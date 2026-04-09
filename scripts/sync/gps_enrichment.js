@@ -25,7 +25,8 @@ const { newQuery } = require('../populate/lib/db');
 const args = process.argv.slice(2);
 const DRY_RUN = !args.includes('--execute');
 const DAYS = parseInt((args.find(a => a.startsWith('--days=')) || '').split('=')[1] || '90');
-const TIME_TOLERANCE_MS = 2 * 60 * 60 * 1000; // ±2h default
+const TOL_H = parseInt((args.find(a => a.startsWith('--tolerance-h=')) || '').split('=')[1] || '4');
+const TIME_TOLERANCE_MS = TOL_H * 60 * 60 * 1000;
 
 const SAM_TOKEN = process.env.SAMSARA_API_TOKEN;
 if (!SAM_TOKEN) throw new Error('SAMSARA_API_TOKEN missing');
@@ -62,7 +63,8 @@ function samsaraGet(path) {
 // /fleet/vehicles/stats/history?types=gps — each GPS sample carries an
 // address.id when the vehicle is inside a client geofence. We group
 // consecutive samples at the same address per vehicle into synthetic "trips".
-const MIN_DWELL_MS = 5 * 60 * 1000;   // ignore drive-throughs <5min
+const MIN_DWELL_MIN = parseInt((args.find(a => a.startsWith('--min-dwell-min=')) || '').split('=')[1] || '2');
+const MIN_DWELL_MS = MIN_DWELL_MIN * 60 * 1000;
 const GAP_MS       = 15 * 60 * 1000;  // >15min outside geofence closes the visit
 const CHUNK_DAYS   = 7;
 
