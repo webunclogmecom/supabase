@@ -1,0 +1,86 @@
+name: Unclogme Daily Sync
+
+# Runs at 06:00 America/New_York. ET is UTC-5 (EST) or UTC-4 (EDT).
+# Using UTC-4 (EDT) as the default since Miami is on EDT most of the year.
+# Accepted trade-off: during EST (Nov–Mar) the job runs at 05:00 local instead
+# of 06:00. Yan's morning review still gets fresh data either way.
+on:
+  schedule:
+    - cron: '0 10 * * *'   # 10:00 UTC = 06:00 EDT / 05:00 EST
+  workflow_dispatch:        # manual trigger from the Actions tab
+
+concurrency:
+  group: daily-sync
+  cancel-in-progress: false  # never let a later run abort a mid-sync earlier run
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Write .env from secrets
+        env:
+          SUPABASE_PAT:          ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_URL:          ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          JOBBER_CLIENT_ID:      ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET:  ${{ secrets.JOBBER_CLIENT_SECRET }}
+          JOBBER_ACCESS_TOKEN:   ${{ secrets.JOBBER_ACCESS_TOKEN }}
+          JOBBER_REFRESH_TOKEN:  ${{ secrets.JOBBER_REFRESH_TOKEN }}
+          SAMSARA_API_TOKEN:     ${{ secrets.SAMSARA_API_TOKEN }}
+          AIRTABLE_PAT:          ${{ secrets.AIRTABLE_PAT }}
+          FILLOUT_API_KEY:       ${{ secrets.FILLOUT_API_KEY }}
+        run: |
+          cat > .env <<EOF
+          SUPABASE_PAT=${SUPABASE_PAT}
+          SUPABASE_URL=${SUPABASE_URL}
+          SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+          JOBBER_CLIENT_ID=${JOBBER_CLIENT_ID}
+          JOBBER_CLIENT_SECRET=${JOBBER_CLIENT_SECRET}
+          JOBBER_ACCESS_TOKEN=${JOBBER_ACCESS_TOKEN}
+          JOBBER_REFRESH_TOKEN=${JOBBER_REFRESH_TOKEN}
+          SAMSARA_API_TOKEN=${SAMSARA_API_TOKEN}
+          AIRTABLE_PAT=${AIRTABLE_PAT}
+          FILLOUT_API_KEY=${FILLOUT_API_KEY}
+          EOF
+
+      - name: Incremental delta pull (Jobber -> raw.*)
+        run: node scripts/sync/incremental_sync.js --execute
+
+      - name: Populate flagged rows (raw.* -> public.*)
+        run: node scripts/sync/run_populate_delta.js --execute
+
+      - name: Validation suite (must stay 10/10)
+        run: node scripts/populate/test_suite.js
+
+      - name: Persist refreshed Jobber tokens back to secrets
+        # The .env file may have been rewritten in-memory if a token refresh
+        # happened during the sync. GitHub Actions secrets can't self-mutate;
+        # on failure of this step we surface a warning so Fred knows to rotate
+        # JOBBER_ACCESS_TOKEN / JOBBER_REFRESH_TOKEN manually.
+        if: always()
+        run: |
+          if [ -f .env ]; then
+            NEW_ACCESS=$(grep '^JOBBER_ACCESS_TOKEN=' .env | cut -d= -f2-)
+            OLD_ACCESS="${{ secrets.JOBBER_ACCESS_TOKEN }}"
+            if [ -n "$NEW_ACCESS" ] && [ "$NEW_ACCESS" != "$OLD_ACCESS" ]; then
+              echo "::warning::Jobber access token was refreshed during this run. Update the JOBBER_ACCESS_TOKEN and JOBBER_REFRESH_TOKEN GitHub secrets from the runner logs (masked) to preserve continuity."
+            fi
+          fi
+
+      - name: Cleanup .env
+        if: always()
+        run: rm -f .env
