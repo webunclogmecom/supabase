@@ -63,6 +63,9 @@ jobs:
       - name: Populate flagged rows (raw.* -> public.*)
         run: node scripts/sync/run_populate_delta.js --execute
 
+      - name: GPS enrichment (Samsara → visits)
+        run: node scripts/sync/gps_enrichment.js --days=7 --execute
+
       - name: Validation suite (must stay 10/10)
         run: node scripts/populate/test_suite.js
 
