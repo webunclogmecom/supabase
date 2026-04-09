@@ -1,0 +1,12 @@
+.env
+.env.*
+node_modules/
+*.log
+populate_report.json
+phase_*_report.json
+scripts/populate/populate_report.json
+scripts/collapse_raw/
+*.xlsx
+CLAUDE.md
+"company context.md"
+.github/
