@@ -81,6 +81,44 @@ jobs:
             fi
           fi
 
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "::warning::SLACK_WEBHOOK_URL not set — cannot notify on failure"
+            exit 0
+          fi
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          PAYLOAD=$(cat <<EOF
+          {
+            "text": ":rotating_light: Unclogme daily sync FAILED",
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*:rotating_light: Unclogme Daily Sync — FAILED*\n*Repo:* ${{ github.repository }}\n*Run:* <${RUN_URL}|#${{ github.run_number }}>\n*Trigger:* ${{ github.event_name }}\n*Commit:* \`${{ github.sha }}\`\n\nCheck the Actions tab for step-level logs. If the failure step is the test suite, the database may be in a drifted state — do not flip any cron until investigated."
+                }
+              }
+            ]
+          }
+          EOF
+          )
+          curl -sS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$SLACK_WEBHOOK_URL"
+
+      - name: Slack confirmation on success
+        if: success()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then exit 0; fi
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            -d "{\"text\":\":white_check_mark: Unclogme daily sync OK — <${RUN_URL}|run #${{ github.run_number }}>\"}" \
+            "$SLACK_WEBHOOK_URL"
+
       - name: Cleanup .env
         if: always()
         run: rm -f .env
