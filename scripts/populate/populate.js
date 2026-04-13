@@ -1258,11 +1258,11 @@ async function step17_receivables() {
       amount_due: N.numOrNull(N.atField(r, 'Amount Due') || N.atField(r, 'Balance')),
       status: N.atField(r, 'Status') || 'Open',
       assignee: N.atField(r, 'Assignee'),
-      note: N.atField(r, 'Note') || N.atField(r, 'Notes'),
+      notes: N.atField(r, 'Note') || N.atField(r, 'Notes'),
       _airtable_id: r.id,
     });
   }
-  const cols = ['client_id', 'amount_due', 'status', 'assignee', 'note'];
+  const cols = ['client_id', 'amount_due', 'status', 'assignee', 'notes'];
   const ids = await bulkInsertReturning('receivables', rows, cols, { dryRun: DRY_RUN, batchSize: 200 });
   stats.steps.receivables = { built: rows.length, inserted: ids.length };
   console.log(`  ${ids.length} receivables ${DRY_RUN ? 'planned' : 'inserted'}`);
@@ -1417,8 +1417,13 @@ async function fixupPasses() {
           await newQuery(`TRUNCATE TABLE ${t} RESTART IDENTITY CASCADE;`);
           console.log(`  truncated ${t}`);
         } catch (e) {
-          // Table might not exist yet — skip silently
-          console.log(`  skip ${t} (${e.message.slice(0, 50)})`);
+          // TRUNCATE can fail (RLS/permissions) — fall back to DELETE
+          try {
+            await newQuery(`DELETE FROM ${t};`);
+            console.log(`  deleted all from ${t} (TRUNCATE blocked)`);
+          } catch (e2) {
+            console.log(`  skip ${t} (${e2.message.slice(0, 60)})`);
+          }
         }
       }
     }

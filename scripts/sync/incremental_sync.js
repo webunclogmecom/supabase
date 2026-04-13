@@ -43,9 +43,10 @@ const ENTITIES = [
     rawTable: 'jobber_pull_clients',
     nodeFields: `
       id
-      firstName lastName companyName
-      emails { address description }
-      phones { number description }
+      firstName lastName companyName isCompany
+      isArchived
+      emails { address primary description }
+      phones { number primary description }
       billingAddress { street city province postalCode country }
       balance
       updatedAt
@@ -87,6 +88,7 @@ const ENTITIES = [
       client { id }
       job { id }
       invoice { id }
+      assignedUsers { nodes { id } }
       createdAt
     `,
   },
