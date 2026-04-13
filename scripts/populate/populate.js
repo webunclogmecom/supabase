@@ -1438,7 +1438,14 @@ async function fixupPasses() {
     if (!ONLY_STEP || ONLY_STEP === 8) await step8_invoices();
     if (!ONLY_STEP || ONLY_STEP === 9) await step9_line_items();
     if (!ONLY_STEP || ONLY_STEP === 10) await step10_visits();
-    if (!ONLY_STEP || ONLY_STEP === 11) await step11_visit_assignments();
+    if (!ONLY_STEP || ONLY_STEP === 11) {
+      // Pre-load maps needed by step 11 if running in isolation
+      if (ONLY_STEP === 11) {
+        await loadSourceMap('visit', 'jobber', 'visitByJobberId');
+        await loadSourceMap('employee', 'jobber', 'employeeByJobberId');
+      }
+      await step11_visit_assignments();
+    }
     if (!ONLY_STEP || ONLY_STEP === 12) await step12_inspections();
     if (!ONLY_STEP || ONLY_STEP === 13) await step13_expenses();
     if (!ONLY_STEP || ONLY_STEP === 14) await step14_derm_manifests();

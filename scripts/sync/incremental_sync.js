@@ -80,6 +80,7 @@ const ENTITIES = [
     name: 'visits',
     gqlField: 'visits',
     rawTable: 'jobber_pull_visits',
+    pageSize: 25, // assignedUsers nested query inflates requestedQueryCost; 100 exceeds 10k budget
     nodeFields: `
       id
       title
@@ -236,6 +237,7 @@ async function syncEntity(entity) {
       entityField: entity.gqlField,
       nodeFields: entity.nodeFields,
       updatedAfter: cursor,
+      ...(entity.pageSize && { pageSize: entity.pageSize }),
     });
     console.log(`  pulled ${nodes.length} delta nodes`);
 
