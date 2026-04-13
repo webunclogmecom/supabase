@@ -59,7 +59,6 @@ const ENTITIES = [
       id
       client { id }
       address { street city province postalCode country }
-      updatedAt
     `,
   },
   {
@@ -83,12 +82,12 @@ const ENTITIES = [
     nodeFields: `
       id
       title
-      startAt endAt
+      startAt endAt completedAt
       visitStatus
       client { id }
       job { id }
       invoice { id }
-      updatedAt
+      createdAt
     `,
   },
   {
@@ -128,7 +127,7 @@ const ENTITIES = [
       name { first last full }
       email { raw }
       isAccountOwner isAccountAdmin
-      updatedAt
+      createdAt
     `,
   },
   // line_items is special: Jobber exposes it only under jobs / quotes (no
@@ -188,17 +187,24 @@ async function markFailed(entity, errMsg) {
   `);
 }
 
-async function upsertRawNode(rawTable, node) {
-  // raw.jobber_pull_* tables have columns: id (identity), data JSONB, ingested_at, needs_populate
-  // We upsert by jobber_id inside data->'id' — but since raw originally used
-  // identity PKs with no unique constraint on data->>'id', we insert with a
-  // targeted DELETE-then-INSERT to stay idempotent. Keeps change-log behavior.
-  const jid = node.id;
-  await newQuery(`
-    DELETE FROM raw.${rawTable} WHERE data->>'id' = ${sqlEscape(jid)};
-    INSERT INTO raw.${rawTable} (data, ingested_at, needs_populate)
-    VALUES (${sqlEscape(JSON.stringify(node))}::jsonb, now(), TRUE);
-  `);
+// Batch upsert: DELETE existing by jobber ID, then bulk INSERT
+// Splits into batches of 50 to keep SQL payload under Supabase Management API limits
+async function batchUpsertRawNodes(rawTable, nodes) {
+  const BATCH = 50;
+  for (let i = 0; i < nodes.length; i += BATCH) {
+    const batch = nodes.slice(i, i + BATCH);
+    // DELETE all matching IDs in one call
+    const ids = batch.map(n => sqlEscape(n.id)).join(', ');
+    await newQuery(`DELETE FROM raw.${rawTable} WHERE data->>'id' IN (${ids});`);
+    // INSERT all in one call
+    const values = batch.map(n =>
+      `(${sqlEscape(JSON.stringify(n))}::jsonb, now(), TRUE)`
+    ).join(',\n  ');
+    await newQuery(`INSERT INTO raw.${rawTable} (data, ingested_at, needs_populate) VALUES\n  ${values};`);
+    if (i + BATCH < nodes.length) {
+      console.log(`    batch ${Math.floor(i / BATCH) + 1}/${Math.ceil(nodes.length / BATCH)} (${Math.min(i + BATCH, nodes.length)}/${nodes.length})`);
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -231,10 +237,13 @@ async function syncEntity(entity) {
     });
     console.log(`  pulled ${nodes.length} delta nodes`);
 
+    // Batch upsert all nodes (50 per API call instead of 1)
+    await batchUpsertRawNodes(entity.rawTable, nodes);
+
     let newCursor = cursor;
     for (const n of nodes) {
-      await upsertRawNode(entity.rawTable, n);
-      if (n.updatedAt && n.updatedAt > newCursor) newCursor = n.updatedAt;
+      const ts = n._cursorTime || n.updatedAt || n.createdAt;
+      if (ts && ts > newCursor) newCursor = ts;
     }
     // If no delta, still advance to now() so we don't re-query the same window forever
     if (nodes.length === 0) newCursor = new Date().toISOString();

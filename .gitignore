@@ -8,4 +8,8 @@ scripts/populate/populate_report.json
 scripts/collapse_raw/
 *.xlsx
 CLAUDE.md
-"company context.md"
+company context.md
+document_pdf.pdf
+EXCLUDED_CLIENTS_REVIEW.md
+.idea/
+supabase/.temp/

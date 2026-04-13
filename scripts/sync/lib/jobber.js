@@ -67,7 +67,9 @@ async function refreshAccessToken() {
   console.log('  [jobber] access token refreshed, expires', expiresAt);
 }
 
-async function gql(query, variables = {}, _retry = false) {
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function gql(query, variables = {}, _retries = 0) {
   if (!ACCESS_TOKEN) throw new Error('JOBBER_ACCESS_TOKEN missing — run scripts/jobber_auth.js once to authorize');
   const body = JSON.stringify({ query, variables });
   const r = await postJson(GRAPHQL_URL, {
@@ -75,13 +77,34 @@ async function gql(query, variables = {}, _retry = false) {
     Authorization: `Bearer ${ACCESS_TOKEN}`,
     'X-JOBBER-GRAPHQL-VERSION': API_VERSION,
   }, body);
-  if (r.status === 401 && !_retry) {
+  if (r.status === 401 && _retries === 0) {
     await refreshAccessToken();
-    return gql(query, variables, true);
+    return gql(query, variables, 1);
   }
   if (r.status >= 300) throw new Error(`Jobber GraphQL HTTP ${r.status}: ${r.body.slice(0, 400)}`);
   const parsed = JSON.parse(r.body);
+
+  // Handle throttling with exponential backoff (max 3 retries)
+  const isThrottled = parsed.errors?.some(e => e.extensions?.code === 'THROTTLED');
+  if (isThrottled && _retries < 3) {
+    const waitSec = Math.pow(2, _retries) * 15; // 15s, 30s, 60s
+    const available = parsed.extensions?.cost?.throttleStatus?.currentlyAvailable;
+    console.log(`    [throttled] available=${available ?? '?'}, waiting ${waitSec}s (retry ${_retries + 1}/3)`);
+    await sleep(waitSec * 1000);
+    return gql(query, variables, _retries + 1);
+  }
+
   if (parsed.errors) throw new Error(`Jobber GraphQL errors: ${JSON.stringify(parsed.errors).slice(0, 400)}`);
+
+  // Log cost budget periodically
+  const cost = parsed.extensions?.cost;
+  if (cost) {
+    const avail = cost.throttleStatus?.currentlyAvailable;
+    if (avail !== undefined && avail < 2000) {
+      console.log(`    [budget] ${avail}/${cost.throttleStatus.maximumAvailable} remaining (restore ${cost.throttleStatus.restoreRate}/min)`);
+    }
+  }
+
   return parsed.data;
 }
 
@@ -92,44 +115,105 @@ async function gql(query, variables = {}, _retry = false) {
 // nodeFields:  GraphQL fragment string for the node shape we care about
 // updatedAfter: ISO timestamp string — cursor filter
 // ----------------------------------------------------------------------------
+// Ensure timestamps are ISO8601 (Jobber rejects "2020-01-01 00:00:00+00")
+function toISO(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts; // pass through if already valid
+  return d.toISOString();
+}
+
 async function pullDelta({ entityField, nodeFields, updatedAfter, pageSize = 100, maxPages = 500 }) {
   const allNodes = [];
   let cursor = null;
   let page = 0;
 
+  const filterType = filterTypeName(entityField);
+  const cursorField = CURSOR_FIELD[entityField];
+  const nodeTimeField = NODE_TIME_FIELD[entityField];
+
+  // Inject the node time field into the query if not already present
+  let fields = nodeFields;
+  if (nodeTimeField && !nodeFields.includes(nodeTimeField)) {
+    fields = nodeFields + `\n      ${nodeTimeField}`;
+  }
+
   while (page < maxPages) {
     page++;
+
+    // Build filter: use the entity-specific cursor field, or no filter if entity doesn't support one
+    let filter = {};
+    let filterDecl = '';
+    if (cursorField && updatedAfter) {
+      filter = { [cursorField]: { after: toISO(updatedAfter) } };
+      filterDecl = `, $filter: ${filterType}FilterAttributes`;
+    }
+
     const q = `
-      query Delta($after: String, $first: Int!, $filter: ${capitalizeSingular(entityField)}FilterAttributes) {
-        ${entityField}(after: $after, first: $first, filter: $filter) {
+      query Delta($after: String, $first: Int!${filterDecl}) {
+        ${entityField}(after: $after, first: $first${filterDecl ? ', filter: $filter' : ''}) {
           pageInfo { hasNextPage endCursor }
-          nodes { ${nodeFields} }
+          nodes { ${fields} }
         }
       }
     `;
-    const filter = updatedAfter ? { updatedAt: { after: updatedAfter } } : {};
-    const data = await gql(q, { after: cursor, first: pageSize, filter });
+    const vars = { after: cursor, first: pageSize };
+    if (cursorField && updatedAfter) vars.filter = filter;
+
+    const data = await gql(q, vars);
     const conn = data[entityField];
     if (!conn) throw new Error(`entity ${entityField} missing in response`);
     allNodes.push(...conn.nodes);
     if (!conn.pageInfo.hasNextPage) break;
     cursor = conn.pageInfo.endCursor;
   }
+
+  // Tag each node with the time field used for cursor advancement
+  if (nodeTimeField) {
+    for (const n of allNodes) {
+      if (!n._cursorTime) n._cursorTime = n[nodeTimeField];
+    }
+  }
+
   return allNodes;
 }
 
-function capitalizeSingular(field) {
-  // clients -> Client, properties -> Property, invoices -> Invoice
+// Maps GraphQL connection name to its FilterAttributes type prefix
+// Verified against Jobber introspection 2026-04-10
+function filterTypeName(field) {
   const map = {
     clients: 'Client',
-    properties: 'Property',
+    properties: 'Properties',   // plural!
     jobs: 'Job',
     visits: 'Visit',
     invoices: 'Invoice',
     quotes: 'Quote',
-    users: 'User',
+    users: 'Users',             // plural!
   };
   return map[field] || field;
 }
+
+// Which cursor field to use for delta filters per entity
+// Jobber schema is inconsistent: some have updatedAt, some only createdAt, some neither
+const CURSOR_FIELD = {
+  clients:    'updatedAt',
+  properties: null,         // PropertiesFilterAttributes has no time filter
+  jobs:       'createdAt',  // no updatedAt filter
+  visits:     'createdAt',  // no updatedAt filter
+  invoices:   'updatedAt',
+  quotes:     'updatedAt',
+  users:      null,         // UsersFilterAttributes has no time filter
+};
+
+// Which node field carries the timestamp for advancing the cursor
+const NODE_TIME_FIELD = {
+  clients:    'updatedAt',
+  properties: null,         // Property type has no time fields at all
+  jobs:       'updatedAt',
+  visits:     'createdAt',  // Visit type has no updatedAt field
+  invoices:   'updatedAt',
+  quotes:     'updatedAt',
+  users:      'createdAt',  // User type has no updatedAt field
+};
 
 module.exports = { gql, pullDelta, refreshAccessToken };

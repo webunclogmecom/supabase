@@ -130,4 +130,28 @@ async function fetchJsonbCache(table) {
   return all;
 }
 
-module.exports = { oldQuery, newQuery, bulkUpsert, fetchJsonbCache, sqlEscape };
+// INSERT ... RETURNING id — returns array of generated PKs in insert order.
+// Used by v2 populate pattern: insert business rows, get back PKs, then write entity_source_links.
+async function bulkInsertReturning(table, rows, columns, options = {}) {
+  if (!rows.length) return [];
+  const { batchSize = 500, dryRun = false } = options;
+  const allIds = [];
+
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    const values = batch.map(row => '(' + columns.map(c => sqlEscape(row[c])).join(', ') + ')').join(',\n  ');
+    const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES\n  ${values}\nRETURNING id;`;
+
+    if (dryRun) {
+      console.log(`[dry-run] would insert ${batch.length} rows into ${table} (batch ${Math.floor(i / batchSize) + 1})`);
+      // Return placeholder IDs for dry-run so downstream code can build links
+      allIds.push(...batch.map((_, idx) => -(i + idx + 1)));
+    } else {
+      const result = await newQuery(sql);
+      allIds.push(...result.map(r => r.id));
+    }
+  }
+  return allIds;
+}
+
+module.exports = { oldQuery, newQuery, bulkUpsert, bulkInsertReturning, fetchJsonbCache, sqlEscape };

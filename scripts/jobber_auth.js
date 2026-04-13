@@ -169,7 +169,11 @@ async function main() {
       });
 
       const { access_token, refresh_token, expires_in } = tokenResponse;
-      const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
+      console.log('[debug] tokenResponse keys:', Object.keys(tokenResponse));
+      console.log('[debug] expires_in:', expires_in);
+      const expiresAt = expires_in
+        ? new Date(Date.now() + expires_in * 1000).toISOString()
+        : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // default 24h if missing
 
       updateEnvFile({
         JOBBER_ACCESS_TOKEN: access_token,
