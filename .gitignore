@@ -21,3 +21,6 @@ document_pdf.pdf
 
 # Historical / superseded — content migrated to docs/company.md
 company context.md
+
+# Handoff zip staging (regenerate on demand; do not commit the build artifact)
+handoff/
