@@ -1,13 +1,13 @@
 # Viktor — Database Access Setup
 
-**Last updated:** 2026-04-20
+**Last updated:** 2026-04-20 (v2 — after switching to Viktor's native integration path)
 
-Viktor (AI coworker in Slack, `U0AKTMAMWP9`) uses two Supabase projects for Yan's Sales App:
+Viktor (AI coworker in Slack, user `U0AKTMAMWP9`) uses two Supabase projects for Yan's Sales App work. Access is enforced through **Viktor's native Supabase integration tool controls**, not via custom database credentials.
 
-| Project | Access | Purpose |
-|---|---|---|
-| **Main Unclogme DB** (`wbasvhvvismukaqdnouk`) | Read-only via `viktor_readonly` Postgres role | Fresh operational data — clients, visits, DERM manifests, photos, notes |
-| **Yan's Sales App DB** (Yan creates — not yet set up) | Full write via service_role key | Sales App's own tables for new data; merged back to main DB later |
+| Project | Viktor integration name | Access level | Purpose |
+|---|---|---|---|
+| **Main Unclogme DB** (`wbasvhvvismukaqdnouk`) | `Supabase - Main DB - Read Only` | Read-only at tool layer | Fresh operational data |
+| **Yan's Sales App DB** | `Supabase - yan supa new apps` | Full write | Sales App's own tables; merged back to main DB later |
 
 ---
 
@@ -15,125 +15,95 @@ Viktor (AI coworker in Slack, `U0AKTMAMWP9`) uses two Supabase projects for Yan'
 
 ### 1.1 How it's enforced
 
-Dedicated Postgres login role `viktor_readonly` with:
+Viktor's native Supabase integration exposes 13 tools (Upsert, Update, Select, Insert, Delete, Count, Batch Insert, RPC, Proxy Get/Post/Put/Patch/Delete). Each tool has an independent setting:
 
-- **SELECT only** on `public` and `ops` schemas (45 tables/views)
-- **No INSERT / UPDATE / DELETE / TRUNCATE** grants anywhere
-- **Revoked** on `webhook_tokens` (holds OAuth credentials — Viktor should never see these)
-- `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOINHERIT`
-- Connection limit: 10 concurrent
+- **Off** — Viktor cannot invoke this tool at all
+- **Ask for confirmation** — Viktor requires human approval before each invocation
+- **Run automatically** — Viktor invokes without asking
 
-Applied via: [`scripts/migrations/create_viktor_readonly_role.sql`](../scripts/migrations/create_viktor_readonly_role.sql).
+For the main DB integration, the settings are:
 
-### 1.2 Connection strings Viktor uses
+| Tool | Setting | Reasoning |
+|---|---|---|
+| Upsert Row | **Off** | Write |
+| Update Row | **Off** | Write |
+| Insert Row | **Off** | Write |
+| Delete Row | **Off** | Write |
+| Batch Insert Rows | **Off** | Write |
+| Remote Procedure Call | **Off** | RPC can call mutating Postgres functions |
+| Proxy Post | **Off** | Raw HTTP POST — write |
+| Proxy Put | **Off** | Raw HTTP PUT — write |
+| Proxy Patch | **Off** | Raw HTTP PATCH — write |
+| Proxy Delete | **Off** | Raw HTTP DELETE — write |
+| **Select Row** | Ask for confirmation | Read — human-in-the-loop for targeted queries |
+| **Count Rows** | Run automatically | Safe aggregate read |
+| **Proxy Get** | Run automatically | Raw HTTP GET — read |
 
-**Pooler (recommended — IPv4, works from anywhere):**
-```
-postgresql://viktor_readonly.wbasvhvvismukaqdnouk:<PW>@aws-1-us-east-1.pooler.supabase.com:6543/postgres
-```
+With 10 write-side tools Off, Viktor physically cannot invoke a mutating operation against the main DB from this integration — regardless of the underlying credentials.
 
-**Direct (for long sessions, may require IPv6):**
-```
-postgresql://viktor_readonly:<PW>@db.wbasvhvvismukaqdnouk.supabase.co:5432/postgres
-```
+### 1.2 Why this is sufficient
 
-Password is **not** in this repo. It's in Fred's credential store and was sent to Viktor via Slack DM (see §4 below).
+The tool-layer restriction is the primary control. No additional Postgres-level role or JWT-role-based restriction is needed because:
 
-### 1.3 What Viktor can read
+1. Viktor's tool runtime enforces the Off state — there is no bypass from a tool whose setting is Off.
+2. Even if Viktor's credentials under the hood are service_role-level, the tool runtime never generates a write call.
+3. The integration settings are owned by Fred (as admin in Viktor's UI). Changing a tool back to Ask/Automatic is an auditable admin action.
 
-Everything under `public.*` and `ops.*` except `webhook_tokens`. Specifically:
+### 1.3 What about a dedicated read-only Postgres role?
 
-- Core business: `clients`, `client_contacts`, `properties`, `service_configs`, `employees`, `vehicles`, `jobs`, `visits`, `invoices`, `quotes`, `line_items`, `inspections`, `expenses`, `derm_manifests`, `routes`, `receivables`, `leads`
-- Junctions: `visit_assignments`, `manifest_visits`, `route_stops`
-- Photo + notes: `photos`, `photo_links`, `notes`, `jobber_oversized_attachments`
-- Telemetry: `vehicle_telemetry_readings`
-- Cross-system IDs: `entity_source_links`
-- Views: `clients_due_service`, `client_services_flat`, `visits_with_status`, `v_vehicle_telemetry_latest`, `ops.v_route_today`, `ops.v_service_due`, etc.
-- Sync observability: `sync_cursors`, `sync_log`, `webhook_events_log`
+An earlier version of this doc (2026-04-20 morning) set up a `viktor_readonly` Postgres login role with SELECT-only grants, intended for a direct PG connection. That role was **dropped the same day** when we discovered Viktor's native integration is the correct path — see [`scripts/migrations/drop_viktor_readonly_role.sql`](../scripts/migrations/drop_viktor_readonly_role.sql).
 
-### 1.4 What Viktor cannot do
-
-- Any write to any table (INSERT/UPDATE/DELETE rejected at grant level)
-- Read `webhook_tokens` (OAuth credentials)
-- Create schema, roles, or DBs
-- Execute stored procedures (EXECUTE revoked)
-
-### 1.5 Password rotation
-
-Every 90 days or immediately on suspected compromise:
-
-```sql
-ALTER ROLE viktor_readonly WITH PASSWORD '<new>';
-```
-
-Then DM Viktor the new password. Log the rotation in [`docs/runbook.md §8`](runbook.md#8-incident-log).
+Rationale: unused credentials rot. A password that's delivered once via Slack DM and never used is a liability, not a safety net. If a future non-Viktor client ever needs read-only access (BI tool, analytics dashboard), we'll recreate the role at that time using [`scripts/migrations/create_viktor_readonly_role.sql`](../scripts/migrations/create_viktor_readonly_role.sql) as a template.
 
 ---
 
 ## 2. Yan's Sales App DB — Viktor has full access
 
-**Not yet set up.** Yan creates the new Supabase project from the handoff zip per [`handoff/BUILDING-NEW-APPS.md`](../handoff/unclogme-handoff/BUILDING-NEW-APPS.md) §3.
+Yan created a separate Supabase project (visible in Viktor as `yan supa new apps`). Viktor has all 13 tools enabled there, since Yan's Sales App needs to write.
 
-Once created:
+Schema baseline for Yan's new project is applied via the handoff zip per [`handoff/BUILDING-NEW-APPS.md`](../handoff/unclogme-handoff/BUILDING-NEW-APPS.md) §3–§4.
 
-- Yan hands Viktor the new project's `service_role` key for write access
-- Viktor can freely `INSERT`/`UPDATE`/`DELETE` on any table in Yan's new project
-- **NO read-only role needed there** — Yan owns that DB
-
-When the Sales App is ready to go live, Fred + Viktor merge Yan's schema + data into the main DB. At merge time, the Sales App's connection string switches from Yan's build project to a role on the main DB (could be a dedicated `sales_app` role similar to `viktor_readonly` but with write access to Sales App tables only).
+When the Sales App is ready to go live, Fred + Viktor merge Yan's schema + data into the main DB. At that point a third Viktor integration can be stood up ("Main DB - Sales App Write") with narrow INSERT/UPDATE grants on the Sales-App-specific tables, while the existing read-only integration remains for reads.
 
 ---
 
-## 3. Why this design
+## 3. Admin responsibilities
 
-### 3.1 Two DBs, not one
+### 3.1 Who controls the integration settings
 
-- **Separation of concerns**: the main DB is production data (live webhooks from Jobber, Samsara, Airtable). Yan's Sales App writes experimental new tables — we don't want that mixing with production until reviewed.
-- **Independent deploy cycles**: Yan iterates on the Sales App without coordinating schema changes with Fred's ongoing 3NF cleanup work.
-- **Merge-gated quality**: when Yan's work is ready, Fred reviews the schema diff + data before merging. Mistakes stay in the build DB.
+Owner: Fred (admin in Viktor's UI). Any change to "Off" / "Ask" / "Automatic" on a tool for either integration should be reviewed against this doc.
 
-### 3.2 Postgres role, not JWT / RLS
+### 3.2 Access tab
 
-- **JWT + RLS** would require enabling RLS on every table + writing `anon`-bound policies. Affects other consumers (the Lovable integration Fred is already evaluating).
-- **Dedicated Postgres login user** isolates Viktor's access without touching `anon` / `authenticated` configuration.
-- Password-based Postgres auth is what Viktor's tooling supports natively — no custom JWT signing, no Supabase configuration toggles.
+Viktor's integration also has an **Access** tab that scopes which team members can invoke each tool. For the main DB integration, restrict to Fred + Yan only — no field staff should be able to run SQL directly against production.
 
-### 3.3 Direct Postgres, not HTTP API
+### 3.3 Audit trail
 
-Viktor can use either. The docs show Postgres pooler first because:
-- Most Python/Node PG libraries (`psycopg2`, `pg`, `asyncpg`) support Postgres connection strings natively
-- The connection pooler handles IPv4 for environments that can't do IPv6
-- PostgREST (the HTTP API) requires extra JWT/role config work; direct PG is simpler
+Viktor logs every tool invocation (visible under Usage in the UI). Review monthly for anomalies — especially any confirmation-required invocations that were approved.
 
-If Viktor prefers HTTP API, he can still use the anon key — but RLS would need to be enabled for real isolation. We're not there yet. Direct PG is the recommended path.
+### 3.4 When a tool is added
+
+If Viktor adds a new Supabase tool (e.g., a future "Stored Procedure Batch Exec"), it arrives at a default state. Update the table in §1.1 and set the new tool's state intentionally.
 
 ---
 
-## 4. Viktor Slack handoff
+## 4. Merge-time access model (future)
 
-Credentials were sent to Viktor (user `U0AKTMAMWP9`) via Slack DM on 2026-04-20. The DM contains:
-- The pooler connection string (recommended)
-- The direct connection string (backup)
-- Username + password
-- Reminder that access is read-only + password rotation cadence
+When Yan's Sales App schema merges into the main DB:
 
-Fred has a copy of the password in his credential store.
+1. The Sales-App-specific tables get their own INSERT/UPDATE grants on the main DB (via a narrow Postgres role, not service_role).
+2. Viktor's main-DB integration either:
+   - Gets its tools upgraded selectively (e.g., Insert Row turned on for specific tables), or
+   - A new integration "Main DB - Sales App Writes" is created with its own credentials and tool set.
+3. The existing read-only integration stays in place for all other reads.
 
-**If Viktor changes integration mechanism** (e.g., starts using HTTP API instead of direct PG), the `viktor_readonly` role still works via a role-claim JWT — just needs the `SUPABASE_JWT_SECRET` (not in this repo; fetch from Supabase dashboard if needed).
-
----
-
-## 5. When this setup changes
-
-- **Yan's new Supabase project goes live** → update §2 with the project ref + confirm Viktor has service_role
-- **Yan's schema grows** → Viktor's read-only grants on the main DB may need additional read permissions (unlikely — all business data is already in the 45 granted tables)
-- **Sales App goes to production** → schema merges back, a dedicated `sales_app_write` role with narrow INSERT/UPDATE grants replaces Yan's service_role usage
-- **Suspected compromise** → rotate password immediately (§1.5) and audit queries in Supabase dashboard logs
+Decision to be made at merge time.
 
 ---
 
 ## Related docs
 
-- [`handoff/unclogme-handoff/BUILDING-NEW-APPS.md`](../handoff/unclogme-handoff/BUILDING-NEW-APPS.md) — what Yan needs to do to set up his new DB
-- [`docs/security.md`](security.md) — overall credential management + rotation procedures
-- [`scripts/migrations/create_viktor_readonly_role.sql`](../scripts/migrations/create_viktor_readonly_role.sql) — the idempotent migration
+- [`handoff/unclogme-handoff/BUILDING-NEW-APPS.md`](../handoff/unclogme-handoff/BUILDING-NEW-APPS.md) — what Yan + Viktor do to set up the new Supabase project
+- [`docs/security.md`](security.md) — overall credential management
+- [`scripts/migrations/create_viktor_readonly_role.sql`](../scripts/migrations/create_viktor_readonly_role.sql) — PG role template (currently unused; kept as reference)
+- [`scripts/migrations/drop_viktor_readonly_role.sql`](../scripts/migrations/drop_viktor_readonly_role.sql) — drop migration, applied 2026-04-20
