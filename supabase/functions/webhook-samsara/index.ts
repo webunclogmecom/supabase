@@ -6,7 +6,7 @@
 // Handles:
 //   - AddressCreated/Updated/Deleted → clients/properties GPS + geofence
 //   - DriverCreated/Updated → employees
-//   - VehicleStatsSnapshot → vehicle_fuel_readings (3NF time-series)
+//   - VehicleStatsSnapshot → vehicle_telemetry_readings (3NF time-series)
 //   - AlertTriggered (geofence) → visits GPS enrichment
 //
 // Samsara sends full payloads (not thin notifications like Jobber).
@@ -17,27 +17,38 @@ import { upsertEntityLink, findEntityBySourceId, buildSourceMap } from '../_shar
 import { ok, badRequest, unauthorized, serverError, logWebhookEvent } from '../_shared/responses.ts'
 
 // ---- HMAC verification ----
+// Samsara issues a unique secretKey per webhook registration, so we accept
+// any configured secret. SAMSARA_WEBHOOK_SECRETS = comma-separated list.
+// (Also still reads legacy single-secret SAMSARA_WEBHOOK_SECRET for back-compat.)
 async function verifySamsaraSignature(body: string, signature: string | null): Promise<boolean> {
-  const secret = Deno.env.get('SAMSARA_WEBHOOK_SECRET')
-  if (!secret) {
-    console.warn('SAMSARA_WEBHOOK_SECRET not set — skipping verification')
+  const multi = Deno.env.get('SAMSARA_WEBHOOK_SECRETS')
+  const single = Deno.env.get('SAMSARA_WEBHOOK_SECRET')
+  const secrets = [
+    ...(multi ? multi.split(',').map((s) => s.trim()).filter(Boolean) : []),
+    ...(single ? [single] : []),
+  ]
+  if (secrets.length === 0) {
+    console.warn('SAMSARA_WEBHOOK_SECRETS not set — skipping verification')
     return true
   }
   if (!signature) return false
 
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))
-  const computed = Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-  // Samsara may send hex or base64 — compare both
-  return computed === signature || btoa(String.fromCharCode(...new Uint8Array(sig))) === signature
+  for (const secret of secrets) {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    )
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))
+    const hex = Array.from(new Uint8Array(sig))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    if (hex === signature || b64 === signature) return true
+  }
+  return false
 }
 
 // ============================================================================
@@ -211,8 +222,12 @@ async function handleDriver(
 }
 
 // ============================================================================
-// Vehicle Stats → vehicle_fuel_readings (3NF time-series)
+// Vehicle Stats → vehicle_telemetry_readings (3NF time-series)
 // ============================================================================
+// 3NF: each row is one observation of vehicle_id at recorded_at. Every column
+// (fuel_percent, odometer_meters, engine_state, engine_hours_seconds) is a
+// direct reading from Samsara. fuel_gallons is NOT stored — it's computed on
+// read in v_vehicle_telemetry_latest via JOIN to vehicles.fuel_tank_capacity_gallons.
 
 async function handleVehicleStats(
   event: any
@@ -243,52 +258,42 @@ async function handleVehicleStats(
     return { entity_type: 'vehicle', entity_id: null, readings: 0 }
   }
 
-  // Get tank capacity for gallons calculation
-  const { data: veh } = await supabase
-    .from('vehicles')
-    .select('tank_capacity_gallons')
-    .eq('id', vehicleId)
-    .single()
-
-  const tankCapacity = veh?.tank_capacity_gallons ?? null
-
-  // Extract fuel data — Samsara may send it in various formats
+  // Extract telemetry from Samsara payload (multiple shapes supported)
   const stats = event.data?.stats ?? event.stats ?? []
-  const fuelStat = stats.find?.((s: any) => s.type === 'fuelPercent') ?? event.data?.fuelPercent ?? event.fuelPercent
-  const odometerStat = stats.find?.((s: any) =>
-    s.type === 'obdOdometerMeters' || s.type === 'odometerMeters'
-  ) ?? event.data?.obdOdometerMeters ?? event.data?.odometerMeters
-  const engineStat = stats.find?.((s: any) => s.type === 'engineState') ?? event.data?.engineState
+  const fuelStat        = stats.find?.((s: any) => s.type === 'fuelPercent') ?? event.data?.fuelPercent ?? event.fuelPercent
+  const odometerStat    = stats.find?.((s: any) => s.type === 'obdOdometerMeters' || s.type === 'odometerMeters') ?? event.data?.obdOdometerMeters ?? event.data?.odometerMeters
+  const engineStat      = stats.find?.((s: any) => s.type === 'engineState') ?? event.data?.engineState
+  const engineHoursStat = stats.find?.((s: any) => s.type === 'engineSeconds' || s.type === 'engineHours') ?? event.data?.engineSeconds
 
-  // If no fuel data in this event, skip
-  const fuelPercent = typeof fuelStat === 'object' ? fuelStat?.value : fuelStat
-  const fuelTime = typeof fuelStat === 'object' ? fuelStat?.time : event.eventTime
-  const odometerValue = typeof odometerStat === 'object' ? odometerStat?.value : odometerStat
-  const engineValue = typeof engineStat === 'object' ? engineStat?.value : engineStat
+  const fuelPercent       = typeof fuelStat === 'object' ? fuelStat?.value : fuelStat
+  const fuelTime          = typeof fuelStat === 'object' ? fuelStat?.time : event.eventTime
+  const odometerValue     = typeof odometerStat === 'object' ? odometerStat?.value : odometerStat
+  const engineValue       = typeof engineStat === 'object' ? engineStat?.value : engineStat
+  const engineHoursValue  = typeof engineHoursStat === 'object' ? engineHoursStat?.value : engineHoursStat
 
-  if (fuelPercent === null || fuelPercent === undefined) {
-    console.log(`VehicleStats for ${vehicle.name}: no fuel data in this event`)
+  // Skip if no telemetry at all — don't write empty rows
+  if (
+    (fuelPercent === null || fuelPercent === undefined) &&
+    (odometerValue === null || odometerValue === undefined) &&
+    (engineValue === null || engineValue === undefined) &&
+    (engineHoursValue === null || engineHoursValue === undefined)
+  ) {
+    console.log(`VehicleStats for ${vehicle.name}: no telemetry in this event`)
     return { entity_type: 'vehicle', entity_id: vehicleId, readings: 0 }
   }
 
-  // Compute gallons from percent + tank capacity
-  const fuelGallons =
-    tankCapacity !== null && fuelPercent !== null
-      ? Math.round((Number(fuelPercent) * Number(tankCapacity)) / 100 * 100) / 100
-      : null
-
-  // Insert fuel reading (append-only, never update)
-  const { error } = await supabase.from('vehicle_fuel_readings').insert({
+  // Append-only insert — no derived columns, all direct observations (3NF)
+  const { error } = await supabase.from('vehicle_telemetry_readings').insert({
     vehicle_id: vehicleId,
-    fuel_percent: Number(fuelPercent),
-    fuel_gallons: fuelGallons,
+    fuel_percent: fuelPercent !== null && fuelPercent !== undefined ? Number(fuelPercent) : null,
     odometer_meters: odometerValue ? Number(odometerValue) : null,
     engine_state: engineValue ?? null,
-    recorded_at: fuelTime ?? new Date().toISOString(),
+    engine_hours_seconds: engineHoursValue ? Number(engineHoursValue) : null,
+    recorded_at: fuelTime ?? event.eventTime ?? new Date().toISOString(),
   })
 
   if (error) {
-    console.error(`Fuel reading insert failed for vehicle ${vehicleId}:`, error.message)
+    console.error(`Telemetry insert failed for vehicle ${vehicleId}:`, error.message)
     return { entity_type: 'vehicle', entity_id: vehicleId, readings: 0 }
   }
 

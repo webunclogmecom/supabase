@@ -450,7 +450,9 @@ async function step2_employees() {
 
 // ----------------------------------------------------------------------------
 // STEP 3 — VEHICLES
-// v2: (name, make, model, year, vin, license_plate, tank_capacity_gallons, status, notes)
+// v2: (name, make, model, year, vin, license_plate, grease_tank_capacity_gallons, fuel_tank_capacity_gallons, status, notes)
+// Grease tank = waste/vacuum tank for collected grease (drives route capacity).
+// Fuel tank   = diesel/gas tank (Samsara fuelPercent reports on this). Separate quantities.
 // ----------------------------------------------------------------------------
 async function step3_vehicles() {
   console.log('\n[STEP 3] Vehicles...');
@@ -465,19 +467,20 @@ async function step3_vehicles() {
       year: N.intOrNull(sv.year),
       vin: sv.vin || null,
       license_plate: sv.licensePlate || null,
-      tank_capacity_gallons: 0,
+      grease_tank_capacity_gallons: 0,
+      fuel_tank_capacity_gallons: null,
       status: 'ACTIVE',
       notes: null,
       _samsara_id: sv.id,
     });
   }
 
-  // Manual capacity overrides + Goliath (no Samsara)
+  // Manual capacity overrides + Goliath (no Samsara). Goliath is inactive.
   const MANUAL = {
-    'Cloggy':  { tank_capacity_gallons: 126 },
-    'David':   { tank_capacity_gallons: 1800 },
-    'Moises':  { tank_capacity_gallons: 9000 },
-    'Goliath': { tank_capacity_gallons: 4800, _samsara_id: null, status: 'ACTIVE' },
+    'Cloggy':  { grease_tank_capacity_gallons: 126,  fuel_tank_capacity_gallons: 26 },
+    'David':   { grease_tank_capacity_gallons: 1800, fuel_tank_capacity_gallons: 66 },
+    'Moises':  { grease_tank_capacity_gallons: 9000, fuel_tank_capacity_gallons: 90 },
+    'Goliath': { grease_tank_capacity_gallons: 4800, fuel_tank_capacity_gallons: null, _samsara_id: null, status: 'INACTIVE' },
   };
   for (const r of rows) {
     const m = MANUAL[r.name];
@@ -487,7 +490,7 @@ async function step3_vehicles() {
     rows.push({ name: 'Goliath', make: null, model: null, year: null, vin: null, license_plate: null, ...MANUAL.Goliath, notes: null });
   }
 
-  const cols = ['name', 'make', 'model', 'year', 'vin', 'license_plate', 'tank_capacity_gallons', 'status', 'notes'];
+  const cols = ['name', 'make', 'model', 'year', 'vin', 'license_plate', 'grease_tank_capacity_gallons', 'fuel_tank_capacity_gallons', 'status', 'notes'];
   const ids = await bulkInsertReturning('vehicles', rows, cols, { dryRun: DRY_RUN });
   stats.steps.vehicles = { built: rows.length, inserted: ids.length };
   console.log(`  ${ids.length} vehicles ${DRY_RUN ? 'planned' : 'inserted'}`);

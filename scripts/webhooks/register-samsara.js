@@ -14,7 +14,7 @@
 // Samsara event types registered:
 //   - AddressCreated, AddressUpdated, AddressDeleted → client GPS
 //   - DriverCreated, DriverUpdated → employee records
-//   - VehicleStatsSnapshot → vehicle_fuel_readings (fuel levels)
+//   - VehicleStatsSnapshot → vehicle_telemetry_readings (fuel + odometer + engine)
 //   - AlertTriggered (geofence) → visit GPS enrichment
 // ============================================================================
 
@@ -95,19 +95,17 @@ async function createEventWebhook(eventType, name) {
   });
 }
 
-// ---- Create alert webhook (for geofence events) ----
+// ---- Create alert webhook (for geofence + fuel alerts configured in dashboard) ----
 async function createAlertWebhook() {
-  // Samsara alerts use a different registration flow
-  // Alert webhooks are configured in the Samsara dashboard
-  // but can also be set via API
+  // Samsara does NOT have GeofenceEntry/Exit or VehicleStatsSnapshot as direct
+  // webhook event types. Instead, configure alert rules in the Samsara dashboard
+  // (e.g., "Inside Geofence", "Fuel Level Low") — when those fire, they emit
+  // AlertIncident webhooks that our handler processes. AlertObjectEvent fires
+  // when an alert object itself is created/modified.
   return samsaraRequest('POST', '/webhooks', {
-    name: 'Unclogme: Geofence & Vehicle Stats',
+    name: 'Unclogme: Alerts (geofence + fuel)',
     url: WEBHOOK_URL,
-    eventTypes: [
-      'GeofenceEntry',
-      'GeofenceExit',
-      'VehicleStatsSnapshot',
-    ],
+    eventTypes: ['AlertIncident', 'AlertObjectEvent'],
   });
 }
 
