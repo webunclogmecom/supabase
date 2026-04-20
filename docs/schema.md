@@ -561,9 +561,10 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 | receivables | 45 | Airtable (past-due) |
 | leads | 5 | Airtable |
 | vehicle_telemetry_readings | 0 | Samsara webhook registration unblocked 2026-04-20; awaiting deploy of updated Edge Function |
-| notes | 0 | Free-form text notes. Populating starts with Jobber notes migration. |
-| photos | 0 | Unified photo table — populating starts with Jobber photos migration |
-| photo_links | 0 | Polymorphic bridge from photos to entities |
-| entity_source_links | 10,117 | Cross-system |
+| notes | growing | Jobber notes migration active 2026-04-20. Live count: `SELECT COUNT(*) FROM notes` |
+| photos | growing | Jobber photos migration active 2026-04-20. Live count: `SELECT COUNT(*) FROM photos` |
+| photo_links | growing | Polymorphic bridge. Live count: `SELECT COUNT(*) FROM photo_links` |
+| entity_source_links | 10,117+ | Cross-system; growing as migration writes note/photo links |
+| jobber_oversized_attachments | tracking | Files > 50 MB that couldn't fit Supabase Pro bucket cap. Tracked for later recovery. |
 
 See [docs/runbook.md](runbook.md#outstanding-population-gaps) for what each `0`-row gap is blocked on.

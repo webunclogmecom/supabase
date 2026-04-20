@@ -236,7 +236,8 @@ Tables with 0 rows that should eventually have data. Tracked here because each h
 |---|---|---|---|
 | `vehicle_telemetry_readings` | 0 | Webhooks registered + Edge Function deployed 2026-04-20 — awaiting first telemetry events | Watch `webhook_events_log` for `source_system='samsara'` inflow |
 | `visit_assignments` | 0 | Needs Jobber visits re-pull with `assignedUsers` field; hits rate limits | Add backfill endpoint to `webhook-jobber`; paced re-query over weekend |
-| `notes` / `photos` / `photo_links` | 0 / 0 / 0 | Jobber notes + attachments not yet migrated (extractor scaffolded at `scripts/migrate/jobber_notes_photos.js`) | [scripts/migrate/README.md](../scripts/migrate/README.md) |
+| `notes` / `photos` / `photo_links` | growing | Jobber notes + attachments migration running 2026-04-20 via `scripts/migrate/jobber_notes_photos.js`. | [scripts/migrate/README.md](../scripts/migrate/README.md) |
+| `jobber_oversized_attachments` | growing | Files > 50 MB skipped by the migration (Supabase Pro bucket cap). Tracked for recovery pass. | Plan upgrade or external storage |
 
 ### `visit_assignments` re-pull plan
 
@@ -315,5 +316,8 @@ Documented incidents for future learning. Add a row when something breaks and ge
 | 2026-04-20 | `visits.is_complete`, `service_configs.{next_visit, status}` were stored derived columns | Pre-standing-check design; columns created before 3NF enforcement was explicit | Dropped columns, rebuilt 5 dependent views with inline derivations | [ADR 010](decisions/010-drop-stored-derived-columns.md) |
 | 2026-04-20 | 132 clients had `status = 'Recuring'` (typo, missing 'r') | Airtable-sourced typo, propagated via populate.js | Normalized to `RECURRING`; views updated to canonical spelling | Add a CHECK constraint or status enum in future |
 | 2026-04-20 | Photo architecture fragmented across `visit_photos`, `inspection_photos`, and inline `properties.location_photo_url` | Before/after treated as intrinsic to the photo (it isn't — it's a link attribute) | Unified to `photos` + `photo_links` polymorphic pair, superseding [ADR 008](decisions/008-photos-normalized-out.md) | [ADR 009](decisions/009-unified-photos-architecture.md) |
+| 2026-04-20 | Jobber notes GraphQL query with `first: 50` + `fileAttachments { url }` rejected by Jobber with THROTTLED (requested cost ~25k > 10k budget ceiling) — never executed | Jobber's cost calculator multiplies page_size × nested-field-count and rejects queries with requested_cost > max_budget | Lowered `NOTES_PAGE_SIZE` to 10 (requested ~5k, actual ~50). Documented in extractor header comment. | Any future deep query: estimate requested cost before production use (fetch small page first, check `extensions.cost.requestedQueryCost`) |
+| 2026-04-20 | Jobber `JobNoteUnion.nodes` returned the same ClientNote surfaced via both `client.notes` and `job.notes` connections | Jobber's JobNoteUnion `possibleTypes` includes ClientNote — inherited client notes show up on each job | Dedup by `note.id` in `fetchJobberClientNotes` using a Set | Always dedupe when a GraphQL Union type could surface the same node via multiple paths |
+| 2026-04-20 | Supabase Storage bucket rejected >50 MB videos with HTTP 413 (bucket set at 500 MB but Pro plan caps it at 50 MB) | Supabase Pro hard-caps bucket `file_size_limit` at 50 MB — the PUT on /storage/v1/bucket/{name} silently rejects larger values without updating | Track oversized files in `jobber_oversized_attachments` with signed Jobber URL + metadata. Deferred recovery. | Before assuming a config limit is honored, verify via GET after PUT |
 
 *Add new rows in chronological order. Keep the "Prevention" column actionable — what procedural change prevents a repeat?*

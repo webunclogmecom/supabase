@@ -119,7 +119,7 @@ Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-
 |---|---|---|
 | Samsara webhook ingestion | **Fully unblocked 2026-04-20** — token has Webhooks write; 6 webhooks registered; `webhook-samsara` Edge Function redeployed with updated code. Telemetry should start flowing. | [runbook.md §5](docs/runbook.md#5-samsara-webhook-registration) |
 | Jobber `visit_assignments` backfill — rate-limited | Blocked — needs paced re-pull | [migration-plan.md](docs/migration-plan.md#active-migration-visit_assignments-backfill) |
-| Jobber photo + notes migration | **Partially landed** 2026-04-20: `notes`, `photos`, `photo_links` tables live; extractor scaffolded at `scripts/migrate/jobber_notes_photos.js` (dry-run capable, `TODO` markers for GraphQL query + attachment upload). Must complete before May 2026 sunset. | `scripts/migrate/README.md`, [migration-plan.md](docs/migration-plan.md#active-migration-jobber-notes--photos--text) |
+| Jobber photo + notes migration | **Running 2026-04-20**: extractor functional end-to-end (GraphQL + classifier + Storage upload + transactional persist). Full run in progress. Oversized files (>50 MB — Supabase Pro cap) logged to `jobber_oversized_attachments` for later recovery. | `scripts/migrate/README.md`, [migration-plan.md](docs/migration-plan.md#active-migration-jobber-notes--photos--text) |
 
 ---
 

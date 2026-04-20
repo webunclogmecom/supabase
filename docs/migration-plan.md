@@ -46,7 +46,7 @@ Before sunset, three kinds of work must complete:
 
 ## Active migration: Jobber notes → photos + text
 
-**Status:** Planned, not started (as of 2026-04-20). Must finish before May 2026 Jobber sunset.
+**Status:** ✅ **Running in production 2026-04-20.** Extractor at `scripts/migrate/jobber_notes_photos.js`. First 3 clients complete (14 notes, 67 attachments, 159 MB); full run in progress.
 
 ### Scope
 
@@ -129,17 +129,33 @@ Edge cases:
 
 ### Execution plan
 
-1. **Build extractor.** New Node.js script or a one-shot Edge Function that:
-   - Enumerates Jobber clients (paginated)
-   - For each client, fetches notes via GraphQL with attachments subfield
-   - For each note, downloads attachments to a temp dir
-   - Uploads attachments to Supabase Storage
-   - Writes `notes` + `note_attachments` rows
-   - Writes `entity_source_links` for each note
-2. **Rate limiting.** Stay under 2,500 req / 5 min (Jobber DDoS). Batch by 50 clients per cycle, 2-second delay.
-3. **Idempotency.** Use `ON CONFLICT` on `entity_source_links(entity_type='note', source_system='jobber', source_id)`. Re-runnable.
-4. **Checkpoint.** Track progress in `sync_cursors` under entity `jobber_notes_migration`.
-5. **Verify.** After completion, spot-check 10 random notes across 3 clients — confirm body text matches, photos load, `visit_id` resolution looks right.
+Full details: [scripts/migrate/README.md](../scripts/migrate/README.md).
+
+**Architecture constraints found during build:**
+
+1. **Jobber GraphQL cost budget:** the notes-with-attachments query at `first: 50` has a *requested* cost of ~25k points, exceeding the 10k ceiling — Jobber rejects without executing. Script uses `first: 10` which requests ~5k, actually burns ~50. More paginated calls, but they fit.
+
+2. **JobNoteUnion dedup:** Jobber's `job.notes` connection returns inherited client-level notes too (ClientNote is a possibleType of the union). Same note id can surface twice — once via `client.notes`, once via `job.notes`. Script dedupes by note.id.
+
+3. **Bucket file-size cap:** Supabase Pro hard-caps bucket `file_size_limit` at 50 MB. Videos > 50 MB (observed: 4K phone footage) can't be stored on this plan. Script logs these to `jobber_oversized_attachments` with the signed Jobber URL preserved for later recovery (URL expires ~3 days, so recovery window is tight).
+
+**Run log:**
+
+```bash
+# Dry-run first
+node scripts/migrate/jobber_notes_photos.js --dry-run --limit 5
+
+# Real run, resumable
+node scripts/migrate/jobber_notes_photos.js --execute
+node scripts/migrate/jobber_notes_photos.js --execute --resume  # if interrupted
+```
+
+**Verification after completion:**
+
+- `SELECT COUNT(*) FROM notes WHERE source='jobber_migration'` — expected: several hundred
+- `SELECT COUNT(*) FROM photos WHERE source='jobber_migration'` — expected: low thousands
+- `SELECT COUNT(*) FROM jobber_oversized_attachments` — track for follow-up recovery
+- Spot-check 10 random notes: pull their `body` from our DB, compare against Jobber UI view
 
 ### Open design questions (for Viktor review)
 
