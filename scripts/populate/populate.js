@@ -331,7 +331,9 @@ function buildPrimaryProperty(jc, ac, sa) {
     access_hours_start: ac ? N.atField(ac, 'Hours in') : null,
     access_hours_end: ac ? N.atField(ac, 'Hours out') : null,
     access_days: ac ? N.atField(ac, 'Days of the week') : null,
-    location_photo_url: ac ? N.atField(ac, 'Photo and Location of GT') : null,
+    // location_photo_url dropped 2026-04-20 — the Airtable source was a
+    // Yes/No checkbox, not a URL. Location photos now live in photos +
+    // photo_links (entity_type='property', role='overview') per ADR 009.
     is_billing: true,
   };
 }
@@ -542,7 +544,6 @@ async function step4_properties() {
       access_hours_start: null,
       access_hours_end: null,
       access_days: null,
-      location_photo_url: null,
       is_primary: false,
       notes: null,
       county: null,
@@ -578,7 +579,6 @@ async function step4_properties() {
           existing.access_hours_start = existing.access_hours_start || pp.access_hours_start;
           existing.access_hours_end = existing.access_hours_end || pp.access_hours_end;
           existing.access_days = existing.access_days || pp.access_days;
-          existing.location_photo_url = existing.location_photo_url || pp.location_photo_url;
           existing.is_primary = true;
           existing.county = existing.county || pp.county;
         }
@@ -600,7 +600,6 @@ async function step4_properties() {
           access_hours_start: pp.access_hours_start,
           access_hours_end: pp.access_hours_end,
           access_days: pp.access_days,
-          location_photo_url: pp.location_photo_url,
           is_primary: true,
           notes: null,
           county: pp.county,
@@ -612,7 +611,7 @@ async function step4_properties() {
 
   const cols = ['client_id', 'name', 'address', 'city', 'state', 'zip', 'country', 'is_billing',
     'zone', 'latitude', 'longitude', 'geofence_radius_meters', 'geofence_type',
-    'access_hours_start', 'access_hours_end', 'access_days', 'location_photo_url',
+    'access_hours_start', 'access_hours_end', 'access_days',
     'is_primary', 'notes', 'county'];
   const ids = await bulkInsertReturning('properties', rows, cols, { dryRun: DRY_RUN, batchSize: 200 });
   stats.steps.properties = { built: rows.length, inserted: ids.length };
