@@ -665,10 +665,10 @@ async function step5_service_configs() {
         frequency_days: freqRaw !== null ? Math.round(freqRaw * (T.freqMul || 1)) : null,
         first_visit: null,
         last_visit: T.last ? N.dateOnly(N.atField(ac, T.last)) : null,
-        next_visit: T.next ? N.dateOnly(N.atField(ac, T.next)) : null,
+        // next_visit dropped — derived on read via clients_due_service view (3NF)
         stop_date: null,
         price_per_visit: price,
-        status: N.atField(ac, 'Status'),
+        // status dropped — derived on read via clients_due_service view (3NF)
         schedule_notes: null,
         equipment_size_gallons: T.sizeField ? N.numOrNull(N.atField(ac, T.sizeField)) : null,
         permit_number: T.gdoNum ? N.atField(ac, T.gdoNum) : null,
@@ -677,8 +677,8 @@ async function step5_service_configs() {
     }
   }
 
-  const cols = ['client_id', 'service_type', 'frequency_days', 'first_visit', 'last_visit', 'next_visit',
-    'stop_date', 'price_per_visit', 'status', 'schedule_notes',
+  const cols = ['client_id', 'service_type', 'frequency_days', 'first_visit', 'last_visit',
+    'stop_date', 'price_per_visit', 'schedule_notes',
     'equipment_size_gallons', 'permit_number', 'permit_expiration'];
   // service_configs has UNIQUE (client_id, service_type) — use bulkUpsert for idempotency
   const result = await bulkUpsert('service_configs', rows, cols, ['client_id', 'service_type'], { dryRun: DRY_RUN, batchSize: 200 });
@@ -879,7 +879,7 @@ async function step10_visits() {
       title: v.title || null,
       service_type: null, // enriched from Airtable in sync scripts
       visit_status: v.visitStatus || null,
-      is_complete: !!v.completedAt,
+      // is_complete dropped — derived on read (visit_status = 'COMPLETED') via visits_with_status view (3NF)
       truck: null, // Jobber visits don't have truck text
       completed_by: null, // Jobber visits use visit_assignments instead
       actual_arrival_at: null,
@@ -920,7 +920,7 @@ async function step10_visits() {
       title: null,
       service_type: N.atField(av, 'Service Type') || N.atField(av, 'Type') || null,
       visit_status: 'COMPLETED',
-      is_complete: true,
+      // is_complete dropped — derived on read (visit_status = 'COMPLETED') via visits_with_status view (3NF)
       truck: truckText, // AT-legacy: preserved for fixup pass 3
       completed_by: completedBy, // AT-legacy: preserved for fixup pass 5
       actual_arrival_at: null,
@@ -935,7 +935,7 @@ async function step10_visits() {
   console.log(`  Built ${rows.length} visits (jobber + AT historical)`);
 
   const cols = ['client_id', 'property_id', 'job_id', 'vehicle_id', 'visit_date', 'start_at', 'end_at',
-    'completed_at', 'duration_minutes', 'title', 'service_type', 'visit_status', 'is_complete',
+    'completed_at', 'duration_minutes', 'title', 'service_type', 'visit_status',
     'truck', 'completed_by',
     'actual_arrival_at', 'actual_departure_at', 'is_gps_confirmed', 'invoice_id'];
   const ids = await bulkInsertReturning('visits', rows, cols, { dryRun: DRY_RUN, batchSize: 200 });
@@ -1060,17 +1060,34 @@ async function step12_inspections() {
   }
   await linkEntities(links, { dryRun: DRY_RUN });
 
-  // inspection_photos
-  const photoRows = [];
+  // Photos → unified photos + photo_links tables (replaces inspection_photos, see ADR 009)
+  // Each inspection photo becomes one row in `photos` (the file) + one row in
+  // `photo_links` (entity_type='inspection', role=<photo_type>).
+  const photoFileRows = [];
+  const photoLinkPending = []; // defer: needs the photo_id after insert
   for (let i = 0; i < rows.length; i++) {
     for (const p of rows[i]._photos) {
-      photoRows.push({ inspection_id: ids[i], photo_type: p.photo_type, url: p.url });
+      photoFileRows.push({
+        storage_path: p.url,          // Fillout-hosted URL, treated as storage_path
+        file_name: null,
+        content_type: null,
+        source: 'fillout_migration',
+      });
+      photoLinkPending.push({ inspection_index: i, role: p.photo_type });
     }
   }
-  if (photoRows.length) {
-    const photoCols = ['inspection_id', 'photo_type', 'url'];
-    await bulkInsertReturning('inspection_photos', photoRows, photoCols, { dryRun: DRY_RUN, batchSize: 500 });
-    console.log(`  ${photoRows.length} inspection_photos written`);
+  if (photoFileRows.length) {
+    const photoCols = ['storage_path', 'file_name', 'content_type', 'source'];
+    const photoIds = await bulkInsertReturning('photos', photoFileRows, photoCols, { dryRun: DRY_RUN, batchSize: 500 });
+    const linkRows = photoLinkPending.map((pl, idx) => ({
+      photo_id: photoIds[idx],
+      entity_type: 'inspection',
+      entity_id: ids[pl.inspection_index],
+      role: pl.role,
+    }));
+    const linkCols = ['photo_id', 'entity_type', 'entity_id', 'role'];
+    await bulkInsertReturning('photo_links', linkRows, linkCols, { dryRun: DRY_RUN, batchSize: 500 });
+    console.log(`  ${photoFileRows.length} photos + ${linkRows.length} photo_links written`);
   }
 }
 
@@ -1358,7 +1375,7 @@ async function fixupPasses() {
     SELECT
       COUNT(*) AS total,
       COUNT(invoice_id) AS with_invoice,
-      COUNT(*) FILTER (WHERE is_complete AND invoice_id IS NULL) AS complete_no_invoice
+      COUNT(*) FILTER (WHERE visit_status = 'COMPLETED' AND invoice_id IS NULL) AS complete_no_invoice
     FROM visits;`);
   if (invoiceCoverage.length) {
     const c = invoiceCoverage[0];
@@ -1409,8 +1426,9 @@ async function fixupPasses() {
       console.log('\n[TRUNCATE] Wiping all tables...');
       // Truncate in reverse dependency order
       const order = [
-        'route_stops', 'manifest_visits', 'visit_assignments', 'inspection_photos',
-        'visit_photos', 'line_items', 'expenses', 'inspections',
+        'route_stops', 'manifest_visits', 'visit_assignments',
+        'photo_links', 'photos',                                  // unified photos (replaces inspection_photos + visit_photos)
+        'line_items', 'expenses', 'inspections',
         'visits', 'invoices', 'quotes', 'jobs', 'service_configs', 'derm_manifests',
         'routes', 'receivables', 'leads', 'client_contacts', 'properties',
         'employees', 'vehicles', 'clients', 'entity_source_links',

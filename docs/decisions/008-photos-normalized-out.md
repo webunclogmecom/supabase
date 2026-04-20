@@ -1,6 +1,7 @@
 # ADR 008 — Photos live in dedicated tables, not inline URL columns
 
-- **Status:** Accepted (2026-04)
+- **Status:** Superseded by [ADR 009](009-unified-photos-architecture.md) (2026-04-20)
+- **Original status:** Accepted (2026-04)
 
 ## Context
 

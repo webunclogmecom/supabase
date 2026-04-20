@@ -57,44 +57,68 @@ Jobber stores notes on Clients, Jobs, and Visits. Each note has:
 
 **We need to migrate both the text and the attachments.** Earlier scoping assumed photos only; Fred clarified on 2026-04-20 that note text is equally important (contains DERM documentation, client instructions, repeat-issue tracking).
 
-### Target schema (proposed)
+### Target schema
+
+Photos now live in the unified `photos` + `photo_links` pair ([ADR 009](decisions/009-unified-photos-architecture.md)) that landed on 2026-04-20. The Jobber migration routes attachments to the right `entity_type` based on classification (see below).
+
+Still to create: a `notes` table for the free-form text content of Jobber notes.
 
 ```
-notes
+notes (not yet created — target schema)
   id PK
-  client_id FK → clients   (always set — every note lives under a client)
-  visit_id  FK → visits NULL   (resolved when we can triangulate to a visit)
-  job_id    FK → jobs   NULL   (set if the note was on a Job, not a Visit)
+  client_id FK → clients        (always set)
+  visit_id  FK → visits    NULL (set when triangulated to a specific visit)
+  property_id FK → properties NULL (set when scoped to a specific location)
+  job_id    FK → jobs      NULL (set when attached to a Job instead of a Visit)
   body TEXT
-  author_employee_id FK → employees NULL   (Jobber user → our employees via entity_source_links)
-  note_created_at TIMESTAMPTZ   (load-bearing: used for visit triangulation)
+  author_employee_id FK → employees NULL
+  author_name TEXT                 (denorm fallback for unresolvable historical Jobber users)
+  note_date TIMESTAMPTZ             (original Jobber timestamp — load-bearing for triangulation)
+  source TEXT                       ('jobber_migration' | 'user' | 'ai' | 'system')
+  tags TEXT[]                       (optional: 'warning','payment','derm','access')
   created_at, updated_at TIMESTAMPTZ
-
-note_attachments
-  id PK
-  note_id FK → notes
-  storage_path TEXT   (path inside Supabase Storage bucket)
-  content_type, file_name TEXT
-  size_bytes BIGINT
-  jobber_original_url TEXT   (audit-only; not the live source after sunset)
-  created_at TIMESTAMPTZ
 ```
 
-Jobber note IDs → `entity_source_links` with `entity_type='note'`, `source_system='jobber'`. No `jobber_note_id` column, per [ADR 002](decisions/002-entity-source-links.md).
+Jobber note IDs → `entity_source_links` with `entity_type='note'`, `source_system='jobber'`. Per [ADR 002](decisions/002-entity-source-links.md) — no `jobber_note_id` column on notes.
 
-### Visit triangulation
+**Photos** — already have a home. Each Jobber attachment becomes:
+- One row in `photos` (the file + EXIF metadata, `source='jobber_migration'`)
+- One row in `photo_links` (polymorphic link to the right entity, see classification rules below)
 
-A note is attached to a Client or a Job in Jobber. Matching it to one of our `visits` rows requires:
+### Classification (the core logic)
 
-- `client_id` — always available.
-- `note_created_at` — when the note was written (usually right after the visit).
-- `visits.visit_date` — the operating date of each visit.
+Every Jobber note goes through this classifier:
 
-Match rule: the visit whose `visit_date` is closest to `note_created_at` for the same client, within a ±1 day window. If no visit is within the window, `visit_id` stays NULL.
+```
+For each Jobber note (has: client_id, note_date, body, attachments[]):
+
+  1. Try to match to a visit:
+     - Find visits for this client where |note_date − visit_date| ≤ 1 day
+     - If exactly one → VISIT-SCOPED
+     - Multiple → pick closest by timestamp
+     - Zero → NON-VISIT
+
+  2. VISIT-SCOPED:
+     - Insert into `notes` with visit_id, client_id, property_id, source='jobber_migration'
+     - For each attachment:
+         photos row (file + EXIF, source='jobber_migration')
+         photo_links row with entity_type='visit', entity_id=<visit_id>, role='other'
+         (historical attachments can't be cleanly before/after — leave role='other';
+          the future app will tag explicit before/after)
+     - The note's body becomes the caption for each linked photo
+
+  3. NON-VISIT (Fred's "historical, warning, or something else"):
+     - Insert into `notes` with only client_id (+ maybe property_id), source='jobber_migration'
+     - Infer tags from body: 'payment','warning','derm','access','contact'
+     - For each attachment:
+         - If body mentions address/access/gate AND client has 1 property → link to property (role='access')
+         - Otherwise → link to the note itself (entity_type='note', role='attachment')
+           These can be reclassified later via a manual review pass
+```
 
 Edge cases:
 - Multi-stop visits on the same day for one client → note links to the most recent by `end_at`.
-- Notes written days after the visit → `visit_id` stays NULL, note still preserved with client + timestamp.
+- Notes written days after the visit → `visit_id` stays NULL on the note; any photos attach to `entity_type='note'`.
 - Notes on client-level (not tied to a specific job) → `visit_id` always NULL.
 
 ### Storage bucket
@@ -120,7 +144,8 @@ Edge cases:
 ### Open design questions (for Viktor review)
 
 - [ ] Worth the effort to map Jobber `createdBy` user → our `employees.id`? Or leave as a denormalized `author_name TEXT` field for historical notes where the person may be long gone?
-- [ ] One bucket for all note attachments, or split by photo_type (before/after/damage/derm)? Current plan: one bucket, reorganize later if needed.
+- [ ] One bucket for all note attachments, or split by entity type? Current plan: one bucket (`jobber-notes-photos`), reorganize later if needed.
+- [ ] `notes` table creation — ship with the extractor or ahead of it? No DB dependency either way.
 
 ---
 

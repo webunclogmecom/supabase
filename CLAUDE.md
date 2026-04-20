@@ -85,15 +85,18 @@ All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`.
 
 ## Quick reference: column-name gotchas
 
-Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). The top 5 that agents repeatedly get wrong:
+Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). The ones agents repeatedly get wrong:
 
 | Wrong | Right | Table |
 |---|---|---|
 | `c.active = true` | `c.status = 'ACTIVE'` | clients |
 | `e.name` | `e.full_name` | employees |
 | `v.status` | `v.visit_status` | visits |
+| `v.is_complete` | `(v.visit_status = 'COMPLETED')` or use `visits_with_status` | visits (dropped 2026-04-20) |
+| `sc.next_visit`, `sc.status` | Use `clients_due_service` view (computed on read) | service_configs (dropped 2026-04-20) |
 | `m.manifest_number` | `m.white_manifest_number` | derm_manifests |
 | `v.tank_capacity_gallons` | `v.fuel_tank_capacity_gallons` or `v.grease_tank_capacity_gallons` | vehicles |
+| `visit_photos`, `inspection_photos` | `photos` + `photo_links` (unified) | photos (dropped 2026-04-20) |
 
 ### Truck names are NOT people
 
@@ -112,11 +115,11 @@ Commercial trucks work 10pm–3am as standard. `visit_date` is the logical opera
 
 Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps).
 
-| Blocker | Impact | Tracking |
+| Blocker | Status | Tracking |
 |---|---|---|
-| Samsara webhook registration — token lacks "Webhooks write" scope | `vehicle_telemetry_readings` at 0 rows | [runbook.md §5](docs/runbook.md#5-samsara-webhook-registration) |
-| Jobber `visit_assignments` backfill — rate-limited | `visit_assignments` at 0 rows | [migration-plan.md](docs/migration-plan.md#active-migration-visit_assignments-backfill) |
-| Jobber photo + notes migration — not started | Data lost at May 2026 sunset | [migration-plan.md](docs/migration-plan.md#active-migration-jobber-notes--photos--text) |
+| Samsara webhook registration | **Unblocked 2026-04-20** — token has Webhooks write; 6 webhooks registered. Awaiting deploy of updated `webhook-samsara` Edge Function. | [runbook.md §5](docs/runbook.md#5-samsara-webhook-registration) |
+| Jobber `visit_assignments` backfill — rate-limited | Blocked — needs paced re-pull | [migration-plan.md](docs/migration-plan.md#active-migration-visit_assignments-backfill) |
+| Jobber photo + notes migration — not started | Blocked — schema ready (`photos`, `photo_links`, `notes` tables landed), extractor not written. Must finish before May 2026 sunset. | [migration-plan.md](docs/migration-plan.md#active-migration-jobber-notes--photos--text) |
 
 ---
 

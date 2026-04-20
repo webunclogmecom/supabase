@@ -234,8 +234,8 @@ supabase/functions/
 
 | Blocker | Impact | Fix path |
 |---|---|---|
-| Samsara webhook registration denied | `vehicle_telemetry_readings` stays at 0 rows | Token needs "Webhooks write" scope → update in Samsara dashboard |
+| Samsara Edge Function code vs schema | Webhooks registered but deployed function still writes to pre-rename table; needs deploy of updated code | `supabase functions deploy webhook-samsara` once ready |
 | Jobber visits re-pull for `assignedUsers` | `visit_assignments` stays at 0 rows | Rate-limited; needs paced re-pull or a `webhook-jobber` backfill endpoint |
-| Photo migration from Jobber notes | Photo URLs expire at May 2026 sunset | [Migration plan](migration-plan.md#jobber-notes--photos-migration) |
+| Photo migration from Jobber notes | Photo URLs expire at May 2026 sunset | Schema ready (`photos`, `photo_links`); extractor not written. [Migration plan](migration-plan.md#jobber-notes--photos-migration) |
 
 Full list in [docs/runbook.md](runbook.md#outstanding-population-gaps).

@@ -18,4 +18,6 @@ ADRs are **immutable** once merged. If a decision changes, write a new ADR that 
 | [005](005-3nf-standing-check.md) | Every schema proposal must pass a 3NF audit; reference all data | Accepted |
 | [006](006-no-quickbooks.md) | No QuickBooks — Jobber is the payment source of truth | Accepted |
 | [007](007-samsara-permanent.md) | Samsara integration is permanent (survives Jobber/Airtable sunset) | Accepted |
-| [008](008-photos-normalized-out.md) | Photos live in dedicated tables, not inline URL columns | Accepted |
+| [008](008-photos-normalized-out.md) | Photos live in dedicated tables, not inline URL columns | Superseded by 009 |
+| [009](009-unified-photos-architecture.md) | Unified `photos` + polymorphic `photo_links` (replaces dedicated tables) | Accepted |
+| [010](010-drop-stored-derived-columns.md) | Drop stored derived columns; compute on read (3NF enforcement) | Accepted |

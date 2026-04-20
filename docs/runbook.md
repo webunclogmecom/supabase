@@ -234,10 +234,9 @@ Tables with 0 rows that should eventually have data. Tracked here because each h
 
 | Table | Rows | Blocker | Path to fix |
 |---|---|---|---|
-| `vehicle_telemetry_readings` | 0 | Samsara webhook registration blocked | [§5 above](#5-samsara-webhook-registration) |
+| `vehicle_telemetry_readings` | 0 | Webhooks registered 2026-04-20; deploy of updated `webhook-samsara` Edge Function pending | `supabase functions deploy webhook-samsara` after config review |
 | `visit_assignments` | 0 | Needs Jobber visits re-pull with `assignedUsers` field; hits rate limits | Add backfill endpoint to `webhook-jobber`; paced re-query over weekend |
-| `inspection_photos` | 0 | Fillout photos not yet migrated | Fillout export + upload to Supabase Storage |
-| `visit_photos` | 0 | Jobber note-attachments not yet migrated | [docs/migration-plan.md#jobber-notes--photos-migration](migration-plan.md#jobber-notes--photos-migration) |
+| `photos` / `photo_links` | 0 / 0 | Fillout photos + Jobber note attachments not yet migrated | [docs/migration-plan.md#jobber-notes--photos--text](migration-plan.md#jobber-notes--photos--text) |
 
 ### `visit_assignments` re-pull plan
 
@@ -313,5 +312,8 @@ Documented incidents for future learning. Add a row when something breaks and ge
 | 2026-04-14 | `vehicle_fuel_readings.fuel_gallons` was a stored 3NF violation | Pre-standing-check design | Dropped column, renamed table to `vehicle_telemetry_readings`, added view | [ADR 005](decisions/005-3nf-standing-check.md) |
 | 2026-04-15..19 | Daily-sync GitHub workflow red for 5 consecutive days | `JOBBER_ACCESS_TOKEN` GH Secret drift — workflow refreshes token in-memory but can't self-update secrets | Deleted workflow (`5253c2b`); webhooks cover the real-time path | [ADR 001](decisions/001-webhooks-over-cron.md) |
 | 2026-04-20 | GitHub PAT `ghp_cPxzQL...` embedded in `.git/config`, exposed via `git remote -v` | Initial `git init` used token-in-URL auth | Stripped PAT from remote URL; moved to `gh auth login` keyring | [security.md](security.md#rules-non-negotiable) rule 2 |
+| 2026-04-20 | `visits.is_complete`, `service_configs.{next_visit, status}` were stored derived columns | Pre-standing-check design; columns created before 3NF enforcement was explicit | Dropped columns, rebuilt 5 dependent views with inline derivations | [ADR 010](decisions/010-drop-stored-derived-columns.md) |
+| 2026-04-20 | 132 clients had `status = 'Recuring'` (typo, missing 'r') | Airtable-sourced typo, propagated via populate.js | Normalized to `RECURRING`; views updated to canonical spelling | Add a CHECK constraint or status enum in future |
+| 2026-04-20 | Photo architecture fragmented across `visit_photos`, `inspection_photos`, and inline `properties.location_photo_url` | Before/after treated as intrinsic to the photo (it isn't — it's a link attribute) | Unified to `photos` + `photo_links` polymorphic pair, superseding [ADR 008](decisions/008-photos-normalized-out.md) | [ADR 009](decisions/009-unified-photos-architecture.md) |
 
 *Add new rows in chronological order. Keep the "Prevention" column actionable — what procedural change prevents a repeat?*

@@ -35,13 +35,18 @@ Common query errors (all caught in agent conversations before):
 | `e.active = true` | `e.status = 'ACTIVE'` | `employees` |
 | `e.name` | `e.full_name` | `employees` |
 | `v.status` | `v.visit_status` | `visits` |
+| `v.is_complete` | `(v.visit_status = 'COMPLETED')` or use the `visits_with_status` view | `visits` (dropped 2026-04-20) |
 | `v.gps_confirmed` | `v.is_gps_confirmed` | `visits` |
+| `sc.next_visit` | `(sc.last_visit + (sc.frequency_days \|\| ' days')::interval)::date` or use `clients_due_service` | `service_configs` (dropped 2026-04-20) |
+| `sc.status` | `clients_due_service.due_status` (view column, computed on read) | `service_configs` (dropped 2026-04-20) |
 | `m.manifest_number` | `m.white_manifest_number` | `derm_manifests` |
 | `m.manifest_date` | `m.service_date` | `derm_manifests` |
 | `i.outstanding` | `i.outstanding_amount` | `invoices` |
 | `v.tank_capacity_gallons` | `v.fuel_tank_capacity_gallons` OR `v.grease_tank_capacity_gallons` | `vehicles` |
 
-The `v_vehicle_telemetry_latest` view exposes `fuel_gallons_computed` (not `fuel_gallons` — that column was dropped in the 3NF migration). See [ADR 005](decisions/005-3nf-standing-check.md).
+The `v_vehicle_telemetry_latest` view exposes `fuel_gallons_computed` (not `fuel_gallons` — that column was dropped in the 3NF migration). See [ADR 005](decisions/005-3nf-standing-check.md) and [ADR 010](decisions/010-drop-stored-derived-columns.md).
+
+**Photos:** `visit_photos` and `inspection_photos` tables were dropped on 2026-04-20. Use `photos` + `photo_links` instead — see [ADR 009](decisions/009-unified-photos-architecture.md) and [schema.md](schema.md#photos--0-rows--intrinsic-photo-metadata).
 
 ---
 

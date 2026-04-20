@@ -7,8 +7,9 @@ Full DDL lives in [`../schema/v2_schema.sql`](../schema/v2_schema.sql). Migratio
 - **28 tables** — 22 business + 6 system/ops
 - **7 views**
 - **38 foreign keys**
-- **Normalization:** 2NF baseline, 3NF for service_configs and telemetry
+- **Normalization:** 2NF baseline, 3NF enforced (see [ADR 005](decisions/005-3nf-standing-check.md) + [ADR 010](decisions/010-drop-stored-derived-columns.md))
 - **Cross-system ID tracking:** `entity_source_links` only. No source-prefixed columns anywhere.
+- **Photos:** unified `photos` + polymorphic `photo_links` (see [ADR 009](decisions/009-unified-photos-architecture.md))
 
 ---
 
@@ -22,8 +23,7 @@ clients (PK)
   ├─ jobs                     (client_id FK)
   │   ├─ visits               (job_id FK)
   │   │   ├─ visit_assignments (visit_id FK) → employees
-  │   │   ├─ manifest_visits   (visit_id FK) → derm_manifests
-  │   │   └─ visit_photos      (visit_id FK)
+  │   │   └─ manifest_visits   (visit_id FK) → derm_manifests
   │   ├─ invoices             (job_id FK)
   │   └─ line_items           (job_id FK)
   ├─ visits                   (client_id FK)          [also links to jobs, vehicles, invoices]
@@ -50,6 +50,7 @@ employees (PK)
   └─ routes                   (employee_id FK)
 
 entity_source_links           — polymorphic bridge (any entity ↔ any source system)
+photos ← photo_links          — polymorphic bridge (any entity ↔ any photo)
 sync_log, sync_cursors,
 webhook_events_log,
 webhook_tokens                — system/ops tables
@@ -114,9 +115,8 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 | client_id | BIGINT FK → clients | |
 | service_type | TEXT | `GT`, `CL`, `WD`, `AUX`, `SUMP`, `GREY_WATER`, `WARRANTY` |
 | frequency_days | INTEGER | Always stored in DAYS (see note below) |
-| first_visit / last_visit / next_visit / stop_date | DATE | |
+| first_visit / last_visit / stop_date | DATE | |
 | price_per_visit | NUMERIC(12,2) | |
-| status | TEXT | `On Time`, `Late`, `Critical`, `Paused` |
 | schedule_notes | TEXT | |
 | equipment_size_gallons | NUMERIC | GT capacity |
 | permit_number | TEXT | GDO permit number |
@@ -128,6 +128,10 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 **Frequency normalization at sync time:**
 - GT / CL frequency from Airtable (MONTHS) × 30 → days
 - WD frequency from Airtable → already DAYS, pass through
+
+**Derived fields (computed in views, not stored — [ADR 010](decisions/010-drop-stored-derived-columns.md)):**
+- `next_visit` = `last_visit + (frequency_days days)` — in `clients_due_service`, `client_services_flat`, `ops.v_service_due`
+- `status` / `due_status` = `CASE` based on computed `next_visit` vs `CURRENT_DATE` — same views
 
 ### `employees` — 34 rows
 
@@ -193,13 +197,14 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 | title | TEXT | |
 | service_type | TEXT | `GT`, `CL`, `AUX`, `HYDROJET`, `CAMERA`, `EMERGENCY` |
 | visit_status | TEXT | `COMPLETED`, `UPCOMING`, `UNSCHEDULED`, `CANCELLED`, `LATE` |
-| is_complete | BOOLEAN | |
 | actual_arrival_at / actual_departure_at | TIMESTAMPTZ | GPS enrichment from Samsara |
 | is_gps_confirmed | BOOLEAN | TRUE when GPS matches |
 | invoice_id | BIGINT FK → invoices | |
 | truck | TEXT | **Intentional denorm** — historical truck name (see ADR 004) |
 | completed_by | TEXT | **Intentional denorm** — historical attribution |
 | created_at, updated_at | TIMESTAMPTZ | |
+
+**Derived field:** `is_complete` = `(visit_status = 'COMPLETED')` — computed in `visits_with_status` and `ops.v_route_today`, not stored ([ADR 010](decisions/010-drop-stored-derived-columns.md)).
 
 ### `visit_assignments` — 0 rows
 
@@ -273,28 +278,54 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 | issue_note | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
 
-### `inspection_photos` — 0 rows
+### `photos` — 0 rows · intrinsic photo metadata
+
+Unified photo storage record. One row per actual file in Supabase Storage. See [ADR 009](decisions/009-unified-photos-architecture.md).
 
 | Column | Type | Notes |
 |---|---|---|
 | id | BIGSERIAL PK | |
-| inspection_id | BIGINT FK → inspections | |
-| photo_type | TEXT | `dashboard`, `cabin`, `front`, `back`, … |
-| url | TEXT | |
+| storage_path | TEXT UNIQUE NOT NULL | Path inside Supabase Storage bucket |
+| thumbnail_path | TEXT | Auto-generated thumbnail (if exists) |
+| file_name | TEXT | Original filename on upload |
+| content_type | TEXT | `image/jpeg`, `image/png`, etc. |
+| size_bytes | BIGINT | |
+| width_px / height_px | INTEGER | |
+| exif_taken_at | TIMESTAMPTZ | From EXIF if available (may differ from `uploaded_at`) |
+| exif_latitude / exif_longitude | NUMERIC | |
+| exif_device | TEXT | `"iPhone 14 Pro"` etc. |
+| uploaded_by_employee_id | BIGINT FK → employees | |
+| uploaded_at | TIMESTAMPTZ | |
+| source | TEXT | `app` / `jobber_migration` / `fillout_migration` / `admin` |
 | created_at | TIMESTAMPTZ | |
 
-### `visit_photos` — 0 rows
+### `photo_links` — 0 rows · polymorphic bridge
+
+One photo can attach to many entities with different roles.
 
 | Column | Type | Notes |
 |---|---|---|
 | id | BIGSERIAL PK | |
-| visit_id | BIGINT FK → visits | |
-| client_id | BIGINT FK → clients | |
-| photo_type | TEXT | |
-| url / thumbnail_url | TEXT | |
-| file_name / content_type | TEXT | |
-| caption | TEXT | |
-| taken_at / created_at | TIMESTAMPTZ | |
+| photo_id | BIGINT FK → photos (ON DELETE CASCADE) | |
+| entity_type | TEXT | `visit` \| `property` \| `inspection` \| `note` \| `vehicle` |
+| entity_id | BIGINT | Polymorphic — points at the table named by `entity_type` |
+| role | TEXT | Semantics depend on `entity_type` (see below) |
+| caption | TEXT | Per-link caption |
+| created_at | TIMESTAMPTZ | |
+
+**Unique:** `(photo_id, entity_type, entity_id, role)`
+
+**Role vocabulary by entity type:**
+
+| entity_type | Valid roles |
+|---|---|
+| `visit` | `before`, `after`, `grease_pit`, `damage`, `derm_manifest`, `address`, `remote`, `other` |
+| `property` | `overview`, `access`, `grease_trap_location`, `manhole`, `other` |
+| `inspection` | `dashboard`, `cabin`, `front`, `back`, `tires`, `boots`, `sludge_level`, `water_level`, `derm_manifest`, `derm_address`, `issue`, `other` |
+| `note` | `attachment` |
+| `vehicle` | `general` |
+
+Enforced in app layer; not a DB CHECK constraint (vocabulary may evolve).
 
 ### `expenses` — 111 rows
 
@@ -473,6 +504,8 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 |---|---|---|
 | `entity_source_links` | `(entity_type, entity_id, source_system)` | UNIQUE |
 | `entity_source_links` | `(entity_type, source_system, source_id)` | UNIQUE |
+| `photos` | `storage_path` | UNIQUE |
+| `photo_links` | `(photo_id, entity_type, entity_id, role)` | UNIQUE |
 | `client_contacts` | `(client_id, contact_role)` | UNIQUE |
 | `service_configs` | `(client_id, service_type)` | UNIQUE |
 | `vehicles` | `name` | UNIQUE |
@@ -489,17 +522,17 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 
 | Table | Rows | Source of truth |
 |---|---|---|
-| clients | 409 | Jobber (373) + Airtable-only (~36) |
+| clients | 409 | Jobber (373) + Airtable-only (~36). Status normalized 2026-04-20 ('Recuring' → 'RECURRING'). |
 | client_contacts | 519 | Normalized from clients |
 | properties | 421 | Includes billing addresses |
-| service_configs | 202 | Airtable (unpivoted) |
+| service_configs | 202 | Airtable (unpivoted). Dropped `next_visit` and `status` cols on 2026-04-20 — now view-computed. |
 | employees | 34 | Merged across all sources |
 | vehicles | 4 | Moises, Cloggy, David, Goliath |
 | jobs | 493 | Jobber |
 | quotes | 151 | Jobber |
 | invoices | 1,557 | Jobber |
 | line_items | 565 | Jobber |
-| visits | 4,705 | 1,685 Jobber + 3,020 Airtable historical |
+| visits | 4,705 | 1,685 Jobber + 3,020 Airtable historical. Dropped `is_complete` col on 2026-04-20 — now view-computed. |
 | visit_assignments | 0 | Blocked — see runbook |
 | inspections | 247 | Fillout |
 | expenses | 111 | Fillout |
@@ -508,7 +541,9 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 | routes | 135 | Airtable |
 | receivables | 45 | Airtable (past-due) |
 | leads | 5 | Airtable |
-| vehicle_telemetry_readings | 0 | Samsara (webhook blocked) |
+| vehicle_telemetry_readings | 0 | Samsara webhook registration unblocked 2026-04-20; awaiting deploy of updated Edge Function |
+| photos | 0 | Unified photo table — populating starts with Jobber photos migration |
+| photo_links | 0 | Polymorphic bridge from photos to entities |
 | entity_source_links | 10,117 | Cross-system |
 
 See [docs/runbook.md](runbook.md#outstanding-population-gaps) for what each `0`-row gap is blocked on.
