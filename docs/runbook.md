@@ -234,9 +234,9 @@ Tables with 0 rows that should eventually have data. Tracked here because each h
 
 | Table | Rows | Blocker | Path to fix |
 |---|---|---|---|
-| `vehicle_telemetry_readings` | 0 | Webhooks registered 2026-04-20; deploy of updated `webhook-samsara` Edge Function pending | `supabase functions deploy webhook-samsara` after config review |
+| `vehicle_telemetry_readings` | 0 | Webhooks registered + Edge Function deployed 2026-04-20 — awaiting first telemetry events | Watch `webhook_events_log` for `source_system='samsara'` inflow |
 | `visit_assignments` | 0 | Needs Jobber visits re-pull with `assignedUsers` field; hits rate limits | Add backfill endpoint to `webhook-jobber`; paced re-query over weekend |
-| `photos` / `photo_links` | 0 / 0 | Fillout photos + Jobber note attachments not yet migrated | [docs/migration-plan.md#jobber-notes--photos--text](migration-plan.md#jobber-notes--photos--text) |
+| `notes` / `photos` / `photo_links` | 0 / 0 / 0 | Jobber notes + attachments not yet migrated (extractor scaffolded at `scripts/migrate/jobber_notes_photos.js`) | [scripts/migrate/README.md](../scripts/migrate/README.md) |
 
 ### `visit_assignments` re-pull plan
 

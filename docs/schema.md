@@ -278,6 +278,25 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 | issue_note | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
 
+### `notes` — 0 rows
+
+Free-form text notes, scoped to a client and optionally to a visit / property / job. `body` is the note text; the photos that came with a Jobber-migrated note live in `photo_links` (routed to the classified parent entity, not the note, per [ADR 009](decisions/009-unified-photos-architecture.md)).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | BIGSERIAL PK | |
+| client_id | BIGINT FK → clients | Always set |
+| visit_id | BIGINT FK → visits | Set when note triangulates to a visit |
+| property_id | BIGINT FK → properties | Set when note scoped to a specific location |
+| job_id | BIGINT FK → jobs | Set when attached to a Job (not Visit) |
+| body | TEXT NOT NULL | |
+| author_employee_id | BIGINT FK → employees | |
+| author_name | TEXT | Intentional denorm fallback for unresolvable historical users |
+| note_date | TIMESTAMPTZ NOT NULL | Original note timestamp — load-bearing for visit triangulation |
+| source | TEXT NOT NULL | `user` / `jobber_migration` / `fillout_migration` / `ai` / `system` |
+| tags | TEXT[] | Optional — `warning`, `payment`, `derm`, `access`, etc. |
+| created_at, updated_at | TIMESTAMPTZ | `updated_at` trigger-managed |
+
 ### `photos` — 0 rows · intrinsic photo metadata
 
 Unified photo storage record. One row per actual file in Supabase Storage. See [ADR 009](decisions/009-unified-photos-architecture.md).
@@ -542,6 +561,7 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 | receivables | 45 | Airtable (past-due) |
 | leads | 5 | Airtable |
 | vehicle_telemetry_readings | 0 | Samsara webhook registration unblocked 2026-04-20; awaiting deploy of updated Edge Function |
+| notes | 0 | Free-form text notes. Populating starts with Jobber notes migration. |
 | photos | 0 | Unified photo table — populating starts with Jobber photos migration |
 | photo_links | 0 | Polymorphic bridge from photos to entities |
 | entity_source_links | 10,117 | Cross-system |

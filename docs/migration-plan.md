@@ -61,10 +61,10 @@ Jobber stores notes on Clients, Jobs, and Visits. Each note has:
 
 Photos now live in the unified `photos` + `photo_links` pair ([ADR 009](decisions/009-unified-photos-architecture.md)) that landed on 2026-04-20. The Jobber migration routes attachments to the right `entity_type` based on classification (see below).
 
-Still to create: a `notes` table for the free-form text content of Jobber notes.
+`notes` table shipped 2026-04-20 (migration `add_notes_table.sql`).
 
 ```
-notes (not yet created — target schema)
+notes
   id PK
   client_id FK → clients        (always set)
   visit_id  FK → visits    NULL (set when triangulated to a specific visit)
