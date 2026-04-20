@@ -1,15 +1,23 @@
+# Secrets — never commit
 .env
 .env.*
+!.env.example
+
+# Dependencies & build artifacts
 node_modules/
 *.log
+.idea/
+supabase/.temp/
+
+# Runtime reports (regenerated each run)
 populate_report.json
 phase_*_report.json
 scripts/populate/populate_report.json
 scripts/collapse_raw/
+
+# Non-repo artifacts
 *.xlsx
-CLAUDE.md
-company context.md
 document_pdf.pdf
-EXCLUDED_CLIENTS_REVIEW.md
-.idea/
-supabase/.temp/
+
+# Historical / superseded — content migrated to docs/company.md
+company context.md
