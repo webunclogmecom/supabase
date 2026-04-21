@@ -46,7 +46,7 @@ Before sunset, three kinds of work must complete:
 
 ## Active migration: Jobber notes → photos + text
 
-**Status:** ✅ **Running in production 2026-04-20.** Extractor at `scripts/migrate/jobber_notes_photos.js`. First 3 clients complete (14 notes, 67 attachments, 159 MB); full run in progress.
+**Status:** ✅ **COMPLETE 2026-04-21.** 1,853 notes + 8,019 files (9.3 GB) migrated from 221/373 Jobber clients. 35 oversized files (>50 MB) tracked in `jobber_oversized_attachments`. See [`docs/jobber-migration-techlead-summary.md §7`](jobber-migration-techlead-summary.md#7-run-results-2026-04-20--2026-04-21) for final numbers.
 
 ### Scope
 

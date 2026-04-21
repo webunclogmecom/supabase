@@ -108,7 +108,7 @@ const CLIENTS_BATCH_SIZE = 100;  // how many of our client rows to fetch per bat
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
-function httpRequest(opts, body) {
+function httpRequest(opts, body, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     const req = https.request(opts, res => {
       const chunks = [];
@@ -120,6 +120,12 @@ function httpRequest(opts, body) {
           body: Buffer.concat(chunks),
         });
       });
+    });
+    // Timeout guard — without this a hung TCP connection can block the
+    // event loop indefinitely after ECONNRESET/network blips. 120 s is
+    // generous for the 50 MB upload case while still recovering fast.
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`HTTP timeout after ${timeoutMs}ms`));
     });
     req.on('error', reject);
     if (body) req.write(body);

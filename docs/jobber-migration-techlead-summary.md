@@ -133,19 +133,43 @@ node scripts/migrate/verify_jobber_migration.js
 
 All flags documented in `scripts/migrate/README.md`.
 
-## 7. Run results (2026-04-20)
+## 7. Run results (2026-04-20 → 2026-04-21)
 
-*This section is filled in after the background migration completes. Until then, see `scripts/migrate/verify_jobber_migration.js` for a live report.*
+**Final state:**
 
-Placeholder — current-state snapshot at checkpoint time:
+| Metric | Value |
+|---|---|
+| Notes migrated | **1,853** |
+| — visit-scoped | 1,498 (81%) |
+| — non-visit | 355 (19%) |
+| Files uploaded | **8,019** |
+| — linked to visit | 7,066 |
+| — linked to note | 953 |
+| Storage used | **9.3 GB** in bucket `GT - Visits Images` |
+| Clients covered | **221 / 373** Jobber clients had at least one note |
+| Oversized files logged | **35** (>50 MB, in `jobber_oversized_attachments`) |
+| Errors (persisted) | 1 transient DB 503 (a single note failed to persist after successful upload) |
+| Integrity | ✅ 0 orphan photos; 0 missing entity_source_links |
 
-- Notes migrated: *(live: run verify_jobber_migration.js)*
-- Photos uploaded: *(same)*
-- Storage used: *(same)*
-- Oversized attachments logged: *(same)*
-- Classifier split: ~78% visit-scoped, ~22% non-visit
-- Clients processed: *(live)*
-- Errors: *(live)*
+**Content-type breakdown:**
+
+| Type | Count | Size |
+|---|---|---|
+| image/jpg | 5,317 | 4,749 MB |
+| image/jpeg | 2,400 | 1,681 MB |
+| image/png | 101 | 271 MB |
+| image/heic | 1 | 3 MB |
+| video/quicktime (.mov) | 101 | 1,687 MB |
+| video/mp4 | 75 | 923 MB |
+| application/pdf | 24 | 10 MB |
+
+7,819 images + 176 videos + 24 PDFs = 8,019 total.
+
+**Classifier quality:** 81% visit-scoped triangulation (higher than the ~78% seen mid-run). Most mismatches are legitimately non-visit — historical warnings, access-code changes, client-level instructions. Sample (recent notes) confirms the classifier is placing notes correctly: e.g. "Incomplete — Need Additional pump hose...", "Access code 1435 doesn't work anymore" → visit-scoped; author-less notes, admin announcements → non-visit.
+
+**Run duration:** Multi-hour with four restart points (DNS crashes, one HTTP hang). Each restart was idempotent — resume from `sync_cursors` + skip-if-already-migrated via `entity_source_links` uniqueness. No data loss across any restart.
+
+**The 35 oversized files** range from 51 MB to 239 MB. The top entry is `IMG_8212.mov` at 239 MB — a field video from a 4K-capable phone. These are logged with their Jobber signed URLs (3-day validity from capture time) in `jobber_oversized_attachments`; recovery requires either a Supabase plan upgrade or external storage (S3 pointer in `photos.storage_path`).
 
 ## 8. Follow-ups scheduled
 
