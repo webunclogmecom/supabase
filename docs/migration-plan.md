@@ -165,9 +165,11 @@ node scripts/migrate/jobber_notes_photos.js --execute --resume  # if interrupted
 
 ---
 
-## Active migration: `visit_assignments` backfill
+## ~~Active migration: `visit_assignments` backfill~~ — not needed
 
-**Status:** Blocked on Jobber API rate limits. Tracked in [runbook.md §6](runbook.md#outstanding-population-gaps).
+**Status:** ✅ Resolved. Doc audit on 2026-04-21 found `visit_assignments` already has **1,677 rows** (1,398 unique visits × 14 employees), populated via `populate.js` fixup pass 5 (text match on `visits.completed_by` against `employees.full_name`). The "blocked on Jobber rate limits" status was stale — it dated from mid-build before the fixup had run.
+
+A more thorough backfill via Jobber's GraphQL `visit.assignedUsers` field could still enrich the ~287 unmatched visits, but this is now a nice-to-have, not a blocker.
 
 `visit_assignments` is at 0 rows because the initial Jobber visits pull didn't include the `assignedUsers` subfield. Current webhook deliveries DO include it — so all visits post-webhook-deploy have correct assignments; only the 1,685 pre-webhook Jobber visits are missing.
 

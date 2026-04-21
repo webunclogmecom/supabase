@@ -206,7 +206,7 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 
 **Derived field:** `is_complete` = `(visit_status = 'COMPLETED')` — computed in `visits_with_status` and `ops.v_route_today`, not stored ([ADR 010](decisions/010-drop-stored-derived-columns.md)).
 
-### `visit_assignments` — 0 rows
+### `visit_assignments` — 1,677 rows
 
 **PK:** `(visit_id, employee_id)` composite — true M:N.
 
@@ -215,7 +215,7 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 | visit_id | BIGINT FK → visits | |
 | employee_id | BIGINT FK → employees | |
 
-**Status:** Empty. Blocked by Jobber API rate limits on the visits re-pull that would populate `assignedUsers`. See [docs/migration-plan.md](migration-plan.md#outstanding-jobber-backfills).
+Covers 1,398 unique visits and 14 unique employees. Populated by `scripts/populate/populate.js` during the initial v2 load (fixup pass 5 that resolved `visits.completed_by` text against `employees.full_name`). An earlier version of this doc claimed 0 rows with a rate-limit blocker — that was stale from mid-build.
 
 ### `invoices` — 1557 rows
 
@@ -505,6 +505,8 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 
 ## Views
 
+### public schema views
+
 | View | Purpose |
 |---|---|
 | `client_services_flat` | Pivoted GT/CL/WD columns from 3NF `service_configs` back to flat layout for Diego/Aaron daily lookup. |
@@ -514,6 +516,21 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 | `v_vehicle_telemetry_latest` | Latest telemetry snapshot per vehicle. Computes `fuel_gallons_computed` on read from `vehicles.fuel_tank_capacity_gallons`; derives `odometer_miles`, `engine_hours`, `minutes_ago`. |
 | `visits_recent` | Last 30 days of visits with client context. |
 | `visits_with_status` | Visits enriched with derived status fields. |
+
+### ops schema views (8 operational reporting views)
+
+Defined in [`../scripts/ops_views/`](../scripts/ops_views/). Read by the operations team for daily reporting.
+
+| View | Rows | Purpose |
+|---|---|---|
+| `ops.v_ar_aging` | 92 | A/R aging buckets by client — which outstanding invoices are 30/60/90+ days late |
+| `ops.v_derm_compliance` | 6 | DERM compliance status — tracks clients overdue on GDO-mandated 90-day service intervals |
+| `ops.v_driver_kpi` | 25 | Per-driver KPIs — visits completed, manifest accuracy, safety score (when Samsara telemetry populates) |
+| `ops.v_gdo_expiry` | 6 | GDO permit expiration tracking — permits expiring within the near future |
+| `ops.v_revenue_summary` | 13 | Revenue roll-up by month / service type |
+| `ops.v_route_today` | — | Today's route with full visit + client + contact + crew context (joined across 8 tables) |
+| `ops.v_service_due` | — | Overdue and due-soon clients (like `clients_due_service` but with `actual_last_visit` fallback from the visits table when `service_configs.last_visit` is stale) |
+| `ops.v_truck_utilization` | 4 | Per-vehicle utilization over the last 30 days — visits, unique clients, hours onsite, attributed revenue |
 
 ---
 
@@ -552,7 +569,7 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 | invoices | 1,557 | Jobber |
 | line_items | 565 | Jobber |
 | visits | 4,705 | 1,685 Jobber + 3,020 Airtable historical. Dropped `is_complete` col on 2026-04-20 — now view-computed. |
-| visit_assignments | 0 | Blocked — see runbook |
+| visit_assignments | 1,677 | Populated via populate.js fixup pass (text-match on visits.completed_by → employees.full_name). 1,398 unique visits × 14 unique employees. |
 | inspections | 247 | Fillout |
 | expenses | 111 | Fillout |
 | derm_manifests | 898 | Airtable |

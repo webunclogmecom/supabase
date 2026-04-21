@@ -118,7 +118,7 @@ Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-
 | Blocker | Status | Tracking |
 |---|---|---|
 | Samsara webhook ingestion | **Fully unblocked 2026-04-20** — token has Webhooks write; 6 webhooks registered; `webhook-samsara` Edge Function redeployed with updated code. Telemetry should start flowing. | [runbook.md §5](docs/runbook.md#5-samsara-webhook-registration) |
-| Jobber `visit_assignments` backfill — rate-limited | Blocked — needs paced re-pull | [migration-plan.md](docs/migration-plan.md#active-migration-visit_assignments-backfill) |
+| Jobber `visit_assignments` backfill | ✅ **Already populated — 1,677 rows** via populate.js text-match fixup pass. Prior "blocked" status was stale documentation. | [schema.md](docs/schema.md#visit_assignments--1677-rows) |
 | Jobber photo + notes migration | ✅ **Complete 2026-04-21.** 1,853 notes (81% visit-scoped) + 8,019 files (9.3 GB) migrated from 221/373 Jobber clients. 35 oversized files (>50 MB) tracked in `jobber_oversized_attachments` for later recovery via plan upgrade or external storage. Integrity checks all pass. See [`docs/jobber-migration-techlead-summary.md §7`](docs/jobber-migration-techlead-summary.md#7-run-results-2026-04-20--2026-04-21). | |
 
 ---
