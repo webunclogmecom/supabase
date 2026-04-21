@@ -1,11 +1,21 @@
 // ============================================================================
 // webhook-airtable/index.ts — Airtable webhook receiver (Edge Function)
 // ============================================================================
-// Airtable Webhooks API flow:
-//   1. Register webhook (one-time, via register-airtable.js script)
-//   2. Receive POST notification: { base, webhook, timestamp }
-//   3. Fetch cursor-based payloads from Airtable API
-//   4. Process changed records → upsert to v2 tables
+// Two supported inbound paths (dispatched by auth header shape):
+//
+//  Path A — Airtable-native webhook API (legacy / never activated):
+//    - Verifies HMAC signature header `x-airtable-content-mac`
+//    - Receives `{base, webhook, timestamp}` notification
+//    - Fetches cursor-based payloads from Airtable
+//    - Kept in place for forward-compat, not currently used in prod
+//
+//  Path B — Airtable automation "Run script" POST (ACTIVE PATH):
+//    - Validates `Authorization: Bearer <AIRTABLE_WEBHOOK_TOKEN>` header
+//    - Expects body: {entity, recordId, fields, changeType}
+//    - Routes directly to the right handler (no cursor fetch — the script
+//      already serialized the record's fields for us)
+//    - Each watched Airtable table has one automation ("when record
+//      created or updated") that POSTs here via Run Script action
 //
 // Tables we watch:
 //   - Clients       → service_configs (GT/CL/WD frequencies, pricing)
@@ -470,6 +480,114 @@ async function processPayload(payload: any): Promise<{ processed: number; errors
 }
 
 // ============================================================================
+// Path B handler — Airtable automation "Run script" POST
+// ============================================================================
+//
+// Payload shape (assembled by the automation script — template in
+// docs/airtable-automation-setup.md):
+//   {
+//     "entity": "client" | "derm_manifest" | "route" | "receivable",
+//     "recordId": "recXXXX",
+//     "fields": { ...record fields keyed by field NAME (not id)... },
+//     "changeType": "created" | "updated" | "destroyed"
+//   }
+//
+// Maps `entity` to the existing RECORD_HANDLERS and passes the pre-
+// serialized fields through. No cursor fetch needed — the automation
+// already had the record in hand.
+
+const ENTITY_TO_HANDLER: Record<string, string> = {
+  'client': 'clients',
+  'derm_manifest': 'derm',
+  'route': 'routes',
+  'receivable': 'past_due',
+}
+
+async function handleAutomationRequest(payload: any, startMs: number): Promise<Response> {
+  const entity = payload.entity as string | undefined
+  const recordId = payload.recordId as string | undefined
+  const fields = (payload.fields ?? {}) as Record<string, unknown>
+  const changeType = (payload.changeType ?? 'updated') as string
+
+  if (!entity || !recordId) {
+    return badRequest('Missing entity or recordId in payload')
+  }
+
+  // Soft-delete path — unlinks and marks deleted without caring about handler
+  if (changeType === 'destroyed') {
+    try {
+      const { data: link } = await supabase
+        .from('entity_source_links')
+        .select('entity_type, entity_id')
+        .eq('source_system', 'airtable')
+        .eq('source_id', recordId)
+        .maybeSingle()
+
+      if (link) {
+        const table = link.entity_type === 'derm_manifest' ? 'derm_manifests' : `${link.entity_type}s`
+        await supabase
+          .from(table)
+          .update({ notes: `[Deleted from Airtable ${new Date().toISOString().slice(0, 10)}]` })
+          .eq('id', link.entity_id)
+      }
+
+      await logWebhookEvent(supabase, 'airtable', `automation_${entity}`, payload, {
+        event_id: recordId,
+        status: 'processed',
+        processing_ms: Date.now() - startMs,
+      })
+      return ok({ processed: true, entity, recordId, changeType: 'destroyed' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      await logWebhookEvent(supabase, 'airtable', `automation_${entity}`, payload, {
+        event_id: recordId,
+        status: 'failed',
+        error_message: msg.slice(0, 1000),
+        processing_ms: Date.now() - startMs,
+      })
+      return serverError(msg.slice(0, 200))
+    }
+  }
+
+  // Route to handler
+  const handlerKey = ENTITY_TO_HANDLER[entity]
+  if (!handlerKey) {
+    await logWebhookEvent(supabase, 'airtable', `automation_${entity}`, payload, {
+      event_id: recordId,
+      status: 'skipped',
+      error_message: `No handler registered for entity '${entity}'. Payload captured for future handler work.`,
+      processing_ms: Date.now() - startMs,
+    })
+    return ok({ skipped: true, reason: `no handler for ${entity}` })
+  }
+
+  const handler = RECORD_HANDLERS[handlerKey]
+  if (!handler) {
+    return serverError(`Handler key '${handlerKey}' maps to missing function`)
+  }
+
+  try {
+    await handler(recordId, fields)
+    await logWebhookEvent(supabase, 'airtable', `automation_${entity}`, payload, {
+      event_id: recordId,
+      status: 'processed',
+      processing_ms: Date.now() - startMs,
+    })
+    return ok({ processed: true, entity, recordId })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error(`[webhook-airtable] handler(${entity}, ${recordId}) failed:`, msg)
+    await logWebhookEvent(supabase, 'airtable', `automation_${entity}`, payload, {
+      event_id: recordId,
+      status: 'failed',
+      error_message: msg.slice(0, 1000),
+      processing_ms: Date.now() - startMs,
+    })
+    return serverError(msg.slice(0, 200))
+  }
+}
+
+// ============================================================================
 // Main handler
 // ============================================================================
 Deno.serve(async (req) => {
@@ -487,7 +605,29 @@ Deno.serve(async (req) => {
     return badRequest('Invalid JSON')
   }
 
-  // Verify signature
+  // ---- Path B: Bearer token auth (Airtable automation Run-script POSTs) ----
+  // Check this FIRST because it's the active path and has a distinct header
+  // shape from Airtable's native HMAC webhook flow.
+  const authHeader = req.headers.get('authorization')
+  if (authHeader?.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.slice(7).trim()
+    const expected = Deno.env.get('AIRTABLE_WEBHOOK_TOKEN')
+    if (!expected) {
+      console.warn('AIRTABLE_WEBHOOK_TOKEN not set — rejecting Bearer auth')
+      return unauthorized('Bearer auth not configured on server')
+    }
+    if (token !== expected) {
+      await logWebhookEvent(supabase, 'airtable', 'automation_unauthed', notification, {
+        status: 'failed',
+        error_message: 'Invalid bearer token',
+        processing_ms: Date.now() - startMs,
+      })
+      return unauthorized('Invalid bearer token')
+    }
+    return handleAutomationRequest(notification, startMs)
+  }
+
+  // ---- Path A: Airtable-native HMAC webhook flow ----
   const signature = req.headers.get('x-airtable-content-mac')
   const valid = await verifyAirtableSignature(rawBody, signature)
   if (!valid) {
