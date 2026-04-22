@@ -26,7 +26,7 @@ Create automations in the Airtable base (4 tables × 2 triggers = **8 automation
 
 ---
 
-## 2. For each of the 4 tables — create 2 automations
+## 2. For each of the 5 tables — create 2 automations
 
 Table mapping (Airtable name → entity parameter for the script):
 
@@ -35,7 +35,8 @@ Table mapping (Airtable name → entity parameter for the script):
 | Clients | `client` | `handleClientRecord` | `service_configs`, `clients.client_code`, `properties.zone`/`county` |
 | DERM | `derm_manifest` | `handleDermRecord` | `derm_manifests` |
 | Route Creation | `route` | `handleRouteRecord` | `routes` |
-| Past Due | `receivable` | `handleReceivableRecord` | `receivables` |
+| Past due | `receivable` | `handleReceivableRecord` | `receivables` |
+| PRE-POST insptection | `inspection` | `handleInspectionRecord` | `inspections` (maps Date, Pre/Post, Driver→employee, Truck→vehicle, SLUDGE Tank level, Gas Level) |
 
 For each table, create two automations: one for **creation**, one for **updates**.
 
@@ -109,20 +110,22 @@ if (!response.ok) {
 }
 ```
 
-### 2.3 The 8 automations, in full
+### 2.3 The 10 automations, in full
 
 | # | Automation name | Trigger | ENTITY | CHANGE_TYPE | tableName input |
 |---|---|---|---|---|---|
 | 1 | Clients — Live sync: created | When record created (Clients) | `'client'` | `'created'` | `"Clients"` |
 | 2 | Clients — Live sync: updated | When record updated (Clients) | `'client'` | `'updated'` | `"Clients"` |
-| 3 | DERM — Live sync: created | When record created (DERM) | `'derm_manifest'` | `'created'` | `"DERM"` (or your exact table name) |
+| 3 | DERM — Live sync: created | When record created (DERM) | `'derm_manifest'` | `'created'` | `"DERM"` |
 | 4 | DERM — Live sync: updated | When record updated (DERM) | `'derm_manifest'` | `'updated'` | `"DERM"` |
 | 5 | Routes — Live sync: created | When record created (Route Creation) | `'route'` | `'created'` | `"Route Creation"` |
 | 6 | Routes — Live sync: updated | When record updated (Route Creation) | `'route'` | `'updated'` | `"Route Creation"` |
-| 7 | Past Due — Live sync: created | When record created (Past Due) | `'receivable'` | `'created'` | `"Past Due"` |
-| 8 | Past Due — Live sync: updated | When record updated (Past Due) | `'receivable'` | `'updated'` | `"Past Due"` |
+| 7 | Past due — Live sync: created | When record created (Past due) | `'receivable'` | `'created'` | `"Past due"` |
+| 8 | Past due — Live sync: updated | When record updated (Past due) | `'receivable'` | `'updated'` | `"Past due"` |
+| 9 | Inspections — Live sync: created | When record created (PRE-POST insptection) | `'inspection'` | `'created'` | `"PRE-POST insptection"` |
+| 10 | Inspections — Live sync: updated | When record updated (PRE-POST insptection) | `'inspection'` | `'updated'` | `"PRE-POST insptection"` |
 
-**Important**: `tableName` must match the **exact** Airtable table name (case-sensitive, including spaces). If your tables are named differently than "Clients"/"DERM"/"Route Creation"/"Past Due", use their actual names.
+**Important**: `tableName` must match the **exact** Airtable table name (case-sensitive, including spaces and typos). The PRE-POST inspection table is literally spelled `PRE-POST insptection` in Airtable — keep the typo.
 
 ### 2.4 For the "updated" triggers — select fields to watch
 
