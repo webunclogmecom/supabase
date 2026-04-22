@@ -42,7 +42,11 @@ async function verifySignature(body: string, signature: string | null): Promise<
 function decodeGid(gid: string): { type: string; numericId: string } | null {
   try {
     const decoded = atob(gid)
-    const match = decoded.match(/^(\w+)\/(\d+)$/)
+    // Jobber's canonical GID format: gid://Jobber/<Type>/<id>
+    let match = decoded.match(/^gid:\/\/Jobber\/(\w+)\/(\d+)$/)
+    if (match) return { type: match[1], numericId: match[2] }
+    // Fallback: accept short form Type/<id> for internal re-encoding paths
+    match = decoded.match(/^(\w+)\/(\d+)$/)
     return match ? { type: match[1], numericId: match[2] } : null
   } catch {
     return null
@@ -111,6 +115,7 @@ async function gql(query: string, variables: Record<string, unknown> = {}): Prom
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
+      'X-JOBBER-GRAPHQL-VERSION': '2025-01-20',
     },
     body: JSON.stringify({ query, variables }),
   })
@@ -132,7 +137,7 @@ async function gql(query: string, variables: Record<string, unknown> = {}): Prom
 // ============================================================================
 
 async function handleClient(numericId: string, topic: string): Promise<{ entity_id: number }> {
-  const gid = btoa(`Client/${numericId}`)
+  const gid = btoa(`gid://Jobber/Client/${numericId}`)
   const data: any = await gql(
     `query($id: EncodedId!) {
       client(id: $id) {
@@ -140,7 +145,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
         emails { address primary description }
         phones { number primary description }
         billingAddress { street city province postalCode }
-        balance isActive isArchived
+        balance isArchived
       }
     }`,
     { id: gid }
@@ -159,7 +164,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   // v2 clients table: only id, client_code, name, status, balance, notes
   const clientRow: Record<string, unknown> = {
     name,
-    status: c.isArchived ? 'INACTIVE' : c.isActive ? 'ACTIVE' : 'INACTIVE',
+    status: c.isArchived ? 'INACTIVE' : 'ACTIVE',
     balance: c.balance ?? null,
   }
 
@@ -249,14 +254,14 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
 }
 
 async function handleVisit(numericId: string, topic: string): Promise<{ entity_id: number }> {
-  const gid = btoa(`Visit/${numericId}`)
+  const gid = btoa(`gid://Jobber/Visit/${numericId}`)
   const data: any = await gql(
     `query($id: EncodedId!) {
       visit(id: $id) {
-        id title status startAt endAt completedAt
+        id title visitStatus startAt endAt completedAt
         job { id client { id } }
         invoice { id }
-        assignedTo { nodes { id firstName lastName } }
+        assignedUsers { nodes { id name { first last } } }
       }
     }`,
     { id: gid }
@@ -285,7 +290,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
 
   const visitRow: Record<string, unknown> = {
     title: v.title ?? null,
-    visit_status: statusMap[v.status?.toLowerCase()] ?? v.status ?? null,
+    visit_status: statusMap[v.visitStatus?.toLowerCase()] ?? v.visitStatus ?? null,
     start_at: v.startAt ?? null,
     end_at: v.endAt ?? null,
     completed_at: v.completedAt ?? null,
@@ -320,8 +325,8 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   })
 
   // Upsert visit_assignments for assigned team members
-  if (v.assignedTo?.nodes?.length) {
-    for (const member of v.assignedTo.nodes) {
+  if (v.assignedUsers?.nodes?.length) {
+    for (const member of v.assignedUsers.nodes) {
       const memberGid = decodeGid(atob(member.id))?.numericId
       if (!memberGid) continue
       const empId = await findEntityBySourceId('employee', 'jobber', memberGid)
@@ -340,14 +345,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
 }
 
 async function handleInvoice(numericId: string, topic: string): Promise<{ entity_id: number }> {
-  const gid = btoa(`Invoice/${numericId}`)
+  const gid = btoa(`gid://Jobber/Invoice/${numericId}`)
   const data: any = await gql(
     `query($id: EncodedId!) {
       invoice(id: $id) {
-        id invoiceNumber subject status issuedDate dueDate
-        amounts { total outstanding depositAmount invoiceBalance }
+        id invoiceNumber subject invoiceStatus issuedDate dueDate
+        amounts { subtotal total invoiceBalance depositAmount }
         client { id }
-        job { id }
+        jobs { nodes { id } }
       }
     }`,
     { id: gid }
@@ -356,7 +361,8 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   if (!inv) throw new Error(`Invoice ${numericId} not found in Jobber`)
 
   const clientGid = inv.client?.id ? decodeGid(atob(inv.client.id))?.numericId ?? null : null
-  const jobGid = inv.job?.id ? decodeGid(atob(inv.job.id))?.numericId ?? null : null
+  const firstJob = inv.jobs?.nodes?.[0]
+  const jobGid = firstJob?.id ? decodeGid(atob(firstJob.id))?.numericId ?? null : null
 
   const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
   const jobId = jobGid ? await findEntityBySourceId('job', 'jobber', jobGid) : null
@@ -365,11 +371,11 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   const invoiceRow: Record<string, unknown> = {
     invoice_number: inv.invoiceNumber ?? null,
     subject: inv.subject ?? null,
-    invoice_status: inv.status?.toLowerCase() ?? null,
+    invoice_status: inv.invoiceStatus?.toLowerCase() ?? null,
     sent_at: inv.issuedDate ?? null,
     due_date: inv.dueDate ?? null,
     total: inv.amounts?.total ?? null,
-    outstanding_amount: inv.amounts?.outstanding ?? null,
+    outstanding_amount: inv.amounts?.invoiceBalance ?? null,
     deposit_amount: inv.amounts?.depositAmount ?? null,
   }
   if (clientId) invoiceRow.client_id = clientId
@@ -403,11 +409,11 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
 }
 
 async function handleJob(numericId: string, topic: string): Promise<{ entity_id: number }> {
-  const gid = btoa(`Job/${numericId}`)
+  const gid = btoa(`gid://Jobber/Job/${numericId}`)
   const data: any = await gql(
     `query($id: EncodedId!) {
       job(id: $id) {
-        id jobNumber title status startAt endAt
+        id jobNumber title jobStatus startAt endAt
         client { id }
         property { id }
         quote { id }
@@ -430,7 +436,7 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   const jobRow: Record<string, unknown> = {
     job_number: j.jobNumber ?? null,
     title: j.title ?? null,
-    job_status: j.status?.toLowerCase() ?? null,
+    job_status: j.jobStatus?.toLowerCase() ?? null,
     start_at: j.startAt ?? null,
     end_at: j.endAt ?? null,
   }
@@ -466,11 +472,11 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
 }
 
 async function handleQuote(numericId: string, topic: string): Promise<{ entity_id: number }> {
-  const gid = btoa(`Quote/${numericId}`)
+  const gid = btoa(`gid://Jobber/Quote/${numericId}`)
   const data: any = await gql(
     `query($id: EncodedId!) {
       quote(id: $id) {
-        id quoteNumber title status createdAt
+        id quoteNumber title quoteStatus createdAt
         amounts { total }
         client { id }
       }
@@ -487,7 +493,7 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
   const quoteRow: Record<string, unknown> = {
     quote_number: q.quoteNumber ?? null,
     title: q.title ?? null,
-    quote_status: q.status?.toLowerCase() ?? null,
+    quote_status: q.quoteStatus?.toLowerCase() ?? null,
     total: q.amounts?.total ?? null,
     sent_at: q.createdAt ?? null,
   }
