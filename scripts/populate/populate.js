@@ -67,12 +67,35 @@ if (!DRY_RUN && !CONFIRM) {
   process.exit(1);
 }
 
+const FORCE = args.includes('--force');
+
 console.log('='.repeat(70));
 console.log('populate.js — UNCLOGME v2 schema');
 console.log(`Mode:     ${DRY_RUN ? 'DRY-RUN (no writes)' : 'EXECUTE (writes enabled)'}`);
 console.log(`Truncate: ${TRUNCATE ? 'YES' : 'no'}`);
 console.log(`Step:     ${ONLY_STEP || 'all'}`);
 console.log('='.repeat(70));
+
+// ----------------------------------------------------------------------------
+// Idempotency guard — populate.js is a one-shot initialization tool.
+// Most steps use bulkInsertReturning (no ON CONFLICT), so a re-run would create
+// duplicates. If the DB already has data, demand --truncate or --force. For
+// ongoing refreshes use scripts/sync/replay_to_webhook.js (Jobber) and
+// scripts/sync/airtable_replay.js (Airtable).
+// ----------------------------------------------------------------------------
+async function assertEmptyOrForced() {
+  if (DRY_RUN || TRUNCATE || FORCE) return;
+  const { newQuery } = require('./lib/db');
+  const r = await newQuery('SELECT count(*)::int AS n FROM clients;');
+  if (r[0].n > 0) {
+    console.error(`\nREFUSING: public.clients already has ${r[0].n} rows. populate.js is non-idempotent.`);
+    console.error('Options:');
+    console.error('  1. For incremental Jobber + Airtable refresh: use scripts/sync/replay_to_webhook.js + airtable_replay.js');
+    console.error('  2. To wipe and start over: add --truncate');
+    console.error('  3. To bypass this guard anyway: add --force (will create duplicates — you have been warned)');
+    process.exit(1);
+  }
+}
 
 // ----------------------------------------------------------------------------
 // In-memory data caches
@@ -1419,6 +1442,7 @@ async function fixupPasses() {
 // ----------------------------------------------------------------------------
 (async () => {
   try {
+    await assertEmptyOrForced();
     await phase1_pull();
 
     if (TRUNCATE && !DRY_RUN) {

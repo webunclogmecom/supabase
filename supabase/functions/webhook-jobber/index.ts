@@ -526,21 +526,111 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
   return { entity_id: entityId }
 }
 
+async function handleProperty(numericId: string, topic: string): Promise<{ entity_id: number }> {
+  const gid = btoa(`gid://Jobber/Property/${numericId}`)
+  const data: any = await gql(
+    `query($id: EncodedId!) {
+      property(id: $id) {
+        id
+        client { id }
+        address { street city province postalCode country }
+      }
+    }`,
+    { id: gid }
+  )
+  const p = data.property
+  if (!p) throw new Error(`Property ${numericId} not found in Jobber`)
+
+  const clientGid = p.client?.id ? decodeGid(atob(p.client.id))?.numericId ?? null : null
+  const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
+  const existingId = await findEntityBySourceId('property', 'jobber', numericId)
+
+  const row: Record<string, unknown> = {
+    address: p.address?.street ?? null,
+    city: p.address?.city ?? null,
+    state: p.address?.province ?? 'FL',
+    zip: p.address?.postalCode ?? null,
+  }
+  if (clientId) row.client_id = clientId
+
+  let entityId: number
+  if (existingId) {
+    const { error } = await supabase.from('properties').update(row).eq('id', existingId)
+    if (error) throw new Error(`Property update failed: ${error.message}`)
+    entityId = existingId
+  } else {
+    const { data: inserted, error } = await supabase.from('properties').insert(row).select('id').single()
+    if (error || !inserted) throw new Error(`Property insert failed: ${error?.message}`)
+    entityId = inserted.id
+  }
+
+  await upsertEntityLink({
+    entity_type: 'property', entity_id: entityId, source_system: 'jobber',
+    source_id: numericId, match_method: 'webhook',
+  })
+  return { entity_id: entityId }
+}
+
+// Soft-delete / status-flip handlers for DESTROY / CLOSED events.
+// Per rule #6 (never hard-delete): we flip a status column so joins + history stay intact.
+async function softStatusFlip(
+  entity_type: string,
+  table: string,
+  statusCol: string,
+  newStatus: string,
+  numericId: string
+): Promise<{ entity_id: number }> {
+  const existingId = await findEntityBySourceId(entity_type, 'jobber', numericId)
+  if (!existingId) {
+    // Never saw this entity — nothing to flip. Log & acknowledge.
+    console.log(`[softStatusFlip ${entity_type}] unknown source_id=${numericId} — nothing to update`)
+    return { entity_id: 0 }
+  }
+  const { error } = await supabase.from(table).update({ [statusCol]: newStatus }).eq('id', existingId)
+  if (error) throw new Error(`${table}.${statusCol}='${newStatus}' failed: ${error.message}`)
+  return { entity_id: existingId }
+}
+
+const handleClientDestroy = (id: string) => softStatusFlip('client', 'clients', 'status', 'INACTIVE', id)
+const handleJobClosed     = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'closed',    id)
+const handleJobDestroy    = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'destroyed', id)
+const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  'visit_status', 'destroyed', id)
+const handleInvoiceDestroy= (id: string) => softStatusFlip('invoice','invoices','invoice_status','destroyed',id)
+const handleQuoteDestroy  = (id: string) => softStatusFlip('quote',  'quotes',  'quote_status','destroyed', id)
+async function handlePropertyDestroy(numericId: string): Promise<{ entity_id: number }> {
+  const existingId = await findEntityBySourceId('property', 'jobber', numericId)
+  if (!existingId) { console.log(`[PROPERTY_DESTROY] unknown ${numericId}`); return { entity_id: 0 } }
+  const { error } = await supabase.from('properties').delete().eq('id', existingId)
+  if (error) throw new Error(`PROPERTY_DESTROY failed: ${error.message}`)
+  return { entity_id: existingId }
+}
+
 // ============================================================================
 // Topic → Handler dispatch
 // ============================================================================
 const TOPIC_HANDLERS: Record<string, (id: string, topic: string) => Promise<{ entity_id: number }>> = {
   CLIENT_CREATE: handleClient,
   CLIENT_UPDATE: handleClient,
+  CLIENT_DESTROY: handleClientDestroy,
   VISIT_CREATE: handleVisit,
   VISIT_UPDATE: handleVisit,
   VISIT_COMPLETE: handleVisit,
+  VISIT_DESTROY: handleVisitDestroy,
   INVOICE_CREATE: handleInvoice,
   INVOICE_UPDATE: handleInvoice,
+  INVOICE_DESTROY: handleInvoiceDestroy,
   JOB_CREATE: handleJob,
   JOB_UPDATE: handleJob,
+  JOB_CLOSED: handleJobClosed,
+  JOB_DESTROY: handleJobDestroy,
   QUOTE_CREATE: handleQuote,
   QUOTE_UPDATE: handleQuote,
+  QUOTE_SENT: handleQuote,
+  QUOTE_APPROVED: handleQuote,
+  QUOTE_DESTROY: handleQuoteDestroy,
+  PROPERTY_CREATE: handleProperty,
+  PROPERTY_UPDATE: handleProperty,
+  PROPERTY_DESTROY: handlePropertyDestroy,
 }
 
 // ============================================================================

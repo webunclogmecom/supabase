@@ -29,6 +29,7 @@ const TABLES = [
   { name: 'DERM', entity: 'derm_manifest' },
   { name: 'Route Creation', entity: 'route' },
   { name: 'Past due', entity: 'receivable' },  // lowercase 'd' per Airtable
+  { name: 'PRE-POST insptection', entity: 'inspection' }, // typo is Airtable's canonical name
 ];
 
 function httpsGet(host, path, headers) {

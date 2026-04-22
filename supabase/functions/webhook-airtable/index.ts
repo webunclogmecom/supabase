@@ -390,12 +390,85 @@ async function handleReceivableRecord(recordId: string, fields: Record<string, u
   })
 }
 
+async function handleInspectionRecord(recordId: string, fields: Record<string, unknown>): Promise<void> {
+  // Airtable "PRE-POST insptection" table → public.inspections
+  // Columns we care about:
+  //   Date (datetime)                 → shift_date + submitted_at
+  //   Pre/Post (text)                 → inspection_type ('PRE' | 'POST')
+  //   Driver (text name)              → employee_id (resolved by full_name ilike)
+  //   Truck (text name)               → vehicle_id (resolved by name ilike)
+  //   SLUDGE Tank level (number)      → sludge_gallons
+  //   Gas Level (text — '1/4' etc.)   → gas_level
+  // Photo attachment fields are present but we don't process them here — that
+  // runs through a separate photos+photo_links migration pass (ADR 009).
+  const dateRaw = fields['Date']
+  const shift_date = typeof dateRaw === 'string' ? dateRaw.slice(0, 10) : null
+  if (!shift_date) {
+    console.warn(`Inspection ${recordId} has no Date — skipping`)
+    return
+  }
+
+  const rawType = strVal(fields, 'Pre/Post')?.toUpperCase()
+  const inspection_type = rawType?.startsWith('PRE') ? 'PRE' : rawType?.startsWith('POST') ? 'POST' : null
+  if (!inspection_type) {
+    console.warn(`Inspection ${recordId} has unrecognized Pre/Post='${rawType}' — skipping`)
+    return
+  }
+
+  // Resolve vehicle by Truck name
+  let vehicle_id: number | null = null
+  const truckName = strVal(fields, 'Truck')
+  if (truckName) {
+    const { data: v } = await supabase.from('vehicles').select('id').ilike('name', `%${truckName}%`).limit(1)
+    if (v?.length) vehicle_id = v[0].id
+  }
+
+  // Resolve employee by Driver name
+  let employee_id: number | null = null
+  const driverName = strVal(fields, 'Driver')
+  if (driverName) {
+    const { data: e } = await supabase.from('employees').select('id').ilike('full_name', `%${driverName}%`).limit(1)
+    if (e?.length) employee_id = e[0].id
+  }
+
+  const row: Record<string, unknown> = {
+    shift_date,
+    inspection_type,
+    submitted_at: typeof dateRaw === 'string' ? dateRaw : null,
+    sludge_gallons: Math.round(numVal(fields, 'SLUDGE Tank level') ?? 0) || null,
+    gas_level: strVal(fields, 'Gas Level'),
+  }
+  if (vehicle_id)  row.vehicle_id = vehicle_id
+  if (employee_id) row.employee_id = employee_id
+
+  const existingId = await findEntityBySourceId('inspection', 'airtable', recordId)
+  let entityId: number
+  if (existingId) {
+    const { error } = await supabase.from('inspections').update(row).eq('id', existingId)
+    if (error) throw new Error(`Inspection update failed: ${error.message}`)
+    entityId = existingId
+  } else {
+    const { data: inserted, error } = await supabase.from('inspections').insert(row).select('id').single()
+    if (error || !inserted) throw new Error(`Inspection insert failed: ${error?.message}`)
+    entityId = inserted.id
+  }
+
+  await upsertEntityLink({
+    entity_type: 'inspection',
+    entity_id: entityId,
+    source_system: 'airtable',
+    source_id: recordId,
+    match_method: 'webhook',
+  })
+}
+
 // ---- Table handler dispatcher ----
 const RECORD_HANDLERS: Record<string, (recordId: string, fields: Record<string, unknown>) => Promise<void>> = {
   clients: handleClientRecord,
   derm: handleDermRecord,
   routes: handleRouteRecord,
   past_due: handleReceivableRecord,
+  inspections: handleInspectionRecord,
 }
 
 // ============================================================================
@@ -501,6 +574,7 @@ const ENTITY_TO_HANDLER: Record<string, string> = {
   'derm_manifest': 'derm',
   'route': 'routes',
   'receivable': 'past_due',
+  'inspection': 'inspections',
 }
 
 async function handleAutomationRequest(payload: any, startMs: number): Promise<Response> {

@@ -77,11 +77,24 @@ Handler then calls Jobber GraphQL with the `itemId` to fetch the full client rec
 | Topic | Handler action |
 |---|---|
 | `CLIENT_CREATE` / `CLIENT_UPDATE` | Fetch full client; upsert `clients`, `client_contacts`, `properties`; upsert `entity_source_links` |
-| `CLIENT_DESTROY` | Set `clients.status = 'INACTIVE'`; do not hard-delete |
-| `JOB_CREATE` / `JOB_UPDATE` | Fetch job; upsert `jobs` + `line_items`; link via `entity_source_links` |
+| `CLIENT_DESTROY` | Set `clients.status = 'INACTIVE'` (never hard-delete — rule #6) |
+| `JOB_CREATE` / `JOB_UPDATE` | Fetch job; upsert `jobs`; link via `entity_source_links` |
+| `JOB_CLOSED` / `JOB_DESTROY` | Flip `jobs.job_status` to `closed` / `destroyed` — no hard-delete |
 | `VISIT_CREATE` / `VISIT_UPDATE` / `VISIT_COMPLETE` | Fetch visit with `assignedUsers`; upsert `visits` + `visit_assignments` |
-| `INVOICE_*` | Upsert `invoices`, set `paid_at` on `INVOICE_PAID` |
-| `QUOTE_*` | Upsert `quotes` |
+| `VISIT_DESTROY` | Flip `visits.visit_status = 'destroyed'` |
+| `INVOICE_CREATE` / `INVOICE_UPDATE` | Upsert `invoices` from Jobber amounts |
+| `INVOICE_DESTROY` | Flip `invoices.invoice_status = 'destroyed'` |
+| `QUOTE_CREATE` / `QUOTE_UPDATE` / `QUOTE_SENT` / `QUOTE_APPROVED` | Upsert `quotes` (status reflects Jobber `quoteStatus`) |
+| `QUOTE_DESTROY` | Flip `quotes.quote_status = 'destroyed'` |
+| `PROPERTY_CREATE` / `PROPERTY_UPDATE` | Upsert `properties` (client_id, address, city, state, zip) |
+| `PROPERTY_DESTROY` | Hard delete (properties are leaf nodes; FK children handled via ON DELETE) |
+
+GraphQL contract notes (critical — all bugs discovered via replay 2026-04-22):
+- IDs are the canonical `gid://Jobber/<Type>/<numericId>` form, base64-encoded; `decodeGid` must match that exact shape.
+- `X-JOBBER-GRAPHQL-VERSION: 2025-01-20` is required on every GraphQL request.
+- Status fields are **typed**: `Job.jobStatus`, `Visit.visitStatus`, `Invoice.invoiceStatus`, `Quote.quoteStatus`. There is no generic `status` field on any of them.
+- `Client.isActive` does not exist — use `isArchived` only.
+- `Visit.assignedTo` → `assignedUsers`. `Invoice.job` → `jobs.nodes[0]`. `InvoiceAmounts.outstanding` → `invoiceBalance`.
 
 ### Airtable — record change
 

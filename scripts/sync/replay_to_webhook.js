@@ -32,13 +32,12 @@ if (!SECRET) throw new Error('JOBBER_CLIENT_SECRET missing in .env');
 // Entity → topic mapping. Use *_UPDATE so handlers upsert (create-or-update path).
 const ENTITIES = [
   { name: 'clients',    rawTable: 'jobber_pull_clients',    topic: 'CLIENT_UPDATE' },
+  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE' },
   { name: 'jobs',       rawTable: 'jobber_pull_jobs',       topic: 'JOB_UPDATE' },
   { name: 'visits',     rawTable: 'jobber_pull_visits',     topic: 'VISIT_UPDATE' },
   { name: 'invoices',   rawTable: 'jobber_pull_invoices',   topic: 'INVOICE_UPDATE' },
   { name: 'quotes',     rawTable: 'jobber_pull_quotes',     topic: 'QUOTE_UPDATE' },
 ];
-// NOTE: properties and users aren't handled by webhook-jobber directly;
-//       populate.js derives properties from jobs/client relations.
 
 function signPayload(body) {
   return crypto.createHmac('sha256', SECRET).update(body).digest('base64');
