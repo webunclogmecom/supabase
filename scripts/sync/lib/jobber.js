@@ -52,19 +52,18 @@ function updateEnv(updates) {
 }
 
 async function refreshAccessToken() {
-  const body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(REFRESH_TOKEN)}&client_id=${encodeURIComponent(CLIENT_ID)}&client_secret=${encodeURIComponent(CLIENT_SECRET)}`;
-  const r = await postJson(TOKEN_URL, { 'Content-Type': 'application/x-www-form-urlencoded' }, body);
-  if (r.status >= 300) throw new Error(`Jobber refresh failed HTTP ${r.status}: ${r.body.slice(0, 300)}`);
-  const parsed = JSON.parse(r.body);
-  ACCESS_TOKEN = parsed.access_token;
-  REFRESH_TOKEN = parsed.refresh_token || REFRESH_TOKEN;
-  const expiresAt = new Date(Date.now() + (parsed.expires_in || 3600) * 1000).toISOString();
-  updateEnv({
-    JOBBER_ACCESS_TOKEN: ACCESS_TOKEN,
-    JOBBER_REFRESH_TOKEN: REFRESH_TOKEN,
-    JOBBER_TOKEN_EXPIRES_AT: expiresAt,
-  });
-  console.log('  [jobber] access token refreshed, expires', expiresAt);
+  // Delegate to shared cross-session token manager. It reads BOTH Supabase/.env
+  // and Slack/.env, picks the freshest-expiring token, tries every known
+  // refresh_token if a refresh is needed, and writes the result back to both
+  // .env files + the Supabase webhook_tokens row — so multiple sessions don't
+  // invalidate each other's refresh_token.
+  const { getValidToken } = require('../jobber_token');
+  ACCESS_TOKEN = await getValidToken({ verbose: true });
+  // Re-read rotated refresh_token from .env (syncAndMaybeRefresh wrote it back)
+  const fs = require('fs');
+  const env = fs.readFileSync(require('path').resolve(__dirname, '../../../.env'), 'utf8');
+  const m = env.match(/^JOBBER_REFRESH_TOKEN=(.+)$/m);
+  if (m) REFRESH_TOKEN = m[1].trim();
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
