@@ -17,10 +17,21 @@ import { upsertEntityLink, findEntityBySourceId, buildSourceMap } from '../_shar
 import { ok, badRequest, unauthorized, serverError, logWebhookEvent } from '../_shared/responses.ts'
 
 // ---- HMAC verification ----
-// Samsara issues a unique secretKey per webhook registration, so we accept
-// any configured secret. SAMSARA_WEBHOOK_SECRETS = comma-separated list.
-// (Also still reads legacy single-secret SAMSARA_WEBHOOK_SECRET for back-compat.)
-async function verifySamsaraSignature(body: string, signature: string | null): Promise<boolean> {
+// Samsara webhook signature spec (per developers.samsara.com/docs/webhooks):
+//   HMAC-SHA256 over the message "v1:<timestamp>:<body>" where
+//     <timestamp> = value of the X-Samsara-Timestamp header
+//     <body>      = raw POST body
+//   The secretKey shown in the Samsara dashboard is base64-encoded — must be
+//   decoded to raw bytes before being used as the HMAC key.
+//   The X-Samsara-Signature header is "v1=<hex_digest>".
+//
+// SAMSARA_WEBHOOK_SECRETS env is a comma-separated list of base64 secrets
+// (one per registered webhook); we try each until one matches.
+async function verifySamsaraSignature(
+  body: string,
+  signature: string | null,
+  timestamp: string | null,
+): Promise<boolean> {
   const multi = Deno.env.get('SAMSARA_WEBHOOK_SECRETS')
   const single = Deno.env.get('SAMSARA_WEBHOOK_SECRET')
   const secrets = [
@@ -31,22 +42,36 @@ async function verifySamsaraSignature(body: string, signature: string | null): P
     console.warn('SAMSARA_WEBHOOK_SECRETS not set — skipping verification')
     return true
   }
-  if (!signature) return false
+  if (!signature || !timestamp) return false
 
-  for (const secret of secrets) {
+  // Strip "v1=" prefix from signature header
+  const expectedHex = signature.startsWith('v1=') ? signature.slice(3) : signature
+
+  // Build the canonical signed message: "v1:<timestamp>:<body>"
+  const messageBytes = new TextEncoder().encode(`v1:${timestamp}:${body}`)
+
+  for (const b64Secret of secrets) {
+    // Decode base64 secret → raw bytes
+    let keyBytes: Uint8Array
+    try {
+      const bin = atob(b64Secret)
+      keyBytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) keyBytes[i] = bin.charCodeAt(i)
+    } catch {
+      continue
+    }
     const key = await crypto.subtle.importKey(
       'raw',
-      new TextEncoder().encode(secret),
+      keyBytes,
       { name: 'HMAC', hash: 'SHA-256' },
       false,
-      ['sign']
+      ['sign'],
     )
-    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))
+    const sig = await crypto.subtle.sign('HMAC', key, messageBytes)
     const hex = Array.from(new Uint8Array(sig))
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('')
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
-    if (hex === signature || b64 === signature) return true
+    if (hex === expectedHex) return true
   }
   return false
 }
@@ -435,11 +460,12 @@ Deno.serve(async (req) => {
     return badRequest('Invalid JSON')
   }
 
-  // Verify signature
+  // Verify signature (Samsara: HMAC over "v1:<timestamp>:<body>")
   const signature =
     req.headers.get('x-samsara-signature') ??
     req.headers.get('x-webhook-signature')
-  const valid = await verifySamsaraSignature(rawBody, signature)
+  const timestamp = req.headers.get('x-samsara-timestamp')
+  const valid = await verifySamsaraSignature(rawBody, signature, timestamp)
   if (!valid) {
     await logWebhookEvent(supabase, 'samsara', event.eventType ?? 'unknown', event, {
       status: 'failed',
