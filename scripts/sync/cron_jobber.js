@@ -247,11 +247,19 @@ async function setCursor(name, ts, rowsPulled) {
 
 // ---- Replay flagged raw rows through webhook-jobber --------------------------
 
-async function replayFlagged(jobberClientSecret) {
+async function replayFlagged(jobberClientSecret, includeFull) {
   const crypto = require('crypto');
-  const TOPICS = {
+  // On incremental runs, skip properties (no delta filter — would waste time on
+  // unchanged rows). They're picked up via PROPERTY_* webhooks or --full runs.
+  const TOPICS = includeFull ? {
     jobber_pull_clients:    { entity: 'client',    topic: 'CLIENT_UPDATE' },
     jobber_pull_properties: { entity: 'property',  topic: 'PROPERTY_UPDATE' },
+    jobber_pull_jobs:       { entity: 'job',       topic: 'JOB_UPDATE' },
+    jobber_pull_visits:     { entity: 'visit',     topic: 'VISIT_UPDATE' },
+    jobber_pull_invoices:   { entity: 'invoice',   topic: 'INVOICE_UPDATE' },
+    jobber_pull_quotes:     { entity: 'quote',     topic: 'QUOTE_UPDATE' },
+  } : {
+    jobber_pull_clients:    { entity: 'client',    topic: 'CLIENT_UPDATE' },
     jobber_pull_jobs:       { entity: 'job',       topic: 'JOB_UPDATE' },
     jobber_pull_visits:     { entity: 'visit',     topic: 'VISIT_UPDATE' },
     jobber_pull_invoices:   { entity: 'invoice',   topic: 'INVOICE_UPDATE' },
@@ -326,7 +334,7 @@ async function replayFlagged(jobberClientSecret) {
 
   if (!SKIP_REPLAY && totalPulled > 0) {
     console.log(`[cron] replaying ${totalPulled} raw rows through webhook-jobber`);
-    const summary = await replayFlagged(CLIENT_SECRET);
+    const summary = await replayFlagged(CLIENT_SECRET, FULL);
     if (summary.length) console.table(summary);
   }
 
