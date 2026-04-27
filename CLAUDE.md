@@ -146,7 +146,9 @@ Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-
 | [docs/migration-plan.md](docs/migration-plan.md) | May 2026 sunset, Odoo.sh cutover |
 | [docs/company.md](docs/company.md) | Business context: fleet, clients, compliance, people |
 | [docs/onboarding.md](docs/onboarding.md) | New to the project (first hour / day / week) |
+| [docs/duplication-guide.md](docs/duplication-guide.md) | Cloning the project to a new Supabase from zero |
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records — *why* something is the way it is |
+| [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md) | Most recent end-to-end audit findings |
 
 ---
 

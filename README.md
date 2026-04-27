@@ -46,6 +46,7 @@ For a longer walk-through, read [`docs/onboarding.md`](docs/onboarding.md).
 | [docs/migration-plan.md](docs/migration-plan.md) | Jobber/Airtable sunset, Odoo.sh cutover plan |
 | [docs/company.md](docs/company.md) | Business context: fleet, clients, compliance, people |
 | [docs/onboarding.md](docs/onboarding.md) | New-engineer 1-hour / 1-day / 1-week path |
+| [docs/duplication-guide.md](docs/duplication-guide.md) | Clone the project to a fresh Supabase from zero (staging, demo, DR) |
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records (ADRs) |
 
 ---
