@@ -27,3 +27,6 @@ handoff/
 oversized_backup/
 samsara_webhooks.json
 recent.json
+jobber_events.json
+samsara_health.json
+today.json

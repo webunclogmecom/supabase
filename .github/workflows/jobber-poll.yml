@@ -1,0 +1,42 @@
+name: Jobber polling sync
+
+# Pulls Jobber deltas every 2 minutes and replays them through webhook-jobber.
+# This is the polling fallback for Jobber webhook delivery (per ADR 009).
+# Once Jobber support resolves webhook delivery, the cron can be deleted —
+# the Edge Function path it feeds is the same one webhooks use.
+
+on:
+  schedule:
+    # Every 2 minutes (GitHub Actions cron has ~5 min delivery jitter, so
+    # actual cadence may be 2-7 min — still well within "live enough")
+    - cron: '*/2 * * * *'
+  workflow_dispatch:  # allow manual trigger
+
+concurrency:
+  # Don't pile up overlapping runs — if a previous one is still going,
+  # cancel queued duplicates. Active run keeps going.
+  group: jobber-poll
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Run Jobber poll
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          JOBBER_CLIENT_ID: ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET: ${{ secrets.JOBBER_CLIENT_SECRET }}
+        run: node scripts/sync/cron_jobber.js
