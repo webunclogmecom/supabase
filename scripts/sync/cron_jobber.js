@@ -34,6 +34,10 @@ if (!SUPABASE_URL || !SERVICE_KEY) throw new Error('SUPABASE_URL and SUPABASE_SE
 if (!CLIENT_ID || !CLIENT_SECRET) throw new Error('JOBBER_CLIENT_ID and JOBBER_CLIENT_SECRET are required');
 
 const SKIP_REPLAY = process.argv.includes('--no-replay');
+// Properties + users have no updatedAt filter in Jobber's API → pulling them
+// every 2 min would re-fetch all ~400 rows each cycle and stall the cron.
+// Default to skipping unless --full is passed (use that for a daily/manual run).
+const FULL = process.argv.includes('--full');
 
 // ---- Tiny REST helpers --------------------------------------------------------
 
@@ -293,6 +297,10 @@ async function replayFlagged(jobberClientSecret) {
 
   let totalPulled = 0;
   for (const entity of ENTITIES) {
+    // Skip non-time-filterable entities on incremental runs (use --full for those)
+    if (!FULL && (entity.name === 'properties' || entity.name === 'users')) {
+      continue;
+    }
     const cursor = await getCursor(entity.name);
     let nodes;
     try {
