@@ -115,7 +115,7 @@ async function gql(query: string, variables: Record<string, unknown> = {}): Prom
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-JOBBER-GRAPHQL-VERSION': '2025-01-20',
+      'X-JOBBER-GRAPHQL-VERSION': '2026-04-16',
     },
     body: JSON.stringify({ query, variables }),
   })
@@ -259,7 +259,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     `query($id: EncodedId!) {
       visit(id: $id) {
         id title visitStatus startAt endAt completedAt
-        job { id client { id } }
+        job { id client { id } property { id } }
         invoice { id }
         assignedUsers { nodes { id name { first last } } }
       }
@@ -270,12 +270,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   if (!v) throw new Error(`Visit ${numericId} not found in Jobber`)
 
   // Resolve FKs via entity_source_links
-  const jobGid = v.job?.id ? decodeGid(atob(v.job.id))?.numericId ?? null : null
-  const clientGid = v.job?.client?.id ? decodeGid(atob(v.job.client.id))?.numericId ?? null : null
-  const invoiceGid = v.invoice?.id ? decodeGid(atob(v.invoice.id))?.numericId ?? null : null
+  const jobGid = v.job?.id ? decodeGid(v.job.id)?.numericId ?? null : null
+  const clientGid = v.job?.client?.id ? decodeGid(v.job.client.id)?.numericId ?? null : null
+  const propGid = v.job?.property?.id ? decodeGid(v.job.property.id)?.numericId ?? null : null
+  const invoiceGid = v.invoice?.id ? decodeGid(v.invoice.id)?.numericId ?? null : null
 
   const jobId = jobGid ? await findEntityBySourceId('job', 'jobber', jobGid) : null
   const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
+  const propertyId = propGid ? await findEntityBySourceId('property', 'jobber', propGid) : null
   const invoiceId = invoiceGid ? await findEntityBySourceId('invoice', 'jobber', invoiceGid) : null
 
   const existingId = await findEntityBySourceId('visit', 'jobber', numericId)
@@ -298,6 +300,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   }
   if (jobId) visitRow.job_id = jobId
   if (clientId) visitRow.client_id = clientId
+  if (propertyId) visitRow.property_id = propertyId
   if (invoiceId) visitRow.invoice_id = invoiceId
 
   let entityId: number
@@ -327,7 +330,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // Upsert visit_assignments for assigned team members
   if (v.assignedUsers?.nodes?.length) {
     for (const member of v.assignedUsers.nodes) {
-      const memberGid = decodeGid(atob(member.id))?.numericId
+      const memberGid = decodeGid(member.id)?.numericId
       if (!memberGid) continue
       const empId = await findEntityBySourceId('employee', 'jobber', memberGid)
       if (!empId) continue
@@ -360,9 +363,9 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   const inv = data.invoice
   if (!inv) throw new Error(`Invoice ${numericId} not found in Jobber`)
 
-  const clientGid = inv.client?.id ? decodeGid(atob(inv.client.id))?.numericId ?? null : null
+  const clientGid = inv.client?.id ? decodeGid(inv.client.id)?.numericId ?? null : null
   const firstJob = inv.jobs?.nodes?.[0]
-  const jobGid = firstJob?.id ? decodeGid(atob(firstJob.id))?.numericId ?? null : null
+  const jobGid = firstJob?.id ? decodeGid(firstJob.id)?.numericId ?? null : null
 
   const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
   const jobId = jobGid ? await findEntityBySourceId('job', 'jobber', jobGid) : null
@@ -424,9 +427,9 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   const j = data.job
   if (!j) throw new Error(`Job ${numericId} not found in Jobber`)
 
-  const clientGid = j.client?.id ? decodeGid(atob(j.client.id))?.numericId ?? null : null
-  const propGid = j.property?.id ? decodeGid(atob(j.property.id))?.numericId ?? null : null
-  const quoteGid = j.quote?.id ? decodeGid(atob(j.quote.id))?.numericId ?? null : null
+  const clientGid = j.client?.id ? decodeGid(j.client.id)?.numericId ?? null : null
+  const propGid = j.property?.id ? decodeGid(j.property.id)?.numericId ?? null : null
+  const quoteGid = j.quote?.id ? decodeGid(j.quote.id)?.numericId ?? null : null
 
   const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
   const propertyId = propGid ? await findEntityBySourceId('property', 'jobber', propGid) : null
@@ -479,6 +482,7 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
         id quoteNumber title quoteStatus createdAt
         amounts { total }
         client { id }
+        property { id }
       }
     }`,
     { id: gid }
@@ -486,8 +490,10 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
   const q = data.quote
   if (!q) throw new Error(`Quote ${numericId} not found in Jobber`)
 
-  const clientGid = q.client?.id ? decodeGid(atob(q.client.id))?.numericId ?? null : null
+  const clientGid = q.client?.id ? decodeGid(q.client.id)?.numericId ?? null : null
+  const propGid = q.property?.id ? decodeGid(q.property.id)?.numericId ?? null : null
   const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
+  const propertyId = propGid ? await findEntityBySourceId('property', 'jobber', propGid) : null
   const existingId = await findEntityBySourceId('quote', 'jobber', numericId)
 
   const quoteRow: Record<string, unknown> = {
@@ -498,6 +504,7 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
     sent_at: q.createdAt ?? null,
   }
   if (clientId) quoteRow.client_id = clientId
+  if (propertyId) quoteRow.property_id = propertyId
 
   let entityId: number
 
@@ -541,7 +548,7 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
   const p = data.property
   if (!p) throw new Error(`Property ${numericId} not found in Jobber`)
 
-  const clientGid = p.client?.id ? decodeGid(atob(p.client.id))?.numericId ?? null : null
+  const clientGid = p.client?.id ? decodeGid(p.client.id)?.numericId ?? null : null
   const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
   const existingId = await findEntityBySourceId('property', 'jobber', numericId)
 

@@ -8,9 +8,9 @@ Per-source integration details: webhook endpoints, signatures, payloads, registr
 
 | Function | Endpoint (public) | Source | Target tables | Status |
 |---|---|---|---|---|
-| `webhook-jobber` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-jobber` | Jobber | clients, jobs, visits, invoices, quotes, properties, line_items | Active |
-| `webhook-airtable` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-airtable` | Airtable | service_configs, derm_manifests, routes, receivables, leads | Active |
-| `webhook-samsara` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-samsara` | Samsara | vehicles, vehicle_telemetry_readings | Active (reg blocked) |
+| `webhook-jobber` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-jobber` | Jobber | clients, client_contacts, jobs, visits, visit_assignments, invoices, quotes, properties, photo_links | Deployed; live delivery intermittent |
+| `webhook-airtable` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-airtable` | Airtable | service_configs (via Clients), derm_manifests, routes, receivables, inspections | Live (10 automations) |
+| `webhook-samsara` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-samsara` | Samsara | properties (geofence on clients), employees (drivers), vehicle_telemetry_readings | Deployed; HMAC failing on real events (see runbook §5) |
 
 Every function:
 - Accepts `POST` with JSON body
@@ -91,7 +91,7 @@ Handler then calls Jobber GraphQL with the `itemId` to fetch the full client rec
 
 GraphQL contract notes (critical — all bugs discovered via replay 2026-04-22):
 - IDs are the canonical `gid://Jobber/<Type>/<numericId>` form, base64-encoded; `decodeGid` must match that exact shape.
-- `X-JOBBER-GRAPHQL-VERSION: 2025-01-20` is required on every GraphQL request.
+- `X-JOBBER-GRAPHQL-VERSION: 2026-04-16` is required on every GraphQL request.
 - Status fields are **typed**: `Job.jobStatus`, `Visit.visitStatus`, `Invoice.invoiceStatus`, `Quote.quoteStatus`. There is no generic `status` field on any of them.
 - `Client.isActive` does not exist — use `isArchived` only.
 - `Visit.assignedTo` → `assignedUsers`. `Invoice.job` → `jobs.nodes[0]`. `InvoiceAmounts.outstanding` → `invoiceBalance`.
@@ -176,10 +176,20 @@ Registration is what tells the source system "deliver events to this URL". It's 
 Webhooks are managed in the Jobber Developer Center → your app → Webhooks. Register:
 
 - **Webhook URL:** `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-jobber`
-- **Secret:** shared HMAC secret (same value you set as `JOBBER_WEBHOOK_SECRET` in Edge Function secrets)
-- **Topics:** `CLIENT_*`, `JOB_*`, `VISIT_*`, `INVOICE_*`, `QUOTE_*`, `PROPERTY_*`
-
-Script: `scripts/webhooks/register-jobber.js`.
+- **Secret:** the OAuth app's `client_secret` (Jobber signs every webhook with HMAC-SHA256 using the client_secret as the key — there is **no** separate "webhook signing secret"). Set as `JOBBER_WEBHOOK_SECRET` in the Edge Function secrets.
+- **22 topics subscribed** (configured in Jobber Developer Center, not via script):
+  - CLIENT_CREATE, CLIENT_UPDATE, CLIENT_DESTROY
+  - JOB_CREATE, JOB_UPDATE, JOB_CLOSED, JOB_DESTROY
+  - VISIT_CREATE, VISIT_UPDATE, VISIT_COMPLETE, VISIT_DESTROY
+  - INVOICE_CREATE, INVOICE_UPDATE, INVOICE_DESTROY
+  - QUOTE_CREATE, QUOTE_UPDATE, QUOTE_SENT, QUOTE_APPROVED, QUOTE_DESTROY
+  - PROPERTY_CREATE, PROPERTY_UPDATE, PROPERTY_DESTROY
+- **GraphQL contract notes** (all bugs found via 2026-04-22 replay):
+  - IDs are canonical `gid://Jobber/<Type>/<numericId>` form, base64-encoded
+  - `X-JOBBER-GRAPHQL-VERSION` header required (currently `2026-04-16`)
+  - Status fields are typed: `Job.jobStatus`, `Visit.visitStatus`, `Invoice.invoiceStatus`, `Quote.quoteStatus` — no generic `status`
+  - `Client.isActive` does not exist; use `isArchived` only
+  - `Visit.assignedTo` → `assignedUsers`; `Invoice.job` → `jobs.nodes[0]`; `InvoiceAmounts.outstanding` → `invoiceBalance`
 
 ### Airtable
 

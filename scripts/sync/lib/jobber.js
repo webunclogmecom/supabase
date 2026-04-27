@@ -14,7 +14,7 @@ const path = require('path');
 
 const GRAPHQL_URL = 'https://api.getjobber.com/api/graphql';
 const TOKEN_URL = 'https://api.getjobber.com/api/oauth/token';
-const API_VERSION = '2025-01-20'; // pin an explicit schema version
+const API_VERSION = '2026-04-16'; // pin an explicit schema version
 
 let ACCESS_TOKEN = process.env.JOBBER_ACCESS_TOKEN;
 let REFRESH_TOKEN = process.env.JOBBER_REFRESH_TOKEN;

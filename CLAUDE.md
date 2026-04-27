@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-04-22*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-04-27*
 
 This file is the non-negotiable rules + quick reference for any AI agent (Claude, Viktor, future agents) working on this repository. **Read this every session before touching anything.**
 
@@ -78,7 +78,7 @@ All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`.
 - **OS:** Windows (Fred's machine). Use forward-slash paths inside code strings, but absolute paths in tool calls use `C:\Users\FRED\Desktop\Virtrify\Yannick\Claude\Supabase\...`.
 - **Node ≥ 20**, npm, Supabase CLI, `gh` CLI (authed via keyring — never embed PATs in URLs).
 - **Supabase project:** `wbasvhvvismukaqdnouk`. Pro plan. Single region (US East).
-- **Current date:** 2026-04-20. May 2026 Jobber/Airtable sunset is 30 days out.
+- **Current date:** 2026-04-27. May 2026 Jobber/Airtable sunset is ~3 weeks out.
 - **No QuickBooks**, no Ramp integration in this DB. See [ADR 006](docs/decisions/006-no-quickbooks.md).
 
 ---
@@ -111,18 +111,21 @@ Commercial trucks work 10pm–3am as standard. `visit_date` is the logical opera
 
 ---
 
-## Known blockers (as of 2026-04-22)
+## Known blockers (as of 2026-04-27)
 
-Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps).
+Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps) and [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md).
 
 | Blocker | Status | Tracking |
 |---|---|---|
-| Samsara webhook ingestion | **Fully unblocked 2026-04-20** — token has Webhooks write; 6 webhooks registered; `webhook-samsara` Edge Function redeployed with updated code. Telemetry should start flowing. | [runbook.md §5](docs/runbook.md#5-samsara-webhook-registration) |
-| Jobber `visit_assignments` backfill | ✅ **Already populated — 1,677 rows** via populate.js text-match fixup pass. Prior "blocked" status was stale documentation. | [schema.md](docs/schema.md#visit_assignments--1677-rows) |
-| Jobber photo + notes migration | ✅ **Complete 2026-04-21.** 1,853 notes (81% visit-scoped) + 8,019 files (9.3 GB) migrated from 221/373 Jobber clients. 35 oversized files (>50 MB) tracked in `jobber_oversized_attachments` for later recovery via plan upgrade or external storage. Integrity checks all pass. See [`docs/jobber-migration-techlead-summary.md §7`](docs/jobber-migration-techlead-summary.md#7-run-results-2026-04-20--2026-04-21). | |
-| Full Jobber + Airtable data refresh | ✅ **Complete 2026-04-22** (commit `d6fa483`). Jobber: 4,424 rows replayed (381 clients, 509 jobs, 1,754 visits, 1,623 invoices, 158 quotes) via new `scripts/sync/replay_to_webhook.js`. 4,252 dup rows from entity_source_links format mismatch merged via `scripts/sync/dedup_jobber_links.js` — all ESL source_ids now normalized to numeric. Airtable: 1,300 records replayed via Path B (`scripts/sync/airtable_replay.js`). Along the way fixed 6 latent `webhook-jobber` GraphQL bugs (canonical GID format, API version header, typed status fields, etc.). | commit `d6fa483` |
-| Jobber webhook **live delivery** | ⚠️ **Still blocked.** Jobber Dev Center app is in "In Development" state and not authorized against the production Jobber account — zero webhooks arriving despite correct URL + signing secret. Edge Function itself is now fully functional (proven via replay). Fix: re-authorize the app via OAuth install flow in the live Jobber account. | — |
-| Samsara + Fillout data refresh | ⚠️ **Not run this pass.** Less time-sensitive (telemetry + inspection forms). Script pattern from Airtable replay can be adapted when needed. | — |
+| **Live sync — Airtable** | ✅ **Fully live** since 2026-04-23. 10 automations on 5 tables (Clients, DERM, Route Creation, Past due, PRE-POST inspection). Verified end-to-end with real edits — 50+ events processed in last 36 h. | [docs/airtable-automation-setup.md](docs/airtable-automation-setup.md) |
+| **Live sync — Samsara** | ⚠️ **Webhooks delivering but HMAC failing.** Samsara is sending real `AddressUpdated` events (25 received 2026-04-24) — all failed signature verification. Likely cause: the 6 webhooks created via `reset_samsara.js` have signing secrets that don't match what `SAMSARA_WEBHOOK_SECRETS` contains, or Samsara generated a 7th secret server-side. Action: re-export secrets via `node scripts/webhooks/reset_samsara.js` once and verify each one is in the env list. | [scripts/webhooks/reset_samsara.js](scripts/webhooks/reset_samsara.js) |
+| **Live sync — Jobber** | ⚠️ **Delivery still intermittent.** Edge Function is fully functional (replay proven). Real Jobber webhooks have arrived 6 times since 2026-04-21, never reliably. App is "In Development" in Dev Center; refresh-token rotation now disabled (2026-04-27). Recommended: email api-support@getjobber.com (draft already prepared) + consider publishing the app or polling fallback. | — |
+| **Cross-session Jobber token sync** | ✅ **Fixed 2026-04-25** (commit `7cc73bb`). New `scripts/sync/jobber_token.js` reads tokens from both Supabase/.env and Slack/.env, picks the freshest, refreshes if needed, and writes back to both .env files + DB `webhook_tokens`. Use it whenever a script needs a Jobber token. | [scripts/sync/jobber_token.js](scripts/sync/jobber_token.js) |
+| **Supabase security alerts** | ✅ **All cleared 2026-04-25/27.** RLS enabled on 30 public tables (`7cc73bb`). 7 `public.*` views and 8 `ops.*` views flipped to `security_invoker` (`9388819`, `5e00c55`). `trg_set_updated_at` search_path pinned (`fa14ac3`). 10 missing FK indexes added (`5e00c55`). | [AUDIT_2026-04-27.md §1](AUDIT_2026-04-27.md) |
+| Jobber `visit_assignments` backfill | ✅ **Already populated — 1,677 rows** via populate.js text-match fixup pass. | [schema.md](docs/schema.md#visit_assignments--1677-rows) |
+| Jobber photo + notes migration | ✅ **Complete 2026-04-21.** 1,853 notes (81% visit-scoped) + 8,019 files (9.3 GB) migrated from 221/373 Jobber clients. 35 oversized (>50 MB) tracked in `jobber_oversized_attachments`; rescued to local `oversized_backup/` 2026-04-22 (3.4 GB) before signed-URL expiry. Long-term storage decision pending (Cloudflare R2 ~$0.05/mo recommended). | [`docs/jobber-migration-techlead-summary.md §7`](docs/jobber-migration-techlead-summary.md#7-run-results-2026-04-20--2026-04-21) |
+| Full Jobber + Airtable data refresh | ✅ **Complete 2026-04-22** (commit `d6fa483`). Jobber: 4,424 rows replayed via `replay_to_webhook.js`; 4,252 dup ESL rows merged via `dedup_jobber_links.js`. Airtable: 1,300 records replayed via Path B. | commit `d6fa483` |
+| Fillout data refresh | ⚠️ **Not run this pass.** Inspection data now sourced from Airtable's `PRE-POST insptection` table instead — see migration. Fillout fall-back path retained but inactive. | — |
 
 ---
 

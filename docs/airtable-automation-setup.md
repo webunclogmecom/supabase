@@ -1,8 +1,8 @@
 # Airtable → Supabase Live Sync Setup
 
-**For:** Fred (one-time setup) · **Last updated:** 2026-04-21
+**For:** Fred (one-time setup) · **Last updated:** 2026-04-27 · **Status:** ✅ All 10 automations live since 2026-04-23
 
-This is the step-by-step to connect Airtable record changes into our Supabase DB via per-table automations. **~5 minutes per table × 4 tables = ~20 minutes total.**
+This is the step-by-step to connect Airtable record changes into our Supabase DB via per-table automations. **~5 minutes per table × 5 tables = ~25 minutes total.**
 
 ---
 
