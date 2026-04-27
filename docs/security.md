@@ -88,9 +88,15 @@ If any secret appears in a commit, Slack message, log file, or screenshot:
 
 ## Row-level security (RLS)
 
-**Current posture:** RLS is **not enabled** on public tables. The database is accessed via the service-role key from Edge Functions — which bypasses RLS anyway — and no frontend code talks directly to Postgres yet.
+**Current posture (since 2026-04-25, commit `7cc73bb`):** RLS is **enabled on all 30 public tables**. The pattern in use is "RLS on with no policies" — service-role bypasses RLS by design, so Edge Functions and our Node scripts continue to work unchanged. anon and authenticated roles are denied because no policies grant them anything. This is the safe default for an operational warehouse with no end-user clients yet.
 
-**When this changes** (e.g. when Odoo.sh reads or when a Lovable-style app connects), enable RLS on every table with explicit policies. The pattern:
+Triggered by a Supabase security alert (`rls_disabled_in_public` + `sensitive_columns_exposed` on `webhook_tokens`) — the alert is now resolved.
+
+Verification: `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity=false;` returns 0.
+
+Related: all 7 `public.*` views and all 8 `ops.*` views have `security_invoker = true` (commits `9388819` and the audit-fix migration). They run as the querying role, so RLS on underlying tables is honored. No `SECURITY DEFINER` views exist anywhere in either schema.
+
+**When end-user clients land** (Odoo.sh, Lovable-style apps), add explicit `CREATE POLICY` clauses on the tables they need to read. The pattern:
 
 ```sql
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
@@ -173,7 +179,8 @@ Any request to "give a tech access to the client list" is a security event. Log 
 
 ## What's missing (roadmap for "big tech company" posture)
 
-- [ ] RLS policies on every table (scheduled for Odoo.sh integration in May 2026).
+- [x] RLS enabled on every public table (2026-04-25 / commit `7cc73bb`).
+- [ ] Explicit RLS policies on tables that end-user clients (Odoo.sh / Lovable) need to read — add when those integrations land in May 2026.
 - [ ] Automated secret rotation (currently manual, quarterly).
 - [ ] SOC 2 audit posture (not needed at current scale, re-evaluate at $2M revenue).
 - [ ] Per-Edge-Function service accounts (currently all share `service_role`).

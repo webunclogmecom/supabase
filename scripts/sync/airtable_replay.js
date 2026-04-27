@@ -19,7 +19,8 @@ const ONLY = (process.argv.find(a => a.startsWith('--entity=')) || '').split('='
 
 const AT_KEY = process.env.AIRTABLE_API_KEY;
 const AT_BASE = process.env.AIRTABLE_BASE_ID;
-const TOKEN = process.env.AIRTABLE_WEBHOOK_TOKEN || 'WvMxehO3jtdCHcnv7Cb3wi4pTavuJvc0N8INQxtZ4tA';
+const TOKEN = process.env.AIRTABLE_WEBHOOK_TOKEN;
+if (!TOKEN) throw new Error('AIRTABLE_WEBHOOK_TOKEN missing in .env');
 const WEBHOOK_URL = `${process.env.SUPABASE_URL}/functions/v1/webhook-airtable`;
 
 if (!AT_KEY || !AT_BASE) throw new Error('AIRTABLE_API_KEY or AIRTABLE_BASE_ID missing');
