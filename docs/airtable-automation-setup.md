@@ -64,7 +64,7 @@ const CHANGE_TYPE = 'updated';     // 'created' | 'updated'
 // ============================================================================
 
 const URL = 'https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-airtable';
-const TOKEN = 'WvMxehO3jtdCHcnv7Cb3wi4pTavuJvc0N8INQxtZ4tA';
+const TOKEN = '<PASTE_AIRTABLE_WEBHOOK_TOKEN_HERE>';  // value lives in Supabase/.env (AIRTABLE_WEBHOOK_TOKEN) and Supabase secrets
 
 const { recordId, tableName } = input.config();
 if (!recordId || !tableName) {
@@ -164,7 +164,7 @@ LIMIT 5;
 ## 4. Troubleshooting
 
 ### `status = 'failed'` with `Invalid bearer token`
-- The `TOKEN` in the automation script doesn't match the Supabase secret. Re-copy: `WvMxehO3jtdCHcnv7Cb3wi4pTavuJvc0N8INQxtZ4tA`
+- The `TOKEN` in the automation script doesn't match the Supabase secret. Re-copy from `Supabase/.env` (`AIRTABLE_WEBHOOK_TOKEN=...`).
 
 ### `status = 'failed'` with `Missing entity or recordId`
 - The Input variables aren't wired to the script. Check the script action config — `recordId` should be dragged from the trigger.

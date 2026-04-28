@@ -45,6 +45,12 @@ Every secret the project uses, where it lives, and how to rotate.
 
 ## Token rotation runbook
 
+### Rotation history
+
+| Date | Token | Reason |
+|---|---|---|
+| 2026-04-28 | `AIRTABLE_WEBHOOK_TOKEN` | Repo moving to public; previous value was hardcoded in `docs/airtable-automation-setup.md` and (briefly) in `scripts/sync/airtable_replay.js`. Old value is no longer accepted by `webhook-airtable`. |
+
 ### Routine (quarterly)
 
 Every 90 days, rotate:
