@@ -1,0 +1,39 @@
+name: Daily DB cleanup
+
+# Two daily hygiene jobs in one workflow:
+#   1. Purge webhook_events_log rows older than 30 days (~700 MB/year savings).
+#   2. Clear `needs_populate` flags on raw.jobber_pull_* rows that have been
+#      consistently failing for 7 days due to deleted-in-Jobber records.
+#      (Stops cron from retrying dead rows forever.)
+
+on:
+  schedule:
+    # 09:00 UTC = 05:00 ET in summer (EDT) / 04:00 ET in winter (EST)
+    # Off-peak: low cron contention with the 2-min jobber-poll workflow.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: daily-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Run cleanup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+        run: node scripts/sync/daily_cleanup.js

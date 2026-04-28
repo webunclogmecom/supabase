@@ -296,7 +296,13 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     start_at: v.startAt ?? null,
     end_at: v.endAt ?? null,
     completed_at: v.completedAt ?? null,
-    visit_date: v.startAt ? v.startAt.slice(0, 10) : null,
+    // visit_date is NOT NULL — fall back through startAt → endAt → completedAt.
+    // If all three are missing, skip the row rather than fail the upsert.
+    visit_date: (v.startAt ?? v.endAt ?? v.completedAt)?.slice(0, 10) ?? null,
+  }
+  if (!visitRow.visit_date) {
+    console.log(`[handleVisit] visit ${numericId} has no startAt/endAt/completedAt — skipping`)
+    return { entity_id: existingId ?? 0 }
   }
   if (jobId) visitRow.job_id = jobId
   if (clientId) visitRow.client_id = clientId
