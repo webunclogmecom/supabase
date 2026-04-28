@@ -7,11 +7,13 @@ name: Jobber polling sync
 
 on:
   schedule:
-    # Every 5 minutes — keeps us within GitHub Actions free tier (2,000 min/mo)
-    # for the private repo. Real-world cadence with cron jitter is closer to
-    # 5-15 min, which is operationally indistinguishable from instant for an
-    # ops business.
-    - cron: '*/5 * * * *'
+    # Every 2 minutes — repo is public, so GitHub Actions is free unlimited.
+    # GitHub's cron has heavy jitter under load (observed 1–3 hr gaps even at
+    # */5). More frequent attempts give more chances for the scheduler to
+    # actually fire one. If observed cadence still drifts past ~30 min,
+    # consider migrating to Cloudflare Workers Cron Triggers (dedicated
+    # infrastructure, no jitter — see AUDIT_2026-04-28 §6 LOW 3).
+    - cron: '*/2 * * * *'
   workflow_dispatch:  # allow manual trigger
 
 concurrency:
