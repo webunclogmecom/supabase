@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-04-27*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-04-28*
 
 This file is the non-negotiable rules + quick reference for any AI agent (Claude, Viktor, future agents) working on this repository. **Read this every session before touching anything.**
 
@@ -111,15 +111,17 @@ Commercial trucks work 10pm–3am as standard. `visit_date` is the logical opera
 
 ---
 
-## Known blockers (as of 2026-04-27)
+## Known blockers (as of 2026-04-28)
 
-Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps) and [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md).
+Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps), [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md), and [AUDIT_2026-04-28.md](AUDIT_2026-04-28.md).
 
 | Blocker | Status | Tracking |
 |---|---|---|
-| **Live sync — Airtable** | ✅ **Fully live** since 2026-04-23. 10 automations on 5 tables (Clients, DERM, Route Creation, Past due, PRE-POST inspection). Verified end-to-end with real edits — 50+ events processed in last 36 h. | [docs/airtable-automation-setup.md](docs/airtable-automation-setup.md) |
-| **Live sync — Samsara** | ⚠️ **Webhooks delivering but HMAC failing.** Samsara is sending real `AddressUpdated` events (25 received 2026-04-24) — all failed signature verification. Likely cause: the 6 webhooks created via `reset_samsara.js` have signing secrets that don't match what `SAMSARA_WEBHOOK_SECRETS` contains, or Samsara generated a 7th secret server-side. Action: re-export secrets via `node scripts/webhooks/reset_samsara.js` once and verify each one is in the env list. | [scripts/webhooks/reset_samsara.js](scripts/webhooks/reset_samsara.js) |
-| **Live sync — Jobber** | ⚠️ **Delivery still intermittent.** Edge Function is fully functional (replay proven). Real Jobber webhooks have arrived 6 times since 2026-04-21, never reliably. App is "In Development" in Dev Center; refresh-token rotation now disabled (2026-04-27). Recommended: email api-support@getjobber.com (draft already prepared) + consider publishing the app or polling fallback. | — |
+| **Live sync — Airtable** | ✅ **Fully live** since 2026-04-23. 10 automations on 5 tables. Token rotated 2026-04-28 (commit `f633265`) when repo went public — all 10 automations updated, 5 entity types verified end-to-end. | [docs/airtable-automation-setup.md](docs/airtable-automation-setup.md) |
+| **Live sync — Samsara** | ✅ **HMAC fixed 2026-04-28** (commit `6b6cbef`). Found four spec violations in our verification (signed message format, base64-decoded secret, `X-Samsara-Timestamp` header, `v1=` prefix). Will verify on next real source event. | [supabase/functions/webhook-samsara/index.ts](supabase/functions/webhook-samsara/index.ts) |
+| **Live sync — Jobber** | ✅ **Polling fallback running** since 2026-04-28 (commit `7ddaefb`, every 2 min via GitHub Actions on public repo — free unlimited). Real webhook delivery still intermittent — support email drafted ([docs/jobber-support-email-draft.md](docs/jobber-support-email-draft.md)). Cron runtime guarantees ≤ ~10-30 min staleness (tomorrow we audit if GH jitter requires Cloudflare Workers migration). | [.github/workflows/jobber-poll.yml](.github/workflows/jobber-poll.yml) |
+| **Repo went public 2026-04-28** | ✅ Token rotation done (Airtable). Secret-leak scan: 0 leaks across 94 tracked files. GitHub Actions becomes free unlimited. | [AUDIT_2026-04-28.md §1](AUDIT_2026-04-28.md) |
+| **Daily DB hygiene** | ✅ **Shipped 2026-04-28** (commit `eaa7ca5`). `daily-cleanup.yml` workflow runs at 09:00 UTC: purges `webhook_events_log` rows >30d, clears stale `needs_populate` flags on dead Jobber records. | [scripts/sync/daily_cleanup.js](scripts/sync/daily_cleanup.js) |
 | **Cross-session Jobber token sync** | ✅ **Fixed 2026-04-25** (commit `7cc73bb`). New `scripts/sync/jobber_token.js` reads tokens from both Supabase/.env and Slack/.env, picks the freshest, refreshes if needed, and writes back to both .env files + DB `webhook_tokens`. Use it whenever a script needs a Jobber token. | [scripts/sync/jobber_token.js](scripts/sync/jobber_token.js) |
 | **Supabase security alerts** | ✅ **All cleared 2026-04-25/27.** RLS enabled on 30 public tables (`7cc73bb`). 7 `public.*` views and 8 `ops.*` views flipped to `security_invoker` (`9388819`, `5e00c55`). `trg_set_updated_at` search_path pinned (`fa14ac3`). 10 missing FK indexes added (`5e00c55`). | [AUDIT_2026-04-27.md §1](AUDIT_2026-04-27.md) |
 | Jobber `visit_assignments` backfill | ✅ **Already populated — 1,677 rows** via populate.js text-match fixup pass. | [schema.md](docs/schema.md#visit_assignments--1677-rows) |
@@ -148,7 +150,7 @@ Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-
 | [docs/onboarding.md](docs/onboarding.md) | New to the project (first hour / day / week) |
 | [docs/duplication-guide.md](docs/duplication-guide.md) | Cloning the project to a new Supabase from zero |
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records — *why* something is the way it is |
-| [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md) | Most recent end-to-end audit findings |
+| [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md) · [AUDIT_2026-04-28.md](AUDIT_2026-04-28.md) | End-to-end audit snapshots — read the latest first |
 
 ---
 

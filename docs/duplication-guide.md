@@ -270,6 +270,36 @@ Trigger a real edit in each source system → verify a row lands in `webhook_eve
 
 ---
 
+## Phase 7 — GitHub Actions automation (10 min)
+
+Two workflows live in `.github/workflows/`. Both need the same 5 GitHub Actions secrets.
+
+### 7.1 `jobber-poll.yml` — Jobber polling fallback (every 2 min)
+Pulls Jobber deltas + replays through `webhook-jobber`. Required because Jobber's webhook delivery is unreliable for In-Development apps. See ADR 009.
+
+### 7.2 `daily-cleanup.yml` — DB hygiene (09:00 UTC daily)
+Two jobs in one script (`scripts/sync/daily_cleanup.js`):
+- DELETE `webhook_events_log` rows older than 30 days (~700 MB/year savings).
+- Clear `needs_populate=TRUE` on `raw.jobber_pull_*` rows that have failed for 7+ days due to deleted-in-Jobber records (stops cron from retrying dead rows).
+
+### Setup — add 5 GH secrets
+
+```bash
+gh secret set -f .env  # uploads all .env vars; or set the 5 below individually:
+# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_PAT,
+# JOBBER_CLIENT_ID, JOBBER_CLIENT_SECRET
+```
+
+Trigger first run manually:
+```bash
+gh workflow run jobber-poll.yml
+gh workflow run daily-cleanup.yml
+```
+
+Expected: both complete in ~60–90s. Then they fire on schedule.
+
+---
+
 ## What's documented elsewhere
 
 | Topic | See |
