@@ -7,9 +7,11 @@ name: Jobber polling sync
 
 on:
   schedule:
-    # Every 2 minutes (GitHub Actions cron has ~5 min delivery jitter, so
-    # actual cadence may be 2-7 min — still well within "live enough")
-    - cron: '*/2 * * * *'
+    # Every 5 minutes — keeps us within GitHub Actions free tier (2,000 min/mo)
+    # for the private repo. Real-world cadence with cron jitter is closer to
+    # 5-15 min, which is operationally indistinguishable from instant for an
+    # ops business.
+    - cron: '*/5 * * * *'
   workflow_dispatch:  # allow manual trigger
 
 concurrency:

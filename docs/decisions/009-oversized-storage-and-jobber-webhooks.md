@@ -54,11 +54,11 @@ In contrast: Airtable live sync (10 automations, Path B Bearer) is fully functio
 ### B1. Keep webhooks configured (status quo)
 Edge Function and 22 subscriptions remain in place. Whatever delivery rate Jobber chooses to give us, we accept.
 
-### B2. Build a 2-minute polling job
-`scripts/sync/incremental_sync.js` already pulls deltas from Jobber GraphQL based on `sync_cursors.last_synced_at`. Wrap it in a GitHub Actions cron (`*/2 * * * *`) so we get a guaranteed 2-min latency floor, regardless of webhook reliability.
+### B2. Build a 5-minute polling job
+`scripts/sync/cron_jobber.js` (purpose-built for stateless CI execution — does not reuse `incremental_sync.js`) pulls Jobber GraphQL deltas based on `sync_cursors.last_synced_at`, upserts into `raw.jobber_pull_*`, and replays through the live `webhook-jobber` Edge Function. Runs on a GitHub Actions cron (`*/5 * * * *`) — chosen over `*/2` to stay within the free-tier 2,000 min/mo for our private repo.
 
-- Pros: Truly live-feeling (2 min ≈ "instant" for a service business). Covers **notes**, which Jobber doesn't webhook at all (zero NOTE_* topics in WebHookTopicEnum). No dev-center mystery.
-- Cons: Polls cost ~50 GraphQL points per run. At 720 runs/day that's 36k points/day — well under Jobber's 10k/10s budget. Negligible.
+- Pros: Effectively-live for an ops business (5 min ≈ instant operationally). Covers **notes**, which Jobber doesn't webhook at all (zero NOTE_* topics in WebHookTopicEnum). No dev-center mystery.
+- Cons: ~288 runs/day at ~60s each = ~8,640 min/mo worst case. GitHub jitter usually delivers far less. If we ever exceed free tier, options are: make repo public (unlimited free Actions), bump to `*/10`, or migrate to Cloudflare Workers Cron Triggers.
 
 This makes webhook flakiness a non-issue: webhooks are a "nice to have" speed-up; the cron is the SLA backstop.
 
@@ -76,7 +76,7 @@ Letter is already drafted (see chat history 2026-04-23). Send it. Even if suppor
 
 **B:**
 - New runtime dependency: GitHub Actions cron (free under 2,000 min/mo private-repo allowance — we'll use ≤30 min/day).
-- Webhook diagnosis is no longer blocking: even if Jobber webhooks never improve, our DB is at most 2 min stale.
+- Webhook diagnosis is no longer blocking: even if Jobber webhooks never improve, our DB is at most ~5 min stale.
 - Documentation grows: `docs/integration.md` adds a "polling fallback" section; `docs/runbook.md` adds a "what if cron fails" section.
 
 ---

@@ -1,6 +1,6 @@
 # Jobber polling cron — first-run setup
 
-**Why this exists:** Jobber's webhook delivery for our In-Development app is unreliable (verified empirically: edits in Jobber → zero webhook events at our endpoint). This cron polls Jobber every 2 minutes via GitHub Actions and replays results through the same `webhook-jobber` Edge Function — DB stays at most 2 min stale, regardless of webhook reliability. Detailed rationale in [ADR 009](decisions/009-oversized-storage-and-jobber-webhooks.md).
+**Why this exists:** Jobber's webhook delivery for our In-Development app is unreliable (verified empirically: edits in Jobber → zero webhook events at our endpoint). This cron polls Jobber every 5 minutes via GitHub Actions and replays results through the same `webhook-jobber` Edge Function — DB stays at most ~5 min stale, regardless of webhook reliability. Detailed rationale in [ADR 009](decisions/009-oversized-storage-and-jobber-webhooks.md).
 
 **Removable:** if Jobber support resolves the webhook issue, just disable or delete `.github/workflows/jobber-poll.yml`. Nothing else changes — webhook-jobber stays the same code path.
 
@@ -69,25 +69,25 @@ After secrets are set + the workflow file is in `main` branch:
    ```
    `last_run_status` should be `success` and `last_synced_at` should be within the last few minutes.
 
-3. **Watch ongoing runs** — the schedule fires every 2 minutes. View them in `Actions` tab; each run takes ~60–120s.
+3. **Watch ongoing runs** — the schedule fires every 5 minutes. View them in `Actions` tab; each run takes ~60–120s.
 
 ---
 
 ## Cost / quota
 
 GitHub Actions on private repos: **2,000 min/mo free** for typical accounts.
-Our cron: **~720 runs/day × ~90s avg = ~18 hours/day = ~540 min/day**.
 
-That's over the free tier. **Two options:**
+**Current schedule: `*/5 * * * *`** (every 5 min).
+- ~288 runs/day × ~60s steady-state = ~288 min/day = **~8,640 min/month worst case**
+- GitHub's cron jitter typically delivers less often than scheduled, so actual usage is closer to 1/5 of that
 
-1. **Make the repo public** (free unlimited Actions) — but our repo contains config, not secrets, so this is safe.
-2. **Reduce frequency to 5 min** — 288 runs/day × 90s = 432 min/day, still over free.
-3. **Set frequency to 10 min** — 144 runs/day × 90s = 216 min/day = ~6,500 min/month — covered by paid tier ($0.008/min for Linux ≈ $52/month).
-4. **Run on Cloudflare Workers Cron Triggers** — free, more performant.
+If you exceed the free tier, alternative options:
 
-**Recommendation:** **Make the repo public** if you're comfortable with that. Otherwise reduce schedule to `*/5 * * * *` (5 min) — still effectively-live for an ops business — and accept that you may exceed free tier. Can be tuned in `.github/workflows/jobber-poll.yml`.
+1. **Make the repo public** (free unlimited Actions) — repo contains config + code, no secrets (`.env` is gitignored).
+2. **Increase frequency to 10 min** (`*/10 * * * *`) — halves the run count.
+3. **Run on Cloudflare Workers Cron Triggers** — free, more performant, but requires re-implementing the workflow.
 
-The default cron in this repo is `*/2 * * * *`. **Change it before enabling if you want to control cost.**
+To change the schedule, edit `.github/workflows/jobber-poll.yml` and push.
 
 ---
 
