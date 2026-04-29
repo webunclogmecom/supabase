@@ -123,9 +123,18 @@ Edge cases:
 
 ### Storage bucket
 
-- **Bucket name:** `jobber-notes-photos` (Fred created on 2026-04-20)
-- **Visibility:** private; signed URLs issued on read
-- **Path pattern:** `<visit_id>/<original-filename>` when `visit_id` resolves, else `unassigned/<client_id>/<jobber_note_id>/<filename>`
+- **Bucket name:** `GT - Visits Images` (Fred created 2026-04-20; previously documented as `jobber-notes-photos` in earlier drafts of this doc — actual bucket name in Supabase is the spaced version).
+- **Visibility:** private; signed URLs issued on read.
+- **Path pattern in `photos.storage_path`:** `visits/<visit_id>/<YYYYMMDD>_<jobber_id_b64>_<filename>` when the photo links to a visit; `notes/<note_id>/...` for client-level notes that didn't resolve to a visit.
+- **Generating a signed URL** (Odoo connector pattern):
+  ```bash
+  curl -X POST \
+    "$SUPABASE_URL/storage/v1/object/sign/GT%20-%20Visits%20Images/<storage_path>" \
+    -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"expiresIn": 3600}'
+  ```
+  Response: `{"signedURL": "/object/sign/GT - Visits Images/...?token=..."}`. Prepend `$SUPABASE_URL/storage/v1` to construct the final URL.
 
 ### Execution plan
 
@@ -160,7 +169,7 @@ node scripts/migrate/jobber_notes_photos.js --execute --resume  # if interrupted
 ### Open design questions (for Viktor review)
 
 - [ ] Worth the effort to map Jobber `createdBy` user → our `employees.id`? Or leave as a denormalized `author_name TEXT` field for historical notes where the person may be long gone?
-- [ ] One bucket for all note attachments, or split by entity type? Current plan: one bucket (`jobber-notes-photos`), reorganize later if needed.
+- [ ] One bucket for all note attachments, or split by entity type? Current plan: one bucket (`GT - Visits Images`), reorganize later if needed.
 - [ ] `notes` table creation — ship with the extractor or ahead of it? No DB dependency either way.
 
 ---
