@@ -123,18 +123,24 @@ Edge cases:
 
 ### Storage bucket
 
-- **Bucket name:** `GT - Visits Images` (Fred created 2026-04-20; previously documented as `jobber-notes-photos` in earlier drafts of this doc — actual bucket name in Supabase is the spaced version).
-- **Visibility:** private; signed URLs issued on read.
+- **Bucket name:** `GT - Visits Images` (Fred created 2026-04-20).
+- **Visibility:** **public-read** (changed 2026-04-29). Direct URLs work in any browser without auth. Internal-warehouse data; URLs aren't easily guessable but aren't secret. Flip back to private if Supabase ever exposes data to external clients.
 - **Path pattern in `photos.storage_path`:** `visits/<visit_id>/<YYYYMMDD>_<jobber_id_b64>_<filename>` when the photo links to a visit; `notes/<note_id>/...` for client-level notes that didn't resolve to a visit.
-- **Generating a signed URL** (Odoo connector pattern):
+- **Public URL pattern:**
+  ```
+  https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/GT%20-%20Visits%20Images/<storage_path>
+  ```
+  Note the URL-encoded spaces (`%20`) in the bucket name. SQL example:
+  ```sql
+  SELECT 'https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/GT%20-%20Visits%20Images/' || storage_path AS url
+  FROM photos WHERE id = 1361;
+  ```
+- **If this ever flips back to private**, signed URLs are generated via:
   ```bash
-  curl -X POST \
-    "$SUPABASE_URL/storage/v1/object/sign/GT%20-%20Visits%20Images/<storage_path>" \
-    -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-    -H "Content-Type: application/json" \
+  curl -X POST "$SUPABASE_URL/storage/v1/object/sign/GT%20-%20Visits%20Images/<storage_path>" \
+    -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "Content-Type: application/json" \
     -d '{"expiresIn": 3600}'
   ```
-  Response: `{"signedURL": "/object/sign/GT - Visits Images/...?token=..."}`. Prepend `$SUPABASE_URL/storage/v1` to construct the final URL.
 
 ### Execution plan
 
