@@ -1,15 +1,31 @@
 # Database Schema Reference
 
-**Supabase project:** `wbasvhvvismukaqdnouk` · **Version:** v2 · **Last reviewed:** 2026-04-20
+**Supabase project:** `wbasvhvvismukaqdnouk` · **Version:** v2 · **Last reviewed:** 2026-04-30 (post-repop + post-cleanup)
 
 Full DDL lives in [`../schema/v2_schema.sql`](../schema/v2_schema.sql). Migrations that have shipped since the baseline live in [`../scripts/migrations/`](../scripts/migrations/). This doc is the human-readable column reference — authoritative for column names, types, and intent.
 
-- **28 tables** — 22 business + 6 system/ops
+- **25 tables** — 20 business + 5 system/ops (5 dormant tables DROPPED on 2026-04-30 — see "Dropped tables" section)
 - **7 views**
-- **38 foreign keys**
 - **Normalization:** 2NF baseline, 3NF enforced (see [ADR 005](decisions/005-3nf-standing-check.md) + [ADR 010](decisions/010-drop-stored-derived-columns.md))
 - **Cross-system ID tracking:** `entity_source_links` only. No source-prefixed columns anywhere.
 - **Photos:** unified `photos` + polymorphic `photo_links` (see [ADR 009](decisions/009-unified-photos-architecture.md))
+- **Source-of-truth trust hierarchy:** Jobber + Samsara = 100% canonical. Airtable trusted ONLY for `derm_manifests` + `inspections` (PRE-POST). See [ADR 011](decisions/011-source-of-truth-canonicalization-2026-04-29.md).
+- **Telemetry:** `vehicle_telemetry_readings` extended 2026-04-30 with `latitude`, `longitude`, `speed_meters_per_sec`, `heading_degrees` columns + UNIQUE constraint on `(vehicle_id, recorded_at)`. Polling cron writes one row per vehicle per 10 min.
+
+> **Row counts in this doc may be stale.** Full wipe + repop ran 2026-04-29. Current counts: clients=441, properties=451, jobs=518, invoices=1665, line_items=565, quotes=166, visits=3888 (1807 Jobber-canonical, 377 AT-merged, 2081 AT-only historical), visit_assignments=1830, inspections=242, derm_manifests=958, manifest_visits=819, employees=32, vehicles=4, service_configs=204, vehicle_telemetry_readings growing via 10-min cron. Notes/photos re-migrating in background.
+
+---
+
+## Dropped tables (removed from schema 2026-04-30)
+
+These tables are no longer in the database. See [ADR 011](decisions/011-source-of-truth-canonicalization-2026-04-29.md) and migration `drop_dormant_tables_2026_04_30.sql`.
+
+| Removed table | Why dropped | Replacement |
+|---|---|---|
+| `routes`, `route_stops` | Airtable Route Creation source abandoned | Viktor's routing skill (Slack) |
+| `receivables` | Airtable Past Due was redundant with Jobber `invoices` | `SELECT * FROM invoices WHERE invoice_status IN ('PAST_DUE', 'OVERDUE') OR (due_date < now() AND amount_paid < total_amount)` |
+| `leads` | Airtable Leads pre-CRM tracking | Odoo CRM module (post-May 2026) |
+| `expenses` | Fillout-derived stubs added no value over Ramp | Ramp (corporate card system) |
 
 ---
 

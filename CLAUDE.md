@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-04-28*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-04-30*
 
 This file is the non-negotiable rules + quick reference for any AI agent (Claude, Viktor, future agents) working on this repository. **Read this every session before touching anything.**
 
@@ -32,9 +32,12 @@ If a column depends on another column in the same table (2NF violation) or on a 
 
 Related data is referenced via FK, never copied. No snapshot columns that duplicate values available via join. Intentional denormalization ([ADR 004](docs/decisions/004-intentional-denormalization.md)) is the only exception — documented, justified, one-time.
 
-### 4. Jobber is the source of truth for money + contact
+### 4. Source-of-truth trust hierarchy (revised 2026-04-29)
 
-When sources conflict on name, address, phone, email, billing, payment status, job/visit dates, or financial fields, **Jobber wins**. Airtable is master for service configs, GDO compliance, zones, scheduling notes. Samsara is fleet telemetry only. See [company.md §technology-stack](docs/company.md#technology-stack-current--roadmap).
+- **Jobber + Samsara = 100% trusted.** Jobber owns identity, addresses, contacts, jobs, visits, invoices, line_items, quotes, notes/photos, employees (office/admin via users). Samsara owns vehicles, drivers (field staff), GPS/telemetry, geofences.
+- **Airtable is fully trusted ONLY for**: `derm_manifests` and `inspections` (PRE-POST table). Everything else from Airtable — service configs (frequencies, prices, GDO), client enrichment fields (zone, hours, days, county) — is treated as best-effort enrichment, not authority. **Airtable throws wrong data regularly**; never let it override Jobber/Samsara on overlapping fields.
+- **Dropped sources (2026-04-29)**: Airtable `Drivers & Team` (stale roster — departed staff), `Past due` (use Jobber `invoices` directly), `Route Creation` (routing moves to Viktor's skill), `Leads` (lead capture moves to Odoo), Fillout entirely (inspections moved to Airtable PRE-POST; expenses live in Ramp).
+- **`ops.*` merge views**: COALESCE Jobber-first over Airtable/Samsara. See [company.md §technology-stack](docs/company.md#technology-stack-current--roadmap).
 
 ### 5. Idempotent upserts only
 
@@ -64,7 +67,7 @@ All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`.
 - **Ask Viktor first on dev changes.** New tables, new FKs, column renames, Edge Function logic. Tests and probes don't need his consent.
 - **Critically reason on his replies.** Viktor has strong cognitive responses but sometimes uses wrong column names. Always verify against [docs/schema.md](docs/schema.md).
 - **Poll cadence.** Check for replies every 3 minutes, max 3 attempts (9 min total). If no reply, move on — Fred has final say.
-- **Slack channel:** `#viktor-supabase` (ID `C0AN9KDP5B8`).
+- **Slack channel:** `#viktor-supabase` (ID `C0B08S21HHD` — recreated 2026-04-29 21:31 CEST; the prior `C0AN9KDP5B8` is dead).
 - **When Fred messages Viktor, always schedule a 3-min polling cron.** Per Fred's standing instruction.
 
 ### With Yan (founder)
@@ -111,23 +114,28 @@ Commercial trucks work 10pm–3am as standard. `visit_date` is the logical opera
 
 ---
 
-## Known blockers (as of 2026-04-28)
+## Known blockers (as of 2026-04-30)
 
-Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps), [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md), and [AUDIT_2026-04-28.md](AUDIT_2026-04-28.md).
+Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps) and the latest AUDIT files.
 
 | Blocker | Status | Tracking |
 |---|---|---|
-| **Live sync — Airtable** | ✅ **Fully live** since 2026-04-23. 10 automations on 5 tables. Token rotated 2026-04-28 (commit `f633265`) when repo went public — all 10 automations updated, 5 entity types verified end-to-end. | [docs/airtable-automation-setup.md](docs/airtable-automation-setup.md) |
-| **Live sync — Samsara** | ✅ **HMAC fixed 2026-04-28** (commit `6b6cbef`). Found four spec violations in our verification (signed message format, base64-decoded secret, `X-Samsara-Timestamp` header, `v1=` prefix). Will verify on next real source event. | [supabase/functions/webhook-samsara/index.ts](supabase/functions/webhook-samsara/index.ts) |
-| **Live sync — Jobber** | ✅ **Polling fallback running** since 2026-04-28 (commit `7ddaefb`, every 2 min via GitHub Actions on public repo — free unlimited). Real webhook delivery still intermittent — support email drafted ([docs/jobber-support-email-draft.md](docs/jobber-support-email-draft.md)). Cron runtime guarantees ≤ ~10-30 min staleness (tomorrow we audit if GH jitter requires Cloudflare Workers migration). | [.github/workflows/jobber-poll.yml](.github/workflows/jobber-poll.yml) |
-| **Repo went public 2026-04-28** | ✅ Token rotation done (Airtable). Secret-leak scan: 0 leaks across 94 tracked files. GitHub Actions becomes free unlimited. | [AUDIT_2026-04-28.md §1](AUDIT_2026-04-28.md) |
-| **Daily DB hygiene** | ✅ **Shipped 2026-04-28** (commit `eaa7ca5`). `daily-cleanup.yml` workflow runs at 09:00 UTC: purges `webhook_events_log` rows >30d, clears stale `needs_populate` flags on dead Jobber records. | [scripts/sync/daily_cleanup.js](scripts/sync/daily_cleanup.js) |
-| **Cross-session Jobber token sync** | ✅ **Fixed 2026-04-25** (commit `7cc73bb`). New `scripts/sync/jobber_token.js` reads tokens from both Supabase/.env and Slack/.env, picks the freshest, refreshes if needed, and writes back to both .env files + DB `webhook_tokens`. Use it whenever a script needs a Jobber token. | [scripts/sync/jobber_token.js](scripts/sync/jobber_token.js) |
-| **Supabase security alerts** | ✅ **All cleared 2026-04-25/27.** RLS enabled on 30 public tables (`7cc73bb`). 7 `public.*` views and 8 `ops.*` views flipped to `security_invoker` (`9388819`, `5e00c55`). `trg_set_updated_at` search_path pinned (`fa14ac3`). 10 missing FK indexes added (`5e00c55`). | [AUDIT_2026-04-27.md §1](AUDIT_2026-04-27.md) |
-| Jobber `visit_assignments` backfill | ✅ **Already populated — 1,677 rows** via populate.js text-match fixup pass. | [schema.md](docs/schema.md#visit_assignments--1677-rows) |
-| Jobber photo + notes migration | ✅ **Complete 2026-04-21.** 1,853 notes (81% visit-scoped) + 8,019 files (9.3 GB) migrated from 221/373 Jobber clients. 35 oversized (>50 MB) tracked in `jobber_oversized_attachments`; rescued to local `oversized_backup/` 2026-04-22 (3.4 GB) before signed-URL expiry. Long-term storage decision pending (Cloudflare R2 ~$0.05/mo recommended). | [`docs/jobber-migration-techlead-summary.md §7`](docs/jobber-migration-techlead-summary.md#7-run-results-2026-04-20--2026-04-21) |
-| Full Jobber + Airtable data refresh | ✅ **Complete 2026-04-22** (commit `d6fa483`). Jobber: 4,424 rows replayed via `replay_to_webhook.js`; 4,252 dup ESL rows merged via `dedup_jobber_links.js`. Airtable: 1,300 records replayed via Path B. | commit `d6fa483` |
-| Fillout data refresh | ⚠️ **Not run this pass.** Inspection data now sourced from Airtable's `PRE-POST insptection` table instead — see migration. Fillout fall-back path retained but inactive. | — |
+| **🆕 Full wipe + repop 2026-04-29** | ✅ **Done.** Cross-source visit dedup successful: 377 AT visits merged into Jobber rows, 2,081 AT-only historical kept standalone, 1,807 Jobber-canonical. Total visits 3,888. Inspections from Airtable PRE-POST: 242 rows. | This file + populate.js + ADR 011 |
+| **🆕 Frequency multiplier bug fixed 2026-04-30** | ✅ populate.js step 5 was multiplying GT/CL frequencies by 30 (assuming months); Airtable actually stores days. Result: 201 service_configs had 30× inflated values. After `freqMul: 1` fix + step-5 re-run, only 4 outliers + 2 zeros remain (real Airtable data errors for Yan to fix). | [scripts/populate/populate.js:676](scripts/populate/populate.js) |
+| **🆕 Dormant tables dropped 2026-04-30** | ✅ `routes`, `route_stops`, `receivables`, `leads`, `expenses` removed from schema. Routing → Viktor skill, past-due → Jobber `invoices`, leads → Odoo, expenses → Ramp. | [scripts/migrations/drop_dormant_tables_2026_04_30.sql](scripts/migrations/drop_dormant_tables_2026_04_30.sql) |
+| **🆕 Samsara telemetry polling 2026-04-30** | ✅ New cron `cron_samsara_telemetry.js` runs every 10 min, pulls `/fleet/vehicles/stats?types=engineStates,fuelPercents,obdOdometerMeters,gps`. Schema migration added lat/lng/speed/heading columns + `UNIQUE(vehicle_id, recorded_at)`. Tested locally — 3 trucks reporting. Started collecting historical telemetry now so fuel/water-burn model has data when built. | [.github/workflows/samsara-poll.yml](.github/workflows/samsara-poll.yml) + [scripts/sync/cron_samsara_telemetry.js](scripts/sync/cron_samsara_telemetry.js) |
+| **Live sync — Airtable** | ✅ Fully live since 2026-04-23. 10 automations on 5 tables. Token rotated 2026-04-28. | [docs/airtable-automation-setup.md](docs/airtable-automation-setup.md) |
+| **Live sync — Samsara** | ✅ **Working** — 296 webhook events processed (address/driver/alert events). Vehicle stats covered by polling cron, NOT webhooks (Samsara doesn't offer webhooks for stats). | [supabase/functions/webhook-samsara/index.ts](supabase/functions/webhook-samsara/index.ts) + samsara-poll workflow |
+| **Live sync — Jobber** | 🟡 Polling fallback every 2 min via GitHub Actions (works fine). Real webhook delivery still intermittent — Jobber Support replied 2026-04-29 saying their own webhook logs aren't fully functional, suggested testing with webhook.site. In-Development vs Published apps make zero delivery difference per support. | [.github/workflows/jobber-poll.yml](.github/workflows/jobber-poll.yml) |
+| **Repo public 2026-04-28** | ✅ Token rotation done. 0 leaks. GitHub Actions free unlimited. | — |
+| **Daily DB hygiene** | ✅ Shipped 2026-04-28. `daily-cleanup.yml` runs 09:00 UTC. | [scripts/sync/daily_cleanup.js](scripts/sync/daily_cleanup.js) |
+| **Cross-session Jobber token sync** | ✅ Fixed 2026-04-25. | [scripts/sync/jobber_token.js](scripts/sync/jobber_token.js) |
+| **Supabase security alerts** | ✅ All cleared 2026-04-25/27. RLS, security_invoker views, FK indexes done. | — |
+| **Jobber notes + photos re-migration (2026-04-29)** | 🟡 **Running in background.** First run got to client 264/425 + 692 notes / 2,800 photos before HTTP timeout. Resumed 2026-04-29 from sync_cursors checkpoint. | [scripts/migrate/jobber_notes_photos.js](scripts/migrate/jobber_notes_photos.js) |
+| 35 oversized attachments | ⚠️ Local backup in `oversized_backup/` (3.4 GB) — Jobber signed URLs expired. After photo re-migration finishes, separate one-shot will re-import these from local backup. | [scripts/migrate/rescue_oversized.js](scripts/migrate/rescue_oversized.js) |
+| Fillout source | ✅ **DROPPED 2026-04-29.** All inspection ingestion moved to Airtable PRE-POST. `pullFillout`, `cache.fillout`, `_fillout_name` employee fields, `employeeByFilloutName` idmap all removed from populate.js. | populate.js |
+| `completed_by` text resolution post-repop | 🟡 Airtable Visits table has no `Completed By`/`Driver` field — confirmed 2026-04-30 via field schema audit. Pre-Jobber driver attribution genuinely unrecoverable. Dead `Completed By`/`Driver` reads removed from populate.js step 10b. | populate.js step 10b |
+| Yan's Airtable fix list | ⚠️ 6 service_configs need correction in Airtable: 005-BUB GT=0, 167-FEN CL=0, 021-GRA GT/CL=360/364, 002-41 GT=300, 056-STM CL=240. After Yan fixes, re-run `populate.js --step=5`. | docs/runbook.md (TODO add section) |
 
 ---
 

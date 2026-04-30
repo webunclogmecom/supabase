@@ -13,7 +13,7 @@
 //
 // Reads:
 //   * Jobber JSONB cache from raw.jobber_pull_* (same Supabase project)
-//   * Live Airtable, Samsara, Fillout via direct APIs
+//   * Live Airtable + Samsara via direct APIs (Fillout dropped 2026-04-29)
 //
 // Writes:
 //   * Idempotent population into v2 schema (24 tables + entity_source_links)
@@ -49,7 +49,8 @@ const path = require('path');
 const fs = require('fs');
 const { newQuery, oldQuery, bulkUpsert, bulkInsertReturning, fetchJsonbCache, sqlEscape } = require('./lib/db');
 const { linkEntities, buildLookupMap } = require('./lib/sourceLinks');
-const { pullAirtable, pullSamsara, pullFillout } = require('./lib/sources');
+const { pullAirtable, pullSamsara } = require('./lib/sources');
+// Fillout dropped 2026-04-29 — inspections moved to Airtable PRE-POST table.
 const N = require('./lib/normalize');
 
 // ----------------------------------------------------------------------------
@@ -61,9 +62,19 @@ const CONFIRM = args.includes('--confirm');
 const TRUNCATE = args.includes('--truncate');
 const stepArg = args.find(a => a.startsWith('--step='));
 const ONLY_STEP = stepArg ? parseInt(stepArg.split('=')[1]) : null;
+// --from-step=N : skip 1..N-1 (preserved data) and run only steps >= N.
+//   When set, idmaps for skipped steps are loaded from existing DB rows
+//   via loadAllIdMaps(). Used for surgical repop after a partial wipe.
+const fromStepArg = args.find(a => a.startsWith('--from-step='));
+const FROM_STEP = fromStepArg ? parseInt(fromStepArg.split('=')[1]) : null;
 
 if (!DRY_RUN && !CONFIRM) {
   console.error('REFUSING TO EXECUTE: --execute requires --confirm');
+  process.exit(1);
+}
+
+if (ONLY_STEP && FROM_STEP) {
+  console.error('REFUSING: --step and --from-step are mutually exclusive');
   process.exit(1);
 }
 
@@ -73,7 +84,7 @@ console.log('='.repeat(70));
 console.log('populate.js — UNCLOGME v2 schema');
 console.log(`Mode:     ${DRY_RUN ? 'DRY-RUN (no writes)' : 'EXECUTE (writes enabled)'}`);
 console.log(`Truncate: ${TRUNCATE ? 'YES' : 'no'}`);
-console.log(`Step:     ${ONLY_STEP || 'all'}`);
+console.log(`Step:     ${ONLY_STEP || (FROM_STEP ? `from ${FROM_STEP} onward` : 'all')}`);
 console.log('='.repeat(70));
 
 // ----------------------------------------------------------------------------
@@ -82,9 +93,13 @@ console.log('='.repeat(70));
 // duplicates. If the DB already has data, demand --truncate or --force. For
 // ongoing refreshes use scripts/sync/replay_to_webhook.js (Jobber) and
 // scripts/sync/airtable_replay.js (Airtable).
+//
+// --from-step also bypasses the guard: by definition, FROM_STEP=N means
+// steps 1..N-1 already ran successfully and their tables are non-empty —
+// that's the whole point of resuming after a partial failure.
 // ----------------------------------------------------------------------------
 async function assertEmptyOrForced() {
-  if (DRY_RUN || TRUNCATE || FORCE) return;
+  if (DRY_RUN || TRUNCATE || FORCE || FROM_STEP || ONLY_STEP) return;
   const { newQuery } = require('./lib/db');
   const r = await newQuery('SELECT count(*)::int AS n FROM clients;');
   if (r[0].n > 0) {
@@ -92,7 +107,8 @@ async function assertEmptyOrForced() {
     console.error('Options:');
     console.error('  1. For incremental Jobber + Airtable refresh: use scripts/sync/replay_to_webhook.js + airtable_replay.js');
     console.error('  2. To wipe and start over: add --truncate');
-    console.error('  3. To bypass this guard anyway: add --force (will create duplicates — you have been warned)');
+    console.error('  3. To resume after a partial failure: add --from-step=N (skips steps 1..N-1, loads idmaps from DB)');
+    console.error('  4. To bypass this guard anyway: add --force (will create duplicates — you have been warned)');
     process.exit(1);
   }
 }
@@ -104,7 +120,7 @@ const cache = {
   jobber: { clients: [], properties: [], jobs: [], visits: [], invoices: [], quotes: [], users: [], lineItems: [] },
   airtable: { clients: [], visits: [], derm: [], inspections: [], routeCreation: [], drivers: [], pastDue: [], leads: [] },
   samsara: { vehicles: [], addresses: [], drivers: [] },
-  fillout: { pre: [], post: [] },
+  // Fillout source dropped 2026-04-29 — inspections moved to Airtable PRE-POST table.
   maps: {
     jobberClientById: new Map(),
     airtableClientByJobberId: new Map(),
@@ -140,7 +156,7 @@ async function phase1_pull() {
 
   cache.airtable = await pullAirtable();
   cache.samsara = await pullSamsara();
-  cache.fillout = await pullFillout();
+  // Fillout pull dropped 2026-04-29 — inspections moved to Airtable PRE-POST table.
 
   // Build lookup maps
   cache.jobber.clients.forEach(jc => cache.maps.jobberClientById.set(jc.id, jc));
@@ -184,7 +200,7 @@ const idMaps = {
   quoteByJobberId: new Map(),
   vehicleByName: new Map(),
   employeeByName: new Map(),
-  employeeByFilloutName: new Map(),
+  // employeeByFilloutName dropped 2026-04-29 — Fillout source removed
   employeeByJobberId: new Map(),
   visitByJobberId: new Map(),
   visitByATId: new Map(),
@@ -209,6 +225,30 @@ async function loadNameMap(table, keyCol, mapKey, normalizer = (x) => x) {
   const m = idMaps[mapKey];
   m.clear();
   for (const row of r) m.set(normalizer(row[keyCol]), row.id);
+}
+
+// ----------------------------------------------------------------------------
+// loadAllIdMaps — populate every idMap from existing DB rows.
+// Used by --from-step=N when steps 1..N-1 are skipped (their tables already
+// preserved). Without this, downstream steps would see empty idmaps and
+// produce orphan rows.
+// ----------------------------------------------------------------------------
+async function loadAllIdMaps() {
+  if (DRY_RUN) return;
+  console.log('\n[--from-step] Loading all idmaps from existing DB rows...');
+  await Promise.all([
+    loadSourceMap('client', 'jobber', 'clientByJobberId'),
+    loadSourceMap('client', 'airtable', 'clientByATId'),
+    loadSourceMap('property', 'jobber', 'propertyByJobberId'),
+    loadSourceMap('job', 'jobber', 'jobByJobberId'),
+    loadSourceMap('invoice', 'jobber', 'invoiceByJobberId'),
+    loadSourceMap('quote', 'jobber', 'quoteByJobberId'),
+    loadSourceMap('employee', 'jobber', 'employeeByJobberId'),
+    loadNameMap('vehicles', 'name', 'vehicleByName', N.normName),
+    loadNameMap('employees', 'full_name', 'employeeByName', N.normName),
+  ]);
+  // visit / manifest maps reload after their respective steps run.
+  console.log(`  loaded: clientByJobberId=${idMaps.clientByJobberId.size} clientByATId=${idMaps.clientByATId.size} propertyByJobberId=${idMaps.propertyByJobberId.size} jobByJobberId=${idMaps.jobByJobberId.size} invoiceByJobberId=${idMaps.invoiceByJobberId.size} vehicleByName=${idMaps.vehicleByName.size} employeeByName=${idMaps.employeeByName.size}`);
 }
 
 // ----------------------------------------------------------------------------
@@ -369,69 +409,15 @@ function buildPrimaryProperty(jc, ac, sa) {
 async function step2_employees() {
   console.log('\n[STEP 2] Employees merge...');
   const rows = [];
-  const seen = new Set();
   const OFFICE_NAMES = new Set(['yannick', 'aaron', 'diego', 'yannick ayache', 'fred', 'fred zerpa']);
 
-  // 2a. Airtable drivers (field staff master)
-  for (const ad of cache.airtable.drivers) {
-    const fullName = N.atField(ad, 'Name') || N.atField(ad, 'Full Name') || N.atField(ad, 'Driver');
-    if (!fullName) continue;
-    const key = N.normName(fullName);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    rows.push({
-      full_name: fullName,
-      role: N.atField(ad, 'Role') || 'Technician',
-      status: N.atField(ad, 'Status') || 'ACTIVE',
-      shift: N.atField(ad, 'Shift'),
-      phone: N.atField(ad, 'Phone'),
-      email: N.atField(ad, 'Email'),
-      hire_date: N.dateOnly(N.atField(ad, 'Hire Date')),
-      access_level: OFFICE_NAMES.has(key) ? 'office' : 'field',
-      notes: null,
-      _airtable_id: ad.id,
-      _samsara_id: null,
-      _jobber_id: null,
-      _fillout_name: fullName,
-    });
-  }
-
-  // 2b. Samsara drivers — fuzzy match to existing
-  for (const sd of cache.samsara.drivers) {
-    const key = N.normName(sd.name);
-    const existing = rows.find(r => N.normName(r.full_name) === key || N.similarity(r.full_name, sd.name) >= 0.9);
-    if (existing) {
-      existing._samsara_id = sd.id;
-      continue;
-    }
-    seen.add(key);
-    rows.push({
-      full_name: sd.name,
-      role: 'Technician',
-      status: sd.driverActivationStatus === 'active' ? 'ACTIVE' : 'INACTIVE',
-      shift: null,
-      phone: sd.phone || null,
-      email: sd.username || null,
-      hire_date: null,
-      access_level: OFFICE_NAMES.has(key) ? 'office' : 'field',
-      notes: null,
-      _airtable_id: null,
-      _samsara_id: sd.id,
-      _jobber_id: null,
-      _fillout_name: sd.name,
-    });
-  }
-
-  // 2c. Jobber users — match into existing or add as office/admin
+  // 2a. Jobber users — canonical seed (office + admin staff)
+  // Source-of-truth: Jobber + Samsara only. Airtable drivers source DROPPED 2026-04-29
+  // (Airtable held outdated employee data — departed staff still listed).
   for (const ju of cache.jobber.users) {
     const fname = ju.name?.full || `${ju.name?.first || ''} ${ju.name?.last || ''}`.trim();
     if (!fname) continue;
     const key = N.normName(fname);
-    const existing = rows.find(r => N.normName(r.full_name) === key || N.similarity(r.full_name, fname) >= 0.9);
-    if (existing) {
-      existing._jobber_id = ju.id;
-      continue;
-    }
     rows.push({
       full_name: fname,
       role: ju.isAccountOwner ? 'Owner' : (ju.isAccountAdmin ? 'Admin' : 'Office'),
@@ -445,7 +431,32 @@ async function step2_employees() {
       _airtable_id: null,
       _samsara_id: null,
       _jobber_id: ju.id,
-      _fillout_name: fname,
+    });
+  }
+
+  // 2b. Samsara drivers — match into existing Jobber rows, or add new field staff
+  for (const sd of cache.samsara.drivers) {
+    const key = N.normName(sd.name);
+    const existing = rows.find(r => N.normName(r.full_name) === key || N.similarity(r.full_name, sd.name) >= 0.9);
+    if (existing) {
+      existing._samsara_id = sd.id;
+      // Samsara enriches phone if Jobber didn't provide it
+      if (!existing.phone && sd.phone) existing.phone = sd.phone;
+      continue;
+    }
+    rows.push({
+      full_name: sd.name,
+      role: 'Technician',
+      status: sd.driverActivationStatus === 'active' ? 'ACTIVE' : 'INACTIVE',
+      shift: null,
+      phone: sd.phone || null,
+      email: sd.username || null,
+      hire_date: null,
+      access_level: OFFICE_NAMES.has(key) ? 'office' : 'field',
+      notes: null,
+      _airtable_id: null,
+      _samsara_id: sd.id,
+      _jobber_id: null,
     });
   }
 
@@ -458,18 +469,14 @@ async function step2_employees() {
   const links = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i], eid = ids[i];
-    if (r._airtable_id) links.push({ entity_type: 'employee', entity_id: eid, source_system: 'airtable', source_id: r._airtable_id, source_name: r.full_name });
     if (r._samsara_id) links.push({ entity_type: 'employee', entity_id: eid, source_system: 'samsara', source_id: r._samsara_id, source_name: r.full_name });
     if (r._jobber_id) links.push({ entity_type: 'employee', entity_id: eid, source_system: 'jobber', source_id: r._jobber_id, source_name: r.full_name });
-    // Store fillout display name as a source link for inspection matching
-    if (r._fillout_name) links.push({ entity_type: 'employee', entity_id: eid, source_system: 'fillout', source_id: r._fillout_name, source_name: r.full_name, match_method: 'display_name' });
   }
   await linkEntities(links, { dryRun: DRY_RUN });
   console.log(`  ${links.length} entity_source_links written`);
 
   // Load maps for downstream steps
   await loadNameMap('employees', 'full_name', 'employeeByName', N.normName);
-  await loadSourceMap('employee', 'fillout', 'employeeByFilloutName', N.normName);
   await loadSourceMap('employee', 'jobber', 'employeeByJobberId');
 }
 
@@ -656,6 +663,13 @@ async function step4_properties() {
 // STEP 5 — SERVICE_CONFIGS (UNPIVOT from Airtable Clients)
 // v2: added equipment_size_gallons, permit_number, permit_expiration
 //     removed total_per_year, projected_year, visits_available, data_quality
+//
+// 2026-04-30: Airtable stores GT/CL/WD frequencies in DAYS (not months).
+// Verified via histogram of 190 AT Clients — values cluster at 30, 60, 90, 120
+// (canonical 1mo/2mo/3mo/4mo cadences). The previous `freqMul: 30` for GT/CL
+// was wrong — produced absurd 900-3600d frequencies for 98% of clients. Fixed
+// to `freqMul: 1` (pass-through). Outliers >180d are real Airtable data errors
+// that need Yan's review, not script bugs.
 // ----------------------------------------------------------------------------
 async function step5_service_configs() {
   console.log('\n[STEP 5] Service configs (UNPIVOT)...');
@@ -666,9 +680,9 @@ async function step5_service_configs() {
 
   const rows = [];
   const TYPES = [
-    { type: 'GT', freq: 'GT Frequency', freqMul: 30, price: 'GT Price', last: 'GT Last Visit', next: 'GT Next Visit', sizeField: 'Size GT in Gallon', gdoNum: 'GDO Number', gdoExp: 'GDO expiration date' },
-    { type: 'CL', freq: 'CL Frequency', freqMul: 30, price: 'CL Price', last: 'CL Last Visit', next: 'CL Next Visit' },
-    { type: 'WD', freq: 'WD Frequency', freqMul: 1,  price: 'WD Price', last: 'WD Last Visit', next: 'WD Next Visit' },
+    { type: 'GT', freq: 'GT Frequency', freqMul: 1, price: 'GT Price', last: 'GT Last Visit', next: 'GT Next Visit', sizeField: 'Size GT in Gallon', gdoNum: 'GDO Number', gdoExp: 'GDO expiration date' },
+    { type: 'CL', freq: 'CL Frequency', freqMul: 1, price: 'CL Price', last: 'CL Last Visit', next: 'CL Next Visit' },
+    { type: 'WD', freq: 'WD Frequency', freqMul: 1, price: 'WD Price', last: 'WD Last Visit', next: 'WD Next Visit' },
     { type: 'SUMP',       freq: null, price: 'Sump Price' },
     { type: 'GREY_WATER', freq: null, price: 'Grey Water Price' },
     { type: 'WARRANTY',   freq: null, price: 'Warranty Price' },
@@ -874,77 +888,106 @@ async function step9_line_items() {
 
 // ----------------------------------------------------------------------------
 // STEP 10 — VISITS
-// v2: source FKs → entity_source_links, invoice_id resolved inline
-// KEPT: truck TEXT + completed_by TEXT (AT-legacy attribution for ~1400 historical visits)
+// Source-of-truth (Fred 2026-04-29):
+//   • Jobber is canonical for visit identity (one row per Jobber visit).
+//   • Airtable enriches matched visits with service_type only.
+//   • truck/vehicle_id resolved later via Samsara GPS overlap (step 10c).
+//   • completed_by derived from visit_assignments (Jobber's assignedUsers).
+// Pre-Jobber historical AT-only visits (~1,400 rows) inserted as standalone
+// rows; their truck/completed_by text is the only attribution available
+// since Samsara coverage doesn't reach that far back.
 // ----------------------------------------------------------------------------
 async function step10_visits() {
   console.log('\n[STEP 10] Visits...');
   const rows = [];
 
-  // 10a. Jobber visits (canonical)
+  // 10a. Jobber visits (canonical) — keyed by `${client_id}|${visit_date}` for AT match
+  const jobberByClientDate = new Map();
   for (const v of cache.jobber.visits) {
     const client_id = idMaps.clientByJobberId.get(v.client?.id);
     const job_id = v.job?.id ? idMaps.jobByJobberId.get(v.job.id) : null;
     const property_id = v.property?.id ? idMaps.propertyByJobberId.get(v.property.id) : null;
     // Resolve invoice_id inline (invoices loaded in step 8)
     const invoice_id = v.invoice?.id ? idMaps.invoiceByJobberId.get(v.invoice.id) : null;
-    rows.push({
+    const visit_date = N.dateOnly(v.startAt || v.endAt || v.completedAt || v.createdAt) || '1970-01-01';
+    const row = {
       client_id: client_id || null,
       property_id: property_id || null,
       job_id: job_id || null,
-      vehicle_id: null, // resolved via GPS enrichment or fixup pass 3
-      visit_date: N.dateOnly(v.startAt || v.endAt || v.createdAt) || '1970-01-01',
+      vehicle_id: null, // resolved via Samsara GPS overlap in step 10c
+      visit_date,
       start_at: v.startAt || null,
       end_at: v.endAt || null,
       completed_at: v.completedAt || null,
       duration_minutes: v.durationMinutes ? Math.round(v.durationMinutes) : null,
       title: v.title || null,
-      service_type: null, // enriched from Airtable in sync scripts
+      service_type: null, // may be enriched from matched Airtable visit below
       visit_status: v.visitStatus || null,
-      // is_complete dropped — derived on read (visit_status = 'COMPLETED') via visits_with_status view (3NF)
-      truck: null, // Jobber visits don't have truck text
-      completed_by: null, // Jobber visits use visit_assignments instead
+      truck: null, // Jobber-era visits use vehicle_id (Samsara) instead
+      completed_by: null, // Jobber-era visits use visit_assignments instead
       actual_arrival_at: null,
       actual_departure_at: null,
       is_gps_confirmed: false,
       invoice_id: invoice_id || null,
       _jobber_id: v.id,
       _airtable_id: null,
-    });
+    };
+    rows.push(row);
+    // Index for AT enrichment lookup. If a client+date already exists (rare:
+    // Jobber really has 2 distinct visits same day), keep first; subsequent
+    // AT visits matching same key will fall through to standalone.
+    const key = `${row.client_id}|${row.visit_date}`;
+    if (row.client_id && !jobberByClientDate.has(key)) jobberByClientDate.set(key, row);
   }
 
-  // 10b. Airtable historical visits (pre-Jobber, ~1400 rows)
-  // These have truck + completed_by text that is the ONLY attribution data.
-  // Match to Jobber visits by jobber_visit_id field; unmatched = AT-only historical.
-  const matchedJobberIds = new Set(rows.map(r => r._jobber_id));
+  // 10b. Airtable visits — match to Jobber by client_id + visit_date == 0d.
+  // Matched: enrich the Jobber row with service_type (if Jobber row's is NULL),
+  //          and add Airtable ESL link to the same row.
+  // Unmatched: insert as pre-Jobber historical standalone (truck/completed_by
+  //          text preserved as the only attribution).
+  let mergedCount = 0;
+  let standaloneCount = 0;
   for (const av of cache.airtable.visits) {
-    const jvid = N.atField(av, 'Jobber Visit ID') || N.atField(av, 'jobber_visit_id');
-    // Skip if this AT visit matches a Jobber visit we already have
-    if (jvid && matchedJobberIds.has(jvid)) continue;
-
     const clientATIds = N.atField(av, 'Client') || [];
     const firstATId = Array.isArray(clientATIds) ? clientATIds[0] : null;
     const client_id = firstATId ? idMaps.clientByATId.get(firstATId) : null;
+    const visit_date = N.dateOnly(N.atField(av, 'Visit Date') || N.atField(av, 'Date')) || '1970-01-01';
+    const service_type = N.atField(av, 'Service Type') || N.atField(av, 'Type') || null;
 
+    // Try to match an existing Jobber row at exact (client_id, visit_date)
+    const key = `${client_id}|${visit_date}`;
+    const matched = client_id ? jobberByClientDate.get(key) : null;
+    if (matched && !matched._airtable_id) {
+      // Enrich Jobber-canonical row: only fill service_type if Jobber didn't have it.
+      // Jobber wins on every other field; we just add Airtable's source link.
+      if (!matched.service_type && service_type) matched.service_type = service_type;
+      matched._airtable_id = av.id;
+      mergedCount++;
+      continue;
+    }
+
+    // No Jobber match — pre-Jobber historical visit. Keep AT truck text as the
+    // only attribution we have (Samsara doesn't cover that era).
+    //
+    // Note (2026-04-29 audit): Airtable Visits table has NO `Completed By` or
+    // `Driver` field — only `Truck`. Pre-Jobber driver attribution is genuinely
+    // unrecoverable from Airtable. completed_by stays NULL for these rows.
     const truckText = N.atField(av, 'Truck') || N.atField(av, 'Vehicle') || null;
-    const completedBy = N.atField(av, 'Completed By') || N.atField(av, 'Driver') || null;
-
     rows.push({
       client_id: client_id || null,
       property_id: null,
-      job_id: null, // AT historical visits have no Jobber job
-      vehicle_id: null, // resolved in fixup pass 3 via truck text
-      visit_date: N.dateOnly(N.atField(av, 'Visit Date') || N.atField(av, 'Date')) || '1970-01-01',
+      job_id: null,
+      vehicle_id: null, // resolved later via fixup pass 3 (truck text → vehicle name)
+      visit_date,
       start_at: null,
       end_at: null,
       completed_at: null,
       duration_minutes: null,
       title: null,
-      service_type: N.atField(av, 'Service Type') || N.atField(av, 'Type') || null,
+      service_type,
       visit_status: 'COMPLETED',
-      // is_complete dropped — derived on read (visit_status = 'COMPLETED') via visits_with_status view (3NF)
-      truck: truckText, // AT-legacy: preserved for fixup pass 3
-      completed_by: completedBy, // AT-legacy: preserved for fixup pass 5
+      truck: truckText,
+      completed_by: null,
       actual_arrival_at: null,
       actual_departure_at: null,
       is_gps_confirmed: false,
@@ -952,9 +995,10 @@ async function step10_visits() {
       _jobber_id: null,
       _airtable_id: av.id,
     });
+    standaloneCount++;
   }
 
-  console.log(`  Built ${rows.length} visits (jobber + AT historical)`);
+  console.log(`  Built ${rows.length} visits (${rows.length - standaloneCount} jobber-canonical, ${mergedCount} AT-merged into jobber, ${standaloneCount} AT-only historical)`);
 
   const cols = ['client_id', 'property_id', 'job_id', 'vehicle_id', 'visit_date', 'start_at', 'end_at',
     'completed_at', 'duration_minutes', 'title', 'service_type', 'visit_status',
@@ -1000,67 +1044,79 @@ async function step11_visit_assignments() {
 }
 
 // ----------------------------------------------------------------------------
-// STEP 12 — INSPECTIONS (Fillout pre + post)
-// v2: photos → inspection_photos, removed has_expense/expense_note/expense_amount,
-//     fillout_submission_id/airtable_record_id/data_sources → entity_source_links
+// STEP 12 — INSPECTIONS (from Airtable's PRE-POST insptection table)
+// Source-of-truth (Fred 2026-04-29): Airtable owns inspections.
+// Rewritten 2026-04-29 — used to read Fillout submissions; Fillout sunset and
+// the live source moved to Airtable's "PRE-POST insptection" table. Logic
+// mirrors webhook-airtable's handleInspectionRecord (single record handler).
+//
+// Field mapping (Airtable column → inspections column):
+//   Date              → shift_date (date) + submitted_at (timestamp)
+//   Pre/Post          → inspection_type ('PRE'|'POST')
+//   Driver            → employee_id (resolve via employeeByName; ilike-ish)
+//   Truck             → vehicle_id (resolve via vehicleByName)
+//   SLUDGE Tank level → sludge_gallons (rounded)
+//   Water Tank level  → water_gallons (POST only; null on PRE)
+//   Gas Level         → gas_level (text e.g. "1/4", "FULL")
+//   Valve Closed      → is_valve_closed (boolean)
+//   Issue             → has_issue (boolean) + issue_note (text)
+//
+// Photo attachment fields are present on the Airtable record but NOT processed
+// here — photos run through a separate migration pass per ADR 009 (unified
+// photos + photo_links architecture). The webhook handler skips photos for the
+// same reason.
 // ----------------------------------------------------------------------------
-function getFilloutAnswer(submission, label) {
-  const qs = submission.questions || [];
-  const q = qs.find(x => x.name && x.name.toLowerCase().includes(label.toLowerCase()));
-  return q ? q.value : null;
-}
-
 async function step12_inspections() {
-  console.log('\n[STEP 12] Inspections...');
+  console.log('\n[STEP 12] Inspections (Airtable PRE-POST)...');
+  if (!idMaps.vehicleByName.size && !DRY_RUN) {
+    await loadNameMap('vehicles', 'name', 'vehicleByName', N.normName);
+  }
+  if (!idMaps.employeeByName.size && !DRY_RUN) {
+    await loadNameMap('employees', 'full_name', 'employeeByName', N.normName);
+  }
+
   const rows = [];
+  for (const r of (cache.airtable.inspections || [])) {
+    const f = r.fields || {};
+    const dateRaw = f['Date'];
+    const shift_date = typeof dateRaw === 'string' ? dateRaw.slice(0, 10) : null;
+    if (!shift_date) continue;
 
-  const buildRow = (sub, type) => {
-    const truckText = N.stripTruckSuffix(getFilloutAnswer(sub, 'truck') || '');
-    const driverText = getFilloutAnswer(sub, 'driver') || getFilloutAnswer(sub, 'name') || '';
-    const vehicle_id = idMaps.vehicleByName.get(N.normName(truckText)) || null;
-    const employee_id = idMaps.employeeByFilloutName.get(N.normName(driverText)) || idMaps.employeeByName.get(N.normName(driverText)) || null;
+    const rawType = (typeof f['Pre/Post'] === 'string' ? f['Pre/Post'] : '').toUpperCase();
+    const inspection_type = rawType.startsWith('PRE') ? 'PRE' : rawType.startsWith('POST') ? 'POST' : null;
+    if (!inspection_type) continue;
 
-    // Collect photo URLs for inspection_photos
-    const photos = [];
-    const photoFields = [
-      ['dashboard', 'dashboard'], ['cabin', 'cabin'], ['cabin_side_left', 'cabin side left'],
-      ['cabin_side_right', 'cabin side right'], ['front', 'front'], ['back', 'back'],
-      ['left_side', 'left side'], ['right_side', 'right side'], ['boots', 'boots'],
-      ['remote', 'remote'], ['closed_valve', 'closed valve'], ['issue', 'issue'],
-      ['sludge_level', 'sludge level'], ['water_level', 'water level'],
-      ['derm_manifest', 'derm manifest'], ['derm_address', 'derm address'],
-    ];
-    for (const [photoType, label] of photoFields) {
-      const url = getFilloutAnswer(sub, label);
-      if (url && typeof url === 'string' && url.startsWith('http')) {
-        photos.push({ photo_type: photoType, url });
-      }
-    }
+    const truckText = typeof f['Truck'] === 'string' ? f['Truck'] : null;
+    const driverText = typeof f['Driver'] === 'string' ? f['Driver'] : null;
+    const vehicle_id = truckText ? (idMaps.vehicleByName.get(N.normName(truckText)) || null) : null;
+    const employee_id = driverText ? (idMaps.employeeByName.get(N.normName(driverText)) || null) : null;
 
-    return {
+    const sludgeRaw = N.numOrNull(f['SLUDGE Tank level']);
+    const waterRaw = inspection_type === 'POST' ? N.numOrNull(f['Water Tank level'] ?? f['WATER Tank level']) : null;
+    const valveRaw = f['Valve Closed'] ?? f['Valve closed'] ?? f['Closed Valve'];
+
+    rows.push({
       vehicle_id,
       employee_id,
-      shift_date: N.dateOnly(sub.submissionTime || sub.lastUpdatedAt),
-      inspection_type: type,
-      submitted_at: sub.submissionTime || sub.lastUpdatedAt || null,
-      sludge_gallons: N.intOrNull(getFilloutAnswer(sub, 'sludge')),
-      water_gallons: type === 'POST' ? N.intOrNull(getFilloutAnswer(sub, 'water')) : null,
-      gas_level: getFilloutAnswer(sub, 'gas'),
-      is_valve_closed: getFilloutAnswer(sub, 'valve') === 'Yes',
-      has_issue: !!getFilloutAnswer(sub, 'issue'),
-      issue_note: getFilloutAnswer(sub, 'issue note'),
-      _fillout_id: sub.submissionId,
-      _photos: photos,
-    };
-  };
+      shift_date,
+      inspection_type,
+      submitted_at: typeof dateRaw === 'string' ? dateRaw : null,
+      sludge_gallons: sludgeRaw !== null ? Math.round(sludgeRaw) : null,
+      water_gallons: waterRaw !== null ? Math.round(waterRaw) : null,
+      gas_level: (typeof f['Gas Level'] === 'string' ? f['Gas Level'] : null),
+      is_valve_closed: valveRaw === true || valveRaw === 'Yes' || valveRaw === 'yes',
+      has_issue: !!(f['Issue'] || f['Has Issue']),
+      issue_note: (typeof f['Issue Note'] === 'string' ? f['Issue Note'] : null) ||
+                  (typeof f['Issue'] === 'string' ? f['Issue'] : null),
+      _airtable_id: r.id,
+    });
+  }
 
-  for (const s of cache.fillout.pre) rows.push(buildRow(s, 'PRE'));
-  for (const s of cache.fillout.post) rows.push(buildRow(s, 'POST'));
-
-  // Dedupe by composite shift key
+  // Dedupe by composite shift key — Airtable shouldn't have dups but
+  // (shift_date, vehicle_id, inspection_type) is the natural key per webhook.
   const dedupeMap = new Map();
   for (const r of rows) {
-    const key = `${r.shift_date}|${r.vehicle_id}|${r.employee_id}|${r.inspection_type}`;
+    const key = `${r.shift_date}|${r.vehicle_id}|${r.inspection_type}`;
     const existing = dedupeMap.get(key);
     if (!existing || (r.submitted_at && r.submitted_at > existing.submitted_at)) {
       dedupeMap.set(key, r);
@@ -1075,78 +1131,33 @@ async function step12_inspections() {
   stats.steps.inspections = { built: rows.length, inserted: ids.length };
   console.log(`  ${ids.length} inspections ${DRY_RUN ? 'planned' : 'inserted'}`);
 
-  // entity_source_links
+  // entity_source_links — Airtable record IDs only (Fillout source dropped)
   const links = [];
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i]._fillout_id) links.push({ entity_type: 'inspection', entity_id: ids[i], source_system: 'fillout', source_id: rows[i]._fillout_id });
-  }
-  await linkEntities(links, { dryRun: DRY_RUN });
-
-  // Photos → unified photos + photo_links tables (replaces inspection_photos, see ADR 009)
-  // Each inspection photo becomes one row in `photos` (the file) + one row in
-  // `photo_links` (entity_type='inspection', role=<photo_type>).
-  const photoFileRows = [];
-  const photoLinkPending = []; // defer: needs the photo_id after insert
-  for (let i = 0; i < rows.length; i++) {
-    for (const p of rows[i]._photos) {
-      photoFileRows.push({
-        storage_path: p.url,          // Fillout-hosted URL, treated as storage_path
-        file_name: null,
-        content_type: null,
-        source: 'fillout_migration',
+    if (rows[i]._airtable_id) {
+      links.push({
+        entity_type: 'inspection',
+        entity_id: ids[i],
+        source_system: 'airtable',
+        source_id: rows[i]._airtable_id,
+        match_method: 'populate_2026_04_29',
       });
-      photoLinkPending.push({ inspection_index: i, role: p.photo_type });
     }
   }
-  if (photoFileRows.length) {
-    const photoCols = ['storage_path', 'file_name', 'content_type', 'source'];
-    const photoIds = await bulkInsertReturning('photos', photoFileRows, photoCols, { dryRun: DRY_RUN, batchSize: 500 });
-    const linkRows = photoLinkPending.map((pl, idx) => ({
-      photo_id: photoIds[idx],
-      entity_type: 'inspection',
-      entity_id: ids[pl.inspection_index],
-      role: pl.role,
-    }));
-    const linkCols = ['photo_id', 'entity_type', 'entity_id', 'role'];
-    await bulkInsertReturning('photo_links', linkRows, linkCols, { dryRun: DRY_RUN, batchSize: 500 });
-    console.log(`  ${photoFileRows.length} photos + ${linkRows.length} photo_links written`);
-  }
-}
-
-// ----------------------------------------------------------------------------
-// STEP 13 — EXPENSES
-// v2: removed ramp_*, fillout_submission_id, data_sources → entity_source_links
-// ----------------------------------------------------------------------------
-async function step13_expenses() {
-  console.log('\n[STEP 13] Expenses (Fillout-derived stubs)...');
-  const rows = [];
-  for (const s of cache.fillout.post) {
-    if (!getFilloutAnswer(s, 'expense')) continue;
-    const truckText = N.stripTruckSuffix(getFilloutAnswer(s, 'truck') || '');
-    const driverText = getFilloutAnswer(s, 'driver') || getFilloutAnswer(s, 'name') || '';
-    rows.push({
-      expense_date: N.dateOnly(s.submissionTime),
-      amount: null,
-      description: getFilloutAnswer(s, 'expense note'),
-      category: 'Other',
-      vendor_name: null,
-      vehicle_id: idMaps.vehicleByName.get(N.normName(truckText)) || null,
-      employee_id: idMaps.employeeByFilloutName.get(N.normName(driverText)) || null,
-      receipt_url: null,
-      _fillout_id: s.submissionId + '_exp',
-    });
-  }
-  const cols = ['expense_date', 'amount', 'description', 'category', 'vendor_name', 'vehicle_id', 'employee_id', 'receipt_url'];
-  const ids = await bulkInsertReturning('expenses', rows, cols, { dryRun: DRY_RUN, batchSize: 200 });
-  stats.steps.expenses = { built: rows.length, inserted: ids.length };
-  console.log(`  ${ids.length} expenses ${DRY_RUN ? 'planned' : 'inserted'}`);
-
-  const links = [];
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i]._fillout_id) links.push({ entity_type: 'expense', entity_id: ids[i], source_system: 'fillout', source_id: rows[i]._fillout_id });
-  }
   await linkEntities(links, { dryRun: DRY_RUN });
 }
+
+// ----------------------------------------------------------------------------
+// STEP 13 — EXPENSES — DROPPED 2026-04-29 per Fred's source-of-truth map.
+//
+// Expenses are tracked in Ramp (corporate card system), not in this warehouse.
+// The Fillout-derived stubs were placeholder rows with NULL amount/receipt and
+// added no business value beyond a reference to the post-shift submission.
+//
+// The `expenses` table remains in the schema but is no longer populated. The
+// 2026-04-29 wipe SQL truncates it. Drop the table separately at Odoo cutover
+// if no consumer surfaces.
+// ----------------------------------------------------------------------------
 
 // ----------------------------------------------------------------------------
 // STEP 14 — DERM MANIFESTS
@@ -1229,132 +1240,25 @@ async function step15_manifest_visits() {
 }
 
 // ----------------------------------------------------------------------------
-// STEP 16 — ROUTES
-// v2: removed gt_wanted_date, cl_wanted_date → route_stops table
-//     removed airtable_record_id → entity_source_links
-//     added route_date, vehicle_id, employee_id, notes
+// STEPS 16, 17, 18 — DROPPED 2026-04-29 per Fred's source-of-truth map.
+//
+//   • Step 16 (routes / route_stops from Airtable routeCreation):
+//     Routing is moving to a separate planner. Airtable's route table is no
+//     longer authoritative.
+//
+//   • Step 17 (receivables from Airtable Past Due):
+//     Past-due is now read from `invoices` (Jobber-canonical) directly:
+//        SELECT * FROM invoices
+//         WHERE invoice_status IN ('PAST_DUE', 'OVERDUE')
+//            OR (due_date < now() AND amount_paid < total_amount);
+//
+//   • Step 18 (leads from Airtable):
+//     Lead capture moves to Odoo CRM (May 2026). No interim ingestion.
+//
+// Tables `routes`, `route_stops`, `receivables`, `leads` are wiped by the
+// 2026-04-29 wipe SQL and remain in the schema (drop separately if/when sunset
+// is final, since some legacy ops.* views may still reference them).
 // ----------------------------------------------------------------------------
-async function step16_routes() {
-  console.log('\n[STEP 16] Routes...');
-  const rows = [];
-  for (const r of cache.airtable.routeCreation) {
-    const clientATIds = N.atField(r, 'Client') || [];
-    const firstATId = Array.isArray(clientATIds) ? clientATIds[0] : null;
-    const client_id = firstATId ? idMaps.clientByATId.get(firstATId) : null;
-    rows.push({
-      client_id: client_id || null,
-      status: N.atField(r, 'Status'),
-      assignee: N.atField(r, 'Assignee'),
-      zone: N.atField(r, 'Zone'),
-      route_date: N.dateOnly(N.atField(r, 'GT Wanted Date') || N.atField(r, 'CL Wanted Date')),
-      vehicle_id: null,
-      employee_id: null,
-      notes: null,
-      _airtable_id: r.id,
-      _gt_wanted_date: N.dateOnly(N.atField(r, 'GT Wanted Date')),
-      _cl_wanted_date: N.dateOnly(N.atField(r, 'CL Wanted Date')),
-    });
-  }
-  const cols = ['client_id', 'status', 'assignee', 'zone', 'route_date', 'vehicle_id', 'employee_id', 'notes'];
-  const ids = await bulkInsertReturning('routes', rows, cols, { dryRun: DRY_RUN, batchSize: 200 });
-  stats.steps.routes = { built: rows.length, inserted: ids.length };
-  console.log(`  ${ids.length} routes ${DRY_RUN ? 'planned' : 'inserted'}`);
-
-  const links = [];
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i]._airtable_id) links.push({ entity_type: 'route', entity_id: ids[i], source_system: 'airtable', source_id: rows[i]._airtable_id });
-  }
-  await linkEntities(links, { dryRun: DRY_RUN });
-
-  // Write route_stops for GT/CL wanted dates
-  const stopRows = [];
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    if (r._gt_wanted_date) {
-      stopRows.push({ route_id: ids[i], client_id: r.client_id, property_id: null, service_type: 'GT', stop_order: null, wanted_date: r._gt_wanted_date, status: r.status });
-    }
-    if (r._cl_wanted_date) {
-      stopRows.push({ route_id: ids[i], client_id: r.client_id, property_id: null, service_type: 'CL', stop_order: null, wanted_date: r._cl_wanted_date, status: r.status });
-    }
-  }
-  if (stopRows.length) {
-    const stopCols = ['route_id', 'client_id', 'property_id', 'service_type', 'stop_order', 'wanted_date', 'status'];
-    await bulkInsertReturning('route_stops', stopRows, stopCols, { dryRun: DRY_RUN, batchSize: 500 });
-    console.log(`  ${stopRows.length} route_stops written`);
-  }
-}
-
-// ----------------------------------------------------------------------------
-// STEP 17 — RECEIVABLES
-// v2: removed last_modified, airtable_record_id → entity_source_links
-// ----------------------------------------------------------------------------
-async function step17_receivables() {
-  console.log('\n[STEP 17] Receivables...');
-  const rows = [];
-  for (const r of cache.airtable.pastDue) {
-    const clientATIds = N.atField(r, 'Client') || [];
-    const firstATId = Array.isArray(clientATIds) ? clientATIds[0] : null;
-    const client_id = firstATId ? idMaps.clientByATId.get(firstATId) : null;
-    rows.push({
-      client_id: client_id || null,
-      amount_due: N.numOrNull(N.atField(r, 'Amount Due') || N.atField(r, 'Balance')),
-      status: N.atField(r, 'Status') || 'Open',
-      assignee: N.atField(r, 'Assignee'),
-      notes: N.atField(r, 'Note') || N.atField(r, 'Notes'),
-      _airtable_id: r.id,
-    });
-  }
-  const cols = ['client_id', 'amount_due', 'status', 'assignee', 'notes'];
-  const ids = await bulkInsertReturning('receivables', rows, cols, { dryRun: DRY_RUN, batchSize: 200 });
-  stats.steps.receivables = { built: rows.length, inserted: ids.length };
-  console.log(`  ${ids.length} receivables ${DRY_RUN ? 'planned' : 'inserted'}`);
-
-  const links = [];
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i]._airtable_id) links.push({ entity_type: 'receivable', entity_id: ids[i], source_system: 'airtable', source_id: rows[i]._airtable_id });
-  }
-  await linkEntities(links, { dryRun: DRY_RUN });
-}
-
-// ----------------------------------------------------------------------------
-// STEP 18 — LEADS
-// v2: removed assigned_to, service_interest, estimated_value, last_contact_at,
-//     lost_reason, jobber_request_id
-// ----------------------------------------------------------------------------
-async function step18_leads() {
-  console.log('\n[STEP 18] Leads...');
-  const rows = [];
-  for (const l of cache.airtable.leads) {
-    const biz = N.atField(l, 'business_name') || N.atField(l, 'Business Name');
-    if (!biz) continue;
-    rows.push({
-      converted_client_id: null,
-      contact_name: N.atField(l, 'op_name') || N.atField(l, 'nick_name') || biz,
-      company_name: biz,
-      phone: N.atField(l, 'Phone'),
-      email: N.atField(l, 'Email'),
-      address: N.atField(l, 'Address'),
-      city: N.atField(l, 'City'),
-      state: N.atField(l, 'State') || 'FL',
-      zip: N.atField(l, 'Zip'),
-      lead_source: N.atField(l, 'Source') || 'other',
-      lead_status: N.atField(l, 'Status') || 'new',
-      notes: N.atField(l, 'Notes'),
-      first_contact_at: null,
-      converted_at: null,
-    });
-  }
-  // dedupe by contact_name
-  const seen = new Map();
-  for (const r of rows) seen.set(r.contact_name, r);
-  rows.length = 0; rows.push(...seen.values());
-
-  const cols = ['converted_client_id', 'contact_name', 'company_name', 'phone', 'email', 'address',
-    'city', 'state', 'zip', 'lead_source', 'lead_status', 'notes', 'first_contact_at', 'converted_at'];
-  const ids = await bulkInsertReturning('leads', rows, cols, { dryRun: DRY_RUN, batchSize: 100 });
-  stats.steps.leads = { built: rows.length, inserted: ids.length };
-  console.log(`  ${ids.length} leads ${DRY_RUN ? 'planned' : 'inserted'}`);
-}
 
 // ----------------------------------------------------------------------------
 // FIXUP PASSES
@@ -1447,10 +1351,15 @@ async function fixupPasses() {
 
     if (TRUNCATE && !DRY_RUN) {
       console.log('\n[TRUNCATE] Wiping all tables...');
-      // Truncate in reverse dependency order
+      // Truncate in reverse dependency order. CASCADE handles transitive deps,
+      // but explicit listing documents intent.
+      // PRESERVED (not in this list — must NEVER be wiped here):
+      //   webhook_tokens, sync_cursors, webhook_events_log, raw.jobber_pull_*
+      //   These are infrastructure (OAuth, cron state, source-data cache).
       const order = [
         'route_stops', 'manifest_visits', 'visit_assignments',
-        'photo_links', 'photos',                                  // unified photos (replaces inspection_photos + visit_photos)
+        'photo_links', 'photos', 'notes',                         // unified photos (ADR 009) + Jobber notes
+        'jobber_oversized_attachments',                           // tracking; rebuilt by jobber_notes_photos.js
         'line_items', 'expenses', 'inspections',
         'visits', 'invoices', 'quotes', 'jobs', 'service_configs', 'derm_manifests',
         'routes', 'receivables', 'leads', 'client_contacts', 'properties',
@@ -1472,31 +1381,43 @@ async function fixupPasses() {
       }
     }
 
-    if (!ONLY_STEP || ONLY_STEP === 1) await step1_clients();
-    if (!ONLY_STEP || ONLY_STEP === 2) await step2_employees();
-    if (!ONLY_STEP || ONLY_STEP === 3) await step3_vehicles();
-    if (!ONLY_STEP || ONLY_STEP === 4) await step4_properties();
-    if (!ONLY_STEP || ONLY_STEP === 5) await step5_service_configs();
-    if (!ONLY_STEP || ONLY_STEP === 6) await step6_quotes();
-    if (!ONLY_STEP || ONLY_STEP === 7) await step7_jobs();
-    if (!ONLY_STEP || ONLY_STEP === 8) await step8_invoices();
-    if (!ONLY_STEP || ONLY_STEP === 9) await step9_line_items();
-    if (!ONLY_STEP || ONLY_STEP === 10) await step10_visits();
-    if (!ONLY_STEP || ONLY_STEP === 11) {
-      // Pre-load maps needed by step 11 if running in isolation
-      if (ONLY_STEP === 11) {
+    // --from-step=N : preload all idmaps from existing DB rows so steps >= N
+    // can reference clients/properties/jobs/etc. without re-running steps 1..N-1.
+    if (FROM_STEP && !DRY_RUN) {
+      await loadAllIdMaps();
+    }
+
+    // shouldRun(N): true if step N should execute given --step / --from-step / default
+    const shouldRun = (n) => {
+      if (ONLY_STEP) return ONLY_STEP === n;
+      if (FROM_STEP) return n >= FROM_STEP;
+      return true;
+    };
+
+    if (shouldRun(1)) await step1_clients();
+    if (shouldRun(2)) await step2_employees();
+    if (shouldRun(3)) await step3_vehicles();
+    if (shouldRun(4)) await step4_properties();
+    if (shouldRun(5)) await step5_service_configs();
+    if (shouldRun(6)) await step6_quotes();
+    if (shouldRun(7)) await step7_jobs();
+    if (shouldRun(8)) await step8_invoices();
+    if (shouldRun(9)) await step9_line_items();
+    if (shouldRun(10)) await step10_visits();
+    if (shouldRun(11)) {
+      // Pre-load maps needed by step 11 when run in isolation (step 10 normally
+      // populates visitByJobberId; from-step=11 would skip that)
+      if (ONLY_STEP === 11 || (FROM_STEP && FROM_STEP === 11)) {
         await loadSourceMap('visit', 'jobber', 'visitByJobberId');
         await loadSourceMap('employee', 'jobber', 'employeeByJobberId');
       }
       await step11_visit_assignments();
     }
-    if (!ONLY_STEP || ONLY_STEP === 12) await step12_inspections();
-    if (!ONLY_STEP || ONLY_STEP === 13) await step13_expenses();
-    if (!ONLY_STEP || ONLY_STEP === 14) await step14_derm_manifests();
-    if (!ONLY_STEP || ONLY_STEP === 15) await step15_manifest_visits();
-    if (!ONLY_STEP || ONLY_STEP === 16) await step16_routes();
-    if (!ONLY_STEP || ONLY_STEP === 17) await step17_receivables();
-    if (!ONLY_STEP || ONLY_STEP === 18) await step18_leads();
+    if (shouldRun(12)) await step12_inspections();
+    // Step 13 (expenses) DROPPED 2026-04-29 — expenses live in Ramp.
+    if (shouldRun(14)) await step14_derm_manifests();
+    if (shouldRun(15)) await step15_manifest_visits();
+    // Steps 16 (routes), 17 (receivables), 18 (leads) DROPPED 2026-04-29 — see comment block above.
     if (!ONLY_STEP) await fixupPasses();
 
     console.log('\n' + '='.repeat(70));

@@ -158,8 +158,10 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   const primaryPhone = c.phones?.find((p: any) => p.primary)?.number ?? c.phones?.[0]?.number
   const addr = c.billingAddress
 
-  // Check if client already exists via entity_source_links
-  const existingId = await findEntityBySourceId('client', 'jobber', numericId)
+  // Check if client already exists via entity_source_links.
+  // Lookup uses the full base64 GID (consistent with populate.js step 1
+  // which stores `jc.id` directly — also a base64 GID).
+  const existingId = await findEntityBySourceId('client', 'jobber', gid)
 
   // v2 clients table: only id, client_code, name, status, balance, notes
   const clientRow: Record<string, unknown> = {
@@ -184,12 +186,14 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     entityId = inserted.id
   }
 
-  // Upsert entity_source_links
+  // Upsert entity_source_links — store full base64 GID for consistency with
+  // populate.js (which stores `jc.id` directly = base64 GID). Migration
+  // scripts feed this value back to Jobber's GraphQL EncodedId param.
   await upsertEntityLink({
     entity_type: 'client',
     entity_id: entityId,
     source_system: 'jobber',
-    source_id: numericId,
+    source_id: gid,
     source_name: name,
     match_method: 'webhook',
     match_confidence: 1.0,
@@ -242,7 +246,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
           entity_type: 'property',
           entity_id: newProp.id,
           source_system: 'jobber',
-          source_id: `${numericId}_billing`,
+          source_id: `${gid}_billing`,
           source_name: `${name} (billing)`,
           match_method: 'webhook',
         })
@@ -270,17 +274,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   if (!v) throw new Error(`Visit ${numericId} not found in Jobber`)
 
   // Resolve FKs via entity_source_links
-  const jobGid = v.job?.id ? decodeGid(v.job.id)?.numericId ?? null : null
-  const clientGid = v.job?.client?.id ? decodeGid(v.job.client.id)?.numericId ?? null : null
-  const propGid = v.job?.property?.id ? decodeGid(v.job.property.id)?.numericId ?? null : null
-  const invoiceGid = v.invoice?.id ? decodeGid(v.invoice.id)?.numericId ?? null : null
+  // FK lookups — use the full base64 GID directly from Jobber's GraphQL
+  // response. Don't decode to numericId; ESL.source_id stores the GID.
+  const jobId = v.job?.id ? await findEntityBySourceId('job', 'jobber', v.job.id) : null
+  const clientId = v.job?.client?.id ? await findEntityBySourceId('client', 'jobber', v.job.client.id) : null
+  const propertyId = v.job?.property?.id ? await findEntityBySourceId('property', 'jobber', v.job.property.id) : null
+  const invoiceId = v.invoice?.id ? await findEntityBySourceId('invoice', 'jobber', v.invoice.id) : null
 
-  const jobId = jobGid ? await findEntityBySourceId('job', 'jobber', jobGid) : null
-  const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
-  const propertyId = propGid ? await findEntityBySourceId('property', 'jobber', propGid) : null
-  const invoiceId = invoiceGid ? await findEntityBySourceId('invoice', 'jobber', invoiceGid) : null
-
-  const existingId = await findEntityBySourceId('visit', 'jobber', numericId)
+  const existingId = await findEntityBySourceId('visit', 'jobber', gid)
 
   // Map Jobber status → our status enum
   const statusMap: Record<string, string> = {
@@ -329,7 +330,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     entity_type: 'visit',
     entity_id: entityId,
     source_system: 'jobber',
-    source_id: numericId,
+    source_id: gid,
     match_method: 'webhook',
   })
 
@@ -369,13 +370,11 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   const inv = data.invoice
   if (!inv) throw new Error(`Invoice ${numericId} not found in Jobber`)
 
-  const clientGid = inv.client?.id ? decodeGid(inv.client.id)?.numericId ?? null : null
   const firstJob = inv.jobs?.nodes?.[0]
-  const jobGid = firstJob?.id ? decodeGid(firstJob.id)?.numericId ?? null : null
 
-  const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
-  const jobId = jobGid ? await findEntityBySourceId('job', 'jobber', jobGid) : null
-  const existingId = await findEntityBySourceId('invoice', 'jobber', numericId)
+  const clientId = inv.client?.id ? await findEntityBySourceId('client', 'jobber', inv.client.id) : null
+  const jobId = firstJob?.id ? await findEntityBySourceId('job', 'jobber', firstJob.id) : null
+  const existingId = await findEntityBySourceId('invoice', 'jobber', gid)
 
   const invoiceRow: Record<string, unknown> = {
     invoice_number: inv.invoiceNumber ?? null,
@@ -410,7 +409,7 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
     entity_type: 'invoice',
     entity_id: entityId,
     source_system: 'jobber',
-    source_id: numericId,
+    source_id: gid,
     match_method: 'webhook',
   })
 
@@ -433,14 +432,10 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   const j = data.job
   if (!j) throw new Error(`Job ${numericId} not found in Jobber`)
 
-  const clientGid = j.client?.id ? decodeGid(j.client.id)?.numericId ?? null : null
-  const propGid = j.property?.id ? decodeGid(j.property.id)?.numericId ?? null : null
-  const quoteGid = j.quote?.id ? decodeGid(j.quote.id)?.numericId ?? null : null
-
-  const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
-  const propertyId = propGid ? await findEntityBySourceId('property', 'jobber', propGid) : null
-  const quoteId = quoteGid ? await findEntityBySourceId('quote', 'jobber', quoteGid) : null
-  const existingId = await findEntityBySourceId('job', 'jobber', numericId)
+  const clientId = j.client?.id ? await findEntityBySourceId('client', 'jobber', j.client.id) : null
+  const propertyId = j.property?.id ? await findEntityBySourceId('property', 'jobber', j.property.id) : null
+  const quoteId = j.quote?.id ? await findEntityBySourceId('quote', 'jobber', j.quote.id) : null
+  const existingId = await findEntityBySourceId('job', 'jobber', gid)
 
   const jobRow: Record<string, unknown> = {
     job_number: j.jobNumber ?? null,
@@ -473,7 +468,7 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
     entity_type: 'job',
     entity_id: entityId,
     source_system: 'jobber',
-    source_id: numericId,
+    source_id: gid,
     match_method: 'webhook',
   })
 
@@ -496,11 +491,9 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
   const q = data.quote
   if (!q) throw new Error(`Quote ${numericId} not found in Jobber`)
 
-  const clientGid = q.client?.id ? decodeGid(q.client.id)?.numericId ?? null : null
-  const propGid = q.property?.id ? decodeGid(q.property.id)?.numericId ?? null : null
-  const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
-  const propertyId = propGid ? await findEntityBySourceId('property', 'jobber', propGid) : null
-  const existingId = await findEntityBySourceId('quote', 'jobber', numericId)
+  const clientId = q.client?.id ? await findEntityBySourceId('client', 'jobber', q.client.id) : null
+  const propertyId = q.property?.id ? await findEntityBySourceId('property', 'jobber', q.property.id) : null
+  const existingId = await findEntityBySourceId('quote', 'jobber', gid)
 
   const quoteRow: Record<string, unknown> = {
     quote_number: q.quoteNumber ?? null,
@@ -532,7 +525,7 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
     entity_type: 'quote',
     entity_id: entityId,
     source_system: 'jobber',
-    source_id: numericId,
+    source_id: gid,
     match_method: 'webhook',
   })
 
@@ -554,9 +547,8 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
   const p = data.property
   if (!p) throw new Error(`Property ${numericId} not found in Jobber`)
 
-  const clientGid = p.client?.id ? decodeGid(p.client.id)?.numericId ?? null : null
-  const clientId = clientGid ? await findEntityBySourceId('client', 'jobber', clientGid) : null
-  const existingId = await findEntityBySourceId('property', 'jobber', numericId)
+  const clientId = p.client?.id ? await findEntityBySourceId('client', 'jobber', p.client.id) : null
+  const existingId = await findEntityBySourceId('property', 'jobber', gid)
 
   const row: Record<string, unknown> = {
     address: p.address?.street ?? null,
@@ -579,13 +571,20 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
 
   await upsertEntityLink({
     entity_type: 'property', entity_id: entityId, source_system: 'jobber',
-    source_id: numericId, match_method: 'webhook',
+    source_id: gid, match_method: 'webhook',
   })
   return { entity_id: entityId }
 }
 
 // Soft-delete / status-flip handlers for DESTROY / CLOSED events.
 // Per rule #6 (never hard-delete): we flip a status column so joins + history stay intact.
+
+// Map our entity_type → Jobber's GID Type token (for re-encoding numericId → GID)
+const JOBBER_GID_TYPE: Record<string, string> = {
+  client: 'Client', job: 'Job', visit: 'Visit',
+  invoice: 'Invoice', quote: 'Quote', property: 'Property',
+}
+
 async function softStatusFlip(
   entity_type: string,
   table: string,
@@ -593,10 +592,12 @@ async function softStatusFlip(
   newStatus: string,
   numericId: string
 ): Promise<{ entity_id: number }> {
-  const existingId = await findEntityBySourceId(entity_type, 'jobber', numericId)
+  // ESL.source_id stores the full base64 GID — reconstruct it for the lookup.
+  const gid = btoa(`gid://Jobber/${JOBBER_GID_TYPE[entity_type]}/${numericId}`)
+  const existingId = await findEntityBySourceId(entity_type, 'jobber', gid)
   if (!existingId) {
     // Never saw this entity — nothing to flip. Log & acknowledge.
-    console.log(`[softStatusFlip ${entity_type}] unknown source_id=${numericId} — nothing to update`)
+    console.log(`[softStatusFlip ${entity_type}] unknown source_id=${gid} — nothing to update`)
     return { entity_id: 0 }
   }
   const { error } = await supabase.from(table).update({ [statusCol]: newStatus }).eq('id', existingId)
@@ -611,8 +612,9 @@ const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  
 const handleInvoiceDestroy= (id: string) => softStatusFlip('invoice','invoices','invoice_status','destroyed',id)
 const handleQuoteDestroy  = (id: string) => softStatusFlip('quote',  'quotes',  'quote_status','destroyed', id)
 async function handlePropertyDestroy(numericId: string): Promise<{ entity_id: number }> {
-  const existingId = await findEntityBySourceId('property', 'jobber', numericId)
-  if (!existingId) { console.log(`[PROPERTY_DESTROY] unknown ${numericId}`); return { entity_id: 0 } }
+  const gid = btoa(`gid://Jobber/Property/${numericId}`)
+  const existingId = await findEntityBySourceId('property', 'jobber', gid)
+  if (!existingId) { console.log(`[PROPERTY_DESTROY] unknown ${gid}`); return { entity_id: 0 } }
   const { error } = await supabase.from('properties').delete().eq('id', existingId)
   if (error) throw new Error(`PROPERTY_DESTROY failed: ${error.message}`)
   return { entity_id: existingId }

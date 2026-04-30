@@ -523,10 +523,15 @@ async function persistNote(context, note, classification, uploadedAttachments) {
   const parts = ['BEGIN;'];
 
   // 1. notes row
+  // 2026-04-30 fix: defensive idempotency. If isNoteAlreadyMigrated() returned
+  // false but the ESL row actually exists (read-replica lag, race, stale
+  // cache), the WHERE NOT EXISTS guard skips the notes insert. The ESL insert
+  // gets ON CONFLICT DO NOTHING. Net: a duplicate-note scenario becomes a
+  // graceful no-op transaction instead of a 23505 rollback that loses photos.
   parts.push(`
     WITH ins AS (
       INSERT INTO notes (client_id, visit_id, property_id, job_id, body, author_employee_id, author_name, note_date, source, tags)
-      VALUES (
+      SELECT
         ${sqlEscape(context.ourClientId)},
         ${sqlEscape(classification.visit_id)},
         ${sqlEscape(classification.property_id)},
@@ -537,13 +542,16 @@ async function persistNote(context, note, classification, uploadedAttachments) {
         ${sqlEscape(note.createdAt)},
         'jobber_migration',
         ${sqlEscape(classification.kind === 'visit' ? ['jobber_migration'] : ['jobber_migration','non_visit'])}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM entity_source_links
+        WHERE entity_type='note' AND source_system='jobber' AND source_id=${sqlEscape(note.id)}
       )
       RETURNING id
     )
     INSERT INTO entity_source_links (entity_type, entity_id, source_system, source_id, source_name, match_method, match_confidence, synced_at)
     SELECT 'note', ins.id, 'jobber', ${sqlEscape(note.id)}, NULL, 'api_pull', 1.00, now()
     FROM ins
-    RETURNING entity_id AS note_id;
+    ON CONFLICT (entity_type, source_system, source_id) DO NOTHING;
   `);
 
   // 2. each uploaded attachment → photos + photo_links + entity_source_links

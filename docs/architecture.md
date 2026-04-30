@@ -1,6 +1,6 @@
 # Architecture
 
-**Version:** v2 · **Last reviewed:** 2026-04-20
+**Version:** v2 · **Last reviewed:** 2026-04-29 (post-repop / source-of-truth canonicalization)
 
 ---
 
@@ -47,46 +47,55 @@ If any step throws, `webhook_events_log.status` is flipped to `failed` with the 
 
 ## Source systems
 
-### Jobber — source of truth for contact + billing
+> **Trust hierarchy** (revised 2026-04-29 — see [ADR 011](decisions/011-source-of-truth-canonicalization-2026-04-29.md)):
+> - **Jobber + Samsara = 100% canonical.** Every overlapping field, Jobber/Samsara wins.
+> - **Airtable = 100% trusted ONLY for `derm_manifests` + `inspections` (PRE-POST table).**
+> - **Airtable = best-effort enrichment** (because no alternative source exists) for: `service_configs` (frequencies, prices, GDO permits), client contacts, property zone/access fields.
+> - **Dropped sources (2026-04-29)**: Airtable `Drivers & Team`, `Past due`, `Route Creation`, `Leads`. Fillout entirely (inspections moved to Airtable PRE-POST; expenses live in Ramp).
+
+### Jobber — 100% canonical (identity + billing + visits)
 
 - **API:** GraphQL, OAuth 2.0
 - **Endpoint:** `https://api.getjobber.com/api/graphql`
 - **Receiver:** `supabase/functions/webhook-jobber/index.ts`
 - **Sunset:** May 2026 — replaced by Odoo.sh CRM
-- **Wins on:** name, address, phone, email, billing, payment status, job/visit dates, financial fields, invoice data
+- **Owns:** clients (identity, name, address, contacts), properties, jobs, visits, invoices, line_items, quotes, notes/photos, employees (office/admin via Jobber users), payment status
 - **Webhook events consumed:** `CLIENT_CREATE/UPDATE/DESTROY`, `JOB_*`, `VISIT_*`, `INVOICE_*`, `QUOTE_*`, `PROPERTY_*`
 - **Rate limits:** 2,500 req / 5 min (DDoS), plus a 10,000-point GraphQL query-cost budget restored at 500/sec. [Details ›](integration.md#jobber-rate-limits)
 
-### Airtable — CRM master for service details + compliance
+### Samsara — 100% canonical (fleet, drivers, GPS)
+
+- **API:** REST
+- **Endpoint:** `https://api.samsara.com`
+- **Receivers:**
+  - Webhook (`supabase/functions/webhook-samsara/index.ts`) — receives address/driver/alert events. 6 webhook subscriptions registered, 296+ events processed.
+  - Polling cron (`scripts/sync/cron_samsara_telemetry.js`, `.github/workflows/samsara-poll.yml`) — pulls `/fleet/vehicles/stats?types=engineStates,fuelPercents,obdOdometerMeters,gps` every 10 minutes. Vehicle stats are NOT available via webhook on Samsara's side (polling is the only mechanism).
+- **Sunset:** Never — Samsara is permanent ([ADR 007](decisions/007-samsara-permanent.md))
+- **Owns:** vehicles, drivers (field staff), GPS/telemetry (`vehicle_telemetry_readings`), geofences, harsh events, DVIR submissions
+- **Telemetry table** (`vehicle_telemetry_readings`): one row per vehicle per cron fire. Columns include `fuel_percent`, `engine_state`, `odometer_meters`, `engine_hours_seconds`, `latitude`, `longitude`, `speed_meters_per_sec`, `heading_degrees`, `recorded_at`. Idempotent on `(vehicle_id, recorded_at)`. ~30MB/year at 10-min cadence × 3 vehicles. Started collecting 2026-04-30 to accumulate history before fuel/water-burn modeling begins.
+- **Rate limits:** 150 req/sec per token, 200 req/sec per org, plus per-endpoint caps (e.g. `/fleet/hos/logs` = 30/sec)
+
+### Airtable — DERM + PRE-POST inspections (100% trusted), service configs (best-effort)
 
 - **API:** REST
 - **Endpoint:** `https://api.airtable.com/v0/`
 - **Receiver:** `supabase/functions/webhook-airtable/index.ts`
 - **Sunset:** May 2026 — replaced by Odoo.sh
-- **Wins on:** GDO compliance fields, service frequencies, zone, scheduling notes, `service_type` on visits, `client_code`
+- **Owns (100% trusted)**: `derm_manifests` (white/yellow manifest numbers, dump dates), `inspections` (PRE-POST insptection table — driver, truck, sludge/water levels, gas, valve, issues)
+- **Best-effort enrichment** (used because no alternative source): `service_configs` (GT/CL/WD frequencies, prices, GDO permit numbers + expirations, equipment size), `client_contacts` (Operation/Accounting/City contact roles), `properties` (zone, access hours/days, county)
+- **Never trusted over Jobber/Samsara**: identity fields, addresses, money, employees, route assignments, payment status
 - **Rate limits:** 5 req/sec per base (hard cap, all tiers), 50 req/sec per token across all bases
 
-**Frequency-unit normalization at sync time:**
-- GT frequency from Airtable: MONTHS × 30 → `service_configs.frequency_days`
-- CL frequency from Airtable: MONTHS × 30 → `service_configs.frequency_days`
-- WD frequency from Airtable: already DAYS → pass through
+**Frequency-unit normalization at sync time** (corrected 2026-04-30 — Airtable stores DAYS for all three; the previous "GT/CL in months" claim was wrong, produced 30× inflated values for 98% of clients):
+- GT frequency: DAYS → `service_configs.frequency_days` (pass-through)
+- CL frequency: DAYS → `service_configs.frequency_days` (pass-through)
+- WD frequency: DAYS → `service_configs.frequency_days` (pass-through)
 
-### Samsara — fleet telemetry (permanent)
+Yannick's normal entry range: 10–180 days. Anything > 180d is an Airtable data error that should be flagged for review (not patched in DB — fix in the source).
 
-- **API:** REST
-- **Endpoint:** `https://api.samsara.com`
-- **Receiver:** `supabase/functions/webhook-samsara/index.ts`
-- **Sunset:** Never. Samsara survives Jobber and Airtable.
-- **Provides:** Vehicle telemetry (fuel %, odometer, engine state, engine hours), GPS geofence enter/exit events, harsh events, DVIR submissions
-- **Known integration blocker:** Samsara webhook registration requires "Webhooks write" scope on the API token. Current token only has read scope. [Recovery ›](runbook.md#samsara-webhook-registration)
-- **Rate limits:** 150 req/sec per token, 200 req/sec per org, plus per-endpoint caps (e.g. `/fleet/hos/logs` = 30/sec)
+### Fillout — DROPPED 2026-04-29
 
-### Fillout — digital inspection forms (sunset)
-
-- **API:** REST
-- **Sunset:** May 2026 — replaced by Odoo.sh forms
-- **Provides:** Pre/post-shift inspections, expense reports, manifest submissions
-- **Rate limits:** 5 req/sec per account (~300 req/min)
+Inspection ingestion migrated to Airtable's PRE-POST table; expense ingestion dropped (Ramp owns expenses). All `pullFillout`, `cache.fillout`, `_fillout_name`, `employeeByFilloutName` references removed from `populate.js`. The Edge Function for Fillout (if any was wired) is no longer referenced.
 
 ### Service type vocabulary
 
