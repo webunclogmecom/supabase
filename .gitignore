@@ -30,3 +30,9 @@ recent.json
 jobber_events.json
 samsara_health.json
 today.json
+supabase.exe
+
+# Scratch JSON outputs from probe scripts
+airtable_recent.json
+failed.json
+final.json
