@@ -149,28 +149,33 @@ const extOf = (ct, name) => {
     const anchorMs = new Date(anchor + 'T00:00:00Z').getTime();
     const windowMs = WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
-    // Pull this client's notes from Jobber (paginate)
+    // Pull notes attached to THIS specific visit from Jobber (paginate).
+    // Notes can be any of: ClientNote, JobNote, QuoteNote, RequestNote (union).
+    // Skip pinned notes — per Fred's rule, pinned = location-level info for the
+    // client, not specific to this visit, so they shouldn't be linked to it.
     let allNotes = [];
     let cursor = null;
     try {
       do {
         const d = await gql(`
-          query ClientNotes($id: EncodedId!, $after: String) {
-            client(id: $id) {
+          query VisitNotes($id: EncodedId!, $after: String) {
+            visit(id: $id) {
               notes(first: 10, after: $after) {
                 nodes {
-                  id createdAt message
-                  fileAttachments { nodes { id fileName contentType fileSize url } }
+                  ... on ClientNote { id pinned createdAt message fileAttachments { nodes { id fileName contentType fileSize url } } }
+                  ... on JobNote    { id pinned createdAt message fileAttachments { nodes { id fileName contentType fileSize url } } }
+                  ... on QuoteNote  { id pinned createdAt message fileAttachments { nodes { id fileName contentType fileSize url } } }
+                  ... on RequestNote { id pinned createdAt message fileAttachments { nodes { id fileName contentType fileSize url } } }
                 }
                 pageInfo { hasNextPage endCursor }
               }
             }
           }
-        `, { id: t.client_gid, after: cursor });
-        const cn = d.client?.notes;
-        if (!cn) break;
-        allNotes.push(...cn.nodes);
-        cursor = cn.pageInfo.hasNextPage ? cn.pageInfo.endCursor : null;
+        `, { id: t.visit_gid, after: cursor });
+        const vn = d.visit?.notes;
+        if (!vn) break;
+        allNotes.push(...vn.nodes);
+        cursor = vn.pageInfo.hasNextPage ? vn.pageInfo.endCursor : null;
       } while (cursor && allNotes.length < 200);  // safety cap
     } catch (e) {
       errors++;
@@ -178,8 +183,9 @@ const extOf = (ct, name) => {
       continue;
     }
 
-    // Filter notes within ±2d of anchor
+    // Filter: unpinned notes only, within ±2d of anchor, with attachments.
     const nearbyWithAtt = allNotes.filter(n => {
+      if (n.pinned) return false;
       const nMs = new Date(n.createdAt).getTime();
       if (Math.abs(nMs - anchorMs) > windowMs) return false;
       return (n.fileAttachments?.nodes || []).length > 0;
