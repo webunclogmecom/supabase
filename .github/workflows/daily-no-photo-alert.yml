@@ -1,0 +1,29 @@
+name: Daily no-photo visits alert
+
+# Posts to #viktor-supabase a list of yesterday's completed visits with no
+# photos linked. Runs at 13:00 UTC = 09:00 ET (summer) / 08:00 ET (winter)
+# so Diego/office can chase same-day before drivers move on.
+
+on:
+  schedule:
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: daily-no-photo-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run alert
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: node scripts/sync/daily_no_photo_visits_alert.js
