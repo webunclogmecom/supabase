@@ -71,9 +71,11 @@ async function gql(query, variables, retries = 5) {
     }
     throw new Error(`Jobber GQL: ${JSON.stringify(j.errors).slice(0, 300)}`);
   }
+  // ClientNotes(first:10) requestedQueryCost ≈ 5056 — bucket max 10000, refill 500/s.
+  // Wait until we have 6000+ available before returning so the next call doesn't 429.
   const remaining = j.extensions?.cost?.throttleStatus?.currentlyAvailable;
-  if (remaining != null && remaining < 2000) {
-    await new Promise(rs => setTimeout(rs, Math.ceil((2000 - remaining) / 500) * 1000));
+  if (remaining != null && remaining < 6000) {
+    await new Promise(rs => setTimeout(rs, Math.ceil((6000 - remaining) / 500) * 1000));
   }
   return j.data;
 }
@@ -155,7 +157,7 @@ const extOf = (ct, name) => {
         const d = await gql(`
           query ClientNotes($id: EncodedId!, $after: String) {
             client(id: $id) {
-              notes(first: 25, after: $after) {
+              notes(first: 10, after: $after) {
                 nodes {
                   id createdAt message
                   fileAttachments { nodes { id fileName contentType fileSize url } }
@@ -271,10 +273,11 @@ const extOf = (ct, name) => {
       console.log(`  [${visitsScanned}/${target.length}] ✓ ${t.client_code} v${t.visit_id} recovered ${recoveredThisVisit} photo(s)`);
     }
 
-    // Explicit pacing — Jobber budget regenerates at 500 points/sec; with
-    // ~50-200 points per client.notes query, 2s between visits keeps us
-    // safely under the ceiling. Total runtime ~76 visits × 2s = ~3 min.
-    await new Promise(rs => setTimeout(rs, 2000));
+    // Outer pacing on top of the gql()-internal "wait until ≥6000 available"
+    // logic. With requestedQueryCost ≈ 5056 per ClientNotes call and 500/s
+    // refill, gql() already pauses ~10s when the bucket is below 6000; this
+    // 1s extra buffers against burst variability. Runtime ~76 × 11s ≈ 14 min.
+    await new Promise(rs => setTimeout(rs, 1000));
   }
 
   console.log('\n=== Summary ===');
