@@ -91,11 +91,13 @@ echo "===================================================================="
 
 echo
 echo "[1/4] pg_dump --data-only from Production..."
+# NOTE: no --disable-triggers — Supabase's `postgres` role isn't a true
+# superuser, so it can't suspend system constraint triggers. pg_dump already
+# orders --data-only inserts in FK-dependency order, so this is fine.
 pg_dump \
   --data-only \
   --no-owner \
   --no-privileges \
-  --disable-triggers \
   "${T_FLAGS[@]}" \
   "$PROD_DB_URL" > "$DUMP_FILE"
 DUMP_BYTES=$(wc -c < "$DUMP_FILE")
@@ -104,12 +106,14 @@ echo "  ✓ ${DUMP_BYTES} bytes, ${DUMP_LINES} lines"
 
 echo
 echo "[2/4] Truncate + reload Sandbox in single transaction..."
+# NOTE: no `SET session_replication_role = replica` — Supabase's `postgres`
+# role can't toggle FK-trigger suppression. We rely on pg_dump's FK-aware
+# insert order instead, and the TRUNCATE CASCADE up front clears all
+# canonical rows before any insert.
 {
   echo "BEGIN;"
-  echo "SET session_replication_role = replica;"  # disable triggers/FK checks during reload
   echo "$TRUNCATE_SQL"
   cat "$DUMP_FILE"
-  echo "SET session_replication_role = origin;"
   echo "COMMIT;"
 } | psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet
 echo "  ✓ committed"
