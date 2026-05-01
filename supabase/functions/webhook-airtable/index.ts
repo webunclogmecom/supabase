@@ -195,10 +195,13 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
     await supabase.from('clients').update({ client_code: clientCode }).eq('id', clientId)
   }
 
-  // Update zone + county on primary property
+  // Update zone + county + manhole count on primary property
+  // (`manholes` field added by Yannick 2026-04-30 — drives grease_trap_manhole_count)
   const zone = strVal(fields, 'Zone')
   const county = strVal(fields, 'County')
-  if (zone || county) {
+  const manholesRaw = numVal(fields, 'manholes')
+  const manholes = (manholesRaw != null && manholesRaw >= 0) ? Math.round(manholesRaw) : null
+  if (zone || county || manholes != null) {
     const { data: props } = await supabase
       .from('properties')
       .select('id')
@@ -210,6 +213,7 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
       const propUpdate: Record<string, unknown> = {}
       if (zone) propUpdate.zone = zone
       if (county) propUpdate.county = county
+      if (manholes != null) propUpdate.grease_trap_manhole_count = manholes
       await supabase.from('properties').update(propUpdate).eq('id', props[0].id)
     }
   }

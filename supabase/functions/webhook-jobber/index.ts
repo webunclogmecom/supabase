@@ -158,6 +158,13 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   const primaryPhone = c.phones?.find((p: any) => p.primary)?.number ?? c.phones?.[0]?.number
   const addr = c.billingAddress
 
+  // client_code originates in Airtable, but Yan often types the NNN-XX prefix
+  // into Jobber's Company Name field too (e.g. "062-TCE The carrot express ...").
+  // Parse it on insert so Jobber-only clients still get a code without waiting
+  // on Airtable enrichment. We do NOT overwrite an existing code on update —
+  // that would clobber Airtable's authoritative value.
+  const parsedCode = name.match(/^\s*(\d{3}-[A-Z0-9]+)/)?.[1] ?? null
+
   // Check if client already exists via entity_source_links.
   // Lookup uses the full base64 GID (consistent with populate.js step 1
   // which stores `jc.id` directly — also a base64 GID).
@@ -169,10 +176,19 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     status: c.isArchived ? 'INACTIVE' : 'ACTIVE',
     balance: c.balance ?? null,
   }
+  if (!existingId && parsedCode) clientRow.client_code = parsedCode
 
   let entityId: number
 
   if (existingId) {
+    // Self-heal: if existing row has no client_code yet and the new name has
+    // a parseable prefix, fill it in. Don't overwrite an existing code —
+    // Airtable owns the authoritative value.
+    if (parsedCode) {
+      const { data: cur } = await supabase
+        .from('clients').select('client_code').eq('id', existingId).maybeSingle()
+      if (cur && !cur.client_code) clientRow.client_code = parsedCode
+    }
     const { error } = await supabase.from('clients').update(clientRow).eq('id', existingId)
     if (error) throw new Error(`Client update failed: ${error.message}`)
     entityId = existingId
@@ -285,15 +301,25 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
 
   // Map Jobber status → our status enum
   const statusMap: Record<string, string> = {
+    // Canonical enum: 'scheduled' | 'completed' | 'canceled'
+    // Jobber returns various scheduling-status values (UPCOMING, TODAY, LATE,
+    // UNSCHEDULED, APPROVED, UNVISITED) — all collapse to 'scheduled' for our
+    // purposes. COMPLETED and REQUIRES_INVOICING both indicate the visit was
+    // performed → 'completed'. Cancellation comes via the DESTROY topic which
+    // softStatusFlip sets to 'canceled' separately.
     'completed': 'completed',
-    'approved': 'scheduled',
     'requires_invoicing': 'completed',
+    'upcoming': 'scheduled',
+    'today': 'scheduled',
+    'late': 'scheduled',
+    'unscheduled': 'scheduled',
+    'approved': 'scheduled',
     'unvisited': 'scheduled',
   }
 
   const visitRow: Record<string, unknown> = {
     title: v.title ?? null,
-    visit_status: statusMap[v.visitStatus?.toLowerCase()] ?? v.visitStatus ?? null,
+    visit_status: statusMap[v.visitStatus?.toLowerCase()] ?? 'scheduled',
     start_at: v.startAt ?? null,
     end_at: v.endAt ?? null,
     completed_at: v.completedAt ?? null,
@@ -608,7 +634,7 @@ async function softStatusFlip(
 const handleClientDestroy = (id: string) => softStatusFlip('client', 'clients', 'status', 'INACTIVE', id)
 const handleJobClosed     = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'closed',    id)
 const handleJobDestroy    = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'destroyed', id)
-const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  'visit_status', 'destroyed', id)
+const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  'visit_status', 'canceled', id)
 const handleInvoiceDestroy= (id: string) => softStatusFlip('invoice','invoices','invoice_status','destroyed',id)
 const handleQuoteDestroy  = (id: string) => softStatusFlip('quote',  'quotes',  'quote_status','destroyed', id)
 async function handlePropertyDestroy(numericId: string): Promise<{ entity_id: number }> {
