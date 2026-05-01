@@ -131,7 +131,10 @@ for t in "${CANONICAL_TABLES[@]}"; do
   [ -z "$HAS_ID" ] && continue
   YCOLS_CSV=$(echo "$YCOLS" | tr '\n' ',' | sed 's/,$//')
   echo "  $t: preserving columns [${YCOLS_CSV}]"
-  SNAPSHOT_SQL+="CREATE TEMP TABLE _yannick_snap_${t} AS SELECT id, ${YCOLS_CSV} FROM ${t};
+  # Use schema-qualified names everywhere — pg_dump's output sets
+  # `search_path = ''` which makes unqualified table names invisible
+  # for any statements that run after the dump body.
+  SNAPSHOT_SQL+="CREATE TEMP TABLE _yannick_snap_${t} AS SELECT id, ${YCOLS_CSV} FROM public.${t};
 "
   SETS=""
   for c in $YCOLS; do
@@ -139,9 +142,9 @@ for t in "${CANONICAL_TABLES[@]}"; do
     PRESERVED_COL_COUNT=$((PRESERVED_COL_COUNT + 1))
   done
   SETS=$(echo "$SETS" | sed 's/,$//')
-  RESTORE_SQL+="UPDATE ${t} t SET ${SETS} FROM _yannick_snap_${t} s WHERE t.id = s.id;
+  RESTORE_SQL+="UPDATE public.${t} t SET ${SETS} FROM pg_temp._yannick_snap_${t} s WHERE t.id = s.id;
 "
-  DROP_TEMPS_SQL+="DROP TABLE _yannick_snap_${t};
+  DROP_TEMPS_SQL+="DROP TABLE pg_temp._yannick_snap_${t};
 "
 done
 echo "  ✓ ${PRESERVED_COL_COUNT} Yannick column(s) will be preserved"
