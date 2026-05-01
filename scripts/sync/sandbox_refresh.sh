@@ -121,18 +121,42 @@ echo "  ✓ committed"
 echo
 echo "[3/4] Refresh sequence values to max(id)+1 on Sandbox..."
 # RESTART IDENTITY in TRUNCATE resets sequences to 1, but we just inserted rows
-# with IDs from Production. Need to bump sequences past the inserted max(id),
+# with IDs from Production. Need to bump every sequence past its column's max,
 # else next INSERT collides on PK.
-SEQ_SQL=""
-for t in "${CANONICAL_TABLES[@]}"; do
-  SEQ_SQL+="
-SELECT setval(pg_get_serial_sequence('public.$t', 'id'),
-              COALESCE((SELECT MAX(id) FROM public.$t), 1),
-              (SELECT MAX(id) FROM public.$t) IS NOT NULL)
-WHERE pg_get_serial_sequence('public.$t', 'id') IS NOT NULL;
-"
-done
-echo "$SEQ_SQL" | psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet -t > /dev/null
+#
+# We auto-discover sequences via pg_depend so we don't have to assume each
+# table has a column called "id" (e.g. visit_assignments is a junction table
+# with composite key — no id column at all).
+TABLES_QUOTED=$(IFS=,; for t in "${CANONICAL_TABLES[@]}"; do echo -n "'$t',"; done | sed 's/,$//')
+psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet -t > /dev/null <<EOF
+DO \$\$
+DECLARE
+  rec RECORD;
+  v_max bigint;
+BEGIN
+  FOR rec IN
+    SELECT
+      n.nspname || '.' || s.relname AS seq_qualified,
+      n.nspname || '.' || c.relname AS table_qualified,
+      a.attname AS column_name
+    FROM pg_class s
+    JOIN pg_namespace ns ON ns.oid = s.relnamespace
+    JOIN pg_depend d ON d.objid = s.oid AND d.deptype IN ('a','i')
+    JOIN pg_class c ON c.oid = d.refobjid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.refobjsubid
+    WHERE s.relkind = 'S'
+      AND n.nspname = 'public'
+      AND c.relname IN (${TABLES_QUOTED})
+  LOOP
+    EXECUTE format('SELECT MAX(%I) FROM %s', rec.column_name, rec.table_qualified) INTO v_max;
+    IF v_max IS NOT NULL THEN
+      EXECUTE format('SELECT setval(%L, %s, true)', rec.seq_qualified, v_max);
+    END IF;
+  END LOOP;
+END
+\$\$;
+EOF
 echo "  ✓ sequences advanced"
 
 echo
