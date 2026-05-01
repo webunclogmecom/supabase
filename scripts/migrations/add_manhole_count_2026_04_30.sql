@@ -9,8 +9,9 @@
 -- This is a NEW data point — not in Airtable today. Manual entry by Diego
 -- via Supabase Studio (or future Odoo UI).
 --
--- Default 1 — safe assumption (most properties have one manhole). Anything
--- with multiple manholes gets set explicitly.
+-- Default 0 — only set explicitly when Airtable supplies a value (per Fred
+-- 2026-05-01 — initial DEFAULT 1 was wrong; it caused 318 properties to
+-- inherit a phantom "1 manhole" reading without Airtable evidence).
 --
 -- Future: if per-manhole detail (size, location notes, cover photos) is
 -- needed, refactor to a property_manholes child table. For now, integer
@@ -20,9 +21,12 @@
 BEGIN;
 
 ALTER TABLE properties
-  ADD COLUMN IF NOT EXISTS grease_trap_manhole_count INTEGER NOT NULL DEFAULT 1;
+  ADD COLUMN IF NOT EXISTS grease_trap_manhole_count INTEGER NOT NULL DEFAULT 0;
+
+-- If column already exists with the old DEFAULT 1, normalize it.
+ALTER TABLE properties ALTER COLUMN grease_trap_manhole_count SET DEFAULT 0;
 
 COMMENT ON COLUMN properties.grease_trap_manhole_count IS
-  'Number of grease trap manholes (covers) at this property. Default 1. Set explicitly when a property has multiple traps. Manually maintained by Diego/Yannick.';
+  'Number of grease trap manholes (covers) at this property. Default 0; only set when Airtable Clients.manholes explicitly supplies a value.';
 
 COMMIT;

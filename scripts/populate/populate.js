@@ -381,8 +381,8 @@ function buildPrimaryProperty(jc, ac, sa) {
   const address = jc?.billingAddress?.street || (ac && N.atField(ac, 'Address'));
   if (!address) return null;
   // Manhole count: Airtable Clients table column `manholes` (lowercase, added
-  // by Yannick 2026-04-30). Fall back to 1 if missing — matches DB default
-  // and is the safe assumption for properties with one trap.
+  // by Yannick 2026-04-30). Fall back to 0 (per Fred 2026-05-01) — only
+  // override when Airtable explicitly supplies a value. DB default also 0.
   const manholeRaw = ac ? N.intOrNull(N.atField(ac, 'manholes')) : null;
   return {
     address,
@@ -398,7 +398,7 @@ function buildPrimaryProperty(jc, ac, sa) {
     access_hours_start: ac ? N.atField(ac, 'Hours in') : null,
     access_hours_end: ac ? N.atField(ac, 'Hours out') : null,
     access_days: ac ? N.atField(ac, 'Days of the week') : null,
-    grease_trap_manhole_count: typeof manholeRaw === 'number' ? manholeRaw : 1,
+    grease_trap_manhole_count: typeof manholeRaw === 'number' ? manholeRaw : 0,
     // location_photo_url dropped 2026-04-20 — the Airtable source was a
     // Yes/No checkbox, not a URL. Location photos now live in photos +
     // photo_links (entity_type='property', role='overview') per ADR 009.
