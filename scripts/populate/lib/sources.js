@@ -93,37 +93,4 @@ async function pullSamsara() {
   return { vehicles, addresses, drivers };
 }
 
-// ----------------------------------------------------------------------------
-// FILLOUT
-// ----------------------------------------------------------------------------
-const FO_KEY = process.env.FILLOUT_API_KEY;
-const FO_PRE = process.env.FILLOUT_PRESHIFT_FORM_ID;
-const FO_POST = process.env.FILLOUT_POSTSHIFT_FORM_ID;
-const FO_HDR = { Authorization: `Bearer ${FO_KEY}` };
-
-async function filloutFetchAll(formId) {
-  const all = [];
-  let offset = 0, pages = 0;
-  while (true) {
-    const r = await httpsGet('api.fillout.com', `/v1/api/forms/${formId}/submissions?limit=150&offset=${offset}&sort=desc`, FO_HDR);
-    const resp = r.responses || [];
-    all.push(...resp);
-    if (resp.length < 150) break;
-    pages++;
-    if (pages > 20) break;
-    offset += 150;
-  }
-  return all;
-}
-
-async function pullFillout() {
-  console.log('  → Fillout...');
-  const [pre, post] = await Promise.all([
-    filloutFetchAll(FO_PRE),
-    filloutFetchAll(FO_POST),
-  ]);
-  console.log(`    preshift=${pre.length} postshift=${post.length}`);
-  return { pre, post };
-}
-
-module.exports = { pullAirtable, pullSamsara, pullFillout };
+module.exports = { pullAirtable, pullSamsara };

@@ -380,6 +380,10 @@ function buildContactsFromSources(jc, ac) {
 function buildPrimaryProperty(jc, ac, sa) {
   const address = jc?.billingAddress?.street || (ac && N.atField(ac, 'Address'));
   if (!address) return null;
+  // Manhole count: Airtable Clients table column `manholes` (lowercase, added
+  // by Yannick 2026-04-30). Fall back to 1 if missing — matches DB default
+  // and is the safe assumption for properties with one trap.
+  const manholeRaw = ac ? N.intOrNull(N.atField(ac, 'manholes')) : null;
   return {
     address,
     city: jc?.billingAddress?.city || (ac && N.atField(ac, 'City')),
@@ -394,6 +398,7 @@ function buildPrimaryProperty(jc, ac, sa) {
     access_hours_start: ac ? N.atField(ac, 'Hours in') : null,
     access_hours_end: ac ? N.atField(ac, 'Hours out') : null,
     access_days: ac ? N.atField(ac, 'Days of the week') : null,
+    grease_trap_manhole_count: typeof manholeRaw === 'number' ? manholeRaw : 1,
     // location_photo_url dropped 2026-04-20 — the Airtable source was a
     // Yes/No checkbox, not a URL. Location photos now live in photos +
     // photo_links (entity_type='property', role='overview') per ADR 009.
@@ -611,6 +616,9 @@ async function step4_properties() {
           existing.access_days = existing.access_days || pp.access_days;
           existing.is_primary = true;
           existing.county = existing.county || pp.county;
+          // Manhole count: take from Airtable when set; existing is undefined for
+          // pure Jobber rows so the OR fallback picks up pp's value.
+          existing.grease_trap_manhole_count = existing.grease_trap_manhole_count || pp.grease_trap_manhole_count;
         }
       } else {
         rows.push({
@@ -633,6 +641,7 @@ async function step4_properties() {
           is_primary: true,
           notes: null,
           county: pp.county,
+          grease_trap_manhole_count: pp.grease_trap_manhole_count,
           _jobber_id: null,
         });
       }
@@ -642,7 +651,7 @@ async function step4_properties() {
   const cols = ['client_id', 'name', 'address', 'city', 'state', 'zip', 'country', 'is_billing',
     'zone', 'latitude', 'longitude', 'geofence_radius_meters', 'geofence_type',
     'access_hours_start', 'access_hours_end', 'access_days',
-    'is_primary', 'notes', 'county'];
+    'is_primary', 'notes', 'county', 'grease_trap_manhole_count'];
   const ids = await bulkInsertReturning('properties', rows, cols, { dryRun: DRY_RUN, batchSize: 200 });
   stats.steps.properties = { built: rows.length, inserted: ids.length };
   console.log(`  ${ids.length} properties ${DRY_RUN ? 'planned' : 'inserted'}`);

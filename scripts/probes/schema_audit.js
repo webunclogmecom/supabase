@@ -1,9 +1,52 @@
 // Comprehensive schema audit post-2026-04-29 redo.
 // Lists every table in `public`, classifies it (active / dormant / deprecated /
 // system), and flags drift between v2_schema.sql, migrations, and live DB.
+//
+// Usage:
+//   node scripts/probes/schema_audit.js                  # default: production
+//   node scripts/probes/schema_audit.js --target=main    # explicit production
+//   node scripts/probes/schema_audit.js --target=sandbox # Yannick's sandbox
 
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
-const { newQuery } = require('../populate/lib/db');
+const https = require('https');
+
+const target = (process.argv.find(a => a.startsWith('--target=')) || '--target=main').split('=')[1];
+const projectId = target === 'sandbox'
+  ? process.env.SANDBOX_SUPABASE_PROJECT_ID
+  : process.env.SUPABASE_PROJECT_ID;
+const pat = process.env.SUPABASE_PAT; // account-scoped, works for both
+if (!projectId) { console.error(`No project ID for target=${target}. Check .env.`); process.exit(1); }
+if (!pat) { console.error('SUPABASE_PAT missing in .env'); process.exit(1); }
+
+console.log(`[target=${target}] project_id=${projectId}\n`);
+
+// Inline newQuery that respects --target (instead of using lib/db.js's hardcoded project)
+function newQuery(sql) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ query: sql });
+    const req = https.request({
+      hostname: 'api.supabase.com',
+      path: `/v1/projects/${projectId}/database/query`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${pat}`,
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Bad JSON: ' + data.slice(0, 300))); }
+        } else reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 600)}`));
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
 
 const CLASSIFICATION = {
   // Business tables — actively populated post-redo
@@ -96,13 +139,11 @@ const CLASSIFICATION = {
     else console.log(`  ✅ ${d} not in DB (correctly dropped)`);
   }
 
-  // Dormant tables — confirm they're empty
-  const dormant = ['expenses', 'receivables', 'routes', 'route_stops', 'leads'];
-  for (const d of dormant) {
-    if (!present.has(d)) { console.log(`  ⚠️  ${d} not in DB (should exist as empty table until Odoo cutover)`); continue; }
-    const c = exactCounts[d];
-    if (c === 0) console.log(`  ✅ ${d} present and empty`);
-    else console.log(`  ⚠️  ${d} present but has ${c} rows — should be 0`);
+  // Dropped tables (removed 2026-04-30 per ADR 011) — confirm they're absent
+  const dropped = ['expenses', 'receivables', 'routes', 'route_stops', 'leads'];
+  for (const d of dropped) {
+    if (!present.has(d)) console.log(`  ✅ ${d} correctly dropped (2026-04-30)`);
+    else console.log(`  ⚠️  ${d} STILL PRESENT — should have been dropped 2026-04-30`);
   }
 
   process.exit(0);

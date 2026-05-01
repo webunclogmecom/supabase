@@ -188,14 +188,17 @@ function extFromContentType(ct, fallbackName) {
 
   console.log('\n[3/3] Processing attachments...');
 
-  // Pre-fetch existing photo ESL source_ids to skip already-migrated attachments
-  const existingPhotoIds = new Set();
+  // Pre-fetch existing photo ESL source_ids → photo_id map. Used to skip
+  // re-uploading already-migrated photos AND to ensure every derm_manifest
+  // gets its photo_link, even when the same att.id appears in multiple DERM
+  // rows (Diego copies images across rows of the same physical dump).
+  const photoIdByAttId = new Map();
   const existingRows = await sbQuery(`
-    SELECT source_id FROM entity_source_links
+    SELECT source_id, entity_id FROM entity_source_links
     WHERE entity_type='photo' AND source_system='airtable';
   `);
-  for (const r of existingRows) existingPhotoIds.add(r.source_id);
-  console.log(`  ${existingPhotoIds.size} Airtable-source photos already migrated (will skip)`);
+  for (const r of existingRows) photoIdByAttId.set(r.source_id, r.entity_id);
+  console.log(`  ${photoIdByAttId.size} Airtable-source photos already migrated (skip upload, still ensure photo_link)`);
 
   for (let i = 0; i < dermRecords.length; i++) {
     const rec = dermRecords[i];
@@ -225,8 +228,30 @@ function extFromContentType(ct, fallbackName) {
         if (!att.url || !att.id) continue;
         stats.attachments_seen++;
 
-        if (existingPhotoIds.has(att.id)) {
+        // Idempotency: if this att.id is already in DB, we still need to ensure
+        // the current derm_manifest has a photo_link to it. Diego frequently
+        // copies the same attachment across multiple DERM rows (one per client
+        // contributing to the dump). The previous version of this script would
+        // skip the second/third/Nth occurrence entirely — leaving those
+        // derm_manifests with NO photo_link to a real-but-already-uploaded photo.
+        const existingPhotoId = photoIdByAttId.get(att.id);
+        if (existingPhotoId) {
           stats.attachments_skipped_already++;
+          if (DRY_RUN) {
+            console.log(`  [${i + 1}/${dermRecords.length}] would link existing photo ${existingPhotoId} as ${role} → derm_manifest=${ourDermId}`);
+            continue;
+          }
+          try {
+            await sbQuery(`
+              INSERT INTO photo_links (photo_id, entity_type, entity_id, role, caption)
+              VALUES (${existingPhotoId}, 'derm_manifest', ${ourDermId}, ${sqlEscape(role)}, NULL)
+              ON CONFLICT (photo_id, entity_type, entity_id, role) DO NOTHING;
+            `);
+            stats.photo_links_inserted++;
+          } catch (e) {
+            stats.attachments_failed++;
+            errors.push({ derm_record: rec.id, role, att: att.id, error: 'link-only failed: ' + e.message.slice(0, 200) });
+          }
           continue;
         }
 
@@ -243,9 +268,11 @@ function extFromContentType(ct, fallbackName) {
           await sbStorageUpload(STORAGE_BUCKET, storagePath, buf, att.type);
           stats.attachments_uploaded++;
 
-          // Insert photo + photo_link + ESL atomically
+          // Single multi-CTE statement — atomic for the photo + its links.
+          // RETURNING captures the photo.id so we can register it in the
+          // in-memory map for any subsequent record that references the same
+          // att.id (Diego copies images across DERM rows for one dump).
           const sql = `
-            BEGIN;
             WITH p AS (
               INSERT INTO photos (storage_path, file_name, content_type, size_bytes, source, uploaded_at)
               VALUES (
@@ -264,15 +291,19 @@ function extFromContentType(ct, fallbackName) {
               SELECT p.id, 'derm_manifest', ${ourDermId}, ${sqlEscape(role)}, NULL
               FROM p
               ON CONFLICT (photo_id, entity_type, entity_id, role) DO NOTHING
+              RETURNING photo_id
+            ),
+            esl_ins AS (
+              INSERT INTO entity_source_links (entity_type, entity_id, source_system, source_id, source_name, match_method, match_confidence, synced_at)
+              SELECT 'photo', p.id, 'airtable', ${sqlEscape(att.id)}, ${sqlEscape(att.filename)}, 'api_pull', 1.00, now()
+              FROM p
+              ON CONFLICT (entity_type, source_system, source_id) DO NOTHING
             )
-            INSERT INTO entity_source_links (entity_type, entity_id, source_system, source_id, source_name, match_method, match_confidence, synced_at)
-            SELECT 'photo', p.id, 'airtable', ${sqlEscape(att.id)}, ${sqlEscape(att.filename)}, 'api_pull', 1.00, now()
-            FROM p
-            ON CONFLICT (entity_type, source_system, source_id) DO NOTHING;
-            COMMIT;
+            SELECT id AS photo_id FROM p;
           `;
-          await sbQuery(sql);
-          existingPhotoIds.add(att.id); // mark as done for this run
+          const result = await sbQuery(sql);
+          const newPhotoId = Array.isArray(result) && result.length ? result[0]?.photo_id : null;
+          if (newPhotoId) photoIdByAttId.set(att.id, newPhotoId);
           stats.photos_inserted++;
           stats.photo_links_inserted++;
         } catch (e) {
