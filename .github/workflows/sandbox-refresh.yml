@@ -1,0 +1,41 @@
+name: Sandbox refresh (Production → Sandbox data sync)
+
+# Daily at 11:00 UTC (07:00 ET in summer / 06:00 ET in winter).
+# Runs AFTER:
+#   - 09:00 UTC daily-cleanup workflow finishes (leaves Production tidy)
+#   - Any overnight Jobber/Samsara/Airtable webhook activity has settled
+#
+# Refreshes Production-owned canonical tables INTO Sandbox, leaving Yannick's
+# app-specific tables/columns alone. See scripts/sync/sandbox_refresh.sh for
+# the full story.
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+concurrency:
+  group: sandbox-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install postgresql-client (matches Supabase PG 15)
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-15
+          which pg_dump
+          pg_dump --version
+
+      - name: Run refresh
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+          SANDBOX_DB_URL: ${{ secrets.SANDBOX_DB_URL }}
+        run: bash scripts/sync/sandbox_refresh.sh
