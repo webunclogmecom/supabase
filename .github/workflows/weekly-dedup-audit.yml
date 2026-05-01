@@ -1,0 +1,31 @@
+name: Weekly dedup audit
+
+# Sundays at 14:00 UTC (10:00 ET in summer, 09:00 ET in winter).
+# Catches duplicate clients, duplicate addresses, and stale Jobber GIDs
+# before they grow roots. Findings go to webhook_events_log + Slack.
+
+on:
+  schedule:
+    - cron: '0 14 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-dedup-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run dedup audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          JOBBER_CLIENT_ID: ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET: ${{ secrets.JOBBER_CLIENT_SECRET }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: node scripts/sync/weekly_dedup_audit.js
