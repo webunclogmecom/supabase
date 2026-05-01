@@ -105,18 +105,63 @@ DUMP_LINES=$(wc -l < "$DUMP_FILE")
 echo "  ✓ ${DUMP_BYTES} bytes, ${DUMP_LINES} lines"
 
 echo
-echo "[2/4] Truncate + reload Sandbox in single transaction..."
+echo "[2a/4] Discover Yannick-added columns to preserve across refresh..."
+# Yannick may add app-specific columns to canonical tables (e.g.
+# clients.favorites). Production doesn't have those columns, so the
+# pg_dump → reload would wipe their values. We compare per-table column
+# lists between the two DBs and snapshot the diff before TRUNCATE,
+# restore after RELOAD. Per Fred 2026-05-01: "for clients we DON'T delete,
+# keep Yannick's column data intact."
+SNAPSHOT_SQL=""
+RESTORE_SQL=""
+DROP_TEMPS_SQL=""
+PRESERVED_COL_COUNT=0
+for t in "${CANONICAL_TABLES[@]}"; do
+  # In Sandbox AND not in Production = Yannick column. Both connections
+  # use the same `postgres` role; column ordering normalized via sort.
+  YCOLS=$(comm -23 \
+    <(psql "$SANDBOX_DB_URL" -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u) \
+    <(psql "$PROD_DB_URL"    -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u))
+  # Skip if no diff
+  [ -z "$YCOLS" ] && continue
+  # Skip if table has no 'id' column (junction tables — Yannick shouldn't
+  # be adding columns to those anyway; junction-table-rows are wholly
+  # determined by their composite key)
+  HAS_ID=$(psql "$SANDBOX_DB_URL" -tAc "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='$t' AND column_name='id' LIMIT 1" 2>/dev/null)
+  [ -z "$HAS_ID" ] && continue
+  YCOLS_CSV=$(echo "$YCOLS" | tr '\n' ',' | sed 's/,$//')
+  echo "  $t: preserving columns [${YCOLS_CSV}]"
+  SNAPSHOT_SQL+="CREATE TEMP TABLE _yannick_snap_${t} AS SELECT id, ${YCOLS_CSV} FROM ${t};
+"
+  SETS=""
+  for c in $YCOLS; do
+    SETS+="${c}=s.${c},"
+    PRESERVED_COL_COUNT=$((PRESERVED_COL_COUNT + 1))
+  done
+  SETS=$(echo "$SETS" | sed 's/,$//')
+  RESTORE_SQL+="UPDATE ${t} t SET ${SETS} FROM _yannick_snap_${t} s WHERE t.id = s.id;
+"
+  DROP_TEMPS_SQL+="DROP TABLE _yannick_snap_${t};
+"
+done
+echo "  ✓ ${PRESERVED_COL_COUNT} Yannick column(s) will be preserved"
+
+echo
+echo "[2b/4] Truncate + reload Sandbox in single transaction..."
 # NOTE: no `SET session_replication_role = replica` — Supabase's `postgres`
 # role can't toggle FK-trigger suppression. We rely on pg_dump's FK-aware
 # insert order instead, and the TRUNCATE CASCADE up front clears all
 # canonical rows before any insert.
 {
   echo "BEGIN;"
+  echo "$SNAPSHOT_SQL"
   echo "$TRUNCATE_SQL"
   cat "$DUMP_FILE"
+  echo "$RESTORE_SQL"
+  echo "$DROP_TEMPS_SQL"
   echo "COMMIT;"
 } | psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet
-echo "  ✓ committed"
+echo "  ✓ committed (Yannick column values restored)"
 
 echo
 echo "[3/4] Refresh sequence values to max(id)+1 on Sandbox..."
