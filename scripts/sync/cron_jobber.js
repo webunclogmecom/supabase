@@ -154,7 +154,7 @@ const ENTITIES = [
   { name: 'clients',    rawTable: 'jobber_pull_clients',    fields: 'id firstName lastName companyName isCompany isArchived emails { address primary description } phones { number primary description } billingAddress { street city province postalCode country } balance updatedAt' },
   { name: 'properties', rawTable: 'jobber_pull_properties', fields: 'id client { id } address { street city province postalCode country }' },
   { name: 'jobs',       rawTable: 'jobber_pull_jobs',       fields: 'id jobNumber title client { id } property { id } jobStatus startAt endAt total updatedAt' },
-  { name: 'visits',     rawTable: 'jobber_pull_visits',     fields: 'id title startAt endAt completedAt visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
+  { name: 'visits',     rawTable: 'jobber_pull_visits',     fields: 'id title startAt endAt completedAt completedBy visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
   { name: 'invoices',   rawTable: 'jobber_pull_invoices',   fields: 'id invoiceNumber invoiceStatus issuedDate dueDate subject amounts { subtotal total invoiceBalance depositAmount } client { id } updatedAt' },
   { name: 'quotes',     rawTable: 'jobber_pull_quotes',     fields: 'id quoteNumber quoteStatus amounts { subtotal total depositAmount } client { id } updatedAt' },
   { name: 'users',      rawTable: 'jobber_pull_users',      fields: 'id name { first last full } email { raw } isAccountOwner isAccountAdmin createdAt' },

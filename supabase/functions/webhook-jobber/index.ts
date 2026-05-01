@@ -193,6 +193,32 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     if (error) throw new Error(`Client update failed: ${error.message}`)
     entityId = existingId
   } else {
+    // Sanity check before INSERT: warn if a client with the same client_code,
+    // email, or phone already exists. We DO insert (Jobber GID is the source
+    // of truth), but log a warning so the weekly dedup audit can catch the
+    // mistake. Yan sometimes creates the same business twice in Jobber under
+    // different codes/typos — this catches it on day 1 instead of week 4.
+    if (parsedCode || primaryEmail || primaryPhone) {
+      const orParts: string[] = []
+      if (parsedCode) orParts.push(`client_code.eq.${parsedCode}`)
+      // Note: email/phone aren't on clients directly (they live on
+      // client_contacts). For the warning we just check client_code here;
+      // contact-level dedup is the weekly audit's job.
+      if (orParts.length) {
+        const { data: dup } = await supabase
+          .from('clients').select('id, name, status').or(orParts.join(','))
+          .limit(3)
+        if (dup && dup.length) {
+          await supabase.from('webhook_events_log').insert({
+            source_system: 'jobber',
+            event_type: 'client_insert_potential_dup',
+            status: 'warning',
+            error_message: `New client "${name}" (gid ${gid.slice(0, 24)}…) inserted with code ${parsedCode}; ${dup.length} existing client(s) share the code: ${dup.map(d => `${d.id}/${d.name}`).join(' | ')}`,
+            payload: { new_gid: gid, new_name: name, parsed_code: parsedCode, candidates: dup },
+          })
+        }
+      }
+    }
     const { data: inserted, error } = await supabase
       .from('clients')
       .insert(clientRow)
@@ -278,7 +304,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   const data: any = await gql(
     `query($id: EncodedId!) {
       visit(id: $id) {
-        id title visitStatus startAt endAt completedAt
+        id title visitStatus startAt endAt completedAt completedBy
         job { id client { id } property { id } }
         invoice { id }
         assignedUsers { nodes { id name { first last } } }
@@ -288,6 +314,15 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   )
   const v = data.visit
   if (!v) throw new Error(`Visit ${numericId} not found in Jobber`)
+
+  // Pre-2026 cutoff (Fred 2026-05-01): we don't track visits before 2026-01-01.
+  // Skip the upsert entirely; if it already exists in our DB, the cleanup
+  // migration will eventually catch it. Don't error — just no-op.
+  const dateForCutoff = (v.startAt ?? v.endAt ?? v.completedAt)?.slice(0, 10)
+  if (dateForCutoff && dateForCutoff < '2026-01-01') {
+    console.log(`[handleVisit] visit ${numericId} dated ${dateForCutoff} — pre-2026, skipping`)
+    return { entity_id: 0 }
+  }
 
   // Resolve FKs via entity_source_links
   // FK lookups — use the full base64 GID directly from Jobber's GraphQL
@@ -323,6 +358,10 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     start_at: v.startAt ?? null,
     end_at: v.endAt ?? null,
     completed_at: v.completedAt ?? null,
+    // completed_by = name of the user who clicked "Complete" in Jobber's app
+    // (often Diego, the office processor — NOT the driver). Driver attribution
+    // lives in visit_assignments via assignedUsers.
+    completed_by: v.completedBy ?? null,
     // visit_date is NOT NULL — fall back through startAt → endAt → completedAt.
     // If all three are missing, skip the row rather than fail the upsert.
     visit_date: (v.startAt ?? v.endAt ?? v.completedAt)?.slice(0, 10) ?? null,
