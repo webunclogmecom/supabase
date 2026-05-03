@@ -24,6 +24,10 @@ const STORAGE_BUCKET = 'GT - Visits Images';
 const STORAGE_SIZE_LIMIT = 52428800;
 
 const DRY_RUN = !process.argv.includes('--execute');
+// --no-window: drop the ±2d filter. Safe with visit.notes endpoint because
+// Jobber already attributes each note to its visit; the window was a guard
+// for the old client.notes approach where misattribution was possible.
+const NO_WINDOW = process.argv.includes('--no-window');
 
 function http(opts, body, timeoutMs = 120000) {
   return new Promise((res, rej) => {
@@ -111,7 +115,7 @@ const extOf = (ct, name) => {
 
 (async () => {
   console.log('='.repeat(60));
-  console.log(`recover_visit_note_photos_window2d.js  Mode: ${DRY_RUN ? 'DRY-RUN' : 'EXECUTE'}`);
+  console.log(`recover_visit_note_photos_window2d.js  Mode: ${DRY_RUN ? 'DRY-RUN' : 'EXECUTE'}  Window: ${NO_WINDOW ? 'OFF (all)' : `±${WINDOW_DAYS}d`}`);
   console.log('='.repeat(60));
 
   // 1. Find the photo-less completed Jobber visits in our DB
@@ -183,11 +187,15 @@ const extOf = (ct, name) => {
       continue;
     }
 
-    // Filter: unpinned notes only, within ±2d of anchor, with attachments.
+    // Filter: unpinned notes only, with attachments.
+    // Window check unless --no-window flag (visit.notes already attributes
+    // each note to this visit, so window is just a recency guard).
     const nearbyWithAtt = allNotes.filter(n => {
       if (n.pinned) return false;
-      const nMs = new Date(n.createdAt).getTime();
-      if (Math.abs(nMs - anchorMs) > windowMs) return false;
+      if (!NO_WINDOW) {
+        const nMs = new Date(n.createdAt).getTime();
+        if (Math.abs(nMs - anchorMs) > windowMs) return false;
+      }
       return (n.fileAttachments?.nodes || []).length > 0;
     });
 

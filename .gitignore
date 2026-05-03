@@ -40,3 +40,6 @@ jobber_visits_full.json
 at_only_salvage.json
 at_only_phantom.json
 audit_findings.json
+
+# Generated audit artifacts
+visit_photo_audit_*.csv
