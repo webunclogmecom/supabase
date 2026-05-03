@@ -190,11 +190,28 @@ function buildRows(stats, vehicleIdMap) {
 
 async function insertBatch(rows) {
   if (!rows.length) return 0;
+  // PostgREST's resolution=ignore-duplicates only catches PK conflicts, not
+  // arbitrary UNIQUE constraints. Our table uses UNIQUE(vehicle_id, recorded_at)
+  // — so dupes throw 23505. Fall back to a row-by-row strategy on conflict.
   const r = await rest('/vehicle_telemetry_readings', {
     method: 'POST',
     headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
     body: JSON.stringify(rows),
   });
+  if (r.status === 409) {
+    // Bulk failed on dupe; insert one-by-one, ignoring 23505 per row
+    let okCount = 0;
+    for (const row of rows) {
+      const rr = await rest('/vehicle_telemetry_readings', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+        body: JSON.stringify(row),
+      });
+      if (rr.status < 300 || rr.status === 409) okCount++;
+      else throw new Error(`insert failed: ${rr.status} ${rr.body.slice(0, 200)}`);
+    }
+    return okCount;
+  }
   if (r.status >= 300) throw new Error(`insert failed: ${r.status} ${r.body.slice(0, 200)}`);
   return rows.length;
 }

@@ -110,24 +110,36 @@ function haversineM(lat1, lng1, lat2, lng2) {
   console.log(`derive_visit_vehicle_id  Mode: ${DRY_RUN ? 'DRY-RUN' : 'EXECUTE'}` + (SINCE ? `  Since: ${SINCE}` : ''));
   console.log('='.repeat(70));
 
-  // Pull candidate visits + their property GPS
+  // Pull candidate visits + their property GPS.
+  // Most visits have property_id NULL but their client has a primary property
+  // with GPS — we COALESCE to that. Validated 2026-05-02: this unlocks 448
+  // additional candidates (vs 13 with strict v.property_id JOIN).
   const sinceFilter = SINCE ? `AND v.visit_date >= '${SINCE}'` : '';
   const candidates = await pg(`
+    WITH primary_prop AS (
+      SELECT DISTINCT ON (client_id) client_id, id, latitude, longitude
+      FROM properties
+      WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY client_id, is_primary DESC NULLS LAST, id ASC
+    )
     SELECT v.id AS visit_id,
       v.start_at::text AS start_at,
       v.completed_at::text AS completed_at,
       v.visit_date::text AS visit_date,
-      p.id AS property_id,
-      p.latitude::float AS lat,
-      p.longitude::float AS lng,
-      c.client_code
+      COALESCE(p_direct.id, p_fallback.id) AS property_id,
+      COALESCE(p_direct.latitude::float,  p_fallback.latitude::float)  AS lat,
+      COALESCE(p_direct.longitude::float, p_fallback.longitude::float) AS lng,
+      c.client_code,
+      CASE WHEN p_direct.id IS NOT NULL THEN 'direct' ELSE 'client-fallback' END AS source
     FROM visits v
-    JOIN properties p ON p.id = v.property_id
+    LEFT JOIN properties   p_direct   ON p_direct.id = v.property_id
+                                      AND p_direct.latitude IS NOT NULL
+    LEFT JOIN primary_prop p_fallback ON p_fallback.client_id = v.client_id
     LEFT JOIN clients c ON c.id = v.client_id
     WHERE v.vehicle_id IS NULL
       AND v.start_at IS NOT NULL
-      AND p.latitude IS NOT NULL
-      AND p.longitude IS NOT NULL
+      AND COALESCE(p_direct.latitude,  p_fallback.latitude)  IS NOT NULL
+      AND COALESCE(p_direct.longitude, p_fallback.longitude) IS NOT NULL
       ${sinceFilter}
     ORDER BY v.start_at DESC;
   `);
