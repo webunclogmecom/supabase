@@ -22,7 +22,10 @@ ALTER TABLE derm_manifests  DROP COLUMN IF EXISTS address_images;    -- 0/972 ro
 -- Step 3: recreate visits_with_status without v.truck. Truck name is
 -- exposed as vehicle_name via JOIN. Also fix the casing bug in
 -- computed_late_status while we're here.
-CREATE VIEW visits_with_status AS
+-- WITH (security_invoker = true) so RLS on visits/clients/properties applies
+-- to the caller, not the view's creator. Supabase advisor flagged the
+-- DEFINER variant as CRITICAL (RLS bypass).
+CREATE VIEW visits_with_status WITH (security_invoker = true) AS
 SELECT v.id, v.client_id, v.property_id, v.job_id, v.vehicle_id,
   v.visit_date, v.start_at, v.end_at, v.completed_at, v.duration_minutes,
   v.title, v.service_type, v.visit_status,
