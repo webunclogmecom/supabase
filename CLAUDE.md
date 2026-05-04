@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-04-30*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-04*
 
 This file is the non-negotiable rules + quick reference for any AI agent (Claude, Viktor, future agents) working on this repository. **Read this every session before touching anything.**
 
@@ -136,6 +136,16 @@ Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-
 | Fillout source | ✅ **DROPPED 2026-04-29.** All inspection ingestion moved to Airtable PRE-POST. `pullFillout`, `cache.fillout`, `_fillout_name` employee fields, `employeeByFilloutName` idmap all removed from populate.js. | populate.js |
 | `completed_by` text resolution post-repop | 🟡 Airtable Visits table has no `Completed By`/`Driver` field — confirmed 2026-04-30 via field schema audit. Pre-Jobber driver attribution genuinely unrecoverable. Dead `Completed By`/`Driver` reads removed from populate.js step 10b. | populate.js step 10b |
 | Yan's Airtable fix list | ⚠️ 6 service_configs need correction in Airtable: 005-BUB GT=0, 167-FEN CL=0, 021-GRA GT/CL=360/364, 002-41 GT=300, 056-STM CL=240. After Yan fixes, re-run `populate.js --step=5`. | docs/runbook.md (TODO add section) |
+| **🆕 Photo recovery 2026-05-01** | ✅ Lever 1 v2 (visit.notes endpoint, skip pinned, --no-window). Photo-less completed 2026 visits: 76 → 19. 378 photos uploaded, 1,290 photo_links created. | scripts/migrate/recover_visit_note_photos_window2d.js |
+| **🆕 Truck attribution autopilot 2026-05-04** | ✅ `visits.vehicle_id` derived from Samsara GPS cross-reference. 0 → 326 of 422 completed 2026 visits (77%). Hourly cron at `:17`. See ADR 012. | scripts/sync/derive_visit_vehicle_id.js + .github/workflows/derive-visit-vehicle-id.yml |
+| **🆕 Property GPS coverage 2026-05-04** | ✅ Tiered geocoding (Jobber → Airtable → Samsara → Google). 199 → 437 of 438 properties (99.8%). Cost ~$1.45 via Google Maps API. See ADR 013. | scripts/sync/geocode_missing_properties.js |
+| **🆕 Samsara telemetry backfill 2026-05-04** | ✅ Pulled Jan 1 → May 3 (4 months). 95 → 439,844 rows. Polling cron continues forward. | scripts/sync/backfill_samsara_telemetry.js |
+| **🆕 Pre-sunset cleanup 2026-05-04** | ✅ 17 hard-deleted test clients + 1 orphan property + 6 soft-deleted borderline records. | scripts/migrations/pre_sunset_cleanup_2026_05_04.sql |
+| **🆕 3NF cleanup 2026-05-04** | ✅ Dropped `visits.truck` (0/564 populated, derivable from vehicle_id), `derm_manifests.manifest_images` + `address_images` (0/972, vestigial; real photos via photo_links). | scripts/migrations/drop_dead_3nf_columns_2026_05_04.sql |
+| **🆕 Sandbox refresh preserves Yannick columns 2026-05-01** | ✅ Snapshot+restore around the daily TRUNCATE so app-specific columns Yannick adds in Sandbox survive the refresh. | scripts/sync/sandbox_refresh.sh |
+| **🆕 Audit toolkit 2026-05-04** | ✅ Run after every batch of fixes (per Fred's standing instruction). Auto-refreshes Jobber token, flags DB size growth >1GB warn / >4GB fail. | scripts/probes/full_session_audit.js |
+| **🆕 Lovable system prompt 2026-05-04** | ✅ Tightened from 12.5K → 9,976 chars (under Lovable's 10K cap). Added decision tree, refresh-aware schema, pinned-note rule, residential rule, inspection sync lag, `inspections_with_truck` JOIN guidance. | handoff/unclogme-lovable-handoff/LOVABLE-SYSTEM-PROMPT.md |
+| Sync gaps to investigate before sunset | ⚠️ Apr 29 full repop missed: invoice #1873 (Alta Standard, Jan 20, $516.61) and job #10000252 (Jewish learning Center). Suggests pagination filter dropped some Jobber records. Targeted completeness check needed before May. | (next session) |
 
 ---
 

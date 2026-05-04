@@ -234,10 +234,12 @@ Tables with 0 rows that should eventually have data. Tracked here because each h
 
 | Table | Rows | Blocker | Path to fix |
 |---|---|---|---|
-| `vehicle_telemetry_readings` | 0 | Webhooks registered + Edge Function deployed 2026-04-20 — awaiting first telemetry events | Watch `webhook_events_log` for `source_system='samsara'` inflow |
+| `vehicle_telemetry_readings` | **439,844** ✅ | Polling cron live every 10min + 4-month historical backfill complete 2026-05-04 (Jan 1 → May 3). | — |
 | `visit_assignments` | 1,677 | ✅ Populated via populate.js fixup pass (1,398 visits × 14 employees) | — (no action needed; doc drift fixed 2026-04-21) |
-| `notes` / `photos` / `photo_links` | 1,853 / 8,019 / 8,019 | Jobber migration complete 2026-04-21. 9.3 GB in Storage. 221 of 373 Jobber clients had notes. | — |
+| `notes` / `photos` / `photo_links` | 1,853 / 7,137 / **9,433** | Jobber migration complete 2026-04-21 + late-photo recovery 2026-05-01 (76 → 19 photo-less visits, +378 photos, +1,290 photo_links). | — |
 | `jobber_oversized_attachments` | 35 | Files > 50 MB skipped by the migration (Supabase Pro bucket cap). Tracked for recovery pass. | Plan upgrade or external storage |
+| `visits.vehicle_id` | **326 / 422 (77%)** of completed 2026 visits | Hourly cron derives via Samsara GPS cross-reference. Remaining 23% are cancellations/off-site/GPS gaps. | See ADR 012 |
+| `properties.latitude/longitude` | **437 / 438 (99.8%)** | Tiered geocoding done 2026-05-04. Remaining 1 has no street address (orphan). | See ADR 013 |
 
 ### `visit_assignments` re-pull plan
 
