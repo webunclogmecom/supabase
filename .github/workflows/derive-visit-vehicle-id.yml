@@ -1,0 +1,42 @@
+name: Derive visit.vehicle_id from Samsara telemetry
+
+# Runs every hour at :17 (offset from samsara-poll's :09 to give telemetry
+# time to land before we try to match against it). Looks back 7 days, so
+# any visit completed in the last week gets vehicle_id assigned via GPS
+# cross-reference. Idempotent — visits already attributed are skipped.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Look back from this date (YYYY-MM-DD). Defaults to 7 days ago.'
+        required: false
+        type: string
+
+concurrency:
+  group: derive-visit-vehicle-id
+  cancel-in-progress: false
+
+jobs:
+  derive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run derivation
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          SINCE="${{ inputs.since }}"
+          if [ -z "$SINCE" ]; then
+            SINCE=$(date -u -d '7 days ago' +%Y-%m-%d)
+          fi
+          echo "Deriving visit.vehicle_id for visits since $SINCE"
+          node scripts/sync/derive_visit_vehicle_id.js --since="$SINCE"
