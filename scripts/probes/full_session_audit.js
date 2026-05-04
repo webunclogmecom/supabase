@@ -228,6 +228,24 @@ async function checkDbSize() {
   } catch (e) { warn('cloud', `DB size check: ${e.message.slice(0, 80)}`); }
 }
 
+async function checkViewSecurity() {
+  // Catches the regression where a view gets recreated without
+  // WITH (security_invoker = true), which Supabase's advisor flags as
+  // CRITICAL (RLS bypass).
+  try {
+    const rows = await pg(PROD, `
+      SELECT c.relname,
+        ('security_invoker=true' = ANY(c.reloptions) OR 'security_invoker=on' = ANY(c.reloptions)) AS invoker
+      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relkind='v'
+      ORDER BY c.relname;
+    `);
+    const definers = rows.filter(r => !r.invoker);
+    if (definers.length === 0) ok('cloud', `View security: all ${rows.length} public views are SECURITY INVOKER`);
+    else for (const v of definers) fail('cloud', `View ${v.relname}: SECURITY DEFINER (RLS bypass — fix with ALTER VIEW SET (security_invoker = true))`);
+  } catch (e) { warn('cloud', `View security check: ${e.message.slice(0, 80)}`); }
+}
+
 async function checkStorageURLs() {
   try {
     const samples = await pg(PROD, `SELECT storage_path FROM photos WHERE storage_path IS NOT NULL ORDER BY id DESC LIMIT 3`);
@@ -335,6 +353,7 @@ function checkEnvVars() {
   console.log('\n[CLOUD] Prod ↔ Sandbox parity…');    await checkProdSandboxParity();
   console.log('\n[CLOUD] Orphan FKs…');               await checkOrphanFKs();
   console.log('\n[CLOUD] DB size + top tables…');     await checkDbSize();
+  console.log('\n[CLOUD] View security (RLS bypass)…'); await checkViewSecurity();
   console.log('\n[CLOUD] Photo storage URLs…');       await checkStorageURLs();
 
   console.log('\n[LOCAL] Repo cleanliness…');         checkRepoCleanliness();

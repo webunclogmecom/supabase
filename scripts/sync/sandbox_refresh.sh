@@ -105,20 +105,47 @@ DUMP_LINES=$(wc -l < "$DUMP_FILE")
 echo "  ✓ ${DUMP_BYTES} bytes, ${DUMP_LINES} lines"
 
 echo
-echo "[2a/4] Discover Yannick-added columns to preserve across refresh..."
-# Yannick may add app-specific columns to canonical tables (e.g.
-# clients.favorites). Production doesn't have those columns, so the
-# pg_dump → reload would wipe their values. We compare per-table column
-# lists between the two DBs and snapshot the diff before TRUNCATE,
-# restore after RELOAD. Per Fred 2026-05-01: "for clients we DON'T delete,
-# keep Yannick's column data intact."
+echo "[2a/4] Detect Production column drops + identify Yannick columns..."
+# Two distinct populations of "in Sandbox but not in Production" columns:
+#   1. Genuine Yannick additions (he created in Sandbox; Prod never had it).
+#      → Preserve values across the TRUNCATE+RELOAD.
+#   2. Production-side drops (Prod used to have it; we dropped it in a
+#      migration). → Drop from Sandbox so the schemas converge.
+#
+# Distinguish via a small _prod_schema_baseline table in Sandbox that
+# records what columns Prod had on the LAST refresh. Anything that was in
+# the baseline but isn't in current Prod = Prod dropped it. Anything not
+# in baseline either = genuine Yannick addition.
+psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet <<'EOSQL'
+CREATE TABLE IF NOT EXISTS _prod_schema_baseline (
+  table_name  TEXT NOT NULL,
+  column_name TEXT NOT NULL,
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (table_name, column_name)
+);
+EOSQL
+DROPPED_BY_PROD_COUNT=0
 SNAPSHOT_SQL=""
 RESTORE_SQL=""
 DROP_TEMPS_SQL=""
 PRESERVED_COL_COUNT=0
 for t in "${CANONICAL_TABLES[@]}"; do
-  # In Sandbox AND not in Production = Yannick column. Both connections
-  # use the same `postgres` role; column ordering normalized via sort.
+  # 1. PROD-DROPPED COLUMNS: was in last baseline, no longer in Prod → drop from Sandbox
+  PROD_DROPPED=$(comm -23 \
+    <(psql "$SANDBOX_DB_URL" -tAc "SELECT column_name FROM _prod_schema_baseline WHERE table_name='$t'" 2>/dev/null | sort -u) \
+    <(psql "$PROD_DB_URL"    -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u))
+  for col in $PROD_DROPPED; do
+    # Only drop from Sandbox if the column actually exists there (and only after
+    # also dropping any view that depends on it — DROP COLUMN ... CASCADE is too
+    # blunt; we'd lose Yannick's views. For now use IF EXISTS and skip on error.)
+    EXISTS=$(psql "$SANDBOX_DB_URL" -tAc "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='$t' AND column_name='$col' LIMIT 1" 2>/dev/null)
+    [ -z "$EXISTS" ] && continue
+    echo "  $t.$col: PROD dropped this — propagating to Sandbox"
+    psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=0 --quiet -c "ALTER TABLE public.$t DROP COLUMN IF EXISTS $col CASCADE;" 2>&1 | grep -v "^$" || true
+    DROPPED_BY_PROD_COUNT=$((DROPPED_BY_PROD_COUNT + 1))
+  done
+
+  # 2. YANNICK-ADDED COLUMNS: in Sandbox AND not in Prod NOW → preserve values
   YCOLS=$(comm -23 \
     <(psql "$SANDBOX_DB_URL" -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u) \
     <(psql "$PROD_DB_URL"    -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u))
@@ -148,6 +175,7 @@ for t in "${CANONICAL_TABLES[@]}"; do
 "
 done
 echo "  ✓ ${PRESERVED_COL_COUNT} Yannick column(s) will be preserved"
+echo "  ✓ ${DROPPED_BY_PROD_COUNT} Production-dropped column(s) propagated to Sandbox"
 
 echo
 echo "[2b/4] Truncate + reload Sandbox in single transaction..."
@@ -208,9 +236,23 @@ EOF
 echo "  ✓ sequences advanced"
 
 echo
-echo "[4/4] ANALYZE Sandbox..."
+echo "[4/4] Update _prod_schema_baseline + ANALYZE Sandbox..."
+# Refresh the baseline with what Prod has RIGHT NOW. Next refresh uses this
+# to detect "Prod had column X yesterday but doesn't now → drop from Sandbox."
+# Single COPY for efficiency vs per-row INSERTs.
+TABLES_LIST=$(IFS=,; for t in "${CANONICAL_TABLES[@]}"; do echo -n "'$t',"; done | sed 's/,$//')
+{
+  echo "BEGIN;"
+  echo "TRUNCATE _prod_schema_baseline;"
+  echo "COPY _prod_schema_baseline (table_name, column_name) FROM stdin;"
+  psql "$PROD_DB_URL" -tAc "SELECT table_name||E'\t'||column_name FROM information_schema.columns WHERE table_schema='public' AND table_name IN (${TABLES_LIST})" 2>/dev/null
+  echo "\\."
+  echo "COMMIT;"
+} | psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet
+BASELINE_COUNT=$(psql "$SANDBOX_DB_URL" -tAc "SELECT COUNT(*) FROM _prod_schema_baseline" 2>/dev/null | tr -d ' ')
+echo "  ✓ baseline updated (${BASELINE_COUNT} columns recorded across ${#CANONICAL_TABLES[@]} canonical tables)"
 psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet -c "ANALYZE;"
-echo "  ✓ done"
+echo "  ✓ analyzed"
 
 echo
 echo "===================================================================="
