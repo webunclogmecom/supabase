@@ -130,14 +130,19 @@ async function checkWebhookFreshness() {
 }
 
 async function checkApiTokens() {
-  // Jobber
+  // Jobber — auto-refresh first since the token has a ~1h life and the audit
+  // is run after long batches of work. A "fresh refresh confirms valid"
+  // signal is more useful than a "stale-token" failure.
   try {
+    execSync('node scripts/sync/jobber_token.js', { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe' });
+    // Re-read the rotated token
+    require('dotenv').config({ path: path.resolve(PROJECT_ROOT, '.env'), override: true });
     const r = await http({
       hostname: 'api.getjobber.com', path: '/api/graphql', method: 'POST',
       headers: { Authorization: `Bearer ${process.env.JOBBER_ACCESS_TOKEN}`, 'X-JOBBER-GRAPHQL-VERSION': '2026-04-13', 'Content-Type': 'application/json' }
     }, JSON.stringify({ query: '{ account { id } }' }));
     const j = JSON.parse(r.body);
-    if (r.status === 200 && j.data) ok('cloud', 'Jobber API token valid');
+    if (r.status === 200 && j.data) ok('cloud', 'Jobber API token valid (auto-refreshed)');
     else fail('cloud', `Jobber API token issue: ${(j.message || j.errors?.[0]?.message || r.status).toString().slice(0, 80)}`);
   } catch (e) { fail('cloud', `Jobber API: ${e.message.slice(0, 80)}`); }
   // Samsara
