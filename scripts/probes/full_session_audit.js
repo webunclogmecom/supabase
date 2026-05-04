@@ -200,6 +200,34 @@ async function checkOrphanFKs() {
   }
 }
 
+async function checkDbSize() {
+  // Flags table or DB growth before it becomes a Pro-tier problem.
+  // Supabase Pro = 8 GB. We warn at 1 GB per table / 6 GB total (75%),
+  // fail at 4 GB per table / 7 GB total (87.5%).
+  try {
+    const db = await pg(PROD, `SELECT pg_database_size(current_database()) AS bytes, pg_size_pretty(pg_database_size(current_database())) AS pretty`);
+    const dbBytes = Number(db[0].bytes);
+    const dbGb = dbBytes / 1024 / 1024 / 1024;
+    if (dbGb >= 7)      fail('cloud', `DB size: ${db[0].pretty} (>87% of 8GB Pro cap)`);
+    else if (dbGb >= 6) warn('cloud', `DB size: ${db[0].pretty} (>75% of 8GB Pro cap)`);
+    else                ok('cloud',   `DB size: ${db[0].pretty} (${(dbGb*100/8).toFixed(1)}% of 8GB cap)`);
+
+    const top = await pg(PROD, `
+      SELECT relname, pg_size_pretty(pg_total_relation_size(c.oid)) AS pretty,
+             pg_total_relation_size(c.oid) AS bytes
+      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relkind='r'
+      ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 3;
+    `);
+    for (const t of top) {
+      const gb = Number(t.bytes) / 1024 / 1024 / 1024;
+      if (gb >= 4)      fail('cloud', `Table ${t.relname}: ${t.pretty} (>4GB — needs retention/compression)`);
+      else if (gb >= 1) warn('cloud', `Table ${t.relname}: ${t.pretty} (>1GB — consider retention soon)`);
+      else              ok('cloud',   `Table ${t.relname}: ${t.pretty}`);
+    }
+  } catch (e) { warn('cloud', `DB size check: ${e.message.slice(0, 80)}`); }
+}
+
 async function checkStorageURLs() {
   try {
     const samples = await pg(PROD, `SELECT storage_path FROM photos WHERE storage_path IS NOT NULL ORDER BY id DESC LIMIT 3`);
@@ -306,6 +334,7 @@ function checkEnvVars() {
   console.log('\n[CLOUD] API tokens valid…');         await checkApiTokens();
   console.log('\n[CLOUD] Prod ↔ Sandbox parity…');    await checkProdSandboxParity();
   console.log('\n[CLOUD] Orphan FKs…');               await checkOrphanFKs();
+  console.log('\n[CLOUD] DB size + top tables…');     await checkDbSize();
   console.log('\n[CLOUD] Photo storage URLs…');       await checkStorageURLs();
 
   console.log('\n[LOCAL] Repo cleanliness…');         checkRepoCleanliness();
