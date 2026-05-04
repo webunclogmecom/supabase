@@ -154,6 +154,16 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   if (!c) throw new Error(`Client ${numericId} not found in Jobber`)
 
   const name = c.isCompany ? c.companyName : `${c.firstName} ${c.lastName}`.trim()
+
+  // Skip Jobber test/junk client patterns — these were hard-deleted from our DB
+  // 2026-05-04 (X 1-15, "test test", "NOT USE Capas Burger"). Webhook updates
+  // on those Jobber-side records would otherwise re-create them in our DB.
+  // Pattern allows: "X 1", "X 12", "x 11" (case-insensitive, optional double space),
+  // "test", "TEST FOO", "NOT USE ..." prefix.
+  if (/^\s*x\s+\d+\s*$/i.test(name) || /^\s*test\b/i.test(name) || /^\s*NOT\s*USE\b/i.test(name)) {
+    console.log(`[skip] client ${numericId} matches test/junk name pattern: "${name}"`)
+    return { entity_id: -1 }
+  }
   const primaryEmail = c.emails?.find((e: any) => e.primary)?.address ?? c.emails?.[0]?.address
   const primaryPhone = c.phones?.find((p: any) => p.primary)?.number ?? c.phones?.[0]?.number
   const addr = c.billingAddress
