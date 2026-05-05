@@ -104,7 +104,11 @@ async function createWebhook(topic) {
   const errs = result?.userErrors ?? [];
   // Detect "already registered" — message wording varies across Jobber API
   // versions, so we match defensively on common substrings.
-  const dupErr = errs.find(e => /already|exists|duplicate/i.test(e.message || ''));
+  // Jobber's "already registered" message wording (multiple variants seen):
+  //   - "Should only have one hook of that topic per account per url"
+  //   - "...already exists..."
+  //   - "...duplicate..."
+  const dupErr = errs.find(e => /already|exists|duplicate|only have one|should only/i.test(e.message || ''));
   if (dupErr) return { skipped: true, reason: dupErr.message };
   if (errs.length) throw new Error(`Failed: ${JSON.stringify(errs)}`);
   return result?.webhookEndpoint;
