@@ -70,15 +70,27 @@ async function pg(sql) {
     WHERE NOT EXISTS (SELECT 1 FROM visits v WHERE v.client_id=ch.id AND v.visit_date >= CURRENT_DATE)
       AND (lv.last_done IS NULL
            OR (CURRENT_DATE - lv.last_done)::numeric / ch.shortest_freq > 2.0)
+      -- Exclude residentials (no client_code) per Fred 2026-05-05.
+      AND ch.client_code IS NOT NULL
+      AND ch.client_code != ''
+      -- Hardcoded exclusions per Fred (residential / non-service clients
+      -- whose visits don't fit the recurring-service model — e.g. 201-ALA
+      -- had a "meeting" visit Apr 22 not tracked here).
+      -- TODO: separate sync gap — 201-ALA has visits in Jobber that didn't
+      -- reach our DB. Investigate later.
+      AND ch.client_code NOT IN ('201-ALA')
     ORDER BY ch.client_code;
   `);
 
+  // freq=0 means "this service type doesn't apply to this client" (per Fred
+  // 2026-05-05) — NOT broken. Only flag freq > 180 days (way too long) or
+  // freq < 10 days (way too frequent) or freq IS NULL.
   const broken = await pg(`
     SELECT c.client_code, c.name,
       STRING_AGG(sc.service_type || '=' || sc.frequency_days::text, ', ' ORDER BY sc.service_type) AS broken_configs
     FROM clients c JOIN service_configs sc ON sc.client_id=c.id
     WHERE c.status IN ('ACTIVE','Recuring')
-      AND (sc.frequency_days = 0 OR sc.frequency_days > 180)
+      AND (sc.frequency_days IS NULL OR sc.frequency_days > 180 OR (sc.frequency_days > 0 AND sc.frequency_days < 10))
     GROUP BY c.client_code, c.name
     ORDER BY c.client_code;
   `);
@@ -115,11 +127,11 @@ async function pg(sql) {
     yan += `| ${i++} | ${r.client_code || '?'} | ${(r.name||'').replace(/\|/g,'\\|').slice(0,40)} | ${(r.configs||'').slice(0,25)} | ${r.last_done || 'never'} | ${r.days_since ?? '∞'} |\n`;
   }
   yan += `\n## Part 3: Other items needing review\n\n`;
-  yan += `- **140-TYO typo**: in our DB the client_code is \`140-TYO\` but the Jobber/Airtable name is \`140-TCY Tacos yoyo\`. Pick one canonical spelling.\n`;
+  yan += `- **140-TYO Tacos Yoyo — Airtable has wrong client_code (140-TCY).** Jobber and our DB correctly say \`140-TYO\`. Fix Airtable to match. (Reminder: clients are sourced from Jobber, not Airtable — so we're not affected, but Airtable views will be wrong until fixed.)\n`;
   yan += `- **26 TCE chain locations on CL=120 days** — if 4 months between cleanings is the agreed chain standard, no action.\n`;
   yan += `- **43 DERM manifests with NULL service_date** — sync gap from Airtable. Either Airtable rows are missing the date and need backfill, or accept the legacy gap.\n`;
   yan += `- **8 commercial visits with no photos** — drivers should be taking photos. Visit IDs: 1241(174-VIN), 1279(170-PV), 1289(182-PAL), 1320(043-MIL), 1396(025-GRO), 1468(112-YA), 1716(195-MYK), 1730(191-TEN).\n`;
-  yan += `- **201-ALA Aladdin** — residential site, removed from list (had a meeting visit Apr 22 not tracked as service).\n`;
+  yan += `- **201-ALA Aladdin** — residential site (recurring meetings, not standard service). Excluded from Part 2. Note: 201-ALA's visits aren't reaching our DB from Jobber — separate sync issue, will investigate.\n`;
   fs.writeFileSync(path.resolve(__dirname, '../../OPS_LIST_YAN.md'), yan);
 
   console.log(`Diego: ${overdue.length} overdue clients`);
