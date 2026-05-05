@@ -43,3 +43,8 @@ audit_findings.json
 
 # Generated audit artifacts
 visit_photo_audit_*.csv
+
+# Temp CSVs from probe/replay scripts (regenerable, not source)
+jobber_gaps_*.csv
+stuck_visits_to_replay.csv
+test_5_visits.csv
