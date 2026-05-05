@@ -137,13 +137,18 @@ async function gql(token, query, variables = {}) {
 // We don't reuse incremental_sync.js directly because that module reads tokens
 // from .env, which we don't have in CI. The logic is duplicated minimally here.
 
+// 2026-05-04: visits switched createdAt → updatedAt. Drivers tapping "Complete"
+// in Jobber's app changes updatedAt but NOT createdAt, so the old config never
+// re-pulled status changes — leaving 63 visits stuck in 'scheduled' on past dates.
+// Same fix on jobs (createdAt → updatedAt) for consistency; jobs do change after
+// creation (status, total) so this catches those updates too.
 const CURSOR_FIELD = {
-  clients: 'updatedAt', properties: null, jobs: 'createdAt',
-  visits: 'createdAt', invoices: 'updatedAt', quotes: 'updatedAt', users: null,
+  clients: 'updatedAt', properties: null, jobs: 'updatedAt',
+  visits: 'updatedAt', invoices: 'updatedAt', quotes: 'updatedAt', users: null,
 };
 const NODE_TIME_FIELD = {
   clients: 'updatedAt', properties: null, jobs: 'updatedAt',
-  visits: 'createdAt', invoices: 'updatedAt', quotes: 'updatedAt', users: 'createdAt',
+  visits: 'updatedAt', invoices: 'updatedAt', quotes: 'updatedAt', users: 'createdAt',
 };
 const FILTER_TYPE = {
   clients: 'Client', properties: 'Properties', jobs: 'Job',
