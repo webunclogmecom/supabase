@@ -56,6 +56,7 @@ function jobberGql(query, variables = {}) {
         headers: {
           Authorization: `Bearer ${TOKEN}`,
           'Content-Type': 'application/json',
+          'X-JOBBER-GRAPHQL-VERSION': '2026-04-13',
           'Content-Length': Buffer.byteLength(body),
         },
       },
@@ -102,8 +103,8 @@ async function listWebhooks() {
 // ---- Create a webhook subscription ----
 async function createWebhook(topic) {
   const data = await jobberGql(
-    `mutation CreateWebhook($input: WebhookCreateInput!) {
-      webhookCreate(input: $input) {
+    `mutation CreateWebhook($input: WebhookEndpointCreateInput!) {
+      webhookEndpointCreate(input: $input) {
         webhook { id topic url }
         userErrors { message path }
       }
@@ -111,24 +112,24 @@ async function createWebhook(topic) {
     { input: { topic, url: WEBHOOK_URL } }
   );
 
-  if (data.webhookCreate?.userErrors?.length) {
-    throw new Error(`Failed: ${JSON.stringify(data.webhookCreate.userErrors)}`);
+  if (data.webhookEndpointCreate?.userErrors?.length) {
+    throw new Error(`Failed: ${JSON.stringify(data.webhookEndpointCreate.userErrors)}`);
   }
-  return data.webhookCreate?.webhook;
+  return data.webhookEndpointCreate?.webhook;
 }
 
 // ---- Delete a webhook ----
 async function deleteWebhook(id) {
   const data = await jobberGql(
     `mutation DeleteWebhook($id: EncodedId!) {
-      webhookDelete(id: $id) {
-        webhook { id }
+      webhookEndpointDelete(id: $id) {
+        deletedId
         userErrors { message }
       }
     }`,
     { id }
   );
-  return data.webhookDelete;
+  return data.webhookEndpointDelete;
 }
 
 // ---- Main ----

@@ -240,6 +240,31 @@ async function checkDbSize() {
   } catch (e) { warn('cloud', `DB size check: ${e.message.slice(0, 80)}`); }
 }
 
+async function checkStaleESLs() {
+  // Stale ESL = a row in entity_source_links pointing to an upstream record
+  // that no longer exists. Happens when Jobber/Airtable deletes a record but
+  // the *_DESTROY webhook didn't fire (Jobber webhook reliability) AND the
+  // polling cron didn't catch the absence. Per Fred 2026-05-05: tolerate up
+  // to 50 total before flagging — small drift is normal, growth = leak.
+  try {
+    const r = await pg(PROD, `
+      SELECT entity_type, COUNT(*) AS n
+      FROM entity_source_links esl
+      WHERE entity_type='client'   AND NOT EXISTS (SELECT 1 FROM clients   WHERE id=esl.entity_id)
+         OR entity_type='visit'    AND NOT EXISTS (SELECT 1 FROM visits    WHERE id=esl.entity_id)
+         OR entity_type='job'      AND NOT EXISTS (SELECT 1 FROM jobs      WHERE id=esl.entity_id)
+         OR entity_type='invoice'  AND NOT EXISTS (SELECT 1 FROM invoices  WHERE id=esl.entity_id)
+         OR entity_type='property' AND NOT EXISTS (SELECT 1 FROM properties WHERE id=esl.entity_id)
+      GROUP BY entity_type
+      ORDER BY 1;
+    `);
+    const total = r.reduce((s, x) => s + Number(x.n), 0);
+    if (total === 0) ok('cloud', 'Stale ESLs: 0');
+    else if (total <= 50) ok('cloud', `Stale ESLs: ${total} (under tolerance threshold of 50)`);
+    else fail('cloud', `Stale ESLs: ${total} (over 50 — investigate sync gaps)`);
+  } catch (e) { warn('cloud', `Stale ESL check: ${e.message.slice(0, 80)}`); }
+}
+
 async function checkViewSecurity() {
   // Catches the regression where a view gets recreated without
   // WITH (security_invoker = true), which Supabase's advisor flags as
@@ -365,6 +390,7 @@ function checkEnvVars() {
   console.log('\n[CLOUD] Prod ↔ Sandbox parity…');    await checkProdSandboxParity();
   console.log('\n[CLOUD] Orphan FKs…');               await checkOrphanFKs();
   console.log('\n[CLOUD] DB size + top tables…');     await checkDbSize();
+  console.log('\n[CLOUD] Stale ESLs (sync drift)…');   await checkStaleESLs();
   console.log('\n[CLOUD] View security (RLS bypass)…'); await checkViewSecurity();
   console.log('\n[CLOUD] Photo storage URLs…');       await checkStorageURLs();
 

@@ -1,0 +1,48 @@
+name: Daily notes + photos sync from Jobber
+
+# Jobber doesn't expose webhook topics for note creation (confirmed 2026-05-05
+# via WebHookTopicEnum introspection — 46 topics, none for notes/photos/files).
+# So notes + their photo attachments must be polled. This cron runs the
+# existing one-shot migration script daily — fully idempotent (every INSERT
+# uses ON CONFLICT DO NOTHING).
+#
+# Timing: 12:00 UTC = 08:00 ET — runs ~1 hour BEFORE the daily-no-photo-alert
+# at 13:00 UTC, so any photos posted overnight by drivers reach the DB before
+# the alert fires (otherwise the alert reports false positives).
+
+on:
+  schedule:
+    - cron: '12 12 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: daily-notes-photos-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+      - name: Refresh Jobber token
+        env:
+          JOBBER_CLIENT_ID: ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET: ${{ secrets.JOBBER_CLIENT_SECRET }}
+          JOBBER_REFRESH_TOKEN: ${{ secrets.JOBBER_REFRESH_TOKEN }}
+          JOBBER_ACCESS_TOKEN: ${{ secrets.JOBBER_ACCESS_TOKEN }}
+          JOBBER_TOKEN_EXPIRES_AT: ${{ secrets.JOBBER_TOKEN_EXPIRES_AT }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/sync/jobber_token.js
+      - name: Pull notes + photos from Jobber
+        env:
+          JOBBER_ACCESS_TOKEN: ${{ secrets.JOBBER_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/migrate/jobber_notes_photos.js --execute
