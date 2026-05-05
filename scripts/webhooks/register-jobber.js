@@ -83,39 +83,31 @@ function jobberGql(query, variables = {}) {
   });
 }
 
-// ---- List existing webhooks ----
-async function listWebhooks() {
-  const data = await jobberGql(`
-    query {
-      webhooks(first: 50) {
-        nodes {
-          id
-          topic
-          url
-          createdAt
-        }
-      }
-    }
-  `);
-  return data.webhooks?.nodes ?? [];
-}
+// Note 2026-05-05: Jobber's current GraphQL API has NO query to list existing
+// webhook endpoints (only WebHookEvent singular lookup). webhookEndpointCreate
+// returns a userError if a duplicate exists, which we treat as "already done"
+// — fully idempotent.
 
 // ---- Create a webhook subscription ----
 async function createWebhook(topic) {
   const data = await jobberGql(
     `mutation CreateWebhook($input: WebhookEndpointCreateInput!) {
       webhookEndpointCreate(input: $input) {
-        webhook { id topic url }
+        webhookEndpoint { id topic url }
         userErrors { message path }
       }
     }`,
     { input: { topic, url: WEBHOOK_URL } }
   );
 
-  if (data.webhookEndpointCreate?.userErrors?.length) {
-    throw new Error(`Failed: ${JSON.stringify(data.webhookEndpointCreate.userErrors)}`);
-  }
-  return data.webhookEndpointCreate?.webhook;
+  const result = data.webhookEndpointCreate;
+  const errs = result?.userErrors ?? [];
+  // Detect "already registered" — message wording varies across Jobber API
+  // versions, so we match defensively on common substrings.
+  const dupErr = errs.find(e => /already|exists|duplicate/i.test(e.message || ''));
+  if (dupErr) return { skipped: true, reason: dupErr.message };
+  if (errs.length) throw new Error(`Failed: ${JSON.stringify(errs)}`);
+  return result?.webhookEndpoint;
 }
 
 // ---- Delete a webhook ----
@@ -137,13 +129,10 @@ async function deleteWebhook(id) {
   const args = process.argv.slice(2);
 
   if (args.includes('--list')) {
-    console.log('Existing Jobber webhooks:');
-    const hooks = await listWebhooks();
-    if (!hooks.length) {
-      console.log('  (none)');
-    } else {
-      hooks.forEach((h) => console.log(`  ${h.id}  ${h.topic.padEnd(20)}  ${h.url}`));
-    }
+    console.log("Jobber's current API has no list-webhooks query — only");
+    console.log('per-topic webhookEndpointCreate (which returns userError on');
+    console.log('duplicate). To audit subscriptions, check webhook_events_log');
+    console.log('for which topics have actually delivered events recently.');
     return;
   }
 
@@ -166,22 +155,16 @@ async function deleteWebhook(id) {
   console.log(`Target URL: ${WEBHOOK_URL}`);
   console.log('============================================================\n');
 
-  // Check existing
-  const existing = await listWebhooks();
-  const existingTopics = new Set(existing.map((h) => h.topic));
-
+  // Try to register every topic. Jobber returns userError if already exists.
   for (const topic of TOPICS) {
-    if (existingTopics.has(topic)) {
-      console.log(`  [skip] ${topic} — already registered`);
-      continue;
-    }
     try {
-      const wh = await createWebhook(topic);
-      console.log(`  [ok]   ${topic} → ${wh.id}`);
+      const result = await createWebhook(topic);
+      if (result.skipped) console.log(`  [skip] ${topic} — already registered (${result.reason.slice(0, 60)})`);
+      else console.log(`  [ok]   ${topic} → ${result.id}`);
     } catch (e) {
       console.error(`  [fail] ${topic}: ${e.message}`);
     }
   }
 
-  console.log('\nDone. Run with --list to verify.');
+  console.log('\nDone.');
 })();
