@@ -81,9 +81,21 @@ async function checkCronWorkflows() {
       warn('cloud', 'No scheduled workflow runs in last 24h (unexpected)');
       return;
     }
+    // What matters operationally: is the cron HEALTHY NOW? Look at the
+    // MOST RECENT run per workflow rather than "any failure in 24h" — a
+    // transient 429/rate-limit hours ago that self-resolved isn't a blocker
+    // if the latest run is green.
+    const latestByName = {};
+    for (const r of recent) {
+      if (!latestByName[r.name] || new Date(r.createdAt) > new Date(latestByName[r.name].createdAt)) {
+        latestByName[r.name] = r;
+      }
+    }
     for (const [name, c] of Object.entries(byName)) {
+      const latest = latestByName[name];
       if (c.fail === 0) ok('cloud', `Cron ${name}: ${c.ok} runs, all green`);
-      else fail('cloud', `Cron ${name}: ${c.fail} failures, ${c.ok} ok`);
+      else if (latest?.conclusion === 'success') warn('cloud', `Cron ${name}: ${c.fail} historical failure(s) but latest green — likely transient`);
+      else fail('cloud', `Cron ${name}: ${c.fail} failures, ${c.ok} ok, latest=${latest?.conclusion}`);
     }
   } catch (e) {
     fail('cloud', `gh run list failed: ${e.message.slice(0, 100)}`);
