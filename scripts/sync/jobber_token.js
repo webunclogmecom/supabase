@@ -123,6 +123,40 @@ async function syncDbTokens(envs, access_token, refresh_token, expires_at) {
   });
 }
 
+// Read the latest tokens from public.webhook_tokens. The DB row is the single
+// source of truth that all surfaces (Edge Functions, crons, local sessions)
+// converge on after every successful refresh — so it's the freshest signal
+// when stale .env / process.env tokens would otherwise trigger a doomed refresh
+// (e.g. when GitHub Actions secrets carry an old CLIENT_ID/SECRET).
+async function readDbTokens(envs) {
+  const first = envs[0];
+  const url = first.kv.SUPABASE_URL;
+  const key = first.kv.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return new Promise((resolve) => {
+    const u = new URL(`${url}/rest/v1/webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,expires_at`);
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    }, res => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => {
+        if (res.statusCode >= 300) return resolve(null);
+        try {
+          const rows = JSON.parse(d);
+          if (!rows.length) return resolve(null);
+          const row = rows[0];
+          if (!row.access_token) return resolve(null);
+          resolve(row);
+        } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(15_000, () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
 async function getValidToken({ force = false, verbose = false } = {}) {
   let envs = ENV_FILES.map(readEnv).filter(Boolean);
   if (!envs.length) {
@@ -137,7 +171,29 @@ async function getValidToken({ force = false, verbose = false } = {}) {
   const clientSecret = envs[0].kv.JOBBER_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new Error('JOBBER_CLIENT_ID / JOBBER_CLIENT_SECRET missing');
 
-  // Pick the env with the latest-expiring access_token
+  // Pull the live token from webhook_tokens — typically the freshest source
+  // because every other refresh path syncs back into it. Surface it as a
+  // virtual env candidate so the rank-by-exp loop below picks it up.
+  const dbRow = await readDbTokens(envs);
+  if (dbRow) {
+    envs.push({
+      filePath: '<webhook_tokens>',
+      content: '',
+      synthetic: true,
+      kv: {
+        JOBBER_CLIENT_ID:        clientId,
+        JOBBER_CLIENT_SECRET:    clientSecret,
+        JOBBER_ACCESS_TOKEN:     dbRow.access_token,
+        JOBBER_REFRESH_TOKEN:    dbRow.refresh_token,
+        JOBBER_TOKEN_EXPIRES_AT: dbRow.expires_at,
+        SUPABASE_URL:            envs[0].kv.SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: envs[0].kv.SUPABASE_SERVICE_ROLE_KEY,
+      },
+    });
+    log(`[jobber-token] webhook_tokens row found, exp ${dbRow.expires_at}`);
+  }
+
+  // Pick the env with the latest-expiring access_token (DB row included)
   const ranked = envs.map(e => ({ env: e, exp: jwtExpMs(e.kv.JOBBER_ACCESS_TOKEN) })).sort((a, b) => b.exp - a.exp);
   const best = ranked[0];
   log(`[jobber-token] best exp: ${best.exp ? new Date(best.exp).toISOString() : '(none)'}  source: ${best.env.filePath}`);
