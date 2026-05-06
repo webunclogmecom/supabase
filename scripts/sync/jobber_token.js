@@ -61,24 +61,25 @@ function writeEnv(env, updates) {
   env.content = content;
 }
 
-// Synthesize a virtual env from process.env so the token-refresh flow works
-// inside GitHub Actions (no .env file on disk; vars come from `env:` block).
+// Synthesize a virtual env from process.env. The only hard requirement is
+// SUPABASE_URL + SERVICE_ROLE_KEY (so we can read webhook_tokens). CLIENT_ID
+// / CLIENT_SECRET / REFRESH_TOKEN are only needed if we have to refresh —
+// callers like jobber_notes_photos.js pass JOBBER_ACCESS_TOKEN only and rely
+// on the DB row for freshness.
 function envFromProcess() {
-  const required = ['JOBBER_CLIENT_ID', 'JOBBER_CLIENT_SECRET', 'JOBBER_REFRESH_TOKEN'];
-  const missing = required.filter(k => !process.env[k]);
-  if (missing.length) return null;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   return {
     filePath: '<process.env>',
     content: '',
     synthetic: true,
     kv: {
-      JOBBER_CLIENT_ID:      process.env.JOBBER_CLIENT_ID,
-      JOBBER_CLIENT_SECRET:  process.env.JOBBER_CLIENT_SECRET,
+      JOBBER_CLIENT_ID:      process.env.JOBBER_CLIENT_ID || '',
+      JOBBER_CLIENT_SECRET:  process.env.JOBBER_CLIENT_SECRET || '',
       JOBBER_ACCESS_TOKEN:   process.env.JOBBER_ACCESS_TOKEN || '',
-      JOBBER_REFRESH_TOKEN:  process.env.JOBBER_REFRESH_TOKEN,
+      JOBBER_REFRESH_TOKEN:  process.env.JOBBER_REFRESH_TOKEN || '',
       JOBBER_TOKEN_EXPIRES_AT: process.env.JOBBER_TOKEN_EXPIRES_AT || '',
-      SUPABASE_URL:          process.env.SUPABASE_URL || '',
-      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+      SUPABASE_URL:          process.env.SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     },
   };
 }
@@ -167,9 +168,12 @@ async function getValidToken({ force = false, verbose = false } = {}) {
   }
   const log = (...a) => { if (verbose) console.log(...a); };
 
+  // CLIENT_ID / SECRET are only required for the refresh path. Don't fail
+  // here just because they're missing — the DB row may still hold a fresh
+  // token (the common case in GH Actions where the workflow step only
+  // forwards JOBBER_ACCESS_TOKEN, SUPABASE_URL, and SERVICE_ROLE_KEY).
   const clientId = envs[0].kv.JOBBER_CLIENT_ID;
   const clientSecret = envs[0].kv.JOBBER_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new Error('JOBBER_CLIENT_ID / JOBBER_CLIENT_SECRET missing');
 
   // Pull the live token from webhook_tokens — typically the freshest source
   // because every other refresh path syncs back into it. Surface it as a
@@ -214,6 +218,12 @@ async function getValidToken({ force = false, verbose = false } = {}) {
       .then(() => log('[jobber-token] DB webhook_tokens synced'))
       .catch(err => log(`[jobber-token] DB sync failed (non-fatal): ${err.message}`));
     return best.env.kv.JOBBER_ACCESS_TOKEN;
+  }
+
+  // Refresh path requires CLIENT_ID/SECRET; fail fast with a clear message
+  // if we got this far without them (no fresh DB row, no env credentials).
+  if (!clientId || !clientSecret) {
+    throw new Error('No fresh token in webhook_tokens AND JOBBER_CLIENT_ID/CLIENT_SECRET not provided — cannot refresh.');
   }
 
   // Refresh path: try every known refresh_token in descending order of env recency
