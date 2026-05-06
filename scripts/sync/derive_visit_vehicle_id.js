@@ -64,7 +64,7 @@ function http(opts, body) {
   });
 }
 
-async function pg(sql) {
+async function pg(sql, _retry = 0) {
   if (!PAT || !PROJECT) throw new Error('SUPABASE_PAT and SUPABASE_PROJECT_ID required for queries');
   const r = await http({
     hostname: 'api.supabase.com',
@@ -72,6 +72,13 @@ async function pg(sql) {
     method: 'POST',
     headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json' }
   }, JSON.stringify({ query: sql }));
+  // Mgmt API throttles around 60 req/min. Back off + retry on 429 / 5xx.
+  if ((r.status === 429 || (r.status >= 500 && r.status < 600)) && _retry < 6) {
+    const waitMs = Math.min(60_000, 2_000 * Math.pow(2, _retry));
+    console.log(`  [pg] HTTP ${r.status} — backing off ${waitMs/1000}s (retry ${_retry+1}/6)`);
+    await new Promise(rs => setTimeout(rs, waitMs));
+    return pg(sql, _retry + 1);
+  }
   if (r.status >= 300) throw new Error(`PG ${r.status}: ${r.body.slice(0, 300)}`);
   return JSON.parse(r.body);
 }
