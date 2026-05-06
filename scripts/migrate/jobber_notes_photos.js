@@ -239,7 +239,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // ---------------------------------------------------------------------------
 // Supabase helpers (SQL via Management API; Storage via REST)
 // ---------------------------------------------------------------------------
-async function sbQuery(sql) {
+async function sbQuery(sql, _retry = 0) {
   const body = JSON.stringify({ query: sql });
   const r = await httpRequest({
     hostname: 'api.supabase.com',
@@ -251,6 +251,15 @@ async function sbQuery(sql) {
       'Content-Length': Buffer.byteLength(body),
     },
   }, body);
+  // Supabase Management API throttles around 60 req/min. Back off and retry
+  // on 429 (and on transient 5xx) — the script issues thousands of writes
+  // per run, so without this it fails ~85% through.
+  if ((r.status === 429 || (r.status >= 500 && r.status < 600)) && _retry < 6) {
+    const waitMs = Math.min(60_000, 2_000 * Math.pow(2, _retry));
+    console.log('  [sbQuery] HTTP ' + r.status + ' — backing off ' + (waitMs/1000) + 's (retry ' + (_retry+1) + '/6)');
+    await sleep(waitMs);
+    return sbQuery(sql, _retry + 1);
+  }
   if (r.status >= 300) throw new Error('DB: HTTP ' + r.status + ': ' + r.body.toString().slice(0, 400));
   return JSON.parse(r.body.toString());
 }
