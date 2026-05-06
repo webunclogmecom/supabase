@@ -766,6 +766,19 @@ async function writeCheckpoint(lastClientId, totalNotes, status, error = null) {
     attachments_failed: 0,
   };
 
+  // Bootstrap token via the shared helper FIRST. It consults webhook_tokens
+  // and uses the freshest source (DB / .env / process.env), so this script
+  // doesn't depend on whatever stale value GitHub Actions passed via the
+  // `env:` block. After this, process.env.JOBBER_ACCESS_TOKEN is current.
+  try {
+    const { getValidToken } = require('../sync/jobber_token.js');
+    process.env.JOBBER_ACCESS_TOKEN = await getValidToken({ verbose: true });
+  } catch (e) {
+    console.error('Token bootstrap (jobber_token.js) failed:', e.message);
+    // Don't exit yet — fall through to the auth-sanity probe so the original
+    // error message is preserved if the script's own refresh path also fails.
+  }
+
   // Auth sanity
   try {
     const me = await jobberGraphQL(`{ account { name } }`);
