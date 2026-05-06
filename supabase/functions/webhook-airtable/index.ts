@@ -121,6 +121,21 @@ function fieldVal(fields: Record<string, unknown>, name: string): unknown {
 function strVal(fields: Record<string, unknown>, name: string): string | null {
   const v = fields[name]
   if (v === null || v === undefined) return null
+  // Airtable single-select / single-collaborator fields arrive as
+  //   { id, name, color }   (since ~2026 — used to be plain strings).
+  // Multi-select fields arrive as an array of those objects. Pick the
+  // human-readable `name`. String(obj) → "[object Object]" otherwise.
+  if (typeof v === 'object') {
+    const obj = v as Record<string, unknown>
+    if (Array.isArray(v)) {
+      const first = (v as unknown[])[0]
+      if (first && typeof first === 'object' && 'name' in (first as Record<string, unknown>)) {
+        return String((first as Record<string, unknown>).name).trim() || null
+      }
+      return v.length ? String(v[0]).trim() || null : null
+    }
+    if ('name' in obj && typeof obj.name === 'string') return obj.name.trim() || null
+  }
   return String(v).trim() || null
 }
 
