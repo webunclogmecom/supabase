@@ -362,8 +362,28 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     'unvisited': 'scheduled',
   }
 
+  // Infer service_type from the visit title — Jobber's API doesn't expose this
+  // field directly. populate.js (one-shot 2026-04-29) got it from matched
+  // Airtable visits, but webhook-arrived visits had no enrichment path —
+  // resulting in 71% of completed visits having NULL service_type and breaking
+  // cadence audits (e.g. Yannick reported 069-TCE config 30d but seeing 60d).
+  // Title patterns observed in production:
+  //   "grease trap", "GT" → GT
+  //   "service call", "clog", "emergency", "hydrojet", "drain", "riser",
+  //   "fire pump", "warranty", "repair", standalone "service" → CL
+  //   "dump" → null (operational, not client-bound)
+  const inferServiceType = (title: string | null): string | null => {
+    if (!title) return null
+    const t = title.toLowerCase()
+    if (/grease trap|grey water|gray water/.test(t)) return 'GT'
+    if (/service call|\bclog|emergency|hydrojet|\bdrain|\briser|fire pump|warranty|\brepair/.test(t)) return 'CL'
+    if (/\bservice\b/.test(t) && !/dump/.test(t)) return 'CL'
+    return null
+  }
+
   const visitRow: Record<string, unknown> = {
     title: v.title ?? null,
+    service_type: inferServiceType(v.title ?? null),
     visit_status: statusMap[v.visitStatus?.toLowerCase()] ?? 'scheduled',
     start_at: v.startAt ?? null,
     end_at: v.endAt ?? null,
