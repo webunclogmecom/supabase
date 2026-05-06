@@ -137,18 +137,25 @@ async function gql(token, query, variables = {}) {
 // We don't reuse incremental_sync.js directly because that module reads tokens
 // from .env, which we don't have in CI. The logic is duplicated minimally here.
 
-// 2026-05-04: visits switched createdAt → updatedAt. Drivers tapping "Complete"
-// in Jobber's app changes updatedAt but NOT createdAt, so the old config never
-// re-pulled status changes — leaving 63 visits stuck in 'scheduled' on past dates.
-// Same fix on jobs (createdAt → updatedAt) for consistency; jobs do change after
-// creation (status, total) so this catches those updates too.
+// 2026-05-06: Jobber's GraphQL schema (introspected at api version 2026-04-13)
+// does NOT support updatedAt as a filter on VisitFilterAttributes nor
+// JobFilterAttributes. Visit type doesn't even expose updatedAt as a field.
+// Available filter fields per type: createdAt, startAt, endAt, completedAt.
+//   - visits: cursor on completedAt — drivers tapping "Complete" sets this,
+//     so we still catch status transitions. Edits to scheduled (uncompleted)
+//     visits arrive via VISIT_UPDATE webhooks instead.
+//   - jobs: cursor on createdAt — new jobs get caught; in-flight status
+//     changes come via JOB_UPDATE webhooks.
+// (The 2026-05-04 commit message about updatedAt was wrong — Jobber's API
+// silently rejected those queries, leaving visits/jobs polling broken until
+// today's audit.)
 const CURSOR_FIELD = {
-  clients: 'updatedAt', properties: null, jobs: 'updatedAt',
-  visits: 'updatedAt', invoices: 'updatedAt', quotes: 'updatedAt', users: null,
+  clients: 'updatedAt', properties: null, jobs: 'createdAt',
+  visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt', users: null,
 };
 const NODE_TIME_FIELD = {
   clients: 'updatedAt', properties: null, jobs: 'updatedAt',
-  visits: 'updatedAt', invoices: 'updatedAt', quotes: 'updatedAt', users: 'createdAt',
+  visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt', users: 'createdAt',
 };
 const FILTER_TYPE = {
   clients: 'Client', properties: 'Properties', jobs: 'Job',
