@@ -48,6 +48,9 @@ function jwtExpMs(jwt) {
 }
 
 function writeEnv(env, updates) {
+  // GitHub Actions runner has no .env file — the env is synthesized from
+  // process.env. There's nothing to write to, so just no-op.
+  if (env.synthetic) return;
   let content = env.content;
   for (const [k, v] of Object.entries(updates)) {
     const re = new RegExp(`^${k}=.*$`, 'm');
@@ -56,6 +59,28 @@ function writeEnv(env, updates) {
   }
   fs.writeFileSync(env.filePath, content);
   env.content = content;
+}
+
+// Synthesize a virtual env from process.env so the token-refresh flow works
+// inside GitHub Actions (no .env file on disk; vars come from `env:` block).
+function envFromProcess() {
+  const required = ['JOBBER_CLIENT_ID', 'JOBBER_CLIENT_SECRET', 'JOBBER_REFRESH_TOKEN'];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length) return null;
+  return {
+    filePath: '<process.env>',
+    content: '',
+    synthetic: true,
+    kv: {
+      JOBBER_CLIENT_ID:      process.env.JOBBER_CLIENT_ID,
+      JOBBER_CLIENT_SECRET:  process.env.JOBBER_CLIENT_SECRET,
+      JOBBER_ACCESS_TOKEN:   process.env.JOBBER_ACCESS_TOKEN || '',
+      JOBBER_REFRESH_TOKEN:  process.env.JOBBER_REFRESH_TOKEN,
+      JOBBER_TOKEN_EXPIRES_AT: process.env.JOBBER_TOKEN_EXPIRES_AT || '',
+      SUPABASE_URL:          process.env.SUPABASE_URL || '',
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    },
+  };
 }
 
 function httpsPostForm(url, body) {
@@ -99,8 +124,13 @@ async function syncDbTokens(envs, access_token, refresh_token, expires_at) {
 }
 
 async function getValidToken({ force = false, verbose = false } = {}) {
-  const envs = ENV_FILES.map(readEnv).filter(Boolean);
-  if (!envs.length) throw new Error('no .env files found');
+  let envs = ENV_FILES.map(readEnv).filter(Boolean);
+  if (!envs.length) {
+    // GitHub Actions / containers without .env files: fall back to process.env.
+    const synth = envFromProcess();
+    if (!synth) throw new Error('no .env files found and process.env missing JOBBER_CLIENT_ID/CLIENT_SECRET/REFRESH_TOKEN');
+    envs = [synth];
+  }
   const log = (...a) => { if (verbose) console.log(...a); };
 
   const clientId = envs[0].kv.JOBBER_CLIENT_ID;

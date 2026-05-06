@@ -70,18 +70,19 @@ async function postSlack(text) {
     SELECT v.id, v.visit_date::text AS date, c.client_code, c.name AS client_name, v.title,
            v.completed_at::text AS completed_at,
            STRING_AGG(DISTINCT e.full_name, ', ') AS drivers,
-           v.truck
+           veh.name AS truck
     FROM visits v
     JOIN clients c ON c.id = v.client_id
     LEFT JOIN visit_assignments va ON va.visit_id = v.id
     LEFT JOIN employees e ON e.id = va.employee_id
+    LEFT JOIN vehicles veh ON veh.id = v.vehicle_id
     , yesterday_et y
     WHERE v.visit_status = 'completed'
       AND v.visit_date = y.d
       AND NOT EXISTS (SELECT 1 FROM photo_links pl WHERE pl.entity_type='visit' AND pl.entity_id=v.id)
       AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.visit_id=v.id AND EXISTS (SELECT 1 FROM photo_links pl WHERE pl.entity_type='note' AND pl.entity_id=n.id))
       AND EXISTS (SELECT 1 FROM entity_source_links esl WHERE esl.entity_type='visit' AND esl.entity_id=v.id AND esl.source_system='jobber')
-    GROUP BY v.id, v.visit_date, c.client_code, c.name, v.title, v.completed_at, v.truck
+    GROUP BY v.id, v.visit_date, c.client_code, c.name, v.title, v.completed_at, veh.name
     ORDER BY v.visit_date, c.client_code;
   `);
 

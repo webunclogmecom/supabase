@@ -80,6 +80,16 @@ const LIMIT = (() => {
   return i >= 0 ? parseInt(args[i + 1], 10) : null;
 })();
 
+// Year cutoff (per Fred 2026-05-05): skip notes/attachments created before
+// this date. The Jobber sunset cutover means we only need 2026 history; pre-
+// 2026 photos are noise and were eating ~70 min of upload time per catchup.
+// Override via `--since YYYY-MM-DD`. Comparison is on note.createdAt (ISO
+// string compare works lexically).
+const NOTE_DATE_CUTOFF = (() => {
+  const i = args.indexOf('--since');
+  return i >= 0 ? args[i + 1] : '2026-01-01';
+})();
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -604,6 +614,13 @@ async function persistNote(context, note, classification, uploadedAttachments) {
 // Process one note end-to-end
 // ---------------------------------------------------------------------------
 async function processNote(context, note, stats) {
+  // Year-cutoff filter (default 2026-01-01) — skip pre-cutoff notes outright
+  // so we don't fetch attachments / hit storage / consume Jobber budget for
+  // history we don't care about.
+  if (note.createdAt && note.createdAt.slice(0, 10) < NOTE_DATE_CUTOFF) {
+    stats.skipped_pre_cutoff = (stats.skipped_pre_cutoff || 0) + 1;
+    return;
+  }
   // Idempotency: if note already migrated, skip
   if (await isNoteAlreadyMigrated(note.id)) {
     stats.skipped_already_migrated++;
