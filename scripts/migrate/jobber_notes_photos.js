@@ -852,26 +852,54 @@ async function writeCheckpoint(lastClientId, totalNotes, status, error = null) {
     if (errors.length > 20) console.log('  ... ' + (errors.length - 20) + ' more');
   }
 
-  // Exit-code policy:
-  //   - DRY_RUN: always 0
-  //   - 0 errors: 0 (clean run)
-  //   - errors but rate < 1% of notes_seen AND idempotent retry will catch them
-  //     next run → exit 0 with a "partial" log line so we don't email Yannick
-  //     for transient Jobber CDN timeouts. The script writes errors to stdout
-  //     so they're still in the GH Actions log for audit.
-  //   - errors ≥ 1% → exit 2 (real outage / regression worth investigating)
-  const seenForRate = stats.notes_seen || 1;
-  const errorRate = errors.length / seenForRate;
-  const PARTIAL_THRESHOLD = 0.01; // 1%
+  // Exit-code policy: re-verify each error against the actual DB state at the
+  // end of the run. A "resolved" error is one whose target note ended up
+  // migrated anyway (e.g. transient CDN timeout on a re-attempt of an
+  // idempotent path — the prior successful migration is still in the DB).
+  // Only UNRESOLVED errors trip the workflow red. Yannick stops getting
+  // false-alarm emails for transient Jobber CDN flakes.
   if (!errors.length || DRY_RUN) {
     process.exit(0);
-  } else if (errorRate < PARTIAL_THRESHOLD) {
-    console.log(`\n[partial-success] ${errors.length} of ${seenForRate} notes errored (${(errorRate * 100).toFixed(2)}% < 1% threshold); exit 0. Idempotent retry on next run will resolve.`);
-    process.exit(0);
-  } else {
-    console.log(`\n[fail] ${errors.length} of ${seenForRate} notes errored (${(errorRate * 100).toFixed(2)}% ≥ 1% threshold); exit 2 — investigate.`);
-    process.exit(2);
   }
+
+  console.log(`\n[verify] re-checking ${errors.length} error(s) against DB state…`);
+  const unresolved = [];
+  const resolved   = [];
+  for (const err of errors) {
+    if (err.note) {
+      // Note-level error: check if note GID is in entity_source_links
+      const ok = await isNoteAlreadyMigrated(err.note);
+      (ok ? resolved : unresolved).push(err);
+    } else {
+      // Client-level error (no note GID — failure during note pull, etc.)
+      // We can't easily verify; treat as unresolved to be safe.
+      unresolved.push(err);
+    }
+  }
+  console.log(`  resolved (already in DB): ${resolved.length}`);
+  console.log(`  unresolved:               ${unresolved.length}`);
+
+  if (unresolved.length === 0) {
+    console.log('\n[partial-success] All errors self-resolved (target rows present in DB). Exit 0.');
+    process.exit(0);
+  }
+
+  // Some errors are real. Apply a 1% rate threshold on the UNRESOLVED count
+  // so a small number of genuine misses don't false-alarm either, but a
+  // real outage (>1% genuinely missing) still trips the alarm.
+  const seenForRate = stats.notes_seen || 1;
+  const unresolvedRate = unresolved.length / seenForRate;
+  const PARTIAL_THRESHOLD = 0.01;
+  console.log('\nUnresolved errors:');
+  unresolved.slice(0, 20).forEach(e => console.log('  ' + JSON.stringify(e)));
+  if (unresolved.length > 20) console.log('  ...' + (unresolved.length - 20) + ' more');
+
+  if (unresolvedRate < PARTIAL_THRESHOLD) {
+    console.log(`\n[partial-success] ${unresolved.length} of ${seenForRate} unresolved (${(unresolvedRate * 100).toFixed(2)}% < 1% threshold). Exit 0; idempotent retry will pick them up.`);
+    process.exit(0);
+  }
+  console.log(`\n[fail] ${unresolved.length} of ${seenForRate} unresolved (${(unresolvedRate * 100).toFixed(2)}% ≥ 1% threshold). Exit 2 — investigate.`);
+  process.exit(2);
 })().catch(e => {
   console.error('\nFATAL:', e.message);
   console.error(e.stack);
