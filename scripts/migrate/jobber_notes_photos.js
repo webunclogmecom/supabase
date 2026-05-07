@@ -851,7 +851,27 @@ async function writeCheckpoint(lastClientId, totalNotes, status, error = null) {
     errors.slice(0, 20).forEach(e => console.log('  ' + JSON.stringify(e)));
     if (errors.length > 20) console.log('  ... ' + (errors.length - 20) + ' more');
   }
-  process.exit(errors.length && !DRY_RUN ? 2 : 0);
+
+  // Exit-code policy:
+  //   - DRY_RUN: always 0
+  //   - 0 errors: 0 (clean run)
+  //   - errors but rate < 1% of notes_seen AND idempotent retry will catch them
+  //     next run → exit 0 with a "partial" log line so we don't email Yannick
+  //     for transient Jobber CDN timeouts. The script writes errors to stdout
+  //     so they're still in the GH Actions log for audit.
+  //   - errors ≥ 1% → exit 2 (real outage / regression worth investigating)
+  const seenForRate = stats.notes_seen || 1;
+  const errorRate = errors.length / seenForRate;
+  const PARTIAL_THRESHOLD = 0.01; // 1%
+  if (!errors.length || DRY_RUN) {
+    process.exit(0);
+  } else if (errorRate < PARTIAL_THRESHOLD) {
+    console.log(`\n[partial-success] ${errors.length} of ${seenForRate} notes errored (${(errorRate * 100).toFixed(2)}% < 1% threshold); exit 0. Idempotent retry on next run will resolve.`);
+    process.exit(0);
+  } else {
+    console.log(`\n[fail] ${errors.length} of ${seenForRate} notes errored (${(errorRate * 100).toFixed(2)}% ≥ 1% threshold); exit 2 — investigate.`);
+    process.exit(2);
+  }
 })().catch(e => {
   console.error('\nFATAL:', e.message);
   console.error(e.stack);
