@@ -1,17 +1,34 @@
 name: Sandbox refresh (Production → Sandbox data sync)
 
-# Daily at 11:00 UTC (07:00 ET in summer / 06:00 ET in winter).
-# Runs AFTER:
-#   - 09:00 UTC daily-cleanup workflow finishes (leaves Production tidy)
-#   - Any overnight Jobber/Samsara/Airtable webhook activity has settled
+# 5×/day on a 3-hour cadence, all expressed in UTC (DST not handled — these
+# times shift by 1 hour between EDT and EST):
+#   11:00 UTC = 07:00 EDT / 06:00 EST   ← anchor; after overnight shift completes
+#   14:00 UTC = 10:00 EDT / 09:00 EST
+#   17:00 UTC = 13:00 EDT / 12:00 EST
+#   20:00 UTC = 16:00 EDT / 15:00 EST
+#   23:00 UTC = 19:00 EDT / 18:00 EST
+#
+# Max Sandbox staleness: ~3h during business hours, ~12h overnight.
+#
+# Each refresh runs AFTER:
+#   - 09:00 UTC daily-cleanup workflow finishes (for the 11:00 UTC run)
+#   - Any pending Jobber/Samsara/Airtable webhook activity has settled
 #
 # Refreshes Production-owned canonical tables INTO Sandbox, leaving Yannick's
-# app-specific tables/columns alone. See scripts/sync/sandbox_refresh.sh for
-# the full story.
+# app-specific tables/columns alone. Each refresh briefly TRUNCATEs canonical
+# tables for ~5-10 min — Lovable queries on those tables can block during
+# that window. The concurrency guard below ensures runs serialize if one
+# overruns into the next slot.
+#
+# See scripts/sync/sandbox_refresh.sh for the full story.
 
 on:
   schedule:
-    - cron: '0 11 * * *'
+    - cron: '0 11 * * *'   # 7am ET (after overnight shift)
+    - cron: '0 14 * * *'   # 10am ET
+    - cron: '0 17 * * *'   # 1pm ET
+    - cron: '0 20 * * *'   # 4pm ET
+    - cron: '0 23 * * *'   # 7pm ET
   workflow_dispatch:  # allow manual trigger from GitHub UI
 
 concurrency:
