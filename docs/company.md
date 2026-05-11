@@ -102,7 +102,7 @@ A 10–15% price raise is on the short-term roadmap.
 | Brian | Technician | Field |
 | Ishad | Technician | Field |
 | Keyon | Technician (surfaced via Samsara driver list) | Field |
-| Ray | Technician (surfaced via Fillout forms) | Field |
+| Ray | Technician (legacy roster — surfaced from pre-2026-04-29 Fillout history) | Field |
 
 **Hiring gap:** The Office Manager role (formerly Hanna Cohen, left early 2025) is transitional. Diego took over the inbox but there's a persistent operational gap. A bilingual Admin & Tech Director hire ($36–46K/year) is actively being recruited.
 
@@ -148,7 +148,7 @@ The `clients_due_service` view is the daily pulse check for this.
 | **Jobber** | Field scheduling + CRM + invoicing | Active → sunset May 2026 |
 | **Airtable** | Service-config master + DERM data | Active → sunset May 2026 |
 | **Samsara** | GPS fleet tracking, driver safety, DVIR | Active (**permanent**) |
-| **Fillout** | Digital forms (pre/post-shift inspections) | Sunset in progress |
+| ~~Fillout~~ | Digital forms (pre/post-shift inspections) | **Dropped 2026-04-29** — inspections moved to Airtable PRE-POST table |
 | **Ramp** | Expense management, company cards | Active (not integrated with this DB) |
 | **Google Drive** | SOPs, contracts, training | Active |
 | **Gmail** | contact@unclogme.com, 14,000+ emails | Active |
@@ -161,8 +161,8 @@ The `clients_due_service` view is the daily pulse check for this.
 
 Viktor is an AI agent embedded in the Unclogme Slack workspace with live integrations across the stack. Not the same as the Claude agent working on this repo — Viktor owns source-data expertise and built the original sync scripts.
 
-- **Primary Slack channel for DB work:** `#viktor-supabase` (ID `C0AN9KDP5B8`)
-- **Strengths:** Jobber GraphQL internals, Airtable schema, Fillout form structure, source-data edge cases
+- **Primary Slack channel for DB work:** `#viktor-supabase` (ID `C0B08S21HHD` — recreated 2026-04-29; prior `C0AN9KDP5B8` is dead)
+- **Strengths:** Jobber GraphQL internals, Airtable schema, Samsara webhook quirks, source-data edge cases
 - **Weaknesses:** Column name drift — frequently proposes wrong column names. Always validate against `docs/schema.md`.
 - **Collaboration rule:** Get Viktor's sign-off before implementing structural changes. Check for replies every 3 min, max 3 attempts. See CLAUDE.md for full protocol.
 

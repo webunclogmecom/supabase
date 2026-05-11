@@ -13,9 +13,9 @@ This guide is the **counterpart to [`onboarding.md`](onboarding.md)**: onboardin
 - A new Supabase project running the same 28-table 2NF/3NF schema, all 7 public views + 8 ops views, RLS enabled, security_invoker on all views, all FK indexes in place.
 - 3 Edge Functions deployed (`webhook-jobber`, `webhook-airtable`, `webhook-samsara`).
 - Webhook subscriptions registered with Jobber, Samsara, and Airtable.
-- Initial data populated from Jobber + Airtable + Samsara + Fillout.
+- Initial data populated from Jobber + Airtable + Samsara. (Fillout was dropped 2026-04-29 — inspections live in Airtable PRE-POST now.)
 - Cross-session token sync helper working.
-- All 4 source systems live-syncing.
+- All 3 source systems live-syncing.
 
 ---
 
@@ -30,7 +30,6 @@ This guide is the **counterpart to [`onboarding.md`](onboarding.md)**: onboardin
 | Jobber Developer account | OAuth app | developer.getjobber.com |
 | Samsara API token (Webhooks-write scope) | webhook registration | Samsara dashboard → Admin → API Tokens |
 | Airtable PAT with read access to the Unclogme base | data pulls | airtable.com/create/tokens |
-| Fillout API key | inspection forms (optional — can be skipped) | fillout.com → Account → API |
 
 ---
 
@@ -55,7 +54,7 @@ Open `.env` and fill in:
 | `SAMSARA_API_TOKEN` | Samsara → API Tokens (must have Webhooks write scope) |
 | `AIRTABLE_API_KEY`, `AIRTABLE_BASE_ID` | airtable.com/create/tokens (PAT with `data.records:read`); base ID from any Airtable URL |
 | `AIRTABLE_WEBHOOK_TOKEN` | A long random string you generate. Set to same value in Supabase secrets later. |
-| `FILLOUT_API_KEY`, `FILLOUT_PRESHIFT_FORM_ID`, `FILLOUT_POSTSHIFT_FORM_ID` | Fillout dashboard → API + form IDs |
+| ~~`FILLOUT_*`~~ | **No longer required** — Fillout was dropped 2026-04-29. Skip these. |
 
 Verify:
 ```
@@ -200,9 +199,9 @@ npx supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" \
 
 Follow [`docs/airtable-automation-setup.md`](airtable-automation-setup.md) — create 10 automations (5 tables × 2 trigger types each). Verify each by clicking the Test button; a `POST 200` response means it's live.
 
-### 4.4 — Fillout (optional, ~5 min)
+### 4.4 — ~~Fillout~~ (skip — dropped 2026-04-29)
 
-If you need pre/post inspection sync, set the form IDs in `.env`. The current setup pulls inspections from **Airtable** instead (the `PRE-POST insptection` table) — Fillout is a fallback path that's currently inactive.
+Inspections come from the Airtable `PRE-POST inspection` table (handled by the Airtable automations in 4.3). The Fillout integration was removed entirely — don't recreate it.
 
 ---
 
@@ -222,7 +221,7 @@ This populates `raw.jobber_pull_*` from the Jobber GraphQL API. Expect ~5,000 ro
 node scripts/populate/populate.js --execute --confirm
 ```
 
-This is the **one-shot** orchestrator: pulls live Airtable + Samsara + Fillout in memory, joins with Jobber raw cache via name + entity_source_links, and inserts into all 28 business tables in dependency order.
+This is the **one-shot** orchestrator: pulls live Airtable + Samsara in memory, joins with Jobber raw cache via name + entity_source_links, and inserts into all canonical business tables in dependency order. (Fillout was removed from this pipeline 2026-04-29.)
 
 It's **non-idempotent** and refuses to run on a non-empty `clients` table — use `--truncate` to wipe first if you need to re-run.
 

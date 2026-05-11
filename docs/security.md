@@ -29,7 +29,7 @@ Every secret the project uses, where it lives, and how to rotate.
 | `JOBBER_ACCESS_TOKEN` + `JOBBER_REFRESH_TOKEN` | Jobber API auth (refreshed ~every 60 min) | `webhook_tokens` row `source_system='jobber'` | Run `node scripts/jobber_auth.js` → paste new tokens → UPDATE `webhook_tokens` |
 | `SAMSARA_API_TOKEN` | Samsara REST + webhook registration | `.env` + Edge Function secrets | Samsara dashboard → API tokens → Regenerate |
 | `AIRTABLE_PAT` | Airtable Personal Access Token | `.env` + Edge Function secrets | https://airtable.com/create/tokens |
-| `FILLOUT_API_KEY` | Fillout REST (sunset path) | `.env` | Fillout dashboard → API keys |
+| ~~`FILLOUT_API_KEY`~~ | ~~Fillout REST~~ | **Decommissioned 2026-04-29** — remove from `.env` if still present. |
 | `SLACK_WEBHOOK_URL` | Slack incident alerts | `.env` + Edge Function secrets | Slack admin → Incoming Webhooks |
 | GitHub PAT (user-level) | `gh` CLI + git push | Windows Credential Manager / macOS Keychain (via `gh auth login`) | https://github.com/settings/tokens |
 

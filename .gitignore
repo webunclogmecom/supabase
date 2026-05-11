@@ -22,8 +22,9 @@ document_pdf.pdf
 # Historical / superseded — content migrated to docs/company.md
 company context.md
 
-# Handoff zip staging (regenerate on demand; do not commit the build artifact)
-handoff/
+# Handoff: zip artifacts only. The .md source docs (LOVABLE-SYSTEM-PROMPT,
+# YANNICK-CLAUDE-CODE-SETUP, etc.) are project-canonical and tracked.
+handoff/*.zip
 oversized_backup/
 samsara_webhooks.json
 recent.json

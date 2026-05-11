@@ -180,10 +180,10 @@ See examples in [docs/schema.md#entity_source_links](schema.md#entity_source_lin
 
 | Source | Status | Target |
 |---|---|---|
-| Jobber | Active via webhook | Sunset May 2026 |
-| Airtable | Active via webhook | Sunset May 2026 |
-| Samsara | Active via webhook (registration blocked) | Permanent |
-| Fillout | Sunset already underway | Replaced by Odoo.sh forms |
+| Jobber | Active via webhook + polling | Sunset May 2026 |
+| Airtable | Active via webhook (10 automations) | Sunset May 2026 — except PRE-POST inspections (keeps running) |
+| Samsara | Active via webhook + 10-min polling | Permanent |
+| ~~Fillout~~ | **Dropped 2026-04-29** | Inspections moved to Airtable PRE-POST |
 | Odoo.sh | Reads from this DB | Live May 2026 |
 
 Full cutover plan: [docs/migration-plan.md](migration-plan.md).

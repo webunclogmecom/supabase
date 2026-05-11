@@ -1,6 +1,6 @@
 # Unclogme Centralized Database
 
-Single source-of-truth Postgres warehouse for Unclogme LLC, hosted on Supabase. Consolidates Jobber (CRM/billing), Airtable (service configs / DERM compliance), Samsara (fleet telemetry), and Fillout (shift inspections) into one normalized schema. Odoo.sh CRM reads from this database starting May 2026, replacing Jobber and Airtable.
+Single source-of-truth Postgres warehouse for Unclogme LLC, hosted on Supabase. Consolidates Jobber (CRM/billing/identity), Airtable (DERM compliance + PRE/POST shift inspections), and Samsara (fleet telemetry) into one normalized schema. Odoo.sh CRM begins reading from this database in May 2026, replacing Jobber and Airtable. (Fillout was dropped 2026-04-29; inspections live in the Airtable PRE-POST table now.)
 
 - **Supabase project:** `wbasvhvvismukaqdnouk`
 - **Dashboard:** https://supabase.com/dashboard/project/wbasvhvvismukaqdnouk

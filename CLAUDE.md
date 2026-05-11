@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-04*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-11*
 
 This file is the non-negotiable rules + quick reference for any AI agent (Claude, Viktor, future agents) working on this repository. **Read this every session before touching anything.**
 
@@ -81,7 +81,7 @@ All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`.
 - **OS:** Windows (Fred's machine). Use forward-slash paths inside code strings, but absolute paths in tool calls use `C:\Users\FRED\Desktop\Virtrify\Yannick\Claude\Supabase\...`.
 - **Node ≥ 20**, npm, Supabase CLI, `gh` CLI (authed via keyring — never embed PATs in URLs).
 - **Supabase project:** `wbasvhvvismukaqdnouk`. Pro plan. Single region (US East).
-- **Current date:** 2026-04-27. May 2026 Jobber/Airtable sunset is ~3 weeks out.
+- **Current date:** 2026-05-11. Jobber/Airtable sunset window is now — Odoo.sh CRM cutover in progress.
 - **No QuickBooks**, no Ramp integration in this DB. See [ADR 006](docs/decisions/006-no-quickbooks.md).
 
 ---
@@ -114,9 +114,17 @@ Commercial trucks work 10pm–3am as standard. `visit_date` is the logical opera
 
 ---
 
-## Known blockers (as of 2026-04-30)
+## Known blockers (as of 2026-05-11)
 
 Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps) and the latest AUDIT files.
+
+**Recent wins (2026-05-05 → 2026-05-11):**
+- ✅ **Sandbox refresh cadence 5×/day** (7am/10am/1pm/4pm/7pm ET) — was 1×/day. Closes daytime data-staleness window. See `.github/workflows/sandbox-refresh.yml`.
+- ✅ **Pattern A path locked down in Sandbox.** Column grants revoked on `photos`, `photo_links`, `notes`, `vehicle_telemetry_readings`, `jobber_oversized_attachments`. Lovable physically can't UPDATE canonical columns anymore. See `scripts/migrations/align_sandbox_canonical_grants_2026_05_11.sql`.
+- ✅ **Lovable Pattern B sidecar tables shipped:** `app_photo_classifications` + `app_property_overrides`. Replaces the `photo_links.role` / `properties.grease_trap_manhole_count` Pattern A writes which were silently no-op'ing for weeks.
+- ✅ **Sandbox lint shipped:** `scripts/probes/sandbox_lovable_lint.js` checks every Sandbox-only addition against the 7 contract rules + Pattern B compliance. 0 FAIL / 0 WARN on current state.
+- ✅ **Yannick read-only role on Prod:** `yannick_readonly` (BYPASSRLS, SELECT-only, webhook_tokens revoked). See `scripts/migrations/create_yannick_readonly_role.sql` and `handoff/yannick-prod-readonly/YANNICK-CLAUDE-CODE-SETUP.md`.
+- ✅ **Lovable system prompt v5** in tracked source (was previously gitignored). Includes "Two Traps" section from the 2026-05-11 photo-classification near-miss incident.
 
 | Blocker | Status | Tracking |
 |---|---|---|

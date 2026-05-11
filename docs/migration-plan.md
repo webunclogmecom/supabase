@@ -1,18 +1,18 @@
 # Migration Plan
 
-The plan for Jobber/Airtable/Fillout sunset and the Odoo.sh cutover in May 2026. Plus active data migrations that must finish before sunset.
+The plan for Jobber + Airtable sunset and the Odoo.sh cutover in May 2026. Plus active data migrations that must finish before sunset. (Fillout was the third sunset target originally — completed 2026-04-29 ahead of schedule.)
 
 ---
 
 ## Why this document exists
 
-Three source systems are being decommissioned:
+Two source systems are being decommissioned in May 2026:
 
 | System | Role today | Sunset target | Replaced by |
 |---|---|---|---|
 | Jobber | CRM, scheduling, invoicing, photo storage | May 2026 | Odoo.sh |
-| Airtable | Service configs, DERM data, routes, receivables, leads | May 2026 | Odoo.sh |
-| Fillout | Pre/post-shift inspections, forms | Rolling (as forms migrate) | Odoo.sh Forms |
+| Airtable | Service configs, DERM data, PRE-POST inspections (kept) | May 2026 (except PRE-POST) | Odoo.sh (except PRE-POST keeps running until Odoo Forms is ready) |
+| ~~Fillout~~ | ~~Pre/post-shift inspections~~ | **Dropped 2026-04-29** | Airtable PRE-POST table |
 
 Samsara stays ([ADR 007](decisions/007-samsara-permanent.md)).
 

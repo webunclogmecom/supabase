@@ -15,7 +15,7 @@ Read this first, then browse `docs/` for reference material.
 │  Main Unclogme DB (wbasvhvvismukaqdnouk)                  │
 │  ───────────────────────────────────────                  │
 │  - Webhook-driven source of truth                         │
-│  - Live updates from Jobber, Airtable, Samsara, Fillout   │
+│  - Live updates from Jobber, Airtable, Samsara            │
 │  - 28+ business tables: clients, visits, invoices, etc.   │
 │  - YAN READS FROM HERE (read-only via Viktor integration) │
 └──────────────────────────────────────────────────────────┘
