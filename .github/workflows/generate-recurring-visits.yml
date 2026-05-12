@@ -1,0 +1,65 @@
+name: Generate recurring visits (Supabase-native)
+
+# ───────────────────────────────────────────────────────────────────────────
+# Schedule:
+#   Daily at 08:30 UTC = 04:30 ET (EDT) / 03:30 ET (EST).
+#   Runs before the 11:00 UTC Sandbox refresh so newly-created visits flow
+#   into Sandbox on the same day they're generated.
+#
+#   The schedule is COMMENTED OUT until Yannick's "upcoming visits per
+#   client" view ships in Lovable. Until then, fire manually via
+#   workflow_dispatch.
+#
+#   When Yannick's view goes live:
+#     1. Uncomment the cron entry below
+#     2. Same day, tell ops to stop using the Airtable Generate Visits button
+#     3. The cron takes over the schedule generation
+# ───────────────────────────────────────────────────────────────────────────
+
+on:
+  # schedule:
+  #   - cron: '30 8 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run mode (no DB writes)'
+        type: boolean
+        default: false
+      client_filter:
+        description: 'Optional: limit to one client code (e.g. 042-MT)'
+        required: false
+        type: string
+      service_filter:
+        description: 'Optional: limit to one service type (GT/CL/WD/LS)'
+        required: false
+        type: string
+
+concurrency:
+  group: generate-recurring-visits
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci --ignore-scripts || npm i --ignore-scripts
+
+      - name: Run cron
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ -n "${{ inputs.client_filter }}" ]; then ARGS="$ARGS --client=${{ inputs.client_filter }}"; fi
+          if [ -n "${{ inputs.service_filter }}" ]; then ARGS="$ARGS --service=${{ inputs.service_filter }}"; fi
+          node scripts/sync/cron_generate_recurring_visits.js $ARGS

@@ -38,6 +38,22 @@ async function verifySignature(body: string, signature: string | null): Promise<
   return computed === signature
 }
 
+// ---- Date helpers for the visit-merge logic (Supabase-cron promotion) ----
+// Used by handleVisit to find a matching supabase_cron-scheduled placeholder
+// within ±7 days of the incoming Jobber visit and PROMOTE it in place.
+function addDaysISO(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+function dateDiff(isoA: string, isoB: string): number {
+  // Returns isoA - isoB in days
+  const [ya, ma, da] = isoA.split('-').map(Number)
+  const [yb, mb, db] = isoB.split('-').map(Number)
+  return Math.round((Date.UTC(ya, ma - 1, da) - Date.UTC(yb, mb - 1, db)) / (1000 * 60 * 60 * 24))
+}
+
 // ---- Decode Jobber base64 GID → { type, numericId } ----
 function decodeGid(gid: string): { type: string; numericId: string } | null {
   try {
@@ -406,19 +422,64 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   if (invoiceId) visitRow.invoice_id = invoiceId
 
   let entityId: number
+  let promotedFromCron = false
 
   if (existingId) {
+    // Standard update path — we've seen this Jobber visit before.
     const { error } = await supabase.from('visits').update(visitRow).eq('id', existingId)
     if (error) throw new Error(`Visit update failed: ${error.message}`)
     entityId = existingId
   } else {
-    const { data: inserted, error } = await supabase
-      .from('visits')
-      .insert(visitRow)
-      .select('id')
-      .single()
-    if (error || !inserted) throw new Error(`Visit insert failed: ${error?.message}`)
-    entityId = inserted.id
+    // Try to find a matching supabase_cron-generated scheduled placeholder
+    // before inserting a new row. This keeps the Supabase cron's planned
+    // schedule and Jobber's actual execution as a SINGLE row through the
+    // visit lifecycle. Match criteria (kept tight to avoid false promotions):
+    //   - client_id, service_type both match
+    //   - visit_status='scheduled'
+    //   - source='supabase_cron' (i.e., it's a placeholder, not a real Jobber row)
+    //   - visit_date within ±7 days of the incoming Jobber visit
+    // If multiple match, pick the closest in date.
+    let promoteId: number | null = null
+    if (clientId && visitRow.service_type && visitRow.visit_date) {
+      const targetDate = visitRow.visit_date as string
+      const { data: candidates } = await supabase
+        .from('visits')
+        .select('id, visit_date')
+        .eq('client_id', clientId)
+        .eq('service_type', visitRow.service_type)
+        .eq('visit_status', 'scheduled')
+        .eq('source', 'supabase_cron')
+        .gte('visit_date', addDaysISO(targetDate, -7))
+        .lte('visit_date', addDaysISO(targetDate, 7))
+      if (candidates && candidates.length > 0) {
+        // Pick the one with smallest |date diff|
+        candidates.sort((a: any, b: any) =>
+          Math.abs(dateDiff(a.visit_date, targetDate)) -
+          Math.abs(dateDiff(b.visit_date, targetDate)))
+        promoteId = candidates[0].id
+      }
+    }
+
+    if (promoteId) {
+      // PROMOTE the cron-scheduled placeholder: claim it as the canonical row
+      // for this Jobber visit. source becomes 'jobber'; visit_date adopts the
+      // Jobber-reported date (which may differ slightly from the planned one).
+      const promotionRow = { ...visitRow, source: 'jobber' }
+      const { error } = await supabase.from('visits').update(promotionRow).eq('id', promoteId)
+      if (error) throw new Error(`Visit promotion failed: ${error.message}`)
+      entityId = promoteId
+      promotedFromCron = true
+      console.log(`[handleVisit] promoted supabase_cron row ${promoteId} → jobber GID ${gid.slice(0, 30)}…`)
+    } else {
+      // No matching placeholder; insert fresh.
+      const { data: inserted, error } = await supabase
+        .from('visits')
+        .insert(visitRow)
+        .select('id')
+        .single()
+      if (error || !inserted) throw new Error(`Visit insert failed: ${error?.message}`)
+      entityId = inserted.id
+    }
   }
 
   await upsertEntityLink({
@@ -426,7 +487,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     entity_id: entityId,
     source_system: 'jobber',
     source_id: gid,
-    match_method: 'webhook',
+    match_method: promotedFromCron ? 'webhook_promoted_from_cron' : 'webhook',
   })
 
   // Upsert visit_assignments for assigned team members
