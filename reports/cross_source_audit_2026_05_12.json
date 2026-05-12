@@ -1,0 +1,821 @@
+{
+  "generated_at": "2026-05-12T18:57:06.656Z",
+  "findings": [
+    {
+      "section": "clients",
+      "severity": "WARN",
+      "summary": "14 AT clients not linked to any Sbx client",
+      "detail": [
+        {
+          "at_id": "rec3pohkZuFVE6b4M",
+          "name": "Kayitili"
+        },
+        {
+          "at_id": "rec3xm2nF62ZLNAK2",
+          "name": "True Barista Truck",
+          "status": "Recurring"
+        },
+        {
+          "at_id": "rec5OGxRHOOQ3Mfbi",
+          "name": "G7 Kitchen 35",
+          "status": "Recurring"
+        },
+        {
+          "at_id": "rec9OcRAIqCMSoq6d",
+          "name": "Hubble Bubble Lounge",
+          "status": "Recurring"
+        },
+        {
+          "at_id": "recCQZd1Mu3zBFOg3",
+          "name": "True Barista Temporally Truck",
+          "status": "Recurring"
+        },
+        {
+          "at_id": "recR5szR0kuY4dyn5",
+          "name": "MYKA Brickell",
+          "status": "Recurring"
+        },
+        {
+          "at_id": "recSjpQicYDKD7G7a",
+          "name": "Treatsneatz"
+        },
+        {
+          "at_id": "recWg6sSjf64Prh7I"
+        },
+        {
+          "at_id": "recaP6COV04ZqZufV",
+          "name": "Casa Neos BAR",
+          "status": "Recurring"
+        },
+        {
+          "at_id": "recafzyLMK6MdzNoH",
+          "name": "Massimo & Umberto Inc",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "section": "service_coverage",
+      "severity": "WARN",
+      "summary": "7 AT clients marked for GT but no Sbx service_config",
+      "detail": [
+        {
+          "client_code": "151-OAS",
+          "name": "Oasis Master association",
+          "status": "ACTIVE"
+        },
+        {
+          "client_code": "194-PV",
+          "name": "Pura Vida 41 St",
+          "status": "ACTIVE"
+        },
+        {
+          "client_code": "203-GF",
+          "name": "Good Food - Merav Halperin",
+          "status": "ACTIVE"
+        },
+        {
+          "client_code": "206-CAC",
+          "name": "Cacio e Pepe",
+          "status": "ACTIVE"
+        },
+        {
+          "client_code": "190-LOU",
+          "name": "Skinny Louie LLC (Burger Fi)",
+          "status": "ACTIVE"
+        },
+        {
+          "client_code": "200-PALO",
+          "name": "Palomar",
+          "status": "ACTIVE"
+        },
+        {
+          "client_code": "204-JCC",
+          "name": "JCC",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "section": "service_coverage",
+      "severity": "WARN",
+      "summary": "31 AT clients marked for CL but no Sbx service_config",
+      "detail": [
+        {
+          "client_code": "155-PV",
+          "name": "Pura Vida Flamingo",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "045-NU",
+          "name": "NU Real Food",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "199-JZ",
+          "name": "JZ Steak House",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "175-PV",
+          "name": "Pura Vida Brickell",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "177-PV",
+          "name": "Pura Vida Doral",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "191-TEN",
+          "name": "Tends",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "088-SH",
+          "name": "Sushi House",
+          "status": "PAUSED"
+        },
+        {
+          "client_code": "024-GRO",
+          "name": "Grove Kosher LLC (Fort Lauderdale)",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "154-PV",
+          "name": "Pura Vida Fisher Island",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "178-LG",
+          "name": "La Granja Flager",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "section": "service_coverage",
+      "severity": "WARN",
+      "summary": "44 AT clients marked for WD but no Sbx service_config",
+      "detail": [
+        {
+          "client_code": "075-TCE",
+          "name": "The carrot express Fort Lauderdale",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "072-TCE",
+          "name": "The Carrot Express (Sunset Harbor)",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "032-LG",
+          "name": "La Granja (36 street)",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "174-VIN",
+          "name": "Vincenzos Pizzeria",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "076-TCE",
+          "name": "The carrot express Hollywood",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "009-CN",
+          "name": "Casa Neos",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "092-TCE",
+          "name": "The carrot express (Coral Gables)",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "063-TCE",
+          "name": "The Carrot Express (Aventura)",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "036-LG",
+          "name": "La Granja (South Miami)",
+          "status": "Recurring"
+        },
+        {
+          "client_code": "069-TCE",
+          "name": "The Carrot Express (Downtown)",
+          "status": "Recurring"
+        }
+      ]
+    },
+    {
+      "section": "visit_volume",
+      "severity": "INFO",
+      "summary": "2026 visit counts per month (AT vs Sbx)",
+      "detail": [
+        {
+          "month": "2026-01",
+          "AT": 83,
+          "Sbx": 96,
+          "delta": 13
+        },
+        {
+          "month": "2026-02",
+          "AT": 78,
+          "Sbx": 96,
+          "delta": 18
+        },
+        {
+          "month": "2026-03",
+          "AT": 87,
+          "Sbx": 123,
+          "delta": 36
+        },
+        {
+          "month": "2026-04",
+          "AT": 110,
+          "Sbx": 149,
+          "delta": 39
+        },
+        {
+          "month": "2026-05",
+          "AT": 113,
+          "Sbx": 48,
+          "delta": -65
+        },
+        {
+          "month": "2026-06",
+          "AT": 113,
+          "Sbx": 2,
+          "delta": -111
+        },
+        {
+          "month": "2026-07",
+          "AT": 98,
+          "Sbx": 1,
+          "delta": -97
+        },
+        {
+          "month": "2026-08",
+          "AT": 86,
+          "Sbx": 2,
+          "delta": -84
+        },
+        {
+          "month": "2026-09",
+          "AT": 79,
+          "Sbx": 1,
+          "delta": -78
+        },
+        {
+          "month": "2026-10",
+          "AT": 80,
+          "Sbx": 2,
+          "delta": -78
+        },
+        {
+          "month": "2026-11",
+          "AT": 74,
+          "Sbx": 1,
+          "delta": -73
+        },
+        {
+          "month": "2026-12",
+          "AT": 77,
+          "Sbx": 2,
+          "delta": -75
+        },
+        {
+          "month": "2027-01",
+          "AT": 66,
+          "Sbx": 1,
+          "delta": -65
+        },
+        {
+          "month": "2027-02",
+          "AT": 63,
+          "Sbx": 2,
+          "delta": -61
+        },
+        {
+          "month": "2027-03",
+          "AT": 61,
+          "Sbx": 1,
+          "delta": -60
+        },
+        {
+          "month": "2027-04",
+          "AT": 61,
+          "Sbx": 2,
+          "delta": -59
+        },
+        {
+          "month": "2027-05",
+          "AT": 57,
+          "Sbx": 1,
+          "delta": -56
+        },
+        {
+          "month": "2027-06",
+          "AT": 55,
+          "Sbx": 2,
+          "delta": -53
+        },
+        {
+          "month": "2027-07",
+          "AT": 42,
+          "Sbx": 1,
+          "delta": -41
+        },
+        {
+          "month": "2027-08",
+          "AT": 37,
+          "Sbx": 2,
+          "delta": -35
+        },
+        {
+          "month": "2027-09",
+          "AT": 28,
+          "Sbx": 1,
+          "delta": -27
+        },
+        {
+          "month": "2027-10",
+          "AT": 33,
+          "Sbx": 2,
+          "delta": -31
+        },
+        {
+          "month": "2027-11",
+          "AT": 28,
+          "Sbx": 1,
+          "delta": -27
+        },
+        {
+          "month": "2027-12",
+          "AT": 25,
+          "Sbx": 2,
+          "delta": -23
+        },
+        {
+          "month": "2028-01",
+          "AT": 29,
+          "Sbx": 1,
+          "delta": -28
+        },
+        {
+          "month": "2028-02",
+          "AT": 20,
+          "Sbx": 2,
+          "delta": -18
+        },
+        {
+          "month": "2028-03",
+          "AT": 19,
+          "Sbx": 1,
+          "delta": -18
+        },
+        {
+          "month": "2028-04",
+          "AT": 20,
+          "Sbx": 2,
+          "delta": -18
+        },
+        {
+          "month": "2028-05",
+          "AT": 16,
+          "Sbx": 1,
+          "delta": -15
+        },
+        {
+          "month": "2028-06",
+          "AT": 16,
+          "Sbx": 2,
+          "delta": -14
+        },
+        {
+          "month": "2028-07",
+          "AT": 19,
+          "Sbx": 1,
+          "delta": -18
+        },
+        {
+          "month": "2028-08",
+          "AT": 10,
+          "Sbx": 2,
+          "delta": -8
+        },
+        {
+          "month": "2028-09",
+          "AT": 16,
+          "Sbx": 1,
+          "delta": -15
+        },
+        {
+          "month": "2028-10",
+          "AT": 14,
+          "Sbx": 2,
+          "delta": -12
+        },
+        {
+          "month": "2028-11",
+          "AT": 10,
+          "Sbx": 1,
+          "delta": -9
+        },
+        {
+          "month": "2028-12",
+          "AT": 13,
+          "Sbx": 2,
+          "delta": -11
+        },
+        {
+          "month": "2029-01",
+          "AT": 12,
+          "Sbx": 1,
+          "delta": -11
+        },
+        {
+          "month": "2029-02",
+          "AT": 5,
+          "Sbx": 2,
+          "delta": -3
+        },
+        {
+          "month": "2029-03",
+          "AT": 16,
+          "Sbx": 1,
+          "delta": -15
+        },
+        {
+          "month": "2029-04",
+          "AT": 5,
+          "Sbx": 2,
+          "delta": -3
+        },
+        {
+          "month": "2029-05",
+          "AT": 13,
+          "Sbx": 1,
+          "delta": -12
+        },
+        {
+          "month": "2029-06",
+          "AT": 11,
+          "Sbx": 2,
+          "delta": -9
+        },
+        {
+          "month": "2029-07",
+          "AT": 6,
+          "Sbx": 1,
+          "delta": -5
+        },
+        {
+          "month": "2029-08",
+          "AT": 5,
+          "Sbx": 2,
+          "delta": -3
+        },
+        {
+          "month": "2029-09",
+          "AT": 3,
+          "Sbx": 1,
+          "delta": -2
+        },
+        {
+          "month": "2029-10",
+          "AT": 1,
+          "Sbx": 2,
+          "delta": 1
+        },
+        {
+          "month": "2029-11",
+          "AT": 1,
+          "Sbx": 1,
+          "delta": 0
+        },
+        {
+          "month": "2029-12",
+          "AT": 3,
+          "Sbx": 2,
+          "delta": -1
+        },
+        {
+          "month": "2030-01",
+          "AT": 0,
+          "Sbx": 1,
+          "delta": 1
+        },
+        {
+          "month": "2030-02",
+          "AT": 1,
+          "Sbx": 2,
+          "delta": 1
+        },
+        {
+          "month": "2030-03",
+          "AT": 3,
+          "Sbx": 1,
+          "delta": -2
+        },
+        {
+          "month": "2030-04",
+          "AT": 0,
+          "Sbx": 2,
+          "delta": 2
+        },
+        {
+          "month": "2030-05",
+          "AT": 3,
+          "Sbx": 1,
+          "delta": -2
+        },
+        {
+          "month": "2030-06",
+          "AT": 2,
+          "Sbx": 2,
+          "delta": 0
+        },
+        {
+          "month": "2030-07",
+          "AT": 0,
+          "Sbx": 1,
+          "delta": 1
+        },
+        {
+          "month": "2030-08",
+          "AT": 3,
+          "Sbx": 2,
+          "delta": -1
+        },
+        {
+          "month": "2030-09",
+          "AT": 1,
+          "Sbx": 1,
+          "delta": 0
+        },
+        {
+          "month": "2030-10",
+          "AT": 0,
+          "Sbx": 2,
+          "delta": 2
+        },
+        {
+          "month": "2030-11",
+          "AT": 3,
+          "Sbx": 1,
+          "delta": -2
+        },
+        {
+          "month": "2030-12",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2031-02",
+          "AT": 3,
+          "Sbx": 0,
+          "delta": -3
+        },
+        {
+          "month": "2031-03",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2031-05",
+          "AT": 4,
+          "Sbx": 0,
+          "delta": -4
+        },
+        {
+          "month": "2031-06",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2031-08",
+          "AT": 3,
+          "Sbx": 0,
+          "delta": -3
+        },
+        {
+          "month": "2031-09",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2032-04",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2033-04",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2034-04",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2035-04",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2036-04",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2037-04",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        },
+        {
+          "month": "2038-04",
+          "AT": 1,
+          "Sbx": 0,
+          "delta": -1
+        }
+      ]
+    },
+    {
+      "section": "visit_volume",
+      "severity": "WARN",
+      "summary": "1763 AT 2026 visits with no Sbx counterpart at same (client_code, date)",
+      "detail": [
+        {
+          "at_id": "rec01RJ6rFROo3Db4",
+          "cc": "070-TCE",
+          "date": "2027-09-05",
+          "status": "Upcoming",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec06dBZm3bJq1LR5",
+          "cc": "027-HER",
+          "date": "2026-10-26",
+          "status": "Upcoming",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec0ARd8YEuce90em",
+          "cc": "154-PV",
+          "date": "2028-07-25",
+          "status": "Upcoming",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec0CAboz9cxqtLBc",
+          "cc": "076-TCE",
+          "date": "2029-07-07",
+          "status": "Upcoming",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec0CNhNueRIgr2EA",
+          "cc": "027-HER",
+          "date": "2026-09-26",
+          "status": "Upcoming",
+          "service": "CL"
+        },
+        {
+          "at_id": "rec0CtT9oWyY0Cs1u",
+          "cc": "099-PV",
+          "date": "2027-03-12",
+          "status": "Upcoming",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec0DKbAAKF5pFerP",
+          "cc": "068-TCE",
+          "date": "2028-11-02",
+          "status": "Upcoming",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec0FvW71o2VCkWwt",
+          "cc": "112-YA",
+          "date": "2026-05-06",
+          "status": "Paused",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec0KVO4FWO4vQOhi",
+          "cc": "212-TRUE",
+          "date": "2026-05-08",
+          "status": "Completed",
+          "service": "GT"
+        },
+        {
+          "at_id": "rec0LnP7uusHwidLd",
+          "cc": "011-CCC",
+          "date": "2029-06-10",
+          "status": "Upcoming",
+          "service": "GT"
+        }
+      ]
+    },
+    {
+      "section": "visit_volume",
+      "severity": "WARN",
+      "summary": "352 Sbx 2026 visits with no AT counterpart at same (client_code, date)",
+      "detail": [
+        {
+          "sbx_id": 1571,
+          "cc": "061-TCE",
+          "date": "2026-04-02",
+          "status": "completed",
+          "service": "GT"
+        },
+        {
+          "sbx_id": 1572,
+          "cc": "047-PAM",
+          "date": "2026-04-02",
+          "status": "completed",
+          "service": "GT"
+        },
+        {
+          "sbx_id": 3891,
+          "cc": "034-LG",
+          "date": "2026-04-29",
+          "status": "completed",
+          "service": "GT"
+        },
+        {
+          "sbx_id": 3889,
+          "cc": "196-PV",
+          "date": "2026-04-29",
+          "status": "completed",
+          "service": "CL"
+        },
+        {
+          "sbx_id": 3901,
+          "cc": "116-HIK",
+          "date": "2026-05-01",
+          "status": "scheduled",
+          "service": "GT"
+        },
+        {
+          "sbx_id": 1573,
+          "cc": "197-BGT",
+          "date": "2026-04-02",
+          "status": "completed",
+          "service": "GT"
+        },
+        {
+          "sbx_id": 1622,
+          "cc": "043-MIL",
+          "date": "2026-04-13",
+          "status": "completed",
+          "service": "GT"
+        },
+        {
+          "sbx_id": 3911,
+          "cc": "205-SAS",
+          "date": "2026-05-03",
+          "status": "completed",
+          "service": "GT"
+        },
+        {
+          "sbx_id": 1496,
+          "cc": "057-BAY",
+          "date": "2026-03-16",
+          "status": "completed",
+          "service": "LS"
+        },
+        {
+          "sbx_id": 1517,
+          "cc": "057-BAY",
+          "date": "2026-03-20",
+          "status": "completed",
+          "service": "LS"
+        }
+      ]
+    },
+    {
+      "section": "properties",
+      "severity": "INFO",
+      "summary": "0 of 455 (primary) properties have a Samsara geofence link",
+      "detail": {
+        "coverage_pct": 0
+      }
+    }
+  ]
+}
