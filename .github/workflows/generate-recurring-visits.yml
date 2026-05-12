@@ -6,19 +6,18 @@ name: Generate recurring visits (Supabase-native)
 #   Runs before the 11:00 UTC Sandbox refresh so newly-created visits flow
 #   into Sandbox on the same day they're generated.
 #
-#   The schedule is COMMENTED OUT until Yannick's "upcoming visits per
-#   client" view ships in Lovable. Until then, fire manually via
-#   workflow_dispatch.
+#   ACTIVATED 2026-05-12 — visits sunset from Airtable. Cron is now the
+#   canonical source for upcoming-visit generation. DERM + PRE-POST
+#   automations stay in Airtable until Fred says otherwise.
 #
-#   When Yannick's view goes live:
-#     1. Uncomment the cron entry below
-#     2. Same day, tell ops to stop using the Airtable Generate Visits button
-#     3. The cron takes over the schedule generation
+#   Ops were told to stop clicking AT's "Generate Visits" button the same
+#   day the schedule was uncommented. AT's visit-creation automation
+#   should be disabled in the AT UI as a defense-in-depth measure.
 # ───────────────────────────────────────────────────────────────────────────
 
 on:
-  # schedule:
-  #   - cron: '30 8 * * *'
+  schedule:
+    - cron: '30 8 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
