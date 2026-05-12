@@ -47,6 +47,25 @@ function atField(record, name, fallback = null) {
   return record.fields && record.fields[name] !== undefined ? record.fields[name] : fallback;
 }
 
+// atSelectName — read an AT singleSelect / multipleSelects field and return
+// a plain string (or null). Handles all three shapes the AT REST API can
+// return depending on params / API version:
+//   - string         "MIAMI BEACH"
+//   - object         {id,name,color}                → "MIAMI BEACH"
+//   - array          [{id,name,color}, …]           → "MIAMI BEACH, NMB"
+// Critical for any column whose Postgres type is text — without this you get
+// "[object Object]" written literally (audit 2026-05-12 caught 19 such rows
+// in properties.zone).
+function atSelectName(record, name, fallback = null) {
+  if (!record || !record.fields) return fallback;
+  const v = record.fields[name];
+  if (v == null) return fallback;
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) return v.map(x => (x && typeof x === 'object' ? x.name : x)).filter(Boolean).join(', ') || fallback;
+  if (typeof v === 'object') return v.name || fallback;
+  return String(v);
+}
+
 // Convert Airtable date string to YYYY-MM-DD
 function dateOnly(d) {
   if (!d) return null;
@@ -84,5 +103,5 @@ function jobberGidNumeric(gid) {
 
 module.exports = {
   normName, lev, similarity, stripTruckSuffix, bestFuzzyMatch,
-  atField, dateOnly, intOrNull, numOrNull, strOrNull, jobberGidNumeric,
+  atField, atSelectName, dateOnly, intOrNull, numOrNull, strOrNull, jobberGidNumeric,
 };

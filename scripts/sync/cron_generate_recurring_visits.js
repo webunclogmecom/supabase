@@ -5,11 +5,13 @@
 // button-triggered visit-generation flow that's being sunset May 2026.
 //
 // What it does
-//   For every client with status IN ('ACTIVE','Recuring') and a service_configs
+//   For every client with status IN ('ACTIVE','RECURRING') and a service_configs
 //   row with frequency_days > 0:
 //     - Compute the chain anchor (Option D precedence below)
 //     - Generate visit dates forward until BOTH:
-//         (a) end of next calendar month is reached, AND
+//         (a) end of the WINDOW_MONTHS_AHEAD'th calendar month is reached
+//             (rolling window — e.g. with WINDOW_MONTHS_AHEAD=3 on 2026-05-12,
+//             window covers rest of May + Jun + Jul + Aug → 2026-08-31), AND
 //         (b) at least 1 future visit exists for this client+service
 //     - For each candidate date, check idempotency: a visit with the same
 //       client_id + service_type + visit_date within ±7d already exists?
@@ -40,7 +42,7 @@
 //   (Merge logic lives in webhook-jobber, not here.)
 //
 // INACTIVE clients
-//   Filtered out at SELECT time (status IN 'ACTIVE','Recuring' only).
+//   Filtered out at SELECT time (status IN 'ACTIVE','RECURRING' only).
 //   Additionally, the trg_clients_wipe_upcoming_on_inactive Postgres trigger
 //   auto-deletes a client's scheduled visits if they flip to INACTIVE/PAUSED
 //   in mid-day; the cron won't re-create them next morning because the filter
@@ -75,8 +77,12 @@ const serviceArg = process.argv.find(a => a.startsWith('--service='));
 const FILTER_SERVICE = serviceArg ? serviceArg.split('=')[1].toUpperCase() : null;
 
 const IDEMPOTENCY_TOLERANCE_DAYS = 7;
-const ALLOWED_CLIENT_STATUSES = ['ACTIVE', 'Recuring'];
+const ALLOWED_CLIENT_STATUSES = ['ACTIVE', 'RECURRING'];
 const ALLOWED_SERVICE_TYPES = ['GT', 'CL', 'WD', 'LS'];
+// Visit-generation window: rest of current month + next N calendar months.
+// 2026-05-12: bumped from 2 → 3 months per Fred's request — gives ops a
+// rolling quarter of upcoming visibility once Yannick's view ships.
+const WINDOW_MONTHS_AHEAD = 3;
 
 // ---- tiny HTTP helpers ------------------------------------------------------
 
@@ -156,11 +162,13 @@ function todayET() {
   });
   return fmt.format(new Date()); // returns 'YYYY-MM-DD'
 }
-function endOfNextMonth(isoToday) {
+function endOfWindowMonth(isoToday) {
+  // WINDOW_MONTHS_AHEAD: number of full calendar months past the current one
+  // that should be covered. e.g. WINDOW_MONTHS_AHEAD=3, today=2026-05-12 →
+  // window includes May (rest of) + Jun + Jul + Aug → end = 2026-08-31.
+  // Day 0 of month+WINDOW+1 = last day of month+WINDOW.
   const [y, m] = isoToday.split('-').map(Number);
-  // Day 0 of month+2 = last day of month+1
-  const date = new Date(Date.UTC(y, m + 1, 0)); // m is already 1-indexed; +1 = next month; 0 = last day of prior
-  // (e.g., today m=5 → new Date(Date.UTC(y, 6, 0)) = last day of June = correct)
+  const date = new Date(Date.UTC(y, m + WINDOW_MONTHS_AHEAD, 0));
   return date.toISOString().slice(0, 10);
 }
 
@@ -169,7 +177,7 @@ function endOfNextMonth(isoToday) {
 (async () => {
   const startedAt = new Date();
   const today = todayET();
-  const windowEnd = endOfNextMonth(today);
+  const windowEnd = endOfWindowMonth(today);
 
   console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
   console.log(`║  cron_generate_recurring_visits — ${DRY_RUN ? 'DRY-RUN' : 'EXECUTE'.padEnd(7)}                  ║`);

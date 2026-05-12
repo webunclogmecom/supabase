@@ -270,7 +270,9 @@ async function step1_clients() {
       // -- v2 business columns --
       client_code: ac ? N.atField(ac, 'Client Code #3') : null,
       name: jc.companyName || jc.name || `${jc.firstName || ''} ${jc.lastName || ''}`.trim() || 'UNKNOWN',
-      status: jc.isArchived ? 'INACTIVE' : (ac && N.atField(ac, 'ACTIVE/INACTIVE')) || 'ACTIVE',
+      // Normalize the 'Recuring' typo (AT single-select option spelled with one r)
+      // to canonical 'RECURRING'. AT-side dropdown should also be renamed eventually.
+      status: jc.isArchived ? 'INACTIVE' : (((ac && N.atField(ac, 'ACTIVE/INACTIVE')) === 'Recuring') ? 'RECURRING' : ((ac && N.atField(ac, 'ACTIVE/INACTIVE')) || 'ACTIVE')),
       balance: N.numOrNull(jc.balance),
       notes: null,
       // -- metadata for entity_source_links (not written to clients table) --
@@ -293,7 +295,7 @@ async function step1_clients() {
     rows.push({
       client_code: N.atField(ac, 'Client Code #3'),
       name: N.atField(ac, 'Client Name') || 'UNKNOWN_AT',
-      status: N.atField(ac, 'ACTIVE/INACTIVE') || 'INACTIVE',
+      status: (N.atField(ac, 'ACTIVE/INACTIVE') === 'Recuring' ? 'RECURRING' : (N.atField(ac, 'ACTIVE/INACTIVE') || 'INACTIVE')),
       balance: null,
       notes: 'Historical Airtable client, no Jobber link',
       _jobber_id: null,
@@ -386,11 +388,15 @@ function buildPrimaryProperty(jc, ac, sa) {
   const manholeRaw = ac ? N.intOrNull(N.atField(ac, 'manholes')) : null;
   return {
     address,
-    city: jc?.billingAddress?.city || (ac && N.atField(ac, 'City')),
-    state: jc?.billingAddress?.province || (ac && N.atField(ac, 'State')) || 'FL',
-    zip: jc?.billingAddress?.postalCode || (ac && N.atField(ac, 'Zip Code')),
-    county: ac ? N.atField(ac, 'County') : null,
-    zone: ac ? N.atField(ac, 'Zone') : null,
+    city: jc?.billingAddress?.city || N.atSelectName(ac, 'City'),
+    state: jc?.billingAddress?.province || N.atSelectName(ac, 'State') || 'FL',
+    zip: jc?.billingAddress?.postalCode || N.atSelectName(ac, 'Zip Code'),
+    county: N.atSelectName(ac, 'County'),
+    // singleSelect fields can return either a plain string (older API) or
+    // {id,name,color} object (newer API / MCP route). atSelectName collapses
+    // both to a string. Without this we get '[object Object]' literally
+    // stored in the column — caught 19 such rows in audit 2026-05-12.
+    zone: N.atSelectName(ac, 'Zone'),
     latitude: sa?.latitude || null,
     longitude: sa?.longitude || null,
     geofence_radius_meters: sa?.geofence?.circle?.radiusMeters || null,

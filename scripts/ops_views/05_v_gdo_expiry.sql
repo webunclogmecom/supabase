@@ -32,7 +32,7 @@ SELECT
   END                        AS expiry_bucket,
   (SELECT MAX(updated_at) FROM public.clients) AS data_as_of
 FROM public.clients c
-WHERE c.status IN ('ACTIVE','Recuring')
+WHERE c.status IN ('ACTIVE','RECURRING')
 ORDER BY
   CASE
     WHEN c.gdo_expiration_date IS NULL THEN 9

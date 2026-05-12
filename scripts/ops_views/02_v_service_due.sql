@@ -5,7 +5,7 @@
 -- Uses denormalized service_configs.last_visit / next_visit when present.
 -- Fallback: first_visit_date + frequency_days when no visit history.
 -- needs_baseline = TRUE when no next_visit and no fallback available.
--- Active clients only (status ACTIVE or Recuring — typo preserved from source).
+-- Active clients only (status ACTIVE or RECURRING).
 -- ============================================================================
 
 CREATE OR REPLACE VIEW ops.v_service_due AS
@@ -33,7 +33,7 @@ WITH base AS (
     ) AS effective_next_visit
   FROM public.service_configs sc
   JOIN public.clients c ON c.id = sc.client_id
-  WHERE c.status IN ('ACTIVE','Recuring')
+  WHERE c.status IN ('ACTIVE','RECURRING')
     AND (sc.stop_date IS NULL OR sc.stop_date > CURRENT_DATE)
 )
 SELECT
