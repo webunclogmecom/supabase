@@ -451,6 +451,12 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
 
 async function handleInvoice(numericId: string, topic: string): Promise<{ entity_id: number }> {
   const gid = btoa(`gid://Jobber/Invoice/${numericId}`)
+  // Pull active jobs + archivedJobs + visits.job (fallback chain) so we
+  // always find the link. Also pull line items + visit IDs so we can sync
+  // invoice-scoped line_items and update linked visits.invoice_id in the
+  // same call — Jobber doesn't send VISIT_UPDATE webhooks when only the
+  // invoice link changes, so this is the only reliable path to keep
+  // visits.invoice_id current.
   const data: any = await gql(
     `query($id: EncodedId!) {
       invoice(id: $id) {
@@ -458,6 +464,11 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
         amounts { subtotal total invoiceBalance depositAmount }
         client { id }
         jobs { nodes { id } }
+        archivedJobs { nodes { id } }
+        visits(first: 25) { nodes { id job { id } } }
+        lineItems(first: 50) {
+          nodes { name description quantity unitPrice totalPrice taxable }
+        }
       }
     }`,
     { id: gid }
@@ -465,10 +476,15 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   const inv = data.invoice
   if (!inv) throw new Error(`Invoice ${numericId} not found in Jobber`)
 
-  const firstJob = inv.jobs?.nodes?.[0]
+  // Job resolution: active → archived → via-visit
+  const jobGid: string | null =
+    inv.jobs?.nodes?.[0]?.id ??
+    inv.archivedJobs?.nodes?.[0]?.id ??
+    (inv.visits?.nodes ?? []).map((v: any) => v?.job?.id).filter(Boolean)[0] ??
+    null
 
   const clientId = inv.client?.id ? await findEntityBySourceId('client', 'jobber', inv.client.id) : null
-  const jobId = firstJob?.id ? await findEntityBySourceId('job', 'jobber', firstJob.id) : null
+  const jobId = jobGid ? await findEntityBySourceId('job', 'jobber', jobGid) : null
   const existingId = await findEntityBySourceId('invoice', 'jobber', gid)
 
   const invoiceRow: Record<string, unknown> = {
@@ -507,6 +523,41 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
     source_id: gid,
     match_method: 'webhook',
   })
+
+  // Sync invoice-scoped line items. Idempotent: wipe + replace.
+  // (Invoice line items have no stable Jobber ID we sync, so dedup by
+  // invoice_id is the simplest correct strategy.)
+  const lineItemNodes: any[] = inv.lineItems?.nodes ?? []
+  await supabase.from('line_items').delete().eq('invoice_id', entityId)
+  if (lineItemNodes.length > 0) {
+    const lineRows = lineItemNodes.map((n: any) => ({
+      invoice_id: entityId,
+      name: n.name ?? null,
+      description: n.description ?? null,
+      quantity: n.quantity ?? null,
+      unit_price: n.unitPrice ?? null,
+      total_price: n.totalPrice ?? null,
+      taxable: n.taxable ?? null,
+    }))
+    const { error: liErr } = await supabase.from('line_items').insert(lineRows)
+    if (liErr) {
+      console.error(`Invoice ${numericId}: line_items insert failed:`, liErr.message)
+      // Don't throw — invoice itself succeeded, line items can be backfilled
+    }
+  }
+
+  // Update linked visits' invoice_id. cron_jobber pulls visits with a
+  // completedAt cursor — once a visit is completed it's never re-pulled,
+  // so the visits.invoice_id sync only works if THIS handler updates them
+  // when the invoice arrives.
+  const visitGids: string[] = (inv.visits?.nodes ?? []).map((v: any) => v?.id).filter(Boolean)
+  for (const vGid of visitGids) {
+    const ourVisitId = await findEntityBySourceId('visit', 'jobber', vGid)
+    if (ourVisitId) {
+      const { error: vErr } = await supabase.from('visits').update({ invoice_id: entityId }).eq('id', ourVisitId)
+      if (vErr) console.error(`Invoice ${numericId}: visit ${ourVisitId} invoice_id update failed:`, vErr.message)
+    }
+  }
 
   return { entity_id: entityId }
 }
