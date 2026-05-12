@@ -679,6 +679,14 @@ async function step4_properties() {
 // was wrong — produced absurd 900-3600d frequencies for 98% of clients. Fixed
 // to `freqMul: 1` (pass-through). Outliers >180d are real Airtable data errors
 // that need Yan's review, not script bugs.
+//
+// 2026-05-12: Repaired AT field-name lookups. Prior strings ('GT Price',
+// 'CL Price', 'WD Price', 'GT Last Visit', etc.) did not match any real
+// Airtable field, so `atField()` always returned undefined → 195 NULL prices,
+// all NULL last_visits. Corrected to the actual AT column names. Also dropped
+// SUMP/GREY_WATER/WARRANTY (0 of 199 clients had data for those). Postgres
+// column names (price_per_visit, frequency_days, first_visit, last_visit)
+// stay semantic — only the AT-side lookups changed.
 // ----------------------------------------------------------------------------
 async function step5_service_configs() {
   console.log('\n[STEP 5] Service configs (UNPIVOT)...');
@@ -688,13 +696,28 @@ async function step5_service_configs() {
   }
 
   const rows = [];
+  // Adapter map: our semantic column (LHS in row construction) ← Airtable field name (RHS).
+  // Our Postgres column names stay clean (price_per_visit, frequency_days, first_visit, last_visit).
+  // The RHS strings are AT's awkward field names — kept here only because we're sunsetting AT.
+  // SUMP/GREY_WATER/WARRANTY removed: 0 of 199 AT clients have those prices populated.
   const TYPES = [
-    { type: 'GT', freq: 'GT Frequency', freqMul: 1, price: 'GT Price', last: 'GT Last Visit', next: 'GT Next Visit', sizeField: 'Size GT in Gallon', gdoNum: 'GDO Number', gdoExp: 'GDO expiration date' },
-    { type: 'CL', freq: 'CL Frequency', freqMul: 1, price: 'CL Price', last: 'CL Last Visit', next: 'CL Next Visit' },
-    { type: 'WD', freq: 'WD Frequency', freqMul: 1, price: 'WD Price', last: 'WD Last Visit', next: 'WD Next Visit' },
-    { type: 'SUMP',       freq: null, price: 'Sump Price' },
-    { type: 'GREY_WATER', freq: null, price: 'Grey Water Price' },
-    { type: 'WARRANTY',   freq: null, price: 'Warranty Price' },
+    { type: 'GT', freqMul: 1,
+      freq:      'GT Frequency',
+      price:     'GT $ per Visit',                  // was 'GT Price' (field did not exist)
+      first:     'GT First Visit Date',             // newly read — was hard-coded null
+      last:      'GT Last Visit (visits table)',    // was 'GT Last Visit' (field did not exist)
+      sizeField: 'Size GT in Gallon',
+      gdoNum:    'GDO Number',
+      gdoExp:    'GDO expiration date' },
+    { type: 'CL', freqMul: 1,
+      freq:  'CL Frequency',
+      price: 'CL$ Price per Visit',                 // was 'CL Price' (field did not exist)
+      first: 'CL First Visit Date',                 // newly read
+      last:  'CL Last Visit' },
+    { type: 'WD', freqMul: 1,
+      freq:  'WD Frequency',
+      price: 'WD$ Price per Visit',                 // was 'WD Price' (field did not exist)
+      first: 'WD Contract Date' },                  // AT has no WD Last Visit; contract date anchors first
   ];
 
   for (const ac of cache.airtable.clients) {
@@ -708,8 +731,8 @@ async function step5_service_configs() {
         client_id: client_id || null,
         service_type: T.type,
         frequency_days: freqRaw !== null ? Math.round(freqRaw * (T.freqMul || 1)) : null,
-        first_visit: null,
-        last_visit: T.last ? N.dateOnly(N.atField(ac, T.last)) : null,
+        first_visit: T.first ? N.dateOnly(N.atField(ac, T.first)) : null,
+        last_visit:  T.last  ? N.dateOnly(N.atField(ac, T.last))  : null,
         // next_visit dropped — derived on read via clients_due_service view (3NF)
         stop_date: null,
         price_per_visit: price,

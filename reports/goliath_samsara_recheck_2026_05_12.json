@@ -1,0 +1,648 @@
+{
+  "resolved": [
+    {
+      "id": "rec0xi4wpASvPD1UQ",
+      "Visit Date": "2026-04-13",
+      "Service Type": "GT",
+      "Client Code": [
+        "036-LG"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rec0xi4wpASvPD1UQ",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 39,
+      "min_distance_m": 11,
+      "sbx_visit_id": 1620,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "rec2rdvfbkuglVwWB",
+      "Visit Date": "2026-04-27",
+      "Service Type": "GT",
+      "Client Code": [
+        "178-LG"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rec2rdvfbkuglVwWB",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 277,
+      "min_distance_m": 15,
+      "sbx_visit_id": 1790,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "rec9ggGIbxlcBaeZU",
+      "Visit Date": "2026-04-28",
+      "Service Type": "GT",
+      "Client Code": [
+        "022-GRO"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rec9ggGIbxlcBaeZU",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 289,
+      "min_distance_m": 15,
+      "sbx_visit_id": 1721,
+      "sbx_truck_was": null,
+      "date_offset": -1
+    },
+    {
+      "id": "recAaHfDbZvGnWVg8",
+      "Visit Date": "2026-04-13",
+      "Service Type": "GT",
+      "Client Code": [
+        "092-TCE"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recAaHfDbZvGnWVg8",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 75,
+      "min_distance_m": 14,
+      "sbx_visit_id": 1619,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recAoJEe3CTT6nYpX",
+      "Visit Date": "2026-04-01",
+      "Service Type": "GT",
+      "Client Code": [
+        "197-BGT"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recAoJEe3CTT6nYpX",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 136,
+      "min_distance_m": 12,
+      "runners_up": [
+        "Cloggy(31)"
+      ],
+      "sbx_visit_id": 1573,
+      "sbx_truck_was": null,
+      "date_offset": 1
+    },
+    {
+      "id": "recDh0TSiVzRLq3dS",
+      "Visit Date": "2026-04-22",
+      "Service Type": "GT",
+      "Client Code": [
+        "009-CN"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recDh0TSiVzRLq3dS",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 486,
+      "min_distance_m": 8,
+      "sbx_visit_id": 1738,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recGagmf68sMdFjST",
+      "Visit Date": "2026-04-19",
+      "Service Type": "GT",
+      "Client Code": [
+        "045-NU"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recGagmf68sMdFjST",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 178,
+      "min_distance_m": 43,
+      "sbx_visit_id": 1729,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recLn80N1vov1Ulwn",
+      "Visit Date": "2026-04-14",
+      "Service Type": "GT",
+      "Client Code": [
+        "043-MIL"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recLn80N1vov1Ulwn",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 140,
+      "min_distance_m": 23,
+      "sbx_visit_id": 1622,
+      "sbx_truck_was": null,
+      "date_offset": -1
+    },
+    {
+      "id": "recNZNQlRKdjtWwrC",
+      "Visit Date": "2026-04-27",
+      "Service Type": "GT",
+      "Client Code": [
+        "205-SAS"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recNZNQlRKdjtWwrC",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 327,
+      "min_distance_m": 24,
+      "sbx_visit_id": 1788,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recP6KXuHQqCGwYXH",
+      "Visit Date": "2026-04-13",
+      "Service Type": "GT",
+      "Client Code": [
+        "140-TYO"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recP6KXuHQqCGwYXH",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 62,
+      "min_distance_m": 18,
+      "sbx_visit_id": 1621,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recTYqLLh4VAqZF7m",
+      "Visit Date": "2026-04-14",
+      "Service Type": "GT",
+      "Client Code": [
+        "019-G7"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recTYqLLh4VAqZF7m",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 49,
+      "min_distance_m": 21,
+      "sbx_visit_id": 1611,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recUo4AH3OGH5KwPA",
+      "Visit Date": "2026-03-24",
+      "Service Type": "GT",
+      "Client Code": [
+        "089-COW"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recUo4AH3OGH5KwPA",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 484,
+      "min_distance_m": 4,
+      "runners_up": [
+        "Cloggy(44)"
+      ],
+      "sbx_visit_id": 1532,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recVR9jpKoGQRpejY",
+      "Visit Date": "2026-04-06",
+      "Service Type": "GT",
+      "Client Code": [
+        "174-VIN"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recVR9jpKoGQRpejY",
+      "pass": "AT+Samsara",
+      "truck": "Cloggy",
+      "tier": "tight",
+      "pings": 14,
+      "min_distance_m": 16
+    },
+    {
+      "id": "recVgt7TeAeBFJ9I9",
+      "Visit Date": "2026-04-28",
+      "Service Type": "GT",
+      "Client Code": [
+        "199-JZ"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recVgt7TeAeBFJ9I9",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 240,
+      "min_distance_m": 21,
+      "runners_up": [
+        "Cloggy(5)"
+      ],
+      "sbx_visit_id": 1799,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recWJT5KgPZD6F4E2",
+      "Visit Date": "2026-04-14",
+      "Service Type": "GT",
+      "Client Code": [
+        "043-MIL"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recWJT5KgPZD6F4E2",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 140,
+      "min_distance_m": 23,
+      "sbx_visit_id": 1622,
+      "sbx_truck_was": null,
+      "date_offset": -1
+    },
+    {
+      "id": "recYjpVYjQ3JX2tg5",
+      "Visit Date": "2026-04-01",
+      "Service Type": "GT",
+      "Client Code": [
+        "061-TCE"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recYjpVYjQ3JX2tg5",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 182,
+      "min_distance_m": 6,
+      "runners_up": [
+        "Cloggy(37)"
+      ],
+      "sbx_visit_id": 1571,
+      "sbx_truck_was": null,
+      "date_offset": 1
+    },
+    {
+      "id": "recZHAueOkUbx7YJ7",
+      "Visit Date": "2026-04-27",
+      "Service Type": "GT",
+      "Client Code": [
+        "206-CAC"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recZHAueOkUbx7YJ7",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 315,
+      "min_distance_m": 14,
+      "sbx_visit_id": 1789,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recal08mXDKlY0jAg",
+      "Visit Date": "2026-04-22",
+      "Service Type": "GT",
+      "Client Code": [
+        "016-FIA"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recal08mXDKlY0jAg",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 211,
+      "min_distance_m": 18,
+      "sbx_visit_id": 1614,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "receMMg0cJjl7zdYQ",
+      "Visit Date": "2026-04-01",
+      "Service Type": "GT",
+      "Client Code": [
+        "047-PAM"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "receMMg0cJjl7zdYQ",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 474,
+      "min_distance_m": 36,
+      "runners_up": [
+        "Cloggy(42)"
+      ],
+      "sbx_visit_id": 1572,
+      "sbx_truck_was": null,
+      "date_offset": 1
+    },
+    {
+      "id": "recfAVnjz2yj9Uh73",
+      "Visit Date": "2026-03-24",
+      "Service Type": "GT",
+      "Client Code": [
+        "111-YC"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recfAVnjz2yj9Uh73",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 197,
+      "min_distance_m": 14,
+      "runners_up": [
+        "Cloggy(54)"
+      ],
+      "sbx_visit_id": 1530,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recofaFKFtWwY7pft",
+      "Visit Date": "2026-04-06",
+      "Service Type": "GT",
+      "Client Code": [
+        "174-VIN"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recofaFKFtWwY7pft",
+      "pass": "AT+Samsara",
+      "truck": "Cloggy",
+      "tier": "tight",
+      "pings": 14,
+      "min_distance_m": 16
+    },
+    {
+      "id": "recqRamnqKJB01Yo4",
+      "Visit Date": "2026-04-19",
+      "Service Type": "GT",
+      "Client Code": [
+        "084-ULT"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recqRamnqKJB01Yo4",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 188,
+      "min_distance_m": 55,
+      "sbx_visit_id": 1575,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recqmpPi1xcP0azS5",
+      "Visit Date": "2026-04-14",
+      "Service Type": "GT",
+      "Client Code": [
+        "058-SOH"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recqmpPi1xcP0azS5",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 72,
+      "min_distance_m": 21,
+      "sbx_visit_id": 1594,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recs6GyJ8BCLMsCnJ",
+      "Visit Date": "2026-04-16",
+      "Service Type": "GT",
+      "Client Code": [
+        "007-CC"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recs6GyJ8BCLMsCnJ",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 587,
+      "min_distance_m": 48,
+      "sbx_visit_id": 1607,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "rectcqtGbYXMxJ7KO",
+      "Visit Date": "2026-04-21",
+      "Service Type": "GT",
+      "Client Code": [
+        "013-DIM"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rectcqtGbYXMxJ7KO",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 664,
+      "min_distance_m": 9,
+      "sbx_visit_id": 1746,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "rectyGIbyjTICUQ9V",
+      "Visit Date": "2026-04-15",
+      "Service Type": "GT",
+      "Client Code": [
+        "083-SHUL"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rectyGIbyjTICUQ9V",
+      "pass": "Jobber+Samsara",
+      "truck": "Moises",
+      "tier": "tight",
+      "pings": 588,
+      "min_distance_m": 20,
+      "sbx_visit_id": 1598,
+      "sbx_truck_was": null,
+      "date_offset": 0
+    },
+    {
+      "id": "recu4cDNkjVzr3tIM",
+      "Visit Date": "2026-04-14",
+      "Service Type": "GT",
+      "Client Code": [
+        "174-VIN"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recu4cDNkjVzr3tIM",
+      "pass": "AT+Samsara",
+      "truck": "Cloggy",
+      "tier": "tight",
+      "pings": 7,
+      "min_distance_m": 8
+    }
+  ],
+  "unresolved": [
+    {
+      "id": "rec0KVO4FWO4vQOhi",
+      "Visit Date": "2026-05-08",
+      "Service Type": "GT",
+      "Client Code": [
+        "212-TRUE"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rec0KVO4FWO4vQOhi",
+      "reason": "NO_PROPERTY_GPS",
+      "pass": "failed before crossref"
+    },
+    {
+      "id": "rec1MUIdvnnisnaW5",
+      "Visit Date": "2026-03-05",
+      "Service Type": "GT",
+      "Client Code": [
+        "174-VIN"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rec1MUIdvnnisnaW5",
+      "pass": "Jobber+Samsara",
+      "reason": "AMBIGUOUS @tight",
+      "detail": "Cloggy(26,9m), Moises(22,10m)"
+    },
+    {
+      "id": "rec4lZmcxsd1qW2tA",
+      "Visit Date": "2026-03-09",
+      "Service Type": "GT",
+      "Client Code": [
+        "061-TCE"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rec4lZmcxsd1qW2tA",
+      "pass": "Jobber+Samsara",
+      "reason": "AMBIGUOUS @tight",
+      "detail": "Cloggy(32,22m), Moises(26,17m)"
+    },
+    {
+      "id": "recJlcFS1DYUWsRWm",
+      "Visit Date": "2026-04-08",
+      "Service Type": "GT",
+      "Client Code": [
+        "192-FRK"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recJlcFS1DYUWsRWm",
+      "pass": "Jobber+Samsara",
+      "reason": "NO_TELEMETRY_ANY_TIER"
+    },
+    {
+      "id": "recK7T1yjVLhxdMuk",
+      "Visit Date": "2026-04-27",
+      "Service Type": "GT",
+      "Client Code": [
+        "207-BAR"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recK7T1yjVLhxdMuk",
+      "reason": "NO_PROPERTY_GPS",
+      "pass": "failed before crossref"
+    },
+    {
+      "id": "recbT0g2skRydNOUW",
+      "Visit Date": "2026-04-14",
+      "Service Type": "GT",
+      "Client Code": [
+        "057-SLS"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recbT0g2skRydNOUW",
+      "reason": "NO_PROPERTY_GPS",
+      "pass": "failed before crossref"
+    },
+    {
+      "id": "recfPxv3yQbJcPcFk",
+      "Visit Date": "2026-03-19",
+      "Service Type": "GT",
+      "Client Code": [
+        "175-PV"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recfPxv3yQbJcPcFk",
+      "pass": "Jobber+Samsara",
+      "reason": "AMBIGUOUS @medium",
+      "detail": "Moises(35,158m), Cloggy(32,173m)"
+    },
+    {
+      "id": "rechNUoglldTGMiPD",
+      "Visit Date": "2026-05-06",
+      "Service Type": "GT",
+      "Client Code": [
+        "208-HUB"
+      ],
+      "Status": "Upcoming",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "rechNUoglldTGMiPD",
+      "reason": "NO_PROPERTY_GPS",
+      "pass": "failed before crossref"
+    },
+    {
+      "id": "recm7q5UG5U8VlmOl",
+      "Visit Date": "2026-04-16",
+      "Service Type": "GT",
+      "Client Code": [
+        "042-MT"
+      ],
+      "Status": "Completed",
+      "Truck": "Goliath 5,000",
+      "at_record_id": "recm7q5UG5U8VlmOl",
+      "pass": "Jobber+Samsara",
+      "reason": "NO_TELEMETRY_ANY_TIER"
+    }
+  ]
+}
