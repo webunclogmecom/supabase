@@ -48,6 +48,9 @@ For a longer walk-through, read [`docs/onboarding.md`](docs/onboarding.md).
 | [docs/onboarding.md](docs/onboarding.md) | New-engineer 1-hour / 1-day / 1-week path |
 | [docs/duplication-guide.md](docs/duplication-guide.md) | Clone the project to a fresh Supabase from zero (staging, demo, DR) |
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records (ADRs) |
+| [docs/research/](docs/research/) | External-source synthesis (Claude Code best practices, etc.) |
+| [docs/audits/](docs/audits/) | Historical audit snapshots |
+| [apps/visit-view-prototype/](apps/visit-view-prototype/) | Visit View prototype — HTML + CSS + design tokens for Yannick's Lovable rebuild |
 
 ---
 

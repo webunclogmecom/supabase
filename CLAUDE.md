@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-12*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-13*
 
 This file is the non-negotiable rules + quick reference for any AI agent (Claude, Viktor, future agents) working on this repository. **Read this every session before touching anything.**
 
@@ -81,7 +81,7 @@ All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`.
 - **OS:** Windows (Fred's machine). Use forward-slash paths inside code strings, but absolute paths in tool calls use `C:\Users\FRED\Desktop\Virtrify\Yannick\Claude\Supabase\...`.
 - **Node ≥ 20**, npm, Supabase CLI, `gh` CLI (authed via keyring — never embed PATs in URLs).
 - **Supabase project:** `wbasvhvvismukaqdnouk`. Pro plan. Single region (US East).
-- **Current date:** 2026-05-11. Jobber/Airtable sunset window is now — Odoo.sh CRM cutover in progress.
+- **Current date:** 2026-05-13. Jobber sunsets May 2026; Airtable visit-gen sunset 2026-05-13 (other AT tables still in use). Odoo.sh CRM cutover in progress.
 - **No QuickBooks**, no Ramp integration in this DB. See [ADR 006](docs/decisions/006-no-quickbooks.md).
 
 ---
@@ -118,18 +118,16 @@ Commercial trucks work 10pm–3am as standard. `visit_date` is the logical opera
 
 Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps) and the latest AUDIT files.
 
-### 🔴 PENDING ACTIVATION — Recurring visit cron (when Yannick's Lovable view ships)
+### ✅ COMPLETED 2026-05-13 — Visit-gen sunset from Airtable
 
-The Supabase-native recurring visit cron is built, tested, and deployed but **the schedule is disabled** until Yannick's "upcoming visits per client" Lovable view ships (estimated this week, 2026-05-12 onwards). When the view goes live, Fred must:
+The Supabase-native recurring visit cron now runs daily at 04:30 ET. **AT's "Generate Visits" button is deprecated.** AT's DERM + PRE-POST automations stay live.
 
-1. **Fire the cron once** to backfill the ~231-visit schedule gap:
-   ```bash
-   gh workflow run generate-recurring-visits.yml
-   ```
-2. **Uncomment the schedule** in `.github/workflows/generate-recurring-visits.yml` (the `schedule: - cron: '30 8 * * *'` block), commit + push.
-3. **Tell ops** to stop clicking the Airtable "Generate Visits" button (Slack #ops-channel — to Yan / Diego / Yannick).
-
-Detailed step-by-step in `~/.claude/projects/<project>/memory/project_pending_recurring_visit_cron_activation.md` and runbook §8.
+State as of 2026-05-13:
+- `cron_generate_recurring_visits.js` generates 3-month rolling window (was 2-month). 423 upcoming visits in Sbx across 143 clients.
+- Daily schedule activated in `.github/workflows/generate-recurring-visits.yml` (commit `38ef309`).
+- AT has no active push automation for Visits to our webhook (read-only-to-us), so no AT-side disable needed.
+- Slack draft to #office-team sent for ops awareness.
+- `webhook-jobber.handleVisit` continues the merge/promote of `supabase_cron` placeholders → `jobber` source rows when Diego creates them in Jobber.
 
 ### Recent wins (2026-05-05 → 2026-05-12):
 - ✅ **Supabase-native recurring visit cron shipped (2026-05-12).** First piece of Airtable sunset. `scripts/sync/cron_generate_recurring_visits.js` generates the upcoming visit schedule (Option D anchor chain, end-of-next-month window + min-1-visit fallback). `visits.source` column distinguishes `'supabase_cron'` from `'jobber'`. `webhook-jobber.handleVisit` gained a promote-existing-cron-row merge path so the planned schedule and Jobber's executed visit become a single row through the lifecycle. INACTIVE-wipe Postgres trigger replaces the legacy Airtable automation. LS service type added. **Cron schedule currently disabled** (workflow_dispatch only) until Yannick's "upcoming visits per client" Lovable view ships. See [ADR 015](docs/decisions/015-supabase-native-recurring-visits.md) + runbook §8.
@@ -191,7 +189,9 @@ Detailed step-by-step in `~/.claude/projects/<project>/memory/project_pending_re
 | [docs/onboarding.md](docs/onboarding.md) | New to the project (first hour / day / week) |
 | [docs/duplication-guide.md](docs/duplication-guide.md) | Cloning the project to a new Supabase from zero |
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records — *why* something is the way it is |
-| [AUDIT_2026-04-27.md](AUDIT_2026-04-27.md) · [AUDIT_2026-04-28.md](AUDIT_2026-04-28.md) | End-to-end audit snapshots — read the latest first |
+| [docs/research/claude-code-best-practices.md](docs/research/claude-code-best-practices.md) | How Anthropic recommends running Claude Code projects — synthesis + project-specific recommendations |
+| [docs/audits/](docs/audits/) | Historical audit snapshots (Apr 27 → May 4) — moved here 2026-05-13 |
+| [apps/visit-view-prototype/](apps/visit-view-prototype/) | Standalone HTML/CSS/JS prototype for Yannick's upcoming-visits view (Lovable handoff) |
 
 ---
 
@@ -199,27 +199,32 @@ Detailed step-by-step in `~/.claude/projects/<project>/memory/project_pending_re
 
 ```
 .
-├── CLAUDE.md                   ← this file
+├── CLAUDE.md                   ← this file (AI operating manual)
 ├── README.md                   ← elevator pitch + quickstart
+├── OPS_LIST_{DIEGO,YAN}.md     ← current ops fix lists
 ├── .env.example                ← credential template
+├── apps/
+│   └── visit-view-prototype/   ← Yannick's upcoming-visits view (HTML+CSS+JS)
 ├── docs/                       ← all project documentation
-│   ├── architecture.md
-│   ├── schema.md
-│   ├── operations.md
-│   ├── runbook.md
-│   ├── integration.md
-│   ├── security.md
-│   ├── migration-plan.md
-│   ├── company.md
-│   ├── onboarding.md
-│   └── decisions/              ← 8 ADRs
+│   ├── architecture.md, schema.md, operations.md, runbook.md
+│   ├── integration.md, security.md, migration-plan.md
+│   ├── company.md, onboarding.md, duplication-guide.md
+│   ├── decisions/              ← ADRs
+│   ├── research/               ← external-source synthesis
+│   └── audits/                 ← historical state snapshots
+├── handoff/                    ← Lovable + Yannick-readonly handoff bundles
+├── reports/                    ← Generated audit / data outputs (dated)
 ├── schema/
 │   └── v2_schema.sql           ← canonical DDL
 ├── scripts/
 │   ├── jobber_auth.js          ← one-time OAuth bootstrap
 │   ├── probe.js                ← sanity check
-│   ├── populate/               ← bulk population orchestrator (one-shot)
-│   ├── migrations/             ← SQL migrations
+│   ├── migrate/                ← one-shot data migrations
+│   ├── migrations/             ← SQL DDL migrations
+│   ├── ops_views/              ← ops.* view definitions
+│   ├── populate/               ← bulk population orchestrator
+│   ├── probes/                 ← active probes (10) + _archive/ (150 historical)
+│   ├── sync/                   ← live cron scripts (Jobber/Samsara/Sbx-recurring)
 │   └── webhooks/               ← webhook registration scripts
 └── supabase/
     └── functions/

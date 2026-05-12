@@ -1,0 +1,129 @@
+/* ==========================================================================
+   Design Tokens — UnclogMe Visit View Prototype
+   --------------------------------------------------------------------------
+   Single source of truth for all visual constants. Everything in styles.css
+   references these — change a token here, every surface inherits.
+   Pattern follows Anthropic's design-system convention: prefix --u- for
+   UnclogMe, semantic naming (--u-color-text-primary not --u-gray-900).
+   ========================================================================== */
+
+:root {
+  /* ---- Color: neutral palette (slate-leaning) ------------------------------ */
+  --u-color-bg:                 #fafafa;     /* app background */
+  --u-color-surface:            #ffffff;     /* cards, panels */
+  --u-color-surface-elevated:   #ffffff;     /* hovered/focused surfaces */
+  --u-color-border:             #e5e7eb;     /* default 1px borders */
+  --u-color-border-strong:      #d1d5db;     /* emphasized borders */
+  --u-color-divider:            #f3f4f6;     /* row separators */
+
+  /* ---- Color: text -------------------------------------------------------- */
+  --u-color-text-primary:       #111827;     /* headings, key labels */
+  --u-color-text-secondary:     #4b5563;     /* body text */
+  --u-color-text-tertiary:      #6b7280;     /* hints, metadata */
+  --u-color-text-disabled:      #9ca3af;
+  --u-color-text-inverse:       #ffffff;
+
+  /* ---- Color: brand + semantic ------------------------------------------- */
+  --u-color-brand:              #1e40af;     /* UnclogMe blue */
+  --u-color-brand-hover:        #1e3a8a;
+  --u-color-brand-subtle:       #eff6ff;
+
+  --u-color-success:            #15803d;     /* completed visit */
+  --u-color-success-subtle:     #f0fdf4;
+  --u-color-warning:            #b45309;     /* late / overdue */
+  --u-color-warning-subtle:     #fffbeb;
+  --u-color-danger:             #b91c1c;     /* cancelled, error */
+  --u-color-danger-subtle:      #fef2f2;
+  --u-color-info:               #1d4ed8;     /* scheduled, informational */
+  --u-color-info-subtle:        #eff6ff;
+
+  /* ---- Color: service-type accents (per the 4 service types) ------------ */
+  --u-color-service-gt:         #b45309;     /* Grease Trap — amber (oil) */
+  --u-color-service-gt-subtle:  #fffbeb;
+  --u-color-service-cl:         #1d4ed8;     /* Cleaning — blue (water) */
+  --u-color-service-cl-subtle:  #eff6ff;
+  --u-color-service-wd:         #6b21a8;     /* Water Discharge — purple */
+  --u-color-service-wd-subtle:  #faf5ff;
+  --u-color-service-ls:         #047857;     /* Lyft Station — green */
+  --u-color-service-ls-subtle:  #ecfdf5;
+
+  /* ---- Spacing scale (4px base, 8px grid for layout) -------------------- */
+  --u-space-0:    0;
+  --u-space-1:    4px;       /* hairline */
+  --u-space-2:    8px;       /* inline gap, icon spacing */
+  --u-space-3:    12px;
+  --u-space-4:    16px;      /* card padding */
+  --u-space-5:    20px;
+  --u-space-6:    24px;      /* section gap */
+  --u-space-8:    32px;
+  --u-space-10:   40px;
+  --u-space-12:   48px;
+  --u-space-16:   64px;
+  --u-space-20:   80px;
+
+  /* ---- Typography -------------------------------------------------------- */
+  --u-font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    "Helvetica Neue", Arial, sans-serif;
+  --u-font-mono:    "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo,
+                    Consolas, monospace;
+
+  --u-text-xs:      11px;     /* badges, eyebrow text */
+  --u-text-sm:      13px;     /* secondary, metadata */
+  --u-text-base:    15px;     /* body */
+  --u-text-md:      17px;
+  --u-text-lg:      20px;     /* card titles */
+  --u-text-xl:      24px;
+  --u-text-2xl:     32px;     /* page headings */
+  --u-text-3xl:     40px;
+
+  --u-weight-regular:   400;
+  --u-weight-medium:    500;
+  --u-weight-semibold:  600;
+  --u-weight-bold:      700;
+
+  --u-leading-tight:    1.25;
+  --u-leading-normal:   1.5;
+  --u-leading-loose:    1.7;
+
+  --u-tracking-tight:  -0.01em;
+  --u-tracking-normal: 0;
+  --u-tracking-wide:    0.06em;     /* eyebrow / badge */
+
+  /* ---- Radius ------------------------------------------------------------ */
+  --u-radius-sm:    4px;
+  --u-radius-md:    8px;       /* cards, buttons */
+  --u-radius-lg:    12px;
+  --u-radius-full:  9999px;    /* pills, avatars */
+
+  /* ---- Shadow / elevation ------------------------------------------------ */
+  --u-shadow-sm:    0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --u-shadow-md:    0 4px 12px -2px rgb(0 0 0 / 0.06),
+                    0 2px 4px -2px rgb(0 0 0 / 0.04);
+  --u-shadow-lg:    0 12px 24px -8px rgb(0 0 0 / 0.10),
+                    0 4px 8px -4px rgb(0 0 0 / 0.06);
+
+  /* ---- Layout ------------------------------------------------------------ */
+  --u-content-max-width:  1240px;
+  --u-sidebar-width:      260px;
+  --u-header-height:      56px;
+
+  /* ---- Motion ------------------------------------------------------------ */
+  --u-duration-instant:  0ms;
+  --u-duration-fast:     120ms;
+  --u-duration-normal:   200ms;
+  --u-duration-slow:     320ms;
+  --u-easing-standard:   cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* Dark mode hook — wire when needed by toggling [data-theme="dark"] on <html>.
+   Defining the override here for the few tokens that need to flip. */
+[data-theme="dark"] {
+  --u-color-bg:               #0a0a0a;
+  --u-color-surface:          #171717;
+  --u-color-surface-elevated: #1f1f1f;
+  --u-color-border:           #2a2a2a;
+  --u-color-divider:          #1a1a1a;
+  --u-color-text-primary:     #f5f5f5;
+  --u-color-text-secondary:   #a3a3a3;
+  --u-color-text-tertiary:    #737373;
+}

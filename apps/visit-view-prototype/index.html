@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UnclogMe — Upcoming Visits</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="u-app">
+    <header class="u-header" role="banner">
+      <span class="u-header__brand" aria-label="UnclogMe">
+        <span class="u-header__brand-mark" aria-hidden="true"></span>
+        UnclogMe
+      </span>
+      <span class="u-header__sub">Visits</span>
+      <span class="u-header__spacer"></span>
+      <span class="u-header__count" id="count-pill">— visits</span>
+    </header>
+
+    <main class="u-page" id="page">
+      <h1 class="u-page__heading">Upcoming visits</h1>
+      <p class="u-page__lede">Next 3 months · auto-generated from your service schedule every morning at 4:30 AM ET.</p>
+
+      <div class="u-toolbar" role="search">
+        <label class="u-search" aria-label="Search visits">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <circle cx="7" cy="7" r="5"></circle><path d="M14 14l-3-3"></path>
+          </svg>
+          <input id="q" type="search" placeholder="Search by client, service, or date…" autocomplete="off" />
+        </label>
+
+        <select class="u-filter" id="service-filter" aria-label="Service type">
+          <option value="">All services</option>
+          <option value="GT">Grease Trap (GT)</option>
+          <option value="CL">Cleaning (CL)</option>
+          <option value="WD">Water Discharge (WD)</option>
+          <option value="LS">Lyft Station (LS)</option>
+        </select>
+
+        <div class="u-segmented" role="group" aria-label="Grouping">
+          <button class="u-segmented__btn" id="group-day" aria-pressed="true">By day</button>
+          <button class="u-segmented__btn" id="group-client" aria-pressed="false">By client</button>
+        </div>
+      </div>
+
+      <div id="list" aria-live="polite">
+        <!-- Skeleton while loading -->
+        <div class="u-day">
+          <div class="u-day__heading">
+            <div>
+              <span class="u-day__eyebrow">Loading</span>
+              <span class="u-day__title">Fetching upcoming visits…</span>
+            </div>
+          </div>
+          <ul class="u-visits">
+            <li class="u-skeleton"></li>
+            <li class="u-skeleton"></li>
+            <li class="u-skeleton"></li>
+          </ul>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
