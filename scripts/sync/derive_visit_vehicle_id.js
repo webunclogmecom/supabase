@@ -5,16 +5,20 @@
 // Samsara owns truck GPS but doesn't know about Jobber visits.
 // We bridge them ourselves.
 //
-// Algorithm per visit:
+// Algorithm per visit (progressive tier fallback):
 //   1. Skip if vehicle_id already set, no start_at, or property has no GPS.
-//   2. Define time window: [start_at - 5min, COALESCE(completed_at, start_at + 1h) + 5min].
-//   3. Pull vehicle_telemetry_readings in that window with GPS, bounding-box
-//      filtered by ±0.0015° lat/lng (~165m at Miami latitude).
-//   4. Compute exact Haversine distance for each reading.
-//   5. Keep readings within 150m.
-//   6. Group surviving readings by vehicle_id. If exactly one truck has a
-//      reading → write that vehicle_id to the visit. If multiple → log
-//      ambiguity and skip (rare; needs human review). If zero → leave NULL.
+//   2. For each tier (tight → medium → wide), pull GPS readings in
+//      [start_at - pad, COALESCE(completed_at, start_at + 1h) + pad] within
+//      a bounding box, then exact-Haversine filter to the tier radius.
+//   3. Tight tier alone counts as high-confidence: if exactly one truck has
+//      ≥1 reading there, write it and stop. Medium/wide tiers act as a
+//      fallback when tight returns nothing (covers GPS dropout / slight
+//      geocode drift).
+//   4. Goliath is excluded for visits dated 2026-01-01 onward — truck was
+//      decommissioned 2026-02-16 and any 2026 GPS pings at a property
+//      represent stale telemetry, not an attribution signal. Without this
+//      exclusion the autopilot saw Goliath+Moises overlap and skipped the
+//      visit as ambiguous (~24 false-NULLs/run per 2026-05-12 audit).
 //
 // Idempotent: only touches rows where vehicle_id IS NULL.
 // Safe to re-run hourly.
@@ -39,11 +43,19 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const sinceArg = process.argv.find(a => a.startsWith('--since='));
 const SINCE = sinceArg ? sinceArg.split('=')[1] : null;
 
-// Matching tunables
-const RADIUS_METERS = 150;          // accept telemetry within this distance
-const TIME_PADDING_BEFORE_MS = 5 * 60 * 1000;     // 5 min before start_at
-const TIME_PADDING_AFTER_MS = 5 * 60 * 1000;      // 5 min after completed_at
+// Matching tunables — progressive tier fallback. Tight = the canonical
+// match; medium/wide kick in only when tight yields nothing, to recover
+// visits with GPS dropout or slight property-geocode drift.
+const TIERS = [
+  { name: 'tight',  radius_m: 150, pad_ms: 5 * 60 * 1000 },
+  { name: 'medium', radius_m: 300, pad_ms: 15 * 60 * 1000 },
+  { name: 'wide',   radius_m: 500, pad_ms: 30 * 60 * 1000 },
+];
 const FALLBACK_DURATION_MS = 60 * 60 * 1000;      // when completed_at is null
+// Cutoff after which Goliath is no longer a valid candidate. Per ops:
+// Goliath was decommissioned 2026-02-16; any post-cutoff GPS pings at a
+// property are stale telemetry, not attribution signal.
+const GOLIATH_DECOMMISSION_DATE = '2026-01-01';
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -153,53 +165,77 @@ function haversineM(lat1, lng1, lat2, lng2) {
   console.log(`\n[1/3] ${candidates.length} candidate visits (vehicle_id NULL, start_at + property GPS present)`);
 
   let matched = 0, ambiguous = 0, noMatch = 0;
+  const byTier = { tight: 0, medium: 0, wide: 0 };
   const updates = [];
 
   for (const v of candidates) {
     const startMs = new Date(v.start_at).getTime();
     const endMs = v.completed_at ? new Date(v.completed_at).getTime() : startMs + FALLBACK_DURATION_MS;
-    const winStart = new Date(startMs - TIME_PADDING_BEFORE_MS).toISOString();
-    const winEnd = new Date(endMs + TIME_PADDING_AFTER_MS).toISOString();
-
-    // Bounding box: ±0.0015° ≈ 165m at Miami latitude
     const lat = v.lat, lng = v.lng;
-    const dLat = 0.0015, dLng = 0.0015 / Math.cos(lat * Math.PI / 180);
-    const minLat = lat - dLat, maxLat = lat + dLat;
-    const minLng = lng - dLng, maxLng = lng + dLng;
+    const excludeGoliath = v.visit_date >= GOLIATH_DECOMMISSION_DATE;
+    const goliathClause = excludeGoliath ? "AND veh.name != 'Goliath'" : '';
 
-    const tel = await pg(`
-      SELECT vt.vehicle_id, veh.name AS truck,
-        vt.recorded_at::text AS recorded_at,
-        vt.latitude::float AS tel_lat,
-        vt.longitude::float AS tel_lng
-      FROM vehicle_telemetry_readings vt
-      JOIN vehicles veh ON veh.id = vt.vehicle_id
-      WHERE vt.recorded_at >= '${winStart}'
-        AND vt.recorded_at <= '${winEnd}'
-        AND vt.latitude  BETWEEN ${minLat} AND ${maxLat}
-        AND vt.longitude BETWEEN ${minLng} AND ${maxLng};
-    `);
+    let resolved = null;
+    let lastAmbiguous = null;
 
-    // Exact Haversine filter
-    const within = tel.filter(r => haversineM(lat, lng, r.tel_lat, r.tel_lng) <= RADIUS_METERS);
-    const truckIds = [...new Set(within.map(r => r.vehicle_id))];
+    for (const tier of TIERS) {
+      const winStart = new Date(startMs - tier.pad_ms).toISOString();
+      const winEnd   = new Date(endMs   + tier.pad_ms).toISOString();
+      // Bounding box: convert tier.radius_m to degrees (~111km per degree lat).
+      // Add 10% headroom so the exact-Haversine filter doesn't miss edge pings.
+      const dLat = (tier.radius_m * 1.1) / 111000;
+      const dLng = dLat / Math.cos(lat * Math.PI / 180);
+      const tel = await pg(`
+        SELECT vt.vehicle_id, veh.name AS truck,
+          vt.recorded_at::text AS recorded_at,
+          vt.latitude::float  AS tel_lat,
+          vt.longitude::float AS tel_lng
+        FROM vehicle_telemetry_readings vt
+        JOIN vehicles veh ON veh.id = vt.vehicle_id
+        WHERE vt.recorded_at >= '${winStart}'
+          AND vt.recorded_at <= '${winEnd}'
+          AND vt.latitude  BETWEEN ${lat - dLat} AND ${lat + dLat}
+          AND vt.longitude BETWEEN ${lng - dLng} AND ${lng + dLng}
+          ${goliathClause};
+      `);
+      const within = tel.filter(r => haversineM(lat, lng, r.tel_lat, r.tel_lng) <= tier.radius_m);
+      const truckIds = [...new Set(within.map(r => r.vehicle_id))];
 
-    if (truckIds.length === 0) {
-      noMatch++;
-    } else if (truckIds.length === 1) {
+      if (truckIds.length === 1) {
+        resolved = {
+          visit_id: v.visit_id, vehicle_id: truckIds[0],
+          truck: within[0].truck, tier: tier.name,
+          pings: within.length,
+          min_dist_m: Math.round(Math.min(...within.map(r => haversineM(lat, lng, r.tel_lat, r.tel_lng)))),
+        };
+        break;
+      }
+      if (truckIds.length > 1) {
+        lastAmbiguous = { tier: tier.name, trucks: [...new Set(within.map(r => r.truck))].join(', ') };
+        // Don't widen further — multiple trucks at this tier already means
+        // we can't disambiguate; widening would only add noise.
+        break;
+      }
+      // truckIds.length === 0 → fall through to next tier
+    }
+
+    if (resolved) {
       matched++;
-      const truckName = within[0].truck;
-      updates.push({ visit_id: v.visit_id, vehicle_id: truckIds[0], truck: truckName });
-      console.log(`  ✓ v${v.visit_id} ${(v.client_code || '?').padEnd(8)} ${v.visit_date} → ${truckName} (${within.length} GPS pings, min ${Math.round(Math.min(...within.map(r => haversineM(lat, lng, r.tel_lat, r.tel_lng))))}m)`);
-    } else {
+      byTier[resolved.tier]++;
+      updates.push({ visit_id: resolved.visit_id, vehicle_id: resolved.vehicle_id, truck: resolved.truck });
+      const goliathNote = excludeGoliath ? '' : ' (Goliath eligible)';
+      console.log(`  ✓ v${v.visit_id} ${(v.client_code || '?').padEnd(8)} ${v.visit_date} → ${resolved.truck} [${resolved.tier}, ${resolved.pings} pings, ${resolved.min_dist_m}m]${goliathNote}`);
+    } else if (lastAmbiguous) {
       ambiguous++;
-      const trucks = [...new Set(within.map(r => r.truck))].join(', ');
-      console.log(`  ? v${v.visit_id} ${(v.client_code || '?').padEnd(8)} ${v.visit_date} AMBIGUOUS: ${trucks}`);
+      console.log(`  ? v${v.visit_id} ${(v.client_code || '?').padEnd(8)} ${v.visit_date} AMBIGUOUS [${lastAmbiguous.tier}]: ${lastAmbiguous.trucks}`);
+    } else {
+      noMatch++;
     }
   }
 
   console.log(`\n[2/3] Match results:`);
   console.log(`  Matched (1 truck):          ${matched}`);
+  console.log(`    by tier — tight: ${byTier.tight}  medium: ${byTier.medium}  wide: ${byTier.wide}`);
   console.log(`  Ambiguous (multiple):       ${ambiguous}`);
   console.log(`  No telemetry in window:     ${noMatch}`);
 

@@ -157,7 +157,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   const data: any = await gql(
     `query($id: EncodedId!) {
       client(id: $id) {
-        id isCompany companyName firstName lastName
+        id isCompany companyName firstName lastName name
         emails { address primary description }
         phones { number primary description }
         billingAddress { street city province postalCode }
@@ -169,7 +169,15 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   const c = data.client
   if (!c) throw new Error(`Client ${numericId} not found in Jobber`)
 
-  const name = c.isCompany ? c.companyName : `${c.firstName} ${c.lastName}`.trim()
+  // Name resolution: prefer the structured field for the entity flavor,
+  // but always fall back to Jobber's denormalized `name` field — many
+  // residential records have isCompany=false yet empty firstName/lastName,
+  // with the actual display name only in `name`. Without this fallback the
+  // webhook landed 4 clients with blank name in 2026-05 (audited 05-12).
+  const structured = c.isCompany
+    ? (c.companyName || '')
+    : `${c.firstName || ''} ${c.lastName || ''}`.trim()
+  const name = structured || c.name || ''
 
   // Skip Jobber test/junk client patterns — these were hard-deleted from our DB
   // 2026-05-04 (X 1-15, "test test", "NOT USE Capas Burger"). Webhook updates
@@ -383,15 +391,24 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // Airtable visits, but webhook-arrived visits had no enrichment path —
   // resulting in 71% of completed visits having NULL service_type and breaking
   // cadence audits (e.g. Yannick reported 069-TCE config 30d but seeing 60d).
-  // Title patterns observed in production:
-  //   "grease trap", "GT" → GT
-  //   "service call", "clog", "emergency", "hydrojet", "drain", "riser",
-  //   "fire pump", "warranty", "repair", standalone "service" → CL
-  //   "dump" → null (operational, not client-bound)
+  //
+  // Title patterns observed in production (NULL audit 2026-05-12):
+  //   "grease trap", standalone "gt" (e.g. "gt & cleaning")  → GT
+  //   "lyft station …"                                       → LS
+  //   "service call", "clog", "emergency", "hydrojet",
+  //     "drain", "riser", "fire pump", "warranty", "repair"  → CL
+  //   standalone "service" (not "dump")                      → CL
+  //   "dump", inspection / camera / dye / leak / smell       → null
+  //     (operational or one-off — not a subscription service)
+  //
+  // Order matters: LS before GT (so "lyft station cleaning" doesn't get
+  // pulled into a future "cleaning"→GT branch); GT before CL (so
+  // "gt & cleaning" resolves to GT instead of falling through to CL).
   const inferServiceType = (title: string | null): string | null => {
     if (!title) return null
     const t = title.toLowerCase()
-    if (/grease trap|grey water|gray water/.test(t)) return 'GT'
+    if (/lyft\s*station/.test(t)) return 'LS'
+    if (/grease trap|grease pump|grey water|gray water|\bgt\b/.test(t)) return 'GT'
     if (/service call|\bclog|emergency|hydrojet|\bdrain|\briser|fire pump|warranty|\brepair/.test(t)) return 'CL'
     if (/\bservice\b/.test(t) && !/dump/.test(t)) return 'CL'
     return null
