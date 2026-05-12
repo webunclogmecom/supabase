@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-11*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-12*
 
 This file is the non-negotiable rules + quick reference for any AI agent (Claude, Viktor, future agents) working on this repository. **Read this every session before touching anything.**
 
@@ -118,7 +118,9 @@ Commercial trucks work 10pm–3am as standard. `visit_date` is the logical opera
 
 Summarized; full details in [docs/runbook.md §6](docs/runbook.md#6-outstanding-population-gaps) and the latest AUDIT files.
 
-**Recent wins (2026-05-05 → 2026-05-11):**
+**Recent wins (2026-05-05 → 2026-05-12):**
+- ✅ **Supabase-native recurring visit cron shipped (2026-05-12).** First piece of Airtable sunset. `scripts/sync/cron_generate_recurring_visits.js` generates the upcoming visit schedule (Option D anchor chain, end-of-next-month window + min-1-visit fallback). `visits.source` column distinguishes `'supabase_cron'` from `'jobber'`. `webhook-jobber.handleVisit` gained a promote-existing-cron-row merge path so the planned schedule and Jobber's executed visit become a single row through the lifecycle. INACTIVE-wipe Postgres trigger replaces the legacy Airtable automation. LS service type added. **Cron schedule currently disabled** (workflow_dispatch only) until Yannick's "upcoming visits per client" Lovable view ships. See [ADR 015](docs/decisions/015-supabase-native-recurring-visits.md) + runbook §8.
+- ✅ **line_items + invoice + visit data-integrity sync gaps fixed (2026-05-12).** Backfilled 1,421 invoices' job_id from Jobber, 56 visits' invoice_id, 2,695 invoice-scoped line_items. Added `line_items.invoice_id` column. Patched + deployed `webhook-jobber.handleInvoice` with archivedJobs+visits.job fallback chain, invoice line-items sync, and visit.invoice_id update on invoice arrival. See commit `bc6947a`.
 - ✅ **Sandbox refresh cadence 5×/day** (7am/10am/1pm/4pm/7pm ET) — was 1×/day. Closes daytime data-staleness window. See `.github/workflows/sandbox-refresh.yml`.
 - ✅ **Pattern A path locked down in Sandbox.** Column grants revoked on `photos`, `photo_links`, `notes`, `vehicle_telemetry_readings`, `jobber_oversized_attachments`. Lovable physically can't UPDATE canonical columns anymore. See `scripts/migrations/align_sandbox_canonical_grants_2026_05_11.sql`.
 - ✅ **Lovable Pattern B sidecar tables shipped:** `app_photo_classifications` + `app_property_overrides`. Replaces the `photo_links.role` / `properties.grease_trap_manhole_count` Pattern A writes which were silently no-op'ing for weeks.

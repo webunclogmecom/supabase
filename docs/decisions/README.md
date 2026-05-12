@@ -21,3 +21,8 @@ ADRs are **immutable** once merged. If a decision changes, write a new ADR that 
 | [008](008-photos-normalized-out.md) | Photos live in dedicated tables, not inline URL columns | Superseded by 009 |
 | [009](009-unified-photos-architecture.md) | Unified `photos` + polymorphic `photo_links` (replaces dedicated tables) | Accepted |
 | [010](010-drop-stored-derived-columns.md) | Drop stored derived columns; compute on read (3NF enforcement) | Accepted |
+| [011](011-source-of-truth-canonicalization-2026-04-29.md) | Source-of-truth trust hierarchy: Jobber + Samsara canonical; Airtable best-effort except DERM/PRE-POST | Accepted |
+| [012](012-visit-vehicle-id-derivation.md) | `visits.vehicle_id` derived from Samsara GPS cross-reference (not user input) | Accepted |
+| [013](013-tiered-property-geocoding.md) | Tiered property geocoding (Jobber → Airtable → Samsara → Google Maps) | Accepted |
+| [014](014-external-system-references-in-state-tables.md) | Source-prefixed columns allowed in private state tables (refines ADR 002) | Accepted |
+| [015](015-supabase-native-recurring-visits.md) | Recurring visit schedule moves from Airtable to Supabase-native cron + `visits.source` + merge promotion | Accepted |
