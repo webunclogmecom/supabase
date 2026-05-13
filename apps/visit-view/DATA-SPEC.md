@@ -23,7 +23,9 @@ For the prototype phase (before Lovable auth is wired), use the public
 
 ```http
 GET /rest/v1/visits
-  ?select=id,visit_date,visit_status,service_type,title,client_id,clients(client_code,name)
+  ?select=id,visit_date,visit_status,service_type,title,client_id,
+          clients(client_code,name),
+          properties(zone,address,city,state,zip,access_hours_start,access_hours_end)
   &visit_status=eq.scheduled
   &visit_date=gte.{today_iso_date}
   &order=visit_date.asc
@@ -34,6 +36,15 @@ Headers:
   Authorization: Bearer {SUPABASE_ANON_OR_JWT}
 ```
 
+**Property embed note**: many visits have `property_id = NULL` even when the
+client has a property. If you find the embed returns `properties: null` for
+those, switch to a server-side view that COALESCEs the visit's `property_id`
+with the client's `is_primary` property — `ops.v_visits_with_property` (we
+have a helper view; if it's missing, ask Fred to add it). Quick client-side
+fallback: if `visit.properties` is null, fire a second batched query for the
+client's primary property and merge in. The zone shown on the visit row is
+ALWAYS the property's zone, never the client's (clients don't have one).
+
 `today_iso_date` is computed client-side as `YYYY-MM-DD` from the ET
 calendar day (use `Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' })`).
 The cron writes visits in UTC but only the date matters here.
@@ -43,6 +54,11 @@ The cron writes visits in UTC but only the date matters here.
 ## Response shape
 
 ```ts
+type Zone =
+  | 'SOUTH' | 'DOWN' | 'MIAMI BEACH' | 'MID/EDG' | 'SF/BH'
+  | 'AVE'   | 'NMB'  | 'BRO'         | 'PALM'    | 'WEST'
+  | 'SUNNY';                            // legacy alias for AVE (3 rows; treat as AVE on read)
+
 type Visit = {
   id:            number;          // primary key
   visit_date:    string;          // 'YYYY-MM-DD' (date, not timestamp)
@@ -54,7 +70,38 @@ type Visit = {
     client_code: string | null;   // e.g. "174-VIN"
     name:        string | null;   // e.g. "Vincenzo's Pizzeria"
   } | null;
+  properties: {
+    zone:                Zone | null;
+    address:             string;
+    city:                string;
+    state:               string;
+    zip:                 string;
+    access_hours_start:  string | null;  // '09:00' (24h) or null = 24/7
+    access_hours_end:    string | null;
+  } | null;
 };
+```
+
+### Zone palette (canonical, from `docs/research/unclogme-design-system.md`)
+
+```ts
+const ZONE_COLORS: Record<Zone, string> = {
+  'SOUTH':       '#ef4444',  // red
+  'DOWN':        '#3b82f6',  // blue
+  'MIAMI BEACH': '#8b5cf6',  // purple
+  'MID/EDG':     '#f59e0b',  // amber
+  'SF/BH':       '#06b6d4',  // cyan
+  'AVE':         '#f97316',  // orange
+  'NMB':         '#eab308',  // yellow
+  'BRO':         '#22c55e',  // green
+  'PALM':        '#14b8a6',  // teal
+  'WEST':        '#6366f1',  // indigo
+  'SUNNY':       '#f97316',  // alias for AVE (3 legacy rows)
+};
+
+function zoneColor(zone: Zone | null | undefined): string {
+  return zone ? ZONE_COLORS[zone] ?? '#9ca3af' : '#9ca3af';
+}
 ```
 
 ---
@@ -79,7 +126,19 @@ eyebrow = key                   // e.g. "174-VIN"
 title = visit.clients?.name      // e.g. "Vincenzo's Pizzeria"
 ```
 
-Sort groups by `key` ascending; within a group, sort by `visit_date`.
+### By zone
+```ts
+key      = visit.properties?.zone ?? 'UNKNOWN'
+eyebrow  = key                                       // e.g. "DOWN"
+title    = `${key} · ${zoneAreaName(key)}`           // e.g. "DOWN · Brickell / Coral Gables"
+accent   = zoneColor(visit.properties?.zone)         // hex for the section's accent line
+```
+
+Section header uses a 2px horizontal line in the zone color; the eyebrow
+label is the zone color text. Group sort: by zone count descending (busiest
+zone first), or alphabetical — pick whichever reads cleaner.
+
+Sort visits within any group by `visit_date` ascending.
 
 ---
 

@@ -54,8 +54,11 @@ LAYOUT (single page, no nav rail needed — keep it focused):
       icon on the left and brand-orange focus ring
     - A "Service" filter dropdown (options: All services, Grease Trap (GT),
       Cleaning (CL), Water Discharge (WD), Lyft Station (LS))
-    - A segmented "Group by" control with two pills: "By day" (default) and
-      "By client"
+    - A "Zone" filter dropdown (options: All zones, then the 10 territory
+      zones — SOUTH, DOWN, MIAMI BEACH, MID/EDG, SF/BH, AVE, NMB, BRO,
+      PALM, WEST). When the user picks one, the visit list filters.
+    - A segmented "Group by" control with three pills: "By day" (default),
+      "By client", "By zone".
 
 • Page heading: "Upcoming visits" — h1 in Manrope 800, ~32px, letter-spacing
   -0.5px
@@ -104,6 +107,38 @@ palette that doesn't fight with it:
                        Outdoor/station distinct from the indoor blues.
 
 The status pill ("scheduled") uses a cool gray-blue: text #475569 on #f1f5f9.
+
+ZONE COLORS — UnclogMe's 10 territory zones (canonical palette from the
+Sales App brand system, applied identically here for consistency across
+apps). Each visit's property has a `zone` value; use these as accent
+hues for zone-aware UI.
+
+• SOUTH        #ef4444   Homestead, Cutler Bay, Palmetto Bay, Pinecrest
+• DOWN         #3b82f6   Downtown, Brickell, Coral Gables, Coconut Grove
+• MIAMI BEACH  #8b5cf6   Miami Beach, Key Biscayne
+• MID/EDG      #f59e0b   Wynwood, Edgewater, Little Haiti, Design District
+• SF/BH        #06b6d4   Surfside, Bal Harbour, Bay Harbor Islands
+• AVE          #f97316   Aventura, Sunny Isles (incl. "SUNNY" data — same zone)
+• NMB          #eab308   North Miami, North Miami Beach, Miami Gardens
+• BRO          #22c55e   All of Broward County
+• PALM         #14b8a6   Palm Beach County
+• WEST         #6366f1   Doral, Hialeah, Medley, Miami Lakes, Miami Springs
+
+ZONE TREATMENT in the visit row + group view (pick whichever you think
+reads cleanest; option B + C combined is what ops actually needs):
+
+  (A) 4px colored stripe on the LEFT edge of each visit card, in the
+      zone color. Subtle but instantly scannable.
+  (B) Small rounded zone pill in the metadata row, next to client_code:
+      [DOWN] · 174-VIN · Grease Trap
+      The pill background is the zone color at 12% opacity; text is the
+      zone color at 100%. Pill stays small (10–11px text).
+  (C) "By zone" group header (when grouping=By zone):
+      ─── DOWN · 16 visits ─── [horizontal accent line in zone color]
+      The line is 2px, the eyebrow label uses the zone color.
+
+Default both B + C ON when zones are visible. Skip A unless you find
+the metadata pill feels light at glance distance.
 
 DESIGN PRINCIPLES:
 
