@@ -23,10 +23,12 @@
   --u-color-text-disabled:      #9ca3af;
   --u-color-text-inverse:       #ffffff;
 
-  /* ---- Color: brand + semantic ------------------------------------------- */
-  --u-color-brand:              #1e40af;     /* UnclogMe blue */
-  --u-color-brand-hover:        #1e3a8a;
-  --u-color-brand-subtle:       #eff6ff;
+  /* ---- Color: brand + semantic (aligned with Sales App brand 2026-05-13) -- */
+  --u-color-brand:              #f14714;     /* UnclogMe orange — primary CTA, focus ring, brand mark */
+  --u-color-brand-hover:        #c93a0f;     /* darker on hover/pressed */
+  --u-color-brand-light:        #ff6b3d;     /* lighter accent */
+  --u-color-brand-subtle:       #fff4f0;     /* pale orange surfaces */
+  --u-color-brand-fg:           #ffffff;     /* text on brand fills */
 
   --u-color-success:            #15803d;     /* completed visit */
   --u-color-success-subtle:     #f0fdf4;
@@ -62,8 +64,11 @@
   --u-space-20:   80px;
 
   /* ---- Typography -------------------------------------------------------- */
-  --u-font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                    "Helvetica Neue", Arial, sans-serif;
+  /* Primary: Manrope (Sales App brand font). Falls back to system stack if
+     the Google Font hasn't loaded yet to avoid FOIT.  Add this to the HTML
+     head:  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"> */
+  --u-font-sans:    "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, "Helvetica Neue", Arial, sans-serif;
   --u-font-mono:    "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo,
                     Consolas, monospace;
 
