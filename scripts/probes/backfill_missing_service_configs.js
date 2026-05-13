@@ -56,21 +56,25 @@ async function listAT(table, fields, filter) {
   const existing = await pg(`SELECT client_id, service_type FROM service_configs;`);
   const existingKeys = new Set(existing.map(c => c.client_id + '|' + c.service_type));
 
+  // CANONICAL: Service Type multi-select is the only authoritative signal for
+  // whether a client subscribes to a service. Frequency fields can hold junk
+  // values (021-GRA had GT Frequency=360 even though AT only marks them as
+  // CL+WD; audit 2026-05-13 caught 16 bogus configs created from freq alone).
+  // Per CLAUDE.md trust hierarchy + memory rule:
+  //   "Airtable Service Type is canonical for subscriptions —
+  //    GT/CL Frequency fields can carry junk values for clients who don't
+  //    subscribe; use the Service Type multiselect as source of truth."
   function inferTypes(ac) {
     const types = new Set();
     const st = ac['Service Type'];
-    if (Array.isArray(st)) {
-      for (const v of st) {
-        const sl = ((v && v.name) || v || '').toString().toLowerCase();
-        if (sl.includes('grease trap') || sl === 'gt') types.add('GT');
-        else if (sl.includes('main cl') || sl.includes('cleaning') || sl === 'cl') types.add('CL');
-        else if (sl === 'wd' || sl.includes('warranty')) types.add('WD');
-        else if (sl.includes('lyft')) types.add('LS');
-      }
+    if (!Array.isArray(st)) return types;
+    for (const v of st) {
+      const sl = ((v && v.name) || v || '').toString().toLowerCase();
+      if (sl.includes('grease trap') || sl === 'gt') types.add('GT');
+      else if (sl.includes('main cl') || sl.includes('cleaning') || sl === 'cl') types.add('CL');
+      else if (sl === 'wd' || sl.includes('warranty') || sl.includes('water dis')) types.add('WD');
+      else if (sl.includes('lyft')) types.add('LS');
     }
-    if (typeof ac['GT Frequency'] === 'number') types.add('GT');
-    if (typeof ac['CL Frequency'] === 'number') types.add('CL');
-    if (typeof ac['WD Frequency'] === 'number') types.add('WD');
     return types;
   }
 

@@ -18,14 +18,23 @@
 //       If yes → skip. If no → INSERT with source='supabase_cron',
 //       visit_status='scheduled'.
 //
-// Anchor precedence (Option D, confirmed with Fred 2026-05-12)
+// Anchor precedence (simplified 2026-05-13 — dropped first_visit per Fred)
 //   1. MAX(visit_date) among visits with status='scheduled' AND visit_date >= today
 //      → if found, anchor = that + frequency  (extend existing chain)
 //   2. else MAX(visit_date) among visits with status='completed'
-//      → if found, anchor = that + frequency  (anchor from history)
-//   3. else service_configs.first_visit
-//      → if found, anchor = that  (initial anchor for new clients)
-//   4. else today + frequency  (last resort; defer first visit by one cycle)
+//      → if found, anchor = that + frequency  (resume cadence from last real service)
+//   3. else today + frequency  (cold start — never had a visit, kick off the cadence)
+//
+// What changed and why:
+//   Earlier versions used service_configs.first_visit as a fallback anchor
+//   before "today + freq". That came from AT's `GT First Visit Date` field,
+//   which AT uses as a one-shot "start generating next N visits from this
+//   date" trigger — NOT a cadence anchor. Worst case: 175-PV Pura Vida
+//   Brickell had first_visit=2028-11-29 in AT (typo), which made our cron
+//   try to anchor visits 2.5 years in the future. Dropping this rule makes
+//   the logic depend only on real visit history (scheduled or completed).
+//   first_visit stays as a column on service_configs (still useful info)
+//   but is no longer consulted by the generator.
 //
 // Idempotency
 //   ±7 day tolerance window when checking for existing matching visits across
@@ -200,8 +209,7 @@ function endOfWindowMonth(isoToday) {
       c.name AS client_name,
       c.status AS client_status,
       sc.service_type,
-      sc.frequency_days,
-      sc.first_visit::text AS first_visit
+      sc.frequency_days
     FROM clients c
     JOIN service_configs sc ON sc.client_id = c.id
     WHERE c.status IN (${ALLOWED_CLIENT_STATUSES.map(s => `'${s}'`).join(',')})
@@ -249,10 +257,10 @@ function endOfWindowMonth(isoToday) {
     } else if (maxCompleted) {
       anchor = addDays(maxCompleted, c.frequency_days);
       anchorSource = 'max_completed+freq';
-    } else if (c.first_visit) {
-      anchor = c.first_visit;
-      anchorSource = 'first_visit';
     } else {
+      // Cold start — no scheduled OR completed visits for this (client, service).
+      // first_visit was dropped from this chain 2026-05-13 (AT field semantics
+      // didn't match cadence-anchor semantics; one client had a 2028 typo).
       anchor = addDays(today, c.frequency_days);
       anchorSource = 'today+freq';
     }

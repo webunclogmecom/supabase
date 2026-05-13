@@ -1,6 +1,6 @@
 # Yan — service config fix list
 
-_Generated 2026-05-13 from live Supabase audit. 94 total rows across 3 priority buckets._
+_Generated 2026-05-13 from live Supabase audit. 92 total rows across 3 priority buckets._
 
 Fix everything in Airtable. Our DB syncs on the next `populate.js --step=5` run.
 
@@ -17,15 +17,13 @@ These have a price set but no cadence, so the daily cron **won't schedule any up
 | 169-TCE TCE The Carrot Express Oakland Park | CL | $200.00 | ? days |
 | 198-ARY ARY Aryeh Hochner | GT | $675.00 | ? days |
 
-## Part 2 — NEEDS_PRICE (8 rows) — MEDIUM PRIORITY
+## Part 2 — NEEDS_PRICE (6 rows) — MEDIUM PRIORITY
 
 These have a cadence so the cron schedules them, but they have no `$ per Visit` in AT, so any invoice will land at $0.
 
 | Client | Service | Freq (days) | Set price to… |
 |---|---|---|---|
-| 021-GRA GRA Granada Condo | GT | 360 | $? |
 | 049-PV PV Pura Vida (Bay Harbor) | CL | 60 | $? |
-| 087-BB BB Bagel Boss Harding Ave | CL | 60 | $? |
 | 110-CLA CLA Claudie | CL | 30 | $? |
 | 114-CI CI Ceviche inka | GT | 45 | $? |
 | 138-ASW ASW Arepas & Sand Wish ( Helen & Jeff ) | GT | 120 | $? |
