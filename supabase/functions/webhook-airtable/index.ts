@@ -277,22 +277,26 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
 }
 
 // ---- DERM table → derm_manifests ----
+//
+// Field-name fixes 2026-05-13: AT DERM schema actually exposes:
+//   "Date Dump Ticket"            (date — when waste was disposed)
+//   "GT Last Visit"               (date — when the GT service happened)
+//   "White Manifest #"            (singleLineText)
+//   "Yellow Ticket #"             (singleLineText)
+//   "Send To Client" (capital To) (checkbox)
+//   "Send To City"   (capital To) (checkbox)
+//   "Client Name (from Client)"   (lookup, parens in the field name)
 async function handleDermRecord(recordId: string, fields: Record<string, unknown>): Promise<void> {
-  const clientName = strVal(fields, 'Client Name')
-  const manifestNumber = strVal(fields, 'Manifest #') ?? strVal(fields, 'White Manifest #')
-
-  // Try to find the linked manifest
+  const clientName = strVal(fields, 'Client Name (from Client)') ?? strVal(fields, 'Client Name')
   const existingId = await findEntityBySourceId('derm_manifest', 'airtable', recordId)
 
-  // v2 derm_manifests: service_date, dump_ticket_date, white_manifest_number,
-  // yellow_ticket_number, manifest_images, address_images, sent_to_client, sent_to_city
   const row: Record<string, unknown> = {
-    service_date: dateVal(fields, 'Date') ?? dateVal(fields, 'Manifest Date'),
-    dump_ticket_date: dateVal(fields, 'Dump Ticket Date'),
-    white_manifest_number: manifestNumber ?? strVal(fields, 'White Manifest #'),
+    service_date: dateVal(fields, 'Date Dump Ticket') ?? dateVal(fields, 'GT Last Visit'),
+    dump_ticket_date: dateVal(fields, 'Date Dump Ticket'),
+    white_manifest_number: strVal(fields, 'White Manifest #'),
     yellow_ticket_number: strVal(fields, 'Yellow Ticket #'),
-    sent_to_client: fields['Sent to Client'] === true,
-    sent_to_city: fields['Sent to City'] === true,
+    sent_to_client: fields['Send To Client'] === true,
+    sent_to_city: fields['Send To City'] === true,
   }
 
   // Resolve client_id
@@ -452,11 +456,16 @@ async function handleInspectionRecord(recordId: string, fields: Record<string, u
     return
   }
 
-  // Resolve vehicle by Truck name
+  // Resolve vehicle by Truck name. AT sends "Moises 9,000" / "David 2,000" /
+  // "Cloggy 120" / "Goliath 5,000" — vehicles.name is just "Moises"/"David"/
+  // "Cloggy"/"Goliath". Strip everything after the first word so the ILIKE
+  // matches. Caught 2026-05-13: 276/276 inspections had NULL vehicle_id
+  // because of the unstripped comparison.
   let vehicle_id: number | null = null
-  const truckName = strVal(fields, 'Truck')
+  const truckRaw = strVal(fields, 'Truck')
+  const truckName = truckRaw ? truckRaw.split(/[\s,]/)[0] : null
   if (truckName) {
-    const { data: v } = await supabase.from('vehicles').select('id').ilike('name', `%${truckName}%`).limit(1)
+    const { data: v } = await supabase.from('vehicles').select('id').ilike('name', truckName).limit(1)
     if (v?.length) vehicle_id = v[0].id
   }
 
@@ -473,6 +482,7 @@ async function handleInspectionRecord(recordId: string, fields: Record<string, u
     inspection_type,
     submitted_at: typeof dateRaw === 'string' ? dateRaw : null,
     sludge_gallons: Math.round(numVal(fields, 'SLUDGE Tank level') ?? 0) || null,
+    water_gallons:  Math.round(numVal(fields, 'WATER Tank level')  ?? 0) || null,
     gas_level: strVal(fields, 'Gas Level'),
   }
   if (vehicle_id)  row.vehicle_id = vehicle_id
