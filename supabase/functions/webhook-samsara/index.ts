@@ -221,8 +221,11 @@ async function handleDriver(
     const officeStaff = ['yannick', 'aaron', 'diego']
     const isOffice = officeStaff.some((n) => name.toLowerCase().includes(n))
 
+    // Role enum (audited 2026-05-13): 'Admin' | 'Office' | 'Owner' | 'Technician'.
+    // Handler previously wrote 'Office Manager' which wasn't a valid enum value —
+    // new Samsara drivers tagged as office would land with a bogus role string.
     empRow.status = 'ACTIVE'
-    empRow.role = isOffice ? 'Office Manager' : 'Technician'
+    empRow.role = isOffice ? 'Office' : 'Technician'
     empRow.access_level = isOffice ? 'office' : 'field'
 
     const { data: inserted, error } = await supabase

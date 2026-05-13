@@ -758,10 +758,14 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
 
 async function handleProperty(numericId: string, topic: string): Promise<{ entity_id: number }> {
   const gid = btoa(`gid://Jobber/Property/${numericId}`)
+  // Jobber exposes property.name (the human-readable label, e.g. "Main location"
+  // or the client's company name). Handler was previously not pulling it →
+  // 470/470 properties had NULL name (audit 2026-05-13).
   const data: any = await gql(
     `query($id: EncodedId!) {
       property(id: $id) {
         id
+        name
         client { id }
         address { street city province postalCode country }
       }
@@ -775,6 +779,7 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
   const existingId = await findEntityBySourceId('property', 'jobber', gid)
 
   const row: Record<string, unknown> = {
+    name: p.name ?? null,
     address: p.address?.street ?? null,
     city: p.address?.city ?? null,
     state: p.address?.province ?? 'FL',
