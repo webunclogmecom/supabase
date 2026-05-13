@@ -191,7 +191,7 @@ State as of 2026-05-13:
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records — *why* something is the way it is |
 | [docs/research/claude-code-best-practices.md](docs/research/claude-code-best-practices.md) | How Anthropic recommends running Claude Code projects — synthesis + project-specific recommendations |
 | [docs/audits/](docs/audits/) | Historical audit snapshots (Apr 27 → May 4) — moved here 2026-05-13 |
-| [apps/visit-view-prototype/](apps/visit-view-prototype/) | Standalone HTML/CSS/JS prototype for Yannick's upcoming-visits view (Lovable handoff) |
+| [apps/visit-view/](apps/visit-view/) | Yannick's upcoming-visits view. Build path: claude.ai/design → handoff bundle → Claude Code wiring. See `CLAUDE-DESIGN-PROMPT.md` + `DATA-SPEC.md` inside. |
 
 ---
 
@@ -204,7 +204,7 @@ State as of 2026-05-13:
 ├── OPS_LIST_{DIEGO,YAN}.md     ← current ops fix lists
 ├── .env.example                ← credential template
 ├── apps/
-│   └── visit-view-prototype/   ← Yannick's upcoming-visits view (HTML+CSS+JS)
+│   └── visit-view/             ← Yannick's upcoming-visits view (Claude Design + handoff workflow)
 ├── docs/                       ← all project documentation
 │   ├── architecture.md, schema.md, operations.md, runbook.md
 │   ├── integration.md, security.md, migration-plan.md

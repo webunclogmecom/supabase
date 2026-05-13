@@ -50,7 +50,7 @@ For a longer walk-through, read [`docs/onboarding.md`](docs/onboarding.md).
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records (ADRs) |
 | [docs/research/](docs/research/) | External-source synthesis (Claude Code best practices, etc.) |
 | [docs/audits/](docs/audits/) | Historical audit snapshots |
-| [apps/visit-view-prototype/](apps/visit-view-prototype/) | Visit View prototype — HTML + CSS + design tokens for Yannick's Lovable rebuild |
+| [apps/visit-view/](apps/visit-view/) | Visit View build path — prompt for Claude Design + data spec for Claude Code (post-handoff) |
 
 ---
 
