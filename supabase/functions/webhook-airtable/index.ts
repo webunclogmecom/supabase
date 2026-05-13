@@ -152,103 +152,121 @@ function dateVal(fields: Record<string, unknown>, name: string): string | null {
   return String(v).slice(0, 10)
 }
 
-// ---- Clients table → service_configs ----
+// ---- Clients table → clients + properties + service_configs ----
+//
+// Field-name + behavior fixes 2026-05-13 (Fred's audit found 307 drift rows
+// across 145 fields because this handler was reading non-existent AT field
+// names, skipping clients.status entirely, and never touching access_hours).
+// The Airtable schema actually exposes:
+//   "GT Frequency", "CL Frequency", "WD Frequency"          (all in DAYS)
+//   "GT $ per Visit", "CL$ Price per Visit", "WD$ Price per Visit"
+//   "Client Code #3"            (formula, not "Client Code")
+//   "GDO Number", "GDO expiration date"
+//   "Size GT in Gallon"
+//   "ACTIVE/INACTIVE", "Service Type" (multiSelect — canonical for subscriptions)
+//   "Hours in", "Hours out", "Days of the week"             (access window)
+// We also normalize the "Recuring" typo on status to "RECURRING".
 async function handleClientRecord(recordId: string, fields: Record<string, unknown>): Promise<void> {
-  // Find linked client via entity_source_links
   const clientId = await findEntityBySourceId('client', 'airtable', recordId)
   if (!clientId) {
-    console.warn(`No client linked to Airtable record ${recordId} — skipping service_configs update`)
+    console.warn(`No client linked to Airtable record ${recordId} — skipping`)
     return
   }
 
-  // Airtable frequency fields: GT in MONTHS, CL in MONTHS, WD in DAYS
-  const serviceTypes = [
-    {
-      type: 'GT',
-      freq: numVal(fields, 'Grease Trap Frequency'),
-      freqMultiplier: 30, // months → days
-      price: numVal(fields, 'Grease Trap Price'),
-      lastVisit: dateVal(fields, 'GT Last Visit'),
-    },
-    {
-      type: 'CL',
-      freq: numVal(fields, 'Cleaning Frequency'),
-      freqMultiplier: 30,
-      price: numVal(fields, 'Cleaning Price'),
-      lastVisit: dateVal(fields, 'CL Last Visit'),
-    },
-    {
-      type: 'WD',
-      freq: numVal(fields, 'Water Drain Frequency'),
-      freqMultiplier: 1, // already in days
-      price: numVal(fields, 'Water Drain Price'),
-      lastVisit: dateVal(fields, 'WD Last Visit'),
-    },
-  ]
-
-  for (const svc of serviceTypes) {
-    if (!svc.freq && !svc.price) continue // No data for this service type
-
-    const row: Record<string, unknown> = {
-      client_id: clientId,
-      service_type: svc.type,
-      frequency_days: svc.freq ? svc.freq * svc.freqMultiplier : null,
-      price_per_visit: svc.price,
-      last_visit: svc.lastVisit,
-    }
-
-    const { error } = await supabase
-      .from('service_configs')
-      .upsert(row, { onConflict: 'client_id,service_type' })
-
-    if (error) console.error(`service_configs upsert failed for ${svc.type}:`, error.message)
+  // -- 1. Update client-level fields (status + client_code) ---------------
+  const clientUpdate: Record<string, unknown> = {}
+  const code = strVal(fields, 'Client Code #3')
+  if (code) clientUpdate.client_code = code
+  let status = strVal(fields, 'ACTIVE/INACTIVE')
+  if (status) {
+    status = status.toUpperCase().trim()
+    if (status === 'RECURING') status = 'RECURRING'
+    clientUpdate.status = status
+  }
+  if (Object.keys(clientUpdate).length) {
+    await supabase.from('clients').update(clientUpdate).eq('id', clientId)
   }
 
-  // v2: zone/county live on properties, GDO permit on service_configs, client_code on clients
-  const clientCode = strVal(fields, 'Client Code')
-  if (clientCode) {
-    await supabase.from('clients').update({ client_code: clientCode }).eq('id', clientId)
-  }
-
-  // Update zone + county + manhole count on primary property
-  // (`manholes` field added by Yannick 2026-04-30 — drives grease_trap_manhole_count)
-  const zone = strVal(fields, 'Zone')
-  const county = strVal(fields, 'County')
+  // -- 2. Update primary property (access window + zone + county + manholes) ----
+  const propUpdate: Record<string, unknown> = {}
+  const hin = strVal(fields, 'Hours in');   if (hin)  propUpdate.access_hours_start = hin
+  const hout = strVal(fields, 'Hours out'); if (hout) propUpdate.access_hours_end   = hout
+  const zone = strVal(fields, 'Zone');      if (zone) propUpdate.zone = zone
+  const county = strVal(fields, 'County');  if (county) propUpdate.county = county
   const manholesRaw = numVal(fields, 'manholes')
-  const manholes = (manholesRaw != null && manholesRaw >= 0) ? Math.round(manholesRaw) : null
-  if (zone || county || manholes != null) {
+  if (manholesRaw != null && manholesRaw >= 0) propUpdate.grease_trap_manhole_count = Math.round(manholesRaw)
+  // Days of the week — multipleSelects → array of {id,name} → text[] of short names
+  const daysRaw = fields['Days of the week']
+  if (Array.isArray(daysRaw)) {
+    const days = daysRaw.map((d: unknown) => {
+      const name = (d && typeof d === 'object' && 'name' in (d as Record<string, unknown>))
+        ? (d as Record<string, unknown>).name as string
+        : String(d)
+      return String(name).toLowerCase().slice(0, 3)
+    }).filter(Boolean)
+    if (days.length) propUpdate.access_days = days
+  }
+  if (Object.keys(propUpdate).length) {
     const { data: props } = await supabase
-      .from('properties')
-      .select('id')
-      .eq('client_id', clientId)
-      .eq('is_primary', true)
-      .limit(1)
-
+      .from('properties').select('id')
+      .eq('client_id', clientId).eq('is_primary', true).limit(1)
     if (props?.length) {
-      const propUpdate: Record<string, unknown> = {}
-      if (zone) propUpdate.zone = zone
-      if (county) propUpdate.county = county
-      if (manholes != null) propUpdate.grease_trap_manhole_count = manholes
       await supabase.from('properties').update(propUpdate).eq('id', props[0].id)
     }
   }
 
-  // GDO permit → service_configs.permit_number on the GT row
-  const gdo = strVal(fields, 'GDO #')
-  const gdoExp = dateVal(fields, 'GDO Expiration')
+  // -- 3. Service-config rows — ONLY for services the client subscribes to ----
+  // Service Type multi-select is canonical (per memory rule and audit
+  // 2026-05-13: GT/CL/WD Frequency fields can carry junk values for clients
+  // who don't actually subscribe, e.g. 021-GRA had GT Frequency=360 even
+  // though Service Type was just [CL, WD]).
+  const serviceTypeRaw = fields['Service Type']
+  const subscribedTypes = new Set<string>()
+  if (Array.isArray(serviceTypeRaw)) {
+    for (const v of serviceTypeRaw) {
+      const name = (v && typeof v === 'object' && 'name' in (v as Record<string, unknown>))
+        ? String((v as Record<string, unknown>).name).toLowerCase()
+        : String(v).toLowerCase()
+      if (name.includes('grease trap') || name === 'gt') subscribedTypes.add('GT')
+      else if (name.includes('main cl') || name.includes('cleaning') || name === 'cl') subscribedTypes.add('CL')
+      else if (name === 'wd' || name.includes('warranty') || name.includes('water dis')) subscribedTypes.add('WD')
+      else if (name.includes('lyft')) subscribedTypes.add('LS')
+    }
+  }
+
+  // AT field names per service (verified against schema 2026-05-13)
+  const SVC_FIELDS: Record<string, { freq: string; price: string }> = {
+    GT: { freq: 'GT Frequency',  price: 'GT $ per Visit' },
+    CL: { freq: 'CL Frequency',  price: 'CL$ Price per Visit' },
+    WD: { freq: 'WD Frequency',  price: 'WD$ Price per Visit' },
+  }
+  for (const type of ['GT', 'CL', 'WD']) {
+    if (!subscribedTypes.has(type)) continue
+    const f = SVC_FIELDS[type]
+    const row: Record<string, unknown> = {
+      client_id: clientId,
+      service_type: type,
+      frequency_days: numVal(fields, f.freq),
+      price_per_visit: numVal(fields, f.price),
+    }
+    const { error } = await supabase.from('service_configs')
+      .upsert(row, { onConflict: 'client_id,service_type' })
+    if (error) console.error(`service_configs upsert failed for ${type}:`, error.message)
+  }
+
+  // -- 4. GDO permit (GT only) ----
+  const gdo = strVal(fields, 'GDO Number')
+  const gdoExp = dateVal(fields, 'GDO expiration date')
   if (gdo || gdoExp) {
     const permitUpdate: Record<string, unknown> = {}
     if (gdo) permitUpdate.permit_number = gdo
     if (gdoExp) permitUpdate.permit_expiration = gdoExp
-    await supabase
-      .from('service_configs')
-      .update(permitUpdate)
-      .eq('client_id', clientId)
-      .eq('service_type', 'GT')
+    await supabase.from('service_configs').update(permitUpdate)
+      .eq('client_id', clientId).eq('service_type', 'GT')
   }
 
-  // GT size → service_configs.equipment_size_gallons on the GT row
-  const gtSize = numVal(fields, 'GT Size') ?? numVal(fields, 'Grease Trap Size')
+  // -- 5. GT tank size ----
+  const gtSize = numVal(fields, 'Size GT in Gallon')
   if (gtSize) {
     await supabase
       .from('service_configs')
