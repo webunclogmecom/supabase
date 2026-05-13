@@ -23,7 +23,7 @@ async function pg(s) {
            WHEN sc.frequency_days IS NULL THEN 'NEEDS_FREQ' END AS need
     FROM service_configs sc JOIN clients c ON c.id=sc.client_id
     WHERE (sc.price_per_visit IS NULL OR sc.frequency_days IS NULL)
-      AND c.status IN ('ACTIVE','RECURRING')
+      AND c.status = 'RECURRING'
     ORDER BY (CASE WHEN sc.price_per_visit IS NULL AND sc.frequency_days IS NULL THEN 3
                    WHEN sc.price_per_visit IS NULL THEN 2 ELSE 1 END), c.client_code, sc.service_type;
   `);

@@ -1,23 +1,19 @@
 # Yan — service config fix list
 
-_Generated 2026-05-13 from live Supabase audit. 92 total rows across 3 priority buckets._
+_Generated 2026-05-13 from live Supabase audit. 75 total rows across 3 priority buckets._
 
 Fix everything in Airtable. Our DB syncs on the next `populate.js --step=5` run.
 
-## Part 1 — NEEDS_FREQ (6 rows) — HIGH PRIORITY
+## Part 1 — NEEDS_FREQ (2 rows) — HIGH PRIORITY
 
 These have a price set but no cadence, so the daily cron **won't schedule any upcoming visits for them**. Set the freq in AT (`GT/CL/WD Frequency` in days).
 
 | Client | Service | Price | Set freq to… |
 |---|---|---|---|
 | 090-OAK OAK One Oak Beachwalk | CL | $0.00 | ? days |
-| 108-ROA ROA Roast | GT | $450.00 | ? days |
-| 146-54W 54 Warehouse LLC | GT | $750.00 | ? days |
-| 147-OST OST Maison Ostrow | GT | $540.00 | ? days |
 | 169-TCE TCE The Carrot Express Oakland Park | CL | $200.00 | ? days |
-| 198-ARY ARY Aryeh Hochner | GT | $675.00 | ? days |
 
-## Part 2 — NEEDS_PRICE (6 rows) — MEDIUM PRIORITY
+## Part 2 — NEEDS_PRICE (3 rows) — MEDIUM PRIORITY
 
 These have a cadence so the cron schedules them, but they have no `$ per Visit` in AT, so any invoice will land at $0.
 
@@ -25,12 +21,9 @@ These have a cadence so the cron schedules them, but they have no `$ per Visit` 
 |---|---|---|---|
 | 049-PV PV Pura Vida (Bay Harbor) | CL | 60 | $? |
 | 110-CLA CLA Claudie | CL | 30 | $? |
-| 114-CI CI Ceviche inka | GT | 45 | $? |
-| 138-ASW ASW Arepas & Sand Wish ( Helen & Jeff ) | GT | 120 | $? |
 | 139-LTG LTG Lettuce and Tomato | CL | 60 | $? |
-| 140-TYO TCY Tacos yoyo | GT | 60 | $? |
 
-## Part 3 — NEEDS_BOTH (80 rows) — LOW PRIORITY (decide: real or noise)
+## Part 3 — NEEDS_BOTH (70 rows) — LOW PRIORITY (decide: real or noise)
 
 These came from AT clients where the `Service Type` multi-select has a service ticked (GT/CL/WD) but **neither cadence nor price is filled in**. Either:
 
@@ -94,7 +87,6 @@ Most of these are WD (Water Discharge) — that program may not have fully rolle
 | 132-PUM PU Pummarola | WD | fill in or uncheck |
 | 133-MUT MU Mutra | CL | fill in or uncheck |
 | 142-57 57 Ocean Residences | CL | fill in or uncheck |
-| 151-OAS OAS Oasis Hallandale Master Association BUILDING 1 | GT | fill in or uncheck |
 | 152-DAV DAV Davinci | CL | fill in or uncheck |
 | 154-PV PV Pura Vida Fisher Island | CL | fill in or uncheck |
 | 155-PV PV Pura Vida Flamingo | CL | fill in or uncheck |
@@ -105,22 +97,13 @@ Most of these are WD (Water Discharge) — that program may not have fully rolle
 | 175-PV PV Pura Vida Brickell 701 | CL | fill in or uncheck |
 | 176-SOU SOU What Soup | CL | fill in or uncheck |
 | 177-PV PV pura Vida Doral | CL | fill in or uncheck |
-| 178-LG LG La Granja Flager | CL | fill in or uncheck |
-| 178-LG LG La Granja Flager | WD | fill in or uncheck |
 | 179-CIG CIG Espanola Cigars | CL | fill in or uncheck |
 | 179-CIG CIG Espanola Cigars | WD | fill in or uncheck |
-| 180-PV PV Pura Vida Kendall | CL | fill in or uncheck |
 | 181-PV PV Pura Vida Esplanade (Aventura) | CL | fill in or uncheck |
 | 182-PAL PAL The Palm | CL | fill in or uncheck |
 | 186-PV PV Pura Vida Coconut Grove | CL | fill in or uncheck |
-| 190-LOU LOU Skinny Louie LLC | GT | fill in or uncheck |
 | 191-TEN TEN Tends | CL | fill in or uncheck |
-| 194-PV PV Pura Vida 41 | GT | fill in or uncheck |
 | 199-JZ STK JZ Steak House | CL | fill in or uncheck |
-| 200-PALO PALO Palomar | GT | fill in or uncheck |
-| 203-GF GF Merav Halperin - Good Food | GT | fill in or uncheck |
-| 204-JCC JCC JCC | GT | fill in or uncheck |
-| 206-CAC CAC Cacio e Pepe | GT | fill in or uncheck |
 
 ## Part 4 — Other anomalies spotted during audit
 
