@@ -112,7 +112,7 @@ Commercial trucks work 10pm–3am. `visit_date` is the logical operating date, n
 | [docs/decisions/](docs/decisions/) | ADRs — *why* something is the way it is |
 | [docs/research/](docs/research/) | External-source synthesis (Claude Code best practices, etc.) |
 | [docs/audits/](docs/audits/) | Historical state snapshots |
-| [apps/visit-view/](apps/visit-view/) | Yannick's upcoming-visits view (Claude Design → handoff → wiring) |
+| [apps/internal-portal/](apps/internal-portal/) | Yannick's full internal-tool prototype (Dashboard, Sales, Scheduling, Visits, Ops). Single-file React+CDN. Pre-built UI; wiring to live Supabase pending. |
 | [OPS_LIST_YAN.md](OPS_LIST_YAN.md) | Current Yan to-do (auto-regenerated from `scripts/probes/generate_ops_list_yan.js`) |
 
 ---

@@ -50,7 +50,7 @@ For a longer walk-through, read [`docs/onboarding.md`](docs/onboarding.md).
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records (ADRs) |
 | [docs/research/](docs/research/) | External-source synthesis (Claude Code best practices, etc.) |
 | [docs/audits/](docs/audits/) | Historical audit snapshots |
-| [apps/visit-view/](apps/visit-view/) | Visit View build path — prompt for Claude Design + data spec for Claude Code (post-handoff) |
+| [apps/internal-portal/](apps/internal-portal/) | Yannick's React+CDN internal portal prototype (Dashboard, Sales, Scheduling, Visits, Ops) + Supabase wiring specs |
 
 ---
 
