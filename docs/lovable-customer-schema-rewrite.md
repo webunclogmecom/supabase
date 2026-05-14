@@ -78,11 +78,11 @@ Empty views render empty UI sections — not a bug, just no test data for those 
 
 ## Test plan (do this in your branch before flipping `VITE_PORTAL_DATA_SOURCE=personal`)
 
-1. Hit `loginWithCode('174-VIN')` — should resolve to Vincenzo's Pizzeria, set cookie.
-2. `fetchClientBySlug('174-vin')` should populate header, location info, permits (if Vincenzo's has a GT permit set), scheduled visits, work orders.
+1. Hit `loginWithCode('168-AVA')` — should resolve to "168-AVA AVA" (9 completed work orders, 5 scheduled, 1 permit). Sets cookie.
+2. `fetchClientBySlug('168-ava')` should populate header, location info, permits (if Vincenzo's has a GT permit set), scheduled visits, work orders.
 3. Open a work order from the history → header + visit details should render. Photos / inspection-items / recommendations grids will be empty (expected).
-4. Print sign at `/174-vin/print` → uses the same 5-query path.
-5. Slug guard: while logged in as `174-vin`, attempt `/009-cn` → should redirect.
+4. Print sign at `/168-ava/print` → uses the same 5-query path.
+5. Slug guard: while logged in as `168-ava`, attempt `/083-shul` → should redirect back to `/168-ava`.
 
 Once all five pass, flip `VITE_PORTAL_DATA_SOURCE=personal`.
 
