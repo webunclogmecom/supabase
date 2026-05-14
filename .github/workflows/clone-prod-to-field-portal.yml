@@ -1,0 +1,105 @@
+name: Clone Prod → Field Portal Sandbox (one-time)
+
+# ─────────────────────────────────────────────────────────────────────────
+# One-shot clone of Prod schema + canonical data into the Field Portal
+# Sandbox project (klgtrdwrasrlxbmfyvdh).
+#
+# Difference from sandbox-refresh.yml:
+#   - sandbox-refresh runs 5×/day to keep Sandbox #1 in sync with Prod
+#   - this workflow runs ONCE (manually) to seed Field Portal Sandbox.
+#     After that, Field Portal diverges via Yannick's Lovable changes —
+#     no further auto-refresh (that would wipe his iterations).
+#
+# Required GitHub Secrets:
+#   PROD_DB_URL              already set (used by sandbox-refresh)
+#   FIELD_PORTAL_DB_URL      NEW — must be added before first run
+#                            value: postgres://postgres.klgtrdwrasrlxbmfyvdh:<pw>@aws-1-us-east-1.pooler.supabase.com:5432/postgres
+#
+# Exclusions:
+#   - webhook_events_log     76 MB of operational audit trail, not customer data
+#   - vehicle_telemetry_readings  103 MB of GPS pings; INCLUDE by default
+#     (Field Portal likely needs route history) — toggle below if not
+#
+# Run via Actions → "Clone Prod → Field Portal Sandbox" → Run workflow.
+# ─────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "CLONE" to confirm. This wipes Field Portal Sandbox.'
+        required: true
+        type: string
+      exclude_telemetry:
+        description: 'Also skip vehicle_telemetry_readings (saves 103 MB)?'
+        type: boolean
+        default: false
+
+concurrency:
+  group: clone-prod-to-field-portal
+  cancel-in-progress: false
+
+jobs:
+  clone:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ inputs.confirm == 'CLONE' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Postgres 17 client
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Dump Prod schema (public)
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+        run: |
+          pg_dump --schema-only --no-owner --no-privileges \
+            --schema=public \
+            "$PROD_DB_URL" > schema.sql
+          wc -l schema.sql
+
+      - name: Dump Prod data (canonical tables; skip operational/audit)
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+        run: |
+          EXCLUDES="--exclude-table=public.webhook_events_log --exclude-table=public.sync_cursors"
+          if [ "${{ inputs.exclude_telemetry }}" = "true" ]; then
+            EXCLUDES="$EXCLUDES --exclude-table=public.vehicle_telemetry_readings"
+          fi
+          pg_dump --data-only --no-owner --no-privileges \
+            --schema=public \
+            --disable-triggers \
+            $EXCLUDES \
+            "$PROD_DB_URL" > data.sql
+          wc -l data.sql
+
+      - name: Apply schema → Field Portal Sandbox
+        env:
+          FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
+        run: |
+          psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -f schema.sql 2>&1 | tail -20
+
+      - name: Apply data → Field Portal Sandbox
+        env:
+          FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
+        run: |
+          psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -f data.sql 2>&1 | tail -20
+
+      - name: Verify row counts
+        env:
+          FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
+        run: |
+          psql "$FIELD_PORTAL_DB_URL" -c "
+            SELECT 'clients' AS t, COUNT(*) FROM clients
+            UNION ALL SELECT 'visits',          COUNT(*) FROM visits
+            UNION ALL SELECT 'properties',      COUNT(*) FROM properties
+            UNION ALL SELECT 'service_configs', COUNT(*) FROM service_configs
+            UNION ALL SELECT 'vehicles',        COUNT(*) FROM vehicles
+            ORDER BY t;
+          "
