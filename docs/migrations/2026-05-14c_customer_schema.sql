@@ -168,7 +168,7 @@ SELECT
     WHERE va.visit_id = v.id) AS driver,
   veh.name AS truck,
   veh.decal_number AS decal,
-  COALESCE(v.manhole_count, prop.grease_trap_manhole_count) AS manholes,
+  v.manhole_count AS manholes,  -- NULL = "—" (not recorded), 0 = real zero. Don't fall back to property's total (that's a different concept: site total, not per-visit serviced).
   v.manhole_breakdown,
   v.ticket_number,
   v.trap_condition_notes AS trap_condition,
