@@ -235,9 +235,18 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
 
   // -- 3. Service-config rows — ONLY for services the client subscribes to ----
   // Service Type multi-select is canonical (per memory rule and audit
-  // 2026-05-13: GT/CL/WD Frequency fields can carry junk values for clients
-  // who don't actually subscribe, e.g. 021-GRA had GT Frequency=360 even
-  // though Service Type was just [CL, WD]).
+  // 2026-05-13). Field-name fixes for the canonical AT values (audit 2026-05-14):
+  //   "Grease Trap"          → GT
+  //   "AUX Cleaning"         → CL    (NOT "Main CL" — that's a different label)
+  //   "Warranty of drainage" → WD
+  //   "Lift Station"         → LS    (NOT 'lyft' — old typo)
+  //   "Main CL", "Gray Water pumping", "Catch Bassin",
+  //   "Floor Drain Cleaning", "Requires Phone Call" → no auto-mapping
+  //
+  // Why "MAIN CL" is NOT CL: per Fred 2026-05-14, MAIN CL labels something
+  // operationally distinct from our recurring CL service. Treating it as CL
+  // created 71 bogus service_configs (and their orphan visits) — audit
+  // scripts/probes/audit_service_type_values_in_at.js for the full list.
   const serviceTypeRaw = fields['Service Type']
   const subscribedTypes = new Set<string>()
   if (Array.isArray(serviceTypeRaw)) {
@@ -246,9 +255,9 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
         ? String((v as Record<string, unknown>).name).toLowerCase()
         : String(v).toLowerCase()
       if (name.includes('grease trap') || name === 'gt') subscribedTypes.add('GT')
-      else if (name.includes('main cl') || name.includes('cleaning') || name === 'cl') subscribedTypes.add('CL')
+      else if (name.includes('aux cleaning') || name === 'cl') subscribedTypes.add('CL')
       else if (name === 'wd' || name.includes('warranty') || name.includes('water dis')) subscribedTypes.add('WD')
-      else if (name.includes('lyft')) subscribedTypes.add('LS')
+      else if (name.includes('lift station') || name === 'ls') subscribedTypes.add('LS')
     }
   }
 
