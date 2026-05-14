@@ -44,20 +44,31 @@ jobs:
       - name: Pull postgres:17 image
         run: docker pull postgres:17
 
-      - name: Dump Prod public schema
+      - name: Dump Prod public schema (and strip CREATE SCHEMA so it's idempotent)
         env:
           PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
         run: |
+          set -o pipefail
           docker run --rm postgres:17 pg_dump \
             --schema-only --no-owner --no-privileges --schema=public \
-            "$PROD_DB_URL" > schema.sql
-          echo "Lines in schema.sql:"; wc -l schema.sql
-          echo "First 20 lines:"; head -20 schema.sql
+            "$PROD_DB_URL" > schema_raw.sql
+          # pg_dump 17 emits "CREATE SCHEMA public;" and an associated COMMENT.
+          # Field Portal already has the public schema (Supabase pre-creates it
+          # after our DROP+CREATE step), so these lines fail with "already
+          # exists". Strip them.
+          sed -e '/^CREATE SCHEMA public;$/d' \
+              -e '/^COMMENT ON SCHEMA public IS/d' \
+              -e '/^\\restrict /d' \
+              -e '/^\\unrestrict /d' \
+              schema_raw.sql > schema.sql
+          echo "Raw lines:";  wc -l schema_raw.sql
+          echo "Cleaned lines:"; wc -l schema.sql
 
       - name: Drop existing public schema on Field Portal (start fresh)
         env:
           FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
         run: |
+          set -o pipefail
           docker run --rm postgres:17 psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -c "
             DROP SCHEMA IF EXISTS public CASCADE;
             CREATE SCHEMA public;
@@ -69,8 +80,9 @@ jobs:
         env:
           FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
         run: |
+          set -o pipefail
           docker run --rm -v "$(pwd):/work" -w /work postgres:17 \
-            psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -f /work/schema.sql 2>&1 | tail -30
+            psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -f /work/schema.sql
 
       - name: Verify schema landed
         env:
