@@ -1,0 +1,49 @@
+name: Samsara locations history (high-frequency GPS)
+
+# Pulls GPS history from Samsara at ~30-second resolution into
+# vehicle_telemetry_readings. Complements samsara-poll.yml (which polls
+# /stats every 10 min for engine/fuel/odometer snapshots). This one is
+# GPS-only and gives us the per-second precision needed for accurate
+# visit→truck attribution.
+#
+# Schedule: every 15 minutes, pulls last 90 minutes (50% overlap; the
+# DB's ON CONFLICT (vehicle_id, recorded_at) makes overlaps cheap).
+#
+# Manual one-shot backfills: use workflow_dispatch with start_time +
+# end_time inputs (ISO 8601 UTC).
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      start_time:
+        description: 'Start time (ISO 8601, UTC). E.g. 2026-05-01T00:00:00Z. Leave blank for last 90 min.'
+        required: false
+        type: string
+      end_time:
+        description: 'End time (ISO 8601, UTC). Leave blank for now.'
+        required: false
+        type: string
+
+concurrency:
+  group: samsara-locations-history
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+      - name: Run sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SAMSARA_API_TOKEN: ${{ secrets.SAMSARA_API_TOKEN }}
+          START_TIME: ${{ inputs.start_time }}
+          END_TIME: ${{ inputs.end_time }}
+        run: node scripts/sync/cron_samsara_locations_history.js
