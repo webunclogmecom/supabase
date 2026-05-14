@@ -311,6 +311,9 @@ GRANT SELECT ON
   customer.client_access_photos,
   customer.inspection_items,
   customer.recommendations
-TO anon, authenticated;
+TO anon, authenticated, service_role;
+-- service_role is required for server-fn `loginWithCode` calls (Yannick's
+-- pattern uses the service-role admin client for the client_code lookup).
+-- Without this grant, "Lookup failed: permission denied for view clients".
 
 COMMIT;
