@@ -1,6 +1,6 @@
 # Yan — service config fix list
 
-_Generated 2026-05-13 from live Supabase audit. 75 total rows across 3 priority buckets._
+_Generated 2026-05-14 from live Supabase audit. 77 total rows across 3 priority buckets._
 
 Fix everything in Airtable. Our DB syncs on the next `populate.js --step=5` run.
 
@@ -23,7 +23,7 @@ These have a cadence so the cron schedules them, but they have no `$ per Visit` 
 | 110-CLA CLA Claudie | CL | 30 | $? |
 | 139-LTG LTG Lettuce and Tomato | CL | 60 | $? |
 
-## Part 3 — NEEDS_BOTH (70 rows) — LOW PRIORITY (decide: real or noise)
+## Part 3 — NEEDS_BOTH (72 rows) — LOW PRIORITY (decide: real or noise)
 
 These came from AT clients where the `Service Type` multi-select has a service ticked (GT/CL/WD) but **neither cadence nor price is filled in**. Either:
 
@@ -104,6 +104,8 @@ Most of these are WD (Water Discharge) — that program may not have fully rolle
 | 186-PV PV Pura Vida Coconut Grove | CL | fill in or uncheck |
 | 191-TEN TEN Tends | CL | fill in or uncheck |
 | 199-JZ STK JZ Steak House | CL | fill in or uncheck |
+| 208-HUB HUB Hubble Bubble Lounge | CL | fill in or uncheck |
+| 215-GT G7 Kitchen 35 | GT | fill in or uncheck |
 
 ## Part 4 — Other anomalies spotted during audit
 
