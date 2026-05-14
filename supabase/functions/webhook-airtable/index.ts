@@ -167,7 +167,26 @@ function dateVal(fields: Record<string, unknown>, name: string): string | null {
 //   "Hours in", "Hours out", "Days of the week"             (access window)
 // We also normalize the "Recuring" typo on status to "RECURRING".
 async function handleClientRecord(recordId: string, fields: Record<string, unknown>): Promise<void> {
-  const clientId = await findEntityBySourceId('client', 'airtable', recordId)
+  let clientId = await findEntityBySourceId('client', 'airtable', recordId)
+
+  // Fallback for new AT records: when a client first lands in Sbx via the
+  // Jobber path (cron_jobber → webhook-jobber), it has a `client_code` but
+  // no AT ESL link yet. The next AT event for that client would otherwise
+  // be silently dropped here, leaving its service_configs / status / access
+  // hours unsynced indefinitely. Match by Client Code #3 and lazily create
+  // the AT ESL link so subsequent updates take the fast path.
+  const code = strVal(fields, 'Client Code #3')
+  if (!clientId && code) {
+    const { data: byCode } = await supabase
+      .from('clients').select('id')
+      .eq('client_code', code).limit(1)
+    if (byCode?.length) {
+      clientId = byCode[0].id as number
+      await upsertEntityLink('client', clientId, 'airtable', recordId)
+      console.log(`[handleClient] linked AT ${recordId} → client ${clientId} via client_code ${code}`)
+    }
+  }
+
   if (!clientId) {
     console.warn(`No client linked to Airtable record ${recordId} — skipping`)
     return
@@ -175,7 +194,6 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
 
   // -- 1. Update client-level fields (status + client_code) ---------------
   const clientUpdate: Record<string, unknown> = {}
-  const code = strVal(fields, 'Client Code #3')
   if (code) clientUpdate.client_code = code
   let status = strVal(fields, 'ACTIVE/INACTIVE')
   if (status) {
