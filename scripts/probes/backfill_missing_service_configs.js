@@ -65,19 +65,20 @@ async function listAT(table, fields, filter) {
   //    GT/CL Frequency fields can carry junk values for clients who don't
   //    subscribe; use the Service Type multiselect as source of truth."
   function inferTypes(ac) {
-    // Canonical AT Service Type values + mappings (audit 2026-05-14):
+    // Canonical AT Service Type → our code (audit 2026-05-14, confirmed by Fred):
     //   "Grease Trap"          → GT
-    //   "AUX Cleaning"         → CL    (NOT "Main CL" — that's something else)
+    //   "Gray Water pumping"   → GT  (GT-alternative service)
+    //   "AUX Cleaning"         → CL  (NOT "Main CL")
     //   "Warranty of drainage" → WD
-    //   "Lift Station"         → LS    (NOT 'lyft' — old typo)
-    //   "Main CL", "Gray Water pumping", "Catch Bassin",
-    //   "Floor Drain Cleaning", "Requires Phone Call" → no auto-mapping
+    //   "Lift Station"         → LS  (NOT 'lyft')
+    //   "Main CL", "Catch Bassin", "Floor Drain Cleaning",
+    //   "Requires Phone Call"  → no mapping (org-labels / services we don't perform)
     const types = new Set();
     const st = ac['Service Type'];
     if (!Array.isArray(st)) return types;
     for (const v of st) {
       const sl = ((v && v.name) || v || '').toString().toLowerCase();
-      if (sl.includes('grease trap') || sl === 'gt') types.add('GT');
+      if (sl.includes('grease trap') || sl === 'gt' || sl.includes('gray water pumping')) types.add('GT');
       else if (sl.includes('aux cleaning') || sl === 'cl') types.add('CL');
       else if (sl === 'wd' || sl.includes('warranty') || sl.includes('water dis')) types.add('WD');
       else if (sl.includes('lift station') || sl === 'ls') types.add('LS');

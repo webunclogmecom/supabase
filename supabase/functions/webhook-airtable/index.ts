@@ -234,19 +234,16 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
   }
 
   // -- 3. Service-config rows — ONLY for services the client subscribes to ----
-  // Service Type multi-select is canonical (per memory rule and audit
-  // 2026-05-13). Field-name fixes for the canonical AT values (audit 2026-05-14):
+  // Service Type multi-select is canonical. AT label → our code (audit 2026-05-14):
   //   "Grease Trap"          → GT
-  //   "AUX Cleaning"         → CL    (NOT "Main CL" — that's a different label)
+  //   "Gray Water pumping"   → GT  (GT-alternative service per Fred)
+  //   "AUX Cleaning"         → CL  (NOT "Main CL" — that's a label only)
   //   "Warranty of drainage" → WD
-  //   "Lift Station"         → LS    (NOT 'lyft' — old typo)
-  //   "Main CL", "Gray Water pumping", "Catch Bassin",
-  //   "Floor Drain Cleaning", "Requires Phone Call" → no auto-mapping
-  //
-  // Why "MAIN CL" is NOT CL: per Fred 2026-05-14, MAIN CL labels something
-  // operationally distinct from our recurring CL service. Treating it as CL
-  // created 71 bogus service_configs (and their orphan visits) — audit
-  // scripts/probes/audit_service_type_values_in_at.js for the full list.
+  //   "Lift Station"         → LS  (NOT 'lyft' — old typo)
+  //   "Main CL", "Catch Bassin", "Floor Drain Cleaning",
+  //   "Requires Phone Call"  → no mapping (Main CL is org-label only;
+  //                            Catch Bassin / Floor Drain Cleaning are
+  //                            services we don't perform per Fred 2026-05-14)
   const serviceTypeRaw = fields['Service Type']
   const subscribedTypes = new Set<string>()
   if (Array.isArray(serviceTypeRaw)) {
@@ -254,7 +251,7 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
       const name = (v && typeof v === 'object' && 'name' in (v as Record<string, unknown>))
         ? String((v as Record<string, unknown>).name).toLowerCase()
         : String(v).toLowerCase()
-      if (name.includes('grease trap') || name === 'gt') subscribedTypes.add('GT')
+      if (name.includes('grease trap') || name === 'gt' || name.includes('gray water pumping')) subscribedTypes.add('GT')
       else if (name.includes('aux cleaning') || name === 'cl') subscribedTypes.add('CL')
       else if (name === 'wd' || name.includes('warranty') || name.includes('water dis')) subscribedTypes.add('WD')
       else if (name.includes('lift station') || name === 'ls') subscribedTypes.add('LS')
