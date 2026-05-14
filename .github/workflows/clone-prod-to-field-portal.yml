@@ -1,105 +1,83 @@
-name: Clone Prod → Field Portal Sandbox (one-time)
+name: Apply Prod schema → Field Portal Sandbox
 
 # ─────────────────────────────────────────────────────────────────────────
-# One-shot clone of Prod schema + canonical data into the Field Portal
-# Sandbox project (klgtrdwrasrlxbmfyvdh).
+# Two-phase seed for Field Portal Sandbox (klgtrdwrasrlxbmfyvdh).
 #
-# Difference from sandbox-refresh.yml:
-#   - sandbox-refresh runs 5×/day to keep Sandbox #1 in sync with Prod
-#   - this workflow runs ONCE (manually) to seed Field Portal Sandbox.
-#     After that, Field Portal diverges via Yannick's Lovable changes —
-#     no further auto-refresh (that would wipe his iterations).
+# Phase 1 (this workflow): Apply Prod's `public` schema to Field Portal.
+#   - Uses Docker postgres:17 to avoid pg_dump version-mismatch errors
+#     (GH runners ship pg-client 16 by default; Prod is on pg 17.6).
+#   - Schema only — no data. Data is handled by the Node subset script.
 #
-# Required GitHub Secrets:
-#   PROD_DB_URL              already set (used by sandbox-refresh)
-#   FIELD_PORTAL_DB_URL      NEW — must be added before first run
-#                            value: postgres://postgres.klgtrdwrasrlxbmfyvdh:<pw>@aws-1-us-east-1.pooler.supabase.com:5432/postgres
+# Phase 2 (separate, not in this workflow):
+#   node scripts/sync/subset_prod_to_field_portal.js
+#   Picks ~30% of ACTIVE/RECURRING clients with visit history and copies
+#   them + related rows (properties, visits, invoices, etc.) for testing.
 #
-# Exclusions:
-#   - webhook_events_log     76 MB of operational audit trail, not customer data
-#   - vehicle_telemetry_readings  103 MB of GPS pings; INCLUDE by default
-#     (Field Portal likely needs route history) — toggle below if not
+# Why split: schema clone is fast + safe; data subset needs careful
+# FK ordering and filtering and is better expressed in Node.
 #
-# Run via Actions → "Clone Prod → Field Portal Sandbox" → Run workflow.
+# GitHub Secrets needed:
+#   PROD_DB_URL              already set
+#   FIELD_PORTAL_DB_URL      already set (2026-05-14)
 # ─────────────────────────────────────────────────────────────────────────
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "CLONE" to confirm. This wipes Field Portal Sandbox.'
+        description: 'Type "APPLY" to confirm. This drops + recreates Field Portal `public` schema.'
         required: true
         type: string
-      exclude_telemetry:
-        description: 'Also skip vehicle_telemetry_readings (saves 103 MB)?'
-        type: boolean
-        default: false
 
 concurrency:
-  group: clone-prod-to-field-portal
+  group: apply-schema-to-field-portal
   cancel-in-progress: false
 
 jobs:
-  clone:
+  apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    if: ${{ inputs.confirm == 'CLONE' }}
+    timeout-minutes: 15
+    if: ${{ inputs.confirm == 'APPLY' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Postgres 17 client
-        run: |
-          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-17
-          pg_dump --version
+      - name: Pull postgres:17 image
+        run: docker pull postgres:17
 
-      - name: Dump Prod schema (public)
+      - name: Dump Prod public schema
         env:
           PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
         run: |
-          pg_dump --schema-only --no-owner --no-privileges \
-            --schema=public \
+          docker run --rm postgres:17 pg_dump \
+            --schema-only --no-owner --no-privileges --schema=public \
             "$PROD_DB_URL" > schema.sql
-          wc -l schema.sql
+          echo "Lines in schema.sql:"; wc -l schema.sql
+          echo "First 20 lines:"; head -20 schema.sql
 
-      - name: Dump Prod data (canonical tables; skip operational/audit)
+      - name: Drop existing public schema on Field Portal (start fresh)
         env:
-          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+          FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
         run: |
-          EXCLUDES="--exclude-table=public.webhook_events_log --exclude-table=public.sync_cursors"
-          if [ "${{ inputs.exclude_telemetry }}" = "true" ]; then
-            EXCLUDES="$EXCLUDES --exclude-table=public.vehicle_telemetry_readings"
-          fi
-          pg_dump --data-only --no-owner --no-privileges \
-            --schema=public \
-            --disable-triggers \
-            $EXCLUDES \
-            "$PROD_DB_URL" > data.sql
-          wc -l data.sql
+          docker run --rm postgres:17 psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -c "
+            DROP SCHEMA IF EXISTS public CASCADE;
+            CREATE SCHEMA public;
+            GRANT ALL ON SCHEMA public TO postgres;
+            GRANT ALL ON SCHEMA public TO public;
+          "
 
       - name: Apply schema → Field Portal Sandbox
         env:
           FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
         run: |
-          psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -f schema.sql 2>&1 | tail -20
+          docker run --rm -v "$(pwd):/work" -w /work postgres:17 \
+            psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -f /work/schema.sql 2>&1 | tail -30
 
-      - name: Apply data → Field Portal Sandbox
+      - name: Verify schema landed
         env:
           FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
         run: |
-          psql "$FIELD_PORTAL_DB_URL" -v ON_ERROR_STOP=1 -f data.sql 2>&1 | tail -20
-
-      - name: Verify row counts
-        env:
-          FIELD_PORTAL_DB_URL: ${{ secrets.FIELD_PORTAL_DB_URL }}
-        run: |
-          psql "$FIELD_PORTAL_DB_URL" -c "
-            SELECT 'clients' AS t, COUNT(*) FROM clients
-            UNION ALL SELECT 'visits',          COUNT(*) FROM visits
-            UNION ALL SELECT 'properties',      COUNT(*) FROM properties
-            UNION ALL SELECT 'service_configs', COUNT(*) FROM service_configs
-            UNION ALL SELECT 'vehicles',        COUNT(*) FROM vehicles
-            ORDER BY t;
+          docker run --rm postgres:17 psql "$FIELD_PORTAL_DB_URL" -c "
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema='public' AND table_type='BASE TABLE'
+            ORDER BY table_name;
           "
