@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-13*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-17*
 
 Non-negotiable rules + quick reference for any AI agent working on this repo. **Read every session before touching anything.** Everything else is in [`docs/`](docs/).
 
@@ -12,7 +12,7 @@ Single source-of-truth Postgres warehouse for Unclogme LLC on Supabase project `
 
 ---
 
-## The 7 non-negotiable rules
+## The 8 non-negotiable rules
 
 ### 1. Source-agnostic schema
 **Zero `jobber_*` / `airtable_*` / `samsara_*` / `fillout_*` / `odoo_*` columns on any business table.** Cross-system identity lives in `entity_source_links`. If you're tempted to propose a source-prefixed column, stop and use the bridge table. Fred is the explicit guardrail on this. See [ADR 002](docs/decisions/002-entity-source-links.md).
@@ -37,6 +37,20 @@ Business data uses `status = 'INACTIVE'` or equivalent. Hard deletes break `enti
 
 ### 7. Timestamps in UTC, money in `NUMERIC(12,2)`
 All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`. `updated_at` trigger-managed — **never set it manually**.
+
+### 8. Audit-trail standing check (NEW 2026-05-17 — see [ADR 010](docs/decisions/010-audit-trail.md))
+Every new business table or schema change must **explicitly opt-in or opt-out** of `audit.logs` triggers, documented in the migration header.
+
+- **Default for tables with human-editable fields** → opt-in. Add `CREATE TRIGGER audit_<table> AFTER INSERT OR UPDATE OR DELETE ON public.<table> FOR EACH ROW EXECUTE FUNCTION audit.log_change();`
+- **Default for sync-only append tables (Jobber/AT/Samsara)** → opt-out, document why in migration header.
+- **Adding a column** to an already-audited table is automatically captured (full-row JSONB) — no action needed.
+- **Renaming an audited table** requires updating the trigger reference.
+- **Disabling audit on an existing table** requires explicit Fred sign-off in the migration header.
+- **No table that touches `customer.*`, billing, DERM compliance, or webhook secrets is allowed to skip audit.** Hard rule.
+
+Current audited set: clients, service_configs, properties, visits, photo_classifications, derm_manifests, manifest_visits *(opted in 2026-05-18 for DERM Tracker)*, disposal_facilities, vehicles, employees, webhook_tokens. See ADR 010 for the exclusion list + rationale.
+
+After ANY change to Prod schema, re-check this rule before declaring the migration done.
 
 ---
 
@@ -81,7 +95,7 @@ Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Mo
 | `c.active = true` | `c.status = 'ACTIVE'` or `'RECURRING'` | clients |
 | `e.name` | `e.full_name` | employees |
 | `v.status` | `v.visit_status` | visits |
-| `v.is_complete` | `(v.visit_status = 'COMPLETED')` | visits |
+| `v.is_complete` | `(v.visit_status = 'completed')` *(lowercase — canonical value, verified 2026-05-18)* | visits |
 | `sc.next_visit`, `sc.status` | Use `clients_due_service` view | service_configs (dropped 2026-04-20) |
 | `m.manifest_number` | `m.white_manifest_number` | derm_manifests |
 | `v.tank_capacity_gallons` | `v.fuel_tank_capacity_gallons` or `v.grease_tank_capacity_gallons` | vehicles |
@@ -94,6 +108,20 @@ Commercial trucks work 10pm–3am. `visit_date` is the logical operating date, n
 
 ### `clients.status` values
 `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE`. AT's old `Recuring` (one r) was a typo — normalized 2026-05-13. populate.js + ops views all use `RECURRING`.
+
+### DERM 2-week rule (added 2026-05-22, per Fred)
+**Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required != false`, typically GT service) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
+
+To find the missing DERM in AT, cross-reference three fields on the AT DERM table:
+1. **`Visits`** — array of AT visit GIDs. Look each up in AT `Visits` table to get the true visit date (often differs from `GT Last Visit` field by weeks because dump dates lag behind service dates).
+2. **`Client Code #3 (from Client)`** — lookup of `clients.client_code`. Confirm match (e.g. `010-CS`).
+3. **`Client Name (from Client)`** — lookup of `clients.name`. Confirm match (e.g. `Chima Steakhouse`).
+
+When all 3 align with a DB visit, INSERT into `public.manifest_visits` (PK `(visit_id, manifest_id)`, audit trigger fires).
+
+Re-runnable backfill: [`scripts/sync/backfill_manifest_visits_via_at_visits_field.js`](scripts/sync/backfill_manifest_visits_via_at_visits_field.js). Walks every AT DERM record's `Visits` field, resolves the AT visit GID's date, matches DB visit by client + date (±1 day). Caught 11 missed links on first run (2026-05-22).
+
+The webhook-airtable's primary link logic uses `GT Last Visit` ±2 days — that field drifts by weeks on jobs invoiced after the fact (Chima 010-CS visit 1511 on 3/18 had a DERM dumped 4/24, AT's `GT Last Visit` showed 4/20, 33 days off). Run the backfill script weekly until the webhook is patched to use the `Visits` field as primary signal.
 
 ---
 

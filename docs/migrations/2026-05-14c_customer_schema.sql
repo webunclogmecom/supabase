@@ -46,6 +46,22 @@ $$;
 COMMENT ON FUNCTION customer.bigint_from_uuid IS
   'Reverse of customer.uuid_from_bigint. ONLY safe on UUIDs that came from customer.uuid_from_bigint.';
 
+-- Build a full Supabase Storage public URL from a relative storage_path.
+-- All canonical photos (visits, notes, client/property access) live in the
+-- same public bucket on Prod: GT - Visits Images. Hardcoded Prod project URL
+-- because the bytes are only in Prod's bucket — Field Portal Sandbox and
+-- any other sibling project's apps fetch image bytes from there.
+-- NOTE: if the bucket name or project URL ever changes, update HERE only.
+CREATE OR REPLACE FUNCTION customer.public_url(storage_path text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE
+    WHEN storage_path IS NULL OR storage_path = '' THEN NULL
+    ELSE 'https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/GT%20-%20Visits%20Images/' || storage_path
+  END
+$$;
+COMMENT ON FUNCTION customer.public_url IS
+  'Prepends the Prod Supabase Storage public URL + bucket prefix to a relative storage_path. NULL-safe.';
+
 
 -- 3. Drop prior compat views from public (moving them here) ---------
 DROP VIEW IF EXISTS public.vw_client_work_orders CASCADE;
@@ -212,7 +228,7 @@ SELECT
   customer.uuid_from_bigint(pl.id) AS id,
   customer.uuid_from_bigint(pl.entity_id) AS work_order_id,
   COALESCE(NULLIF(pl.role, ''), 'after') AS variant,
-  ph.storage_path AS url,
+  customer.public_url(ph.storage_path) AS url,
   pl.caption,
   (ROW_NUMBER() OVER (PARTITION BY pl.entity_id ORDER BY ph.created_at) - 1)::integer AS position
 FROM public.photo_links pl
@@ -240,7 +256,7 @@ WITH resolved AS (
 SELECT
   customer.uuid_from_bigint(link_id) AS id,
   customer.uuid_from_bigint(client_id_resolved) AS client_id,
-  storage_path AS url,
+  customer.public_url(storage_path) AS url,
   caption,
   (ROW_NUMBER() OVER (PARTITION BY client_id_resolved ORDER BY created_at) - 1)::integer AS position,
   created_at
@@ -302,6 +318,7 @@ FROM public.visit_recommendations vr;
 GRANT USAGE ON SCHEMA customer TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION customer.uuid_from_bigint(bigint) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION customer.bigint_from_uuid(uuid)   TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION customer.public_url(text)         TO anon, authenticated, service_role;
 GRANT SELECT ON
   customer.clients,
   customer.permits,
