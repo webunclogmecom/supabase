@@ -17,6 +17,33 @@ import { ok, badRequest, unauthorized, serverError, logWebhookEvent } from '../_
 const JOBBER_GQL = 'https://api.getjobber.com/api/graphql'
 const JOBBER_TOKEN_URL = 'https://api.getjobber.com/api/oauth/token'
 
+// ---- City → county fallback ----
+// AT enrichment is the authoritative source for properties.county, but
+// Jobber-only clients (residential, no AT entry) never get AT data, so
+// county would stay NULL forever. This fallback sets county on INSERT
+// only — AT can still override on subsequent updates. Built from the
+// 2026-05-20 backfill audit (auto-classified 278 of 279 properties).
+function inferCountyFromCity(city: string | null | undefined): string | null {
+  if (!city) return null
+  const c = city.toLowerCase().trim()
+  const DADE = new Set([
+    'miami','miami beach','surfside','north miami beach','bay harbor islands',
+    'aventura','bal harbour','hialeah','pinecrest','indian creek','medley',
+    'biscayne park','beverly hills','sunny isles beach','coral gables','doral',
+    'miami shores','miami gardens','cutler bay','kendall','south miami',
+    'north miami','miami-dade county',
+  ])
+  const BROWARD = new Set([
+    'hollywood','hallandale beach','fort lauderdale','pompano beach',
+    'pembroke pines','margate',
+  ])
+  // Boca Raton is geographically Palm Beach but ops classifies as Broward.
+  const BROWARD_BY_CONVENTION = new Set(['boca raton'])
+  if (DADE.has(c)) return 'Dade'
+  if (BROWARD.has(c) || BROWARD_BY_CONVENTION.has(c)) return 'Broward'
+  return null
+}
+
 // ---- HMAC-SHA256 verification ----
 async function verifySignature(body: string, signature: string | null): Promise<boolean> {
   const secret = Deno.env.get('JOBBER_WEBHOOK_SECRET')
@@ -199,6 +226,13 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   // that would clobber Airtable's authoritative value.
   const parsedCode = name.match(/^\s*(\d{3}-[A-Z0-9]+)/)?.[1] ?? null
 
+  // Normalize: strip the code prefix from name so the DB stores name + code
+  // in separate fields (matches Fred's spec 2026-05-19). Idempotent — if the
+  // upstream name already lacks the prefix, this is a no-op.
+  const nameNormalized = parsedCode
+    ? name.replace(/^\s*\d{3}-[A-Z0-9]+\s*/, '').trim()
+    : name
+
   // Check if client already exists via entity_source_links.
   // Lookup uses the full base64 GID (consistent with populate.js step 1
   // which stores `jc.id` directly — also a base64 GID).
@@ -206,7 +240,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
 
   // v2 clients table: only id, client_code, name, status, balance, notes
   const clientRow: Record<string, unknown> = {
-    name,
+    name: nameNormalized,
     status: c.isArchived ? 'INACTIVE' : 'ACTIVE',
     balance: c.balance ?? null,
   }
@@ -307,13 +341,21 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
       zip: addr.postalCode ?? null,
       is_billing: true,
     }
+    // NOTE: Jobber GraphQL ClientAddress type does NOT expose `coordinates`
+    // (only the Address type on Property does — see handleProperty). New Jobber
+    // clients land with NULL lat/lng here; the weekly geo-backfill cron fills
+    // them in via Samsara/Google. Don't add `coordinates` to billingAddress —
+    // the GraphQL query will 400 on every CLIENT_UPDATE event.
 
     if (existingProps?.length) {
+      // UPDATE — do NOT touch county; AT enrichment may have set it.
       await supabase.from('properties').update(propRow).eq('id', existingProps[0].id)
     } else {
+      // INSERT — fallback county from city so Jobber-only clients aren't NULL.
+      const insertRow = { ...propRow, is_primary: true, county: inferCountyFromCity(addr.city) }
       const { data: newProp } = await supabase
         .from('properties')
-        .insert({ ...propRow, is_primary: true })
+        .insert(insertRow)
         .select('id')
         .single()
 
@@ -773,7 +815,7 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
         id
         name
         client { id }
-        address { street city province postalCode country }
+        address { street city province postalCode country coordinates { latitude longitude } }
       }
     }`,
     { id: gid }
@@ -792,14 +834,21 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
     zip: p.address?.postalCode ?? null,
   }
   if (clientId) row.client_id = clientId
+  // Coordinates: only set if Jobber returned a non-null value, so we don't
+  // overwrite an existing geocoded/Samsara value with NULL.
+  if (p.address?.coordinates?.latitude != null)  row.latitude  = p.address.coordinates.latitude
+  if (p.address?.coordinates?.longitude != null) row.longitude = p.address.coordinates.longitude
 
   let entityId: number
   if (existingId) {
+    // UPDATE — preserve county (AT may have set it).
     const { error } = await supabase.from('properties').update(row).eq('id', existingId)
     if (error) throw new Error(`Property update failed: ${error.message}`)
     entityId = existingId
   } else {
-    const { data: inserted, error } = await supabase.from('properties').insert(row).select('id').single()
+    // INSERT — fallback county from city so new Jobber properties aren't NULL.
+    const insertRow = { ...row, county: inferCountyFromCity(p.address?.city) }
+    const { data: inserted, error } = await supabase.from('properties').insert(insertRow).select('id').single()
     if (error || !inserted) throw new Error(`Property insert failed: ${error?.message}`)
     entityId = inserted.id
   }

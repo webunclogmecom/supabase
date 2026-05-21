@@ -1,0 +1,53 @@
+name: Weekly geo backfill
+
+# Sundays at 13:00 UTC (09:00 ET in summer, 08:00 ET in winter), runs BEFORE
+# weekly-dedup-audit so any newly-created properties have coords by the time
+# dedup checks for address matches.
+#
+# Two-step backfill of properties.latitude/longitude/geofence_radius_meters:
+#   1) Free pass — match active/recurring clients to Samsara geofences and
+#      copy lat/lng + circle radius where DB is NULL.
+#   2) Tiered geocoder — Jobber → Airtable → Samsara → Google for anything
+#      still NULL. Already idempotent on `latitude IS NULL`.
+#
+# Both scripts only write to NULL fields, never overwrite existing data.
+
+on:
+  schedule:
+    - cron: '0 13 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-geo-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      - name: Install deps
+        run: npm ci --silent || npm install --silent
+
+      - name: 1) Samsara geo backfill (free)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SAMSARA_API_TOKEN: ${{ secrets.SAMSARA_API_TOKEN }}
+        run: node scripts/sync/backfill_geo_from_samsara.js --execute
+
+      - name: 2) Google geocoder fallback (paid; idempotent on lat IS NULL)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          JOBBER_CLIENT_ID: ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET: ${{ secrets.JOBBER_CLIENT_SECRET }}
+          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: node scripts/sync/geocode_missing_properties.js

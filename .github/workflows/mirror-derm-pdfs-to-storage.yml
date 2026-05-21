@@ -1,0 +1,39 @@
+name: Mirror DERM PDFs to Supabase Storage
+
+# Every 15 minutes — catches new AT-sourced URLs from webhook-airtable
+# before they hit the 2-hour signed-URL expiry. Idempotent: skips rows whose
+# URL already points at Supabase Storage. Updates all 3 DBs (Prod, Sandbox
+# #1, Field Portal Sandbox).
+#
+# The migration script downloads each AT attachment bytes, uploads to
+# Supabase Storage bucket "GT - Visits Images" under derm/{manifest_id}/
+# manifest.{ext} or address.{ext}, and rewrites the derm_manifests URL.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-derm-pdfs
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Install deps
+        run: npm ci --silent || npm install --silent
+      - name: Mirror new AT PDFs → Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SANDBOX_SUPABASE_PROJECT_ID: ${{ secrets.SANDBOX_SUPABASE_PROJECT_ID }}
+          FIELD_PORTAL_SUPABASE_PROJECT_ID: ${{ secrets.FIELD_PORTAL_SUPABASE_PROJECT_ID }}
+        run: node scripts/sync/migrate_derm_attachments_to_storage.js --resume

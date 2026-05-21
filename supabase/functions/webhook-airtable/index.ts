@@ -310,9 +310,82 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
 //   "Send To Client" (capital To) (checkbox)
 //   "Send To City"   (capital To) (checkbox)
 //   "Client Name (from Client)"   (lookup, parens in the field name)
+// ---- DERM PDF mirror: AT signed URLs expire every ~2h, so we download
+// each attachment and re-upload to Supabase Storage with a permanent path.
+// Called inline from handleDermRecord after the row's id is known.
+const DERM_BUCKET = 'GT - Visits Images'
+const DERM_BUCKET_PATH = 'GT%20-%20Visits%20Images'
+
+function extFromContentType(ct: string | null): string {
+  if (!ct) return 'jpg'
+  if (ct.includes('png')) return 'png'
+  if (ct.includes('pdf')) return 'pdf'
+  if (ct.includes('webp')) return 'webp'
+  return 'jpg'
+}
+
+async function mirrorAttachmentToStorage(
+  manifestId: number,
+  atUrl: string,
+  kind: 'manifest' | 'address',
+): Promise<string | null> {
+  // Skip if already on Supabase Storage (idempotent — e.g. an update where
+  // the URL was already mirrored on a previous webhook fire).
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+  if (atUrl.startsWith(SUPABASE_URL)) return atUrl
+  try {
+    const dl = await fetch(atUrl)
+    if (!dl.ok) {
+      console.warn(`[derm-mirror] download failed ${dl.status} for ${atUrl.slice(0, 60)}...`)
+      return null
+    }
+    const bytes = new Uint8Array(await dl.arrayBuffer())
+    const ext = extFromContentType(dl.headers.get('content-type'))
+    const objectPath = `derm/${manifestId}/${kind}.${ext}`
+    const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const up = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/${DERM_BUCKET_PATH}/${encodeURIComponent(objectPath)}`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: SERVICE_KEY,
+          Authorization: `Bearer ${SERVICE_KEY}`,
+          'Content-Type': dl.headers.get('content-type') || 'image/jpeg',
+          'x-upsert': 'true',
+        },
+        body: bytes,
+      },
+    )
+    if (!up.ok) {
+      console.warn(`[derm-mirror] upload failed ${up.status} for ${objectPath}`)
+      return null
+    }
+    return `${SUPABASE_URL}/storage/v1/object/public/${DERM_BUCKET_PATH}/${encodeURI(objectPath)}`
+  } catch (e) {
+    console.warn(`[derm-mirror] error: ${(e as Error).message}`)
+    return null
+  }
+}
+
 async function handleDermRecord(recordId: string, fields: Record<string, unknown>): Promise<void> {
-  const clientName = strVal(fields, 'Client Name (from Client)') ?? strVal(fields, 'Client Name')
   const existingId = await findEntityBySourceId('derm_manifest', 'airtable', recordId)
+
+  // Extract AT attachment URLs. AT fields "DERM Manifest" + "DERM Address"
+  // are multipleAttachments arrays of { id, url, ... }. Mapping per DERM
+  // Tracker CLAUDE.md rule #4 is 1:1 at the canonical layer (Field Portal
+  // view does the inverse mapping later). 2026-05-21 fix — handler was
+  // never extracting these, so every webhook-created manifest landed with
+  // NULL urls and showed "No PDF" in the app.
+  // 2026-05-21 (later): after the row is persisted, mirror these URLs into
+  // Supabase Storage (mirrorAttachmentToStorage) so the stored URL is
+  // permanent (AT signed URLs expire every ~2h).
+  function firstAttachmentUrl(name: string): string | null {
+    const v = fields[name]
+    if (!Array.isArray(v) || v.length === 0) return null
+    const first = v[0] as Record<string, unknown> | string
+    if (typeof first === 'string') return null
+    return typeof first?.url === 'string' ? (first.url as string) : null
+  }
 
   const row: Record<string, unknown> = {
     service_date: dateVal(fields, 'Date Dump Ticket') ?? dateVal(fields, 'GT Last Visit'),
@@ -321,16 +394,61 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     yellow_ticket_number: strVal(fields, 'Yellow Ticket #'),
     sent_to_client: fields['Send To Client'] === true,
     sent_to_city: fields['Send To City'] === true,
+    derm_manifest_url: firstAttachmentUrl('DERM Manifest'),
+    derm_address_url:  firstAttachmentUrl('DERM Address'),
   }
 
-  // Resolve client_id
-  if (clientName) {
-    const { data: clients } = await supabase
-      .from('clients')
-      .select('id')
-      .ilike('name', `%${clientName}%`)
-      .limit(1)
-    if (clients?.length) row.client_id = clients[0].id
+  // Resolve client_id. Prefer AT `Client` array (always carries the GID) over
+  // the `Client Name (from Client)` lookup — that lookup is empty at trigger
+  // time when ops drop a manifest in without re-saving the Client field,
+  // which previously left 22+ manifests orphaned (no client_id, invisible
+  // in DERM Tracker). Fix 2026-05-19.
+  const atClient = (fields['Client'] as unknown[] | undefined)?.[0]
+  const atClientGid = typeof atClient === 'string'
+    ? atClient
+    : (atClient && typeof atClient === 'object' && 'id' in (atClient as Record<string, unknown>))
+      ? String((atClient as Record<string, unknown>).id)
+      : null
+  if (atClientGid) {
+    const { data: link } = await supabase
+      .from('entity_source_links')
+      .select('entity_id')
+      .eq('entity_type', 'client').eq('source_system', 'airtable').eq('source_id', atClientGid)
+      .maybeSingle()
+    if (link) row.client_id = link.entity_id
+  }
+  if (!row.client_id) {
+    const clientName = strVal(fields, 'Client Name (from Client)') ?? strVal(fields, 'Client Name')
+    if (clientName) {
+      const { data: clients } = await supabase
+        .from('clients').select('id').ilike('name', `%${clientName}%`).limit(1)
+      if (clients?.length) row.client_id = clients[0].id
+    }
+  }
+
+  // 2026-05-20 prevention guards. New AT events for empty/orphan rows used to
+  // pile up as junk:
+  //   - 5 NULL-client orphans (440, 1004, 1008, 1012, 1013)
+  //   - 75 hollow rows (client_id but no WM#/YT#/PDFs/dump_date)
+  //   - 3 true dupes (same client_id + WM# or YT#)
+  // Now blocked at the gate.
+  const hasData =
+    row.white_manifest_number != null ||
+    row.yellow_ticket_number != null ||
+    row.dump_ticket_date != null ||
+    row.derm_manifest_url != null ||
+    row.derm_address_url != null
+  if (!existingId && !hasData) {
+    // Empty placeholder — orphan (no client) or hollow (client only). Either
+    // way, nothing useful to store yet. Skip insert; AT will re-fire once
+    // ops fills it in, at which point hasData will be true.
+    return
+  }
+  if (!existingId && !row.client_id) {
+    // Has data but client couldn't be resolved (unsynced AT client). Skip
+    // rather than insert as orphan. Will retry on next AT update once the
+    // client gets synced.
+    return
   }
 
   let entityId: number
@@ -340,6 +458,31 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     if (error) throw new Error(`DERM update failed: ${error.message}`)
     entityId = existingId
   } else {
+    // Dedup-on-insert: if (client_id, WM#) or (client_id, YT#) already exists
+    // (because AT sometimes creates parallel rows for the same client+manifest),
+    // route to that existing row instead of creating a new one. The unique
+    // constraint added 2026-05-20 backs this up.
+    let dupId: number | null = null
+    if (row.client_id && row.white_manifest_number) {
+      const { data } = await supabase.from('derm_manifests').select('id')
+        .eq('client_id', row.client_id).eq('white_manifest_number', row.white_manifest_number)
+        .maybeSingle()
+      if (data) dupId = data.id
+    }
+    if (!dupId && row.client_id && row.yellow_ticket_number) {
+      const { data } = await supabase.from('derm_manifests').select('id')
+        .eq('client_id', row.client_id).eq('yellow_ticket_number', row.yellow_ticket_number)
+        .maybeSingle()
+      if (data) dupId = data.id
+    }
+    if (dupId) {
+      // Update the existing row with any new fields from this AT payload.
+      // Skip the ESL upsert since the existing row already has an AT link
+      // and entity_source_links has a unique (entity_type, entity_id,
+      // source_system) constraint — can't add a second AT id to the same row.
+      await supabase.from('derm_manifests').update(row).eq('id', dupId)
+      return
+    }
     const { data: inserted, error } = await supabase
       .from('derm_manifests')
       .insert(row)
@@ -356,6 +499,48 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     source_id: recordId,
     match_method: 'webhook',
   })
+
+  // Mirror AT attachments to Supabase Storage. Skipped if URL already
+  // points at Storage (idempotent), so re-firing webhooks doesn't re-upload.
+  // Failures are logged but don't fail the webhook — the AT URL stays in the
+  // DB as a stopgap until the 15-min cron picks it up.
+  const updates: Record<string, unknown> = {}
+  if (typeof row.derm_manifest_url === 'string') {
+    const newUrl = await mirrorAttachmentToStorage(entityId, row.derm_manifest_url, 'manifest')
+    if (newUrl && newUrl !== row.derm_manifest_url) updates.derm_manifest_url = newUrl
+  }
+  if (typeof row.derm_address_url === 'string') {
+    const newUrl = await mirrorAttachmentToStorage(entityId, row.derm_address_url, 'address')
+    if (newUrl && newUrl !== row.derm_address_url) updates.derm_address_url = newUrl
+  }
+  if (Object.keys(updates).length > 0) {
+    await supabase.from('derm_manifests').update(updates).eq('id', entityId)
+  }
+
+  // Link to matching completed GT visit(s) within ±2 days of GT Last Visit.
+  // Handler previously never wrote manifest_visits at all, leaving 40+ May
+  // visits unattributed in DERM Tracker. AT's `Visits` field has AT visit
+  // GIDs but our `visits` table is Jobber-sourced (no AT GID), so match by
+  // client + visit_date window instead. Fix 2026-05-19.
+  const gtLastVisit = dateVal(fields, 'GT Last Visit')
+  if (row.client_id && gtLastVisit) {
+    const base = new Date(gtLastVisit + 'T00:00:00Z')
+    const lo = new Date(base); lo.setUTCDate(lo.getUTCDate() - 2)
+    const hi = new Date(base); hi.setUTCDate(hi.getUTCDate() + 2)
+    const { data: matchingVisits } = await supabase
+      .from('visits')
+      .select('id')
+      .eq('client_id', row.client_id)
+      .eq('visit_status', 'completed')
+      .eq('service_type', 'GT')
+      .gte('visit_date', lo.toISOString().slice(0, 10))
+      .lte('visit_date', hi.toISOString().slice(0, 10))
+    for (const v of matchingVisits ?? []) {
+      await supabase
+        .from('manifest_visits')
+        .upsert({ manifest_id: entityId, visit_id: v.id }, { onConflict: 'manifest_id,visit_id' })
+    }
+  }
 }
 
 // ---- Route Creation → routes + route_stops ----
