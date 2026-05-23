@@ -52,6 +52,19 @@ Current audited set: clients, service_configs, properties, visits, photo_classif
 
 After ANY change to Prod schema, re-check this rule before declaring the migration done.
 
+#### App-source attribution (added 2026-05-23 — see [ADR 016](docs/decisions/016-audit-app-source-attribution.md))
+
+Every audit row now carries `app_source` and `request_context`. To find "who wrote this":
+- `app_source = 'derm-tracker'` — DERM Tracker UI (derm.unclogme.app)
+- `app_source = 'field-portal'` — Field Portal (fp.unclogme.app)
+- `app_source = 'admin-review'` — Admin Review (grease-buddy-dash)
+- `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
+- `app_source = 'sql'` — direct Management API / psql / scripts (no PostgREST context)
+- `app_source = 'other:<host>'` — unmapped origin (add to the trigger CASE when an app subdomain is added)
+- explicit `X-App-Source: <name>` header overrides everything — use for scripts, bots, one-off curl
+
+Old rows (pre-2026-05-23 18:30 UTC) have `app_source IS NULL` — no attribution available retroactively.
+
 ---
 
 ## Collaboration rules
