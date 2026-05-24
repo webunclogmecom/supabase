@@ -1,0 +1,38 @@
+name: Audit critical poll
+
+# Tier 1 audit-trail alerts. Polls audit.logs every 5 min for the four
+# conditions that warrant immediate human attention (per ADR 010):
+#   1. webhook_tokens modified by non-service_role
+#   2. Hard DELETE on clients / derm_manifests / service_configs
+#   3. Mass-change spike (>200 audit events / minute)
+#   4. Anon write outside the photo_classifications/visits/properties allow-list
+#
+# Posts to #viktor-supabase (C0B08S21HHD). State via sync_cursors row
+# entity='audit_alerts'. Free-tier budget: ~288 runs/day · ~15s each
+# ≈ 72 min/day = 2,160 min/mo. Pairs with cron_jobber.js at */5;
+# combined we're still under the 2,000 min budget for ops-critical jobs
+# (Fred re-evaluates if usage breaches 80% of free tier).
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: audit-critical-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run audit critical poll
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: node scripts/alerts/audit_critical_poll.js
