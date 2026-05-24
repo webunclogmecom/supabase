@@ -55,6 +55,19 @@ const ANON_ALLOWED = new Set([
   'properties:UPDATE',
 ]);
 
+// ---------------------------------------------------------------------------
+// Allow-list of (source_system, db_role, app_source) tuples permitted to
+// modify webhook_tokens without alerting. The Jobber polling cron refreshes
+// its access_token every ~hour via the Supabase Management API, which runs
+// as 'postgres' role with app_source='sql' — known-good cron heartbeat, not
+// a security event. Anything else on webhook_tokens still alerts.
+// Add a tuple here if a new sync source needs cron-driven token refresh.
+// Format: <source_system>:<db_role>:<app_source>
+// ---------------------------------------------------------------------------
+const WEBHOOK_TOKENS_ALLOWED = new Set([
+  'jobber:postgres:sql',  // hourly Jobber access_token refresh via mgmt API
+]);
+
 function http(opts, body) {
   return new Promise((res, rej) => {
     const req = https.request(opts, r => {
@@ -140,9 +153,14 @@ function pkStr(pk) {
   };
 
   for (const r of newRows) {
-    // Rule 1: webhook_tokens modified by anything but service_role
+    // Rule 1: webhook_tokens modified by anything but service_role,
+    // unless the (source_system, db_role, app_source) tuple is in the
+    // known-good cron allow-list (e.g., Jobber hourly token refresh).
     if (r.table_name === 'webhook_tokens' && r.db_role !== 'service_role') {
-      flagged.webhook_tokens_non_service_role.push(r);
+      const tokenKey = `${r.record_pk?.source_system ?? '?'}:${r.db_role}:${r.app_source ?? '?'}`;
+      if (!WEBHOOK_TOKENS_ALLOWED.has(tokenKey)) {
+        flagged.webhook_tokens_non_service_role.push(r);
+      }
     }
     // Rule 2: hard DELETE on critical business tables
     if (r.operation === 'DELETE' &&
