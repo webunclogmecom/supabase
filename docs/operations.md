@@ -137,6 +137,60 @@ Multi-location clients documented:
 
 ---
 
+## GDO permits — bound to LOCATION, not client (per Fred 2026-05-25)
+
+A **GDO** (Grease Disposal Operator permit) is issued by Miami-Dade DERM to a **physical
+location**, not to the business operating there. The GDO number stays with the address
+across client turnover.
+
+### Concrete example
+
+If `Yan's Restaurant` operates at 123 Main St and the GDO is `GDO-103595`:
+- When `Yan's Restaurant` closes and `Fred's Restaurant` takes over the same address, the
+  GDO is still `GDO-103595` — the new client inherits the permit.
+- The `clients` row may change (new owner, new client_code, new contract dates) but the
+  `properties` row stays the same and the GDO stays bound to it.
+
+### What the GDO carries
+
+Beyond the permit number itself:
+- **Maximum service frequency** — the city-mandated upper bound for how long between
+  Grease Trap cleanings (e.g. "must be pumped at least every 90 days"). The negotiated
+  contract `frequency_days` must be ≤ this max.
+- **Permit document** (PDF) — the actual signed permit, customer-facing in FP.
+- **Expiration date** — GDOs are renewed annually; expired GDO = compliance risk.
+
+### Schema implication
+
+Currently `service_configs` carries `permit_number` and `permit_document_path` on a per
+(client, service_type) basis. This is **misaligned with reality**:
+
+- If a property changes client, all the new client's `service_configs` rows lose the GDO
+  data until someone manually re-enters it.
+- The same GDO ends up duplicated across multiple `service_configs` rows for the same
+  property (one per service type GT/CL/WD/LS — fixed today by the 2026-05-25 backfill,
+  but the schema still has the data at the wrong level of abstraction).
+
+**Forward design (not yet implemented):** GDO data belongs on `properties`, not
+`service_configs`. Either:
+- New columns: `properties.gdo_number`, `properties.gdo_max_frequency_days`,
+  `properties.gdo_permit_document_path`, `properties.gdo_expiration_date`, OR
+- A separate `property_permits` table FK'd to properties (one-to-many if a property has
+  multiple compliance permits over its lifetime).
+
+When this migration happens, `service_configs.permit_*` columns get dropped, and the
+`customer.permits` view recomposes from `properties` joined to `service_configs` (for the
+per-service `frequency_days`).
+
+### Until that migration lands
+
+The webhook-airtable sync currently writes GDO Number to ALL the client's
+`service_configs` rows (not just GT) — that's the workaround. Backfill script
+`scripts/sync/backfill_permit_numbers_from_at.js` (TBD) re-runs the AT Clients.GDO
+Number alignment if drift appears.
+
+---
+
 ## Payments: `invoices.paid_at` is the truth
 
 There is **no QuickBooks**, no separate payments table. See [ADR 006](decisions/006-no-quickbooks.md).

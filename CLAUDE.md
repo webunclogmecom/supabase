@@ -122,6 +122,23 @@ Commercial trucks work 10pm–3am. `visit_date` is the logical operating date, n
 ### `clients.status` values
 `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE`. AT's old `Recuring` (one r) was a typo — normalized 2026-05-13. populate.js + ops views all use `RECURRING`.
 
+### GDO permits — location-bound (added 2026-05-25, per Fred)
+
+A GDO (Grease Disposal Operator permit) is issued by Miami-Dade DERM to a **physical
+location**, not the business operating there. If a property changes hands (Yan's
+Restaurant → Fred's Restaurant at the same address), the GDO stays — same number, same
+max-frequency, same PDF. Beyond the permit number, a GDO carries the city-mandated
+**max service frequency** (e.g. "GT must be pumped at least every 90 days") and the
+**expiration date**.
+
+**Schema implication**: currently `service_configs.permit_number` + `permit_document_path`
+sit at the (client, service_type) level. Eventually these belong on `properties`
+(see [operations.md → GDO permits](docs/operations.md#gdo-permits--bound-to-location-not-client-per-fred-2026-05-25)
+for full design + migration plan).
+
+For now the workaround: webhook-airtable writes GDO Number to all `service_configs` rows
+for the client (not just GT). The 2026-05-25 backfill caught the historic gap.
+
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required != false`, typically GT service) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
 
