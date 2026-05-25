@@ -1,0 +1,627 @@
+{
+  "taken_at": "2026-05-25T08:39:10.660Z",
+  "properties_for_test_visits": [
+    {
+      "id": 12,
+      "client_id": 367,
+      "grease_trap_manhole_count": 1,
+      "notes": null,
+      "address": "1523 Northwest 165th Street, Miami Gardens, Florida 33154, USA"
+    },
+    {
+      "id": 51,
+      "client_id": 298,
+      "grease_trap_manhole_count": 10,
+      "notes": null,
+      "address": "1636 Meridian Avenue, Miami Beach, Florida 33139, USA"
+    },
+    {
+      "id": 66,
+      "client_id": 290,
+      "grease_trap_manhole_count": 6,
+      "notes": null,
+      "address": "2243 Northwest 2nd Avenue"
+    },
+    {
+      "id": 78,
+      "client_id": 279,
+      "grease_trap_manhole_count": 0,
+      "notes": null,
+      "address": "259 Miracle Mile, Coral Gables, Florida 33134, USA"
+    },
+    {
+      "id": 92,
+      "client_id": 226,
+      "grease_trap_manhole_count": 3,
+      "notes": null,
+      "address": "7105 Collins Avenue"
+    }
+  ],
+  "visits": [
+    {
+      "id": 3915,
+      "visit_date": "2026-05-04",
+      "client_id": 279,
+      "property_id": 78,
+      "manhole_count": null,
+      "derm_required": null,
+      "visit_status": "completed"
+    },
+    {
+      "id": 4742,
+      "visit_date": "2026-05-18",
+      "client_id": 367,
+      "property_id": 12,
+      "manhole_count": null,
+      "derm_required": null,
+      "visit_status": "completed"
+    },
+    {
+      "id": 4901,
+      "visit_date": "2026-05-24",
+      "client_id": 290,
+      "property_id": 66,
+      "manhole_count": null,
+      "derm_required": null,
+      "visit_status": "completed"
+    },
+    {
+      "id": 5125,
+      "visit_date": "2026-05-20",
+      "client_id": 460,
+      "property_id": null,
+      "manhole_count": null,
+      "derm_required": null,
+      "visit_status": "completed"
+    },
+    {
+      "id": 5127,
+      "visit_date": "2026-05-20",
+      "client_id": 460,
+      "property_id": null,
+      "manhole_count": null,
+      "derm_required": null,
+      "visit_status": "completed"
+    },
+    {
+      "id": 5128,
+      "visit_date": "2026-05-22",
+      "client_id": 298,
+      "property_id": 51,
+      "manhole_count": null,
+      "derm_required": null,
+      "visit_status": "completed"
+    },
+    {
+      "id": 5130,
+      "visit_date": "2026-05-21",
+      "client_id": 226,
+      "property_id": 92,
+      "manhole_count": null,
+      "derm_required": null,
+      "visit_status": "completed"
+    }
+  ],
+  "manifest_visits_for_test_visits": [
+    {
+      "manifest_id": 976,
+      "visit_id": 3915,
+      "white_manifest_number": "823726"
+    },
+    {
+      "manifest_id": 1046,
+      "visit_id": 4742,
+      "white_manifest_number": "824949"
+    },
+    {
+      "manifest_id": 1055,
+      "visit_id": 5127,
+      "white_manifest_number": "825167"
+    }
+  ],
+  "photo_classifications_for_test_visits": [
+    {
+      "id": 4298,
+      "photo_link_id": 24840,
+      "service_phase": "internal",
+      "photo_id": 16252,
+      "entity_type": "visit",
+      "entity_id": 3915
+    },
+    {
+      "id": 4299,
+      "photo_link_id": 24841,
+      "service_phase": "internal",
+      "photo_id": 16253,
+      "entity_type": "visit",
+      "entity_id": 3915
+    },
+    {
+      "id": 4300,
+      "photo_link_id": 24842,
+      "service_phase": "after",
+      "photo_id": 16254,
+      "entity_type": "visit",
+      "entity_id": 3915
+    },
+    {
+      "id": 4301,
+      "photo_link_id": 24843,
+      "service_phase": "after",
+      "photo_id": 16255,
+      "entity_type": "visit",
+      "entity_id": 3915
+    },
+    {
+      "id": 4302,
+      "photo_link_id": 24844,
+      "service_phase": "after",
+      "photo_id": 16256,
+      "entity_type": "visit",
+      "entity_id": 3915
+    },
+    {
+      "id": 4303,
+      "photo_link_id": 24845,
+      "service_phase": "before",
+      "photo_id": 16257,
+      "entity_type": "visit",
+      "entity_id": 3915
+    },
+    {
+      "id": 4304,
+      "photo_link_id": 24846,
+      "service_phase": "before",
+      "photo_id": 16258,
+      "entity_type": "visit",
+      "entity_id": 3915
+    },
+    {
+      "id": 4305,
+      "photo_link_id": 24847,
+      "service_phase": "before",
+      "photo_id": 16259,
+      "entity_type": "visit",
+      "entity_id": 3915
+    }
+  ],
+  "photos_for_test_visits": [
+    {
+      "photo_link_id": 24840,
+      "photo_id": 16252,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA1Ng_32FCC5BD-F627-47B9-94AE-5A7B7ECF480F.jpg"
+    },
+    {
+      "photo_link_id": 24841,
+      "photo_id": 16253,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA1Nw_89AF5D1E-D24E-4B78-9467-ED672AB89FDA.jpg"
+    },
+    {
+      "photo_link_id": 24842,
+      "photo_id": 16254,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA1OA_99F62D3E-962B-4B8A-A86D-A82D169DF32F.jpg"
+    },
+    {
+      "photo_link_id": 24843,
+      "photo_id": 16255,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA1OQ_F4EE9D48-F8D4-4F18-A380-BFBCEF899D94.jpg"
+    },
+    {
+      "photo_link_id": 24844,
+      "photo_id": 16256,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA2MA_993CD576-F909-4B00-8F9F-430DF529C87E.jpg"
+    },
+    {
+      "photo_link_id": 24845,
+      "photo_id": 16257,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA2MQ_2707EB26-96E1-4ECA-B4C4-FBD2A6589D10.jpg"
+    },
+    {
+      "photo_link_id": 24846,
+      "photo_id": 16258,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA2Mg_49A25C0D-E2E5-43FC-87E6-81F7059B8B6B.jpg"
+    },
+    {
+      "photo_link_id": 24847,
+      "photo_id": 16259,
+      "entity_type": "visit",
+      "entity_id": 3915,
+      "role": "other",
+      "storage_path": "visits/3915/20260505_Mjk3ODA2Mw_1359148A-B185-4191-BA91-3AADDBAFB64E.jpg"
+    },
+    {
+      "photo_link_id": 30031,
+      "photo_id": 18721,
+      "entity_type": "visit",
+      "entity_id": 4742,
+      "role": "other",
+      "storage_path": "visits/4742/20260519_OTQwMDQwNw_F02E5EA6-5BA7-407B-9F64-AC31022751E7.jpg"
+    },
+    {
+      "photo_link_id": 30032,
+      "photo_id": 18722,
+      "entity_type": "visit",
+      "entity_id": 4742,
+      "role": "other",
+      "storage_path": "visits/4742/20260519_OTQwMDQwOA_FF591F4B-DE30-47C0-B56B-D15C827CDAA1.jpg"
+    },
+    {
+      "photo_link_id": 30033,
+      "photo_id": 18723,
+      "entity_type": "visit",
+      "entity_id": 4742,
+      "role": "other",
+      "storage_path": "visits/4742/20260519_OTQwMDQwOQ_A60B6028-0E1A-4F0F-A599-A1A2C14168BF.jpg"
+    },
+    {
+      "photo_link_id": 30034,
+      "photo_id": 18724,
+      "entity_type": "visit",
+      "entity_id": 4742,
+      "role": "other",
+      "storage_path": "visits/4742/20260519_OTQwMDQxMA_98946EDF-37CC-49B9-8DDD-C4A3FE2C4F4C.jpg"
+    },
+    {
+      "photo_link_id": 30035,
+      "photo_id": 18725,
+      "entity_type": "visit",
+      "entity_id": 4742,
+      "role": "other",
+      "storage_path": "visits/4742/20260519_OTQwMDQxMQ_7241EB74-5944-49EE-B001-5EEBC5B12F07.jpg"
+    },
+    {
+      "photo_link_id": 30140,
+      "photo_id": 18830,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260520_MDUxMDMyMw_WhatsApp_Image_2026-05-20_at_1.32.48_PM.jpeg"
+    },
+    {
+      "photo_link_id": 30141,
+      "photo_id": 18831,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260521_MDYzMTQ5Ng_C80922C8-984D-4642-B9ED-BE91E9F7839B.jpg"
+    },
+    {
+      "photo_link_id": 30142,
+      "photo_id": 18832,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260521_MDYzMTQ5Nw_46A97633-08F1-4CE5-AD09-B58A386675A4.jpg"
+    },
+    {
+      "photo_link_id": 30143,
+      "photo_id": 18833,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260521_MDYzMTQ5OA_1539274D-5C56-45E5-B1C7-CFAABB88CC72.jpg"
+    },
+    {
+      "photo_link_id": 30144,
+      "photo_id": 18834,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260521_MDYzMTQ5OQ_FE604673-BFE7-40F7-B8E0-A2AB8261B789.jpg"
+    },
+    {
+      "photo_link_id": 30145,
+      "photo_id": 18835,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260521_MDYzMTUwMA_2B0378AA-7384-4F0A-8A73-178B2062F35B.jpg"
+    },
+    {
+      "photo_link_id": 30146,
+      "photo_id": 18836,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260521_MDYzMTUwMQ_08576E65-D9F0-4E0F-8663-A32B94BA0414.jpg"
+    },
+    {
+      "photo_link_id": 30147,
+      "photo_id": 18837,
+      "entity_type": "visit",
+      "entity_id": 5127,
+      "role": "other",
+      "storage_path": "visits/5127/20260521_MDYzMTUwMw_B9F0F745-90C0-4728-97D0-7ABFF48C232C.jpg"
+    },
+    {
+      "photo_link_id": 30174,
+      "photo_id": 18864,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY4MQ_1000030359.jpg"
+    },
+    {
+      "photo_link_id": 30175,
+      "photo_id": 18865,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY4NA_1000030360.jpg"
+    },
+    {
+      "photo_link_id": 30176,
+      "photo_id": 18866,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY4Nw_1000030364.jpg"
+    },
+    {
+      "photo_link_id": 30177,
+      "photo_id": 18867,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY4OQ_1000030365.jpg"
+    },
+    {
+      "photo_link_id": 30178,
+      "photo_id": 18868,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5MA_1000030366.jpg"
+    },
+    {
+      "photo_link_id": 30179,
+      "photo_id": 18869,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5MQ_1000030367.jpg"
+    },
+    {
+      "photo_link_id": 30180,
+      "photo_id": 18870,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5Mw_1000030368.jpg"
+    },
+    {
+      "photo_link_id": 30181,
+      "photo_id": 18871,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5NA_1000030369.jpg"
+    },
+    {
+      "photo_link_id": 30182,
+      "photo_id": 18872,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5NQ_1000030361.jpg"
+    },
+    {
+      "photo_link_id": 30183,
+      "photo_id": 18873,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5Ng_1000030362.jpg"
+    },
+    {
+      "photo_link_id": 30184,
+      "photo_id": 18874,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5Nw_1000030363.jpg"
+    },
+    {
+      "photo_link_id": 30185,
+      "photo_id": 18875,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5OA_1000030370.jpg"
+    },
+    {
+      "photo_link_id": 30186,
+      "photo_id": 18876,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODY5OQ_1000030371.jpg"
+    },
+    {
+      "photo_link_id": 30187,
+      "photo_id": 18877,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwMA_1000030372.jpg"
+    },
+    {
+      "photo_link_id": 30188,
+      "photo_id": 18878,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwMQ_1000030373.jpg"
+    },
+    {
+      "photo_link_id": 30189,
+      "photo_id": 18879,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwMg_1000030376.jpg"
+    },
+    {
+      "photo_link_id": 30190,
+      "photo_id": 18880,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwMw_1000030377.jpg"
+    },
+    {
+      "photo_link_id": 30191,
+      "photo_id": 18881,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwNA_1000030378.jpg"
+    },
+    {
+      "photo_link_id": 30192,
+      "photo_id": 18882,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwNQ_1000030379.jpg"
+    },
+    {
+      "photo_link_id": 30193,
+      "photo_id": 18883,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwNg_1000030380.jpg"
+    },
+    {
+      "photo_link_id": 30194,
+      "photo_id": 18884,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwNw_1000030381.jpg"
+    },
+    {
+      "photo_link_id": 30195,
+      "photo_id": 18885,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwOA_1000030385.jpg"
+    },
+    {
+      "photo_link_id": 30196,
+      "photo_id": 18886,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcwOQ_1000030384.jpg"
+    },
+    {
+      "photo_link_id": 30197,
+      "photo_id": 18887,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcxMQ_1000030387.jpg"
+    },
+    {
+      "photo_link_id": 30198,
+      "photo_id": 18888,
+      "entity_type": "visit",
+      "entity_id": 5128,
+      "role": "other",
+      "storage_path": "visits/5128/20260522_MTQzODcxMg_1000030386.jpg"
+    },
+    {
+      "photo_link_id": 30158,
+      "photo_id": 18848,
+      "entity_type": "visit",
+      "entity_id": 5130,
+      "role": "other",
+      "storage_path": "visits/5130/20260522_MTI2NDIxMw_0B486615-AC8B-4696-8CBE-D796666879A7.jpg"
+    },
+    {
+      "photo_link_id": 30159,
+      "photo_id": 18849,
+      "entity_type": "visit",
+      "entity_id": 5130,
+      "role": "other",
+      "storage_path": "visits/5130/20260522_MTI2NDIxNA_EA66E162-7388-404C-8AC7-F799B4774FD4.png"
+    },
+    {
+      "photo_link_id": 30160,
+      "photo_id": 18850,
+      "entity_type": "visit",
+      "entity_id": 5130,
+      "role": "other",
+      "storage_path": "visits/5130/20260522_MTI2NDIxNQ_861135D4-4E2E-42DB-9C29-7D2978A4FBCD.png"
+    },
+    {
+      "photo_link_id": 30161,
+      "photo_id": 18851,
+      "entity_type": "visit",
+      "entity_id": 5130,
+      "role": "other",
+      "storage_path": "visits/5130/20260522_MTI2NDIxNg_B7F6385A-7A4D-4ABB-A75B-9D7EF6AD2001.png"
+    }
+  ],
+  "sandbox_visits_snapshot": [
+    {
+      "id": 3915,
+      "manhole_count": null,
+      "completed_at": "2026-05-05 07:51:21+00"
+    },
+    {
+      "id": 4742,
+      "manhole_count": null,
+      "completed_at": "2026-05-19 08:48:29+00"
+    },
+    {
+      "id": 4901,
+      "manhole_count": null,
+      "completed_at": null
+    },
+    {
+      "id": 5125,
+      "manhole_count": null,
+      "completed_at": "2026-05-20 16:59:55+00"
+    },
+    {
+      "id": 5127,
+      "manhole_count": null,
+      "completed_at": "2026-05-21 03:31:35+00"
+    },
+    {
+      "id": 5128,
+      "manhole_count": null,
+      "completed_at": "2026-05-22 15:51:31+00"
+    },
+    {
+      "id": 5130,
+      "manhole_count": null,
+      "completed_at": "2026-05-22 05:50:14+00"
+    }
+  ]
+}
