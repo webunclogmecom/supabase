@@ -224,14 +224,24 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   // Parse it on insert so Jobber-only clients still get a code without waiting
   // on Airtable enrichment. We do NOT overwrite an existing code on update —
   // that would clobber Airtable's authoritative value.
-  const parsedCode = name.match(/^\s*(\d{3}-[A-Z0-9]+)/)?.[1] ?? null
-
-  // Normalize: strip the code prefix from name so the DB stores name + code
-  // in separate fields (matches Fred's spec 2026-05-19). Idempotent — if the
-  // upstream name already lacks the prefix, this is a no-op.
-  const nameNormalized = parsedCode
-    ? name.replace(/^\s*\d{3}-[A-Z0-9]+\s*/, '').trim()
-    : name
+  //
+  // Patterns we strip (in order of how Yan types them in Jobber):
+  //   "062-TCE The carrot..."        — tight  (3 digits + dash + alpha — no space)
+  //   "205- SAS Signor SASSI"        — loose  (3 digits + dash + ws + alpha + ws)
+  //   "000- Kaffe"                   — bare   (3 digits + dash + ws only, no alpha suffix)
+  // The trailing `\s+` requires whitespace between the prefix and the real
+  // business name so we don't accidentally strip part of a real name.
+  let parsedCode: string | null = null
+  let nameNormalized = name
+  const codeMatch = name.match(/^\s*(\d{3})-\s*([A-Z0-9]*)\s+/)
+  if (codeMatch) {
+    const [fullMatch, numericPart, alphaPart] = codeMatch
+    // Only treat as a valid client_code if it has the NNN-XX shape. Bare
+    // "000-" prefixes are pollution — still strip from the name but don't
+    // promote the orphan numeric part to client_code.
+    if (alphaPart) parsedCode = `${numericPart}-${alphaPart}`
+    nameNormalized = name.replace(fullMatch, '').trim()
+  }
 
   // Check if client already exists via entity_source_links.
   // Lookup uses the full base64 GID (consistent with populate.js step 1
