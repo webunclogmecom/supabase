@@ -352,7 +352,22 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
       await supabase.from('properties').update(propRow).eq('id', existingProps[0].id)
     } else {
       // INSERT — fallback county from city so Jobber-only clients aren't NULL.
-      const insertRow = { ...propRow, is_primary: true, county: inferCountyFromCity(addr.city) }
+      // Check if client already has ANY primary property (from a prior
+      // PROPERTY_CREATE or CLIENT_UPDATE) — if yes, this new billing-address
+      // row is NOT primary, to honor uq_properties_one_primary_per_client
+      // (partial unique on (client_id) WHERE is_primary=true). Race-safe
+      // against concurrent full-sync replays + live webhooks.
+      const { data: existingPrimary } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('client_id', entityId)
+        .eq('is_primary', true)
+        .limit(1)
+      const insertRow = {
+        ...propRow,
+        is_primary: !(existingPrimary && existingPrimary.length > 0),
+        county: inferCountyFromCity(addr.city),
+      }
       const { data: newProp } = await supabase
         .from('properties')
         .insert(insertRow)
@@ -826,6 +841,17 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
   const clientId = p.client?.id ? await findEntityBySourceId('client', 'jobber', p.client.id) : null
   const existingId = await findEntityBySourceId('property', 'jobber', gid)
 
+  // Defer-if-orphan: if the property's owning Jobber client hasn't been
+  // materialized in canonical yet (race condition: PROPERTY_UPDATE arrived
+  // before CLIENT_UPDATE for the same client, or full-sync replay ordering),
+  // skip with a log. The next CLIENT_UPDATE webhook will materialize the
+  // client, and a subsequent PROPERTY_UPDATE (or full-sync) will pick this
+  // property up. Inserting with NULL client_id violates NOT NULL.
+  if (!existingId && !clientId) {
+    console.log(`[handleProperty] property ${numericId} has no canonical client yet (jobber client.id=${p.client?.id}) — deferring; next CLIENT_UPDATE will materialize`)
+    return { entity_id: 0 }
+  }
+
   const row: Record<string, unknown> = {
     name: p.name ?? null,
     address: p.address?.street ?? null,
@@ -847,7 +873,26 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
     entityId = existingId
   } else {
     // INSERT — fallback county from city so new Jobber properties aren't NULL.
-    const insertRow = { ...row, county: inferCountyFromCity(p.address?.city) }
+    // properties.is_primary column DEFAULT is `true`. If this client already
+    // has a primary property (from PRIOR PROPERTY_CREATE or CLIENT_UPDATE's
+    // billing-property path), default would violate uq_properties_one_primary_per_client.
+    // Check first; force is_primary=false when a primary already exists. Only
+    // the first property for a client gets primary=true via the default.
+    let isPrimary: boolean | undefined = undefined  // let DB default kick in (true)
+    if (clientId) {
+      const { data: existingPrimary } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('is_primary', true)
+        .limit(1)
+      if (existingPrimary && existingPrimary.length > 0) isPrimary = false
+    }
+    const insertRow = {
+      ...row,
+      county: inferCountyFromCity(p.address?.city),
+      ...(isPrimary === false ? { is_primary: false } : {}),
+    }
     const { data: inserted, error } = await supabase.from('properties').insert(insertRow).select('id').single()
     if (error || !inserted) throw new Error(`Property insert failed: ${error?.message}`)
     entityId = inserted.id
