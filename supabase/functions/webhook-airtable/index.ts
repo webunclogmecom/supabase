@@ -182,7 +182,14 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
       .eq('client_code', code).limit(1)
     if (byCode?.length) {
       clientId = byCode[0].id as number
-      await upsertEntityLink('client', clientId, 'airtable', recordId)
+      // Object syntax — positional call was passing 'client' as the whole link
+      // object, leaving entity_type undefined → NULL constraint violation.
+      await upsertEntityLink({
+        entity_type: 'client',
+        entity_id: clientId,
+        source_system: 'airtable',
+        source_id: recordId,
+      })
       console.log(`[handleClient] linked AT ${recordId} → client ${clientId} via client_code ${code}`)
     }
   }
@@ -278,15 +285,76 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
     if (error) console.error(`service_configs upsert failed for ${type}:`, error.message)
   }
 
-  // -- 4. GDO permit (GT only) ----
+  // -- 4. GDO permit (GT only) — Phase 4b canonical-only 2026-05-25 --------
+  // Writes the GDO Number + expiration to public.gdos (canonical source of
+  // truth). The legacy dual-write to service_configs.permit_* was removed
+  // in Phase 4b after view rewires (25t) confirmed no readers depend on
+  // the legacy columns. The columns themselves are dropped in migration 25u.
   const gdo = strVal(fields, 'GDO Number')
   const gdoExp = dateVal(fields, 'GDO expiration date')
   if (gdo || gdoExp) {
-    const permitUpdate: Record<string, unknown> = {}
-    if (gdo) permitUpdate.permit_number = gdo
-    if (gdoExp) permitUpdate.permit_expiration = gdoExp
-    await supabase.from('service_configs').update(permitUpdate)
-      .eq('client_id', clientId).eq('service_type', 'GT')
+    // CANONICAL write to public.gdos.
+    // Requires gdo_number (can't insert from expiration alone). Idempotent:
+    // try UPDATE on (client_id, gdo_number); INSERT only if no match.
+    if (gdo) {
+      // GUARD 1: BW placeholder — Broward county has no GDO program (Miami-Dade
+      // DERM only). AT data-entry sometimes uses "BW"/"bw" as a marker on Broward
+      // clients; that's not a real permit. Reject before any DB write so a sync
+      // can't undo the 2026-05-27 Broward cleanup (see probes 72/73).
+      if (/^\s*bw\s*$/i.test(gdo)) {
+        console.log(
+          `webhook-airtable: skipped gdos write for client ${clientId} — gdo_number="${gdo}" is a BW placeholder, Broward has no GDO program`,
+        )
+      } else {
+        const { data: prop } = await supabase
+          .from('properties')
+          .select('id, county')
+          .eq('client_id', clientId)
+          .eq('is_primary', true)
+          .limit(1)
+          .maybeSingle()
+
+        if (prop?.id) {
+          // GUARD 2: defence-in-depth — if the primary property is in Broward,
+          // skip even if AT supplied a non-BW gdo_number. DERM only issues
+          // permits in Miami-Dade. Caller might just have a real-looking
+          // GDO-NNNNN typo mapped to a Broward address.
+          if (prop.county && /^\s*broward\s*$/i.test(prop.county)) {
+            console.log(
+              `webhook-airtable: skipped gdos write for client ${clientId}/${gdo} — primary property is in Broward county, DERM only issues in Miami-Dade`,
+            )
+          } else {
+            // UPDATE existing row if (client_id, gdo_number) already present —
+            // also flips status back to ACTIVE if a prior demote (rare).
+            const updateFields: Record<string, unknown> = { status: 'ACTIVE' }
+            if (gdoExp) updateFields.permit_expiration = gdoExp
+            const { data: updated, error: upErr } = await supabase
+              .from('gdos')
+              .update(updateFields)
+              .eq('client_id', clientId)
+              .eq('gdo_number', gdo)
+              .select('id')
+
+            if (upErr) {
+              console.error(`gdos update failed for ${clientId}/${gdo}:`, upErr.message)
+            } else if (!updated || updated.length === 0) {
+              // No existing row — INSERT new canonical permit
+              const { error: insErr } = await supabase.from('gdos').insert({
+                client_id: clientId,
+                property_id: prop.id,
+                gdo_number: gdo,
+                permit_expiration: gdoExp || null,
+                status: 'ACTIVE',
+                notes: `[webhook-airtable] Inserted from AT GDO Number update on ${new Date().toISOString().slice(0, 10)}`,
+              })
+              if (insErr) console.error(`gdos insert failed for ${clientId}/${gdo}:`, insErr.message)
+            }
+          }
+        } else {
+          console.warn(`webhook-airtable: client ${clientId} has no primary property; skipped gdos write for ${gdo}`)
+        }
+      }
+    }
   }
 
   // -- 5. GT tank size ----
