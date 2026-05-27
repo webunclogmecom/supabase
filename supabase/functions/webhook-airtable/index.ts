@@ -396,6 +396,7 @@ async function mirrorAttachmentToStorage(
   manifestId: number,
   atUrl: string,
   kind: 'manifest' | 'address',
+  pageNo = 1,
 ): Promise<string | null> {
   // Skip if already on Supabase Storage (idempotent — e.g. an update where
   // the URL was already mirrored on a previous webhook fire).
@@ -409,7 +410,11 @@ async function mirrorAttachmentToStorage(
     }
     const bytes = new Uint8Array(await dl.arrayBuffer())
     const ext = extFromContentType(dl.headers.get('content-type'))
-    const objectPath = `derm/${manifestId}/${kind}.${ext}`
+    // Page 1 keeps the legacy path (derm/<id>/manifest.<ext>) so existing URLs
+    // in the DB stay valid. Page 2+ get a suffix.
+    const objectPath = pageNo === 1
+      ? `derm/${manifestId}/${kind}.${ext}`
+      : `derm/${manifestId}/${kind}_p${pageNo}.${ext}`
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const up = await fetch(
       `${SUPABASE_URL}/storage/v1/object/${DERM_BUCKET_PATH}/${encodeURIComponent(objectPath)}`,
@@ -455,6 +460,21 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     return typeof first?.url === 'string' ? (first.url as string) : null
   }
 
+  // 2026-05-27 — multi-page support. AT attachments are an ordered array;
+  // previously only [0] was kept, dropping pages 2+ when a manifest spanned
+  // several scans. Returns pages 2+ for storage in derm_manifest_extra_urls
+  // / derm_address_extra_urls.
+  function extraAttachmentUrls(name: string): string[] {
+    const v = fields[name]
+    if (!Array.isArray(v) || v.length <= 1) return []
+    return v.slice(1).map((a) => {
+      if (a && typeof a === 'object' && typeof (a as Record<string, unknown>).url === 'string') {
+        return (a as Record<string, unknown>).url as string
+      }
+      return null
+    }).filter((u): u is string => !!u)
+  }
+
   const row: Record<string, unknown> = {
     service_date: dateVal(fields, 'Date Dump Ticket') ?? dateVal(fields, 'GT Last Visit'),
     dump_ticket_date: dateVal(fields, 'Date Dump Ticket'),
@@ -464,6 +484,8 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     sent_to_city: fields['Send To City'] === true,
     derm_manifest_url: firstAttachmentUrl('DERM Manifest'),
     derm_address_url:  firstAttachmentUrl('DERM Address'),
+    derm_manifest_extra_urls: extraAttachmentUrls('DERM Manifest'),
+    derm_address_extra_urls:  extraAttachmentUrls('DERM Address'),
   }
 
   // Resolve client_id. Prefer AT `Client` array (always carries the GID) over
@@ -588,14 +610,35 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
   // points at Storage (idempotent), so re-firing webhooks doesn't re-upload.
   // Failures are logged but don't fail the webhook — the AT URL stays in the
   // DB as a stopgap until the 15-min cron picks it up.
+  // Page 1 → derm_manifest_url / derm_address_url. Page 2+ → *_extra_urls[].
   const updates: Record<string, unknown> = {}
   if (typeof row.derm_manifest_url === 'string') {
-    const newUrl = await mirrorAttachmentToStorage(entityId, row.derm_manifest_url, 'manifest')
+    const newUrl = await mirrorAttachmentToStorage(entityId, row.derm_manifest_url, 'manifest', 1)
     if (newUrl && newUrl !== row.derm_manifest_url) updates.derm_manifest_url = newUrl
   }
   if (typeof row.derm_address_url === 'string') {
-    const newUrl = await mirrorAttachmentToStorage(entityId, row.derm_address_url, 'address')
+    const newUrl = await mirrorAttachmentToStorage(entityId, row.derm_address_url, 'address', 1)
     if (newUrl && newUrl !== row.derm_address_url) updates.derm_address_url = newUrl
+  }
+  // Multi-page: mirror each extra page, store the mirrored URL in the
+  // *_extra_urls array. Page numbering starts at 2 (page 1 is the singular).
+  const manifestExtras = (row.derm_manifest_extra_urls as string[]) || []
+  if (manifestExtras.length > 0) {
+    const mirrored: string[] = []
+    for (let i = 0; i < manifestExtras.length; i++) {
+      const mirroredUrl = await mirrorAttachmentToStorage(entityId, manifestExtras[i], 'manifest', i + 2)
+      mirrored.push(mirroredUrl ?? manifestExtras[i])
+    }
+    updates.derm_manifest_extra_urls = mirrored
+  }
+  const addressExtras = (row.derm_address_extra_urls as string[]) || []
+  if (addressExtras.length > 0) {
+    const mirrored: string[] = []
+    for (let i = 0; i < addressExtras.length; i++) {
+      const mirroredUrl = await mirrorAttachmentToStorage(entityId, addressExtras[i], 'address', i + 2)
+      mirrored.push(mirroredUrl ?? addressExtras[i])
+    }
+    updates.derm_address_extra_urls = mirrored
   }
   if (Object.keys(updates).length > 0) {
     await supabase.from('derm_manifests').update(updates).eq('id', entityId)
