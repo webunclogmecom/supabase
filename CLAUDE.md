@@ -184,7 +184,11 @@ The webhook-airtable's primary link logic uses `GT Last Visit` ±2 days — that
 - **Body explains *why*, not *what*.** Diff shows what.
 - **Co-author line** required on Claude commits:
   `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
-- **Never** skip hooks (`--no-verify`), bypass signing, or force-push to main without explicit ask.
+- **Push every commit to origin** (updated 2026-05-27, per Fred). Fred pre-approves
+  pushes to non-protected branches — no need to ask. Same trust model as the
+  "no approval needed for routine actions" rule. Plain fast-forward `git push`
+  only; force-push to `main` still requires explicit ask.
+- **Never** skip hooks (`--no-verify`) or bypass signing without explicit ask.
 - **Destructive ops** only with explicit Fred approval.
 
 ---
