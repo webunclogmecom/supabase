@@ -545,19 +545,35 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     }
     if (dupId) {
       // Update the existing row with any new fields from this AT payload.
-      // Skip the ESL upsert since the existing row already has an AT link
-      // and entity_source_links has a unique (entity_type, entity_id,
-      // source_system) constraint — can't add a second AT id to the same row.
       await supabase.from('derm_manifests').update(row).eq('id', dupId)
-      return
+      entityId = dupId
+      // Re-link only when the existing row has NO AT link yet (orphan from a
+      // prior dedup-and-skip). If it already has an AT link to a different
+      // record id, preserve that — the upsert's onConflict would otherwise
+      // rotate the link to the new (duplicate) AT id on every replay. The
+      // first AT record to reach the row wins. Fix 2026-05-27.
+      const { data: existingLink } = await supabase
+        .from('entity_source_links')
+        .select('source_id')
+        .eq('entity_type', 'derm_manifest')
+        .eq('entity_id', dupId)
+        .eq('source_system', 'airtable')
+        .maybeSingle()
+      if (existingLink && existingLink.source_id !== recordId) {
+        // AT-side duplicate. Keep the original link, no-op the rest.
+        return
+      }
+      // Falls through to upsertEntityLink — either no link exists (orphan
+      // re-link) or the link already points to this same recordId (idempotent).
+    } else {
+      const { data: inserted, error } = await supabase
+        .from('derm_manifests')
+        .insert(row)
+        .select('id')
+        .single()
+      if (error || !inserted) throw new Error(`DERM insert failed: ${error?.message}`)
+      entityId = inserted.id
     }
-    const { data: inserted, error } = await supabase
-      .from('derm_manifests')
-      .insert(row)
-      .select('id')
-      .single()
-    if (error || !inserted) throw new Error(`DERM insert failed: ${error?.message}`)
-    entityId = inserted.id
   }
 
   await upsertEntityLink({

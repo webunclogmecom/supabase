@@ -1,0 +1,17 @@
+import 'dotenv/config';
+const PAT = process.env.SUPABASE_PAT;
+const PROD = process.env.SUPABASE_PROJECT_ID;
+async function pg(sql) {
+  const r = await fetch(`https://api.supabase.com/v1/projects/${PROD}/database/query`, {
+    method:'POST', headers:{Authorization:`Bearer ${PAT}`,'Content-Type':'application/json'},
+    body:JSON.stringify({query:sql}),
+  });
+  return JSON.parse(await r.text());
+}
+console.log('=== All esls for client 353 (Specialita) ===');
+console.log(await pg(`
+  SELECT id, source_system, source_id, synced_at, match_method
+  FROM public.entity_source_links
+  WHERE entity_type='client' AND entity_id=353
+  ORDER BY source_system;
+`));
