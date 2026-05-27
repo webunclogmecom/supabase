@@ -80,8 +80,13 @@ async function atFetchOne(table, id) {
   const dbIdByAtGid = {};
   for (const e of eslMap) dbIdByAtGid[e.source_id] = e.entity_id;
 
-  // 3) Index DB visits by (client_id, visit_date)
-  const visits = (await sql(`SELECT id, client_id, visit_date::text FROM visits WHERE visit_status='completed'`));
+  // 3) Index DB visits by (client_id, visit_date). Filter to service_type='GT'
+  // — DERM manifests are issued for grease-trap dumps only, so matching CL
+  // (drain cleaning) or LS (lift station) visits causes false-positive links
+  // that the DERM Tracker then shows on the wrong visit. Caught 2026-05-27
+  // by a Claudie May 14 GT visit showing "Missing manifest" because its
+  // manifest had been mis-linked to a same-week CL service call.
+  const visits = (await sql(`SELECT id, client_id, visit_date::text FROM visits WHERE visit_status='completed' AND service_type='GT'`));
   const dbVisitByClientDate = {};
   for (const v of visits) {
     dbVisitByClientDate[`${v.client_id}|${v.visit_date}`] = v.id;
