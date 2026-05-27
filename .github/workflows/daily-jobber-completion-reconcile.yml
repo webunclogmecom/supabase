@@ -1,0 +1,61 @@
+name: Daily Jobber visit completion reconcile
+
+# Closes a structural gap in cron_jobber.js: its visits cursor uses `completedAt`,
+# which is blind to un-completion (un-complete clears completedAt → NULL, so the
+# delta query `completedAt > cursor` can never see it). VISIT_UPDATE webhooks also
+# don't reliably fire for these edits (confirmed 2026-05-27 with Kendall — 7 days
+# of zero webhook events for that one record).
+#
+# Once a day, scan our DB visits we have as 'completed' in the last 60 days,
+# query Jobber GraphQL for the live state of each, and reconcile any drift on
+# visit_status / completed_at / start_at / end_at / visit_date.
+
+on:
+  schedule:
+    # 08:30 UTC = 04:30 ET (EDT) / 03:30 ET (EST). Off-peak, after the daily
+    # cleanup cron (which runs at 09:00) doesn't matter — they don't conflict.
+    - cron: '30 8 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Window in days (default 60)'
+        required: false
+        default: '60'
+      execute:
+        description: 'Apply updates? (true = execute, false = dry-run)'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: jobber-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Reconcile Jobber completion drift
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          JOBBER_CLIENT_ID: ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET: ${{ secrets.JOBBER_CLIENT_SECRET }}
+        run: |
+          DAYS="${{ github.event.inputs.days || '60' }}"
+          if [ "${{ github.event.inputs.execute || 'true' }}" = "true" ]; then
+            node scripts/sync/cron_jobber_reconcile_completion.js --days=$DAYS --execute
+          else
+            node scripts/sync/cron_jobber_reconcile_completion.js --days=$DAYS
+          fi
