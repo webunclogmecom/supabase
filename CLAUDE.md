@@ -109,9 +109,33 @@ Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Mo
 | `e.name` | `e.full_name` | employees |
 | `v.status` | `v.visit_status` | visits |
 | `v.is_complete` | `(v.visit_status = 'completed')` *(lowercase — canonical value, verified 2026-05-18)* | visits |
+| any `SELECT … FROM visits` | add `WHERE deleted_at IS NULL` *(soft-delete column added 2026-05-29 — see "Soft-delete on visits" below)* | visits |
 | `sc.next_visit`, `sc.status` | Use `clients_due_service` view | service_configs (dropped 2026-04-20) |
 | `m.manifest_number` | `m.white_manifest_number` | derm_manifests |
 | `v.tank_capacity_gallons` | `v.fuel_tank_capacity_gallons` or `v.grease_tank_capacity_gallons` | vehicles |
+
+### Soft-delete on visits (added 2026-05-29)
+
+`public.visits.deleted_at TIMESTAMPTZ` is set by
+`scripts/sync/cron_jobber_reconcile_anomalies.js` when Jobber returns
+"Visit not found" for a stored GID (deleted upstream or converted to a Task).
+**Every query against `visits` MUST filter `deleted_at IS NULL`**, otherwise
+soft-deleted rows leak back into Calendar / Field Portal / DERM Tracker.
+
+Already patched (2026-05-29): `ops.v_calendar_visit`, `customer.scheduled_visits`,
+`public.manifest_pickable_visits`, `public.visits_with_status`.
+
+Pending follow-up (low-impact): `ops.visits`, `ops.v_route_today`,
+`ops.v_service_due`, `ops.v_truck_utilization`, `ops.v_driver_kpi`,
+`ops.v_revenue_summary`, `ops.v_derm_compliance`, `public.visits_recent`,
+`public.visits_with_review`, `customer.work_orders`, `customer.recommendations`,
+`customer.inspection_items`, `customer.wo_photos`, `customer.permits`.
+
+Hard-delete is still forbidden in general (Rule 6) — `deleted_at` is the
+canonical soft-delete pattern for visits. One-off hard-deletes for clearly
+broken rows (e.g. completed-then-rescheduled visits ops cannot operate on)
+require explicit Fred sign-off and run via a manual script (see
+2026-05-29 visit 5146 009-CN repair for the audited pattern).
 
 ### Truck names are NOT people
 **Moises, David, Goliath** — trucks. **Cloggy** — truck (only daytime-only one). Never respond to "David did the visit" as if David is a person without checking [docs/operations.md](docs/operations.md#truck-name--person-name).

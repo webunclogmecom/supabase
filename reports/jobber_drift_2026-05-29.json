@@ -1,0 +1,121 @@
+{
+  "today": "2026-05-29",
+  "universe": 405,
+  "drift_count": 2,
+  "orphan_count": 4,
+  "inverted_count": 2,
+  "errors_count": 0,
+  "drift": [
+    {
+      "id": 1794,
+      "visit_date": "2026-05-01",
+      "visit_status": "scheduled",
+      "title": "170-PV Pura Vida Bakery - Emergency call",
+      "start_at": "2026-05-01 12:30:00+00",
+      "completed_at": null,
+      "client_code": "170-PV",
+      "client_name": "Pura Vida Bakery",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzIxNDk1MTMzOTU=",
+      "jobber_startAt": "2026-07-04T11:15:00Z",
+      "jobber_completedAt": null,
+      "jobber_date": "2026-07-04",
+      "jobber_status": "UPCOMING"
+    },
+    {
+      "id": 1795,
+      "visit_date": "2026-05-01",
+      "visit_status": "scheduled",
+      "title": "093-KC KC Market - Adjust lids",
+      "start_at": "2026-05-01 09:00:00+00",
+      "completed_at": null,
+      "client_code": "093-KC",
+      "client_name": "KC Market",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzIxNTAyMjA2MTM=",
+      "jobber_startAt": "2026-07-04T08:30:00Z",
+      "jobber_completedAt": null,
+      "jobber_date": "2026-07-04",
+      "jobber_status": "UPCOMING"
+    }
+  ],
+  "orphan": [
+    {
+      "id": 3917,
+      "visit_date": "2026-05-13",
+      "visit_status": "scheduled",
+      "title": "168-AVA AVA - Grease Trap Pumping",
+      "start_at": "2026-05-13 13:30:00+00",
+      "completed_at": null,
+      "client_code": "168-AVA",
+      "client_name": "AVA",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzIxNjA5MTE5MzU=",
+      "jobber_status": "NOT_FOUND"
+    },
+    {
+      "id": 3912,
+      "visit_date": "2026-05-04",
+      "visit_status": "scheduled",
+      "title": "Tower 41 Association  Building - Emergency",
+      "start_at": "2026-05-04 04:00:00+00",
+      "completed_at": null,
+      "client_code": null,
+      "client_name": "Tower 41 Association  Building",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzIxNjA3MDM2ODg=",
+      "jobber_status": "NOT_FOUND"
+    },
+    {
+      "id": 1624,
+      "visit_date": "2026-05-04",
+      "visit_status": "scheduled",
+      "title": "112-YA Yan's Restaurant - Grease Trap Service Agreement",
+      "start_at": "2026-05-04 04:00:00+00",
+      "completed_at": null,
+      "client_code": "112-YA",
+      "client_name": "Yan's Restaurant",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzE5NTE2ODUyMzA=",
+      "jobber_status": "NOT_FOUND"
+    },
+    {
+      "id": 1806,
+      "visit_date": "2026-04-30",
+      "visit_status": "scheduled",
+      "title": "148-MOR The Moore - Grease Trap Pumping and Hydrojet Cleaning",
+      "start_at": "2026-04-30 16:30:00+00",
+      "completed_at": null,
+      "client_code": "148-MOR",
+      "client_name": "The Moore",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzIxNTM4NDcxNjE=",
+      "jobber_status": "NOT_FOUND"
+    }
+  ],
+  "inverted": [
+    {
+      "id": 5146,
+      "visit_date": "2026-07-04",
+      "visit_status": "completed",
+      "title": "009-CN Casa Neos - Service call",
+      "start_at": "2026-07-04 14:15:00+00",
+      "completed_at": "2026-05-27 19:09:03+00",
+      "client_code": "009-CN",
+      "client_name": "Casa Neos",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzIxOTIxNTIwNjM=",
+      "jobber_startAt": "2026-07-04T14:15:00Z",
+      "jobber_completedAt": "2026-05-27T19:09:03Z",
+      "jobber_status": "COMPLETED"
+    },
+    {
+      "id": 1739,
+      "visit_date": "2026-04-21",
+      "visit_status": "completed",
+      "title": "Tower 41 Building - Emergency",
+      "start_at": "2026-04-21 04:00:00+00",
+      "completed_at": "2026-04-20 17:56:54+00",
+      "client_code": null,
+      "client_name": "Tower 41 Association  Building",
+      "jobber_gid": "Z2lkOi8vSm9iYmVyL1Zpc2l0LzIxMzk3NDE2MzU=",
+      "jobber_startAt": "2026-04-21T04:00:00Z",
+      "jobber_completedAt": "2026-04-20T17:56:54Z",
+      "jobber_status": "COMPLETED"
+    }
+  ],
+  "errors": []
+}

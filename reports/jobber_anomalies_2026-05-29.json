@@ -1,0 +1,12 @@
+{
+  "ran_at": "2026-05-29T12:50:48.638Z",
+  "execute": false,
+  "window_days": 90,
+  "universe": 400,
+  "scanned": 400,
+  "elapsed_seconds": 108,
+  "orphans": [],
+  "dateDrift": [],
+  "inversions": [],
+  "errors": []
+}

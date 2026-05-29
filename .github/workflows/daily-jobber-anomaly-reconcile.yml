@@ -1,0 +1,82 @@
+name: Daily Jobber anomaly reconcile
+
+# Closes 3 gaps the existing crons miss:
+#
+#   - Visits whose Jobber GID returns "Visit not found" (deleted in Jobber)
+#     get soft-deleted via public.visits.deleted_at = NOW().
+#
+#   - Scheduled visits where Jobber's startAt has moved (rescheduling not
+#     caught by the completedAt-cursor pull) get visit_date/start_at/end_at
+#     synced back to Jobber's current values.
+#
+#   - Inverted-timeline cases (Jobber.completedAt < startAt by >24h, i.e.
+#     visits rescheduled after completion) are flagged in the run JSON but
+#     not auto-mutated — ops reviews per case.
+#
+# Runs nightly at 09:15 UTC = 05:15 ET (EDT) / 04:15 ET (EST). Sits 45 min
+# after the existing daily-jobber-completion-reconcile.yml so they don't
+# contend for the Jobber rate-limit budget.
+
+on:
+  schedule:
+    - cron: '15 9 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Window ± days (default 90)'
+        required: false
+        default: '90'
+      limit:
+        description: 'Cap visits scanned (0 = unlimited)'
+        required: false
+        default: '0'
+      execute:
+        description: 'Apply mutations? (true = execute, false = dry-run)'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: jobber-anomaly-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Reconcile Jobber anomalies
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          JOBBER_CLIENT_ID: ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET: ${{ secrets.JOBBER_CLIENT_SECRET }}
+        run: |
+          DAYS="${{ github.event.inputs.days || '90' }}"
+          LIMIT="${{ github.event.inputs.limit || '0' }}"
+          LIMIT_FLAG=""
+          if [ "$LIMIT" != "0" ]; then LIMIT_FLAG="--limit=$LIMIT"; fi
+          if [ "${{ github.event.inputs.execute || 'true' }}" = "true" ]; then
+            node scripts/sync/cron_jobber_reconcile_anomalies.js --days=$DAYS $LIMIT_FLAG --execute
+          else
+            node scripts/sync/cron_jobber_reconcile_anomalies.js --days=$DAYS $LIMIT_FLAG
+          fi
+
+      - name: Upload anomaly report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobber-anomaly-report
+          path: reports/jobber_anomalies_*.json
+          if-no-files-found: ignore
+          retention-days: 30
