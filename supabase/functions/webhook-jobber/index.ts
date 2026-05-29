@@ -248,11 +248,19 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   // which stores `jc.id` directly — also a base64 GID).
   const existingId = await findEntityBySourceId('client', 'jobber', gid)
 
-  // v2 clients table: only id, client_code, name, status, balance, notes
+  // v2 clients table: id, client_code, name, status, balance, notes, client_class
   const clientRow: Record<string, unknown> = {
     name: nameNormalized,
     status: c.isArchived ? 'INACTIVE' : 'ACTIVE',
     balance: c.balance ?? null,
+  }
+  // client_class: Jobber's `isCompany` is the canonical source of truth for
+  // Commercial vs Residential. Added 2026-05-29 (migration
+  // 2026-05-29_clients_class.sql). Only writes when isCompany is a real
+  // boolean so we don't clobber a backfilled value with NULL on partial
+  // payloads.
+  if (typeof c.isCompany === 'boolean') {
+    clientRow.client_class = c.isCompany ? 'commercial' : 'residential'
   }
   if (!existingId && parsedCode) clientRow.client_code = parsedCode
 

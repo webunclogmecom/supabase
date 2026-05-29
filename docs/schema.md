@@ -76,7 +76,7 @@ webhook_tokens                — system/ops tables
 
 ## Business tables
 
-### `clients` — 409 rows
+### `clients` — 390 rows
 
 | Column | Type | Notes |
 |---|---|---|
@@ -84,8 +84,10 @@ webhook_tokens                — system/ops tables
 | client_code | TEXT | 3-digit prefix, e.g. `"009"` |
 | name | TEXT | Clean display name |
 | status | TEXT | `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE` |
+| client_class | TEXT | `commercial` or `residential`. Source: Jobber `Client.isCompany`. Added 2026-05-29. Currently 311 commercial / 79 residential. See `project_residential_clients.md` — STORE != ACT-on. |
 | balance | NUMERIC(12,2) | Outstanding balance |
 | notes | TEXT | |
+| group_id | BIGINT FK | Optional client grouping |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | Trigger-managed |
 
