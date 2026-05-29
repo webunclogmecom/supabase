@@ -385,8 +385,8 @@ Enforced in app layer; not a DB CHECK constraint (vocabulary may evolve).
 | client_id | BIGINT FK → clients | |
 | service_date | DATE | |
 | dump_ticket_date | DATE | |
-| white_manifest_number | TEXT | DADE = `481xxx`, BROWARD = `294xxx` |
-| yellow_ticket_number | TEXT | |
+| white_manifest_number | TEXT | Miami-Dade only (e.g. `481xxx`, `824xxx`). NULL for Broward + Palm Beach manifests. |
+| yellow_ticket_number | TEXT | Broward + Palm Beach (e.g. `294xxx`, `305xxx`). Septage Receiving receipt — those jurisdictions don't issue a white manifest. |
 | manifest_images | JSONB | |
 | address_images | JSONB | |
 | sent_to_client | BOOLEAN | |
@@ -532,6 +532,20 @@ OAuth credentials for each source system. PK is `source_system`. `access_token`,
 | `v_vehicle_telemetry_latest` | Latest telemetry snapshot per vehicle. Computes `fuel_gallons_computed` on read from `vehicles.fuel_tank_capacity_gallons`; derives `odometer_miles`, `engine_hours`, `minutes_ago`. |
 | `visits_recent` | Last 30 days of visits with client context. |
 | `visits_with_status` | Visits enriched with derived status fields. |
+
+### customer schema views (Field Portal, customer-facing)
+
+Defined in `docs/migrations/2026-05-14c_customer_schema.sql` and incrementally
+re-shaped by later `2026-05-*_customer_*` migrations. Read by the Field Portal
+Lovable app (`fp.unclogme.app`) via PostgREST under the anon role.
+
+| View | Purpose |
+|---|---|
+| `customer.work_orders` | Per-visit work-order shape — driver, truck, manholes, DERM manifest #, jurisdiction, `wwtp_receipt_url` (white manifest form). `derm_manifest_url` is **always NULL** as of 2026-05-27 (Path C v2 — dump-run address sheet is multi-client by design; see ADR 017). `id` is `visits.public_id` (random base62, IDOR-safe). |
+| `customer.wo_photos` | Before/after/extra photos per work order. |
+| `customer.inspection_items` | POST-inspection items (valve closed, issues) surfaced per visit. |
+| `customer.recommendations` | Visit-level recommendations (per `visit_recommendations`). |
+| `customer.scheduled_visits` | Upcoming scheduled visits per client. |
 
 ### ops schema views (8 operational reporting views)
 
