@@ -232,12 +232,19 @@ function endOfWindowMonth(isoToday) {
   };
   for (const c of candidates) {
     // Read existing visits for this (client, service)
+    // deleted_at IS NULL added 2026-05-30: the soft-delete column (2026-05-29)
+    // postdates this script. Without the filter, a visit Jobber reported as
+    // "not found" (soft-deleted by cron_jobber_reconcile_anomalies) would still
+    // skew both the anchor (line ~245) and the ±7d idempotency check (line ~288),
+    // suppressing a legitimately-needed regeneration. We only anchor/dedup
+    // against live visits.
     const existing = await pg(`
       SELECT visit_date::text AS visit_date, visit_status, source
       FROM visits
       WHERE client_id = ${c.client_id}
         AND service_type = '${c.service_type}'
         AND visit_status IN ('completed','scheduled','late','today')
+        AND deleted_at IS NULL
       ORDER BY visit_date;
     `);
 
