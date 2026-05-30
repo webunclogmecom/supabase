@@ -122,3 +122,32 @@ Per-candidate-date check: any existing visit at `(same client, same service_type
 - [supabase/functions/webhook-jobber/index.ts](../../supabase/functions/webhook-jobber/index.ts) — `handleVisit` promotion logic, search "PROMOTE"
 - [scripts/migrations/add_visits_source_and_inactive_wipe_2026_05_12.sql](../../scripts/migrations/add_visits_source_and_inactive_wipe_2026_05_12.sql) — schema migration
 - Commit [`0b4ad9d`](https://github.com/webunclogmecom/supabase/commit/0b4ad9d) — initial deploy
+
+## Addendum — 2026-05-30 (live + self-maintaining)
+
+The cron has been **live on the daily GitHub Actions schedule since 2026-05-12**
+(commit `38ef309`); the "currently disabled" wording elsewhere was stale. Three
+hardening changes landed 2026-05-30:
+
+1. **`deleted_at` filter** (commit `9341898`) — the per-(client,service)
+   existing-visits read now filters `deleted_at IS NULL`, so soft-deleted visits
+   no longer skew the anchor or the ±7d idempotency check.
+2. **Test-account exclusion** (commit `e0ebbc1`) — `EXCLUDED_CLIENT_CODES`
+   (currently `['112-YA']`, Yan's test restaurant) are skipped at SELECT time so
+   they don't generate real schedule rows while staying `ACTIVE` for app testing.
+3. **Self-maintenance cleanup** (commit `7dab0fc`) — a pre-generation phase
+   soft-deletes the cron's own `supabase_cron` scheduled placeholders that are
+   `> 14d` past and were never completed/promoted, so the schedule stays clean
+   without manual sweeps. Guarded by `STALE_CLEANUP_MAX = 50` (aborts + logs a
+   sync_log `warning` rather than mass-deleting on a logic bug). Writes carry
+   `X-App-Source: recurring-visits-cron`.
+
+**Division of cleanup responsibility (no overlap):**
+- This generator owns **`source='supabase_cron'`** stale placeholders (item 3).
+- [`cron_jobber_reconcile_anomalies.js`](../../scripts/sync/cron_jobber_reconcile_anomalies.js)
+  (nightly `daily-jobber-anomaly-reconcile.yml`, 09:15 UTC) owns **`source='jobber'`**
+  orphans (Visit-not-found → soft-delete), scheduled-date drift, and flags
+  inverted timelines for ops review. Live + green as of 2026-05-30.
+
+Together they make the visit schedule fully self-maintaining: forward generation
++ our-stale cleanup + Jobber-side reconciliation, all unattended on daily crons.
