@@ -216,7 +216,7 @@ function endOfWindowMonth(isoToday) {
   //    the same run re-anchors affected clients forward off their last completed
   //    visit. Scoped to source='supabase_cron' only (Jobber-side handled by
   //    cron_jobber_reconcile_anomalies.js). Guarded by STALE_CLEANUP_MAX.
-  console.log('[0/5] Stale supabase_cron placeholder cleanup...');
+  console.log('[0/6] Stale supabase_cron placeholder cleanup...');
   const staleCutoff = addDays(today, -STALE_AGE_DAYS);
   const staleRows = await pg(`
     SELECT id FROM visits
@@ -246,7 +246,7 @@ function endOfWindowMonth(isoToday) {
   }
 
   // 1. Pull all candidate (client, service_config) pairs in one query.
-  console.log('\n[1/5] Loading candidate client × service rows...');
+  console.log('\n[1/6] Loading candidate client × service rows...');
   const filterClient = FILTER_CLIENT ? `AND c.client_code = '${FILTER_CLIENT.replace(/'/g, "''")}'` : '';
   const filterService = FILTER_SERVICE ? `AND sc.service_type = '${FILTER_SERVICE}'` : '';
   const filterExcluded = EXCLUDED_CLIENT_CODES.length
@@ -273,7 +273,7 @@ function endOfWindowMonth(isoToday) {
   console.log(`  ${candidates.length} (client × service) rows`);
 
   // 2. For each candidate, compute the chain and figure out what's missing.
-  console.log('\n[2/4] Computing schedule + idempotency check per (client × service)...');
+  console.log('\n[2/6] Computing schedule + idempotency check per (client × service)...');
   const toInsert = [];
   const summary = {
     skipped_no_anchor: 0,
@@ -371,7 +371,7 @@ function endOfWindowMonth(isoToday) {
   console.log(`    min-count beyond window:         ${summary.generated_min_count_only}`);
 
   // 3. Insert (or dry-run preview)
-  console.log(`\n[3/4] ${DRY_RUN ? 'DRY-RUN — would insert' : 'Inserting'} ${toInsert.length} visits...`);
+  console.log(`\n[3/6] ${DRY_RUN ? 'DRY-RUN — would insert' : 'Inserting'} ${toInsert.length} visits...`);
   if (toInsert.length > 0 && toInsert.length <= 20) {
     console.log('  Sample:');
     for (const v of toInsert.slice(0, 10)) {
@@ -396,8 +396,40 @@ function endOfWindowMonth(isoToday) {
     console.log(`  ✓ ${inserted} rows inserted`);
   }
 
-  // 4. Write sync_log entry
-  console.log(`\n[4/4] Writing sync_log entry...`);
+  // 4. Dup-detection safety net (interim — Jobber transition month). Flags
+  //    supabase_cron placeholders that coexist with a jobber visit for the same
+  //    client+service within ±7d — a merge-on-sync the promotion path should
+  //    have collapsed but didn't. DETECT + LOG ONLY (no auto-delete: a ±7d gap
+  //    is legitimate for high-frequency clients, so a human reviews). Surfaces in
+  //    sync_log as 'warning' so dups can't accumulate silently while the office
+  //    creates visits manually in Jobber. Remove once push-to-Jobber is live.
+  console.log('\n[4/6] Duplicate check (cron×jobber within ±7d)...');
+  const dupRows = await pg(`
+    SELECT cron.id AS cron_id, c.client_code, cron.service_type,
+           cron.visit_date::text AS cron_date, j.id AS jobber_id,
+           j.visit_date::text AS jobber_date, j.visit_status AS jobber_status,
+           ABS(j.visit_date - cron.visit_date) AS gap_days
+    FROM visits cron
+    JOIN clients c ON c.id = cron.client_id
+    JOIN visits j ON j.client_id = cron.client_id AND j.service_type = cron.service_type
+      AND j.source = 'jobber' AND j.deleted_at IS NULL
+      AND ABS(j.visit_date - cron.visit_date) <= 7
+    WHERE cron.source = 'supabase_cron' AND cron.visit_status = 'scheduled'
+      AND cron.deleted_at IS NULL
+    ORDER BY c.client_code;
+  `);
+  const dupCount = dupRows.length;
+  if (dupCount === 0) {
+    console.log('  ✓ no cron×jobber duplicates');
+  } else {
+    console.warn(`  ⚠ ${dupCount} potential cron×jobber duplicate(s) — promotion path may have missed these:`);
+    for (const d of dupRows.slice(0, 25)) {
+      console.warn(`    ${d.client_code} ${d.service_type}: cron#${d.cron_id}@${d.cron_date} vs jobber#${d.jobber_id}@${d.jobber_date} (${d.jobber_status}, gap ${d.gap_days}d)`);
+    }
+  }
+
+  // 5. Write sync_log entry
+  console.log(`\n[5/6] Writing sync_log entry...`);
   if (!DRY_RUN) {
     const finishedAt = new Date();
     const durationMs = finishedAt - startedAt;
@@ -407,7 +439,7 @@ function endOfWindowMonth(isoToday) {
     // so sync_log had zero generator rows. Fixed 2026-05-30.
     const logRow = {
       sync_source: 'generate_recurring_visits',
-      status: staleAborted ? 'warning' : 'success',
+      status: (staleAborted || dupCount > 0) ? 'warning' : 'success',
       started_at: startedAt.toISOString(),
       finished_at: finishedAt.toISOString(),
       rows_inserted: inserted,
@@ -423,6 +455,7 @@ function endOfWindowMonth(isoToday) {
         stale_soft_deleted: staleSoftDeleted,
         stale_cleanup_aborted: staleAborted,
         stale_cleanup_cap: STALE_CLEANUP_MAX,
+        cron_jobber_dups: dupCount,
         duration_ms: durationMs,
       },
     };
@@ -439,6 +472,7 @@ function endOfWindowMonth(isoToday) {
   console.log(`\n${'═'.repeat(64)}`);
   console.log(`  Done. ${DRY_RUN ? 'Would insert' : 'Inserted'} ${DRY_RUN ? toInsert.length : inserted} visits` +
     `; cleanup ${staleAborted ? 'ABORTED (over cap)' : (DRY_RUN ? `would remove ${staleRows.length}` : `removed ${staleSoftDeleted}`)}` +
+    `; cron×jobber dups ${dupCount}` +
     ` in ${Math.round((Date.now() - startedAt) / 1000)}s.`);
   console.log(`${'═'.repeat(64)}\n`);
 })().catch(e => { console.error('FATAL:', e.message, e.stack); process.exit(1); });
