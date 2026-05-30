@@ -401,14 +401,19 @@ function endOfWindowMonth(isoToday) {
   if (!DRY_RUN) {
     const finishedAt = new Date();
     const durationMs = finishedAt - startedAt;
+    // NB: sync_log columns are sync_source / rows_inserted / rows_updated /
+    // rows_errored / duration_seconds (NOT job_name / records_*). The prior
+    // shape failed the PostgREST insert silently every run (try/catch below),
+    // so sync_log had zero generator rows. Fixed 2026-05-30.
     const logRow = {
-      job_name: 'generate_recurring_visits',
-      source_system: 'supabase',
+      sync_source: 'generate_recurring_visits',
       status: staleAborted ? 'warning' : 'success',
       started_at: startedAt.toISOString(),
       finished_at: finishedAt.toISOString(),
-      records_processed: candidates.length,
-      records_succeeded: inserted,
+      rows_inserted: inserted,
+      rows_updated: staleSoftDeleted,
+      rows_errored: 0,
+      duration_seconds: Math.round(durationMs / 1000),
       details: {
         today, window_end: windowEnd,
         visits_inserted: inserted,
