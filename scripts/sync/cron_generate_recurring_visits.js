@@ -88,6 +88,10 @@ const FILTER_SERVICE = serviceArg ? serviceArg.split('=')[1].toUpperCase() : nul
 const IDEMPOTENCY_TOLERANCE_DAYS = 7;
 const ALLOWED_CLIENT_STATUSES = ['ACTIVE', 'RECURRING'];
 const ALLOWED_SERVICE_TYPES = ['GT', 'CL', 'WD', 'LS'];
+// Test / non-serviced accounts that must NEVER auto-generate visits, even
+// though they're kept ACTIVE for app-testing purposes. (112-YA "Yan's
+// Restaurant" is Yan's test account — confirmed by Fred 2026-05-30.)
+const EXCLUDED_CLIENT_CODES = ['112-YA'];
 // Visit-generation window: rest of current month + next N calendar months.
 // 2026-05-12: bumped from 2 → 3 months per Fred's request — gives ops a
 // rolling quarter of upcoming visibility once Yannick's view ships.
@@ -202,6 +206,9 @@ function endOfWindowMonth(isoToday) {
   console.log('[1/4] Loading candidate client × service rows...');
   const filterClient = FILTER_CLIENT ? `AND c.client_code = '${FILTER_CLIENT.replace(/'/g, "''")}'` : '';
   const filterService = FILTER_SERVICE ? `AND sc.service_type = '${FILTER_SERVICE}'` : '';
+  const filterExcluded = EXCLUDED_CLIENT_CODES.length
+    ? `AND (c.client_code IS NULL OR c.client_code NOT IN (${EXCLUDED_CLIENT_CODES.map(s => `'${s.replace(/'/g, "''")}'`).join(',')}))`
+    : '';
   const candidates = await pg(`
     SELECT
       c.id AS client_id,
@@ -217,6 +224,7 @@ function endOfWindowMonth(isoToday) {
       AND sc.frequency_days > 0
       ${filterClient}
       ${filterService}
+      ${filterExcluded}
     ORDER BY c.client_code, sc.service_type;
   `);
   console.log(`  ${candidates.length} (client × service) rows`);
