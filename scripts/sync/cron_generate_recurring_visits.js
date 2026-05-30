@@ -97,6 +97,16 @@ const EXCLUDED_CLIENT_CODES = ['112-YA'];
 // rolling quarter of upcoming visibility once Yannick's view ships.
 const WINDOW_MONTHS_AHEAD = 3;
 
+// Self-maintenance cleanup (added 2026-05-30). Soft-delete our OWN
+// supabase_cron scheduled placeholders that are > STALE_AGE_DAYS past and were
+// never completed/promoted. Jobber-sourced stale/orphan visits are NOT touched
+// here — cron_jobber_reconcile_anomalies.js owns those. STALE_CLEANUP_MAX is a
+// circuit-breaker: if a single run would soft-delete more than this, it ABORTS
+// (deletes nothing) and logs a warning, so a logic bug can't silently wipe the
+// schedule. In steady state (daily run) only a handful go stale per day.
+const STALE_AGE_DAYS = 14;
+const STALE_CLEANUP_MAX = 50;
+
 // ---- tiny HTTP helpers ------------------------------------------------------
 
 function http(opts, body) {
@@ -202,8 +212,41 @@ function endOfWindowMonth(isoToday) {
   if (FILTER_SERVICE) console.log(`║  Service filter:${FILTER_SERVICE.padEnd(46)} ║`);
   console.log(`╚══════════════════════════════════════════════════════════════╝\n`);
 
+  // 0. Stale-placeholder cleanup (self-maintenance). Runs BEFORE generation so
+  //    the same run re-anchors affected clients forward off their last completed
+  //    visit. Scoped to source='supabase_cron' only (Jobber-side handled by
+  //    cron_jobber_reconcile_anomalies.js). Guarded by STALE_CLEANUP_MAX.
+  console.log('[0/5] Stale supabase_cron placeholder cleanup...');
+  const staleCutoff = addDays(today, -STALE_AGE_DAYS);
+  const staleRows = await pg(`
+    SELECT id FROM visits
+    WHERE source = 'supabase_cron'
+      AND visit_status = 'scheduled'
+      AND deleted_at IS NULL
+      AND visit_date < '${staleCutoff}';
+  `);
+  let staleSoftDeleted = 0;
+  let staleAborted = false;
+  if (staleRows.length === 0) {
+    console.log(`  none older than ${STALE_AGE_DAYS}d to clean`);
+  } else if (staleRows.length > STALE_CLEANUP_MAX) {
+    staleAborted = true;
+    console.warn(`  ⚠ ABORT: ${staleRows.length} stale placeholders exceeds cap ${STALE_CLEANUP_MAX}. Deleting NONE — investigate before next run.`);
+  } else if (DRY_RUN) {
+    console.log(`  (DRY-RUN — would soft-delete ${staleRows.length} placeholder(s) dated < ${staleCutoff})`);
+  } else {
+    const ids = staleRows.map(r => r.id);
+    await rest(`/visits?id=in.(${ids.join(',')})`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal', 'X-App-Source': 'recurring-visits-cron' },
+      body: JSON.stringify({ deleted_at: new Date().toISOString() }),
+    });
+    staleSoftDeleted = ids.length;
+    console.log(`  ✓ soft-deleted ${staleSoftDeleted} stale placeholder(s) dated < ${staleCutoff}`);
+  }
+
   // 1. Pull all candidate (client, service_config) pairs in one query.
-  console.log('[1/4] Loading candidate client × service rows...');
+  console.log('\n[1/5] Loading candidate client × service rows...');
   const filterClient = FILTER_CLIENT ? `AND c.client_code = '${FILTER_CLIENT.replace(/'/g, "''")}'` : '';
   const filterService = FILTER_SERVICE ? `AND sc.service_type = '${FILTER_SERVICE}'` : '';
   const filterExcluded = EXCLUDED_CLIENT_CODES.length
@@ -361,7 +404,7 @@ function endOfWindowMonth(isoToday) {
     const logRow = {
       job_name: 'generate_recurring_visits',
       source_system: 'supabase',
-      status: 'success',
+      status: staleAborted ? 'warning' : 'success',
       started_at: startedAt.toISOString(),
       finished_at: finishedAt.toISOString(),
       records_processed: candidates.length,
@@ -372,6 +415,9 @@ function endOfWindowMonth(isoToday) {
         within_window: summary.generated_in_window,
         min_count_beyond_window: summary.generated_min_count_only,
         pairs_skipped_window_met: summary.skipped_window_met,
+        stale_soft_deleted: staleSoftDeleted,
+        stale_cleanup_aborted: staleAborted,
+        stale_cleanup_cap: STALE_CLEANUP_MAX,
         duration_ms: durationMs,
       },
     };
@@ -386,6 +432,8 @@ function endOfWindowMonth(isoToday) {
   }
 
   console.log(`\n${'═'.repeat(64)}`);
-  console.log(`  Done. ${DRY_RUN ? 'Would insert' : 'Inserted'} ${DRY_RUN ? toInsert.length : inserted} visits in ${Math.round((Date.now() - startedAt) / 1000)}s.`);
+  console.log(`  Done. ${DRY_RUN ? 'Would insert' : 'Inserted'} ${DRY_RUN ? toInsert.length : inserted} visits` +
+    `; cleanup ${staleAborted ? 'ABORTED (over cap)' : (DRY_RUN ? `would remove ${staleRows.length}` : `removed ${staleSoftDeleted}`)}` +
+    ` in ${Math.round((Date.now() - startedAt) / 1000)}s.`);
   console.log(`${'═'.repeat(64)}\n`);
 })().catch(e => { console.error('FATAL:', e.message, e.stack); process.exit(1); });
