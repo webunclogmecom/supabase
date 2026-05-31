@@ -249,9 +249,13 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   const existingId = await findEntityBySourceId('client', 'jobber', gid)
 
   // v2 clients table: id, client_code, name, status, balance, notes, client_class
+  // NB: `status` is set per-branch below, NOT here. Airtable is canonical for the
+  // ACTIVE/RECURRING/PAUSED/INACTIVE distinction; Jobber only knows archived/active.
+  // Writing 'ACTIVE' unconditionally clobbered AT's RECURRING/PAUSED on every
+  // cron_jobber replay (status flapped — fixed 2026-05-31). See
+  // docs/fixes/2026-05-31_client_status_flapping.md.
   const clientRow: Record<string, unknown> = {
     name: nameNormalized,
-    status: c.isArchived ? 'INACTIVE' : 'ACTIVE',
     balance: c.balance ?? null,
   }
   // client_class: Jobber's `isCompany` is the canonical source of truth for
@@ -262,23 +266,31 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   if (typeof c.isCompany === 'boolean') {
     clientRow.client_class = c.isCompany ? 'commercial' : 'residential'
   }
-  if (!existingId && parsedCode) clientRow.client_code = parsedCode
-
   let entityId: number
 
   if (existingId) {
-    // Self-heal: if existing row has no client_code yet and the new name has
-    // a parseable prefix, fill it in. Don't overwrite an existing code —
-    // Airtable owns the authoritative value.
-    if (parsedCode) {
-      const { data: cur } = await supabase
-        .from('clients').select('client_code').eq('id', existingId).maybeSingle()
-      if (cur && !cur.client_code) clientRow.client_code = parsedCode
+    // Read current status + code. Airtable owns the ACTIVE/RECURRING/PAUSED/
+    // INACTIVE distinction, so DON'T clobber a richer AT status with 'ACTIVE':
+    //   - Jobber archived       → INACTIVE (deactivation is authoritative)
+    //   - reactivating INACTIVE → ACTIVE
+    //   - otherwise             → leave status untouched (preserve AT value)
+    const { data: cur } = await supabase
+      .from('clients').select('client_code, status').eq('id', existingId).maybeSingle()
+    if (c.isArchived) {
+      clientRow.status = 'INACTIVE'
+    } else if (cur && cur.status === 'INACTIVE') {
+      clientRow.status = 'ACTIVE'
     }
+    // Self-heal client_code only if missing — Airtable owns the authoritative value.
+    if (parsedCode && cur && !cur.client_code) clientRow.client_code = parsedCode
     const { error } = await supabase.from('clients').update(clientRow).eq('id', existingId)
     if (error) throw new Error(`Client update failed: ${error.message}`)
     entityId = existingId
   } else {
+    // INSERT — Jobber-only default; the AT webhook refines status later if the
+    // client is in Airtable.
+    clientRow.status = c.isArchived ? 'INACTIVE' : 'ACTIVE'
+    if (parsedCode) clientRow.client_code = parsedCode
     // Sanity check before INSERT: warn if a client with the same client_code,
     // email, or phone already exists. We DO insert (Jobber GID is the source
     // of truth), but log a warning so the weekly dedup audit can catch the
