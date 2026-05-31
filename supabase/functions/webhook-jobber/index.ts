@@ -433,6 +433,20 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     return { entity_id: 0 }
   }
 
+  // Excluded test / non-synced accounts: their Jobber visits must NEVER enter
+  // our DB. 112-YA "Yan's Restaurant" is Yan's test account — it still has a
+  // leftover Jobber recurring job generating ~81 visits out to 2030. We already
+  // exclude it from our own generator; this is the matching guard on the inbound
+  // Jobber sync (both the real-time webhook and cron_jobber's replay funnel
+  // through here). Matched by Jobber client GID. Added 2026-05-30.
+  const EXCLUDED_JOBBER_CLIENT_GIDS = new Set<string>([
+    'Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=', // 112-YA Yan's Restaurant (test)
+  ])
+  if (v.job?.client?.id && EXCLUDED_JOBBER_CLIENT_GIDS.has(v.job.client.id)) {
+    console.log(`[handleVisit] visit ${numericId} belongs to excluded test client ${v.job.client.id} (112-YA) — skipping`)
+    return { entity_id: 0 }
+  }
+
   // Resolve FKs via entity_source_links
   // FK lookups — use the full base64 GID directly from Jobber's GraphQL
   // response. Don't decode to numericId; ESL.source_id stores the GID.
