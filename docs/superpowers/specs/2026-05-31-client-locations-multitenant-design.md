@@ -231,6 +231,25 @@ multi-client, H4 under-seeded coverage gap).
 4. Decide whether single-GDO clients (134) get a trivial 1-location row for uniformity, or
    stay implicit (client = its sole location).
 
+### Phase-2 batch 1 — APPLIED 2026-06-01 (migration `2026-06-01c`)
+
+Evidence: `reports/_gdo_dedup_evidence.json` (all 26 GDOs on the 12 multi-GDO clients, with
+manifest-reference + permit-doc signals).
+
+- **Soft-deleted 5 invalid GDO rows** (status→INACTIVE, 0 manifests + no doc each, reversible):
+  132-PUM `GDO-000951` (typo-dup of `GDO-00951`), 043-MIL `"Needs review"` + `"GDO-14117 / GDO-11024"`,
+  192-FRK `"Not available"`, 193-FRK `"Not available"`. → those clients collapse to a single facility.
+- **Backfilled 6 locations** for the 3 confirmed multi-facility clients (different street addresses),
+  naming = label-else-street-address (Fred): 025-GRO (9467 Harding + Adriana), 045-NU (266 Miracle
+  Mile + 3250 NE 1st Ave), 175-PV (701 Brickell + 1104 S Miami) — each linked to its GDO.
+- **HELD pending Diego/Yannick DERM verification** (`docs/phase2-gdo-verification-message.md`): the 3
+  "phantom" same-property 2nd GDOs — 060-TU `GDO-13076`, 155-PV `GDO-12838`, 170-PV `GDO-11433` — plus
+  two flags (Mila possible `GDO-11024`; Fresko Bakery `GDO-01861` is INACTIVE).
+- **Single-facility clients NOT given a trivial location** (Q5 deferred): Pummarola, Mila, Fresko,
+  Fresko Bakery, 139-LTG.
+
+After this batch: `client_locations` = 14 rows (Casa Neos 3 + Wynd 5 + 6 here); `gdos.client_location_id` set on 9.
+
 ---
 
 ## 11. Open questions
