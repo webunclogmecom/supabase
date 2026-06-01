@@ -1,0 +1,58 @@
+name: Jobber upcoming visits sync
+
+# Phase 1 of the Calendar <-> Jobber reconcile.
+#
+# cron_jobber.js cursors visits on completedAt, so it only ever pulls COMPLETED
+# visits — Jobber's materialized FUTURE (scheduled) visit instances never land in
+# our DB. This sync pulls them (visits filtered by startAt >= today) and replays
+# each through webhook-jobber's handleVisit, which:
+#   - upserts as visit_status='scheduled', infers service_type, links the Jobber GID
+#   - PROMOTES/dedups a matching supabase_cron projection instead of duplicating
+#   - already excludes 112-YA (test account)
+# => the Calendar shows Jobber's real near-term schedule + our projections beyond.
+#
+# Idempotent (keyed on Jobber Visit GID). Reads + refreshes the Jobber token from
+# public.webhook_tokens, so it only needs Supabase secrets. Runs every 4 hours.
+#
+# NOTE: this is the READ half. The WRITE half (Calendar -> Jobber push) is Phase 2
+# and needs Yannick's Jobber Dev OAuth (write scope) — task #80.
+
+on:
+  schedule:
+    - cron: '15 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run? (true = pull + count only, no writes)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: jobber-upcoming-visits
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Sync Jobber upcoming visits
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run || 'false' }}" = "true" ]; then
+            node scripts/sync/cron_jobber_upcoming_visits.js --dry-run
+          else
+            node scripts/sync/cron_jobber_upcoming_visits.js
+          fi
