@@ -1,0 +1,89 @@
+# Answer — DERM Tracker pre-2026 manifests (Supabase session, 2026-06-01)
+
+Reply to `Building Apps/DERM Tracker/docs/pending-supabase-question-pre2026-data.md`.
+Diagnostics: `Supabase/reports/_derm_pre2026.json` + `_derm_health_split.json`
+(probe `scripts/probes/_derm_pre2026_diagnostics.js`).
+
+## TL;DR
+
+**The pre-2026 data is legitimate historical DERM compliance — do NOT hard-filter or purge it.**
+It's a one-time Airtable backfill from the 2026-04-29 DB do-over (AT is canonical for
+`derm_manifests`). The right scoping is an **app default-view** (default to current year, older
+reachable), **not** a `derm.*` view filter or a sync change. That routing matches the brief: data
+scoping stays here (answered: keep it), the default-view is the Building Apps session's to set.
+
+## The 5 questions, answered
+
+**1. How far back / count by year** — 977 manifests total. **2025: 598 (61%)**, **2026: 379**.
+Service dates span **2025-03-20 → 2026-05-27**. (Neither `derm.manifests` nor `derm.manifest_health`
+filters — both return all 977; anon has a permissive read policy and sees all 977, so the app's
+"227" is its own already-built default filter, not RLS.)
+
+**2. Pre-2026: real open gaps vs just old/complete** — of the 598 pre-2026:
+- **525 are `fully_complete`** (88%) — old, documented, done. Pure list clutter.
+- **73 are "unhealthy"** (12%): 50 `has_number_no_pdfs`, 21 `partial_other`, 2 `has_pdfs_no_number`,
+  **0 `empty_placeholder`**.
+- **The work queue is 91% pre-2026:** the app's Health queue (`health_state <> 'fully_complete'`) is
+  **80 total — 73 pre-2026 + only 7 from 2026.** Current-year operations are 98% clean.
+- **These 73 are NOT active "never filed" gaps.** 50/73 already have a DERM manifest NUMBER (so they
+  were filed with the city) but no PDF scan in our system. **72 of 73 cluster in March–April 2025**
+  (36 + 36; the 73rd is Oct 2025) — the very start of the dataset. **0 of 73 are linked to a visit;**
+  69/73 belong to active clients. Read: **document-scan backfill gaps from the earliest period**, not
+  live operational misses.
+
+**3. Where the pre-2026 data comes from** — a **one-time Airtable backfill** during the **2026-04-29
+DB do-over**. Every one of the 977 rows has `created_at` in 2026; `entity_source_links` first_seen =
+2026-04-29; 971/977 carry an `airtable` source link. **Not stale/test rows; not an ongoing sync of
+old data** (the AT pipeline is sunsetting). AT is the canonical DERM source, so this is real history.
+
+**4. Intended scope** — Fred has stated current-year (2026) operations. (If the intent were
+"manage all historical DERM compliance," the answer flips to *keep showing everything* — please
+confirm, but the recommendation below assumes current-year.)
+
+**5. Where scoping should live** — **app default-view only.** Specifically NOT:
+- ❌ **`derm.*` view year filter** — would permanently hide the 73 older gaps from the Health queue =
+  masking real (if old) incompleteness. The exact anti-pattern the brief flagged. Keep views exposing all.
+- ❌ **Sync filter** — it's a one-time backfill; no new old rows arrive; AT is sunsetting anyway.
+- ❌ **Purge / archive flag** — it's canonical historical compliance data; keep it.
+- ✅ **App default-view** — default DERM Tracker to current-year, older reachable via the date filter
+  that's already built.
+
+## Recommendation (boundary routing)
+
+**Supabase session owns (DONE — no change needed):** the data is legit; `derm_manifests` keeps all
+977 rows; the `derm.*` views correctly expose everything; no sync/purge/flag. Nothing to mutate.
+
+**Building Apps session owns (the actual change):** default both surfaces to current year, keep older
+reachable —
+- **`/manifests` list:** default to 2026; the 598 pre-2026 rows (mostly complete) are just clutter at
+  the bottom. Cosmetic.
+- **`/manifests/health` queue (the important one):** default to current year so the **7 real 2026
+  gaps** are visible instead of buried under 73 backfill-era items — but keep a **"Historical backlog
+  (73)"** toggle/tab so they're **not hidden**, just not masquerading as the live queue.
+
+Since `service_date` is exposed (ISO `YYYY-MM-DD` text, sorts correctly), the app can filter
+`service_date >= '2026-01-01'` directly — no DB change required.
+
+## ⚠️ Time-sensitive, separate from the scope question
+
+The 50 `has_number_no_pdfs` manifests (have a DERM number, missing the PDF scan) likely have those
+scans as **Airtable attachments** — and **AT sunsets this week.** If we ever want to close those gaps,
+we must pull the PDFs from AT into Supabase Storage **before sunset**, or they may be unrecoverable
+(same risk class as the Jobber-notes→photos migration). This is a data-completeness task, independent
+of the app-scope decision. The Supabase session can verify whether those AT records have attachments
+and migrate them if so — flag if you want this run now.
+
+---
+
+## Paste-ready block to relay to the Building Apps session
+
+> **Supabase session's answer on the pre-2026 manifests:** the old data is **legit** — a one-time
+> Airtable backfill (2026-04-29 do-over) of real historical DERM compliance; AT is canonical. **Keep
+> it; no DB view/sync/purge change.** Scope is an **app default-view**: default both `/manifests` and
+> `/manifests/health` to **current year (2026)**, with the existing date filter exposing older.
+> Filter on `service_date >= '2026-01-01'` (it's ISO text, sorts fine).
+> **Why it matters for Health:** the work queue is 80 items but only **7 are 2026**; the other **73
+> are Mar–Apr 2025 backfill-era** records that already have a DERM number but no PDF scan (not live
+> gaps). Don't *delete* them from the queue — put them behind a **"Historical backlog (73)"** tab so
+> the 7 current gaps aren't buried. Confirm product intent is current-year ops (Fred said yes); if
+> it's "manage all history," keep showing everything instead.
