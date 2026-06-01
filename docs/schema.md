@@ -430,7 +430,10 @@ Enforced in app layer; not a DB CHECK constraint (vocabulary may evolve).
 | sent_to_client | BOOLEAN | |
 | sent_to_city | BOOLEAN | |
 | notes | TEXT | **NEW 2026-06-01** — ops annotation (damaged/lost paper manifest, known accepted doc gaps). Not synced from Airtable; exposed via `derm.manifests` + `derm.manifest_health`. |
+| derm_address_no | BIGINT | **NEW 2026-06-01** — sequential DERM Address sheet number (`next_derm_address_id()`, starts 1000) printed on the generated PDF. Per dump-ticket sheet → written to all sibling rows on final generation. Indexed; exposed via `derm.manifests`/`derm.manifest_health` for search. |
 | created_at, updated_at | TIMESTAMPTZ | |
+
+> `public.disposal_facilities` gained a **`county`** column 2026-06-01 (`Miami-Dade`/`Broward`, NULL for non-DERM-WWTP) for the DERM Tracker facility dropdown; the Broward WWTP `Water and Wastewater Services` was added. New seq `public.derm_address_seq` (start 1000) + RPC `public.next_derm_address_id()` (service_role/authenticated execute).
 
 ### `manifest_visits` — 1079 rows
 
