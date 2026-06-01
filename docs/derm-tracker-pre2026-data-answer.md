@@ -104,3 +104,10 @@ and migrate them if so — flag if you want this run now.
 > form needs a graceful "please select a client" check to show a friendly message instead of a raw
 > Postgres error. (If your form has a legit flow that inserts before a client is chosen, tell me and
 > I'll reconsider — it's reversible.)
+
+**✅ CLOSED 2026-06-01.** Building Apps confirmed there's no legitimate client-less insert — keep the
+constraint. The app now handles it end-to-end: it won't attempt a client-less save (File disabled +
+inline prompt), and if the DB ever rejects one the user sees *"Please select a client before saving
+this manifest"* — never a raw Postgres error. **Loop closed: DB enforces (`client_id NOT NULL`, verified
+`is_nullable=NO`, 0 client-less rows), app prevents + gracefully handles.** (Mirrors DERM Tracker
+CLAUDE.md rule #10.)
