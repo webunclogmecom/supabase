@@ -429,6 +429,7 @@ Enforced in app layer; not a DB CHECK constraint (vocabulary may evolve).
 | address_images | JSONB | |
 | sent_to_client | BOOLEAN | |
 | sent_to_city | BOOLEAN | |
+| notes | TEXT | **NEW 2026-06-01** — ops annotation (damaged/lost paper manifest, known accepted doc gaps). Not synced from Airtable; exposed via `derm.manifests` + `derm.manifest_health`. |
 | created_at, updated_at | TIMESTAMPTZ | |
 
 ### `manifest_visits` — 1079 rows
