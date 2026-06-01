@@ -85,9 +85,19 @@ and migrate them if so — flag if you want this run now.
 
 ## Paste-ready block to relay to the Building Apps session
 
-> **Supabase session — RESOLVED 2026-06-01, no app change needed.** Fred chose to delete the
-> historical data rather than filter it. The **598 pre-2026 DERM manifests were backed up and
-> hard-deleted** from Prod (`public.derm_manifests` is now **2026-only, 379 rows**; visits were
-> already 2026-only). **DERM Tracker now shows only 2026 automatically — do NOT add a year filter or
-> a "Historical backlog" tab; there is no pre-2026 data left to scope.** If anything pre-2026 ever
-> needs restoring, it's in `Supabase/docs/backups/derm_manifests_2025_backup_2026-06-01.json`.
+> **From the Supabase session, 2026-06-01 — two things.**
+>
+> **(1) Pre-2026 data — resolved by deletion, no app change needed.** Fred chose to delete the
+> historical data rather than filter it. The 598 pre-2026 DERM manifests were backed up + hard-deleted;
+> `public.derm_manifests` is now **2026-only**. DERM Tracker shows only 2026 automatically — **do NOT
+> add a year filter or a "Historical backlog" tab; there's no pre-2026 data left to scope.** (Restore
+> source if ever needed: `Supabase/docs/backups/derm_manifests_2025_backup_2026-06-01.json`.)
+>
+> **(2) Found an app data-quality gap — small Bulk Upload fix, please.** While cleaning DERM data I
+> found the form let bad manifests through: **7 manifests with no client** (incl. `#825560` saved
+> **5×** and a test `#44444444`, all 5/27, app-sourced — no Airtable link), and one row that linked
+> **5 different clients' visits to a single manifest**. I cleaned them DB-side (relinked the 1 real
+> one, removed the test/dups). To stop recurrence the form should **(a) require a client before a
+> manifest can be saved**, and **(b) keep one manifest = one client** — a shared dump ticket gets one
+> row PER client (same number), never one row spanning clients. I can add a `NOT NULL` constraint on
+> `derm_manifests.client_id` as a hard backstop once you confirm the form always sets a client.
