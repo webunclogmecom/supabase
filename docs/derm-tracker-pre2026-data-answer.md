@@ -99,5 +99,8 @@ and migrate them if so — flag if you want this run now.
 > **5 different clients' visits to a single manifest**. I cleaned them DB-side (relinked the 1 real
 > one, removed the test/dups). To stop recurrence the form should **(a) require a client before a
 > manifest can be saved**, and **(b) keep one manifest = one client** — a shared dump ticket gets one
-> row PER client (same number), never one row spanning clients. I can add a `NOT NULL` constraint on
-> `derm_manifests.client_id` as a hard backstop once you confirm the form always sets a client.
+> row PER client (same number), never one row spanning clients. **NOTE: `derm_manifests.client_id` is
+> now `NOT NULL` (live + tested 2026-06-01)** — a client-less save will be rejected by the DB, so the
+> form needs a graceful "please select a client" check to show a friendly message instead of a raw
+> Postgres error. (If your form has a legit flow that inserts before a client is chosen, tell me and
+> I'll reconsider — it's reversible.)

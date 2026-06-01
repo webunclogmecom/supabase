@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-06-01",
+  "note": "held #825560 app-test manifest, Fred-authorized removal",
+  "manifest": [
+    {
+      "id": 1132,
+      "client_id": null,
+      "service_date": "2026-05-27",
+      "dump_ticket_date": "2026-05-27",
+      "white_manifest_number": "825560",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-05-27 18:57:33.735631+00",
+      "updated_at": "2026-05-27 18:57:35.28106+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": 2,
+      "derm_manifest_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1132/manifest_1.JPG",
+      "derm_address_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1132/address_1.JPG",
+      "gdo_id": null,
+      "derm_manifest_extra_urls": [],
+      "derm_address_extra_urls": [],
+      "deleted_at": null
+    }
+  ],
+  "manifest_visits": [
+    {
+      "manifest_id": 1132,
+      "visit_id": 3903
+    },
+    {
+      "manifest_id": 1132,
+      "visit_id": 5028
+    },
+    {
+      "manifest_id": 1132,
+      "visit_id": 5043
+    },
+    {
+      "manifest_id": 1132,
+      "visit_id": 5092
+    },
+    {
+      "manifest_id": 1132,
+      "visit_id": 5131
+    }
+  ]
+}
