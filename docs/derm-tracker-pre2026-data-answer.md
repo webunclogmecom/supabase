@@ -4,6 +4,14 @@ Reply to `Building Apps/DERM Tracker/docs/pending-supabase-question-pre2026-data
 Diagnostics: `Supabase/reports/_derm_pre2026.json` + `_derm_health_split.json`
 (probe `scripts/probes/_derm_pre2026_diagnostics.js`).
 
+> ## ✅ RESOLVED 2026-06-01 — by deletion, NOT by filtering
+> Fred chose to **remove** the historical data rather than scope the app to it. The **598 pre-2026
+> DERM manifests were backed up** (`Supabase/docs/backups/derm_manifests_2025_backup_2026-06-01.json`,
+> 1.04 MB — manifests + dependent rows) and then **hard-deleted** from Prod. `public.derm_manifests`
+> is now **2026-only (977 → 379)**; visits were already 2026-only. **DERM Tracker therefore shows only
+> 2026 automatically — NO app change is needed** (do not add a year filter or "Historical backlog"
+> tab; there is no pre-2026 data left). The analysis below is kept for the record.
+
 ## TL;DR
 
 **The pre-2026 data is legitimate historical DERM compliance — do NOT hard-filter or purge it.**
@@ -77,13 +85,9 @@ and migrate them if so — flag if you want this run now.
 
 ## Paste-ready block to relay to the Building Apps session
 
-> **Supabase session's answer on the pre-2026 manifests:** the old data is **legit** — a one-time
-> Airtable backfill (2026-04-29 do-over) of real historical DERM compliance; AT is canonical. **Keep
-> it; no DB view/sync/purge change.** Scope is an **app default-view**: default both `/manifests` and
-> `/manifests/health` to **current year (2026)**, with the existing date filter exposing older.
-> Filter on `service_date >= '2026-01-01'` (it's ISO text, sorts fine).
-> **Why it matters for Health:** the work queue is 80 items but only **7 are 2026**; the other **73
-> are Mar–Apr 2025 backfill-era** records that already have a DERM number but no PDF scan (not live
-> gaps). Don't *delete* them from the queue — put them behind a **"Historical backlog (73)"** tab so
-> the 7 current gaps aren't buried. Confirm product intent is current-year ops (Fred said yes); if
-> it's "manage all history," keep showing everything instead.
+> **Supabase session — RESOLVED 2026-06-01, no app change needed.** Fred chose to delete the
+> historical data rather than filter it. The **598 pre-2026 DERM manifests were backed up and
+> hard-deleted** from Prod (`public.derm_manifests` is now **2026-only, 379 rows**; visits were
+> already 2026-only). **DERM Tracker now shows only 2026 automatically — do NOT add a year filter or
+> a "Historical backlog" tab; there is no pre-2026 data left to scope.** If anything pre-2026 ever
+> needs restoring, it's in `Supabase/docs/backups/derm_manifests_2025_backup_2026-06-01.json`.

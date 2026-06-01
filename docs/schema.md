@@ -413,7 +413,9 @@ Enforced in app layer; not a DB CHECK constraint (vocabulary may evolve).
 | receipt_url | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
 
-### `derm_manifests` — 898 rows
+### `derm_manifests` — 379 rows · 2026-only
+
+> Pre-2026 manifests (598 rows, 2025 service dates from the 2026-04-29 Airtable backfill) were backed up + hard-deleted 2026-06-01 (`docs/backups/derm_manifests_2025_backup_2026-06-01.json`) per Fred — the DB now holds only 2026-forward DERM data.
 
 | Column | Type | Notes |
 |---|---|---|
