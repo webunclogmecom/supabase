@@ -1,0 +1,122 @@
+{
+  "captured_at": "2026-06-01",
+  "note": "merge dup clients 144-LTG (147->466) + 172-NU (delete empty 224); Jobber rows kept",
+  "child_counts": {
+    "derm_manifests": {
+      "c147": 1,
+      "c224": 0
+    },
+    "service_configs": {
+      "c147": 1,
+      "c224": 0
+    }
+  },
+  "clients": [
+    {
+      "id": 147,
+      "client_code": "144-LTG",
+      "name": "(Bakery) Lettuce and Tomato Restaurant",
+      "status": "INACTIVE",
+      "balance": "0.00",
+      "notes": "[2026-05-25 Phase 7 merge] Merged into 139-LTG Lettuce and Tomato (id=5) — same business, two client records. All child rows reassigned. The duplicate GDO-08912 was pre-emptively renamed + demoted before the FK-rewire to bypass the gdos_client_gdo_unique constraint.",
+      "created_at": "2026-04-29 19:46:08.389792+00",
+      "updated_at": "2026-05-30 00:48:10.613499+00",
+      "group_id": null,
+      "client_class": "commercial"
+    },
+    {
+      "id": 224,
+      "client_code": "172-NU",
+      "name": "Nu Real food - Coral gables",
+      "status": "PAUSED",
+      "balance": "308.42",
+      "notes": "[2026-05-25 Phase 7 merge] Merged into 045-NU Nu Real Food (id=371) — same business, two client records at adjacent block (3250 NE 1st Ave vs 3252 Buena Vista Blvd). All child rows reassigned.",
+      "created_at": "2026-04-29 19:46:09.285119+00",
+      "updated_at": "2026-05-31 18:08:18.663614+00",
+      "group_id": null,
+      "client_class": "commercial"
+    },
+    {
+      "id": 464,
+      "client_code": "172-NU",
+      "name": "Nu Real food - Coral gables",
+      "status": "PAUSED",
+      "balance": "0.00",
+      "notes": null,
+      "created_at": "2026-05-27 20:35:44.828719+00",
+      "updated_at": "2026-05-31 18:08:12.431373+00",
+      "group_id": null,
+      "client_class": "commercial"
+    },
+    {
+      "id": 466,
+      "client_code": "144-LTG",
+      "name": "(Bakery) Lettuce and Tomato Restaurant",
+      "status": "ACTIVE",
+      "balance": "0.00",
+      "notes": null,
+      "created_at": "2026-05-29 17:03:50.981165+00",
+      "updated_at": "2026-06-01 00:10:30.973094+00",
+      "group_id": null,
+      "client_class": "commercial"
+    }
+  ],
+  "esl_147_224": [
+    {
+      "id": 37074,
+      "entity_type": "client",
+      "entity_id": 147,
+      "source_system": "airtable",
+      "source_id": "rec7AEEMxu2KxUPdj",
+      "source_name": null,
+      "match_method": "webhook",
+      "match_confidence": "1",
+      "synced_at": "2026-05-26 15:54:07.796+00",
+      "created_at": "2026-05-26 15:54:07.810913+00"
+    }
+  ],
+  "children_147": {
+    "derm_manifests": [
+      {
+        "id": 679,
+        "client_id": 147,
+        "service_date": "2026-02-13",
+        "dump_ticket_date": "2026-02-13",
+        "white_manifest_number": null,
+        "yellow_ticket_number": "298064",
+        "sent_to_client": true,
+        "sent_to_city": false,
+        "created_at": "2026-04-29 19:51:00.074254+00",
+        "updated_at": "2026-05-27 15:36:43.899467+00",
+        "wwtp_receipt_number": null,
+        "wwtp_receipt_document_path": null,
+        "wwtp_ticket_number": null,
+        "disposal_facility_id": null,
+        "derm_manifest_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/GT%20-%20Visits%20Images/derm/679/manifest.jpg",
+        "derm_address_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/GT%20-%20Visits%20Images/derm/679/address.jpg",
+        "gdo_id": 29,
+        "derm_manifest_extra_urls": [],
+        "derm_address_extra_urls": [],
+        "deleted_at": null
+      }
+    ],
+    "service_configs": [
+      {
+        "id": 1714,
+        "client_id": 147,
+        "service_type": "GT",
+        "frequency_days": 60,
+        "first_visit": null,
+        "last_visit": null,
+        "stop_date": null,
+        "price_per_visit": "275.00",
+        "schedule_notes": null,
+        "created_at": "2026-05-26 15:54:07.88431+00",
+        "updated_at": "2026-05-30 00:48:10.725119+00",
+        "equipment_size_gallons": "25",
+        "material_type": null,
+        "property_id": null
+      }
+    ]
+  }
+}

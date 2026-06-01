@@ -168,9 +168,9 @@ def build_cover():
                  "<b>Goal:</b> model the real ones like Wynd 28 and Casa Neos (one client → N locations)"]:
         story.append(Paragraph(line, S["cover_meta"]))
     story.append(Spacer(1,0.45*inch))
-    cards=[[stat_card("16","BRAND FAMILIES",BG_NEUTRAL), stat_card("12","SHARED-ADDRESS",ORANGE_SOFT),
-            stat_card("2","DUPLICATE RECORDS",ORANGE_SOFT), stat_card("2","ALREADY DONE",BG_NEUTRAL)]]
-    ct=Table(cards,colWidths=[1.7*inch]*4,hAlign="LEFT")
+    cards=[[stat_card("16","BRAND FAMILIES",BG_NEUTRAL), stat_card("12","SHARED-ADDRESS CLUSTERS",ORANGE_SOFT),
+            stat_card("2","ALREADY MODELLED",BG_NEUTRAL)]]
+    ct=Table(cards,colWidths=[1.95*inch]*3,hAlign="LEFT")
     ct.setStyle(TableStyle([("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(2,-1),12)]))
     story.append(ct); story.append(Spacer(1,0.4*inch))
     story.append(Paragraph("How to read this", S["h2"]))
@@ -198,16 +198,11 @@ def build_body():
     story.append(addr_table(CROSS_BRAND_ADDR))
     story.append(Paragraph("Adjacent storefronts — probably separate, please confirm", S["h2"]))
     story.append(addr_table(ADJACENT))
-    story.append(PageBreak())
-
-    story.append(Paragraph("C. Duplicate client records", S["h1"]))
-    story.append(Paragraph("Same code entered twice (one populated row + one empty twin). OK to merge?", S["lead"]))
-    story.append(dup_table())
     story.append(Spacer(1,0.3*inch))
     story.append(Paragraph("What we need back", S["h2"]))
     story.append(Paragraph("1. Section A: confirm the brand families + whether each chain should be one client with N "
-        "locations.<br/>2. Section B: for each address, “one operator, multiple units” vs “separate "
-        "businesses.”<br/>3. Section C: OK to merge the duplicates.", S["lead"]))
+        "locations.<br/>2. Section B: for each address, “one operator, multiple units” vs “separate businesses.”",
+        S["lead"]))
     return story
 
 def build_pdf():

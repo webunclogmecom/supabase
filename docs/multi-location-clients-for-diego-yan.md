@@ -68,13 +68,14 @@ like Wynd/Casa Neos), or **separate businesses** that just share a building?
 
 ---
 
-## C. Duplicate client records (same code entered twice — data cleanup, we'll merge)
-- `172-NU` Nu Real Food — Coral Gables: ids 464 + 224
-- `144-LTG` Lettuce & Tomato (Bakery): ids 466 + 147
+## C. Duplicate client records — RESOLVED 2026-06-01
+Two codes had **two rows in our database** — a 2026-04-29 Airtable-backfill row + a later Jobber row
+that didn't match it. **This was NOT an Airtable duplicate** (AT had one record each). Consolidated:
+`144-LTG` (AT row merged into the Jobber row) + `172-NU` (empty orphan removed). 0 duplicate client
+codes remain. No action needed from ops.
 
 ---
 
 ## What we need back
 1. **List A:** confirm the brand families + whether each chain should become one client with N locations.
 2. **List B:** for each shared-address row, tell us "one operator, multiple units" vs "separate businesses."
-3. **List C:** OK to merge the duplicates.
