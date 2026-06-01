@@ -21,30 +21,41 @@ secrets). Fred/Claude stores them in `public.webhook_tokens` and the write-back 
    - **Scheduling / Visits** (read + **write**)
    *(Keep every read scope the integration already uses; just add the write ones. Exact scope names
    are shown in Jobber's UI — pick the write equivalents of jobs + scheduling/visits.)*
-4. Under **Redirect URIs**, make sure this exact URI is listed:
-   **`http://localhost:3000/callback`**
+4. Under **Redirect URIs**, add this exact URI — **it MUST be `https://`** (Jobber rejects `http://`):
+   **`https://localhost:3000/callback`**
+   *(If Jobber also refuses `localhost`, use a domain we own instead, e.g.
+   `https://fp.unclogme.app/jobber-callback` — nothing has to actually serve it; see Step 3.)*
 5. Copy the app's **Client ID** and **Client Secret** (Settings / OAuth section). Save them for Step 4.
 
 ## Step 2 — Point our tool at the app
-On the machine doing the auth (Fred's, or Yannick's), in `Supabase/.env` set:
+On the machine doing the exchange (Fred's), in `Supabase/.env` set:
 ```
 JOBBER_CLIENT_ID=<the app's Client ID>
 JOBBER_CLIENT_SECRET=<the app's Client Secret>
-JOBBER_REDIRECT_URI=http://localhost:3000/callback
+JOBBER_REDIRECT_URI=https://localhost:3000/callback   # must match Jobber EXACTLY
 ```
 
-## Step 3 — Authorize AS AN ADMIN (the critical step)
-1. In the **same browser**, log into **Jobber as Yannick (the administrator)** — i.e. the "Allow"
-   click must happen on the admin account, not Fred's. *(If Fred is running it, log into Yannick's
-   Jobber account in that browser first.)*
-2. From `Supabase/`, run:
+## Step 3 — Authorize AS AN ADMIN (the critical step), then exchange the code
+Because the redirect must be `https://`, we can't auto-capture on a plain local server. We do a
+no-server manual exchange instead. **The token inherits the permissions of whoever clicks "Allow"**,
+so an **admin (Yannick)** must do the Allow click — but anyone can run the exchange.
+
+1. Print the consent URL:
    ```
-   node scripts/jobber_auth.js
+   node scripts/jobber_auth_https.js
    ```
-   It opens Jobber's consent page. Confirm it's the **admin** account, review the requested
-   permissions (should now include the write scopes), and click **Allow**.
-3. On success it captures the **access_token + refresh_token**. The **refresh_token** is the long-lived
-   one we need.
+2. Open that URL in a browser **logged into Jobber as Yannick (the admin)**, review the permissions
+   (should now include the write scopes), and click **Allow**. *(If Fred drives it, log into Yannick's
+   Jobber account in that browser first; or send Yannick the URL and have him send back the result.)*
+3. The browser lands on `https://localhost:3000/callback?code=XXXX`. **That page won't load — that's
+   expected.** Copy the full URL (or just the `code=...` value) from the address bar.
+4. Exchange it for tokens:
+   ```
+   node scripts/jobber_auth_https.js --code "<paste-the-code-or-full-url>"
+   ```
+   It saves the **access_token + refresh_token** to `.env`. The **refresh_token** is the long-lived one.
+   *(The code is single-use and expires fast — if it errors with `invalid_grant`, just re-run step 1
+   for a fresh one.)*
 
 ## Step 4 — Hand the credentials to Fred / Claude
 Send (securely): **Client ID**, **Client Secret**, and the **Refresh Token** from Step 3.
