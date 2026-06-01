@@ -1,5 +1,12 @@
 # Jobber write-OAuth setup (Phase 2 — Calendar → Jobber write-back)
 
+> ✅ **DONE 2026-06-01.** New app **"Unclogme Calendar sync"** (`2600594d…`) authorized by Yannick (admin).
+> Granted: `read_clients read_jobs write_jobs read_scheduled_items write_scheduled_items read_users
+> read_custom_field_configurations`. Live-tested (406 clients / 591 jobs / 625 visits). Stored in
+> `public.webhook_tokens` source_system=**`jobber_write`** (separate from the read/webhook app `jobber`/`fbd14714…`).
+> The steps below are kept for re-auth/reference. **Gotcha:** the auth *code's* `scopes` claim is always
+> `""` — verify via the access token's `scope` (singular) claim or a live read, not the code.
+
 **Goal:** give our Jobber integration **write** access (create/update jobs + visits) so visits
 created in our Calendar push into Jobber. The read-sync already works; this only **adds write**.
 
