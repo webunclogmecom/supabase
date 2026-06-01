@@ -123,6 +123,40 @@ webhook_tokens                — system/ops tables
 | notes | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
 
+### `client_locations` — 8 rows · NEW 2026-06-01
+
+One client → N named service **locations** (tenants / service areas), each linked to its own GDO. For multi-tenant clients (Wynd 28 = Pasta/Presidente/CU4/Nino Gordo/Pari Pari sharing ONE trap + ONE visit) and multi-area clients (Casa Neos = Kitchens/Bars/Lounge). **Identity only** — visits / frequency / price / billing stay shared on their own tables, referenced never copied. Spec: `docs/superpowers/specs/2026-05-31-client-locations-multitenant-design.md`.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | BIGINT IDENTITY PK | |
+| client_id | BIGINT FK → clients (CASCADE) | |
+| name | TEXT NOT NULL | Location name; **UNIQUE (client_id, name)** |
+| property_id | BIGINT FK → properties (SET NULL) | Shared building (reference, not a copy) |
+| status | TEXT | `active` / `closed` |
+| contact_name / contact_phone / contact_email | TEXT | Optional, per-location |
+| notes | TEXT | |
+| created_at, updated_at | TIMESTAMPTZ | |
+
+**RLS:** anon SELECT; authenticated/service_role ALL. **Audit:** opt-in (`audit_client_locations`).
+
+### `gdos` — 160 rows · DERM permits (one per permitted facility)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | BIGSERIAL PK | |
+| client_id | BIGINT FK → clients (RESTRICT) | |
+| client_location_id | BIGINT FK → client_locations (SET NULL) | **NEW 2026-06-01** — the location this GDO permits (~1:1; NULL until ingested) |
+| gdo_number | TEXT | Miami-Dade GDO permit number |
+| location_label | TEXT | Free-text facility label (89% NULL; superseded by `client_locations.name`) |
+| property_id | BIGINT FK → properties (SET NULL) | |
+| permit_expiration | DATE | |
+| permit_document_path | TEXT | |
+| max_frequency_days | INTEGER | DERM-mandated max service interval |
+| status | TEXT | |
+| notes | TEXT | |
+| created_at, updated_at | TIMESTAMPTZ | |
+
 ### `service_configs` — 202 rows · 3NF
 
 One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd_*` column groups.
