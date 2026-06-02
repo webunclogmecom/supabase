@@ -49,3 +49,22 @@ visit_photo_audit_*.csv
 jobber_gaps_*.csv
 stuck_visits_to_replay.csv
 test_5_visits.csv
+
+# Throwaway diagnostic scripts — the leading-underscore convention marks a
+# one-off (re-auth helpers, ad-hoc checks). Kept locally, never committed.
+**/_*.js
+**/_*.cjs
+**/_*.mjs
+**/_*.sql
+**/_*.py
+**/_*.sh
+
+# Generated analysis outputs — regenerable from the scripts that emit them
+**/*_results.json
+**/*_raw.json
+reports/
+docs/reports/*.pdf
+
+# Local agent config + scratch dirs
+.claude/
+.temp/
