@@ -113,15 +113,19 @@ async function getAccessToken(): Promise<string> {
     // Expired — try refresh
     if (cached.refresh_token && cached.client_id && cached.client_secret) {
       try {
+        // Jobber's OAuth token endpoint requires application/x-www-form-urlencoded
+        // (OAuth 2.0 spec). Posting JSON here silently fails the refresh and falls
+        // back to the (also-expired) env token -> 401 on the next GraphQL call.
+        // Fixed 2026-06-01.
         const resp = await fetch(JOBBER_TOKEN_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
             grant_type: 'refresh_token',
             refresh_token: cached.refresh_token,
             client_id: cached.client_id,
             client_secret: cached.client_secret,
-          }),
+          }).toString(),
         })
         if (resp.ok) {
           const tokens = await resp.json()
@@ -543,6 +547,16 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   let promotedFromCron = false
 
   if (existingId) {
+    // Loop-guard (2026-06-01): visits created in our Calendar (source='visit-calendar')
+    // are MASTERED by the Calendar -> Jobber push (jobber-push-visit Edge Function).
+    // Do NOT overwrite their fields from this inbound Jobber echo: it would corrupt
+    // Anytime/all-day visits (Jobber returns a concrete allDay startAt) and bounce
+    // back through the push trigger (loop). Keep the row + link untouched.
+    const { data: existing } = await supabase.from('visits').select('source').eq('id', existingId).maybeSingle()
+    if (existing?.source === 'visit-calendar') {
+      console.log(`[handleVisit] visit ${numericId} -> calendar-mastered visit ${existingId}; skipping clobber (loop-guard)`)
+      return { entity_id: existingId }
+    }
     // Standard update path — we've seen this Jobber visit before.
     const { error } = await supabase.from('visits').update(visitRow).eq('id', existingId)
     if (error) throw new Error(`Visit update failed: ${error.message}`)
