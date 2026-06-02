@@ -18,8 +18,9 @@ name: Jobber upcoming visits sync
 # and needs Yannick's Jobber Dev OAuth (write scope) — task #80.
 
 on:
-  schedule:
-    - cron: '15 */4 * * *'
+  # schedule DISABLED 2026-06-02 (Fred): visit-inbound from Jobber stopped — Calendar owns visits.
+  # schedule:
+  #   - cron: '15 */4 * * *'
   workflow_dispatch:
     inputs:
       dry_run:

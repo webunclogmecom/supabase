@@ -1010,14 +1010,24 @@ async function handlePropertyDestroy(numericId: string): Promise<{ entity_id: nu
 // ============================================================================
 // Topic → Handler dispatch
 // ============================================================================
+// Visit inbound from Jobber is DISABLED (2026-06-02, per Fred): the Calendar app now
+// owns the full visit lifecycle (generated + completed in-app); Jobber visits are no
+// longer pulled in, and the office mirrors Calendar visits into Jobber by hand. We still
+// ACK these events with 200 so Jobber doesn't retry — we just don't process them.
+async function handleVisitInboundDisabled(_id: string, topic: string): Promise<{ entity_id: number }> {
+  console.log(`[webhook-jobber] visit-inbound disabled — ignoring ${topic}`)
+  return { entity_id: 0 }
+}
+
 const TOPIC_HANDLERS: Record<string, (id: string, topic: string) => Promise<{ entity_id: number }>> = {
   CLIENT_CREATE: handleClient,
   CLIENT_UPDATE: handleClient,
   CLIENT_DESTROY: handleClientDestroy,
-  VISIT_CREATE: handleVisit,
-  VISIT_UPDATE: handleVisit,
-  VISIT_COMPLETE: handleVisit,
-  VISIT_DESTROY: handleVisitDestroy,
+  // Visit inbound DISABLED 2026-06-02 (Fred) — Calendar app owns visits; ACK but ignore:
+  VISIT_CREATE: handleVisitInboundDisabled,
+  VISIT_UPDATE: handleVisitInboundDisabled,
+  VISIT_COMPLETE: handleVisitInboundDisabled,
+  VISIT_DESTROY: handleVisitInboundDisabled,
   INVOICE_CREATE: handleInvoice,
   INVOICE_UPDATE: handleInvoice,
   INVOICE_DESTROY: handleInvoiceDestroy,

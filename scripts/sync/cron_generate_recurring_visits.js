@@ -331,10 +331,10 @@ function endOfWindowMonth(isoToday) {
       const inWindow = cur <= windowEnd;
       const haveMinCount = datesToGenerate.length + existing.filter(v => v.visit_date >= today).length >= 1;
       if (!inWindow && haveMinCount) break;
-      // Fred 2026-06-02: generated visits start TOMORROW; today + past are Jobber-only.
-      // Enforced two more ways: a daily pg_cron 'purge-past-cron-visits' hard-deletes any
-      // cron projection whose date is <= today, and ops.v_calendar_visit hides cron-past.
-      if (cur <= today) { cur = addDays(cur, c.frequency_days); continue; }
+      // Generate from today forward (skip strictly-past dates only). 2026-06-02 (Fred):
+      // reverted from '<= today' back to '< today' — the app owns visits now (no longer
+      // "today = Jobber only"), so today's schedule should exist for the office to manage.
+      if (cur < today) { cur = addDays(cur, c.frequency_days); continue; }
       datesToGenerate.push(cur);
       if (datesToGenerate.length >= 24) break; // hard cap: max 24 visits per (client × service) per run
       cur = addDays(cur, c.frequency_days);

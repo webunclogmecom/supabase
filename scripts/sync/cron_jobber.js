@@ -177,7 +177,8 @@ const ENTITIES = [
   { name: 'clients',    rawTable: 'jobber_pull_clients',    fields: 'id firstName lastName companyName isCompany isArchived emails { address primary description } phones { number primary description } billingAddress { street city province postalCode country } balance updatedAt' },
   { name: 'properties', rawTable: 'jobber_pull_properties', fields: 'id client { id } address { street city province postalCode country }' },
   { name: 'jobs',       rawTable: 'jobber_pull_jobs',       fields: 'id jobNumber title client { id } property { id } jobStatus startAt endAt total updatedAt' },
-  { name: 'visits',     rawTable: 'jobber_pull_visits',     fields: 'id title startAt endAt completedAt completedBy visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
+  // 'visits' entity removed 2026-06-02 (Fred): visit-inbound from Jobber stopped — the
+  // Calendar app owns visits now. Clients/properties/jobs/invoices/quotes/users still sync.
   { name: 'invoices',   rawTable: 'jobber_pull_invoices',   fields: 'id invoiceNumber invoiceStatus issuedDate dueDate subject amounts { subtotal total invoiceBalance depositAmount } client { id } updatedAt' },
   { name: 'quotes',     rawTable: 'jobber_pull_quotes',     fields: 'id quoteNumber quoteStatus amounts { subtotal total depositAmount } client { id } updatedAt' },
   { name: 'users',      rawTable: 'jobber_pull_users',      fields: 'id name { first last full } email { raw } isAccountOwner isAccountAdmin createdAt' },
@@ -278,13 +279,13 @@ async function replayFlagged(jobberClientSecret, includeFull) {
     jobber_pull_clients:    { entity: 'client',    topic: 'CLIENT_UPDATE' },
     jobber_pull_properties: { entity: 'property',  topic: 'PROPERTY_UPDATE' },
     jobber_pull_jobs:       { entity: 'job',       topic: 'JOB_UPDATE' },
-    jobber_pull_visits:     { entity: 'visit',     topic: 'VISIT_UPDATE' },
+    // jobber_pull_visits replay removed 2026-06-02 (Fred) — visit-inbound stopped
     jobber_pull_invoices:   { entity: 'invoice',   topic: 'INVOICE_UPDATE' },
     jobber_pull_quotes:     { entity: 'quote',     topic: 'QUOTE_UPDATE' },
   } : {
     jobber_pull_clients:    { entity: 'client',    topic: 'CLIENT_UPDATE' },
     jobber_pull_jobs:       { entity: 'job',       topic: 'JOB_UPDATE' },
-    jobber_pull_visits:     { entity: 'visit',     topic: 'VISIT_UPDATE' },
+    // jobber_pull_visits replay removed 2026-06-02 (Fred) — visit-inbound stopped
     jobber_pull_invoices:   { entity: 'invoice',   topic: 'INVOICE_UPDATE' },
     jobber_pull_quotes:     { entity: 'quote',     topic: 'QUOTE_UPDATE' },
   };

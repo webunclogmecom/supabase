@@ -18,8 +18,9 @@ name: Daily Jobber anomaly reconcile
 # contend for the Jobber rate-limit budget.
 
 on:
-  schedule:
-    - cron: '15 9 * * *'
+  # schedule DISABLED 2026-06-02 (Fred): visit-inbound from Jobber stopped — Calendar owns visits.
+  # schedule:
+  #   - cron: '15 9 * * *'
   workflow_dispatch:
     inputs:
       days:

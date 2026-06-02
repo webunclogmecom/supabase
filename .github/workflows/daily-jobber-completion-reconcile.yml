@@ -11,10 +11,9 @@ name: Daily Jobber visit completion reconcile
 # visit_status / completed_at / start_at / end_at / visit_date.
 
 on:
-  schedule:
-    # 08:30 UTC = 04:30 ET (EDT) / 03:30 ET (EST). Off-peak, after the daily
-    # cleanup cron (which runs at 09:00) doesn't matter — they don't conflict.
-    - cron: '30 8 * * *'
+  # schedule DISABLED 2026-06-02 (Fred): visit-inbound from Jobber stopped — Calendar owns visits.
+  # schedule:
+  #   - cron: '30 8 * * *'
   workflow_dispatch:
     inputs:
       days:
