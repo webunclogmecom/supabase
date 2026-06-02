@@ -145,6 +145,40 @@ for t in "${CANONICAL_TABLES[@]}"; do
     DROPPED_BY_PROD_COUNT=$((DROPPED_BY_PROD_COUNT + 1))
   done
 
+  # 1b. PROD-ADDED COLUMNS: in Prod, missing from Sandbox → ADD to Sandbox
+  # before pg_dump's INSERTs hit (otherwise the INSERT names columns that
+  # don't exist on Sandbox and the whole transaction rolls back).
+  # Added 2026-05-22 after 8/11 refreshes failed on visits.derm_required +
+  # derm_manifests.gdo_id added to Prod between refresh cycles.
+  # We add as nullable regardless of Prod's NOT NULL — the dump populates
+  # values from Prod rows. NOT NULL enforcement on Sandbox isn't needed
+  # (Yannick reads, doesn't insert), and demanding it would force us to
+  # carry defaults we may not want in Sandbox.
+  PROD_ADDED=$(comm -13 \
+    <(psql "$SANDBOX_DB_URL" -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u) \
+    <(psql "$PROD_DB_URL"    -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u))
+  for col in $PROD_ADDED; do
+    # Pull the Prod type via udt_name (canonical short form) — falls back to
+    # text if for some reason the type can't be resolved.
+    COL_TYPE=$(psql "$PROD_DB_URL" -tAc "SELECT udt_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t' AND column_name='$col' LIMIT 1" 2>/dev/null | tr -d ' ')
+    [ -z "$COL_TYPE" ] && COL_TYPE='text'
+    # Re-map a few Postgres udt names to their SQL canonical form so
+    # ALTER TABLE parses them cleanly:
+    case "$COL_TYPE" in
+      int2)    COL_TYPE='smallint' ;;
+      int4)    COL_TYPE='integer' ;;
+      int8)    COL_TYPE='bigint' ;;
+      bool)    COL_TYPE='boolean' ;;
+      timestamptz) COL_TYPE='timestamptz' ;;
+      timestamp)   COL_TYPE='timestamp' ;;
+      _text)   COL_TYPE='text[]' ;;
+      _int4)   COL_TYPE='integer[]' ;;
+      _int8)   COL_TYPE='bigint[]' ;;
+    esac
+    echo "  $t.$col: PROD added (type=$COL_TYPE) — propagating to Sandbox"
+    psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=0 --quiet -c "ALTER TABLE public.$t ADD COLUMN IF NOT EXISTS $col $COL_TYPE;" 2>&1 | grep -v "^$" || true
+  done
+
   # 2. YANNICK-ADDED COLUMNS: in Sandbox AND not in Prod NOW → preserve values
   YCOLS=$(comm -23 \
     <(psql "$SANDBOX_DB_URL" -tAc "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='$t'" 2>/dev/null | sort -u) \

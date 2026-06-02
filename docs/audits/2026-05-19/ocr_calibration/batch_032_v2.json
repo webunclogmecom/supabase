@@ -1,0 +1,242 @@
+[
+  {
+    "manifest_id": 350,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "820497",
+      "date": "2026-04-01"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "820497",
+      "date": "2026-04-01"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "820497",
+      "dump_date": "2026-04-01"
+    }
+  },
+  {
+    "manifest_id": 351,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "000388",
+      "date": "2026-03-15"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "000388",
+      "date": "2026-03-15"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "000388",
+      "dump_date": "2026-03-15"
+    }
+  },
+  {
+    "manifest_id": 352,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "497268",
+      "date": "2025-07-10"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "497268",
+      "date": "2025-07-10"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "497268",
+      "dump_date": "2025-07-10"
+    }
+  },
+  {
+    "manifest_id": 353,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "814459",
+      "date": "2026-01-21"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "814459",
+      "date": "2026-01-21"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "814459",
+      "dump_date": "2026-01-21"
+    }
+  },
+  {
+    "manifest_id": 354,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "broward",
+      "number": "302279",
+      "date": "2026-04-09"
+    },
+    "ocr": {
+      "jurisdiction": "broward",
+      "number": "302279",
+      "date": "2026-04-09"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "broward",
+      "number": "302279",
+      "dump_date": "2026-04-09"
+    }
+  },
+  {
+    "manifest_id": 355,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "broward",
+      "number": "292505",
+      "date": "2025-11-21"
+    },
+    "ocr": {
+      "jurisdiction": "broward",
+      "number": "292505",
+      "date": "2025-11-21"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "broward",
+      "number": "292505",
+      "dump_date": "2025-11-21"
+    }
+  },
+  {
+    "manifest_id": 356,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "803667",
+      "date": "2025-09-29"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "803667",
+      "date": "2025-09-29"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "803667",
+      "dump_date": "2025-09-29"
+    }
+  },
+  {
+    "manifest_id": 357,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "488883",
+      "date": "2025-04-08"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "488883",
+      "date": "2025-04-08"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "488883",
+      "dump_date": "2025-04-08"
+    }
+  },
+  {
+    "manifest_id": 358,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "broward",
+      "number": "298064",
+      "date": "2026-02-13"
+    },
+    "ocr": {
+      "jurisdiction": "broward",
+      "number": "298064",
+      "date": "2026-02-13"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "broward",
+      "number": "298064",
+      "dump_date": "2026-02-13"
+    }
+  },
+  {
+    "manifest_id": 359,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "broward",
+      "number": "293940",
+      "date": "2025-12-15"
+    },
+    "ocr": {
+      "jurisdiction": "broward",
+      "number": "293940",
+      "date": "2025-12-15"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "broward",
+      "number": "293940",
+      "dump_date": "2025-12-15"
+    }
+  }
+]

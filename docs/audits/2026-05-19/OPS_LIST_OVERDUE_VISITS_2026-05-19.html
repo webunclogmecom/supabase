@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Missing visits in Airtable — 2026-05-19</title>
+<style>
+  :root {
+    --brand: #f14714;
+    --text: rgba(55, 53, 47, 1);
+    --text-soft: rgba(55, 53, 47, 0.65);
+    --text-muted: rgba(55, 53, 47, 0.45);
+    --border: rgba(55, 53, 47, 0.09);
+    --border-strong: rgba(55, 53, 47, 0.16);
+    --bg-page: #ffffff;
+    --bg-card: rgba(247, 246, 243, 1);
+    --bg-row-hover: rgba(55, 53, 47, 0.03);
+    --critical-bg: #fde2dd;
+    --critical-fg: #9c1f10;
+    --high-bg: #fef0d4;
+    --high-fg: #8d5b00;
+    --medium-bg: #ddebf1;
+    --medium-fg: #1c5779;
+    --low-bg: #e8e7e3;
+    --low-fg: #5e5b56;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg-page);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Manrope', 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .doc {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 56px 64px 96px 64px;
+  }
+  .doc-title {
+    font-size: 36px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .doc-meta {
+    color: var(--text-soft);
+    font-size: 14px;
+    margin: 0 0 36px 0;
+  }
+  .doc-meta b { color: var(--text); font-weight: 600; }
+
+  /* TL;DR callout */
+  .callout {
+    background: var(--bg-card);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 0 0 40px 0;
+    display: flex;
+    gap: 24px;
+    align-items: center;
+  }
+  .callout-emoji { font-size: 22px; line-height: 1; flex: 0 0 32px; }
+  .callout-body { flex: 1; }
+  .callout-title { font-weight: 600; font-size: 14px; margin: 0 0 8px 0; color: var(--text); }
+  .summary-row { display: flex; gap: 28px; flex-wrap: wrap; }
+  .summary-stat { display: flex; flex-direction: column; min-width: 120px; }
+  .summary-stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+  .summary-stat .value { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; margin-top: 2px; }
+  .summary-stat .value.critical { color: var(--critical-fg); }
+
+  /* Section */
+  .section {
+    margin: 48px 0 0 0;
+    page-break-inside: auto;
+  }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  .section-count {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .section-sub {
+    color: var(--text-soft);
+    font-size: 13px;
+    margin: -8px 0 16px 0;
+  }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-strong);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: var(--bg-row-hover); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { color: var(--text-muted); width: 24px; text-align: right; padding-right: 14px; font-variant-numeric: tabular-nums; }
+  td.mono { font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; color: var(--text-soft); white-space: nowrap; }
+  td.name { font-weight: 500; min-width: 180px; }
+  td.muted { color: var(--text-soft); font-size: 12px; }
+  td.tags { max-width: 280px; }
+  td.empty-row { color: var(--text-muted); padding: 18px 10px; font-style: italic; }
+
+  .tag {
+    display: inline-block;
+    background: var(--bg-card);
+    color: var(--text-soft);
+    font-size: 10.5px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    margin: 1px 2px 1px 0;
+    white-space: nowrap;
+  }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .urgency-critical { background: var(--critical-bg); color: var(--critical-fg); }
+  .urgency-high { background: var(--high-bg); color: var(--high-fg); }
+  .urgency-medium { background: var(--medium-bg); color: var(--medium-fg); }
+  .urgency-low { background: var(--low-bg); color: var(--low-fg); }
+
+  .notes {
+    margin-top: 48px;
+    color: var(--text-soft);
+    font-size: 12px;
+    line-height: 1.7;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .notes h3 { font-size: 12.5px; font-weight: 600; color: var(--text); margin: 0 0 6px 0; letter-spacing: 0.02em; }
+  .notes ul { margin: 0; padding-left: 18px; }
+  .notes li { margin-bottom: 4px; }
+  code { background: var(--bg-card); padding: 1px 5px; border-radius: 3px; font-size: 11.5px; color: var(--text); }
+
+  @media print {
+    .doc { padding: 24px 32px; }
+    .section { page-break-inside: avoid; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+  <h1 class="doc-title">Missing visits in Airtable</h1>
+  <p class="doc-meta">Recurring AT clients due by <b>2026-05-31</b> with no upcoming visit scheduled in AT. Generated <b>2026-05-19</b>.</p>
+
+  <div class="callout">
+    <div class="callout-emoji">⚠️</div>
+    <div class="callout-body">
+      <p class="callout-title">Summary</p>
+      <div class="summary-row">
+        <div class="summary-stat">
+          <span class="label">GT missing</span>
+          <span class="value critical">11</span>
+        </div>
+        <div class="summary-stat">
+          <span class="label">CL missing</span>
+          <span class="value critical">48</span>
+        </div>
+        <div class="summary-stat">
+          <span class="label">Total clients reviewed</span>
+          <span class="value">140</span>
+        </div>
+        <div class="summary-stat">
+          <span class="label">Upcoming visits in window</span>
+          <span class="value">51</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2 class="section-title">Grease Trap visits</h2>
+      <span class="section-count">11 need scheduling</span>
+    </div>
+    <p class="section-sub">Includes Grease Trap, Gray Water pumping, and Lift Station (GT side).</p>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Code</th><th>Client</th><th>Service Type</th><th>Freq</th><th>Last visit</th><th>Should be</th><th>Status</th><th>Truck · Zone</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">1</td>
+          <td class="mono">142-57</td>
+          <td class="name">57 Ocean Residences</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Requires Phone Call</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-12-18</td>
+          <td class="mono">2026-02-16</td>
+          <td><span class="pill urgency-critical">+92d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td class="mono">029-JOS</td>
+          <td class="name">Josh&#39;s Deli</td>
+          <td class="tags"><span class="tag">Grease Trap</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-03-05</td>
+          <td class="mono">2026-04-04</td>
+          <td><span class="pill urgency-critical">+45d · Critical</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td class="mono">141-NEY</td>
+          <td class="name">Neya</td>
+          <td class="tags"><span class="tag">Grease Trap</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2026-01-27</td>
+          <td class="mono">2026-04-27</td>
+          <td><span class="pill urgency-high">+22d · High</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td class="mono">082-TFC</td>
+          <td class="name">The Fresh Carrot of Surfside</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-03-30</td>
+          <td class="mono">2026-04-29</td>
+          <td><span class="pill urgency-high">+20d · High</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">5</td>
+          <td class="mono">183-KRE</td>
+          <td class="name">Kresy Kosher Pizza &amp; Falafel Bar</td>
+          <td class="tags"><span class="tag">Grease Trap</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2026-03-05</td>
+          <td class="mono">2026-05-04</td>
+          <td><span class="pill urgency-high">+15d · High</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">6</td>
+          <td class="mono">091-SB</td>
+          <td class="name">Street Bar</td>
+          <td class="tags"><span class="tag">Grease Trap</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-04-07</td>
+          <td class="mono">2026-05-07</td>
+          <td><span class="pill urgency-medium">+12d · Due</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">7</td>
+          <td class="mono">010-CS</td>
+          <td class="name">Chima Steakhouse</td>
+          <td class="tags"><span class="tag">Grease Trap</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2026-03-18</td>
+          <td class="mono">2026-05-17</td>
+          <td><span class="pill urgency-medium">+2d · Due</span></td>
+          <td class="muted">5,000 · BRO</td>
+        </tr>
+        <tr>
+          <td class="num">8</td>
+          <td class="mono">044-MP</td>
+          <td class="name">Mrs. Pasta</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2026-03-23</td>
+          <td class="mono">2026-05-22</td>
+          <td><span class="pill urgency-low">-3d · Upcoming</span></td>
+          <td class="muted">INT · BRO</td>
+        </tr>
+        <tr>
+          <td class="num">9</td>
+          <td class="mono">207-BAR</td>
+          <td class="name">Casa Neos BAR</td>
+          <td class="tags"><span class="tag">Grease Trap</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-04-27</td>
+          <td class="mono">2026-05-27</td>
+          <td><span class="pill urgency-low">-8d · Upcoming</span></td>
+          <td class="muted">5,000 · DOWN</td>
+        </tr>
+        <tr>
+          <td class="num">10</td>
+          <td class="mono">060-TU</td>
+          <td class="name">Talmudic University</td>
+          <td class="tags"><span class="tag">Grease Trap</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2026-03-02</td>
+          <td class="mono">2026-05-31</td>
+          <td><span class="pill urgency-low">-12d · Upcoming</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">11</td>
+          <td class="mono">047-PAM</td>
+          <td class="name">Pamplemousse On the bay</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">AUX Cleaning</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2026-04-01</td>
+          <td class="mono">2026-05-31</td>
+          <td><span class="pill urgency-low">-12d · Upcoming</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2 class="section-title">Cleaning visits</h2>
+      <span class="section-count">48 need scheduling</span>
+    </div>
+    <p class="section-sub">Includes MAIN CL, AUX Cleaning, Warranty of drainage, and Lift Station (CL side).</p>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Code</th><th>Client</th><th>Service Type</th><th>Freq</th><th>Last visit</th><th>Should be</th><th>Status</th><th>Truck · Zone</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">1</td>
+          <td class="mono">107-PV</td>
+          <td class="name">Pura Vida Sobe</td>
+          <td class="tags"><span class="tag">AUX Cleaning</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2025-03-26</td>
+          <td class="mono">2025-06-24</td>
+          <td><span class="pill urgency-critical">+329d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td class="mono">051-PV</td>
+          <td class="name">Pura Vida (Delray)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2025-05-30</td>
+          <td class="mono">2025-06-29</td>
+          <td><span class="pill urgency-critical">+324d · Critical</span></td>
+          <td class="muted">INT · PALM</td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td class="mono">043-MIL</td>
+          <td class="name">Mila</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-03-06</td>
+          <td class="mono">2025-07-04</td>
+          <td><span class="pill urgency-critical">+319d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td class="mono">083-SHUL</td>
+          <td class="name">The Shul</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">AUX Cleaning</span> <span class="tag">Lift Station</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2025-05-19</td>
+          <td class="mono">2025-08-17</td>
+          <td><span class="pill urgency-critical">+275d · Critical</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">5</td>
+          <td class="mono">057-SLS</td>
+          <td class="name">Shaulson Lyft Station</td>
+          <td class="tags"><span class="tag">Lift Station</span> <span class="tag">Grease Trap</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2025-07-31</td>
+          <td class="mono">2025-08-30</td>
+          <td><span class="pill urgency-critical">+262d · Critical</span></td>
+          <td class="muted">INT · NMB</td>
+        </tr>
+        <tr>
+          <td class="num">6</td>
+          <td class="mono">004-BAO</td>
+          <td class="name">Bâoli Miami</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2025-08-01</td>
+          <td class="mono">2025-08-31</td>
+          <td><span class="pill urgency-critical">+261d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">7</td>
+          <td class="mono">012-DKC</td>
+          <td class="name">Danziguer Kosher Catering T41</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2025-08-08</td>
+          <td class="mono">2025-09-07</td>
+          <td><span class="pill urgency-critical">+254d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">8</td>
+          <td class="mono">089-COW</td>
+          <td class="name">Cowy Burger</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">40d</td>
+          <td class="mono">2025-08-08</td>
+          <td class="mono">2025-09-17</td>
+          <td><span class="pill urgency-critical">+244d · Critical</span></td>
+          <td class="muted">INT · MID/EDG</td>
+        </tr>
+        <tr>
+          <td class="num">9</td>
+          <td class="mono">082-TFC</td>
+          <td class="name">The Fresh Carrot of Surfside</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2025-08-20</td>
+          <td class="mono">2025-09-19</td>
+          <td><span class="pill urgency-critical">+242d · Critical</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">10</td>
+          <td class="mono">047-PAM</td>
+          <td class="name">Pamplemousse On the bay</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">AUX Cleaning</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-08-04</td>
+          <td class="mono">2025-10-03</td>
+          <td><span class="pill urgency-critical">+228d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">11</td>
+          <td class="mono">058-SOH</td>
+          <td class="name">Soho Asian Bar and Grill</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-08-11</td>
+          <td class="mono">2025-10-10</td>
+          <td><span class="pill urgency-critical">+221d · Critical</span></td>
+          <td class="muted">INT · AVE</td>
+        </tr>
+        <tr>
+          <td class="num">12</td>
+          <td class="mono">139-LTG</td>
+          <td class="name">Lettuce &amp; Tomato Gastobar</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-08-11</td>
+          <td class="mono">2025-10-10</td>
+          <td><span class="pill urgency-critical">+221d · Critical</span></td>
+          <td class="muted">INT · NMB</td>
+        </tr>
+        <tr>
+          <td class="num">13</td>
+          <td class="mono">049-PV</td>
+          <td class="name">Pura Vida (Bay Harbor) NOT UNDER CONTRACT</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-08-13</td>
+          <td class="mono">2025-10-12</td>
+          <td><span class="pill urgency-critical">+219d · Critical</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">14</td>
+          <td class="mono">016-FIA</td>
+          <td class="name">Florida Food Eats Fialko (Miami Beach)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-08-20</td>
+          <td class="mono">2025-10-19</td>
+          <td><span class="pill urgency-critical">+212d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">15</td>
+          <td class="mono">017-FIA</td>
+          <td class="name">Florida Food Eats Fialko (Surfside)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-08-20</td>
+          <td class="mono">2025-10-19</td>
+          <td><span class="pill urgency-critical">+212d · Critical</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">16</td>
+          <td class="mono">069-TCE</td>
+          <td class="name">The Carrot Express (Downtown)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-07-10</td>
+          <td class="mono">2025-11-07</td>
+          <td><span class="pill urgency-critical">+193d · Critical</span></td>
+          <td class="muted">INT · DOWN</td>
+        </tr>
+        <tr>
+          <td class="num">17</td>
+          <td class="mono">065-TCE</td>
+          <td class="name">The Carrot Express (Brickell)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-07-10</td>
+          <td class="mono">2025-11-07</td>
+          <td><span class="pill urgency-critical">+193d · Critical</span></td>
+          <td class="muted">INT · DOWN</td>
+        </tr>
+        <tr>
+          <td class="num">18</td>
+          <td class="mono">104-PV</td>
+          <td class="name">Pura Vida Miracle Mile</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2025-08-14</td>
+          <td class="mono">2025-11-12</td>
+          <td><span class="pill urgency-critical">+188d · Critical</span></td>
+          <td class="muted">INT · SOUTH</td>
+        </tr>
+        <tr>
+          <td class="num">19</td>
+          <td class="mono">052-PV</td>
+          <td class="name">Pura Vida (Design District)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2025-08-15</td>
+          <td class="mono">2025-11-13</td>
+          <td><span class="pill urgency-critical">+187d · Critical</span></td>
+          <td class="muted">INT · MID/EDG</td>
+        </tr>
+        <tr>
+          <td class="num">20</td>
+          <td class="mono">099-PV</td>
+          <td class="name">Pura Vida Dadeland</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2025-08-15</td>
+          <td class="mono">2025-11-13</td>
+          <td><span class="pill urgency-critical">+187d · Critical</span></td>
+          <td class="muted">INT · SOUTH</td>
+        </tr>
+        <tr>
+          <td class="num">21</td>
+          <td class="mono">025-GRO</td>
+          <td class="name">Grove Kosher LLC (Harding Ave)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">Lift Station</span> <span class="tag">MAIN CL</span></td>
+          <td class="num">90d</td>
+          <td class="mono">2025-08-20</td>
+          <td class="mono">2025-11-18</td>
+          <td><span class="pill urgency-critical">+182d · Critical</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">22</td>
+          <td class="mono">075-TCE</td>
+          <td class="name">The carrot express Fort Lauderdale</td>
+          <td class="tags"><span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-07-31</td>
+          <td class="mono">2025-11-28</td>
+          <td><span class="pill urgency-critical">+172d · Critical</span></td>
+          <td class="muted">INT · BRO</td>
+        </tr>
+        <tr>
+          <td class="num">23</td>
+          <td class="mono">076-TCE</td>
+          <td class="name">The carrot express Hollywood</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-07-31</td>
+          <td class="mono">2025-11-28</td>
+          <td><span class="pill urgency-critical">+172d · Critical</span></td>
+          <td class="muted">INT · BRO</td>
+        </tr>
+        <tr>
+          <td class="num">24</td>
+          <td class="mono">067-TCE</td>
+          <td class="name">The Carrot Express (Central Kitchen)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-07-31</td>
+          <td class="mono">2025-11-28</td>
+          <td><span class="pill urgency-critical">+172d · Critical</span></td>
+          <td class="muted">INT · BRO</td>
+        </tr>
+        <tr>
+          <td class="num">25</td>
+          <td class="mono">073-TCE</td>
+          <td class="name">The carrot express Coconut Creek</td>
+          <td class="tags"><span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-01</td>
+          <td class="mono">2025-11-29</td>
+          <td><span class="pill urgency-critical">+171d · Critical</span></td>
+          <td class="muted">INT · PALM</td>
+        </tr>
+        <tr>
+          <td class="num">26</td>
+          <td class="mono">064-TCE</td>
+          <td class="name">The Carrot Express (Boca Raton)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-01</td>
+          <td class="mono">2025-11-29</td>
+          <td><span class="pill urgency-critical">+171d · Critical</span></td>
+          <td class="muted">INT · PALM</td>
+        </tr>
+        <tr>
+          <td class="num">27</td>
+          <td class="mono">081-TCE</td>
+          <td class="name">The carrot express West Boca, Shadowwood Plaza</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-01</td>
+          <td class="mono">2025-11-29</td>
+          <td><span class="pill urgency-critical">+171d · Critical</span></td>
+          <td class="muted">INT · PALM</td>
+        </tr>
+        <tr>
+          <td class="num">28</td>
+          <td class="mono">072-TCE</td>
+          <td class="name">The Carrot Express (Sunset Harbor)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-04</td>
+          <td class="mono">2025-12-02</td>
+          <td><span class="pill urgency-critical">+168d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">29</td>
+          <td class="mono">092-TCE</td>
+          <td class="name">The carrot express (Coral Gables)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-04</td>
+          <td class="mono">2025-12-02</td>
+          <td><span class="pill urgency-critical">+168d · Critical</span></td>
+          <td class="muted">INT · SOUTH</td>
+        </tr>
+        <tr>
+          <td class="num">30</td>
+          <td class="mono">061-TCE</td>
+          <td class="name">The Carrot Express (71st Collins)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-04</td>
+          <td class="mono">2025-12-02</td>
+          <td><span class="pill urgency-critical">+168d · Critical</span></td>
+          <td class="muted">INT · MIAMI BEACH</td>
+        </tr>
+        <tr>
+          <td class="num">31</td>
+          <td class="mono">071-TCE</td>
+          <td class="name">The Carrot Express (South Miami)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-04</td>
+          <td class="mono">2025-12-02</td>
+          <td><span class="pill urgency-critical">+168d · Critical</span></td>
+          <td class="muted">INT · SOUTH</td>
+        </tr>
+        <tr>
+          <td class="num">32</td>
+          <td class="mono">068-TCE</td>
+          <td class="name">The Carrot Express (Coconut Grove)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-05</td>
+          <td class="mono">2025-12-03</td>
+          <td><span class="pill urgency-critical">+167d · Critical</span></td>
+          <td class="muted">INT · SOUTH</td>
+        </tr>
+        <tr>
+          <td class="num">33</td>
+          <td class="mono">079-TCE</td>
+          <td class="name">The carrot express Plantation</td>
+          <td class="tags"><span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-06</td>
+          <td class="mono">2025-12-04</td>
+          <td><span class="pill urgency-critical">+166d · Critical</span></td>
+          <td class="muted">INT · BRO</td>
+        </tr>
+        <tr>
+          <td class="num">34</td>
+          <td class="mono">078-TCE</td>
+          <td class="name">The carrot express Pembroke Pines</td>
+          <td class="tags"><span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-06</td>
+          <td class="mono">2025-12-04</td>
+          <td><span class="pill urgency-critical">+166d · Critical</span></td>
+          <td class="muted">INT · BRO</td>
+        </tr>
+        <tr>
+          <td class="num">35</td>
+          <td class="mono">080-TCE</td>
+          <td class="name">The carrot express River Landing</td>
+          <td class="tags"><span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-13</td>
+          <td class="mono">2025-12-11</td>
+          <td><span class="pill urgency-critical">+159d · Critical</span></td>
+          <td class="muted">INT · DOWN</td>
+        </tr>
+        <tr>
+          <td class="num">36</td>
+          <td class="mono">074-TCE</td>
+          <td class="name">The carrot express Doral</td>
+          <td class="tags"><span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-13</td>
+          <td class="mono">2025-12-11</td>
+          <td><span class="pill urgency-critical">+159d · Critical</span></td>
+          <td class="muted">INT · WEST</td>
+        </tr>
+        <tr>
+          <td class="num">37</td>
+          <td class="mono">036-LG</td>
+          <td class="name">La Granja (South Miami)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-14</td>
+          <td class="mono">2025-12-12</td>
+          <td><span class="pill urgency-critical">+158d · Critical</span></td>
+          <td class="muted">INT · SOUTH</td>
+        </tr>
+        <tr>
+          <td class="num">38</td>
+          <td class="mono">066-TCE</td>
+          <td class="name">The Carrot Express (Buena Vista)</td>
+          <td class="tags"><span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-15</td>
+          <td class="mono">2025-12-13</td>
+          <td><span class="pill urgency-critical">+157d · Critical</span></td>
+          <td class="muted">INT · MID/EDG</td>
+        </tr>
+        <tr>
+          <td class="num">39</td>
+          <td class="mono">077-TCE</td>
+          <td class="name">The carrot express Kendall</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-15</td>
+          <td class="mono">2025-12-13</td>
+          <td><span class="pill urgency-critical">+157d · Critical</span></td>
+          <td class="muted">Toyota · SOUTH</td>
+        </tr>
+        <tr>
+          <td class="num">40</td>
+          <td class="mono">063-TCE</td>
+          <td class="name">The Carrot Express (Aventura)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-19</td>
+          <td class="mono">2025-12-17</td>
+          <td><span class="pill urgency-critical">+153d · Critical</span></td>
+          <td class="muted">INT · NMB</td>
+        </tr>
+        <tr>
+          <td class="num">41</td>
+          <td class="mono">062-TCE</td>
+          <td class="name">The Carrot Express (Aventura Mall)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-19</td>
+          <td class="mono">2025-12-17</td>
+          <td><span class="pill urgency-critical">+153d · Critical</span></td>
+          <td class="muted">INT · AVE</td>
+        </tr>
+        <tr>
+          <td class="num">42</td>
+          <td class="mono">070-TCE</td>
+          <td class="name">The Carrot Express (Miami Shores)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span> <span class="tag">Lift Station</span></td>
+          <td class="num">120d</td>
+          <td class="mono">2025-08-22</td>
+          <td class="mono">2025-12-20</td>
+          <td><span class="pill urgency-critical">+150d · Critical</span></td>
+          <td class="muted">INT · NMB</td>
+        </tr>
+        <tr>
+          <td class="num">43</td>
+          <td class="mono">026-HAP</td>
+          <td class="name">Happea&#39;s</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">60d</td>
+          <td class="mono">2025-11-12</td>
+          <td class="mono">2026-01-11</td>
+          <td><span class="pill urgency-critical">+128d · Critical</span></td>
+          <td class="muted">INT · DOWN</td>
+        </tr>
+        <tr>
+          <td class="num">44</td>
+          <td class="mono">021-GRA</td>
+          <td class="name">Granada Condo</td>
+          <td class="tags"><span class="tag">AUX Cleaning</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">364d</td>
+          <td class="mono">2025-05-08</td>
+          <td class="mono">2026-05-07</td>
+          <td><span class="pill urgency-medium">+12d · Due</span></td>
+          <td class="muted">INT · SF/BH</td>
+        </tr>
+        <tr>
+          <td class="num">45</td>
+          <td class="mono">032-LG</td>
+          <td class="name">La Granja (36 street)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-04-08</td>
+          <td class="mono">2026-05-08</td>
+          <td><span class="pill urgency-medium">+11d · Due</span></td>
+          <td class="muted">INT · MID/EDG</td>
+        </tr>
+        <tr>
+          <td class="num">46</td>
+          <td class="mono">033-LG</td>
+          <td class="name">La Granja (Allapattah)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-04-09</td>
+          <td class="mono">2026-05-09</td>
+          <td><span class="pill urgency-medium">+10d · Due</span></td>
+          <td class="muted">INT · MID/EDG</td>
+        </tr>
+        <tr>
+          <td class="num">47</td>
+          <td class="mono">034-LG</td>
+          <td class="name">La Granja (Calle 8) Little Havanna</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-04-10</td>
+          <td class="mono">2026-05-10</td>
+          <td><span class="pill urgency-medium">+9d · Due</span></td>
+          <td class="muted">INT · DOWN</td>
+        </tr>
+        <tr>
+          <td class="num">48</td>
+          <td class="mono">035-LG</td>
+          <td class="name">La Granja (Downtown)</td>
+          <td class="tags"><span class="tag">Grease Trap</span> <span class="tag">MAIN CL</span> <span class="tag">Warranty of drainage</span></td>
+          <td class="num">30d</td>
+          <td class="mono">2026-04-10</td>
+          <td class="mono">2026-05-10</td>
+          <td><span class="pill urgency-medium">+9d · Due</span></td>
+          <td class="muted">INT · DOWN</td>
+        </tr></tbody>
+    </table>
+  </div>
+
+  <div class="notes">
+    <h3>Notes</h3>
+    <ul>
+      <li>Filter: <code>{ACTIVE/INACTIVE}='Recurring'</code> — Active, PAUSED, INACTIVE all excluded.</li>
+      <li>"Due" = AT's <code>Next Visit Calculated</code> ≤ 2026-05-31. That's <code>Last Visit + Frequency</code> per AT's own formula.</li>
+      <li>"Missing" = no AT Visit with <code>Status='Upcoming'</code> for that client + that service line through 2026-05-31.</li>
+      <li>Lift Station clients can appear in BOTH sections (they need both visit types).</li>
+      <li>"Requires Phone Call" clients excluded (emergency-only, no recurring schedule).</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

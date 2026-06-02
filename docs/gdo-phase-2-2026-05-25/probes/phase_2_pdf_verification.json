@@ -1,0 +1,98 @@
+[
+  {
+    "id": 133,
+    "client_name": "Hubble Bubble Lounge",
+    "new_gdo": "GDO-16086",
+    "expected_token": "HUBBLE BUBBLE",
+    "format": ".pdf",
+    "found_expected_token": true,
+    "bot_issued_to": "HUBBLE BUBBLE CORP DBA HUBBLE BUBBLE",
+    "issued_to_tokens_present": true,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-16086.pdf",
+    "result": "OK"
+  },
+  {
+    "id": 125,
+    "client_name": "La Granja South Miami",
+    "new_gdo": "GDO-11708",
+    "expected_token": "LA GRANJA",
+    "format": ".pdf",
+    "found_expected_token": true,
+    "bot_issued_to": "FG GROUP INT'L, CORP. DBA LA GRANJA ON NORTH MIAMI BEACH",
+    "issued_to_tokens_present": true,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-11708.pdf",
+    "result": "OK"
+  },
+  {
+    "id": 59,
+    "client_name": "The Moore",
+    "new_gdo": "GDO-14769",
+    "expected_token": "MOORE",
+    "format": ".pdf",
+    "found_expected_token": false,
+    "bot_issued_to": null,
+    "issued_to_tokens_present": null,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-14769.pdf",
+    "result": "MISS"
+  },
+  {
+    "id": 7,
+    "client_name": "Pura Vida Bakery",
+    "new_gdo": "GDO-14681",
+    "expected_token": "PURA VIDA",
+    "format": ".pdf",
+    "found_expected_token": true,
+    "bot_issued_to": "PURA VIDA ENTERPRISES LLC DBA PURA VIDA MIAMI",
+    "issued_to_tokens_present": true,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-14681.pdf",
+    "result": "OK"
+  },
+  {
+    "id": 44,
+    "client_name": "Pura Vida Flamingo",
+    "new_gdo": "GDO-10891",
+    "expected_token": "PURA VIDA",
+    "format": ".pdf",
+    "found_expected_token": true,
+    "bot_issued_to": "PURA VIDA COLLINS LOEWS LLC",
+    "issued_to_tokens_present": true,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-10891.pdf",
+    "result": "OK"
+  },
+  {
+    "id": 62,
+    "client_name": "Pummarola",
+    "new_gdo": "GDO-00951",
+    "expected_token": "PUMMAROLA",
+    "format": ".pdf",
+    "found_expected_token": true,
+    "bot_issued_to": "SOUTH BEACH EXPRESS LLC DBA PUMMAROLA",
+    "issued_to_tokens_present": true,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-00951.pdf",
+    "result": "OK"
+  },
+  {
+    "id": 57,
+    "client_name": "Talmudic University",
+    "new_gdo": "GDO-00313",
+    "expected_token": "TALMUDIC",
+    "format": ".pdf",
+    "found_expected_token": true,
+    "bot_issued_to": "TALMUDIC COLLEGE 4000 ALTON ROAD INC. DBA TALMUDIC COLLEGE 4",
+    "issued_to_tokens_present": true,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-00313.pdf",
+    "result": "OK"
+  },
+  {
+    "id": 99,
+    "client_name": "Ironside Cafe",
+    "new_gdo": "GDO-10249",
+    "expected_token": "IRONSIDE",
+    "format": ".pdf",
+    "found_expected_token": true,
+    "bot_issued_to": "THE OM CENTER, LLC DBA PIZZA AT IRONSIDE",
+    "issued_to_tokens_present": true,
+    "pdf_path": "C:\\Users\\FRED\\AppData\\Local\\Temp\\gdo-rename-verify\\GDO-10249.pdf",
+    "result": "OK"
+  }
+]

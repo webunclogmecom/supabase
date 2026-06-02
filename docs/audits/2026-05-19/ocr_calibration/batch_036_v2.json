@@ -1,0 +1,242 @@
+[
+  {
+    "manifest_id": 394,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "802856",
+      "date": "2025-09-18"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "802856",
+      "date": "2025-09-18"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "802856",
+      "dump_date": "2025-09-18"
+    }
+  },
+  {
+    "manifest_id": 395,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "801243",
+      "date": "2025-09-03"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "801243",
+      "date": "2025-09-03"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "801243",
+      "dump_date": "2025-09-03"
+    }
+  },
+  {
+    "manifest_id": 396,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "804034",
+      "date": "2025-10-02"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "804034",
+      "date": "2025-10-02"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "804034",
+      "dump_date": "2025-10-02"
+    }
+  },
+  {
+    "manifest_id": 397,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "491973",
+      "date": "2025-05-09"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "491973",
+      "date": "2025-05-09"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "491973",
+      "dump_date": "2025-05-09"
+    }
+  },
+  {
+    "manifest_id": 398,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "811866",
+      "date": "2025-12-23"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "811866",
+      "date": "2025-12-23"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "811866",
+      "dump_date": "2025-12-23"
+    }
+  },
+  {
+    "manifest_id": 399,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "broward",
+      "number": "293940",
+      "date": "2025-12-15"
+    },
+    "ocr": {
+      "jurisdiction": "broward",
+      "number": "293940",
+      "date": "2025-12-15"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "broward",
+      "number": "293940",
+      "dump_date": "2025-12-15"
+    }
+  },
+  {
+    "manifest_id": 400,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "496008",
+      "date": "2025-06-24"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "496008",
+      "date": "2025-06-24"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "496008",
+      "dump_date": "2025-06-24"
+    }
+  },
+  {
+    "manifest_id": 401,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "493582",
+      "date": "2025-05-28"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "493582",
+      "date": "2025-05-28"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "493582",
+      "dump_date": "2025-05-28"
+    }
+  },
+  {
+    "manifest_id": 402,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "496725",
+      "date": "2025-07-02"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "496725",
+      "date": "2025-07-02"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "496725",
+      "dump_date": "2025-07-02"
+    }
+  },
+  {
+    "manifest_id": 403,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "806450",
+      "date": "2025-10-28"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "806450",
+      "date": "2025-10-28"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "806450",
+      "dump_date": "2025-10-28"
+    }
+  }
+]

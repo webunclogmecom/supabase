@@ -96,7 +96,13 @@ const NOTE_DATE_CUTOFF = (() => {
 const JOBBER_GRAPHQL = 'https://api.getjobber.com/api/graphql';
 const JOBBER_API_VERSION = '2026-04-13';
 const STORAGE_BUCKET = 'GT - Visits Images';
-const NOTE_CLASSIFIER_WINDOW_DAYS = 1;
+// Window for matching a Jobber note to its visit by date proximity.
+// Bumped from 1 → 2 on 2026-05-16 after audit found 487 orphan Jobber photos
+// (75 client-level notes with no matching visit at ±1 day). A ±2 day window
+// recovered 47/75 of those notes (428 photos linked). Wider windows risk
+// false positives on multi-visit-per-week clients; ±2 is the sweet spot
+// validated empirically against the orphan pool.
+const NOTE_CLASSIFIER_WINDOW_DAYS = 2;
 
 // Budget: pause new queries when Jobber budget < 20% of max
 const BUDGET_FLOOR_FRACTION = 0.20;

@@ -112,10 +112,11 @@ async function fetchTable(table, where) {
   // 2) Build the table copy plan (order matters for FK satisfaction)
   // ESL rows are kept only for entities ACTUALLY in the subset. Strict scope.
   const VEHICLES_SUB  = `SELECT DISTINCT vehicle_id FROM visits WHERE client_id IN (${clientList}) AND vehicle_id IS NOT NULL`;
-  // Employees referenced by our subset can show up in TWO places:
+  // Employees referenced by our subset can show up in THREE places:
   //   - visit_assignments.employee_id  (the drivers / techs on the visit)
   //   - notes.author_employee_id       (whoever wrote a note on the visit)
-  // Union both, drop nulls.
+  //   - inspections.employee_id        (driver who did the shift inspection — may differ from visit_assignments)
+  // Union, drop nulls.
   const EMPLOYEES_SUB = `
     SELECT employee_id AS id FROM visit_assignments
       WHERE visit_id IN (SELECT id FROM visits WHERE client_id IN (${clientList}))
@@ -124,6 +125,12 @@ async function fetchTable(table, where) {
     SELECT author_employee_id AS id FROM notes
       WHERE visit_id IN (SELECT id FROM visits WHERE client_id IN (${clientList}))
         AND author_employee_id IS NOT NULL
+    UNION
+    SELECT employee_id AS id FROM inspections
+      WHERE (vehicle_id, shift_date) IN (
+        SELECT DISTINCT vehicle_id, visit_date FROM visits
+        WHERE client_id IN (${clientList}) AND vehicle_id IS NOT NULL
+      ) AND employee_id IS NOT NULL
   `.replace(/\s+/g,' ').trim();
   const ESL_FILTER = `
        (entity_type='client'        AND entity_id IN (${clientList}))
@@ -138,9 +145,32 @@ async function fetchTable(table, where) {
   `.replace(/\s+/g, ' ').trim();
 
   // Per Fred 2026-05-14: only data strictly linked to the subset clients.
-  // Skip photos, photo_links, inspections (shift-based, not client-linked),
-  // webhook_tokens (global ops), and any other non-linked global tables.
+  // 2026-05-14 (later): re-include photos + photo_links so customer.wo_photos
+  // renders real data in Field Portal validation. Inspections still excluded
+  // (separate todo — pending canonical inspection columns). photo_classifications
+  // included forward-compat: auto-skips until migration 2026-05-14d creates
+  // the canonical table in Prod.
   // Vehicles + employees: only those REFERENCED by subset visits/assignments.
+
+  // inspections: shift-level (per truck per day). Match to subset via (vehicle_id, shift_date)
+  // tuple — pulls inspections whose shift was on a date a subset visit also occurred.
+  const INSPECTIONS_FILTER = `
+    (vehicle_id, shift_date) IN (
+      SELECT DISTINCT vehicle_id, visit_date FROM visits
+      WHERE client_id IN (${clientList}) AND vehicle_id IS NOT NULL
+    )
+  `.replace(/\s+/g, ' ').trim();
+
+  // photo_links: polymorphic. Only include entity_types whose data is in the subset.
+  const PHOTO_LINKS_FILTER = `
+       (entity_type='visit'         AND entity_id IN (SELECT id FROM visits         WHERE client_id IN (${clientList})))
+    OR (entity_type='note'          AND entity_id IN (SELECT id FROM notes          WHERE visit_id IN (SELECT id FROM visits WHERE client_id IN (${clientList}))))
+    OR (entity_type='derm_manifest' AND entity_id IN (SELECT id FROM derm_manifests WHERE client_id IN (${clientList})))
+    OR (entity_type='inspection'    AND entity_id IN (SELECT i.id FROM inspections i WHERE ${INSPECTIONS_FILTER}))
+  `.replace(/\s+/g, ' ').trim();
+  // photos: only those referenced by the photo_links in our subset.
+  const PHOTOS_FILTER = `id IN (SELECT DISTINCT photo_id FROM photo_links WHERE (${PHOTO_LINKS_FILTER}) AND photo_id IS NOT NULL)`;
+
   const plan = [
     // Reference data, scoped to what's actually used by subset visits.
     { table: 'vehicles',  where: `id IN (SELECT DISTINCT vehicle_id FROM visits WHERE client_id IN (${clientList}) AND vehicle_id IS NOT NULL)` },
@@ -163,6 +193,13 @@ async function fetchTable(table, where) {
         manifest_id IN (SELECT id FROM derm_manifests WHERE client_id IN (${clientList}))
         AND visit_id IN (SELECT id FROM visits WHERE client_id IN (${clientList}))
       `.replace(/\s+/g,' ').trim() },
+    // Inspections: shift-level, scoped to subset's (vehicle, date) pairs
+    { table: 'inspections',         where: INSPECTIONS_FILTER },
+    // Photos: order matters. photos before photo_links (FK), photo_links before photo_classifications.
+    { table: 'photos',              where: PHOTOS_FILTER },
+    { table: 'photo_links',         where: PHOTO_LINKS_FILTER },
+    // Forward-compat: auto-skips until canonical photo_classifications exists in Prod (migration 2026-05-14d).
+    { table: 'photo_classifications', where: `photo_link_id IN (SELECT id FROM photo_links WHERE ${PHOTO_LINKS_FILTER})` },
     { table: 'entity_source_links', where: ESL_FILTER },
   ];
 

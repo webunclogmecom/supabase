@@ -57,6 +57,14 @@ const FALLBACK_DURATION_MS = 60 * 60 * 1000;      // when completed_at is null
 // property are stale telemetry, not attribution signal.
 const GOLIATH_DECOMMISSION_DATE = '2026-01-01';
 
+// Cloggy is the day-shift plumbing truck (Grecia). Commercial overnight
+// service (GT/CL/LS/WD) is run by Moises (Kenworth T880); Cloggy only
+// touches residential/emergency calls. Cloggy GPS pings near commercial
+// clients are usually pass-by noise during the day route. Without this
+// exclusion the autopilot saw Moises+Cloggy overlap on 8/15 recent
+// commercial visits (audit 2026-05-22) and skipped them as ambiguous.
+const COMMERCIAL_SERVICE_TYPES = new Set(['GT', 'CL', 'LS', 'WD']);
+
 // ---- helpers ----------------------------------------------------------------
 
 function http(opts, body) {
@@ -149,6 +157,7 @@ function haversineM(lat1, lng1, lat2, lng2) {
       COALESCE(p_direct.latitude::float,  p_fallback.latitude::float)  AS lat,
       COALESCE(p_direct.longitude::float, p_fallback.longitude::float) AS lng,
       c.client_code,
+      v.service_type,
       CASE WHEN p_direct.id IS NOT NULL THEN 'direct' ELSE 'client-fallback' END AS source
     FROM visits v
     LEFT JOIN properties   p_direct   ON p_direct.id = v.property_id
@@ -173,7 +182,15 @@ function haversineM(lat1, lng1, lat2, lng2) {
     const endMs = v.completed_at ? new Date(v.completed_at).getTime() : startMs + FALLBACK_DURATION_MS;
     const lat = v.lat, lng = v.lng;
     const excludeGoliath = v.visit_date >= GOLIATH_DECOMMISSION_DATE;
-    const goliathClause = excludeGoliath ? "AND veh.name != 'Goliath'" : '';
+    // Exclude Cloggy for commercial visits (and for NULL service_type, which
+    // for visits past 2026 is overwhelmingly recurring commercial work).
+    const excludeCloggy = v.service_type == null || COMMERCIAL_SERVICE_TYPES.has(v.service_type);
+    const exclusions = [];
+    if (excludeGoliath) exclusions.push("'Goliath'");
+    if (excludeCloggy) exclusions.push("'Cloggy'");
+    const goliathClause = exclusions.length
+      ? `AND veh.name NOT IN (${exclusions.join(',')})`
+      : '';
 
     let resolved = null;
     let lastAmbiguous = null;

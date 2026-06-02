@@ -1,0 +1,96 @@
+# Phase 2b — 50-GDO Bot Batch Results
+
+Total: 50 rows · Generated from `09_phase_2b_results.json`
+
+## Counts
+
+- CONFIRMED_MATCH (safe UPDATE max_frequency_days): **23**
+- WRONG_CLIENT (DEMOTE INACTIVE): **14**
+- DIFFERENT_TENANT (DEMOTE INACTIVE): **4**
+- WRONG_GDO_NUMBER (re-link to bot's gdo_number, NEEDS VIKTOR REVIEW): **7**
+- AMBIGUOUS (defer, NEEDS VIKTOR REVIEW): **2**
+
+
+## CONFIRMED_MATCH (safe UPDATE) (23)
+
+| id | gdo_number | client_code | client_name | bot_freq | bot_exp | bot_facility | bot_issued_to |
+|---|---|---|---|---|---|---|---|
+| 122 | GDO-03342 | 214-PER | Aromas del Peru | 90 | 2026-12-31 | AROMAS DEL PERU | SEAFOOD ON THE TABLE, INC. DBA AROM... |
+| 129 | GDO-08341 | 192-FRK | Fresko | 30 | 2026-12-31 | COOL WILD COMPANY LLC.\DBA TH... | NB2J INVESTMENTS, LLC DBA FRESKO |
+| 29 | GDO-08912 | 144-LTG | (Bakery) Lettuce and Tomato... | 90 | 2026-12-31 | LUNA CREPESSE GOURMET DELI & ... | LETTUCE & TOMATO RESTAURANT, LLC |
+| 132 | GDO-09070 | 206-CAC | Cacio e Pepe | 60 | 2026-12-31 | HOLY BAGEL & PIZZARIA | THE BROTHERS GROUP, LLC. DBA CACIO ... |
+| 34 | GDO-14528 | 183-KRE | Kresy Kosher Pizza & Falafe... | 90 | 2025-12-31 | BONE ROME | MEY ENTERPRISE LLC. DBA. KRESY FALA... |
+| 95 | GDO-11986 | 133-MUT | Mutra | 30 | 2026-12-31 | SAPMAHASARN, LLC. | GOURMET HOSPITALITY GROUP LLC DBA M... |
+| 101 | GDO-13141 | 031-KRU | Krudo Fish Market | 60 | 2026-12-31 | KRUDO, LLC | KRUDO, LLC |
+| 77 | GDO-06012 | 065-TCE | The carrot express Brickell | 30 | 2026-12-31 | STARBUCKS COFFEE | CARROT LOVE BRICKELL OPERATING LLC ... |
+| 52 | GDO-06762 | 094-MOZ | Mozart Cafe | 30 | 2025-12-31 | COLLINS CONVENIENCE STORE | MOZART CAFE SUNNY ISLES, INC. DBA M... |
+| 54 | GDO-00092 | 174-17 | 17 Restaurant and Sushi Bar | 30 | 2026-12-31 | ANGIE PERUVIAN KITCHEN, INC d... | ANGIE PERUVIAN KITCHEN, INC DBA SEV... |
+| 119 | GDO-12970 | 048-PV | Pura Vida (Aventura) | 60 | 2026-12-31 | DELICIOUS RAW AVENTURA LLC. | PURA VIDA AVENTURA PARK SQUARE LLC |
+| 12 | GDO-10820 | 089-COW | Cowy Burger | 60 | 2026-12-31 | ALTOR RESTAURANT | TJM HOSPITALITY GROUP, LLC DBA. COW... |
+| 41 | GDO-05734 | 068-TCE | The carrot express Coconut ... | 30 | 2026-12-31 | HAAGEN-DAZS ICE CREAM | CARROT LOVE COCONUT GROVE OPERATING... |
+| 69 | GDO-14965 | 041-MB | Marie Blachere | 90 | 2023-12-31 | MARIE BLACHERE HYDE MIAMI BAK... | MARIE BLACHERE HYDE MIAMI BAKERY, L... |
+| 84 | GDO-14294 | 047-PAM | Pamplemousse On the bay | 90 | 2024-12-31 | PAMPLEMOUSSE ON THE BAY LLC | PAMPLEMOUSSE ON THE BAY LLC D/B/A P... |
+| 114 | GDO-14514 | 080-TCE | The carrot express River La... | 90 | 2026-12-31 | CARROT EXPRESS | CARROT LOVE RIVER LANDING LLC DBA C... |
+| 30 | GDO-12066 | 018-FUE | Fuego By Mana | 90 | 2026-12-31 | CCFP MIAMI, LLC. DBA CAMPANIA... | AVIMARKABE CORP. DBA FUEGO BY MANA |
+| 118 | GDO-11170 | 074-TCE | The carrot express Doral | 90 | 2026-12-31 | MIXTURA RESTAURANT | CARROT LOVE CITY PLACE OPERATING LL... |
+| 80 | GDO-10285 | 134-SC | Shepherd Coffee | 30 | 2026-12-31 | SHEPPERD PRTISON COFFEE | SHEPHERD ARTISAN COFFEE, LLC |
+| 15 | GDO-15675 | 168-AVA | AVA | 90 | 2026-12-31 | AVA RESTAURANT | AVA COCONUT GROVE LLC DBA AVA MEDIT... |
+| 103 | GDO-11710 | 052-PV | Pura Vida Design District | 30 | 2026-12-31 | BLUE BOTTLE COFFEE | PURA VIDA DESIGN DISTRICT, LLC. |
+| 83 | GDO-09945 | 005-BUB | Bubby's Fish N' Chips | 90 | 2026-12-31 | MIAMI KOSHER DELI | SBH FISH N' CHIPS LLC. DBA BUBBY'S ... |
+| 90 | GDO-11328 | 070-TCE | The carrot express Miami sh... | 90 | 2026-12-31 | FUENTE OVEJUNA | CARROT EXPRESS MIAMI SHORES LLC |
+
+## WRONG_CLIENT (DEMOTE) (14)
+
+| id | gdo_number | client_code | client_name | bot_freq | bot_exp | bot_facility | bot_issued_to |
+|---|---|---|---|---|---|---|---|
+| 130 | GDO-01861 | 193-FRK | Fresko Bakery | ? | ? | PITAS & PLATTERS RESTAURANT |  |
+| 128 | GDO-02118 | 188-ACA | Hebrew Academy | 90 | 2026-12-31 | SAN LAZARO CAFETERIA | SAN LAZARO CAFETERIA, INC. |
+| 131 | GDO-05563 | 203-GF | Merav Halperin - Good Food | 30 | 2026-12-31 | FIRST MOON HOLDINGS LLC D/B/A... | FIRST MOON HOLDINGS LLC D/B/A CHINA... |
+| 134 | GDO-06685 | 210-KAY | Kayitili | 60 | 2026-12-31 | CHUBBY CHEESE PIZZA | KORNDOG, LLC DBA KORNDOG |
+| 123 | GDO-07382 | 187-HAI | Shalom Haifa | 90 | 2024-12-31 | MACITAS RESTAURANT | MACITAS RESTAURANT, INC. |
+| 135 | GDO-08422 | 214-MYK | Myka Brickell FT LLC | 30 | 2026-12-31 | TRULUCKS RESTAURANT STEAK & S... | 777 BRICKELL PARTNERS LLC DBA TRULU... |
+| 18 | GDO-11202 | 202-CAP | Capas Burger | 90 | 2026-12-31 | LEVINSKY ROASTING | LR SUSHI LLC DBA TYO SUSHI |
+| 92 | GDO-11220 | 136-BB | Bagel Boss Miami Beach | 60 | 2026-12-31 | POLLO TROPICAL EXPRESS | POLLO OPERATIONS, INC. DBA POLLO TR... |
+| 106 | GDO-11260 | 123-EUC | Euclid LLC | 30 | 2026-12-31 | AZUL SPIRITS & WINE, INC. | MAIA SPIRITS & WINES LLC DBA AZUL S... |
+| 23 | GDO-11264 | 138-ASW | Arepas & Sand Wish ( Helen ... | 90 | 2026-12-31 | AMSTERDAM FALAFEL SHOP | CHEESESTEAK FOR SALE, LLC |
+| 98 | GDO-11014 | 085-VA | Villa Azur | 30 | 2026-12-31 | HOLI PETIT CAFE | NEARLEX LLC. DBA: DON PIETRO GELATO... |
+| 49 | GDO-08976 | 063-TCE | The Carrot Express (Aventur... | 90 | 2026-12-31 | M-DCPS-STATE SCHOOL "CC-1" | MDCPS-COCONUT PALM K-8 ACADEMY |
+| 87 | GDO-03828 | 084-ULT | Ultra Padel Club | 90 | 2026-12-31 | DCPS-SOUTHWOOD MIDDLE SCHOOL | MDCPS-SOUTHWOOD MIDDLE SCHOOL |
+| 43 | GDO-14031 | 105-CU | Cook Unity | 60 | 2024-12-31 | SABORES LATINOS MIAMI LLC | SABORES LATINOS MIAMI LLC |
+
+## DIFFERENT_TENANT (DEMOTE) (4)
+
+| id | gdo_number | client_code | client_name | bot_freq | bot_exp | bot_facility | bot_issued_to |
+|---|---|---|---|---|---|---|---|
+| 127 | GDO-05104 | 114-CI | Ceviche inka | 60 | 2024-12-31 | POLYNESIO LAKE RESTAURANT & B... | POLYNESIO LAKE RESTAURANT & BAR, IN... |
+| 121 | GDO-11308 | 201-ALA | Aladdin Mediterranean food | 90 | 2026-12-31 | TORRE'S STORE CORP D/B/A U GAS | TORRE'S STORE CORP D/B/A U GAS |
+| 66 | GDO-05180 | 198-ARY | Aryeh Hochner | 90 | 2026-12-31 | FAIRFIELD INN & SUITES | FAIRFIELD INN & SUITES |
+| 53 | GDO-12490 | 083-SHUL | The Shul | 90 | 2026-12-31 | THE IVOY TOWER | PPG BAY HARBOR OWNER LLC |
+
+## WRONG_GDO_NUMBER (NEEDS VIKTOR REVIEW) (7)
+
+| id | gdo_number | client_code | client_name | bot_freq | bot_exp | bot_facility | bot_issued_to |
+|---|---|---|---|---|---|---|---|
+| 124 | GDO-04943 | 150-KOS | Kosh | 90 | 2026-12-31 | GROVE KOSHER LLC | GROVE KOSHER LLC |
+| 133 | GDO-08370 | 208-HUB | Hubble Bubble Lounge | 90 | 2026-12-31 | RESTAURANT EXPANSION | HUBBLE BUBBLE CORP DBA HUBBLE BUBBLE |
+| 125 | GDO-12484 | 036-LG | La Granja South Miami | 60 | 2026-12-31 | FG GROUP INT'L, CORP. DBA LA ... | FG GROUP INT'L, CORP. DBA LA GRANJA... |
+| 59 | GDO-11226 | 148-MOR | The Moore | ? | ? | MIAMI DD CLUB, LLC dba MOORE ... |  |
+| 7 | GDO-11433 | 170-PV | Pura Vida Bakery | 90 | 2026-12-31 | PURA VIDA ENTERPRISES LLC DBA... | PURA VIDA ENTERPRISES LLC DBA PURA ... |
+| 88 | GDO-07733 | 172-NU | Nu Real food - Coral gables | 90 | 2026-12-31 | STALK AND SPADE MIDTOWN LLC d... | STALK AND SPADE MIDTOWN LLC DBA NU ... |
+| 44 | GDO-12838 | 155-PV | Pura Vida Flamingo | 60 | 2026-12-31 | PURA VIDA COLLINS LOEWS LLC | PURA VIDA COLLINS LOEWS LLC |
+
+**Bot's proposed gdo_number for each:**
+- id=124 150-KOS Kosh: our `GDO-04943` -> bot `GDO-13447` (GROVE KOSHER LLC)
+- id=133 208-HUB Hubble Bubble Lounge: our `GDO-08370` -> bot `GDO-16086` (HUBBLE BUBBLE CORP DBA HUBBLE BUBBLE)
+- id=125 036-LG La Granja South Miami: our `GDO-12484` -> bot `GDO-11708` (FG GROUP INT'L, CORP. DBA LA GRANJA ON NORTH MIAM...)
+- id=59 148-MOR The Moore: our `GDO-11226` -> bot `GDO-14769` (MIAMI DD CLUB, LLC dba MOORE CLUB BEV CO / MOORE ...)
+- id=7 170-PV Pura Vida Bakery: our `GDO-11433` -> bot `GDO-14681` (PURA VIDA ENTERPRISES LLC DBA PURA VIDA MIAMI)
+- id=88 172-NU Nu Real food - Coral gables: our `GDO-07733` -> bot `GDO-11540` (STALK AND SPADE MIDTOWN LLC DBA NU REAL FOOD)
+- id=44 155-PV Pura Vida Flamingo: our `GDO-12838` -> bot `GDO-10891` (PURA VIDA COLLINS LOEWS LLC)
+
+## AMBIGUOUS (NEEDS VIKTOR REVIEW) (2)
+
+| id | gdo_number | client_code | client_name | bot_freq | bot_exp | bot_facility | bot_issued_to |
+|---|---|---|---|---|---|---|---|
+| 61 | GDO-08499 | 149-RUS | Rustico | 90 | 2026-12-31 | MIAMI SUBS | BH 9476 INVESTMENTS LLC DBA RUSTIKO |
+| 72 | GDO-03375 | 194-PV | Pura Vida 41 | 30 | 2026-12-31 | M&L FOOD MARKET | COLLINS & 74 STREET CORP. DBA M & L... |

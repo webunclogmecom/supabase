@@ -1,0 +1,204 @@
+[
+  {
+    "manifest_id": 304,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "820615",
+      "date": "2026-04-02"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "820615",
+      "date": "2026-04-02"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "820615",
+      "dump_date": "2026-04-02"
+    }
+  },
+  {
+    "manifest_id": 307,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "495044",
+      "date": "2025-06-12"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "495044",
+      "date": "2025-06-12"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "495044",
+      "dump_date": "2025-06-12"
+    }
+  },
+  {
+    "manifest_id": 308,
+    "prompt_version": "v2",
+    "error": "Anthropic 529: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"},\"request_id\":\"req_011CbBuqZpdQNtsAqzbKRYbo\"}"
+  },
+  {
+    "manifest_id": 309,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "809704",
+      "date": "2025-12-02"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "809704",
+      "date": "2025-12-02"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "809704",
+      "dump_date": "2025-12-02"
+    }
+  },
+  {
+    "manifest_id": 310,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "803601",
+      "date": "2025-09-27"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "803601",
+      "date": "2025-09-27"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "803601",
+      "dump_date": "2025-09-27"
+    }
+  },
+  {
+    "manifest_id": 311,
+    "prompt_version": "v2",
+    "error": "Anthropic 529: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"},\"request_id\":\"req_011CbBurUhLF4pgEAEGCAZfv\"}"
+  },
+  {
+    "manifest_id": 312,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "498395",
+      "date": "2025-07-23"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "498395",
+      "date": "2025-07-23"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "498395",
+      "dump_date": "2025-07-23"
+    }
+  },
+  {
+    "manifest_id": 313,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "broward",
+      "number": "303478",
+      "date": "2026-04-24"
+    },
+    "ocr": {
+      "jurisdiction": "broward",
+      "number": "303478",
+      "date": "2026-04-24"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "broward",
+      "number": "303478",
+      "dump_date": "2026-04-24"
+    }
+  },
+  {
+    "manifest_id": 315,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "816562",
+      "date": "2026-02-10"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "816562",
+      "date": "2026-02-10"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "816562",
+      "dump_date": "2026-02-10"
+    }
+  },
+  {
+    "manifest_id": 316,
+    "prompt_version": "v2",
+    "expected": {
+      "jurisdiction": "dade",
+      "number": "495440",
+      "date": "2025-06-17"
+    },
+    "ocr": {
+      "jurisdiction": "dade",
+      "number": "495440",
+      "date": "2025-06-17"
+    },
+    "match": {
+      "jurisdiction": true,
+      "number": true,
+      "date": true
+    },
+    "parsed": {
+      "jurisdiction": "dade",
+      "number": "495440",
+      "dump_date": "2025-06-17"
+    }
+  }
+]

@@ -375,6 +375,24 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Webhook receivers: verify_jwt MUST be false. External services (Jobber HMAC,
+# Airtable shared-secret, Samsara HMAC) authenticate via their own headers /
+# query params; they cannot send a Supabase JWT. Supabase's default for new
+# function deploys is verify_jwt=true, which silently 401s every webhook event
+# at the gateway. 2026-05-16 incident: 5 days of Jobber + 3 days of AT events
+# were lost this way before being diagnosed.
+#
+# Each handler implements its own auth check internally (HMAC signature
+# verification for Jobber/Samsara; shared-secret check for AT).
+[functions.webhook-jobber]
+verify_jwt = false
+
+[functions.webhook-airtable]
+verify_jwt = false
+
+[functions.webhook-samsara]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

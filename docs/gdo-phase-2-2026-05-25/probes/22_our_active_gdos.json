@@ -1,0 +1,842 @@
+[
+  {
+    "id": 138,
+    "gdo_number": "bw",
+    "location_label": null,
+    "max_frequency_days": null,
+    "permit_expiration": null,
+    "client_code": "076-TCE",
+    "client_name": "The carrot express Hollywood",
+    "address": "1818 Hollywood Boulevard, Hollywood, Florida 33020, USA"
+  },
+  {
+    "id": 139,
+    "gdo_number": "BW",
+    "location_label": null,
+    "max_frequency_days": null,
+    "permit_expiration": null,
+    "client_code": "024-GRO",
+    "client_name": "Grove Kosher LLC (Fort Lauderdale)",
+    "address": "2889 Stirling Road, Fort Lauderdale, Florida 33312, USA"
+  },
+  {
+    "id": 137,
+    "gdo_number": "BW",
+    "location_label": null,
+    "max_frequency_days": null,
+    "permit_expiration": null,
+    "client_code": "044-MP",
+    "client_name": "Mrs. Pasta",
+    "address": "220 Southwest 31st Street, Fort Lauderdale, Florida 33315, USA"
+  },
+  {
+    "id": 54,
+    "gdo_number": "GDO-00092",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "174-17",
+    "client_name": "17 Restaurant and Sushi Bar",
+    "address": "1751 Alton Road"
+  },
+  {
+    "id": 57,
+    "gdo_number": "GDO-00313",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "060-TU",
+    "client_name": "Talmudic University",
+    "address": "4000 Alton Road, Miami Beach, Florida 33140, USA"
+  },
+  {
+    "id": 62,
+    "gdo_number": "GDO-00951",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "132-PUM",
+    "client_name": "Pummarola",
+    "address": "1747 Alton Road, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 96,
+    "gdo_number": "GDO-00992",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "029-JOS",
+    "client_name": "Josh's Deli",
+    "address": "9517 Harding Avenue"
+  },
+  {
+    "id": 50,
+    "gdo_number": "GDO-02345",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "003-BC",
+    "client_name": "Bagel Cove",
+    "address": "19003 Biscayne Boulevard, Miami, Florida 33180, USA"
+  },
+  {
+    "id": 1,
+    "gdo_number": "GDO-02591",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "117-BH",
+    "client_name": "Food Art Catering / Bh gourmet",
+    "address": "14566 Northwest 22nd Avenue, Opa-locka, Florida 33054, USA"
+  },
+  {
+    "id": 14,
+    "gdo_number": "GDO-03033",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "186-PV",
+    "client_name": "Pura Vida Coconut Grove",
+    "address": "3034 Grand Avenue, Miami, FL 33133"
+  },
+  {
+    "id": 122,
+    "gdo_number": "GDO-03342",
+    "location_label": "AROMAS DEL PERU",
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "214-PER",
+    "client_name": "Aromas del Peru",
+    "address": "13823 Southwest 88th Street"
+  },
+  {
+    "id": 72,
+    "gdo_number": "GDO-03375",
+    "location_label": null,
+    "max_frequency_days": null,
+    "permit_expiration": "2026-12-31",
+    "client_code": "194-PV",
+    "client_name": "Pura Vida 41",
+    "address": "744 West 41st Street"
+  },
+  {
+    "id": 93,
+    "gdo_number": "GDO-03917",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "014-JOY",
+    "client_name": "The Joyce",
+    "address": "448 Española Way"
+  },
+  {
+    "id": 67,
+    "gdo_number": "GDO-04840",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "004-BAO",
+    "client_name": "Baoli Miami",
+    "address": "1906 Collins Avenue, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 25,
+    "gdo_number": "GDO-04868",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "199-JZ",
+    "client_name": "JZ Steak House",
+    "address": "16145 Biscayne Boulevard"
+  },
+  {
+    "id": 85,
+    "gdo_number": "GDO-05180",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "129-BSC",
+    "client_name": "Bet Shira Congretation",
+    "address": "7500 Southwest 120th Street, Miami, FL"
+  },
+  {
+    "id": 13,
+    "gdo_number": "GDO-05189",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "008-CV",
+    "client_name": "Cafe Vert",
+    "address": "9490 Harding Avenue, Surfside, Florida 33154, USA"
+  },
+  {
+    "id": 86,
+    "gdo_number": "GDO-05625",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "011-CCC",
+    "client_name": "Cine Citta Cafe (Franck Taieb)",
+    "address": "9544 Harding Avenue"
+  },
+  {
+    "id": 41,
+    "gdo_number": "GDO-05734",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "068-TCE",
+    "client_name": "The carrot express Coconut grove",
+    "address": "2982 Grand Avenue, Miami, Florida 33133, USA"
+  },
+  {
+    "id": 70,
+    "gdo_number": "GDO-05860",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "189-FRE",
+    "client_name": "Miami Fresh Fish Market",
+    "address": "433 West 41st Street"
+  },
+  {
+    "id": 77,
+    "gdo_number": "GDO-06012",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "065-TCE",
+    "client_name": "The carrot express Brickell",
+    "address": "1111 Brickell Avenue"
+  },
+  {
+    "id": 10,
+    "gdo_number": "GDO-06749",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "056-STM",
+    "client_name": "Sarah's Tent Market",
+    "address": "3565 Northeast 207th Street, Miami, Florida 33180, USA"
+  },
+  {
+    "id": 52,
+    "gdo_number": "GDO-06762",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "094-MOZ",
+    "client_name": "Mozart Cafe",
+    "address": "18110 Collins Avenue, Sunny Isles Beach, Florida 33160, USA"
+  },
+  {
+    "id": 79,
+    "gdo_number": "GDO-06989",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "039-HSE",
+    "client_name": "Hiro's Sushi Express",
+    "address": "1518 Washington Avenue"
+  },
+  {
+    "id": 107,
+    "gdo_number": "GDO-07696",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "107-PV",
+    "client_name": "Pura Vida SOBE",
+    "address": "110 Washington Avenue, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 129,
+    "gdo_number": "GDO-08341",
+    "location_label": "COOL WILD COMPANY LLC DBA THAT COOL CAFE",
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "192-FRK",
+    "client_name": "Fresko",
+    "address": "19048 Northeast 29th Avenue"
+  },
+  {
+    "id": 61,
+    "gdo_number": "GDO-08499",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "149-RUS",
+    "client_name": "Rustico",
+    "address": "9476 Harding Avenue, Surfside, Florida 33154, USA"
+  },
+  {
+    "id": 11,
+    "gdo_number": "GDO-08630",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "026-HAP",
+    "client_name": "Happea's",
+    "address": "1250 South Miami Avenue"
+  },
+  {
+    "id": 102,
+    "gdo_number": "GDO-08912",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "139-LTG",
+    "client_name": "Lettuce and Tomato",
+    "address": "17070 West Dixie Highway"
+  },
+  {
+    "id": 76,
+    "gdo_number": "GDO-09017",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "033-LG",
+    "client_name": "La Granja Allapattah",
+    "address": "3333 Northwest 17th Avenue, Miami, Florida 33142, USA"
+  },
+  {
+    "id": 132,
+    "gdo_number": "GDO-09070",
+    "location_label": "HOLY BAGEL & PIZZARIA",
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "206-CAC",
+    "client_name": "Cacio e Pepe",
+    "address": "15903 Biscayne Boulevard"
+  },
+  {
+    "id": 78,
+    "gdo_number": "GDO-09077",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "178-LG",
+    "client_name": "La Granja Flager",
+    "address": "8754 West Flagler Street, Miami"
+  },
+  {
+    "id": 36,
+    "gdo_number": "GDO-09236",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "035-LG",
+    "client_name": "La Granja Downtown",
+    "address": "127 Southeast 2nd Avenue, Miami, Florida 33131, USA"
+  },
+  {
+    "id": 3,
+    "gdo_number": "GDO-09672",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "055-PV",
+    "client_name": "Pura Vida Sunset Harbor",
+    "address": "1940 Alton Road, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 16,
+    "gdo_number": "GDO-09807",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "195-MYK",
+    "client_name": "Myka Lincoln LLC",
+    "address": "551 Lincoln Road, Miami beach"
+  },
+  {
+    "id": 8,
+    "gdo_number": "GDO-09852",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "002-41",
+    "client_name": "41 Pizza and Bakery",
+    "address": "451 West 41st Street, Miami Beach, Florida 33140, USA"
+  },
+  {
+    "id": 19,
+    "gdo_number": "GDO-09881",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "071-TCE",
+    "client_name": "The carrot express South Miami",
+    "address": "5850 Sunset Drive, South Miami, Florida 33143, USA"
+  },
+  {
+    "id": 40,
+    "gdo_number": "GDO-09925",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "092-TCE",
+    "client_name": "The carrot express Coral Gables",
+    "address": "259 Miracle Mile, Coral Gables, Florida 33134, USA"
+  },
+  {
+    "id": 83,
+    "gdo_number": "GDO-09945",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "005-BUB",
+    "client_name": "Bubby's Fish N' Chips",
+    "address": "1129 Northeast 163rd Street"
+  },
+  {
+    "id": 99,
+    "gdo_number": "GDO-10249",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "171-CAF",
+    "client_name": "Ironside Cafe",
+    "address": "7580 Northeast 4th Court, Miami"
+  },
+  {
+    "id": 80,
+    "gdo_number": "GDO-10285",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "134-SC",
+    "client_name": "Shepherd Coffee",
+    "address": "919 Collins Avenue, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 39,
+    "gdo_number": "GDO-10440",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "072-TCE",
+    "client_name": "The carrot express Sunset Harbor",
+    "address": "1828 Bay Road, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 12,
+    "gdo_number": "GDO-10820",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "089-COW",
+    "client_name": "Cowy Burger",
+    "address": "223 Northwest 23rd Street, Miami, Florida 33127, USA"
+  },
+  {
+    "id": 100,
+    "gdo_number": "GDO-10822",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "077-TCE",
+    "client_name": "The carrot express Kendall",
+    "address": "8880 Southwest 72nd Place, Kendall, Florida 33156, USA"
+  },
+  {
+    "id": 63,
+    "gdo_number": "GDO-10877",
+    "location_label": "KITCHENS",
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "009-CN",
+    "client_name": "Casa Neos",
+    "address": "40 Southwest North River Drive"
+  },
+  {
+    "id": 44,
+    "gdo_number": "GDO-10891",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "155-PV",
+    "client_name": "Pura Vida Flamingo",
+    "address": "1504 Bay Road, Miami Beach, FL"
+  },
+  {
+    "id": 37,
+    "gdo_number": "GDO-11029",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "040-MV",
+    "client_name": "Maison Valentine",
+    "address": "1112 15th Street, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 118,
+    "gdo_number": "GDO-11170",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "074-TCE",
+    "client_name": "The carrot express Doral",
+    "address": "3450 Northwest 83rd Avenue, Doral, Florida 33166, USA"
+  },
+  {
+    "id": 91,
+    "gdo_number": "GDO-11186",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "086-ZAK",
+    "client_name": "Zak the Baker",
+    "address": "295 Northwest 26th Street"
+  },
+  {
+    "id": 117,
+    "gdo_number": "GDO-11228",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "175-PV",
+    "client_name": "Pura Vida Brickell 701",
+    "address": "1104 South Miami Avenue"
+  },
+  {
+    "id": 32,
+    "gdo_number": "GDO-11271",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "137-BB",
+    "client_name": "Bagel Boss Aventura",
+    "address": "18549 W Dixie Hwy, Aventura, FL 33180, Aventura, FL 33180, USA"
+  },
+  {
+    "id": 90,
+    "gdo_number": "GDO-11328",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "070-TCE",
+    "client_name": "The carrot express Miami shores",
+    "address": "9802 Northeast 2nd Avenue"
+  },
+  {
+    "id": 38,
+    "gdo_number": "GDO-11532",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "032-LG",
+    "client_name": "La Granja 36th St",
+    "address": "2885 Northwest 36th Street, Miami, Florida 33142, USA"
+  },
+  {
+    "id": 125,
+    "gdo_number": "GDO-11708",
+    "location_label": "URBAN BRICKS PIZZA CO",
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "036-LG",
+    "client_name": "La Granja South Miami",
+    "address": "6144 South Dixie Highway, Miami, Florida 33143, USA"
+  },
+  {
+    "id": 103,
+    "gdo_number": "GDO-11710",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "052-PV",
+    "client_name": "Pura Vida Design District",
+    "address": "3818 Northeast 1st Avenue, Miami, Florida 33137, USA"
+  },
+  {
+    "id": 46,
+    "gdo_number": "GDO-11852",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "049-PV",
+    "client_name": "Pura Vida (Bay Harbor)",
+    "address": "1001 Kane Concourse, Bay Harbor Islands, Florida 33154, USA"
+  },
+  {
+    "id": 95,
+    "gdo_number": "GDO-11986",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "133-MUT",
+    "client_name": "Mutra",
+    "address": "2188 Northeast 123rd Street"
+  },
+  {
+    "id": 30,
+    "gdo_number": "GDO-12066",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "018-FUE",
+    "client_name": "Fuego By Mana",
+    "address": "3861 Northeast 163rd Street, North Miami Beach, Florida 33160, USA"
+  },
+  {
+    "id": 33,
+    "gdo_number": "GDO-12345",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "053-PV",
+    "client_name": "Pura Vida Edgewater",
+    "address": "1756 North Bayshore Drive, Miami, Florida 33132, USA"
+  },
+  {
+    "id": 2,
+    "gdo_number": "GDO-12517",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "110-CLA",
+    "client_name": "Claudie",
+    "address": "1101 Brickell Avenue, Miami, Florida 33131, USA"
+  },
+  {
+    "id": 119,
+    "gdo_number": "GDO-12970",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "048-PV",
+    "client_name": "Pura Vida (Aventura)",
+    "address": "2980 Northeast 207th Street, Aventura, Florida 33180, USA"
+  },
+  {
+    "id": 31,
+    "gdo_number": "GDO-13059",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "177-PV",
+    "client_name": "pura Vida Doral",
+    "address": "8400 NW 53rd St, Miami, FL"
+  },
+  {
+    "id": 101,
+    "gdo_number": "GDO-13141",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "031-KRU",
+    "client_name": "Krudo Fish Market",
+    "address": "17092 West Dixie Highway"
+  },
+  {
+    "id": 60,
+    "gdo_number": "GDO-13263",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "111-YC",
+    "client_name": "Yann Couvreur",
+    "address": "2243 Northwest 2nd Avenue"
+  },
+  {
+    "id": 68,
+    "gdo_number": "GDO-13447",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "025-GRO",
+    "client_name": "Grove Kosher LLC (Harding Ave)",
+    "address": "9467 Harding Avenue"
+  },
+  {
+    "id": 112,
+    "gdo_number": "GDO-13822",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "066-TCE",
+    "client_name": "The carrot express Buena Vista Miami",
+    "address": "3252 Buena Vista Boulevard"
+  },
+  {
+    "id": 17,
+    "gdo_number": "GDO-13841",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "141-NEY",
+    "client_name": "Neya",
+    "address": "9491 Harding Avenue"
+  },
+  {
+    "id": 5,
+    "gdo_number": "GDO-13929",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "197-BGT",
+    "client_name": "Bagatelle Miami River",
+    "address": "311 NW S river dr, Miami"
+  },
+  {
+    "id": 4,
+    "gdo_number": "GDO-13962",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "017-FIA",
+    "client_name": "Florida Food Eats LLC Fialkoff��s (Surfside)",
+    "address": "9463 Harding Avenue"
+  },
+  {
+    "id": 84,
+    "gdo_number": "GDO-14294",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "047-PAM",
+    "client_name": "Pamplemousse On the bay",
+    "address": "910 West Avenue, Miami Beach, Florida 33139, USA"
+  },
+  {
+    "id": 114,
+    "gdo_number": "GDO-14514",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "080-TCE",
+    "client_name": "The carrot express River Landing",
+    "address": "1418 Northwest North River Drive, Miami, Florida 33125, USA"
+  },
+  {
+    "id": 34,
+    "gdo_number": "GDO-14528",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "183-KRE",
+    "client_name": "Kresy Kosher Pizza & Falafel Bar",
+    "address": "9545 Harding Avenue"
+  },
+  {
+    "id": 7,
+    "gdo_number": "GDO-14681",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "170-PV",
+    "client_name": "Pura Vida Bakery",
+    "address": "1657 North Miami Avenue suite a"
+  },
+  {
+    "id": 59,
+    "gdo_number": "GDO-14769",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "148-MOR",
+    "client_name": "The Moore",
+    "address": "4040 Northeast 2nd Avenue"
+  },
+  {
+    "id": 69,
+    "gdo_number": "GDO-14965",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "041-MB",
+    "client_name": "Marie Blachere",
+    "address": "3421 Northeast 1st Avenue, Miami, Florida 33137, USA"
+  },
+  {
+    "id": 55,
+    "gdo_number": "GDO-15030",
+    "location_label": null,
+    "max_frequency_days": 60,
+    "permit_expiration": "2026-12-31",
+    "client_code": "099-PV",
+    "client_name": "Pura Vida Dadeland",
+    "address": "7535 North Kendall Drive"
+  },
+  {
+    "id": 64,
+    "gdo_number": "GDO-15062",
+    "location_label": "BARS",
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "009-CN",
+    "client_name": "Casa Neos",
+    "address": "40 Southwest North River Drive"
+  },
+  {
+    "id": 24,
+    "gdo_number": "GDO-15264",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "154-PV",
+    "client_name": "Pura Vida Fisher Island",
+    "address": "16 Fisher Island Drive"
+  },
+  {
+    "id": 21,
+    "gdo_number": "GDO-15328",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "165-LPB",
+    "client_name": "La Plaza Bakery And Coffee",
+    "address": "2104 Northeast 123rd Street, north miami"
+  },
+  {
+    "id": 81,
+    "gdo_number": "GDO-15359",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "145-NON",
+    "client_name": "International Foods By Noni (Arepas Noni)",
+    "address": "17030 West Dixie Highway, North Miami Beach, Florida 33160, USA"
+  },
+  {
+    "id": 15,
+    "gdo_number": "GDO-15675",
+    "location_label": null,
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "168-AVA",
+    "client_name": "AVA",
+    "address": "2889 McFarlane Road"
+  },
+  {
+    "id": 133,
+    "gdo_number": "GDO-16086",
+    "location_label": "G-COFFEE",
+    "max_frequency_days": 90,
+    "permit_expiration": "2026-12-31",
+    "client_code": "208-HUB",
+    "client_name": "Hubble Bubble Lounge",
+    "address": "3507 Northeast 163rd Street"
+  },
+  {
+    "id": 45,
+    "gdo_number": "GDO-16119",
+    "location_label": null,
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "181-PV",
+    "client_name": "Pura Vida Esplanade (Aventura)",
+    "address": "19505 Biscayne Boulevard, Aventura"
+  },
+  {
+    "id": 65,
+    "gdo_number": "GDO-16389",
+    "location_label": "LOUNGE",
+    "max_frequency_days": 30,
+    "permit_expiration": "2026-12-31",
+    "client_code": "009-CN",
+    "client_name": "Casa Neos",
+    "address": "40 Southwest North River Drive"
+  }
+]

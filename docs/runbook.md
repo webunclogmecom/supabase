@@ -409,3 +409,31 @@ Documented incidents for future learning. Add a row when something breaks and ge
 | 2026-04-21 | Documentation drift audit: `visit_assignments` reported as 0 rows across multiple docs; reality was 1,677 rows from populate.js fixup pass | Mid-build documentation never updated when populate.js fixup pass 5 (text-match `visits.completed_by` → `employees.full_name`) populated the table. The "blocked on Jobber API rate limits" label was from a pre-populate state. | Updated [schema.md](schema.md), [CLAUDE.md](../CLAUDE.md), this doc, [migration-plan.md](migration-plan.md) | After any fixup pass in populate.js runs, mark the relevant docs as covered in the same commit |
 
 *Add new rows in chronological order. Keep the "Prevention" column actionable — what procedural change prevents a repeat?*
+
+## Webhook silence diagnosis (added 2026-05-16)
+
+### Symptom
+`webhook_events_log` shows no recent entries for `source_system='jobber'` or `source_system='airtable'`. Last events:
+- Jobber: 2026-05-11 23:36 UTC
+- Airtable: 2026-05-13 17:17 UTC
+
+### Quick check
+```sql
+SELECT source_system, MAX(created_at) AS last_event
+FROM webhook_events_log
+GROUP BY source_system;
+```
+
+If the latest timestamp is more than a few hours old, webhooks are silently dead.
+
+### Diagnosis path
+1. Open Supabase Dashboard → Edge Functions → webhook-{source} → Logs.
+2. Filter to last 7 days.
+3. Cases:
+   - **0 invocations** → source-side issue (subscription deleted/disabled).
+   - **invocations returning 401/403** → signature/secret mismatch; rotate webhook secret.
+   - **invocations returning 500** → handler bug; check error_message in webhook_events_log.
+
+### Fixing source side
+- **Jobber**: Developer Center → app → Webhooks. Verify subscription URLs.
+- **Airtable**: base → Automations tab. Verify automations are enabled.
