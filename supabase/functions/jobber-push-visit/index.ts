@@ -109,7 +109,14 @@ function etParts(d: Date) {
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}:${p.second}`, timezone: TZ };
 }
 function visitSchedule(visit: any) {
-  const start = visit.start_at ? new Date(visit.start_at) : new Date(`${visit.visit_date}T13:00:00Z`); // default 9am ET
+  // No specific time -> "Anytime" / all-day in Jobber: send the date with NO time
+  // component and Jobber sets allDay=true spanning the full ET day.
+  if (!visit.start_at) {
+    const d = { date: visit.visit_date, timezone: TZ };
+    return { startAt: d, endAt: d };
+  }
+  // Timed visit -> include the ET wall-clock time.
+  const start = new Date(visit.start_at);
   const end = visit.end_at ? new Date(visit.end_at) : new Date(start.getTime() + 60 * 60 * 1000);
   return { startAt: etParts(start), endAt: etParts(end) };
 }
