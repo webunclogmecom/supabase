@@ -95,7 +95,18 @@ async function getJobberToken() {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
-  if (tr.status >= 300) throw new Error(`Refresh failed ${tr.status}: ${tr.body.slice(0,200)}`);
+  if (tr.status >= 300) {
+    // Rotation race: a sibling refresher (30-min keepalive or the other Jobber cron)
+    // may have just rotated the refresh_token and stored a fresh access_token. Re-read
+    // webhook_tokens once and use it if now valid, instead of FATAL-exiting on a benign race.
+    const r2 = await rest('/webhook_tokens?source_system=eq.jobber&select=access_token,expires_at');
+    const row2 = r2.status === 200 ? JSON.parse(r2.body)[0] : null;
+    if (row2 && new Date(row2.expires_at).getTime() > Date.now() + 60_000) {
+      console.log(`[cron] refresh got ${tr.status} but a sibling already refreshed; using current token`);
+      return row2.access_token;
+    }
+    throw new Error(`Refresh failed ${tr.status}: ${tr.body.slice(0,200)}`);
+  }
   const tokens = JSON.parse(tr.body);
   // exp lives in JWT claim
   const newExpMs = JSON.parse(Buffer.from(tokens.access_token.split('.')[1], 'base64').toString()).exp * 1000;

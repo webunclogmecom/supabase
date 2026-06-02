@@ -65,7 +65,17 @@ async function getJobberCreds() {
     console.log('[upcoming] token expiring; refreshing');
     const body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(row.refresh_token)}&client_id=${encodeURIComponent(row.client_id)}&client_secret=${encodeURIComponent(row.client_secret)}`;
     const tr = await request({ host: 'api.getjobber.com', path: '/api/oauth/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-    if (tr.status >= 300) throw new Error(`Refresh failed ${tr.status}: ${tr.body.slice(0,150)}`);
+    if (tr.status >= 300) {
+      // Rotation race: a sibling refresher may have just rotated the token and stored a
+      // fresh access_token. Re-read once and use it if now valid, instead of FATAL-exiting.
+      const rows2 = await execSql(`SELECT access_token, expires_at::text FROM public.webhook_tokens WHERE source_system='jobber' LIMIT 1`);
+      const row2 = rows2[0];
+      if (row2 && new Date(row2.expires_at).getTime() > Date.now() + 60_000) {
+        console.log(`[upcoming] refresh got ${tr.status} but a sibling already refreshed; using current token`);
+        return { token: row2.access_token, clientSecret: row.client_secret };
+      }
+      throw new Error(`Refresh failed ${tr.status}: ${tr.body.slice(0,150)}`);
+    }
     const t = JSON.parse(tr.body);
     const newExp = JSON.parse(Buffer.from(t.access_token.split('.')[1], 'base64').toString()).exp * 1000;
     await execSql(`UPDATE public.webhook_tokens SET access_token=${q(t.access_token)}, refresh_token=${q(t.refresh_token || row.refresh_token)}, expires_at=${q(new Date(newExp).toISOString())}, updated_at=now() WHERE source_system='jobber'`);
