@@ -169,10 +169,13 @@ in the DERM Tracker. (We already have `visits.derm_required boolean` to hold thi
 4. **Link back**: store the returned `createdVisits[].id` as `entity_source_links(visit, jobber, GID)` + set `visits.job_id` →
    the read-sync (`cron_jobber_upcoming_visits.js`) then recognizes it and never duplicates (no loop).
 
-**Open decisions (lock before building):**
-- **Scope:** push only ad-hoc `Service Call` visits (Jobber keeps generating `Service Agreement` recurring) — recommended — vs all.
-- **No-match fallback:** multi-job client with no job for that service → create a one-off job (`jobCreate`) vs skip + flag.
-- **Source value:** confirm what `source` the Calendar app stamps on manually-created visits (today only `jobber` + `supabase_cron` exist).
+**Decisions (locked 2026-06-01, per Fred):**
+- **Scope = ALL** user-created Calendar visits (full control; Calendar is master; duplication with Jobber's own recurring is acceptable). NOT the `supabase_cron` auto-projections.
+- **No-match fallback = skip + flag** (`public.visit_sync_flags`), no auto one-off job.
+- **Trigger = near-real-time** DB trigger → Edge Function (+ cron backstop).
+- **Source value = `'visit-calendar'`** (already in the `visits_source_chk` CHECK; matches the audit `app_source`). Calendar-origin visits carry `source='visit-calendar'`.
+
+**Status:** Edge Function **`supabase/functions/jobber-push-visit`** built + deployed (verify_jwt=true; auth = service_role `role` claim) + **E2E-tested on 112-YA** (create / move-date / delete all ✅, cleanup ✅). Runner: `scripts/probes/jobber_push_visit_e2e_test.js`. Flag table migration: `docs/migrations/2026-06-01_visit_sync_flags.sql`. **Remaining:** realtime trigger (#8), cron backstop (#9), webhook-jobber loop-guard (don't clobber `visit-calendar` visits).
 
 **Creds/runtime:** read+refresh `webhook_tokens` source_system=`jobber_write` (grant_type=refresh_token). Token lives ~1h; refresh on demand.
 **Safe testing:** 112-YA test client, Jobber gid `Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=` — create + `visitDelete` to clean up.
