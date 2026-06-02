@@ -1,0 +1,277 @@
+{
+  "captured_at": "2026-06-02",
+  "purpose": "hard-delete of all soft-deleted derm_manifests (Fred request)",
+  "manifests": [
+    {
+      "id": 1135,
+      "client_id": 39,
+      "service_date": "2025-03-31",
+      "dump_ticket_date": "2025-03-31",
+      "white_manifest_number": "488184",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-06-01 19:02:50.929325+00",
+      "updated_at": "2026-06-02 15:45:37.942174+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": null,
+      "derm_manifest_url": null,
+      "derm_address_url": null,
+      "gdo_id": null,
+      "derm_manifest_extra_urls": [],
+      "derm_address_extra_urls": [],
+      "deleted_at": "2026-06-02 15:45:37.942174+00",
+      "notes": null,
+      "derm_address_no": null
+    },
+    {
+      "id": 1136,
+      "client_id": 34,
+      "service_date": "2026-05-26",
+      "dump_ticket_date": "2026-05-26",
+      "white_manifest_number": "825560",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-06-01 20:32:29.454512+00",
+      "updated_at": "2026-06-02 14:01:43.172564+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": 2,
+      "derm_manifest_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1136/manifest_1.JPG",
+      "derm_address_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1136/address_1.JPG",
+      "gdo_id": null,
+      "derm_manifest_extra_urls": null,
+      "derm_address_extra_urls": null,
+      "deleted_at": "2026-06-02 14:01:34.657+00",
+      "notes": null,
+      "derm_address_no": null
+    },
+    {
+      "id": 1140,
+      "client_id": 381,
+      "service_date": "2026-01-01",
+      "dump_ticket_date": "2026-01-01",
+      "white_manifest_number": "0001",
+      "yellow_ticket_number": null,
+      "sent_to_client": true,
+      "sent_to_city": true,
+      "created_at": "2026-06-01 20:40:17.072286+00",
+      "updated_at": "2026-06-02 15:45:37.942174+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": null,
+      "derm_manifest_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/GT%20-%20Visits%20Images/derm/1140/manifest.jpg",
+      "derm_address_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/GT%20-%20Visits%20Images/derm/1140/address.jpg",
+      "gdo_id": null,
+      "derm_manifest_extra_urls": [],
+      "derm_address_extra_urls": [],
+      "deleted_at": "2026-06-02 15:45:37.942174+00",
+      "notes": null,
+      "derm_address_no": null
+    },
+    {
+      "id": 1141,
+      "client_id": 454,
+      "service_date": "2026-06-02",
+      "dump_ticket_date": "2026-06-02",
+      "white_manifest_number": "825560",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-06-02 14:02:34.145382+00",
+      "updated_at": "2026-06-02 16:09:30.451137+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": 2,
+      "derm_manifest_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1141/manifest_1.jpg",
+      "derm_address_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1141/address_1.jpg",
+      "gdo_id": null,
+      "derm_manifest_extra_urls": null,
+      "derm_address_extra_urls": null,
+      "deleted_at": "2026-06-02 16:09:21.84+00",
+      "notes": null,
+      "derm_address_no": null
+    },
+    {
+      "id": 1142,
+      "client_id": 456,
+      "service_date": "2026-06-02",
+      "dump_ticket_date": "2026-06-02",
+      "white_manifest_number": "825560",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-06-02 14:02:35.420401+00",
+      "updated_at": "2026-06-02 16:09:30.451137+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": 2,
+      "derm_manifest_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1141/manifest_1.jpg",
+      "derm_address_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1141/address_1.jpg",
+      "gdo_id": null,
+      "derm_manifest_extra_urls": null,
+      "derm_address_extra_urls": null,
+      "deleted_at": "2026-06-02 16:09:21.84+00",
+      "notes": null,
+      "derm_address_no": null
+    },
+    {
+      "id": 1143,
+      "client_id": 221,
+      "service_date": "2026-06-02",
+      "dump_ticket_date": "2026-06-02",
+      "white_manifest_number": "825560",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-06-02 14:02:35.733604+00",
+      "updated_at": "2026-06-02 16:09:30.451137+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": 2,
+      "derm_manifest_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1141/manifest_1.jpg",
+      "derm_address_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1141/address_1.jpg",
+      "gdo_id": null,
+      "derm_manifest_extra_urls": null,
+      "derm_address_extra_urls": null,
+      "deleted_at": "2026-06-02 16:09:21.84+00",
+      "notes": null,
+      "derm_address_no": null
+    },
+    {
+      "id": 1147,
+      "client_id": 39,
+      "service_date": "2026-06-02",
+      "dump_ticket_date": "2026-06-02",
+      "white_manifest_number": "9999999",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-06-02 14:39:11.658348+00",
+      "updated_at": "2026-06-02 14:39:26.858424+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": 2,
+      "derm_manifest_url": null,
+      "derm_address_url": null,
+      "gdo_id": null,
+      "derm_manifest_extra_urls": [],
+      "derm_address_extra_urls": [],
+      "deleted_at": "2026-06-02 14:39:18.305+00",
+      "notes": null,
+      "derm_address_no": null
+    },
+    {
+      "id": 1148,
+      "client_id": 463,
+      "service_date": "2026-06-02",
+      "dump_ticket_date": "2026-06-02",
+      "white_manifest_number": "9999999",
+      "yellow_ticket_number": null,
+      "sent_to_client": false,
+      "sent_to_city": false,
+      "created_at": "2026-06-02 15:03:26.25094+00",
+      "updated_at": "2026-06-02 15:03:39.190201+00",
+      "wwtp_receipt_number": null,
+      "wwtp_receipt_document_path": null,
+      "wwtp_ticket_number": null,
+      "disposal_facility_id": 2,
+      "derm_manifest_url": null,
+      "derm_address_url": null,
+      "gdo_id": null,
+      "derm_manifest_extra_urls": [],
+      "derm_address_extra_urls": [],
+      "deleted_at": "2026-06-02 15:03:30.627+00",
+      "notes": null,
+      "derm_address_no": null
+    }
+  ],
+  "manifest_visits_links": [
+    {
+      "manifest_id": 1141,
+      "visit_id": 5028
+    },
+    {
+      "manifest_id": 1142,
+      "visit_id": 5043
+    },
+    {
+      "manifest_id": 1143,
+      "visit_id": 3903
+    },
+    {
+      "manifest_id": 1143,
+      "visit_id": 5092
+    },
+    {
+      "manifest_id": 1143,
+      "visit_id": 5131
+    },
+    {
+      "manifest_id": 1147,
+      "visit_id": 5528
+    },
+    {
+      "manifest_id": 1148,
+      "visit_id": 5644
+    }
+  ],
+  "entity_source_links": [
+    {
+      "id": 40459,
+      "entity_type": "derm_manifest",
+      "entity_id": 1135,
+      "source_system": "airtable",
+      "source_id": "recZ8iCpcU5Y9w1NG",
+      "source_name": null,
+      "match_method": "webhook",
+      "match_confidence": "1",
+      "synced_at": "2026-06-01 19:02:50.955+00",
+      "created_at": "2026-06-01 19:02:50.99188+00"
+    },
+    {
+      "id": 40504,
+      "entity_type": "derm_manifest",
+      "entity_id": 1140,
+      "source_system": "airtable",
+      "source_id": "recPXgbGssEMh4H92",
+      "source_name": null,
+      "match_method": "webhook",
+      "match_confidence": "1",
+      "synced_at": "2026-06-01 20:41:53.35+00",
+      "created_at": "2026-06-01 20:40:17.113879+00"
+    }
+  ],
+  "derm_manifest_number_proposals": [],
+  "linked_visits_also_on_live_manifest": [
+    {
+      "visit_id": 5028,
+      "live_links": 1
+    },
+    {
+      "visit_id": 3903,
+      "live_links": 1
+    },
+    {
+      "visit_id": 5131,
+      "live_links": 1
+    },
+    {
+      "visit_id": 5092,
+      "live_links": 1
+    },
+    {
+      "visit_id": 5043,
+      "live_links": 1
+    }
+  ]
+}
