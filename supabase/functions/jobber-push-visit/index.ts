@@ -154,7 +154,7 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
     const s = await gql(token, M_EDIT_SCHED, { id: existingGid, input: sched });
     const se = ue(s.visitEditSchedule); if (se) throw new Error(`visitEditSchedule: ${se}`);
     if (visit.title) {
-      const e = await gql(token, M_EDIT, { id: existingGid, attributes: { title: visit.title } });
+      const e = await gql(token, M_EDIT, { id: existingGid, attributes: { title: visit.title, instructions: visit.notes ?? null } });
       const ee = ue(e.visitEdit); if (ee) throw new Error(`visitEdit: ${ee}`);
     }
     console.log(`[push] updated Jobber visit ${existingGid} (our visit ${visitId})`);
@@ -164,7 +164,7 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   // ---- CREATE (not linked) ----
   const job = await resolveJobGid(visit);
   if ("error" in job) { await flag(visitId, "no_job_match", job.error); return { ok: true, flagged: job.error }; }
-  const input = { visits: [{ title: visit.title || null, instructions: null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: [] } }] };
+  const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: [] } }] };
   const c = await gql(token, M_CREATE, { jobId: job.gid, input });
   const ce = ue(c.visitCreate); if (ce) { await flag(visitId, "create_error", ce); throw new Error(`visitCreate: ${ce}`); }
   const newGid = c.visitCreate.createdVisits?.[0]?.id;
