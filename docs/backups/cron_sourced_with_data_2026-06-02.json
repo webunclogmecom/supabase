@@ -1,0 +1,56 @@
+{
+  "exported": "2026-06-02",
+  "visits": [
+    {
+      "id": 4717,
+      "client_id": 361,
+      "property_id": null,
+      "job_id": null,
+      "vehicle_id": null,
+      "visit_date": "2026-05-29",
+      "start_at": null,
+      "end_at": null,
+      "completed_at": null,
+      "duration_minutes": null,
+      "title": "034-LG - Scheduled GT",
+      "service_type": "GT",
+      "visit_status": "scheduled",
+      "actual_arrival_at": null,
+      "actual_departure_at": null,
+      "is_gps_confirmed": false,
+      "created_at": "2026-05-13 17:05:11.676384+00",
+      "updated_at": "2026-05-30 07:23:30.712081+00",
+      "invoice_id": null,
+      "completed_by": null,
+      "source": "supabase_cron",
+      "manhole_count": null,
+      "manhole_breakdown": null,
+      "ticket_number": null,
+      "trap_condition_notes": null,
+      "derm_required": null,
+      "public_id": "tgSFUR5JOh",
+      "deleted_at": "2026-05-30 07:23:30.712081+00",
+      "service_line_item_id": null,
+      "notes": null
+    }
+  ],
+  "notes": [
+    {
+      "id": 3088,
+      "client_id": 361,
+      "visit_id": 4717,
+      "property_id": null,
+      "job_id": null,
+      "body": "Truck Ran Out of Water During The Rinse Out Process....WILL RESUME TO COMPLETE JOB IF NOT SATISFIED!!!",
+      "author_employee_id": 8,
+      "author_name": "Ishad Knight",
+      "note_date": "2026-05-29 07:06:17+00",
+      "source": "jobber_migration",
+      "tags": [
+        "jobber_migration"
+      ],
+      "created_at": "2026-05-29 16:19:18.065138+00",
+      "updated_at": "2026-05-29 16:19:18.065138+00"
+    }
+  ]
+}
