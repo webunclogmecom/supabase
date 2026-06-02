@@ -179,6 +179,76 @@ async function checkApiTokens() {
   ok('cloud', 'Supabase PAT working (queries above succeeded)');
 }
 
+function jwtClaims(jwt) { try { return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64').toString()); } catch { return {}; } }
+
+async function checkTokenIntegrity() {
+  // Root-cause guard for the 2026-06-02 contamination incident: each token row's
+  // access_token MUST belong to that row's OWN app (jwt app_id == client_id).
+  // When a shared refresher (jobber_token.js getValidToken) picked the freshest
+  // token across apps and PATCHed the write-app's token into the read ('jobber')
+  // row, the read app's refresh broke AND webhook enrichment silently stopped —
+  // a ~30% visit gap that freshness/failure metrics never surfaced. This check
+  // is cheap, deterministic, and would have caught it on the next audit.
+  try {
+    const rows = await pg(PROD, `SELECT source_system, client_id, access_token FROM webhook_tokens WHERE source_system IN ('jobber','jobber_write') ORDER BY source_system`);
+    for (const r of rows) {
+      const appId = jwtClaims(r.access_token).app_id;
+      if (!appId) { warn('cloud', `Token ${r.source_system}: access_token has no app_id claim`); continue; }
+      if (appId === r.client_id) ok('cloud', `Token ${r.source_system}: app_id matches client_id (not contaminated)`);
+      else fail('cloud', `Token ${r.source_system}: CONTAMINATED — access_token app_id ${appId.slice(0,8)}… != client_id ${(r.client_id||'').slice(0,8)}… (cross-app token written into this row — re-auth this app)`);
+    }
+  } catch (e) { warn('cloud', `Token integrity: ${e.message.slice(0, 80)}`); }
+}
+
+async function checkUpstreamCompleteness() {
+  // Completeness != no-failures. webhook_events_log can be all-green and freshness
+  // fine while a chunk of upstream records never landed (the read token broke, so
+  // enrichment no-op'd). This counts UPSTREAM (Jobber) vs our DB jobber-linked rows
+  // and flags REAL gaps after excluding known test/junk records. Two highest-signal
+  // entities: clients (identity) + visits (the thing that broke). Quotes are
+  // intentionally excluded (no canonical table — that's an open ops decision).
+  const JUNK = [/^x\s+\d+\b/i, /\btest\b/i, /not use/i, /^example/i, /\[archived\]/i];
+  const isJunk = n => !n || JUNK.some(re => re.test(n));
+  const EXCLUDED_VISIT_CLIENTS = new Set(['Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=']); // 112-YA test (webhook-jobber excludes at the gate)
+  let token;
+  try {
+    const row = (await pg(PROD, `SELECT access_token, refresh_token, client_id, client_secret, expires_at::text FROM webhook_tokens WHERE source_system='jobber'`))[0];
+    token = row.access_token;
+    if (new Date(row.expires_at).getTime() <= Date.now() + 60_000) {
+      const body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(row.refresh_token)}&client_id=${encodeURIComponent(row.client_id)}&client_secret=${encodeURIComponent(row.client_secret)}`;
+      const tr = await http({ hostname: 'api.getjobber.com', path: '/api/oauth/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }, body);
+      if (tr.status < 300) token = JSON.parse(tr.body).access_token;
+    }
+  } catch (e) { warn('cloud', `Completeness: no Jobber token: ${e.message.slice(0, 80)}`); return; }
+  const gql = async (q) => {
+    const r = await http({ hostname: 'api.getjobber.com', path: '/api/graphql', method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-JOBBER-GRAPHQL-VERSION': '2026-04-16' } }, JSON.stringify({ query: q }));
+    return JSON.parse(r.body);
+  };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // CLIENTS — name-diff (authoritative), junk-filtered
+  try {
+    let after = null, jc = [];
+    for (let p = 0; p < 10; p++) { const d = await gql(`{ clients(first:100${after ? `, after:"${after}"` : ''}){ nodes{ id name } pageInfo{ hasNextPage endCursor } } }`); const c = d.data.clients; jc.push(...c.nodes); if (!c.pageInfo.hasNextPage) break; after = c.pageInfo.endCursor; await sleep(150); }
+    const linked = new Set((await pg(PROD, `SELECT source_id FROM entity_source_links WHERE entity_type='client' AND source_system='jobber'`)).map(r => r.source_id));
+    const missing = jc.filter(c => !linked.has(c.id));
+    const realMissing = missing.filter(c => !isJunk(c.name));
+    if (realMissing.length === 0) ok('cloud', `Completeness clients: all real clients linked (${jc.length} upstream; ${missing.length - realMissing.length} junk/test correctly unlinked)`);
+    else fail('cloud', `Completeness clients: ${realMissing.length} REAL client(s) missing from DB → ${realMissing.slice(0, 6).map(c => c.name).join(', ')}`);
+  } catch (e) { warn('cloud', `Completeness clients: ${e.message.slice(0, 80)}`); }
+  // VISITS (last 30d) — gid-diff, 112-YA excluded (avoids the UTC-startAt vs ET-visit_date window artifact by matching on GID, not date)
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    let after = null, jv = [];
+    for (let p = 0; p < 10; p++) { const d = await gql(`{ visits(first:100${after ? `, after:"${after}"` : ''}, filter:{startAt:{after:"${since}"}}){ nodes{ id title client{ id } } pageInfo{ hasNextPage endCursor } } }`); const c = d.data.visits; jv.push(...c.nodes); if (!c.pageInfo.hasNextPage) break; after = c.pageInfo.endCursor; await sleep(150); }
+    const eligible = jv.filter(v => !EXCLUDED_VISIT_CLIENTS.has(v.client?.id));
+    const linked = new Set((await pg(PROD, `SELECT source_id FROM entity_source_links WHERE entity_type='visit' AND source_system='jobber'`)).map(r => r.source_id));
+    const missing = eligible.filter(v => !linked.has(v.id));
+    if (missing.length === 0) ok('cloud', `Completeness visits(30d): all ${eligible.length} upstream visits linked (112-YA excluded)`);
+    else fail('cloud', `Completeness visits(30d): ${missing.length} upstream visit(s) missing from DB → ${missing.slice(0, 6).map(v => (v.title || '').slice(0, 24)).join(', ')}`);
+  } catch (e) { warn('cloud', `Completeness visits: ${e.message.slice(0, 80)}`); }
+}
+
 async function checkProdSandboxParity() {
   if (!SBX) { warn('cloud', 'No SANDBOX_SUPABASE_PROJECT_ID configured'); return; }
   const tables = ['clients', 'visits', 'photos', 'photo_links', 'inspections', 'derm_manifests', 'employees', 'vehicles', 'service_configs', 'invoices'];
@@ -246,22 +316,35 @@ async function checkStaleESLs() {
   // the *_DESTROY webhook didn't fire (Jobber webhook reliability) AND the
   // polling cron didn't catch the absence. Per Fred 2026-05-05: tolerate up
   // to 50 total before flagging — small drift is normal, growth = leak.
+  //
+  // Allow-list (added 2026-05-24): the 81 visit→jobber rows from the
+  // 2026-04-29 19:50:17.095+00 redo-wipe batch are KNOWN STALE and are
+  // documented in MEMORY.md / CLAUDE.md ADR-context. Filtering by exact
+  // synced_at is the tightest match — any NEW orphan with the same
+  // entity_type/source_system but a different synced_at will still surface.
   try {
     const r = await pg(PROD, `
       SELECT entity_type, COUNT(*) AS n
       FROM entity_source_links esl
-      WHERE entity_type='client'   AND NOT EXISTS (SELECT 1 FROM clients   WHERE id=esl.entity_id)
-         OR entity_type='visit'    AND NOT EXISTS (SELECT 1 FROM visits    WHERE id=esl.entity_id)
-         OR entity_type='job'      AND NOT EXISTS (SELECT 1 FROM jobs      WHERE id=esl.entity_id)
-         OR entity_type='invoice'  AND NOT EXISTS (SELECT 1 FROM invoices  WHERE id=esl.entity_id)
-         OR entity_type='property' AND NOT EXISTS (SELECT 1 FROM properties WHERE id=esl.entity_id)
+      WHERE (
+              (entity_type='client'   AND NOT EXISTS (SELECT 1 FROM clients   WHERE id=esl.entity_id))
+           OR (entity_type='visit'    AND NOT EXISTS (SELECT 1 FROM visits    WHERE id=esl.entity_id))
+           OR (entity_type='job'      AND NOT EXISTS (SELECT 1 FROM jobs      WHERE id=esl.entity_id))
+           OR (entity_type='invoice'  AND NOT EXISTS (SELECT 1 FROM invoices  WHERE id=esl.entity_id))
+           OR (entity_type='property' AND NOT EXISTS (SELECT 1 FROM properties WHERE id=esl.entity_id))
+            )
+        AND NOT (
+              entity_type   = 'visit'
+          AND source_system = 'jobber'
+          AND synced_at     = '2026-04-29 19:50:17.095+00'::timestamptz
+        )
       GROUP BY entity_type
       ORDER BY 1;
     `);
     const total = r.reduce((s, x) => s + Number(x.n), 0);
-    if (total === 0) ok('cloud', 'Stale ESLs: 0');
-    else if (total <= 50) ok('cloud', `Stale ESLs: ${total} (under tolerance threshold of 50)`);
-    else fail('cloud', `Stale ESLs: ${total} (over 50 — investigate sync gaps)`);
+    if (total === 0) ok('cloud', 'Stale ESLs: 0 (excluding 81 allow-listed 2026-04-29 wipe-leftovers)');
+    else if (total <= 50) ok('cloud', `Stale ESLs: ${total} (under tolerance threshold of 50; 81 allow-listed)`);
+    else fail('cloud', `Stale ESLs: ${total} (over 50 — investigate sync gaps; excludes 81 allow-listed)`);
   } catch (e) { warn('cloud', `Stale ESL check: ${e.message.slice(0, 80)}`); }
 }
 
@@ -387,6 +470,8 @@ function checkEnvVars() {
   console.log('\n[CLOUD] Edge functions reachable…'); await checkEdgeFunctions();
   console.log('\n[CLOUD] Webhook event freshness…');  await checkWebhookFreshness();
   console.log('\n[CLOUD] API tokens valid…');         await checkApiTokens();
+  console.log('\n[CLOUD] Token integrity (app match)…'); await checkTokenIntegrity();
+  console.log('\n[CLOUD] Upstream completeness…');     await checkUpstreamCompleteness();
   console.log('\n[CLOUD] Prod ↔ Sandbox parity…');    await checkProdSandboxParity();
   console.log('\n[CLOUD] Orphan FKs…');               await checkOrphanFKs();
   console.log('\n[CLOUD] DB size + top tables…');     await checkDbSize();

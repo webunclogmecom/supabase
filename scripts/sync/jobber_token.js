@@ -47,6 +47,15 @@ function jwtExpMs(jwt) {
   catch { return 0; }
 }
 
+// The OAuth app a Jobber access_token belongs to. Used to refuse cross-app
+// contamination: this helper manages the READ app ('jobber' row) only, and a
+// token whose app_id != the row's client_id must never be picked or stored.
+function jwtAppId(jwt) {
+  if (!jwt) return null;
+  try { return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64').toString()).app_id || null; }
+  catch { return null; }
+}
+
 function writeEnv(env, updates) {
   // GitHub Actions runner has no .env file — the env is synthesized from
   // process.env. There's nothing to write to, so just no-op.
@@ -135,7 +144,7 @@ async function readDbTokens(envs) {
   const key = first.kv.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   return new Promise((resolve) => {
-    const u = new URL(`${url}/rest/v1/webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,expires_at`);
+    const u = new URL(`${url}/rest/v1/webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,expires_at,client_id,client_secret`);
     const req = https.request({
       hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
       headers: { apikey: key, Authorization: `Bearer ${key}` },
@@ -168,17 +177,14 @@ async function getValidToken({ force = false, verbose = false } = {}) {
   }
   const log = (...a) => { if (verbose) console.log(...a); };
 
-  // CLIENT_ID / SECRET are only required for the refresh path. Don't fail
-  // here just because they're missing — the DB row may still hold a fresh
-  // token (the common case in GH Actions where the workflow step only
-  // forwards JOBBER_ACCESS_TOKEN, SUPABASE_URL, and SERVICE_ROLE_KEY).
-  const clientId = envs[0].kv.JOBBER_CLIENT_ID;
-  const clientSecret = envs[0].kv.JOBBER_CLIENT_SECRET;
-
-  // Pull the live token from webhook_tokens — typically the freshest source
-  // because every other refresh path syncs back into it. Surface it as a
-  // virtual env candidate so the rank-by-exp loop below picks it up.
+  // The webhook_tokens 'jobber' row is the canonical READ app. Its client_id +
+  // client_secret define the ONLY app whose tokens are valid here — the guard
+  // against cross-app contamination (a sibling .env holding the WRITE app's
+  // token must never be picked or written into the read row). DB row = identity
+  // source of truth; .env is only a fallback when there is no row.
   const dbRow = await readDbTokens(envs);
+  const clientId = (dbRow && dbRow.client_id) || envs[0].kv.JOBBER_CLIENT_ID;
+  const clientSecret = (dbRow && dbRow.client_secret) || envs[0].kv.JOBBER_CLIENT_SECRET;
   if (dbRow) {
     envs.push({
       filePath: '<webhook_tokens>',
@@ -194,16 +200,21 @@ async function getValidToken({ force = false, verbose = false } = {}) {
         SUPABASE_SERVICE_ROLE_KEY: envs[0].kv.SUPABASE_SERVICE_ROLE_KEY,
       },
     });
-    log(`[jobber-token] webhook_tokens row found, exp ${dbRow.expires_at}`);
+    log(`[jobber-token] webhook_tokens row: exp ${dbRow.expires_at} app ${jwtAppId(dbRow.access_token)}`);
   }
 
-  // Pick the env with the latest-expiring access_token (DB row included)
-  const ranked = envs.map(e => ({ env: e, exp: jwtExpMs(e.kv.JOBBER_ACCESS_TOKEN) })).sort((a, b) => b.exp - a.exp);
+  // Rank ONLY access_tokens belonging to the canonical app (or whose app can't
+  // be decoded). A foreign-app token (e.g. the write app's, in a sibling .env)
+  // is ignored — never picked, never propagated.
+  const ranked = envs
+    .map(e => ({ env: e, exp: jwtExpMs(e.kv.JOBBER_ACCESS_TOKEN), app: jwtAppId(e.kv.JOBBER_ACCESS_TOKEN) }))
+    .filter(c => c.exp > 0 && (!clientId || !c.app || c.app === clientId))
+    .sort((a, b) => b.exp - a.exp);
   const best = ranked[0];
-  log(`[jobber-token] best exp: ${best.exp ? new Date(best.exp).toISOString() : '(none)'}  source: ${best.env.filePath}`);
+  log(`[jobber-token] best app-matched exp: ${best ? new Date(best.exp).toISOString() : '(none)'}`);
 
-  // Fast path: best still valid (60s buffer)
-  if (!force && best.exp > Date.now() + 60_000) {
+  // Fast path: an app-matched token is still valid (60s buffer)
+  if (!force && best && best.exp > Date.now() + 60_000) {
     log('[jobber-token] still valid, propagating to siblings');
     const updates = {
       JOBBER_ACCESS_TOKEN: best.env.kv.JOBBER_ACCESS_TOKEN,
@@ -226,14 +237,16 @@ async function getValidToken({ force = false, verbose = false } = {}) {
     throw new Error('No fresh token in webhook_tokens AND JOBBER_CLIENT_ID/CLIENT_SECRET not provided — cannot refresh.');
   }
 
-  // Refresh path: try every known refresh_token in descending order of env recency
-  const refreshTokens = [...new Set(ranked.map(r => r.env.kv.JOBBER_REFRESH_TOKEN).filter(Boolean))];
-  log(`[jobber-token] refreshing; trying ${refreshTokens.length} refresh_token candidate(s)`);
+  // Refresh as the canonical app: try its DB refresh_token first, then others.
+  const refreshTokens = [...new Set([dbRow && dbRow.refresh_token, ...ranked.map(r => r.env.kv.JOBBER_REFRESH_TOKEN)].filter(Boolean))];
+  log(`[jobber-token] refreshing as app ${clientId}; trying ${refreshTokens.length} refresh_token candidate(s)`);
 
   let lastErr;
   for (const rt of refreshTokens) {
     try {
       const result = await refreshWith(rt, clientId, clientSecret);
+      // Defense in depth: never store a token that isn't the canonical app's.
+      if (jwtAppId(result.access_token) !== clientId) { log('[jobber-token] refreshed token app mismatch — refusing to store'); continue; }
       const newExpMs = jwtExpMs(result.access_token);
       const newExpIso = new Date(newExpMs).toISOString();
       log(`[jobber-token] refresh OK, new exp ${newExpIso}`);
