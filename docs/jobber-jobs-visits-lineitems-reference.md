@@ -121,6 +121,8 @@ mutation CreateVisit($jobId: EncodedId!, $input: VisitCreateInput!) {
     } }] } }
 ```
 > Times are **split date+time+timezone** (not an ISO datetime). Always `America/New_York` (ET) per house rule. Jobber stores/returns UTC `Z`.
+>
+> ✅ **Smoke-tested end-to-end on 112-YA (2026-06-01):** `visitCreate` → read-back → `visitDelete` all succeeded; `09:00 America/New_York` correctly stored as `13:00Z` (EDT); query cost ~2–4 pts; `notifyTeam:false` = no crew ping. **Cleanup mutation is `visitDelete(visitIds: [EncodedId!]!)` — PLURAL array arg, not `visitId`.** Runner: `scripts/probes/jobber_write_smoketest.js`.
 
 ### 3b. `jobCreate` — one-off job (only the no-match fallback)
 ```
