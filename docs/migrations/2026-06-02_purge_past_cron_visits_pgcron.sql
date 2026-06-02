@@ -1,0 +1,23 @@
+-- Migration: daily pg_cron purge of past/today cron-generated visit projections
+-- Date: 2026-06-02
+-- Author: Claude (for Fred)
+-- Audit: N/A (schedules a cron job; the DELETE it runs fires the visits audit trigger normally)
+-- Why (Fred 2026-06-02): cron-generated recurring projections are forward-planning ONLY.
+--   Past + today must reflect real Jobber visits ("hard delete all visits that age past
+--   today, just stick with jobber scheduled visits; generated visits start tomorrow").
+--   This pg_cron job HARD-deletes source='supabase_cron' visits with visit_date <= today
+--   (ET) daily at 09:00 UTC (~05:00 ET, after the night shift). NOT-EXISTS guards skip any
+--   projection that has real attached data (notes, assignments, manifests, recommendations,
+--   oversized attachments, sync flags) so a serviced-but-unpromoted visit is never
+--   destroyed. Promoted placeholders are already source='jobber' and untouched.
+-- Companion changes (same day):
+--   - cron_generate_recurring_visits.js: generation floor moved to '> today' (starts tomorrow)
+--   - ops.v_calendar_visit: hides cron-past in real-time (covers the midnight -> 09:00 UTC gap)
+--   - one-time: the 15 pure-prediction past/today projections were hard-deleted; visit #4717
+--     (034-LG, has a real field note) was intentionally KEPT — a serviced visit never mirrored
+--     to Jobber, to be reconciled separately.
+-- NOTE: cron projections are NOT created in Jobber. The generator only writes to public.visits.
+--   Calendar->Jobber push exists for MANUAL visits only (source='visit-calendar' trigger);
+--   auto-pushing generated visits to Jobber is deferred until rules are set (Fred).
+
+SELECT cron.schedule('purge-past-cron-visits', '0 9 * * *', $$DELETE FROM public.visits v WHERE v.source='supabase_cron' AND v.visit_date <= (now() AT TIME ZONE 'America/New_York')::date AND NOT EXISTS (SELECT 1 FROM public.notes n WHERE n.visit_id=v.id) AND NOT EXISTS (SELECT 1 FROM public.visit_assignments va WHERE va.visit_id=v.id) AND NOT EXISTS (SELECT 1 FROM public.manifest_visits m WHERE m.visit_id=v.id) AND NOT EXISTS (SELECT 1 FROM public.jobber_oversized_attachments j WHERE j.visit_id=v.id) AND NOT EXISTS (SELECT 1 FROM public.visit_recommendations r WHERE r.visit_id=v.id) AND NOT EXISTS (SELECT 1 FROM public.visit_sync_flags f WHERE f.visit_id=v.id)$$);
