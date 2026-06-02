@@ -130,7 +130,11 @@ async function checkWebhookFreshness() {
       GROUP BY source_system
       ORDER BY 1;
     `);
-    const expected = { airtable: 24 * 3600, jobber: 30 * 60, samsara: 12 * 3600, internal: 7 * 24 * 3600 };
+    // Samsara webhooks are naturally low-volume (a handful per 2 weeks). The real
+    // Samsara health signal is telemetry landing in vehicle_telemetry_readings via
+    // the direct pull (checkSamsaraTelemetry below), NOT this webhook — so keep the
+    // samsara threshold loose to avoid false "silent" alarms.
+    const expected = { airtable: 24 * 3600, jobber: 30 * 60, samsara: 4 * 24 * 3600, internal: 7 * 24 * 3600 };
     for (const r of rows) {
       const max = expected[r.source_system] ?? 24 * 3600;
       if (r.seconds_since <= max) ok('cloud', `Webhook ${r.source_system}: last event ${Math.round(r.seconds_since/60)}min ago`);
@@ -139,6 +143,22 @@ async function checkWebhookFreshness() {
   } catch (e) {
     fail('cloud', `webhook freshness: ${e.message.slice(0, 100)}`);
   }
+}
+
+async function checkSamsaraTelemetry() {
+  // The true Samsara health signal: GPS/fuel/engine telemetry landing in
+  // vehicle_telemetry_readings (pulled directly, not via webhook). A quiet webhook
+  // is normal; a stale telemetry table means the pull actually broke.
+  try {
+    const r = (await pg(PROD, `SELECT
+      EXTRACT(EPOCH FROM (now() - MAX(recorded_at)))::int AS secs_since,
+      COUNT(*) FILTER (WHERE recorded_at > now() - interval '7 days') AS n7
+      FROM vehicle_telemetry_readings`))[0];
+    const hrs = Math.round(Number(r.secs_since) / 3600);
+    if (Number(r.secs_since) <= 48 * 3600 && Number(r.n7) >= 200) ok('cloud', `Samsara telemetry: fresh (${hrs}h ago, ${r.n7} readings/7d)`);
+    else if (Number(r.secs_since) > 48 * 3600) fail('cloud', `Samsara telemetry STALE: latest ${hrs}h ago — the pull likely broke`);
+    else warn('cloud', `Samsara telemetry: only ${r.n7} readings/7d (low — verify trucks are reporting)`);
+  } catch (e) { warn('cloud', `Samsara telemetry: ${e.message.slice(0, 80)}`); }
 }
 
 async function checkApiTokens() {
@@ -469,6 +489,7 @@ function checkEnvVars() {
   console.log('\n[CLOUD] Cron workflow health…');     await checkCronWorkflows();
   console.log('\n[CLOUD] Edge functions reachable…'); await checkEdgeFunctions();
   console.log('\n[CLOUD] Webhook event freshness…');  await checkWebhookFreshness();
+  console.log('\n[CLOUD] Samsara telemetry freshness…'); await checkSamsaraTelemetry();
   console.log('\n[CLOUD] API tokens valid…');         await checkApiTokens();
   console.log('\n[CLOUD] Token integrity (app match)…'); await checkTokenIntegrity();
   console.log('\n[CLOUD] Upstream completeness…');     await checkUpstreamCompleteness();
