@@ -1,0 +1,12 @@
+{
+  "when": "2026-06-02",
+  "reloptions": [
+    {
+      "reloptions": [
+        "security_invoker=true"
+      ],
+      "owner": "postgres"
+    }
+  ],
+  "def": " SELECT v.id AS visit_id,\n    v.visit_date,\n    v.start_at,\n    v.completed_at,\n    v.service_type,\n    v.title,\n    c.id AS client_id,\n    c.client_code,\n    c.name AS client_name,\n    COALESCE(p.address, primary_p.address) AS address,\n    COALESCE(p.city, primary_p.city) AS city,\n    COALESCE(p.county, primary_p.county) AS county\n   FROM visits v\n     JOIN clients c ON c.id = v.client_id\n     LEFT JOIN properties p ON p.id = v.property_id\n     LEFT JOIN properties primary_p ON primary_p.client_id = v.client_id AND primary_p.is_primary = true\n  WHERE v.visit_status = 'completed'::text AND v.service_type = 'GT'::text AND (v.derm_required IS NULL OR v.derm_required = true) AND v.deleted_at IS NULL AND NOT (EXISTS ( SELECT 1\n           FROM manifest_visits mv\n             JOIN derm_manifests dm ON dm.id = mv.manifest_id\n          WHERE mv.visit_id = v.id AND dm.deleted_at IS NULL));"
+}
