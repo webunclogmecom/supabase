@@ -16,8 +16,13 @@ name: Generate recurring visits (Supabase-native)
 # ───────────────────────────────────────────────────────────────────────────
 
 on:
-  schedule:
-    - cron: '30 8 * * *'
+  # schedule PAUSED 2026-06-02 (Fred): generated visits must carry the 27 service line-items
+  # per visit, which the current generator doesn't attach — so the schedule is being rebuilt.
+  # The 455 already-generated visits were deleted (backup: docs/backups/cron_generated_visits_backup_2026-06-02.json).
+  # Re-enable this schedule once the new line-item-aware generation logic is in place.
+  # Manual/test runs still available via workflow_dispatch.
+  # schedule:
+  #   - cron: '30 8 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
