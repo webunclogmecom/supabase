@@ -1,0 +1,53 @@
+{
+  "probed_at": "2026-06-03T09:49:22.771Z",
+  "a": {
+    "data": {
+      "job": {
+        "jobNumber": 11100534,
+        "jobberWebUri": "https://secure.getjobber.com/work_orders/146650142"
+      },
+      "client": {
+        "jobberWebUri": "https://secure.getjobber.com/clients/106567404"
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 5,
+        "actualQueryCost": 5,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9995,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  },
+  "b": {
+    "errors": [
+      {
+        "message": "Field 'jobberWebUri' doesn't exist on type 'Visit'",
+        "locations": [
+          {
+            "line": 1,
+            "column": 112
+          }
+        ],
+        "path": [
+          "query",
+          "job",
+          "visits",
+          "nodes",
+          "jobberWebUri"
+        ],
+        "extensions": {
+          "code": "undefinedField",
+          "typeName": "Visit",
+          "fieldName": "jobberWebUri"
+        }
+      }
+    ]
+  }
+}

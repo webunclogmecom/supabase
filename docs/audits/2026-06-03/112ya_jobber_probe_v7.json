@@ -1,0 +1,366 @@
+{
+  "probed_at": "2026-06-03T09:56:16.096Z",
+  "unionName": "CustomFieldUnion",
+  "union": {
+    "data": {
+      "__type": {
+        "name": "CustomFieldUnion",
+        "kind": "UNION",
+        "possibleTypes": [
+          {
+            "name": "CustomFieldArea",
+            "fields": [
+              {
+                "name": "customFieldConfiguration",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldConfigurationArea",
+                    "kind": "OBJECT"
+                  }
+                }
+              },
+              {
+                "name": "id",
+                "type": {
+                  "name": "EncodedId",
+                  "kind": "SCALAR",
+                  "ofType": null
+                }
+              },
+              {
+                "name": "label",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "unit",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "valueArea",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldAreaValue",
+                    "kind": "OBJECT"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "CustomFieldDropdown",
+            "fields": [
+              {
+                "name": "customFieldConfiguration",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldConfigurationDropdown",
+                    "kind": "OBJECT"
+                  }
+                }
+              },
+              {
+                "name": "dropdownOptions",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": null,
+                    "kind": "LIST"
+                  }
+                }
+              },
+              {
+                "name": "id",
+                "type": {
+                  "name": "EncodedId",
+                  "kind": "SCALAR",
+                  "ofType": null
+                }
+              },
+              {
+                "name": "label",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "valueDropdown",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "CustomFieldLink",
+            "fields": [
+              {
+                "name": "customFieldConfiguration",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldConfigurationLink",
+                    "kind": "OBJECT"
+                  }
+                }
+              },
+              {
+                "name": "id",
+                "type": {
+                  "name": "EncodedId",
+                  "kind": "SCALAR",
+                  "ofType": null
+                }
+              },
+              {
+                "name": "label",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "valueLink",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldLinkValue",
+                    "kind": "OBJECT"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "CustomFieldNumeric",
+            "fields": [
+              {
+                "name": "customFieldConfiguration",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldConfigurationNumeric",
+                    "kind": "OBJECT"
+                  }
+                }
+              },
+              {
+                "name": "id",
+                "type": {
+                  "name": "EncodedId",
+                  "kind": "SCALAR",
+                  "ofType": null
+                }
+              },
+              {
+                "name": "label",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "unit",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "valueNumeric",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "Float",
+                    "kind": "SCALAR"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "CustomFieldText",
+            "fields": [
+              {
+                "name": "customFieldConfiguration",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldConfigurationText",
+                    "kind": "OBJECT"
+                  }
+                }
+              },
+              {
+                "name": "id",
+                "type": {
+                  "name": "EncodedId",
+                  "kind": "SCALAR",
+                  "ofType": null
+                }
+              },
+              {
+                "name": "label",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "valueText",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "CustomFieldTrueFalse",
+            "fields": [
+              {
+                "name": "customFieldConfiguration",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "CustomFieldConfigurationTrueFalse",
+                    "kind": "OBJECT"
+                  }
+                }
+              },
+              {
+                "name": "id",
+                "type": {
+                  "name": "EncodedId",
+                  "kind": "SCALAR",
+                  "ofType": null
+                }
+              },
+              {
+                "name": "label",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "String",
+                    "kind": "SCALAR"
+                  }
+                }
+              },
+              {
+                "name": "valueTrueFalse",
+                "type": {
+                  "name": null,
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "name": "Boolean",
+                    "kind": "SCALAR"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 13,
+        "actualQueryCost": 193,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9807,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  },
+  "job": {
+    "data": {
+      "job": {
+        "jobNumber": 11100534,
+        "customFields": [
+          {
+            "__typename": "CustomFieldNumeric"
+          },
+          {
+            "__typename": "CustomFieldNumeric"
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 4,
+        "actualQueryCost": 5,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9995,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  }
+}

@@ -1,0 +1,615 @@
+{
+  "probed_at": "2026-06-03T09:44:01.306Z",
+  "visit_schedule_introspection": {
+    "data": {
+      "__type": {
+        "name": "VisitSchedule",
+        "fields": [
+          {
+            "name": "assignedTo",
+            "description": "Users assigned at time of job creation. This may differ from users assigned to the job's visits",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "UserConnection",
+                "kind": "OBJECT",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "endDate",
+            "description": "End date of the schedule",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "endTime",
+            "description": "Daily end time",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "recurrenceSchedule",
+            "description": "Recurrence details",
+            "type": {
+              "name": "RecurrenceSchedule",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "startDate",
+            "description": "Start date of the schedule",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "startTime",
+            "description": "Daily start time",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 14,
+        "actualQueryCost": 42,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9958,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  },
+  "visit_introspection": {
+    "data": {
+      "__type": {
+        "name": "Visit",
+        "fields": [
+          {
+            "name": "actionsUponComplete",
+            "description": "The actions available after completing the visit",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": null,
+                "kind": "LIST",
+                "ofType": {
+                  "name": null,
+                  "kind": "NON_NULL"
+                }
+              }
+            }
+          },
+          {
+            "name": "allDay",
+            "description": "Indicates whether the scheduled item is for a full day",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Boolean",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "arrivalWindow",
+            "description": "The time window during which the SP can arrive at the visit",
+            "type": {
+              "name": "ArrivalWindow",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "assignedUsers",
+            "description": "Users assigned to the scheduled item",
+            "type": {
+              "name": "UserConnection",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "client",
+            "description": "The Client for the visit",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Client",
+                "kind": "OBJECT",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "clientConfirmed",
+            "description": "Whether the client has confirmed this visit",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Boolean",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "completedAt",
+            "description": "The time that the visit was completed.",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "completedBy",
+            "description": "The name of the user or system that completed the visit.",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "createdAt",
+            "description": "The time that the visit was created.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "ISO8601DateTime",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "createdBy",
+            "description": "The user that created this scheduled item",
+            "type": {
+              "name": "User",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "duration",
+            "description": "Minute duration between start and end time.",
+            "type": {
+              "name": "Int",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "endAt",
+            "description": "End date and time of the scheduled item. An unscheduled visit is represented by both startAt and endAt being null",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "id",
+            "description": "The unique identifier",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "EncodedId",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "incompleteJobFormsCount",
+            "description": "The number of incomplete job form submissions for this visit",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Int",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "instructions",
+            "description": "The instructions for the visit",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "invoice",
+            "description": "The invoice for the visit",
+            "type": {
+              "name": "Invoice",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "isComplete",
+            "description": "Whether the visit has been completed",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Boolean",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "isDefaultTitle",
+            "description": "Indicates whether the title is the default",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Boolean",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "isLastScheduledVisit",
+            "description": "Whether the visit is the last visit for the associated job.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Boolean",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "job",
+            "description": "The Job the visit is associated with",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Job",
+                "kind": "OBJECT",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "lineItems",
+            "description": "A list of line items for the visit",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "JobLineItemConnection",
+                "kind": "OBJECT",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "notes",
+            "description": "The notes attached to the associated job",
+            "type": {
+              "name": "JobNoteUnionConnection",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "overrideOrder",
+            "description": "An override for ordering anytime and unscheduled items",
+            "type": {
+              "name": "Int",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "property",
+            "description": "The property for the visit",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Property",
+                "kind": "OBJECT",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "routingOrder",
+            "description": "The order in which the scheduled item should be routed",
+            "type": {
+              "name": "Int",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "startAt",
+            "description": "Start date and time of the scheduled item. An unscheduled visit is represented by both startAt and endAt being null",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "teamReminderOffset",
+            "description": "Offset in minutes from the time of the scheduled item to notify the team",
+            "type": {
+              "name": "Minutes",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "timeSheetEntries",
+            "description": "A list of all timesheet entries for this visit",
+            "type": {
+              "name": "TimeSheetEntryConnection",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "title",
+            "description": "The title of the scheduled item",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "visitStatus",
+            "description": "The status of the visit",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "VisitStatusTypeEnum",
+                "kind": "ENUM",
+                "ofType": null
+              }
+            }
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 14,
+        "actualQueryCost": 227,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9773,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  },
+  "jobs": {
+    "data": {
+      "client": {
+        "id": "Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=",
+        "name": "112-YA Yan's Restaurant",
+        "companyName": "112-YA Yan's Restaurant",
+        "jobs": {
+          "totalCount": 7,
+          "nodes": [
+            {
+              "id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NTAxNDI=",
+              "jobNumber": 11100534,
+              "jobType": "RECURRING",
+              "jobStatus": "action_required",
+              "title": "Service Agreement - Pumping",
+              "total": 33,
+              "startAt": null,
+              "endAt": null,
+              "lineItems": {
+                "nodes": [
+                  {
+                    "name": "01 - Service Agreement - Pumping - Grease Trap",
+                    "description": "",
+                    "quantity": 1,
+                    "unitPrice": 1,
+                    "totalPrice": 1
+                  },
+                  {
+                    "name": "05 - Service Agreement - Cleaning - Main Line Cleaning",
+                    "description": "",
+                    "quantity": 1,
+                    "unitPrice": 2,
+                    "totalPrice": 2
+                  },
+                  {
+                    "name": "27 - GDO Online Reporting",
+                    "description": "",
+                    "quantity": 1,
+                    "unitPrice": 30,
+                    "totalPrice": 30
+                  }
+                ]
+              }
+            },
+            {
+              "id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NTAxNDQ=",
+              "jobNumber": 99900535,
+              "jobType": "RECURRING",
+              "jobStatus": "action_required",
+              "title": "Service Call",
+              "total": 0,
+              "startAt": null,
+              "endAt": null,
+              "lineItems": {
+                "nodes": []
+              }
+            },
+            {
+              "id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NDgyOTE=",
+              "jobNumber": 10000363,
+              "jobType": "RECURRING",
+              "jobStatus": "archived",
+              "title": "Service Agreement",
+              "total": 0,
+              "startAt": null,
+              "endAt": null,
+              "lineItems": {
+                "nodes": []
+              }
+            },
+            {
+              "id": "Z2lkOi8vSm9iYmVyL0pvYi8xMjc2MzU1MDc=",
+              "jobNumber": 10000152,
+              "jobType": "RECURRING",
+              "jobStatus": "action_required",
+              "title": "GT & CLeaning",
+              "total": 1,
+              "startAt": "2025-10-27T04:00:00Z",
+              "endAt": "2030-10-27T03:59:59Z",
+              "lineItems": {
+                "nodes": [
+                  {
+                    "name": "Grease Trap Pumping ",
+                    "description": "",
+                    "quantity": 1,
+                    "unitPrice": 1,
+                    "totalPrice": 1
+                  }
+                ]
+              }
+            },
+            {
+              "id": "Z2lkOi8vSm9iYmVyL0pvYi8xMjkzNTMwNjE=",
+              "jobNumber": 10000178,
+              "jobType": "RECURRING",
+              "jobStatus": "action_required",
+              "title": "Grease Trap Service Agreement",
+              "total": 111,
+              "startAt": "2025-11-13T05:00:00Z",
+              "endAt": "2030-11-14T04:59:59Z",
+              "lineItems": {
+                "nodes": [
+                  {
+                    "name": "Grease Trap Pumping ",
+                    "description": "monthly",
+                    "quantity": 1,
+                    "unitPrice": 100,
+                    "totalPrice": 100
+                  },
+                  {
+                    "name": "Warranty",
+                    "description": "",
+                    "quantity": 1,
+                    "unitPrice": 1,
+                    "totalPrice": 1
+                  },
+                  {
+                    "name": "Manual Unclogging Under Warranty of Drainage ",
+                    "description": "",
+                    "quantity": 1,
+                    "unitPrice": 10,
+                    "totalPrice": 10
+                  }
+                ]
+              }
+            },
+            {
+              "id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDUzMzMwMTI=",
+              "jobNumber": 10000344,
+              "jobType": "RECURRING",
+              "jobStatus": "archived",
+              "title": "1 Year service",
+              "total": 399,
+              "startAt": "2026-05-19T04:00:00Z",
+              "endAt": "2027-05-19T03:59:59Z",
+              "lineItems": {
+                "nodes": [
+                  {
+                    "name": "Hydrojet Cleaning",
+                    "description": "",
+                    "quantity": 1,
+                    "unitPrice": 399,
+                    "totalPrice": 399
+                  }
+                ]
+              }
+            },
+            {
+              "id": "Z2lkOi8vSm9iYmVyL0pvYi8xMTg3NTUyNTU=",
+              "jobNumber": 10000065,
+              "jobType": "ONE_OFF",
+              "jobStatus": "action_required",
+              "title": "Cath Bassin cleaning",
+              "total": 0,
+              "startAt": null,
+              "endAt": null,
+              "lineItems": {
+                "nodes": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 2132,
+        "actualQueryCost": 117,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9883,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  }
+}

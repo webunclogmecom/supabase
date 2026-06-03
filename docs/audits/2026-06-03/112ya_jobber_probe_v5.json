@@ -1,0 +1,132 @@
+{
+  "probed_at": "2026-06-03T09:47:50.151Z",
+  "results": {
+    "11100534_SA_Pumping_new": {
+      "data": {
+        "job": {
+          "id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NTAxNDI=",
+          "jobNumber": 11100534,
+          "title": "Service Agreement - Pumping",
+          "jobType": "RECURRING",
+          "jobStatus": "action_required",
+          "startAt": null,
+          "endAt": null,
+          "visitSchedule": {
+            "startDate": null,
+            "endDate": null,
+            "startTime": null,
+            "endTime": null,
+            "recurrenceSchedule": null
+          },
+          "visits": {
+            "totalCount": 0,
+            "nodes": []
+          }
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 27,
+          "actualQueryCost": 17,
+          "throttleStatus": {
+            "maximumAvailable": 10000,
+            "currentlyAvailable": 9983,
+            "restoreRate": 500
+          }
+        },
+        "versioning": {
+          "version": "2026-04-16"
+        }
+      }
+    },
+    "10000152_GT_CLeaning_old": {
+      "data": {
+        "job": {
+          "id": "Z2lkOi8vSm9iYmVyL0pvYi8xMjc2MzU1MDc=",
+          "jobNumber": 10000152,
+          "title": "GT & CLeaning",
+          "jobType": "RECURRING",
+          "jobStatus": "action_required",
+          "startAt": "2025-10-27T04:00:00Z",
+          "endAt": "2030-10-27T03:59:59Z",
+          "visitSchedule": {
+            "startDate": "2025-10-27T04:00:00Z",
+            "endDate": "2030-10-27T03:59:59Z",
+            "startTime": null,
+            "endTime": null,
+            "recurrenceSchedule": {
+              "friendly": "Every 60 days",
+              "calendarRule": "FREQ=DAILY;INTERVAL=60"
+            }
+          },
+          "visits": {
+            "totalCount": 0,
+            "nodes": []
+          }
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 27,
+          "actualQueryCost": 19,
+          "throttleStatus": {
+            "maximumAvailable": 10000,
+            "currentlyAvailable": 9981,
+            "restoreRate": 500
+          }
+        },
+        "versioning": {
+          "version": "2026-04-16"
+        }
+      }
+    },
+    "10000178_GT_ServiceAgreement_old": {
+      "data": {
+        "job": {
+          "id": "Z2lkOi8vSm9iYmVyL0pvYi8xMjkzNTMwNjE=",
+          "jobNumber": 10000178,
+          "title": "Grease Trap Service Agreement",
+          "jobType": "RECURRING",
+          "jobStatus": "action_required",
+          "startAt": "2025-11-13T05:00:00Z",
+          "endAt": "2030-11-14T04:59:59Z",
+          "visitSchedule": {
+            "startDate": "2025-11-13T05:00:00Z",
+            "endDate": "2030-11-14T04:59:59Z",
+            "startTime": null,
+            "endTime": null,
+            "recurrenceSchedule": {
+              "friendly": "Monthly on the 1st Monday",
+              "calendarRule": "FREQ=MONTHLY;BYDAY=1MO"
+            }
+          },
+          "visits": {
+            "totalCount": 2,
+            "nodes": [
+              {
+                "startAt": "2026-03-10T04:00:00Z"
+              },
+              {
+                "startAt": "2026-06-01T04:00:00Z"
+              }
+            ]
+          }
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 27,
+          "actualQueryCost": 21,
+          "throttleStatus": {
+            "maximumAvailable": 10000,
+            "currentlyAvailable": 9979,
+            "restoreRate": 500
+          }
+        },
+        "versioning": {
+          "version": "2026-04-16"
+        }
+      }
+    }
+  }
+}

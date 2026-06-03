@@ -1,0 +1,61 @@
+{
+  "probed_at": "2026-06-03T09:56:53.979Z",
+  "r": {
+    "data": {
+      "sa": {
+        "jobNumber": 11100534,
+        "title": "Service Agreement - Pumping",
+        "customFields": [
+          {
+            "__typename": "CustomFieldNumeric",
+            "id": "MTQ2NjUwMTQyOjozMDcwMzQx",
+            "label": "GT size",
+            "unit": "Gallon",
+            "valueNumeric": 0
+          },
+          {
+            "__typename": "CustomFieldNumeric",
+            "id": "MTQ2NjUwMTQyOjozNzQzNTE0",
+            "label": "Frequency",
+            "unit": "days",
+            "valueNumeric": 60
+          }
+        ]
+      },
+      "sc": {
+        "jobNumber": 99900535,
+        "title": "Service Call",
+        "customFields": [
+          {
+            "__typename": "CustomFieldNumeric",
+            "id": "MTQ2NjUwMTQ0OjozMDcwMzQx",
+            "label": "GT size",
+            "unit": "Gallon",
+            "valueNumeric": 0
+          },
+          {
+            "__typename": "CustomFieldNumeric",
+            "id": "MTQ2NjUwMTQ0OjozNzQzNTE0",
+            "label": "Frequency",
+            "unit": "days",
+            "valueNumeric": 0
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 18,
+        "actualQueryCost": 28,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9972,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  }
+}

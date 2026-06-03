@@ -1,0 +1,87 @@
+{
+  "probed_at": "2026-06-03T10:24:20.197Z",
+  "r": {
+    "data": {
+      "job": {
+        "jobNumber": 11100534,
+        "jobType": "RECURRING",
+        "jobStatus": "upcoming",
+        "visitSchedule": {
+          "startDate": "2026-06-04T04:00:00Z",
+          "endDate": "2027-06-04T03:59:59Z",
+          "startTime": null,
+          "endTime": null,
+          "recurrenceSchedule": {
+            "friendly": "Every 7 days",
+            "calendarRule": "FREQ=DAILY;INTERVAL=7"
+          }
+        },
+        "visits": {
+          "totalCount": 53,
+          "nodes": [
+            {
+              "startAt": "2026-06-04T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            },
+            {
+              "startAt": "2026-06-11T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            },
+            {
+              "startAt": "2026-06-18T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            },
+            {
+              "startAt": "2026-06-25T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            },
+            {
+              "startAt": "2026-07-02T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            },
+            {
+              "startAt": "2026-07-09T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            },
+            {
+              "startAt": "2026-07-16T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            },
+            {
+              "startAt": "2026-07-23T04:00:00Z",
+              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+            }
+          ]
+        },
+        "customFields": [
+          {
+            "__typename": "CustomFieldNumeric",
+            "label": "GT size",
+            "valueNumeric": 0,
+            "unit": "Gallon"
+          },
+          {
+            "__typename": "CustomFieldNumeric",
+            "label": "Frequency",
+            "valueNumeric": 60,
+            "unit": "days"
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 36,
+        "actualQueryCost": 40,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9960,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  }
+}

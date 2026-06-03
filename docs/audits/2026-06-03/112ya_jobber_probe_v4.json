@@ -1,0 +1,58 @@
+{
+  "probed_at": "2026-06-03T09:46:22.027Z",
+  "icalendar_rule_introspection": {
+    "data": {
+      "__type": {
+        "name": "ICalendarRule",
+        "fields": null
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 11,
+        "actualQueryCost": 3,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9997,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  },
+  "sa_job": {
+    "data": {
+      "job": {
+        "id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NTAxNDI=",
+        "jobNumber": 11100534,
+        "title": "Service Agreement - Pumping",
+        "jobStatus": "action_required",
+        "visitSchedule": {
+          "startDate": null,
+          "endDate": null,
+          "recurrenceSchedule": null
+        },
+        "visits": {
+          "totalCount": 0,
+          "nodes": []
+        }
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 31,
+        "actualQueryCost": 12,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9988,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "client": [
+    {
+      "id": 381,
+      "client_code": "112-YA",
+      "name": "Yan's Restaurant",
+      "status": "ACTIVE"
+    }
+  ],
+  "visits": [
+    {
+      "id": 5680,
+      "visit_date": "2026-06-03",
+      "visit_status": "scheduled",
+      "source": "visit-calendar",
+      "title": "17 - Service Call - Unclogging - Commercial - Manual",
+      "service_type": null,
+      "derm_required": false,
+      "job_id": 766
+    },
+    {
+      "id": 1468,
+      "visit_date": "2026-03-10",
+      "visit_status": "completed",
+      "source": "jobber",
+      "title": "112-YA Yan's Restaurant - Grease Trap Service Agreement",
+      "service_type": "GT",
+      "derm_required": false,
+      "job_id": 159
+    }
+  ],
+  "jobs": [
+    {
+      "id": 283,
+      "job_number": "10000065",
+      "title": "Cath Bassin cleaning",
+      "job_status": "action_required",
+      "source_id": "Z2lkOi8vSm9iYmVyL0pvYi8xMTg3NTUyNTU="
+    },
+    {
+      "id": 263,
+      "job_number": "10000152",
+      "title": "GT & CLeaning",
+      "job_status": "upcoming",
+      "source_id": "Z2lkOi8vSm9iYmVyL0pvYi8xMjc2MzU1MDc="
+    },
+    {
+      "id": 159,
+      "job_number": "10000178",
+      "title": "Grease Trap Service Agreement",
+      "job_status": "upcoming",
+      "source_id": "Z2lkOi8vSm9iYmVyL0pvYi8xMjkzNTMwNjE="
+    },
+    {
+      "id": 577,
+      "job_number": "10000344",
+      "title": "1 Year service",
+      "job_status": "requires_invoicing",
+      "source_id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDUzMzMwMTI="
+    },
+    {
+      "id": 1283,
+      "job_number": "10000363",
+      "title": "Service Agreement",
+      "job_status": "archived",
+      "source_id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NDgyOTE="
+    },
+    {
+      "id": 765,
+      "job_number": "11100534",
+      "title": "Service Agreement - Pumping",
+      "job_status": "action_required",
+      "source_id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NTAxNDI="
+    },
+    {
+      "id": 766,
+      "job_number": "99900535",
+      "title": "Service Call",
+      "job_status": "action_required",
+      "source_id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NTAxNDQ="
+    }
+  ],
+  "line_items": [
+    {
+      "job_id": 159,
+      "name": "Grease Trap Pumping "
+    },
+    {
+      "job_id": 159,
+      "name": "Warranty"
+    },
+    {
+      "job_id": 159,
+      "name": "Manual Unclogging Under Warranty of Drainage "
+    },
+    {
+      "job_id": 263,
+      "name": "Grease Trap Pumping"
+    }
+  ],
+  "service_configs": [
+    {
+      "service_type": "GT",
+      "frequency_days": 20,
+      "first_visit": "2026-09-05",
+      "last_visit": "2026-02-21"
+    },
+    {
+      "service_type": "WD",
+      "frequency_days": null,
+      "first_visit": null,
+      "last_visit": null
+    },
+    {
+      "service_type": "CL",
+      "frequency_days": 10,
+      "first_visit": "2027-01-10",
+      "last_visit": "2025-05-15"
+    }
+  ]
+}

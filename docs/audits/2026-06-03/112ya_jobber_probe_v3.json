@@ -1,0 +1,83 @@
+{
+  "probed_at": "2026-06-03T09:45:39.156Z",
+  "recurrence_schedule_introspection": {
+    "data": {
+      "__type": {
+        "name": "RecurrenceSchedule",
+        "fields": [
+          {
+            "name": "calendarRule",
+            "description": "iCalendar Recurrence Rule",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "ICalendarRule",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "friendly",
+            "description": "Human readable string describing the schedule's recurrence. Ex. Weekly on Sundays",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "String",
+                "kind": "SCALAR",
+                "ofType": null
+              }
+            }
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 14,
+        "actualQueryCost": 21,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9979,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  },
+  "sa_job": {
+    "data": {
+      "job": {
+        "id": "Z2lkOi8vSm9iYmVyL0pvYi8xNDY2NTAxNDI=",
+        "jobNumber": 11100534,
+        "title": "Service Agreement - Pumping",
+        "jobType": "RECURRING",
+        "jobStatus": "action_required",
+        "visitSchedule": {
+          "startDate": null,
+          "endDate": null,
+          "startTime": null,
+          "endTime": null
+        }
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 11,
+        "actualQueryCost": 11,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9989,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  }
+}

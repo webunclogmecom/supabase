@@ -1,0 +1,535 @@
+{
+  "probed_at": "2026-06-03T09:42:29.985Z",
+  "client_gid": "Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=",
+  "jobs": {
+    "errors": [
+      {
+        "message": "Throttled",
+        "extensions": {
+          "code": "THROTTLED",
+          "documentation": "https://developer.getjobber.com/docs/using_jobbers_api/api_rate_limits"
+        }
+      }
+    ],
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 10507,
+        "actualQueryCost": 0,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 10000,
+          "restoreRate": 500
+        }
+      }
+    }
+  },
+  "job_type_introspection": {
+    "data": {
+      "__type": {
+        "name": "Job",
+        "fields": [
+          {
+            "name": "allowReviewRequest",
+            "description": "Allow SMS to be sent to client for Google Reviews feature",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Boolean",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "arrivalWindow",
+            "description": "The time window during which the SP can arrive at the job",
+            "type": {
+              "name": "ArrivalWindow",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "billingType",
+            "description": "Invoicing strategy selected for the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "BillingStrategy",
+                "kind": "ENUM"
+              }
+            }
+          },
+          {
+            "name": "bookingConfirmationSentAt",
+            "description": "The time when booking confirmation for the job was sent",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "client",
+            "description": "The client on the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Client",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "completedAndUninvoicedVisitsCount",
+            "description": "Count of completed visits that have not been invoiced. Only relevant for visit-based billing jobs.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Int",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "completedAndUninvoicedVisitsTotal",
+            "description": "The total dollar value of completed visits that have not been invoiced. Only relevant for visit-based billing jobs; returns 0 for fixed-price jobs.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Float",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "completedAt",
+            "description": "The completion date of the job",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "createdAt",
+            "description": "The time the job was created",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "ISO8601DateTime",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "customFields",
+            "description": "The custom fields set for this object",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": null,
+                "kind": "LIST"
+              }
+            }
+          },
+          {
+            "name": "defaultVisitTitle",
+            "description": "The default title for new visits",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "String",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "endAt",
+            "description": "End date of the job",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "expenses",
+            "description": "Expenses associated with the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "ExpenseConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "id",
+            "description": "The unique identifier",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "EncodedId",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "instructions",
+            "description": "The instructions on a job",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "invoiceSchedule",
+            "description": "Schedule of invoices",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "InvoiceSchedule",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "invoicedTotal",
+            "description": "The total invoiced amount of the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Float",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "invoices",
+            "description": "The invoices associated with the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "InvoiceConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "jobBalanceTotals",
+            "description": "The total and outstanding balance of the job based on invoice and quote deposits",
+            "type": {
+              "name": "JobBalanceTotals",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "jobCosting",
+            "description": "The job costing fields representing the profitability of the job",
+            "type": {
+              "name": "JobCosting",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "jobNumber",
+            "description": "The number of the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Int",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "jobStatus",
+            "description": "The status of the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "JobStatusTypeEnum",
+                "kind": "ENUM"
+              }
+            }
+          },
+          {
+            "name": "jobType",
+            "description": "The type of job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "JobTypeTypeEnum",
+                "kind": "ENUM"
+              }
+            }
+          },
+          {
+            "name": "jobberWebUri",
+            "description": "The URI for the given record in Jobber Online",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "String",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "lineItems",
+            "description": "The line items associated with the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "JobLineItemConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "nextDateToSendReviewSms",
+            "description": "The next available date to send an SMS review request",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "noteAttachments",
+            "description": "The note files attached to the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "JobNoteFileConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "notes",
+            "description": "The notes attached to the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "JobNoteUnionConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "paymentRecords",
+            "description": "The payment records applied to this job's invoices",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "PaymentRecordConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "property",
+            "description": "The property associated with the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Property",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "quote",
+            "description": "When applicable, the quote associated with the job",
+            "type": {
+              "name": "Quote",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "request",
+            "description": "When applicable, the request associated with the job",
+            "type": {
+              "name": "Request",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "salesperson",
+            "description": "Salesperson for the job",
+            "type": {
+              "name": "User",
+              "kind": "OBJECT",
+              "ofType": null
+            }
+          },
+          {
+            "name": "source",
+            "description": "The originating source of the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Source",
+                "kind": "ENUM"
+              }
+            }
+          },
+          {
+            "name": "startAt",
+            "description": "Start date of the job",
+            "type": {
+              "name": "ISO8601DateTime",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "timeSheetEntries",
+            "description": "A list of all timesheet entries for this job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "TimeSheetEntryConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "title",
+            "description": "The scheduling information of the job",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          },
+          {
+            "name": "total",
+            "description": "The total chargeable amount of the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Float",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "uninvoicedTotal",
+            "description": "The total uninvoiced amount of the job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "Float",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "updatedAt",
+            "description": "The last time the job was changed in a way that is meaningful to the Service Provider",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "ISO8601DateTime",
+                "kind": "SCALAR"
+              }
+            }
+          },
+          {
+            "name": "visitSchedule",
+            "description": "Schedule of visits",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "VisitSchedule",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "visits",
+            "description": "The scheduled or unscheduled visits to the customer's property to complete the work associated with this job",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "VisitConnection",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "visitsInfo",
+            "description": "Information about jobs visits",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL",
+              "ofType": {
+                "name": "VisitsInfo",
+                "kind": "OBJECT"
+              }
+            }
+          },
+          {
+            "name": "willClientBeAutomaticallyCharged",
+            "description": "The setting for automatic invoice charges",
+            "type": {
+              "name": "Boolean",
+              "kind": "SCALAR",
+              "ofType": null
+            }
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "cost": {
+        "requestedQueryCost": 11,
+        "actualQueryCost": 327,
+        "throttleStatus": {
+          "maximumAvailable": 10000,
+          "currentlyAvailable": 9673,
+          "restoreRate": 500
+        }
+      },
+      "versioning": {
+        "version": "2026-04-16"
+      }
+    }
+  }
+}
