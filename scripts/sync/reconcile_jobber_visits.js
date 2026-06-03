@@ -127,7 +127,7 @@ async function fetchJobberVisits() {
   }
   const clients = await pg(`SELECT id, client_code, name FROM clients`);
   const clientMeta = new Map(clients.map(c => [c.id, c]));
-  const existing = await pg(`SELECT esl.source_id AS gid, v.client_id, v.visit_date::text AS vdate, v.source
+  const existing = await pg(`SELECT esl.source_id AS gid, v.id AS visit_id, v.client_id, v.visit_date::text AS vdate, v.source
     FROM visits v JOIN entity_source_links esl ON esl.entity_type='visit' AND esl.source_system='jobber' AND esl.entity_id=v.id
     WHERE v.visit_date BETWEEN '${WINDOW_START}' AND '${WINDOW_END}' AND v.deleted_at IS NULL`);
   const existingByGid = new Map(existing.map(r => [r.gid, r]));
@@ -151,7 +151,7 @@ async function fetchJobberVisits() {
     if (visitGid.has(v.id)) {
       known++;
       const ex = existingByGid.get(v.id);
-      if (ex && ex.vdate !== vdate) drift.push({ gid: v.id, stored: ex.vdate, jobber: vdate, source: ex.source });
+      if (ex && ex.vdate !== vdate) drift.push({ gid: v.id, visit_id: ex.visit_id, stored: ex.vdate, jobber: vdate, start_at: v.startAt || null, end_at: v.endAt || null, source: ex.source });
       continue;
     }
     const client_id = clientGid ? clientByGid.get(clientGid) : null;
@@ -173,7 +173,7 @@ async function fetchJobberVisits() {
   // 4. Report
   console.log(`Known (already in DB): ${known}  ·  pre-2026 skipped: ${preYear}  ·  out-of-window: ${outOfWindow}  ·  112-YA excluded: ${excluded.length}`);
   if (drift.length) {
-    console.log(`\n⚠️  Reschedule drift — ${drift.length} existing visit(s) whose Jobber startAt moved since sync (stale visit_date, NOT touched here):`);
+    console.log(`\n⚠️  Reschedule drift — ${drift.length} existing visit(s) whose Jobber startAt moved since sync${EXECUTE ? ' — re-dating below:' : ' (run --execute to re-date):'}`);
     drift.slice(0, 15).forEach(d => console.log(`     ${d.gid.slice(-10)}  stored=${d.stored}  jobber=${d.jobber}  source=${d.source}`));
   }
   if (unlinkedClient.length) {
@@ -187,22 +187,45 @@ async function fetchJobberVisits() {
   }
 
   // 5. Execute
-  if (!EXECUTE) { console.log(`\nDRY-RUN — would insert ${missing.length} visit(s). Re-run with --execute to write.`); return; }
-  if (!missing.length) { console.log('\nNothing to insert.'); return; }
-
-  console.log(`\nInserting ${missing.length} visit(s)...`);
-  let ok = 0;
-  for (const m of missing) {
-    const row = { client_id: m.client_id, visit_date: m.visit_date, start_at: m.start_at, end_at: m.end_at,
-      completed_at: m.completed_at, completed_by: m.completed_by, title: m.title, service_type: m.service_type,
-      visit_status: m.visit_status, source: 'jobber' };
-    if (m.job_id) row.job_id = m.job_id;
-    if (m.property_id) row.property_id = m.property_id;
-    const [ins] = await rest('/visits', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });
-    await rest('/entity_source_links?on_conflict=entity_type,source_system,source_id',
-      { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ entity_type: 'visit', entity_id: ins.id, source_system: 'jobber', source_id: m.gid }) });
-    ok++;
+  const toSync = drift.filter(d => d.source === 'jobber');           // re-date these
+  const masteredDrift = drift.filter(d => d.source !== 'jobber');    // never pull Jobber's date onto Calendar-mastered rows
+  if (!EXECUTE) {
+    console.log(`\nDRY-RUN — would insert ${missing.length} visit(s) and re-date ${toSync.length} rescheduled visit(s). Re-run with --execute to write.`);
+    if (masteredDrift.length) console.log(`(would skip ${masteredDrift.length} calendar-mastered drift — Calendar stays source of truth)`);
+    return;
   }
-  console.log(`✓ inserted ${ok} visit(s), each linked to its Jobber GID (source='jobber', no push-back).`);
+
+  if (missing.length) {
+    console.log(`\nInserting ${missing.length} visit(s)...`);
+    let ok = 0;
+    for (const m of missing) {
+      const row = { client_id: m.client_id, visit_date: m.visit_date, start_at: m.start_at, end_at: m.end_at,
+        completed_at: m.completed_at, completed_by: m.completed_by, title: m.title, service_type: m.service_type,
+        visit_status: m.visit_status, source: 'jobber' };
+      if (m.job_id) row.job_id = m.job_id;
+      if (m.property_id) row.property_id = m.property_id;
+      const [ins] = await rest('/visits', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row) });
+      await rest('/entity_source_links?on_conflict=entity_type,source_system,source_id',
+        { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({ entity_type: 'visit', entity_id: ins.id, source_system: 'jobber', source_id: m.gid }) });
+      ok++;
+    }
+    console.log(`✓ inserted ${ok} visit(s), each linked to its Jobber GID (source='jobber', no push-back).`);
+  } else console.log('\nNo missing visits to insert.');
+
+  // Re-date visits the office RESCHEDULED in Jobber so our DB matches Jobber.
+  // Guarded to source='jobber' — Calendar-mastered rows (visit-calendar / supabase_cron)
+  // keep the Calendar as source of truth and are never overwritten from Jobber.
+  if (toSync.length) {
+    console.log(`\nRe-dating ${toSync.length} rescheduled visit(s) to current Jobber dates...`);
+    let sok = 0;
+    for (const d of toSync) {
+      await rest(`/visits?id=eq.${d.visit_id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ visit_date: d.jobber, start_at: d.start_at, end_at: d.end_at }) });
+      console.log(`   ${d.visit_id}: ${d.stored} -> ${d.jobber}`);
+      sok++;
+    }
+    console.log(`✓ re-dated ${sok} visit(s) (visit_date + start_at/end_at = Jobber).`);
+  }
+  if (masteredDrift.length) console.log(`(skipped ${masteredDrift.length} calendar-mastered drift — Calendar stays source of truth)`);
 })().catch(e => { console.error('FATAL', e.message, e.stack); process.exit(1); });
