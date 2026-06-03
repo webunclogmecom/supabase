@@ -40,7 +40,8 @@ const clientArg = process.argv.find(a => a.startsWith('--client='));
 const FILTER_CLIENT = clientArg ? clientArg.split('=')[1] : (ALL ? null : '112-YA');
 
 const IDEMPOTENCY_TOLERANCE_DAYS = 7;
-const HORIZON_MONTHS = 12;
+const horizonArg = process.argv.find(a => a.startsWith('--horizon-months='));
+const HORIZON_MONTHS = horizonArg ? Math.max(1, parseInt(horizonArg.split('=')[1], 10) || 12) : 12;
 const MAX_PER_JOB = 24;
 
 // ---- HTTP helpers -----------------------------------------------------------
