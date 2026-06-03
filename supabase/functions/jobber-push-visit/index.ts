@@ -144,7 +144,7 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   }
 
   if (!visit) return { ok: true, note: "visit gone, not a delete" };
-  if (visit.source !== "visit-calendar") { console.log(`[push] visit ${visitId} source=${visit.source} — ignoring (not visit-calendar)`); return { ok: true, note: "not visit-calendar" }; }
+  if (visit.source !== "visit-calendar" && visit.source !== "supabase_cron") { console.log(`[push] visit ${visitId} source=${visit.source} — ignoring (not visit-calendar)`); return { ok: true, note: "not visit-calendar" }; }
 
   const existingGid = await jobberGid("visit", visitId);
   const sched = visitSchedule(visit);
