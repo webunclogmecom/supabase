@@ -149,4 +149,20 @@ Active Service-Agreement job = **`jobType = RECURRING` AND `jobStatus != 'archiv
 
 ---
 
-*Created 2026-06-02 per Fred's request to persist this across context limits; §8 added 2026-06-03 from the live 112-YA probe; §9 (agreed design) added 2026-06-03. Memory pointer: `project_service_agreement_visit_model.md`.*
+## 10. Visit drawer — semantic redesign (2026-06-03, Fred approved)
+
+The old SERVICE box was GT/CL-model-centric (`Service type: GT`, `GT size`, a `service_configs` frequency) — vestigial under the SA/SC model, where the **badge** is the kind and the **line items** are the work. Reframed. The drawer reads `ops.v_calendar_visit_detail`. SERVICE-section rows, in order:
+
+- **Type** — a colored chip: **`SA`** (green) when `service_kind='service_agreement'`, **`SC`** (blue) when `service_call`. Replaces the old "Service type: GT" row. (Header keeps the full "Service Agreement"/"Service Call" badge.)
+- **Job #** — `jobber_job_number` (the Jobber job number, e.g. 11100534) rendered as a **link** opening `jobber_job_url` in a new tab.
+- **Frequency** — `Every N days` (`agreement_frequency_days`) for SA; **"On request"** for SC.
+- **DERM** — **"Required"** (amber) when `derm_required` is true, else "Not required" (gray). *NEW — compliance flag, driven by Pumping line items.*
+- **Hours** — access/service window (unchanged).
+- **Amount** — unchanged.
+- ~~GT size~~ — **removed** (GT-model-specific + unset).
+
+The **SERVICES** line-items list, the header badge, and the bottom "Open job in Jobber" button are unchanged. View change: add `jobber_job_number` (= `jobs.job_number`).
+
+---
+
+*Created 2026-06-02 per Fred's request to persist this across context limits; §8 added 2026-06-03 from the live 112-YA probe; §9 (agreed design) added 2026-06-03; §10 (drawer redesign) added 2026-06-03. Memory pointer: `project_service_agreement_visit_model.md`.*
