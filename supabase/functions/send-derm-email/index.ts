@@ -183,10 +183,15 @@ Deno.serve(async (req: Request) => {
       if (!pdfResp.ok) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', http: pdfResp.status }); continue }
       const b64 = encodeBase64(new Uint8Array(await pdfResp.arrayBuffer()))
 
-      // The WWTP receipt may be a PDF or an image (phone photo of the receipt). Name the
-      // attachment with the file's REAL extension (derived from the storage URL) so the
-      // recipient can actually open it — a JPEG renamed .pdf won't open in a PDF viewer.
-      const attExt = (m.derm_manifest_url.split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] ?? 'pdf').toLowerCase()
+      // The WWTP receipt may be a PDF or an image (phone photo of the receipt). Use the source's
+      // REAL media type (from the fetch response, URL extension as fallback) to both name AND type
+      // the attachment — a JPEG renamed .pdf won't open in a PDF viewer (the bug we hit). Setting
+      // content_type explicitly stops Gmail/Outlook from guessing wrong off the filename.
+      const srcCt = (pdfResp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+      const extFromUrl = m.derm_manifest_url.split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase()
+      const CT_TO_EXT: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' }
+      const attExt = extFromUrl || CT_TO_EXT[srcCt] || 'pdf'
+      const attType = srcCt || (attExt === 'pdf' ? 'application/pdf' : `image/${attExt === 'jpg' ? 'jpeg' : attExt}`)
 
       const emailRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -197,7 +202,7 @@ Deno.serve(async (req: Request) => {
           subject: SUBJECT,
           html: buildHtml(clientName, number, attExt),
           text: buildText(clientName, number, attExt),
-          attachments: [{ filename: `DERM-Manifest-${number}.${attExt}`, content: b64 }],
+          attachments: [{ filename: `DERM-Manifest-${number}.${attExt}`, content: b64, content_type: attType }],
         }),
       })
       const er = await emailRes.json().catch(() => ({}))
