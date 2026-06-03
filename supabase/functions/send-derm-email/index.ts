@@ -126,6 +126,11 @@ Deno.serve(async (req: Request) => {
       if (!pdfResp.ok) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', http: pdfResp.status }); continue }
       const b64 = encodeBase64(new Uint8Array(await pdfResp.arrayBuffer()))
 
+      // The WWTP receipt may be a PDF or an image (phone photo of the receipt). Name the
+      // attachment with the file's REAL extension (derived from the storage URL) so the
+      // recipient can actually open it — a JPEG renamed .pdf won't open in a PDF viewer.
+      const attExt = (m.derm_manifest_url.split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] ?? 'pdf').toLowerCase()
+
       const emailRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -134,7 +139,7 @@ Deno.serve(async (req: Request) => {
           to: [toEmail],
           subject: SUBJECT,
           html: buildHtml(clientName),
-          attachments: [{ filename: `DERM-Manifest-${number}.pdf`, content: b64 }],
+          attachments: [{ filename: `DERM-Manifest-${number}.${attExt}`, content: b64 }],
         }),
       })
       const er = await emailRes.json().catch(() => ({}))
