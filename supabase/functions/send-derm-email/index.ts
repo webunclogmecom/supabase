@@ -57,16 +57,73 @@ function jsonResponse(body: Record<string, unknown>, status: number, cors: Recor
 
 const SUBJECT = 'Your Manifest Form from Unclogme'
 
-function buildHtml(clientName: string): string {
+// Brand assets / tokens (UnclogMe). Logo hosted in our own Storage (stable URL,
+// not the Lovable build-hashed asset). Manrope leads the stack but email clients
+// fall back to a system sans — the layout/colors carry the brand, not the font.
+const LOGO_URL = 'https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/_brand/unclogme-logo.jpg'
+const FONT_STACK = "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c))
+}
+
+// Branded, email-safe HTML (table layout + inline styles; renders in Gmail/Outlook/Apple Mail).
+function buildHtml(clientName: string, number: string, ext: string): string {
+  const name = escapeHtml(clientName)
+  const fileLabel = `DERM-Manifest-${escapeHtml(number)}.${escapeHtml(ext)}`
+  const badge = escapeHtml(ext.toUpperCase()).slice(0, 4)
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>${SUBJECT}</title></head>
+<body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Your DERM Manifest Form is attached &mdash; required by the Water &amp; Sewer Department. Please keep it for your records.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;border-top:4px solid #f14714;">
+<tr><td style="padding:28px 36px 20px 36px;border-bottom:1px solid #eef0f2;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
+<tr><td style="padding:32px 36px 4px 36px;font-family:${FONT_STACK};">
+<p style="margin:0 0 18px 0;font-size:18px;line-height:1.5;font-weight:700;color:#111827;">Hi ${name},</p>
+<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">Thank you for choosing Unclogme!</p>
+<p style="margin:0 0 24px 0;font-size:15px;line-height:1.65;color:#374151;">Attached, you'll find your <strong style="color:#111827;">Manifest Form</strong> required by the Water &amp; Sewer Department. Please review it carefully and keep it for your records.</p>
+</td></tr>
+<tr><td style="padding:0 36px 28px 36px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff7f4;border:1px solid #ffd9c9;border-radius:10px;"><tr><td style="padding:16px 18px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td valign="middle" width="40" style="width:40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" height="40" style="width:40px;height:40px;background-color:#f14714;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">${badge}</td></tr></table></td>
+<td valign="middle" style="padding-left:14px;font-family:${FONT_STACK};">
+<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Manifest Form attached</div>
+<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${fileLabel}</div>
+</td></tr></table>
+</td></tr></table>
+</td></tr>
+<tr><td style="padding:0 36px 32px 36px;font-family:${FONT_STACK};">
+<p style="margin:0;font-size:15px;line-height:1.65;color:#374151;">If you have any questions or need assistance regarding this document, please reach us at <a href="mailto:contact@unclogme.com" style="color:#d63d12;text-decoration:underline;font-weight:600;">contact@unclogme.com</a> or call us directly.</p>
+</td></tr>
+<tr><td style="padding:22px 36px 26px 36px;background-color:#fafbfc;border-top:1px solid #eef0f2;font-family:${FONT_STACK};">
+<p style="margin:0 0 4px 0;font-size:13px;font-weight:700;color:#374151;">Unclogme LLC</p>
+<p style="margin:0 0 2px 0;font-size:12px;line-height:1.5;color:#9ca3af;">333 West 41st Street, Suite 606, Miami Beach, FL 33140</p>
+<p style="margin:0;font-size:12px;line-height:1.5;color:#9ca3af;"><a href="mailto:contact@unclogme.com" style="color:#9ca3af;text-decoration:underline;">contact@unclogme.com</a></p>
+</td></tr>
+</table>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:16px 36px;text-align:center;font-family:${FONT_STACK};font-size:11px;color:#b6bcc4;line-height:1.5;">Sent by Unclogme LLC regarding your grease trap service. Please retain this manifest for your compliance records.</td></tr></table>
+</td></tr></table>
+</body></html>`
+}
+
+// Plain-text fallback (deliverability + text-only clients).
+function buildText(clientName: string, number: string, ext: string): string {
   return [
     `Hi ${clientName},`,
     '',
     'Thank you for choosing Unclogme!',
     '',
-    "Attached, you'll find your Manifest Form required by the Water and Sewer Department. Please review it carefully and keep it for your records.",
+    `Attached, you'll find your Manifest Form (DERM-Manifest-${number}.${ext}) required by the Water and Sewer Department. Please review it carefully and keep it for your records.`,
     '',
-    'If you have any questions or need assistance regarding this document, please feel free to reach us at contact@unclogme.com or call us directly.',
-  ].join('<br>')
+    'If you have any questions or need assistance regarding this document, please reach us at contact@unclogme.com or call us directly.',
+    '',
+    '--',
+    'Unclogme LLC',
+    '333 West 41st Street, Suite 606, Miami Beach, FL 33140',
+    'contact@unclogme.com',
+  ].join('\n')
 }
 
 Deno.serve(async (req: Request) => {
@@ -138,7 +195,8 @@ Deno.serve(async (req: Request) => {
           from: RESEND_FROM,
           to: [toEmail],
           subject: SUBJECT,
-          html: buildHtml(clientName),
+          html: buildHtml(clientName, number, attExt),
+          text: buildText(clientName, number, attExt),
           attachments: [{ filename: `DERM-Manifest-${number}.${attExt}`, content: b64 }],
         }),
       })
