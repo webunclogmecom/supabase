@@ -133,22 +133,46 @@ Deno.serve(async (req: Request) => {
   if (!RESEND_API_KEY) return jsonResponse({ error: 'email_not_configured', detail: 'RESEND_API_KEY not set' }, 503, cors)
   if (!SUPABASE_URL || !SERVICE_KEY) return jsonResponse({ error: 'service_not_configured' }, 503, cors)
 
-  let body: { manifest_ids?: unknown; test_recipient?: unknown }
+  let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown }
   try { body = await req.json() } catch { return jsonResponse({ error: 'bad_json' }, 400, cors) }
 
-  const manifestIds = Array.isArray(body?.manifest_ids)
-    ? [...new Set((body.manifest_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n)))]
-    : []
+  // Recipients are (manifest_id, client_id) pairs — one manifest can cover several clients
+  // (a shared WWTP receipt links visits from multiple clients). Prefer `recipients`; fall back
+  // to `manifest_ids` (client_id resolved to the manifest's own client below) for compatibility.
+  type Rec = { manifest_id: number; client_id: number | null }
+  let recipients: Rec[] = []
+  if (Array.isArray(body?.recipients)) {
+    recipients = (body.recipients as unknown[])
+      .map((r) => {
+        const o = (r ?? {}) as { manifest_id?: unknown; client_id?: unknown }
+        return { manifest_id: Number(o.manifest_id), client_id: o.client_id == null ? null : Number(o.client_id) }
+      })
+      .filter((r) => Number.isFinite(r.manifest_id))
+  } else if (Array.isArray(body?.manifest_ids)) {
+    recipients = (body.manifest_ids as unknown[])
+      .map(Number)
+      .filter((n) => Number.isFinite(n))
+      .map((id) => ({ manifest_id: id, client_id: null }))
+  }
+  // de-dup on (manifest_id, client_id)
+  const seenRec = new Set<string>()
+  recipients = recipients.filter((r) => {
+    const k = `${r.manifest_id}:${r.client_id ?? 'own'}`
+    if (seenRec.has(k)) return false
+    seenRec.add(k)
+    return true
+  })
   const testRecipient =
     typeof body?.test_recipient === 'string' && body.test_recipient.includes('@')
       ? body.test_recipient.trim()
       : null
-  if (manifestIds.length === 0) return jsonResponse({ error: 'no_manifest_ids' }, 400, cors)
+  if (recipients.length === 0) return jsonResponse({ error: 'no_recipients' }, 400, cors)
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY)
   const results: Record<string, unknown>[] = []
 
-  for (const id of manifestIds) {
+  for (const rec of recipients) {
+    const id = rec.manifest_id
     try {
       const { data: m, error: me } = await sb
         .from('derm_manifests')
@@ -161,7 +185,9 @@ Deno.serve(async (req: Request) => {
 
       const number = m.white_manifest_number || m.yellow_ticket_number || String(id)
 
-      const { data: c } = await sb.from('clients').select('name, client_code').eq('id', m.client_id).maybeSingle()
+      // recipient client = explicit client_id from the pair, else the manifest's own client
+      const clientId = rec.client_id ?? (m.client_id as number)
+      const { data: c } = await sb.from('clients').select('name, client_code').eq('id', clientId).maybeSingle()
       const clientName = c?.name || 'Customer'
       const clientCode = c?.client_code || null
 
@@ -170,7 +196,7 @@ Deno.serve(async (req: Request) => {
         const { data: cc } = await sb
           .from('client_contacts')
           .select('email')
-          .eq('client_id', m.client_id)
+          .eq('client_id', clientId)
           .not('email', 'is', null)
           .neq('email', '')
           .limit(1)
@@ -208,12 +234,12 @@ Deno.serve(async (req: Request) => {
       const er = await emailRes.json().catch(() => ({}))
       if (!emailRes.ok) { results.push({ manifest_id: id, status: 'error', reason: 'resend_failed', detail: er, client: clientCode }); continue }
 
-      results.push({ manifest_id: id, status: 'sent', to: testRecipient ? `${toEmail} (TEST)` : toEmail, client: clientCode, number, email_id: (er as { id?: string })?.id })
+      results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toEmail} (TEST)` : toEmail, client: clientCode, number, email_id: (er as { id?: string })?.id })
     } catch (e) {
       results.push({ manifest_id: id, status: 'error', reason: String((e as Error)?.message ?? e) })
     }
   }
 
   const sent = results.filter((r) => r.status === 'sent').length
-  return jsonResponse({ ok: true, sent, total: manifestIds.length, test_mode: !!testRecipient, results }, 200, cors)
+  return jsonResponse({ ok: true, sent, total: recipients.length, test_mode: !!testRecipient, results }, 200, cors)
 })
