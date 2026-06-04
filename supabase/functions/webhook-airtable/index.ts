@@ -541,6 +541,19 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     return
   }
 
+  // 2026-forward only (Fred 2026-06-01): the DB intentionally holds NO pre-2026
+  // DERM history — the 598 pre-2026 manifests were backed up + hard-deleted, and
+  // missing-2025-data is intentional, not a bug. Don't let an old AT record
+  // re-introduce one when it fires (this is how #488184 / 2025-03-31 crept back
+  // in 2026-06-03). Block CREATION of a manifest whose date is positively before
+  // 2026; existing manifests (updates) are left untouched. Undated records pass
+  // (year unknown — they'll be re-evaluated once ops enters a date).
+  const manifestDate = (row.service_date as string | null) ?? (row.dump_ticket_date as string | null)
+  if (!existingId && manifestDate && manifestDate < '2026-01-01') {
+    console.log(`webhook-airtable: skipped pre-2026 DERM record ${recordId} (date ${manifestDate}) — DB is 2026-forward only`)
+    return
+  }
+
   let entityId: number
 
   if (existingId) {

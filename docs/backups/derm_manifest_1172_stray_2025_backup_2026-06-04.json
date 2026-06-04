@@ -1,0 +1,28 @@
+{
+  "note": "Stray 2025 DERM manifest re-introduced by webhook-airtable on 2026-06-03 from an old Airtable DERM record (AT rec recZ8iCpcU5Y9w1NG = Pura Vida Edgewater 053-PV, White Manifest #488184, service date 2025-03-31, no PDF, no visits). Per the 2026-forward-only policy (598 pre-2026 manifests backed up + hard-deleted 2026-06-01) this should not exist. Hard-deleted 2026-06-04 per Fred; webhook-airtable patched the same day to block creation of pre-2026 DERM records. Kept for the record (audit.logs also holds the full old_row from the DELETE).",
+  "manifest": {
+    "id": 1172,
+    "client_id": 39,
+    "service_date": "2025-03-31",
+    "dump_ticket_date": "2025-03-31",
+    "white_manifest_number": "488184",
+    "yellow_ticket_number": null,
+    "sent_to_client": false,
+    "sent_to_city": false,
+    "created_at": "2026-06-03T20:45:04.138193+00:00",
+    "updated_at": "2026-06-03T20:45:04.138193+00:00",
+    "wwtp_receipt_number": null,
+    "wwtp_receipt_document_path": null,
+    "wwtp_ticket_number": null,
+    "disposal_facility_id": null,
+    "derm_manifest_url": null,
+    "derm_address_url": null,
+    "gdo_id": null,
+    "derm_manifest_extra_urls": [],
+    "derm_address_extra_urls": [],
+    "deleted_at": null,
+    "notes": null,
+    "derm_address_no": null,
+    "airtable_rec": "recZ8iCpcU5Y9w1NG"
+  }
+}
