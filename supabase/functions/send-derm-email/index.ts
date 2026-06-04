@@ -168,11 +168,33 @@ Deno.serve(async (req: Request) => {
       : null
   if (recipients.length === 0) return jsonResponse({ error: 'no_recipients' }, 400, cors)
 
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY)
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'send-derm-email' } } })
   const results: Record<string, unknown>[] = []
+  const isTest = !!testRecipient
+
+  // Append-only send log (public.derm_email_sends): one row per send ATTEMPT.
+  // A logging failure MUST NOT break the email response, so this never throws.
+  // client_id is NOT NULL in the table; the rare unresolved case is skipped + warned.
+  const logSend = async (
+    manifestId: number, clientId: number | null, recipientEmail: string | null,
+    resendEmailId: string | null, status: string, reason: string | null,
+  ): Promise<void> => {
+    if (clientId == null) { console.warn(`[send-derm-email] log skipped (no client_id) manifest=${manifestId} status=${status}`); return }
+    try {
+      const { error } = await sb.from('derm_email_sends').insert({
+        manifest_id: manifestId, client_id: clientId, recipient_email: recipientEmail,
+        resend_email_id: resendEmailId, status, reason, is_test: isTest,
+      })
+      if (error) console.error(`[send-derm-email] log insert failed: ${error.message}`)
+    } catch (e) {
+      console.error(`[send-derm-email] log insert threw: ${String((e as Error)?.message ?? e)}`)
+    }
+  }
 
   for (const rec of recipients) {
     const id = rec.manifest_id
+    let logClientId: number | null = rec.client_id ?? null
+    let logEmail: string | null = null
     try {
       const { data: m, error: me } = await sb
         .from('derm_manifests')
@@ -180,8 +202,9 @@ Deno.serve(async (req: Request) => {
         .eq('id', id)
         .maybeSingle()
       if (me) throw me
-      if (!m || m.deleted_at) { results.push({ manifest_id: id, status: 'skipped', reason: 'not_found_or_deleted' }); continue }
-      if (!m.derm_manifest_url) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_pdf' }); continue }
+      if (!m || m.deleted_at) { results.push({ manifest_id: id, status: 'skipped', reason: 'not_found_or_deleted' }); await logSend(id, logClientId, logEmail, null, 'skipped', 'not_found_or_deleted'); continue }
+      logClientId = rec.client_id ?? (m.client_id as number)
+      if (!m.derm_manifest_url) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_pdf' }); await logSend(id, logClientId, logEmail, null, 'skipped', 'no_pdf'); continue }
 
       const number = m.white_manifest_number || m.yellow_ticket_number || String(id)
 
@@ -203,10 +226,11 @@ Deno.serve(async (req: Request) => {
           .maybeSingle()
         toEmail = cc?.email ?? null
       }
-      if (!toEmail) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_email', client: clientCode }); continue }
+      if (!toEmail) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_email', client: clientCode }); await logSend(id, logClientId, null, null, 'skipped', 'no_email'); continue }
+      logEmail = toEmail
 
       const pdfResp = await fetch(m.derm_manifest_url)
-      if (!pdfResp.ok) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', http: pdfResp.status }); continue }
+      if (!pdfResp.ok) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', http: pdfResp.status }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed'); continue }
       const b64 = encodeBase64(new Uint8Array(await pdfResp.arrayBuffer()))
 
       // The WWTP receipt may be a PDF or an image (phone photo of the receipt). Use the source's
@@ -232,11 +256,15 @@ Deno.serve(async (req: Request) => {
         }),
       })
       const er = await emailRes.json().catch(() => ({}))
-      if (!emailRes.ok) { results.push({ manifest_id: id, status: 'error', reason: 'resend_failed', detail: er, client: clientCode }); continue }
+      if (!emailRes.ok) { results.push({ manifest_id: id, status: 'error', reason: 'resend_failed', detail: er, client: clientCode }); await logSend(id, logClientId, logEmail, null, 'error', 'resend_failed'); continue }
 
-      results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toEmail} (TEST)` : toEmail, client: clientCode, number, email_id: (er as { id?: string })?.id })
+      const sentEmailId = (er as { id?: string })?.id ?? null
+      results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toEmail} (TEST)` : toEmail, client: clientCode, number, email_id: sentEmailId })
+      await logSend(id, logClientId, logEmail, sentEmailId, 'sent', null)
     } catch (e) {
-      results.push({ manifest_id: id, status: 'error', reason: String((e as Error)?.message ?? e) })
+      const msg = String((e as Error)?.message ?? e)
+      results.push({ manifest_id: id, status: 'error', reason: msg })
+      await logSend(id, logClientId, logEmail, null, 'error', msg)
     }
   }
 
