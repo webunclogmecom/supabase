@@ -1,0 +1,39 @@
+name: Generate FOG Manifests
+
+# Generates the per-client FOG Manifest (DERM Address showing only the client's
+# own facility) for any derm_manifests row missing fog_manifest_url, by calling
+# the generate-fog-manifest Edge Function (-> Railway pdf-service). Idempotent;
+# usually a no-op. Covers new manifests regardless of source (scanned/generated).
+# Hourly is cheap because it only touches rows that still lack a FOG Manifest.
+
+on:
+  # schedule GATED until the Railway /generate/fog-manifest endpoint is confirmed
+  # live (Phase 2 deploy). Run via workflow_dispatch to test; uncomment to enable.
+  # schedule:
+  #   - cron: '15 * * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max manifests to process this run'
+        required: false
+        default: '500'
+
+concurrency:
+  group: generate-fog-manifests
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Generate FOG manifests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOG_LIMIT: ${{ github.event.inputs.limit || '500' }}
+        run: node scripts/sync/cron_generate_fog_manifests.js
