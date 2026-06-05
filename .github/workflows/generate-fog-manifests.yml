@@ -7,10 +7,10 @@ name: Generate FOG Manifests
 # Hourly is cheap because it only touches rows that still lack a FOG Manifest.
 
 on:
-  # schedule GATED until the Railway /generate/fog-manifest endpoint is confirmed
-  # live (Phase 2 deploy). Run via workflow_dispatch to test; uncomment to enable.
-  # schedule:
-  #   - cron: '15 * * * *'
+  # Hourly. Railway /generate/fog-manifest endpoint confirmed live 2026-06-05.
+  # Idempotent — only touches manifests still missing a FOG Manifest (usually 0).
+  schedule:
+    - cron: '15 * * * *'
   workflow_dispatch:
     inputs:
       limit:
