@@ -1023,11 +1023,11 @@ const TOPIC_HANDLERS: Record<string, (id: string, topic: string) => Promise<{ en
   CLIENT_CREATE: handleClient,
   CLIENT_UPDATE: handleClient,
   CLIENT_DESTROY: handleClientDestroy,
-  // Visit inbound DISABLED 2026-06-02 (Fred) — Calendar app owns visits; ACK but ignore:
-  VISIT_CREATE: handleVisitInboundDisabled,
-  VISIT_UPDATE: handleVisitInboundDisabled,
-  VISIT_COMPLETE: handleVisitInboundDisabled,
-  VISIT_DESTROY: handleVisitInboundDisabled,
+  // Visit inbound RE-ENABLED 2026-06-05 (Fred, TEMPORARY — repopulate visits from Jobber; turn off ~next week):
+  VISIT_CREATE: handleVisit,
+  VISIT_UPDATE: handleVisit,
+  VISIT_COMPLETE: handleVisit,
+  VISIT_DESTROY: handleVisitDestroy,
   INVOICE_CREATE: handleInvoice,
   INVOICE_UPDATE: handleInvoice,
   INVOICE_DESTROY: handleInvoiceDestroy,

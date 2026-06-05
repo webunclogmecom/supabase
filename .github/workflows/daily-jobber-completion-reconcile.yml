@@ -11,9 +11,9 @@ name: Daily Jobber visit completion reconcile
 # visit_status / completed_at / start_at / end_at / visit_date.
 
 on:
-  # schedule DISABLED 2026-06-02 (Fred): visit-inbound from Jobber stopped — Calendar owns visits.
-  # schedule:
-  #   - cron: '30 8 * * *'
+  # schedule RE-ENABLED 2026-06-05 (Fred, TEMPORARY — repopulate from Jobber; turn off ~next week):
+  schedule:
+    - cron: '30 8 * * *'
   workflow_dispatch:
     inputs:
       days:
