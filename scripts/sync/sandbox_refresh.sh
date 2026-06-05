@@ -61,6 +61,16 @@ CANONICAL_TABLES=(
   vehicle_telemetry_readings
   entity_source_links
   jobber_oversized_attachments
+  # Dimension/lookup tables the canonical set FKs into — added 2026-06-05 after a refresh
+  # failure (clients.group_id -> client_groups was unseeded in Sandbox). gdos in particular
+  # GROWS via DERM Tracker, so a stale one-time seed was a latent landmine. pg_dump --data-only
+  # orders FK dependencies automatically on restore, so position here is irrelevant.
+  client_groups
+  zones
+  client_locations
+  disposal_facilities
+  gdos
+  service_line_items
 )
 
 # Skipped on purpose:
