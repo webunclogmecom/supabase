@@ -115,6 +115,40 @@ DUMP_LINES=$(wc -l < "$DUMP_FILE")
 echo "  ✓ ${DUMP_BYTES} bytes, ${DUMP_LINES} lines"
 
 echo
+echo "[1a/4] Schema parity — create canonical tables missing from Sandbox..."
+# The refresh is data-only: a NEW canonical table in Prod won't exist in Sandbox,
+# so the reload's COPY (or an FK from an existing canonical table) aborts the whole
+# transaction. Auto-create any missing canonical table from Prod's schema. We STRIP
+# triggers + RLS/policies on purpose: Sandbox has no `audit` schema (audit.log_change
+# is absent) and runs an anon-permissive posture, not Prod's RLS-hardened one. Then
+# grant read so Yannick's Lovable app can see the new table.
+SP_MISSING=()
+for t in "${CANONICAL_TABLES[@]}"; do
+  ex=$(psql "$SANDBOX_DB_URL" -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='$t' LIMIT 1" 2>/dev/null)
+  [ -z "$ex" ] && SP_MISSING+=("$t")
+done
+if [ ${#SP_MISSING[@]} -gt 0 ]; then
+  echo "  missing in Sandbox: ${SP_MISSING[*]} — creating from Prod schema"
+  SP_FLAGS=()
+  for t in "${SP_MISSING[@]}"; do SP_FLAGS+=(-t "public.$t"); done
+  pg_dump --schema-only --no-owner --no-privileges "${SP_FLAGS[@]}" "$PROD_DB_URL" \
+    | awk '
+        /^CREATE TRIGGER/ { skip=1 }
+        /^CREATE POLICY/  { skip=1 }
+        /ROW LEVEL SECURITY/ { next }
+        skip { if ($0 ~ /;[[:space:]]*$/) skip=0; next }
+        { print }
+      ' \
+    | psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet
+  for t in "${SP_MISSING[@]}"; do
+    psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet -c "GRANT SELECT ON public.\"$t\" TO anon, authenticated;"
+  done
+  echo "  ✓ created ${#SP_MISSING[@]} table(s) (triggers/RLS stripped, read granted)"
+else
+  echo "  ✓ no missing tables"
+fi
+
+echo
 echo "[2a/4] Detect Production column drops + identify Yannick columns..."
 # Two distinct populations of "in Sandbox but not in Production" columns:
 #   1. Genuine Yannick additions (he created in Sandbox; Prod never had it).
@@ -220,6 +254,43 @@ for t in "${CANONICAL_TABLES[@]}"; do
 done
 echo "  ✓ ${PRESERVED_COL_COUNT} Yannick column(s) will be preserved"
 echo "  ✓ ${DROPPED_BY_PROD_COUNT} Production-dropped column(s) propagated to Sandbox"
+
+echo
+echo "[2a+/4] Schema parity — realign drifted CHECK constraints to Prod..."
+# A CHECK whose allowed set widened in Prod (e.g. visits.source gaining
+# 'visit-calendar') but not in Sandbox will reject the incoming Prod rows and abort
+# the reload. Copy Prod's canonical CHECK defs into a temp table on Sandbox, then
+# re-create any that differ or are missing. NOT VALID so the about-to-be-truncated
+# Sandbox rows aren't re-validated; the reload's COPY enforces them on fresh data.
+SP_CANON_IN=$(IFS=,; for t in "${CANONICAL_TABLES[@]}"; do echo -n "'$t',"; done | sed 's/,$//')
+{
+  echo "CREATE TEMP TABLE _prod_chk (tbl text, conname text, def text);"
+  echo "COPY _prod_chk (tbl, conname, def) FROM stdin;"
+  psql "$PROD_DB_URL" -tAc "SELECT conrelid::regclass::text||E'\t'||conname||E'\t'||pg_get_constraintdef(oid) FROM pg_constraint WHERE contype='c' AND connamespace='public'::regnamespace AND conrelid::regclass::text IN (${SP_CANON_IN})" 2>/dev/null
+  echo "\\."
+  cat <<'EOSQL'
+DO $$
+DECLARE r record; n int := 0;
+BEGIN
+  FOR r IN
+    SELECT p.tbl, p.conname, p.def
+    FROM _prod_chk p
+    LEFT JOIN pg_constraint c
+      ON c.conname = p.conname
+     AND c.connamespace = 'public'::regnamespace
+     AND c.conrelid::regclass::text = p.tbl
+    WHERE c.oid IS NULL OR pg_get_constraintdef(c.oid) <> p.def
+  LOOP
+    EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT IF EXISTS %I', r.tbl, r.conname);
+    EXECUTE format('ALTER TABLE public.%I ADD CONSTRAINT %I %s NOT VALID', r.tbl, r.conname, r.def);
+    RAISE NOTICE 'realigned CHECK %.%', r.tbl, r.conname;
+    n := n + 1;
+  END LOOP;
+  RAISE NOTICE 'check realign: % constraint(s) updated', n;
+END $$;
+EOSQL
+} | psql "$SANDBOX_DB_URL" -v ON_ERROR_STOP=1 --quiet
+echo "  ✓ checks realigned"
 
 echo
 echo "[2b/4] Truncate + reload Sandbox in single transaction..."
