@@ -150,3 +150,23 @@ You framed TCE as **"1 client with many locations."** The DB instead has **23 TC
 
 ## 8. References
 Spec `docs/superpowers/specs/2026-05-31-client-locations-multitenant-design.md` · `docs/tce-chain-modeling-decision.md` · `docs/operations.md#gdo-permits--bound-to-location` · migrations `2026-06-01_client_locations.sql` / `…b_seed_casa_neos_wynd…` / `…c_phase2_gdo_dedup…` · `docs/phase2-gdo-verification-message.md` · ADR 002 (entity-source-links), ADR 011 (source-of-truth) · Memory `project_client_locations_model`.
+
+---
+
+## 9. 2026-06-08 — Fred directive + build progress
+
+**Directive (Fred):** the **location** is the service unit — it owns the **manhole/GDO**, its **billing/invoices**, and its **visits**. A **visit attaches to a location, not directly to a client** (reach the client *through* the location). One client → many locations. And: "group all the clients" (chains).
+
+### Stage 1 — DONE ✅ (commit `9a9ece8`, migration `2026-06-08_client_groups_chains.sql`)
+Grouped every clear brand-chain under `client_groups` (the brand = "client"; each store stays its own Jobber billing entity = the "location" that owns billing/invoices/GDO/visits). **10 brands now:** Pura Vida (24), The Carrot Express (23), La Granja (6), Grove Kosher (4), Bagel Boss (4), Myka / Nu Real Food / Krudo / Fresko / Mr.&Mrs. Pasta (2 each). 71 clients grouped, 324 standalone.
+**Held for review (NOT grouped — not chains):** G7 (single-venue areas?), TRUE (truck dedup?), FIA (duplicate clients?).
+
+### Stage 2 — make the location the visit/billing grain (planned)
+- Add `visits.client_location_id`; enforce **1 GDO per location** (partial UNIQUE on `gdos.client_location_id`).
+- Materialize locations + attribute every visit to one.
+- Update `webhook-jobber` `handleVisit` to set the location on sync (replay-safe).
+- Wire FP / billing / DERM to read at the location grain.
+
+**Open decisions (blocking Stage 2 schema):**
+1. **Multi-manhole venues** (Casa Neos = 3 GDOs): no Jobber signal distinguishes the area — verified line items (none), jobs ("Service call"/"GT Pumping"), DERM `gdo_id` (NULL), property (single) are all venue-level; and one pump visit may service several manholes. → Does a visit map to **one** location (single FK + FP tagging) or **many** (visit↔location join)? Only ~32 historical visits across 5 clients affected (Casa Neos 16, 025-GRO 7, 045-NU 4, 175-PV 4, Wynd 1).
+2. **Materialization grain:** every client gets ≥1 location (uniform; every visit→location) vs only multi-location clients (single-site stays client-grain).
