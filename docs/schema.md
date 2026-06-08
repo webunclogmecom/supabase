@@ -155,6 +155,10 @@ Which **manhole(s)** a visit serviced. A visit can cover several manholes (one p
 > **Every client auto-gets a location** — trigger `trg_client_default_location` (AFTER INSERT on `clients`, SECURITY DEFINER) creates a `'Main'` location for each new client, so the "every client ≥1 location" invariant self-maintains. Migration `2026-06-08d`.
 >
 > **Billing per location** — `ops.invoice_locations` (each invoice → its location(s) with apportioned `amount_share` / `outstanding_share`) + `ops.v_billing_by_location` (per-location rollup). Invoices are *managed* per location but *sent* to the client; location is **DERIVED** (single-site → its location; multi-site → the billed visits' locations), never stored — Rule 2. 1999/2000 invoices mapped. Migration `2026-06-08c`.
+>
+> **Seeded on every insert** — `trg_visit_default_locations` (AFTER INSERT on `visits`, SECURITY DEFINER) seeds a visit's manhole(s) on *all* paths (webhook, Calendar app, crons), only when it has none. Migration `2026-06-08e`.
+>
+> **Edited in Admin Review** — `public.visit_manhole_options` (per visit: the client's manholes + `is_assigned`) + `public.set_visit_manholes(p_visit_id, p_location_ids[])` (validated replace-set; SECURITY DEFINER → anon needs only EXECUTE; rejects manholes not belonging to the visit's client; audit captures it). The human-tag that resolves multi-manhole attribution + feeds per-manhole DERM. Migration `2026-06-08f`.
 
 ### `gdos` — 166 rows · DERM permits (one per permitted facility = one location)
 
