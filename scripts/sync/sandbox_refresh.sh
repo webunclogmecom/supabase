@@ -57,6 +57,9 @@ CANONICAL_TABLES=(
   derm_manifests
   manifest_visits
   inspections
+  # Admin Review review/bonus — canonical since 2026-06-08 (were Sandbox-only app_visit_reviews/app_shift_reviews)
+  visit_reviews
+  shift_reviews
   employees
   vehicles
   vehicle_telemetry_readings
