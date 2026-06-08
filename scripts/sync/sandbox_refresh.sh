@@ -47,6 +47,7 @@ CANONICAL_TABLES=(
   jobs
   visits
   visit_assignments
+  visit_locations
   invoices
   line_items
   quotes

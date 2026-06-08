@@ -173,3 +173,15 @@ Decisions taken (AskUserQuestion 2026-06-08): **(1) a visit maps to MANY locatio
 - Wire **FP / DERM** to read at the location grain (apps: LEFT-JOIN `visit_locations`, fall back to client when none). *(Billing-per-location views shipped.)*
 - Link **045-NU**'s GDOs to its 2 facilities; ingest **Wynd**'s GDOs (D-track) → then its visits auto-attribute.
 - Review the 3 held codes (**G7, TRUE, FIA** — areas vs duplicates); finish Phase-2 suspect-GDO verification (060-TU, 132-PUM, 155-PV, 170-PV, 192-FRK); **property-dedup** pass (354 multi-property clients).
+
+### App + population alignment audit (2026-06-08)
+Audited all app DB contracts (FP `customer.*`, DERM `derm.*`, Calendar `ops.v_calendar_*`) + the population layer against the new grain. **No breakage** — every view executes, no row-count drift, the new triggers are safe (no recursion; service-role/SECURITY DEFINER), `webhook-airtable` untouched (never inserts clients; its `gdos` writes never set `client_location_id`).
+
+**Fixed — population now aligned:**
+- `trg_visit_default_locations` (AFTER INSERT on `visits`, migration `2026-06-08e`, SECURITY DEFINER) seeds `visit_locations` on EVERY insert path — closes the gap where the **Calendar app** (visit source of truth) + 3 crons (`cron_generate_recurring_visits`, `generate_service_agreement_visits`, `reconcile_jobber_visits`) created visits with no manhole. (handleVisit block kept — idempotent, covers the update/promote path.)
+- `sandbox_refresh.sh`: added `visit_locations` to `CANONICAL_TABLES` (else Sandbox 400s on any view joining it).
+
+**Wiring follow-ups — apps WORK, but don't yet expose the manhole grain:**
+- **FP** `customer.work_orders` / `customer.scheduled_visits` show an opaque manhole *count* — add the named `visit_locations → client_locations.name` list (444/448 FP visits have it; data one join away).
+- **DERM (priority)** — `ops.v_derm_compliance`, `derm.gdos`, `derm.manifests`, `derm.visits`, `derm.manifest_visits` still attribute at CLIENT grain, collapsing multi-manhole venues (Casa Neos → 1 row/1 GDO, hiding 2 manholes; a non-compliant manhole can hide). **Blocked on 2 gaps:** (1) `derm_manifests.gdo_id` NULL on 195/391 manifests (all Casa Neos); (2) `manifest_visits` has no `client_location_id` → "each manhole gets its own DERM" not representable. **Decision:** add `manifest_visits.client_location_id` or standardize on `derm_manifests.gdo_id → client_location`. `customer.permits` is already per-manhole (the model to mirror).
+- **Calendar** = mock-data prototype → rides the wiring pass. **FP-clone** omits `ops.*` + dimension data → only if FP consumes per-location billing. Minor: `derm.gdos` shows the INACTIVE concatenated legacy GDO (no `status='ACTIVE'` filter); orphan manifest 959 (no `manifest_visits`).
