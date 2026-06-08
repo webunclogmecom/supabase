@@ -166,8 +166,10 @@ Decisions taken (AskUserQuestion 2026-06-08): **(1) a visit maps to MANY locatio
 - **1 GDO per location** enforced (partial UNIQUE on `gdos.client_location_id`); **108 GDOs linked**.
 - `visit_locations` backfilled: **664 historical + all 21 upcoming visits** attributed to GDO-confirmed manhole(s). **5 pending:** Wynd (D-track GDO ingestion) + 045-NU (its 2 facilities need GDO linkage).
 - `webhook-jobber` `handleVisit` now maintains `visit_locations` on every sync — seeds only when a visit has none, so FP/ops manual tags survive replays. **Verified live:** replay ok=23 fail=0, 0 duplicate links, 0 webhook failures.
+- **Billing per location** (migration `2026-06-08c`): `ops.invoice_locations` (invoice → its location(s), apportioned `amount_share` / `outstanding_share`) + `ops.v_billing_by_location` rollup — invoices *managed* per location, *sent* to the client; location DERIVED (Rule 2). **1999/2000 mapped** ($1.10M apportions exactly, no double-count).
+- **Invariant self-maintains** (migration `2026-06-08d`): trigger `trg_client_default_location` gives every new client a `'Main'` location on insert (a client synced after the materialization had revealed the gap).
 
 ### Remaining follow-ups (not blocking)
-- Wire **FP / billing / DERM** to read at the location grain (apps: LEFT-JOIN `visit_locations`, fall back to client when none).
+- Wire **FP / DERM** to read at the location grain (apps: LEFT-JOIN `visit_locations`, fall back to client when none). *(Billing-per-location views shipped.)*
 - Link **045-NU**'s GDOs to its 2 facilities; ingest **Wynd**'s GDOs (D-track) → then its visits auto-attribute.
 - Review the 3 held codes (**G7, TRUE, FIA** — areas vs duplicates); finish Phase-2 suspect-GDO verification (060-TU, 132-PUM, 155-PV, 170-PV, 192-FRK); **property-dedup** pass (354 multi-property clients).

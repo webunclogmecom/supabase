@@ -152,6 +152,10 @@ Which **manhole(s)** a visit serviced. A visit can cover several manholes (one p
 
 **RLS:** anon SELECT; authenticated/service_role ALL. **Audit:** opt-in (`audit_visit_locations`). **Backfill 2026-06-08:** 664 historical + all upcoming visits → GDO-confirmed manhole(s); 5 pending (Wynd D-track, 045-NU GDO-link gap). Migration: `docs/migrations/2026-06-08b_location_service_grain.sql`.
 
+> **Every client auto-gets a location** — trigger `trg_client_default_location` (AFTER INSERT on `clients`, SECURITY DEFINER) creates a `'Main'` location for each new client, so the "every client ≥1 location" invariant self-maintains. Migration `2026-06-08d`.
+>
+> **Billing per location** — `ops.invoice_locations` (each invoice → its location(s) with apportioned `amount_share` / `outstanding_share`) + `ops.v_billing_by_location` (per-location rollup). Invoices are *managed* per location but *sent* to the client; location is **DERIVED** (single-site → its location; multi-site → the billed visits' locations), never stored — Rule 2. 1999/2000 invoices mapped. Migration `2026-06-08c`.
+
 ### `gdos` — 166 rows · DERM permits (one per permitted facility = one location)
 
 | Column | Type | Notes |
