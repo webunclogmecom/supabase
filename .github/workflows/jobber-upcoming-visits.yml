@@ -12,15 +12,17 @@ name: Jobber upcoming visits sync
 # => the Calendar shows Jobber's real near-term schedule + our projections beyond.
 #
 # Idempotent (keyed on Jobber Visit GID). Reads + refreshes the Jobber token from
-# public.webhook_tokens, so it only needs Supabase secrets. Runs every 4 hours.
+# public.webhook_tokens, so it only needs Supabase secrets. Runs every 15 minutes.
 #
 # NOTE: this is the READ half. The WRITE half (Calendar -> Jobber push) is Phase 2
 # and needs Yannick's Jobber Dev OAuth (write scope) — task #80.
 
 on:
-  # schedule RE-ENABLED 2026-06-05 (Fred, TEMPORARY — repopulate from Jobber; turn off ~next week):
+  # schedule RE-ENABLED 2026-06-05; cadence tightened 2026-06-08 (4h -> every 15 min) to close the
+  # new-visit latency gap — Jobber sends NO real-time VISIT_CREATE webhook (verified: 0 in 14 days),
+  # so this poll is the only ingestion path for freshly-added visits. Tunable if Actions minutes tighten.
   schedule:
-    - cron: '15 */4 * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -43,9 +45,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm ci --omit=dev || npm install --omit=dev
-
+      # No npm install needed — the script uses only Node built-ins (https/crypto); dotenv is optional.
       - name: Sync Jobber upcoming visits
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

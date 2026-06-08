@@ -136,7 +136,20 @@ async function gql(token, query) {
   const dur = Math.round((Date.now() - startMs) / 1000);
   console.log(`[upcoming] replayed: ok=${ok} fail=${fail} in ${dur}s`);
 
+  // VERIFY (added 2026-06-08): after replaying, EVERY eligible upcoming Jobber visit must now exist
+  // in our DB. A residual gap here is a real ingestion bug (handleVisit rejected/dropped it), not
+  // just latency — surface it loudly: record it in sync_log AND exit non-zero so the workflow goes
+  // red and we find out from the pipeline, not from someone eyeballing Jobber.
+  const verifyIds = eligible.map(v => `'${v.id}'`).join(',') || "''";
+  const present = await execSql(`SELECT source_id FROM public.entity_source_links WHERE entity_type='visit' AND source_system='jobber' AND source_id IN (${verifyIds})`);
+  const presentSet = new Set(present.map(r => r.source_id));
+  const stillMissing = eligible.filter(v => !presentSet.has(v.id));
+  console.log(`[upcoming] VERIFY: ${presentSet.size}/${eligible.length} eligible upcoming visits present in DB; residual gap = ${stillMissing.length}`);
+  stillMissing.slice(0, 10).forEach(v => console.error(`  STILL MISSING after replay: ${(v.title || '').slice(0, 55)} (${v.id})`));
+
   await execSql(`INSERT INTO public.sync_log (sync_source, started_at, finished_at, rows_inserted, rows_updated, rows_errored, duration_seconds, status, details)
-    VALUES ('jobber_upcoming_visits', ${q(startedAt)}, now(), ${ok}, 0, ${fail}, ${dur}, ${fail === 0 ? "'success'" : "'partial'"},
-            ${q(JSON.stringify({ pulled: visits.length, excluded_112ya: excluded, replayed_ok: ok, replayed_fail: fail }))})`);
+    VALUES ('jobber_upcoming_visits', ${q(startedAt)}, now(), ${ok}, 0, ${fail}, ${dur}, ${stillMissing.length === 0 && fail === 0 ? "'success'" : "'partial'"},
+            ${q(JSON.stringify({ pulled: visits.length, excluded_112ya: excluded, replayed_ok: ok, replayed_fail: fail, residual_gap: stillMissing.length }))})`);
+
+  if (stillMissing.length > 0) { console.error(`[upcoming] FAIL: ${stillMissing.length} upcoming visit(s) still missing after replay`); process.exitCode = 1; }
 })().catch(err => { console.error('[upcoming] FATAL:', err.message); process.exit(1); });
