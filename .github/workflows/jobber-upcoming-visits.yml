@@ -18,11 +18,14 @@ name: Jobber upcoming visits sync
 # and needs Yannick's Jobber Dev OAuth (write scope) — task #80.
 
 on:
-  # schedule RE-ENABLED 2026-06-05; cadence tightened 2026-06-08 (4h -> every 15 min) to close the
-  # new-visit latency gap — Jobber sends NO real-time VISIT_CREATE webhook (verified: 0 in 14 days),
-  # so this poll is the only ingestion path for freshly-added visits. Tunable if Actions minutes tighten.
-  schedule:
-    - cron: '*/15 * * * *'
+  # 2026-06-08: GitHub SCHEDULE DISABLED — replaced by the Supabase pg_cron job
+  # 'jobber-upcoming-visits-sync' (every 15 min, via pg_net -> the sync-jobber-upcoming-visits Edge
+  # Function), which runs INSIDE the database and is immune to GitHub's scheduler throttling (GitHub
+  # was lagging/skipping the */15 schedule). Our Jobber integration is poll-based (no real-time
+  # webhooks), so this cadence is what determines new-visit freshness. This workflow is kept for
+  # manual backup runs only. See docs/migrations/2026-06-08_jobber_upcoming_visits_pgcron.sql.
+  # schedule:
+  #   - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
