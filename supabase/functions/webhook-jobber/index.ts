@@ -433,6 +433,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
         job { id client { id } property { id } }
         invoice { id }
         assignedUsers { nodes { id name { first last } } }
+        lineItems(first: 50) { nodes { name description quantity unitPrice totalPrice taxable } }
       }
     }`,
     { id: gid }
@@ -519,9 +520,28 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     return null
   }
 
+  // Derive service_type from the visit's LINE ITEMS (canonical), falling back to the title
+  // guess, then defaulting to 'GT' so a registered visit is never left without one (Fred
+  // 2026-06-08). Codes map per public.service_line_items; non-concrete kinds (grey water,
+  // lift station, unclogging, camera, labor, fees) carry no GT/CL/WD -> default GT.
+  const CODE_SVC: Record<string, string> = { '01': 'GT', '02': 'GT', '09': 'GT', '05': 'CL', '06': 'CL', '07': 'CL', '12': 'CL', '13': 'CL', '14': 'CL', '08': 'WD' }
+  const lineItemSvc = (name: string | null): string | null => {
+    if (!name) return null
+    const code = name.match(/^\s*(\d{2})\s*-/)?.[1]
+    if (code && CODE_SVC[code]) return CODE_SVC[code]
+    const t = name.toLowerCase()
+    if (/grease trap/.test(t)) return 'GT'
+    if (/warranty of drain/.test(t)) return 'WD'
+    if (/main line|auxiliary|aux cleaning|tank cleaning|\bcleaning\b/.test(t)) return 'CL'
+    return null
+  }
+  let serviceType: string | null = null
+  for (const li of (v.lineItems?.nodes ?? [])) { const s = lineItemSvc(li?.name ?? null); if (s) { serviceType = s; break } }
+  serviceType = serviceType ?? inferServiceType(v.title ?? null) ?? 'GT'
+
   const visitRow: Record<string, unknown> = {
     title: v.title ?? null,
-    service_type: inferServiceType(v.title ?? null),
+    service_type: serviceType,
     visit_status: statusMap[v.visitStatus?.toLowerCase()] ?? 'scheduled',
     start_at: v.startAt ?? null,
     end_at: v.endAt ?? null,
@@ -621,6 +641,25 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     source_id: gid,
     match_method: promotedFromCron ? 'webhook_promoted_from_cron' : 'webhook',
   })
+
+  // Sync visit-scoped line items (idempotent: wipe + replace by visit_id). Mirrors the
+  // invoice line-item sync — captures each scheduled visit's services verbatim (incl. the
+  // formatted "NN - ..." codes) so the registered visit carries its full service detail.
+  const visitLineNodes: any[] = v.lineItems?.nodes ?? []
+  await supabase.from('line_items').delete().eq('visit_id', entityId)
+  if (visitLineNodes.length > 0) {
+    const liRows = visitLineNodes.map((n: any) => ({
+      visit_id: entityId,
+      name: n.name ?? null,
+      description: n.description ?? null,
+      quantity: n.quantity ?? null,
+      unit_price: n.unitPrice ?? null,
+      total_price: n.totalPrice ?? null,
+      taxable: n.taxable ?? null,
+    }))
+    const { error: liErr } = await supabase.from('line_items').insert(liRows)
+    if (liErr) console.error(`Visit ${numericId}: line_items insert failed:`, liErr.message)
+  }
 
   // Upsert visit_assignments for assigned team members.
   // FIX 2026-05-15: pass member.id (full base64 gid) directly — same format as
