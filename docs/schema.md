@@ -123,9 +123,9 @@ webhook_tokens                — system/ops tables
 | notes | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
 
-### `client_locations` — 8 rows · NEW 2026-06-01
+### `client_locations` — 404 rows · the service unit (universalized 2026-06-08)
 
-One client → N named service **locations** (tenants / service areas), each linked to its own GDO. For multi-tenant clients (Wynd 28 = Pasta/Presidente/CU4/Nino Gordo/Pari Pari sharing ONE trap + ONE visit) and multi-area clients (Casa Neos = Kitchens/Bars/Lounge). **Identity only** — visits / frequency / price / billing stay shared on their own tables, referenced never copied. Spec: `docs/superpowers/specs/2026-05-31-client-locations-multitenant-design.md`.
+One client → N **locations** — the service unit that owns the **manhole/GDO** and (via `visit_locations`) its **visits**. Per Fred 2026-06-08, **every client has ≥1 location**: single-site clients carry a default `'Main'`; multi-area clients (Casa Neos = Kitchens/Bars/Lounge) carry one per manhole. A visit attaches to location(s) through `visit_locations` (M:N) — reach the client *through* the location, not directly. **Identity only** — frequency / price / billing stay on their own tables, referenced never copied. Brand grouping = `client_groups` (chains: TCE, Pura Vida…). Spec + audit: `docs/superpowers/specs/2026-05-31-client-locations-multitenant-design.md`, `docs/audits/2026-06-08_client_location_gdo_audit.md`.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -140,13 +140,25 @@ One client → N named service **locations** (tenants / service areas), each lin
 
 **RLS:** anon SELECT; authenticated/service_role ALL. **Audit:** opt-in (`audit_client_locations`).
 
-### `gdos` — 160 rows · DERM permits (one per permitted facility)
+### `visit_locations` — M:N visit ↔ location · NEW 2026-06-08
+
+Which **manhole(s)** a visit serviced. A visit can cover several manholes (one pump visit) and a location has many visits → join table. Each manhole still produces its own DERM manifest via `manifest_visits`. Populated by `webhook-jobber` `handleVisit` (single-location client → its one location; multi-location → its GDO-confirmed manholes) **and** by FP/ops tagging — the sync seeds defaults ONLY when a visit has none, so manual tags survive replays.
+
+| Column | Type | Notes |
+|---|---|---|
+| visit_id | BIGINT FK → visits (CASCADE) | **PK (visit_id, client_location_id)** |
+| client_location_id | BIGINT FK → client_locations (CASCADE) | |
+| created_at | TIMESTAMPTZ | |
+
+**RLS:** anon SELECT; authenticated/service_role ALL. **Audit:** opt-in (`audit_visit_locations`). **Backfill 2026-06-08:** 664 historical + all upcoming visits → GDO-confirmed manhole(s); 5 pending (Wynd D-track, 045-NU GDO-link gap). Migration: `docs/migrations/2026-06-08b_location_service_grain.sql`.
+
+### `gdos` — 166 rows · DERM permits (one per permitted facility = one location)
 
 | Column | Type | Notes |
 |---|---|---|
 | id | BIGSERIAL PK | |
 | client_id | BIGINT FK → clients (RESTRICT) | |
-| client_location_id | BIGINT FK → client_locations (SET NULL) | **NEW 2026-06-01** — the location this GDO permits (~1:1; NULL until ingested) |
+| client_location_id | BIGINT FK → client_locations (SET NULL) | the location this GDO permits — **UNIQUE: 1 GDO per location** (2026-06-08); 108 linked, NULL until ingested |
 | gdo_number | TEXT | Miami-Dade GDO permit number |
 | location_label | TEXT | Free-text facility label (89% NULL; superseded by `client_locations.name`) |
 | property_id | BIGINT FK → properties (SET NULL) | |

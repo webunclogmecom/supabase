@@ -161,12 +161,13 @@ Spec `docs/superpowers/specs/2026-05-31-client-locations-multitenant-design.md` 
 Grouped every clear brand-chain under `client_groups` (the brand = "client"; each store stays its own Jobber billing entity = the "location" that owns billing/invoices/GDO/visits). **10 brands now:** Pura Vida (24), The Carrot Express (23), La Granja (6), Grove Kosher (4), Bagel Boss (4), Myka / Nu Real Food / Krudo / Fresko / Mr.&Mrs. Pasta (2 each). 71 clients grouped, 324 standalone.
 **Held for review (NOT grouped — not chains):** G7 (single-venue areas?), TRUE (truck dedup?), FIA (duplicate clients?).
 
-### Stage 2 — make the location the visit/billing grain (planned)
-- Add `visits.client_location_id`; enforce **1 GDO per location** (partial UNIQUE on `gdos.client_location_id`).
-- Materialize locations + attribute every visit to one.
-- Update `webhook-jobber` `handleVisit` to set the location on sync (replay-safe).
-- Wire FP / billing / DERM to read at the location grain.
+### Stage 2 — DONE ✅ (migration `2026-06-08b_location_service_grain.sql` + `webhook-jobber` deploy)
+Decisions taken (AskUserQuestion 2026-06-08): **(1) a visit maps to MANY locations** (one pump visit services several manholes) → `public.visit_locations` (M:N; each manhole still gets its own DERM via `manifest_visits`); **(2) every client gets ≥1 location** → materialized a default `'Main'` for the 390 single-site clients (**404 locations; all 395 clients covered**).
+- **1 GDO per location** enforced (partial UNIQUE on `gdos.client_location_id`); **108 GDOs linked**.
+- `visit_locations` backfilled: **664 historical + all 21 upcoming visits** attributed to GDO-confirmed manhole(s). **5 pending:** Wynd (D-track GDO ingestion) + 045-NU (its 2 facilities need GDO linkage).
+- `webhook-jobber` `handleVisit` now maintains `visit_locations` on every sync — seeds only when a visit has none, so FP/ops manual tags survive replays. **Verified live:** replay ok=23 fail=0, 0 duplicate links, 0 webhook failures.
 
-**Open decisions (blocking Stage 2 schema):**
-1. **Multi-manhole venues** (Casa Neos = 3 GDOs): no Jobber signal distinguishes the area — verified line items (none), jobs ("Service call"/"GT Pumping"), DERM `gdo_id` (NULL), property (single) are all venue-level; and one pump visit may service several manholes. → Does a visit map to **one** location (single FK + FP tagging) or **many** (visit↔location join)? Only ~32 historical visits across 5 clients affected (Casa Neos 16, 025-GRO 7, 045-NU 4, 175-PV 4, Wynd 1).
-2. **Materialization grain:** every client gets ≥1 location (uniform; every visit→location) vs only multi-location clients (single-site stays client-grain).
+### Remaining follow-ups (not blocking)
+- Wire **FP / billing / DERM** to read at the location grain (apps: LEFT-JOIN `visit_locations`, fall back to client when none).
+- Link **045-NU**'s GDOs to its 2 facilities; ingest **Wynd**'s GDOs (D-track) → then its visits auto-attribute.
+- Review the 3 held codes (**G7, TRUE, FIA** — areas vs duplicates); finish Phase-2 suspect-GDO verification (060-TU, 132-PUM, 155-PV, 170-PV, 192-FRK); **property-dedup** pass (354 multi-property clients).

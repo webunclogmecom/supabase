@@ -661,6 +661,36 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     if (liErr) console.error(`Visit ${numericId}: line_items insert failed:`, liErr.message)
   }
 
+  // Maintain visit_locations (M:N): attribute the visit to its client's GDO-confirmed
+  // manhole(s). Seed defaults ONLY when the visit has none yet, so FP/ops manual tagging
+  // survives every replay. Single-location client -> its one location; multi-location ->
+  // only locations carrying an active GDO (a confirmed manhole). Clients whose locations
+  // lack a linked GDO (e.g. Wynd, pending D-track) stay unlinked until tagged.
+  if (clientId) {
+    const { data: existingVL } = await supabase
+      .from('visit_locations').select('visit_id').eq('visit_id', entityId).limit(1)
+    if (!existingVL || existingVL.length === 0) {
+      const { data: locs } = await supabase
+        .from('client_locations').select('id').eq('client_id', clientId)
+      let targetLocIds: number[] = []
+      if (locs && locs.length === 1) {
+        targetLocIds = [locs[0].id]
+      } else if (locs && locs.length > 1) {
+        const locIds = locs.map((l: any) => l.id)
+        const { data: gdoLocs } = await supabase
+          .from('gdos').select('client_location_id')
+          .eq('status', 'ACTIVE').in('client_location_id', locIds)
+        targetLocIds = [...new Set((gdoLocs ?? [])
+          .map((g: any) => g.client_location_id).filter((x: any) => x != null))]
+      }
+      if (targetLocIds.length > 0) {
+        const { error: vlErr } = await supabase.from('visit_locations')
+          .insert(targetLocIds.map((id) => ({ visit_id: entityId, client_location_id: id })))
+        if (vlErr) console.error(`Visit ${numericId}: visit_locations insert failed:`, vlErr.message)
+      }
+    }
+  }
+
   // Upsert visit_assignments for assigned team members.
   // FIX 2026-05-15: pass member.id (full base64 gid) directly — same format as
   // entity_source_links.source_id stores. Previously decoded to numericId
