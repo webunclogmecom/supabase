@@ -70,7 +70,9 @@ async function checkCronWorkflows() {
     const out = execSync('gh run list --limit=30 --json name,status,conclusion,createdAt,event', { cwd: PROJECT_ROOT, encoding: 'utf8' });
     const runs = JSON.parse(out);
     const since = Date.now() - 24 * 3600 * 1000;
-    const recent = runs.filter(r => new Date(r.createdAt).getTime() > since && r.event === 'schedule');
+    // Only COMPLETED runs count — an in-progress/queued run has conclusion=null and
+    // was being miscounted as a failure (false BLOCKER when the audit ran mid-run).
+    const recent = runs.filter(r => new Date(r.createdAt).getTime() > since && r.event === 'schedule' && r.status === 'completed');
     const byName = {};
     for (const r of recent) {
       if (!byName[r.name]) byName[r.name] = { ok: 0, fail: 0 };
