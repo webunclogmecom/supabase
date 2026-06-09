@@ -461,15 +461,21 @@ function checkMemoryIndex() {
 }
 
 function checkMigrationCommits() {
-  // Migrations live in scripts/migrations/ in this repo (legacy layout).
-  const migDir = path.join(PROJECT_ROOT, 'scripts/migrations');
-  if (!fs.existsSync(migDir)) { warn('local', 'scripts/migrations/ folder not found'); return; }
-  try {
-    const status = execSync('git status --porcelain scripts/migrations/', { cwd: PROJECT_ROOT, encoding: 'utf8' }).trim();
-    const count = fs.readdirSync(migDir).filter(f => f.endsWith('.sql')).length;
-    if (!status) ok('local', `Migrations: ${count} files, all committed`);
-    else warn('local', `Migrations: ${status.split('\n').length} uncommitted in scripts/migrations/`);
-  } catch (e) { warn('local', `Migration check: ${e.message.slice(0, 80)}`); }
+  // ACTIVE migrations live in docs/migrations/ (canonical dated SQL since 2026-05-14).
+  // scripts/migrations/ is FROZEN (pre-2026-05-13, still referenced by ADRs/guides as the
+  // historical record). Check BOTH — the old code only checked the frozen dir, so new
+  // docs/migrations/ files were silently unaudited (a blind spot, fixed 2026-06-09).
+  const dirs = ['docs/migrations', 'scripts/migrations'].filter(d => fs.existsSync(path.join(PROJECT_ROOT, d)));
+  let uncommitted = 0, total = 0;
+  for (const d of dirs) {
+    total += fs.readdirSync(path.join(PROJECT_ROOT, d)).filter(f => f.endsWith('.sql')).length;
+    try {
+      const status = execSync(`git status --porcelain ${d}/`, { cwd: PROJECT_ROOT, encoding: 'utf8' }).trim();
+      if (status) uncommitted += status.split('\n').length;
+    } catch { /* per-dir ignore */ }
+  }
+  if (!uncommitted) ok('local', `Migrations: ${total} files (docs/migrations active + scripts/migrations frozen), all committed`);
+  else warn('local', `Migrations: ${uncommitted} uncommitted across docs/migrations + scripts/migrations`);
 }
 
 function checkEnvVars() {
