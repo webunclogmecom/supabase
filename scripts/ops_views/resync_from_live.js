@@ -34,7 +34,7 @@ const header = (view) =>
   const liveViews = (await mgmt("SELECT viewname FROM pg_views WHERE schemaname='ops' ORDER BY viewname;")).map(r => r.viewname);
   const liveSet = new Set(liveViews);
   const files = fs.readdirSync(DIR).filter(f => f.endsWith('.sql')).sort();
-  const out = { mode: exec ? 'EXECUTE' : 'DRY-RUN', resynced: [], unchanged: [], orphan_file_view_not_live: [], skipped_non_view: [] };
+  const out = { mode: exec ? 'EXECUTE' : 'DRY-RUN', created: [], resynced: [], unchanged: [], orphan_file_view_not_live: [], skipped_non_view: [] };
   const handled = new Set();
   for (const f of files) {
     const fp = path.join(DIR, f);
@@ -48,6 +48,15 @@ const header = (view) =>
     if (content === cur) { out.unchanged.push(f); }
     else { out.resynced.push(`${f} -> ops.${view}`); if (exec) fs.writeFileSync(fp, content); }
   }
-  out.live_views_without_source_file = liveViews.filter(v => !handled.has(v));
+  // Create a mirror file for every live ops view that has no source file yet.
+  // Migration-defined views land here as <viewname>.sql (no numeric prefix — they
+  // are not part of the 01-08 apply-order sequence; their edit-source is the migration).
+  for (const view of liveViews.filter(v => !handled.has(v))) {
+    const def = (await mgmt(`SELECT pg_get_viewdef('ops.${view}'::regclass, true) AS def;`))[0].def.trim();
+    const content = header(view) + `CREATE OR REPLACE VIEW ops.${view} AS\n${def}\n`;
+    out.created.push(`${view}.sql -> ops.${view}`);
+    if (exec) fs.writeFileSync(path.join(DIR, `${view}.sql`), content);
+  }
+  out.coverage = `${handled.size + out.created.length}/${liveViews.length} live ops views have a source file`;
   console.log(JSON.stringify(out, null, 2));
 })().catch(e => { console.error('ERR', e.message); process.exit(1); });
