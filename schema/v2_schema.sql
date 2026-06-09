@@ -1,3 +1,8 @@
+-- STALE SNAPSHOT as of 2026-04-13 -- ~190 migrations have shipped since (see docs/migrations/).
+-- This is the FROM-ZERO DDL BASELINE; reconstruct the CURRENT schema by applying
+-- docs/migrations/*.sql on top in date order. A clean pg_dump regenerate (requested
+-- 2026-06-09) needs Docker Desktop running or a CI job -- pending.
+--
 -- ============================================================================
 -- UNCLOGME — SCHEMA V2 (Clean Foundation)
 -- ============================================================================

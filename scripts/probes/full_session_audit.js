@@ -433,7 +433,7 @@ function checkClaudeMdLinks() {
 }
 
 function checkLovablePromptSize() {
-  const f = path.join(PROJECT_ROOT, 'handoff/unclogme-lovable-handoff/LOVABLE-SYSTEM-PROMPT.md');
+  const f = path.join(PROJECT_ROOT, 'docs/handoffs/unclogme-lovable-handoff/LOVABLE-SYSTEM-PROMPT.md');
   if (!fs.existsSync(f)) { warn('local', 'Lovable handoff doc not found'); return; }
   const txt = fs.readFileSync(f, 'utf8');
   const m = txt.match(/```text\n([\s\S]*?)\n```/);
