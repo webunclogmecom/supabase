@@ -177,3 +177,23 @@ GRANT ALL ON public.shift_reviews TO service_role;
 2. **Move scope** — minimal (re-point the 2 review hooks to Prod) **or** full single-Prod-client + `review.*` refactor (kills the 5h lag; bigger app change).
 3. **Timing** — do the move now, or stage it after the manhole-location wiring on `/review/:jobId`.
 4. **Manhole count** — keep `visits.manhole_count` alongside `visit_locations`, or retire it once locations are tagged?
+
+---
+
+## 9. EXECUTED — 2026-06-08 (full move done + live-verified)
+
+**Decisions (Fred "go"):** placement = `public` canonical; scope = **full single-Prod-client move**; timing = now.
+
+**DB side** (migration `2026-06-08g_admin_review_reviews_to_prod.sql` + `scripts/sync/migrate_admin_reviews_to_prod.js`, committed):
+- Created `public.visit_reviews` (PK `visit_id` FK→visits) + `public.shift_reviews` (PK `employee_id,shift_date` FK→employees) — CHECK enums, `set_updated_at`, **`audit.log_change` triggers** (ADR 010), anon-permissive RLS. Migrated all **18 + 2** rows from Sandbox (timestamps + real bonus decisions preserved; **0 FK orphans**).
+- `visits_with_review` re-pointed onto `visit_reviews` (output shape unchanged; verified it surfaces the decisions).
+- Added `visit_reviews` + `shift_reviews` to `sandbox_refresh.sh` CANONICAL_TABLES (Sandbox now mirrors Prod).
+
+**App side** (Lovable project `8eec2ff9-…`, published to `grease-buddy-dash.lovable.app`): 4 surgical edits via Plan-mode review → Approve → Publish — `client.ts` → `VITE_PROD_*` (single client, all reads+writes to Prod); `useSaveVisitReview` → `visit_reviews`/`visit_id`; `useSaveShiftReview` → `shift_reviews`/`(employee_id,shift_date)`; `useShiftFormDetail` reads `shift_reviews`. No UI / business-logic / schema changes.
+
+**Live verification:** the published app's network = **17 Supabase requests, ALL to Prod `wbasvhvvismukaqdnouk`, 0 to Sandbox**; queue renders (141 Prod jobs). Reads confirmed on Prod; the review-write path is the same anon RLS already proven by the live `photo_classifications` writes.
+
+**Pending cleanup (NOT done — intentional rollback net):**
+- Legacy `app_visit_reviews` / `app_shift_reviews` (Prod-empty + Sandbox originals) **kept** as a rollback net → retire after a verification window (rename `_deprecated_*`, then drop).
+- `prod-mirror.ts` dual-write is now a redundant (harmless) double-write to Prod → remove in a later cleanup.
+- App-side doc: `Building Apps/Admin Review/docs/09-known-issues.md #3` is now moot (reads are Prod as of this move).
