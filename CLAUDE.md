@@ -75,12 +75,9 @@ Old rows (pre-2026-05-23 18:30 UTC) have `app_source IS NULL` — no attribution
 - **Save tokens.** Don't generate Excel/screenshots/markdown unless asked.
 - **Critical reasoning over agreement.** Fred values pushback. If his proposal has a flaw, say so with reasoning.
 
-### With Viktor (AI coworker in Slack, `U0AKTMAMWP9`)
-- **Ask first on dev changes** — new tables, FKs, column renames, Edge Function logic. Probes don't need consent.
-- **Critically reason** on his replies. He sometimes uses wrong column names; verify against [docs/schema.md](docs/schema.md).
-- **Poll cadence** — every 3 min, max 3 attempts (9 min). After that, Fred has final say.
-- **Channel:** `#viktor-supabase` (`C0B08S21HHD` — recreated 2026-04-29; prior `C0AN9KDP5B8` is dead).
-- **When Fred messages Viktor**, always schedule a 3-min polling cron.
+### With Viktor (AI coworker in Slack) — on-demand only
+- **Contact Viktor ONLY when Fred explicitly asks.** The old "ask Viktor first on every dev change + poll every 3 min for a reply" protocol is **retired (2026-06-09)** — no automatic consults, no auto-scheduled polling crons. Implement dev changes directly (modular, non-breaking, verified); Fred is the reviewer.
+- If Fred DOES tell you to message Viktor: tag him `<@U0AKTMAMWP9>` in `#viktor-supabase` (`C0B08S21HHD`) and reason critically on his replies (he sometimes uses wrong column names — verify against [docs/schema.md](docs/schema.md)).
 
 ### With Yan (founder)
 Yan owns strategy, budget, business rules. Fred owns architecture + implementation. Route accordingly.
@@ -223,8 +220,7 @@ The webhook-airtable's primary link logic uses `GT Last Visit` ±2 days — that
 2. **Grep the codebase** before asking.
 3. **Check `docs/`** — answer is usually there.
 4. **Check `webhook_events_log`** for data-path questions.
-5. **Ask Viktor** for source-data questions.
-6. **Ask Fred** for architecture questions. He is the final word.
+5. **Ask Fred** for architecture + source-data questions. He is the final word (he loops in Viktor only if he chooses to).
 
 ---
 
