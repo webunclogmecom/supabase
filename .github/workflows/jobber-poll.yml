@@ -6,14 +6,9 @@ name: Jobber polling sync
 # the Edge Function path it feeds is the same one webhooks use.
 
 on:
-  schedule:
-    # Every 2 minutes — repo is public, so GitHub Actions is free unlimited.
-    # GitHub's cron has heavy jitter under load (observed 1–3 hr gaps even at
-    # */5). More frequent attempts give more chances for the scheduler to
-    # actually fire one. If observed cadence still drifts past ~30 min,
-    # consider migrating to Cloudflare Workers Cron Triggers (dedicated
-    # infrastructure, no jitter — see AUDIT_2026-04-28 §6 LOW 3).
-    - cron: '*/2 * * * *'
+  # SCHEDULE RETIRED 2026-06-09 — GitHub throttled this */2 to ~2-3h gaps, so the Jobber
+  # delta poll moved to Supabase pg_cron (jobber-poll-sync */5 -> the sync-jobber-poll
+  # Edge Function), which runs inside the DB and isn't throttled. Kept as a manual fallback.
   workflow_dispatch:  # allow manual trigger
 
 concurrency:

@@ -1,0 +1,203 @@
+// ============================================================================
+// sync-jobber-poll — Edge Function (Supabase-native Jobber delta poll)
+// ============================================================================
+// Deno port of scripts/sync/cron_jobber.js's INCREMENTAL run. Pulls Jobber deltas
+// (clients/jobs/visits/invoices/quotes since the sync_cursors cursor), stages them in
+// raw.jobber_pull_* (needs_populate=TRUE), then replays the flagged rows through
+// webhook-jobber (HMAC-signed) so they land in public.* — exactly as the GitHub poll does.
+//
+// WHY: GitHub Actions throttles the */2 jobber-poll.yml schedule to ~2-3h gaps. Driven by
+// pg_cron (*/5) via pg_net this runs INSIDE the database, immune to GitHub's scheduler —
+// invoices/clients/jobs land within ~5 min. Same pattern as sync-jobber-upcoming-visits.
+//
+// Runs as a background task (EdgeRuntime.waitUntil) — the full cycle exceeds pg_net's ~5s
+// timeout, so the caller gets an immediate 202 and the result lands in public.sync_log.
+// `x-sync-wait: 1` runs synchronously and returns the result (manual testing).
+//
+// Auth: `x-sync-key: <SYNC_TRIGGER_KEY>`. Deploy --no-verify-jwt.
+// Public tables (webhook_tokens, sync_cursors) via service-role supabase-js; raw.* (not
+// PostgREST-exposed) via a DIRECT Postgres connection (SUPABASE_DB_URL — already a function
+// secret, normal DB privileges, NO admin PAT in the function). queryObject(string) uses the
+// simple-query protocol → safe with the transaction pooler (no prepared statements).
+// Faithful 1:1 port of the incremental run — the cutover changes only the scheduler.
+// ============================================================================
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { Client } from 'https://deno.land/x/postgres@v0.19.3/mod.ts'
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const DB_URL = Deno.env.get('SUPABASE_DB_URL')!
+const TRIGGER_KEY = Deno.env.get('SYNC_TRIGGER_KEY') ?? ''
+const GRAPHQL_VERSION = '2026-04-16'
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
+
+type Exec = (q: string) => Promise<any[]>
+
+// Incremental entity set — matches cron_jobber's default run. properties + users have no
+// updatedAt filter (would re-fetch ~400 rows each cycle); they ride webhooks / a daily --full.
+const CURSOR_FIELD: Record<string, string> = { clients: 'updatedAt', jobs: 'createdAt', visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt' }
+const NODE_TIME_FIELD: Record<string, string> = { clients: 'updatedAt', jobs: 'updatedAt', visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt' }
+const FILTER_TYPE: Record<string, string> = { clients: 'Client', jobs: 'Job', visits: 'Visit', invoices: 'Invoice', quotes: 'Quote' }
+const ENTITIES = [
+  { name: 'clients',  rawTable: 'jobber_pull_clients',  topic: 'CLIENT_UPDATE',  fields: 'id firstName lastName companyName isCompany isArchived emails { address primary description } phones { number primary description } billingAddress { street city province postalCode country } balance updatedAt' },
+  { name: 'jobs',     rawTable: 'jobber_pull_jobs',     topic: 'JOB_UPDATE',     fields: 'id jobNumber title client { id } property { id } jobStatus startAt endAt total updatedAt' },
+  { name: 'visits',   rawTable: 'jobber_pull_visits',   topic: 'VISIT_UPDATE',   fields: 'id title startAt endAt completedAt completedBy visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
+  { name: 'invoices', rawTable: 'jobber_pull_invoices', topic: 'INVOICE_UPDATE', fields: 'id invoiceNumber invoiceStatus issuedDate dueDate subject amounts { subtotal total invoiceBalance depositAmount } client { id } updatedAt' },
+  { name: 'quotes',   rawTable: 'jobber_pull_quotes',   topic: 'QUOTE_UPDATE',   fields: 'id quoteNumber quoteStatus amounts { subtotal total depositAmount } client { id } updatedAt' },
+] as const
+
+async function gql(token: string, query: string, variables: Record<string, unknown> = {}) {
+  const r = await fetch('https://api.getjobber.com/api/graphql', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-JOBBER-GRAPHQL-VERSION': GRAPHQL_VERSION },
+    body: JSON.stringify({ query, variables }),
+  })
+  const j = await r.json()
+  if (j.errors?.length) throw new Error(`GraphQL: ${JSON.stringify(j.errors[0]).slice(0, 200)}`)
+  return j.data
+}
+
+// Token + client_secret, with the rotation-race re-read (a sibling refresher — the */30
+// keepalive or the other Jobber cron — may have just rotated the token).
+async function getCreds(): Promise<{ token: string; clientSecret: string }> {
+  const { data: row } = await supabase.from('webhook_tokens')
+    .select('access_token, refresh_token, client_id, client_secret, expires_at').eq('source_system', 'jobber').single()
+  if (!row) throw new Error('No jobber row in webhook_tokens')
+  let token = row.access_token as string
+  if (new Date(row.expires_at).getTime() <= Date.now() + 60_000) {
+    const body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(row.refresh_token)}&client_id=${encodeURIComponent(row.client_id)}&client_secret=${encodeURIComponent(row.client_secret)}`
+    const tr = await fetch('https://api.getjobber.com/api/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
+    if (!tr.ok) {
+      const { data: row2 } = await supabase.from('webhook_tokens').select('access_token, expires_at').eq('source_system', 'jobber').single()
+      if (row2 && new Date(row2.expires_at).getTime() > Date.now() + 60_000) return { token: row2.access_token, clientSecret: row.client_secret }
+      throw new Error(`Refresh failed ${tr.status}`)
+    }
+    const t = await tr.json()
+    const payloadB64 = t.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const newExp = JSON.parse(atob(payloadB64)).exp * 1000
+    await supabase.from('webhook_tokens').update({
+      access_token: t.access_token, refresh_token: t.refresh_token || row.refresh_token,
+      expires_at: new Date(newExp).toISOString(), updated_at: new Date().toISOString(),
+    }).eq('source_system', 'jobber')
+    token = t.access_token
+  }
+  return { token, clientSecret: row.client_secret }
+}
+
+async function hmacB64(secret: string, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
+  return btoa(String.fromCharCode(...new Uint8Array(sig)))
+}
+
+const sqlEsc = (v: unknown) => v == null ? 'NULL' : "'" + String(v).replace(/'/g, "''") + "'"
+
+async function pullDelta(token: string, entity: typeof ENTITIES[number], cursor: string | null): Promise<any[]> {
+  const cursorField = CURSOR_FIELD[entity.name], nodeTimeField = NODE_TIME_FIELD[entity.name]
+  const pageSize = (entity as any).pageSize || 100
+  let fields = entity.fields as string
+  if (nodeTimeField && !fields.includes(nodeTimeField)) fields += ` ${nodeTimeField}`
+  const all: any[] = []
+  let after: string | null = null, page = 0
+  while (page++ < 200) {
+    const useFilter = cursorField && cursor
+    const q = `query Delta($after: String, $first: Int!${useFilter ? `, $filter: ${FILTER_TYPE[entity.name]}FilterAttributes` : ''}) {
+      ${entity.name}(after: $after, first: $first${useFilter ? ', filter: $filter' : ''}) { pageInfo { hasNextPage endCursor } nodes { ${fields} } } }`
+    const vars: Record<string, unknown> = { after, first: pageSize }
+    if (useFilter) vars.filter = { [cursorField]: { after: new Date(cursor as string).toISOString() } }
+    const data = await gql(token, q, vars)
+    const conn = data[entity.name]
+    if (!conn) break
+    all.push(...conn.nodes)
+    if (!conn.pageInfo.hasNextPage) break
+    after = conn.pageInfo.endCursor
+  }
+  if (nodeTimeField) for (const n of all) if (!n._cursorTime) n._cursorTime = n[nodeTimeField]
+  return all
+}
+
+async function upsertRaw(exec: Exec, rawTable: string, nodes: any[]) {
+  for (let i = 0; i < nodes.length; i += 50) {
+    const batch = nodes.slice(i, i + 50)
+    const ids = batch.map((n) => sqlEsc(n.id)).join(', ')
+    await exec(`DELETE FROM raw.${rawTable} WHERE data->>'id' IN (${ids})`)
+    const values = batch.map((n) => `(${sqlEsc(JSON.stringify(n))}::jsonb, now(), TRUE)`).join(',')
+    await exec(`INSERT INTO raw.${rawTable} (data, ingested_at, needs_populate) VALUES ${values}`)
+  }
+}
+
+async function getCursor(name: string): Promise<string | null> {
+  const { data } = await supabase.from('sync_cursors').select('last_synced_at').eq('entity', name).maybeSingle()
+  return (data?.last_synced_at as string) ?? null
+}
+async function setCursor(name: string, ts: string, rows: number) {
+  await supabase.from('sync_cursors').update({
+    last_synced_at: ts, last_run_finished: new Date().toISOString(), last_run_status: 'success', rows_pulled: rows, updated_at: new Date().toISOString(),
+  }).eq('entity', name)
+}
+
+async function replayFlagged(exec: Exec, clientSecret: string) {
+  const summary: { table: string; ok: number; fail: number }[] = []
+  for (const e of ENTITIES) {
+    const rows = await exec(`SELECT data->>'id' AS gid FROM raw.${e.rawTable} WHERE needs_populate=TRUE`)
+    if (!rows.length) continue
+    let ok = 0, fail = 0
+    for (const { gid } of rows) {
+      const payload = JSON.stringify({ topic: e.topic, webHookEvent: { itemId: gid, occurredAt: new Date().toISOString() } })
+      const sig = await hmacB64(clientSecret, payload)
+      const wr = await fetch(`${SUPABASE_URL}/functions/v1/webhook-jobber`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-jobber-hmac-sha256': sig }, body: payload })
+      if (wr.ok) { ok++; await exec(`UPDATE raw.${e.rawTable} SET needs_populate=FALSE WHERE data->>'id'=${sqlEsc(gid)}`) } else fail++
+    }
+    summary.push({ table: e.rawTable, ok, fail })
+  }
+  return summary
+}
+
+async function runSync(): Promise<Record<string, unknown>> {
+  const startedAt = new Date().toISOString(); const startMs = Date.now()
+  const db = new Client(DB_URL)
+  try {
+    await db.connect()
+    const exec: Exec = (q) => db.queryObject<Record<string, any>>(q).then((r) => r.rows as any[])
+    const { token, clientSecret } = await getCreds()
+    let totalPulled = 0
+    const pulls: Record<string, number> = {}
+    for (const entity of ENTITIES) {
+      const cursor = await getCursor(entity.name)
+      let nodes: any[]
+      try { nodes = await pullDelta(token, entity, cursor) } catch { pulls[entity.name] = -1; continue }
+      if (nodes.length) {
+        await upsertRaw(exec, entity.rawTable, nodes)
+        const newCursor = nodes.reduce((max, n) => { const ts = n._cursorTime || n.updatedAt || n.createdAt; return ts && ts > max ? ts : max }, cursor || '2020-01-01T00:00:00Z')
+        await setCursor(entity.name, newCursor, nodes.length)
+        totalPulled += nodes.length; pulls[entity.name] = nodes.length
+      } else { await setCursor(entity.name, new Date().toISOString(), 0); pulls[entity.name] = 0 }
+    }
+    const replay = totalPulled > 0 ? await replayFlagged(exec, clientSecret) : []
+    const fails = replay.reduce((s, r) => s + r.fail, 0)
+    const dur = Math.round((Date.now() - startMs) / 1000)
+    await supabase.from('sync_log').insert({
+      sync_source: 'jobber_poll_pgcron', started_at: startedAt, finished_at: new Date().toISOString(),
+      rows_inserted: totalPulled, rows_updated: 0, rows_errored: fails, duration_seconds: dur,
+      status: fails === 0 ? 'success' : 'partial', details: { pulls, replay },
+    })
+    return { pulled: totalPulled, pulls, replay, duration_s: dur }
+  } catch (e) {
+    const dur = Math.round((Date.now() - startMs) / 1000)
+    await supabase.from('sync_log').insert({ sync_source: 'jobber_poll_pgcron', started_at: startedAt, finished_at: new Date().toISOString(), rows_inserted: 0, rows_updated: 0, rows_errored: 0, duration_seconds: dur, status: 'error', details: { error: String(e).slice(0, 300) } }).catch(() => {})
+    return { error: String(e).slice(0, 300) }
+  } finally {
+    await db.end().catch(() => {})
+  }
+}
+
+Deno.serve(async (req) => {
+  if (TRIGGER_KEY && req.headers.get('x-sync-key') !== TRIGGER_KEY) return new Response('forbidden', { status: 403 })
+  if (req.headers.get('x-sync-wait') === '1') {
+    const res = await runSync()
+    return new Response(JSON.stringify(res), { status: res.error ? 500 : 200, headers: { 'Content-Type': 'application/json' } })
+  }
+  // @ts-ignore — EdgeRuntime provided by the Supabase Edge runtime.
+  EdgeRuntime.waitUntil(runSync())
+  return new Response(JSON.stringify({ accepted: true }), { status: 202, headers: { 'Content-Type': 'application/json' } })
+})
