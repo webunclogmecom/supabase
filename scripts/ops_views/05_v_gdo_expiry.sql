@@ -1,45 +1,48 @@
 -- ============================================================================
--- ops.v_gdo_expiry — Grease Disposal Operator permit expiry tracker
--- ----------------------------------------------------------------------------
--- One row per active client with GDO data.
--- Buckets: expired | 0-30d | 31-60d | 61-90d | ok | no_gdo
--- Highest-used compliance view per Viktor — Yan checks constantly.
+-- ops.v_gdo_expiry — AUTO-GENERATED from the live view definition.
+-- Do NOT hand-edit the body. To change this view: apply a migration to the LIVE
+-- view (docs/migrations/), then run:
+--   node scripts/ops_views/resync_from_live.js --execute
 -- ============================================================================
 
 CREATE OR REPLACE VIEW ops.v_gdo_expiry AS
-SELECT
-  c.id                       AS client_id,
-  c.name                     AS client_name,
-  c.client_code,
-  c.status                   AS client_status,
-  c.gdo_number,
-  c.gdo_expiration_date,
-  c.gdo_frequency,
-  c.city_email,
-  c.operation_email,
-  CASE
-    WHEN c.gdo_expiration_date IS NULL THEN NULL
-    ELSE (c.gdo_expiration_date - CURRENT_DATE)::int
-  END                        AS days_until_expiry,
-  CASE
-    WHEN c.gdo_number IS NULL AND c.gdo_expiration_date IS NULL       THEN 'no_gdo'
-    WHEN c.gdo_expiration_date IS NULL                                THEN 'no_date'
-    WHEN c.gdo_expiration_date < CURRENT_DATE                         THEN 'expired'
-    WHEN c.gdo_expiration_date <= CURRENT_DATE + INTERVAL '30 days'   THEN '0-30d'
-    WHEN c.gdo_expiration_date <= CURRENT_DATE + INTERVAL '60 days'   THEN '31-60d'
-    WHEN c.gdo_expiration_date <= CURRENT_DATE + INTERVAL '90 days'   THEN '61-90d'
-    ELSE                                                                   'ok'
-  END                        AS expiry_bucket,
-  (SELECT MAX(updated_at) FROM public.clients) AS data_as_of
-FROM public.clients c
-WHERE c.status IN ('ACTIVE','RECURRING')
-ORDER BY
-  CASE
-    WHEN c.gdo_expiration_date IS NULL THEN 9
-    WHEN c.gdo_expiration_date < CURRENT_DATE THEN 0
-    ELSE 1
-  END,
-  c.gdo_expiration_date NULLS LAST;
-
-COMMENT ON VIEW ops.v_gdo_expiry IS
-  'GDO permit expiry buckets (expired/0-30d/31-60d/61-90d/ok/no_gdo/no_date) for active clients. Most-used compliance view.';
+SELECT c.id,
+    c.client_code,
+    c.name AS client_name,
+    c.status AS client_status,
+    p.zone,
+    p.address,
+    p.city,
+    p.county,
+    cc.name AS contact_name,
+    cc.email,
+    cc.phone,
+    'GT'::text AS service_type,
+    g.gdo_number AS permit_number,
+    g.permit_expiration,
+    sc.equipment_size_gallons,
+    sc.frequency_days,
+    g.permit_expiration - CURRENT_DATE AS days_until_expiry,
+        CASE
+            WHEN g.permit_expiration IS NULL THEN 'no_permit'::text
+            WHEN g.permit_expiration < CURRENT_DATE THEN 'expired'::text
+            WHEN (g.permit_expiration - CURRENT_DATE) <= 30 THEN 'expiring_30d'::text
+            WHEN (g.permit_expiration - CURRENT_DATE) <= 60 THEN 'expiring_60d'::text
+            WHEN (g.permit_expiration - CURRENT_DATE) <= 90 THEN 'expiring_90d'::text
+            ELSE 'valid'::text
+        END AS permit_status
+   FROM gdos g
+     JOIN clients c ON c.id = g.client_id
+     LEFT JOIN properties p ON p.id = g.property_id
+     LEFT JOIN client_contacts cc ON cc.client_id = c.id AND cc.contact_role = 'primary'::text
+     LEFT JOIN service_configs sc ON sc.client_id = c.id AND sc.service_type = 'GT'::text
+  WHERE g.status = 'ACTIVE'::text AND (c.status = ANY (ARRAY['ACTIVE'::text, 'RECURRING'::text]))
+  ORDER BY (
+        CASE
+            WHEN g.permit_expiration IS NULL THEN 2
+            WHEN g.permit_expiration < CURRENT_DATE THEN 1
+            WHEN (g.permit_expiration - CURRENT_DATE) <= 30 THEN 3
+            WHEN (g.permit_expiration - CURRENT_DATE) <= 60 THEN 4
+            WHEN (g.permit_expiration - CURRENT_DATE) <= 90 THEN 5
+            ELSE 6
+        END), (g.permit_expiration - CURRENT_DATE);

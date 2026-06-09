@@ -1,41 +1,25 @@
 -- ============================================================================
--- ops.v_revenue_summary — Monthly revenue (invoiced vs collected)
--- ----------------------------------------------------------------------------
--- One row per (month, invoice_status_bucket).
--- Invoiced = SUM(total) of invoices created in month.
--- Collected = SUM(total - outstanding) for invoices in month.
--- Last 18 months.
+-- ops.v_revenue_summary — AUTO-GENERATED from the live view definition.
+-- Do NOT hand-edit the body. To change this view: apply a migration to the LIVE
+-- view (docs/migrations/), then run:
+--   node scripts/ops_views/resync_from_live.js --execute
 -- ============================================================================
 
 CREATE OR REPLACE VIEW ops.v_revenue_summary AS
-WITH inv AS (
-  SELECT
-    date_trunc('month', COALESCE(i.sent_at, i.created_at))::date AS month,
-    COUNT(*)                                                     AS invoice_count,
-    SUM(i.total)                                                 AS invoiced_total,
-    SUM(COALESCE(i.total,0) - COALESCE(i.outstanding,0))         AS collected_total,
-    SUM(COALESCE(i.outstanding,0))                               AS outstanding_total,
-    COUNT(*) FILTER (WHERE i.invoice_status = 'paid')            AS paid_count,
-    COUNT(*) FILTER (WHERE i.invoice_status IN ('past_due','awaiting_payment')) AS open_count
-  FROM public.invoices i
-  WHERE COALESCE(i.sent_at, i.created_at) >= CURRENT_DATE - INTERVAL '18 months'
-    AND i.invoice_status NOT IN ('void','draft')
-  GROUP BY 1
-)
-SELECT
-  month,
-  invoice_count,
-  invoiced_total,
-  collected_total,
-  outstanding_total,
-  paid_count,
-  open_count,
-  CASE WHEN invoiced_total > 0
-       THEN ROUND((collected_total / invoiced_total) * 100, 1)
-       ELSE NULL END AS collection_rate_pct,
-  (SELECT MAX(updated_at) FROM public.invoices) AS data_as_of
-FROM inv
-ORDER BY month DESC;
-
-COMMENT ON VIEW ops.v_revenue_summary IS
-  'Monthly revenue: invoiced vs collected vs outstanding, last 18 months. Excludes void/draft.';
+SELECT date_trunc('month'::text, v.visit_date::timestamp with time zone)::date AS month,
+    v.service_type,
+    p.zone,
+    veh.name AS truck,
+    count(DISTINCT v.id) AS visit_count,
+    count(DISTINCT v.client_id) AS client_count,
+    sum(i.total) AS gross_revenue,
+    sum(i.outstanding_amount) AS outstanding_ar,
+    sum(i.total - i.outstanding_amount) AS collected_revenue,
+    round(100.0 * sum(i.total - i.outstanding_amount) / NULLIF(sum(i.total), 0::numeric), 1) AS collection_rate_pct
+   FROM visits v
+     JOIN invoices i ON i.id = v.invoice_id
+     LEFT JOIN properties p ON p.id = v.property_id
+     LEFT JOIN vehicles veh ON veh.id = v.vehicle_id
+  WHERE v.visit_status = 'completed'::text AND v.visit_date >= (CURRENT_DATE - '1 year'::interval)
+  GROUP BY (date_trunc('month'::text, v.visit_date::timestamp with time zone)), v.service_type, p.zone, veh.name
+  ORDER BY (date_trunc('month'::text, v.visit_date::timestamp with time zone)::date) DESC, (sum(i.total)) DESC;

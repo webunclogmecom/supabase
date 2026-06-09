@@ -1,68 +1,40 @@
 -- ============================================================================
--- ops.v_ar_aging — Accounts receivable aging buckets
--- ----------------------------------------------------------------------------
--- One row per open invoice (invoice_status NOT IN paid/void/draft/bad_debt).
--- Net-of-credits: includes negative outstanding (customer credits).
--- Bucket by due_date if present, else sent_at, else created_at.
--- Consumers: Yan (collections), Fred (ops dashboard).
+-- ops.v_ar_aging — AUTO-GENERATED from the live view definition.
+-- Do NOT hand-edit the body. To change this view: apply a migration to the LIVE
+-- view (docs/migrations/), then run:
+--   node scripts/ops_views/resync_from_live.js --execute
 -- ============================================================================
 
-CREATE SCHEMA IF NOT EXISTS ops;
-
 CREATE OR REPLACE VIEW ops.v_ar_aging AS
-WITH base AS (
-  SELECT
-    i.id                         AS invoice_id,
-    i.invoice_number,
-    i.invoice_status,
-    i.client_id,
-    c.name                       AS client_name,
+SELECT c.id AS client_id,
     c.client_code,
-    c.accounting_email,
-    c.accounting_phone,
-    c.acct_name,
-    c.status                     AS client_status,
-    i.total,
-    i.outstanding,
-    i.deposit_amount,
+    c.name AS client_name,
+    c.status AS client_status,
+    p.zone,
+    p.address,
+    p.city,
+    p.county,
+    cc.name AS contact_name,
+    cc.email AS primary_email,
+    cc.phone AS primary_phone,
+    i.id AS invoice_id,
+    i.invoice_number,
     i.due_date,
-    i.sent_at,
-    i.created_at                 AS invoice_created_at,
-    COALESCE(i.due_date, i.sent_at::date, i.created_at::date) AS reference_date
-  FROM public.invoices i
-  LEFT JOIN public.clients c ON c.id = i.client_id
-  WHERE i.invoice_status NOT IN ('paid','void','draft','bad_debt')
-    AND i.outstanding IS NOT NULL
-)
-SELECT
-  invoice_id,
-  invoice_number,
-  invoice_status,
-  client_id,
-  client_name,
-  client_code,
-  client_status,
-  acct_name,
-  accounting_email,
-  accounting_phone,
-  total,
-  outstanding,
-  deposit_amount,
-  due_date,
-  sent_at,
-  invoice_created_at,
-  reference_date,
-  GREATEST(0, (CURRENT_DATE - reference_date))::int AS days_outstanding,
-  CASE
-    WHEN outstanding < 0                                      THEN 'credit'
-    WHEN (CURRENT_DATE - reference_date) <= 30                THEN '0-30'
-    WHEN (CURRENT_DATE - reference_date) <= 60                THEN '31-60'
-    WHEN (CURRENT_DATE - reference_date) <= 90                THEN '61-90'
-    ELSE                                                            '90+'
-  END AS aging_bucket,
-  (SELECT MAX(updated_at) FROM public.invoices) AS data_as_of
-FROM base
-ORDER BY reference_date NULLS LAST, outstanding DESC;
-
-COMMENT ON VIEW ops.v_ar_aging IS
-  'Open A/R aging (0-30, 31-60, 61-90, 90+, credit). Net-of-credits. Filter excludes paid/void/draft/bad_debt.';
+    i.total,
+    i.outstanding_amount AS balance_due,
+    i.invoice_status,
+    CURRENT_DATE - i.due_date AS days_overdue,
+        CASE
+            WHEN i.outstanding_amount <= 0::numeric THEN 'paid'::text
+            WHEN i.due_date >= CURRENT_DATE THEN 'current'::text
+            WHEN (CURRENT_DATE - i.due_date) >= 1 AND (CURRENT_DATE - i.due_date) <= 30 THEN '1-30_days'::text
+            WHEN (CURRENT_DATE - i.due_date) >= 31 AND (CURRENT_DATE - i.due_date) <= 60 THEN '31-60_days'::text
+            WHEN (CURRENT_DATE - i.due_date) >= 61 AND (CURRENT_DATE - i.due_date) <= 90 THEN '61-90_days'::text
+            ELSE '90+_days'::text
+        END AS aging_bucket
+   FROM invoices i
+     JOIN clients c ON c.id = i.client_id
+     LEFT JOIN client_contacts cc ON cc.client_id = c.id AND cc.contact_role = 'primary'::text
+     LEFT JOIN properties p ON p.client_id = c.id AND p.is_primary = true
+  WHERE i.outstanding_amount > 0::numeric
+  ORDER BY p.zone, (CURRENT_DATE - i.due_date) DESC NULLS LAST;
