@@ -1064,7 +1064,7 @@ async function softStatusFlip(
 const handleClientDestroy = (id: string) => softStatusFlip('client', 'clients', 'status', 'INACTIVE', id)
 const handleJobClosed     = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'closed',    id)
 const handleJobDestroy    = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'destroyed', id)
-const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  'visit_status', 'canceled', id)
+const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  'visit_status', 'cancelled', id) // double-L: canonical enum + visits_visit_status_chk
 const handleInvoiceDestroy= (id: string) => softStatusFlip('invoice','invoices','invoice_status','destroyed',id)
 const handleQuoteDestroy  = (id: string) => softStatusFlip('quote',  'quotes',  'quote_status','destroyed', id)
 async function handlePropertyDestroy(numericId: string): Promise<{ entity_id: number }> {

@@ -39,17 +39,37 @@ Tracker (657 visits, badges ✓), Field Portal (client page ✓). **Anon REST pr
 properties.zone, vehicles, photo_links, employees all 200-with-rows (no 200-but-empty).
 **Pipeline:** 0 webhook errors; jobber_poll_pgcron green through the new CHECKs.
 
-## Deferred — Batch B (needs decision/sequencing)
-| Item | Why deferred |
+## Batch B1 — APPLIED 2026-06-10 ✅ (`docs/migrations/2026-06-10b_batch_b1_checks_identity_cleanup.sql`)
+Gated on the read-only pre-flight (workflow `wf_6e9ebcbe-82c`); Fred approved app_* drop,
+identity conversion, and zone repoint+drop.
+1. **CHECKs on the Jobber-synced statuses** — pinned to the LIVE-INTROSPECTED GraphQL
+   enums (version 2026-04-16; natively lowercase) **plus** the local softStatusFlip
+   values (`closed`/`destroyed`): jobs (12 values), invoices (7), quotes (7). Plus
+   `clients.status` (4) and `visits.visit_status` (`scheduled/completed/cancelled`).
+   Pre-req fixes shipped same cycle: webhook-jobber `'canceled'`→`'cancelled'`
+   (never-fired path, deployed) + populate.js status normalization.
+2. **All 18 serial-style PKs → `generated always as identity`** (scan found no active
+   explicit-id writer; sandbox refresh is COPY; FP loaders already OVERRIDING).
+   Stale Sandbox one-off `backfill_sandbox_photos.js` archived.
+3. **Dropped `client_locations.contact_*`** (0/407, zero refs).
+4. **gdos client/location consistency trigger** (guards `client_id` vs
+   `client_location_id` drift until the 59-GDO backfill allows dropping client_id).
+5. **Dropped legacy `app_visit_reviews`/`app_shift_reviews`** (0 rows; Sandbox keeps the
+   real rollback copies) — and in doing so **found + fixed a latent bug**: the
+   `inspections_with_review` view still read the EMPTY legacy table, so shift review
+   statuses always showed 'pending'; repointed to canonical `shift_reviews` →
+   5 reviewed shifts immediately visible.
+
+**Post-apply verification:** 5 CHECKs live; 0 serial PKs left; forced live poll cycle
+pushed all 5 entity types through the redeployed webhook into the constrained,
+identity-PK tables — 0 failures, 0 webhook errors.
+
+## Still deferred (Batch B2)
+| Item | Why |
 |---|---|
-| CHECKs on Jobber-synced statuses (`jobs.job_status`, `invoices.invoice_status`, `quotes.quote_status`, `clients.status`) | Pinning upstream-fed enums can break webhook ingestion on a new upstream value; need Jobber's documented enum sets first |
-| CHECK on `visits.visit_status` | Calendar app's write vocabulary unconfirmed (cancelled? in_progress?) |
-| `serial`→`generated always as identity` on 18 core tables | Protocol deviation, low risk; verify no script inserts explicit ids first |
-| Drop `properties.zone` (text dup of `zones` via `zone_id`; 232/232 identical) | Read by 12 app-facing views + Visit Calendar zone colors — repoint views first keeping output column `zone` identical, THEN drop |
-| Drop `gdos.client_id` (transitive via `client_location_id`; 108/108 consistent) | Blocked until the 59 unlinked GDOs get `client_location_id` (location-grain backfill) |
-| Drop dead columns: `visits.duration_minutes` (0/735), `client_locations.contact_*` (0/407) | Trivial; bundle with next schema migration |
-| Drop legacy `public.app_visit_reviews`/`app_shift_reviews` (0 rows) | Rollback net; retire after Admin-Review verification window — Fred sign-off |
-| Relocate `public.jobber_oversized_attachments` → raw/ops | Source-prefixed naming in public; one-off migration artifact (50 rows) |
-| `properties.access_days` text[] | Borderline repeating group; fine as-is unless per-day attrs needed |
+| Drop `properties.zone` + `visits.duration_minutes` | Approved + GO, but real surgery: repoint 12 zone views (`z.code AS zone` via `zone_id`; 2 dual-alias views need 2 joins) + keep `duration_minutes` output in 5 views (`NULL::integer` — Admin Review selects it), drop 2 sync triggers (`properties_sync_zone_columns_trg`, `zones_cascade_code_rename_trg`), rewrite webhook-airtable:219 to resolve `zone_id` + deploy, update populate.js zone/duration writes + `backfill_properties_from_at.js`, then drop the columns. Full recipe in pre-flight `wf_6e9ebcbe-82c` (drop-dependencies dimension). |
+| Drop `gdos.client_id` | Still blocked on the 59-GDO `client_location_id` backfill (drift now guarded by trigger) |
+| Relocate `public.jobber_oversized_attachments` → raw/ops | One-off migration artifact; defer-acceptable, recorded exception |
+| `properties.access_days` text[] | Fine as-is unless per-day attributes are ever needed |
 
 Full per-dimension findings + SQL evidence: workflow run `wf_1353f00d-36b` (6 agents).

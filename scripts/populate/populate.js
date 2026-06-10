@@ -960,7 +960,9 @@ async function step10_visits() {
       duration_minutes: v.durationMinutes ? Math.round(v.durationMinutes) : null,
       title: v.title || null,
       service_type: null, // may be enriched from matched Airtable visit below
-      visit_status: v.visitStatus || null,
+      // Normalize Jobber's UPPER statuses to the canonical lowercase enum (visits_visit_status_chk):
+      // COMPLETED/REQUIRES_INVOICING -> completed, else scheduled (same map as webhook-jobber handleVisit).
+      visit_status: v.visitStatus ? (['COMPLETED', 'REQUIRES_INVOICING'].includes(String(v.visitStatus).toUpperCase()) ? 'completed' : 'scheduled') : null,
       truck: null, // Jobber-era visits use vehicle_id (Samsara) instead
       completed_by: null, // Jobber-era visits use visit_assignments instead
       actual_arrival_at: null,
@@ -1023,7 +1025,7 @@ async function step10_visits() {
       duration_minutes: null,
       title: null,
       service_type,
-      visit_status: 'COMPLETED',
+      visit_status: 'completed', // lowercase canonical (visits_visit_status_chk)
       truck: truckText,
       completed_by: null,
       actual_arrival_at: null,
