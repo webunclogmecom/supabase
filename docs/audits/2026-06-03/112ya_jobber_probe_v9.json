@@ -1,5 +1,5 @@
 {
-  "probed_at": "2026-06-03T10:24:20.197Z",
+  "probed_at": "2026-06-03T19:32:12.119Z",
   "r": {
     "data": {
       "job": {
@@ -8,48 +8,28 @@
         "jobStatus": "upcoming",
         "visitSchedule": {
           "startDate": "2026-06-04T04:00:00Z",
-          "endDate": "2027-06-04T03:59:59Z",
+          "endDate": "2026-06-05T03:59:59Z",
           "startTime": null,
           "endTime": null,
           "recurrenceSchedule": {
-            "friendly": "Every 7 days",
-            "calendarRule": "FREQ=DAILY;INTERVAL=7"
+            "friendly": "Daily",
+            "calendarRule": "FREQ=DAILY"
           }
         },
         "visits": {
-          "totalCount": 53,
+          "totalCount": 3,
           "nodes": [
             {
-              "startAt": "2026-06-04T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+              "startAt": "2026-07-08T04:00:00Z",
+              "title": "Service Agreement - Pumping"
             },
             {
-              "startAt": "2026-06-11T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+              "startAt": "2026-09-06T04:00:00Z",
+              "title": "Service Agreement - Pumping"
             },
             {
-              "startAt": "2026-06-18T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
-            },
-            {
-              "startAt": "2026-06-25T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
-            },
-            {
-              "startAt": "2026-07-02T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
-            },
-            {
-              "startAt": "2026-07-09T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
-            },
-            {
-              "startAt": "2026-07-16T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
-            },
-            {
-              "startAt": "2026-07-23T04:00:00Z",
-              "title": "112-YA Yan's Restaurant - Service Agreement - Pumping"
+              "startAt": "2026-11-05T05:00:00Z",
+              "title": "Service Agreement - Pumping"
             }
           ]
         },
@@ -72,10 +52,10 @@
     "extensions": {
       "cost": {
         "requestedQueryCost": 36,
-        "actualQueryCost": 40,
+        "actualQueryCost": 30,
         "throttleStatus": {
           "maximumAvailable": 10000,
-          "currentlyAvailable": 9960,
+          "currentlyAvailable": 9970,
           "restoreRate": 500
         }
       },
