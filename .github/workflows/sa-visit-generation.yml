@@ -1,0 +1,68 @@
+name: SA visit generation (DB + Jobber schedule)
+
+# ============================================================================
+# Generates Service Agreement visits from jobs.frequency_days and inserts them
+# with source='supabase_cron'. The DB trigger trg_push_visit_insert then pushes
+# each visit to Jobber's schedule via the jobber-push-visit Edge Function
+# (visitCreate on the job's GID, link written back to entity_source_links).
+#
+# END-TO-END SMOKE-TESTED 2026-06-11 on 112-YA (client_id 381):
+#   generate -> insert -> trigger -> push -> Jobber visit created (verified via
+#   Jobber API) -> soft-delete -> push delete -> gone from Jobber. Clean.
+#
+# ⏸ DISABLED until the new Jobber jobs land (the Jobs restructure from the
+# Airtable "Job Line Items" pricing table). GO-LIVE CHECKLIST:
+#   1. Create the new Jobs in Jobber per docs/jobber-jobs-service-call-restructure-PLAN.md
+#      (each with the Frequency custom field; webhook syncs them to public.jobs
+#      with frequency_days).
+#   2. Widen the push triggers from the 112-YA test gate to all clients —
+#      recreate both WITHOUT the "new.client_id = 381" condition:
+#        DROP TRIGGER trg_push_visit_insert ON public.visits;
+#        CREATE TRIGGER trg_push_visit_insert AFTER INSERT ON public.visits
+#          FOR EACH ROW WHEN (new.source IN ('visit-calendar','supabase_cron'))
+#          EXECUTE FUNCTION fn_push_visit_to_jobber();
+#        -- and trg_push_visit_update identically, keeping its existing
+#        -- column-change WHEN conditions (date/start/end/title/job_id/
+#        -- service_line_item_id/deleted_at IS DISTINCT FROM).
+#   3. Uncomment the schedule below.
+#   4. First run: workflow_dispatch with execute=false (dry-run), eyeball the
+#      plan, then run with execute=true.
+# ============================================================================
+
+on:
+  # schedule:
+  #   - cron: '0 10 * * *'   # daily 06:00 EDT / 05:00 EST — after overnight shift
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: 'Actually write (true) or dry-run (false)'
+        required: true
+        default: 'false'
+      client:
+        description: 'Limit to one client_code (empty = --all)'
+        required: false
+        default: ''
+
+concurrency:
+  group: sa-visit-generation
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Generate SA visits (+ auto-push to Jobber via DB trigger)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_ID: wbasvhvvismukaqdnouk
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.client }}" != "" ]; then ARGS="--client=${{ github.event.inputs.client }}"; else ARGS="--all"; fi
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.execute }}" = "true" ]; then ARGS="$ARGS --execute"; fi
+          node scripts/sync/generate_service_agreement_visits.js $ARGS
