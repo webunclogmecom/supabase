@@ -90,8 +90,8 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
 - **Node ≥ 20**, npm, Supabase CLI, `gh` CLI (keyring-authed — never embed PATs in URLs).
 - **Supabase projects (all in `Dev - Unclogme` org, us-east-1):**
   - **Prod** `wbasvhvvismukaqdnouk` — source of truth, Pro plan, RLS hardened.
-  - **Sandbox** `ubtlwpcyntelgbykdatn` — Yannick's *internal portal* Lovable app reads here. Auto-refreshed from Prod 5×/day by `sandbox-refresh.yml`. Don't write to canonical tables directly. Don't touch Yannick's tables/columns.
-  - **Field Portal Sandbox** `klgtrdwrasrlxbmfyvdh` — Yannick's *Field Portal* Lovable app (created 2026-05-14). Free plan, 500 MB cap. **Clone-of-Prod model**: seeded once via `clone-prod-to-field-portal.yml` workflow, then diverges as Yannick iterates. Migration of his changes back to Prod (with 3NF / proper schema) is a separate forward-task.
+  - **Sandbox #1 `ubtlwpcyntelgbykdatn` — DELETED 2026-06-11.** Verified zero consumers (0 API requests/7d; every Lovable app runs on Prod or Lovable Cloud; review data migrated to Prod canonical 2026-06-08). `sandbox-refresh.yml` retired (schedule removed + disabled); audit parity checks retired. Final backup of its unique tables: `..\backups\sandbox1_final_backup_2026-06-11.json` (parent folder, outside repo).
+  - **HR Sandbox** `klgtrdwrasrlxbmfyvdh` (renamed from *Field Portal Sandbox*) — Yannick's **HR app** project (Field Portal app reads Prod directly since 2026-05-16). Legacy April-clone schema (keep as-is); data re-seeded fresh 2026-06-11 (full employees/vehicles/inspections + live subset visits). Also hosts the `frozen_leads` schema — don't touch. One-time-seed model, no periodic refresh.
 - **Today:** 2026-05-13. Visit-gen sunset from AT 2026-05-13; DERM + PRE-POST AT automations still active.
 
 ---

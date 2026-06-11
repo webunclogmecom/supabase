@@ -1,5 +1,15 @@
 name: Sandbox refresh (Production → Sandbox data sync)
 
+# ============================================================================
+# ⚰️ RETIRED 2026-06-11 — Sandbox #1 (ubtlwpcyntelgbykdatn) was DELETED.
+# Verified before deletion: 0 API requests in 7 days, no Lovable app references
+# (all apps on Prod or Lovable Cloud), review data migrated to Prod canonical
+# 2026-06-08. Final backup of its unique tables (app_visit_reviews,
+# app_shift_reviews, app_property_overrides): ..\..\backups\
+# sandbox1_final_backup_2026-06-11.json (parent folder, outside this repo).
+# Schedule removed + workflow disabled — running it now would just fail.
+# ============================================================================
+
 # 5×/day on a 3-hour cadence, all expressed in UTC (DST not handled — these
 # times shift by 1 hour between EDT and EST):
 #   11:00 UTC = 07:00 EDT / 06:00 EST   ← anchor; after overnight shift completes
@@ -23,13 +33,9 @@ name: Sandbox refresh (Production → Sandbox data sync)
 # See scripts/sync/sandbox_refresh.sh for the full story.
 
 on:
-  schedule:
-    - cron: '0 11 * * *'   # 7am ET (after overnight shift)
-    - cron: '0 14 * * *'   # 10am ET
-    - cron: '0 17 * * *'   # 1pm ET
-    - cron: '0 20 * * *'   # 4pm ET
-    - cron: '0 23 * * *'   # 7pm ET
-  workflow_dispatch:  # allow manual trigger from GitHub UI
+  # schedule removed 2026-06-11 (target project deleted):
+  #   was: 0 11/14/17/20/23 * * * (5×/day)
+  workflow_dispatch:  # kept only so the workflow file stays valid; target is gone
 
 concurrency:
   group: sandbox-refresh

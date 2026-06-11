@@ -272,18 +272,11 @@ async function checkUpstreamCompleteness() {
 }
 
 async function checkProdSandboxParity() {
-  if (!SBX) { warn('cloud', 'No SANDBOX_SUPABASE_PROJECT_ID configured'); return; }
-  const tables = ['clients', 'visits', 'photos', 'photo_links', 'inspections', 'derm_manifests', 'employees', 'vehicles', 'service_configs', 'invoices'];
-  for (const t of tables) {
-    try {
-      const p = (await pg(PROD, `SELECT COUNT(*) AS n FROM ${t}`))[0].n;
-      const s = (await pg(SBX, `SELECT COUNT(*) AS n FROM ${t}`))[0].n;
-      if (p === s) ok('cloud', `Parity ${t}: ${p}/${p}`);
-      else warn('cloud', `Parity ${t}: prod=${p} sbx=${s} (Δ${p - s})`);
-    } catch (e) {
-      fail('cloud', `Parity ${t}: ${e.message.slice(0, 80)}`);
-    }
-  }
+  // Sandbox #1 (ubtlwpcyntelgbykdatn) DELETED 2026-06-11 — zero app consumers
+  // (0 API requests/7d; all Lovable apps verified on Prod or Lovable Cloud).
+  // Parity checks retired with it; final backup of its unique tables lives at
+  // ..\..\backups\sandbox1_final_backup_2026-06-11.json (outside repo).
+  ok('cloud', 'Sandbox parity: retired (Sandbox #1 deleted 2026-06-11, no consumers)');
 }
 
 async function checkOrphanFKs() {
@@ -480,8 +473,8 @@ function checkMigrationCommits() {
 
 function checkEnvVars() {
   const required = ['SUPABASE_URL', 'SUPABASE_PROJECT_ID', 'SUPABASE_PAT', 'SUPABASE_SERVICE_ROLE_KEY',
-    'JOBBER_ACCESS_TOKEN', 'AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'SAMSARA_API_TOKEN',
-    'SANDBOX_SUPABASE_PROJECT_ID'];
+    'JOBBER_ACCESS_TOKEN', 'AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'SAMSARA_API_TOKEN'];
+  // SANDBOX_SUPABASE_PROJECT_ID removed 2026-06-11 — Sandbox #1 deleted.
   const missing = required.filter(k => !process.env[k]);
   if (missing.length === 0) ok('local', `Env vars: all ${required.length} required present`);
   else fail('local', `Env vars missing: ${missing.join(', ')}`);
