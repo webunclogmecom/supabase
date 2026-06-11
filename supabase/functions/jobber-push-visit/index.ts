@@ -132,14 +132,17 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   const token = await getJobberToken();
   const { data: visit } = await db.from("visits").select("*").eq("id", visitId).maybeSingle();
 
-  // ---- DELETE (soft-delete sets deleted_at; or explicit op=delete) ----
-  if (op === "delete" || (visit && visit.deleted_at)) {
+  // ---- DELETE (deleted_at set, Calendar cancel = visit_status'cancelled', or explicit op) ----
+  if (op === "delete" || (visit && (visit.deleted_at || visit.visit_status === "cancelled"))) {
     const gid = payloadGid || (visit ? await jobberGid("visit", visitId) : null);
     if (!gid) { console.log(`[push] delete: visit ${visitId} has no jobber link — nothing to delete`); return { ok: true, note: "no link" }; }
     const d = await gql(token, M_DELETE, { ids: [gid] });
     const err = ue(d.visitDelete);
     if (err) throw new Error(`visitDelete: ${err}`);
-    console.log(`[push] deleted Jobber visit ${gid} (our visit ${visitId})`);
+    // unlink so a later un-cancel (upsert) cleanly re-creates instead of editing a dead GID
+    await db.from("entity_source_links").delete()
+      .eq("entity_type", "visit").eq("entity_id", visitId).eq("source_system", "jobber");
+    console.log(`[push] deleted Jobber visit ${gid} + unlinked (our visit ${visitId})`);
     return { ok: true, deleted: gid };
   }
 
@@ -162,6 +165,10 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   }
 
   // ---- CREATE (not linked) ----
+  // Only auto-create Jobber visits for 'scheduled' rows — a status flip on an
+  // old unlinked visit (e.g. marked completed in Calendar) must not spawn a
+  // brand-new Jobber visit.
+  if (visit.visit_status !== "scheduled") { console.log(`[push] visit ${visitId} status=${visit.visit_status}, unlinked — not creating in Jobber`); return { ok: true, note: "non-scheduled, not created" }; }
   const job = await resolveJobGid(visit);
   if ("error" in job) { await flag(visitId, "no_job_match", job.error); return { ok: true, flagged: job.error }; }
   const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: [] } }] };
