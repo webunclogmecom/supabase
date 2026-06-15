@@ -40,7 +40,8 @@ Add **Supabase Auth** to Calendar, DERM Tracker, and Admin Review.
 1. **Google OAuth**, one-click "Sign in with Google", **restricted to `ayache.com` and `unclogme.com`**.
    - **The domain restriction is mandatory and must be enforced server-side.** Supabase's Google provider by default admits *any* Google account (any gmail) — without enforcement the "Sign in with Google" button opens the gate to the entire internet, defeating the goal.
    - **Mechanism:** a Supabase **Before-User-Created Auth Hook** (preferred) — or a `BEFORE INSERT` trigger on `auth.users` — that rejects any email whose domain is not in `{ayache.com, unclogme.com}`. The hook fires on first sign-in (when the user row is created). Enforcing at the Supabase layer (not the Google consent screen) is required because the consent-screen "internal" restriction only covers a single Workspace org, and we have two domains.
-   - **Prerequisite (Fred action):** create a Google Cloud OAuth client (client ID + secret), authorized redirect URI `https://wbasvhvvismukaqdnouk.supabase.co/auth/v1/callback`, and paste credentials into Supabase → Auth → Providers → Google.
+   - **VERIFIED 2026-06-15 (Management API probe):** the project exposes `hook_before_user_created_enabled` / `hook_before_user_created_uri` in `/config/auth` (currently off) — so we can deploy the hook (Postgres function or Edge Function) and enable it via the API, no dashboard. `auth.users` is empty (0 rows) with no existing triggers → clean slate, zero migration risk.
+   - **Prerequisite (Fred action — the one genuine hard dependency):** create a Google Cloud OAuth client (client ID + secret) with authorized redirect URI `https://wbasvhvvismukaqdnouk.supabase.co/auth/v1/callback`, and hand the client ID + secret to Claude. Everything else (enabling the provider, the hook, redirect URLs) is then done via the Management API — no dashboard clicks needed from Fred.
 
 2. **Shared email+password fallback** — `unclogme@unclogme.com` / `unclogme` (Supabase identifies accounts by email, so it's an email, not a bare username).
    - **Accepted weakness (Fred, 2026-06-15):** the password equals the company name and is guessable; it is the weak link in the Phase-1 gate. Accepted deliberately for low friction; **replaced with real per-user accounts in Phase 2** when the CRM ships.
@@ -89,12 +90,19 @@ Each of the three apps gets:
 
 **Genuinely strong even in Phase 1:** the Google-domain restriction (if the §4.1 hook is in place) — only `ayache.com`/`unclogme.com` Google accounts can authenticate. The shared `unclogme:unclogme` account is the deliberate soft spot.
 
-## 7. Open items / prerequisites
+## 7. Work split (refined after the 2026-06-15 Management-API verification)
 
-- **Fred:** create the Google Cloud OAuth client (ID/secret + redirect URI) for the gate; decide whether the OAuth consent screen is "External" (needed to span both domains).
-- **Claude (Supabase-side):** author + deploy the Before-User-Created domain-restriction hook (or trigger) — gates ALL account creation to the two domains; create the shared `unclogme@unclogme.com` account; enable the Google + email providers; leave the global "Disable signups" toggle OFF (domain gating is the hook's job).
-- **Claude (drafts) / Fred (runs in Lovable):** the per-app login-guard prompts for the three apps.
-- Confirm the two Google Workspaces (`ayache.com`, `unclogme.com`) and that all office users have accounts on one of them.
+Almost the entire backend is doable by Claude programmatically (Management API for `/config/auth`, `service_role` Admin API for users, SQL/Edge for the hook) — same access level we use for crons + Edge Functions. The split:
+
+- **Fred — the only hard dependency:** create the Google Cloud OAuth client (client ID + secret) with redirect URI `https://wbasvhvvismukaqdnouk.supabase.co/auth/v1/callback`; hand Claude the ID + secret. (Consent screen "External" so it can span both domains.) Then run the per-app Lovable login-guard prompts Claude drafts (the login UI lives in the Lovable apps).
+- **Claude — everything else, no dashboard:**
+  - Deploy the domain-restriction hook (Postgres function or Edge Function) gating ALL account creation to `{ayache.com, unclogme.com}`; enable it via `/config/auth`.
+  - Enable + configure the Google provider via the Management API (once Fred supplies creds); email provider already on.
+  - Set `site_url` + redirect allow-list to the real app URLs (currently the default `http://localhost:3000` — must be fixed or OAuth redirects fail).
+  - Create the shared `unclogme@unclogme.com` account via the Admin API.
+  - Leave the global "Disable signups" toggle OFF (domain gating is the hook's job).
+  - Draft the per-app Lovable login-guard prompts.
+- **Confirm:** the two Google Workspaces (`ayache.com`, `unclogme.com`) exist and all office users have an account on one of them.
 
 ## 8. FP (Field Portal) — deferred note
 
