@@ -11,8 +11,12 @@ Companion to `2026-06-15-app-auth-gate-design.md`. The **backend is already done
 - `site_url` + redirect allow-list set to the 3 app URLs (was `localhost:3000`).
 - A1 applied: `authenticated` is a verified peer of `anon` (identical read counts; authenticated write confirmed) → **adding login will NOT break the apps**.
 - A2 (anon-write revoke) written + staged, NOT applied: `docs/migrations/STAGED_2026-06-15c_auth_revoke_anon_write_DO-NOT-APPLY-YET.sql`.
+- **Google provider ENABLED 2026-06-15** (client `…0928881…`; secret stored in Supabase encrypted config, never committed). Verified: `/auth/v1/authorize?provider=google` → 302 to accounts.google.com.
+  - ⚠ **Check the Google consent-screen publishing status** when you first sign in: if it's in **"Testing"**, only added test users can get in (add Yannick/Fred/Aaron as test users, or click **Publish app** → "In production"). Our domain hook still does the real restriction; "Production" here just means the Google app isn't limited to a test-user list. Symptom if it's Testing: "Access blocked / app is being tested."
+  - You can now delete the downloaded `client_secret_….json` from Downloads — the secret lives in Supabase config.
 
-## Step 1 — Fred: create the Google OAuth client (one-time, ~5 min)
+## Step 1 — ✅ DONE: Google OAuth client (Fred created, Claude enabled)
+Original instructions kept below for reference. Client + secret received and enabled via the Management API on 2026-06-15.
 
 1. Google Cloud Console → APIs & Services → **Credentials** → Create Credentials → **OAuth client ID**.
 2. App type: **Web application**.
