@@ -43,6 +43,9 @@ Paste this into the Lovable chat of **each** app (Visit Calendar, DERM Tracker, 
 
 **Testing note:** the OAuth redirect allow-list is set to the 3 published URLs. If you test the Google flow inside the **Lovable preview** (a `*.lovable.app`/`*.lovableproject.com` URL), the redirect will fail until that preview URL is added — easiest is to test on the **published** URL, or tell Claude the preview URL to add it temporarily. The **email/password** login works in preview regardless.
 
+## ✅ Visit Calendar — LIVE (2026-06-15)
+Login gate built (Lovable), **published** to `calendar.unclogme.app` (login wall confirmed live), and **A2 Section C applied** (anon write on `visit_assignments` revoked; verified anon blocked / authenticated allowed). The preview URL `id-preview--6533c3ee….lovable.app` is temporarily in the redirect allow-list for testing — remove when done. DERM + Admin Review still to do (same prompt); the shared `visits` table (A2 Section D) waits until DERM's login is live.
+
 ## Step 3 — Claude: enable Google provider + apply A2 per app
 
 Once you hand over the Google creds and confirm an app's login works in production:

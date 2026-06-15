@@ -41,7 +41,8 @@ DROP POLICY IF EXISTS "anon_insert_dmnp" ON public.derm_manifest_number_proposal
 DROP POLICY IF EXISTS "anon_update_dmnp" ON public.derm_manifest_number_proposals;
 REVOKE INSERT, UPDATE ON public.derm_manifest_number_proposals FROM anon;
 
--- ===== SECTION C — Visit Calendar (apply after calendar.unclogme.app login is live) =====
+-- ===== SECTION C — Visit Calendar — ✅ APPLIED 2026-06-15 (migration 2026-06-15d) =====
+-- Calendar published with the login gate; verified anon write blocked / authenticated allowed.
 DROP POLICY IF EXISTS "visit_assignments_anon_delete" ON public.visit_assignments;
 DROP POLICY IF EXISTS "visit_assignments_anon_insert" ON public.visit_assignments;
 REVOKE INSERT, DELETE ON public.visit_assignments FROM anon;
