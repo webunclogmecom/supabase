@@ -1,35 +1,44 @@
 # App Auth Gate — Design Spec
 
 **Date:** 2026-06-15
-**Status:** Design (plan-mode) — approved direction, pending spec review → implementation plan
+**Status:** Design v2 (plan-mode) — **audited 2026-06-15** (adversarial multi-lens review); one open decision in §13 before this becomes an implementation plan.
 **Author:** Fred + Claude (brainstorm)
-**Scope:** Visit Calendar, DERM Tracker, Admin Review (the three internal Lovable apps). **FP excluded** (client-facing — separate future effort).
+**Scope:** Visit Calendar, DERM Tracker, Admin Review (the three internal Lovable apps). **FP + HR excluded** (see §12).
 
 ---
 
 ## 1. Goal & threat model
 
-**Goal:** stop the internal apps from being usable by anyone who simply has the URL. Today `calendar.unclogme.app`, `derm.unclogme.app`, and `grease-buddy-dash.lovable.app` are public with **anon-permissive RLS and no login** — anyone with the link can read PII (clients, visits), financial data (driver bonuses), and DERM compliance, and in places write (classify photos, save reviews, edit visits).
+**Goal:** stop the internal apps from being usable by anyone who simply has the URL. Today `calendar.unclogme.app`, `derm.unclogme.app`, and `grease-buddy-dash.lovable.app` are public with **anon-permissive RLS and no login**.
 
-**Threat model (Fred, 2026-06-15):** keep the *public / random URL visitor* out. **Not** a tight data-security exercise — explicitly accepted. No per-user roles, no RBAC, no audit-attribution requirement (the DB already attributes writes via the `app_source` header).
+**What "anon-permissive" actually means today (VERIFIED live 2026-06-15)** — the anon role (key ships in every app's JS bundle, public by design) has, via `/rest/v1`, not just read but **write** access to:
+- `visit_reviews`, `shift_reviews` — INSERT/UPDATE/DELETE → **driver bonus / payroll decisions**
+- `derm_manifests`, `manifest_visits` — INSERT/UPDATE/DELETE → **DERM compliance records**
+- `visits`, `visit_assignments`, `photo_classifications` — INSERT/UPDATE/DELETE → visits, crew assignments, photo tags
+
+So a mildly technical visitor can today **approve/deny bonuses, alter compliance records, delete assignments, and inject visits** — none of which a client-side login screen touches. This reframes the security assessment (§10) and drives the open decision (§13).
+
+**Threat model (Fred, 2026-06-15):** keep the *public / random URL visitor* out. Not a tight per-user/RBAC exercise. **But** see §13 — "not tight" was originally stated against a *read*-exposure understanding; the verified *write* exposure to payroll/compliance warrants an explicit re-confirm.
 
 **Users in scope:** office staff only (Yannick, Fred, Aaron) on `ayache.com` / `unclogme.com` Google accounts, plus a shared fallback login. Drivers/field/customers are NOT in scope for these three apps.
 
 ## 2. Non-goals
 
-- **FP (Field Portal)** — client-facing; no auth added now; revisit separately later.
-- **Tight data-layer security in Phase 1** — see §6; the Phase-1 gate is a UI/login wall, not a vault. RLS hardening is deferred to Phase 1.5.
+- **FP (Field Portal) + HR app** — out of scope (see §12).
 - **Per-user identity / roles / RBAC** — deferred to Phase 2 (real users arrive with the CRM).
+- **MFA** — out of scope for Phase 1's keep-the-public-out goal (adds friction; wouldn't meaningfully protect a shared account). Reconsider with per-user accounts in Phase 2.
+- **Full anon-READ lockdown** — deferred to Phase 1.5 (§9); reads share base tables/views with FP and need a per-table audit.
 
 ## 3. Constraints discovered (why the design is what it is)
 
-- **Apps are Lovable-hosted behind Lovable's own Cloudflare.** `unclogme.app` nameservers are GoDaddy (`domaincontrol.com`); `calendar.unclogme.app` resolves to Lovable's ingress (`185.158.133.1`). The `Server: cloudflare` / `CF-RAY` we see is **Lovable's CDN, not our zone**.
-  - ⇒ **An edge gate (Cloudflare Access / Zero Trust) is NOT available** — we don't control that Cloudflare layer, and double-proxying a Lovable app through our own Cloudflare isn't clean. Re-platforming hosting just to gate it isn't justified for "keep the public out."
-  - ⇒ **The gate must live inside the apps** = Supabase Auth (native to the whole stack, first-class in Lovable).
-- **All three apps run on the same Prod Supabase project** (`wbasvhvvismukaqdnouk`) ⇒ they already **share one `auth.users` pool**. One small set of accounts works across all three; provisioning/revoking happens in one place.
-- **Resend is already wired** (used by `send-derm-email`) ⇒ a delivery path for any auth emails already exists; no new dependency.
-- **The CRM (ops-portal) is not deployed yet** ⇒ apps are used **standalone today**. The CRM iframe + SSO is a future phase. This makes per-app login the correct Phase-1 move (it's used standalone anyway) **and** the foundation the SSO phase builds on — not throwaway.
-- **Apps currently send no `X-Frame-Options`/CSP** ⇒ anyone can iframe them today (clickjacking surface). Addressed in Phase 2 (§5).
+- **Apps are Lovable-hosted behind Lovable's own Cloudflare.** `unclogme.app` NS is GoDaddy; `calendar.unclogme.app` resolves to Lovable ingress `185.158.133.1`. The Cloudflare we see is **Lovable's CDN, not our zone**.
+  - ⇒ **An edge gate (Cloudflare Access / Zero Trust) is NOT available** — we don't control that layer. Re-platforming just to gate it isn't justified.
+  - ⇒ **The gate must live inside the apps** = Supabase Auth.
+- **All three apps run on the same Prod Supabase project** (`wbasvhvvismukaqdnouk`) ⇒ they share one `auth.users` pool — one account set works across all three; provisioning is one place. (NB: this is a shared *credential store*, NOT a shared session — see §4.2.)
+- **Only the apps write the high-value tables as anon.** Crons/webhooks write via the `service_role` key (bypasses RLS); the Jobber-push trigger is SECURITY DEFINER. So once the apps authenticate (Phase 1 login), revoking anon *write* breaks nothing app-side — this is what makes the §13 write-lockdown low-risk.
+- **Resend is wired** (used by `send-derm-email`) ⇒ a delivery path exists, but the **auth mailer is NOT pointed at Resend** today; Supabase's default SMTP is heavily throttled (see §8).
+- **The CRM (ops-portal) is not deployed yet** ⇒ apps are used **standalone today**. Per-app login is the correct Phase-1 move and the foundation Phase-2 SSO builds on — not throwaway.
+- **Apps currently send no `X-Frame-Options`/CSP** ⇒ anyone can iframe them (clickjacking surface). Addressed in Phase 2 (§9).
 
 ## 4. Phase 1 — the gate (now)
 
@@ -37,73 +46,104 @@ Add **Supabase Auth** to Calendar, DERM Tracker, and Admin Review.
 
 ### 4.1 Providers (both enabled, same `auth.users` pool)
 
-1. **Google OAuth**, one-click "Sign in with Google", **restricted to `ayache.com` and `unclogme.com`**.
-   - **The domain restriction is mandatory and must be enforced server-side.** Supabase's Google provider by default admits *any* Google account (any gmail) — without enforcement the "Sign in with Google" button opens the gate to the entire internet, defeating the goal.
-   - **Mechanism:** a Supabase **Before-User-Created Auth Hook** (preferred) — or a `BEFORE INSERT` trigger on `auth.users` — that rejects any email whose domain is not in `{ayache.com, unclogme.com}`. The hook fires on first sign-in (when the user row is created). Enforcing at the Supabase layer (not the Google consent screen) is required because the consent-screen "internal" restriction only covers a single Workspace org, and we have two domains.
-   - **VERIFIED 2026-06-15 (Management API probe):** the project exposes `hook_before_user_created_enabled` / `hook_before_user_created_uri` in `/config/auth` (currently off) — so we can deploy the hook (Postgres function or Edge Function) and enable it via the API, no dashboard. `auth.users` is empty (0 rows) with no existing triggers → clean slate, zero migration risk.
-   - **Prerequisite (Fred action — the one genuine hard dependency):** create a Google Cloud OAuth client (client ID + secret) with authorized redirect URI `https://wbasvhvvismukaqdnouk.supabase.co/auth/v1/callback`, and hand the client ID + secret to Claude. Everything else (enabling the provider, the hook, redirect URLs) is then done via the Management API — no dashboard clicks needed from Fred.
+**1. Google OAuth**, one-click, **restricted to `ayache.com` and `unclogme.com`** — restriction is mandatory and enforced server-side (Supabase's Google provider otherwise admits any gmail).
 
-2. **Shared email+password fallback** — `unclogme@unclogme.com` / `unclogme` (Supabase identifies accounts by email, so it's an email, not a bare username).
-   - **Accepted weakness (Fred, 2026-06-15):** the password equals the company name and is guessable; it is the weak link in the Phase-1 gate. Accepted deliberately for low friction; **replaced with real per-user accounts in Phase 2** when the CRM ships.
+- **Mechanism — a fail-CLOSED Before-User-Created Auth Hook implemented as a Postgres function** (NOT an Edge/HTTP hook, NOT an `auth.users` trigger):
+  - A Postgres-function hook runs *in the signup transaction*; returning an error reliably aborts user creation and **cannot fail-open**. An HTTP/Edge hook can time out or 5xx and (depending on config) fail-open — unacceptable for the one control the whole gate rests on. A raw `BEFORE INSERT` trigger on `auth.users` is rejected as the fallback: it risks interfering with GoTrue's own flows. Grant `EXECUTE` to `supabase_auth_admin`.
+  - Verified 2026-06-15: `/config/auth` exposes `hook_before_user_created_enabled`/`_uri` (off today); `auth.users` is empty with no triggers → clean slate. We deploy + enable via the Management API, no dashboard.
+- **⚠ Known limitation — the hook sees `user.email` but NOT Google's `hd` (hosted-domain) claim or `email_verified`.** Domain string-matching alone could in principle be passed by an *unverified* Google account whose profile email is set to an `@unclogme.com` address. **Required mitigation + test:** confirm whether Supabase's Google provider rejects `email_verified=false` (it generally trusts Google-verified emails); if `email_verified` is surfaced to the hook, also require it true; and the §6 acceptance test MUST include creating a throwaway off-domain Google account with a spoofed domain email and confirming it is rejected (no `auth.users` row). Treat "the hook is strong" as UNPROVEN until that negative test passes.
+- **Prerequisite (Fred — the one hard dependency):** create a Google Cloud OAuth client (ID + secret), consent screen "External" (to span both domains), redirect URI `https://wbasvhvvismukaqdnouk.supabase.co/auth/v1/callback`; hand Claude the ID + secret.
 
-3. **Account creation gated by the domain hook, not globally disabled.** The same Before-User-Created hook (§4.1.1) restricts *all* account creation — Google OAuth *and* email/password — to `{ayache.com, unclogme.com}`. So:
-   - Office Google-domain users self-onboard on first "Sign in with Google" (no pre-provisioning needed) — the hook lets their domain through.
-   - A random person cannot self-register an email/password account (wrong domain → hook rejects), and cannot Google-in (wrong domain → hook rejects).
-   - The shared `unclogme@unclogme.com` account is on `unclogme.com`, so it passes the hook; we create it once.
-   - **Do NOT use Supabase's global "Disable signups" toggle** — it would also block new Google-domain users from onboarding. Domain gating is the hook's job.
+**2. Shared email+password fallback** — account `unclogme@unclogme.com`, password **stored in the team password manager** (placeholder `<SHARED_PW>` in this doc — the repo is public; the literal value is NOT committed). On `unclogme.com`, so the hook admits it.
+- **Must be created via the Admin API with `email_confirm: true`** — `mailer_autoconfirm=false` (verified), so a normally-created account would sit unconfirmed and be unable to log in.
+- Accepted weakness (Fred): a shared credential, no per-person identity; replaced with real per-user accounts in Phase 2.
 
-### 4.2 Session behaviour
+**3. Account creation gated by the hook, not globally disabled.** The hook restricts *all* creation (Google + email/password) to the two domains. Leave Supabase's global "Disable signups" toggle OFF (it would also block new Google-domain users). Office Google users self-onboard on first sign-in; randoms are rejected by every path.
 
-- Supabase JS defaults: `persistSession: true` + `autoRefreshToken: true` ⇒ **log in once per app, stay logged in for months** (token silently refreshes; re-auth only on storage-clear or explicit sign-out). This is the "long-lived session/cookie" requirement.
-- JWT access-token expiry can be left at default (1h) since refresh is automatic.
+### 4.2 Session behaviour — persistent, but NOT single sign-on
+
+- Supabase JS defaults (`persistSession` + `autoRefreshToken`) ⇒ **log in once per app, stay logged in for months** (silent refresh).
+- **This is three separate logins, not SSO.** Sessions live in per-origin `localStorage`; there is no cross-origin session sharing. A user logs in separately at `calendar.unclogme.app`, `derm.unclogme.app`, and `grease-buddy-dash.lovable.app` — and the last is a *different registrable domain*, so it can never share a session with the `unclogme.app` subdomains even via a cookie-domain trick. SSO arrives only in Phase 2 (CRM handoff). The shared `auth.users` pool means the same *credentials* work everywhere, not the same *session*.
 
 ### 4.3 Per-app work (Lovable — Claude drafts prompts, Fred runs)
 
-Each of the three apps gets:
-- A **login screen / auth guard**: unauthenticated → show "Sign in with Google" + email/password; authenticated → render the app as today.
-- Supabase Auth client wired with the Prod URL + anon key already in use (no new project).
+Each app gets a **login screen / auth guard** (unauth → "Sign in with Google" + email/password; authed → app as today), wired to the Prod URL + existing anon key. Login-guard prompt MUST specify **accessibility** (labeled fields, keyboard-navigable, visible focus, announced errors) and handle the **logged-out / expired-session** state explicitly.
 
 | App | URL | Phase-1 change |
 |---|---|---|
-| Visit Calendar | calendar.unclogme.app | add login guard |
-| DERM Tracker | derm.unclogme.app | add login guard |
-| Admin Review | grease-buddy-dash.lovable.app | add login guard |
+| Visit Calendar | calendar.unclogme.app | login guard (+ write-RLS swap per §13) |
+| DERM Tracker | derm.unclogme.app | login guard (+ write-RLS swap per §13) |
+| Admin Review | grease-buddy-dash.lovable.app | login guard (+ write-RLS swap per §13) |
 
-### 4.4 RLS in Phase 1
+### 4.4 OAuth redirect config (REQUIRED, or sign-in dead-ends)
 
-**Left `anon`-permissive as-is** (no RLS flip). The Phase-1 gate is a **UI/login wall** — it stops casual URL visitors (the actual goal) but does not lock the data API (see §6). This keeps Phase 1 low-risk (no chance of breaking existing queries) per the accepted not-tight trade.
+Verified: `site_url` is still the default `http://localhost:3000`. Before Google works we must, via the Management API:
+- set `site_url` to a real app URL;
+- populate the redirect allow-list with the **exact** per-app callback URLs for all three apps — **no wildcards** (an over-broad allow-list is an open-redirect risk);
+- (NB: resolve any Lovable project-id/domain discrepancy for Calendar before finalizing the redirect list.)
 
-## 5. Phase 1.5 & Phase 2 (later)
+## 5. Rollout order & break-glass (REQUIRED — avoids public-gap AND self-lockout)
 
-- **Phase 1.5 — RLS hardening (cheap, when wanted):** flip the apps' tables/views from `anon` to `authenticated` so the data API itself requires a logged-in session, not just the UI. Closes the §6 gap. Do per-app, verifying queries still pass.
-- **Phase 2 — CRM SSO + clickjacking lock (when ops-portal ships to `ops.unclogme.app`):**
-  - The CRM owns login; it passes the Supabase session into each embedded iframe via `postMessage` → `supabase.auth.setSession(...)`. **No second login** — same session mechanism, just a different *supplier*. Because Phase 1 already makes each app "require a real Supabase session," this is additive, not a rebuild.
-  - Replace the shared `unclogme@unclogme.com` account with **real per-user accounts** (Google-domain users already work; add/remove people).
-  - **Add `Content-Security-Policy: frame-ancestors`** locking embedding to `https://ops.unclogme.app` only (kills the open-iframe / clickjacking surface that exists today). Note: `frame-ancestors` blocks *embedding by other sites* but not direct top-level visits — direct visits are already gated by the login from Phase 1.
-  - **Explicitly avoided:** a "trust a token the portal injects without a real session" path. That invents a weaker trust route (token replay if leaked via URL/history/referer). The app always requires a real Supabase session regardless of who supplies it.
+Strict order; verify each step before the next:
+1. **Create + verify the shared account FIRST** (Admin API, `email_confirm:true`) and confirm it can log in — *before* enabling the hook, so a hook bug can't block the one guaranteed fallback.
+2. Configure backend: Google provider creds, `site_url` + redirect allow-list, deploy + enable the Postgres-function hook.
+3. **Run the §6 acceptance tests** (esp. the negative off-domain Google test) — gate must prove it works before app changes.
+4. Apply the login guard per app, one at a time; confirm each shows the wall logged-out and lets a domain user in before moving to the next.
+5. (If §13 = yes) apply the write-RLS swap per app *after* that app's login is live (so the app writes as `authenticated`).
+- **Break-glass / rollback:** the gate is reversible in one step each — disable the hook (`hook_before_user_created_enabled=false` via API), and the write-RLS swap is revert-by-migration. Keep the shared account + service-role access as the break-glass path. Note: existing open anon tabs are NOT force-logged-out in Phase 1 (only the RLS work ends anon sessions).
 
-## 6. Honest security assessment
+## 6. Acceptance tests (the gate must prove itself)
 
-**What Phase 1 protects:** a random person who finds/guesses an app URL hits a login wall instead of the app. That is the stated goal and Phase 1 meets it.
+- **Positive:** an `ayache.com` and an `unclogme.com` Google account each sign in to each app; the shared account signs in.
+- **Negative — the critical one:** a random `@gmail.com` Google sign-in is rejected and creates **no** `auth.users` row; an off-domain email/password signup is rejected; (see §4.1 ⚠) a Google account with a *spoofed/unverified* `@unclogme.com` profile email is rejected.
+- **Redirect:** OAuth round-trips correctly after the `site_url`/allow-list fix (no localhost dead-end).
+- **Wall:** each app, logged out, shows the login wall, not the app.
+- **(If §13=yes) Write-lockdown:** an anon `/rest/v1` write to `visit_reviews`/`shift_reviews`/`derm_manifests`/`visits` is rejected; the logged-in app can still perform the same write.
 
-**What Phase 1 does NOT protect (accepted):** with RLS left `anon`, the data API (`/rest/v1/...`) remains technically reachable by anyone who extracts the anon key from the app's JS bundle and crafts requests directly. The login is a UI deterrent, not a data vault. This is an accepted Phase-1 trade; Phase 1.5 (RLS flip) closes it.
+## 7. Monitoring & drift detection (NEW)
 
-**Genuinely strong even in Phase 1:** the Google-domain restriction (if the §4.1 hook is in place) — only `ayache.com`/`unclogme.com` Google accounts can authenticate. The shared `unclogme:unclogme` account is the deliberate soft spot.
+The gate fails silently (a Lovable re-deploy can drop the guard; a hook could be disabled) — this team has been burned by silent green before. Add:
+- a **pg_cron watchdog** asserting `hook_before_user_created_enabled=true` and `external_google_enabled=true` (via `/config/auth`), alerting to Slack on drift;
+- a scheduled query flagging any `auth.users` email whose domain ∉ {ayache.com, unclogme.com};
+- a checklist item (or synthetic check) to re-confirm each app shows the login wall **after every Lovable re-deploy**.
 
-## 7. Work split (refined after the 2026-06-15 Management-API verification)
+## 8. Recovery & email deliverability (NEW)
 
-Almost the entire backend is doable by Claude programmatically (Management API for `/config/auth`, `service_role` Admin API for users, SQL/Edge for the hook) — same access level we use for crons + Edge Functions. The split:
+- Create the shared account with `email_confirm:true` (no confirmation email needed).
+- **Point Supabase's auth SMTP at Resend** (recommended) — default SMTP is throttled to a few mails/hour, so OTP/confirmation/reset mail will otherwise be flaky.
+- Document who owns the `unclogme@unclogme.com` inbox and the recovery path if the shared password is lost; note service-role/Management access is the ultimate break-glass.
 
-- **Fred — the only hard dependency:** create the Google Cloud OAuth client (client ID + secret) with redirect URI `https://wbasvhvvismukaqdnouk.supabase.co/auth/v1/callback`; hand Claude the ID + secret. (Consent screen "External" so it can span both domains.) Then run the per-app Lovable login-guard prompts Claude drafts (the login UI lives in the Lovable apps).
-- **Claude — everything else, no dashboard:**
-  - Deploy the domain-restriction hook (Postgres function or Edge Function) gating ALL account creation to `{ayache.com, unclogme.com}`; enable it via `/config/auth`.
-  - Enable + configure the Google provider via the Management API (once Fred supplies creds); email provider already on.
-  - Set `site_url` + redirect allow-list to the real app URLs (currently the default `http://localhost:3000` — must be fixed or OAuth redirects fail).
-  - Create the shared `unclogme@unclogme.com` account via the Admin API.
-  - Leave the global "Disable signups" toggle OFF (domain gating is the hook's job).
-  - Draft the per-app Lovable login-guard prompts.
-- **Confirm:** the two Google Workspaces (`ayache.com`, `unclogme.com`) exist and all office users have an account on one of them.
+## 9. Phase 1.5 & Phase 2 (later)
 
-## 8. FP (Field Portal) — deferred note
+- **Phase 1.5 — anon-READ lockdown (NOT "cheap" — a per-table audit, give it a date + owner).** Flip remaining anon *reads* to `authenticated`. For each table/view, first **enumerate every reader/writer** (the three apps, **FP — which shares base tables/views**, crons, Edge functions, SECURITY-DEFINER triggers) and verify in the **anon context**, not just the logged-in app — a blanket flip can break FP, crons, the Jobber-push chain, or repeat the past SECURITY-DEFINER 401. **Trigger:** schedule within a defined window of Phase-1 go-live (don't let "whenever" leave the documented hole open indefinitely over PII/DERM/bonus data).
+- **Phase 2 — CRM SSO + clickjacking lock (when ops-portal ships):**
+  - CRM owns login; passes the Supabase session into each iframe via `postMessage` (pin the exact origin) → `supabase.auth.setSession(...)`. **Open risk to validate before relying on it:** browser **storage partitioning** (Chrome) / **ITP** (Safari) may block or partition the embedded app's session storage, and popup-based Google OAuth is often blocked inside iframes — so the passthrough (parent logs in, hands the session down) is the intended path precisely because the iframe may not be able to log in itself. Confirm empirically per browser.
+  - Replace the shared account with real per-user accounts.
+  - Add `Content-Security-Policy: frame-ancestors https://ops.unclogme.app` (confirm Lovable can set response headers). Blocks embedding by other sites; direct visits stay gated by the Phase-1 login.
+  - **Explicitly avoided:** any "trust a token the portal injects without a real session" path (token-replay risk).
 
-FP is client-facing (`customer.*` reads). No auth in this effort. Future options to consider when securing it: per-client magic-link access, signed/expiring work-order URLs, or a lightweight client login — to be designed separately so as not to add friction for customers.
+## 10. Honest security assessment (rewritten post-audit)
+
+- **What Phase 1 (login only) protects:** a random URL visitor hits a login wall instead of the app UI.
+- **What login alone does NOT protect:** the login is **client-side state**, not a network control. With RLS left anon, anyone who copies the anon key from the bundle and calls `/rest/v1` directly **reads AND writes** everything in §1 — including approving/denying **driver bonuses** and altering **DERM compliance**. The login wall does nothing for this path. ⇒ This is why §13 proposes pulling the **write**-lockdown into Phase 1.
+- **Genuinely strong (once §4.1 hook + its negative test pass):** the Google-domain restriction. The shared `unclogme@…` account is the deliberate soft spot.
+- **Compliance note:** the exposed data includes Miami-Dade DERM regulatory records and employee bonus/comp figures. Fred/Yan should confirm that the accepted Phase-1 trade (and any deferral of the read lockdown) is acceptable with that in mind, or pull Phase 1.5 forward.
+
+## 11. Work split (verified 2026-06-15)
+
+- **Fred — the only hard dependency:** create the Google Cloud OAuth client (ID + secret, "External" consent, redirect URI above); hand Claude the creds. Run the per-app Lovable login-guard prompts Claude drafts. Confirm the Workspace facts in §13.
+- **Claude — everything else, no dashboard:** deploy + enable the fail-closed Postgres-function hook; configure Google provider + `site_url`/redirect allow-list; create the shared account (`email_confirm:true`); point auth SMTP at Resend; (if §13=yes) author the write-RLS swap migrations; build the pg_cron watchdog; draft the per-app guard prompts.
+
+## 12. Out of scope — FP & HR
+
+- **FP (Field Portal)** — client-facing (`customer.*`). No auth now. Future options: per-client magic-link, signed/expiring work-order URLs, or a light client login — designed separately to avoid customer friction.
+- **HR app** — separate **dev** project (`klgtrdwrasrlxbmfyvdh`, legacy anon schema, employee/PII data). Carries the same public-URL exposure as these apps but is pre-production; **address when it goes to prod** (it'll want the same gate, arguably with stricter RLS given HR data).
+
+## 13. OPEN DECISION for Fred — does the WRITE-lockdown move into Phase 1?
+
+The audit verified the data API is **world-writable** to payroll (`visit_reviews`/`shift_reviews`), DERM compliance (`derm_manifests`/`manifest_visits`), and visits — bypassing any login screen. Two ways forward:
+
+- **(A) Recommended — pull the write-lockdown into Phase 1.** For each high-value table: add an `authenticated` write policy mirroring the existing anon one, then drop the anon write policy + revoke the anon write grant. Because **only the apps write these as anon** (crons = service-role, Jobber-push = SECURITY DEFINER) and the apps will be logged in after the Phase-1 guard, this is low-risk and makes "we added auth" *real* for the dangerous paths. Anon *reads* still deferred to Phase 1.5. Modest extra work (a handful of mirror-policy migrations + the §6 write test).
+- **(B) Login-wall only, eyes open.** Accept that bonuses/DERM/visits stay **world-writable via the anon API** until a later RLS pass — i.e. "anyone can rewrite payroll," not merely "anyone can read." Re-label the project outcome accordingly so no one assumes the data is protected.
+
+**This is the one decision blocking the implementation plan.** Everything else above is settled.
