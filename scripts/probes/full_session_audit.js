@@ -259,15 +259,26 @@ async function checkUpstreamCompleteness() {
     else fail('cloud', `Completeness clients: ${realMissing.length} REAL client(s) missing from DB → ${realMissing.slice(0, 6).map(c => c.name).join(', ')}`);
   } catch (e) { warn('cloud', `Completeness clients: ${e.message.slice(0, 80)}`); }
   // VISITS (last 30d) — gid-diff, 112-YA excluded (avoids the UTC-startAt vs ET-visit_date window artifact by matching on GID, not date)
+  // Post-decoupling (2026-06-02) the Calendar app owns the visit lifecycle and the office still
+  // hand-enters some visits directly in Jobber; the sync-jobber-upcoming-visits poll only catches
+  // FUTURE-dated visits, so a past-dated / LATE / duplicate visit created in Jobber after-the-fact
+  // legitimately won't be in our DB. So split the diff: a missing visit whose JOB already has a
+  // linked DB visit is an expected straggler/dup (⚠ informational) — only a job with visits in
+  // Jobber but ZERO linked in our DB is the systemic silent-sync failure this check guards against (❌).
   try {
     const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
     let after = null, jv = [];
-    for (let p = 0; p < 10; p++) { const d = await gql(`{ visits(first:100${after ? `, after:"${after}"` : ''}, filter:{startAt:{after:"${since}"}}){ nodes{ id title client{ id } } pageInfo{ hasNextPage endCursor } } }`); const c = d.data.visits; jv.push(...c.nodes); if (!c.pageInfo.hasNextPage) break; after = c.pageInfo.endCursor; await sleep(150); }
+    for (let p = 0; p < 10; p++) { const d = await gql(`{ visits(first:100${after ? `, after:"${after}"` : ''}, filter:{startAt:{after:"${since}"}}){ nodes{ id title client{ id } job{ id } } pageInfo{ hasNextPage endCursor } } }`); const c = d.data.visits; jv.push(...c.nodes); if (!c.pageInfo.hasNextPage) break; after = c.pageInfo.endCursor; await sleep(150); }
     const eligible = jv.filter(v => !EXCLUDED_VISIT_CLIENTS.has(v.client?.id));
     const linked = new Set((await pg(PROD, `SELECT source_id FROM entity_source_links WHERE entity_type='visit' AND source_system='jobber'`)).map(r => r.source_id));
+    // Jobber JOB GIDs that already have ≥1 linked visit in our DB → that job synced fine
+    const syncedJobGids = new Set((await pg(PROD, `SELECT DISTINCT j_esl.source_id AS job_gid FROM visits v JOIN entity_source_links j_esl ON j_esl.entity_type='job' AND j_esl.entity_id=v.job_id AND j_esl.source_system='jobber' JOIN entity_source_links v_esl ON v_esl.entity_type='visit' AND v_esl.entity_id=v.id AND v_esl.source_system='jobber' WHERE v.job_id IS NOT NULL AND v.deleted_at IS NULL`)).map(r => r.job_gid));
     const missing = eligible.filter(v => !linked.has(v.id));
+    const realGaps = missing.filter(v => !syncedJobGids.has(v.job?.id)); // job entirely unlinked = real sync gap
+    const stragglers = missing.filter(v => syncedJobGids.has(v.job?.id)); // dup/manual past entry on an already-synced job
     if (missing.length === 0) ok('cloud', `Completeness visits(30d): all ${eligible.length} upstream visits linked (112-YA excluded)`);
-    else fail('cloud', `Completeness visits(30d): ${missing.length} upstream visit(s) missing from DB → ${missing.slice(0, 6).map(v => (v.title || '').slice(0, 24)).join(', ')}`);
+    else if (realGaps.length > 0) fail('cloud', `Completeness visits(30d): ${realGaps.length} upstream visit(s) on UNSYNCED jobs missing from DB → ${realGaps.slice(0, 6).map(v => (v.title || '').slice(0, 24)).join(', ')}`);
+    else warn('cloud', `Completeness visits(30d): ${stragglers.length} unlinked Jobber visit(s) on already-synced jobs (expected — manual/past/dup Jobber entry outside the upcoming-visits poll; not a DB gap) → ${stragglers.slice(0, 6).map(v => (v.title || '').slice(0, 24)).join(', ')}`);
   } catch (e) { warn('cloud', `Completeness visits: ${e.message.slice(0, 80)}`); }
 }
 
