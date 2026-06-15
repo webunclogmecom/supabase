@@ -114,7 +114,11 @@ async function checkEdgeFunctions() {
         method: 'OPTIONS',
         headers: { 'Content-Type': 'application/json' },
       });
-      if (r.status === 200 || r.status === 204 || r.status === 405) ok('cloud', `Edge function ${fn} reachable (HTTP ${r.status})`);
+      // These are POST-only webhook receivers: a non-POST probe gets 400 {"error":"POST only"}
+      // (jobber/airtable/samsara) or 405 — both PROVE the function is deployed + routing. The goal
+      // here is reachability, so any clean non-5xx HTTP response counts; only a 5xx or a connection
+      // error (the catch below) is a real failure.
+      if (r.status < 500) ok('cloud', `Edge function ${fn} reachable (HTTP ${r.status}${r.status === 400 ? ' POST-only guard' : ''})`);
       else warn('cloud', `Edge function ${fn} returned HTTP ${r.status}`);
     } catch (e) {
       fail('cloud', `Edge function ${fn} unreachable: ${e.message.slice(0, 80)}`);
