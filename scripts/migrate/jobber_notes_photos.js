@@ -149,36 +149,11 @@ function httpRequest(opts, body, timeoutMs = 120000) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Jobber token refresh
-// ---------------------------------------------------------------------------
-async function refreshJobberToken() {
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: process.env.JOBBER_CLIENT_ID,
-    client_secret: process.env.JOBBER_CLIENT_SECRET,
-    refresh_token: process.env.JOBBER_REFRESH_TOKEN,
-  }).toString();
-  const r = await httpRequest({
-    hostname: 'api.getjobber.com',
-    path: '/api/oauth/token',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(params),
-    },
-  }, params);
-  if (r.status >= 300) throw new Error(`Token refresh failed: ${r.status} ${r.body.toString().slice(0, 200)}`);
-  const tokens = JSON.parse(r.body.toString());
-  process.env.JOBBER_ACCESS_TOKEN = tokens.access_token;
-  if (tokens.refresh_token) process.env.JOBBER_REFRESH_TOKEN = tokens.refresh_token;
-  // Also persist to .env so the next invocation doesn't start with expired tokens
-  let env = fs.readFileSync('.env', 'utf8');
-  env = env.replace(/^JOBBER_ACCESS_TOKEN=.*$/m, 'JOBBER_ACCESS_TOKEN=' + tokens.access_token);
-  if (tokens.refresh_token) env = env.replace(/^JOBBER_REFRESH_TOKEN=.*$/m, 'JOBBER_REFRESH_TOKEN=' + tokens.refresh_token);
-  fs.writeFileSync('.env', env);
-  console.log('  [auth] Jobber token refreshed');
-}
+// (Local refreshJobberToken() removed 2026-06-15 — it used raw env
+// JOBBER_CLIENT_ID/SECRET which on the GitHub runner can be stale, causing
+// "client id and secret do not match" 401s mid-run. All token refresh now goes
+// through the canonical DB-backed getValidToken() in scripts/sync/jobber_token.js,
+// matching the startup path.)
 
 // ---------------------------------------------------------------------------
 // Jobber GraphQL client
@@ -201,9 +176,14 @@ async function jobberGraphQL(query, variables = {}, _retries = 0) {
 
   const parsed = JSON.parse(r.body.toString());
 
-  // Expired token → refresh and retry once
+  // Expired token → refresh via the canonical, app-aware, DB-backed token
+  // manager and retry once. NOT the old local refreshJobberToken(): that used
+  // raw env JOBBER_CLIENT_ID/SECRET which on the GitHub runner can be stale,
+  // producing "client id and secret do not match" 401s mid-run for long syncs
+  // (fixed 2026-06-15). getValidToken refreshes with the DB row's own creds.
   if (parsed.message === 'Access token expired' && _retries === 0) {
-    await refreshJobberToken();
+    const { getValidToken } = require('../sync/jobber_token.js');
+    process.env.JOBBER_ACCESS_TOKEN = await getValidToken({ force: true, verbose: true });
     return jobberGraphQL(query, variables, _retries + 1);
   }
 

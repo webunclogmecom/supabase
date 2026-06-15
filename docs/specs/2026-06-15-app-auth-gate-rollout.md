@@ -6,7 +6,7 @@ Companion to `2026-06-15-app-auth-gate-design.md`. The **backend is already done
 
 ## ✅ Already done by Claude (Supabase backend, 2026-06-15)
 
-- Shared fallback account `unclogme@unclogme.com` / `unclogme` created (email-confirmed, login verified).
+- Shared fallback account `unclogme@unclogme.com` created (email-confirmed, login verified). Password is the agreed Phase-1 value (kept in the team password manager — not written here; this repo is public).
 - Fail-closed domain hook live + tested: only `@ayache.com` / `@unclogme.com` can create accounts; a real gmail signup was rejected (403, no user created).
 - `site_url` + redirect allow-list set to the 3 app URLs (was `localhost:3000`).
 - A1 applied: `authenticated` is a verified peer of `anon` (identical read counts; authenticated write confirmed) → **adding login will NOT break the apps**.
