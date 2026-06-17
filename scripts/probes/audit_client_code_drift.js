@@ -1,127 +1,116 @@
-// Audit client_code drift: DB vs Airtable (canonical) vs Jobber (secondary).
+// ============================================================================
+// audit_client_code_drift.js  [--heal]
+// ============================================================================
+// Reconciliation safety-net for client_code drift. Heals ONLY on TWO-SOURCE
+// AGREEMENT: when a client's Jobber company-name prefix AND its Airtable
+// "Client Code #3" agree on a code that differs from the stale DB value.
 //
-// AT is the source of truth for client_code per CLAUDE.md ("client_code
-// originates in Airtable, but Yan often types the NNN-XX prefix into
-// Jobber's Company Name field too").
+// Why two-source (learned 2026-06-17): the canonical code is assigned in Airtable
+// and copied into the Jobber company name by Yan. Neither alone is safe to heal
+// from — Jobber's prefix is frequently typo'd/truncated ("133-MU" for 133-MUT,
+// "140-TCY" for 140-TYO), and the DB can go stale on a renumber that
+// webhook-airtable's code-matching can never reach ("221-MP" stuck for a client
+// both Airtable and Jobber call "224-MP"). The DB is healed only when the two
+// independent upstreams AGREE against it — matched to Jobber by the STABLE GID
+// (entity_source_links), and to Airtable by that agreed code.
 //
-// Matches DB clients to AT records via:
-//   1. entity_source_links (entity_type=client, source_system=airtable)
-//   2. fallback: fuzzy name match
+// Three outcomes are reported:
+//   * AGREEMENT DRIFT  — Jobber prefix == an AT code, both != DB  -> healable
+//   * JOBBER TYPO      — Jobber prefix != DB and NOT an AT code   -> DB likely fine; fix Jobber company name
+//   * (in sync)        — silent
 //
-// Then checks: does DB.client_code == AT."Client Code #3"?
-// Same for Jobber (parsed from companyName / name prefix).
+// Real-time companion: webhook-jobber handleClient only sets the code when MISSING
+// (it must not overwrite from Jobber alone). This probe is the drift catch-all and
+// is meant to run on the daily audit cron.
 //
-// Output: list of mismatches with proposed action.
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env'), override: true });
+// Usage:  node scripts/probes/audit_client_code_drift.js [--heal]
+// ============================================================================
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+const https = require('https');
+const { pullDelta } = require('../sync/lib/jobber');
 
-const URL = process.env.SUPABASE_URL;
-const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const HEAL = process.argv.includes('--heal');
+const PAT = process.env.SUPABASE_PAT;
+const REF = (process.env.SUPABASE_URL || '').match(/https?:\/\/([^.]+)\./)[1];
 const AT_KEY = process.env.AIRTABLE_API_KEY;
 const AT_BASE = process.env.AIRTABLE_BASE_ID;
-const JOBBER_TOKEN = process.env.JOBBER_ACCESS_TOKEN;
 
-async function rest(qs, opts = {}) {
-  const r = await fetch(`${URL}/rest/v1/${qs}`, { ...opts, headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, ...(opts.headers || {}) } });
-  if (!r.ok) throw new Error(`REST ${r.status} ${await r.text()}`);
-  return r.json();
+function pg(sql) {
+  return new Promise((res, rej) => {
+    const b = JSON.stringify({ query: sql });
+    const r = https.request({ hostname: 'api.supabase.com', path: `/v1/projects/${REF}/database/query`, method: 'POST',
+      headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) } },
+      rs => { let d = ''; rs.on('data', c => d += c); rs.on('end', () => rs.statusCode < 300 ? res(JSON.parse(d)) : rej(new Error(`HTTP ${rs.statusCode} ${d.slice(0, 300)}`))); });
+    r.on('error', rej); r.write(b); r.end();
+  });
 }
-async function airtableAll() {
-  const all = [];
+const q = s => String(s).replace(/'/g, "''");
+
+// Same prefix parse as webhook-jobber handleClient (only a real NNN-XX with alpha suffix).
+function parsePrefix(name) {
+  if (!name) return null;
+  const m = String(name).match(/^\s*(\d{3})-\s*([A-Z0-9]*)\s+/);
+  return m && m[2] ? `${m[1]}-${m[2]}` : null;
+}
+
+async function airtableCodes() {
+  const codes = new Set();
   let offset = null;
   do {
     const qs = new URLSearchParams({ pageSize: '100' });
     if (offset) qs.set('offset', offset);
-    const r = await fetch(`https://api.airtable.com/v0/${AT_BASE}/Clients?${qs}`, { headers: { Authorization: `Bearer ${AT_KEY}` } }).then(r => r.json());
-    all.push(...(r.records || []));
+    const r = await fetch(`https://api.airtable.com/v0/${AT_BASE}/Clients?${qs}`, { headers: { Authorization: `Bearer ${AT_KEY}` } }).then(x => x.json());
+    for (const rec of (r.records || [])) {
+      const code = rec.fields?.['Client Code #3'];
+      if (code) codes.add(String(code).trim());
+    }
     offset = r.offset;
   } while (offset);
-  return all;
-}
-function normalize(s) {
-  return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-function parsePrefix(name) {
-  return name?.match(/^\s*(\d{3}-[A-Z0-9]+)/)?.[1] || null;
+  return codes;
 }
 
 (async () => {
-  console.log('Pulling AT Clients + DB clients...\n');
-  const atRecords = await airtableAll();
-  const clients = await rest('clients?select=id,client_code,name,status&limit=10000');
-
-  // Index AT by id + by code + by normalized name
-  const atById = {}, atByCode = {}, atByName = {};
-  for (const r of atRecords) {
-    atById[r.id] = r;
-    const code = r.fields?.['Client Code #3'];
-    if (code) atByCode[String(code).toUpperCase()] = r;
-    const name = r.fields?.['Client Name'];
-    if (name) atByName[normalize(name)] = r;
+  const atCodes = await airtableCodes();                                   // canonical AT codes
+  const jclients = await pullDelta({ entityField: 'clients', nodeFields: 'id name companyName', updatedAfter: null });
+  const prefixByGid = {};
+  for (const c of jclients) {
+    const pre = parsePrefix(c.name) || parsePrefix(c.companyName);
+    if (pre) prefixByGid[c.id] = pre;
   }
+  const rows = await pg(`select c.id, c.client_code, c.name, esl.source_id as gid from clients c join entity_source_links esl on esl.entity_id=c.id and esl.entity_type='client' and esl.source_system='jobber'`);
+  const dbHolders = {};
+  for (const r of rows) if (r.client_code) (dbHolders[r.client_code] = dbHolders[r.client_code] || []).push(r.id);
 
-  // Pull ESL airtable links for all clients
-  const ids = clients.map(c => c.id);
-  const eslAt = {};
-  for (let i = 0; i < ids.length; i += 200) {
-    const chunk = ids.slice(i, i + 200);
-    const r = await rest(`entity_source_links?entity_type=eq.client&source_system=eq.airtable&entity_id=in.(${chunk.join(',')})&select=entity_id,source_id`);
-    for (const e of r) eslAt[e.entity_id] = e.source_id;
-  }
-
-  const mismatches = [];
-  const matched = { agree: 0, db_missing_code: 0, at_silent: 0, no_at_match: 0 };
-
-  for (const c of clients) {
-    const dbCode = c.client_code?.toUpperCase() || null;
-    // 1) try ESL
-    let atRec = eslAt[c.id] ? atById[eslAt[c.id]] : null;
-    // 2) fallback: by DB code
-    if (!atRec && dbCode) atRec = atByCode[dbCode] || null;
-    // 3) fallback: by normalized name
-    if (!atRec) {
-      const nc = normalize(c.name);
-      if (nc.length >= 6) {
-        atRec = atByName[nc] || null;
-        if (!atRec) {
-          for (const [n, r] of Object.entries(atByName)) {
-            if (n.length >= 8 && (n.includes(nc) || nc.includes(n))) { atRec = r; break; }
-          }
-        }
-      }
+  const agreementDrifts = [], jobberTypos = [];
+  for (const r of rows) {
+    const pre = prefixByGid[r.gid];
+    if (!pre || r.client_code === pre) continue;
+    if (atCodes.has(pre)) {
+      // Jobber prefix AND Airtable agree on `pre`; DB disagrees -> heal candidate.
+      const otherHolders = (dbHolders[pre] || []).filter(id => id !== r.id);
+      agreementDrifts.push({ id: r.id, name: r.name, db_code: r.client_code, agreed_code: pre, collision_with: otherHolders });
+    } else {
+      // Jobber prefix is not a real AT code -> Jobber-side typo; DB (matching AT) left alone.
+      jobberTypos.push({ id: r.id, name: r.name, db_code: r.client_code, jobber_prefix: pre, db_code_is_at: r.client_code ? atCodes.has(r.client_code) : false });
     }
-    if (!atRec) { matched.no_at_match++; continue; }
-    const atCode = atRec.fields?.['Client Code #3']?.toUpperCase() || null;
-    if (!atCode) { matched.at_silent++; continue; }
-    if (!dbCode) {
-      matched.db_missing_code++;
-      mismatches.push({
-        kind: 'db_missing_code', db_id: c.id, db_name: c.name?.slice(0, 40),
-        db_code: '(none)', at_code: atCode, at_name: atRec.fields?.['Client Name']?.slice(0, 40),
-        status: c.status,
-      });
-      continue;
+  }
+  const healable = agreementDrifts.filter(d => d.collision_with.length === 0);
+  const blocked = agreementDrifts.filter(d => d.collision_with.length > 0);
+
+  console.log(`AT canonical codes: ${atCodes.size} | Jobber clients: ${jclients.length} | DB Jobber-linked: ${rows.length}`);
+  console.log(`AGREEMENT DRIFTS (Jobber+AT agree vs DB): ${agreementDrifts.length}  (healable: ${healable.length}, collision-blocked: ${blocked.length})`);
+  for (const d of agreementDrifts) console.log(`  ${d.collision_with.length ? 'BLOCKED ' : 'heal    '}  client ${d.id} "${d.name}"  DB=${d.db_code || '(none)'} -> ${d.agreed_code}${d.collision_with.length ? `  (target held by ${d.collision_with.join(',')})` : ''}`);
+  console.log(`JOBBER COMPANY-NAME TYPOS (DB likely canonical, Jobber prefix off): ${jobberTypos.length}`);
+  for (const t of jobberTypos) console.log(`  client ${t.id} "${t.name}"  DB=${t.db_code || '(none)'}${t.db_code_is_at ? ' [=AT]' : ' [DB code NOT in AT!]'}  Jobber=${t.jobber_prefix}`);
+
+  if (HEAL && healable.length) {
+    for (const d of healable) {
+      await pg(`update clients set client_code='${q(d.agreed_code)}' where id=${d.id}`);
+      await pg(`insert into webhook_events_log (source_system, event_type, status, error_message, payload) values ('jobber','client_code_drift_healed','info','probe healed client ${d.id} client_code ${q(d.db_code || '(none)')} -> ${q(d.agreed_code)} (Jobber+AT agree)','${q(JSON.stringify({ client_id: d.id, from: d.db_code, to: d.agreed_code, by: 'audit_client_code_drift' }))}'::jsonb)`);
     }
-    if (dbCode === atCode) { matched.agree++; continue; }
-    mismatches.push({
-      kind: 'drift', db_id: c.id, db_name: c.name?.slice(0, 40),
-      db_code: dbCode, at_code: atCode, at_name: atRec.fields?.['Client Name']?.slice(0, 40),
-      status: c.status,
-    });
+    console.log(`HEALED ${healable.length} agreement-drift(s).`);
+  } else if (healable.length) {
+    console.log('Run with --heal to auto-fix the healable agreement-drifts.');
   }
-
-  console.log('=== Summary ===');
-  console.table([
-    { metric: 'DB clients (all statuses)', count: clients.length },
-    { metric: 'AT-matched, agree',         count: matched.agree },
-    { metric: 'AT-matched, DB missing code', count: matched.db_missing_code },
-    { metric: 'AT-matched, AT silent on code', count: matched.at_silent },
-    { metric: 'No AT match (Jobber-only)', count: matched.no_at_match },
-    { metric: 'AT + DB DISAGREE on code',  count: mismatches.filter(m => m.kind === 'drift').length },
-  ]);
-
-  if (mismatches.length) {
-    console.log(`\n=== Mismatches (${mismatches.length}) ===`);
-    console.table(mismatches.slice(0, 60));
-  }
-})().catch(err => { console.error(err); process.exit(1); });
+  console.log(`--- audit complete --- ${JSON.stringify({ probe: 'client_code_drift', agreement_drifts: agreementDrifts.length, healable: healable.length, blocked: blocked.length, jobber_typos: jobberTypos.length, healed: HEAL ? healable.length : 0 })}`);
+})().catch(e => { console.error('FATAL', e.message); process.exit(1); });

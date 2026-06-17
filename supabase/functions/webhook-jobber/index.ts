@@ -285,7 +285,13 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     } else if (cur && cur.status === 'INACTIVE') {
       clientRow.status = 'ACTIVE'
     }
-    // Self-heal client_code only if missing — Airtable owns the authoritative value.
+    // Self-heal client_code only if missing — Airtable owns the authoritative value,
+    // and Jobber's company-name prefix is NOT reliable enough to overwrite an existing
+    // code (Yan frequently typos/truncates it there: e.g. "133-MU" for 133-MUT,
+    // "140-TCY" for 140-TYO). Drift correction is handled out-of-band by the
+    // reconciliation probe scripts/probes/audit_client_code_drift.js, which only heals
+    // when the Jobber prefix AND Airtable's Client Code #3 AGREE against a stale DB
+    // value (the 2026-06-17 221-MP→224-MP case). See that probe + ADR / runbook.
     if (parsedCode && cur && !cur.client_code) clientRow.client_code = parsedCode
     const { error } = await supabase.from('clients').update(clientRow).eq('id', existingId)
     if (error) throw new Error(`Client update failed: ${error.message}`)
