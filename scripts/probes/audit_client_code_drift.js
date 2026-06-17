@@ -46,6 +46,21 @@ function pg(sql) {
 }
 const q = s => String(s).replace(/'/g, "''");
 
+// Known, ACCEPTED Jobber company-name variances (created manually by Diego; the DB +
+// Airtable hold the canonical code, Jobber's prefix differs on purpose). Keyed
+// canonical client_code -> the accepted Jobber prefix. Suppressed from the report so
+// the weekly audit stays signal-only. A DIFFERENT Jobber prefix for the same client
+// (a NEW variance) still surfaces. 146-54W was aligned in Jobber 2026-06-17, so it's
+// no longer here.
+const ACCEPTED_JOBBER_VARIANCE = {
+  '057-SLS': '057-BAY',
+  '132-PUM': '132-PU',
+  '133-MUT': '133-MU',
+  '140-TYO': '140-TCY',
+  '199-JZ': '199-STK',
+  '213-TRUE': '213-TRU',
+};
+
 // Same prefix parse as webhook-jobber handleClient (only a real NNN-XX with alpha suffix).
 function parsePrefix(name) {
   if (!name) return null;
@@ -81,7 +96,7 @@ async function airtableCodes() {
   const dbHolders = {};
   for (const r of rows) if (r.client_code) (dbHolders[r.client_code] = dbHolders[r.client_code] || []).push(r.id);
 
-  const agreementDrifts = [], jobberTypos = [];
+  const agreementDrifts = [], jobberTypos = [], accepted = [];
   for (const r of rows) {
     const pre = prefixByGid[r.gid];
     if (!pre || r.client_code === pre) continue;
@@ -89,6 +104,9 @@ async function airtableCodes() {
       // Jobber prefix AND Airtable agree on `pre`; DB disagrees -> heal candidate.
       const otherHolders = (dbHolders[pre] || []).filter(id => id !== r.id);
       agreementDrifts.push({ id: r.id, name: r.name, db_code: r.client_code, agreed_code: pre, collision_with: otherHolders });
+    } else if (ACCEPTED_JOBBER_VARIANCE[r.client_code] === pre) {
+      // Known/accepted Diego variance — DB is canonical; stay quiet.
+      accepted.push({ id: r.id, name: r.name, db_code: r.client_code, jobber_prefix: pre });
     } else {
       // Jobber prefix is not a real AT code -> Jobber-side typo; DB (matching AT) left alone.
       jobberTypos.push({ id: r.id, name: r.name, db_code: r.client_code, jobber_prefix: pre, db_code_is_at: r.client_code ? atCodes.has(r.client_code) : false });
@@ -100,7 +118,7 @@ async function airtableCodes() {
   console.log(`AT canonical codes: ${atCodes.size} | Jobber clients: ${jclients.length} | DB Jobber-linked: ${rows.length}`);
   console.log(`AGREEMENT DRIFTS (Jobber+AT agree vs DB): ${agreementDrifts.length}  (healable: ${healable.length}, collision-blocked: ${blocked.length})`);
   for (const d of agreementDrifts) console.log(`  ${d.collision_with.length ? 'BLOCKED ' : 'heal    '}  client ${d.id} "${d.name}"  DB=${d.db_code || '(none)'} -> ${d.agreed_code}${d.collision_with.length ? `  (target held by ${d.collision_with.join(',')})` : ''}`);
-  console.log(`JOBBER COMPANY-NAME TYPOS (DB likely canonical, Jobber prefix off): ${jobberTypos.length}`);
+  console.log(`JOBBER COMPANY-NAME TYPOS (new, DB canonical): ${jobberTypos.length}  | accepted/known variances suppressed: ${accepted.length}`);
   for (const t of jobberTypos) console.log(`  client ${t.id} "${t.name}"  DB=${t.db_code || '(none)'}${t.db_code_is_at ? ' [=AT]' : ' [DB code NOT in AT!]'}  Jobber=${t.jobber_prefix}`);
 
   if (HEAL && healable.length) {
@@ -112,5 +130,5 @@ async function airtableCodes() {
   } else if (healable.length) {
     console.log('Run with --heal to auto-fix the healable agreement-drifts.');
   }
-  console.log(`--- audit complete --- ${JSON.stringify({ probe: 'client_code_drift', agreement_drifts: agreementDrifts.length, healable: healable.length, blocked: blocked.length, jobber_typos: jobberTypos.length, healed: HEAL ? healable.length : 0 })}`);
+  console.log(`--- audit complete --- ${JSON.stringify({ probe: 'client_code_drift', agreement_drifts: agreementDrifts.length, healable: healable.length, blocked: blocked.length, jobber_typos: jobberTypos.length, accepted_suppressed: accepted.length, healed: HEAL ? healable.length : 0 })}`);
 })().catch(e => { console.error('FATAL', e.message); process.exit(1); });
