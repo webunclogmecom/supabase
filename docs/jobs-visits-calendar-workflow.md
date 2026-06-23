@@ -108,8 +108,15 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
 - ✅ Jobber push gate widened to all clients (go-live 2026-06-23, smoke-tested on 026-HAP).
 - ✅ Durable jobs-sync fix: `handleJob` (lineItems + Frequency) + `reconcile_jobs.js` (daily cron `reconcile-jobs.yml`).
 - ✅ Wynd 28 phantoms (#10000712 SA / #10000713 SC, deleted in Jobber) archived in DB.
+- ✅ `webhook-jobber` deployed (Supabase CLI) with the `handleJob` edit; no CI auto-deploy.
+- ✅ Service Calls — every active/recurring client has one (0 missing, re-checked 2026-06-23).
+- ✅ Itemized re-check (2026-06-23, fresh from Airtable base `app6TThMjeY1PRTrR` — Clients `tbl5lXLtHKUWilDDj`
+  + Job Line Items `tblQkj5SIuabDnuXo`): created the newly-spec'd SA for **147-OST** (#99900937, freq 60).
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
-- ⏳ Deploy `webhook-jobber` with the `handleJob` edit (manual Supabase CLI; no CI auto-deploy).
-- 🟡 7 SA jobs lack line items in Jobber (edge clients) → need Itemized-sheet line items or archival.
-  213-TRUE / 232-AC have an SA *title* but no active SA (their 06-02 SAs are archived) — decide whether
-  they're SA clients (then add Itemized line items) or stay SC-only.
+- 🟡 4 clients have an SA *title* but **no line items in the Itemized sheet** → can't build the SA without
+  fabricating; need Fred to add their Job Line Items rows: **213-TRUE, 232-AC** (2 of the 7 pending-visit
+  clients), **107-PV, 030-KGC**.
+- 🟡 New Airtable rows not in Jobber: **207-CN "Casa Neos BAR"** (Recurring +SA, no Jobber client → needs a
+  Jobber client before any job can be created); the 5 Wynd tenants (216–220-WYN) are `client_locations` under
+  the single Wynd 28 Jobber client (no separate jobs); `000-` / `095- ZZZ…` / `115-aziz test` = junk/test.
+- ℹ️ The 7 pending-visit `[OLD]` jobs are left open until their visits complete (Fred 2026-06-23), then close.
