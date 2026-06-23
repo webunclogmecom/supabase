@@ -112,7 +112,14 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
 - ✅ Service Calls — every active/recurring client has one (0 missing, re-checked 2026-06-23).
 - ✅ Itemized re-check (2026-06-23, fresh from Airtable base `app6TThMjeY1PRTrR` — Clients `tbl5lXLtHKUWilDDj`
   + Job Line Items `tblQkj5SIuabDnuXo`): created the newly-spec'd SA for **147-OST** (#99900937, freq 60).
+- ✅ Closed **75 legacy/[OLD] jobs across ALL clients regardless of status** (Fred 2026-06-23) — safe-close,
+  skipping the 10 with a pending visit (the 7 + 2 residential + 1 test 777-YA) to close after they complete.
+  Guarded so an active/recurring client with a clean Service Call is never left job-less.
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
+- 🟡 3 Jobber clients are **not in the Airtable roster** but have old jobs + no SC/SA: **233-AH "Aloft hotels",
+  234-PV "Pura Vida Wynwood", 238-PV "Pura Vida South Miami" (recurring)** — held from the close (would be
+  job-less). If real/active, add to Airtable → create SC/SA, then close old; else close. (000-DH dump, 018-FUE
+  + 105-CU inactive, 777-YA test were closed.)
 - 🟡 4 clients have an SA *title* but **no line items in the Itemized sheet** → can't build the SA without
   fabricating; need Fred to add their Job Line Items rows: **213-TRUE, 232-AC** (2 of the 7 pending-visit
   clients), **107-PV, 030-KGC**.
