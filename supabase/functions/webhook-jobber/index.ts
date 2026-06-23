@@ -845,6 +845,8 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
         client { id }
         property { id }
         quote { id }
+        customFields { __typename ... on CustomFieldNumeric { label valueNumeric } }
+        lineItems(first: 50) { nodes { name description quantity unitPrice totalPrice taxable } }
       }
     }`,
     { id: gid }
@@ -867,6 +869,9 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   if (clientId) jobRow.client_id = clientId
   if (propertyId) jobRow.property_id = propertyId
   if (quoteId) jobRow.quote_id = quoteId
+  // Frequency (Jobber "Frequency" numeric custom field) → frequency_days (the SA cadence; SC = 0/absent)
+  const freqCF = (j.customFields ?? []).find((cf: any) => (cf?.label ?? '').toLowerCase() === 'frequency')
+  if (freqCF && typeof freqCF.valueNumeric === 'number') jobRow.frequency_days = freqCF.valueNumeric
 
   let entityId: number
 
@@ -891,6 +896,21 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
     source_id: gid,
     match_method: 'webhook',
   })
+
+  // Sync job-scoped line items per the rule: Service Agreement jobs carry their agreed services;
+  // Service Call jobs carry none. Idempotent: wipe job-scoped rows + re-insert only for SA jobs.
+  const isSA = (j.title ?? '').toLowerCase().startsWith('service agreement')
+  await supabase.from('line_items').delete().eq('job_id', entityId)
+  if (isSA) {
+    const jobLineNodes: any[] = j.lineItems?.nodes ?? []
+    if (jobLineNodes.length > 0) {
+      await supabase.from('line_items').insert(jobLineNodes.map((n: any) => ({
+        job_id: entityId, name: n.name, description: n.description ?? '',
+        quantity: n.quantity ?? 1, unit_price: n.unitPrice ?? 0,
+        total_price: n.totalPrice ?? 0, taxable: !!n.taxable,
+      })))
+    }
+  }
 
   return { entity_id: entityId }
 }

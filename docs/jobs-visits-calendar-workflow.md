@@ -35,10 +35,20 @@ Every client's work in Jobber (and mirrored in `public.jobs`) is now exactly one
    `createdAt`-cursored and does **not** fetch `lineItems`). `scripts/sync/sync_job_line_items.js`
    pulled them into `public.line_items` (job scope) — 162/170 SA jobs, 287 line items.
 
-> **Sync gap (still open, see [`reference/jobs_sync_gaps`]):** the jobs poll fetches neither
-> `lineItems` nor status changes (createdAt cursor). Durable fix = add `customFields`(Frequency) +
-> `lineItems` to the poll's jobs query + a periodic full-status reconcile. Until then, re-run
-> `sync_job_line_items.js` after creating/editing SA jobs.
+> **Sync gap — FIXED 2026-06-23 (see [[reference_jobs_sync_gaps]]):** the createdAt-cursored jobs poll
+> fetched neither `lineItems`, `customFields`(Frequency), nor status changes/deletions. Now closed:
+> (a) `webhook-jobber.handleJob` fetches `lineItems` + `customFields`, maps Frequency→`frequency_days`,
+> and syncs job-scoped line items (SA-only, per the rule) — the real-time path; (b)
+> `scripts/sync/reconcile_jobs.js` (daily cron `reconcile-jobs.yml`) reconciles every non-archived
+> job's status + frequency + line items + detects deletions (Jobber null → archived) — the catch-up.
+> `sync_job_line_items.js` is superseded by `reconcile_jobs.js`.
+
+### Line-item rule (Fred 2026-06-23)
+**Every Service Agreement job carries line items (its agreed services); no Service Call job carries
+line items** (services are chosen per-visit). Enforced by `handleJob` + `reconcile_jobs.js` (wipe
+job-scoped line items, re-insert only for SA). Verified: 0 SC jobs have line items. The 7 pre-restructure
+SA jobs that lack line items in Jobber (032-LG, 053-PV, 119-ME, 128-MF, 145-NON, Line Barthes, + the
+archived Wynd phantom) are edge cases needing Itemized-sheet line items or archival — flagged to Fred.
 
 ## 3. Visit ↔ job ↔ service ↔ location
 
@@ -76,16 +86,30 @@ SC catalog) → DERM badge if any service is pumping → property/location (defa
 instructions/truck → `rpc('create_calendar_visit')`. Diego uses this (and, near-term, the migration
 PDF) to create the pending visits onto the clean SC/SA jobs.
 
-## 5. Calendar → Jobber push (gated)
+## 5. Calendar → Jobber push (LIVE for all clients — 2026-06-23)
 
-A created visit (`source='visit-calendar'`) fires `trg_push_visit_insert` →
-`fn_push_visit_to_jobber` → `jobber-push-visit` Edge Function, **gated to client 112-YA (id 381)**.
-For every other client the visit lives only in our DB (Calendar = SoT) until go-live. **Widening the
-gate writes to Jobber for all clients — a Fred go/no-go decision** (the restructure precondition is
-now met). See [[project_pending_push_to_jobber]].
+A created/edited/cancelled visit (`source IN ('visit-calendar','supabase_cron')`) fires
+`trg_push_visit_insert` / `trg_push_visit_update` → `fn_push_visit_to_jobber` → `jobber-push-visit`
+Edge Function. **GO-LIVE 2026-06-23 (Fred): the 112-YA-only gate was removed** — the push now fires
+for **all clients** (migration `2026-06-23_widen_jobber_push_all_clients.sql`). Smoke-tested
+end-to-end on a real client (026-HAP): create → Jobber visit on the schedule + GID linked → cancel →
+Jobber visit removed + ESL unlinked.
 
-## 6. Open items / follow-ups
-- Widen the Jobber push gate (Fred go/no-go) → then enable the SA visit-generation cron.
-- Durable jobs-sync fix (lineItems + Frequency + status reconcile in the poll).
-- 213-TRUE / 232-AC have an SA title but no Itemized line-item spec → SA not created (flagged).
-- Wynd 28 `entity_source_links` client GID looks stale (SA #10000712 / SC #10000713 unreachable live).
+**Safe with Jobber inbound ON:** `webhook-jobber.handleVisit` has a loop-guard — when the inbound
+poll sees a Jobber visit GID-linked to a `source='visit-calendar'` row it skips the clobber and
+preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays the master.
+
+> Still gated: only `source IN ('visit-calendar','supabase_cron')` push — inbound `source='jobber'`
+> visits never re-push. Only NEW inserts / qualifying field-changes push; existing rows aren't
+> retro-pushed. The SA visit-generation cron (`sa-visit-generation.yml`, `source='supabase_cron'`)
+> is still **disabled** — enabling it is the remaining go-live step.
+
+## 6. Status / follow-ups
+- ✅ Jobber push gate widened to all clients (go-live 2026-06-23, smoke-tested on 026-HAP).
+- ✅ Durable jobs-sync fix: `handleJob` (lineItems + Frequency) + `reconcile_jobs.js` (daily cron `reconcile-jobs.yml`).
+- ✅ Wynd 28 phantoms (#10000712 SA / #10000713 SC, deleted in Jobber) archived in DB.
+- ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
+- ⏳ Deploy `webhook-jobber` with the `handleJob` edit (manual Supabase CLI; no CI auto-deploy).
+- 🟡 7 SA jobs lack line items in Jobber (edge clients) → need Itemized-sheet line items or archival.
+  213-TRUE / 232-AC have an SA *title* but no active SA (their 06-02 SAs are archived) — decide whether
+  they're SA clients (then add Itemized line items) or stay SC-only.
