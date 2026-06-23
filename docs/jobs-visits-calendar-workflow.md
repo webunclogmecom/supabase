@@ -115,6 +115,9 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
 - ✅ Closed **75 legacy/[OLD] jobs across ALL clients regardless of status** (Fred 2026-06-23) — safe-close,
   skipping the 10 with a pending visit (the 7 + 2 residential + 1 test 777-YA) to close after they complete.
   Guarded so an active/recurring client with a clean Service Call is never left job-less.
+- ✅ **`[OLD]` suffix on every remaining open non-SC/SA job** (36 more, Fred 2026-06-23). Invariant verified:
+  every open job is now either a clean `Service Call` / `Service Agreement%` (the restructure jobs) or carries
+  `[OLD]` — 0 untagged legacy jobs left open. (Title rename only — never destroys visits.)
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
 - 🟡 3 Jobber clients are **not in the Airtable roster** but have old jobs + no SC/SA: **233-AH "Aloft hotels",
   234-PV "Pura Vida Wynwood", 238-PV "Pura Vida South Miami" (recurring)** — held from the close (would be
