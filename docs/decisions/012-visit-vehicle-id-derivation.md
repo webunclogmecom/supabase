@@ -107,3 +107,36 @@ After Jan 1 → May 3 telemetry backfill (4 months) and full property geocoding:
 - [.github/workflows/derive-visit-vehicle-id.yml](../../.github/workflows/derive-visit-vehicle-id.yml)
 - [scripts/sync/backfill_samsara_telemetry.js](../../scripts/sync/backfill_samsara_telemetry.js) — historical telemetry pull
 - ADR 013 — tiered property geocoding (the dependency that unlocked client-fallback matching)
+
+---
+
+## Addendum 2026-06-23 — June null-vehicle_id regression fixed (Cloggy tie-break + GPS self-heal)
+
+`visits.vehicle_id` null rate (completed visits) jumped from ~6-11% (mid-May) to
+**~69% in June**. Surfaced via an Admin Review health check ("Truck: Not recorded"
+on 81/130 queue jobs). RCA found **two independent regressions, both ~June 1**
+(the 2026-06-02 Jobber-visit decouple was a red herring — those crons don't write
+`vehicle_id`):
+
+1. **Cloggy blanket exclusion (logic, ~30 visits).** Commit `b486d32` (2026-06-02)
+   changed the Cloggy handling from "tie-break vs Moises" to a **hard exclusion**
+   from the SQL candidate set for commercial/NULL-service visits. Cloggy genuinely
+   ran commercial/overnight work in June, so Cloggy-**only** visits stopped
+   attributing. **Fix:** reverted to a true tie-break — Cloggy stays in the
+   candidate set and is dropped only when a non-Cloggy truck is also present at the
+   tier (`derive_visit_vehicle_id.js`). Preserves the Moises+Cloggy disambiguation
+   the exclusion was written for (0 ambiguous on re-derive).
+
+2. **Samsara GPS ingestion gap (data, ~17+ visits).** `cron_samsara_locations_history.js`
+   used a **fixed 90-min lookback** on a `*/15` GitHub schedule; whenever GitHub
+   throttled runs past 90 min, that telemetry window was permanently lost (June:
+   ~70-79% of overnight GPS missing from our DB though present in Samsara — e.g.
+   06-22 Moises 3358 pts in Samsara vs 714 in DB). **Fix:** self-healing lookback —
+   resume from the last stored `recorded_at`, floored to `AUTO_LOOKBACK_H` (6h).
+
+**Remediation:** backfilled May 9–Jun 23 Samsara GPS (idempotent, ON CONFLICT) +
+re-derived. Completed-visit null rate **43% → 13%** (June 70/102 → 21/102; 63 visits
+attributed, 0 mis-attributions). Residual nulls have no GPS evidence (irreducible).
+Commit `eef2889`. Both scripts remain idempotent. Lesson: any sync cron with a fixed
+lookback shorter than its worst-case schedule gap silently loses data under GitHub
+throttling — prefer resume-from-last-stored windows.
