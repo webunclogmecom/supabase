@@ -189,6 +189,7 @@ The webhook-airtable's primary link logic uses `GT Last Visit` ±2 days — that
 | [docs/integration.md](docs/integration.md) | Edge Functions / webhooks / rate limits |
 | [docs/security.md](docs/security.md) | Secrets / tokens / RLS / rotation |
 | [docs/migration-plan.md](docs/migration-plan.md) | Jobber/AT sunset + Odoo cutover |
+| [docs/jobs-visits-calendar-workflow.md](docs/jobs-visits-calendar-workflow.md) | Jobs↔visits↔calendar workflow + 2026-06-23 restructure + the Calendar Create Visit DB layer |
 | [docs/company.md](docs/company.md) | Business context: fleet, clients, compliance |
 | [docs/onboarding.md](docs/onboarding.md) | New to project |
 | [docs/decisions/](docs/decisions/) | ADRs — *why* something is the way it is |
