@@ -27,9 +27,17 @@ if (!SUPABASE_URL || !SVC || !SAMSARA_TOKEN) {
   process.exit(1);
 }
 
-// Window — default: last 90 min. Override with START_TIME / END_TIME env.
-const START_TIME = process.env.START_TIME || new Date(Date.now() - 90 * 60 * 1000).toISOString();
-const END_TIME   = process.env.END_TIME   || new Date().toISOString();
+// Window. END defaults to now. START is SELF-HEALING: when not overridden it
+// resumes from the most recent telemetry we already have, so a throttled/skipped
+// GitHub run backfills the whole gap instead of permanently losing any span
+// longer than a fixed lookback (the */15 schedule gets throttled past 90 min,
+// which silently dropped ~70-79% of overnight GPS in June 2026). It is floored
+// to AUTO_LOOKBACK_H so an auto-run never pulls an unbounded span. Manual
+// backfill: set START_TIME / END_TIME env (ISO-8601 UTC).
+const END_TIME = process.env.END_TIME || new Date().toISOString();
+const ENV_START = process.env.START_TIME || null;
+const AUTO_LOOKBACK_H = Number(process.env.AUTO_LOOKBACK_H || 6); // floor for auto-runs
+let START_TIME = ENV_START; // resolved in main() when null (self-heal)
 
 function http(opts, body) { return new Promise((res, rej) => {
   const payload = body == null ? null : (typeof body === 'string' ? body : JSON.stringify(body));
@@ -95,6 +103,20 @@ async function pullChunk(vehicleIds, startTime, endTime) {
 (async () => {
   const t0 = Date.now();
   console.log('[samsara-locations-history] start ' + new Date().toISOString());
+  if (!START_TIME) {
+    // Self-heal: resume from the latest reading we already have, floored to
+    // AUTO_LOOKBACK_H so a long stall doesn't trigger an unbounded pull.
+    let lastTs = null;
+    try {
+      const r = await rest('/vehicle_telemetry_readings?select=recorded_at&order=recorded_at.desc&limit=1');
+      if (r.status === 200) { const j = JSON.parse(r.body); if (j.length) lastTs = new Date(j[0].recorded_at).getTime(); }
+    } catch (e) { console.warn('  [self-heal] last-reading lookup failed: ' + e.message); }
+    const floorMs = Date.now() - AUTO_LOOKBACK_H * 60 * 60 * 1000;
+    const startMs = lastTs ? Math.max(lastTs, floorMs) : (Date.now() - 90 * 60 * 1000);
+    START_TIME = new Date(startMs).toISOString();
+    console.log('  [self-heal] auto START_TIME=' + START_TIME +
+      (lastTs ? ' (resume from last reading ' + new Date(lastTs).toISOString() + ', floored to ' + AUTO_LOOKBACK_H + 'h)' : ' (no prior reading; 90m default)'));
+  }
   console.log('  window: ' + START_TIME + ' → ' + END_TIME);
 
   const idMap = await loadVehicleIdMap();

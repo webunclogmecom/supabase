@@ -19,6 +19,11 @@
 //      represent stale telemetry, not an attribution signal. Without this
 //      exclusion the autopilot saw Goliath+Moises overlap and skipped the
 //      visit as ambiguous (~24 false-NULLs/run per 2026-05-12 audit).
+//   5. Cloggy (day plumbing truck) is a TIE-BREAK, not a hard exclusion: on
+//      commercial/NULL-service visits Cloggy is dropped only when a non-Cloggy
+//      truck is also present at the tier; a Cloggy-only visit still attributes.
+//      (A blanket exclusion in b486d32 stranded ~30 Cloggy-only June visits —
+//      fixed 2026-06-23.)
 //
 // Idempotent: only touches rows where vehicle_id IS NULL.
 // Safe to re-run hourly.
@@ -57,12 +62,12 @@ const FALLBACK_DURATION_MS = 60 * 60 * 1000;      // when completed_at is null
 // property are stale telemetry, not attribution signal.
 const GOLIATH_DECOMMISSION_DATE = '2026-01-01';
 
-// Cloggy is the day-shift plumbing truck (Grecia). Commercial overnight
-// service (GT/CL/LS/WD) is run by Moises (Kenworth T880); Cloggy only
-// touches residential/emergency calls. Cloggy GPS pings near commercial
-// clients are usually pass-by noise during the day route. Without this
-// exclusion the autopilot saw Moises+Cloggy overlap on 8/15 recent
-// commercial visits (audit 2026-05-22) and skipped them as ambiguous.
+// Cloggy is primarily the day-shift plumbing truck (Grecia); commercial
+// service (GT/CL/LS/WD) is mostly Moises (Kenworth T880). When Moises and
+// Cloggy BOTH ping a commercial client (daytime pass-by) we prefer Moises —
+// a TIE-BREAK in the match loop, not a hard exclusion — so a Cloggy-only ping
+// still attributes Cloggy (Cloggy does run some commercial/overnight work).
+// (8/15 Moises+Cloggy ambiguous commercial visits, audit 2026-05-22.)
 const COMMERCIAL_SERVICE_TYPES = new Set(['GT', 'CL', 'LS', 'WD']);
 
 // ---- helpers ----------------------------------------------------------------
@@ -182,15 +187,14 @@ function haversineM(lat1, lng1, lat2, lng2) {
     const endMs = v.completed_at ? new Date(v.completed_at).getTime() : startMs + FALLBACK_DURATION_MS;
     const lat = v.lat, lng = v.lng;
     const excludeGoliath = v.visit_date >= GOLIATH_DECOMMISSION_DATE;
-    // Exclude Cloggy for commercial visits (and for NULL service_type, which
-    // for visits past 2026 is overwhelmingly recurring commercial work).
-    const excludeCloggy = v.service_type == null || COMMERCIAL_SERVICE_TYPES.has(v.service_type);
-    const exclusions = [];
-    if (excludeGoliath) exclusions.push("'Goliath'");
-    if (excludeCloggy) exclusions.push("'Cloggy'");
-    const goliathClause = exclusions.length
-      ? `AND veh.name NOT IN (${exclusions.join(',')})`
-      : '';
+    // Cloggy is a TIE-BREAK, not a hard exclusion. For commercial/NULL-service
+    // visits Moises is the expected truck, but Cloggy genuinely runs some
+    // commercial/overnight work too. We keep Cloggy IN the candidate set so a
+    // Cloggy-ONLY visit still attributes; we only drop Cloggy when a non-Cloggy
+    // truck is ALSO present at the same tier (handled in the tier loop below).
+    // (A blanket b486d32 exclusion stranded ~30 Cloggy-only June visits.)
+    const cloggyTiebreak = v.service_type == null || COMMERCIAL_SERVICE_TYPES.has(v.service_type);
+    const goliathClause = excludeGoliath ? "AND veh.name != 'Goliath'" : '';
 
     let resolved = null;
     let lastAmbiguous = null;
@@ -215,7 +219,14 @@ function haversineM(lat1, lng1, lat2, lng2) {
           AND vt.longitude BETWEEN ${lng - dLng} AND ${lng + dLng}
           ${goliathClause};
       `);
-      const within = tel.filter(r => haversineM(lat, lng, r.tel_lat, r.tel_lng) <= tier.radius_m);
+      let within = tel.filter(r => haversineM(lat, lng, r.tel_lat, r.tel_lng) <= tier.radius_m);
+      // Cloggy tie-break: on commercial/NULL-service visits, if a non-Cloggy
+      // truck is also at this tier, drop Cloggy (commercial work is Moises').
+      // Cloggy survives only when it is the SOLE truck present.
+      if (cloggyTiebreak) {
+        const nonCloggy = within.filter(r => r.truck !== 'Cloggy');
+        if (nonCloggy.length > 0 && nonCloggy.length < within.length) within = nonCloggy;
+      }
       const truckIds = [...new Set(within.map(r => r.vehicle_id))];
 
       if (truckIds.length === 1) {
