@@ -134,6 +134,11 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
   Jobber push link→unlink round-trip; plus free-text classifier, 3-source resolution, monotonicity, and
   soft-delete exclusion. All test artifacts cleaned up (0 orphaned Jobber visits). The SC catalog exposes
   all 16 SC line items (09–24).
+- ✅ **`jobs.job_number` integrity** (2026-06-24 audit follow-up #1, `2026-06-24_jobs_job_number_unique.sql`):
+  partial unique index `jobs_active_job_number_uniq` on non-archived `job_number` — blocks a future
+  duplicate ACTIVE row for one Jobber job (the one-card-per-job + ESL-bridge invariant). Root cause of the
+  2 historical dupes (10000317/318) was a raw-numeric-vs-base64 GID drift, now historical (2/1691 ESLs).
+  Smoke-tested 3/3 (dupe blocked, archived dupe allowed, normal insert ok).
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
 - 🟡 3 Jobber clients are **not in the Airtable roster** but have old jobs + no SC/SA: **233-AH "Aloft hotels",
   234-PV "Pura Vida Wynwood", 238-PV "Pura Vida South Miami" (recurring)** — held from the close (would be
