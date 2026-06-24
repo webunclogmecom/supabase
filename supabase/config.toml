@@ -393,6 +393,19 @@ verify_jwt = false
 [functions.webhook-samsara]
 verify_jwt = false
 
+# pg_cron pollers: SAME rule as the webhook receivers. Invoked by Supabase pg_cron
+# via pg_net with only an `x-sync-key` header (no Supabase JWT), so verify_jwt MUST
+# be false or the gateway 401s every scheduled run. 2026-06-24 incident: a manual
+# `supabase functions deploy sync-jobber-upcoming-visits` WITHOUT --no-verify-jwt
+# (and without this block) flipped it to verify_jwt=true; the next */15 run was 401'd
+# before it was caught + restored. (jobber-push-visit is exempt — fn_push_visit_to_jobber
+# sends a service-role bearer, so it authenticates regardless.)
+[functions.sync-jobber-upcoming-visits]
+verify_jwt = false
+
+[functions.sync-jobber-poll]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
