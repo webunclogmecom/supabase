@@ -129,4 +129,14 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
 - 🟡 New Airtable rows not in Jobber: **207-CN "Casa Neos BAR"** (Recurring +SA, no Jobber client → needs a
   Jobber client before any job can be created); the 5 Wynd tenants (216–220-WYN) are `client_locations` under
   the single Wynd 28 Jobber client (no separate jobs); `000-` / `095- ZZZ…` / `115-aziz test` = junk/test.
-- ℹ️ The 7 pending-visit `[OLD]` jobs are left open until their visits complete (Fred 2026-06-23), then close.
+- ℹ️ **A pending visit only blocks *closing* the old job — never *creating* the new SC/SA** (Fred 2026-06-23).
+  Every active/recurring client gets its Service Call (+ SA if recurring) regardless of any pending visit; the
+  `[OLD]` job stays open until its visit completes, then we close it and let the invoice flow. Closing is not a
+  prerequisite for the new jobs.
+- ℹ️ Diagnosed why the 61 open `[OLD]` jobs aren't archived: **45 = `requires_invoicing`** (jobClose stopped
+  recurrence but Jobber won't archive a job with un-invoiced completed visits — a billing step, not ours),
+  **12 = pending visit** (closing would destroy it), **4 = held** (would leave the client job-less). The 45
+  archive once invoiced; the 12 once their visit completes.
+- ✅ Gap fix from the above principle: my residential cleanup had *skipped* 2 active residential clients entirely
+  because their old job held a pending visit, so they never got a Service Call — **Laura odette (#99900938)** and
+  **Bay Harborview Condo (#99900939)** now have a clean Service Call (created in Jobber + synced to `public.jobs`).
