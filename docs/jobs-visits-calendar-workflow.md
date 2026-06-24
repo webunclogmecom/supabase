@@ -143,6 +143,14 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
   66 soft-deleted visits were leaking through 6 `ops.*` views (revenue/KPI/route/service-due/passthrough).
   New canonical base view `public.v_visits_live` (`visits WHERE deleted_at IS NULL`); the 6 views re-pointed
   at it (future views should read it, not bare `visits`). `ops.visits` 813→747. Smoke-tested 10/10.
+- ✅ **Inbound loop-guard widened to completion-only** (2026-06-24 audit follow-up #3, `webhook-jobber`
+  deployed): the inbound Jobber poll now protects BOTH `source='visit-calendar'` AND `source='supabase_cron'`
+  rows — it may sync only completion (`visit_status`/`completed_at`/`completed_by`), never clobber their
+  Calendar/cron-mastered `visit_date`/`start_at`/`end_at`/`title`/`job_id`. Closes the real exposure (3
+  SA-cron visits had Jobber ESLs and were getting schedule-clobbered each poll). Loop-safe (re-push
+  re-asserts the same schedule). Smoke-tested 5/5 via the real poll with a positive control (a jobber visit
+  clobbered while the cron visit was preserved). **Still Fred's call: keep inbound Jobber on, or re-decouple
+  entirely** — this is the safe interim either way.
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
 - 🟡 3 Jobber clients are **not in the Airtable roster** but have old jobs + no SC/SA: **233-AH "Aloft hotels",
   234-PV "Pura Vida Wynwood", 238-PV "Pura Vida South Miami" (recurring)** — held from the close (would be

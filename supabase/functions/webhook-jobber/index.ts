@@ -573,17 +573,29 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   let promotedFromCron = false
 
   if (existingId) {
-    // Loop-guard (2026-06-01): visits created in our Calendar (source='visit-calendar')
-    // are MASTERED by the Calendar -> Jobber push (jobber-push-visit Edge Function).
-    // Do NOT overwrite their fields from this inbound Jobber echo: it would corrupt
-    // Anytime/all-day visits (Jobber returns a concrete allDay startAt) and bounce
-    // back through the push trigger (loop). Keep the row + link untouched.
+    // Loop-guard (2026-06-01; widened 2026-06-24, audit follow-up #3): visits MASTERED by our
+    // side — source='visit-calendar' (Calendar) OR 'supabase_cron' (SA generator) — own their
+    // SCHEDULE + title; the Calendar/cron -> Jobber push (jobber-push-visit) is the writer. The
+    // inbound Jobber poll must NOT clobber their visit_date/start_at/end_at/title/job_id (it would
+    // corrupt Anytime/all-day visits — Jobber returns a concrete allDay startAt — and fight the
+    // push). It MAY sync COMPLETION (visit_status/completed_at/completed_by) so a field-completed
+    // visit reflects in our DB. Loop-safe: a visit_status change re-fires trg_push_visit_update,
+    // but jobber-push-visit only re-asserts the SAME schedule -> Jobber unchanged -> no echo.
     const { data: existing } = await supabase.from('visits').select('source').eq('id', existingId).maybeSingle()
-    if (existing?.source === 'visit-calendar') {
-      console.log(`[handleVisit] visit ${numericId} -> calendar-mastered visit ${existingId}; skipping clobber (loop-guard)`)
+    if (existing?.source === 'visit-calendar' || existing?.source === 'supabase_cron') {
+      const compRow: Record<string, unknown> = {}
+      if (v.completedAt !== undefined) compRow.completed_at = v.completedAt ?? null
+      if (v.completedBy !== undefined) compRow.completed_by = v.completedBy ?? null
+      const inStatus = statusMap[v.visitStatus?.toLowerCase() ?? '']
+      if (inStatus) compRow.visit_status = inStatus
+      if (Object.keys(compRow).length > 0) {
+        const { error } = await supabase.from('visits').update(compRow).eq('id', existingId)
+        if (error) throw new Error(`Visit completion-sync failed: ${error.message}`)
+      }
+      console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion-only sync (schedule/title preserved)`)
       return { entity_id: existingId }
     }
-    // Standard update path — we've seen this Jobber visit before.
+    // Standard update path — Jobber-mastered visit.
     const { error } = await supabase.from('visits').update(visitRow).eq('id', existingId)
     if (error) throw new Error(`Visit update failed: ${error.message}`)
     entityId = existingId
