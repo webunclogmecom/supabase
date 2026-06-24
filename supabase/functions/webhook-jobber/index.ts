@@ -457,14 +457,12 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   }
 
   // Excluded test / non-synced accounts: their Jobber visits must NEVER enter
-  // our DB. 112-YA "Yan's Restaurant" is Yan's test account — it still has a
-  // leftover Jobber recurring job generating ~81 visits out to 2030. We already
-  // exclude it from our own generator; this is the matching guard on the inbound
-  // Jobber sync (both the real-time webhook and cron_jobber's replay funnel
-  // through here). Matched by Jobber client GID. Added 2026-05-30.
-  const EXCLUDED_JOBBER_CLIENT_GIDS = new Set<string>([
-    'Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=', // 112-YA Yan's Restaurant (test)
-  ])
+  // our DB. Matched by Jobber client GID. (Added 2026-05-30; emptied 2026-06-24 —
+  // 112-YA "Yan's Restaurant" un-excluded per Fred so its visits are visible in
+  // the Calendar: its old leftover recurring job that generated ~81 visits to 2030
+  // was archived in the 2026-06-23 restructure, so 112-YA now has only its real
+  // jobs/visits. Re-add a GID here to exclude a future test account.)
+  const EXCLUDED_JOBBER_CLIENT_GIDS = new Set<string>([])
   if (v.job?.client?.id && EXCLUDED_JOBBER_CLIENT_GIDS.has(v.job.client.id)) {
     console.log(`[handleVisit] visit ${numericId} belongs to excluded test client ${v.job.client.id} (112-YA) — skipping`)
     return { entity_id: 0 }

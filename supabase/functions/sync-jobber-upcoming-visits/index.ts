@@ -25,7 +25,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const TRIGGER_KEY = Deno.env.get('SYNC_TRIGGER_KEY') ?? ''
 const GRAPHQL_VERSION = '2026-04-16'
-const EXCLUDED_CLIENT_GIDS = new Set(['Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=']) // 112-YA test account
+const EXCLUDED_CLIENT_GIDS = new Set<string>([]) // none (112-YA un-excluded 2026-06-24 per Fred; its leftover recurring job is archived). Re-add a GID to exclude a future test account.
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
 async function gql(token: string, query: string) {
