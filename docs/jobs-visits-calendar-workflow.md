@@ -151,6 +151,12 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
   re-asserts the same schedule). Smoke-tested 5/5 via the real poll with a positive control (a jobber visit
   clobbered while the cron visit was preserved). **Still Fred's call: keep inbound Jobber on, or re-decouple
   entirely** — this is the safe interim either way.
+- ✅ **Calendar→Jobber push-completeness probe** (2026-06-24 audit follow-up #4, `2026-06-24_calendar_push_health.sql`):
+  the push is fire-and-forget, so a failed push left a silently un-synced visit. New `ops.v_calendar_push_health`
+  view surfaces (a) unresolved `visit_sync_flags` (explicit push failures) + (b) calendar/cron scheduled visits
+  with no Jobber link after a 15-min grace (re-pushable orphans); nightly pg_cron `calendar-push-health-check`
+  logs the count to `sync_log` (status `attention` when >0). A future Calendar "sync pending" icon can read the
+  view. Currently healthy (0). Smoke-tested 5/5. (Per the audit: visibility only, no retry queue.)
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
 - 🟡 3 Jobber clients are **not in the Airtable roster** but have old jobs + no SC/SA: **233-AH "Aloft hotels",
   234-PV "Pura Vida Wynwood", 238-PV "Pura Vida South Miami" (recurring)** — held from the close (would be
