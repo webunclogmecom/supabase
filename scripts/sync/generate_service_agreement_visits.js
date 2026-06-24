@@ -44,6 +44,7 @@ const IDEMPOTENCY_TOLERANCE_DAYS = 7;
 const horizonArg = process.argv.find(a => a.startsWith('--horizon-months='));
 const HORIZON_MONTHS = horizonArg ? Math.max(1, parseInt(horizonArg.split('=')[1], 10) || 12) : 12;
 const MAX_PER_JOB = 24;
+const MAX_CLEANUP = 40;   // safety cap: never auto-soft-delete more than this many stale visits in one run
 
 // Test / non-serviceable accounts that must NEVER auto-generate visits (Fred 2026-06-24):
 //   112-YA + 777-YA = Yan's test restaurants; 000-DH = Homestead Dump (a disposal site).
@@ -51,6 +52,18 @@ const MAX_PER_JOB = 24;
 // real recurring SA clients always carry an Airtable client_code. The exclusion applies even
 // when a code is passed via --client, so a stray manual run can't touch these either.
 const EXCLUDED_CLIENT_CODES = ['112-YA', '777-YA', '000-DH'];
+const EXCL_SQL = EXCLUDED_CLIENT_CODES.map(c => `'${c.replace(/'/g, "''")}'`).join(', ');
+
+// Shared SA-generating predicate (jobs aliased `j`, clients `c`) — used by BOTH the generation
+// query AND the stale-cleanup sweep so the two can never drift. A job generates visits IFF it is
+// an active, frequency-set, non-[OLD] Service Agreement for a real ACTIVE/RECURRING coded client.
+const JOB_PREDICATE = `j.frequency_days > 0
+      AND j.title ILIKE 'Service Agreement%'
+      AND j.title NOT ILIKE '%[OLD]%'
+      AND COALESCE(j.job_status,'') <> 'archived'
+      AND c.status IN ('ACTIVE','RECURRING')
+      AND c.client_code IS NOT NULL
+      AND c.client_code NOT IN (${EXCL_SQL})`;
 
 // ---- HTTP helpers -----------------------------------------------------------
 function http(opts, body) {
@@ -116,12 +129,7 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
     FROM jobs j
     JOIN clients c ON c.id = j.client_id
     LEFT JOIN line_items li ON li.job_id = j.id AND li.invoice_id IS NULL
-    WHERE j.frequency_days > 0
-      AND j.title ILIKE 'Service Agreement%'
-      AND COALESCE(j.job_status,'') <> 'archived'
-      AND c.status IN ('ACTIVE','RECURRING')
-      AND c.client_code IS NOT NULL
-      AND c.client_code NOT IN (${EXCLUDED_CLIENT_CODES.map(c => `'${c.replace(/'/g, "''")}'`).join(', ')})
+    WHERE ${JOB_PREDICATE}
       ${clientFilter}
     GROUP BY j.id, j.job_number, j.title, j.frequency_days, c.id, c.client_code, c.name
     ORDER BY c.client_code, j.job_number;`);
@@ -169,5 +177,34 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
       await rest('/visits', { method: 'POST', headers: { Prefer: 'return=minimal', 'X-App-Source': 'service-agreement-cron' }, body: JSON.stringify(toInsert.slice(i, i + 500)) });
     }
     console.log(`✓ inserted ${toInsert.length}`);
+  }
+
+  // ---- CLEANUP: soft-delete future cron visits whose SA job no longer qualifies --------------
+  // Catches SAs that were archived/deleted, had their Frequency removed, were retitled/[OLD]-tagged,
+  // or whose client was set inactive. Soft-delete (deleted_at) fires trg_push_visit_update ->
+  // jobber-push-visit -> visitDelete, so the visit is removed from Jobber too. Only future,
+  // source='supabase_cron' visits are ever touched — never a manual/Jobber visit or a past one.
+  // Runs only on the full daily run (--all), never a single --client run. Guardrail: if it would
+  // remove more than MAX_CLEANUP, ABORT and alert — a large count signals a data issue (e.g. a sync
+  // wrongly flipping many clients inactive), and mass-deleting visits is worse than leaving them.
+  if (ALL) {
+    const stale = await pg(`SELECT v.id FROM visits v
+      WHERE v.source = 'supabase_cron' AND v.deleted_at IS NULL AND v.visit_date >= '${today}'
+        AND NOT EXISTS (SELECT 1 FROM jobs j JOIN clients c ON c.id = j.client_id
+                        WHERE j.id = v.job_id AND ${JOB_PREDICATE})`);
+    const staleIds = stale.map(r => r.id);
+    console.log(`\nCleanup: ${staleIds.length} stale cron future visit(s) (SA archived/deleted/freq-removed/[OLD]/inactive).`);
+    if (EXECUTE && staleIds.length) {
+      if (staleIds.length > MAX_CLEANUP) {
+        console.error(`⚠ CLEANUP ABORTED: ${staleIds.length} stale > MAX_CLEANUP=${MAX_CLEANUP} — likely a bulk data issue. Not deleting; investigate.`);
+        process.exitCode = 1;
+      } else {
+        for (let i = 0; i < staleIds.length; i += 200) {
+          const chunk = staleIds.slice(i, i + 200);
+          await rest(`/visits?id=in.(${chunk.join(',')})`, { method: 'PATCH', headers: { Prefer: 'return=minimal', 'X-App-Source': 'service-agreement-cron' }, body: JSON.stringify({ deleted_at: new Date().toISOString() }) });
+        }
+        console.log(`✓ soft-deleted ${staleIds.length} stale visit(s) — visitDelete pushed to Jobber`);
+      }
+    }
   }
 })().catch(e => { console.error('FATAL', e.message, e.stack); process.exit(1); });
