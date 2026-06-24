@@ -161,7 +161,9 @@ For now the workaround: webhook-airtable writes GDO Number to all `service_confi
 for the client (not just GT). The 2026-05-25 backfill caught the historic gap.
 
 ### DERM 2-week rule (added 2026-05-22, per Fred)
-**Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required != false`, typically GT service) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
+**Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
+
+> **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01–04/09–11); `service_type='GT'` is unreliable (handleVisit defaults to GT; grey-water pumping is coded CL). Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic — never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
 
 To find the missing DERM in AT, cross-reference three fields on the AT DERM table:
 1. **`Visits`** — array of AT visit GIDs. Look each up in AT `Visits` table to get the true visit date (often differs from `GT Last Visit` field by weeks because dump dates lag behind service dates).

@@ -68,3 +68,8 @@ docs/reports/*.pdf
 # Local agent config + scratch dirs
 .claude/
 .temp/
+
+# scratch JSON/JSONL (one-off probe outputs)
+**/_*.json
+**/_*.jsonl
+**/_*.log

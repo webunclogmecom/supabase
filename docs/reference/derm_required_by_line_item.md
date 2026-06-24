@@ -1,47 +1,74 @@
-# DERM-required by line-item / service type (canonical mapping)
+# DERM-required by line-item (canonical mapping + derivation)
 
-**Source of truth:** Fred's Google Sheet — https://docs.google.com/spreadsheets/d/19ArflSwdhcpnu1U6Lii5q2VFmDLjwskurDCghN0aanE/edit (gid=0). Column A = "Requires DERM reporting" (Y/N), Column B = the formatted line-item type, Column C = the `#`. Re-export (`/export?format=csv&gid=0`) if the sheet changes — the sheet is canonical, this file is a snapshot captured 2026-06-02.
+**Status: IMPLEMENTED 2026-06-24** (migration `migrations/2026-06-24_derm_required_from_line_items.sql`,
+ADR [018](../decisions/018-derm-required-from-line-items.md)). Supersedes the 2026-06-02 stopgap.
+
+**Source of truth:** Fred's Google Sheet — https://docs.google.com/spreadsheets/d/19ArflSwdhcpnu1U6Lii5q2VFmDLjwskurDCghN0aanE/edit (gid=0). Column **"Requires DERM reporting"** (Y/N) per formatted line-item type (01–27).
 
 ## The rule
-**A visit requires a DERM manifest iff it includes a "Pumping" line item** (Grease Trap, Grey Water, or Lift Station pumping). Everything else — Cleaning, Warranty, Unclogging, Camera/Dye/Assessment, Labor, Parts, fees, GDO reporting — does **not** require DERM. (Confirms the earlier finding: the coarse `visits.service_type` GT/CL/LS code is too blunt — e.g. "03 - Pumping - Grey Water" is coded `CL` but DOES need DERM. The line-item type is the real signal.)
+**A visit requires a DERM manifest iff it includes a "Pumping" line item** — Grease Trap (incl. grease
+*interceptor*), Grey Water, or Lift Station pumping. Everything else (Cleaning, Hydrojet, Unclogging,
+Camera/Dye/Assessment, Labor, Parts, Warranty, fees, GDO reporting) does **not**.
 
-## Full mapping (snapshot 2026-06-02)
+`service_line_items.requires_derm = true` for exactly codes **{01, 02, 03, 04, 09, 10, 11}** (all Pumping;
+01–04 = Service Agreement, 09–11 = Service Call). This column is already correct and matches the sheet.
 
-| # | Line item | DERM? |
-|---|-----------|:---:|
-| 01 | Service Agreement - Pumping - Grease Trap & Tank Cleaning | **Y** |
-| 02 | Service Agreement - Pumping - Grease Trap | **Y** |
-| 03 | Service Agreement - Pumping - Grey Water | **Y** |
-| 04 | Service Agreement - Pumping - Lift Station & Tank Cleaning | **Y** |
-| 05 | Service Agreement - Cleaning - Main Line Cleaning | N |
-| 06 | Service Agreement - Cleaning - Aux Cleaning | N |
-| 07 | Service Agreement - Cleaning - Tank Cleaning | N |
-| 08 | Service Agreement - Warranty of Drainage | N |
-| 09 | Service Call - Pumping - Grease Trap & Tank Cleaning | **Y** |
-| 10 | Service Call - Pumping - Grey Water | **Y** |
-| 11 | Service Call - Pumping - Lift Station & Tank Cleaning | **Y** |
-| 12 | Service Call - Cleaning - Main Line Cleaning | N |
-| 13 | Service Call - Cleaning - Auxiliary Line Cleaning | N |
-| 14 | Service Call - Cleaning - Tank Cleaning | N |
-| 15 | Service Call - Unclogging - Residential - Manual | N |
-| 16 | Service Call - Unclogging - Residential - Hydrojet | N |
-| 17 | Service Call - Unclogging - Commercial - Manual | N |
-| 18 | Service Call - Unclogging - Commercial - Hydrojet | N |
-| 19 | Service Call - Camera Inspection | N |
-| 20 | Service Call - Dye Test | N |
-| 21 | Service Call - Assessment | N |
-| 22 | Service Call - Labor | N |
-| 23 | Service Call - Parts | N |
-| 24 | Service Call - Labor BUS | N |
-| 25 | Credit card fee (3.53%) | N |
-| 26 | ACH Fee (1%) | N |
-| 27 | GDO Online Reporting | N |
+`visits.service_type` (GT/CL/LS) is **too blunt** and is NOT the DERM signal: `handleVisit` *defaults*
+service_type to GT (so cleaning visits looked GT), and grey-water pumping is coded CL but DOES need DERM.
+The line items are the real signal.
 
-**DERM-required set: `#` ∈ {01, 02, 03, 04, 09, 10, 11}** (all "Pumping").
+## How `visits.derm_required` is derived
 
-## Planned fix (deferred — not yet applied)
-Replace the current **stopgap** (`manifest_pickable_visits` offers ALL non-GT visits; `derm.visits` flags all `derm_required IS NOT false` visits as Missing Docs — see `migrations/2026-06-02_manifest_pickable_all_service_types.sql`) with this precise per-type rule:
-1. Populate `visits.derm_required` from the visit's line items via this mapping (true iff it has a Pumping line item). Likely in the Jobber sync / a backfill keyed on `line_items.name` matched to the `#`/type.
-2. Once `derm_required` is reliable, both `manifest_pickable_visits` and `derm.visits.needs_manifest` key off `derm_required` only (drop the service_type heuristics). Then cleaning/unclogging visits correctly show "Not Required" and only Pumping visits are fileable + flagged.
+`public.fn_line_item_requires_derm(name)` → boolean (nullable):
+1. **Taxonomy-formatted** `"NN - ..."` → authoritative `requires_derm` for that code.
+2. else **free-text PUMPING** (`fn`'s `PUMP_RE`): a regulated vessel (grease trap / grease interceptor /
+   interceptor / grey water / lift station, typo-tolerant "Tap"/"Lyft") near a pump word in either order,
+   or an explicit pump-out (any word-form: pump/pumped/pumping/pumps out) → **true**. PUMP is tested
+   **before** NONPUMP so a co-occurring fee/cleaning token can never downgrade a pumping line.
+3. else **free-text recognized NON-pumping** (cleaning, hydrojet, unclog, camera, dye, assess, inspect,
+   labor, parts, warranty, fees, install, repair, …) → **false**.
+4. else **NULL** (unknown — e.g. bare "Service Agreement"/"Service", "Oil pumping").
 
-This is the clean version of the "it's per-visit, not by service type" option Fred deferred on 2026-06-02.
+`public.fn_visit_requires_derm(visit_id)` → boolean (nullable): classifies the **UNION** of the visit's
+line items across all three scopes (visit-scoped `visit_id`, invoice-scoped `invoice_id`, job-scoped
+`job_id`), then:
+- **any** item true → **true** (union, so pumping carried on the job/invoice is never masked);
+- has items, all classified, none true → **false**;
+- otherwise (some unknown, or no items) → **NULL**.
+
+**NULL is the safe default** — every consumer treats `derm_required IS NULL OR = true` as *still needs a
+manifest* (surfaced for review), so a genuinely-ambiguous visit is never silently dropped. False
+negatives (hiding a real DERM visit) are worse than noise.
+
+## Keeping it fresh (three writers)
+- **Calendar** — `create_calendar_visit` RPC sets it from the chosen `service_line_item` ids (`bool_or(requires_derm)`).
+- **Jobber sync** — `webhook-jobber.handleVisit` calls `set_visit_derm_required(visit_id)` after storing
+  the visit's line items (near-real-time, every poll).
+- **Nightly catch-up** — pg_cron `derm-required-rederive` (03:20 ET) runs `rederive_visits_derm_required()`
+  for line items that arrive later (esp. invoices). Watchdog idempotent: a 2nd run touches 0 rows.
+
+**Monotonic invariant (automated paths):** `set_visit_derm_required` + `rederive_visits_derm_required`
+never demote a stored **TRUE** to false/null and never write NULL — they only promote NULL→{true,false}
+and false→true. This stops a later non-pump invoice from hiding a pumping visit and protects a human's
+NULL→true reclassification. (The one-time backfill is authoritative: it writes the function's verdict
+including re-surfacing a stale false→null, protecting only existing trues.)
+
+## Consumers (all key off `derm_required`, NULL-safe)
+- `public.manifest_pickable_visits` — `WHERE completed AND (derm_required IS NULL OR = true) AND no manifest`.
+- `derm.visits.needs_manifest` = `COALESCE(derm_required, true)` (DERM Tracker "Missing Docs").
+- `customer.work_orders` — `WHERE COALESCE(derm_required, true) = true` (Field Portal grease-trap work orders).
+- `ops.v_derm_compliance` — missing-manifest count now uses `derm_required` (was `service_type='GT'`);
+  the view stays **GT-config-roster scoped** (it joins `service_configs` GT for equipment/frequency), so
+  grey-water/lift-station-**only** clients are tracked via `derm.visits`, not this ops dashboard.
+
+## Live result (2026-06-24 backfill, 706 completed visits)
+**436 true / 176 false / 94 null.** Notable corrections vs the old service_type heuristic: **41 GT visits
+→ false** (verified: all cleaning/unclog/camera/fees, no pumping line), **18 CL visits → true** (grey-water
+pumping). The 94 NULL are generic "Service Agreement"/"Service"/bare "Lyft Station" — surfaced for review,
+will resolve once Jobber line items are reformatted to the 01–27 taxonomy.
+
+## Full code mapping (matches the sheet)
+DERM-required (`Y`): 01,02,03,04 (SA Pumping) · 09,10,11 (SC Pumping). All others (05–08, 12–27) = `N`.
+
+Rollback: `public.derm_required_backfill_snapshot_2026_06_24` (visit_id, service_type, prior value);
+`cron.unschedule('derm-required-rederive')` to stop the nightly job without reverting the migration.

@@ -59,8 +59,14 @@ archived Wynd phantom) are edge cases needing Itemized-sheet line items or archi
   - `visits.service_line_item_id` = the primary service; the full set lives in `line_items`
     (visit scope).
   - `visits.service_type` (GT/CL/WD/LS, or NULL) is derived from the primary service.
-  - **DERM required** iff any chosen service is a pumping item (`service_line_items.requires_derm`,
-    codes 01–04 / 09–11) → `visits.derm_required`.
+  - **DERM required** iff the visit has a *pumping* line item (`service_line_items.requires_derm`,
+    codes 01–04 / 09–11). `visits.derm_required` is **derived from the visit's line items** (union of
+    visit/invoice/job scope; taxonomy code → free-text classifier → NULL), **not** `service_type` —
+    which is too blunt (handleVisit defaults to GT; grey-water pumping is coded CL but needs DERM). NULL
+    = unknown = surfaced for review. Full spec: [`reference/derm_required_by_line_item.md`](reference/derm_required_by_line_item.md)
+    + ADR [018](decisions/018-derm-required-from-line-items.md). Set by the Calendar RPC, `handleVisit`
+    (`set_visit_derm_required`), and nightly pg_cron `derm-required-rederive` (all monotonic — never
+    demote a known TRUE).
 - **Location grain** — a visit hits one **property** (address) + one or more **`client_locations`**
   (tenant/manhole) via `visit_locations` (M:N). Single-site clients default to `'Main'`.
 - **Soft-delete** — always filter `visits.deleted_at IS NULL`.
@@ -118,6 +124,16 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
 - ✅ **`[OLD]` suffix on every remaining open non-SC/SA job** (36 more, Fred 2026-06-23). Invariant verified:
   every open job is now either a clean `Service Call` / `Service Agreement%` (the restructure jobs) or carries
   `[OLD]` — 0 untagged legacy jobs left open. (Title rename only — never destroys visits.)
+- ✅ **DERM-required derived from line items** (2026-06-24, ADR 018) — `visits.derm_required` populated
+  from each visit's line items (not `service_type`); backfill of 706 completed visits → 436 true / 176
+  false / 94 null (41 GT→false, 18 grey-water CL→true corrected). Functions + monotonic writers + nightly
+  pg_cron + `ops.v_derm_compliance` fix. Adversarially reviewed (5-lens workflow) before apply.
+- ✅ **Smoke-tested the Calendar SC flow + DERM logic on 112-YA / 777-YA** (2026-06-24, 14/14 passed):
+  created 777-YA's clean Service Call (#99900941); via `create_calendar_visit` a SC + pumping line item
+  (09) → `derm_required=true` → pickable + needs_manifest, a SC + cleaning (12) → false → not required;
+  Jobber push link→unlink round-trip; plus free-text classifier, 3-source resolution, monotonicity, and
+  soft-delete exclusion. All test artifacts cleaned up (0 orphaned Jobber visits). The SC catalog exposes
+  all 16 SC line items (09–24).
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
 - 🟡 3 Jobber clients are **not in the Airtable roster** but have old jobs + no SC/SA: **233-AH "Aloft hotels",
   234-PV "Pura Vida Wynwood", 238-PV "Pura Vida South Miami" (recurring)** — held from the close (would be

@@ -667,6 +667,13 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     if (liErr) console.error(`Visit ${numericId}: line_items insert failed:`, liErr.message)
   }
 
+  // Derive DERM-required from this visit's line items (visit/invoice/job-scoped, per the taxonomy
+  // "Requires DERM reporting" rule). MONOTONIC + idempotent in SQL: never demotes a known TRUE,
+  // never writes NULL, only writes a real change. Best-effort/near-real-time; the nightly pg_cron
+  // re-derive (derm-required-rederive) is the catch-up for invoice line items that arrive later.
+  const { error: dermErr } = await supabase.rpc('set_visit_derm_required', { p_visit_id: entityId })
+  if (dermErr) console.error(`Visit ${numericId}: set_visit_derm_required failed:`, dermErr.message)
+
   // Maintain visit_locations (M:N): attribute the visit to its client's GDO-confirmed
   // manhole(s). Seed defaults ONLY when the visit has none yet, so FP/ops manual tagging
   // survives every replay. Single-location client -> its one location; multi-location ->
