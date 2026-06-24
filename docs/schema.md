@@ -84,7 +84,8 @@ webhook_tokens                — system/ops tables
 | client_code | TEXT | 3-digit prefix, e.g. `"009"` |
 | name | TEXT | Clean display name |
 | status | TEXT | `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE` |
-| client_class | TEXT | `commercial` or `residential`. Source: Jobber `Client.isCompany`. Added 2026-05-29. Currently 311 commercial / 79 residential. See `project_residential_clients.md` — STORE != ACT-on. |
+| client_class | TEXT | `commercial` or `residential`. Default source: Jobber `Client.isCompany`. Added 2026-05-29. ~323 commercial / 86 residential. **Jobber `isCompany` is unreliable for Airtable-coded clients (all `true`)** — verify residential by Google Places address lookup, then pin via `client_class_source='manual'`. See `project_residential_clients.md` — STORE != ACT-on. |
+| client_class_source | TEXT | Provenance of `client_class`: `jobber` (auto-derived from `isCompany` by webhook-jobber + backfill_clients_class.js) or `manual` (hand-set override the poll must NOT clobber). Added 2026-06-24 (`2026-06-24_clients_class_source.sql`). Guarded by `trg_clients_protect_manual_class` (BEFORE UPDATE silently preserves a `manual` value). 3 residentials pinned (119-ME/121-FRO/126-YM). |
 | balance | NUMERIC(12,2) | Outstanding balance |
 | notes | TEXT | |
 | group_id | BIGINT FK | Optional client grouping |

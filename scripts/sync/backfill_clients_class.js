@@ -88,6 +88,7 @@ async function jobberIsCompany(gid) {
 
   const rows = await pg(`
     SELECT c.id, c.name, c.client_class AS current_class,
+           c.client_class_source AS class_source,
            esl.source_id AS jobber_gid
     FROM public.clients c
     JOIN public.entity_source_links esl
@@ -100,6 +101,12 @@ async function jobberIsCompany(gid) {
   let lastRefresh = Date.now();
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
+    // Skip manual overrides — a hand-set client_class (e.g. residential clients
+    // Jobber reports isCompany=true) must not be re-derived. The DB trigger
+    // trg_clients_protect_manual_class would silently revert it anyway, but
+    // skipping here keeps the report accurate (no phantom willUpdate). See
+    // docs/migrations/2026-06-24_clients_class_source.sql.
+    if (r.class_source === 'manual') { unchanged.push({ id: r.id, class: r.current_class, manual: true }); continue; }
     if (Date.now() - lastRefresh > 5 * 60_000) { await getToken(); lastRefresh = Date.now(); }
     if (i > 0 && i % 50 === 0) console.log(`  ${i}/${rows.length}  upd=${willUpdate.length} same=${unchanged.length} err=${errors.length}`);
 

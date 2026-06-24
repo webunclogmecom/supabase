@@ -279,7 +279,15 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     //   - reactivating INACTIVE → ACTIVE
     //   - otherwise             → leave status untouched (preserve AT value)
     const { data: cur } = await supabase
-      .from('clients').select('client_code, status').eq('id', existingId).maybeSingle()
+      .from('clients').select('client_code, status, client_class_source').eq('id', existingId).maybeSingle()
+    // Respect a manual client_class override (e.g. residential clients that Jobber
+    // reports isCompany=true — 119-ME/121-FRO/126-YM). The DB trigger
+    // trg_clients_protect_manual_class also enforces this, but dropping the field
+    // here avoids a guaranteed no-op write on every poll. See
+    // docs/migrations/2026-06-24_clients_class_source.sql.
+    if (cur && (cur as { client_class_source?: string }).client_class_source === 'manual') {
+      delete clientRow.client_class
+    }
     if (c.isArchived) {
       clientRow.status = 'INACTIVE'
     } else if (cur && cur.status === 'INACTIVE') {
