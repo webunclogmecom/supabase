@@ -85,12 +85,30 @@ archived Wynd phantom) are edge cases needing Itemized-sheet line items or archi
 | `ops.client_locations` (view) | the location picker. |
 | `public.create_calendar_visit(...)` (RPC) | **atomic** create: inserts the visit (`source='visit-calendar'`, `visit_status='scheduled'`, derived `service_type` + `derm_required`, job's `property_id`) + visit-scoped `line_items` + `visit_locations` (form choice overrides the auto-seed). SECURITY DEFINER (`line_items` has no anon INSERT). Migration `2026-06-23_create_calendar_visit_rpc.sql`. |
 | `ops.create_calendar_visit(...)` (wrapper) | so the app's ops-schema client can call it. Migration `2026-06-23_ops_calendar_form_exposure.sql`. |
+| `public.ripple_reschedule_visit(p_visit_id, p_new_date, p_new_start_at, p_new_end_at, p_dry_run)` (RPC) | **ripple reschedule** — moves a Calendar/SA-cron visit and re-anchors the job's FORWARD chain at `jobs.frequency_days` from the moved date (07/01→07/03 ⇒ next 07/13, 07/23…). Each shifted row pushes ONCE via the existing `trg_push_visit_update` (no push fork). SECURITY DEFINER; scope = same `job_id`, `source IN ('visit-calendar','supabase_cron')`, not completed/cancelled, `deleted_at IS NULL`, `visit_date > LEAST(old,new)`; fan-out cap 24 RAISEs; `freq<=0` ⇒ move-only. Migration `2026-06-25_ripple_reschedule_visit_rpc.sql`. |
 
 ### Create Visit flow
 client picker → that client's SC/SA cards (SA shows frequency + agreed services; SC = pick from the
 SC catalog) → DERM badge if any service is pumping → property/location (default Main) → date/time/
 instructions/truck → `rpc('create_calendar_visit')`. Diego uses this (and, near-term, the migration
 PDF) to create the pending visits onto the clean SC/SA jobs.
+
+### Ripple reschedule (RPC, built 2026-06-25 — dry-run-verified, NOT yet wired)
+Moving a visit must keep the chain's cadence: if a client is on a 10-day frequency with visits 07/01 &
+07/11 and you drag 07/01→07/03 (to group same-zone visits on one day), the next visit should re-anchor
+to 07/13, not stay at 07/11. `ripple_reschedule_visit` does this **re-anchor at frequency from the
+moved date** (verified against job 1635: earliest-forward, middle-forward, and last-moved-before-first
+all re-space at exactly `freq`). Chosen as an **RPC, not a trigger** — `fn_push_visit_to_jobber` has no
+recursion depth guard, so a date-change trigger that itself writes `visit_date` would infinite-loop; the
+RPC's cascade lives in its own loop and reuses the verified push path unchanged. **Rollout gates before
+global enable** (the push is live for all 144 clients, so a cascade writes real Jobber reschedules):
+1. ✅ ship with `p_dry_run` + dry-run real chains (done 2026-06-25).
+2. ⏳ first LIVE cascade on ONE real short chain (≤3 future visits) — verify in Jobber exactly one
+   `visitEditSchedule` per row, GID intact, no orphan on old dates. **Needs Fred go (customer-facing).**
+3. ⏳ wire the Lovable Calendar drag-drop to call `ripple_reschedule_visit` (NOT a bare PATCH, which
+   moves+pushes ONE visit but does NOT ripple) with an **opt-in confirmation showing the N dates that
+   will change** (re-anchor is destructive to deliberately-placed spacing).
+4. ⏳ post-ripple reconcile/watchdog for the fire-and-forget pg_net pushes; then remove any gate to go global.
 
 ## 5. Calendar → Jobber push (LIVE for all clients — 2026-06-23)
 
