@@ -1,6 +1,8 @@
 # Service Agreement vs Service Call — visit generation model
 
-**Source:** Fred, verbal explanation 2026-06-02. **Status:** SPEC — to be implemented. **Test client:** 112-YA ONLY.
+**Source:** Fred, verbal explanation 2026-06-02. **Status:** ✅ **ACTIVATED 2026-06-24** — generator + daily cron live for ALL clients (no longer 112-YA-only).
+
+> **Activation (2026-06-24):** the generator (`scripts/sync/generate_service_agreement_visits.js`) + the daily cron (`.github/workflows/sa-visit-generation.yml`, cron `0 10 * * *` = 06:00 ET) are LIVE. Backfilled **676 SA visits across 143 clients / 164 jobs**, all pushed + GID-linked to Jobber (0 orphans; `ops.v_calendar_push_health` clean; 0 duplicates). **Rolling horizon = 6 months** (`--horizon-months=6`). Pre-activation hardening (commit before backfill): `derm_required` seeded via canonical `fn_line_item_requires_derm` (not crude name match), `service_type` derived from line items (no NULLs → fixes ops views + the rebound-duplicate vector), client-status guard (`ACTIVE`/`RECURRING` only), and `jobber-push-visit` now retries on Jobber `THROTTLED`/429. The old `service_configs`-based generator (`generate-recurring-visits.yml`) is **retired/superseded** by this.
 
 This is the NEW model for how recurring visits are generated and what data they carry. It **replaces** the old generator that produced bare `GT`/`CL` visits from `service_configs.frequency_days`. From now on, visits are generated from **Jobber jobs** and carry **line items**.
 

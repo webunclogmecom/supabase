@@ -10,28 +10,22 @@ name: SA visit generation (DB + Jobber schedule)
 #   generate -> insert -> trigger -> push -> Jobber visit created (verified via
 #   Jobber API) -> soft-delete -> push delete -> gone from Jobber. Clean.
 #
-# ⏸ DISABLED until the new Jobber jobs land (the Jobs restructure from the
-# Airtable "Job Line Items" pricing table). GO-LIVE CHECKLIST:
-#   1. Create the new Jobs in Jobber per docs/jobber-jobs-service-call-restructure-PLAN.md
-#      (each with the Frequency custom field; webhook syncs them to public.jobs
-#      with frequency_days).
-#   2. Widen the push triggers from the 112-YA test gate to all clients —
-#      recreate both WITHOUT the "new.client_id = 381" condition:
-#        DROP TRIGGER trg_push_visit_insert ON public.visits;
-#        CREATE TRIGGER trg_push_visit_insert AFTER INSERT ON public.visits
-#          FOR EACH ROW WHEN (new.source IN ('visit-calendar','supabase_cron'))
-#          EXECUTE FUNCTION fn_push_visit_to_jobber();
-#        -- and trg_push_visit_update identically, keeping its existing
-#        -- column-change WHEN conditions (date/start/end/title/job_id/
-#        -- service_line_item_id/deleted_at IS DISTINCT FROM).
-#   3. Uncomment the schedule below.
-#   4. First run: workflow_dispatch with execute=false (dry-run), eyeball the
-#      plan, then run with execute=true.
+# ✅ ACTIVATED 2026-06-24 — daily schedule live (06:00 ET). Go-live checklist (all done):
+#   1. ✅ New SA jobs exist in Jobber with the Frequency custom field (171 active SA jobs;
+#         public.jobs.frequency_days synced by the jobs poll / fetch_service_agreement_jobs.js).
+#   2. ✅ Push triggers widened off the 112-YA test gate to all clients
+#         (migration 2026-06-23_widen_jobber_push_all_clients.sql).
+#   3. ✅ Schedule uncommented below.
+#   4. ✅ Backfilled 2026-06-24: 676 SA cron visits across 143 clients, 100% pushed +
+#         GID-linked to Jobber, 0 orphans (ops.v_calendar_push_health clean).
+# Horizon: --horizon-months=6 (rolling). The daily run keeps each SA job's chain extended
+# to ~6 months and is idempotent (±7d job-scoped dedup); jobber-push-visit retries on
+# Jobber throttle. See docs/service-agreement-visit-generation.md.
 # ============================================================================
 
 on:
-  # schedule:
-  #   - cron: '0 10 * * *'   # daily 06:00 EDT / 05:00 EST — after overnight shift
+  schedule:
+    - cron: '0 10 * * *'   # daily 06:00 EDT / 05:00 EST — after overnight shift
   workflow_dispatch:
     inputs:
       execute:
@@ -65,4 +59,4 @@ jobs:
           ARGS=""
           if [ "${{ github.event.inputs.client }}" != "" ]; then ARGS="--client=${{ github.event.inputs.client }}"; else ARGS="--all"; fi
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.execute }}" = "true" ]; then ARGS="$ARGS --execute"; fi
-          node scripts/sync/generate_service_agreement_visits.js $ARGS
+          node scripts/sync/generate_service_agreement_visits.js $ARGS --horizon-months=6
