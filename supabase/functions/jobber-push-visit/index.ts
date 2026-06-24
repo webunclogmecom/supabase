@@ -5,8 +5,10 @@
 // into Jobber. The Calendar app is the MASTER; Jobber follows.
 //
 // Invoked by a DB trigger (pg_net) with JSON body { op, visit_id } and an
-// Authorization: Bearer <service_role_key> header. Deployed --no-verify-jwt
-// (like the webhook receivers); auth is the service-key bearer check below.
+// Authorization: Bearer <service_role_key> header. Deployed WITH verify_jwt=true
+// (pinned in supabase/config.toml): the gateway verifies the JWT signature and the
+// handler additionally requires role=service_role (bearerRole below only DECODES the
+// token, so the gateway MUST verify it — do NOT deploy this one --no-verify-jwt).
 //
 //   op = 'upsert'  -> create (if no Jobber link) or edit schedule/title (if linked)
 //   op = 'delete'  -> visitDelete in Jobber (soft-delete: visits.deleted_at set)
@@ -46,13 +48,26 @@ async function getJobberToken(): Promise<string> {
   return t.access_token;
 }
 
-async function gql(token: string, query: string, variables?: unknown) {
+async function gql(token: string, query: string, variables?: unknown, _retry = 0): Promise<any> {
   const r = await fetch("https://api.getjobber.com/api/graphql", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-JOBBER-GRAPHQL-VERSION": GQL_VERSION },
     body: JSON.stringify({ query, variables }),
   });
-  const j = await r.json();
+  const j = await r.json().catch(() => ({}));
+  // Jobber's GraphQL API is a cost-based leaky bucket. Retry THROTTLED / HTTP 429 with
+  // exponential backoff — WITHOUT this, a backfill burst silently loses visitCreate calls
+  // (the push is fire-and-forget from pg_net; a throw here just 500s with no retry, leaving
+  // an orphan calendar visit with no Jobber GID). Mirrors scripts/sync/lib/jobber.js.
+  const throttled = r.status === 429 ||
+    (Array.isArray(j.errors) && j.errors.some((e: any) =>
+      e?.extensions?.code === "THROTTLED" || /throttl/i.test(e?.message || "")));
+  if (throttled && _retry < 5) {
+    const waitMs = Math.min(30_000, 1_000 * Math.pow(2, _retry)) + _retry * 250;
+    console.log(`[push] Jobber throttled — backoff ${waitMs}ms (retry ${_retry + 1}/5)`);
+    await new Promise((s) => setTimeout(s, waitMs));
+    return gql(token, query, variables, _retry + 1);
+  }
   if (j.errors) throw new Error(`GraphQL: ${JSON.stringify(j.errors).slice(0, 300)}`);
   return j.data;
 }

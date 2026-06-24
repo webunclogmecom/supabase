@@ -406,6 +406,13 @@ verify_jwt = false
 [functions.sync-jobber-poll]
 verify_jwt = false
 
+# jobber-push-visit is the EXCEPTION — it MUST be verify_jwt=true. It is invoked by
+# fn_push_visit_to_jobber with a service_role bearer, and its handler only DECODES the JWT
+# to check role=service_role (bearerRole). The gateway MUST verify the signature, otherwise
+# a forged role=service_role token would pass. Never deploy this one --no-verify-jwt.
+[functions.jobber-push-visit]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

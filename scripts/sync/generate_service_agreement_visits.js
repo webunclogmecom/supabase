@@ -9,7 +9,8 @@
 // and generates scheduled visits every frequency_days days. The Calendar app is the
 // source of truth for visits; each generated visit carries job_id, so its line items,
 // frequency and Jobber link all resolve through the job (3NF, nothing copied onto the
-// visit except the title + DERM flag).
+// visit except the title, service_type and DERM flag — both derived from the job's
+// line items via the canonical service_line_items taxonomy / fn_line_item_requires_derm).
 //
 // Anchor precedence (per job):
 //   1. max scheduled FUTURE visit for THIS job   -> +freq   (extend the chain)
@@ -89,13 +90,29 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
   const jobs = await pg(`
     SELECT j.id AS job_id, j.job_number, j.title, j.frequency_days,
            c.id AS client_id, c.client_code, c.name AS client_name,
-           COALESCE(bool_or(li.name ILIKE '%pumping%'), false) AS derm_required
+           -- derm_required: canonical taxonomy classifier (ADR-018), NOT a crude name match.
+           -- Keying off service_line_items.requires_derm via fn_line_item_requires_derm avoids
+           -- false positives (e.g. a non-pump item whose name contains "pumping"); those would
+           -- be PERMANENT because the nightly rederive is monotonic (never demotes a TRUE).
+           -- NULL (no classifiable line item) is allowed = unknown = surfaced/safe.
+           bool_or(public.fn_line_item_requires_derm(li.name)) AS derm_required,
+           -- service_type derived from the job's line items (GT > CL > WD priority, default GT),
+           -- mirroring webhook-jobber.handleVisit so a bounced-back visit promotes (matches on
+           -- service_type) instead of inserting a duplicate. Never leave it NULL.
+           COALESCE((
+             SELECT sli.service_type
+             FROM line_items l2
+             JOIN service_line_items sli ON sli.code = lpad(substring(btrim(l2.name) from '^([0-9]+)'), 2, '0')
+             WHERE l2.job_id = j.id AND l2.invoice_id IS NULL AND sli.service_type IS NOT NULL
+             ORDER BY CASE sli.service_type WHEN 'GT' THEN 1 WHEN 'CL' THEN 2 WHEN 'WD' THEN 3 ELSE 4 END
+             LIMIT 1), 'GT') AS service_type
     FROM jobs j
     JOIN clients c ON c.id = j.client_id
     LEFT JOIN line_items li ON li.job_id = j.id AND li.invoice_id IS NULL
     WHERE j.frequency_days > 0
       AND j.title ILIKE 'Service Agreement%'
       AND COALESCE(j.job_status,'') <> 'archived'
+      AND c.status IN ('ACTIVE','RECURRING')
       ${clientFilter}
     GROUP BY j.id, j.job_number, j.title, j.frequency_days, c.id, c.client_code, c.name
     ORDER BY c.client_code, j.job_number;`);
@@ -126,13 +143,14 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
     }
     const fresh = dates.filter(d => !existing.some(v => Math.abs(diffDays(v.visit_date, d)) <= IDEMPOTENCY_TOLERANCE_DAYS));
 
-    console.log(`#${job.job_number} "${job.title}" (db job ${job.job_id}) freq=${job.frequency_days}d derm=${job.derm_required}`);
+    console.log(`#${job.job_number} "${job.title}" (db job ${job.job_id}) freq=${job.frequency_days}d type=${job.service_type} derm=${job.derm_required}`);
     console.log(`   anchor=${anchor} (${anchorSrc}) | lastCompleted=${lastCompleted || 'none'} | existing=${existing.length} | generate=${fresh.length}`);
     fresh.forEach(d => console.log(`     + ${d}`));
 
     for (const d of fresh) {
       toInsert.push({ client_id: job.client_id, job_id: job.job_id, visit_date: d,
-        visit_status: 'scheduled', source: 'supabase_cron', title: job.title, derm_required: job.derm_required });
+        visit_status: 'scheduled', source: 'supabase_cron', title: job.title,
+        service_type: job.service_type, derm_required: job.derm_required });
     }
   }
 
