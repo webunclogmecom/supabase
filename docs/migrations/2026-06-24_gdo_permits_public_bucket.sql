@@ -1,0 +1,22 @@
+-- ============================================================================
+-- Migration: 2026-06-24_gdo_permits_public_bucket.sql
+-- Purpose: Make GDO permit PDFs servable by the anon Visit Calendar drawer.
+--          Decision (Fred 2026-06-24): serve GDO permits from a PUBLIC bucket —
+--          same model as DERM manifests (public bucket "GT - Visits Images" +
+--          public URLs). GDO permits are Miami-Dade regulatory documents Fred
+--          considers non-sensitive; simplest path, no signed-URL Edge Function.
+-- Effect:  storage.buckets 'gdo-permits' public=false -> true. The 49 already
+--          ingested permits (gdo/GDO-<n>.pdf, ~232KB application/pdf) now render
+--          at:  https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/gdo-permits/<permit_document_path>
+--          (permit_document_path stays the bucket-relative path, e.g. gdo/GDO-00092.pdf;
+--          the frontend builds the public URL — no full-URL column change needed).
+-- Exposure: objects in this bucket become world-readable by path (gdo/GDO-<n>.pdf
+--           is enumerable). Accepted by Fred — permits are public regulatory records.
+-- Idempotent: re-running the UPDATE is a no-op once public=true.
+-- PENDING (separate task): backfill the 97 ACTIVE GDOs that still have NULL
+--           permit_document_path from the live Miami-Dade DERM document API
+--           (generalize docs/audits/2026-05-25-gdo-phase-2/probes/18_phase_6_pdf_backfill.js,
+--           needs SUPABASE_SERVICE_ROLE_KEY). Until then those rows show the
+--           Calendar drawer's "No permit on file" empty-state.
+-- ============================================================================
+UPDATE storage.buckets SET public = true WHERE id = 'gdo-permits';
