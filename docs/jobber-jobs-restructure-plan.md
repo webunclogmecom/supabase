@@ -114,6 +114,14 @@ For the SKIPPED jobs, future/today pending visits whose service maps to a Servic
 - After migration: **skip-list = 15** (was 19), **needs-invoicing = 41** (was 40, +168-AVA old job). Scratch result files: `_visit_migrate_plan.json`, `_visit_migrate_results.json`.
 - **GOTCHA — `visitCreate` does NOT carry `assignedUsers` (fixed 2026-06-23):** the migration payload `{title,instructions,schedule}` recreated the 4 visits **unassigned** — the original crew was silently dropped. Any future pending-visit rescue MUST capture the old visit's `assignedUsers` *before* `visitDelete`, then re-apply on the new visit via **`visitEditAssignedUsers(visitId, input:{ assignedUserIds:[EncodedId!]! })`** (replace-set). Backfilled the 4: 092-TCE/104-PV/186-PV → Aaron Driver; 168-AVA → Grecia + Ishad Knight + Aaron Driver. (Other migrated visit fields — title, schedule, instructions — *do* carry over correctly.)
 
+## 2026-06-24 — second archive pass (visits since completed)
+Re-checked all non-archived Jobber jobs for archiving (Fred). **Reliable keep-rule:** `#999` number + not `[OLD]` + SA/SC title = the 402 real jobs — NEVER touched (verified 0 leaked into the candidate set). Candidates = 60 `[OLD]`-tagged + 6 untagged-old `#100xxxxx` duplicates whose client already has a `#999` replacement (119-ME, 128-MF, #10000709, 112-YA #11100534). `jobClose(COMPLETE_PAST_DESTROY_FUTURE)` on the 52 with all-COMPLETED visits:
+- **8 newly archived** (+2 already archived) — fully off the active list.
+- **44 closed but `requires_invoicing`** — Jobber won't archive a job with uninvoiced completed work; ops must invoice → then archive from the Actions menu (same blocker as the 2026-06-23 rollout's 40).
+- **12 skipped** — still have a non-COMPLETED (LATE/UPCOMING/UNSCHEDULED) visit; complete/reschedule/cancel it first, then re-run.
+- **4 orphan-risk clients left untouched** (021-GRA, 032-LG, 053-PV, 145-NON — only an old `#100xxxxx` SA+SC pair, no `#999` replacement; need replacement jobs or a keep decision).
+DB `job_status` reconciled to Jobber for the archived ones (status changes don't auto-sync — see `reference_jobs_sync_gaps`). The archive pass is idempotent + resumable (re-run skips already-archived).
+
 ## Status log
 - 2026-06-22: plan finalized; titles audited clean (163/163); API discovered; **jobCreate validated on 112-YA then 031-KRU (3 jobs created OK)**.
 - 2026-06-22: **Chrome UI verify DONE** — all 3 new 031-KRU jobs confirmed live in the Jobber web UI (Chrome, not Brave) with correct titles/amounts.
