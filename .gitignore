@@ -64,11 +64,6 @@ test_5_visits.csv
 **/*_raw.json
 reports/
 docs/reports/*.pdf
-# ...but DO track report SOURCE (generator scripts + their docs); only generated PDFs/outputs stay ignored
-!docs/reports/
-!docs/reports/*.md
-!scripts/reports/
-!scripts/reports/*.py
 
 # Local agent config + scratch dirs
 .claude/
