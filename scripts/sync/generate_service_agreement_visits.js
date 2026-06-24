@@ -45,6 +45,13 @@ const horizonArg = process.argv.find(a => a.startsWith('--horizon-months='));
 const HORIZON_MONTHS = horizonArg ? Math.max(1, parseInt(horizonArg.split('=')[1], 10) || 12) : 12;
 const MAX_PER_JOB = 24;
 
+// Test / non-serviceable accounts that must NEVER auto-generate visits (Fred 2026-06-24):
+//   112-YA + 777-YA = Yan's test restaurants; 000-DH = Homestead Dump (a disposal site).
+// Null client_code (residential / junk / not-imported, e.g. "DUMP Pompano") is also excluded —
+// real recurring SA clients always carry an Airtable client_code. The exclusion applies even
+// when a code is passed via --client, so a stray manual run can't touch these either.
+const EXCLUDED_CLIENT_CODES = ['112-YA', '777-YA', '000-DH'];
+
 // ---- HTTP helpers -----------------------------------------------------------
 function http(opts, body) {
   return new Promise((res, rej) => {
@@ -113,6 +120,8 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
       AND j.title ILIKE 'Service Agreement%'
       AND COALESCE(j.job_status,'') <> 'archived'
       AND c.status IN ('ACTIVE','RECURRING')
+      AND c.client_code IS NOT NULL
+      AND c.client_code NOT IN (${EXCLUDED_CLIENT_CODES.map(c => `'${c.replace(/'/g, "''")}'`).join(', ')})
       ${clientFilter}
     GROUP BY j.id, j.job_number, j.title, j.frequency_days, c.id, c.client_code, c.name
     ORDER BY c.client_code, j.job_number;`);
