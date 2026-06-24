@@ -105,6 +105,18 @@ Jobber visit removed + ESL unlinked.
 poll sees a Jobber visit GID-linked to a `source='visit-calendar'` row it skips the clobber and
 preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays the master.
 
+### Inbound Jobber sync — DECIDED: keep ON (Fred 2026-06-24)
+Both Jobber and the Calendar are **live editing surfaces**, so inbound stays ON (re-decouple deferred
+to the Jobber sunset). Verified the team's workflow needs it: drivers complete visits in Jobber, and
+Diego/Yannick create/update clients + create visits in Jobber. **Ownership model:**
+- **Clients** — always Jobber-mastered (sync straight in; never part of the visit toggle).
+- **A visit is mastered by its birthplace:** born-in-Jobber → Jobber-mastered (create/reschedule/complete
+  all flow in); born-in-Calendar/cron → Calendar-mastered for schedule (inbound is completion-only per #3),
+  Jobber may mark it complete but can't move it.
+- **Workflow rule for the team:** reschedule a *Calendar-made* visit *in the Calendar* (not Jobber) —
+  a Jobber-side reschedule of a Calendar-born visit is intentionally ignored on inbound (and our push
+  re-asserts the Calendar's schedule). Everything created/managed in Jobber flows in normally.
+
 > Still gated: only `source IN ('visit-calendar','supabase_cron')` push — inbound `source='jobber'`
 > visits never re-push. Only NEW inserts / qualifying field-changes push; existing rows aren't
 > retro-pushed. The SA visit-generation cron (`sa-visit-generation.yml`, `source='supabase_cron'`)

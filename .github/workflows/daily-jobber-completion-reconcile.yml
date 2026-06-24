@@ -11,7 +11,8 @@ name: Daily Jobber visit completion reconcile
 # visit_status / completed_at / start_at / end_at / visit_date.
 
 on:
-  # schedule RE-ENABLED 2026-06-05 (Fred, TEMPORARY — repopulate from Jobber; turn off ~next week):
+  # schedule RE-ENABLED 2026-06-05; DECIDED PERMANENT 2026-06-24 (Fred): inbound Jobber sync stays ON
+  # (team uses Jobber for driver completions + client/visit CRUD). Re-decouple deferred to Jobber sunset.
   schedule:
     - cron: '30 8 * * *'
   workflow_dispatch:
