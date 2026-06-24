@@ -11,7 +11,8 @@
 --   * visit_locations: the passed client_location_ids, else the client's 'Main' (else first
 --     active) location.
 --   * property: explicit p_property_id, else the job's property, else the client's primary.
---   The visits INSERT fires the existing trg_push_visit_insert (Jobber push, gated to 112-YA) and
+--   The visits INSERT fires the existing trg_push_visit_insert (Jobber push — widened to ALL clients
+--   2026-06-23, see 2026-06-23_widen_jobber_push_all_clients.sql) and
 --   the audit trigger (visits is audited, ADR 010) — app_source attributes via PostgREST context.
 -- Audit (ADR 010): FUNCTION (no trigger). Writes to already-audited public.visits.
 -- Grants: anon, authenticated, service_role EXECUTE.
