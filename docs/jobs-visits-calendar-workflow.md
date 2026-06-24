@@ -139,6 +139,10 @@ preserves the calendar-mastered row (no source-flip, no loop). So Calendar stays
   duplicate ACTIVE row for one Jobber job (the one-card-per-job + ESL-bridge invariant). Root cause of the
   2 historical dupes (10000317/318) was a raw-numeric-vs-base64 GID drift, now historical (2/1691 ESLs).
   Smoke-tested 3/3 (dupe blocked, archived dupe allowed, normal insert ok).
+- ✅ **Soft-delete leak fixed** (2026-06-24 audit follow-up #2, `2026-06-24_v_visits_live_softdelete.sql`):
+  66 soft-deleted visits were leaking through 6 `ops.*` views (revenue/KPI/route/service-due/passthrough).
+  New canonical base view `public.v_visits_live` (`visits WHERE deleted_at IS NULL`); the 6 views re-pointed
+  at it (future views should read it, not bare `visits`). `ops.visits` 813→747. Smoke-tested 10/10.
 - ⏳ Enable the SA visit-generation cron (`sa-visit-generation.yml`) — the remaining go-live step.
 - 🟡 3 Jobber clients are **not in the Airtable roster** but have old jobs + no SC/SA: **233-AH "Aloft hotels",
   234-PV "Pura Vida Wynwood", 238-PV "Pura Vida South Miami" (recurring)** — held from the close (would be

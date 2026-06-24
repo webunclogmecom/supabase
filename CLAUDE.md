@@ -122,11 +122,15 @@ soft-deleted rows leak back into Calendar / Field Portal / DERM Tracker.
 Already patched (2026-05-29): `ops.v_calendar_visit`, `customer.scheduled_visits`,
 `public.manifest_pickable_visits`, `public.visits_with_status`.
 
-Pending follow-up (low-impact): `ops.visits`, `ops.v_route_today`,
-`ops.v_service_due`, `ops.v_truck_utilization`, `ops.v_driver_kpi`,
-`ops.v_revenue_summary`, `ops.v_derm_compliance`, `public.visits_recent`,
-`public.visits_with_review`, `customer.work_orders`, `customer.recommendations`,
-`customer.inspection_items`, `customer.wo_photos`, `customer.permits`.
+**Canonical base view (2026-06-24): `public.v_visits_live` = `visits WHERE deleted_at IS NULL`.**
+New ops/app views should read `v_visits_live`, NOT bare `public.visits`, so the soft-delete filter
+can't be forgotten. FIXED 2026-06-24 (`2026-06-24_v_visits_live_softdelete.sql`): `ops.visits`,
+`ops.v_route_today`, `ops.v_service_due`, `ops.v_truck_utilization`, `ops.v_driver_kpi`,
+`ops.v_revenue_summary` re-pointed to it; `ops.v_derm_compliance` got the filter in the DERM migration.
+
+Pending follow-up (low-impact): `public.visits_recent`, `public.visits_with_review`,
+`customer.recommendations`, `customer.inspection_items`, `customer.wo_photos`, `customer.permits`
+(`customer.work_orders` already filters). Re-point these at `v_visits_live` when touched.
 
 Hard-delete is still forbidden in general (Rule 6) — `deleted_at` is the
 canonical soft-delete pattern for visits. One-off hard-deletes for clearly
