@@ -98,6 +98,7 @@ delete-propagation gap for Jobber-born visits.
 | [`2026-06-24_calendar-db-features.md`](2026-06-24_calendar-db-features.md) | Residential guard, ripple reschedule, GDO permits |
 | [`2026-06-24_crew-consolidation.md`](2026-06-24_crew-consolidation.md) | Driver-list dedup → the 6 crew |
 | [`2026-06-25_calendar-jobber-sync-fixes.md`](2026-06-25_calendar-jobber-sync-fixes.md) | Driver push fix + delete-propagation gap |
+| [`2026-06-25_service-call-line-item-prices.md`](2026-06-25_service-call-line-item-prices.md) | SC line-item prices + push to Jobber (visitCreateLineItems) |
 
 **Related, kept elsewhere (referenced, not moved):**
 `../jobber-write-oauth-setup.md` (write-app OAuth + token-contamination guard),
