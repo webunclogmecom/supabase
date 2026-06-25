@@ -1,6 +1,6 @@
 # Activity History / Audit Trail — design spec
 
-*2026-06-25. Status: DESIGN — awaiting Fred's review before implementation.*
+*2026-06-25. Status: Phase 0 + **Phase 1 backend SHIPPED** (migration `2026-06-25_audit_trail_phase1.sql`: txid capture, `audit.entity_render_config`, `audit.render_value`, `public.get_record_history` RPC, index — verified on visit 6804). Remaining: the Calendar "Activity" tab UI (Lovable) + Phase 2/3.*
 *Decisions locked: app-level attribution for v1 · scope = visits + clients + derm_manifests ·
 secret redaction = redact + keep trigger (Phase 0, already shipped).*
 
