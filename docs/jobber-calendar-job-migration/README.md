@@ -100,6 +100,7 @@ delete-propagation gap for Jobber-born visits.
 | [`2026-06-25_calendar-jobber-sync-fixes.md`](2026-06-25_calendar-jobber-sync-fixes.md) | Driver push fix + delete-propagation gap |
 | [`2026-06-25_service-call-line-item-prices.md`](2026-06-25_service-call-line-item-prices.md) | SC line-item prices + push to Jobber (visitCreateLineItems) |
 | [`2026-06-25_team-multiselect.md`](2026-06-25_team-multiselect.md) | Driver→Team multi-select (0/1/many), `visit_team` + Jobber assignedUsers |
+| [`2026-06-25_drawer-lineitem-and-search-fixes.md`](2026-06-25_drawer-lineitem-and-search-fixes.md) | Drawer pre-checks current services+prices; Jobber push dedupe; drift heal; search null-safety |
 
 **Related, kept elsewhere (referenced, not moved):**
 `../jobber-write-oauth-setup.md` (write-app OAuth + token-contamination guard),
