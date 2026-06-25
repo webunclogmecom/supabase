@@ -14,7 +14,9 @@
 //
 // Anchor precedence (per job):
 //   1. max scheduled FUTURE visit for THIS job   -> +freq   (extend the chain)
-//   2. else max completed visit for the CLIENT   -> +freq   (resume cadence from last real service)
+//   2. else max completed visit of the SAME SERVICE TYPE for the CLIENT -> +freq
+//      (resume cadence from the last real GT/CL/WD service of the SA's type; a one-off
+//       Service Call of a DIFFERENT service must not set the cadence — Yan 2026-06-25, 178-LG)
 //   3. else today + freq                          (cold start)
 // Idempotency: skip any candidate date within +/-7d of an existing visit for the same job.
 //
@@ -139,8 +141,13 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
   for (const job of jobs) {
     const existing = await pg(`SELECT visit_date::text AS visit_date, visit_status FROM visits
       WHERE job_id = ${job.job_id} AND deleted_at IS NULL ORDER BY visit_date;`);
+    // Anchor on the last completed visit OF THE SA'S SERVICE TYPE (e.g. the last GT
+    // visit for a Grease-Trap SA), NOT any last completed visit. A one-off Service Call
+    // of a different service must never set the recurring cadence (Yan 2026-06-25:
+    // 178-LG was anchored on a 06-03 CL "Service" call instead of the 04-27 GT visit).
     const lastCompleted = (await pg(`SELECT max(visit_date)::text AS d FROM visits
-      WHERE client_id = ${job.client_id} AND visit_status = 'completed' AND deleted_at IS NULL;`))[0].d;
+      WHERE client_id = ${job.client_id} AND visit_status = 'completed'
+        AND service_type = '${job.service_type}' AND deleted_at IS NULL;`))[0].d;
 
     const maxScheduledFuture = existing
       .filter(v => v.visit_status === 'scheduled' && v.visit_date >= today)
