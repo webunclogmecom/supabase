@@ -13,11 +13,15 @@
 - ✅ **SA push skip lifted** — `jobber-push-visit` v19 pushes SA per-visit overrides (un-edited
   SA visits no-op via the empty-items guard).
 - ✅ **Backfill** — job 645 done; 815 genuinely empty in Jobber.
-- ⏳ **REMAINING:** (1) the drawer's Line-items *editor* must handle ARBITRARY lines for SA
-  visits (show the agreement's fee/custom lines, pre-filled from the job's per-client prices,
-  send the `line_items` patch) — currently the editor only offers the catalog service
-  checklist; (2) `create_calendar_visit` arbitrary-lines param for form-created SA visits
-  (secondary — 0 SA visits are created via the form today).
+- ✅ **SA line-items editor (drawer)** — LIVE + verified. For an SA visit, Line items → Edit
+  shows the agreement's lines (incl. non-catalog fees like "25 - Credit card fee") as editable
+  rows (qty + price, quantity-before-price), with remove + "Add from catalog" + "+ Custom
+  line"; Save sends `p_patch.line_items`. Verified on visit 6553 (Pamplemousse / 047-PAM):
+  the read list showed 06 Aux Cleaning $360 + 25 Credit-card fee $13 (subtotal $373), and the
+  editor rendered both as editable rows incl. the fee.
+- ⏳ **REMAINING (secondary):** `create_calendar_visit` arbitrary-lines param for *form-created*
+  SA visits — 0 SA visits are created via the form today (all cron-generated), so this is
+  low-priority. The edit path (the common one) is complete.
 
 ## Goal
 
