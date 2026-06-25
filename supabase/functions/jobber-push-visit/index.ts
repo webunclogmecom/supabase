@@ -158,7 +158,13 @@ async function syncVisitLineItems(token: string, visit: any, visitGid: string, i
   if (job?.title && /^\s*service agreement/i.test(job.title)) return; // SA -> job holds the line items
   const { data: items } = await db.from("line_items").select("name,quantity,unit_price").eq("visit_id", visit.id);
   if (!items || !items.length) return;
-  if (isUpdate) {
+  // ALWAYS reconcile (create + update): delete any line items already on the
+  // Jobber visit first, then recreate from our DB. Idempotent — every push
+  // converges Jobber to exactly our set, self-healing both duplicate line items
+  // (from a racing 2nd push, e.g. the inbound poll re-touching a fresh visit)
+  // and missing line items (from a prior push whose sync errored). isUpdate is
+  // no longer used to gate the delete.
+  {
     const jobGid = await jobberGid("job", visit.job_id);
     if (jobGid) {
       const jr = await gql(token, Q_VISIT_LI, { jobId: jobGid });
