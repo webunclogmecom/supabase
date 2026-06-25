@@ -99,6 +99,7 @@ delete-propagation gap for Jobber-born visits.
 | [`2026-06-24_crew-consolidation.md`](2026-06-24_crew-consolidation.md) | Driver-list dedup → the 6 crew |
 | [`2026-06-25_calendar-jobber-sync-fixes.md`](2026-06-25_calendar-jobber-sync-fixes.md) | Driver push fix + delete-propagation gap |
 | [`2026-06-25_service-call-line-item-prices.md`](2026-06-25_service-call-line-item-prices.md) | SC line-item prices + push to Jobber (visitCreateLineItems) |
+| [`2026-06-25_team-multiselect.md`](2026-06-25_team-multiselect.md) | Driver→Team multi-select (0/1/many), `visit_team` + Jobber assignedUsers |
 
 **Related, kept elsewhere (referenced, not moved):**
 `../jobber-write-oauth-setup.md` (write-app OAuth + token-contamination guard),
@@ -113,8 +114,10 @@ delete-propagation gap for Jobber-born visits.
 - ✅ Jobs restructured into SC / SA shapes (carve-outs honored).
 - ✅ SA visit generation + daily cron **live** for all clients; 676 visits backfilled, pushed to Jobber.
 - ✅ Calendar app DB layer live (RPC, driver, ripple, GDO, residential guard).
-- ✅ Two-way Jobber sync live; outbound push now includes the **assigned driver**.
+- ✅ Two-way Jobber sync live; outbound push now includes the **whole team** (assignedUsers).
 - ✅ Crew deduped to 6.
+- ✅ **Driver → Team multi-select** (0/1/many, optional) shipped + live-verified; `visit_team`
+  join table, pushed to Jobber assignedUsers. See [`2026-06-25_team-multiselect.md`](2026-06-25_team-multiselect.md).
 - ✅ **Calendar deletes of Jobber-born visits now propagate** to Jobber (widened push trigger +
   fail-safe Origin gate so sync/reconcile never echoes). See the sync-fixes doc §Issue A.
 - 🟡 **PITR enable** on Prod still gated on the 4 apps finishing (see memory `project_pending_pitr_enable`).
