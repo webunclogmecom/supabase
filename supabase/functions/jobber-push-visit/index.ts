@@ -142,7 +142,42 @@ const M_EDIT_SCHED = `mutation($id: EncodedId!, $input: VisitEditScheduleInput!)
 const M_EDIT = `mutation($id: EncodedId!, $attributes: VisitEditAttributes!){ visitEdit(id:$id, attributes:$attributes){ userErrors{ message path } } }`;
 const M_DELETE = `mutation($ids: [EncodedId!]!){ visitDelete(visitIds:$ids){ userErrors{ message path } } }`;
 const M_ASSIGN = `mutation($id: EncodedId!, $input: VisitEditAssignedUsersInput!){ visitEditAssignedUsers(visitId:$id, input:$input){ userErrors{ message path } } }`;
+// Service-Call visits carry their own line items (the services done on that call);
+// Service-Agreement visits do NOT — their priced line items live on the Jobber SA job.
+const M_LI_CREATE = `mutation($id: EncodedId!, $input: VisitCreateLineItemInput!){ visitCreateLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
+const M_LI_DELETE = `mutation($id: EncodedId!, $input: VisitDeleteLineItemsInput!){ visitDeleteLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
+const Q_VISIT_LI  = `query($jobId: EncodedId!){ job(id:$jobId){ visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id } } } } } }`;
 function ue(payload: any): string | null { const e = payload?.userErrors; return e && e.length ? JSON.stringify(e) : null; }
+
+// Push a Service-Call visit's line items (with prices) onto its Jobber visit.
+// Skips Service-Agreement visits (the Jobber SA job already holds the per-client
+// priced line items). Idempotent: on update it deletes the visit's existing
+// Jobber line items first, then re-creates from our DB.
+async function syncVisitLineItems(token: string, visit: any, visitGid: string, isUpdate: boolean) {
+  const { data: job } = await db.from("jobs").select("title").eq("id", visit.job_id).maybeSingle();
+  if (job?.title && /^\s*service agreement/i.test(job.title)) return; // SA -> job holds the line items
+  const { data: items } = await db.from("line_items").select("name,quantity,unit_price").eq("visit_id", visit.id);
+  if (!items || !items.length) return;
+  if (isUpdate) {
+    const jobGid = await jobberGid("job", visit.job_id);
+    if (jobGid) {
+      const jr = await gql(token, Q_VISIT_LI, { jobId: jobGid });
+      const node = (jr.job?.visits?.nodes || []).find((n: any) => n.id === visitGid);
+      const ids = (node?.lineItems?.nodes || []).map((x: any) => x.id);
+      if (ids.length) {
+        const d = await gql(token, M_LI_DELETE, { id: visitGid, input: { lineItemIds: ids } });
+        const de = ue(d.visitDeleteLineItems); if (de) throw new Error(`visitDeleteLineItems: ${de}`);
+      }
+    }
+  }
+  const lineItems = items.map((it: any) => {
+    const up = Number(it.unit_price) || 0, qty = Number(it.quantity) || 1;
+    return { name: it.name, unitPrice: up, quantity: qty, totalPrice: up * qty, saveToProductsAndServices: false };
+  });
+  const c = await gql(token, M_LI_CREATE, { id: visitGid, input: { lineItems } });
+  const ce = ue(c.visitCreateLineItems); if (ce) throw new Error(`visitCreateLineItems: ${ce}`);
+  console.log(`[push] synced ${lineItems.length} line item(s) to Jobber visit ${visitGid}`);
+}
 
 async function handle(op: string, visitId: number, payloadGid?: string) {
   const token = await getJobberToken();
@@ -185,6 +220,7 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
       const a = await gql(token, M_ASSIGN, { id: existingGid, input: { assignedUserIds: [driverGid] } });
       const ae = ue(a.visitEditAssignedUsers); if (ae) throw new Error(`visitEditAssignedUsers: ${ae}`);
     }
+    await syncVisitLineItems(token, visit, existingGid, true);
     console.log(`[push] updated Jobber visit ${existingGid}${driverGid ? " (+driver)" : ""} (our visit ${visitId})`);
     return { ok: true, updated: existingGid };
   }
@@ -203,6 +239,7 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   if (!newGid) throw new Error("visitCreate returned no visit id");
   await linkVisit(visitId, newGid);
   await clearFlag(visitId);
+  await syncVisitLineItems(token, visit, newGid, false);
   console.log(`[push] created Jobber visit ${newGid} on job ${job.gid} (our visit ${visitId})`);
   return { ok: true, created: newGid };
 }
