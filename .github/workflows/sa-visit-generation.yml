@@ -20,7 +20,7 @@ name: SA visit generation (DB + Jobber schedule)
 #         GID-linked to Jobber, 0 orphans (ops.v_calendar_push_health clean).
 # Horizon: --horizon-months=6 (rolling). The daily run keeps each SA job's chain extended
 # to ~6 months and is idempotent (±7d job-scoped dedup); jobber-push-visit retries on
-# Jobber throttle. See docs/service-agreement-visit-generation.md.
+# Jobber throttle. See docs/jobber-calendar-job-migration/service-agreement-visit-generation.md.
 # ============================================================================
 
 on:

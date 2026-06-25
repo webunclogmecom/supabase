@@ -1,6 +1,6 @@
 // fetch_service_agreement_jobs.js
 // FETCH step (Jobber -> DB) of the Service Agreement visit-generation pipeline.
-// Spec: Supabase/docs/service-agreement-visit-generation.md (§9).
+// Spec: Supabase/docs/jobber-calendar-job-migration/service-agreement-visit-generation.md (§9).
 //
 // For active jobs titled "Service Agreement ..." (scoped to one client; default 112-YA),
 // pull the "Frequency" numeric custom field + line items from Jobber and save to our DB:

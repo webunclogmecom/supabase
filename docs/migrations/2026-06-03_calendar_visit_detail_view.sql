@@ -1,7 +1,7 @@
 -- Migration: ops.v_calendar_visit_detail — Visit Calendar drawer detail
 -- Date:   2026-06-03
 -- Author: Claude, directed by Fred — Service Agreement visit-generation (§9)
--- Spec:   Supabase/docs/service-agreement-visit-generation.md
+-- Spec:   Supabase/docs/jobber-calendar-job-migration/service-agreement-visit-generation.md
 --
 -- Purpose: the per-visit fields the grid view (ops.v_calendar_visit) doesn't carry, for
 --   the right-side drawer: service_kind (Service Agreement vs Service Call), the agreement

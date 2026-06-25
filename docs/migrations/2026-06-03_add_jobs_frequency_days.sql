@@ -1,7 +1,7 @@
 -- Migration: add public.jobs.frequency_days
 -- Date:   2026-06-03
 -- Author: Claude, directed by Fred — Service Agreement visit-generation (Calendar app = source of truth)
--- Spec:   Supabase/docs/service-agreement-visit-generation.md (§9)
+-- Spec:   Supabase/docs/jobber-calendar-job-migration/service-agreement-visit-generation.md (§9)
 --
 -- Audit (ADR 010): public.jobs is a Jobber sync-only table -> OPT-OUT of audit.logs triggers
 --   (no trigger added). frequency_days is synced from the Jobber job's "Frequency" numeric

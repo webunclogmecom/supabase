@@ -1,7 +1,7 @@
 # 2026-06-24 — Three Calendar/DB features: residential guard, ripple reschedule, GDO permits
 
 *Supabase data-ops session · companion records: [`jobs-visits-calendar-workflow.md`](jobs-visits-calendar-workflow.md),
-[`schema.md`](schema.md), the four `migrations/2026-06-2*` files, and the Lovable-side handoff
+[`schema.md`](../schema.md), the four `migrations/2026-06-2*` files, and the Lovable-side handoff
 `../../Building Apps/building apps - calendar app - task.md`.*
 
 Three features were designed together, adversarially reviewed for DB-logic coherence, verified
@@ -26,7 +26,7 @@ Airtable-coded client is `isCompany=true`** in Jobber, so genuine residentials t
 Google Places address lookup) would be **flipped back to `commercial` on the next `*/5` poll** (both
 `webhook-jobber.handleClient` and `backfill_clients_class.js` re-derive blindly).
 
-**Built.** Migration [`2026-06-24_clients_class_source.sql`](migrations/2026-06-24_clients_class_source.sql):
+**Built.** Migration [`2026-06-24_clients_class_source.sql`](../migrations/2026-06-24_clients_class_source.sql):
 - `clients.client_class_source TEXT NOT NULL DEFAULT 'jobber'` + CHECK `IN ('jobber','manual')`. 3NF
   (provenance of `client_class`, depends only on the PK). Rule-1-safe — the *value* `'jobber'` names a
   system as data; it is **not** a `jobber_*` column.
@@ -55,8 +55,8 @@ one visit; the chain drifts.
 so a date-change trigger that itself writes `visit_date` would infinite-loop. The cascade lives in the RPC's
 own loop and reuses the verified push path unchanged.
 
-**Built.** Migrations [`2026-06-25_ripple_reschedule_visit_rpc.sql`](migrations/2026-06-25_ripple_reschedule_visit_rpc.sql)
-+ [`2026-06-25b_ops_ripple_reschedule_visit.sql`](migrations/2026-06-25b_ops_ripple_reschedule_visit.sql)
+**Built.** Migrations [`2026-06-25_ripple_reschedule_visit_rpc.sql`](../migrations/2026-06-25_ripple_reschedule_visit_rpc.sql)
++ [`2026-06-25b_ops_ripple_reschedule_visit.sql`](../migrations/2026-06-25b_ops_ripple_reschedule_visit.sql)
 (ops wrapper so the app's ops-schema client can call it):
 `public.ripple_reschedule_visit(p_visit_id, p_new_date, p_new_start_at, p_new_end_at, p_dry_run)` —
 moves the target and re-anchors the **forward** chain at `jobs.frequency_days` from the new date. Scope =
@@ -90,11 +90,11 @@ had a PDF ingested.
 
 **Decision (Fred): public bucket** — GDO permits are Miami-Dade regulatory records treated as
 non-sensitive; same model as DERM manifests. Migration
-[`2026-06-24_gdo_permits_public_bucket.sql`](migrations/2026-06-24_gdo_permits_public_bucket.sql) flips
+[`2026-06-24_gdo_permits_public_bucket.sql`](../migrations/2026-06-24_gdo_permits_public_bucket.sql) flips
 `storage.buckets 'gdo-permits' public=true`. `permit_document_path` stays a bucket-relative path; the
 frontend builds `https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/gdo-permits/<path>`.
 
-**Built + ran.** [`scripts/sync/cron_gdo_permit_pdf_ingest.js`](../scripts/sync/cron_gdo_permit_pdf_ingest.js)
+**Built + ran.** [`scripts/sync/cron_gdo_permit_pdf_ingest.js`](../../scripts/sync/cron_gdo_permit_pdf_ingest.js)
 resolves each missing permit from (a) the Phase-2 bot result JSONs then (b) a **live Miami-Dade DERM
 Strategy-0 case-number lookup** (`POST api-ecmrer.miamidade.gov/derm/documents`, integer-digit case match
 to avoid misattribution), downloads, uploads, sets `permit_document_path`. Idempotent, guarded, dry-run

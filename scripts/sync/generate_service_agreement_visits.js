@@ -2,7 +2,7 @@
 // generate_service_agreement_visits.js
 // ============================================================================
 // GENERATE step (DB -> visits) of the Service Agreement visit-generation pipeline.
-// Spec: Supabase/docs/service-agreement-visit-generation.md (§9).
+// Spec: Supabase/docs/jobber-calendar-job-migration/service-agreement-visit-generation.md (§9).
 //
 // Reads Service Agreement jobs from OUR DB (jobs.frequency_days > 0 and
 // title ILIKE 'Service Agreement%') -- populated by fetch_service_agreement_jobs.js --

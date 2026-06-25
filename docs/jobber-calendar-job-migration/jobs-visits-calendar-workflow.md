@@ -2,7 +2,7 @@
 
 *Last updated 2026-06-23. Covers the Jobber Jobs restructure/migration + how jobs, visits, and
 the Calendar App fit together. Companion: [`service-agreement-visit-generation.md`](service-agreement-visit-generation.md),
-[`reference/derm_required_by_line_item.md`](reference/derm_required_by_line_item.md). App-side mirror lives in
+[`reference/derm_required_by_line_item.md`](../reference/derm_required_by_line_item.md). App-side mirror lives in
 `Building Apps/Visit Calendar/docs/`.*
 
 ## 1. The jobs model (post-restructure)
@@ -63,8 +63,8 @@ archived Wynd phantom) are edge cases needing Itemized-sheet line items or archi
     codes 01–04 / 09–11). `visits.derm_required` is **derived from the visit's line items** (union of
     visit/invoice/job scope; taxonomy code → free-text classifier → NULL), **not** `service_type` —
     which is too blunt (handleVisit defaults to GT; grey-water pumping is coded CL but needs DERM). NULL
-    = unknown = surfaced for review. Full spec: [`reference/derm_required_by_line_item.md`](reference/derm_required_by_line_item.md)
-    + ADR [018](decisions/018-derm-required-from-line-items.md). Set by the Calendar RPC, `handleVisit`
+    = unknown = surfaced for review. Full spec: [`reference/derm_required_by_line_item.md`](../reference/derm_required_by_line_item.md)
+    + ADR [018](../decisions/018-derm-required-from-line-items.md). Set by the Calendar RPC, `handleVisit`
     (`set_visit_derm_required`), and nightly pg_cron `derm-required-rederive` (all monotonic — never
     demote a known TRUE).
 - **Location grain** — a visit hits one **property** (address) + one or more **`client_locations`**

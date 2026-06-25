@@ -4,7 +4,7 @@ name: Daily jobs reconcile (status + frequency + line items)
 # (archive/complete), the Frequency custom field, job line items (SA-has / SC-has-none rule),
 # and deletions (Jobber returns null -> mark archived). Runs scripts/sync/reconcile_jobs.js
 # once a day over all non-archived jobs. The real-time path is webhook-jobber.handleJob; this is
-# the daily catch-up. See reference_jobs_sync_gaps + docs/jobs-visits-calendar-workflow.md.
+# the daily catch-up. See reference_jobs_sync_gaps + docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md.
 
 on:
   schedule:
