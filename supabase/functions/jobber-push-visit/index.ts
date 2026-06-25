@@ -208,11 +208,19 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
 
   const existingGid = await jobberGid("visit", visitId);
   const sched = visitSchedule(visit);
-  // Planned driver (visits.assigned_driver_id, set on the Calendar form) -> Jobber
-  // user GID, so the visit shows the assigned team member in Jobber. (The
-  // VisitEditScheduleInput only carries start/end, so assignment is a separate
-  // mutation on update; on create it rides teamMemberIdsToAssign.)
-  const driverGid = visit.assigned_driver_id ? await jobberGid("employee", visit.assigned_driver_id) : null;
+  // Planned crew (public.visit_team; fall back to the legacy single
+  // assigned_driver_id) -> Jobber user GIDs. Jobber assigns a TEAM
+  // (teamMemberIdsToAssign on create, visitEditAssignedUsers on update). An empty
+  // team clears the assignment. (VisitEditScheduleInput carries only start/end,
+  // so assignment is always a separate mutation on update.)
+  const teamGids: string[] = [];
+  {
+    const { data: teamRows } = await db.from("visit_team").select("employee_id").eq("visit_id", visit.id);
+    const empIds = (teamRows && teamRows.length)
+      ? teamRows.map((r: any) => r.employee_id)
+      : (visit.assigned_driver_id ? [visit.assigned_driver_id] : []);
+    for (const eid of empIds) { const g = await jobberGid("employee", eid); if (g) teamGids.push(g); }
+  }
 
   // ---- UPDATE (already linked) ----
   if (existingGid) {
@@ -222,12 +230,13 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
       const e = await gql(token, M_EDIT, { id: existingGid, attributes: { title: visit.title, instructions: visit.notes ?? null } });
       const ee = ue(e.visitEdit); if (ee) throw new Error(`visitEdit: ${ee}`);
     }
-    if (driverGid) {
-      const a = await gql(token, M_ASSIGN, { id: existingGid, input: { assignedUserIds: [driverGid] } });
+    {
+      // always set (incl. empty) so team changes — including clearing — propagate
+      const a = await gql(token, M_ASSIGN, { id: existingGid, input: { assignedUserIds: teamGids } });
       const ae = ue(a.visitEditAssignedUsers); if (ae) throw new Error(`visitEditAssignedUsers: ${ae}`);
     }
     await syncVisitLineItems(token, visit, existingGid, true);
-    console.log(`[push] updated Jobber visit ${existingGid}${driverGid ? " (+driver)" : ""} (our visit ${visitId})`);
+    console.log(`[push] updated Jobber visit ${existingGid}${teamGids.length ? ` (+team:${teamGids.length})` : ""} (our visit ${visitId})`);
     return { ok: true, updated: existingGid };
   }
 
@@ -238,7 +247,7 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   if (visit.visit_status !== "scheduled") { console.log(`[push] visit ${visitId} status=${visit.visit_status}, unlinked — not creating in Jobber`); return { ok: true, note: "non-scheduled, not created" }; }
   const job = await resolveJobGid(visit);
   if ("error" in job) { await flag(visitId, "no_job_match", job.error); return { ok: true, flagged: job.error }; }
-  const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: driverGid ? [driverGid] : [] } }] };
+  const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: teamGids } }] };
   const c = await gql(token, M_CREATE, { jobId: job.gid, input });
   const ce = ue(c.visitCreate); if (ce) { await flag(visitId, "create_error", ce); throw new Error(`visitCreate: ${ce}`); }
   const newGid = c.visitCreate.createdVisits?.[0]?.id;
