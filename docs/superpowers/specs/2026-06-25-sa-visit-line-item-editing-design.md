@@ -1,6 +1,23 @@
 # Per-visit Service-Agreement line-item editing — design spec
 
-*2026-06-25. Status: DESIGN — awaiting Fred's review before implementation.*
+*2026-06-25. Status: IN PROGRESS.*
+
+**Progress (2026-06-26):**
+- ✅ **Drawer redesign (read-first, section-level edit)** — LIVE + verified on the live app.
+  Each section (Date & time, Service, Line items, Team, Instructions) is read-only by
+  default with its own Edit → editable + Save/Cancel; only one section edits at a time.
+- ✅ **qty-before-price** — live.
+- ✅ **`edit_calendar_visit` arbitrary `line_items` branch** — accepts `[{name,unit_price,
+  quantity,taxable}]` (catalog + non-catalog fees), derives type/primary/DERM, bumps
+  `line_items_rev`. Migration `2026-06-26_edit_visit_arbitrary_line_items.sql`, smoke-tested.
+- ✅ **SA push skip lifted** — `jobber-push-visit` v19 pushes SA per-visit overrides (un-edited
+  SA visits no-op via the empty-items guard).
+- ✅ **Backfill** — job 645 done; 815 genuinely empty in Jobber.
+- ⏳ **REMAINING:** (1) the drawer's Line-items *editor* must handle ARBITRARY lines for SA
+  visits (show the agreement's fee/custom lines, pre-filled from the job's per-client prices,
+  send the `line_items` patch) — currently the editor only offers the catalog service
+  checklist; (2) `create_calendar_visit` arbitrary-lines param for form-created SA visits
+  (secondary — 0 SA visits are created via the form today).
 
 ## Goal
 
