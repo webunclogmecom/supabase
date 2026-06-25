@@ -141,6 +141,7 @@ const M_CREATE = `mutation($jobId: EncodedId!, $input: VisitCreateInput!){ visit
 const M_EDIT_SCHED = `mutation($id: EncodedId!, $input: VisitEditScheduleInput!){ visitEditSchedule(id:$id, input:$input){ userErrors{ message path } } }`;
 const M_EDIT = `mutation($id: EncodedId!, $attributes: VisitEditAttributes!){ visitEdit(id:$id, attributes:$attributes){ userErrors{ message path } } }`;
 const M_DELETE = `mutation($ids: [EncodedId!]!){ visitDelete(visitIds:$ids){ userErrors{ message path } } }`;
+const M_ASSIGN = `mutation($id: EncodedId!, $input: VisitEditAssignedUsersInput!){ visitEditAssignedUsers(visitId:$id, input:$input){ userErrors{ message path } } }`;
 function ue(payload: any): string | null { const e = payload?.userErrors; return e && e.length ? JSON.stringify(e) : null; }
 
 async function handle(op: string, visitId: number, payloadGid?: string) {
@@ -166,6 +167,11 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
 
   const existingGid = await jobberGid("visit", visitId);
   const sched = visitSchedule(visit);
+  // Planned driver (visits.assigned_driver_id, set on the Calendar form) -> Jobber
+  // user GID, so the visit shows the assigned team member in Jobber. (The
+  // VisitEditScheduleInput only carries start/end, so assignment is a separate
+  // mutation on update; on create it rides teamMemberIdsToAssign.)
+  const driverGid = visit.assigned_driver_id ? await jobberGid("employee", visit.assigned_driver_id) : null;
 
   // ---- UPDATE (already linked) ----
   if (existingGid) {
@@ -175,7 +181,11 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
       const e = await gql(token, M_EDIT, { id: existingGid, attributes: { title: visit.title, instructions: visit.notes ?? null } });
       const ee = ue(e.visitEdit); if (ee) throw new Error(`visitEdit: ${ee}`);
     }
-    console.log(`[push] updated Jobber visit ${existingGid} (our visit ${visitId})`);
+    if (driverGid) {
+      const a = await gql(token, M_ASSIGN, { id: existingGid, input: { assignedUserIds: [driverGid] } });
+      const ae = ue(a.visitEditAssignedUsers); if (ae) throw new Error(`visitEditAssignedUsers: ${ae}`);
+    }
+    console.log(`[push] updated Jobber visit ${existingGid}${driverGid ? " (+driver)" : ""} (our visit ${visitId})`);
     return { ok: true, updated: existingGid };
   }
 
@@ -186,7 +196,7 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   if (visit.visit_status !== "scheduled") { console.log(`[push] visit ${visitId} status=${visit.visit_status}, unlinked — not creating in Jobber`); return { ok: true, note: "non-scheduled, not created" }; }
   const job = await resolveJobGid(visit);
   if ("error" in job) { await flag(visitId, "no_job_match", job.error); return { ok: true, flagged: job.error }; }
-  const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: [] } }] };
+  const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: driverGid ? [driverGid] : [] } }] };
   const c = await gql(token, M_CREATE, { jobId: job.gid, input });
   const ce = ue(c.visitCreate); if (ce) { await flag(visitId, "create_error", ce); throw new Error(`visitCreate: ${ce}`); }
   const newGid = c.visitCreate.createdVisits?.[0]?.id;
