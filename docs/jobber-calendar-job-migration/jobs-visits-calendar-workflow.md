@@ -94,22 +94,29 @@ SC catalog) → DERM badge if any service is pumping → property/location (defa
 instructions/truck → `rpc('create_calendar_visit')`. Diego uses this (and, near-term, the migration
 PDF) to create the pending visits onto the clean SC/SA jobs.
 
-### Ripple reschedule (RPC, built 2026-06-25 — dry-run-verified, NOT yet wired)
+### Ripple reschedule (RPC built 2026-06-25 — LIVE-wired + Jobber-verified 2026-06-26)
 Moving a visit must keep the chain's cadence: if a client is on a 10-day frequency with visits 07/01 &
 07/11 and you drag 07/01→07/03 (to group same-zone visits on one day), the next visit should re-anchor
 to 07/13, not stay at 07/11. `ripple_reschedule_visit` does this **re-anchor at frequency from the
 moved date** (verified against job 1635: earliest-forward, middle-forward, and last-moved-before-first
 all re-space at exactly `freq`). Chosen as an **RPC, not a trigger** — `fn_push_visit_to_jobber` has no
 recursion depth guard, so a date-change trigger that itself writes `visit_date` would infinite-loop; the
-RPC's cascade lives in its own loop and reuses the verified push path unchanged. **Rollout gates before
-global enable** (the push is live for all 144 clients, so a cascade writes real Jobber reschedules):
+RPC's cascade lives in its own loop and reuses the verified push path unchanged. **Rollout gates**
+(the push is live for all 144 clients, so a cascade writes real Jobber reschedules):
 1. ✅ ship with `p_dry_run` + dry-run real chains (done 2026-06-25).
-2. ⏳ first LIVE cascade on ONE real short chain (≤3 future visits) — verify in Jobber exactly one
-   `visitEditSchedule` per row, GID intact, no orphan on old dates. **Needs Fred go (customer-facing).**
-3. ⏳ wire the Lovable Calendar drag-drop to call `ripple_reschedule_visit` (NOT a bare PATCH, which
-   moves+pushes ONE visit but does NOT ripple) with an **opt-in confirmation showing the N dates that
-   will change** (re-anchor is destructive to deliberately-placed spacing).
-4. ⏳ post-ripple reconcile/watchdog for the fire-and-forget pg_net pushes; then remove any gate to go global.
+2. ✅ **first LIVE cascade on a real short chain — done 2026-06-26.** Re-verified end-to-end on job 1377
+   (041-MB Marie Blachère, freq 60, 3 future visits): moved the anchor +3d → all 3 forward rows re-anchored
+   at exactly `freq`; Jobber showed **exactly one `visitEditSchedule` per row** (`net._http_response`
+   3×`200 {"ok":true}`), GIDs intact, **no orphan on the old dates, no dupes**; reverted to the captured
+   exact originals → net-zero (DB + Jobber). Re-verify pattern: dry-run → apply → check `net._http_response`
+   → restore captured originals (not a reverse-ripple — that only net-zeros an exact-`freq` chain).
+3. ✅ **drag-drop wired — confirmed live 2026-06-26.** The published Calendar bundle (`index-C5_bbv1U.js`)
+   calls `rpc('ripple_reschedule_visit')` with `p_dry_run` (3 refs) — so a drag is routed through the
+   cascade RPC (dry-run → confirm the N dates → apply), **not** a bare `edit_calendar_visit` PATCH.
+   (The in-browser drag→confirm modal wasn't separately driven; the RPC-level cascade-to-Jobber is the
+   verified path.) **Supersedes the earlier "inert until wired" note.**
+4. ⏳ post-ripple reconcile/watchdog for the fire-and-forget pg_net pushes (still pending) — then any
+   remaining global-enable gate can be removed.
 
 ## 5. Calendar → Jobber push (LIVE for all clients — 2026-06-23)
 

@@ -45,7 +45,7 @@ trigger enforces protection regardless; it rides the next webhook-jobber deploy.
 
 ---
 
-## 2. Ripple reschedule ✅ BACKEND DONE + LIVE-VERIFIED · ⏳ frontend wiring + global enable gated
+## 2. Ripple reschedule ✅ DONE — backend + drag-drop LIVE-wired + Jobber-verified (re-verified 2026-06-26) · ⏳ pg_net watchdog pending
 
 **Problem (Fred).** Moving a visit should keep the job's cadence: freq 10d with visits 07/01 & 07/11,
 drag 07/01→07/03 ⇒ the next should re-anchor to **07/13**, not stay at 07/11. Today a drag moves only that
@@ -75,10 +75,15 @@ shifted row pushes to Jobber once via the existing `trg_push_visit_update`.
 last-moved-before-first all re-space at exactly freq. **Live Jobber round-trip on job 1607 (181-PV):**
 rippled `06/30→07/01` → Jobber reflected all 3 rows within 3s, GIDs unchanged → reverted → **net-zero**
 (DB + Jobber both back to original). Commits `d429ece`, `fcc03a6`.
+**Re-verified 2026-06-26 on job 1377 (041-MB Marie Blachère, freq 60, 3 future visits):** anchor +3d →
+`07/23,09/21,11/20` → `07/26,09/24,11/23` (each re-anchored at exactly freq); Jobber UI showed all 3
+visits shifted, **same GIDs, no orphan on the old dates, no dupes**; `net._http_response` = 3×`200
+{"ok":true,"updated":"<gid>"}` per push; reverted to captured exact originals → net-zero (DB + Jobber).
 
-**Remaining (Lovable/Calendar session — gated).** Wire drag-drop to call `ops.ripple_reschedule_visit`
-(dry-run → opt-in confirmation listing the N dates → apply). Global enable across all 144 clients is gated
-on that wiring + the opt-in (it writes real customer Jobber reschedules). The RPC is **inert** until wired.
+**Wiring — DONE + confirmed live 2026-06-26.** The published Calendar bundle (`index-C5_bbv1U.js`) calls
+`rpc('ripple_reschedule_visit')` with `p_dry_run` (3 refs), i.e. a drag is routed through the cascade RPC
+(dry-run → confirm N dates → apply), **not** a bare `edit_calendar_visit` PATCH. ~~The RPC is inert until
+wired.~~ (superseded). **Remaining:** post-ripple reconcile/watchdog for the fire-and-forget pg_net pushes.
 
 ---
 
