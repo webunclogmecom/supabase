@@ -146,7 +146,7 @@ const M_ASSIGN = `mutation($id: EncodedId!, $input: VisitEditAssignedUsersInput!
 // Service-Agreement visits do NOT — their priced line items live on the Jobber SA job.
 const M_LI_CREATE = `mutation($id: EncodedId!, $input: VisitCreateLineItemInput!){ visitCreateLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
 const M_LI_DELETE = `mutation($id: EncodedId!, $input: VisitDeleteLineItemsInput!){ visitDeleteLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
-const Q_VISIT_LI  = `query($jobId: EncodedId!){ job(id:$jobId){ visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id } } } } } }`;
+const Q_VISIT_LI  = `query($jobId: EncodedId!){ job(id:$jobId){ visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id name } } } } } }`;
 function ue(payload: any): string | null { const e = payload?.userErrors; return e && e.length ? JSON.stringify(e) : null; }
 
 // Push a Service-Call visit's line items (with prices) onto its Jobber visit.
@@ -182,6 +182,26 @@ async function syncVisitLineItems(token: string, visit: any, visitGid: string, i
   });
   const c = await gql(token, M_LI_CREATE, { id: visitGid, input: { lineItems } });
   const ce = ue(c.visitCreateLineItems); if (ce) throw new Error(`visitCreateLineItems: ${ce}`);
+  // Final reconcile (concurrency self-heal): if a racing 2nd push (e.g. a rapid
+  // re-save or the inbound poll) duplicated items, trim Jobber back to exactly our
+  // DB set, per-name count. No-op when already in sync — costs one extra query.
+  try {
+    const jobGid2 = await jobberGid("job", visit.job_id);
+    if (jobGid2) {
+      const jr2 = await gql(token, Q_VISIT_LI, { jobId: jobGid2 });
+      const node2 = (jr2.job?.visits?.nodes || []).find((n: any) => n.id === visitGid);
+      const jb = (node2?.lineItems?.nodes || []) as Array<{ id: string; name: string }>;
+      const want = new Map<string, number>();
+      for (const it of items) want.set(it.name, (want.get(it.name) || 0) + 1);
+      const seen = new Map<string, number>(); const extraIds: string[] = [];
+      for (const ji of jb) { const n = (seen.get(ji.name) || 0) + 1; seen.set(ji.name, n); if (n > (want.get(ji.name) || 0)) extraIds.push(ji.id); }
+      if (extraIds.length) {
+        const dd = await gql(token, M_LI_DELETE, { id: visitGid, input: { lineItemIds: extraIds } });
+        const dde = ue(dd.visitDeleteLineItems);
+        console.log(dde ? `[push] dedupe warn: ${dde}` : `[push] deduped ${extraIds.length} racing duplicate line item(s) on ${visitGid}`);
+      }
+    }
+  } catch (e) { console.log(`[push] dedupe skipped: ${e instanceof Error ? e.message : e}`); }
   console.log(`[push] synced ${lineItems.length} line item(s) to Jobber visit ${visitGid}`);
 }
 
