@@ -58,7 +58,7 @@ Grecia=1, Fred=2, Aaron=26, Yannick=27, Diego=28, Mark=35 — all linked.
 
 ---
 
-## Issue A — Calendar delete of a Jobber-born visit didn't propagate  ✅ instance fixed · 🟡 gap open
+## Issue A — Calendar delete of a Jobber-born visit didn't propagate  ✅ instance fixed · ✅ systemic fix shipped
 
 ### What happened
 The June-26 Service Call shown in the image (visit id **5828**, title
@@ -80,21 +80,30 @@ Jobber + `entity_source_links` unlinked, then soft-deleted the row in our DB
 (`visits.deleted_at`). Verified: Jobber job #10000519 now has **0 visits**; the duplicate is
 gone. The NEW Service Call (6804, with Grecia) is the single remaining June-26 visit for 099-PV.
 
-### 🟡 Open architectural gap (decision pending)
-Calendar deletes of **Jobber-born** visits silently don't reach Jobber. This will recur any
-time someone deletes (in the Calendar) a visit that originated from Jobber.
+### Systemic fix — shipped 2026-06-25 (migration `2026-06-25_propagate_calendar_deletes_to_jobber.sql`)
+Two parts, so Calendar deletes propagate while internal sync never echoes:
 
-**Why not just widen the trigger:** the delete-push path itself is source-agnostic, but the
-trigger gate is intentional — internal processes (cross-source dedup, the SA-gen cleanup
-sweep) soft-delete Jobber-born rows for *bookkeeping*, and we must NOT let those delete the
-real Jobber visit. Blindly removing the source gate would cause unwanted Jobber deletions.
+1. **Widened `trg_push_visit_update`** to also fire `fn_push_visit_to_jobber` on a
+   soft-delete / cancel of **any** source (so Jobber-born deletes now reach the push).
+   Edits/reschedules of Jobber-born visits stay Jobber-mastered (only the delete branch
+   crosses the source gate).
+2. **Fail-safe Origin gate in `fn_push_visit_to_jobber`:** a Jobber-born visit
+   (`source` not Calendar/cron) is only deleted in Jobber when the request carries a
+   **browser Origin** (`http%`) — i.e. a human deleted it in an app. Service/sync calls
+   (no Origin) never echo a `visitDelete` back to Jobber.
 
-**Recommended fix (needs Fred's go-ahead):** add an **explicit intent** signal for
-user-initiated Calendar deletes — e.g. a `cancel_calendar_visit(visit_id)` RPC the app calls
-on delete, which pushes `op='delete'` to Jobber regardless of `source`, while ordinary
-internal soft-deletes stay silent. This keeps "delete in the Calendar removes it from Jobber"
-without letting dedup/cleanup nuke Jobber visits. Alternative (simpler, more restrictive):
-have the Calendar refuse to delete Jobber-born visits and instead route the user to Jobber.
+**Why the gate was required:** `cron_jobber_reconcile_anomalies.js` soft-deletes
+Jobber-sourced visits that are **orphaned** (already removed in Jobber) to keep our DB in
+sync. Without the gate, the widened trigger would echo a `visitDelete` for every orphan
+(failed "not found" calls = noise) and would be a data-loss footgun for any future reconcile
+that soft-deletes a still-live Jobber visit. Verified against `audit.logs`: Calendar writes
+carry `origin=https://calendar.unclogme.app` (44/47); `app_source='jobber-reconcile'`/`sql`/
+`service-agreement-cron` = 0 origin — so the gate cleanly separates human from sync.
+
+**Verification:** trigger WHEN logic evaluated on real rows (jobber: delete fires=T,
+edit=F; calendar: both=T); the Origin gate parses + decides correctly both ways
+(`https://calendar.unclogme.app` → allow; no header → block); the push path itself was
+already proven live (visit 5828). DB-only change — no edge-fn redeploy.
 
 ---
 

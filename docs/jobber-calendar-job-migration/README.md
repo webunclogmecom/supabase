@@ -114,6 +114,6 @@ delete-propagation gap for Jobber-born visits.
 - ✅ Calendar app DB layer live (RPC, driver, ripple, GDO, residential guard).
 - ✅ Two-way Jobber sync live; outbound push now includes the **assigned driver**.
 - ✅ Crew deduped to 6.
-- 🟡 **Open architectural gap:** Calendar deletes of **Jobber-born** visits don't auto-propagate
-  to Jobber (push is source-gated). See the sync-fixes doc §Issue A. Decision pending.
+- ✅ **Calendar deletes of Jobber-born visits now propagate** to Jobber (widened push trigger +
+  fail-safe Origin gate so sync/reconcile never echoes). See the sync-fixes doc §Issue A.
 - 🟡 **PITR enable** on Prod still gated on the 4 apps finishing (see memory `project_pending_pitr_enable`).
