@@ -74,8 +74,9 @@ line-item sync **Jobber-native** (Airtable sunsets May 2026).
 ### E. UX — form + drawer
 - **Field order: quantity first, then price** — everywhere line items are edited (New Visit
   form + drawer), including the existing Service-Call editor (for consistency). (Fred's
-  preference, 2026-06-25.) **STATUS: built + published standalone 2026-06-25** (Lovable
-  "Reordered qty/price fields"); live visual confirm pending (browser renderer was unstable).
+  preference, 2026-06-25.) **STATUS: SHIPPED + live-verified 2026-06-25** (Lovable
+  "Reordered qty/price fields"; confirmed on the live form — the quantity box now sits to the
+  left of the `$` price box).
 - **Drawer line-item display (polish phase, after A–D):** evaluate the best way to present a
   priced, multi-line agreement in the drawer — alignment, `$`/qty placement, per-line total,
   agreement subtotal, read vs edit states — and present **2 mockup options** for Fred to pick,
