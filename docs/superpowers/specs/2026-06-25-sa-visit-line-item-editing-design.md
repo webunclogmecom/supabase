@@ -74,7 +74,8 @@ line-item sync **Jobber-native** (Airtable sunsets May 2026).
 ### E. UX — form + drawer
 - **Field order: quantity first, then price** — everywhere line items are edited (New Visit
   form + drawer), including the existing Service-Call editor (for consistency). (Fred's
-  preference, 2026-06-25.)
+  preference, 2026-06-25.) **STATUS: built + published standalone 2026-06-25** (Lovable
+  "Reordered qty/price fields"); live visual confirm pending (browser renderer was unstable).
 - **Drawer line-item display (polish phase, after A–D):** evaluate the best way to present a
   priced, multi-line agreement in the drawer — alignment, `$`/qty placement, per-line total,
   agreement subtotal, read vs edit states — and present **2 mockup options** for Fred to pick,
@@ -91,7 +92,7 @@ line-item sync **Jobber-native** (Airtable sunsets May 2026).
 
 ## Risks / watch-items
 
-- **Untouched-visit default**: keep inheriting (no copy) — confirm with Fred (flagged).
+- **Untouched-visit default**: keep inheriting (no copy) — **CONFIRMED by Fred 2026-06-25**.
 - **Jobber per-visit override reaching the invoice**: confirmed VISIT_BASED + invoice reads
   visit lines; re-verify end-to-end with a real edit before declaring done.
 - **Don't break the Service-Call path** (the existing `service_line_item_ids` flow, the view
