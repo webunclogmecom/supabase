@@ -304,3 +304,13 @@ GRANT EXECUTE ON FUNCTION public.get_record_history(text, text, timestamptz, boo
 -- 5. Per-record query index (parent -> all partitions) ----------------------
 CREATE INDEX IF NOT EXISTS logs_table_record_changed_idx
   ON audit.logs (table_name, (record_pk->>'id'), changed_at DESC);
+
+-- 6. ops wrapper (apps call via the ops schema, like create/edit_calendar_visit)
+CREATE OR REPLACE FUNCTION ops.get_record_history(
+  p_table text, p_record_id text, p_since timestamptz DEFAULT NULL,
+  p_hide_system boolean DEFAULT true, p_limit int DEFAULT 50, p_cursor jsonb DEFAULT NULL)
+ RETURNS TABLE(entry_id bigint, changed_at timestamptz, txid bigint, actor_label text, actor_type text, app_source text, operation text, changes jsonb)
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+AS $function$ SELECT * FROM public.get_record_history(p_table, p_record_id, p_since, p_hide_system, p_limit, p_cursor); $function$;
+REVOKE ALL ON FUNCTION ops.get_record_history(text, text, timestamptz, boolean, int, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION ops.get_record_history(text, text, timestamptz, boolean, int, jsonb) TO anon, authenticated, service_role;
