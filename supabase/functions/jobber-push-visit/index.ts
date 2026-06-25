@@ -149,13 +149,13 @@ const M_LI_DELETE = `mutation($id: EncodedId!, $input: VisitDeleteLineItemsInput
 const Q_VISIT_LI  = `query($jobId: EncodedId!){ job(id:$jobId){ visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id name } } } } } }`;
 function ue(payload: any): string | null { const e = payload?.userErrors; return e && e.length ? JSON.stringify(e) : null; }
 
-// Push a Service-Call visit's line items (with prices) onto its Jobber visit.
-// Skips Service-Agreement visits (the Jobber SA job already holds the per-client
-// priced line items). Idempotent: on update it deletes the visit's existing
-// Jobber line items first, then re-creates from our DB.
+// Push a visit's line items (with prices) onto its Jobber visit. For Service-Agreement
+// visits this pushes the office's PER-VISIT overrides (set via the drawer) onto the Jobber
+// visit, replacing the inherited job lines (SA billing is per-visit / VISIT_BASED, so the
+// invoice reads the visit's lines). Un-edited SA visits carry NO visit-scoped line_items,
+// so the empty-items guard below no-ops them — leaving the Jobber visit's inherited lines
+// intact. Idempotent: deletes the visit's existing Jobber line items first, then re-creates.
 async function syncVisitLineItems(token: string, visit: any, visitGid: string, isUpdate: boolean) {
-  const { data: job } = await db.from("jobs").select("title").eq("id", visit.job_id).maybeSingle();
-  if (job?.title && /^\s*service agreement/i.test(job.title)) return; // SA -> job holds the line items
   const { data: items } = await db.from("line_items").select("name,quantity,unit_price").eq("visit_id", visit.id);
   if (!items || !items.length) return;
   // ALWAYS reconcile (create + update): delete any line items already on the
