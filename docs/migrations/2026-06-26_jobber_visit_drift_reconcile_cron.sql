@@ -11,13 +11,14 @@
 -- row per run (sync_source='jobber_visit_drift'); status='attention' when drift is
 -- detected.
 --
--- SAFE-BY-DEFAULT: DETECT + LOG only. It HEALS (re-pushes DB->Jobber via
--- public.fn_request_jobber_push) ONLY when env DRIFT_HEAL_ENABLED=1 or a per-call
--- `x-heal: 1` header is set. Auto-heal is OFF because a state reconcile cannot
--- distinguish a failed OUR-push (DB right) from a deliberate JOBBER-side edit
--- (Jobber right); the first scan (2026-06-26) surfaced 3 ambiguous divergences
--- (cron visits DB=06/25 vs Jobber=06/26). Flip DRIFT_HEAL_ENABLED on only after a
--- heal-direction policy is set (or push-intent is tracked).
+-- TWO-WAY + ON BY DEFAULT (heal-direction policy set 2026-06-26). Reconciles by
+-- direction, classified from audit.logs: HEAL (DB->Jobber via fn_request_jobber_push)
+-- only when audit proves OUR push failed (we set the current DB date AND Jobber holds
+-- the exact pre-edit value); ADOPT (Jobber->DB via adopt_visit_schedule_from_jobber,
+-- push-suppressed + AUDITED app_source='jobber') when we never edited it (a driver/
+-- Diego scheduled it in Jobber); SURFACE (log only) when ambiguous. Reconcile writes
+-- are ON by default; kill-switch env DRIFT_HEAL_DISABLED=1 (or header x-no-heal:1) ->
+-- detect-only. Full spec: docs/jobber-calendar-job-migration/2026-06-26_gate4-drift-watchdog.md
 --
 -- NOTE: applied via the Management API (cron.* requires elevated perms the
 -- migration role lacks). This file is the canonical RECORD of the job. The
