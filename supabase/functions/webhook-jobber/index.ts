@@ -319,7 +319,9 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     // when the Jobber prefix AND Airtable's Client Code #3 AGREE against a stale DB
     // value (the 2026-06-17 221-MP→224-MP case). See that probe + ADR / runbook.
     if (parsedCode && cur && !cur.client_code) clientRow.client_code = parsedCode
-    const { error } = await supabase.from('clients').update(clientRow).eq('id', existingId)
+    // supabaseJobber: handleClient is only ever CLIENT_CREATE/UPDATE/DESTROY -> audit
+    // app_source='jobber' ("Changed in Jobber") instead of bare 'sql'/"System".
+    const { error } = await supabaseJobber.from('clients').update(clientRow).eq('id', existingId)
     if (error) throw new Error(`Client update failed: ${error.message}`)
     entityId = existingId
   } else {
@@ -353,7 +355,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
         }
       }
     }
-    const { data: inserted, error } = await supabase
+    const { data: inserted, error } = await supabaseJobber
       .from('clients')
       .insert(clientRow)
       .select('id')
@@ -707,7 +709,9 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // "Requires DERM reporting" rule). MONOTONIC + idempotent in SQL: never demotes a known TRUE,
   // never writes NULL, only writes a real change. Best-effort/near-real-time; the nightly pg_cron
   // re-derive (derm-required-rederive) is the catch-up for invoice line items that arrive later.
-  const { error: dermErr } = await supabase.rpc('set_visit_derm_required', { p_visit_id: entityId })
+  // supabaseJobber: the RPC's inner UPDATE inherits request.headers x-app-source='jobber'
+  // (SECURITY INVOKER) -> the derm_required flip audits as "Changed in Jobber", not "System".
+  const { error: dermErr } = await supabaseJobber.rpc('set_visit_derm_required', { p_visit_id: entityId })
   if (dermErr) console.error(`Visit ${numericId}: set_visit_derm_required failed:`, dermErr.message)
 
   // Maintain visit_locations (M:N): attribute the visit to its client's GDO-confirmed
@@ -733,7 +737,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
           .map((g: any) => g.client_location_id).filter((x: any) => x != null))]
       }
       if (targetLocIds.length > 0) {
-        const { error: vlErr } = await supabase.from('visit_locations')
+        const { error: vlErr } = await supabaseJobber.from('visit_locations')
           .insert(targetLocIds.map((id) => ({ visit_id: entityId, client_location_id: id })))
         if (vlErr) console.error(`Visit ${numericId}: visit_locations insert failed:`, vlErr.message)
       }
@@ -871,7 +875,7 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   for (const vGid of visitGids) {
     const ourVisitId = await findEntityBySourceId('visit', 'jobber', vGid)
     if (ourVisitId) {
-      const { error: vErr } = await supabase.from('visits').update({ invoice_id: entityId }).eq('id', ourVisitId)
+      const { error: vErr } = await supabaseJobber.from('visits').update({ invoice_id: entityId }).eq('id', ourVisitId)
       if (vErr) console.error(`Invoice ${numericId}: visit ${ourVisitId} invoice_id update failed:`, vErr.message)
     }
   }
@@ -1125,7 +1129,9 @@ async function softStatusFlip(
     console.log(`[softStatusFlip ${entity_type}] unknown source_id=${gid} — nothing to update`)
     return { entity_id: 0 }
   }
-  const { error } = await supabase.from(table).update({ [statusCol]: newStatus }).eq('id', existingId)
+  // supabaseJobber: every *_DESTROY / JOB_CLOSED topic is Jobber-originated -> the
+  // cancel/archive audits as "Changed in Jobber" (visits/clients are user-visible).
+  const { error } = await supabaseJobber.from(table).update({ [statusCol]: newStatus }).eq('id', existingId)
   if (error) throw new Error(`${table}.${statusCol}='${newStatus}' failed: ${error.message}`)
   return { entity_id: existingId }
 }
