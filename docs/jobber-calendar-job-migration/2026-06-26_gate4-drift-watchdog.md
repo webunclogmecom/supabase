@@ -1,98 +1,103 @@
 # Gate #4 — Calendar→Jobber schedule-drift watchdog (`sync-jobber-visit-drift`)
 
-*2026-06-26. Status: **DETECT + LOG LIVE** (cron every 30 min). Auto-heal BUILT + tested but **OFF by default** pending a heal-direction policy.*
+*2026-06-26. Status: **LIVE** (cron every 30 min). Detects drift + **heals only a provable failed-our-push**
+(audit-gated, on by default, kill-switch available); Jobber-side edits are surfaced, never reverted.*
 
 ## Why it exists
 
 A Calendar/cron visit edit (incl. every row of a `ripple_reschedule_visit` cascade) pushes to
 Jobber **fire-and-forget**: `trg_push_visit_update → fn_push_visit_to_jobber → net.http_post →
-jobber-push-visit → visitEditSchedule`. If that push silently fails (Jobber userError, token
-refresh failure, pg_net drop), **the DB shows date X while Jobber stays on date Y and nothing is
-recorded**:
+jobber-push-visit → visitEditSchedule`. If that push silently fails, **the DB shows date X while
+Jobber stays on date Y and nothing is recorded**:
 
-- The update push path writes **no** `visit_sync_flags` row (flags are only written on the
-  *create* path — `jobber-push-visit/index.ts:269,272`).
-- `net._http_response` has **no `visit_id`** (body returns the Jobber GID, not our id), is 84%
-  poll-noise, and purges in **~6 h** (`pg_net.ttl='6 hours'`). Unusable for forensics.
-- The inbound poll **never clobbers** a calendar/cron visit's schedule (the `handleVisit`
-  loop-guard does a completion-only sync — `webhook-jobber/index.ts:581-603`), so the DB keeps
-  the correct date and the divergence is **invisible from DB columns alone**.
+- The update push path writes **no** `visit_sync_flags` row (flags are create-path only).
+- `net._http_response` has **no `visit_id`**, is mostly poll-noise, and purges in **~6 h**.
+- The inbound poll **never clobbers** a calendar/cron visit's schedule (`handleVisit` loop-guard,
+  `webhook-jobber:581-603`), so the DB keeps the date and the divergence is **invisible from DB
+  columns alone**. `ops.v_calendar_push_health` only finds *unlinked* orphans — a failed reschedule
+  is *linked* + *unflagged*, so it slips through.
 
-The existing `ops.v_calendar_push_health` only finds *unlinked* orphans + explicit flag rows — a
-failed reschedule is *linked* (has a GID) and *unflagged*, so it slips through. The **only** way
-to catch it is to read Jobber's actual `startAt` and compare. That is gate #4.
+The only way to catch it is to read Jobber's actual `startAt` and compare. That is gate #4.
+
+## Heal policy — "Calendar is master, but drivers/Diego use Jobber" (Fred, 2026-06-26)
+
+Drivers complete visits in Jobber, and Diego sometimes reschedules/edits there — those are
+**legitimate** and must **never be reverted**. So a blind DB→Jobber heal is unsafe. The heal is
+**direction-safe by construction**: it re-pushes DB→Jobber **only** when the **audit trail proves it
+was our push that failed** — a `visit_date`-changing `audit.logs` UPDATE set the **current DB date**
+AND Jobber still holds the **exact pre-edit value** (`public.visit_last_schedule_edit`). Any other
+Jobber value (a Jobber-side move/time assignment) does **not** match → it is **surfaced** in
+`sync_log`, never healed. (Completed visits are out of scope — only `scheduled` visits are checked,
+and completions already sync inbound. Client edits are Jobber-mastered already.)
+
+Heal of the safe class is **ON by default**; kill-switch: env `DRIFT_HEAL_DISABLED=1` (or per-call
+`x-no-heal: 1`) → detect-only.
 
 ## What it does
 
 Pattern-A self-verifying watchdog (pg_cron → Edge Function), modeled on `sync-jobber-upcoming-visits`:
 
-1. **Candidates** — `public.calendar_visit_drift_candidates(p_back_days=7, p_fwd_days=184)`:
-   calendar/cron-mastered (`source IN ('visit-calendar','supabase_cron')`), `scheduled`,
-   Jobber-**linked**, live (`v_visits_live`) visits in `[today-7, today+6mo]`. (~676 today.) The
-   window is **re-scanned in full every run** (level-triggered, no cursor) so a skipped run is
-   self-healing.
-2. **Pull** Jobber's upcoming visits (`startAt` ≥ today-7), paginated, stopping once every
-   candidate GID is seen; map `gid → startAt`.
-3. **Compare ET-floored** (mirrors `etParts`/`visitSchedule` in `jobber-push-visit`): untimed
-   visit → compare date only; timed → date + ET `HH:MM`. Jobber returns an all-day `startAt` as
-   ET-midnight-in-UTC (`04:00Z`), which floors back to the `visit_date` — **verified on visit 6036,
-   no false-positive**.
-4. **Heal (gated)** — for each drifted visit, `rpc('fn_request_jobber_push', {visit_id,'upsert'})`
-   (reuses the proven trigger path: vault `jobber_push_service_key` → `jobber-push-visit`), then
-   **re-reads Jobber per GID to confirm convergence**. Idempotent; `op='upsert'` on a linked visit
-   only edits schedule/title/team/lines — never creates or deletes. Bounded `MAX_HEAL_PER_RUN=50`.
-5. **Log** one `public.sync_log` row, `sync_source='jobber_visit_drift'`:
-   `status='attention'` when drift detected + heal off, `'success'`/`'partial'` when healing,
-   `'error'` on throw. `details` carries `checked / drift_found / drift_healed / residual_drift /
-   read_fail / heal_enabled / drifted_visit_ids`.
+1. **Candidates** — `public.calendar_visit_drift_candidates(7, 184)`: calendar/cron-mastered,
+   `scheduled`, Jobber-**linked**, live visits in `[today-7, today+6mo]` (~676). Re-scanned in full
+   every run (level-triggered, self-healing — no cursor).
+2. **Pull** Jobber upcoming `startAt` (≥ today-7), paginated, stopping once all candidate GIDs seen.
+3. **Compare ET-floored, OVERNIGHT-AWARE** (mirrors `etParts`/`visitSchedule`):
+   - **Untimed** visit (`start_at IS NULL`): `visit_date` is the logical **operating date**. A Jobber
+     start in the **early-AM (< 06:00 ET) of the next clock day** is the overnight execution of that
+     operating date (commercial trucks run 10pm–3am) → **NOT drift**. (Without this, every overnight
+     visit false-flags — e.g. visit 6496, a 3:00 AM run of the 06-25 operating date.)
+   - **Timed** visit: compare Jobber `startAt` to the DB `start_at` (date + ET `HH:MM`) — **not** to
+     `visit_date` — so a correctly-stored timed overnight visit isn't false-flagged.
+4. **Classify** each drift via `public.visit_last_schedule_edit` (reads `audit.logs`): **our failed
+   push** (Jobber == pre-edit value) → *healable*; else → *surfaced* (`no_our_edit` /
+   `jobber_value_unexpected`).
+5. **Heal** the healable class via `rpc('fn_request_jobber_push')` (vault key → jobber-push-visit,
+   the proven trigger path) + **re-read Jobber to confirm convergence**. Idempotent; `op='upsert'`
+   on a linked visit only edits schedule/title/team/lines. Bounded `MAX_HEAL_PER_RUN=50`.
+6. **Log** one `public.sync_log` row, `sync_source='jobber_visit_drift'`: `status='attention'` when
+   anything still needs eyes (unhealed failed-push OR jobber-origin drift), else `'success'`.
+   `details`: `heal_enabled / checked / drift_found / healable / drift_healed / residual_drift /
+   jobber_origin / jobber_origin_visits / read_fail / healable_visit_ids`.
 
-## Safe-by-default: why auto-heal is OFF
+## Verified (2026-06-26)
 
-A state reconcile **cannot tell** a failed *our-push* (DB right → heal DB→Jobber) from a deliberate
-*Jobber-side edit* (Jobber right → do **not** clobber). The very first scan (2026-06-26) proved this
-matters — it found **3 real divergences**:
+- **Overnight fix:** visit 6496 (untimed, 3:00 AM = overnight of 06-25) no longer flagged.
+- **Classification / no false revert:** visits **5971** (untimed 06-25 vs Jobber 06-26 9:30 AM —
+  `no_our_edit`) and **6458** (timed; DB 06-25 midnight vs Jobber 06-26 2:00 AM — `jobber_value_unexpected`,
+  we'd moved it via `sql`) are **surfaced, `healable=0`, `healed=0`** — Jobber-side state untouched.
+- **Heal:** an induced failed-our-push on visit 6038 (DB→11-25, Jobber stuck on 11-20, audit proves
+  ours) classified `healable=1`, healed (Jobber → 11-25), the 2 jobber-origin untouched, then
+  reverted net-zero (DB + Jobber).
 
-| visit | client | DB date | Jobber date | note |
-|---|---|---|---|---|
-| 5971 | 028-HUM Hummus Achla | 2026-06-25 | 2026-06-26 | scheduled, cron, no app-edit |
-| 6458 | 195-MYK Myka Lincoln | 2026-06-25 | 2026-06-26 | scheduled, cron, no app-edit |
-| 6496 | 214-MYK Myka Brickell FT | 2026-06-25 | 2026-06-26 | scheduled, cron, no app-edit |
+## Open review items (surfaced, not auto-resolved)
 
-All three are dated **yesterday** in DB but **today** in Jobber — almost certainly **slipped visits
-moved forward in Jobber**. Blindly healing DB→Jobber would revert them to *yesterday*, which is
-wrong. So the watchdog **surfaces** drift (sync_log `attention`) rather than auto-reverting it.
-
-**To enable auto-heal** once the policy is set ("Calendar is master, always heal DB→Jobber"):
-set the Functions secret `DRIFT_HEAL_ENABLED=1` (project-wide) — OR send a per-call `x-heal: 1`
-header for a one-off heal. Heal was **validated in isolation** on a controlled induced drift
-(visit 6038: DB→Jobber re-push converged Jobber, then reverted net-zero). Before flipping it on,
-prefer adding **push-intent attribution** (only heal drift on a visit whose schedule was edited via
-our apps recently) so legitimate Jobber-side edits are never clobbered.
+`sync_log` currently shows **2 jobber-origin drifts** to eyeball: **5971** (028-HUM) and **6458**
+(195-MYK) — both DB operating-date 06-25 vs a Jobber 06-26 slot. Likely a driver/Diego scheduled them
+in Jobber; if Jobber is right, our DB should adopt the Jobber date (a future **Jobber→DB adopt** step,
+intentionally NOT automated yet — it writes canonical data from a Jobber-side edit).
 
 ## Pieces
 
 | Piece | File |
 |---|---|
 | Candidate set fn | `docs/migrations/2026-06-26_calendar_visit_drift_candidates.sql` |
-| Re-push primitive | `docs/migrations/2026-06-26_fn_request_jobber_push.sql` (`public.fn_request_jobber_push(visit_id, op)`) |
-| Edge Function | `supabase/functions/sync-jobber-visit-drift/index.ts` (verify_jwt=false, `config.toml`) |
+| Re-push primitive | `docs/migrations/2026-06-26_fn_request_jobber_push.sql` |
+| Heal safety discriminator | `docs/migrations/2026-06-26_visit_last_schedule_edit.sql` |
+| Edge Function | `supabase/functions/sync-jobber-visit-drift/index.ts` (verify_jwt=false) |
 | Cron (RECORD) | `docs/migrations/2026-06-26_jobber_visit_drift_reconcile_cron.sql` — `jobber-visit-drift-reconcile` `*/30` |
 
 ## Operating
 
 - **Watch:** `SELECT status, details FROM sync_log WHERE sync_source='jobber_visit_drift' ORDER BY id DESC;`
-  Alert when `details->>'residual_drift'` (heal on) or `details->>'drift_found'` (heal off) stays
-  `> 0` across **two consecutive** runs — a transient throttle clears next run; sustained = a real
-  divergence to investigate (or, if `read_fail>0`, a Jobber-deleted-but-still-linked visit → that's
-  the `cron_jobber_reconcile_anomalies` soft-delete path, not this gate).
+  Alert when `details->>'residual_drift'` (a failed-our-push that the re-push couldn't fix) or
+  `details->>'jobber_origin'` stays `> 0` across **two** runs.
 - **Manual run:** `POST /functions/v1/sync-jobber-visit-drift` with `x-sync-key` + `x-sync-wait: 1`
-  (add `x-heal: 1` to heal that run).
+  (add `x-no-heal: 1` to detect-only).
+- **Disable heal:** set Functions secret `DRIFT_HEAL_DISABLED=1`.
 
 ## Compliance
 
-No new business table; reuses `sync_log` + `visit_sync_flags`. No source-prefixed columns — the
-DB↔Jobber map is the `entity_source_links` bridge. `fn_request_jobber_push` is SECURITY DEFINER,
-service_role-only. Heal never writes `visits.derm_required` (structurally cannot demote DERM) and
-never hard-deletes (`op='upsert'` only). ADR 010: view/function/cron only → audit opt-out, stated
-in each migration header. Built from the verified design in
-`docs/superpowers/specs/` workflow (2026-06-26).
+No new business table; reuses `sync_log` + the `entity_source_links` bridge. No source-prefixed
+columns. `fn_request_jobber_push` / `visit_last_schedule_edit` are SECURITY DEFINER, service_role-only.
+Heal never writes `visits.derm_required` (cannot demote DERM) and never hard-deletes (`op='upsert'`
+only). ADR 010: view/function/cron only → audit opt-out per migration header.
