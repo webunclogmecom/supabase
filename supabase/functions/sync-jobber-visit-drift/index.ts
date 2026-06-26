@@ -1,39 +1,31 @@
 // ============================================================================
-// sync-jobber-visit-drift — Edge Function · "Gate #4" Calendar->Jobber drift watchdog
+// sync-jobber-visit-drift — Edge Function · "Gate #4" Calendar<->Jobber drift reconciler
 // ============================================================================
-// Detects + (safely) heals Calendar/cron visit reschedules whose fire-and-forget
-// push to Jobber SILENTLY FAILED (DB says date X, Jobber stuck on date Y). This is
-// the blind spot ops.v_calendar_push_health can't see: a failed reschedule is
-// already LINKED (has a GID) and the update push path writes no visit_sync_flags
-// row, so only reading Jobber's actual startAt reveals it.
+// Two-way reconciler for calendar/cron-mastered visit schedules vs Jobber, for the
+// silent fire-and-forget push-failure blind spot (DB date X, Jobber date Y, no trace;
+// ops.v_calendar_push_health can't see it because the visit is linked + unflagged).
 //
-// "Calendar is master, but drivers/Diego use Jobber" (Fred, 2026-06-26). So the
-// heal is DIRECTION-SAFE: it re-pushes DB->Jobber ONLY when the audit trail proves
-// it was OUR push that failed -- i.e. a visit_date-changing audit UPDATE set the
-// CURRENT DB date AND Jobber still holds the exact PRE-edit value. Any other Jobber
-// value (a deliberate Jobber-side move / time assignment by a driver or Diego)
-// does NOT match and is SURFACED for review, never reverted.
+// "Calendar is master, but drivers/Diego use Jobber" (Fred, 2026-06-26). So each
+// drift is classified from the AUDIT trail and handled by direction:
+//   * HEAL  (DB->Jobber): our push failed -- audit proves WE set the current DB date
+//     AND Jobber still holds the exact PRE-edit value. Re-push via fn_request_jobber_push.
+//   * ADOPT (Jobber->DB): we NEVER edited it (no visit_date audit UPDATE) -> a driver/
+//     Diego scheduled it in Jobber -> Jobber is authoritative -> pull its schedule into
+//     our DB via adopt_visit_schedule_from_jobber (push-suppressed; AUDITED app_source
+//     ='jobber' via the X-App-Source header so the visit's Activity history shows it).
+//   * SURFACE (review): we edited it AND Jobber holds some OTHER value (ambiguous
+//     conflict) -> log only, never auto-resolve.
+// Completed visits are out of scope (only `scheduled` checked; completions sync inbound).
 //
-// HOW:
-//   1. candidates = public.calendar_visit_drift_candidates() — calendar/cron,
-//      scheduled, Jobber-linked, live visits in [today-7, today+6mo].
-//   2. pull Jobber upcoming visits (startAt >= today-7), paginated; map gid->startAt.
-//   3. compare ET-floored, OVERNIGHT-AWARE: an untimed visit's visit_date is the
-//      logical OPERATING date; a Jobber start in the early-AM (< 06:00 ET) of the
-//      NEXT clock day is the overnight execution of that operating date (commercial
-//      trucks run 10pm-3am) -> NOT drift. (Without this, every overnight visit
-//      false-flags.) Timed visit -> compare date + ET HH:MM.
-//   4. classify each drift via public.visit_last_schedule_edit (audit): OUR failed
-//      push (Jobber==pre-edit value) -> healable; else -> surfaced (jobber-origin).
-//   5. heal healable via rpc('fn_request_jobber_push') + re-read to confirm; bounded.
-//      Kill-switch: env DRIFT_HEAL_DISABLED=1 (or header x-no-heal:1) -> detect-only.
-//   6. one public.sync_log row (sync_source='jobber_visit_drift').
+// Compare is ET-floored + OVERNIGHT-AWARE: an untimed visit's visit_date is the logical
+// OPERATING date; a Jobber start in the early-AM (< 06:00 ET) of the next clock day is
+// the overnight (10pm-3am) execution of that operating date -> NOT drift. Timed visits
+// compare to the DB start_at, not visit_date.
 //
-// Self-healing: window re-scanned in full every run (no cursor). Never reads
-// net._http_response (no visit_id + ~6h TTL).
-//
-// Auth: caller must present `x-sync-key: <SYNC_TRIGGER_KEY>`. Deployed --no-verify-jwt.
-// Reads/refreshes the Jobber READ token from public.webhook_tokens('jobber').
+// Reconcile writes (heal + adopt) are ON by default; kill-switch env
+// DRIFT_HEAL_DISABLED=1 (or header x-no-heal:1) -> detect-only. One sync_log row/run.
+// Never reads net._http_response (no visit_id + ~6h TTL). Self-healing: window
+// re-scanned in full every run. Auth: x-sync-key. Deployed --no-verify-jwt.
 // ============================================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -46,11 +38,15 @@ const TZ = 'America/New_York'
 const BACK_DAYS = 7
 const FWD_DAYS = 184
 const MAX_PAGES = 100
-const MAX_HEAL_PER_RUN = 50
-const OVERNIGHT_CUTOFF = '06:00'   // a Jobber start before this on visit_date+1 = overnight execution of visit_date
+const MAX_RECONCILE_PER_RUN = 50
+const OVERNIGHT_CUTOFF = '06:00'
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
+// Adopt writes (Jobber->DB) go through this client so audit.logs.app_source='jobber'
+// (per ADR 016: X-App-Source overrides) — the visit's Activity history shows "from Jobber".
+const supabaseJobber = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'jobber' } } })
 
 type Cand = { id: number; visit_date: string; start_at: string | null; end_at: string | null; jobber_gid: string }
+type JV = { startAt: string; endAt: string | null }
 
 async function gql(token: string, query: string) {
   const r = await fetch('https://api.getjobber.com/api/graphql', {
@@ -87,7 +83,6 @@ async function getToken(): Promise<string> {
   return token
 }
 
-// UTC instant -> ET wall-clock { date, time }. Mirrors jobber-push-visit/etParts.
 function etParts(d: Date) {
   const f = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
   const p: Record<string, string> = {}
@@ -98,8 +93,6 @@ function addDays(dateStr: string, n: number): string {
   const d = new Date(`${dateStr}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10)
 }
 
-// true if Jobber's startAt diverges from the DB schedule. Untimed -> operating-date
-// compare with an overnight allowance; timed -> date + ET HH:MM.
 function isDrift(c: Cand, jobberStartAt: string): boolean {
   const jEt = etParts(new Date(jobberStartAt))
   if (!c.start_at) {
@@ -107,12 +100,19 @@ function isDrift(c: Cand, jobberStartAt: string): boolean {
     if (jEt.date === addDays(c.visit_date, 1) && jEt.time.slice(0, 5) < OVERNIGHT_CUTOFF) return false  // overnight execution of the operating date
     return true
   }
-  // timed visit: Jobber's startAt must match the DB start_at (the clock time we
-  // pushed) -- compare to dbEt, NOT visit_date (the operating-date label), so a
-  // correctly-stored timed OVERNIGHT visit (start_at on visit_date+1 early-AM) is
-  // not false-flagged.
+  // timed: compare Jobber startAt to the DB start_at (clock time we pushed), not visit_date
   const dbEt = etParts(new Date(c.start_at))
   return jEt.date !== dbEt.date || jEt.time.slice(0, 5) !== dbEt.time.slice(0, 5)
+}
+
+// Jobber schedule -> the DB row we should adopt. All-day (ET midnight) -> untimed +
+// operating-date = that date. Timed -> keep the clock start/end; operating-date is the
+// overnight-adjusted date (an early-AM start belongs to the previous operating day).
+function adoptTarget(jv: JV): { visit_date: string; start_at: string | null; end_at: string | null } {
+  const e = etParts(new Date(jv.startAt))
+  if (e.time === '00:00:00') return { visit_date: e.date, start_at: null, end_at: null }
+  const visit_date = e.time.slice(0, 5) < OVERNIGHT_CUTOFF ? addDays(e.date, -1) : e.date
+  return { visit_date, start_at: jv.startAt, end_at: jv.endAt }
 }
 
 async function jobberStartAtByGid(token: string, gid: string): Promise<string | null> {
@@ -120,81 +120,87 @@ async function jobberStartAtByGid(token: string, gid: string): Promise<string | 
   return d?.visit?.startAt ?? null
 }
 
-async function runSync(healEnabled: boolean): Promise<Record<string, unknown>> {
+async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
   const startedAt = new Date().toISOString(); const startMs = Date.now()
   try {
     const token = await getToken()
 
-    // 1. candidates
     const { data: candidates, error: cErr } = await supabase.rpc('calendar_visit_drift_candidates', { p_back_days: BACK_DAYS, p_fwd_days: FWD_DAYS })
     if (cErr) throw new Error(`candidates rpc: ${cErr.message}`)
     const cands = (candidates ?? []) as Cand[]
     const byGid = new Map(cands.map((c) => [c.jobber_gid, c]))
 
-    // 2. pull Jobber upcoming startAt (>= today-7)
     const back = new Date(); back.setUTCHours(0, 0, 0, 0); back.setUTCDate(back.getUTCDate() - BACK_DAYS); const afterIso = back.toISOString()
-    const jobberStart = new Map<string, string>()
+    const jobberStart = new Map<string, JV>()
     let cursor: string | null = null, page = 0
     while (page++ < MAX_PAGES) {
       const after = cursor ? `, after: "${cursor}"` : ''
-      const data = await gql(token, `{ visits(first: 50, filter: { startAt: { after: "${afterIso}" } }${after}) { pageInfo { hasNextPage endCursor } nodes { id startAt } } }`)
-      for (const n of data.visits.nodes) if (byGid.has(n.id)) jobberStart.set(n.id, n.startAt)
+      const data = await gql(token, `{ visits(first: 50, filter: { startAt: { after: "${afterIso}" } }${after}) { pageInfo { hasNextPage endCursor } nodes { id startAt endAt } } }`)
+      for (const n of data.visits.nodes) if (byGid.has(n.id)) jobberStart.set(n.id, { startAt: n.startAt, endAt: n.endAt ?? null })
       if (jobberStart.size >= byGid.size) break
       if (!data.visits.pageInfo.hasNextPage) break
       cursor = data.visits.pageInfo.endCursor
       await new Promise((s) => setTimeout(s, 700))
     }
 
-    // 3. compare (overnight-aware)
+    // compare (overnight-aware)
     const drifted: Cand[] = []
     let readFail = 0
     for (const c of cands) {
-      const jsa = jobberStart.get(c.jobber_gid)
-      if (!jsa) { readFail++; continue }
-      if (isDrift(c, jsa)) drifted.push(c)
+      const jv = jobberStart.get(c.jobber_gid)
+      if (!jv) { readFail++; continue }
+      if (isDrift(c, jv.startAt)) drifted.push(c)
     }
 
-    // 4. classify: OUR failed push (healable) vs Jobber-origin (surface only)
+    // classify by audit: our failed push (heal) / never-edited (adopt) / ambiguous (surface)
     const healable: Cand[] = []
+    const adoptable: Cand[] = []
     const surfaced: Array<{ id: number; jobber_date: string; reason: string; app_source: string | null }> = []
     for (const c of drifted) {
-      const jDate = etParts(new Date(jobberStart.get(c.jobber_gid)!)).date
+      const jDate = etParts(new Date(jobberStart.get(c.jobber_gid)!.startAt)).date
       const { data: le } = await supabase.rpc('visit_last_schedule_edit', { p_visit_id: c.id })
       const last = (Array.isArray(le) ? le[0] : le) as { old_date: string; new_date: string; app_source: string | null } | undefined
-      const ourFailedPush = !!last && last.new_date === c.visit_date && last.old_date === jDate   // we set current; Jobber holds pre-edit value
-      if (ourFailedPush) healable.push(c)
-      else surfaced.push({ id: c.id, jobber_date: jDate, reason: last ? 'jobber_value_unexpected' : 'no_our_edit', app_source: last?.app_source ?? null })
+      if (last && last.new_date === c.visit_date && last.old_date === jDate) healable.push(c)        // our push failed (Jobber holds pre-edit value)
+      else if (!last) adoptable.push(c)                                                              // we never edited it -> Jobber authoritative
+      else surfaced.push({ id: c.id, jobber_date: jDate, reason: 'jobber_value_unexpected', app_source: last.app_source ?? null })  // we edited; Jobber has a 3rd value -> review
     }
 
-    // 5. heal only the healable class (provable failed-our-push) when enabled
-    let healed = 0, residual = 0
-    if (healEnabled && healable.length) {
-      const toHeal = healable.slice(0, MAX_HEAL_PER_RUN)
-      for (const d of toHeal) await supabase.rpc('fn_request_jobber_push', { p_visit_id: d.id, p_op: 'upsert' })
-      await new Promise((s) => setTimeout(s, 8000))
-      for (const d of toHeal) {
-        try { const jsa = await jobberStartAtByGid(token, d.jobber_gid); if (jsa && !isDrift(d, jsa)) healed++; else residual++ } catch { residual++ }
+    let healed = 0, healFail = 0, adopted = 0, adoptFail = 0
+    if (reconcile) {
+      // HEAL DB->Jobber
+      for (const d of healable.slice(0, MAX_RECONCILE_PER_RUN)) await supabase.rpc('fn_request_jobber_push', { p_visit_id: d.id, p_op: 'upsert' })
+      if (healable.length) await new Promise((s) => setTimeout(s, 8000))
+      for (const d of healable.slice(0, MAX_RECONCILE_PER_RUN)) {
+        try { const jsa = await jobberStartAtByGid(token, d.jobber_gid); if (jsa && !isDrift(d, jsa)) healed++; else healFail++ } catch { healFail++ }
       }
-      residual += Math.max(0, healable.length - toHeal.length)
-    } else {
-      residual = healable.length   // not healed (kill-switch on)
-    }
+      healFail += Math.max(0, healable.length - MAX_RECONCILE_PER_RUN)
+      // ADOPT Jobber->DB (push-suppressed, audited app_source='jobber')
+      for (const c of adoptable.slice(0, MAX_RECONCILE_PER_RUN)) {
+        const t = adoptTarget(jobberStart.get(c.jobber_gid)!)
+        try {
+          const { data: ok, error } = await supabaseJobber.rpc('adopt_visit_schedule_from_jobber', { p_visit_id: c.id, p_visit_date: t.visit_date, p_start_at: t.start_at, p_end_at: t.end_at })
+          if (!error && ok) adopted++; else adoptFail++
+        } catch { adoptFail++ }
+      }
+      adoptFail += Math.max(0, adoptable.length - MAX_RECONCILE_PER_RUN)
+    } else { healFail = healable.length; adoptFail = adoptable.length }
 
-    // 6. log. attention = anything still needing eyes (unhealed failed-push OR jobber-origin drift).
+    const residual = healFail + adoptFail   // reconcile writes that didn't land
     const dur = Math.round((Date.now() - startMs) / 1000)
     const needsAttention = residual > 0 || surfaced.length > 0
     const status = drifted.length === 0 ? 'success' : (needsAttention ? 'attention' : 'success')
     await supabase.from('sync_log').insert({
       sync_source: 'jobber_visit_drift', started_at: startedAt, finished_at: new Date().toISOString(),
-      rows_updated: healed, rows_errored: residual, duration_seconds: dur, status,
+      rows_updated: healed + adopted, rows_errored: residual, duration_seconds: dur, status,
       details: {
-        heal_enabled: healEnabled, checked: cands.length, drift_found: drifted.length,
-        healable: healable.length, drift_healed: healed, residual_drift: residual,
-        jobber_origin: surfaced.length, jobber_origin_visits: surfaced.slice(0, 50),
-        read_fail: readFail, healable_visit_ids: healable.map((d) => d.id).slice(0, 100),
+        reconcile_enabled: reconcile, checked: cands.length, drift_found: drifted.length,
+        healable: healable.length, healed, adoptable: adoptable.length, adopted,
+        jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50),
+        residual, read_fail: readFail,
+        healable_visit_ids: healable.map((d) => d.id).slice(0, 100), adopted_visit_ids: adoptable.map((d) => d.id).slice(0, 100),
       },
     })
-    return { heal_enabled: healEnabled, checked: cands.length, drift_found: drifted.length, healable: healable.length, drift_healed: healed, residual_drift: residual, jobber_origin: surfaced.length, jobber_origin_visits: surfaced.slice(0, 50), read_fail: readFail }
+    return { reconcile_enabled: reconcile, checked: cands.length, drift_found: drifted.length, healable: healable.length, healed, adoptable: adoptable.length, adopted, jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50), residual, read_fail: readFail }
   } catch (e) {
     const dur = Math.round((Date.now() - startMs) / 1000)
     await supabase.from('sync_log').insert({ sync_source: 'jobber_visit_drift', started_at: startedAt, finished_at: new Date().toISOString(), rows_updated: 0, rows_errored: 0, duration_seconds: dur, status: 'error', details: { error: String(e).slice(0, 300) } }).catch(() => {})
@@ -204,12 +210,12 @@ async function runSync(healEnabled: boolean): Promise<Record<string, unknown>> {
 
 Deno.serve(async (req) => {
   if (TRIGGER_KEY && req.headers.get('x-sync-key') !== TRIGGER_KEY) return new Response('forbidden', { status: 403 })
-  const healEnabled = !HEAL_DISABLED_ENV && req.headers.get('x-no-heal') !== '1'   // heal the safe class by default; kill-switch via env or header
+  const reconcile = !HEAL_DISABLED_ENV && req.headers.get('x-no-heal') !== '1'
   if (req.headers.get('x-sync-wait') === '1') {
-    const res = await runSync(healEnabled)
+    const res = await runSync(reconcile)
     return new Response(JSON.stringify(res), { status: res.error ? 500 : ((res.drift_found as number) ? 207 : 200), headers: { 'Content-Type': 'application/json' } })
   }
   // @ts-ignore — EdgeRuntime is provided by the Supabase Edge runtime.
-  EdgeRuntime.waitUntil(runSync(healEnabled))
+  EdgeRuntime.waitUntil(runSync(reconcile))
   return new Response(JSON.stringify({ accepted: true }), { status: 202, headers: { 'Content-Type': 'application/json' } })
 })
