@@ -1,6 +1,47 @@
 # Activity tab — "who did it" attribution — design spec
 
-*2026-06-26. Status: DESIGN APPROVED (Fred), ready for implementation plan.*
+*2026-06-26. Status: **P1+P2a SHIPPED + fact-verified**; P2b GATED.*
+
+## Status / impact review (2026-06-26)
+
+A 4-lens adversarial impact review returned **GO-WITH-CHANGES**. P1+P2a were implemented with the
+fixes folded in (migration `2026-06-26_activity_attribution_p1_p2a.sql`); **P2b is gated** (touches the
+hot inbound path + has an open product question).
+
+**Corrections from the review (the original "Verified facts" below overstated reach):**
+- Only **60 of 452** `visit-calendar` audit rows carry a person (the rest are pre-2026-06-24 anon rows);
+  they correctly keep the bare "Edited in Visit Calendar" label.
+- The 3 logins (fred@/yannick@/unclogme@) matched **no** `employees.email`, so the migration **seeds**
+  `employees.email` for **Fred** + **Yannick** → names now resolve ("Edited in Visit Calendar by Fred",
+  verified on visit 5873). A future Diego/office login needs the same seed; until then it shows the email.
+
+**Safety fixes folded in (vs the original design):**
+- **Dropped the `audit.log_change` `changed_by` hygiene fix** — not needed (display reads
+  `jwt_claims->>'email'`, already captured) and its `::uuid` cast could **abort writes** on a non-uuid
+  `sub`. Zero audit-trigger change in P1+P2a.
+- Person resolved as a **scalar `LIMIT 1` correlated subquery**, never a JOIN (`employees.email` is not
+  unique → a JOIN would multiply history rows across all 4 apps).
+- `src` selects **only** `jwt_claims->>'email'` + `request_context->>'actor_name'` — never raw
+  `jwt_claims` (15 PII keys; the fn is anon-granted). 8-col signature unchanged.
+- Person-resolution stays **inside the human-app WHEN branch**; `p_hide_system` allowlist + system/cron
+  branches byte-identical → field-portal/derm-tracker/admin-review + cron labels preserved (verified).
+- **Shared `unclogme@unclogme.com`** login → **no by-line** (collapses N humans into one).
+
+**P2b gate (deferred):** (1) `webhook-jobber.handleVisit` must use a **dedicated per-write client**
+(`createClient(..., {global:{headers:{'x-app-source':'jobber','x-actor-name':<name>}}})`) on **all three**
+write paths — NOT the shared `_shared/supabase-client.ts` singleton (also imported by
+webhook-airtable/samsara → would mislabel every entity). (2) **Validate** `Visit.createdBy{ name{ full } }`
+against the live read-token schema before deploy (the shared `gql()` throws on errors → a bad subfield
+halts ALL inbound visit ingestion). (3) Render the **completion** name from the stored
+`visits.completed_by` column, not request_context (only `createdBy` lacks a column). (4) **Product
+question for Fred:** `completedBy` is often the office processor (Diego), not the field driver — confirm
+"Completed in Jobber by <completedBy>" is acceptable. (5) Gate-#4 invariant note: the drift classifier is
+safe under the `sql→jobber` relabel **only because** `handleVisit` never writes `visit_date` on
+`source IN ('visit-calendar','supabase_cron')` visits — flag the loop-guard as load-bearing.
+
+---
+
+*Original design (2026-06-26, approved):*
 
 ## Goal
 
