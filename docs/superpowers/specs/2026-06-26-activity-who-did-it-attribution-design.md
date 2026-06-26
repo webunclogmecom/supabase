@@ -1,6 +1,6 @@
 # Activity tab — "who did it" attribution — design spec
 
-*2026-06-26. Status: **P1+P2a SHIPPED + fact-verified**; P2b GATED.*
+*2026-06-26. Status: **P1 + P2a + P2b ALL SHIPPED + verified** (facts + Chrome UI).*
 
 ## Status / impact review (2026-06-26)
 
@@ -27,7 +27,20 @@ hot inbound path + has an open product question).
   branches byte-identical → field-portal/derm-tracker/admin-review + cron labels preserved (verified).
 - **Shared `unclogme@unclogme.com`** login → **no by-line** (collapses N humans into one).
 
-**P2b gate (deferred):** (1) `webhook-jobber.handleVisit` must use a **dedicated per-write client**
+**P2b — SHIPPED 2026-06-26** (migration `2026-06-26_activity_attribution_p2b.sql` + `webhook-jobber`
+deploy). `handleVisit` routes its **4 visits-writes** through a **dedicated per-write client**
+(`x-app-source='jobber'` + `x-actor-name=createdBy` on insert) — NOT the shared singleton, so
+clients/jobs/invoices/airtable/samsara attribution is untouched. `createdBy{name{full}}` validated
+against the live read-token schema before deploy. `audit.log_change` captures `x-actor-name` into
+`request_context` (additive, null-dropped, 120-cap). `get_record_history` 'jobber' branch →
+**"Created in Jobber by <createdBy>"** (INSERT, from request_context) / **"Completed in Jobber by
+<completed_by>"** (status→completed, from the stored column) / **"Changed in Jobber"** (else).
+**Verified:** PostgREST header→audit→render path live ("Changed in Jobber by Yannick Ayache",
+"Completed in Jobber by Diego Test", net-zero); hot path intact (single-visit replay HTTP 200,
+`*/5` polls success). completedBy = "who marked it complete in Jobber" (often Diego/office) —
+accepted per Fred. The original gate notes (now satisfied) follow:
+
+**Original P2b gate (all satisfied):** (1) `webhook-jobber.handleVisit` must use a **dedicated per-write client**
 (`createClient(..., {global:{headers:{'x-app-source':'jobber','x-actor-name':<name>}}})`) on **all three**
 write paths — NOT the shared `_shared/supabase-client.ts` singleton (also imported by
 webhook-airtable/samsara → would mislabel every entity). (2) **Validate** `Visit.createdBy{ name{ full } }`

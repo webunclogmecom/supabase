@@ -10,6 +10,24 @@
 // ============================================================================
 
 import { supabase } from '../_shared/supabase-client.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// Dedicated client that stamps inbound Jobber VISIT writes with app_source='jobber'
+// (so the visit Activity tab reads "...in Jobber" instead of "System") + optionally the
+// Jobber actor's name. NOT the shared `supabase` singleton — that one is reused for
+// clients/jobs/invoices/line_items/visit_locations + by webhook-airtable/samsara and MUST
+// stay headerless so their ADR-016 attribution is unaffected. Used ONLY for the visits-table
+// writes in handleVisit. Completion names come from the stored visits.completed_by column;
+// x-actor-name carries createdBy on insert (createdBy has no column).
+const _jobberSbUrl = Deno.env.get('SUPABASE_URL')!
+const _jobberSbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+function jobberVisitClient(actorName?: string | null) {
+  const headers: Record<string, string> = { 'x-app-source': 'jobber' }
+  const a = (actorName ?? '').split('').filter((ch) => ch.charCodeAt(0) >= 32).join('').trim().slice(0, 120)
+  if (a) headers['x-actor-name'] = a
+  return createClient(_jobberSbUrl, _jobberSbKey, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers } })
+}
+const supabaseJobber = jobberVisitClient()
 import { upsertEntityLink, findEntityBySourceId } from '../_shared/entity-links.ts'
 import { ok, badRequest, unauthorized, serverError, logWebhookEvent } from '../_shared/responses.ts'
 
@@ -443,7 +461,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   const data: any = await gql(
     `query($id: EncodedId!) {
       visit(id: $id) {
-        id title visitStatus startAt endAt completedAt completedBy
+        id title visitStatus startAt endAt completedAt completedBy createdBy { name { full } }
         job { id client { id } property { id } }
         invoice { id }
         assignedUsers { nodes { id name { first last } } }
@@ -595,14 +613,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
       const inStatus = statusMap[v.visitStatus?.toLowerCase() ?? '']
       if (inStatus) compRow.visit_status = inStatus
       if (Object.keys(compRow).length > 0) {
-        const { error } = await supabase.from('visits').update(compRow).eq('id', existingId)
+        const { error } = await supabaseJobber.from('visits').update(compRow).eq('id', existingId)
         if (error) throw new Error(`Visit completion-sync failed: ${error.message}`)
       }
       console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion-only sync (schedule/title preserved)`)
       return { entity_id: existingId }
     }
     // Standard update path — Jobber-mastered visit.
-    const { error } = await supabase.from('visits').update(visitRow).eq('id', existingId)
+    const { error } = await supabaseJobber.from('visits').update(visitRow).eq('id', existingId)
     if (error) throw new Error(`Visit update failed: ${error.message}`)
     entityId = existingId
   } else {
@@ -641,14 +659,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
       // for this Jobber visit. source becomes 'jobber'; visit_date adopts the
       // Jobber-reported date (which may differ slightly from the planned one).
       const promotionRow = { ...visitRow, source: 'jobber' }
-      const { error } = await supabase.from('visits').update(promotionRow).eq('id', promoteId)
+      const { error } = await supabaseJobber.from('visits').update(promotionRow).eq('id', promoteId)
       if (error) throw new Error(`Visit promotion failed: ${error.message}`)
       entityId = promoteId
       promotedFromCron = true
       console.log(`[handleVisit] promoted supabase_cron row ${promoteId} → jobber GID ${gid.slice(0, 30)}…`)
     } else {
       // No matching placeholder; insert fresh.
-      const { data: inserted, error } = await supabase
+      const { data: inserted, error } = await jobberVisitClient(v.createdBy?.name?.full)
         .from('visits')
         .insert(visitRow)
         .select('id')
