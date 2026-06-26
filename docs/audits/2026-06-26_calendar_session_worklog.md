@@ -222,6 +222,37 @@ soft-delete model.
 
 ---
 
+## Audit-trail attribution completeness pass (2026-06-26)
+
+A 5-lens audit (`get_record_history`, every Calendar + Jobber write path, render config,
+login→employee mapping, live spot-check) confirmed the attribution **model is sound** — the
+everyday Calendar path (create / reschedule / complete / delete / driver-date-instructions edits)
+renders "Edited in Visit Calendar by &lt;person&gt;" with the timestamp, and real Jobber events are
+correctly system-classed. It also found nine gaps; the code-fixable ones shipped in
+`2026-06-26_audit_attribution_completeness.sql` + a `webhook-jobber` redeploy (commit `07b7350`):
+
+| Gap | Fix | Verified |
+| --- | --- | --- |
+| Jobber-inbound writes via the shared headerless client logged `app_source='sql'` → bare "System" (handleClient update/insert, `set_visit_derm_required`, the `visit_locations` seed, handleInvoice `invoice_id`, `softStatusFlip` destroy/cancel) | Routed all 6 sites through the existing `supabaseJobber` client (`x-app-source='jobber'`) → "Changed in Jobber" | webhook redeployed; mechanism = the proven P2b pattern |
+| Soft-delete rendered `operation='deleted'` with an **empty** changes array (`deleted_at` not in render config) | Added `('visits','deleted_at','Deleted','datetime',…)` render row | live: visit 6822 now shows "Deleted: → Jun 26, 6:04 AM ET" by Fred |
+| **Team** (`visit_team`) and **manhole** (`visit_locations`) edits written to already-audited child tables were never read by `get_record_history` (visits-only) → invisible | `get_record_history` now surfaces same-visit child rows (txid-level delete-reinsert dedupe) + render rows for `employee_id`/`client_location_id` | live: 6806 shows "added Crew member: Diego by Fred"; 6809 shows "added Service location: Main by Fred" |
+| `Completed in Jobber by Grecia ` trailing space | `btrim` the completed_by label | in the same migration |
+
+**Deferred (header-noted, surfaced to Fred):**
+- **Line-item edits** still don't surface. `line_items` has no audit trigger, and `handleVisit`
+  delete-reinserts visit line_items on **every** poll (`index.ts:691`), so a naive trigger would
+  flood `audit.logs`. Needs `handleVisit` made change-conditional first, then the trigger + a
+  `line_items` UNION in `get_record_history` (the function is already structured for it).
+- **Login→name seeds.** Only Fred + Yannick resolve to a name. Diego (the named completion
+  operator), Aaron, Grecia have no login + no `employees.email`; Mark has an email but no matching
+  login. Their future Calendar edits won't show a name until each login email is created and
+  `employees.email` is seeded to match. Operational, needs the real login emails.
+- **`p_hide_system` semantics.** With the "Show Jobber sync changes" toggle OFF, real Jobber
+  completions / soft-deletes are hidden (toggle defaults ON, so they show by default). Whether a
+  driver's Jobber completion should always show is a product call.
+
+---
+
 ## Appendix — supporting cross-feature work in the window
 
 These commits supported the six features but are not themselves a requested feature thread:
