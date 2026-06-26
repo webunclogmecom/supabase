@@ -287,6 +287,77 @@ These commits supported the six features but are not themselves a requested feat
 
 ---
 
+## 2026-06-26 (later) — Amount/cents/search/avatars + hour-sync + Week/Day views
+
+A follow-on batch on the same Calendar app. Two threads are Supabase-side (committed below); the
+rest are Lovable UI changes, all **published live on `calendar.unclogme.app`**.
+
+### Amount = real visit total (Supabase)
+
+`ops.v_calendar_visit.amount` was redefined from a service-config estimate to the **actual sum of the
+visit's line items**, with an estimate fallback kept as a separate column.
+
+| Commit | Date | What | File |
+| --- | --- | --- | --- |
+| `611db43` | 2026-06-26 | `amount` = `SUM(line_items.total_price)` scoped to the visit (`visit_id`), falling back to job-level un-invoiced line items; appended `amount_estimated` = `COALESCE(sc.price_per_visit, op.median_line_price)` as the last column | `2026-06-26_calendar_amount_real_total.sql` |
+
+**Verified.** 042-MT showed `$362.36` (its true line-item total) vs. the old `$350` estimate; the
+06-26 day total summed to `$5,023.28`. The frontend money formatting now shows **cents** everywhere
+(money + specs) — Lovable UI.
+
+### Week/Day backend columns (Supabase)
+
+The ops visit view gained the two columns the time-grid views render against.
+
+| Commit | Date | What | File |
+| --- | --- | --- | --- |
+| `27e4580` | 2026-06-26 | `duration_minutes` = `COALESCE(v.duration_minutes, (end_at-start_at) in minutes)`; `is_all_day` = true when `start_at` is NULL **or** the slot is a full-day 00:00→~24h span | `2026-06-26_calendar_week_view_cols.sql` |
+
+**Verified.** Split was 47 timed / 42 all-day on the inspected window.
+
+### Hour-sync — adopt Diego's Jobber route hours (Supabase edge fn)
+
+`webhook-jobber`'s `handleVisit` now **fills `start_at`/`end_at` from Jobber when ours is NULL** and
+Jobber holds a real timed slot (`allDay=false`). Diego routes the SA-generated (`supabase_cron`)
+visits by dragging them onto hours in Jobber's weekly view; previously those hours never flowed back
+because the cron/calendar loop-guard skipped `start_at`. This is a **fill-if-empty** adopt (it never
+overwrites an existing DB time), so it doesn't fight Calendar-side edits.
+
+| Commit | Date | What | File |
+| --- | --- | --- | --- |
+| `7443db6` | 2026-06-26 | `handleVisit`: add `allDay` to the Visit query; `select('source, start_at')`; in the cron/calendar branch, adopt `start_at`/`end_at` only when `existing.start_at IS NULL && allDay===false && startAt` present | `functions/webhook-jobber/index.ts` |
+
+**Verified.** Deployed function is **version 70** (`updated_at` 2026-06-26T20:35Z, ACTIVE); the live
+body contains the `"Adopt the route HOUR Diego sets"` block + `allDay` query + `source, start_at`
+select. Jobber-source visits previously showed 20/20 minute-match; this change closes the latent gap
+for untimed `supabase_cron` visits.
+
+### Month / Week / Day views — Jobber-style (Lovable UI)
+
+The Calendar gained a **Month / Week / Day** toggle (Month unchanged, default). Week and Day now
+render a real time grid like Jobber's weekly schedule:
+
+- **Anytime ("ALL-DAY") lane** at the top — visits where `is_all_day=true`, as the existing compact
+  chips; Week shares one lane across all 7 day-columns.
+- **Hourly grid** below — left time gutter, each timed visit (`is_all_day=false`) positioned at its
+  **ET start hour** (`start_at AT TIME ZONE 'America/New_York'`), height from `duration_minutes`,
+  overlapping visits split side-by-side.
+- Chips reuse the existing component (status color, `client_code` bold, client name, **person avatar**
+  by driver, `formatUSD` with cents); clicking opens the existing visit drawer.
+
+**Verified live on `calendar.unclogme.app`.** Week of May 31–Jun 6 renders the gutter + ALL-DAY lane +
+visits placed by start time (e.g. Casa Neos 7:30 AM, Happea's 9:00 AM, Sarah's Tent Market 1:45 PM),
+with 6 AM overlap on THU split side-by-side. Day (Mon Jun 1) renders the same grid. Published →
+"Up to date".
+
+**Other UI in this batch (Lovable, live):** search bar now matches **clients** and opens the visit
+drawer; **person avatar** (driver initial, Jobber "F"-style) added to month/week/day chips; cents shown
+on all money + spec values; "Jeffry" (old employee) reconciled out of the driver list.
+
+**Minor nit (not yet fixed):** Day-view time gutter shows a doubled "ALL-DAY" label — cosmetic only.
+
+---
+
 ## Uncertainties / out of scope for this log
 
 - **Feature 1** (Open-in-Jobber button move + Jobber icon) and the **"Show Jobber sync changes" default-ON**
