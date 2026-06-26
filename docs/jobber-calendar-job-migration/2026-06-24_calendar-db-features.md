@@ -83,7 +83,10 @@ visits shifted, **same GIDs, no orphan on the old dates, no dupes**; `net._http_
 **Wiring — DONE + confirmed live 2026-06-26.** The published Calendar bundle (`index-C5_bbv1U.js`) calls
 `rpc('ripple_reschedule_visit')` with `p_dry_run` (3 refs), i.e. a drag is routed through the cascade RPC
 (dry-run → confirm N dates → apply), **not** a bare `edit_calendar_visit` PATCH. ~~The RPC is inert until
-wired.~~ (superseded). **Remaining:** post-ripple reconcile/watchdog for the fire-and-forget pg_net pushes.
+wired.~~ (superseded). **Gate #4 (reconcile/watchdog) DONE 2026-06-26** — `sync-jobber-visit-drift`
+(pg_cron `*/30`) detects + logs schedule drift to `sync_log` (`jobber_visit_drift`); auto-heal built +
+tested but OFF by default (heal-direction policy pending; first scan found 3 ambiguous divergences).
+See [`2026-06-26_gate4-drift-watchdog.md`](2026-06-26_gate4-drift-watchdog.md).
 
 ---
 

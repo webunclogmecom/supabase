@@ -115,8 +115,14 @@ RPC's cascade lives in its own loop and reuses the verified push path unchanged.
    cascade RPC (dry-run → confirm the N dates → apply), **not** a bare `edit_calendar_visit` PATCH.
    (The in-browser drag→confirm modal wasn't separately driven; the RPC-level cascade-to-Jobber is the
    verified path.) **Supersedes the earlier "inert until wired" note.**
-4. ⏳ post-ripple reconcile/watchdog for the fire-and-forget pg_net pushes (still pending) — then any
-   remaining global-enable gate can be removed.
+4. ✅ **post-ripple reconcile/watchdog — DETECT+LOG live 2026-06-26.** `sync-jobber-visit-drift`
+   (pg_cron `jobber-visit-drift-reconcile` `*/30`) reads each linked calendar/cron scheduled
+   visit's actual Jobber `startAt`, ET-floor-compares to the DB date, and logs drift to `sync_log`
+   (`sync_source='jobber_visit_drift'`, `status='attention'`). **Auto-heal is BUILT** (re-push via
+   `fn_request_jobber_push` + re-verify, validated on visit 6038) but **OFF by default** — a state
+   reconcile can't tell a failed our-push from a deliberate Jobber-side edit, and the first scan
+   found 3 such ambiguous divergences. Enable via `DRIFT_HEAL_ENABLED=1` once a heal-direction
+   policy is set. Spec: `2026-06-26_gate4-drift-watchdog.md`.
 
 ## 5. Calendar → Jobber push (LIVE for all clients — 2026-06-23)
 

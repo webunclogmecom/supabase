@@ -406,6 +406,10 @@ verify_jwt = false
 [functions.sync-jobber-poll]
 verify_jwt = false
 
+# gate #4 drift watchdog: same pg_cron + x-sync-key rule, so verify_jwt MUST be false.
+[functions.sync-jobber-visit-drift]
+verify_jwt = false
+
 # jobber-push-visit is the EXCEPTION — it MUST be verify_jwt=true. It is invoked by
 # fn_push_visit_to_jobber with a service_role bearer, and its handler only DECODES the JWT
 # to check role=service_role (bearerRole). The gateway MUST verify the signature, otherwise
