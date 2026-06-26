@@ -463,7 +463,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   const data: any = await gql(
     `query($id: EncodedId!) {
       visit(id: $id) {
-        id title visitStatus startAt endAt completedAt completedBy createdBy { name { full } }
+        id title visitStatus startAt endAt allDay completedAt completedBy createdBy { name { full } }
         job { id client { id } property { id } }
         invoice { id }
         assignedUsers { nodes { id name { first last } } }
@@ -605,20 +605,33 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     // inbound Jobber poll must NOT clobber their visit_date/start_at/end_at/title/job_id (it would
     // corrupt Anytime/all-day visits — Jobber returns a concrete allDay startAt — and fight the
     // push). It MAY sync COMPLETION (visit_status/completed_at/completed_by) so a field-completed
-    // visit reflects in our DB. Loop-safe: a visit_status change re-fires trg_push_visit_update,
+    // visit reflects in our DB. EXCEPTION (2026-06-26): it MAY also FILL start_at/end_at when ours
+    // is NULL and Jobber holds a real timed slot (allDay=false) — Diego routes still-untimed SA
+    // visits by setting their hour in Jobber's weekly view; fill-if-empty captures that hour without
+    // clobbering a Calendar-set time. Loop-safe: a visit_status change re-fires trg_push_visit_update,
     // but jobber-push-visit only re-asserts the SAME schedule -> Jobber unchanged -> no echo.
-    const { data: existing } = await supabase.from('visits').select('source').eq('id', existingId).maybeSingle()
+    const { data: existing } = await supabase.from('visits').select('source, start_at').eq('id', existingId).maybeSingle()
     if (existing?.source === 'visit-calendar' || existing?.source === 'supabase_cron') {
       const compRow: Record<string, unknown> = {}
       if (v.completedAt !== undefined) compRow.completed_at = v.completedAt ?? null
       if (v.completedBy !== undefined) compRow.completed_by = v.completedBy ?? null
       const inStatus = statusMap[v.visitStatus?.toLowerCase() ?? '']
       if (inStatus) compRow.visit_status = inStatus
+      // Adopt the route HOUR Diego sets in Jobber's weekly view for a STILL-UNTIMED visit:
+      // FILL start_at/end_at ONLY when ours is NULL and Jobber holds a real timed slot
+      // (allDay=false). Diego routes the SA-generated (supabase_cron) visits by dragging
+      // them to an hour in Jobber; fill-if-empty captures that without clobbering a
+      // Calendar-set time (an already-timed visit's re-time or date move stays the */30
+      // drift reconciler's job). Same value flows back via the push -> Jobber unchanged.
+      if (existing.start_at == null && v.allDay === false && v.startAt) {
+        compRow.start_at = v.startAt
+        compRow.end_at = v.endAt ?? null
+      }
       if (Object.keys(compRow).length > 0) {
         const { error } = await supabaseJobber.from('visits').update(compRow).eq('id', existingId)
-        if (error) throw new Error(`Visit completion-sync failed: ${error.message}`)
+        if (error) throw new Error(`Visit completion/hour-sync failed: ${error.message}`)
       }
-      console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion-only sync (schedule/title preserved)`)
+      console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion + fill-hour-if-empty sync`)
       return { entity_id: existingId }
     }
     // Standard update path — Jobber-mastered visit.
