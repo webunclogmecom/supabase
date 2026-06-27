@@ -251,6 +251,10 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   if (existingGid) {
     const groups: string[] | null = Array.isArray(changed) ? changed : (changed === undefined ? null : []);
     const wants = (g: string) => groups === null || groups.includes(g);
+    // crew + instructions are EMPTY-CLOBBER-prone (our value is usually empty/null): push them ONLY
+    // when the office EXPLICITLY edited that field — never on a legacy/unscoped null `changed` (e.g. a
+    // drift-reconciler HEAL re-assert). Defense-in-depth against re-introducing the driver/instructions clobber.
+    const wantsStrict = (g: string) => Array.isArray(groups) && groups.includes(g);
     const did: string[] = [];
     if (wants("schedule")) {
       const s = await gql(token, M_EDIT_SCHED, { id: existingGid, input: sched });
@@ -263,15 +267,15 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
       // (all cron visits have notes=NULL). 2026-06-27 audit fix.
       const attrs: Record<string, unknown> = {};
       if (wants("title") && visit.title) attrs.title = visit.title;
-      if (wants("notes")) attrs.instructions = visit.notes ?? null;
+      if (wantsStrict("notes")) attrs.instructions = visit.notes ?? null;
       if (Object.keys(attrs).length) {
         const e = await gql(token, M_EDIT, { id: existingGid, attributes: attrs });
         const ee = ue(e.visitEdit); if (ee) throw new Error(`visitEdit: ${ee}`);
         did.push(Object.keys(attrs).join("+"));
       }
     }
-    if (wants("crew")) {
-      // Only on a deliberate team edit. Pushes the office's team (incl. empty = cleared on purpose).
+    if (wantsStrict("crew")) {
+      // Only on a deliberate team edit (explicit 'crew' group). Pushes the office's team (incl. empty = cleared on purpose).
       const a = await gql(token, M_ASSIGN, { id: existingGid, input: { assignedUserIds: teamGids } });
       const ae = ue(a.visitEditAssignedUsers); if (ae) throw new Error(`visitEditAssignedUsers: ${ae}`);
       did.push(`crew:${teamGids.length}`);
