@@ -593,9 +593,13 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     if (/main line|auxiliary|aux cleaning|tank cleaning|\bcleaning\b/.test(t)) return 'CL'
     return null
   }
-  let serviceType: string | null = null
-  for (const li of (v.lineItems?.nodes ?? [])) { const s = lineItemSvc(li?.name ?? null); if (s) { serviceType = s; break } }
-  serviceType = serviceType ?? inferServiceType(v.title ?? null) ?? 'GT'
+  // Track whether the derive is CONCRETE (line item or explicit title match) vs the bare 'GT' default,
+  // so the inbound UPDATE path can avoid clobbering a stored LS/CL with the default when a Jobber title
+  // edit drops the keyword (2026-06-27 clobber-class fix). The 'GT' default applies only to INSERT/promote.
+  let serviceTypeConcrete: string | null = null
+  for (const li of (v.lineItems?.nodes ?? [])) { const s = lineItemSvc(li?.name ?? null); if (s) { serviceTypeConcrete = s; break } }
+  if (!serviceTypeConcrete) serviceTypeConcrete = inferServiceType(v.title ?? null)
+  const serviceType = serviceTypeConcrete ?? 'GT'
 
   const visitRow: Record<string, unknown> = {
     title: v.title ?? null,
@@ -664,8 +668,10 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
       console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion + fill-hour-if-empty sync`)
       return { entity_id: existingId }
     }
-    // Standard update path — Jobber-mastered visit.
-    const { error } = await supabaseJobber.from('visits').update(visitRow).eq('id', existingId)
+    // Standard update path — Jobber-mastered visit. Do NOT clobber a stored LS/CL service_type with
+    // the bare 'GT' default: when the derive is non-concrete, omit service_type so the stored value sticks.
+    const updateRow = serviceTypeConcrete ? visitRow : (() => { const { service_type: _drop, ...rest } = visitRow; return rest })()
+    const { error } = await supabaseJobber.from('visits').update(updateRow).eq('id', existingId)
     if (error) throw new Error(`Visit update failed: ${error.message}`)
     entityId = existingId
   } else {
