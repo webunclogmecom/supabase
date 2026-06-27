@@ -281,6 +281,16 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   // old unlinked visit (e.g. marked completed in Calendar) must not spawn a
   // brand-new Jobber visit.
   if (visit.visit_status !== "scheduled") { console.log(`[push] visit ${visitId} status=${visit.visit_status}, unlinked — not creating in Jobber`); return { ok: true, note: "non-scheduled, not created" }; }
+  // Task 3 (2026-06-27): Jobber horizon = next 60 days + the single next visit per job.
+  // A cron SA visit beyond that window stays DB-ONLY (the Calendar shows 6 months); the
+  // generator's daily promote step creates it in Jobber once it rolls into the 60-day window.
+  {
+    const { data: inScope } = await db.rpc("fn_visit_in_jobber_scope", { p_visit_id: visitId });
+    if (inScope === false) {
+      console.log(`[push] visit ${visitId} (${visit.visit_date}, ${visit.source}) beyond Jobber 60d horizon — DB-only, not created`);
+      return { ok: true, note: "beyond-jobber-horizon" };
+    }
+  }
   const job = await resolveJobGid(visit);
   if ("error" in job) { await flag(visitId, "no_job_match", job.error); return { ok: true, flagged: job.error }; }
   const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: teamGids } }] };

@@ -44,7 +44,10 @@ const FILTER_CLIENT = clientArg ? clientArg.split('=')[1] : (ALL ? null : '112-Y
 
 const IDEMPOTENCY_TOLERANCE_DAYS = 7;
 const horizonArg = process.argv.find(a => a.startsWith('--horizon-months='));
-const HORIZON_MONTHS = horizonArg ? Math.max(1, parseInt(horizonArg.split('=')[1], 10) || 12) : 12;
+// DB/Calendar horizon = 6 months (Task 3, 2026-06-27). JOBBER only gets the next 60 days +
+// the single next visit per job — enforced by fn_visit_in_jobber_scope in the push gate +
+// the promote step below; the DB still holds the full 6 months for the Calendar.
+const HORIZON_MONTHS = horizonArg ? Math.max(1, parseInt(horizonArg.split('=')[1], 10) || 6) : 6;
 const MAX_PER_JOB = 24;
 const MAX_CLEANUP = 40;   // safety cap: never auto-soft-delete more than this many stale visits in one run
 
@@ -213,5 +216,36 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
         console.log(`✓ soft-deleted ${staleIds.length} stale visit(s) — visitDelete pushed to Jobber`);
       }
     }
+  }
+
+  // ---- PROMOTE: create in Jobber any in-scope cron visit that has no Jobber link yet -----------
+  // The Jobber horizon is the next 60 days + each job's single next visit (fn_visit_in_jobber_scope).
+  // A cron visit generated beyond that window is DB-only at insert (the push gate skips it). As days
+  // pass it rolls INTO the window; this step re-pushes it so Jobber always carries the next 60 days +
+  // next visit. A blanket push of every in-scope unlinked cron visit is safe — the push gate is the
+  // single source of truth, so anything still out-of-scope is skipped there.
+  const promote = await pg(`
+    SELECT v.id FROM visits v
+    JOIN clients c ON c.id = v.client_id
+    WHERE v.source = 'supabase_cron' AND v.visit_status = 'scheduled' AND v.deleted_at IS NULL
+      AND v.visit_date >= '${today}'
+      AND public.fn_visit_in_jobber_scope(v.id)
+      AND NOT EXISTS (SELECT 1 FROM entity_source_links esl
+                      WHERE esl.entity_type = 'visit' AND esl.entity_id = v.id AND esl.source_system = 'jobber')
+      ${clientFilter}
+    ORDER BY v.visit_date`);
+  console.log(`\nPromote: ${promote.length} in-scope cron visit(s) with no Jobber link yet.`);
+  if (EXECUTE && promote.length) {
+    let ok = 0, fail = 0;
+    const host = new URL(SUPABASE_URL).hostname;
+    for (const { id } of promote) {
+      try {
+        const r = await http({ hostname: host, path: '/functions/v1/jobber-push-visit', method: 'POST',
+          headers: { Authorization: `Bearer ${SVC}`, 'Content-Type': 'application/json' } }, JSON.stringify({ op: 'upsert', visit_id: id }));
+        if (r.status < 300) ok++; else { fail++; console.error(`  promote ${id} -> ${r.status}: ${r.body.slice(0, 120)}`); }
+      } catch (e) { fail++; console.error(`  promote ${id} -> ${e.message}`); }
+      await new Promise(rs => setTimeout(rs, 150)); // gentle pacing (Jobber leaky-bucket)
+    }
+    console.log(`✓ promoted ${ok} visit(s) to Jobber (fail ${fail})`);
   }
 })().catch(e => { console.error('FATAL', e.message, e.stack); process.exit(1); });
