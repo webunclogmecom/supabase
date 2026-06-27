@@ -458,6 +458,32 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   return { entity_id: entityId }
 }
 
+// Stage 2 (2026-06-27): mirror Jobber's CURRENT assignedUsers into public.visit_team —
+// the table the Calendar drawer's team-select AND the on-purpose push read — so the
+// Calendar shows the real driver. Diff-only (skip the write when the set already matches,
+// so no audit-log churn) and we DO NOT bump visits.team_rev: adopting Jobber's crew must
+// never echo back to Jobber as an "office edit" (Jobber is the source of truth for crew).
+// assigned_driver_id (NOT watched by trg_push_visit_update) tracks the primary for display.
+async function syncVisitTeamFromJobber(visitId: number, nodes: any[] | undefined) {
+  const want = new Set<number>()
+  for (const member of (nodes || [])) {
+    if (!member?.id) continue
+    const empId = await findEntityBySourceId('employee', 'jobber', member.id)
+    if (empId) want.add(empId)
+  }
+  const { data: curRows } = await supabase.from('visit_team').select('employee_id').eq('visit_id', visitId)
+  const cur = new Set((curRows || []).map((r: any) => r.employee_id as number))
+  const same = cur.size === want.size && [...want].every((id) => cur.has(id))
+  if (same) return
+  const ids = [...want]
+  await supabase.from('visit_team').delete().eq('visit_id', visitId)
+  if (ids.length) {
+    await supabase.from('visit_team').insert(ids.map((id) => ({ visit_id: visitId, employee_id: id })))
+  }
+  await supabase.from('visits').update({ assigned_driver_id: ids[0] ?? null }).eq('id', visitId)
+  console.log(`[handleVisit] visit_team mirrored from Jobber for ${visitId}: [${ids.join(',')}]`)
+}
+
 async function handleVisit(numericId: string, topic: string): Promise<{ entity_id: number }> {
   const gid = btoa(`gid://Jobber/Visit/${numericId}`)
   const data: any = await gql(
@@ -631,6 +657,10 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
         const { error } = await supabaseJobber.from('visits').update(compRow).eq('id', existingId)
         if (error) throw new Error(`Visit completion/hour-sync failed: ${error.message}`)
       }
+      // Stage 2 (2026-06-27): mirror Jobber's crew into visit_team so the Calendar drawer
+      // shows the real driver (these DB-mastered supabase_cron/calendar visits are exactly
+      // what the Calendar displays). Diff-only, no team_rev bump -> no echo back to Jobber.
+      await syncVisitTeamFromJobber(existingId, v.assignedUsers?.nodes)
       console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion + fill-hour-if-empty sync`)
       return { entity_id: existingId }
     }
@@ -757,20 +787,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     }
   }
 
-  // Upsert visit_assignments for assigned team members.
-  // FIX 2026-05-15: pass member.id (full base64 gid) directly — same format as
-  // entity_source_links.source_id stores. Previously decoded to numericId
-  // (e.g. '3866470'), which never matched the stored full-gid (e.g.
-  // 'Z2lkOi8vSm9iYmVyL1VzZXIvMzg2NjQ3MA==') → silent skip for every assignment
-  // since the webhook started running. populate.js worked because it keys by
-  // u.id directly (line 1073). All other lookups in this file use full gid
-  // (lines 205/364/369) — only this one was inconsistent.
+  // Upsert visit_assignments for assigned team members (historical crew record;
+  // upsert-only, never deletes). FIX 2026-05-15: pass member.id (full base64 gid)
+  // directly — same format as entity_source_links.source_id stores.
   if (v.assignedUsers?.nodes?.length) {
     for (const member of v.assignedUsers.nodes) {
       if (!member?.id) continue
       const empId = await findEntityBySourceId('employee', 'jobber', member.id)
       if (!empId) continue
-
       await supabase
         .from('visit_assignments')
         .upsert(
@@ -779,6 +803,9 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
         )
     }
   }
+
+  // Stage 2 (2026-06-27): mirror Jobber's crew into visit_team (Calendar drawer + push). No echo.
+  await syncVisitTeamFromJobber(entityId, v.assignedUsers?.nodes)
 
   return { entity_id: entityId }
 }
