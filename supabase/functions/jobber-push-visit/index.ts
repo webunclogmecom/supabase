@@ -257,10 +257,18 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
       const se = ue(s.visitEditSchedule); if (se) throw new Error(`visitEditSchedule: ${se}`);
       did.push("schedule");
     }
-    if (wants("title") && visit.title) {
-      const e = await gql(token, M_EDIT, { id: existingGid, attributes: { title: visit.title, instructions: visit.notes ?? null } });
-      const ee = ue(e.visitEdit); if (ee) throw new Error(`visitEdit: ${ee}`);
-      did.push("title");
+    {
+      // title and instructions are INDEPENDENT: push title ONLY when title changed, instructions
+      // ONLY when notes changed — so a title-only edit never wipes a Jobber visit instruction
+      // (all cron visits have notes=NULL). 2026-06-27 audit fix.
+      const attrs: Record<string, unknown> = {};
+      if (wants("title") && visit.title) attrs.title = visit.title;
+      if (wants("notes")) attrs.instructions = visit.notes ?? null;
+      if (Object.keys(attrs).length) {
+        const e = await gql(token, M_EDIT, { id: existingGid, attributes: attrs });
+        const ee = ue(e.visitEdit); if (ee) throw new Error(`visitEdit: ${ee}`);
+        did.push(Object.keys(attrs).join("+"));
+      }
     }
     if (wants("crew")) {
       // Only on a deliberate team edit. Pushes the office's team (incl. empty = cleared on purpose).
