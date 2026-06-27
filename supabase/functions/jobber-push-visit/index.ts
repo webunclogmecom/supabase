@@ -205,7 +205,7 @@ async function syncVisitLineItems(token: string, visit: any, visitGid: string, i
   console.log(`[push] synced ${lineItems.length} line item(s) to Jobber visit ${visitGid}`);
 }
 
-async function handle(op: string, visitId: number, payloadGid?: string) {
+async function handle(op: string, visitId: number, payloadGid?: string, changed?: string[]) {
   const token = await getJobberToken();
   const { data: visit } = await db.from("visits").select("*").eq("id", visitId).maybeSingle();
 
@@ -243,21 +243,37 @@ async function handle(op: string, visitId: number, payloadGid?: string) {
   }
 
   // ---- UPDATE (already linked) ----
+  // "On-purpose" push: edit ONLY the field-groups the office actually changed in the
+  // Calendar (the trigger passes them as `changed`). CREW is pushed ONLY when the team
+  // was edited on purpose ('crew' in changed) — so a time move / truck change / status
+  // flip never clobbers Jobber's driver (the bug). A null `changed` (legacy caller)
+  // falls back to the full push; an empty `changed` is a no-op.
   if (existingGid) {
-    const s = await gql(token, M_EDIT_SCHED, { id: existingGid, input: sched });
-    const se = ue(s.visitEditSchedule); if (se) throw new Error(`visitEditSchedule: ${se}`);
-    if (visit.title) {
+    const groups: string[] | null = Array.isArray(changed) ? changed : (changed === undefined ? null : []);
+    const wants = (g: string) => groups === null || groups.includes(g);
+    const did: string[] = [];
+    if (wants("schedule")) {
+      const s = await gql(token, M_EDIT_SCHED, { id: existingGid, input: sched });
+      const se = ue(s.visitEditSchedule); if (se) throw new Error(`visitEditSchedule: ${se}`);
+      did.push("schedule");
+    }
+    if (wants("title") && visit.title) {
       const e = await gql(token, M_EDIT, { id: existingGid, attributes: { title: visit.title, instructions: visit.notes ?? null } });
       const ee = ue(e.visitEdit); if (ee) throw new Error(`visitEdit: ${ee}`);
+      did.push("title");
     }
-    {
-      // always set (incl. empty) so team changes — including clearing — propagate
+    if (wants("crew")) {
+      // Only on a deliberate team edit. Pushes the office's team (incl. empty = cleared on purpose).
       const a = await gql(token, M_ASSIGN, { id: existingGid, input: { assignedUserIds: teamGids } });
       const ae = ue(a.visitEditAssignedUsers); if (ae) throw new Error(`visitEditAssignedUsers: ${ae}`);
+      did.push(`crew:${teamGids.length}`);
     }
-    await syncVisitLineItems(token, visit, existingGid, true);
-    console.log(`[push] updated Jobber visit ${existingGid}${teamGids.length ? ` (+team:${teamGids.length})` : ""} (our visit ${visitId})`);
-    return { ok: true, updated: existingGid };
+    if (wants("lineitems")) {
+      await syncVisitLineItems(token, visit, existingGid, true);
+      did.push("lineitems");
+    }
+    console.log(`[push] updated Jobber visit ${existingGid} [${did.join(",") || "noop"}] (our visit ${visitId})`);
+    return { ok: true, updated: existingGid, did };
   }
 
   // ---- CREATE (not linked) ----
@@ -296,7 +312,7 @@ Deno.serve(async (req) => {
   const visitId = Number(body.visit_id);
   if (!visitId) return new Response("missing visit_id", { status: 400 });
   try {
-    const res = await handle(op, visitId, body.jobber_gid);
+    const res = await handle(op, visitId, body.jobber_gid, Array.isArray(body.changed) ? body.changed : undefined);
     return new Response(JSON.stringify(res), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (e) {
     console.error(`[push] FATAL visit ${visitId}:`, e instanceof Error ? e.message : String(e));
