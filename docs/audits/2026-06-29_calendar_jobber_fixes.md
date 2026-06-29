@@ -4,7 +4,7 @@ Four tasks from Fred's day list. Investigated (read-only, 4-agent fan-out) → p
 
 ## Task 4 — `service_kind` mislabels (line-item-code class)  ✅
 `ops.v_calendar_visit.service_kind` ignored line-item codes, so 11 visits with generic job titles fell through to `SC` while carrying real SA items (01/02/04). Added a code tiebreaker **after** the title regex, **before** the frequency fallback (narrow rule): SA-codes-only → SA, SC-codes-only → SC. 11 fixed; visit 5830 (job literally "Service Call" + an SA item) left SC for office review. Migration `2026-06-29_calendar_view_servicekind_frequency.sql`.
-> NOTE: superseded in scope by the queued **frequency-based** service_kind task (below) — that rule is broader (~562 visits) and Fred-confirmed.
+> NOTE: the code tiebreaker was **superseded same day** by Task 5 (below) — service_kind is now purely frequency-based per Fred's confirmed rule. Migration `2026-06-29d`.
 
 ## Task 2 — frequency / next-visit cascade  ✅
 Two distinct defects:
@@ -26,5 +26,11 @@ Shipped + published 2026-06-29. The Calendar app code lives in its own Lovable r
 ## Committed
 `243c017` on `main`: generator + the 3 DB migrations. Calendar-app changes are in the Lovable repo. This audit doc + the frequency-based service_kind task remain.
 
-## STILL PENDING
-- **Frequency-based `service_kind` rule** (Fred-queued): `SA = frequency_days > 0, else SC` — broader (~562) than Task 4's code rule. Reconcile: is `service_kind` a stored column or view-only (scout: view-only)? does the pure-frequency rule override the 11 code-based SA's (they have no job frequency → would flip back to SC)? The Calendar app already derives SA/SC from `frequency_days` client-side as an interim.
+## Task 5 — frequency-based `service_kind` (Fred-queued)  ✅
+`service_kind` was mislabeling ~562 recurring visits as SC. Confirmed `service_kind` is **view-only** (no stored `public.visits.service_kind`; no writer sets it — visit-gen/handleVisit write `service_type`, not `service_kind`), so the fix is the view, not a backfill/writer. Replaced the derivation with Fred's pure rule: `service_kind = CASE WHEN COALESCE(NULLIF(jb.frequency_days,0), sc.frequency_days, oc.median_gap_days) > 0 THEN 'SA' ELSE 'SC' END` — the **same** frequency the view displays. Title regex + Task-4 code tiebreaker removed.
+- **Used the displayed frequency, NOT `jobs.frequency_days` alone:** the 562 have `jobs.frequency_days=0/null` (the JOBS-poll sync gap — never fetches the Frequency customField) but a real sc/median cadence. Job-freq-only flips 0 of them; displayed-freq flips the 559 correctly.
+- **Impact (verified):** all visits SA 733→1289 / SC 692→137 / nulls 1→0; completed SA 54→606 / SC 682→131. 559 SC→SA, 133 true one-offs stay SC, 4 SA→SC (line-item-SA but zero recurrence). 63 cols unchanged, 0 dependents.
+- Migration `2026-06-29d_calendar_view_service_kind_frequency_based.sql`. The Calendar app's interim client-side `frequency_days` derivation now matches the backend (redundant, harmless). Not touched: `v_calendar_visit_detail.service_kind` (separate title-based field).
+- **Root cause remains** the `jobs.frequency_days` sync gap (see [[reference_jobs_sync_gaps]]); this view rule is the pragmatic correction. A robust fix = make the JOBS poll fetch the Frequency customField, then key off `jobs.frequency_days`.
+
+## All 5 tasks complete. Open follow-ups (not today): jobs.frequency_days sync-gap root fix; office to confirm the drawer cascade on first use + to start assigning drivers at scheduling (so chip person-avatars populate); visit 5830 SC/SA office review.
