@@ -335,9 +335,17 @@ Deno.serve(async (req) => {
   if (!visitId) return new Response("missing visit_id", { status: 400 });
   try {
     const res = await handle(op, visitId, body.jobber_gid, Array.isArray(body.changed) ? body.changed : undefined);
+    // sync_state confirmation (Calendar↔Jobber "no success unless Jobber confirms"): mark 'confirmed'
+    // when the visit reached its settled state — pushed/updated/created, OR legitimately nothing-to-do
+    // (beyond-horizon DB-only / no link to delete). Mark 'failed' when we could NOT settle it
+    // (no job match / create error / a thrown error). A sync_state-only UPDATE does not re-fire the
+    // push trigger (its WHEN watches visit_date/start_at/title/..., never sync_state) so no loop.
+    const settled = res?.ok === true && !res?.flagged;
+    await db.from("visits").update({ sync_state: settled ? "confirmed" : "failed" }).eq("id", visitId);
     return new Response(JSON.stringify(res), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (e) {
     console.error(`[push] FATAL visit ${visitId}:`, e instanceof Error ? e.message : String(e));
+    await db.from("visits").update({ sync_state: "failed" }).eq("id", visitId);
     return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 });
