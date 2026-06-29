@@ -1,0 +1,33 @@
+-- Migration (CODE + DATA BACKFILL): 2026-06-29c_visit_title_client_prefix
+-- Author: Claude (Opus 4.8) for Fred
+-- Audit: visits.title writes go through the already-audited public.visits. No DDL.
+--
+-- WHY: On the Jobber schedule, generated SA visits showed a GENERIC chip
+--      ("Service Agreement - Grease Trap Pumping & Tank Cleaning", no client) while
+--      Jobber-native visits showed "CODE Name - <job>". Root cause: our generator
+--      stored visit.title = bare job.title; jobber-push wrote that client-less string
+--      to Jobber, suppressing Jobber's default client prefix. (NOT a sync bug -- two
+--      title conventions feeding one schedule.) Approved by Fred 2026-06-29.
+--
+-- FORWARD FIX (code): scripts/sync/generate_service_agreement_visits.js line ~179
+--   title: job.title  ->  title: `${job.client_code} ${job.client_name} - ${job.title}`
+--   Safe: dedup is by date +/-7d, cleanup/promote by source+job_id -- none key on title.
+--
+-- BACKFILL (data) applied 2026-06-29 -- re-titled every FUTURE scheduled supabase_cron
+-- visit not already prefixed (idempotent guard: title NOT LIKE client_code||' %'):
+--   UPDATE public.visits v SET title = c.client_code||' '||c.name||' - '||v.title
+--   FROM public.clients c WHERE c.id=v.client_id
+--     AND v.source='supabase_cron' AND v.visit_status='scheduled' AND v.deleted_at IS NULL
+--     AND v.visit_date >= '2026-06-29' AND v.title NOT LIKE (c.client_code||' %');
+--   670 rows total. Run in two passes to control the Jobber push burst:
+--     * 442 OUT-OF-SCOPE rows in one UPDATE -> trg_push_visit_update fires but
+--       fn_push_visit_to_jobber's scope gate skips them (no Jobber call). DB now
+--       carries the prefix so they relabel correctly when promoted into the 60d window.
+--     * 228 IN-SCOPE (linked) rows in paced batches of 25 / 3s -> each fires a
+--       TITLE-ONLY change-aware push (2026-06-27 split) -> live Jobber chip relabel.
+--       Never touches schedule/crew (title-only; no team_rev change -> no crew clobber).
+-- VERIFIED: 0 future generic left; push_health clean for all 228; live Jobber spot-check
+--   5/5 titles match DB (017-FIA, 019-G7, 169-TCE, 205-SAS, 215-G7).
+--
+-- NOTE: Service Call (source='jobber', manual) visits are untouched -- Jobber already
+--   renders them client-prefixed via its default. Only supabase_cron SA visits changed.

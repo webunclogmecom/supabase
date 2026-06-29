@@ -1,0 +1,30 @@
+-- Migration (DATA BACKFILL): 2026-06-29b_respace_sa_series_backfill
+-- Author: Claude (Opus 4.8) for Fred
+-- Audit: writes go through public.visits (already audited) via the existing
+--        public.ripple_reschedule_visit RPC -> trg_push_visit_update. No DDL.
+--
+-- WHY: 6 SA series had a single off-frequency gap (an imminent visit pulled a few
+--      days early via a Calendar DRAWER move, which -- unlike drag-n-drop -- does
+--      NOT cascade re-spacing). Re-anchored each forward chain to exact job
+--      frequency by calling ripple_reschedule_visit on the first downstream visit
+--      with new_date = anchor_date + frequency_days. Approved by Fred 2026-06-29.
+--
+-- Applied (non-dry-run) -- one call per series, on the first downstream visit:
+--   select * from public.ripple_reschedule_visit(5928, '2026-07-30', NULL, NULL, false); -- 017-FIA freq30 (6 rows +3d)
+--   select * from public.ripple_reschedule_visit(5934, '2026-07-29', NULL, NULL, false); -- 019-G7  freq30 (6 rows +4d)
+--   select * from public.ripple_reschedule_visit(6580, '2026-07-30', NULL, NULL, false); -- 025-GRO freq30 (6 rows +3d)
+--   select * from public.ripple_reschedule_visit(6039, '2026-07-29', NULL, NULL, false); -- 042-MT  freq30 (6 rows +4d)
+--   select * from public.ripple_reschedule_visit(6067, '2026-08-28', NULL, NULL, false); -- 051-PV  freq60 (3 rows +4d)
+--   select * from public.ripple_reschedule_visit(6313, '2026-08-28', NULL, NULL, false); -- 127-PC  freq60 (3 rows +6d)
+--
+-- VERIFIED: all 6 chains now have exact gaps (30/30/30/30/30/30 and 60/60/60).
+--   In-scope (<=60d) visits pushed to Jobber cleanly (push_health issue=null);
+--   far-future visits correctly not_in_jobber (promote when in horizon). Zero
+--   push failures / drift.
+--
+-- HELD (NOT applied): 214-MYK GT -- its off gap is a MISSING Dec-10 weekly visit
+--   (not a moved anchor); rippling would pull Dec17/24/31 back 7d and end the
+--   series a week early, possibly undoing an intentional skip. Awaiting Fred.
+--
+-- Re-running any line above is a near-no-op now (targets already equal -> skipped
+-- by the RPC's IS DISTINCT FROM guard), EXCEPT it would re-push the in-scope rows.

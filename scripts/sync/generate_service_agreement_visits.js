@@ -176,7 +176,11 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
 
     for (const d of fresh) {
       toInsert.push({ client_id: job.client_id, job_id: job.job_id, visit_date: d,
-        visit_status: 'scheduled', source: 'supabase_cron', title: job.title,
+        // title = "CODE Name - <job title>" so the Jobber schedule chip shows the client
+        // (matches native Jobber, which only composes client.name + job.title when the visit
+        // title is left blank; our explicit bare title used to suppress that prefix). Dedup is
+        // by date (line ~171), cleanup/promote by source+job_id — none key on title, so safe.
+        visit_status: 'scheduled', source: 'supabase_cron', title: `${job.client_code} ${job.client_name} - ${job.title}`,
         service_type: job.service_type, derm_required: job.derm_required });
     }
   }
