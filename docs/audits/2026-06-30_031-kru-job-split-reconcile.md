@@ -40,9 +40,16 @@ service_type NULL → COALESCE default 'GT'), derm_required=true. In-horizon (Ju
 - Pre-flight gated on a live read-only Jobber confirm of #557=21/Lift-Station/[04] & #971=30/[02].
 - Plan was adversarially reviewed (4-lens workflow, GO_WITH_CHANGES); all required changes applied.
 
+## Step D — anchor GT cadence on the last completed GT (Fred follow-up)
+6605 (Jun30) turned out to be the **Lift Station** visit — its Jobber record carries instructions "Solo lift
+station" + assignee Grecia, so the office had already designated tomorrow as LS-only (and it correctly anchors
+the LS @21 series Jun30→Jul21→…). That left the **Grease Trap with no Jun30 visit** (last GT = May 31; the
+#971 series started Jul30 = a 60-day gap). Fix: inserted an all-day GT visit (6849) on #971 at May31+30 = Jun30.
+**GT series #971 now: Jun30, Jul30, Aug29, Sep28, Oct28, Nov27, Dec27** (May31-anchored @30, confirmed; Jun30+Jul30 in Jobber).
+Left it unassigned/all-day so the office slots crew/time (not presuming Grecia does GT too).
+**Operational note:** Jun30 now carries 3 visits — LS (6605, Grecia, solo lift station), Aux (5990), GT (6849, new).
+
 ## Open items
-- **6605 (Jun30 GT visit)** sits on the LS job #557 (Fred: leave today's). One visit where Grease Trap shows
-  under the Lift Station job. Can re-home (delete+recreate, timed 10:15 ET) if desired.
 - **Edge-fn delete idempotency** (separate task): `visitDelete` returning a not-found userError marks
   `failed` + skips unlink even though the visit was deleted.
 - LS @21 co-schedules with Aux @21 on 8 dates (intended — Fred confirmed). Default trucks differ (LS=1, Aux=2).
