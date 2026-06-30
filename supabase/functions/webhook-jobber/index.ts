@@ -98,6 +98,25 @@ function dateDiff(isoA: string, isoB: string): number {
   const [yb, mb, db] = isoB.split('-').map(Number)
   return Math.round((Date.UTC(ya, ma - 1, da) - Date.UTC(yb, mb - 1, db)) / (1000 * 60 * 60 * 24))
 }
+// ET ('America/New_York') wall-clock { date, time } of a UTC timestamp.
+function etParts(d: Date): { date: string; time: string } {
+  const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  const p: Record<string, string> = {}
+  for (const part of f.formatToParts(d)) p[part.type] = part.value
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}:${p.second}` }
+}
+// visit_date = the ET OPERATING date (the night the route is FOR). UnclogMe's commercial
+// overnight routes run ~8pm into the next morning, so a genuine early-AM start (00:01-05:59 ET)
+// belongs to the PRIOR operating day; all-day (ET-midnight, no real time) + evening/day starts
+// keep their ET date. Mirrors sync-jobber-visit-drift.adoptTarget so the inbound poll and the
+// drift reconciler share ONE convention. (Replaces the old `.slice(0,10)` UTC-date derivation,
+// which pushed every >=~8pm-ET visit one day forward — the 081-TCE/5846 +1 bug, 126 rows.)
+function operatingDateET(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const e = etParts(new Date(iso))
+  if (e.time === '00:00:00') return e.date
+  return e.time.slice(0, 5) < '06:00' ? addDaysISO(e.date, -1) : e.date
+}
 
 // ---- Decode Jobber base64 GID → { type, numericId } ----
 function decodeGid(gid: string): { type: string; numericId: string } | null {
@@ -612,9 +631,9 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     // (often Diego, the office processor — NOT the driver). Driver attribution
     // lives in visit_assignments via assignedUsers.
     completed_by: v.completedBy ?? null,
-    // visit_date is NOT NULL — fall back through startAt → endAt → completedAt.
-    // If all three are missing, skip the row rather than fail the upsert.
-    visit_date: (v.startAt ?? v.endAt ?? v.completedAt)?.slice(0, 10) ?? null,
+    // visit_date is NOT NULL — derive the ET OPERATING date from startAt → endAt → completedAt
+    // (operatingDateET handles the overnight rule + all-day). If all three are missing, skip.
+    visit_date: operatingDateET(v.startAt ?? v.endAt ?? v.completedAt),
   }
   if (!visitRow.visit_date) {
     console.log(`[handleVisit] visit ${numericId} has no startAt/endAt/completedAt — skipping`)
