@@ -24,9 +24,12 @@ Tank Cleaning"; dropped the `02` line item (kept `04`). app_source='sql' (jobs/l
 **Step B — re-home GT series to job 1722 (#99900971), dates preserved:**
 - Inserted Jul30 GT replacement on 1722 first (scope floor) → created in Jobber under #971.
 - Soft-deleted 6606 (old Jul30 under #557) → Jobber `visitDelete` succeeded (visit gone). NOTE: the edge fn
-  marked it `sync_state='failed'` and skipped the unlink because `visitDelete` returned a userError (likely
-  "Visit not found" from a duplicate delivery — `jobber-push-visit/index.ts:216-218` throws on ANY userError).
-  Manually unlinked + set confirmed. **Follow-up: make the delete path idempotent.**
+  marked it `sync_state='failed'` and skipped the unlink because a poll-replay double-delivered the delete and
+  the 2nd call hit an already-gone visit. Confirmed from the edge logs (2026-06-29 23:38:53 UTC): Jobber
+  surfaced this as a **top-level GraphQL error `"Visit does not exist"`** (path `["visitDelete"]`) — which
+  `gql()` *throws* at `index.ts:71`, BEFORE the `ue(d.visitDelete)` userError check is ever reached (so the
+  original "throws on any userError" read was only half the story). Manually unlinked + set confirmed at the
+  time. **RESOLVED 2026-06-30 — see Open items.**
 - Re-homed 6607–6611 (DB-only, beyond 60d horizon) via `job_id`+`title` together → settled DB-only (promote later).
 
 **Step C — generate LS series on 1304:** `generate_service_agreement_visits.js --client=031-KRU --execute`
@@ -50,7 +53,12 @@ Left it unassigned/all-day so the office slots crew/time (not presuming Grecia d
 **Operational note:** Jun30 now carries 3 visits — LS (6605, Grecia, solo lift station), Aux (5990), GT (6849, new).
 
 ## Open items
-- **Edge-fn delete idempotency** (separate task): `visitDelete` returning a not-found userError marks
-  `failed` + skips unlink even though the visit was deleted.
+- ~~**Edge-fn delete idempotency** (separate task): `visitDelete` returning a not-found userError marks
+  `failed` + skips unlink even though the visit was deleted.~~ **RESOLVED 2026-06-30.** `jobber-push-visit`
+  DELETE branch is now idempotent: a not-found signal — whether a top-level GraphQL error (`gql()` throw, the
+  path actually observed: `"Visit does not exist"`) OR a `visitDelete` userError — matching
+  `/not found|could not be found|does not exist/i` is treated as SUCCESS (skip throw, still unlink the
+  `entity_source_links` row, handler marks `sync_state='confirmed'`). Only genuine errors throw. Deployed
+  (verify_jwt=true) + smoke-tested on 112-YA (double-delete → `confirmed` + unlinked).
 - LS @21 co-schedules with Aux @21 on 8 dates (intended — Fred confirmed). Default trucks differ (LS=1, Aux=2).
 - Acceptance: next 09:00 UTC `reconcile_jobs` + 10:00 UTC sa-gen are self-checking (Jobber is authority, already correct → corrective, not reverting).

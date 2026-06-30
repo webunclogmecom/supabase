@@ -213,9 +213,25 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   if (op === "delete" || (visit && (visit.deleted_at || visit.visit_status === "cancelled"))) {
     const gid = payloadGid || (visit ? await jobberGid("visit", visitId) : null);
     if (!gid) { console.log(`[push] delete: visit ${visitId} has no jobber link — nothing to delete`); return { ok: true, note: "no link" }; }
-    const d = await gql(token, M_DELETE, { ids: [gid] });
-    const err = ue(d.visitDelete);
-    if (err) throw new Error(`visitDelete: ${err}`);
+    // IDEMPOTENT delete. Jobber's poll-replay can double-deliver, so a 2nd delete
+    // hits an already-gone visit. Jobber surfaces "already gone" two different ways:
+    //   (a) a TOP-LEVEL GraphQL error ("Visit does not exist") — gql() THROWS this
+    //       (the path actually observed in Prod 2026-06-29, visit 6606), and
+    //   (b) a visitDelete userErrors entry (defensive — Jobber is inconsistent).
+    // Both mean the visit is gone, which is the desired end-state — treat as SUCCESS:
+    // skip the throw, still unlink, let the handler mark sync_state='confirmed'.
+    // Only a GENUINE error (anything not matching ALREADY_GONE) aborts.
+    const ALREADY_GONE = /not found|could not be found|does not exist/i;
+    try {
+      const d = await gql(token, M_DELETE, { ids: [gid] });
+      const err = ue(d.visitDelete);
+      if (err && !ALREADY_GONE.test(err)) throw new Error(`visitDelete: ${err}`);
+      if (err) console.log(`[push] delete: Jobber visit ${gid} already gone (userError: ${err}) — treating as deleted (visit ${visitId})`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!ALREADY_GONE.test(msg)) throw e;
+      console.log(`[push] delete: Jobber visit ${gid} already gone (${msg}) — treating as deleted (visit ${visitId})`);
+    }
     // unlink so a later un-cancel (upsert) cleanly re-creates instead of editing a dead GID
     await db.from("entity_source_links").delete()
       .eq("entity_type", "visit").eq("entity_id", visitId).eq("source_system", "jobber");
