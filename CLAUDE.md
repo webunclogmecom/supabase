@@ -8,7 +8,7 @@ Non-negotiable rules + quick reference for any AI agent working on this repo. **
 
 ## What this project is
 
-Single source-of-truth Postgres warehouse for Unclogme LLC on Supabase project `wbasvhvvismukaqdnouk`. Webhooks from Jobber, Airtable, and Samsara land in three Edge Functions and normalize into a 28-table 2NF/3NF schema. Cross-system IDs live in one polymorphic bridge table (`entity_source_links`) — never as source-prefixed columns. Jobber + Airtable visit-gen sunset May 2026 (visit-gen already done 2026-05-13); DERM + PRE-POST stay on AT until further notice; Odoo.sh CRM takes over CRM; Samsara is permanent.
+Single source-of-truth Postgres warehouse for Unclogme LLC on Supabase project `wbasvhvvismukaqdnouk`. Webhooks from Jobber, Airtable, and Samsara land in three Edge Functions and normalize into a 28-table 2NF/3NF schema. Cross-system IDs live in one polymorphic bridge table (`entity_source_links`) — never as source-prefixed columns. Jobber + Airtable visit-gen sunset May 2026 (visit-gen already done 2026-05-13). **DERM capture moved to the DERM Tracker app** — it writes `derm_manifests` directly to Supabase; Airtable is retired for DERM (verified 2026-06-26: recent inserts are `app_source='derm-tracker'` with no Airtable source link). **PRE-POST inspections are now the ONLY live Airtable feed** — still ingested via `webhook-airtable` (the sole writer of `inspections`); the Admin Review app is their front-end / review surface, but the data still rides Airtable into Supabase. Odoo.sh CRM takes over CRM; Samsara is permanent.
 
 ---
 
@@ -25,7 +25,7 @@ Related data via FK, never copied. No snapshot columns duplicating join-availabl
 
 ### 4. Source-of-truth trust hierarchy (revised 2026-04-29)
 - **Jobber + Samsara = 100% trusted.** Jobber owns identity, addresses, contacts, jobs, visits, invoices, line_items, quotes, notes/photos, employees. Samsara owns vehicles, drivers (field), GPS/telemetry, geofences.
-- **Airtable = best-effort enrichment, NOT authority.** Trusted only for `derm_manifests` and `inspections` (PRE-POST). Service configs, client enrichment (zone, hours, days, county) — treat as suggestions. Airtable throws wrong data regularly; never let it override Jobber/Samsara.
+- **Airtable = best-effort enrichment, NOT authority.** As of 2026-06-26, Airtable's ONLY live inbound feed is **`inspections` (PRE-POST)** via `webhook-airtable` (its sole DB writer). **`derm_manifests` no longer come from Airtable** — the DERM Tracker app writes them directly (`app_source='derm-tracker'`; recent rows carry no Airtable source link). Service configs, client enrichment (zone, hours, days, county) — treat as suggestions. Airtable throws wrong data regularly; never let it override Jobber/Samsara.
 - **`ops.*` merge views** COALESCE Jobber-first over Airtable/Samsara.
 - Dropped sources: Fillout (entirely), Airtable Drivers&Team/Past due/Route Creation/Leads.
 
@@ -92,7 +92,7 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
   - **Prod** `wbasvhvvismukaqdnouk` — source of truth, Pro plan, RLS hardened.
   - **Sandbox #1 `ubtlwpcyntelgbykdatn` — DELETED 2026-06-11.** Verified zero consumers (0 API requests/7d; every Lovable app runs on Prod or Lovable Cloud; review data migrated to Prod canonical 2026-06-08). `sandbox-refresh.yml` retired (schedule removed + disabled); audit parity checks retired. Final backup of its unique tables: `..\backups\sandbox1_final_backup_2026-06-11.json` (parent folder, outside repo).
   - **HR Sandbox** `klgtrdwrasrlxbmfyvdh` (renamed from *Field Portal Sandbox*) — Yannick's **HR app** project (Field Portal app reads Prod directly since 2026-05-16). Legacy April-clone schema (keep as-is); data re-seeded fresh 2026-06-11 (full employees/vehicles/inspections + live subset visits). Also hosts the `frozen_leads` schema — don't touch. One-time-seed model, no periodic refresh.
-- **Today:** 2026-05-13. Visit-gen sunset from AT 2026-05-13; DERM + PRE-POST AT automations still active.
+- **Today:** 2026-05-13. Visit-gen sunset from AT 2026-05-13. **DERM AT automation retired — the DERM Tracker app now writes `derm_manifests` directly (verified 2026-06-26).** PRE-POST inspections (`webhook-airtable`) are the only AT → Supabase automation left.
 
 ---
 
@@ -141,8 +141,15 @@ require explicit Fred sign-off and run via a manual script (see
 ### Truck names are NOT people
 **Moises, David, Goliath** — trucks. **Cloggy** — truck (only daytime-only one). Never respond to "David did the visit" as if David is a person without checking [docs/operations.md](docs/operations.md#truck-name--person-name).
 
-### Overnight shifts
-Commercial trucks work 10pm–3am. `visit_date` is the logical operating date, not the clock date of `start_at`. Use `visit_date` explicitly or ±12h windows. See [operations.md](docs/operations.md#overnight-shift-handling).
+### Overnight shifts → the operating-date rule (refined 2026-07-01)
+Commercial overnight routes run **~8 PM into the next ~6 AM**, so **`visit_date` = the OPERATING NIGHT the route is FOR**, NOT the clock date of `start_at`. ONE canonical derivation, shared by `webhook-jobber.operatingDateET`, `sync-jobber-visit-drift.adoptTarget`, and the DB trigger `trg_aa_reconcile_operating_date` (`OVERNIGHT_CUTOFF = 06:00 ET`):
+- `start_at` NULL, or ET time **00:00:00** (placeholder) → all-day; `visit_date` stands as the operating date.
+- ET time **00:00:01–05:59** (early-AM) → the **PRIOR** ET date (it belongs to the prior night's route).
+- evening / daytime → that ET date.
+
+**Consequence for the apps (esp. Calendar):** evening visits → Calendar date = Jobber date (agree). **Early-AM visits (after midnight)** → the Calendar shows the **prior operating night** while Jobber shows the actual clock date a day later — **intentional, NOT a mismatch** (a 2 AM visit on Jun 30 belongs to the Jun 29 night → `visit_date` = Jun 29). Don't "fix" that gap.
+
+**Safeguards (2026-07-01):** the BEFORE trigger `trg_aa_reconcile_operating_date` keeps the `visit_date`↔`start_at` pair consistent both ways (start_at write → derive date; pure date-drag → move start_at's day, keep the ET wall-clock). The old `handleVisit` +1 bug (took the UTC date-slice) is fixed; `ripple_reschedule_visit` now shifts days in ET (DST-safe). Always query with `visit_date` explicitly. Full spec: [docs/reference/operating-date-rule.md](docs/reference/operating-date-rule.md).
 
 ### `clients.status` values
 `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE`. AT's old `Recuring` (one r) was a typo — normalized 2026-05-13. populate.js + ops views all use `RECURRING`.
