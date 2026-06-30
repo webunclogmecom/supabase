@@ -1,14 +1,22 @@
-name: Daily jobs reconcile (status + frequency + line items)
+name: Jobs reconcile every 6h (status + frequency + line items)
 
 # Closes the jobs-sync gaps the createdAt-cursored poll can't: existing-job status changes
 # (archive/complete), the Frequency custom field, job line items (SA-has / SC-has-none rule),
 # and deletions (Jobber returns null -> mark archived). Runs scripts/sync/reconcile_jobs.js
-# once a day over all non-archived jobs. The real-time path is webhook-jobber.handleJob; this is
-# the daily catch-up. See reference_jobs_sync_gaps + docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md.
+# over all non-archived jobs (~475, ~4 min/run).
+#
+# WHY this is the only catch-up for EDITED jobs: Jobber's JobFilterAttributes accepts ONLY
+# `createdAt` (NOT `updatedAt`), so the */5 delta poll can incrementally fetch NEW jobs but can
+# never re-fetch an OLD job that was edited (e.g. a Frequency or line-item change). handleJob
+# (the per-job webhook path) re-fetches fresh from Jobber, but it only fires for jobs the poll
+# actually pulls. So an edit to an old job propagates ONLY when this full by-GID reconcile runs.
+# Bumped daily -> every 6h (2026-06-30) to shrink that edit-sync latency from 24h to <=6h
+# (031-KRU's stale Frequency was the trigger). See reference_jobs_sync_gaps +
+# docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md.
 
 on:
   schedule:
-    - cron: '0 9 * * *'   # 09:00 UTC daily
+    - cron: '0 */6 * * *'   # every 6 hours (00/06/12/18 UTC)
   workflow_dispatch:
     inputs:
       execute:
