@@ -5,9 +5,12 @@ name: Jobber note-photo diff sync (every 6h)
 # LATER (the daily migration is note-level idempotent and skips edited notes, so it
 # misses these). Photo-level diff via entity_source_links attachment GID.
 #
-# Runs every 6h (Fred, 2026-07-01). Add-only for now — REMOVE is gated behind
-# --enable-remove until the delete path is verified safe (a naive diff can
-# false-positive on a partial/empty Jobber response and hard-delete is irreversible).
+# Runs every 6h (Fred, 2026-07-01). Full sync (add + remove). REMOVE is now safe:
+# it is NOTE-ANCHORED (only unlinks a JOB-note photo whose own note is still on the
+# visit but dropped the attachment) and UNLINK-based (keeps the photos row + storage,
+# recoverable) — never the old naive visit-diff hard-delete. ADD is dedup-safe (links
+# an existing photo by attachment gid instead of re-downloading) and JOB-note only
+# (client notes are client-level and repeat on every visit → would over-attach).
 # The script self-refreshes the Jobber read token from webhook_tokens, so no static
 # JOBBER_ACCESS_TOKEN secret is needed.
 
@@ -33,10 +36,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: npm install
-      - name: Photo-level diff sync from Jobber notes (add-only)
+      - name: Photo-level diff sync from Jobber notes (add + note-anchored remove)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
           SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/sync/sync_jobber_note_photos.js --execute --days=${{ github.event.inputs.days || '14' }}
+        run: node scripts/sync/sync_jobber_note_photos.js --execute --enable-remove --days=${{ github.event.inputs.days || '14' }}

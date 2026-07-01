@@ -6,11 +6,15 @@
 // was NOTE-level idempotent and skipped edited notes), this diffs at the
 // ATTACHMENT level:
 //   ADD    — a Jobber note attachment we don't have  -> download + upload + link.
-//   REMOVE — a photo we imported from a Jobber note that is NO LONGER on the
-//            note (Diego deleted it) -> HARD delete (photo_links + photos +
-//            entity_source_links + storage object). photos/photo_links are not
-//            in the audited set, so a hard delete is fine (Fred, 2026-07-01) and
-//            guarantees it stops showing in the apps.
+//   REMOVE — NOTE-ANCHORED (safe): a photo whose OWN Jobber note is STILL on the
+//            visit but no longer holds the attachment => Diego removed it from that
+//            note. We UNLINK it (delete photo_links + classifications) so it stops
+//            showing in the apps immediately, but KEEP the photos row + storage
+//            (recoverable — a re-add re-links it; orphan storage is swept by the
+//            existing cleanup later). We NEVER touch legacy note-less photos (no
+//            note anchor — 82% of Jobber visit-photos are date-matched with no
+//            note link and were proven false-removes under a naive diff), and never
+//            a note that isn't currently surfaced (deleted/moved => can't confirm).
 //
 // Scope: completed, Jobber-linked visits with visit_date within --days (default
 // 45). --visit=<id> targets one. Only touches Jobber-sourced photos
@@ -34,11 +38,11 @@ const STORAGE_SIZE_LIMIT = 52428800;
 const EXECUTE = process.argv.includes('--execute');
 const DAYS = Number((process.argv.find(a => a.startsWith('--days=')) || '').split('=')[1] || 45);
 const ONLY_VISIT = (process.argv.find(a => a.startsWith('--visit=')) || '').split('=')[1] || null;
-// Removals are OFF by default (add-only). A naive visit.notes diff can false-
-// positive (partial/empty Jobber response, or a photo Jobber attributes to a
-// different note than our old date-matching did) and hard-delete is irreversible.
-// Enable only when verified safe. Extra guard: never remove when Jobber returned
-// ZERO current attachments for a visit that has photos (looks like a query blip).
+// Removals default OFF for local dry-runs; the cron passes --enable-remove. Now
+// SAFE because removes are NOTE-ANCHORED (only a photo whose own note is still on
+// the visit but dropped it) + UNLINK (recoverable), not a naive visit-level diff
+// with hard-delete. Extra guards below: skip when Jobber returned ZERO attachments
+// for the visit (query blip) and skip any note whose attachment page is truncated.
 const ENABLE_REMOVE = process.argv.includes('--enable-remove');
 const JOBBER_SOURCES = ['jobber_migration', 'jobber_late_recovery', 'jobber_note_sync'];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -101,9 +105,13 @@ async function getReadToken(force) {
   let added = 0, removed = 0, errors = 0, changedVisits = 0;
 
   for (const t of target) {
-    // our jobber-sourced photos for THIS visit: gid -> {photo_id, storage_path}
+    // our jobber-sourced photos for THIS visit: att_gid + the Jobber note it came
+    // from (note_gid; NULL for legacy date-matched photos with no note anchor).
     const ours = await pg(`
-      SELECT ph.id AS photo_id, ph.storage_path, esl.source_id AS att_gid
+      SELECT ph.id AS photo_id, ph.storage_path, esl.source_id AS att_gid,
+        (SELECT nesl.source_id FROM photo_links pn
+           JOIN entity_source_links nesl ON nesl.entity_type='note' AND nesl.entity_id=pn.entity_id AND nesl.source_system='jobber'
+         WHERE pn.photo_id=ph.id AND pn.entity_type='note' LIMIT 1) AS note_gid
       FROM photo_links pl JOIN photos ph ON ph.id=pl.photo_id
       JOIN entity_source_links esl ON esl.entity_type='photo' AND esl.entity_id=ph.id AND esl.source_system='jobber'
       WHERE pl.entity_type='visit' AND pl.entity_id=${t.visit_id} AND ph.source IN (${JOBBER_SOURCES.map(sqlEsc).join(',')})`);
@@ -113,56 +121,82 @@ async function getReadToken(force) {
     let notes = [], cursor = null;
     try {
       do {
-        const d = await gql(`query($id:EncodedId!,$after:String){ visit(id:$id){ notes(first:10,after:$after){ nodes{
-          ... on ClientNote { id pinned message fileAttachments{ nodes{ id fileName contentType fileSize url } } }
-          ... on JobNote    { id pinned message fileAttachments{ nodes{ id fileName contentType fileSize url } } }
+        const d = await gql(`query($id:EncodedId!,$after:String){ visit(id:$id){ notes(first:10,after:$after){ nodes{ __typename
+          ... on ClientNote { id pinned message fileAttachments(first:100){ nodes{ id fileName contentType fileSize url } pageInfo{ hasNextPage } } }
+          ... on JobNote    { id pinned message fileAttachments(first:100){ nodes{ id fileName contentType fileSize url } pageInfo{ hasNextPage } } }
         } pageInfo{ hasNextPage endCursor } } } }`, { id: t.visit_gid, after: cursor });
         const vn = d.visit?.notes; if (!vn) break; notes.push(...vn.nodes); cursor = vn.pageInfo.hasNextPage ? vn.pageInfo.endCursor : null;
       } while (cursor && notes.length < 200);
     } catch (e) { errors++; console.log(`  v${t.visit_id} ${t.client_code} ERR: ${e.message.slice(0, 70)}`); continue; }
 
-    const curAtt = new Map();
-    for (const n of notes) { if (n.pinned) continue; for (const f of (n.fileAttachments?.nodes || [])) curAtt.set(f.id, { ...f, noteGid: n.id, noteMsg: n.message || '' }); }
+    // curAtt: every current attachment (for the empty-guard + remove context).
+    // noteAtts: per-note attachment set (for note-anchored REMOVE). incompleteNotes:
+    // notes whose attachment page is truncated (>100) — excluded from removes.
+    // We only ADD JobNote attachments to a visit: JobNotes are visit/job-specific,
+    // while ClientNotes are CLIENT-level and Jobber returns the SAME ClientNotes on
+    // EVERY visit of the client — attaching them per-visit over-attaches (the same
+    // photo on all visits). Client-note photos are handled at the client level.
+    const curAtt = new Map(); const noteAtts = new Map(); const incompleteNotes = new Set(); const jobNoteGids = new Set();
+    for (const n of notes) {
+      if (n.pinned) continue;
+      const fa = n.fileAttachments;
+      if (fa?.pageInfo?.hasNextPage) incompleteNotes.add(n.id);
+      if (n.__typename === 'JobNote') jobNoteGids.add(n.id);
+      noteAtts.set(n.id, new Set((fa?.nodes || []).map(f => f.id)));
+      for (const f of (fa?.nodes || [])) curAtt.set(f.id, { ...f, noteGid: n.id, noteMsg: n.message || '', noteType: n.__typename });
+    }
 
-    const toAdd = [...curAtt.keys()].filter(g => !ourByGid.has(g));
-    const toRemove = [...ourByGid.keys()].filter(g => !curAtt.has(g));
-    const doRemove = ENABLE_REMOVE && curAtt.size > 0; // guard: never remove on an empty Jobber response
-    if (!toAdd.length && !(doRemove && toRemove.length)) continue;
+    const toAdd = [...curAtt.keys()].filter(g => curAtt.get(g).noteType === 'JobNote' && !ourByGid.has(g));
+    // NOTE-ANCHORED remove: only a JOB-note photo whose own note is STILL on the visit
+    // (positive confirmation it exists) but no longer holds this attachment. Legacy
+    // note-less photos, client-note photos, and photos on a truncated/absent note are
+    // never removed (symmetric with add: the sync only manages job-note→visit links).
+    const removable = r => r.note_gid && jobNoteGids.has(r.note_gid) && noteAtts.has(r.note_gid) && !incompleteNotes.has(r.note_gid) && !noteAtts.get(r.note_gid).has(r.att_gid);
+    const toRemove = ENABLE_REMOVE ? ours.filter(removable) : [];
+    const doRemove = ENABLE_REMOVE && curAtt.size > 0 && toRemove.length > 0; // guard: never remove on an empty Jobber response
+    const wouldRemoveGated = !ENABLE_REMOVE ? ours.filter(removable).length : 0;
+    if (!toAdd.length && !doRemove) continue;
     changedVisits++;
-    console.log(`  v${t.visit_id} ${t.client_code}: +${toAdd.length} add${doRemove ? `, -${toRemove.length} remove` : (toRemove.length ? `, (${toRemove.length} would-remove — gated)` : '')}`);
+    console.log(`  v${t.visit_id} ${t.client_code}: +${toAdd.length} add${doRemove ? `, -${toRemove.length} remove` : (wouldRemoveGated ? `, (${wouldRemoveGated} would-remove — gated)` : '')}`);
     if (!EXECUTE) { added += toAdd.length; if (doRemove) removed += toRemove.length; continue; }
 
-    // ADD
+    // ADD (dedup-safe): if this attachment gid already exists as a photo anywhere,
+    // just LINK that existing photo to the visit + note; only download when it's
+    // genuinely new. Keying existence on the GLOBAL att_gid esl (not the visit-scoped
+    // set) is what prevents duplicate rows when the same file is on multiple visits
+    // or was captured earlier under a different storage path.
     for (const g of toAdd) {
       const att = curAtt.get(g);
-      if (!att.url || (att.fileSize && att.fileSize > STORAGE_SIZE_LIMIT)) { console.log(`    skip ${att.fileName} (no url / oversized)`); continue; }
       try {
-        // ensure note row
+        // ensure note row (job note -> visit-scoped)
         let noteRow = await pg(`SELECT entity_id FROM entity_source_links WHERE entity_type='note' AND source_system='jobber' AND source_id=${sqlEsc(att.noteGid)} LIMIT 1`);
         let noteId = noteRow[0]?.entity_id;
         if (!noteId) { const ins = await pg(`INSERT INTO notes (client_id, visit_id, body, note_date, source) VALUES (${t.client_id}, ${t.visit_id}, ${sqlEsc(att.noteMsg)}, now(), 'jobber_note_sync') RETURNING id`); noteId = ins[0].id; await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('note',${noteId},'jobber',${sqlEsc(att.noteGid)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`); }
-        const dl = await downloadFromUrl(att.url); const ext = extOf(dl.contentType || att.contentType, att.fileName);
-        const path = `notes/${t.client_id}/${att.noteGid}/${g}.${ext}`;
-        await storageUpload(path, dl.body, dl.contentType);
-        const p = await pg(`INSERT INTO photos (storage_path,file_name,content_type,size_bytes,source) VALUES (${sqlEsc(path)},${sqlEsc(att.fileName || g + '.' + ext)},${sqlEsc(dl.contentType || null)},${dl.body.length},'jobber_note_sync') ON CONFLICT (storage_path) DO UPDATE SET storage_path=EXCLUDED.storage_path RETURNING id`);
-        const photoId = p[0].id;
-        await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('photo',${photoId},'jobber',${sqlEsc(g)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`);
+        // reuse an existing photo for this attachment gid if we already have it
+        let photoId = (await pg(`SELECT entity_id AS id FROM entity_source_links WHERE entity_type='photo' AND source_system='jobber' AND source_id=${sqlEsc(g)} LIMIT 1`))[0]?.id;
+        if (!photoId) {
+          if (!att.url || (att.fileSize && att.fileSize > STORAGE_SIZE_LIMIT)) { console.log(`    skip ${att.fileName} (no url / oversized)`); continue; }
+          const dl = await downloadFromUrl(att.url); const ext = extOf(dl.contentType || att.contentType, att.fileName);
+          const path = `notes/${t.client_id}/${att.noteGid}/${g}.${ext}`;
+          await storageUpload(path, dl.body, dl.contentType);
+          const p = await pg(`INSERT INTO photos (storage_path,file_name,content_type,size_bytes,source) VALUES (${sqlEsc(path)},${sqlEsc(att.fileName || g + '.' + ext)},${sqlEsc(dl.contentType || null)},${dl.body.length},'jobber_note_sync') ON CONFLICT (storage_path) DO UPDATE SET storage_path=EXCLUDED.storage_path RETURNING id`);
+          photoId = p[0].id;
+          await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('photo',${photoId},'jobber',${sqlEsc(g)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`);
+        }
         await pg(`INSERT INTO photo_links (photo_id,entity_type,entity_id,role) VALUES (${photoId},'note',${noteId},'attachment') ON CONFLICT (photo_id,entity_type,entity_id,role) DO NOTHING;
                   INSERT INTO photo_links (photo_id,entity_type,entity_id,role) VALUES (${photoId},'visit',${t.visit_id},'other') ON CONFLICT (photo_id,entity_type,entity_id,role) DO NOTHING`);
         added++;
       } catch (e) { errors++; console.log(`    add ${g} ERR: ${e.message.slice(0, 70)}`); }
     }
-    // REMOVE (hard delete: links + classifications + photo + esl + storage) — gated
-    if (doRemove) for (const g of toRemove) {
-      const row = ourByGid.get(g);
+    // REMOVE (note-anchored UNLINK): drop the photo's links + classifications so it
+    // stops showing in the apps; keep the photos row + entity_source_link + storage
+    // (recoverable; a re-add re-links, orphan storage swept by cleanup later).
+    if (doRemove) for (const r of toRemove) {
       try {
-        await pg(`DELETE FROM photo_classifications WHERE photo_link_id IN (SELECT id FROM photo_links WHERE photo_id=${row.photo_id})`);
-        await pg(`DELETE FROM photo_links WHERE photo_id=${row.photo_id}`);
-        await pg(`DELETE FROM entity_source_links WHERE entity_type='photo' AND entity_id=${row.photo_id} AND source_system='jobber'`);
-        await pg(`DELETE FROM photos WHERE id=${row.photo_id}`);
-        if (row.storage_path) await storageDelete(row.storage_path);
+        await pg(`DELETE FROM photo_classifications WHERE photo_link_id IN (SELECT id FROM photo_links WHERE photo_id=${r.photo_id})`);
+        await pg(`DELETE FROM photo_links WHERE photo_id=${r.photo_id}`);
         removed++;
-      } catch (e) { errors++; console.log(`    remove ${g} ERR: ${e.message.slice(0, 70)}`); }
+      } catch (e) { errors++; console.log(`    remove ${r.att_gid} ERR: ${e.message.slice(0, 70)}`); }
     }
     await sleep(80);
   }
