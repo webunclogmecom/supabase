@@ -146,7 +146,7 @@ CREATE TABLE derm.address_row_map (
   image_url          text NOT NULL,            -- the specific page image
   facility_name_read text,                     -- raw transcription
   address_read       text,                     -- raw transcription
-  matched_client_id  uuid REFERENCES public.clients(id),  -- NULL when UNMATCHED
+  matched_client_id  bigint REFERENCES public.clients(id),  -- NULL when UNMATCHED (clients.id is bigint)
   assignment_status  text NOT NULL CHECK (assignment_status IN ('matched','unmatched','low_confidence','proposed')),
   confidence         text CHECK (confidence IN ('high','medium','low')),
   agent_agreement    text,                     -- e.g. '3/3'

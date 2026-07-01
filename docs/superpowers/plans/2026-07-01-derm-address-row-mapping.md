@@ -59,8 +59,9 @@ function q(sql) {
     }, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => {
       let j; try { j = JSON.parse(d); } catch (e) { return rej(new Error('non-JSON: ' + d.slice(0, 300))); }
       if (Array.isArray(j)) return res(j);
-      if (j && j.error) return rej(new Error(JSON.stringify(j).slice(0, 400)));
-      res(j); // DDL returns {} or []
+      if (j && (j.message || j.error)) return rej(new Error(String(j.message || j.error || JSON.stringify(j)).slice(0, 400)));
+      if (j && typeof j === 'object' && Object.keys(j).length === 0) return res(j); // DDL success ({})
+      rej(new Error('unexpected API response: ' + JSON.stringify(j).slice(0, 300)));
     }); });
     req.on('error', rej); req.write(body); req.end();
   });
@@ -84,7 +85,7 @@ CREATE TABLE IF NOT EXISTS derm.address_row_map (
   image_url             text NOT NULL,
   facility_name_read    text,
   address_read          text,
-  matched_client_id     uuid REFERENCES public.clients(id),
+  matched_client_id     bigint REFERENCES public.clients(id),
   assignment_status     text NOT NULL CHECK (assignment_status IN ('matched','unmatched','low_confidence','proposed')),
   confidence            text CHECK (confidence IN ('high','medium','low')),
   agent_agreement       text,

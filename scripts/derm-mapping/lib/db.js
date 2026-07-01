@@ -19,7 +19,8 @@ function q(sql) {
       let j; try { j = JSON.parse(d); } catch (e) { return rej(new Error('non-JSON: ' + d.slice(0, 300))); }
       if (Array.isArray(j)) return res(j);
       if (j && (j.message || j.error)) return rej(new Error(String(j.message || j.error || JSON.stringify(j)).slice(0, 400)));
-      res(j); // DDL returns {} or []
+      if (j && typeof j === 'object' && Object.keys(j).length === 0) return res(j); // DDL success ({})
+      rej(new Error('unexpected API response: ' + JSON.stringify(j).slice(0, 300)));
     }); });
     req.on('error', rej); req.write(body); req.end();
   });
