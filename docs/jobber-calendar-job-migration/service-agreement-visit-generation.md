@@ -167,4 +167,28 @@ The **SERVICES** line-items list, the header badge, and the bottom "Open job in 
 
 ---
 
-*Created 2026-06-02 per Fred's request to persist this across context limits; §8 added 2026-06-03 from the live 112-YA probe; §9 (agreed design) added 2026-06-03; §10 (drawer redesign) added 2026-06-03. Memory pointer: `project_service_agreement_visit_model.md`.*
+## 11. Creating a new Service Agreement via the Jobber API (2026-07-01)
+
+Diego's 4 new SAs (243-FE, 244-URI, 241-WYN, 242-WYN) were the first created **programmatically via the Jobber write API** — previously all SA jobs were made by hand in the Jobber console. `scripts/sync/jobber_create_canonical_jobs.js` only creates **bare container** jobs (title + property + invoicing, no line items / Frequency), so the full setup used a one-off `jobCreate` carrying everything:
+
+```
+mutation($input: JobCreateAttributes!){ jobCreate(input:$input){ job{ id jobNumber jobType } userErrors{ message path } } }
+input = {
+  propertyId: <real Jobber Property GID>,        // NOT the client GID; 3 of 4 clients had no synced property → read live from client.properties
+  title: "Service Agreement - Grease Trap Pumping & Tank Cleaning",   // MUST start with "Service Agreement"
+  invoicing: { invoicingType: VISIT_BASED, invoicingSchedule: PER_VISIT },
+  lineItems: [{ name: "01 - Service Agreement - Pumping - Grease Trap & Tank Cleaning", unitPrice: <price>, quantity: 1, saveToProductsAndServices: false }],  // free-text line item, no product id
+  customFields: [{ customFieldConfigurationId: "Z2lkOi8vSm9iYmVyL0N1c3RvbUZpZWxkQ29uZmlndXJhdGlvbk51bWVyaWMvMzc0MzUxNA==", valueNumeric: <freq> }]   // "Frequency" (days), config 3743514
+}
+```
+
+- `jobCreate` returns **jobType RECURRING automatically** (no `scheduling` needed) with **0 auto-visits** — exactly what the generator wants (the reference SA jobs are also RECURRING with a null native recurrence).
+- The line item is a **free-text** row (`name` starts `01 - …`), quantity 1, `unitPrice`; no `productOrServiceId` needed. `saveToProductsAndServices: false`.
+- After create, the JOBS poll syncs the job + `line_items` + `frequency_days` into the DB (~5 min); then `generate_service_agreement_visits.js --client=<code> --execute` builds the series and pushes in-horizon visits.
+- **Anchor caveat:** the generator anchors at (last-completed-of-same-type + freq) or (today + freq), NOT the requested first-service date. To honor a specific first date, `ripple_reschedule_visit(<first_visit_id>, <target_date>)` shifts the whole series by the delta.
+- `fetch_service_agreement_jobs.js` couldn't see these via its anon-REST job-link map (PostgREST's 1000-row default drops the newest `entity_source_links`) — moot here, since the poll had already set `frequency_days` + `line_items`.
+- Jobs created 2026-07-01: #99900973 (244-URI $420/30d), #99900974 (243-FE $1/60d), #99900975 (241-WYN $2320/30d), #99900976 (242-WYN $2320/30d). First visits set to Jul 2 / Jul 1 / Jul 1 / Jul 22.
+
+---
+
+*Created 2026-06-02 per Fred's request to persist this across context limits; §8 added 2026-06-03 from the live 112-YA probe; §9 (agreed design) added 2026-06-03; §10 (drawer redesign) added 2026-06-03; §11 (API creation) added 2026-07-01. Memory pointer: `project_service_agreement_visit_model.md`.*
