@@ -32,12 +32,20 @@ Be precise: the GDO# cells are evenly stacked, so y_pct should increase in rough
 }
 
 phase('Locate')
+const med = arr => { const a = arr.filter(x => typeof x === 'number').sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null }
 const tasks = []
 for (const s of SHEETS) (s.local_files || []).forEach((p, i) => {
   if (!p || String(p).startsWith('DL_FAIL')) return
-  tasks.push(() => agent(prompt(p), { label: `pos:${s.label}-p${i + 1}`, phase: 'Locate', schema: SCHEMA, effort: 'high' })
-    .then(r => ({ label: s.label, dump_folder: s.dump_folder, wm: s.wm, page: i + 1, local_file: p, ...r }))
-    .catch(() => null))
+  // 3-vote ensemble: median y per row + median gdo_x cancels single-agent outliers
+  tasks.push(() => parallel([0, 1, 2].map(k => () => agent(prompt(p), { label: `pos:${s.label}-p${i + 1}#${k + 1}`, phase: 'Locate', schema: SCHEMA, effort: 'high' }).catch(() => null)))
+    .then(passes => {
+      const ok = passes.filter(Boolean)
+      if (!ok.length) return null
+      const byIdx = {}
+      for (const o of ok) for (const r of (o.rows || [])) { (byIdx[r.row_index] = byIdx[r.row_index] || { ys: [], names: [] }); byIdx[r.row_index].ys.push(r.y_pct); byIdx[r.row_index].names.push(r.facility_name) }
+      const rows = Object.keys(byIdx).map(Number).sort((a, b) => a - b).map(ri => ({ row_index: ri, facility_name: (byIdx[ri].names.find(Boolean) || ''), y_pct: med(byIdx[ri].ys) })).filter(r => typeof r.y_pct === 'number')
+      return { label: s.label, dump_folder: s.dump_folder, wm: s.wm, page: i + 1, local_file: p, gdo_x_pct: med(ok.map(o => o.gdo_x_pct)), rows }
+    }))
 })
 const positions = (await parallel(tasks)).filter(Boolean)
 return { positions }
