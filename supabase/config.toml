@@ -387,6 +387,12 @@ deno_version = 2
 [functions.webhook-jobber]
 verify_jwt = false
 
+# Signed-URL server for private DERM buckets. Anon-callable (the frontends hold no secret) —
+# the handler does its OWN slug-scoped authorization (manifest must belong to the passed
+# client_code) before returning createSignedUrl(). MUST be false or the gateway 401s the apps.
+[functions.get-derm-doc]
+verify_jwt = false
+
 [functions.webhook-airtable]
 verify_jwt = false
 
