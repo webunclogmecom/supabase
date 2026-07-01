@@ -28,6 +28,11 @@ const DRY_RUN = !process.argv.includes('--execute');
 // Jobber already attributes each note to its visit; the window was a guard
 // for the old client.notes approach where misattribution was possible.
 const NO_WINDOW = process.argv.includes('--no-window');
+// --visit=<id>: process ONE specific visit regardless of whether it already has
+// photos (photo-level idempotency still skips already-imported attachments and
+// adds only the new ones). Implies --no-window. For late-added note photos on a
+// visit that was already migrated.
+const ONLY_VISIT = (process.argv.find(a => a.startsWith('--visit=')) || '').split('=')[1] || null;
 
 function http(opts, body, timeoutMs = 120000) {
   return new Promise((res, rej) => {
@@ -131,9 +136,9 @@ const extOf = (ct, name) => {
     JOIN clients c ON c.id = v.client_id
     JOIN entity_source_links esl_c ON esl_c.entity_type='client' AND esl_c.entity_id=v.client_id AND esl_c.source_system='jobber'
     WHERE v.visit_status='completed'
-      AND v.visit_date >= '2026-01-01'
+      ${ONLY_VISIT ? `AND v.id = ${Number(ONLY_VISIT)}` : `AND v.visit_date >= '2026-01-01'
       AND NOT EXISTS (SELECT 1 FROM photo_links pl WHERE pl.entity_type='visit' AND pl.entity_id=v.id)
-      AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.visit_id=v.id AND EXISTS (SELECT 1 FROM photo_links pl WHERE pl.entity_type='note' AND pl.entity_id=n.id));
+      AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.visit_id=v.id AND EXISTS (SELECT 1 FROM photo_links pl WHERE pl.entity_type='note' AND pl.entity_id=n.id))`};
   `);
   console.log(`  ${target.length} candidates`);
 
@@ -192,7 +197,7 @@ const extOf = (ct, name) => {
     // each note to this visit, so window is just a recency guard).
     const nearbyWithAtt = allNotes.filter(n => {
       if (n.pinned) return false;
-      if (!NO_WINDOW) {
+      if (!NO_WINDOW && !ONLY_VISIT) {
         const nMs = new Date(n.createdAt).getTime();
         if (Math.abs(nMs - anchorMs) > windowMs) return false;
       }
@@ -275,7 +280,7 @@ const extOf = (ct, name) => {
           VALUES (${dbPhotoId}, 'note', ${dbNoteId}, 'attachment')
           ON CONFLICT (photo_id, entity_type, entity_id, role) DO NOTHING;
           INSERT INTO photo_links (photo_id, entity_type, entity_id, role)
-          VALUES (${dbPhotoId}, 'visit', ${t.visit_id}, 'attachment')
+          VALUES (${dbPhotoId}, 'visit', ${t.visit_id}, 'other')
           ON CONFLICT (photo_id, entity_type, entity_id, role) DO NOTHING;
         `);
         photoLinksCreated += 2;
