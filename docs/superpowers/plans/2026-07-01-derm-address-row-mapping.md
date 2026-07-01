@@ -347,8 +347,10 @@ export const meta = {
 }
 
 // args = { sheets: [{label, dump_folder, wm, dump_date, candidates:[{code,name,address}], local_files:[paths]}], gazetteer: {byAddr,byName} }
-const SHEETS = (args && args.sheets) || []
-const GAZ = (args && args.gazetteer) || { byAddr: {}, byName: {} }
+// NOTE: the runtime delivers `args` as a JSON STRING — parse it.
+const A = typeof args === 'string' ? JSON.parse(args) : (args || {})
+const SHEETS = (A && A.sheets) || []
+const GAZ = (A && A.gazetteer) || { byAddr: {}, byName: {} }
 
 const SCHEMA = {
   type: 'object', additionalProperties: false,
@@ -432,7 +434,7 @@ const results = perSheet.filter(Boolean).map(({ sheet, passes }) => {
   return { label: sheet.label, dump_folder: sheet.dump_folder, wm: sheet.wm, dump_date: sheet.dump_date,
     page_urls: sheet.page_urls, local_files: sheet.local_files, candidates: sheet.candidates, rows, gazetteer_add }
 })
-return { window: (args && args.window) || null, sheets: results }
+return { window: (A && A.window) || null, sheets: results }
 ```
 
 - [ ] **Step 2: Regression-test the workflow on the POC ground-truth sheets (A/B/C)**
