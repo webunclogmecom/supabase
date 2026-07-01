@@ -34,11 +34,12 @@ function sheetHtml(title, sheets) {
            (SELECT coalesce(dm.dump_ticket_date,dm.service_date)::text FROM derm_manifests dm
              WHERE dm.white_manifest_number=m.white_manifest_number ORDER BY 1 LIMIT 1) AS dump_date
     FROM derm.address_row_map m LEFT JOIN clients c ON c.id=m.matched_client_id
-    WHERE m.white_manifest_number IN (
+    WHERE (m.white_manifest_number IN (
        SELECT white_manifest_number FROM derm_manifests
         WHERE deleted_at IS NULL AND coalesce(dump_ticket_date,service_date) >= '${w.from}'
           AND coalesce(dump_ticket_date,service_date) <= '${w.to}')
-    ORDER BY dump_date DESC, m.dump_folder, m.page, m.row_index`);
+       OR m.dump_folder LIKE 'window${n}-sheet%')
+    ORDER BY dump_date DESC NULLS LAST, m.dump_folder, m.page, m.row_index`);
   const byFolder = new Map();
   for (const r of rows) {
     if (!byFolder.has(r.dump_folder)) byFolder.set(r.dump_folder, { dump_folder: r.dump_folder, wm: r.wm, dump_date: r.dump_date, page_urls: [], rows: [] });

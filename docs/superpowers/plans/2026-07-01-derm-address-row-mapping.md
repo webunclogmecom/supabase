@@ -480,17 +480,18 @@ const J = o => `'${JSON.stringify(o || {}).replace(/'/g, "''")}'::jsonb`;
 (async () => {
   const file = process.argv[2];
   const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  // resolve code -> client_id once
-  const codes = [...new Set(data.sheets.flatMap(s => s.rows).map(r => r.matched_client_code).filter(Boolean))];
+  // resolve code -> client_id once (NOCODE-<id> encodes the id directly for null-code clients)
+  const codes = [...new Set(data.sheets.flatMap(s => s.rows).map(r => r.matched_client_code).filter(c => c && !/^NOCODE-\d+$/.test(c)))];
   let byCode = {};
   if (codes.length) {
     const rows = await q(`SELECT id, client_code FROM clients WHERE client_code IN (${codes.map(S).join(',')})`);
     for (const r of rows) byCode[r.client_code] = r.id;
   }
+  const resolveId = code => { if (!code) return null; const m = /^NOCODE-(\d+)$/.exec(code); return m ? Number(m[1]) : (byCode[code] || null); };
   let n = 0;
   for (const sheet of data.sheets) {
     for (const r of sheet.rows) {
-      const cid = r.matched_client_code ? byCode[r.matched_client_code] : null;
+      const cid = resolveId(r.matched_client_code);
       const flags = {};
       if (r.assignment_status === 'unmatched') flags.unlinked_facility = true;
       const sql = `
@@ -499,7 +500,7 @@ const J = o => `'${JSON.stringify(o || {}).replace(/'/g, "''")}'::jsonb`;
            matched_client_id,assignment_status,confidence,agent_agreement,flags,source)
         VALUES (${S(sheet.dump_folder)},${S(sheet.wm)},${r.page},${r.row_index},
            ${S(sheet.local_files[r.page - 1] ? sheet.page_urls[r.page - 1] : sheet.page_urls[0])},
-           ${S(r.facility_name_read)},${S(r.address_read)},${cid ? S(cid) : 'NULL'},
+           ${S(r.facility_name_read)},${S(r.address_read)},${cid != null ? cid : 'NULL'},
            ${S(r.assignment_status)},${S(r.confidence)},${S(r.agent_agreement)},${J(flags)},'claude-vision-v1')
         ON CONFLICT (dump_folder,page,row_index) DO UPDATE SET
            white_manifest_number=EXCLUDED.white_manifest_number, image_url=EXCLUDED.image_url,
@@ -588,11 +589,12 @@ function sheetHtml(title, sheets) {
            (SELECT coalesce(dm.dump_ticket_date,dm.service_date)::text FROM derm_manifests dm
              WHERE dm.white_manifest_number=m.white_manifest_number ORDER BY 1 LIMIT 1) AS dump_date
     FROM derm.address_row_map m LEFT JOIN clients c ON c.id=m.matched_client_id
-    WHERE m.white_manifest_number IN (
+    WHERE (m.white_manifest_number IN (
        SELECT white_manifest_number FROM derm_manifests
         WHERE deleted_at IS NULL AND coalesce(dump_ticket_date,service_date) >= '${w.from}'
           AND coalesce(dump_ticket_date,service_date) <= '${w.to}')
-    ORDER BY dump_date DESC, m.dump_folder, m.page, m.row_index`);
+       OR m.dump_folder LIKE 'window${n}-sheet%')
+    ORDER BY dump_date DESC NULLS LAST, m.dump_folder, m.page, m.row_index`);
   const byFolder = new Map();
   for (const r of rows) {
     if (!byFolder.has(r.dump_folder)) byFolder.set(r.dump_folder, { dump_folder: r.dump_folder, wm: r.wm, dump_date: r.dump_date, page_urls: [], rows: [] });
