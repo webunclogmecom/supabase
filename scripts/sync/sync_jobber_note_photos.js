@@ -172,8 +172,12 @@ async function getReadToken(force) {
         let noteRow = await pg(`SELECT entity_id FROM entity_source_links WHERE entity_type='note' AND source_system='jobber' AND source_id=${sqlEsc(att.noteGid)} LIMIT 1`);
         let noteId = noteRow[0]?.entity_id;
         if (!noteId) { const ins = await pg(`INSERT INTO notes (client_id, visit_id, body, note_date, source) VALUES (${t.client_id}, ${t.visit_id}, ${sqlEsc(att.noteMsg)}, now(), 'jobber_note_sync') RETURNING id`); noteId = ins[0].id; await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('note',${noteId},'jobber',${sqlEsc(att.noteGid)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`); }
-        // reuse an existing photo for this attachment gid if we already have it
-        let photoId = (await pg(`SELECT entity_id AS id FROM entity_source_links WHERE entity_type='photo' AND source_system='jobber' AND source_id=${sqlEsc(g)} LIMIT 1`))[0]?.id;
+        // reuse an existing photo for this attachment gid ONLY if the photo row still
+        // exists — there are ~4k stale photo esls (source_system='jobber') pointing at
+        // photos a historical cleanup deleted (esl has no cascade). The JOIN filters
+        // those out so we don't hand a dangling photo_id to the FK; the DO UPDATE below
+        // then repoints the stale esl to the freshly downloaded photo.
+        let photoId = (await pg(`SELECT esl.entity_id AS id FROM entity_source_links esl JOIN photos ph ON ph.id=esl.entity_id WHERE esl.entity_type='photo' AND esl.source_system='jobber' AND esl.source_id=${sqlEsc(g)} LIMIT 1`))[0]?.id;
         if (!photoId) {
           if (!att.url || (att.fileSize && att.fileSize > STORAGE_SIZE_LIMIT)) { console.log(`    skip ${att.fileName} (no url / oversized)`); continue; }
           const dl = await downloadFromUrl(att.url); const ext = extOf(dl.contentType || att.contentType, att.fileName);
@@ -181,7 +185,7 @@ async function getReadToken(force) {
           await storageUpload(path, dl.body, dl.contentType);
           const p = await pg(`INSERT INTO photos (storage_path,file_name,content_type,size_bytes,source) VALUES (${sqlEsc(path)},${sqlEsc(att.fileName || g + '.' + ext)},${sqlEsc(dl.contentType || null)},${dl.body.length},'jobber_note_sync') ON CONFLICT (storage_path) DO UPDATE SET storage_path=EXCLUDED.storage_path RETURNING id`);
           photoId = p[0].id;
-          await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('photo',${photoId},'jobber',${sqlEsc(g)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`);
+          await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('photo',${photoId},'jobber',${sqlEsc(g)}) ON CONFLICT (entity_type,source_system,source_id) DO UPDATE SET entity_id=EXCLUDED.entity_id`);
         }
         await pg(`INSERT INTO photo_links (photo_id,entity_type,entity_id,role) VALUES (${photoId},'note',${noteId},'attachment') ON CONFLICT (photo_id,entity_type,entity_id,role) DO NOTHING;
                   INSERT INTO photo_links (photo_id,entity_type,entity_id,role) VALUES (${photoId},'visit',${t.visit_id},'other') ON CONFLICT (photo_id,entity_type,entity_id,role) DO NOTHING`);
