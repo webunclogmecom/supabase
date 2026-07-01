@@ -40,6 +40,13 @@ Implemented identically in three places (keep them in sync):
   `visit_date`↔`start_at` pair consistent for any writer (edge fn, Lovable PATCH, scripts). Bidirectional /
   intent-aware: a write that changes `start_at` re-derives `visit_date`; a pure date-drag (date changed, time not)
   moves `start_at`'s calendar day onto the new operating night while **preserving the ET wall-clock time**.
+  - **`end_at` carry (2026-07-01b):** the pure-date-drag branch also shifts `end_at` by the **same delta** so the
+    visit's duration is preserved; a write that shifts `start_at` alone gets a defensive snap (`end_at` →
+    `start_at + prior duration`) if it would otherwise land `≤ start_at`. Root-caused from a health-check finding:
+    the branch used to move `start_at` and leave `end_at` a day behind (`end_at ≤ start_at`), which made Jobber
+    reject the schedule push (*"startAt needs to be before endAt"*) — 6 visits, incl. two future 7/03 ones.
+  - **`visits_end_after_start_chk`** CHECK constraint now blocks `end_at ≤ start_at` from **any** path (incl. an
+    `end_at`-only edit the trigger doesn't watch).
 - **`handleVisit` +1 bug fixed**: it used to take the UTC date-slice of Jobber's `startAt`, pushing every
   ≥~8 PM-ET visit one day forward (the 081-TCE / 5846 class, 126 historical rows).
 - **`ripple_reschedule_visit` is DST-safe**: it shifts whole days in the `America/New_York` zone (round-trip),
