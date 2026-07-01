@@ -70,6 +70,12 @@ set (Bagel Boss, a Hallandale Carrot Express, One Oak Walk, Wine & Cheese, Cafe 
   **flag** for human confirmation. Ensemble with a second vendor model (GPT-4o / Gemini) stays
   available as a tiebreaker but the POC produced zero disagreements, so it is **not** in v1.
 - **Flag, never guess:** `UNMATCHED` rows and unplaced candidates are surfaced, not forced.
+- **Learn across sheets (gazetteer):** process sheets **one by one**, accumulating every *confirmed*
+  `facility-name / address → client_code` into a running gazetteer. Reuse it on later sheets to raise
+  certainty and to **auto-resolve** a facility that was `UNMATCHED` on one sheet but confidently
+  matched on another (many clients recur across the year's dumps). It also feeds the linkage-audit's
+  proposed fixes. Only *confirmed* (unanimous + consistent, or human-reviewed) matches enter the
+  gazetteer — never a guess.
 
 ## 5. Architecture (components, each independently testable)
 
@@ -90,13 +96,18 @@ set (Bagel Boss, a Hallandale Carrot Express, One Oak Walk, Wine & Cheese, Cafe 
    no linked client → optionally address-lookup against **all** clients/properties to *propose* a
    link; (b) linked clients with no matched row → possible mis-link. Emits a report; does **not**
    auto-mutate `derm_manifests`/`manifest_visits` (Fred reviews proposed fixes).
-6. **Renderer for Yannick** — from the mapping:
+6. **Renderer for Yannick** — from the mapping, output bundles that keep the **same 2-week dump-date
+   grouping** as today's DERM address bundles (most-recent-first, ~13 windows), but **split each into
+   `Confirmed` vs `Unconfirmed`**:
+   - A sheet with **any** flagged / `UNMATCHED` / low-confidence / gazetteer-unresolved row → the
+     **Unconfirmed** side (those blocks left **blank + `?`**), so Yannick tackles them first.
+     Fully-confident sheets → the **Confirmed** side.
    - **v1 (ship first): legend beside the image.** Each sheet = the original image + a numbered table
      (`Row 1 → 092-TCE` · transcribed address · confidence/flag). 100% reliable, no pixel-geometry
-     risk. Delivered as the same style of bundle PDF Yannick already receives.
+     risk. Same PDF style Yannick already receives; Unconfirmed bundle is the priority deliverable.
    - **v2 (fast-follow): stamped in the GDO# cell.** De-skew each scan to the fixed FOG template and
-     print each code inside its row's GDO# box (`?` for flagged), matching Fred's red-pen look. Gated
-     on validating template registration on a sample.
+     print each code inside its row's GDO# box (`?` for the blank/unconfirmed rows), matching Fred's
+     red-pen look. Gated on validating template registration on a sample.
 
 ## 6. Data flow
 
@@ -204,6 +215,7 @@ machine columns, never a human's `reviewed_*`).
 1. Every address sheet since the cutoff has rows in `derm.address_row_map`.
 2. On a re-labeled validation set (starting with the POC's A/B/C + a Yannick-annotated sample),
    auto-accepted rows are **≥ 99% correct**; the rest are flagged, not wrong.
-3. Yannick receives v1 legend PDFs covering all sheets, most-recent-first, bundled as today.
+3. Yannick receives v1 legend bundles for all sheets, grouped by the same 2-week dump-date windows as
+   today, **split into Confirmed and Unconfirmed** (unconfirmed surfaced first for him to resolve).
 4. A linkage-audit report lists every `UNMATCHED` row and every linked-but-absent client for Fred.
 5. Re-running the engine is idempotent and preserves human confirmations.
