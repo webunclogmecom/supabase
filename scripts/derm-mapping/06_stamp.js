@@ -53,11 +53,13 @@ function render(imgPath, gdoX, stamps, out) {
       let best = null, bs = 0;
       for (const pr of (pos.rows || [])) { if (usedPos.has(pr)) continue; const sc = overlap(d.facility_name_read, pr.facility_name); if (sc > bs) { bs = sc; best = pr; } }
       if (!best || bs === 0) best = (pos.rows || []).find(pr => pr.row_index === d.row_index && !usedPos.has(pr)) || null;
-      if (best && typeof best.y_pct === 'number') { usedPos.add(best); stamps.push({ y_pct: best.y_pct, code: d.code }); }
+      if (best && typeof best.y_pct === 'number') { usedPos.add(best); stamps.push({ y_pct: Math.max(2, Math.min(96, best.y_pct)), code: d.code }); }
     }
     const base = pos.wm ? ('ticket_' + pos.wm) : String(pos.dump_folder || 'sheet').replace(/[^a-z0-9]+/gi, '_');
     const out = dir + '/' + base + '_p' + pos.page + (stamps.length ? ('_' + stamps.length + 'codes') : '_blank') + '.png';
-    try { render(pos.local_file, typeof pos.gdo_x_pct === 'number' ? pos.gdo_x_pct : 5, stamps, out); imgs++; coded += stamps.length; }
+    // GDO# column is always in the left ~14% of the sheet; ignore obvious outliers (e.g. mid-page reads)
+    const gx = (typeof pos.gdo_x_pct === 'number' && pos.gdo_x_pct >= 0.5 && pos.gdo_x_pct <= 14) ? pos.gdo_x_pct : 6;
+    try { render(pos.local_file, gx, stamps, out); imgs++; coded += stamps.length; }
     catch (e) { console.error('render fail', pos.label, 'p' + pos.page, '-', e.message); fails++; }
   }
   try { fs.unlinkSync(HTMLTMP); } catch (e) {}
