@@ -4,7 +4,16 @@
 **Status:** Accepted (option 1 shipped); option 2 deferred
 **Supersedes:** Path C predicate in 2026-05-20j (and its carry-forward in
 2026-05-21a / 2026-05-25b / 2026-05-25f)
-**Related:** ADR 008 (photos normalized out), ADR 010 (audit trail)
+**Related:** ADR 008 (photos normalized out), ADR 010 (audit trail), ADR 019 (storage privacy)
+
+> **2026-07-01 update — Path B partially adopted; storage half → ADR 019 (body below unchanged).**
+> The "per-client redacted sheets" alternative *rejected* below (§Considered-and-rejected) was
+> **partially adopted 2026-07-01**: a **generated-PDF-only** redaction shipped — the `fog_manifest_url`
+> FOG eManifest is rendered per client with black bars over co-clients (leak-proof by construction, no
+> browser canvas; pdf-service commits `6110e51`/`8466973`, 438 multi-client sheets regenerated). The
+> other half of the leak — the RAW address sheet still **public + enumerable at its storage path** — is
+> closed separately by **[ADR 019](019-derm-storage-private-signed-urls.md)** (buckets → private +
+> `get-derm-doc` signed URLs). ADRs are immutable, so this is a pointer only.
 
 ## Context
 
