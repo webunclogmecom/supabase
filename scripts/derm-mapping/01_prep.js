@@ -28,8 +28,8 @@ function dl(url, dest) {
   const rows = await q(`
     SELECT coalesce(m.dump_ticket_date, m.service_date)::text AS dump_date,
            m.white_manifest_number AS wm, m.derm_address_url AS url, m.derm_address_extra_urls AS extras,
-           c.client_code, c.name,
-           (SELECT p.address||', '||coalesce(p.city,'')||', '||coalesce(p.state,'')||' '||coalesce(p.zip,'')
+           c.id AS client_id, c.client_code, c.name,
+           (SELECT concat_ws(', ', nullif(p.address,''), nullif(p.city,''), nullif(p.state,''), nullif(p.zip,''))
               FROM properties p WHERE p.client_id=c.id ORDER BY p.is_primary DESC NULLS LAST, p.id LIMIT 1) AS address
     FROM derm_manifests m JOIN clients c ON c.id=m.client_id
     WHERE m.deleted_at IS NULL AND m.derm_address_url IS NOT NULL
@@ -41,7 +41,7 @@ function dl(url, dest) {
     const key = r.wm ? 'WM:' + r.wm : 'URL:' + r.url;
     if (!sheets.has(key)) sheets.set(key, { dump_date: r.dump_date, wm: r.wm, dump_folder: null, candidates: [], imgs: new Map() });
     const s = sheets.get(key);
-    s.candidates.push({ code: r.client_code, name: r.name, address: r.address });
+    s.candidates.push({ code: r.client_code || ('NOCODE-' + r.client_id), name: r.name, address: r.address });
     const urls = [r.url, ...(Array.isArray(r.extras) ? r.extras : [])];
     for (const u of urls) if (u && !s.imgs.has(fileName(u))) s.imgs.set(fileName(u), u);
   }
