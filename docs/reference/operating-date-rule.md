@@ -1,58 +1,54 @@
-# The Operating-Date Rule (visit_date ↔ start_at)
+# The Visit-Date Rule (visit_date ↔ start_at)
 
-*Owner-confirmed (Fred, 2026-07-01). Canonical reference for how a visit's date relates to its time.*
+*Originally the "operating-date rule" (Fred, 2026-07-01). **Revised 2026-07-02 (Fred): the operating-night
+concept must NOT move a visit's date** — see "What changed" below. Canonical reference for how a visit's date
+relates to its time.*
 
-## The model
-UnclogMe runs **commercial overnight routes**: a route scheduled for night **D** is worked from roughly
-**8 PM that evening into ~6 AM the next morning**. A single route therefore spans the midnight boundary —
-the early clients are visited ~8 PM–midnight (clock date D), the later clients ~midnight–6 AM (clock date D+1),
-**but every one of them belongs to operating night D**.
-
-So:
-- **`visit_date`** = the **operating night the route is FOR** (the business "service date"). This is what the
+## The rule (current)
+**`visit_date` = the ET CLOCK date of `start_at`** — the day the visit actually ran / is scheduled, exactly as
+Jobber displays it. Nothing shifts it.
+- **`visit_date`** = `(start_at AT TIME ZONE 'America/New_York')::date`. **Matches Jobber's date.** This is what the
   Calendar, Field Portal, DERM, and reports group by.
-- **`start_at` / `end_at`** = the **actual UTC instant** the visit ran (displayed in ET). These can legitimately
-  fall in the early morning of D+1.
+- **`start_at` / `end_at`** = the actual UTC instant (displayed in ET).
+- **All-day visits** (`start_at` NULL): `visit_date` is authoritative (nothing to derive).
 
-## The derivation (ONE rule everywhere)
-`OVERNIGHT_CUTOFF = 06:00 ET`. Given `start_at`:
+## The operating-night concept (understanding only — does NOT move dates)
+UnclogMe runs commercial overnight routes (~8 PM into ~6 AM the next morning), so a single route spans midnight:
+the early stops run ~8 PM–midnight, the later stops ~midnight–6 AM of the next clock day, but the crew works them
+as **one shift**. That's useful to **understand** which shift did the work — but it is **metadata, not the date**.
+A 2:15 AM stop belongs to the previous night's shift *conceptually*, yet its `visit_date` is its real clock date
+(the 2:15 AM day), same as Jobber. If a per-shift grouping is ever needed for reporting, derive a **separate**
+`operating_night` value — never move `visit_date`.
 
-| `start_at` in ET | `visit_date` |
-|---|---|
-| NULL, or exactly **00:00:00** (placeholder / all-day) | the ET date as-is (operating date stands) |
-| **00:00:01 – 05:59** (early-AM) | the **PRIOR** ET date (prior night's route) |
-| **06:00 – 23:59** (daytime / evening) | that ET date |
+## What the apps see
+**Calendar date = Jobber date, always** — evening AND early-morning visits. A visit that runs Jun 30 at 2:15 AM
+shows on **Jun 30** in both the Calendar and Jobber. (No more "prior night" gap.)
 
-Implemented identically in three places (keep them in sync):
-- `supabase/functions/webhook-jobber/index.ts` → `operatingDateET()` (inbound Jobber sync)
-- `supabase/functions/sync-jobber-visit-drift/index.ts` → `adoptTarget()` (drift reconciler)
-- DB trigger `public.fn_reconcile_visit_operating_date` / `trg_aa_reconcile_operating_date` (the safeguard)
+## What changed (2026-07-02)
+The 07-01 rule derived `visit_date` = the *operating night*, shifting early-AM (00:00–06:00 ET) visits to the
+**prior** day. Fred: that shift should never have moved dates — the concept is for understanding the shift, not
+relocating the visit. Removed the shift entirely; `visit_date` is now the ET clock date for scheduled **and**
+completed visits. Reconciled 130 completed visits back to their clock date (5 from the shift + 125 leftover from
+the pre-07-01 UTC `+1` bug). Migrations `2026-07-02_operating_date_scheduled_matches_jobber.sql` (scheduled-only,
+superseded) → `2026-07-02b_visit_date_always_clock_date.sql` (final).
 
-## What the apps see (important for the office)
-- **Evening visits** (8 PM–midnight): operating night = clock date → **Calendar date = Jobber date.** They agree.
-- **Early-morning visits** (after midnight, before 6 AM): operating night = the **prior** clock date.
-  → The **Calendar shows the prior night**, while **Jobber shows the later clock date**. This is **intentional**,
-  not a sync error. Example: a visit that ran **Jun 30 at 2:15 AM** is part of the **Jun 29** night's route, so the
-  Calendar shows it on **Jun 29** and Jobber shows **Jun 30 2:15 AM**. Do not "reconcile" that one-day gap — it's correct.
+## Implemented identically in three places (keep in sync)
+- **DB trigger** `public.fn_reconcile_visit_operating_date` / `trg_aa_reconcile_operating_date` — the safeguard:
+  any writer's `start_at` change re-derives `visit_date` = ET clock date; a pure date-drag moves `start_at` onto
+  the new day at the same ET wall-clock (no shift) and carries `end_at` by the same delta.
+- **`supabase/functions/webhook-jobber/index.ts`** → `operatingDateET()` — inbound Jobber sync (returns ET clock date).
+- **`supabase/functions/sync-jobber-visit-drift/index.ts`** — drift reconciler. **Timed** visits compare Jobber
+  `startAt` to the DB `start_at` (unaffected by this change). **Untimed** (all-day) visits still use the
+  overnight-aware tolerance against `visit_date` — an untimed visit has no `start_at` to move, so it's out of
+  scope for the "don't move dates" change.
 
-## Safeguards (2026-07-01)
-- **`trg_aa_reconcile_operating_date`** (BEFORE INSERT/UPDATE on `visits`, fires first): keeps the
-  `visit_date`↔`start_at` pair consistent for any writer (edge fn, Lovable PATCH, scripts). Bidirectional /
-  intent-aware: a write that changes `start_at` re-derives `visit_date`; a pure date-drag (date changed, time not)
-  moves `start_at`'s calendar day onto the new operating night while **preserving the ET wall-clock time**.
-  - **`end_at` carry (2026-07-01b):** the pure-date-drag branch also shifts `end_at` by the **same delta** so the
-    visit's duration is preserved; a write that shifts `start_at` alone gets a defensive snap (`end_at` →
-    `start_at + prior duration`) if it would otherwise land `≤ start_at`. Root-caused from a health-check finding:
-    the branch used to move `start_at` and leave `end_at` a day behind (`end_at ≤ start_at`), which made Jobber
-    reject the schedule push (*"startAt needs to be before endAt"*) — 6 visits, incl. two future 7/03 ones.
-  - **`visits_end_after_start_chk`** CHECK constraint now blocks `end_at ≤ start_at` from **any** path (incl. an
-    `end_at`-only edit the trigger doesn't watch).
-- **`handleVisit` +1 bug fixed**: it used to take the UTC date-slice of Jobber's `startAt`, pushing every
-  ≥~8 PM-ET visit one day forward (the 081-TCE / 5846 class, 126 historical rows).
-- **`ripple_reschedule_visit` is DST-safe**: it shifts whole days in the `America/New_York` zone (round-trip),
-  so a reschedule across a March/November DST boundary keeps the ET wall-clock instead of drifting an hour.
+## Safeguards
+- `trg_aa_reconcile_operating_date` (BEFORE INSERT/UPDATE on `visits`): keeps `visit_date`↔`start_at` consistent.
+  `end_at` carry (2026-07-01b): the date-drag branch shifts `end_at` by the same delta (duration preserved); a
+  `start_at`-only shift gets a defensive snap if `end_at` would land `≤ start_at`. `visits_end_after_start_chk`
+  CHECK blocks `end_at ≤ start_at` from any path.
+- `ripple_reschedule_visit` is DST-safe (whole-day shifts in `America/New_York`).
 
 ## Querying
-Always group/filter by **`visit_date`** for the business/service date. Use `start_at AT TIME ZONE 'America/New_York'`
-only when you need the actual clock time. Never derive a date with a bare `start_at::date` (that's UTC) — use the
-rule above.
+Group/filter by `visit_date` for the service date (= Jobber's date). Use `start_at AT TIME ZONE 'America/New_York'`
+for the clock time. Never use a bare `start_at::date` (that's UTC — the old `+1` bug).

@@ -105,17 +105,14 @@ function etParts(d: Date): { date: string; time: string } {
   for (const part of f.formatToParts(d)) p[part.type] = part.value
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}:${p.second}` }
 }
-// visit_date = the ET OPERATING date (the night the route is FOR). UnclogMe's commercial
-// overnight routes run ~8pm into the next morning, so a genuine early-AM start (00:01-05:59 ET)
-// belongs to the PRIOR operating day; all-day (ET-midnight, no real time) + evening/day starts
-// keep their ET date. Mirrors sync-jobber-visit-drift.adoptTarget so the inbound poll and the
-// drift reconciler share ONE convention. (Replaces the old `.slice(0,10)` UTC-date derivation,
-// which pushed every >=~8pm-ET visit one day forward — the 081-TCE/5846 +1 bug, 126 rows.)
+// visit_date = the ET CLOCK date of the Jobber start (the day it actually ran, matching how
+// Jobber displays it). The operating-night / overnight-shift concept is metadata for
+// understanding WHICH shift did the work — it must NOT move the visit's date (Fred 2026-07-02).
+// So no early-AM -1 shift: the DB trigger fn_reconcile_visit_operating_date enforces the same.
+// (Still ET-based, so it does NOT reintroduce the old `.slice(0,10)` UTC +1 bug — 126 rows.)
 function operatingDateET(iso: string | null | undefined): string | null {
   if (!iso) return null
-  const e = etParts(new Date(iso))
-  if (e.time === '00:00:00') return e.date
-  return e.time.slice(0, 5) < '06:00' ? addDaysISO(e.date, -1) : e.date
+  return etParts(new Date(iso)).date
 }
 
 // ---- Decode Jobber base64 GID → { type, numericId } ----
