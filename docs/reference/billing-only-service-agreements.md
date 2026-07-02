@@ -73,3 +73,25 @@ closed→archived. New jobs poll-sync into `public.jobs`; the generator excludes
 If an SA is a warranty / billing-only service (no physical work — Warranty of Drainage, a pure retainer,
 etc.): in Jobber create it with a **Billing frequency** (recurring invoice), **not** a visit schedule; and
 make sure our visit-generator does **not** create visits for it (it must be WD-only / non-serviceable).
+
+## 2026-07-03 CORRECTION — the Phase-2 recreations were WRONG; fixed by reopening the originals
+Fred caught that the Phase-2 billing-only jobs (`#99900984`–`#99901006`) had **two errors** vs the real
+originals: they billed **every 2 months on the LAST day** (should be **the 22nd**) and had **Automatic
+payments = No** (should be **Yes**).
+
+- **Autopay CANNOT be set via the Jobber API.** `Job.willClientBeAutomaticallyCharged` is READ-ONLY; there's
+  no autopay field in `jobCreate`/`jobEdit`, and 0 of ~109 mutations touch it. It's a UI-only, per-job setting
+  fixed at CREATION. Jobber AI also confirmed a **true 0-visit recurring job isn't creatable in the UI**
+  ("recurring jobs are built around a visit schedule"). So neither path alone gives 22nd + autopay + 0 visits:
+  the API makes 0-visit jobs but no autopay; the UI sets autopay but forces visits.
+- **The originals (`#100000xx`) already had all three** (22nd + autopay=Yes + 0 visits) — they predate this and
+  were just archived. **Fix (all via API):** `jobReopen` the original (restores everything incl. billing
+  history; reopen creates **NO** new invoice — verified) → `jobEdit` title = "Service Agreement - Warranty of
+  Drainage" → `jobEditLineItems`/`jobCreateLineItems` to match `08 - …Warranty of Drainage $225` + `26-ACH (1%)
+  $2.25` (or `25-CC (3.53%) $7.94`) → `jobClose` the wrong Phase-2 dupe. Next invoice = **Jul 22 2026** (odd-month
+  …May 22 → Jul 22 cadence). 22/23 done; DB re-synced via webhook-jobber replay.
+- **2 exceptions:** **081-TCE**'s original never had autopay (auto=false — likely no card on file); reopened on
+  the 22nd but autopay stays off (office must enable in UI). **169-TCE** has **no original** to reopen (only the
+  Phase-2 dupe ever existed) — left as-is pending an office UI setup.
+- **Rule for future warranties:** if a correct original exists, **REOPEN it** — don't recreate (reopen preserves
+  autopay, which the API can't set). A brand-new warranty needing autopay must be created in the Jobber UI.
