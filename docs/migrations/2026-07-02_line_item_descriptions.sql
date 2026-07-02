@@ -11,6 +11,14 @@
 --
 -- Adds a param -> changes the signature, so drop any non-15-arg overload first (idempotent),
 -- then CREATE OR REPLACE + restore EXECUTE grants (DROP loses grants).
+--
+-- ⚠⚠ BUG (fixed by 2026-07-03_restore_ops_create_calendar_visit.sql) — DO NOT COPY THIS DO-BLOCK ⚠⚠
+-- The DO-block below has NO pronamespace filter, so it dropped `create_calendar_visit` overloads in
+-- EVERY schema — including the app-facing `ops.create_calendar_visit` wrapper — and this migration only
+-- recreated the `public` one. Result: the Calendar broke with "Could not find the function
+-- ops.create_calendar_visit(...) in the schema cache". Always DROP schema-QUALIFIED and recreate the
+-- ops wrapper too (see docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md; guard:
+-- scripts/probes/check_ops_app_rpcs.js).
 -- ============================================================================
 DO $$ DECLARE r record; BEGIN
   FOR r IN SELECT oid FROM pg_proc WHERE proname='create_calendar_visit' AND pronargs <> 15 LOOP
