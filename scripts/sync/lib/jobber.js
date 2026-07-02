@@ -59,17 +59,29 @@ async function refreshAccessToken() {
   // invalidate each other's refresh_token.
   const { getValidToken } = require('../jobber_token');
   ACCESS_TOKEN = await getValidToken({ verbose: true });
-  // Re-read rotated refresh_token from .env (syncAndMaybeRefresh wrote it back)
-  const fs = require('fs');
-  const env = fs.readFileSync(require('path').resolve(__dirname, '../../../.env'), 'utf8');
-  const m = env.match(/^JOBBER_REFRESH_TOKEN=(.+)$/m);
-  if (m) REFRESH_TOKEN = m[1].trim();
+  // Re-read rotated refresh_token from .env (syncAndMaybeRefresh wrote it back). In CI there is
+  // no .env — getValidToken already sourced/refreshed from webhook_tokens, so a missing file is
+  // fine; skip the re-read instead of crashing on ENOENT.
+  try {
+    const fs = require('fs');
+    const env = fs.readFileSync(require('path').resolve(__dirname, '../../../.env'), 'utf8');
+    const m = env.match(/^JOBBER_REFRESH_TOKEN=(.+)$/m);
+    if (m) REFRESH_TOKEN = m[1].trim();
+  } catch { /* no .env (e.g. GitHub Actions) — token came from webhook_tokens */ }
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function gql(query, variables = {}, _retries = 0) {
-  if (!ACCESS_TOKEN) throw new Error('JOBBER_ACCESS_TOKEN missing — run scripts/jobber_auth.js once to authorize');
+  // Bootstrap a token if none came from env/.env. GitHub Actions runners have no .env, so the
+  // token must come from public.webhook_tokens — refreshAccessToken() delegates to getValidToken(),
+  // which reads that row using SUPABASE_URL + SERVICE_ROLE_KEY (both present in CI). Without this,
+  // gql() threw "JOBBER_ACCESS_TOKEN missing" on the first call and every CI cron (reconcile_jobs)
+  // erred on all jobs while still exiting green.
+  if (!ACCESS_TOKEN) {
+    await refreshAccessToken();
+    if (!ACCESS_TOKEN) throw new Error('JOBBER_ACCESS_TOKEN missing and DB bootstrap failed — check webhook_tokens + SUPABASE_URL/SERVICE_ROLE_KEY (or run scripts/jobber_auth.js locally)');
+  }
   const body = JSON.stringify({ query, variables });
   const r = await postJson(GRAPHQL_URL, {
     'Content-Type': 'application/json',

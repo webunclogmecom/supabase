@@ -26,7 +26,7 @@ function pg(q){return new Promise((res,rej)=>{const b=JSON.stringify({query:q});
     FROM jobs j JOIN entity_source_links esl ON esl.entity_type='job' AND esl.source_system='jobber' AND esl.entity_id=j.id
     WHERE j.job_status <> 'archived' ORDER BY j.id`);
   console.log(`${EXECUTE ? 'EXECUTE' : 'DRY'} — ${jobs.length} non-archived jobs`);
-  const sum = { statusFixed: 0, freqFixed: 0, liSynced: 0, deletedArchived: 0, errors: 0 };
+  const sum = { statusFixed: 0, titleFixed: 0, freqFixed: 0, liSynced: 0, deletedArchived: 0, errors: 0 };
   for (const j of jobs) {
     if (!j.gid) { sum.errors++; continue; }
     let d;
@@ -45,6 +45,7 @@ function pg(q){return new Promise((res,rej)=>{const b=JSON.stringify({query:q});
     const sets = [];
     if (liveStatus && liveStatus !== j.job_status) { sets.push(`job_status='${sq(liveStatus)}'`); sum.statusFixed++; }
     if (liveFreq !== null && liveFreq !== j.frequency_days) { sets.push(`frequency_days=${liveFreq}`); sum.freqFixed++; }
+    if (job.title && job.title !== j.title) { sets.push(`title='${sq(job.title)}'`); sum.titleFixed++; }
     if (!EXECUTE) {
       const nodes = job.lineItems?.nodes || [];
       if (isSA && nodes.length) sum.liSynced++;
