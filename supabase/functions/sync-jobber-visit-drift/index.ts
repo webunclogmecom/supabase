@@ -157,12 +157,28 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
     const adoptable: Cand[] = []
     const surfaced: Array<{ id: number; jobber_date: string; reason: string; app_source: string | null }> = []
     for (const c of drifted) {
-      const jDate = etParts(new Date(jobberStart.get(c.jobber_gid)!.startAt)).date
+      const jET = etParts(new Date(jobberStart.get(c.jobber_gid)!.startAt))
+      const jDate = jET.date
       const { data: le } = await supabase.rpc('visit_last_schedule_edit', { p_visit_id: c.id })
-      const last = (Array.isArray(le) ? le[0] : le) as { old_date: string; new_date: string; app_source: string | null } | undefined
-      if (last && last.new_date === c.visit_date && last.old_date === jDate) healable.push(c)        // our push failed (Jobber holds pre-edit value)
+      const last = (Array.isArray(le) ? le[0] : le) as { old_date: string; new_date: string; old_start_at: string | null; app_source: string | null } | undefined
+      // HEAL only when our push simply FAILED: our last (non-Jobber) edit set the current DB value AND
+      // Jobber STILL holds our EXACT pre-edit schedule — date AND, for a timed pre-edit, the clock time
+      // (an untimed pre-edit must still be all-day in Jobber). If Jobber holds ANY other value, a
+      // driver/Diego moved it in Jobber after our push -> we must NOT silently revert it -> SURFACE.
+      // (visit_last_schedule_edit excludes app_source='jobber', so an inbound Jobber start_at FILL is
+      // never mistaken for our office edit — that misread is what reverted 152-DAV/6356 on 2026-07-02.)
+      let jobberHoldsPreEdit = false
+      if (last) {
+        if (last.old_start_at) {
+          const preET = etParts(new Date(last.old_start_at))
+          jobberHoldsPreEdit = jET.date === preET.date && jET.time.slice(0, 5) === preET.time.slice(0, 5)
+        } else {
+          jobberHoldsPreEdit = jDate === last.old_date && jET.time === '00:00:00'
+        }
+      }
+      if (last && last.new_date === c.visit_date && jobberHoldsPreEdit) healable.push(c)             // our push failed (Jobber still holds our exact pre-edit value)
       else if (!last) adoptable.push(c)                                                              // we never edited it -> Jobber authoritative
-      else surfaced.push({ id: c.id, jobber_date: jDate, reason: 'jobber_value_unexpected', app_source: last.app_source ?? null })  // we edited; Jobber has a 3rd value -> review
+      else surfaced.push({ id: c.id, jobber_date: jDate, reason: 'jobber_value_unexpected', app_source: last.app_source ?? null })  // human moved Jobber after our push -> review, never auto-revert
     }
 
     let healed = 0, healFail = 0, adopted = 0, adoptFail = 0
