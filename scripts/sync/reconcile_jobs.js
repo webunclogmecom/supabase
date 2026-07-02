@@ -19,7 +19,9 @@ const PAT = process.env.SUPABASE_PAT, P = process.env.SUPABASE_PROJECT_ID;
 const EXECUTE = process.argv.includes('--execute');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sq = s => String(s).replace(/'/g, "''");
-function pg(q){return new Promise((res,rej)=>{const b=JSON.stringify({query:q});const r=https.request({hostname:'api.supabase.com',path:`/v1/projects/${P}/database/query`,method:'POST',headers:{Authorization:`Bearer ${PAT}`,'Content-Type':'application/json','Content-Length':Buffer.byteLength(b)}},x=>{let d='';x.on('data',c=>d+=c);x.on('end',()=>{let j;try{j=JSON.parse(d);}catch(e){return rej(new Error('pg parse: '+d.slice(0,200)));} if(!Array.isArray(j))return rej(new Error('pg error: '+JSON.stringify(j).slice(0,200))); res(j);});});r.on('error',rej);r.write(b);r.end();});}
+// Management API has a low req/min cap; the execute path bursts past it (UPDATE+DELETE+INSERT per
+// job), so back off + retry on ThrottlerException (the sequential await loop then self-paces).
+function pg(q, _retry=0){return new Promise((res,rej)=>{const b=JSON.stringify({query:q});const r=https.request({hostname:'api.supabase.com',path:`/v1/projects/${P}/database/query`,method:'POST',headers:{Authorization:`Bearer ${PAT}`,'Content-Type':'application/json','Content-Length':Buffer.byteLength(b)}},x=>{let d='';x.on('data',c=>d+=c);x.on('end',()=>{let j;try{j=JSON.parse(d);}catch(e){return rej(new Error('pg parse: '+d.slice(0,200)));} if(!Array.isArray(j)){const msg=JSON.stringify(j); if(/Throttler|Too Many Requests|rate limit/i.test(msg)&&_retry<6){return setTimeout(()=>pg(q,_retry+1).then(res,rej),(_retry+1)*4000);} return rej(new Error('pg error: '+msg.slice(0,200)));} res(j);});});r.on('error',rej);r.write(b);r.end();});}
 
 (async () => {
   const jobs = await pg(`SELECT j.id, j.job_number, j.title, j.job_status, j.frequency_days, esl.source_id AS gid
