@@ -39,12 +39,35 @@ lift-station pumping). Fees (25 credit-card, 26 ACH) don't count as service. Suc
    (WD) so the taxonomy itself marks it non-serviceable.
 2. Soft-delete the phantom scheduled visits on the `[08]`-only jobs, and un-push any that reached Jobber.
 
-**Phase 2 — Jobber (bill it correctly):**
-Recreate each `[08+26]` warranty SA in Jobber as **billing-only**: create a new job with the **Billing
-frequency** (e.g. "Monthly on the last day" or every N days) and **no visit schedule**, then archive the
-old visit-based one. **Verify first whether the Jobber `jobCreate` API exposes the billing/invoice
-schedule** — if it doesn't, this must be done in the **Jobber UI** (creation-time only). High-stakes
-(billing config for ~30 clients) → do deliberately, ideally after confirming one client end-to-end.
+**Phase 2 — Jobber (bill it correctly): DONE 2026-07-02 for the 23 TCE warranties (via `jobCreate` API).**
+Recreate each `[08+26]`/`[08+25]` warranty SA in Jobber as **billing-only** (recurring invoice, no visits),
+then archive the old visit-based one. The Jobber API CAN do it (verified + UI-double-checked on 065-TCE).
+
+**The exact `jobCreate` recipe** (matches the 012-DKC done-right reference — copy for any future warranty):
+```js
+jobCreate(input: {                                  // input type = JobCreateAttributes
+  propertyId: <client's Jobber property GID>,
+  title: 'Service Agreement - Warranty of Drainage',
+  timeframe: { startAt: '<YYYY-MM-01>', durationUnits: 'YEARS', durationValue: 3 },  // 3-yr term (012-DKC = 3yr)
+  invoicing: {
+    invoicingType: 'FIXED_PRICE',
+    invoicingSchedule: 'PERIODIC',
+    recurrence: 'RRULE:FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=-1'   // every 2 months on the LAST day (freq 60).
+  },                                                            // monthly => drop INTERVAL=2. BYMONTHDAY=-1 = last day.
+  scheduling: { createVisits: false, notifyTeam: false },      // NO truck rolls.
+  lineItems: [ { name, unitPrice, quantity, totalPrice, saveToProductsAndServices: false }, ... ]  // 08 warranty + 25/26 fee
+})
+```
+Gotchas (all enforced by the API): `recurrence` needs the `RRULE:` prefix; `notifyTeam` and each line item's
+`saveToProductsAndServices` cannot be null; `timeframe.startAt` is REQUIRED when a recurrence is set (else it
+defaults the job to a 6-month term). Verify the result shows `jobType=RECURRING`, `billingType=FIXED_PRICE`,
+`invoiceSchedule.scheduleSummary="Every 2 months on the last day of the month"`, and `visits.totalCount=0`.
+Retire the old visit-based job with `jobClose(jobId, input:{ modifyIncompleteVisitsBy: DESTROY_ALL })`
+(→ status `archived`; DESTROY_ALL is safe here since Phase 1 already left 0 visits).
+
+**Done 2026-07-02:** 23 TCE warranties (061–081, 092, 169-TCE; all freq 60 = every-2-months) recreated as
+billing-only jobs `#99900984`–`#99901006` (3-yr term, first invoice Jul 31 2026), old jobs `#99900659…`
+closed→archived. New jobs poll-sync into `public.jobs`; the generator excludes them (08-only, Phase 1).
 
 ## For any future client
 If an SA is a warranty / billing-only service (no physical work — Warranty of Drainage, a pure retainer,
