@@ -53,10 +53,19 @@ function http(opts, body) {
     r.on('error', rej); if (body) r.write(body); r.end();
   });
 }
-async function pg(sql) {
+async function pg(sql, retries = 4) {
   const body = JSON.stringify({ query: sql });
-  const r = await http({ hostname: 'api.supabase.com', path: `/v1/projects/${PROJECT}/database/query`, method: 'POST', headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, body);
-  if (r.status >= 300) throw new Error(`DB ${r.status}: ${r.body.toString().slice(0, 300)}`);
+  let r;
+  try {
+    r = await http({ hostname: 'api.supabase.com', path: `/v1/projects/${PROJECT}/database/query`, method: 'POST', headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, body);
+  } catch (e) { // transient network/DNS blip (e.g. ENOTFOUND) — retry with backoff so one drop doesn't kill a long backfill
+    if (retries > 0) { await sleep((5 - retries) * 2000); return pg(sql, retries - 1); }
+    throw e;
+  }
+  if (r.status >= 300) {
+    if (retries > 0 && (r.status === 429 || r.status >= 500)) { await sleep((5 - retries) * 2000); return pg(sql, retries - 1); }
+    throw new Error(`DB ${r.status}: ${r.body.toString().slice(0, 300)}`);
+  }
   return JSON.parse(r.body.toString());
 }
 async function gql(query, variables, retries = 5) {
