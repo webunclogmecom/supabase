@@ -1,0 +1,23 @@
+-- ============================================================================
+-- 2026-07-02 — Billing-only SAs (Warranty of Drainage / code 08) generate NO visits
+-- ============================================================================
+-- Code 08 "Service Agreement - Warranty of Drainage" wrongly carried service_type='WD'.
+-- The SA generator (generate_service_agreement_visits.js) defaults service_type to 'GT'
+-- when no line item resolves one, so it treated the warranty jobs as GT services and made
+-- ~69 PHANTOM scheduled visits across ~30 TCE [08+26] warranty jobs (a warranty is a
+-- recurring CHARGE, not a truck roll — Fred/Yan 2026-07-02).
+--
+-- Fix (3 parts):
+--   1. THIS migration — neutralize code 08's service_type (warranty = billing-only, non-serviceable).
+--   2. generate_service_agreement_visits.js JOB_PREDICATE now REQUIRES a non-08 SA/SC service line
+--      item (reason IN Service Agreement/Service Call AND code<>'08'). Codes 03/04 (grey water /
+--      lift station) also have NULL service_type, so we key on reason+code, not service_type — real
+--      03/04/01 services still generate; 08-only warranties generate 0. (Verified 065/013-DIM/084-ULT.)
+--   3. The 69 phantom scheduled WD visits were soft-deleted (deleted_at set).
+--
+-- Still TODO (Phase 2): recreate the [08+26] jobs in Jobber as billing-only (Billing frequency,
+-- no visits) — the billing cadence matches the job frequency. See
+-- docs/reference/billing-only-service-agreements.md.
+-- Idempotent. service_line_items is not in the audited set (taxonomy table).
+-- ============================================================================
+UPDATE public.service_line_items SET service_type = NULL WHERE code = '08' AND service_type IS NOT NULL;

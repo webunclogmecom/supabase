@@ -68,7 +68,17 @@ const JOB_PREDICATE = `j.frequency_days > 0
       AND COALESCE(j.job_status,'') <> 'archived'
       AND c.status IN ('ACTIVE','RECURRING')
       AND c.client_code IS NOT NULL
-      AND c.client_code NOT IN (${EXCL_SQL})`;
+      AND c.client_code NOT IN (${EXCL_SQL})
+      -- Billing-only SAs (only code 08 "Warranty of Drainage" + fees 25/26) generate NO
+      -- visits — a warranty is a recurring CHARGE, not a truck roll (Fred/Yan 2026-07-02;
+      -- code 08 wrongly carried service_type=WD, so the GT-default made phantom visits).
+      -- Require a real physical-service line item (any SA/SC code except 08). Codes 03/04
+      -- (grey water / lift station) have service_type NULL too, so we key on reason+code, not type.
+      AND EXISTS (
+        SELECT 1 FROM line_items lp
+        JOIN service_line_items slip ON slip.code = lpad(substring(btrim(lp.name) from '^([0-9]+)'), 2, '0')
+        WHERE lp.job_id = j.id AND lp.invoice_id IS NULL
+          AND slip.reason IN ('Service Agreement','Service Call') AND slip.code <> '08')`;
 
 // ---- HTTP helpers -----------------------------------------------------------
 function http(opts, body) {
