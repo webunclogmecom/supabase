@@ -49,7 +49,9 @@ For EACH red code label visible on the image:
    - "cannot_tell" = the row content is too illegible to judge (use sparingly).
 Be strict: if a label is closer to the neighboring row's text than to its intended row, that is "misaligned", not "correct".
 
-Also set any_code_between_rows = true if ANY red label is not clearly seated within one row's band (floating on a grid line between two facilities).
+Also set any_code_between_rows = true if ANY red label is not clearly seated within one row's band (floating on a grid line between two facilities). Additionally, judge whether each red code is vertically centered on the handwritten facility-NAME writing line (good) versus sitting up on the black row-divider line above it (too high) -- note any that look too high in the notes.
+
+IMPORTANT: view the image with the Read tool. If you crop/zoom for analysis, write those temp files ONLY under the system temp directory (e.g. %TEMP%) -- NEVER write any file into the folder that contains the image (${p.out_png.split('/').slice(0, -1).join('/')}).
 
 Set overall = "all_correct" only if every check is "correct". Otherwise "has_problem". Return ONLY the JSON.`
 }

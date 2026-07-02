@@ -11,6 +11,11 @@ const { q } = require('./lib/db');
 
 const NAME_FRAC = 0.25;
 const MAX_ROWS = 6; // DERM Section B always has 6 physical row slots
+// The handwritten facility NAME sits low in the name sub-cell (on the writing line, just above the
+// internal divider), NOT at the sub-cell midpoint. Measurement across Window_03 put it at ~0.63 of
+// the way from the row's top boundary to its divider. We center the code on the actual name INK when
+// there's enough of it, else fall back to this fraction.
+const NAME_LINE_FRAC = 0.63;
 
 function rowBoundaries(img) {
   const lines = detectLines(img, 16, 72, [46, 60], 0.55).map(l => l.y_pct);
@@ -35,6 +40,24 @@ function dividerFor(img, top, bot) {
   const mid = top + rh * 0.5;
   cand.sort((a, b) => Math.abs(a.y_pct - mid) - Math.abs(b.y_pct - mid));
   return cand[0].y_pct;
+}
+
+// Vertical center of the handwritten facility NAME within the name sub-cell [top, div]. Measures the
+// dark-ink centroid in the name column (x 20-42%, right of the printed "Facility Name" label); falls
+// back to a fixed fraction of the sub-cell when the name is blank/faint.
+function nameLineY(img, top, div) {
+  const { width: W, height: H, data } = img;
+  const lum = i => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  const x0 = Math.round(W * 0.20), x1 = Math.round(W * 0.42);
+  const yLo = Math.round(H * (top + 0.4) / 100), yHi = Math.round(H * (div - 0.15) / 100);
+  let sum = 0, wsum = 0;
+  for (let y = yLo; y <= yHi; y++) {
+    let dark = 0;
+    for (let x = x0; x < x1; x++) if (lum((y * W + x) * 4) < 110) dark++;
+    sum += dark * y; wsum += dark;
+  }
+  if (wsum >= 150) return 100 * (sum / wsum) / H;      // enough ink -> center on it
+  return top + NAME_LINE_FRAC * (div - top);            // blank/faint -> geometric name line
 }
 
 (async () => {
@@ -62,7 +85,8 @@ function dividerFor(img, top, bot) {
     for (let k = 1; k < bounds.length; k++) {
       const top = bounds[k - 1], bot = bounds[k];
       const div = dividerFor(img, top, bot);
-      rowCenters.push({ phys_row: k, y_pct: +( div != null ? (top + div) / 2 : top + NAME_FRAC * rh ).toFixed(2) });
+      const y = div != null ? nameLineY(img, top, div) : top + NAME_FRAC * rh;
+      rowCenters.push({ phys_row: k, y_pct: +y.toFixed(2) });
     }
     const codes = (dbBy[`${e.wm}_${e.page}`] || [])
       .filter(r => r.assignment_status === 'matched' && r.confidence === 'high' && r.client_code)
