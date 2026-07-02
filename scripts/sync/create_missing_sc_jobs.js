@@ -27,15 +27,16 @@ const EXECUTE = process.argv.includes('--execute');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const q = v => v == null ? 'NULL' : "'" + String(v).replace(/'/g, "''") + "'";
 
-// 4 clients missing a current Service Call, with the real Jobber property GID read
-// off an existing job (220-WYN "Pari Pari" is intentionally EXCLUDED — it has no
-// property/job in Jobber, so a Service Call job cannot be anchored until a property
-// is created; flagged to Fred separately).
+// The 5 clients missing a current Service Call, each with the real Jobber property GID.
+// For 233-AH/234-PV/243-FE/244-URI it was read off an existing job; 220-WYN "Pari Pari"
+// had no property until Fred added one 2026-07-02 (127 NW 27th St, Miami — property
+// 1517211743). Idempotent dup-check skips whichever already have an open Service Call.
 const TARGETS = [
   { client_code: '233-AH',  client_gid: 'Z2lkOi8vSm9iYmVyL0NsaWVudC8xNDI0ODI2MTQ=', propGid: 'Z2lkOi8vSm9iYmVyL1Byb3BlcnR5LzE0ODk2OTczNA==' },
   { client_code: '234-PV',  client_gid: 'Z2lkOi8vSm9iYmVyL0NsaWVudC8xNDI1NTM0OTQ=', propGid: 'Z2lkOi8vSm9iYmVyL1Byb3BlcnR5LzE0OTA0NjgxMA==' },
   { client_code: '243-FE',  client_gid: 'Z2lkOi8vSm9iYmVyL0NsaWVudC8xNDQ4MjkxMDk=', propGid: 'Z2lkOi8vSm9iYmVyL1Byb3BlcnR5LzE1MTI4OTM3NQ==' },
   { client_code: '244-URI', client_gid: 'Z2lkOi8vSm9iYmVyL0NsaWVudC8xNDUwMTMwMDg=', propGid: 'Z2lkOi8vSm9iYmVyL1Byb3BlcnR5LzE1MTQ4MTg0MQ==' },
+  { client_code: '220-WYN', client_gid: 'Z2lkOi8vSm9iYmVyL0NsaWVudC8xNDI4MjA2MDI=', propGid: 'Z2lkOi8vSm9iYmVyL1Byb3BlcnR5LzE1MTcyMTE3NA==' },
 ];
 
 function sql(query) { return new Promise((res, rej) => { const b = JSON.stringify({ query }); const r = https.request({ hostname: 'api.supabase.com', path: '/v1/projects/' + ref + '/database/query', method: 'POST', headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) } }, x => { let d = ''; x.on('data', c => d += c); x.on('end', () => { if (x.statusCode >= 300) return rej(new Error(x.statusCode + ': ' + d.slice(0, 300))); res(JSON.parse(d)); }); }); r.on('error', rej); r.write(b); r.end(); }); }
