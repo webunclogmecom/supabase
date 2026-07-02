@@ -156,7 +156,7 @@ function ue(payload: any): string | null { const e = payload?.userErrors; return
 // so the empty-items guard below no-ops them — leaving the Jobber visit's inherited lines
 // intact. Idempotent: deletes the visit's existing Jobber line items first, then re-creates.
 async function syncVisitLineItems(token: string, visit: any, visitGid: string, isUpdate: boolean) {
-  const { data: items } = await db.from("line_items").select("name,quantity,unit_price").eq("visit_id", visit.id);
+  const { data: items } = await db.from("line_items").select("name,description,quantity,unit_price").eq("visit_id", visit.id);
   if (!items || !items.length) return;
   // ALWAYS reconcile (create + update): delete any line items already on the
   // Jobber visit first, then recreate from our DB. Idempotent — every push
@@ -178,7 +178,9 @@ async function syncVisitLineItems(token: string, visit: any, visitGid: string, i
   }
   const lineItems = items.map((it: any) => {
     const up = Number(it.unit_price) || 0, qty = Number(it.quantity) || 1;
-    return { name: it.name, unitPrice: up, quantity: qty, totalPrice: up * qty, saveToProductsAndServices: false };
+    const desc = (it.description ?? "").trim();
+    // Send the per-line-item description (Jobber's LineItem.description) when set (Fred 2026-07-02).
+    return { name: it.name, unitPrice: up, quantity: qty, totalPrice: up * qty, saveToProductsAndServices: false, ...(desc ? { description: desc } : {}) };
   });
   const c = await gql(token, M_LI_CREATE, { id: visitGid, input: { lineItems } });
   const ce = ue(c.visitCreateLineItems); if (ce) throw new Error(`visitCreateLineItems: ${ce}`);
