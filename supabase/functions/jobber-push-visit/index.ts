@@ -325,11 +325,28 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   }
   const job = await resolveJobGid(visit);
   if ("error" in job) { await flag(visitId, "no_job_match", job.error); return { ok: true, flagged: job.error }; }
+  // RACE GUARD (2026-07-03): two overlapping pushes (e.g. a skip gap-fill + the resolve-stale
+  // re-driver) can both reach this CREATE branch and double-create the visit in Jobber. Re-check
+  // the link immediately before creating, and after creating verify we're still the winner — if
+  // another push linked a different GID meanwhile, compensate by deleting our duplicate.
+  {
+    const raceGid = await jobberGid("visit", visitId);
+    if (raceGid) { console.log(`[push] visit ${visitId} got linked (${raceGid}) while preparing create — skipping duplicate create`); return { ok: true, note: "already-linked-race" }; }
+  }
   const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: teamGids } }] };
   const c = await gql(token, M_CREATE, { jobId: job.gid, input });
   const ce = ue(c.visitCreate); if (ce) { await flag(visitId, "create_error", ce); throw new Error(`visitCreate: ${ce}`); }
   const newGid = c.visitCreate.createdVisits?.[0]?.id;
   if (!newGid) throw new Error("visitCreate returned no visit id");
+  {
+    const winner = await jobberGid("visit", visitId);
+    if (winner && winner !== newGid) {
+      console.log(`[push] create race lost for visit ${visitId}: ${winner} already linked — deleting our duplicate ${newGid}`);
+      try { await gql(token, M_DELETE, { ids: [newGid] }); }
+      catch (e) { const msg = e instanceof Error ? e.message : String(e); console.error(`[push] duplicate cleanup failed for ${newGid}: ${msg}`); await flag(visitId, "dup_create_cleanup_failed", `${newGid}: ${msg}`); }
+      return { ok: true, note: "create-race-lost, duplicate removed" };
+    }
+  }
   await linkVisit(visitId, newGid);
   await clearFlag(visitId);
   await syncVisitLineItems(token, visit, newGid, false);

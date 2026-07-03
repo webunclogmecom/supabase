@@ -70,8 +70,45 @@ async function hmacB64(secret: string, payload: string): Promise<string> {
   return btoa(String.fromCharCode(...new Uint8Array(sig)))
 }
 
+// ---------------------------------------------------------------------------
+// REWORK 2026-07-03 (round-B smoke finding): the old runSync replayed EVERY eligible
+// visit sequentially (241+ after the Jun-24 SA backfill) with 800ms page sleeps and
+// wrote sync_log only at the END — the isolate was killed mid-run every time, so the
+// job was silently dead for 9 days while pg_cron reported "succeeded" (202-accepted).
+// Now: (1) HEARTBEAT — the sync_log row is inserted FIRST (status='started') and
+// updated at the end, so isolate death leaves a visible stalled 'started' row;
+// (2) BOUNDED work — replay all MISSING visits first (cap 50) plus a ROTATING refresh
+// slice (25/run, cursor carried in details.next_offset), small concurrency (4), and a
+// 90s time budget. Full refresh sweep ≈ every 2-3 hours at */15; missing visits are
+// caught on the next run. (3) page sleep 800ms -> 150ms (5-6 pages, leaky-bucket safe).
+// ---------------------------------------------------------------------------
+const MISSING_CAP = 50, REFRESH_PER_RUN = 25, CONCURRENCY = 4, TIME_BUDGET_MS = 90_000
+
+async function replayOne(clientSecret: string, gid: string): Promise<boolean> {
+  const payload = JSON.stringify({ topic: 'VISIT_UPDATE', webHookEvent: { itemId: gid, occurredAt: new Date().toISOString() } })
+  const sig = await hmacB64(clientSecret, payload)
+  const wr = await fetch(`${SUPABASE_URL}/functions/v1/webhook-jobber`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-jobber-hmac-sha256': sig }, body: payload })
+  return wr.ok
+}
+
 async function runSync(): Promise<Record<string, unknown>> {
   const startedAt = new Date().toISOString(); const startMs = Date.now()
+  // HEARTBEAT first — a run that dies leaves a visible 'started' row instead of silence.
+  let hbId: number | null = null
+  try {
+    const { data: hb } = await supabase.from('sync_log').insert({
+      sync_source: 'jobber_upcoming_visits_pgcron', started_at: startedAt,
+      rows_inserted: 0, rows_updated: 0, rows_errored: 0, status: 'started', details: { phase: 'pull' },
+    }).select('id').single()
+    hbId = (hb as any)?.id ?? null
+  } catch (_e) { /* heartbeat failure must not block the sync */ }
+  const done = async (patch: Record<string, unknown>) => {
+    const row = { finished_at: new Date().toISOString(), duration_seconds: Math.round((Date.now() - startMs) / 1000), ...patch }
+    try {
+      if (hbId != null) await supabase.from('sync_log').update(row).eq('id', hbId)
+      else await supabase.from('sync_log').insert({ sync_source: 'jobber_upcoming_visits_pgcron', started_at: startedAt, rows_inserted: 0, rows_updated: 0, rows_errored: 0, ...row })
+    } catch (_e) { /* logged best-effort */ }
+  }
   try {
     const { token, clientSecret } = await getCreds()
     const today = new Date(); today.setUTCHours(0, 0, 0, 0); const afterIso = today.toISOString()
@@ -84,41 +121,67 @@ async function runSync(): Promise<Record<string, unknown>> {
       visits.push(...data.visits.nodes)
       if (!data.visits.pageInfo.hasNextPage) break
       cursor = data.visits.pageInfo.endCursor
-      await new Promise((s) => setTimeout(s, 800))
+      await new Promise((s) => setTimeout(s, 150))
     }
     const eligible = visits.filter((v) => !EXCLUDED_CLIENT_GIDS.has(v.client?.id))
     const excluded = visits.length - eligible.length
 
-    // Replay each through webhook-jobber (VISIT_UPDATE) — handleVisit upserts + promotes/dedups.
-    let ok = 0, fail = 0
-    for (const v of eligible) {
-      const payload = JSON.stringify({ topic: 'VISIT_UPDATE', webHookEvent: { itemId: v.id, occurredAt: new Date().toISOString() } })
-      const sig = await hmacB64(clientSecret, payload)
-      const wr = await fetch(`${SUPABASE_URL}/functions/v1/webhook-jobber`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-jobber-hmac-sha256': sig }, body: payload })
-      if (wr.ok) ok++; else fail++
-    }
+    // Rotation cursor from the most recent run that recorded one.
+    let offset = 0
+    try {
+      const { data: prev } = await supabase.from('sync_log').select('details')
+        .eq('sync_source', 'jobber_upcoming_visits_pgcron').not('details->next_offset', 'is', null)
+        .order('started_at', { ascending: false }).limit(1)
+      offset = Number((prev?.[0] as any)?.details?.next_offset ?? 0) || 0
+    } catch (_e) { offset = 0 }
 
-    // VERIFY: every eligible upcoming visit must now be in our DB. Residual gap = real bug.
+    // Verify FIRST: replay everything missing from our DB, then a rotating refresh slice.
     const gids = eligible.map((v) => v.id)
-    let inDb = 0; let stillMissing: string[] = []
-    if (gids.length) {
+    const set = new Set<string>()
+    for (let i = 0; i < gids.length; i += 200) {
       const { data: present } = await supabase.from('entity_source_links').select('source_id')
-        .eq('entity_type', 'visit').eq('source_system', 'jobber').in('source_id', gids)
-      const set = new Set((present ?? []).map((r: any) => r.source_id))
-      inDb = set.size
-      stillMissing = eligible.filter((v) => !set.has(v.id)).map((v) => v.id)
+        .eq('entity_type', 'visit').eq('source_system', 'jobber').in('source_id', gids.slice(i, i + 200))
+      for (const r of (present ?? []) as any[]) set.add(r.source_id)
     }
-    const dur = Math.round((Date.now() - startMs) / 1000)
-    await supabase.from('sync_log').insert({
-      sync_source: 'jobber_upcoming_visits_pgcron', started_at: startedAt, finished_at: new Date().toISOString(),
-      rows_inserted: ok, rows_updated: 0, rows_errored: fail, duration_seconds: dur,
-      status: (stillMissing.length === 0 && fail === 0) ? 'success' : 'partial',
-      details: { pulled: visits.length, excluded_112ya: excluded, replayed_ok: ok, replayed_fail: fail, residual_gap: stillMissing.length },
+    const missing = eligible.filter((v) => !set.has(v.id))
+    const linked = eligible.filter((v) => set.has(v.id))
+    const slice: any[] = []
+    if (linked.length) {
+      const o = offset % linked.length
+      slice.push(...linked.slice(o, o + REFRESH_PER_RUN))
+      if (slice.length < REFRESH_PER_RUN && linked.length > REFRESH_PER_RUN) slice.push(...linked.slice(0, REFRESH_PER_RUN - slice.length))
+    }
+    const work = [...missing.slice(0, MISSING_CAP), ...slice]
+
+    let ok = 0, fail = 0, budgetHit = false
+    for (let i = 0; i < work.length; i += CONCURRENCY) {
+      if (Date.now() - startMs > TIME_BUDGET_MS) { budgetHit = true; break }
+      const res = await Promise.all(work.slice(i, i + CONCURRENCY).map((v) => replayOne(clientSecret, v.id).catch(() => false)))
+      for (const r of res) { if (r) ok++; else fail++ }
+    }
+    const nextOffset = linked.length ? (offset + REFRESH_PER_RUN) % linked.length : 0
+
+    // Residual check on the missing set only (cheap): still-absent after replay = real gap.
+    let residual = 0
+    const missCapGids = missing.slice(0, MISSING_CAP).map((v) => v.id)
+    if (missCapGids.length) {
+      const { data: present2 } = await supabase.from('entity_source_links').select('source_id')
+        .eq('entity_type', 'visit').eq('source_system', 'jobber').in('source_id', missCapGids)
+      const set2 = new Set((present2 ?? []).map((r: any) => r.source_id))
+      residual = missCapGids.filter((g) => !set2.has(g)).length
+    }
+    await done({
+      rows_inserted: ok, rows_errored: fail,
+      status: (fail === 0 && residual === 0 && !budgetHit) ? 'success' : 'partial',
+      details: {
+        pulled: visits.length, eligible: eligible.length, excluded_112ya: excluded,
+        missing: missing.length, replayed: work.length, replayed_ok: ok, replayed_fail: fail,
+        residual_gap: residual, next_offset: nextOffset, budget_hit: budgetHit,
+      },
     })
-    return { pulled: visits.length, eligible: eligible.length, ok, fail, in_db: inDb, residual_gap: stillMissing.length }
+    return { pulled: visits.length, eligible: eligible.length, missing: missing.length, replayed: work.length, ok, fail, residual_gap: residual, next_offset: nextOffset, budget_hit: budgetHit }
   } catch (e) {
-    const dur = Math.round((Date.now() - startMs) / 1000)
-    await supabase.from('sync_log').insert({ sync_source: 'jobber_upcoming_visits_pgcron', started_at: startedAt, finished_at: new Date().toISOString(), rows_inserted: 0, rows_updated: 0, rows_errored: 0, duration_seconds: dur, status: 'error', details: { error: String(e).slice(0, 300) } }).catch(() => {})
+    await done({ status: 'error', details: { error: String(e).slice(0, 300) } })
     return { error: String(e).slice(0, 300) }
   }
 }
