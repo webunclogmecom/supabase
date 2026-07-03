@@ -90,8 +90,12 @@ payments = No** (should be **Yes**).
   Drainage" → `jobEditLineItems`/`jobCreateLineItems` to match `08 - …Warranty of Drainage $225` + `26-ACH (1%)
   $2.25` (or `25-CC (3.53%) $7.94`) → `jobClose` the wrong Phase-2 dupe. Next invoice = **Jul 22 2026** (odd-month
   …May 22 → Jul 22 cadence). 22/23 done; DB re-synced via webhook-jobber replay.
-- **2 exceptions:** **081-TCE**'s original never had autopay (auto=false — likely no card on file); reopened on
-  the 22nd but autopay stays off (office must enable in UI). **169-TCE** has **no original** to reopen (only the
-  Phase-2 dupe ever existed) — left as-is pending an office UI setup.
+- **2 initial exceptions — RESOLVED by Fred 2026-07-03; all 23/23 now correct.** **081-TCE** — Fred created a fresh
+  UI job **#99901010** with autopay=Yes (081 pays by **credit card**, so it *does* have a card on file — the earlier
+  "no card" guess was wrong); the reopened original #10000088 is re-archived. **169-TCE** — its original **#10000308**
+  is now active with autopay=Yes. Both verified against the canonical Airtable **"Job Line Items"** list (081 = `08 $225`
+  + `25-CC (3.53%) $7.94`; 169 = `08 $225` + `26-ACH (1%) $2.25`; fee type differs because 081 is CC-billed, 169 ACH-billed)
+  and DB re-synced. **To check any warranty's line items/prices/fee-type:** that Airtable table is the canonical source
+  (`base app6TThMjeY1PRTrR / table tblQkj5SIuabDnuXo`).
 - **Rule for future warranties:** if a correct original exists, **REOPEN it** — don't recreate (reopen preserves
   autopay, which the API can't set). A brand-new warranty needing autopay must be created in the Jobber UI.
