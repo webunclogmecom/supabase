@@ -102,8 +102,16 @@ floor / a false-negative is worse than over-surfacing." As of 2026-07-03 there a
 (human-locked `false` **but** `fn_visit_requires_derm = true`), **30 completed with no manifest, 27
 overdue >14 days** (e.g. 070-TCE v1240 182d, 057-BAY lift-station v1344/1352/1498/…, 112-YA v1468). The
 view `ops.v_derm_human_override_conflict` lists them (worst-overdue first) so Yannick can confirm each
-"not required" call was correct rather than trusting it blindly. To re-require one: clear
-`derm_required_locked` and set `derm_required = true`. **Pending a Fred/Yannick review of those 36.**
+"not required" call was correct rather than trusting it blindly. To re-require one: **clear
+`derm_required_locked` FIRST (its own UPDATE — the lock trigger doesn't fire on a lock-only change),
+then set `derm_required = true`** (a single combined UPDATE gets the value reverted by the lock trigger).
+
+**2026-07-03 (later): the 6 `has_manifest=true` rows were FIXED** (Fred approved; found by Supabase 2 via
+v5842/104-PV): visits 1707, 5028, 4901, 4836, 5841, 5842 each had a REAL linked manifest (white #s
+821472/825560/825450/827989/828601×2) + pumping line items, yet carried a human "not required" override —
+mis-clicks contradicted by the manifest on file. All re-required + unlocked (backup
+`backups/2026-07-03_derm_override_manifest_contradiction_fix.json`); none re-enter Missing Docs (they have
+manifests). **The review surface is now 30 rows, all no-manifest overrides — pending Yannick's review.**
 
 ## Consumers (all key off `derm_required`, NULL-safe)
 - `public.manifest_pickable_visits` — `WHERE completed AND (derm_required IS NULL OR = true) AND no manifest`.
