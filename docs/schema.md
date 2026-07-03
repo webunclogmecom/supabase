@@ -269,7 +269,8 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 | duration_minutes | INTEGER | |
 | title | TEXT | |
 | service_type | TEXT | `GT`, `CL`, `AUX`, `HYDROJET`, `CAMERA`, `EMERGENCY` |
-| visit_status | TEXT | `COMPLETED`, `UPCOMING`, `UNSCHEDULED`, `CANCELLED`, `LATE` |
+| visit_status | TEXT | CHECK domain = `scheduled`, `completed`, `cancelled`, `skipped` (2026-07-03). `skipped` = deliberately not serviced this cycle (e.g. client temporarily closed) but kept for the record + removed from Jobber — set via `skip_visit()`/`unskip_visit()`; see migration `2026-07-03c_skip_visit_status.sql`. |
+| skip_reason | TEXT | Why a visit was skipped (only when `visit_status='skipped'`). Set by `skip_visit()`, cleared by `unskip_visit()`. NOT pushed to Jobber. |
 | actual_arrival_at / actual_departure_at | TIMESTAMPTZ | GPS enrichment from Samsara |
 | is_gps_confirmed | BOOLEAN | TRUE when GPS matches |
 | invoice_id | BIGINT FK → invoices | |

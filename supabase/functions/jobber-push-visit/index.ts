@@ -211,8 +211,8 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   const token = await getJobberToken();
   const { data: visit } = await db.from("visits").select("*").eq("id", visitId).maybeSingle();
 
-  // ---- DELETE (deleted_at set, Calendar cancel = visit_status'cancelled', or explicit op) ----
-  if (op === "delete" || (visit && (visit.deleted_at || visit.visit_status === "cancelled"))) {
+  // ---- DELETE (deleted_at set, Calendar cancel = visit_status'cancelled', skip = 'skipped', or explicit op) ----
+  if (op === "delete" || (visit && (visit.deleted_at || visit.visit_status === "cancelled" || visit.visit_status === "skipped"))) {
     const gid = payloadGid || (visit ? await jobberGid("visit", visitId) : null);
     if (!gid) { console.log(`[push] delete: visit ${visitId} has no jobber link — nothing to delete`); return { ok: true, note: "no link" }; }
     // IDEMPOTENT delete. Jobber's poll-replay can double-deliver, so a 2nd delete
