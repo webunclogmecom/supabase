@@ -83,6 +83,28 @@ Verified 2026-07-03: restored + locked all 139 human decisions; ran the real cro
 residual; Missing-Docs **52 → 23**; trigger blocks an auto-writer on a locked row and still lets an
 **unlocked** visit auto-promote. Restore backup: `backups/2026-07-03_derm_required_restore_backup.json`.
 
+**Hardening (migration `2026-07-03b_derm_lock_hardening.sql`, after an adversarial smoke-test review —
+no must-fix defects found):** (1) the header cast is now wrapped in an `EXCEPTION` guard (matches
+`audit.log_change`) so a malformed `request.headers` GUC degrades to "not derm-tracker" instead of
+aborting the write; (2) origin match is `ILIKE` (case-insensitive); (3) the trigger dropped its
+value-change `WHEN` gate — it now fires on any `derm_required`-targeted write, so a human re-clicking
+"not required" on an **already-false** visit still locks it (closing a latent gap where such a no-op
+click left the row unlocked and re-promotable). Robustness note for the DERM Tracker app: the auto-lock
+relies on the app sending `x-app-source: derm-tracker` (or a `derm.unclogme.app` origin) — treat that
+header as a release invariant; belt-and-suspenders would be for the app to set `derm_required_locked`
+explicitly on a "not required" write.
+
+### Compliance review surface — `ops.v_derm_human_override_conflict`
+
+Locking a human "not required" **overrides** the auto pumping-line-item verdict, so those visits vanish
+from every missing-docs surface — which tensions ADR-018's "pumping verdict is a monotonic compliance
+floor / a false-negative is worse than over-surfacing." As of 2026-07-03 there are **36** such conflicts
+(human-locked `false` **but** `fn_visit_requires_derm = true`), **30 completed with no manifest, 27
+overdue >14 days** (e.g. 070-TCE v1240 182d, 057-BAY lift-station v1344/1352/1498/…, 112-YA v1468). The
+view `ops.v_derm_human_override_conflict` lists them (worst-overdue first) so Yannick can confirm each
+"not required" call was correct rather than trusting it blindly. To re-require one: clear
+`derm_required_locked` and set `derm_required = true`. **Pending a Fred/Yannick review of those 36.**
+
 ## Consumers (all key off `derm_required`, NULL-safe)
 - `public.manifest_pickable_visits` — `WHERE completed AND (derm_required IS NULL OR = true) AND no manifest`.
 - `derm.visits.needs_manifest` = `COALESCE(derm_required, true)` (DERM Tracker "Missing Docs").
