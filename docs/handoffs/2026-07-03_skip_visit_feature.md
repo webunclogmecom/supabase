@@ -1,4 +1,11 @@
-# Handoff → Building Apps (Visit Calendar): "Skip a visit" UI
+# ~~Handoff~~ → RESOLVED: "Skip a visit" UI SHIPPED by the Supabase session (full-stack, 2026-07-03)
+
+**No BA action needed.** Fred asked the Supabase session to finish full-stack: the UI below was built in
+the Visit Calendar Lovable editor, published, and **live-verified end-to-end on calendar.unclogme.app**
+(real 202-CAP skip → Jobber visit deleted + muted SKIPPED chip + Skipped banner/reason → un-skip →
+fresh Jobber visit `2240001131` re-created; both transitions audit-attributed `[visit-calendar]`).
+Also verified live: the backend gap-fill pushed the job's next visit (Nov 30 → `Visit/2239996494`) to
+Jobber at skip time. The spec below is retained as documentation of the shipped behavior.
 
 **Backend is LIVE + verified (2026-07-03, Supabase session).** This is the Calendar UI half.
 Origin: Yannick (Slack) — *"I need to skip a visit for 202, the restaurant is not open yet."* Today the
