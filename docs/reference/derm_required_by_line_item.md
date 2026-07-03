@@ -46,12 +46,42 @@ negatives (hiding a real DERM visit) are worse than noise.
   the visit's line items (near-real-time, every poll).
 - **Nightly catch-up** — pg_cron `derm-required-rederive` (03:20 ET) runs `rederive_visits_derm_required()`
   for line items that arrive later (esp. invoices). Watchdog idempotent: a 2nd run touches 0 rows.
+  **Skips human-locked rows** (`derm_required_locked` — see below).
 
 **Monotonic invariant (automated paths):** `set_visit_derm_required` + `rederive_visits_derm_required`
 never demote a stored **TRUE** to false/null and never write NULL — they only promote NULL→{true,false}
 and false→true. This stops a later non-pump invoice from hiding a pumping visit and protects a human's
 NULL→true reclassification. (The one-time backfill is authoritative: it writes the function's verdict
 including re-surfacing a stale false→null, protecting only existing trues.)
+
+## Human override — `derm_required_locked` (2026-07-03)
+
+**Problem it solves:** the monotonic `false→true` promotion above is line-item-blind to *human judgement*.
+When Diego/Yannick click **"DERM not required"** in the DERM Tracker, the app writes `derm_required = false`.
+But the nightly re-derive's guard is `derm_required IS NOT TRUE`, which treats that human **false** exactly
+like an unknown **NULL** and re-promotes it to **true** whenever the job/invoice carries a pumping line item.
+Result (Yannick, 2026-07-02): visits keep **re-appearing in "Missing Docs"** the morning after they were
+marked not-required. Sample visit 5745 (214-MYK) flip-flopped 6× — human `→false` at 15:38, cron `→true`
+at 07:20, every day. Audit: **139 human "not required" decisions**, of which **36 the cron had already
+flipped back to Required**.
+
+**The model (migration `2026-07-03_derm_required_manual_lock.sql`):**
+- `public.visits.derm_required` **stays the single effective value** every consumer reads — no view rewrite.
+- New additive column `public.visits.derm_required_locked boolean NOT NULL DEFAULT false` = "a human set
+  this deliberately; automation must not touch it."
+- Trigger `trg_derm_required_lock` (`BEFORE UPDATE OF derm_required`): detects the DERM Tracker the same
+  way `audit.log_change` does (request header `x-app-source='derm-tracker'` / origin `derm.unclogme.app`).
+  - A **DERM-Tracker** write that changes `derm_required` → set `derm_required_locked = true` (auto-lock).
+  - Any **other** writer (cron / `handleVisit` / raw SQL) that tries to change a locked value → reverted to
+    the human value. **The lock is enforced no matter which code path attempts the override** — this is the
+    real guarantee; the `AND derm_required_locked IS NOT TRUE` guards added to `rederive_visits_derm_required`
+    + `set_visit_derm_required` are belt-and-suspenders (they don't even attempt a locked row).
+- **No DERM Tracker app change** — the existing "DERM not required" button now sticks automatically.
+- To hand a visit back to auto-classification: set `derm_required_locked = false` explicitly.
+
+Verified 2026-07-03: restored + locked all 139 human decisions; ran the real cron → **0** promoted, 0
+residual; Missing-Docs **52 → 23**; trigger blocks an auto-writer on a locked row and still lets an
+**unlocked** visit auto-promote. Restore backup: `backups/2026-07-03_derm_required_restore_backup.json`.
 
 ## Consumers (all key off `derm_required`, NULL-safe)
 - `public.manifest_pickable_visits` — `WHERE completed AND (derm_required IS NULL OR = true) AND no manifest`.
