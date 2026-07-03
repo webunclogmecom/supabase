@@ -113,6 +113,16 @@ mis-clicks contradicted by the manifest on file. All re-required + unlocked (bac
 `backups/2026-07-03_derm_override_manifest_contradiction_fix.json`); none re-enter Missing Docs (they have
 manifests). **The review surface is now 30 rows, all no-manifest overrides — pending Yannick's review.**
 
+**Full-population consistency audit (2026-07-03, Fred ask — do NOT re-litigate):** across all 1,550 live
+visits the ONLY human-override-vs-manifest contradictions were the 6 above (fixed; 0 remain). Additionally
+**23 auto-false + 45 NULL visits carry a linked manifest — audited, NOT bugs**: the 23 have genuinely
+non-pumping line items (hydrojet/camera/repairs — sheet says N) and got the manifest via the client-level
+over-linking pattern (their neighboring pumping visits all have their own manifests — mis-link hypothesis
+tested and dead); the 45 NULLs are pre-taxonomy unknowns that display as Documented (NULL=required +
+has_manifest). All other integrity checks zero (no links to deleted visits/manifests, no scheduled-with-
+manifest, no over-linked visits). v5830 (053-PV): human not-required decision PRESERVED (dump ticket
+828601 does not cover 053-PV) — stays on the review surface.
+
 ## Consumers (all key off `derm_required`, NULL-safe)
 - `public.manifest_pickable_visits` — `WHERE completed AND (derm_required IS NULL OR = true) AND no manifest`.
 - `derm.visits.needs_manifest` = `COALESCE(derm_required, true)` (DERM Tracker "Missing Docs").
