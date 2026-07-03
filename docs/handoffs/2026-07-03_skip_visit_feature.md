@@ -21,17 +21,28 @@ ops.unskip_visit(p_visit_id bigint)                -> returns the updated visits
   far-future unskip re-adds via the nightly generator PROMOTE step rather than instantly; don't treat that
   as a failure).
 
+## Finalized behavior (Fred decisions 2026-07-03)
+- **Un-skip is the only door back.** A skipped visit's ONLY sanctioned transition is un-skip → scheduled.
+  The backend now **blocks `skipped → completed`** (RAISE "un-skip first"). So the drawer for a skipped
+  visit must offer **only Un-skip** — NOT Reschedule / Mark-complete / Edit (editing a skipped visit is
+  also not guarded server-side yet, so the UI must not expose it — unskip first).
+- **Single occurrence.** Skipping one visit skips only that cycle; the next visit stands and is **auto-
+  pushed to Jobber** by the backend (the gap-fill), so the crew always keeps its next service. No UI work.
+- **Warnings (both directions) — REQUIRED:**
+  - On **Skip**: confirm *"This removes the visit from the crew's Jobber schedule — continue?"*
+  - On **Un-skip**: confirm *"This re-adds the visit to the crew's Jobber schedule on {date} — continue?"*
+
 ## UI
 
-1. **Visit drawer** (scheduled visit) → add a **"Skip visit"** action next to Reschedule/Cancel. Open a
-   small modal with a reason textarea → call `ops.skip_visit(id, reason)`.
-2. **Visit drawer** (skipped visit) → show the `skip_reason` + an **"Un-skip"** action → `ops.unskip_visit(id)`.
+1. **Visit drawer** (scheduled visit) → add a **"Skip visit"** action. Confirm modal (skip warning above) +
+   a reason textarea → `ops.skip_visit(id, reason)`.
+2. **Visit drawer** (skipped visit) → show the `skip_reason` + an **"Un-skip"** action (with the un-skip
+   warning) → `ops.unskip_visit(id)`. Do NOT show Reschedule / Mark-complete / Edit on a skipped visit.
 3. **Chip styling** — `ops.v_calendar_visit` passes `visit_status` through raw, so style a **skipped chip**
    client-side when `visit_status === 'skipped'` (e.g. muted/striped, a "Skipped" label + the reason on
-   hover). **Important:** a skipped chip must NOT render the red/yellow "late" border — the backend
-   `late_status` field still computes lateness off the cadence date and I deliberately did **not** change
-   `ops.v_calendar_visit` (Calendar hot-zone). So in the app, when `visit_status==='skipped'`, ignore
-   `late_status` and use the skipped style. (A "Completed & skipped" filter option can now be real.)
+   hover). The backend now sets `late_status = NULL` for a skipped visit (fixed 2026-07-03d), so it won't
+   render a red/yellow late border — but still give it its own skipped style. (A "Completed & skipped"
+   filter option can now be real.)
 4. **Async Jobber sync** — skip/unskip use the same saga as reschedule/cancel: the row goes
    `sync_state='pending'` then `'confirmed'` (Jobber removal/recreate ok) or `'failed'`. Reuse the existing
    `pollVisitSyncState` pattern; on `'failed'` show needs-attention, not success (the removal/recreate

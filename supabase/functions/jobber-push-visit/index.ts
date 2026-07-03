@@ -227,11 +227,13 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     try {
       const d = await gql(token, M_DELETE, { ids: [gid] });
       const err = ue(d.visitDelete);
-      if (err && !ALREADY_GONE.test(err)) throw new Error(`visitDelete: ${err}`);
+      if (err && !ALREADY_GONE.test(err)) { await flag(visitId, "delete_error", err); throw new Error(`visitDelete: ${err}`); }
       if (err) console.log(`[push] delete: Jobber visit ${gid} already gone (userError: ${err}) — treating as deleted (visit ${visitId})`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!ALREADY_GONE.test(msg)) throw e;
+      // A genuine (non-already-gone) delete failure leaves the visit still booked in Jobber — flag it
+      // so ops.v_calendar_push_health surfaces it (esp. a skip whose removal did not land).
+      if (!ALREADY_GONE.test(msg)) { await flag(visitId, "delete_error", msg); throw e; }
       console.log(`[push] delete: Jobber visit ${gid} already gone (${msg}) — treating as deleted (visit ${visitId})`);
     }
     // unlink so a later un-cancel (upsert) cleanly re-creates instead of editing a dead GID

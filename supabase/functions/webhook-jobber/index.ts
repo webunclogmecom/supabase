@@ -656,7 +656,15 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     // visits by setting their hour in Jobber's weekly view; fill-if-empty captures that hour without
     // clobbering a Calendar-set time. Loop-safe: a visit_status change re-fires trg_push_visit_update,
     // but jobber-push-visit only re-asserts the SAME schedule -> Jobber unchanged -> no echo.
-    const { data: existing } = await supabase.from('visits').select('source, start_at').eq('id', existingId).maybeSingle()
+    const { data: existing } = await supabase.from('visits').select('source, start_at, visit_status').eq('id', existingId).maybeSingle()
+    // A 'skipped' visit is intentionally REMOVED from Jobber. An in-flight Jobber replay
+    // (VISIT_UPDATE/COMPLETE arriving before the removal propagates, or on a stale link if the
+    // visitDelete failed) must NOT resurrect it — ignore the inbound change. The skip-removal retry
+    // (resolve-stale cron) will unlink it; unskip_visit is the only sanctioned way back to Jobber.
+    if (existing?.visit_status === 'skipped') {
+      console.log(`[handleVisit] visit ${numericId} is skipped in DB — ignoring inbound Jobber change (not resurrecting)`)
+      return { entity_id: existingId }
+    }
     if (existing?.source === 'visit-calendar' || existing?.source === 'supabase_cron') {
       const compRow: Record<string, unknown> = {}
       if (v.completedAt !== undefined) compRow.completed_at = v.completedAt ?? null
