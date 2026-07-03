@@ -65,16 +65,25 @@ function nameLineY(img, top, div) {
   const STATE_FILE = path.resolve(__dirname, 'data', 'stamp_state_v3.json');
   const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
   const entries = state.filter(e => String(e.window) === String(n).padStart(2, '0'))
-    .sort((a, b) => a.wm.localeCompare(b.wm) || a.page - b.page);
-  const wms = [...new Set(entries.map(e => e.wm))];
+    .sort((a, b) => String(a.wm || a.key).localeCompare(String(b.wm || b.key)) || a.page - b.page);
+  const wms = [...new Set(entries.map(e => e.wm).filter(Boolean))];
+  // no-ticket sheets (wm null) key their DB rows by dump_folder = window<N>-sheet<S> (from the key)
+  const dfOf = e => { const m = e.key.match(/^w(\d+)-s(\d+)-p\d+$/); return m ? `window${m[1]}-sheet${m[2]}` : null; };
+  const dfs = [...new Set(entries.filter(e => !e.wm).map(dfOf).filter(Boolean))];
+  const conds = [];
+  if (wms.length) conds.push(`m.white_manifest_number in (${wms.map(w => `'${w}'`).join(',')})`);
+  if (dfs.length) conds.push(`m.dump_folder in (${dfs.map(d => `'${d}'`).join(',')})`);
   const dbrows = await q(`
-    select m.white_manifest_number as wm, m.page, m.row_index, m.address_read, m.facility_name_read,
+    select m.white_manifest_number as wm, m.dump_folder as df, m.page, m.row_index, m.address_read, m.facility_name_read,
            m.assignment_status, m.confidence, c.client_code
     from derm.address_row_map m left join public.clients c on c.id = m.matched_client_id
-    where m.white_manifest_number in (${wms.map(w => `'${w}'`).join(',')})
-    order by m.white_manifest_number, m.page, m.row_index`);
+    where ${conds.join(' or ')}
+    order by m.white_manifest_number nulls last, m.dump_folder, m.page, m.row_index`);
   const dbBy = {};
-  for (const r of dbrows) (dbBy[`${r.wm}_${r.page}`] ||= []).push(r);
+  for (const r of dbrows) {
+    if (r.wm) (dbBy[`${r.wm}_${r.page}`] ||= []).push(r);
+    if (r.df) (dbBy[`${r.df}_${r.page}`] ||= []).push(r);
+  }
 
   const payload = [];
   for (const e of entries) {
@@ -88,7 +97,7 @@ function nameLineY(img, top, div) {
       const y = div != null ? nameLineY(img, top, div) : top + NAME_FRAC * rh;
       rowCenters.push({ phys_row: k, y_pct: +y.toFixed(2) });
     }
-    const codes = (dbBy[`${e.wm}_${e.page}`] || [])
+    const codes = ((e.wm && dbBy[`${e.wm}_${e.page}`]) || dbBy[`${dfOf(e)}_${e.page}`] || [])
       .filter(r => r.assignment_status === 'matched' && r.confidence === 'high' && r.client_code)
       .map(r => ({ code: r.client_code, address: r.address_read || '', facility: r.facility_name_read || '' }));
     payload.push({ key: e.key, wm: e.wm, page: e.page, local_file: e.local_file, phys_rows: rowCenters.length, rowCenters, codes });
