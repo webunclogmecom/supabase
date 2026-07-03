@@ -1199,6 +1199,19 @@ async function softStatusFlip(
     console.log(`[softStatusFlip ${entity_type}] unknown source_id=${gid} — nothing to update`)
     return { entity_id: 0 }
   }
+  // A 'skipped' visit is intentionally removed from Jobber by US — an inbound VISIT_DESTROY for it
+  // (usually our own skip-removal echoing back through the poll before the unlink lands) must NOT
+  // flip it to 'cancelled' (that would lose the skip status/reason and drop it out of the skip
+  // watchdogs). Instead complete the skip's intended end-state: unlink the ESL and keep 'skipped'.
+  if (entity_type === 'visit') {
+    const { data: vrow } = await supabase.from('visits').select('visit_status').eq('id', existingId).maybeSingle()
+    if (vrow?.visit_status === 'skipped') {
+      await supabase.from('entity_source_links').delete()
+        .eq('entity_type', 'visit').eq('entity_id', existingId).eq('source_system', 'jobber')
+      console.log(`[softStatusFlip visit] ${existingId} is skipped in DB — unlinked instead of cancelling (skip-removal echo)`)
+      return { entity_id: existingId }
+    }
+  }
   // supabaseJobber: every *_DESTROY / JOB_CLOSED topic is Jobber-originated -> the
   // cancel/archive audits as "Changed in Jobber" (visits/clients are user-visible).
   const { error } = await supabaseJobber.from(table).update({ [statusCol]: newStatus }).eq('id', existingId)
