@@ -13,29 +13,41 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
   const folder = process.argv[2];
   if (!folder) { console.error('usage: node list_clients_html.js <Window_NN>'); process.exit(1); }
   const dir = path.join('C:/Users/FRED/Downloads/DERM_Stamped', folder);
-  const files = fs.readdirSync(dir).filter(f => /^ticket_.*\.png$/.test(f)).sort();
-  const wms = [...new Set(files.map(f => f.match(/^ticket_(\d+)_p(\d+)/)[1]))];
-  if (!wms.length) { console.error('no ticket_*.png files found in', dir); process.exit(1); }
+  // Two stamped-image naming schemes: ticket_<wm>_p<n>_… (normal) and window<N>_sheet<S>_p<n>_…
+  // (manifests with NO ticket number — keyed by dump_folder instead, e.g. window10-sheet6).
+  const files = fs.readdirSync(dir).filter(f => /^(ticket_|window\d+_sheet)\S*\.png$/.test(f)).sort();
+  const wms = [...new Set(files.map(f => (f.match(/^ticket_(\d+)_p\d+/) || [])[1]).filter(Boolean))];
+  const dfs = [...new Set(files.map(f => { const m = f.match(/^window(\d+)_sheet(\d+)_p\d+/); return m ? `window${m[1]}-sheet${m[2]}` : null; }).filter(Boolean))];
+  if (!wms.length && !dfs.length) { console.error('no stamped images found in', dir); process.exit(1); }
   const imageFor = {};
-  for (const f of files) { const m = f.match(/^ticket_(\d+)_p(\d+)_/); if (m) imageFor[`${m[1]}_${m[2]}`] = f; }
+  for (const f of files) {
+    let m = f.match(/^ticket_(\d+)_p(\d+)_/);
+    if (m) { imageFor[`${m[1]}_${m[2]}`] = f; continue; }
+    m = f.match(/^window(\d+)_sheet(\d+)_p(\d+)_/);
+    if (m) imageFor[`window${m[1]}-sheet${m[2]}_${m[3]}`] = f;
+  }
 
+  const conds = [];
+  if (wms.length) conds.push(`m.white_manifest_number in (${wms.map(w => `'${w}'`).join(',')})`);
+  if (dfs.length) conds.push(`m.dump_folder in (${dfs.map(d => `'${d}'`).join(',')})`);
   const rows = await q(`
-    select m.white_manifest_number, m.page, m.row_index, m.facility_name_read, m.address_read,
+    select m.white_manifest_number, m.dump_folder, m.page, m.row_index, m.facility_name_read, m.address_read,
            m.assignment_status, c.client_code, c.name as client_name
     from derm.address_row_map m
     left join public.clients c on c.id = m.matched_client_id
-    where m.white_manifest_number in (${wms.map(w => `'${w}'`).join(',')})
-    order by m.white_manifest_number, m.page, m.row_index`);
+    where ${conds.join(' or ')}
+    order by m.white_manifest_number nulls last, m.dump_folder, m.page, m.row_index`);
 
   const trs = rows.map(r => {
     const matched = r.assignment_status === 'matched' && r.client_code;
-    const file = imageFor[`${r.white_manifest_number}_${r.page}`];
+    const file = imageFor[`${r.white_manifest_number}_${r.page}`] || imageFor[`${r.dump_folder}_${r.page}`];
     const code = matched ? esc(r.client_code) : '<span class="q">unmatched</span>';
     const name = esc(r.client_name || r.facility_name_read || '');
     const link = file ? `<a href="${esc(file)}" target="_blank">${esc(file)}</a>` : '';
-    const searchText = esc([r.white_manifest_number, r.client_code, name, r.address_read, file].filter(Boolean).join(' ').toLowerCase());
+    const ticket = r.white_manifest_number ? esc(r.white_manifest_number) : '<span class="q">no ticket</span>';
+    const searchText = esc([r.white_manifest_number, r.dump_folder, r.client_code, name, r.address_read, file].filter(Boolean).join(' ').toLowerCase());
     return `<tr class="${matched ? 'matched' : 'missing'}" data-search="${searchText}">
-      <td class="ri">${r.page}.${r.row_index}</td><td>${esc(r.white_manifest_number)}</td>
+      <td class="ri">${r.page}.${r.row_index}</td><td>${ticket}</td>
       <td class="code">${code}</td><td>${name}</td><td class="addr">${esc(r.address_read || '')}</td>
       <td class="file">${link}</td></tr>`;
   }).join('');
@@ -60,7 +72,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
    .note{background:#eef6fa;border:1px solid #cfe4ee;border-radius:6px;padding:8px 10px;margin:0 0 14px;font-size:11px;color:#444}
    </style></head><body><div class="doc">
    <h1>DERM Client List — ${esc(folder)}</h1>
-   <p class="sub">${wms.length} tickets &middot; ${totalRows} facility rows &middot; ${missingCount} missing</p>
+   <p class="sub">${wms.length + dfs.length} tickets &middot; ${totalRows} facility rows &middot; ${missingCount} missing</p>
    <div class="note">Keep this file in the same folder as the images. Click a filename to open that sheet.</div>
    <div class="toolbar">
      <input id="search" type="text" placeholder="Search ticket, code, client, address, filename...">
@@ -102,5 +114,5 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 
   const out = path.join(dir, `ClientList_${folder}.html`);
   fs.writeFileSync(out, html);
-  console.log(`${wms.length} tickets, ${totalRows} rows (${missingCount} missing) -> ${out}`);
+  console.log(`${wms.length + dfs.length} tickets, ${totalRows} rows (${missingCount} missing) -> ${out}`);
 })().catch(e => { console.error('ERR', e.message); process.exit(1); });
