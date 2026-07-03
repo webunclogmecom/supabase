@@ -42,7 +42,7 @@ I ran a 14-agent OCR reconciliation over all 73 multi-client manifests, then **v
 **Net real over-merge across all 73 = essentially just 827989** (the reused-photo batch), already corrected 18 → 14 (Fred's stated target). **No deletions performed in this pass.**
 
 ### Residual real issues (small, for the office — not auto-fixable from images)
-- **827989** — ~~14 clients all point to a single stored sheet; additional sheets never uploaded~~ **CORRECTED 2026-07-03 (DB re-verification):** the ticket has THREE address sheets in storage (derm/1218/address_1-3.JPG), all uploaded with the original Jun-23 filing and shared across all 14 rows — this audit saw only the primary because it predated the 2026-07-01 extras-pooling view fix. Links re-verified 1:1 client-matched. Remaining office check: confirm the 3 sheets between them list all 14 facilities.
+- **827989** — ~~14 clients all point to a single stored sheet; additional sheets never uploaded~~ **SUPERSEDED 2026-07-03 (see below) / CORRECTED 2026-07-03 (DB re-verification):** the ticket has THREE address sheets in storage (derm/1218/address_1-3.JPG), all uploaded with the original Jun-23 filing and shared across all 14 rows — this audit saw only the primary because it predated the 2026-07-01 extras-pooling view fix. Links re-verified 1:1 client-matched. Remaining office check: confirm the 3 sheets between them list all 14 facilities.
 - **826477 / 306859 number attribution** — my earlier renumbers (826114→826477, 306858→306859) may have merged two adjacent dump tickets under one number. Both numbers are valid DERM; this is a number-accuracy nuance, not lost coverage. Flagged, not thrash-reverted.
 - **1 empty record** (id 512, client 287, 1/26) — no image, no number; office to attach or remove.
 
@@ -76,3 +76,16 @@ Do not change anything else in the flow.
 </details>
 
 All DB changes above are reversible + audited (`derm_manifests` carries audit triggers).
+
+
+## SUPERSEDED (2026-07-03): the 827989 "over-merge correction" itself was WRONG — reversed with evidence
+Fred located the ticket's missing 4th page (typed sheet #1006-1, "Page 2 of 4", signed + ticket-stamped,
+never uploaded to storage). The ticket has FOUR address pages listing NINETEEN facilities: the 14 on the
+stored pages (#323/#322/#1006-2) PLUS 231-CHE, 061-TCE, 155-PV, 047-PAM, 077-TCE on the found page. The
+four rows this audit soft-deleted (067-TCE, 103-BWC, 090-OAK, 007-CC) are on stored sheet #322 —
+address-verified — so the "over-merge" deletion removed legitimate rows. Corrections executed 2026-07-03:
+4 rows restored + relinked, 087-BB given its own row (visit moved off the cross-client 055-PV attachment),
+end state 19 rows / 19 links / 0 cross-client. Root cause of the whole episode: the never-uploaded signed
+page + no sheet/page tracking (derm_address_no was 0/455 — the preview workflow never stamps). New
+detection surface: `ops.v_derm_ticket_doc_gaps` (migration 2026-07-03k). Backup:
+`backups/2026-07-03_827989_link_corrections_backup.json`.
