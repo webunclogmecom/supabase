@@ -1,0 +1,90 @@
+-- 2026-07-03l  DERM ADDRESS-image de-duplication  (DATA OPERATION — not DDL)
+-- ============================================================================
+-- Context: sequel to the receipt (derm_manifest) dedup recorded alongside
+--          ops.v_derm_ticket_doc_gaps (2026-07-03k). Fred-approved.
+--
+-- Root cause (same as receipts): the Airtable->DB migration wrote a copy of the
+-- SAME physical address sheet under EACH client/visit row of a shared dump
+-- ticket (in Airtable every visit carried its own attachment copy). The
+-- derm.manifests view (2026-07-01 "union sheets across rows") then pools every
+-- row's copy via array_agg(DISTINCT url) — but the copies are DIFFERENT URL
+-- strings (derm/<mid>/address.jpg per row) with IDENTICAL bytes, so DISTINCT
+-- did not collapse them and the app showed N*pages:
+--   #825450  14 address pages (7 rows x 2)   #825167  20 (10 rows x 2)
+--   #824949  42 (14 rows x 3)
+--
+-- Why addresses needed more care than receipts: a ticket legitimately has 2-3
+-- DISTINCT pages (a multi-page FOG eManifest / multiple continuation sheets),
+-- so we canonicalize PER-ETAG PER-ROW (never force one file per ticket). Each
+-- row keeps its own set of distinct pages; only byte-identical copies are made
+-- to share one canonical URL, which the view's DISTINCT then collapses.
+--
+-- Method:
+--   1) eTag census: unnest every address ref (derm_address_url +
+--      derm_address_extra_urls) for all live rows, parse the public-storage URL
+--      to (bucket, object name), LEFT JOIN storage.objects for metadata->>'eTag'.
+--   2) Per ticket (coalesce(white_manifest_number, yellow_ticket_number)):
+--      pick one canonical URL per distinct eTag (smallest mid, smallest ord).
+--   3) Rewrite EACH row's ordered file list: map every URL to its eTag's
+--      canonical URL (null-eTag / external refs passed through untouched),
+--      dedup preserving order; derm_address_url = list[0],
+--      derm_address_extra_urls = list[1:].
+--   Storage objects are NEVER deleted — references only. Fully reversible.
+--
+-- Result: 291 rows across 65 tickets updated. App-visible address pages
+--   537 -> 119. #825450 14->2, #825167 20->2, #824949 42->3.
+--   Genuine multi-sheet tickets #826477 / #827989 untouched (3->3).
+--   Set-equality verified: 92/92 tickets kept an IDENTICAL distinct-eTag page
+--   set before/after — 0 pages lost or gained.
+--   0 tickets left holding byte-identical duplicate address URLs.
+--
+-- Tier 2 (perceptual dHash/aHash on the 22 tickets with >=2 distinct pages):
+--   flagged 14 "near-identical" pairs, ALL confirmed FALSE POSITIVES on visual
+--   inspection — DERM FOG eManifests are a fixed form so different continuation
+--   sheets share the template+header and differ only in the Section-B facility
+--   list (a 64-bit hash can't resolve that). Min distance across all tickets = 4
+--   and was between genuinely-different forms. => no content-duplicate beyond
+--   byte-identical; nothing further collapsed.
+--
+-- Bonus repair: #824026 row 968 (061-TCE) page-2 was a dead airtableusercontent
+--   .com URL (HTTP 410, never migrated). Its 10 co-client rows unanimously share
+--   the same 2-page sheet, so the dead link was repointed to the canonical
+--   derm/970/address_p2.jpg (page-2 eTag e98c6a37...). Sweep confirmed 0 other
+--   external/orphan image refs remain across all DERM image columns.
+--
+-- Backups (workspace-root /backups, outside the public repos):
+--   backups/2026-07-03_address_dedup_backup.json        (291 rows, pre-image)
+--   backups/2026-07-03_orphan_968_repoint_backup.json   (row 968, pre-image)
+--
+-- Executed via the Supabase Management API (value-specific VALUES UPDATE of 291
+-- rows); this file is the audit record, not re-runnable DDL. Detection surface
+-- for future bloat: ops.v_derm_ticket_doc_gaps (2026-07-03k).
+--
+-- ----------------------------------------------------------------------------
+-- Standing verification query (should return 0 rows): any ticket still holding
+-- two DIFFERENT address URL strings that are the SAME storage object (eTag).
+-- ----------------------------------------------------------------------------
+-- WITH refs AS (
+--   SELECT coalesce(dm.white_manifest_number, dm.yellow_ticket_number) AS ticket, u.url
+--   FROM derm_manifests dm
+--   CROSS JOIN LATERAL unnest(array_remove(ARRAY[dm.derm_address_url], NULL)
+--        || coalesce(dm.derm_address_extra_urls, '{}')) u(url)
+--   WHERE dm.deleted_at IS NULL
+--     AND coalesce(dm.white_manifest_number, dm.yellow_ticket_number) IS NOT NULL
+-- ),
+-- parsed AS (
+--   SELECT ticket, url,
+--     replace(replace(split_part(url, '/object/public/', 2), '%20', ' '), '%2520', ' ') AS pd
+--   FROM refs
+-- ),
+-- sp AS (
+--   SELECT ticket, url, split_part(pd, '/', 1) AS bkt, substr(pd, position('/' in pd)+1) AS nm
+--   FROM parsed
+-- ),
+-- j AS (
+--   SELECT ticket, url, o.metadata->>'eTag' AS etag
+--   FROM sp LEFT JOIN storage.objects o ON o.bucket_id = sp.bkt AND o.name = sp.nm
+-- )
+-- SELECT ticket, etag, count(DISTINCT url) AS dup_url_strings
+-- FROM j WHERE etag IS NOT NULL
+-- GROUP BY ticket, etag HAVING count(DISTINCT url) > 1;
