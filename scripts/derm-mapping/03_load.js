@@ -40,4 +40,6 @@ const J = o => `'${JSON.stringify(o || {}).replace(/'/g, "''")}'::jsonb`;
     }
   }
   console.log(`loaded/upserted ${n} rows from ${file}`);
+  // OCR flywheel: fold this batch's high-trust matches into the persistent label store
+  await require('./lib/aliases').refresh();
 })().catch(e => { console.error('ERR', e.message); process.exit(1); });
