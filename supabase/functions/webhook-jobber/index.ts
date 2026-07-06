@@ -334,7 +334,26 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     // reconciliation probe scripts/probes/audit_client_code_drift.js, which only heals
     // when the Jobber prefix AND Airtable's Client Code #3 AGREE against a stale DB
     // value (the 2026-06-17 221-MP→224-MP case). See that probe + ADR / runbook.
-    if (parsedCode && cur && !cur.client_code) clientRow.client_code = parsedCode
+    //
+    // GUARD (2026-07-05): only heal if the parsed code isn't already held by another
+    // ACTIVE client. Yan sometimes types the same NNN-XX prefix into TWO Jobber records
+    // for one business (a Jobber-side duplicate — 145-NON on clients 152 + 153). Writing
+    // the shared code onto this row 23505s on clients_active_client_code_uniq, and the
+    // */5 poll re-throws + replays the same CLIENT_UPDATE forever (288 failures/day).
+    // Skip the code write silently here; the duplicate is surfaced out-of-band
+    // (client_insert_potential_dup warning at create time + the weekly dedup audit),
+    // and collapsing the two Jobber records is a manual merge decision.
+    let healCode = !!(parsedCode && cur && !cur.client_code)
+    if (healCode) {
+      const { data: codeHolder } = await supabase
+        .from('clients').select('id')
+        .eq('client_code', parsedCode as string)
+        .neq('id', existingId)
+        .neq('status', 'INACTIVE')
+        .limit(1)
+      if (codeHolder && codeHolder.length) healCode = false
+    }
+    if (healCode) clientRow.client_code = parsedCode
     // supabaseJobber: handleClient is only ever CLIENT_CREATE/UPDATE/DESTROY -> audit
     // app_source='jobber' ("Changed in Jobber") instead of bare 'sql'/"System".
     const { error } = await supabaseJobber.from('clients').update(clientRow).eq('id', existingId)
