@@ -657,30 +657,14 @@ async function handleDermRecord(recordId: string, fields: Record<string, unknown
     await supabase.from('derm_manifests').update(updates).eq('id', entityId)
   }
 
-  // Link to matching completed GT visit(s) within ±2 days of GT Last Visit.
-  // Handler previously never wrote manifest_visits at all, leaving 40+ May
-  // visits unattributed in DERM Tracker. AT's `Visits` field has AT visit
-  // GIDs but our `visits` table is Jobber-sourced (no AT GID), so match by
-  // client + visit_date window instead. Fix 2026-05-19.
-  const gtLastVisit = dateVal(fields, 'GT Last Visit')
-  if (row.client_id && gtLastVisit) {
-    const base = new Date(gtLastVisit + 'T00:00:00Z')
-    const lo = new Date(base); lo.setUTCDate(lo.getUTCDate() - 2)
-    const hi = new Date(base); hi.setUTCDate(hi.getUTCDate() + 2)
-    const { data: matchingVisits } = await supabase
-      .from('visits')
-      .select('id')
-      .eq('client_id', row.client_id)
-      .eq('visit_status', 'completed')
-      .eq('service_type', 'GT')
-      .gte('visit_date', lo.toISOString().slice(0, 10))
-      .lte('visit_date', hi.toISOString().slice(0, 10))
-    for (const v of matchingVisits ?? []) {
-      await supabase
-        .from('manifest_visits')
-        .upsert({ manifest_id: entityId, visit_id: v.id }, { onConflict: 'manifest_id,visit_id' })
-    }
-  }
+  // (2026-07-07) REMOVED the fuzzy manifest_visits linker that upserted a link
+  // for every completed GT visit within ±2 days of "GT Last Visit". That ±2-day
+  // window was the source of the over-attach mis-links (a client's NEXT visit
+  // attached to the wrong dump — 6 unlinked 2026-07-07). The AT→DERM automation is
+  // retired: DERM Tracker writes derm_manifests directly (since 2026-06-26) and is
+  // the sole live writer of manifest_visits; linking is human-only there. The DB now
+  // guards this table anyway (trg_aa_link_same_client, trg_ab_link_one_white,
+  // trg_ac_link_visit_not_after_dump). Manifest doc-mirroring above stays intact.
 }
 
 // ---- Route Creation → routes + route_stops ----
