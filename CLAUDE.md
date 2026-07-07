@@ -25,6 +25,7 @@ Related data via FK, never copied. No snapshot columns duplicating join-availabl
 
 ### 4. Source-of-truth trust hierarchy (revised 2026-04-29)
 - **Jobber + Samsara = 100% trusted.** Jobber owns identity, addresses, contacts, jobs, visits, invoices, line_items, quotes, notes/photos, employees. Samsara owns vehicles, drivers (field), GPS/telemetry, geofences.
+- **DO NOT use Airtable unless Fred EXPLICITLY tells you to (hard rule, Fred 2026-06-30).** Airtable is **stale / not up to date** — never read it, write it, or use it as a source or reference for a task. Use Jobber / Samsara / the Supabase DB instead, or ask Fred. This overrides the "best-effort enrichment" latitude below.
 - **Airtable = best-effort enrichment, NOT authority.** As of 2026-06-26, Airtable's ONLY live inbound feed is **`inspections` (PRE-POST)** via `webhook-airtable` (its sole DB writer). **`derm_manifests` no longer come from Airtable** — the DERM Tracker app writes them directly (`app_source='derm-tracker'`; recent rows carry no Airtable source link). Service configs, client enrichment (zone, hours, days, county) — treat as suggestions. Airtable throws wrong data regularly; never let it override Jobber/Samsara.
 - **`ops.*` merge views** COALESCE Jobber-first over Airtable/Samsara.
 - Dropped sources: Fillout (entirely), Airtable Drivers&Team/Past due/Route Creation/Leads.
@@ -170,6 +171,16 @@ for full design + migration plan).
 
 For now the workaround: webhook-airtable writes GDO Number to all `service_configs` rows
 for the client (not just GT). The 2026-05-25 backfill caught the historic gap.
+
+### DERM link guards (added 2026-07-07 — read before writing `manifest_visits` or `derm_manifests`)
+
+`public.manifest_visits` is guarded by BEFORE triggers that apply to **every** writer (apps, RPCs, scripts, backfills):
+- **`trg_aa_link_same_client`** — REJECTS a link whose visit belongs to a different client than the manifest (the root cause of the 25 cross-client mis-links remediated 07-06/07). The sanctioned co-loaded-ticket path is **`public.file_manifest_on_shared_ticket(white#, client_id, visit_id)`** (files the client's own sibling manifest inheriting the shared sheet docs + links, idempotent).
+- **`trg_ab_link_one_white`** — one white manifest # per visit (same-white sibling/consolidated-dump re-links allowed).
+- **`trg_zz_card_from_link`** (AFTER) — materializes the Stamp Studio card for the (ticket, client) on link.
+- `public.derm_manifests` has **`CHECK service_date <= dump_ticket_date`** (grease dumps after service, never before).
+
+⚠ **Restore/backfill gotcha:** replaying a backup that contains an OLD cross-client pair now RAISES (BEFORE triggers fire before `ON CONFLICT`) and aborts the transaction — filter those pairs out first. Only 1 sanctioned legacy cross-client row exists (815064, pending Diego).
 
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
