@@ -1,0 +1,35 @@
+-- 2026-07-07_unlink_6_overattached_visits.sql
+-- Fred approved (he spotted 116-HIK on #818188 showing a Mar 5 visit on a Feb 26
+-- dump ticket — one of the 6 same-client over-attached links the 07-07 fleet hunt
+-- flagged). Each visit POSTDATES its ticket's dump by 3-9 days: grease pumped
+-- after the dump cannot be on that truckload, so the links are provably wrong
+-- (the old fuzzy-linker attached the client's NEXT visit too). Cross-client
+-- guards can't catch this class (same client).
+--
+-- Rehoming was evaluated and REJECTED: each client's next manifest is 26-73 days
+-- later and already documents its own visit — moving these there would just
+-- create a new wrong link. The truthful fix is to UNLINK; the visits then
+-- surface in the DERM Missing-manifest queue (2-week rule) for Yannick to file
+-- against the real tickets (or accept a gap). Of the 6 freed visits, 3 are
+-- derm_required=true (026-HAP 1273, 116-HIK 1449, 132-PUM 1334) and will show
+-- in the queue; 3 are derm_required=false (042-MT 1786, 168-AVA 1389,
+-- 179-CIG 1602) and won't clutter it.
+--
+--   DELETEd pairs (manifest_id, visit_id):
+--     (614,1334) 132-PUM #814459 visit Jan30 vs dump Jan21
+--     (227,1786) 042-MT  #821911 visit Apr27 vs dump Apr19
+--     (235,1449) 116-HIK #818188 visit Mar5  vs dump Feb26   <- Fred's screenshot
+--     (142,1389) 168-AVA #816708 visit Feb16 vs dump Feb12
+--     (385,1273) 026-HAP #813222 visit Jan12 vs dump Jan9
+--     (661,1602) 179-CIG #820810 visit Apr10 vs dump Apr7
+--
+-- Verified: 6 deleted; every manifest keeps its correct link(s); the 6 visits
+-- now link-free; remaining fleet dump-before-service links = 5, ALL deliberate
+-- holds already flagged for paper-ticket review (009-CN m898 split-brain +10d,
+-- 041-MB m913 mis-key +3d, and 3 borderline +1d overnight cases). Live-verified
+-- in Stamp: 116-HIK popover now shows Feb 26 linked, Mar 5 as a candidate.
+-- Backup: backups/2026-07-07_overattach_unlink_backup.json
+-- (junction rows; hard-delete is the canonical unlink for manifest_visits).
+
+DELETE FROM public.manifest_visits
+ WHERE (manifest_id, visit_id) IN ((614,1334),(227,1786),(235,1449),(142,1389),(385,1273),(661,1602));
