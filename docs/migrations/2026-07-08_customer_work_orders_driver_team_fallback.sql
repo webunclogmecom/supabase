@@ -1,0 +1,25 @@
+-- 2026-07-08_customer_work_orders_driver_team_fallback.sql
+-- ============================================================================
+-- WHY: Field Portal visit detail showed DRIVER "—" on visits where the Calendar
+--      clearly shows a team (e.g. 244-URI Jul-4 → "Anthony"). Root cause (same
+--      class as the Pump Frequency "—"): customer.work_orders.driver derived
+--      ONLY from public.visit_assignments (the GPS/Samsara actual-driver table),
+--      which is EMPTY for some visits (e.g. new field crew with no GPS device) —
+--      while public.visit_team (the Jobber assignedUsers mirror the Calendar
+--      shows) HAS the crew. See memory project_visit_crew_tables.
+--
+-- CHANGE: customer.work_orders.driver now falls back to the Jobber team:
+--        COALESCE(<visit_assignments names>, <visit_team names>)
+--      GPS-actual driver stays PRIMARY (no change where it exists — additive
+--      only), and visit_team fills the blanks. CREATE OR REPLACE (grants/owner/
+--      column order preserved). Backup of the prior def:
+--      backups/2026-07-08_customer_work_orders_before.sql.
+--
+-- VERIFIED (rolled-back + live): 244-URI Jul-4 "—" → "Anthony"; NULL drivers
+--      40 → 2 (526 rows unchanged); a GPS-tracked client (035-LG → "Ishad
+--      Knight") unchanged — no regression. The 2 remaining NULL = visits with
+--      neither a GPS assignment nor a Jobber team row.
+--
+-- Applied statement = the prior pg_get_viewdef with only the `driver` scalar
+-- subquery replaced by the COALESCE above (captured verbatim in the backup).
+-- ============================================================================
