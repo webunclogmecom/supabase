@@ -93,7 +93,8 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
   - **Prod** `wbasvhvvismukaqdnouk` — source of truth, Pro plan, RLS hardened.
   - **Sandbox #1 `ubtlwpcyntelgbykdatn` — DELETED 2026-06-11.** Verified zero consumers (0 API requests/7d; every Lovable app runs on Prod or Lovable Cloud; review data migrated to Prod canonical 2026-06-08). `sandbox-refresh.yml` retired (schedule removed + disabled); audit parity checks retired. Final backup of its unique tables: `..\backups\sandbox1_final_backup_2026-06-11.json` (parent folder, outside repo).
   - **HR Sandbox** `klgtrdwrasrlxbmfyvdh` (renamed from *Field Portal Sandbox*) — Yannick's **HR app** project (Field Portal app reads Prod directly since 2026-05-16). Legacy April-clone schema (keep as-is); data re-seeded fresh 2026-06-11 (full employees/vehicles/inspections + live subset visits). Also hosts the `frozen_leads` schema — don't touch. One-time-seed model, no periodic refresh.
-- **Today:** 2026-05-13. Visit-gen sunset from AT 2026-05-13. **DERM AT automation retired — the DERM Tracker app now writes `derm_manifests` directly (verified 2026-06-26).** PRE-POST inspections (`webhook-airtable`) are the only AT → Supabase automation left.
+  - **Client App Mirror** `mjxjhwxktedrrnochwli` (org Unclogme, created 2026-07-08) — hourly-refreshed full-snapshot mirror of Prod's client domain (19 tables) for the Client App build phase; Prod strictly read-only in the pipeline; ~$10/mo Micro. See [docs/reference/client-app-mirror.md](docs/reference/client-app-mirror.md).
+- **Docs snapshot:** 2026-07-08. Visit-gen sunset from AT 2026-05-13. **DERM AT automation retired — the DERM Tracker app now writes `derm_manifests` directly (verified 2026-06-26).** PRE-POST inspections (`webhook-airtable`) are the only AT → Supabase automation left.
 
 ---
 
