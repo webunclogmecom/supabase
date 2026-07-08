@@ -7,14 +7,26 @@
 //
 // "Calendar is master, but drivers/Diego use Jobber" (Fred, 2026-06-26). So each
 // drift is classified from the AUDIT trail and handled by direction:
-//   * HEAL  (DB->Jobber): our push failed -- audit proves WE set the current DB date
-//     AND Jobber still holds the exact PRE-edit value. Re-push via fn_request_jobber_push.
-//   * ADOPT (Jobber->DB): we NEVER edited it (no visit_date audit UPDATE) -> a driver/
+//   * HEAL  (DB->Jobber): our push failed -- audit proves WE set the current DB value
+//     (BOTH halves: date AND start_at, tightened 2026-07-08) AND Jobber still holds the
+//     exact PRE-edit value. Re-push via fn_request_jobber_push.
+//   * ADOPT (Jobber->DB): we NEVER edited it (no schedule audit UPDATE) -> a driver/
 //     Diego scheduled it in Jobber -> Jobber is authoritative -> pull its schedule into
 //     our DB via adopt_visit_schedule_from_jobber (push-suppressed; AUDITED app_source
 //     ='jobber' via the X-App-Source header so the visit's Activity history shows it).
-//   * SURFACE (review): we edited it AND Jobber holds some OTHER value (ambiguous
-//     conflict) -> log only, never auto-resolve.
+//   * ADOPT/time_refinement (Jobber->DB, added 2026-07-08 — Yan's stale-Calendar report):
+//     we DID edit it, but our last edit was DATE-BEARING and Jobber's ET clock date still
+//     equals visit_date with a TIMED start -> the date intent agrees; the residual drift
+//     is dispatch re-timing the stop inside Jobber AFTER our push landed -> Jobber owns
+//     route times -> adopt. Guards (2-skeptic reviewed): Jobber start timed (all-day
+//     re-flags never wipe an office time), jDate === visit_date (early-AM <06:00 ET
+//     re-times keep surfacing — the BEFORE trigger stores the CLOCK date, Fred 2026-07-02,
+//     so adopting one would silently flip visit_date +1), and the last office edit moved
+//     the DATE (a pure time-only office edit with a third Jobber value keeps surfacing).
+//   * SURFACE (review): anything else ambiguous -> log only, never auto-resolve.
+// Adopts pass the candidate snapshot as expected values (p_enforce_expected): if the office
+// dragged the visit between our snapshot and the write, the RPC refuses (adoptFail, fresh
+// retry next run) instead of clobbering the newer office edit.
 // Completed visits are out of scope (only `scheduled` checked; completions sync inbound).
 //
 // Compare is ET-floored + OVERNIGHT-AWARE: an untimed visit's visit_date is the logical
@@ -108,6 +120,11 @@ function isDrift(c: Cand, jobberStartAt: string): boolean {
 // Jobber schedule -> the DB row we should adopt. All-day (ET midnight) -> untimed +
 // operating-date = that date. Timed -> keep the clock start/end; operating-date is the
 // overnight-adjusted date (an early-AM start belongs to the previous operating day).
+// NOTE (2026-07-08): the early-AM -1 shift below is LEGACY vs the live BEFORE trigger
+// trg_aa_reconcile_operating_date Branch 3 (Fred 2026-07-02), which derives visit_date as
+// the ET CLOCK date of start_at on every timed write — overriding whatever date we pass.
+// The classifier's jDate === c.visit_date guard keeps early-AM re-times SURFACED, so the
+// divergence is inert here; align this fn if the operating-date rule is ever revisited.
 function adoptTarget(jv: JV): { visit_date: string; start_at: string | null; end_at: string | null } {
   const e = etParts(new Date(jv.startAt))
   if (e.time === '00:00:00') return { visit_date: e.date, start_at: null, end_at: null }
@@ -152,15 +169,27 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
       if (isDrift(c, jv.startAt)) drifted.push(c)
     }
 
-    // classify by audit: our failed push (heal) / never-edited (adopt) / ambiguous (surface)
+    // classify by audit: our failed push (heal) / never-edited (adopt) /
+    // same-date time refinement (adopt) / ambiguous (surface)
     const healable: Cand[] = []
     const adoptable: Cand[] = []
+    const refinedIds: number[] = []
     const surfaced: Array<{ id: number; jobber_date: string; reason: string; app_source: string | null }> = []
+    // null-safe instant compare (audit JSONB text vs PostgREST ISO text — formats differ, compare epochs)
+    const sameInstant = (a: string | null | undefined, b: string | null | undefined): boolean =>
+      (a == null && b == null) || (a != null && b != null && new Date(a).getTime() === new Date(b).getTime())
     for (const c of drifted) {
-      const jET = etParts(new Date(jobberStart.get(c.jobber_gid)!.startAt))
+      const jv = jobberStart.get(c.jobber_gid)!
+      const jET = etParts(new Date(jv.startAt))
       const jDate = jET.date
-      const { data: le } = await supabase.rpc('visit_last_schedule_edit', { p_visit_id: c.id })
-      const last = (Array.isArray(le) ? le[0] : le) as { old_date: string; new_date: string; old_start_at: string | null; app_source: string | null } | undefined
+      const { data: le, error: leErr } = await supabase.rpc('visit_last_schedule_edit', { p_visit_id: c.id })
+      if (leErr) {
+        // audit read failed — NEVER let a transient error route an office-edited visit into the
+        // unguarded never-edited ADOPT branch; surface it and retry with the next run.
+        surfaced.push({ id: c.id, jobber_date: jDate, reason: 'audit_read_fail', app_source: null })
+        continue
+      }
+      const last = (Array.isArray(le) ? le[0] : le) as { old_date: string; new_date: string; old_start_at: string | null; new_start_at: string | null; app_source: string | null } | undefined
       // HEAL only when our push simply FAILED: our last (non-Jobber) edit set the current DB value AND
       // Jobber STILL holds our EXACT pre-edit schedule — date AND, for a timed pre-edit, the clock time
       // (an untimed pre-edit must still be all-day in Jobber). If Jobber holds ANY other value, a
@@ -176,9 +205,29 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
           jobberHoldsPreEdit = jDate === last.old_date && jET.time === '00:00:00'
         }
       }
-      if (last && last.new_date === c.visit_date && jobberHoldsPreEdit) healable.push(c)             // our push failed (Jobber still holds our exact pre-edit value)
+      // "our last edit set the current DB value" must hold for BOTH halves (date AND start_at).
+      // Adopts are audited app_source='jobber' and invisible to visit_last_schedule_edit, so after an
+      // adopt the DB start_at no longer equals last.new_start_at — HEAL must NOT re-push a mixed
+      // office-date + adopted-time value over a deliberate Jobber restore (tightened 2026-07-08).
+      const dbStillOurEdit = !!last && last.new_date === c.visit_date && sameInstant(last.new_start_at, c.start_at)
+      if (last && dbStillOurEdit && jobberHoldsPreEdit) healable.push(c)                             // our push failed (Jobber still holds our exact pre-edit value)
       else if (!last) adoptable.push(c)                                                              // we never edited it -> Jobber authoritative
-      else surfaced.push({ id: c.id, jobber_date: jDate, reason: 'jobber_value_unexpected', app_source: last.app_source ?? null })  // human moved Jobber after our push -> review, never auto-revert
+      else {
+        // Same-operating-date TIME refinement -> ADOPT (Jobber owns dispatch reality). Guards:
+        //  * t.start_at !== null       — a Jobber all-day re-flag never wipes an office time (surface)
+        //  * t.visit_date === c.visit_date && jDate === c.visit_date — date intent agrees on the ET
+        //    CLOCK date; blocks early-AM (<06:00 ET) re-times, where the BEFORE trigger's clock-date
+        //    rule (Fred 2026-07-02) would silently flip visit_date +1 under a "time refinement" tag
+        //  * last.old_date !== last.new_date — the office's last edit moved the DATE (e.g. a bulk
+        //    day-shift); a pure time-only office edit with a third Jobber value keeps surfacing
+        const t = adoptTarget(jv)
+        if (t.start_at !== null && t.visit_date === c.visit_date && jDate === c.visit_date && last.old_date !== last.new_date) {
+          adoptable.push(c)
+          refinedIds.push(c.id)
+        } else {
+          surfaced.push({ id: c.id, jobber_date: jDate, reason: 'jobber_value_unexpected', app_source: last.app_source ?? null })  // ambiguous -> review, never auto-revert
+        }
+      }
     }
 
     let healed = 0, healFail = 0, adopted = 0, adoptFail = 0
@@ -190,11 +239,16 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
         try { const jsa = await jobberStartAtByGid(token, d.jobber_gid); if (jsa && !isDrift(d, jsa)) healed++; else healFail++ } catch { healFail++ }
       }
       healFail += Math.max(0, healable.length - MAX_RECONCILE_PER_RUN)
-      // ADOPT Jobber->DB (push-suppressed, audited app_source='jobber')
+      // ADOPT Jobber->DB (push-suppressed, audited app_source='jobber'). p_enforce_expected: the
+      // RPC refuses if the row moved since our snapshot (office dragged it mid-run) — adoptFail,
+      // fresh retry next run — instead of clobbering the newer office edit.
       for (const c of adoptable.slice(0, MAX_RECONCILE_PER_RUN)) {
         const t = adoptTarget(jobberStart.get(c.jobber_gid)!)
         try {
-          const { data: ok, error } = await supabaseJobber.rpc('adopt_visit_schedule_from_jobber', { p_visit_id: c.id, p_visit_date: t.visit_date, p_start_at: t.start_at, p_end_at: t.end_at })
+          const { data: ok, error } = await supabaseJobber.rpc('adopt_visit_schedule_from_jobber', {
+            p_visit_id: c.id, p_visit_date: t.visit_date, p_start_at: t.start_at, p_end_at: t.end_at,
+            p_expected_visit_date: c.visit_date, p_expected_start_at: c.start_at, p_enforce_expected: true,
+          })
           if (!error && ok) adopted++; else adoptFail++
         } catch { adoptFail++ }
       }
@@ -213,10 +267,11 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
         healable: healable.length, healed, adoptable: adoptable.length, adopted,
         jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50),
         residual, read_fail: readFail,
-        healable_visit_ids: healable.map((d) => d.id).slice(0, 100), adopted_visit_ids: adoptable.map((d) => d.id).slice(0, 100),
+        healable_visit_ids: healable.map((d) => d.id).slice(0, 100), adoptable_visit_ids: adoptable.map((d) => d.id).slice(0, 100),
+        time_refined_visit_ids: refinedIds.slice(0, 100),
       },
     })
-    return { reconcile_enabled: reconcile, checked: cands.length, drift_found: drifted.length, healable: healable.length, healed, adoptable: adoptable.length, adopted, jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50), residual, read_fail: readFail }
+    return { reconcile_enabled: reconcile, checked: cands.length, drift_found: drifted.length, healable: healable.length, healed, adoptable: adoptable.length, adopted, time_refined: refinedIds.length, jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50), residual, read_fail: readFail }
   } catch (e) {
     const dur = Math.round((Date.now() - startMs) / 1000)
     await supabase.from('sync_log').insert({ sync_source: 'jobber_visit_drift', started_at: startedAt, finished_at: new Date().toISOString(), rows_updated: 0, rows_errored: 0, duration_seconds: dur, status: 'error', details: { error: String(e).slice(0, 300) } }).catch(() => {})

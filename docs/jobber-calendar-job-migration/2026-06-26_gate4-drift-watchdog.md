@@ -1,8 +1,9 @@
 # Gate #4 — Calendar↔Jobber schedule-drift reconciler (`sync-jobber-visit-drift`)
 
-*2026-06-26. Status: **LIVE** (cron every 30 min). Two-way: HEAL failed-our-pushes (DB→Jobber),
-ADOPT Jobber-side edits (Jobber→DB, audited as `jobber`), SURFACE ambiguous conflicts. Reconcile
-writes on by default; kill-switch available.*
+*2026-06-26, revised **2026-07-08** (time-refinement adopt + RPC hardening — see below). Status:
+**LIVE** (cron every 30 min). Two-way: HEAL failed-our-pushes (DB→Jobber), ADOPT Jobber-side edits
+and same-date time refinements (Jobber→DB, audited as `jobber`), SURFACE ambiguous conflicts.
+Reconcile writes on by default; kill-switch available.*
 
 ## Why it exists
 
@@ -22,9 +23,37 @@ must **never be reverted**. So each drift is classified from the **audit trail**
 
 | Class | Condition (from `audit.logs`) | Action |
 |---|---|---|
-| **HEAL** (DB→Jobber) | a `visit_date` audit UPDATE set the **current DB date** AND Jobber holds the **exact pre-edit value** → our push failed | re-push via `fn_request_jobber_push` (vault key → jobber-push-visit), re-read to confirm |
-| **ADOPT** (Jobber→DB) | **no** `visit_date` audit UPDATE → we never touched it → a driver/Diego scheduled it in Jobber → Jobber authoritative | pull Jobber's schedule into DB via `adopt_visit_schedule_from_jobber` |
-| **SURFACE** (review) | we edited it AND Jobber holds **some other** value (ambiguous conflict) | log only, never auto-resolve |
+| **HEAL** (DB→Jobber) | a schedule audit UPDATE set the **current DB value** — BOTH halves: `new_date` = `visit_date` AND `new_start_at` = `start_at` as instants (tightened 2026-07-08: adopts are `app_source='jobber'`-invisible to `visit_last_schedule_edit`, so after an adopt the time half no longer matches and HEAL must not re-push a mixed office-date + adopted-time) — AND Jobber holds the **exact pre-edit value** → our push failed | re-push via `fn_request_jobber_push` (vault key → jobber-push-visit), re-read to confirm |
+| **ADOPT** (Jobber→DB) | **no** schedule audit UPDATE → we never touched it → a driver/Diego scheduled it in Jobber → Jobber authoritative | pull Jobber's schedule into DB via `adopt_visit_schedule_from_jobber` |
+| **ADOPT / time_refinement** (Jobber→DB, **NEW 2026-07-08** — Yan's stale-Calendar report) | we DID edit it, but the last office edit was **date-bearing** (`old_date ≠ new_date`, e.g. a bulk day-shift) AND Jobber's ET **clock date** still equals `visit_date` AND Jobber's start is **timed** → the date intent agrees; the residual is dispatch re-timing the stop in Jobber after our push landed → Jobber owns route times | same adopt RPC; ids logged in `details.time_refined_visit_ids` |
+| **SURFACE** (review) | anything else ambiguous — incl. early-AM (<06:00 ET) Jobber re-times (clock-date guard: the BEFORE trigger stores the ET **clock** date per Fred 2026-07-02, so adopting one would silently flip `visit_date` +1), Jobber all-day re-flags of a timed DB visit (never wipe an office time), pure time-only office edits with a third Jobber value, and `audit_read_fail` (transient `visit_last_schedule_edit` error — never falls through to the unguarded adopt) | log only, never auto-resolve |
+
+**2026-07-08 incident + hardening** (migration `2026-07-08_adopt_schedule_concurrency_confirm_and_7048.sql`):
+Yan reported the Calendar day view ≠ Jobber (order + times). The 07-06 Calendar bulk +1-day shift
+landed in Jobber, then dispatch re-timed 13 stops (Jul 8–10) inside Jobber → every one surfaced as
+`jobber_value_unexpected` forever (both-sides-edited). Fleet sweep vs live Jobber (242 linked
+scheduled visits): exactly those 13, zero others. The time_refinement class above drains them (13
+adopted in one run, drift 0 after). Shipped with it, per 2-skeptic adversarial review:
+- **Optimistic concurrency** on `adopt_visit_schedule_from_jobber` (`p_expected_visit_date` /
+  `p_expected_start_at` / `p_enforce_expected`): the fn adopts from a minutes-old snapshot; if the
+  office dragged the visit mid-run the RPC now refuses (adoptFail → fresh retry) instead of
+  clobbering the newer office edit.
+- **`sync_state='confirmed'` finisher** in the RPC: the adopt UPDATE flips `sync_state='pending'`
+  (the mark trigger is NOT gated by the suppress GUC) and nothing confirmed it, so the */3-min
+  `resolve-stale-visit-sync-pending` cron **blind-re-pushed the adopted schedule to Jobber ~3–6 min
+  later** — silently reverting any dispatch edit made in that window, with zero trace. The finisher
+  (sync_state-only UPDATE — trips no push/mark/date trigger) kills that echo.
+- Grants tightened (PUBLIC EXECUTE leak from 06-26 revoked; service_role only).
+- Phantom visit 7048 (169-TCE, deleted upstream in Jobber) soft-deleted → `read_fail` 1→0 and the
+  Jobber pagination early-break works again.
+- `details` keys: `adopted_visit_ids` renamed **`adoptable_visit_ids`** (it always listed adoptable),
+  new **`time_refined_visit_ids`**, new surfaced reason **`audit_read_fail`**.
+
+**Known divergence (flagged, not fixed here):** `adoptTarget`'s early-AM −1 mapping and CLAUDE.md's
+operating-date section still describe the pre-2026-07-02 trigger behavior; the live trigger Branch 3
+stores the ET **clock** date ("must NOT move the date", Fred 2026-07-02). Inert under the clock-date
+guard. Also latent: `cron_jobber_reconcile_anomalies.js` case 2 compares the raw UTC date-slice with
+no source guard — a clobber lane for DATE-level drift that should be aligned with this fn's rules.
 
 Completed visits are out of scope (only `scheduled` checked; completions sync inbound). Client edits
 are Jobber-mastered already.
