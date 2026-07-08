@@ -8,7 +8,7 @@ Non-negotiable rules + quick reference for any AI agent working on this repo. **
 
 ## What this project is
 
-Single source-of-truth Postgres warehouse for Unclogme LLC on Supabase project `wbasvhvvismukaqdnouk`. Webhooks from Jobber, Airtable, and Samsara land in three Edge Functions and normalize into a 28-table 2NF/3NF schema. Cross-system IDs live in one polymorphic bridge table (`entity_source_links`) — never as source-prefixed columns. Jobber + Airtable visit-gen sunset May 2026 (visit-gen already done 2026-05-13). **DERM capture moved to the DERM Tracker app** — it writes `derm_manifests` directly to Supabase; Airtable is retired for DERM (verified 2026-06-26: recent inserts are `app_source='derm-tracker'` with no Airtable source link). **PRE-POST inspections are now the ONLY live Airtable feed** — still ingested via `webhook-airtable` (the sole writer of `inspections`); the Admin Review app is their front-end / review surface, but the data still rides Airtable into Supabase. Odoo.sh CRM takes over CRM; Samsara is permanent.
+Single source-of-truth Postgres warehouse for Unclogme LLC on Supabase project `wbasvhvvismukaqdnouk`. Webhooks from Jobber, Airtable, and Samsara land in three Edge Functions and normalize into a 28-table 2NF/3NF schema. Cross-system IDs live in one polymorphic bridge table (`entity_source_links`) — never as source-prefixed columns. Jobber + Airtable visit-gen sunset May 2026 (visit-gen already done 2026-05-13). **DERM capture moved to the DERM Tracker app** — it writes `derm_manifests` directly to Supabase; Airtable is retired for DERM (verified 2026-06-26: recent inserts are `app_source='derm-tracker'` with no Airtable source link). **PRE-POST inspections are now the ONLY live Airtable feed** — still ingested via `webhook-airtable` (the sole writer of `inspections`); the Admin Review app is their front-end / review surface, but the data still rides Airtable into Supabase. **Odoo.sh is DROPPED (Fred 2026-07-08)** — CRM/client management moves to in-house apps (the planned "Client App" is slated to become the client-data master; Jobber sunset expected ~Aug-Sep 2026); Samsara is permanent.
 
 ---
 
@@ -214,7 +214,7 @@ The webhook-airtable's primary link logic uses `GT Last Visit` ±2 days — that
 | [docs/runbook.md](docs/runbook.md) | Incidents, deploys, migrations |
 | [docs/integration.md](docs/integration.md) | Edge Functions / webhooks / rate limits |
 | [docs/security.md](docs/security.md) | Secrets / tokens / RLS / rotation |
-| [docs/migration-plan.md](docs/migration-plan.md) | Jobber/AT sunset + Odoo cutover |
+| [docs/migration-plan.md](docs/migration-plan.md) | Jobber/AT sunset + cutover (⚠ Odoo references are stale — Odoo dropped 2026-07-08; successor = in-house Client App) |
 | [docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md](docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md) | Jobs↔visits↔calendar workflow + 2026-06-23 restructure + the Calendar Create Visit DB layer |
 | [docs/reports/sa-status-report.md](docs/reports/sa-status-report.md) | Regenerating the SA status report (coverage gaps + old open jobs PDF) |
 | [docs/company.md](docs/company.md) | Business context: fleet, clients, compliance |
