@@ -1,0 +1,42 @@
+-- 2026-07-08_customer_permits_job_frequency_fallback.sql
+-- ============================================================================
+-- WHY: Field Portal's "GDO Permits & Frequency" section showed PUMP FREQUENCY
+--      as "—" for 38 of 158 permits. Fred: the pump frequency is supposed to be
+--      the JOB's "Frequency" custom field (Jobber job custom field → mirrored to
+--      public.jobs.frequency_days) of the visit's job — not only the GT
+--      service_config. Root cause of the "—": customer.permits.our_frequency_days
+--      read ONLY service_configs.frequency_days via an address-aware LATERAL, and
+--      that join drops when the matching service_config has property_id = NULL
+--      (e.g. 244-URI: sc.frequency_days=30 but property_id NULL → no join → NULL).
+--
+-- CHANGE: our_frequency_days (and the `compliant` computation that keys off it)
+--      now fall back to the client's recurring job frequency:
+--        COALESCE(sc.frequency_days, jf.freq)
+--      where jf = the client's job with frequency_days > 0, preferring the job on
+--      the GDO's property, else the most recent (id DESC). Added one LEFT JOIN
+--      LATERAL; no other logic touched. CREATE OR REPLACE (grants + owner + column
+--      order preserved). Backup of the prior def:
+--      backups/2026-07-08_customer_permits_before.sql.
+--
+-- VERIFIED (rolled-back + live): 244-URI "—" → 30; NULL frequencies 38 → 24;
+--      158 rows unchanged; columns unchanged.
+--
+-- ⚠ REMAINING 24 STILL "—": their client has NO job with frequency_days > 0 —
+--   i.e. the Jobber "Frequency" custom field was never synced into
+--   public.jobs.frequency_days for those jobs (the known JOBS-poll customFields
+--   gap; see reference/jobs_sync_gaps or memory reference_jobs_sync_gaps). A
+--   view change CANNOT fill these — they need an UPSTREAM backfill of
+--   jobs.frequency_days from Jobber (fetch the job's Frequency custom field).
+--   Flagged to Fred; whoever owns the JOBS sync should backfill + start syncing
+--   customFields so new jobs get frequency_days.
+--
+-- The applied statement is (inner SELECT = the prior pg_get_viewdef, edited in
+-- the 4 spots above — captured verbatim in the backup):
+--   CREATE OR REPLACE VIEW customer.permits AS < prior def with
+--     our_frequency_days = COALESCE(sc.frequency_days, jf.freq),
+--     compliant using the same COALESCE,
+--     + LEFT JOIN LATERAL (SELECT j.frequency_days AS freq FROM jobs j
+--         WHERE j.client_id = g.client_id AND j.frequency_days > 0
+--         ORDER BY (j.property_id = g.property_id) DESC NULLS LAST, j.id DESC
+--         LIMIT 1) jf ON true >
+-- ============================================================================
