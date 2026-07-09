@@ -1,23 +1,20 @@
 -- 2026-07-09_get_record_history_friendly_labels.sql
--- Activity-feed attribution: make the `actor_label` in ops/public.get_record_history
--- informative instead of a bare "System" (Fred, 2026-07-09).
+-- Activity-feed attribution: two-tier "System · <part>" labels (Fred, 2026-07-09).
+-- Keeps "System" as the at-a-glance umbrella, appends the exact subsystem after " · ":
+--   %reconcile% / %drift% / jobber-daily% / jobber-reconcile → "System · Synced to match Jobber"
+--   service-agreement-cron / sa-% / %recurring%              → "System · Recurring-visit generator"
+--   %backfill% / %correction% / %-fix / %-repair             → "System · Data correction"
+--   %-cron / system:%                                        → "System · Scheduled job"
+--   sql / other:% / null / anything else                     → "System"  (unknown subsystem)
+-- Human app edits ("Edited in <app> by <name>") + raw `jobber` labels are UNCHANGED.
+-- Pattern-based, so new X-App-Source names from the reconcile scripts (Supabase 2 lane) classify
+-- automatically. The Visit Calendar UI splits actor_label on " · " to render "System" + a
+-- color-coded detail chip; a non-updated consumer just sees the inline "System · <part>" string.
 --
--- Automated writers (app_source without an app/jobber value) now read as:
---   %reconcile% / %drift% / jobber-daily% / jobber-reconcile → "Auto-synced to match Jobber"
---   service-agreement-cron / sa-% / %recurring%              → "Recurring-visit scheduler"
---   %backfill% / %correction% / %-fix / %-repair             → "Data correction"
---   %-cron / system:%                                        → "Scheduled job"
---   sql / other:% / null / anything else                     → "Automated update"
--- Human app edits + raw `jobber` labels are unchanged. Pattern-based, so it auto-catches
--- new X-App-Source names the reconcile scripts set (Supabase 2 lane) with no re-coordination.
---
--- Also aligns `p_hide_system` to its documented intent: hide ONLY raw sql/other/null noise
--- (previously an explicit allow-list that would have hidden new meaningful sources).
---
--- Return shape UNCHANGED (same columns) → zero app impact; anon/authenticated EXECUTE preserved
+-- Also aligns `p_hide_system` to its documented intent: hide ONLY raw sql/other/null noise.
+-- Return shape UNCHANGED (same 8 columns) → zero app impact; anon/authenticated EXECUTE preserved
 -- (CREATE OR REPLACE keeps grants). AUDIT (ADR 010): N/A — read-only reporting function.
 -- Backup of prior definition: backups/2026-07-09_get_record_history_before_friendly_labels.sql
--- ops.get_record_history is a thin wrapper over this; no change needed there.
 
 CREATE OR REPLACE FUNCTION public.get_record_history(p_table text, p_record_id text, p_since timestamp with time zone DEFAULT NULL::timestamp with time zone, p_hide_system boolean DEFAULT true, p_limit integer DEFAULT 50, p_cursor jsonb DEFAULT NULL::jsonb)
  RETURNS TABLE(entry_id bigint, changed_at timestamp with time zone, txid bigint, actor_label text, actor_type text, app_source text, operation text, changes jsonb)
@@ -108,20 +105,20 @@ BEGIN
       -- Automated nightly reconcile / drift-heal that pulls our DB into line with Jobber
       WHEN s.app_source LIKE '%reconcile%' OR s.app_source LIKE '%drift%'
            OR s.app_source LIKE 'jobber-daily%' OR s.app_source = 'jobber-reconcile'
-        THEN 'Auto-synced to match Jobber'
+        THEN 'System · Synced to match Jobber'
       -- Automated recurring / service-agreement visit generation
       WHEN s.app_source = 'service-agreement-cron' OR s.app_source LIKE 'sa-%'
            OR s.app_source LIKE '%recurring%'
-        THEN 'Recurring-visit scheduler'
+        THEN 'System · Recurring-visit generator'
       -- Automated data corrections / backfills / repairs
       WHEN s.app_source LIKE '%backfill%' OR s.app_source LIKE '%correction%'
            OR s.app_source LIKE '%-fix' OR s.app_source LIKE '%-repair'
-        THEN 'Data correction'
+        THEN 'System · Data correction'
       -- Other scheduled/system jobs
       WHEN s.app_source LIKE '%-cron' OR s.app_source LIKE 'system:%'
-        THEN 'Scheduled job'
+        THEN 'System · Scheduled job'
       -- Generic backend script (Management API / psql / uncategorized)
-      ELSE 'Automated update'
+      ELSE 'System'
     END AS actor_label,
     CASE WHEN s.app_source IN ('visit-calendar','field-portal','derm-tracker','admin-review')
          THEN 'human' ELSE 'system' END AS actor_type,
