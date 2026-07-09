@@ -45,14 +45,21 @@ cross-checked the number). 13 FOUND (all upheld, high confidence), 44 NO_PERMIT,
 All 9 PDFs ingested to the bucket + linked; verified rendering in `customer.permits`
 (permit_number + frequency + permit_url) and serving publicly (200 application/pdf).
 
-### Held for Fred (found but NOT written)
+### Initially held, then written per Fred ("apply the confirmed ones", 2026-07-08)
 
-| Client | Found | Why held |
-|---|---|---|
-| 036-LG | GDO-12484 (exp **2019**, 90d) | newest doc on file is 7 years old — location's case exists, no current permit indexed |
-| 058-SOH | GDO-01179 (exp **2011**) | 15 years stale; the same number already sits INACTIVE on 058-SOH (id 126) |
-| 193-FRK | GDO-01861 (exp **2009**) | 17 years stale |
-| 057-BAY | **PSO-00025** (exp 2019) | not a GDO — a Private Sanitary Sewer operating permit (client is a lift station); `customer.permits` labels everything "Grease Trap", so storing a PSO there is Fred's call |
+| Client | Permit | Exp (true) | How written |
+|---|---|---|---|
+| 036-LG | GDO-12484 (90d) | 2019-12-31 | ACTIVE "Needs review" placeholder filled in place (id 183); newest doc is 2019 — no current permit indexed, likely needs renewal |
+| 057-BAY | **PSO-00025** | 2019-09-30 | placeholder filled (id 141); noted in-row as a Private Sanitary Sewer permit — client is a lift station, not a grease trap |
+| 058-SOH | GDO-01179 | 2011-12-31 | existing INACTIVE row (id 126) reactivated; redundant placeholder (id 165) retired |
+| 193-FRK | GDO-01861 | 2009-12-31 | existing INACTIVE row (id 130) reactivated; redundant placeholder (id 159) retired |
+
+Documents ingested directly from the adjudicated DERM URLs (the cron script can't: it forces a
+GDO- case prefix, and two docs are TIFFs): `gdo/GDO-12484.pdf`, `gdo/PSO-00025.pdf`,
+`gdo/GDO-01179.tif`, `gdo/GDO-01861.tif` — all verified serving 200 with correct content types,
+all rendering in `customer.permits` with true expirations. Backup
+`backups/2026-07-08_gdo_held4_backup.json`. End state after this: **182 ACTIVE / 164 with
+documents / 20 placeholders remaining (the no-permit-exists clients)**.
 
 ### No permit exists in DERM (44 + 5 with zero search hits)
 
