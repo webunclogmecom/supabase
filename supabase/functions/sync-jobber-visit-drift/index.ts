@@ -118,18 +118,18 @@ function isDrift(c: Cand, jobberStartAt: string): boolean {
 }
 
 // Jobber schedule -> the DB row we should adopt. All-day (ET midnight) -> untimed +
-// operating-date = that date. Timed -> keep the clock start/end; operating-date is the
-// overnight-adjusted date (an early-AM start belongs to the previous operating day).
-// NOTE (2026-07-08): the early-AM -1 shift below is LEGACY vs the live BEFORE trigger
-// trg_aa_reconcile_operating_date Branch 3 (Fred 2026-07-02), which derives visit_date as
-// the ET CLOCK date of start_at on every timed write — overriding whatever date we pass.
-// The classifier's jDate === c.visit_date guard keeps early-AM re-times SURFACED, so the
-// divergence is inert here; align this fn if the operating-date rule is ever revisited.
+// operating-date = that date. Timed -> keep the clock start/end + visit_date = the ET
+// CLOCK date of start_at.
+// ALIGNED 2026-07-09 with the live BEFORE trigger trg_aa_reconcile_operating_date Branch 3
+// (Fred 2026-07-02: visit_date = the ET clock date, the operating-night shift was REMOVED).
+// The old early-AM -1 shift here diverged from the trigger, so the time_refinement guard
+// (t.visit_date === c.visit_date) could never match an early-AM (<06:00 ET) re-time and the
+// reconciler SURFACED it forever instead of adopting — the 6708 case found in the 3-month
+// DB↔Jobber audit. Clock date makes early-AM re-times adopt like any other.
 function adoptTarget(jv: JV): { visit_date: string; start_at: string | null; end_at: string | null } {
   const e = etParts(new Date(jv.startAt))
   if (e.time === '00:00:00') return { visit_date: e.date, start_at: null, end_at: null }
-  const visit_date = e.time.slice(0, 5) < OVERNIGHT_CUTOFF ? addDays(e.date, -1) : e.date
-  return { visit_date, start_at: jv.startAt, end_at: jv.endAt }
+  return { visit_date: e.date, start_at: jv.startAt, end_at: jv.endAt }
 }
 
 async function jobberStartAtByGid(token: string, gid: string): Promise<string | null> {

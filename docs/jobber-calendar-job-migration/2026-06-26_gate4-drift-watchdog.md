@@ -49,11 +49,20 @@ adopted in one run, drift 0 after). Shipped with it, per 2-skeptic adversarial r
 - `details` keys: `adopted_visit_ids` renamed **`adoptable_visit_ids`** (it always listed adoptable),
   new **`time_refined_visit_ids`**, new surfaced reason **`audit_read_fail`**.
 
-**Known divergence (flagged, not fixed here):** `adoptTarget`'s early-AM −1 mapping and CLAUDE.md's
-operating-date section still describe the pre-2026-07-02 trigger behavior; the live trigger Branch 3
-stores the ET **clock** date ("must NOT move the date", Fred 2026-07-02). Inert under the clock-date
-guard. Also latent: `cron_jobber_reconcile_anomalies.js` case 2 compares the raw UTC date-slice with
-no source guard — a clobber lane for DATE-level drift that should be aligned with this fn's rules.
+**Divergences — RESOLVED 2026-07-09:**
+- `adoptTarget`'s early-AM −1 mapping is **removed** — it now returns the ET **clock** date, matching
+  the trigger (Fred 2026-07-02). It was NOT inert: the `t.visit_date === c.visit_date` guard could
+  never match an early-AM (<06:00 ET) Jobber re-time, so those SURFACED forever instead of adopting
+  (found on visit 6708 in the 3-month DB↔Jobber audit; now auto-adopts).
+- `cron_jobber_reconcile_anomalies.js` (+ the completion cron) now derive `visit_date` via the shared
+  `operating_date_et.js` (ET clock date), never write `visit_date` standalone, are `X-App-Source`-
+  attributed, and **suppress the echo push** (`app.suppress_jobber_push` + `sync_state='confirmed'`) so
+  a match-Jobber write can't ratchet into Jobber (Supabase `7c093e8`/`00c0a65`).
+- CLAUDE.md's operating-date section is still stale vs the 07-02 clock-date rule (doc-only follow-up).
+
+**Verified 2026-07-09:** full 3-month DB↔Jobber sweep (721 Jobber-linked live visits) = 654 exact
+matches + 67 all-day (DB encodes all-day as 00:00 ET; Jobber `allDay=true`; same ET date — consistent,
+left as-is) + 0 date/time/status/completed/orphan mismatches after adopting 6708.
 
 Completed visits are out of scope (only `scheduled` checked; completions sync inbound). Client edits
 are Jobber-mastered already.
