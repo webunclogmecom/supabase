@@ -102,6 +102,18 @@ Verification: `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.re
 
 Related: all 7 `public.*` views and all 8 `ops.*` views have `security_invoker = true` (commits `9388819` and the audit-fix migration). They run as the querying role, so RLS on underlying tables is honored. No `SECURITY DEFINER` views exist anywhere in either schema.
 
+### `public.visits` — anon/authenticated write model (2026-07-09, `159e1c6`)
+
+The Lovable apps write `visits` under the **public anon key** (shipped in every bundle), so their write surface must be minimized — a push-safety audit found the old `visits_anon_update_manhole`/`_authn` policies were `USING(true)/CHECK(true)` with table-wide UPDATE, letting any anon-key holder PATCH `deleted_at`/`visit_status='cancelled'` on any visit → `trg_push_visit_update` → a **real Jobber `visitDelete`** (proven live). Locked down (`2026-07-09_visits_rls_lockdown.sql`):
+
+- **Column-level `GRANT UPDATE`** to anon + authenticated on **exactly** `visit_status, completed_at, manhole_count, derm_required` (the complete bundle-verified direct-write set: Calendar mark-complete/status, Admin Review manhole, DERM Tracker toggle). `REVOKE UPDATE/INSERT` otherwise. PostgREST → **SQLSTATE 42501 / HTTP 403, atomic** on any other column (deleted_at, visit_date, start/end_at, source, sync_state, job_id, client_id, title, …). RLS can't compare OLD/NEW, so column privileges — not a `WITH CHECK` — do the column scoping.
+- Row policies `visits_app_update_{anon,authn}` add `USING/WITH CHECK (deleted_at IS NULL)` (act on live rows only).
+- SECDEF RPCs (`create/edit/delete_calendar_visit`, `ripple_reschedule_visit`, `skip/unskip_visit`, …) run as owner `postgres` (BYPASSRLS) → the sanctioned path for schedule/lifecycle; unaffected.
+
+**⚠ FUTURE-COLUMN RULE:** any NEW column an app writes directly to `visits` via anon/authenticated MUST be added to that `GRANT UPDATE (...)` list, or the app 403s. Trigger-set columns (e.g. `derm_required_locked` via `trg_derm_required_lock`, `sync_state`, `updated_at`) need NO grant — trigger assignments bypass column privileges.
+
+**Accepted residual (open, needs the auth follow-up):** anon can still set `visit_status='cancelled'` (must stay grantable for the Calendar cancel/complete flow) → Jobber delete, and call the intentionally-anon SECDEF RPCs. Inherent to unauthenticated apps; full close = a guarded `set_visit_status` RPC + REVOKE `visit_status` + apps behind Supabase Auth.
+
 **When end-user clients land** (Odoo.sh, Lovable-style apps), add explicit `CREATE POLICY` clauses on the tables they need to read. The pattern:
 
 ```sql
