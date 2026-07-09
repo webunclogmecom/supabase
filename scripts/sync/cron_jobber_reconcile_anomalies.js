@@ -203,14 +203,20 @@ async function fetchCandidates() {
   `);
 }
 
+// Both writes go through the Management-API (pg) with two transaction-local settings:
+//  - "request.headers" → X-App-Source attribution (else audit shows 'sql' = "System").
+//  - "app.suppress_jobber_push"='on' → no echo back to Jobber. This is a MATCH-JOBBER
+//    reconcile (read Jobber → write DB); pushing back is never needed. Without it, a
+//    write to a Calendar/cron-mastered row echoes via trg_push_visit_update — the path
+//    that ratcheted the pre-fix UTC-date bug INTO Jobber (e.g. 6860 07-02→03→04) and can
+//    revert a dispatch edit made in the ~1-2s window. Orphan soft-deletes suppress too
+//    (the visit is already gone from Jobber — no delete to push).
+const GUC_PREFIX = `SET LOCAL "request.headers" = '{"x-app-source":"${APP_SOURCE}"}'; SET LOCAL "app.suppress_jobber_push" = 'on'; `;
+const pgLit = v => (v == null ? 'NULL' : "'" + String(v).replace(/'/g, "''") + "'");
+
 async function softDelete(id) {
   if (!EXECUTE) return;
-  const r = await rest(`/visits?id=eq.${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ deleted_at: new Date().toISOString() }),
-    headers: { Prefer: 'return=minimal' },
-  });
-  if (r.status >= 300) throw new Error(`softDelete ${id}: ${r.status} ${r.body.slice(0, 200)}`);
+  await pg(`${GUC_PREFIX}UPDATE public.visits SET deleted_at=now() WHERE id=${id} AND deleted_at IS NULL;`);
 }
 
 async function updateDate(id, startAt, endAt) {
@@ -219,12 +225,9 @@ async function updateDate(id, startAt, endAt) {
   // UTC = +1 day for evening-ET visits → the ±1-day oscillation). Co-written WITH
   // start_at here, so the trigger derives the same date; never written standalone.
   const newDate = operatingDateET(startAt);
-  const r = await rest(`/visits?id=eq.${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ visit_date: newDate, start_at: startAt, end_at: endAt }),
-    headers: { Prefer: 'return=minimal' },
-  });
-  if (r.status >= 300) throw new Error(`updateDate ${id}: ${r.status} ${r.body.slice(0, 200)}`);
+  // + sync_state finisher: the schedule write flips sync_state->'pending', which the */3-min
+  // resolve-stale cron would re-push (defeating suppress). DB now == Jobber, so confirm it.
+  await pg(`${GUC_PREFIX}UPDATE public.visits SET visit_date=${pgLit(newDate)}::date, start_at=${pgLit(startAt)}::timestamptz, end_at=${endAt ? `${pgLit(endAt)}::timestamptz` : 'NULL'} WHERE id=${id}; UPDATE public.visits SET sync_state='confirmed' WHERE id=${id} AND sync_state='pending';`);
 }
 
 // ---------------------------------------------------------------------------

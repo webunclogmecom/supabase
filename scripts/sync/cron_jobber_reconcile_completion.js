@@ -271,10 +271,19 @@ function dateEq(a, b) {
         }
         if (updates.length) {
           try {
-            // SET LOCAL "request.headers" carries X-App-Source through the Management-API
-            // SQL path (no PostgREST context otherwise → audit app_source would be 'sql'
-            // = the opaque "System" in the Calendar feed). Same transaction as the UPDATE.
-            await pg(`SET LOCAL "request.headers" = '{"x-app-source":"${APP_SOURCE}"}'; UPDATE public.visits SET ${updates.join(', ')} WHERE id = ${v.id};`);
+            // Two transaction-local settings prefix the UPDATE (same Management-API query):
+            //  - "request.headers" carries X-App-Source (audit attribution; else 'sql' = "System").
+            //  - "app.suppress_jobber_push"='on' stops the echo: this is a MATCH-JOBBER reconcile
+            //    (read Jobber → write DB), so it must NEVER push back. Without it, a write to a
+            //    Calendar/cron-mastered row (source in visit-calendar/supabase_cron) fires
+            //    trg_push_visit_update ~1-2s later — the exact path that ratcheted the pre-fix
+            //    UTC-date bug INTO Jobber and can revert a dispatch edit made in that window.
+            // The schedule UPDATE flips sync_state->'pending' (trg_mark_visit_sync_pending is NOT
+            // GUC-gated), which the */3-min resolve-stale cron would then re-push — defeating the
+            // suppress. A sync_state-only finisher back to 'confirmed' (DB now == Jobber, nothing to
+            // push) closes that, same pattern adopt_visit_schedule_from_jobber uses (07-08). A
+            // sync_state-only UPDATE trips neither the mark diff nor the push WHEN.
+            await pg(`SET LOCAL "request.headers" = '{"x-app-source":"${APP_SOURCE}"}'; SET LOCAL "app.suppress_jobber_push" = 'on'; UPDATE public.visits SET ${updates.join(', ')} WHERE id = ${v.id}; UPDATE public.visits SET sync_state='confirmed' WHERE id = ${v.id} AND sync_state='pending';`);
           } catch (e) {
             console.log(`  visit ${v.id} UPDATE FAILED: ${e.message}`);
           }
