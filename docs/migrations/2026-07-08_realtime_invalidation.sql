@@ -38,8 +38,14 @@
 --    data residue verified). Note: the delivered payload also carries a random
 --    UUID `id` — that is the realtime.messages ENVELOPE id (the tables' own ids
 --    are bigint / composite), NOT business data → still leak-free.
+--  * 2026-07-09 — PHASE 2 (Stamp Studio) DEPLOYED + PROVEN LIVE: trigger added to
+--    `derm.address_row_map` (topic inval:address_row_map; anon inval:% policy
+--    already covers it). DERM Stamp Studio wired + live-verified (backend write to
+--    address_row_map AND derm_manifests each auto-refetch its v_stamp_sheets query;
+--    idle = no refetch). DERM Tracker (07-09) + Stamp Studio (07-09) both on realtime.
 --  * PENDING (coordinate w/ Supabase 2): the `visits` + `clients` triggers below
---    (the hot shared tables). Run those two CREATE TRIGGER statements when ready.
+--    (the hot shared tables). Run those two CREATE TRIGGER statements when ready;
+--    Calendar app wiring queued behind them.
 -- ============================================================================
 
 -- 1) The broadcast function ---------------------------------------------------
@@ -104,11 +110,12 @@ create policy app_inval_read
   to anon
   using (topic like 'inval:%');
 
--- 4) Phase 2 (Stamp Studio) — attach when Stamp Studio subscribes. Uncomment:
--- drop trigger if exists zzz_broadcast_inval on derm.address_row_map;
--- create trigger zzz_broadcast_inval
---   after insert or update or delete on derm.address_row_map
---   for each statement execute function public.tg_broadcast_inval();
+-- 4) Phase 2 (Stamp Studio) — DEPLOYED 2026-07-09. Stamp Studio subscribes to
+--    inval:address_row_map (+ inval:derm_manifests).
+drop trigger if exists zzz_broadcast_inval on derm.address_row_map;
+create trigger zzz_broadcast_inval
+  after insert or update or delete on derm.address_row_map
+  for each statement execute function public.tg_broadcast_inval();
 
 -- ============================================================================
 -- TEARDOWN (reversal) — run to fully remove:
