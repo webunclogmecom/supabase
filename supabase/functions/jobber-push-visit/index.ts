@@ -81,10 +81,13 @@ async function jobberGid(entityType: string, entityId: number): Promise<string |
 }
 
 async function linkVisit(visitId: number, gid: string) {
-  await db.from("entity_source_links").upsert(
+  const { error } = await db.from("entity_source_links").upsert(
     { entity_type: "visit", entity_id: visitId, source_system: "jobber", source_id: gid },
     { onConflict: "entity_type,source_system,source_id" },
   );
+  // A silently-failed link leaves a LIVE Jobber visit unlinked -> the next edit re-CREATEs a
+  // duplicate on the crew's schedule. Fail loudly instead (sync_state='failed' -> visible).
+  if (error) { await flag(visitId, "link_write_failed", `${gid}: ${error.message}`); throw new Error(`linkVisit ${visitId}: ${error.message}`); }
 }
 
 async function flag(visitId: number, reason: string, detail: string) {
@@ -101,6 +104,12 @@ async function clearFlag(visitId: number) {
 // resolve the target Jobber job GID for a visit
 async function resolveJobGid(visit: any): Promise<{ gid: string } | { error: string }> {
   if (visit.job_id) {
+    // CROSS-CLIENT GUARD (2026-07-09 push-safety audit): a visit whose job_id points at
+    // ANOTHER client's job (bad backfill / raw PATCH — create_calendar_visit validates this,
+    // but PostgREST inserts don't) would be filed under the WRONG client's Jobber schedule
+    // and invoice. Refuse instead.
+    const { data: job } = await db.from("jobs").select("client_id").eq("id", visit.job_id).maybeSingle();
+    if (job && job.client_id !== visit.client_id) return { error: `job_client_mismatch: job ${visit.job_id} belongs to client ${job.client_id}, visit is client ${visit.client_id}` };
     const g = await jobberGid("job", visit.job_id);
     return g ? { gid: g } : { error: `job_id=${visit.job_id} has no jobber link` };
   }
@@ -130,9 +139,21 @@ function visitSchedule(visit: any) {
     const d = { date: visit.visit_date, timezone: TZ };
     return { startAt: d, endAt: d };
   }
-  // Timed visit -> include the ET wall-clock time.
   const start = new Date(visit.start_at);
   const end = visit.end_at ? new Date(visit.end_at) : new Date(start.getTime() + 60 * 60 * 1000);
+  // ALL-DAY ENCODED AS TIMESTAMPS (2026-07-09 push-safety audit): inbound sync materializes
+  // Jobber all-day visits as start_at = ET midnight + end_at = ET 23:59:xx of the SAME day.
+  // Pushing that shape as a TIMED schedule flips Jobber's allDay visit into a timed-midnight
+  // one (this misplaced 7 completed visits historically). PAIR TEST — only the full-day span
+  // maps back to date-only; a genuine midnight-timed visit (e.g. 00:00-01:00) stays timed.
+  {
+    const s = etParts(start), e = etParts(end);
+    if (s.time === "00:00:00" && s.date === e.date && /^23:59:\d\d$/.test(e.time)) {
+      const d = { date: s.date, timezone: TZ };
+      return { startAt: d, endAt: d };
+    }
+  }
+  // Timed visit -> include the ET wall-clock time.
   return { startAt: etParts(start), endAt: etParts(end) };
 }
 
@@ -158,32 +179,36 @@ function ue(payload: any): string | null { const e = payload?.userErrors; return
 async function syncVisitLineItems(token: string, visit: any, visitGid: string, isUpdate: boolean) {
   const { data: items } = await db.from("line_items").select("name,description,quantity,unit_price").eq("visit_id", visit.id);
   if (!items || !items.length) return;
-  // ALWAYS reconcile (create + update): delete any line items already on the
-  // Jobber visit first, then recreate from our DB. Idempotent — every push
-  // converges Jobber to exactly our set, self-healing both duplicate line items
-  // (from a racing 2nd push, e.g. the inbound poll re-touching a fresh visit)
-  // and missing line items (from a prior push whose sync errored). isUpdate is
-  // no longer used to gate the delete.
+  // ALWAYS reconcile (create + update). CREATE-FIRST-THEN-DELETE-OLD (reordered 2026-07-09
+  // push-safety audit): the old delete-then-create left the Jobber visit with ZERO line items
+  // if the create failed mid-flight (throttle/5xx) — and nothing retries 'lineitems', so a
+  // completed visit could invoice $0. Both phases are id-addressed, so capturing the OLD ids
+  // first and deleting them AFTER a successful create converges identically without the
+  // empty-window. Idempotent — every push converges Jobber to exactly our set.
+  let oldIds: string[] = [];
   {
     const jobGid = await jobberGid("job", visit.job_id);
     if (jobGid) {
       const jr = await gql(token, Q_VISIT_LI, { jobId: jobGid });
       const node = (jr.job?.visits?.nodes || []).find((n: any) => n.id === visitGid);
-      const ids = (node?.lineItems?.nodes || []).map((x: any) => x.id);
-      if (ids.length) {
-        const d = await gql(token, M_LI_DELETE, { id: visitGid, input: { lineItemIds: ids } });
-        const de = ue(d.visitDeleteLineItems); if (de) throw new Error(`visitDeleteLineItems: ${de}`);
-      }
+      oldIds = (node?.lineItems?.nodes || []).map((x: any) => x.id);
     }
   }
   const lineItems = items.map((it: any) => {
-    const up = Number(it.unit_price) || 0, qty = Number(it.quantity) || 1;
+    // Money coercion (2026-07-09 audit): default quantity ONLY when NULL/NaN — a deliberate
+    // qty-0 (comped line) must NOT become 1 × full price in Jobber. Round totals to cents.
+    const up = Number.isFinite(Number(it.unit_price)) ? Number(it.unit_price) : 0;
+    const qty = (it.quantity == null || !Number.isFinite(Number(it.quantity))) ? 1 : Number(it.quantity);
     const desc = (it.description ?? "").trim();
     // Send the per-line-item description (Jobber's LineItem.description) when set (Fred 2026-07-02).
-    return { name: it.name, unitPrice: up, quantity: qty, totalPrice: up * qty, saveToProductsAndServices: false, ...(desc ? { description: desc } : {}) };
+    return { name: it.name, unitPrice: up, quantity: qty, totalPrice: Math.round(up * qty * 100) / 100, saveToProductsAndServices: false, ...(desc ? { description: desc } : {}) };
   });
   const c = await gql(token, M_LI_CREATE, { id: visitGid, input: { lineItems } });
   const ce = ue(c.visitCreateLineItems); if (ce) throw new Error(`visitCreateLineItems: ${ce}`);
+  if (oldIds.length) {
+    const d = await gql(token, M_LI_DELETE, { id: visitGid, input: { lineItemIds: oldIds } });
+    const de = ue(d.visitDeleteLineItems); if (de) throw new Error(`visitDeleteLineItems(old): ${de}`);
+  }
   // Final reconcile (concurrency self-heal): if a racing 2nd push (e.g. a rapid
   // re-save or the inbound poll) duplicated items, trim Jobber back to exactly our
   // DB set, per-name count. No-op when already in sync — costs one extra query.
@@ -254,13 +279,24 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   // team clears the assignment. (VisitEditScheduleInput carries only start/end,
   // so assignment is always a separate mutation on update.)
   const teamGids: string[] = [];
+  const teamUnmapped: number[] = [];
   {
     const { data: teamRows } = await db.from("visit_team").select("employee_id").eq("visit_id", visit.id);
     const empIds = (teamRows && teamRows.length)
       ? teamRows.map((r: any) => r.employee_id)
       : (visit.assigned_driver_id ? [visit.assigned_driver_id] : []);
-    for (const eid of empIds) { const g = await jobberGid("employee", eid); if (g) teamGids.push(g); }
+    for (const eid of empIds) { const g = await jobberGid("employee", eid); if (g) teamGids.push(g); else teamUnmapped.push(eid); }
   }
+  // UNMAPPED-CREW GUARD (2026-07-09 push-safety audit): an employee with no Jobber user link
+  // used to be SILENTLY dropped — a crew edit could push a partial team, or (all-unmapped)
+  // assignedUserIds=[] which WIPES the Jobber crew, indistinguishable from a deliberate clear.
+  // Fail loudly instead so the office sees it and Jobber's crew stays untouched.
+  const assertTeamMapped = async () => {
+    if (teamUnmapped.length) {
+      await flag(visitId, "unmapped_employee", `employee id(s) ${teamUnmapped.join(",")} have no Jobber user link — crew NOT pushed`);
+      throw new Error(`unmapped employee(s) ${teamUnmapped.join(",")} — refusing to push a partial/empty crew`);
+    }
+  };
 
   // ---- UPDATE (already linked) ----
   // "On-purpose" push: edit ONLY the field-groups the office actually changed in the
@@ -296,6 +332,7 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     }
     if (wantsStrict("crew")) {
       // Only on a deliberate team edit (explicit 'crew' group). Pushes the office's team (incl. empty = cleared on purpose).
+      await assertTeamMapped();
       const a = await gql(token, M_ASSIGN, { id: existingGid, input: { assignedUserIds: teamGids } });
       const ae = ue(a.visitEditAssignedUsers); if (ae) throw new Error(`visitEditAssignedUsers: ${ae}`);
       did.push(`crew:${teamGids.length}`);
@@ -333,6 +370,9 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     const raceGid = await jobberGid("visit", visitId);
     if (raceGid) { console.log(`[push] visit ${visitId} got linked (${raceGid}) while preparing create — skipping duplicate create`); return { ok: true, note: "already-linked-race" }; }
   }
+  // Unmapped crew on CREATE: don't block the visit's existence in Jobber — create with the
+  // mappable subset but FLAG it so push-health surfaces the missing member (2026-07-09 audit).
+  if (teamUnmapped.length) await flag(visitId, "unmapped_employee", `created without employee id(s) ${teamUnmapped.join(",")} — no Jobber user link`);
   const input = { visits: [{ title: visit.title || null, instructions: visit.notes ?? null, schedule: { ...sched, notifyTeam: false, teamMemberIdsToAssign: teamGids } }] };
   const c = await gql(token, M_CREATE, { jobId: job.gid, input });
   const ce = ue(c.visitCreate); if (ce) { await flag(visitId, "create_error", ce); throw new Error(`visitCreate: ${ce}`); }
