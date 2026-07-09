@@ -237,7 +237,7 @@ Deno.serve(async (req: Request) => {
       let logEmail: string | null = null
       try {
         const { data: m, error: me } = await sb.from('derm_manifests')
-          .select('id, client_id, white_manifest_number, yellow_ticket_number, derm_manifest_url, derm_address_url, deleted_at')
+          .select('id, client_id, white_manifest_number, yellow_ticket_number, derm_manifest_url, derm_manifest_extra_urls, derm_address_url, derm_address_extra_urls, deleted_at')
           .eq('id', id).maybeSingle()
         if (me) throw me
         if (!m || m.deleted_at) { results.push({ manifest_id: id, status: 'skipped', reason: 'not_found_or_deleted' }); await logSend(id, logClientId, null, null, 'skipped', 'not_found_or_deleted', 'city'); continue }
@@ -282,10 +282,30 @@ Deno.serve(async (req: Request) => {
         }
         if (!servedAddress && props?.length) servedAddress = (props[0] as { address: string | null }).address || ''
 
-        // Attachments: Manifest Form (derm_address_url) + Transporter Manifest (derm_manifest_url)
-        const formAtt = await fetchAttachment(m.derm_address_url, `DERM-Manifest-Form-${number}`)
-        const transAtt = await fetchAttachment(m.derm_manifest_url, `DERM-Transporter-Manifest-${number}`)
-        if (!formAtt || !transAtt) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', client: clientName }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed', 'city'); continue }
+        // Attachments: the Manifest Form is a MULTI-SHEET doc — the shared DERM Address
+        // sheet spills to extra images (derm_address_extra_urls) when one dump run covers
+        // more clients than fit on one sheet. Attaching only the primary made the City see
+        // just the sheet-1 clients and warn about the rest (Fred, 2026-07-09, #829216 = 12
+        // clients / 4 sheets). Attach the primary + EVERY extra so the City gets the full
+        // manifest. Same for the Transporter Manifest. Require all to fetch (a missing sheet
+        // = the bug we're fixing — fail loudly rather than send an incomplete manifest).
+        const addressUrls = [m.derm_address_url, ...(((m.derm_address_extra_urls as string[] | null) || []))].filter(Boolean)
+        const transUrls = [m.derm_manifest_url, ...(((m.derm_manifest_extra_urls as string[] | null) || []))].filter(Boolean)
+        const attachments: { filename: string; content: string; content_type: string }[] = []
+        let fetchFailed = false
+        for (let i = 0; i < addressUrls.length; i++) {
+          const suffix = addressUrls.length > 1 ? `-${i + 1}` : ''
+          const att = await fetchAttachment(addressUrls[i], `DERM-Manifest-Form-${number}${suffix}`)
+          if (!att) { fetchFailed = true; break }
+          attachments.push(att)
+        }
+        if (!fetchFailed) for (let i = 0; i < transUrls.length; i++) {
+          const suffix = transUrls.length > 1 ? `-${i + 1}` : ''
+          const att = await fetchAttachment(transUrls[i], `DERM-Transporter-Manifest-${number}${suffix}`)
+          if (!att) { fetchFailed = true; break }
+          attachments.push(att)
+        }
+        if (fetchFailed) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', client: clientName }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed', 'city'); continue }
 
         const payload: Record<string, unknown> = {
           from: RESEND_FROM,
@@ -293,7 +313,7 @@ Deno.serve(async (req: Request) => {
           subject: `DERM Manifest for ${clientName}`,
           html: buildCityHtml(clientName, servedAddress, fmtDate(visitDate)),
           text: buildCityText(clientName, servedAddress, fmtDate(visitDate)),
-          attachments: [formAtt, transAtt],
+          attachments,
         }
         if (!testRecipient) payload.bcc = [CITY_BCC]
 
@@ -323,7 +343,7 @@ Deno.serve(async (req: Request) => {
       try {
         const { data: m, error: me } = await sb
           .from('derm_manifests')
-          .select('id, client_id, white_manifest_number, yellow_ticket_number, derm_manifest_url, deleted_at')
+          .select('id, client_id, white_manifest_number, yellow_ticket_number, derm_manifest_url, derm_manifest_extra_urls, deleted_at')
           .eq('id', id)
           .maybeSingle()
         if (me) throw me
@@ -353,14 +373,21 @@ Deno.serve(async (req: Request) => {
         if (!toEmail) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_email', client: clientCode }); await logSend(id, logClientId, null, null, 'skipped', 'no_email'); continue }
         logEmail = toEmail
 
-        const pdfResp = await fetch(m.derm_manifest_url)
-        if (!pdfResp.ok) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', http: pdfResp.status }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed'); continue }
-        const b64 = encodeBase64(new Uint8Array(await pdfResp.arrayBuffer()))
-
-        const srcCt = (pdfResp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-        const extFromUrl = m.derm_manifest_url.split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase()
-        const attExt = extFromUrl || CT_TO_EXT[srcCt] || 'pdf'
-        const attType = srcCt || (attExt === 'pdf' ? 'application/pdf' : `image/${attExt === 'jpg' ? 'jpeg' : attExt}`)
+        // The WWTP receipt can be multi-page (derm_manifest_extra_urls). Send the primary
+        // + every extra so a multi-page receipt reaches the client complete. (This is the
+        // client's OWN WWTP receipt only — NEVER the shared DERM Address sheet, which lists
+        // co-clients; that stays City-only to avoid a co-client PII leak.)
+        const manUrls = [m.derm_manifest_url, ...(((m.derm_manifest_extra_urls as string[] | null) || []))].filter(Boolean)
+        const attachments: { filename: string; content: string; content_type: string }[] = []
+        let fetchFailed = false
+        for (let i = 0; i < manUrls.length; i++) {
+          const suffix = manUrls.length > 1 ? `-${i + 1}` : ''
+          const att = await fetchAttachment(manUrls[i], `DERM-Manifest-${number}${suffix}`)
+          if (!att) { fetchFailed = true; break }
+          attachments.push(att)
+        }
+        if (fetchFailed) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed' }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed'); continue }
+        const attExt = attachments[0].filename.split('.').pop() || 'pdf'
 
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -371,7 +398,7 @@ Deno.serve(async (req: Request) => {
             subject: SUBJECT,
             html: buildHtml(clientName, number, attExt),
             text: buildText(clientName, number, attExt),
-            attachments: [{ filename: `DERM-Manifest-${number}.${attExt}`, content: b64, content_type: attType }],
+            attachments,
           }),
         })
         const er = await emailRes.json().catch(() => ({}))
