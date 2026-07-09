@@ -80,6 +80,27 @@ evening TZ bug is the dominant, reproducible pattern.)*
 
 Raw data: scratchpad `osc2.json` / `full_recon.json` (this session).
 
+## Divergence proof (2026-07-09) — it's NOT cosmetic; `start_at` drifts off Jobber by a day
+
+Fleet check of all **18 visits System (`sql`) wrote in the last 3 days**, DB `start_at`/`end_at` vs the
+live Jobber API: **13 match Jobber exactly; 5 DIVERGE — currently a full day AHEAD of Jobber.** The 5 are
+exactly the evening oscillators:
+
+| Visit | Client | DB start_at (wrong) | Jobber start_at (truth) |
+|---|---|---|---|
+| 5810 | 035-LG | 2026-06-20 00:00Z | 2026-06-19 00:00Z |
+| 5811 | 052-PV | 2026-06-20 01:00Z | 2026-06-19 01:00Z |
+| 5812 | 032-LG | 2026-06-20 02:00Z | 2026-06-19 02:00Z |
+| 5799 | 007-CC | 2026-06-18 00:30Z | 2026-06-17 00:30Z |
+| 5013 | 197-BGT | 2026-06-05 00:30Z | 2026-06-04 00:30Z |
+
+So the oscillation actively **corrupts the real `start_at` instant** (not just the `visit_date` label):
+on "+1" days these visits sit a full day ahead of Jobber; on "−1" days they match. The counter-writer is
+the ET operating-date trigger (`trg_aa_reconcile_operating_date`: "pure date-drag → move start_at's day,
+keep the ET wall-clock") dragging `start_at` with the flipped `visit_date`. Meanwhile the 13 non-evening
+visits (incl. 235-LOU/070-TCE/243-FE) mirror Jobber correctly — the bug is specific to the evening/
+just-past-midnight-UTC cohort. Raw data: scratchpad `diverge.json`.
+
 ## Requested fix (Supabase 2's lane)
 
 1. **Derive `visit_date` via the shared ET operating-date helper, never a raw UTC date slice.** Both
@@ -91,6 +112,18 @@ Raw data: scratchpad `osc2.json` / `full_recon.json` (this session).
    operating-date rule just set (stop the two-writer fight).
 3. **Backfill the 18 oscillators** to their correct ET operating date once (they'll stop flipping after
    #1+#2). The top 5 evening visits should sit on the ET date (e.g. 035-LG → 06-18, not 06-19).
+
+## Secondary finding — the reconcile makes 2 passes (placeholder → real), doubling "System" noise
+
+Example 235-LOU (visit 7052, a completed Service Call that came back from Jobber with NO start/end):
+- **07-08 pass**: set an all-day **placeholder** (00:00 → 23:59 ET) — did NOT read Jobber's real time.
+- **07-09 pass**: overwrote it with Jobber's actual `endAt` (12:59 AM ET) → now matches Jobber.
+
+Result: **two "System" activity entries** and a confusing intermediate (11:59 PM) that was never real. The
+reconcile should read Jobber's real `startAt`/`endAt` on the **first** pass and skip the all-day
+placeholder entirely — one correct edit, one activity line. (Note: 235-LOU's Jobber time itself is a
+midnight 12:00–12:59 AM slot even though it was completed 1:25 PM — a **Jobber data-entry** issue on that
+Service Call, not ours; flag to Diego separately.)
 
 ## Attribution improvement (small, helps everyone)
 
