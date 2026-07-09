@@ -28,6 +28,18 @@
 --
 -- REVERSIBLE: see the teardown block at the bottom (commented).
 -- IDEMPOTENT: re-runnable.
+--
+-- DEPLOYMENT STATUS:
+--  * 2026-07-08 — DERM SUBSET DEPLOYED + PROVEN LIVE on Prod: the function, the
+--    anon RLS policy, and the triggers on `derm_manifests` + `manifest_visits`
+--    ONLY. End-to-end proof: an anon WS subscriber (no auth users) on
+--    inval:derm_manifests + inval:manifest_visits received `{table,op,at}` from
+--    real 0-row test writes (WHERE false → 0 rows touched, 0 audit rows, zero
+--    data residue verified). Note: the delivered payload also carries a random
+--    UUID `id` — that is the realtime.messages ENVELOPE id (the tables' own ids
+--    are bigint / composite), NOT business data → still leak-free.
+--  * PENDING (coordinate w/ Supabase 2): the `visits` + `clients` triggers below
+--    (the hot shared tables). Run those two CREATE TRIGGER statements when ready.
 -- ============================================================================
 
 -- 1) The broadcast function ---------------------------------------------------
