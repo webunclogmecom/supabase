@@ -1,0 +1,51 @@
+-- 2026-07-09_visit_date_oscillation_backfill.sql
+-- Fred-routed hand-off (docs/audits/2026-07-09_visit_date_oscillation_handoff.md):
+-- visit_date oscillated ±1 day daily on evening-ET visits. Root cause = the two daily
+-- reconcile scripts computed visit_date from the RAW UTC date (startAt.slice(0,10)),
+-- which is +1 day for evening-ET visits (20:00-23:59 ET = 00:00-03:59 Z next day). The
+-- BEFORE trigger trg_aa_reconcile_operating_date re-derives visit_date = ET clock date
+-- (Branch 3), so the two fought once per day. When a reconcile wrote visit_date STANDALONE
+-- (start_at unchanged), the trigger's Branch-2 date-drag also shoved start_at +/-1 day.
+--
+-- CODE FIX (the permanent one, in the same commit): both scripts now derive visit_date via
+-- scripts/lib/operating_date_et.js (ET clock date, mirroring webhook-jobber.operatingDateET
+-- + the trigger + docs/reference/operating-date-rule.md), never write visit_date standalone
+-- (only co-write with start_at), and set X-App-Source so the Calendar feed shows the cron
+-- name, not "System":
+--   - scripts/sync/cron_jobber_reconcile_completion.js  (completed visits; Management-API
+--     writes attributed via SET LOCAL "request.headers" -> app_source='jobber-daily-completion-reconcile')
+--   - scripts/sync/cron_jobber_reconcile_anomalies.js   (scheduled visits; PostgREST writes
+--     attributed via X-App-Source: jobber-daily-anomaly-reconcile)
+--
+-- NOTE on the 06:00 cutoff: the hand-off cited "OVERNIGHT_CUTOFF = 06:00 ET" but the CURRENT
+-- rule (operating-date-rule.md, revised 2026-07-02) REMOVED the shift — visit_date is the plain
+-- ET clock date. Using the cutoff here would re-oscillate the early-AM (00:00-05:59 ET) visits
+-- (e.g. 6835 05:30, 6592 04:15, 6982 03:00, 6983 01:30) that the live trigger keeps on clock
+-- date. Verified vs Jobber: those early-AM visits were already CORRECT — clock date is right.
+--
+-- ============================ ONE-TIME DATA BACKFILL ============================
+-- Of the 18 hand-off visits, only 5 were actually wrong at fix time (the rest were on the
+-- correct oscillation phase when checked live vs Jobber; 5654/170-PV is already soft-deleted).
+-- These 5 evening oscillators had start_at drifted +1 day. Reset to Jobber's authoritative
+-- start_at/end_at; the trigger then derives the correct ET clock visit_date. THIS IS THE SQL
+-- THAT WAS APPLIED 2026-07-09 (backup: backups/2026-07-09_visit_date_oscillation_backfill_before.json):
+--
+-- BEGIN;
+-- SELECT set_config('app.suppress_jobber_push','on',true);   -- belt (all 5 are source=jobber, no push trigger)
+-- SELECT set_config('request.headers','{"x-app-source":"visit-date-oscillation-backfill"}',true);
+-- UPDATE public.visits SET start_at='2026-06-04T00:30:00Z', end_at='2026-06-04T01:30:00Z' WHERE id=5013 AND source='jobber' AND deleted_at IS NULL;  -- 197-BGT -> 2026-06-03
+-- UPDATE public.visits SET start_at='2026-06-17T00:30:00Z', end_at='2026-06-17T01:30:00Z' WHERE id=5799 AND source='jobber' AND deleted_at IS NULL;  -- 007-CC  -> 2026-06-16
+-- UPDATE public.visits SET start_at='2026-06-19T00:00:00Z', end_at='2026-06-19T01:00:00Z' WHERE id=5810 AND source='jobber' AND deleted_at IS NULL;  -- 035-LG  -> 2026-06-18
+-- UPDATE public.visits SET start_at='2026-06-19T01:00:00Z', end_at='2026-06-19T02:00:00Z' WHERE id=5811 AND source='jobber' AND deleted_at IS NULL;  -- 052-PV  -> 2026-06-18
+-- UPDATE public.visits SET start_at='2026-06-19T02:00:00Z', end_at='2026-06-19T03:00:00Z' WHERE id=5812 AND source='jobber' AND deleted_at IS NULL;  -- 032-LG  -> 2026-06-18
+-- COMMIT;
+--
+-- A 6th visit (6820 / 000-DP, scheduled, not in the hand-off's 18) was the same class and
+-- currently drifted; it was corrected by running the FIXED anomalies script with --execute
+-- (visit_date 06-26 -> 06-25, app_source='jobber-daily-anomaly-reconcile') — proving the fixed
+-- writer self-heals the class going forward.
+--
+-- VERIFICATION (2026-07-09): fixed completion dry-run over 251 completed visits (45d) = 0
+-- visit_date drift (was 1-per-evening-visit before). All 5 backfilled rows: visit_date = ET
+-- clock date, start_at un-drifted, attributed 'visit-date-oscillation-backfill' (not "System").
+-- No schema/trigger change — data + script fix only.

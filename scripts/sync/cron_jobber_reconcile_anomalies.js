@@ -43,6 +43,11 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env'), override: true });
 const https = require('https');
+const { operatingDateET } = require('../lib/operating_date_et');
+
+// app_source attribution (ADR 016) — so the Calendar activity feed shows this
+// reconcile by name instead of the opaque "System".
+const APP_SOURCE = 'jobber-daily-anomaly-reconcile';
 
 const URL_BASE = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -93,7 +98,7 @@ async function rest(p, opts = {}) {
       apikey: SERVICE_KEY,
       Authorization: `Bearer ${SERVICE_KEY}`,
       'Content-Type': 'application/json',
-      'X-App-Source': 'sql',
+      'X-App-Source': APP_SOURCE,
       ...(opts.headers || {}),
     },
     body: opts.body,
@@ -210,7 +215,10 @@ async function softDelete(id) {
 
 async function updateDate(id, startAt, endAt) {
   if (!EXECUTE) return;
-  const newDate = startAt.slice(0, 10);
+  // ET clock date of start_at (matches the DB trigger), NOT startAt.slice(0,10) (raw
+  // UTC = +1 day for evening-ET visits → the ±1-day oscillation). Co-written WITH
+  // start_at here, so the trigger derives the same date; never written standalone.
+  const newDate = operatingDateET(startAt);
   const r = await rest(`/visits?id=eq.${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ visit_date: newDate, start_at: startAt, end_at: endAt }),
@@ -270,7 +278,9 @@ async function updateDate(id, startAt, endAt) {
     }
 
     const j = res.data.visit;
-    const jDate = j.startAt?.slice(0, 10) || null;
+    // ET clock date of Jobber's start (matches the DB trigger), NOT j.startAt.slice(0,10)
+    // (raw UTC = +1 for evening-ET visits → a phantom drift that the trigger reverts daily).
+    const jDate = operatingDateET(j.startAt);
 
     // (2) Scheduled-visit date drift
     if (

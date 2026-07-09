@@ -32,7 +32,7 @@ completed visits. Reconciled 130 completed visits back to their clock date (5 fr
 the pre-07-01 UTC `+1` bug). Migrations `2026-07-02_operating_date_scheduled_matches_jobber.sql` (scheduled-only,
 superseded) → `2026-07-02b_visit_date_always_clock_date.sql` (final).
 
-## Implemented identically in three places (keep in sync)
+## Implemented identically in these places (keep in sync)
 - **DB trigger** `public.fn_reconcile_visit_operating_date` / `trg_aa_reconcile_operating_date` — the safeguard:
   any writer's `start_at` change re-derives `visit_date` = ET clock date; a pure date-drag moves `start_at` onto
   the new day at the same ET wall-clock (no shift) and carries `end_at` by the same delta.
@@ -41,6 +41,12 @@ superseded) → `2026-07-02b_visit_date_always_clock_date.sql` (final).
   `startAt` to the DB `start_at` (unaffected by this change). **Untimed** (all-day) visits still use the
   overnight-aware tolerance against `visit_date` — an untimed visit has no `start_at` to move, so it's out of
   scope for the "don't move dates" change.
+- **`scripts/lib/operating_date_et.js`** → `operatingDateET()` — shared by the two daily reconcile crons
+  `scripts/sync/cron_jobber_reconcile_completion.js` + `cron_jobber_reconcile_anomalies.js` (ET clock date, NOT
+  `startAt.slice(0,10)` = raw UTC). **Added 2026-07-09** after both crons' raw-UTC slice fought the trigger and
+  oscillated evening-ET visits' `visit_date` ±1 day daily (audit `2026-07-09_visit_date_oscillation_handoff.md`).
+  **Rule for any reconcile writer:** never write `visit_date` standalone — only co-write it with a `start_at`
+  change (a standalone `visit_date` write fires the trigger's date-drag branch and moves `start_at` ±1 day).
 
 ## Safeguards
 - `trg_aa_reconcile_operating_date` (BEFORE INSERT/UPDATE on `visits`): keeps `visit_date`↔`start_at` consistent.

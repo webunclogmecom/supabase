@@ -33,6 +33,11 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env'), override: true });
 const https = require('https');
+const { operatingDateET } = require('../lib/operating_date_et');
+
+// app_source attribution for this cron's writes (ADR 016) — so the Calendar
+// activity feed shows this reconcile by name instead of the opaque "System".
+const APP_SOURCE = 'jobber-daily-completion-reconcile';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -232,8 +237,10 @@ function dateEq(a, b) {
     const completedDrift = !isoEq(v.completed_at, jbVisit.completedAt);
     const startDrift = !isoEq(v.start_at, jbVisit.startAt);
     const endDrift = !isoEq(v.end_at, jbVisit.endAt);
-    // visit_date drift is implied by start_at change (visit_date = start_at::date in our system)
-    const newVisitDate = jbVisit.startAt ? jbVisit.startAt.slice(0, 10) : null;
+    // visit_date = the ET CLOCK date of start_at (operatingDateET), matching the DB
+    // trigger. NOT startAt.slice(0,10) (raw UTC = +1 day for evening-ET visits, which
+    // the trigger flips back → the ±1-day oscillation bug, 2026-07-09).
+    const newVisitDate = operatingDateET(jbVisit.startAt);
     const dateDrift = newVisitDate && !dateEq(v.visit_date, newVisitDate);
 
     if (statusDrift || completedDrift || startDrift || endDrift || dateDrift) {
@@ -254,11 +261,23 @@ function dateEq(a, b) {
         if (completedDrift) updates.push(`completed_at=${jbVisit.completedAt ? `'${jbVisit.completedAt}'::timestamptz` : 'NULL'}`);
         if (startDrift) updates.push(`start_at=${jbVisit.startAt ? `'${jbVisit.startAt}'::timestamptz` : 'NULL'}`);
         if (endDrift) updates.push(`end_at=${jbVisit.endAt ? `'${jbVisit.endAt}'::timestamptz` : 'NULL'}`);
-        if (dateDrift) updates.push(`visit_date='${newVisitDate}'::date`);
-        try {
-          await pg(`UPDATE public.visits SET ${updates.join(', ')} WHERE id = ${v.id};`);
-        } catch (e) {
-          console.log(`  visit ${v.id} UPDATE FAILED: ${e.message}`);
+        // visit_date is derived from start_at by trg_aa_reconcile_operating_date.
+        // Only ever CO-WRITE it with a start_at change (keeps the pair consistent in one
+        // write). NEVER write visit_date standalone: that fires the trigger's date-drag
+        // branch and shoves start_at ±1 day — the oscillation root cause.
+        if (dateDrift && startDrift) updates.push(`visit_date='${newVisitDate}'::date`);
+        else if (dateDrift && !startDrift) {
+          console.log(`  visit ${v.id} date-only drift (DB ${v.visit_date} vs ET ${newVisitDate}) with matching start_at — SKIPPED (trigger owns visit_date; a standalone write would date-drag start_at)`);
+        }
+        if (updates.length) {
+          try {
+            // SET LOCAL "request.headers" carries X-App-Source through the Management-API
+            // SQL path (no PostgREST context otherwise → audit app_source would be 'sql'
+            // = the opaque "System" in the Calendar feed). Same transaction as the UPDATE.
+            await pg(`SET LOCAL "request.headers" = '{"x-app-source":"${APP_SOURCE}"}'; UPDATE public.visits SET ${updates.join(', ')} WHERE id = ${v.id};`);
+          } catch (e) {
+            console.log(`  visit ${v.id} UPDATE FAILED: ${e.message}`);
+          }
         }
       }
     }
