@@ -11,7 +11,8 @@
 // Input (POST JSON):
 //   { recipients: [{ manifest_id, client_id }],   // or manifest_ids: number[]
 //     target?: 'client' | 'city',                 // default 'client'
-//     test_recipient?: string }                   // if set, send ONLY there (is_test)
+//     test_recipient?: string,                    // if set, send ONLY there (is_test) — real clients/city NOT emailed
+//     test_cc?: string }                           // "send to both": REAL send to clients/city + BCC a copy here
 //
 // Logs every attempt to public.derm_email_sends with recipient_type = target.
 // Auth: anon-callable for MVP, origin-restricted to derm.unclogme.app.
@@ -175,7 +176,7 @@ Deno.serve(async (req: Request) => {
   if (!RESEND_API_KEY) return jsonResponse({ error: 'email_not_configured', detail: 'RESEND_API_KEY not set' }, 503, cors)
   if (!SUPABASE_URL || !SERVICE_KEY) return jsonResponse({ error: 'service_not_configured' }, 503, cors)
 
-  let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; target?: unknown }
+  let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown }
   try { body = await req.json() } catch { return jsonResponse({ error: 'bad_json' }, 400, cors) }
 
   type Rec = { manifest_id: number; client_id: number | null }
@@ -199,6 +200,12 @@ Deno.serve(async (req: Request) => {
   })
   const testRecipient =
     typeof body?.test_recipient === 'string' && body.test_recipient.includes('@') ? body.test_recipient.trim() : null
+  // test_cc = the "send to BOTH" copy (Fred 2026-07-09): a REAL send to the clients/city
+  // PLUS a BCC copy to this address so the sender can verify what went out. Distinct from
+  // test_recipient (which SUPPRESSES the real send). Ignored when test_recipient is set
+  // (that path already sends only to the test address, so there is no real send to copy).
+  const testCc =
+    !testRecipient && typeof body?.test_cc === 'string' && body.test_cc.includes('@') ? body.test_cc.trim() : null
   const target = body?.target === 'city' ? 'city' : 'client'
   if (recipients.length === 0) return jsonResponse({ error: 'no_recipients' }, 400, cors)
 
@@ -315,7 +322,9 @@ Deno.serve(async (req: Request) => {
           text: buildCityText(clientName, servedAddress, fmtDate(visitDate)),
           attachments,
         }
-        if (!testRecipient) payload.bcc = [CITY_BCC]
+        // BCC = compliance copy on real sends (CITY_BCC) + the test_cc "send-to-both" copy.
+        const cityBcc = [...(!testRecipient ? [CITY_BCC] : []), ...(testCc ? [testCc] : [])]
+        if (cityBcc.length) payload.bcc = cityBcc
 
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -399,6 +408,8 @@ Deno.serve(async (req: Request) => {
             html: buildHtml(clientName, number, attExt),
             text: buildText(clientName, number, attExt),
             attachments,
+            // "send to both": real client send + a BCC copy to the test address.
+            ...(testCc ? { bcc: [testCc] } : {}),
           }),
         })
         const er = await emailRes.json().catch(() => ({}))
@@ -416,5 +427,5 @@ Deno.serve(async (req: Request) => {
   }
 
   const sent = results.filter((r) => r.status === 'sent').length
-  return jsonResponse({ ok: true, target, sent, total: recipients.length, test_mode: !!testRecipient, results }, 200, cors)
+  return jsonResponse({ ok: true, target, sent, total: recipients.length, test_mode: !!testRecipient, cc_test: !!testCc, results }, 200, cors)
 })
