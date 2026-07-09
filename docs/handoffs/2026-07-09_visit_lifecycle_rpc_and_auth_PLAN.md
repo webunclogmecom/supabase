@@ -19,7 +19,11 @@ direct `visit_status`/`completed_at` grants entirely.
 ## Confirmed decisions (Fred, 2026-07-09)
 1. **Auth scope:** the 4 STAFF apps require login — Visit Calendar, Admin Review, DERM Tracker, Stamp
    Studio. **Field Portal stays anon** (customer portal, client-code access, read-only, zero lifecycle
-   writes — no residual, must not demand a staff login from customers).
+   writes — no residual, must not demand a staff login from customers). **Staff = any email at
+   `@ayache.com` or `@unclogme.com`** (a DOMAIN allowlist, NOT a fixed account list — Fred 2026-07-09).
+   Only 4 have signed in so far (fred@/yannick@ayache.com, contact@/unclogme@unclogme.com), but any new
+   address at those two domains is staff. The RPC enforces the domain as defense-in-depth; the app-side
+   login should likewise be restricted to those domains (Supabase Auth Google OAuth + domain allow-list).
 2. **cancel == skip in Jobber:** both remove exactly ONE occurrence from Jobber and PRESERVE the SA
    series (the next scheduled occurrence stays / is promoted). The ONLY difference is the label/reason
    shown in our apps. (Today's raw `cancelled` write does NOT promote the next SA occurrence — the RPC
@@ -53,19 +57,30 @@ direct `visit_status`/`completed_at` grants entirely.
 
 **Signature:** `set_visit_status(p_visit_id bigint, p_status text, p_reason text DEFAULT NULL) RETURNS public.visits`
 - SECURITY DEFINER, `SET search_path=public`.
-- **GRANT EXECUTE TO `authenticated` ONLY** (NOT anon, NOT during-phase — see rollout). `REVOKE` from
-  PUBLIC/anon.
-- Guard: require an authenticated caller — `IF auth.uid() IS NULL THEN RAISE EXCEPTION 'login required'`
-  (defence beyond the grant, so even a mis-grant can't let anon through).
+- **GRANT EXECUTE TO `authenticated` ONLY** (NOT anon, NOT during-phase — see rollout). `REVOKE ALL`
+  from PUBLIC first (else the CREATE grants EXECUTE to PUBLIC = anon).
+- Guard: `IF auth.uid() IS NULL THEN RAISE 'login required'` **AND** the caller's
+  `auth.jwt()->>'email'` must end with `@ayache.com` or `@unclogme.com` (defence beyond the grant, so
+  even a mis-grant or a self-signed-up non-staff Google account can't act).
 
-**Allowed transitions** (reject anything else with a clear message):
+**Allowed transitions** (reject anything else with a clear message; all preconditions = `scheduled`
+except uncomplete, mirroring the proven `skip_visit` shape):
 
 | p_status | precondition | DB effect | Jobber (via trigger) | SA series |
 |---|---|---|---|---|
-| `completed` | current = scheduled | `visit_status='completed'`, `completed_at=now()`, `completed_by`=caller's employee | (no delete; existing complete behavior) | untouched |
-| `scheduled` (uncomplete) | current = completed | `visit_status='scheduled'`, `completed_at=NULL` | (no delete) | untouched |
-| `skipped` | current = scheduled | `visit_status='skipped'`, `skip_reason=p_reason` | delete THIS visit | **promote next occurrence** |
-| `cancelled` | current IN (scheduled, completed) | `visit_status='cancelled'`, `skip_reason=p_reason` | delete THIS visit | **promote next occurrence** |
+| `completed` | current = scheduled | `visit_status='completed'`, `completed_at=now()` | no delete (no-op upsert, as today) | untouched |
+| `scheduled` (uncomplete) | current = completed | `visit_status='scheduled'`, `completed_at=NULL` | no delete | untouched |
+| `skipped` | current = scheduled | `visit_status='skipped'`, `skip_reason=p_reason`, source normalized | delete THIS occurrence | **promote next occurrence** |
+| `cancelled` | current = scheduled | `visit_status='cancelled'`, source normalized (**no reason stored** — see below) | delete THIS occurrence | **promote next occurrence** |
+
+**Cancel stores no reason (ground-truth constraint):** `visits_skip_reason_chk` (`skip_reason` allowed
+only when `visit_status='skipped'`) + the BEFORE trigger `fn_visits_skip_transition_guard` (nulls
+`skip_reason` on any non-skipped row) mean a cancelled row physically cannot carry a reason, and there
+is no `cancel_reason` column. So `p_reason` is accepted but ignored for `cancelled` in Phase 1; the
+cancel-vs-skip distinction lives entirely in the `cancelled`/`skipped` status value (the app label).
+Adding a `cancel_reason` column is a future option if the office wants cancel notes. **`completed_by`
+is left untouched on complete** (matches today — the app never set it; the acting user is captured by
+the audit `app_source`/`request_context`; mapping `auth.email()`→`employees` is a future nicety).
 
 - `skipped` + `cancelled` share ONE code path (the existing `skip_visit` gap-fill: find + `sync_state
   ='pending'` + `fn_request_jobber_push` the next scheduled/unlinked/in-scope SA occurrence for the same
@@ -92,8 +107,9 @@ Each of **Visit Calendar, Admin Review, DERM Tracker, Stamp Studio**:
 - After login the app's PostgREST calls carry the user JWT → role `authenticated` → `set_visit_status`
   (and the retained direct `manhole_count`/`derm_required` writes) run as `authenticated`.
 - **Field Portal: NO change** (stays anon/customer-code, read-only).
-- Staff accounts: 4 exist; add the rest of the crew/office as needed (Supabase Auth dashboard or an
-  invite flow) — enumerate real staff with Fred before cutover.
+- Restrict who can obtain a session to the staff domains (`@ayache.com`/`@unclogme.com`) — Supabase Auth
+  Google OAuth + a domain allow-list (Auth config / a `before-user-created` hook), matching the RPC's
+  domain guard. No per-user account provisioning needed: anyone at those domains can sign in.
 - Owner: the **Building Apps session** (Lovable app changes) — coordinate via WORKING-NOW.md.
 
 **Acceptance (Phase 2):** each staff app requires login (no-session → login screen, live-verified);
@@ -113,8 +129,14 @@ Once Phase 2 is live-verified on all 4 apps:
   `rpc/delete_calendar_visit` → denied. Re-run the full `rls_verify.js` matrix.
 
 ## Rollout order (STRICT — do not collapse)
-1. **Phase 1 (DB, low risk):** ship `set_visit_status` + `fn_promote_next_sa_occurrence`; grant
-   authenticated. Keep ALL current grants intact → zero app impact. Verify via authenticated JWT.
+1. **Phase 1 (DB, low risk) — ✅ DONE + 16/16 SMOKE-VERIFIED 2026-07-09** (`2026-07-09_set_visit_status_rpc.sql`):
+   shipped `set_visit_status` (authenticated-only + domain guard) + `fn_promote_next_sa_occurrence`;
+   refactored `skip_visit` onto the shared helper; also REVOKEd the stray `fn_request_jobber_push` PUBLIC
+   grant (review-found anon→Jobber-delete vector). All current app grants intact → zero app impact.
+   Verified via simulated authenticated JWTs, rollback-isolated (zero prod change, zero Jobber calls);
+   4-lens adversarial review passed (wf_48ec33e6). ⚠ Grant gotcha recorded: Supabase default-privileges
+   auto-grant EXECUTE to anon/authenticated/service_role on every new public function → `REVOKE FROM
+   PUBLIC` is NOT enough; must revoke those roles explicitly (caught + fixed on first deploy).
 2. **Phase 2 (apps, Building Apps session):** migrate Calendar lifecycle → RPC; add login gate to the 4
    staff apps. Publish + live-verify each. (Field Portal untouched.)
 3. **Phase 3 (DB lock):** revoke direct `visit_status`/`completed_at` + anon EXECUTE on the lifecycle
