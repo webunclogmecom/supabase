@@ -183,7 +183,24 @@ for the client (not just GT). The 2026-05-25 backfill caught the historic gap.
 - `public.derm_manifests` has **`CHECK service_date <= dump_ticket_date`** (grease dumps after service, never before).
 - **Soft-deleting a `derm_manifests` row re-points its Stamp cards** (`trg_ad_card_reptr_on_delete` → live (ticket,client) sibling, else NULL) and re-filing re-resolves them (`trg_resolve_card_manifest`) — so a delete+re-file never leaves a Stamp card pointing at a dead manifest (which would make it invisible). Writes only `derm.address_row_map`.
 
-⚠ **Restore/backfill gotcha:** replaying a backup that contains an OLD cross-client pair now RAISES (BEFORE triggers fire before `ON CONFLICT`) and aborts the transaction — filter those pairs out first. Only 1 sanctioned legacy cross-client row exists (815064, pending Diego).
+⚠ **Restore/backfill gotcha:** replaying a backup that contains an OLD cross-client pair now RAISES (BEFORE triggers fire before `ON CONFLICT`) and aborts the transaction — filter those pairs out first. Only 1 sanctioned legacy cross-client row exists (815064, pending Diego). Also: `trg_ae_ticket_key_unambiguous` RAISES when a white# collides with an existing yellow-only ticket key (or vice versa) — same filter-first rule for restores.
+
+### FP Blackout — customer-safe redacted DERM sheets (added 2026-07-10, Fred-approved)
+
+The Field Portal's "DERM FOG eManifest" card serves a **server-side redacted copy** of the shared
+multi-client address sheet: only the viewing client's Stamp-Studio band + the form header/footer are
+visible; the whole measured roster region is blacked. Pipeline: Studio stamps → vision measurement pass
+(`derm.page_block_extents` = full-roster extent per page, ALL slots incl. empty) → line-snapped bands
+(`derm.v_stamp_row_bands`, manual > derived) → `derm.fn_blackout_targets` (gates: fully-banded sheet,
+measured extent REQUIRED, order-consistency, page-identity, staleness fingerprint) → edge fn
+`redact-manifest-sheet` (service_role-only; EXIF-safe; deletes superseded files) → `manifests/redacted/*`
+→ `customer.work_orders.derm_manifest_url` (client-checked join). pg_cron `redact-manifest-sweep` (*/5,
+limit 1 — edge CPU cap). The WWTP receipt card serves the raw disposal receipt ONLY when its image URL
+is vision-classified safe in `derm.receipt_doc_class` (97/97 verified receipts; new uploads hidden until
+classified). ⚠ RULES: NEW stamped pages generate NOTHING until a measurement pass adds their extent
+(rerun: export pages → `ocr-band-measure` workflow → `apply_bands.js`); NEVER widen the visible region
+from banded-card math alone (that was the v2 leak, caught by Fred 2026-07-10 — see
+`docs/audits/2026-07-10_ocr_band_refinement.md` + migrations `2026-07-10_fp_blackout_*.sql`).
 
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
