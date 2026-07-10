@@ -25,3 +25,23 @@ template constants hard-coded.
 **Ongoing:** new stamped pages get midpoint-derived bands until the next measurement pass — the
 redaction gates (fully-banded sheet, order-consistency, page-identity) keep those safe in the interim.
 Re-run pattern: export stamped pages → `ocr-band-measure` workflow → `apply_bands.js --execute`.
+
+## Addendum — line-snap pass (ocr-v2) + Fred's review round (2026-07-10)
+
+The fleet estimates carried a systematic ~1.4% bias (proven via pixel diagnostics). A deterministic
+line detector (row-darkness profile, jpeg-js) now snaps every band edge to the DETECTED printed line,
+grid-fitted with stamp-containment phase disambiguation and conservative tilt handling: **465/511
+cards snapped (`ocr-v2-snap`), 12 pages auto-flagged.** Fred reviewed the flagged gallery: 11 OK as-is
+(fleet bands kept), 1 repaired manually:
+
+**window11-sheet9 (ticket 815375, sheet 237):** stored 90-deg rotated with EXIF orientation 8 (Studio +
+browsers displayed it upright; raw pixels sideways -> line detection impossible, edge-fn EXIF guard +
+fully-banded gate correctly blocked ALL generation). Fix: rotated the shared image physically upright
+(EXIF-free) at derm/43/address.jpg (+ copies; originals in backups/2026-07-10_w11s9_*); deleted OCR
+ghost row 467 ("Pizza-Vola" = misread duplicate of Pummarola/132-PUM; backup json in backups/);
+snapped the 4 real bands (band_set_by='fred-review'). All 4 derivatives now generate correctly
+(visually verified 061-TCE: upright, own block only, header+cert+disposal intact).
+
+Final state: 377 derivatives, regen queue 0, 1 transient retry (cron-managed). Precision ladder now:
+printed-line snap (465) > fleet vision (46 on flagged-OK pages) > stamp-midpoint (new pages until the
+next measurement pass). Rerun pattern unchanged (export -> measure -> snap_bands.js).
