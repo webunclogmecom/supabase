@@ -168,6 +168,12 @@ const M_ASSIGN = `mutation($id: EncodedId!, $input: VisitEditAssignedUsersInput!
 const M_LI_CREATE = `mutation($id: EncodedId!, $input: VisitCreateLineItemInput!){ visitCreateLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
 const M_LI_DELETE = `mutation($id: EncodedId!, $input: VisitDeleteLineItemsInput!){ visitDeleteLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
 const Q_VISIT_LI  = `query($jobId: EncodedId!){ job(id:$jobId){ visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id name } } } } } }`;
+// Completion as a first-class two-way field-group (2026-07-10): the Calendar's complete /
+// uncomplete must reach Jobber (visits.visit_status completed<->scheduled), not just our DB.
+// Jobber has dedicated mutations that return the visit so we can VERIFY the result.
+const Q_VISIT_COMPLETED = `query($id: EncodedId!){ visit(id:$id){ id completedAt } }`;
+const M_COMPLETE   = `mutation($id: EncodedId!, $input: VisitCompleteInput){ visitComplete(visitId:$id, input:$input){ userErrors{ message path } visit{ id completedAt } } }`;
+const M_UNCOMPLETE = `mutation($id: EncodedId!){ visitUncomplete(visitId:$id){ userErrors{ message path } visit{ id completedAt } } }`;
 function ue(payload: any): string | null { const e = payload?.userErrors; return e && e.length ? JSON.stringify(e) : null; }
 
 // Push a visit's line items (with prices) onto its Jobber visit. For Service-Agreement
@@ -340,6 +346,31 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     if (wants("lineitems")) {
       await syncVisitLineItems(token, visit, existingGid, true);
       did.push("lineitems");
+    }
+    // ---- COMPLETION (two-way, 2026-07-10) ----
+    // Sync the visit's completion state to Jobber when the office DELIBERATELY flipped it
+    // (wantsStrict — only when the DB trigger detected a completed<->scheduled change; never on a
+    // legacy/unscoped null `changed` or a reconciler HEAL, so we don't fight the inbound
+    // cron_jobber_reconcile_completion). Idempotent: read Jobber's current state and act ONLY on a
+    // diff, then VERIFY from the returned payload (no false success). Cancelled/skipped never reach
+    // here — they route to the DELETE branch above.
+    if (wantsStrict("completion")) {
+      const jv = await gql(token, Q_VISIT_COMPLETED, { id: existingGid });
+      const jobberCompleted = !!jv.visit?.completedAt;
+      const dbCompleted = visit.visit_status === "completed";
+      if (dbCompleted && !jobberCompleted) {
+        const c = await gql(token, M_COMPLETE, { id: existingGid, input: { completedAt: visit.completed_at ?? null } });
+        const ce = ue(c.visitComplete); if (ce) throw new Error(`visitComplete: ${ce}`);
+        if (!c.visitComplete?.visit?.completedAt) throw new Error(`visitComplete: Jobber still not completed after complete (visit ${visitId})`);
+        did.push("completed");
+      } else if (!dbCompleted && jobberCompleted) {
+        const u = await gql(token, M_UNCOMPLETE, { id: existingGid });
+        const uErr = ue(u.visitUncomplete); if (uErr) throw new Error(`visitUncomplete: ${uErr}`);
+        if (u.visitUncomplete?.visit?.completedAt) throw new Error(`visitUncomplete: Jobber still completed after uncomplete (visit ${visitId})`);
+        did.push("uncompleted");
+      } else {
+        did.push("completion:in-sync");
+      }
     }
     console.log(`[push] updated Jobber visit ${existingGid} [${did.join(",") || "noop"}] (our visit ${visitId})`);
     return { ok: true, updated: existingGid, did };
