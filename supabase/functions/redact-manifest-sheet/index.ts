@@ -131,7 +131,8 @@ Deno.serve(async (req) => {
     effective_page: number;
     band_y0: number;
     band_y1: number;
-    header_y: number | null;
+    blocks_top: number | null;
+    blocks_bottom: number | null;
     fingerprint: string;
     old_url: string | null;
   }[] = await tr.json();
@@ -157,11 +158,13 @@ Deno.serve(async (req) => {
       const y0 = Math.max(1, Math.round((H * Number(t.band_y0)) / 100));
       const y1 = Math.min(H, Math.round((H * Number(t.band_y1)) / 100));
       if (y1 <= y0) throw new Error(`degenerate band ${t.band_y0}..${t.band_y1}`);
-      const headerY = t.header_y == null ? 0 : Math.max(0, Math.round((H * Number(t.header_y)) / 100));
-
-      // visible = [1, headerY] + [y0, y1]; black the rest, full width (1-based coords)
-      if (headerY + 1 < y0) img.drawBox(1, headerY + 1, W, y0 - headerY - 1, BLACK);
-      if (y1 < H) img.drawBox(1, y1 + 1, W, H - y1, BLACK);
+      // v2 (Fred's manual examples): the WHOLE form stays visible (header, grid, certification,
+      // disposal footer) — black ONLY the other clients' block region: [blocks_top..own_y0] and
+      // [own_y1..blocks_bottom], full width (contiguous => no boundary slivers).
+      const bTop = Math.max(0, Math.round((H * Number(t.blocks_top ?? t.band_y0)) / 100));
+      const bBot = Math.min(H, Math.round((H * Number(t.blocks_bottom ?? t.band_y1)) / 100));
+      if (bTop + 1 < y0) img.drawBox(1, bTop + 1, W, y0 - bTop - 1, BLACK);
+      if (y1 < bBot) img.drawBox(1, y1 + 1, W, bBot - y1, BLACK);
 
       const out = await img.encodeJPEG(80);
       const name = `redacted/m${t.manifest_id}-${String(t.fingerprint).slice(0, 10)}.jpg`;
@@ -190,7 +193,8 @@ Deno.serve(async (req) => {
             fingerprint: t.fingerprint,
             band_y0: t.band_y0,
             band_y1: t.band_y1,
-            header_y: t.header_y,
+            header_y: t.blocks_top,
+            blocks_bottom: t.blocks_bottom,
             effective_page: t.effective_page,
             source_url: t.source_url,
             generated_at: new Date().toISOString(),
