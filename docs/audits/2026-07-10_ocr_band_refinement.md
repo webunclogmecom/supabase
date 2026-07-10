@@ -100,3 +100,40 @@ black — including the hard cases: **815064** (025-GRO, the sole sanctioned leg
 **308684** where 019-G7 and 020-G7 each see only their own entity. **FOG eManifest "Preview" already
 opens an in-page zoom modal identical to the WWTP receipt** (close X + secondary "Open in new tab"
 button) — the earlier "opens a new tab" behavior is gone; no change needed.
+
+## Addendum 4 — the geotag source-patch OVER-BLACKED the printed sheet number (Fred caught it) — CORRECTED
+
+The Addendum-3 "fix = black the geotag at the source" was **wrong on 829201** and Fred caught it: on that
+sheet the camera geotag sits in the **same top-right corner as the DERM form's pre-printed sheet number**
+(`1009-1` / `1009-2`), so the full-strip source patch (`x 50-100%, y 0-12%`) blacked the number too —
+staff opening the raw sheet in the DERM app saw a black box where the page number should be. Root lesson:
+**never source-patch a region that can overlap legitimate printed form content, and camera geotags are
+NOT client-roster PII** — the blackout's real privacy boundary is Section B (the co-client roster), which
+the derivative already hides; a phone's GPS stamp of the driver's photo location is not roster data.
+
+**Verification the geotags are non-PII:** `Homestead FL 33032` → 0 clients in ZIP 33032 (it's the
+disposal-facility / Black Point area); `200 NW 36th St, Miami` ≠ La Granja's `2885 NW 36th St` (the only
+"36th" client) → neither geotag is any client's address.
+
+**Fix applied:** restored `manifests/derm/1276/address_1.JPG` + `address_2.JPG` to the pristine pre-patch
+originals (backups `2026-07-10_bf829201_p*_pre_geotag.jpg`), deleted the ledger rows + redacted files for
+mids 1276–1285, regenerated all 10 from clean source. Verified: number region luma 0→166/187 (visible);
+**live-verified in FP** (168-AVA order, 829201) — the modal now shows `1009-1` top-right with only
+168-AVA's own row visible and the four co-clients still fully blacked. **Exhaustive re-check:** scanned
+the top-right number region of ALL 92 distinct source sheets → **0 have a blacked number region**, so
+829201 was the only one affected.
+
+**Still open — geotag customer-visibility policy (Fred's call):** 829201 now shows its (non-PII) geotag
+in the customer header because it couldn't be separated from the number. `window7-sheet1` (`GT - Visits
+Images/derm/661/address.jpg`, mids 261/511/578/661) still carries a LEFT-edge geotag patch — its number
+(`072`, top-right) is unaffected, so it was NOT part of this defect, but its "200 NW 36th St" geotag stays
+hidden. Policy is currently inconsistent (829201 shows the geotag, window7-sheet1 hides it). To make it
+uniform: either restore window7-sheet1 too (show non-PII geotags everywhere — the simplest correct state,
+since sources should stay pristine and only the roster is hidden), OR add a derivative-level geotag box
+that hides geotags from customers while never touching the number. Awaiting Fred's preference.
+
+**Also corrected (Fred, from the DERM app):** the 3 tickets **824026 / 827989-p4 / 829322** are NOT
+wrong-photo "contaminated" as Addendum 3 stated — the raw photos are CORRECT in the DERM app. They are
+simply **page_unmeasured**: no `page_block_extents` row yet, so the FP customer blackout can't generate
+(FP shows "Coming soon"). Fix is a **measurement pass** (export pages → `ocr-band-measure` → `apply_bands`),
+NOT a photo re-upload. Supersedes the Addendum-3 "Yannick re-upload photos" note.
