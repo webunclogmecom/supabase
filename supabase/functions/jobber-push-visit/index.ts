@@ -360,13 +360,20 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
       const dbCompleted = visit.visit_status === "completed";
       if (dbCompleted && !jobberCompleted) {
         const c = await gql(token, M_COMPLETE, { id: existingGid, input: { completedAt: visit.completed_at ?? null } });
-        const ce = ue(c.visitComplete); if (ce) throw new Error(`visitComplete: ${ce}`);
-        if (!c.visitComplete?.visit?.completedAt) throw new Error(`visitComplete: Jobber still not completed after complete (visit ${visitId})`);
+        const ce = ue(c.visitComplete);
+        // Surface a Jobber rejection as a visit_sync_flag (push-health notification) — never fail silently.
+        if (ce) { await flag(visitId, "complete_push_rejected", `Jobber refused to complete visit ${existingGid}: ${ce}`); throw new Error(`visitComplete: ${ce}`); }
+        if (!c.visitComplete?.visit?.completedAt) { await flag(visitId, "complete_push_unverified", `visitComplete returned no completedAt for ${existingGid}`); throw new Error(`visitComplete: Jobber still not completed after complete (visit ${visitId})`); }
         did.push("completed");
       } else if (!dbCompleted && jobberCompleted) {
         const u = await gql(token, M_UNCOMPLETE, { id: existingGid });
-        const uErr = ue(u.visitUncomplete); if (uErr) throw new Error(`visitUncomplete: ${uErr}`);
-        if (u.visitUncomplete?.visit?.completedAt) throw new Error(`visitUncomplete: Jobber still completed after uncomplete (visit ${visitId})`);
+        const uErr = ue(u.visitUncomplete);
+        // The office un-completed a visit Jobber won't un-complete (most commonly: it's already
+        // INVOICED). Flag it so the office is NOTIFIED (Fred 2026-07-10) rather than the uncomplete
+        // dead-ending + being re-reverted by the inbound reconcile. Resolve the invoice in Jobber
+        // first, then it can be un-completed.
+        if (uErr) { await flag(visitId, "uncomplete_rejected", `Jobber refused to un-complete visit ${existingGid} (often: already invoiced — un-invoice in Jobber, then retry): ${uErr}`); throw new Error(`visitUncomplete: ${uErr}`); }
+        if (u.visitUncomplete?.visit?.completedAt) { await flag(visitId, "uncomplete_unverified", `Jobber still shows completed after uncomplete for ${existingGid}`); throw new Error(`visitUncomplete: Jobber still completed after uncomplete (visit ${visitId})`); }
         did.push("uncompleted");
       } else {
         did.push("completion:in-sync");
