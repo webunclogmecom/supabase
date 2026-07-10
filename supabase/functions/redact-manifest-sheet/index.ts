@@ -146,9 +146,12 @@ Deno.serve(async (req) => {
       if (!src.ok) throw new Error(`source fetch ${src.status}`);
       const raw = new Uint8Array(await src.arrayBuffer());
       const ori = exifOrientation(raw);
-      if (ori !== 1) throw new Error(`exif-orientation ${ori} (bands were placed on the browser-rotated image)`);
-      const img = await decode(raw);
+      // orientation 3 = 180° (no axis swap, direction-unambiguous): rotate so the pixels match the
+      // browser-displayed image the bands were placed on. Other non-1 orientations stay fail-safe.
+      if (ori !== 1 && ori !== 3) throw new Error(`exif-orientation ${ori} (bands were placed on the browser-rotated image)`);
+      let img = await decode(raw);
       if (!(img instanceof Image)) throw new Error("animated/unsupported image");
+      if (ori === 3) img = img.rotate(180);
       const W = img.width, H = img.height;
 
       const y0 = Math.max(1, Math.round((H * Number(t.band_y0)) / 100));
