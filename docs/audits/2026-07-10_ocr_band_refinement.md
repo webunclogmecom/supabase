@@ -137,3 +137,39 @@ wrong-photo "contaminated" as Addendum 3 stated — the raw photos are CORRECT i
 simply **page_unmeasured**: no `page_block_extents` row yet, so the FP customer blackout can't generate
 (FP shows "Coming soon"). Fix is a **measurement pass** (export pages → `ocr-band-measure` → `apply_bands`),
 NOT a photo re-upload. Supersedes the Addendum-3 "Yannick re-upload photos" note.
+
+## Addendum 5 — geotag policy resolved + a NEW "why no blackout" class (phantom OCR row) + a band-precision LEAK
+
+**Geotag policy (Fred decided): show non-PII geotags everywhere.** window7-sheet1 restored to pristine
+(`GT - Visits Images/derm/661/address.jpg` AND its copy `derm/261/address.jpg` — both needed identical
+bytes or the page-identity etag gate fails; `ticket_page_images` resolves to the `derm/261` copy).
+Regenerated mids 261/511/578/661; verified only-own-row + number `072` + the "200 NW 36th St" geotag
+now visible. All source sheets are now pristine; the blackout hides ONLY the Section-B roster.
+
+**Taxonomy — a blackout can fail to appear in the FP for FOUR distinct reasons** (each needs a different
+fix; do NOT assume "re-stamp"):
+1. **Unmeasured page** — no `page_block_extents` row (the 3 tickets). Fix: vision measurement pass.
+2. **Phantom / duplicate OCR row** — the OCR mis-matched a client onto a sheet they were never serviced
+   on; that row has no manifest, so it can't be stamped, and its missing band trips the fully-banded gate
+   forever. Fix: DELETE the phantom row (established ghost-row pattern). **825560 (sheet #352, `derm/1158`)
+   was this:** OCR added a 6th row matched to `213-TRUE` (True Barista GT), but 213-TRUE's only manifest is
+   on ticket **824533** (correctly stamped there, `window4-sheet2`), NOT 825560. The 5 real clients were
+   all stamped. Deleted the phantom (id 113, backup `2026-07-10_derm1158_phantom_row113_213TRUE.json`) →
+   fully-banded → generated 5 → **certified 5/5, 0 leaks** → **live-verified in FP** (087-BB Bagel Boss
+   shows only its own row, #352 visible, 4 co-clients black). ⚠ Watch for the `212-TRUE` vs `213-TRUE`
+   labeling on that slot (handwriting reads "GT"=213, manifest says 212 — same operator, low impact).
+3. **Genuinely unstamped real row** — Yannick needs to stamp it in Studio (the classic "awaiting banding").
+4. **Imprecise (grid/midpoint) bands** — generates but LEAKS: the black band boundary drifts off the
+   printed row line and exposes a sliver of the *adjacent* co-client. **This bit the 3 tickets:** after
+   measuring their extents and generating 21, the adversarial certification caught **5 co-client leaks**
+   (m970, m1220, m1223, m1221, m1330 — each exposing the neighbor's name/GDO#/address). Their bands are
+   grid-derived, never line-snapped. **All 21 pulled + hard-gated** (extents removed) → FP back to
+   "Coming soon", no live leak. They need an `ocr-v2-snap` band pass before regenerating + re-certifying.
+   ⚠ **PROCESS LESSON:** pulling the ledger row alone does NOT stop regeneration — the sweep re-derives it
+   from the still-present extent+bands. To quarantine, remove the `page_block_extents` row too (or the
+   bands). Confirmed: after removing the 4 extents, `fn_blackout_targets()` = 0 fleet-wide.
+
+**Why 825560 was safe but the 3 tickets leaked:** 825560's 5 bands were already `ocr-v2-snap` (line-snapped
+during the earlier pass); the 3 tickets' pages were never in that pass. **Standing rule reaffirmed: a page
+must have line-snapped bands (not grid/midpoint) before its blackout may serve — the certification is the
+gate that catches the difference.**
