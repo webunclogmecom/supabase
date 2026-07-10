@@ -172,4 +172,34 @@ fix; do NOT assume "re-stamp"):
 **Why 825560 was safe but the 3 tickets leaked:** 825560's 5 bands were already `ocr-v2-snap` (line-snapped
 during the earlier pass); the 3 tickets' pages were never in that pass. **Standing rule reaffirmed: a page
 must have line-snapped bands (not grid/midpoint) before its blackout may serve — the certification is the
-gate that catches the difference.**
+gate that catches the difference.** ⚠ NOTE: `ocr-v2-snap` is NOT itself a leak guarantee — window4-sheet5
+and ticket-829322 had 100% `ocr-v2-snap` bands yet still leaked at a specific boundary (usually the last
+slot). **Only the adversarial certification is a reliable gate. Every fix = fix → generate → CERTIFY →
+keep-clean / pull-leak.**
+
+## Addendum 6 — full blackout-gap audit + phantom-batch fix (2026-07-10)
+
+Ran a fleet audit categorizing every non-serving carded manifest (`scripts` scratch `audit_blackout_gaps.js`).
+**509 carded, 361 serving at audit time → after this batch, 401 serving.** Blocked manifests fall into
+FIVE classes (extends the Addendum-5 taxonomy with the orphan case):
+
+| Class | Fix | Scope found |
+|---|---|---|
+| Phantom / duplicate OCR row | Delete the row (me) | **7 sheets / 40 mf — FIXED this batch** |
+| Unmeasured page | Vision measure (me) | 3 tickets (824026/827989-p4/829322) — leak-quarantined |
+| Grid/imprecise bands | Line-snap + re-cert (me) | derm/1194 (306859), derm/1218 (827989) |
+| Genuinely unstamped real row | Yannick stamps in Studio | ~13 sheets / ~102 mf (most need 1 stamp; 826477 needs 8, 294999 needs 5) |
+| Orphan manifest (no sheet row) | needs an address sheet | e.g. 242-WYN m1250 (824713), m1205 — filed but not on any OCR'd roster |
+
+**Phantom batch executed:** deleted 11 phantom rows across 7 sheets (825167/824713/822415/821472/825666/
+000068/825906; backup `2026-07-10_phantom_rows_7sheets.json`) — each a client whose real manifests are on
+OTHER tickets (same pattern as 825560's 213-TRUE). Generated 40 → **certified 40/40, 0 leaks, 0 wrong-row**
+(incl. the 019-G7/215-G7 shared-fingerprint pair — same G7 operator, both show their own row). 824713 =
+9/10 (the 10th, 242-WYN, is orphan). **Standing hygiene note:** the OCR keeps mis-matching similar-named
+chains (True Barista, La Granja, G7, Pura Vida) onto sibling tickets → phantom rows are a recurring class;
+re-audit with `audit_blackout_gaps.js` after any OCR re-run.
+
+**Handed to Yannick (Studio stamps, exact list in session):** single-stamp sheets 298064/822919/824533/
+815710/818188/822050/823174; multi-stamp 826477 (8) + 294999 (5). **Still mine:** 4 more cleanable sheets
+(824949→14, 825450→7, 814105→2, 824273→1 — phantom/unmatched only) + the 3-ticket & derm/1194/1218 band
+repair before those may serve.
