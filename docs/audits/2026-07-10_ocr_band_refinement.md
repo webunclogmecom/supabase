@@ -203,3 +203,34 @@ re-audit with `audit_blackout_gaps.js` after any OCR re-run.
 815710/818188/822050/823174; multi-stamp 826477 (8) + 294999 (5). **Still mine:** 4 more cleanable sheets
 (824949→14, 825450→7, 814105→2, 824273→1 — phantom/unmatched only) + the 3-ticket & derm/1194/1218 band
 repair before those may serve.
+
+## Addendum 7 — the "completed = human-verified" rule (Fred) supersedes the Yannick stamp list
+
+**Fred (2026-07-10, stated as certain): a Stamp-App `completed` sheet was CHECKED BY A HUMAN → the PLACED
+rows are the correct/complete set; the UNPLACED (unbanded) rows are OCR extras the human rejected.** Saved
+to memory `reference_stamp_completed_human_verified`. This **flips the Addendum-6 "Yannick must stamp ~102
+manifests"** conclusion: those sheets are `completed` — the human already stamped the real rows. The gap is
+leftover unplaced OCR noise blocking the correct placed rows. Fix = remove the unplaced rows (like phantoms),
+generate the placed rows, certify. NB the unplaced rows are also visit-unlinked (their stray manifests are
+co-load/mis-file artifacts, no visit).
+
+**Executed across the 10 completed-with-unplaced sheets:** removed the unplaced rows (298064: 1; the other
+8: 23; backups `2026-07-10_298064_unplaced_test.json` + `_unplaced_8completed_sheets.json`), generated the
+placed rows, certified. **Result: +46 correct manifests now serve** (serving 401→450 fleet-wide). The
+certification caught **4 band-precision leaks** (298064 m679/144-LTG; 826477 m1197/076-TCE; 822919 m897/
+026-HAP + m101/034-LG — each a co-client address spilling below the black band, own-row correct) → all
+pulled; they need band-boundary repair before regenerating. Verified 103-BWC clean (overlap partner of the
+144-LTG leak — co-load overlaps are NOT systemically broken; leaks are per-row boundary drift).
+
+**Two exceptions parked:**
+- **306859 (derm/1194):** source has **EXIF-orientation 8** (bands placed on the browser-rotated image) →
+  4 manifests error in the edge fn (`exif-orientation 8` guard); needs the image rotated upright at source
+  + band re-snap (same fix as window11-sheet9). Only 4/15 serve.
+- **294999 (window13-sheet8):** `completed=true` but **0 rows placed** — anomalous (a human marked it done
+  yet placed nothing); nothing to release. Flag for Fred/Yannick to review.
+
+**Net standing gap = band-precision repair, not stamping.** The recurring blocker is now clearly band
+boundaries (~8% of generated derivatives leak at a row edge even with `ocr-v2-snap` bands, all cert-caught).
+Outstanding band-repair set: the 4 leaks above + the 5 quarantined 3-ticket leaks + derm/1194/1218 grid
+bands. A dedicated line-snap/boundary-repair pass (re-run `snap_bands.js` + widen-to-printed-line, per-row)
+is the next lever; the adversarial certification remains the only reliable ship gate.
