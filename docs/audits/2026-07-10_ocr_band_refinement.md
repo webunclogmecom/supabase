@@ -234,3 +234,32 @@ boundaries (~8% of generated derivatives leak at a row edge even with `ocr-v2-sn
 Outstanding band-repair set: the 4 leaks above + the 5 quarantined 3-ticket leaks + derm/1194/1218 grid
 bands. A dedicated line-snap/boundary-repair pass (re-run `snap_bands.js` + widen-to-printed-line, per-row)
 is the next lever; the adversarial certification remains the only reliable ship gate.
+
+## Addendum 8 — the "completed" rule DISPROVEN (2026-07-11) + manifest audit + FP visual check
+
+**Addendum-7's premise is WRONG.** A vision pass over the 22 manifests on completed sheets whose client was
+NOT placed found them split **11 spurious / 11 real-on-sheet**: `completed` is a human-set flag but does NOT
+guarantee every real row was stamped. Memory `reference_stamp_completed_human_verified` rewritten to say so.
+- **11 confirmed NOT on their sheet = mis-filed/ghost DERM manifests** (docs but no visit, not on the roster):
+  823174/062-TCE, 824533/224-MP, 824713/242-WYN, and **all 8 on 826477** (1-page sheet #357 holds only
+  Talmudic U, Danziger, PV Edgewater, Bagatelle, PV Wynwood, Express). → **Fred: soft-delete/re-file review.**
+- **11 confirmed ON their sheet but never stamped:** all 5 on **294999** (`completed` with 0 stamps!), plus
+  298064/010-CS, 306859/020-G7, 815710/035-LG, 818188/025-GRO, 822050/001-VIN, 822919/009-CN. These are real
+  clients needing a stamp AND a visit link (all 11 have zero visit links).
+- **CORRECTION:** the Addendum-7 removal wrongly deleted 6 of these real rows (010-CS, 020-G7, 035-LG,
+  025-GRO, 001-VIN, 009-CN) — **restored** via `jsonb_populate_recordset ... OVERRIDING SYSTEM VALUE`
+  (backups `2026-07-10_298064_unplaced_test.json` + `_unplaced_8completed_sheets.json`). Placed derivatives
+  stayed serving. The 11 spurious rows correctly stay removed; their sheets' placed rows serve.
+
+**⚠ Quarantine process lesson (repeated + now fixed):** the 4 band-leaks pulled in Addendum 7 **regenerated
+via the */5 cron** (ledger-delete alone doesn't stop it). For sheets that also have CLEAN serving siblings
+(can't drop the whole extent), quarantine per-manifest: `INSERT derm.redacted_manifest_errors (manifest_id,
+next_retry_at)` with a far-future date → `fn_blackout_targets` excludes it (`next_retry_at > now()`). Applied
+to m679/m1197/m897/m101.
+
+**FP visual check (Fred request):** vision-inspected 3 clients on each of the 8 sheets (298064/815710/818188/
+822050/822919/823174/824533/826477 — what the FP renders) → **24/24 clean, own-row-only, 0 leaks** (incl. the
+heavily co-loaded 826477). Everything currently serving on these sheets is verified.
+
+**Data-accuracy flag:** on 298064 the row served to 044-MP (Mrs. Pasta) reads "MR PASTA, 220 SW 31 St" =
+224-MP (MR. Pasta Factory, a flagged mis-file) — the two Pasta clients look interchanged on this ticket.
