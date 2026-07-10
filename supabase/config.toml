@@ -423,6 +423,13 @@ verify_jwt = false
 [functions.jobber-push-visit]
 verify_jwt = true
 
+# redact-manifest-sheet: same pattern as jobber-push-visit — invoked by pg_cron
+# (fn_request_blackout_sweep) + the backlog driver with a service_role bearer; the handler decodes
+# the JWT and requires role=service_role, so the gateway MUST verify the signature.
+# Never deploy --no-verify-jwt.
+[functions.redact-manifest-sheet]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327
