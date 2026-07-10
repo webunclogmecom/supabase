@@ -60,3 +60,43 @@ pass). Regenerated fleet-wide: **377 derivatives, 0 queue, 0 errors, 389 FP work
 m1309 visually re-verified (Fresko/JZ black). Lesson recorded: the v2 "blacklist" geometry change
 shipped without a fresh adversarial pass — the extent gate restores the default-deny property the
 original whitelist had.
+
+## Addendum 3 — full-fleet certification campaign + camera-geotag class + FP smoke test (2026-07-10, FINAL)
+
+A per-derivative adversarial vision certification of the whole fleet (each redacted sheet READ at full
+resolution, FAIL if ANY co-client identity OR any camera/GPS overlay text is legible) surfaced one new
+leak class the geometry gates could not catch: **camera geotag overlays burned into the SOURCE sheet
+photo** — a driver's phone stamped location/timestamp text (e.g. "200 NW 36th St, Miami", "Homestead FL
+33032 · 7/4/26 9:48 PM", "Estados Unidos") into the image margins/corners BEFORE upload, so it sits
+outside the roster region the blackout spans and rides straight through. Fix = black the overlay at the
+**source** image (`patch_source.js`, full-strip box, EXIF-safe, original backed up to workspace
+`backups/`) then regenerate. **Gotcha:** a sheet photo can exist as several per-manifest copies
+(`derm/<id>/address*.jpg` + `manifests/derm/<id>/address_N.JPG`); patching one and regenerating still
+serves an unpatched sibling — you must patch EVERY copy and force a fresh CDN re-pull (delete the
+ledger row + redacted file so the sweep refetches). Patched sources this round: `derm/661`,
+`derm/261` (a 2nd copy of window7-sheet1), `manifests/derm/1276/address_1.JPG` + `address_2.JPG`.
+Final certification of the last geotag batch: **10/10 PASS** (pixel-verified black + vision-verified).
+⚠ STANDING RISK: re-uploading/re-scanning any patched source drops the geotag patch → re-patch + regen.
+
+**Final fleet reconciliation (509 carded manifests, exact):**
+- **356 serving** — all certified clean, 0 regen queue, 0 errors.
+- **21 hard-gated** = the 3 contaminated tickets **824026 / 827989-p4 / 829322** (wrong sheet photo
+  attached, contaminated from ticket 827989). They were part of the earlier "377"; certification
+  correctly pulled them (377 − 21 = 356). Generate nothing / cannot leak. **Yannick: re-upload the
+  correct sheet photos** → a measurement pass then releases them. Their *clean* sibling pages on the
+  same tickets still serve (page-level gating is surgical — verified 007-CC on 827989).
+- **130 awaiting a banding pass** across 21 distinct sheets (14 of the 21 need just ONE more row
+  banded) — held by the fully-banded-sheet gate (default-deny; by design per CLAUDE.md "new stamped
+  pages generate nothing until measured"). Not a regression — never in the serving set.
+- **2 no-live-visit-link** (041-MB m913, 242-WYN m1205) — no `manifest_visits` row, so no customer
+  work order exists to attach a blackout to anyway. Nothing to fix.
+
+**FP visual smoke test (Fred's request — 10 SA clients × 3 orders in the live Field Portal, Chrome):**
+all 30 orders passed the DB join/staleness check (every served derivative's manifest belongs to the
+signed-in client, FP serves the current ledger URL, none deleted). 10/10 clients visually confirmed in
+the app showing ONLY their own roster row + form header/certification/disposal footer, everything else
+black — including the hard cases: **815064** (025-GRO, the sole sanctioned legacy cross-client ticket),
+**827989** (007-CC, clean page of the ex-contaminated ticket), and the co-loaded yellow-only sheet
+**308684** where 019-G7 and 020-G7 each see only their own entity. **FOG eManifest "Preview" already
+opens an in-page zoom modal identical to the WWTP receipt** (close X + secondary "Open in new tab"
+button) — the earlier "opens a new tab" behavior is gone; no change needed.
