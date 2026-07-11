@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+scripts/probes/prod_anon.txt
+scripts/probes/rls_verify_id.json
 
 # Dependencies & build artifacts
 node_modules/

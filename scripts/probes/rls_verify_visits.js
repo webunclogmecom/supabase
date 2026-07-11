@@ -1,6 +1,15 @@
-// rls_verify.js — post-lockdown negative + positive tests with the REAL Prod anon key
-// (extracted from the public Admin Review bundle). Creates a fresh live 112-YA test visit
-// via the SECDEF RPC, runs the matrix, deletes it.
+// rls_verify_visits.js — Phase-3 post-lock NEGATIVE matrix with the REAL Prod anon key
+// (public/publishable key in prod_anon.txt, gitignored). Creates a fresh LIVE test visit via the
+// SECDEF create RPC (service role), then asserts the raw anon key CANNOT drive any visit-lifecycle
+// write — neither the direct columns (visit_status/completed_at/deleted_at/schedule/...) NOR the 6
+// lifecycle RPCs in EITHER schema (public.* and ops.* — the Calendar client defaults to `ops`).
+// Confirms the two intentionally-still-open columns (manhole_count, derm_required) remain writable
+// (ship-first accepted risk; not Jobber-delete vectors). Cleans up via the SECDEF delete RPC.
+//
+// Phase 3 (2026-07-11, docs/migrations/2026-07-11_phase3_visit_lifecycle_lock.sql): REVOKEd
+// UPDATE(visit_status, completed_at) from anon+authenticated + anon/PUBLIC EXECUTE on the 6 lifecycle
+// RPCs (both schemas). set_visit_status stays authenticated-only. This replaces the pre-Phase-3 probe
+// where visit_status/completed_at were POSITIVE (anon-allowed) — they are now NEGATIVE (blocked).
 const fs = require('fs');
 const https = require('https');
 const SP = __dirname;
@@ -11,53 +20,59 @@ for (const l of fs.readFileSync('C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/S
 const ANON = fs.readFileSync(SP + '/prod_anon.txt', 'utf8').trim();
 const KEY = env.SUPABASE_SERVICE_ROLE_KEY, BASE = env.SUPABASE_URL;
 
-function req(method, path, body, key) {
+function req(method, path, body, key, profile) {
   return new Promise((res) => {
     const b = body ? JSON.stringify(body) : null;
     const u = new URL(BASE + '/rest/v1' + path);
-    const r = https.request({ hostname: u.hostname, path: u.pathname + u.search, method, headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Prefer: 'return=representation', ...(b ? { 'Content-Length': Buffer.byteLength(b) } : {}) } },
+    const headers = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Prefer: 'return=representation' };
+    if (profile) { headers['Content-Profile'] = profile; headers['Accept-Profile'] = profile; }
+    if (b) headers['Content-Length'] = Buffer.byteLength(b);
+    const r = https.request({ hostname: u.hostname, path: u.pathname + u.search, method, headers },
       x => { let d = ''; x.on('data', c => d += c); x.on('end', () => res({ s: x.statusCode, d })); });
     r.on('error', e => res({ s: 0, d: e.message })); if (b) r.write(b); r.end();
   });
 }
 const anonPatch = (id, body) => req('PATCH', `/visits?id=eq.${id}`, body, ANON);
+const anonRpc = (fn, body, profile) => req('POST', `/rpc/${fn}`, body, ANON, profile);
 const svc = (method, path, body) => req(method, path, body, KEY);
 
 (async () => {
-  // create a fresh LIVE test visit (SECDEF RPC — unaffected by lockdown)
   const c = await svc('POST', '/rpc/create_calendar_visit', { p_client_id: 381, p_job_id: 766, p_service_line_item_ids: [1], p_visit_date: '2026-09-15', p_start_at: '2026-09-15T18:00:00Z', p_end_at: '2026-09-15T19:00:00Z', p_title: 'TEST-RLS do not service [Claude]' });
   const id = JSON.parse(c.d).id;
   console.log('live test visit', id, '\n');
 
-  const is403 = r => r.s === 403 || /42501|permission denied/i.test(r.d);
+  // anon "blocked" = 401/403/404 or an explicit permission-denied/not-found body (revoked EXECUTE
+  // makes PostgREST hide the function → 404; revoked column UPDATE → 403 permission denied).
+  const blocked = r => [401, 403, 404].includes(r.s) || /42501|permission denied|could not find|not find the function/i.test(r.d);
   let pass = 0, fail = 0;
-  const check = (label, cond, r) => { console.log((cond ? 'PASS ' : '**FAIL** ') + label + '  [' + r.s + ' ' + r.d.replace(/\s+/g, ' ').slice(0, 70) + ']'); cond ? pass++ : fail++; };
+  const check = (label, r, cond) => { const ok = cond === undefined ? blocked(r) : cond; console.log((ok ? 'PASS ' : '**FAIL** ') + label + '  [' + r.s + ' ' + r.d.replace(/\s+/g, ' ').slice(0, 70) + ']'); ok ? pass++ : fail++; };
 
-  console.log('=== NEGATIVE (anon must be 403/42501) ===');
-  check('deleted_at (the Jobber-delete vector)', is403(await anonPatch(id, { deleted_at: '2026-07-09T00:00:00Z' })), await anonPatch(id, { deleted_at: '2026-07-09T00:00:00Z' }));
-  for (const col of [['visit_date', '2026-09-20'], ['start_at', '2026-09-16T18:00:00Z'], ['end_at', '2026-09-16T19:00:00Z'], ['source', 'x'], ['sync_state', 'synced'], ['job_id', 1], ['client_id', 1], ['vehicle_id', 1], ['completed_by', 1], ['derm_required_locked', true], ['title', 'HACKED']]) {
-    const body = { [col[0]]: col[1] };
-    check(col[0], is403(await anonPatch(id, body)), await anonPatch(id, body));
+  console.log('=== NEGATIVE: direct anon column writes must be BLOCKED ===');
+  for (const [col, val] of [['visit_status', 'completed'], ['completed_at', '2026-09-15T20:00:00Z'], ['deleted_at', '2026-07-09T00:00:00Z'], ['visit_date', '2026-09-20'], ['start_at', '2026-09-16T18:00:00Z'], ['title', 'HACKED'], ['source', 'x'], ['sync_state', 'synced'], ['job_id', 1], ['client_id', 1], ['derm_required_locked', true]]) {
+    check('PATCH ' + col, await anonPatch(id, { [col]: val }));
   }
-  // mixed body atomicity: allowed + forbidden col must 403 AND not partial-apply
-  const mixed = await anonPatch(id, { visit_status: 'completed', deleted_at: '2026-07-09T00:00:00Z' });
+  // atomicity: an allowed col + a forbidden col in one body must fully reject (status stays scheduled).
+  const mixed = await anonPatch(id, { manhole_count: 9, visit_status: 'completed' });
   const after = await svc('GET', `/visits?id=eq.${id}&select=visit_status`, null);
-  check('mixed {visit_status+deleted_at} rejected atomically (status still scheduled)', is403(mixed) && /scheduled/.test(after.d), mixed);
-  // INSERT revoked
-  check('direct anon INSERT', is403(await req('POST', '/visits', { client_id: 381, visit_date: '2026-09-15', source: 'visit-calendar' }, ANON)), await req('POST', '/visits', { client_id: 381, visit_date: '2026-09-15', source: 'visit-calendar' }, ANON));
+  check('mixed {manhole_count+visit_status} rejected atomically (status still scheduled)', mixed, blocked(mixed) && /scheduled/.test(after.d));
+  check('direct anon INSERT', await req('POST', '/visits', { client_id: 381, visit_date: '2026-09-15', source: 'visit-calendar' }, ANON));
 
-  console.log('\n=== POSITIVE (the 4 app columns must succeed) ===');
-  check('visit_status=completed (Calendar mark-complete)', (await anonPatch(id, { visit_status: 'completed' })).d.includes('"visit_status":"completed"'), await anonPatch(id, { visit_status: 'completed' }));
-  check('completed_at (Calendar)', (await anonPatch(id, { completed_at: '2026-09-15T20:00:00Z' })).d.includes('completed_at'), await anonPatch(id, { completed_at: '2026-09-15T20:00:00Z' }));
-  check('manhole_count (Admin Review)', (await anonPatch(id, { manhole_count: 3 })).d.includes('"manhole_count":3'), await anonPatch(id, { manhole_count: 3 }));
-  check('derm_required (DERM Tracker)', (() => { return true; })(), { s: 0, d: '' }); // run below to capture trigger
+  console.log('\n=== NEGATIVE: anon lifecycle RPC EXECUTE must be BLOCKED (public.* AND ops.*) ===');
+  const rpcBodies = { skip_visit: { p_visit_id: id, p_reason: 'x' }, unskip_visit: { p_visit_id: id }, delete_calendar_visit: { p_visit_id: id }, edit_calendar_visit: { p_visit_id: id, p_patch: { title: 'x' } }, ripple_reschedule_visit: { p_visit_id: id, p_new_date: '2026-09-25', p_dry_run: true }, create_calendar_visit: { p_client_id: 381, p_job_id: 766, p_service_line_item_ids: [1], p_visit_date: '2026-09-15' } };
+  for (const fn of Object.keys(rpcBodies)) {
+    check('anon rpc public.' + fn, await anonRpc(fn, rpcBodies[fn]));
+    check('anon rpc ops.' + fn, await anonRpc(fn, rpcBodies[fn], 'ops'));
+  }
+
+  console.log('\n=== EXPECTED-OPEN (intentionally still anon-writable per plan; not Jobber-delete vectors) ===');
+  const mh = await anonPatch(id, { manhole_count: 3 });
+  check('manhole_count (Admin Review) still writable', mh, mh.d.includes('"manhole_count":3'));
   const dr = await anonPatch(id, { derm_required: false });
-  check('derm_required=false (DERM Tracker toggle)', dr.d.includes('"derm_required":false'), dr);
-  check('visit_status=scheduled (mark-incomplete)', (await anonPatch(id, { visit_status: 'scheduled' })).d.includes('"visit_status":"scheduled"'), await anonPatch(id, { visit_status: 'scheduled' }));
+  check('derm_required (DERM) still writable', dr, dr.d.includes('"derm_required":false'));
 
   console.log(`\n=== ${pass} pass / ${fail} fail ===`);
 
-  // cleanup: delete the test visit (SECDEF path)
+  // cleanup via SECDEF service-role path
   await svc('POST', '/rpc/delete_calendar_visit', { p_visit_id: id });
   console.log('cleanup: delete_calendar_visit(' + id + ')');
   fs.writeFileSync(SP + '/rls_verify_id.json', JSON.stringify({ id }));

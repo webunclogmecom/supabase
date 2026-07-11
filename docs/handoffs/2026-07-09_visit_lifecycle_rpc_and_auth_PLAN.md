@@ -139,8 +139,11 @@ Once Phase 2 is live-verified on all 4 apps:
    PUBLIC` is NOT enough; must revoke those roles explicitly (caught + fixed on first deploy).
 2. **Phase 2 (apps, Building Apps session):** migrate Calendar lifecycle → RPC; add login gate to the 4
    staff apps. Publish + live-verify each. (Field Portal untouched.)
-3. **Phase 3 (DB lock):** revoke direct `visit_status`/`completed_at` + anon EXECUTE on the lifecycle
-   RPCs. Re-run negative tests. Residual CLOSED.
+3. **Phase 3 (DB lock): ✅ DONE 2026-07-11** (`2026-07-11_phase3_visit_lifecycle_lock.sql`) — revoked direct
+   `visit_status`/`completed_at` (from anon+authenticated; service_role kept) + PUBLIC+anon EXECUTE on the 6
+   lifecycle RPCs in **both** `public.*` and `ops.*` (the Calendar's real path is `ops.*`), authenticated+service_role
+   kept. Re-ran `scripts/probes/rls_verify_visits.js` (updated to the Phase-3 posture) → **27/27**, every anon
+   lifecycle write 42501. Residual CLOSED (`docs/security.md`); before-state `backups/2026-07-11_phase3_grants_before.json`.
 
 ## Risks / rollback
 - **Ordering:** revoking in Phase 3 before Phase 2 ships breaks the Calendar (403 on complete/cancel).
