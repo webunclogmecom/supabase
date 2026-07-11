@@ -286,3 +286,42 @@ Verified: all 16 gone from the `derm.manifests` view; every affected ticket now 
 (826477→5, 298064→10, 815710/818188/822050→5, 824533→7, 824713→9); **all real blackouts kept serving
 (451 fleet-wide)**. NB the restore→re-delete churn on the 5 typos came from trusting Fred's initial
 "completed=correct" rule before the vision+human check — the corrected rule is in memory.
+
+## Addendum 10 — band-repair pass: tight non-touching bands (2026-07-11)
+
+Root cause of the recurring ~8% co-client "sliver" leaks: bands were **contiguous** (a band's `y1` = the next
+band's `y0`), so any sub-pixel boundary drift exposed a sliver of the neighbour's handwriting. **Fix pattern:
+measure each client's band TIGHT to its own two handwritten lines with a visible GAP between rows** (the printed
+row separator stays inside the black), and extend the page `span_bottom` to cover any co-client address that
+overflows into the margin under the grid. All bands re-measured by an adversarial vision pass (workflows
+`bandmeasure-repair` + `wa9svvgpf`), applied via `apply_bandrepair.js` (3 whole tickets) + `apply_bandrepair2.js`
+(page-specific per-client bands), then **each derivative re-certified by an independent skeptic agent**.
+
+**Whole-ticket re-band (extent had been removed as a stop-gap) — 3 tickets, all regenerated + cert-clean:**
+- **824026** → 11/11 serving, cert-clean.
+- **827989** → 18/19 serving; the 1 hold-out **m1235 (007-CC)** FAILED cert = **wrong-assignment** (its single
+  visible roster row is 052-PV's facility, not 007-CC) → quarantined, flagged for human. Not a band issue.
+- **829322** → 7/7 serving, cert-clean.
+
+**Individual-leak pages — vision-remeasured, applied, certified (12/13 pass):**
+- **144-LTG (m679, 298064 p2)** → fixed, serving. 298064 now 10/10.
+- **076-TCE (m1197, 306859 p1)** → fixed, serving.
+- **204-JCC (m641, 822919 p2)** → cert caught it still leaking **114-CI's** margin origination-address
+  ("3155 NE 163 St") — because 822919 **cannot regenerate** with the new extended `span_bottom` (65.6): the
+  sheet fails the fully-banded gate on the one **unbanded real row 009-CN** (Casa Neos, Yannick's item). →
+  **pulled + quarantined** (`redacted_manifest_errors`, retry 2030) so it can't reappear. Its siblings
+  026-HAP (m897) + 034-LG (m101) sit un-generated behind the same gate — safe "Coming soon".
+
+**Net state after the pass:** `fn_blackout_targets` = **0 pending**; nothing will auto-regenerate wrong.
+Repaired tickets serving: 824026 11/11 · 827989 18/19 · 829322 7/7 · 298064 10/10 · 306859 8/14 · 822919 3/7.
+
+### Residuals (NOT band-precision — separate root causes)
+1. **822919** (3/7): 204-JCC/026-HAP/034-LG all blocked behind the unbanded **009-CN** (Casa Neos, 40 SW N
+   River Dr). Once Yannick stamps 009-CN + links its visit, the sheet becomes fully-banded and all four
+   regenerate with the corrected `span_bottom` (114-CI margin covered). **The extent fix is already in the DB**,
+   waiting on that one stamp.
+2. **306859** (8/14): the 6 un-served rows are **page-2 EXIF-orientation** manifests (m1198, 1202, 1201, 1287,
+   1196) — the stored source is rotated, so browser-view bands don't match raw pixels. Needs the source rotated
+   upright (bake orientation into pixels, EXIF-strip) + p2 re-band. Distinct from band precision.
+3. **827989 m1235 (007-CC)** — wrong-assignment (shows 052-PV's row). Quarantined; a human must confirm whether
+   007-CC belongs on this ticket at all.
