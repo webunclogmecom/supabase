@@ -325,3 +325,34 @@ Repaired tickets serving: 824026 11/11 · 827989 18/19 · 829322 7/7 · 298064 1
    upright (bake orientation into pixels, EXIF-strip) + p2 re-band. Distinct from band precision.
 3. **827989 m1235 (007-CC)** — wrong-assignment (shows 052-PV's row). Quarantined; a human must confirm whether
    007-CC belongs on this ticket at all.
+
+## Addendum 11 — 306859 page-2 EXIF-orientation bake + tight re-band (2026-07-11)
+
+**Root cause:** the redaction edge fn (`redact-manifest-sheet`) only handles EXIF orientation 1 (none) and 3
+(180°) — for any axis-swapping orientation (6/8 = 90°/270°) it **fail-safes and throws** (`imagescript.decode`
+does NOT auto-apply EXIF, so the bands, placed on the browser-rotated view, would land wrong). 306859's page-2
+source (`manifests/derm/1203/address_2_…2nntq3.jpeg`) carried **EXIF orientation 8**, so its 5 clients (109-RAB,
+010-CS, 106-ALC, 230-KRU, 044-MP) generated nothing — served "Coming soon".
+
+**Fix (one-time source rewrite, the window11-sheet9 pattern):**
+1. Backed up the original bytes to `backups/2026-07-11_306859_p2_ORIGINAL_address_2.jpeg` (outside the repo).
+2. `PIL.ImageOps.exif_transpose` → baked the orientation-8 rotation into the pixels (794×1024 → **1024×794
+   upright**) and stripped the EXIF tag; **visually verified** the baked sheet is upright/readable and matches
+   the Studio view the bands were placed on.
+3. Re-uploaded to the **same storage path** (x-upsert). Because every consumer references the image **by URL**,
+   all three gates stayed internally consistent — verified post-upload: `ticket_page_images('306859')` still
+   returns 3 pages with p2 intact; the new etag is present in the live-manifest set (staleness gate) and equals
+   itself for the page-identity gate; the changed etag re-fingerprints the 5 targets so they regenerate.
+4. The stored bands were old `ocr-v1` **contiguous** (touching) → vision-remeasured **tight non-touching**
+   bands + extent (109-RAB 25.44–32.62, 010-CS 33.88–39.92, 106-ALC 40.55–46.98, 230-KRU 47.73–54.79, 044-MP
+   55.67–62.47; span 25.19–63.35), applied by exact row_id, un-quarantined → edge fn generated **5/5, 0 errors**.
+5. **Adversarially certified 5/5 PASS** (pixel-level row-scan: solid black over the whole co-client roster, own
+   row matches, zero legible co-client PII).
+
+**Result:** 306859 now **13/14 serving** (was 8/14); fleet **479**, 0 pending. **Zero EXIF/orientation errors
+remain fleet-wide** — 306859 p2 was the last EXIF-blocked sheet. Standing note for future EXIF-6/8 sheets: the
+edge fn stays fail-safe by design; bake the source upright (`exif_transpose`) + re-upload to the same path +
+re-band, don't loosen the edge fn.
+
+*(Residual on 306859 unrelated to EXIF: 242-WYN on page 3 is non-serving + non-quarantined — a pre-existing
+0-count/no-live-visit row, not part of this fix.)*
