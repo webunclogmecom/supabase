@@ -263,3 +263,26 @@ heavily co-loaded 826477). Everything currently serving on these sheets is verif
 
 **Data-accuracy flag:** on 298064 the row served to 044-MP (Mrs. Pasta) reads "MR PASTA, 220 SW 31 St" =
 224-MP (MR. Pasta Factory, a flagged mis-file) — the two Pasta clients look interchanged on this ticket.
+
+## Addendum 9 — ghost/typo-manifest cleanup, Fred-verified in Studio+DERM (2026-07-11)
+
+Fred verified the flagged records against the live Studio + DERM apps and pinned each case (my vision
+detection was correct; my framing "review these in the DERM app" was wrong — the ghosts are `total_client_
+count=0`/no-visit records the app filters out, so Fred never saw them). Resolution:
+- **11 pure ghosts** (826477's 8 + 062-TCE/823174 + 224-MP/824533 + 242-WYN/824713) — confirmed off-sheet.
+- **5 human TYPOS** — a real client's name hand-written on the WRONG sheet (010-CS "Chima"/298064,
+  020-G7/306859, 035-LG/815710, 025-GRO/818188, 001-VIN/822050). Vision correctly read the text; the text
+  itself was a data-entry error. **Key lesson: "on the sheet" (vision) ≠ "correctly on the sheet" — a
+  hand-written name can be a typo; only a human who knows the client can confirm.**
+- **294999** (5 clients) — genuinely on the sheet but the visits are **pre-2026, not in the DB**; that's why
+  the sheet reads `completed` with 0 stampable rows. Legacy — excluded, left alone (no blackout possible).
+- **822919/009-CN** (Casa Neos) — the ONE genuinely-real unstamped client → Fred unmarked the sheet
+  `completed`; routed to Yannick/Diego to stamp + link.
+
+**Executed (Fred-approved), backups `2026-07-11_softdelete_16_ghost_manifests.json` +
+`_remove_5_typo_rows.json`:** soft-deleted the **16** ghost/typo manifests (m1178-1184/1186, 284, 1200, 300,
+530, 775, 962, 1052, 1250 — 0 were serving) and removed the 5 restored typo OCR rows (608/67/454/397/275).
+Verified: all 16 gone from the `derm.manifests` view; every affected ticket now shows only its real clients
+(826477→5, 298064→10, 815710/818188/822050→5, 824533→7, 824713→9); **all real blackouts kept serving
+(451 fleet-wide)**. NB the restore→re-delete churn on the 5 typos came from trusting Fred's initial
+"completed=correct" rule before the vision+human check — the corrected rule is in memory.
