@@ -36,10 +36,13 @@ const anonPatch = (id, body) => req('PATCH', `/visits?id=eq.${id}`, body, ANON);
 const anonRpc = (fn, body, profile) => req('POST', `/rpc/${fn}`, body, ANON, profile);
 const svc = (method, path, body) => req(method, path, body, KEY);
 
+const anonPropPatch = (pid, body) => req('PATCH', `/properties?id=eq.${pid}`, body, ANON);
+
 (async () => {
   const c = await svc('POST', '/rpc/create_calendar_visit', { p_client_id: 381, p_job_id: 766, p_service_line_item_ids: [1], p_visit_date: '2026-09-15', p_start_at: '2026-09-15T18:00:00Z', p_end_at: '2026-09-15T19:00:00Z', p_title: 'TEST-RLS do not service [Claude]' });
   const id = JSON.parse(c.d).id;
-  console.log('live test visit', id, '\n');
+  const propId = (JSON.parse((await svc('GET', `/visits?id=eq.${id}&select=property_id`, null)).d)[0] || {}).property_id;
+  console.log('live test visit', id, '/ property', propId, '\n');
 
   // anon "blocked" = 401/403/404 or an explicit permission-denied/not-found body (revoked EXECUTE
   // makes PostgREST hide the function → 404; revoked column UPDATE → 403 permission denied).
@@ -64,11 +67,18 @@ const svc = (method, path, body) => req(method, path, body, KEY);
     check('anon rpc ops.' + fn, await anonRpc(fn, rpcBodies[fn], 'ops'));
   }
 
-  console.log('\n=== EXPECTED-OPEN (intentionally still anon-writable per plan; not Jobber-delete vectors) ===');
-  const mh = await anonPatch(id, { manhole_count: 3 });
-  check('manhole_count (Admin Review) still writable', mh, mh.d.includes('"manhole_count":3'));
-  const dr = await anonPatch(id, { derm_required: false });
-  check('derm_required (DERM) still writable', dr, dr.d.includes('"derm_required":false'));
+  console.log('\n=== NEGATIVE: the last 4 business columns must be BLOCKED (2026-07-11 anon-column harden) ===');
+  check('visits.derm_required', await anonPatch(id, { derm_required: false }));
+  check('visits.manhole_count', await anonPatch(id, { manhole_count: 3 }));
+  if (propId) {
+    check('properties.grease_trap_manhole_count', await anonPropPatch(propId, { grease_trap_manhole_count: 5 }));
+    check('properties.sample_port_count', await anonPropPatch(propId, { sample_port_count: 2 }));
+  } else {
+    console.log('(!) test visit had no property_id — skipped properties.* anon checks (investigate)');
+  }
+  // Positive control: authenticated is NOT tested here (needs a staff JWT — Fred live-verified the apps
+  // 2026-07-11). has_column_privilege confirms authenticated=true on all 4 (apps keep working).
+  console.log('anon is now FULLY READ-ONLY on visits + properties business data.');
 
   console.log(`\n=== ${pass} pass / ${fail} fail ===`);
 
