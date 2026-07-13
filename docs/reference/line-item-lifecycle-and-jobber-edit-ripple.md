@@ -93,7 +93,9 @@ Not a cascade: `ops.service_line_items` / `ops.service_options` read the **catal
 
 ---
 
-## 5. Design (approved 2026-07-13) — propagate to 082-TFC future visits + fix the class
+## 5. Design — propagate to 082-TFC future visits + fix the class
+
+**STATUS: ✅ SHIPPED 2026-07-13** — Task A `5a5b769`, B1 `5eae984`, B2 `73885d2`; smoke-tested (A 8/8, B1 4/4, B2 7/7). Plan: [`../handoffs/2026-07-13_lineitem_propagation_PLAN.md`](../handoffs/2026-07-13_lineitem_propagation_PLAN.md).
 
 **Requirements (Fred):** reflect the new line on **both** the internal Calendar **and** the customer work order;
 fix the **class** (systemic), not just 082-TFC; customer work order shows **services only** (hide the card fee);
@@ -118,7 +120,7 @@ Trade-off: template semantics (a completed visit shows the job's *current* servi
 
 ### Part B2 — freeze-on-completion (durable; ALL clients, SA + SC)
 Add a DB trigger: when a visit becomes `visit_status='completed'`, ensure it carries a **frozen visit-scoped snapshot**
-of its effective services at that moment, then re-derive `derm_required` (`set_visit_derm_required`):
+of its effective services at that moment (**DERM is *not* re-derived inline** — `fn_visit_requires_derm` already unions job scope + the nightly `derm-required-rederive` cron backstops; a nested `visits` UPDATE from the trigger would risk a cascade):
 - **Visit already has its own visit-scoped line items** → those ARE the frozen record; leave them. (Typical SC /
   manually-created Calendar visits: verified 27/28 completed Calendar visits carry their own picked services, e.g.
   "12 - Service Call - Main Line Cleaning". SC *jobs* deliberately carry no job-scoped template — the freeze comes from
@@ -128,14 +130,16 @@ of its effective services at that moment, then re-derive `derm_required` (`set_v
   082-TFC visit 6215), and that number grows as Jobber sunsets.
 - **Neither** → no source to freeze; leave blank (flag, don't fabricate).
 
-Path-independent (fires for `supabase_cron` / `visit-calendar` / `jobber` / RPC completions), closes both the line-item
-**and** the derm re-derivation skip in the `handleVisit` early-return. Idempotent (guard: only materialize-from-template
-when the visit has zero visit-scoped rows AND its job has job-scoped rows). Direct insert → **no** `line_items_rev` bump →
-**no** Jobber push. Once B2 ships, B1's fallback only serves legacy gaps.
+**Source-gated** to `supabase_cron` / `visit-calendar` completions (jobber-mastered visits get their real lines from
+`handleVisit`; post-Jobber everything is DB-mastered). Trigger `trg_zz_freeze_line_items_on_complete`
+(`AFTER UPDATE OF visit_status`, `WHEN NEW.visit_status='completed' AND OLD IS DISTINCT FROM 'completed' AND source IN (…)`)
+→ `fn_freeze_visit_line_items`. Idempotent (guard: materialize only when the visit has zero visit-scoped rows AND its job
+has job-scoped rows). Direct insert → **no** `line_items_rev` bump → **no** Jobber push, no cascade. Once B2 ships, B1's
+fallback only serves legacy blanks.
 
-**Backfill:** the 21 blank `supabase_cron` completed visits (incl. 6215) — snapshot each from its SA job template. The 47
-blank `jobber` + 1 `visit-calendar` completed visits are reviewed separately (may legitimately lack lines / pre-date the
-job template — do not blindly stamp the current template on old visits).
+**No retroactive backfill (refinement):** B1's fallback already shows the ~20 existing blank completed visits' services on
+the work order, and stamping *today's* job template onto an *old* visit would fabricate a wrong snapshot (e.g. 6215
+predates the GDO add). So old blanks display via B1; B2 captures **true** snapshots only for completions going forward.
 
 *Data-quality note (separate, flag to Fred):* manually-created SC Calendar visits record service **names** but **$0**
 prices (`create_calendar_visit` captures the service, not a price). The customer work order is names-only so it's
@@ -168,11 +172,13 @@ touches `visits`/`line_items`/job 1472 (the most-shared surface); confirm Supaba
 
 ## 7. Docs to create / fix (part of this work)
 
-- **This file** — the missing canonical reference (was absent per the 2026-07-13 doc audit).
-- **Fix `docs/integration.md`** — the `JOB_CREATE/JOB_UPDATE` row omits the `handleJob` line-item + customField sync
-  (2026-06-23 enhancement); a reader would wrongly conclude a Jobber line-item edit isn't synced.
-- **Link** from `jobs-visits-calendar-workflow.md` and root `CLAUDE.md`.
-- **Optional ADR 019** if B2 becomes a documented standing behavior (materialize-on-completion).
+- ✅ **This file** — the missing canonical reference (was absent per the 2026-07-13 doc audit). CREATED.
+- ✅ **Fixed `docs/integration.md`** — the `JOB_CREATE/JOB_UPDATE` row now documents `handleJob`'s job-scoped line-item +
+  Frequency-customField sync and the `reconcile_jobs.js` 6h catch-up (the `createdAt`-cursor poll can't re-fetch edits).
+- ✅ **Linked** from root `CLAUDE.md` documentation map.
+- **Optional ADR 019** if B2 becomes a formal standing behavior (materialize-on-completion) — deferred unless needed.
+- Migrations shipped: `docs/migrations/2026-07-13_work_orders_services_job_fallback.sql` (B1) +
+  `docs/migrations/2026-07-13_freeze_visit_line_items_on_completion.sql` (B2); script `scripts/sync/reconcile_jobs.js` (`--only`).
 - App-side (doc-in-both-places): `Building Apps/Visit Calendar/docs/03-data-model.md` + `08-changelog.md`.
 
 ## 8. Key code refs

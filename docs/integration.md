@@ -78,7 +78,7 @@ Handler then calls Jobber GraphQL with the `itemId` to fetch the full client rec
 |---|---|
 | `CLIENT_CREATE` / `CLIENT_UPDATE` | Fetch full client; upsert `clients`, `client_contacts`, `properties`; upsert `entity_source_links` |
 | `CLIENT_DESTROY` | Set `clients.status = 'INACTIVE'` (never hard-delete — rule #6) |
-| `JOB_CREATE` / `JOB_UPDATE` | Fetch job; upsert `jobs`; link via `entity_source_links` |
+| `JOB_CREATE` / `JOB_UPDATE` | Fetch job; upsert `jobs`; link via `entity_source_links`; sync **job-scoped `line_items`** (SA jobs — wipe+replace; SC jobs carry none) + the **Frequency** custom field. ⚠ The `*/5` jobs poll uses a `createdAt` cursor so it can't re-fetch an *edited* job — `reconcile_jobs.js` / `reconcile-jobs.yml` (every 6h, by GID; `--only=<job#>` for a single job) is the catch-up. See [line-item-lifecycle-and-jobber-edit-ripple.md](reference/line-item-lifecycle-and-jobber-edit-ripple.md). |
 | `JOB_CLOSED` / `JOB_DESTROY` | Flip `jobs.job_status` to `closed` / `destroyed` — no hard-delete |
 | `VISIT_CREATE` / `VISIT_UPDATE` / `VISIT_COMPLETE` | Fetch visit with `assignedUsers`; upsert `visits` + `visit_assignments` |
 | `VISIT_DESTROY` | Flip `visits.visit_status = 'destroyed'` |
