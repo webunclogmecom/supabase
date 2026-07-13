@@ -17,6 +17,7 @@ const https = require('https');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const PAT = process.env.SUPABASE_PAT, P = process.env.SUPABASE_PROJECT_ID;
 const EXECUTE = process.argv.includes('--execute');
+const ONLY = (process.argv.find(a => a.startsWith('--only=')) || '').split('=')[1] || null; // reconcile a single job_number
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sq = s => String(s).replace(/'/g, "''");
 // Management API has a low req/min cap; the execute path bursts past it (UPDATE+DELETE+INSERT per
@@ -26,8 +27,8 @@ function pg(q, _retry=0){return new Promise((res,rej)=>{const b=JSON.stringify({
 (async () => {
   const jobs = await pg(`SELECT j.id, j.job_number, j.title, j.job_status, j.frequency_days, esl.source_id AS gid
     FROM jobs j JOIN entity_source_links esl ON esl.entity_type='job' AND esl.source_system='jobber' AND esl.entity_id=j.id
-    WHERE j.job_status <> 'archived' ORDER BY j.id`);
-  console.log(`${EXECUTE ? 'EXECUTE' : 'DRY'} — ${jobs.length} non-archived jobs`);
+    WHERE j.job_status <> 'archived' ${ONLY ? `AND j.job_number = '${sq(ONLY)}'` : ''} ORDER BY j.id`);
+  console.log(`${EXECUTE ? 'EXECUTE' : 'DRY'} — ${jobs.length} non-archived jobs${ONLY ? ` (only #${ONLY})` : ''}`);
   const sum = { statusFixed: 0, titleFixed: 0, freqFixed: 0, liSynced: 0, deletedArchived: 0, errors: 0 };
   for (const j of jobs) {
     if (!j.gid) { sum.errors++; continue; }
