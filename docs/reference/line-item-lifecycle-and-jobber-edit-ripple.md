@@ -124,8 +124,8 @@ both the line-item **and** the derm re-derivation skip in the `handleVisit` earl
 push. Once B2 ships, B1's fallback only serves legacy gaps. Backfill visit 6215.
 
 ### Part C — customer work order
-No further change: the view already strips prefixes + filters fees (Fred's "services only"). Optional: shorten the
-verbose customer-facing label "Service Agreement – Pumping – Grease Trap & Tank Cleaning".
+No further change: the view already strips the `NN - ` prefix + filters fees (Fred's "services only"). The verbose
+customer-facing label "Service Agreement – Pumping – Grease Trap & Tank Cleaning" stays **as-is** (Fred 2026-07-13: do not shorten).
 
 ### Part D — guardrails
 Direct `line_items` writes only (`app_source='sql'`); **never** `edit_calendar_visit` (Jobber push-back on 6216/6217).
