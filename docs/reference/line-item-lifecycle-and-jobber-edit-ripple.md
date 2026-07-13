@@ -149,6 +149,18 @@ unaffected, but internal $ totals read $0 for those visits — worth capturing p
 No further change: the view already strips the `NN - ` prefix + filters fees (Fred's "services only"). The verbose
 customer-facing label "Service Agreement – Pumping – Grease Trap & Tank Cleaning" stays **as-is** (Fred 2026-07-13: do not shorten).
 
+### Part E — SC invoice-price read-through (SHIPPED 2026-07-13)
+Diego prices Service Calls **$0** at scheduling, then sets the real price on the Jobber **invoice** days later (he works in
+Jobber, not our apps). `handleInvoice` already syncs the invoice's real-priced lines (invoice-scoped `line_items`) + stamps
+`visits.invoice_id`, but `ops.v_calendar_visit.amount` only read visit/job scope → it stayed **$0**. `amount` now has a
+4-tier precedence: **own priced lines → 1:1-invoice total → SA job template → raw own** (batch invoices covering >1 visit
+are **skipped via a `=1` guard** so we never double-count; e.g. visit 7096 keeps its own $399, not its batched $765 invoice).
+**Read-through only** (no data writes; self-heals every time Diego re-prices). Only `v_calendar_visit.amount` changes —
+`v_revenue_summary` already sums real invoice totals (`invoices.total`), so it's unaffected. Migration
+`2026-07-13_calendar_amount_invoice_readthrough.sql`; rollback `backups/2026-07-13_v_calendar_visit_before.sql`.
+Verified: v7076 **$0 → $181.18**, own-lines/templates unchanged, batch-invoiced visit skipped, no new NULLs (42→25), warm
+perf ~0.8s (+~145ms). *(Supersedes the earlier "add a Calendar price box" idea — Diego doesn't use our apps, so the invoice is the price source.)*
+
 ### Part D — guardrails
 Direct `line_items` writes only (`app_source='sql'`); **never** `edit_calendar_visit` (Jobber push-back on 6216/6217).
 DERM stays TRUE (code 27 non-pumping, monotonic). Reconcile the **whole** job set to Jobber truth (don't insert only the
