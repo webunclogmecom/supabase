@@ -97,7 +97,8 @@ Not a cascade: `ops.service_line_items` / `ops.service_options` read the **catal
 
 **Requirements (Fred):** reflect the new line on **both** the internal Calendar **and** the customer work order;
 fix the **class** (systemic), not just 082-TFC; customer work order shows **services only** (hide the card fee);
-Part B done **phased** (view fallback now + snapshot trigger durable).
+Part B done **phased** (view fallback now + snapshot trigger durable); the freeze-on-completion snapshot applies to
+**all clients, both SA and SC** ("I want to see what line items were in that specific visit at that moment").
 
 **The change (ground truth, Jobber job 148742630 / #99900714, RECURRING SA):**
 `01 - Pumping $300`, **`27 - GDO Online Reporting $35` (new, non-pumping → no DERM impact)**, `25 - Credit card fee` recomputed `$10.59 → $11.83`. Job total **$346.83**. DB was stale (2 lines, old fee) at design time.
@@ -115,13 +116,30 @@ keeping the existing prefix-strip + fee filter. Instantly fixes past + future bl
 customer sees **"Pumping…" + "GDO Online Reporting"**, card fee hidden. Mirrors how the Calendar already works.
 Trade-off: template semantics (a completed visit shows the job's *current* services, not a frozen snapshot).
 
-### Part B2 — snapshot trigger (durable, post-Jobber source of truth)
-Add a DB trigger: on a visit transition to `visit_status='completed'` **with no visit-scoped line items**, materialize
-the job's line set as **visit-scoped** rows (a snapshot at completion) **and** re-derive `derm_required`
-(`set_visit_derm_required`). Path-independent (fires for `supabase_cron` / `visit-calendar` / RPC completions), closes
-both the line-item **and** the derm re-derivation skip in the `handleVisit` early-return. Idempotent (guard on
-"no existing visit-scoped rows" + "job has job-scoped rows"). Direct insert → **no** `line_items_rev` bump → **no** Jobber
-push. Once B2 ships, B1's fallback only serves legacy gaps. Backfill visit 6215.
+### Part B2 — freeze-on-completion (durable; ALL clients, SA + SC)
+Add a DB trigger: when a visit becomes `visit_status='completed'`, ensure it carries a **frozen visit-scoped snapshot**
+of its effective services at that moment, then re-derive `derm_required` (`set_visit_derm_required`):
+- **Visit already has its own visit-scoped line items** → those ARE the frozen record; leave them. (Typical SC /
+  manually-created Calendar visits: verified 27/28 completed Calendar visits carry their own picked services, e.g.
+  "12 - Service Call - Main Line Cleaning". SC *jobs* deliberately carry no job-scoped template — the freeze comes from
+  the visit's own lines, written by `create_calendar_visit`/`edit_calendar_visit`.)
+- **Visit has none but its job carries a template (SA)** → copy the job-scoped line set to visit scope (freeze the SA
+  template as it stands now). This is the actual gap: **21 completed `supabase_cron` visits are already blank** (incl.
+  082-TFC visit 6215), and that number grows as Jobber sunsets.
+- **Neither** → no source to freeze; leave blank (flag, don't fabricate).
+
+Path-independent (fires for `supabase_cron` / `visit-calendar` / `jobber` / RPC completions), closes both the line-item
+**and** the derm re-derivation skip in the `handleVisit` early-return. Idempotent (guard: only materialize-from-template
+when the visit has zero visit-scoped rows AND its job has job-scoped rows). Direct insert → **no** `line_items_rev` bump →
+**no** Jobber push. Once B2 ships, B1's fallback only serves legacy gaps.
+
+**Backfill:** the 21 blank `supabase_cron` completed visits (incl. 6215) — snapshot each from its SA job template. The 47
+blank `jobber` + 1 `visit-calendar` completed visits are reviewed separately (may legitimately lack lines / pre-date the
+job template — do not blindly stamp the current template on old visits).
+
+*Data-quality note (separate, flag to Fred):* manually-created SC Calendar visits record service **names** but **$0**
+prices (`create_calendar_visit` captures the service, not a price). The customer work order is names-only so it's
+unaffected, but internal $ totals read $0 for those visits — worth capturing price in the future Client App.
 
 ### Part C — customer work order
 No further change: the view already strips the `NN - ` prefix + filters fees (Fred's "services only"). The verbose
