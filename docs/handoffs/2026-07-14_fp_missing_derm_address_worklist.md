@@ -40,7 +40,21 @@ skeptics confirmed the hard cases (029-JOS's near-twin "Fresh Carrot 9519 Hardin
 - **824949:** 029-JOS, 032-LG, 036-LG, 042-MT, 057-BAY, 068-TCE, 071-TCE, 082-TFC, 091-SB, 141-NEY, 191-TEN, 208-HUB, 221-YAS, 222-SPE (14)
 - **825450:** 001-VIN, 033-LG, 041-MB, 043-MIL, 092-TCE, 111-YC, 154-PV (7)
 
-**Still open:** 822919 (026-HAP, 034-LG, 204-JCC — page-numbering quirk + 204-JCC quarantine, handled separately); 819788 (3 — fresh, unmeasured); 827989/007-CC (wrong-band data fix); the 5 missing WWTP receipts.
+**822919 — ALSO RESOLVED (2026-07-14).** It was a consolidated 2-sheet ticket: sheet #096 (page 1) =
+009-CN "Casa Neos Bar" + the 5 shared clients; sheet #095 (page 2) = 206-CAC "Cacio e pepe" + the same
+5 shared. The 5 shared correctly redact on page 2 (#095); 009-CN was the lone page-1 blocker (no visit
+→ never generates its own). Banded 009-CN (co-content) → folder fully-banded; un-quarantined 204-JCC
+(m641) → regenerated all 6 → **cert 6/6 PASS**, and the old **204-JCC 114-CI-margin leak is cleared**
+(the extended page-2 extent 65.6 now covers the "3155 NE 163 St" overflow). 026-HAP, 034-LG, 204-JCC
+now serve their DERM address.
+
+**Net: 0 missing DERM addresses remain system-wide except:** 819788 (3 — fresh 07-10 sheet, NOT
+completed in Studio, unmeasured — needs a measurement pass or Studio stamping); 827989/007-CC (1 —
+quarantined wrong-client-band data fix); + the 5 missing WWTP receipts (raw receipt not yet
+vision-classified). **Follow-up idea from Fred (2026-07-14):** relax the "every row must be stamped"
+fully-banded gate to just require a measured full-roster extent + black everything except the viewer's
+band (incl. empty rows) — would auto-resolve future blocked sheets. Privacy-critical (the v2-leak code
+path) → do with adversarial review, separately.
 
 ## Original worklist (superseded for the 4 completed sheets above) — To fix (Stamp Studio — Yannick)
 Stamp / resolve the blocking rows above. **The moment a sheet's last unstamped row is stamped, all of
