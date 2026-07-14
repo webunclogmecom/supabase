@@ -56,9 +56,11 @@ Independently corroborated by Building Apps post-fix: driver 98% (7d) / 99% (28d
 
 ## Open items
 
-- **⚠ Samsara GPS volume halved → console check** (device health / plan / unit connectivity). This is the
-  real truck ceiling — **Fred + Building Apps are handling it** (BA drafting the console checklist +
-  pinpointing which truck(s) dropped from `vehicle_telemetry_readings`). Outside the DB lane.
+- **⚠ Samsara GPS volume halved → console check** (Fred's action; outside the DB lane). Building Apps did the
+  per-truck drill-down (`Building Apps/Admin Review/docs/samsara-telemetry-drop-2026-07-14.md`): **Moises ~32k→~9k/wk,
+  Cloggy ~12k→~3–4k/wk, David chronically low/erratic** — but all 3 units are **ONLINE and reporting within hours**, so
+  it's **not dead hardware** — it's a **frequency/plan change**. Top suspect for Fred: the Samsara **location-update-frequency
+  setting**. This is the real truck ceiling; no DB/derive fix raises it.
 - **derive 7-day lookback → self-healing** — retry still-NULL visits as late telemetry lands. Low value while
   telemetry is this sparse; **parked** until the feed is healthy.
 
