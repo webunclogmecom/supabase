@@ -56,11 +56,18 @@ Independently corroborated by Building Apps post-fix: driver 98% (7d) / 99% (28d
 
 ## Open items
 
-- **⚠ Samsara GPS volume halved → console check** (Fred's action; outside the DB lane). Building Apps did the
-  per-truck drill-down (`Building Apps/Admin Review/docs/samsara-telemetry-drop-2026-07-14.md`): **Moises ~32k→~9k/wk,
-  Cloggy ~12k→~3–4k/wk, David chronically low/erratic** — but all 3 units are **ONLINE and reporting within hours**, so
-  it's **not dead hardware** — it's a **frequency/plan change**. Top suspect for Fred: the Samsara **location-update-frequency
-  setting**. This is the real truck ceiling; no DB/derive fix raises it.
+- ✅ **RESOLVED 2026-07-14 — the truck "Samsara drop" was OUR GPS cron, NOT Samsara** (checked directly via the Samsara
+  API, per Fred). Samsara has been sending the **full 30-second feed** the whole time: a last-18h API-vs-DB comparison
+  showed **Samsara 4,870 points vs our DB 2,807 (58% captured); David 41%, idle Moises 89%**. **ROOT CAUSE:**
+  `cron_samsara_locations_history` self-heal resumed from the shared `vehicle_telemetry_readings` **global-max
+  `recorded_at`** — which the `/stats` cron (`cron_samsara_telemetry`, every 10 min, same table) keeps recent — so the GPS
+  pull under-reached and silently dropped ~42% of **active**-truck GPS between its GitHub-throttled (~1.7h) runs (idle
+  trucks unaffected; David's trail had a 140-min gap + 35 gaps>5min, avg 50s vs true ~30s). **FIX** (commit `f70d893`):
+  resume from the last **GPS-only** row (`odometer`/`fuel`/`engine` all NULL) instead of the polluted global max, + bump the
+  stall cap 6h→24h. **BACKFILL:** re-pulled GPS since 06-15 → **57k → 104k GPS rows** recovered; re-ran `derive --since` →
+  +19 matches. **TRUCK COVERAGE 48%→78% (7d), 60%→75% (28d)** — now at the ~77–90% ADR-012 structural ceiling.
+  **No Samsara console change is needed** — BA's per-truck "drop" numbers (`samsara-telemetry-drop-2026-07-14.md`) were our
+  lossy *capture*, not Samsara's true feed. The remaining ~86 unmatched are the irreducible off-site/dead-zone/placeholder-start cases.
 - **derive 7-day lookback → self-healing** — retry still-NULL visits as late telemetry lands. Low value while
   telemetry is this sparse; **parked** until the feed is healthy.
 
