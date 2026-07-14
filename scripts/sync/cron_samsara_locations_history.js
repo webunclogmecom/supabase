@@ -36,7 +36,7 @@ if (!SUPABASE_URL || !SVC || !SAMSARA_TOKEN) {
 // backfill: set START_TIME / END_TIME env (ISO-8601 UTC).
 const END_TIME = process.env.END_TIME || new Date().toISOString();
 const ENV_START = process.env.START_TIME || null;
-const AUTO_LOOKBACK_H = Number(process.env.AUTO_LOOKBACK_H || 6); // floor for auto-runs
+const AUTO_LOOKBACK_H = Number(process.env.AUTO_LOOKBACK_H || 24); // max lookback cap for auto-runs (6->24 2026-07-14: an overnight run-gap >6h was silently dropping GPS beyond 6h; Samsara retains history + ON CONFLICT dedups, so a generous cap is cheap and only bites on long stalls)
 let START_TIME = ENV_START; // resolved in main() when null (self-heal)
 
 function http(opts, body) { return new Promise((res, rej) => {
@@ -108,7 +108,12 @@ async function pullChunk(vehicleIds, startTime, endTime) {
     // AUTO_LOOKBACK_H so a long stall doesn't trigger an unbounded pull.
     let lastTs = null;
     try {
-      const r = await rest('/vehicle_telemetry_readings?select=recorded_at&order=recorded_at.desc&limit=1');
+      // Resume from the last GPS-ONLY reading (all three stats fields null), NOT the global max.
+      // The /stats cron (cron_samsara_telemetry, every 10 min) writes to the SAME table and keeps the
+      // global-max recorded_at recent, so resuming from the global max made this self-heal under-reach
+      // and silently drop ~40% of active-truck GPS between runs (root-caused 2026-07-14: David overnight
+      // = 41% captured vs Samsara's true feed; idle trucks fine). GPS-only rows = odometer/fuel/engine all NULL.
+      const r = await rest('/vehicle_telemetry_readings?select=recorded_at&odometer_meters=is.null&fuel_percent=is.null&engine_state=is.null&order=recorded_at.desc&limit=1');
       if (r.status === 200) { const j = JSON.parse(r.body); if (j.length) lastTs = new Date(j[0].recorded_at).getTime(); }
     } catch (e) { console.warn('  [self-heal] last-reading lookup failed: ' + e.message); }
     const floorMs = Date.now() - AUTO_LOOKBACK_H * 60 * 60 * 1000;
