@@ -24,7 +24,25 @@ row freezes the WHOLE sheet. All 32 come from just **6 blocked sheets + 2 quaran
 - **827989 / 007-CC** — wrong-client band (the sheet row shows 052-PV, not 007-CC). Needs a human fix.
 - **822919 / 204-JCC** (2 visit dates) — its redaction leaked 114-CI's margin address; pulled + quarantined pending the 822919 re-generation (blocked by 009-CN above).
 
-## To fix (Stamp Studio — Yannick)
+## ✅ RESOLVED Supabase-side (2026-07-14, Fred: "completed in Studio = correct, go fix it")
+
+The 4 completed sheets were **not** a Studio job — the affected clients were already banded; each sheet
+was frozen only by 1–3 leftover co-content rows (mostly NOT our clients). Fix: vision-measured tight
+bands for those 7 leftover rows (`band-measure-blockers` workflow), applied them as **co-content**
+(band + stamp_y_pct so the fully-banded gate passes, but NO stamp_placed_at so they don't generate
+their own cards), regenerated, and **adversarially certified 24/24 PASS (zero co-client leak)**. The
+skeptics confirmed the hard cases (029-JOS's near-twin "Fresh Carrot 9519 Harding" stays blacked;
+009-CN shows no trace of MYLA / Casa Neos Lounge).
+
+**24 client visits now serve their DERM address in the FP:**
+- **814105:** 036-LG, 068-TCE (2026-01-18)
+- **824273:** 009-CN (2026-05-12) — Yan's case
+- **824949:** 029-JOS, 032-LG, 036-LG, 042-MT, 057-BAY, 068-TCE, 071-TCE, 082-TFC, 091-SB, 141-NEY, 191-TEN, 208-HUB, 221-YAS, 222-SPE (14)
+- **825450:** 001-VIN, 033-LG, 041-MB, 043-MIL, 092-TCE, 111-YC, 154-PV (7)
+
+**Still open:** 822919 (026-HAP, 034-LG, 204-JCC — page-numbering quirk + 204-JCC quarantine, handled separately); 819788 (3 — fresh, unmeasured); 827989/007-CC (wrong-band data fix); the 5 missing WWTP receipts.
+
+## Original worklist (superseded for the 4 completed sheets above) — To fix (Stamp Studio — Yannick)
 Stamp / resolve the blocking rows above. **The moment a sheet's last unstamped row is stamped, all of
 its blocked visits' DERM addresses appear in the FP automatically** (the */5 blackout cron regenerates).
 A few need a decision, not just a stamp:
