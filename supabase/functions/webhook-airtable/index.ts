@@ -828,9 +828,30 @@ async function handleInspectionRecord(recordId: string, fields: Record<string, u
     if (error) throw new Error(`Inspection update failed: ${error.message}`)
     entityId = existingId
   } else {
-    const { data: inserted, error } = await supabase.from('inspections').insert(row).select('id').single()
-    if (error || !inserted) throw new Error(`Inspection insert failed: ${error?.message}`)
-    entityId = inserted.id
+    // No Airtable-source-id match, but the SAME physical inspection
+    // (shift_date, vehicle_id, employee_id, inspection_type) may already exist
+    // under a DIFFERENT Airtable recordId (record deleted+recreated, or a
+    // duplicate AT row) — a plain INSERT then 23505s on
+    // idx_inspections_shift_unique (the bug behind 29 dropped events,
+    // 2026-06/07). Fall back to the natural key to stay idempotent (Rule 5);
+    // that unique index is PARTIAL (vehicle_id/employee_id NOT NULL) so
+    // PostgREST .upsert() can't target it — look up + update in code.
+    let naturalId: number | null = null
+    if (vehicle_id && employee_id) {
+      const { data: nat } = await supabase.from('inspections').select('id')
+        .eq('shift_date', shift_date).eq('vehicle_id', vehicle_id)
+        .eq('employee_id', employee_id).eq('inspection_type', inspection_type).limit(1)
+      if (nat?.length) naturalId = nat[0].id
+    }
+    if (naturalId) {
+      const { error } = await supabase.from('inspections').update(row).eq('id', naturalId)
+      if (error) throw new Error(`Inspection update failed: ${error.message}`)
+      entityId = naturalId
+    } else {
+      const { data: inserted, error } = await supabase.from('inspections').insert(row).select('id').single()
+      if (error || !inserted) throw new Error(`Inspection insert failed: ${error?.message}`)
+      entityId = inserted.id
+    }
   }
 
   await upsertEntityLink({
