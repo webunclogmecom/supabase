@@ -380,6 +380,18 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
           .from('clients').select('id, name, status').or(orParts.join(','))
           .limit(3)
         if (dup && dup.length) {
+          // GUARD (2026-07-14): mirror the UPDATE-path guard (~L346). If a
+          // NON-INACTIVE client already holds parsedCode, do NOT set it on this
+          // INSERT — it 23505s on clients_active_client_code_uniq and the */5
+          // poll replays the CLIENT_UPDATE forever (the 963-failure loop that
+          // hit client 153 / gid 113794289 via the UPDATE path 2026-07-02→06,
+          // before THAT path was guarded; this closes the symmetric INSERT gap).
+          // Insert the client WITHOUT the code (Jobber GID is source of truth);
+          // the warning below + weekly dedup audit surface it for a manual
+          // merge / code assignment.
+          if (parsedCode && dup.some((d) => (d as { status?: string }).status !== 'INACTIVE')) {
+            delete clientRow.client_code
+          }
           await supabase.from('webhook_events_log').insert({
             source_system: 'jobber',
             event_type: 'client_insert_potential_dup',
