@@ -39,6 +39,24 @@ existing shift now updates + links, and subsequent re-sends take the existing-so
 `AIRTABLE_WEBHOOK_TOKEN`, no Airtable fetch) → **29/29 processed, 0 failed; 4 inspection rows
 corrected** (had real edits previously dropped; the other 25 were identical re-sends). 0 new failures.
 
-## Residual
+## Issue 2 — NOT a bug: the Airtable inspection source is retired (Building Apps + Fred, 2026-07-14)
 
-Issue 2 (feed silent since 07-11) is unresolved and Airtable-side — with Building Apps / Fred.
+Follow-up with the Building Apps session corrected the framing. Verified independently: **max
+`automation_inspection` payload `shift_date` ever = 2026-07-11; ZERO events for 07-12/13** (the only
+recent event activity is this fix's own 29-event replay of old shifts, 06-24→07-09). New shifts have
+no existing row, so a plain INSERT would have *succeeded* — they'd have landed if submitted. They
+didn't. **Per Fred ("we don't use Airtable anymore"): the Airtable inspection form is retired**;
+drivers stopped filling it, so the Shift-Forms feed dried up because the SOURCE moved, not because of
+a delivery/pipeline error.
+
+**So this idempotency fix is a HARDENING fix** — it recovers the 4 old dropped edits and makes the
+ingest correct (Rule 5) — **but it does NOT and cannot bring in 07-12/13+ inspections; that data
+doesn't exist in Airtable.** "Admin Review missing recent shifts" resolves only when inspections get
+a **new source** (pending Fred's decision on where inspections come from now).
+
+⚠ **Doc drift:** `CLAUDE.md` still states "PRE-POST inspections are now the ONLY live Airtable feed."
+If Airtable is now fully retired for inspections too, that line is stale — confirm with Fred and
+update `CLAUDE.md` + `docs/architecture.md`.
+
+**Separate signal (Building Apps FYI, not inspection-related):** `jobber` `CLIENT_UPDATE` events show
+~966 errors / 5378 (18%) over the last 12d — a pipeline-health flag worth its own look.
