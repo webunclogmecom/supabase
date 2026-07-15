@@ -92,3 +92,24 @@ WHERE  deleted_at IS NULL
   AND  (white_manifest_number ~ '^[23][0-9]{5}$' OR yellow_ticket_number ~ '^[23][0-9]{5}$');
 -- Applied 2026-07-15: 65 rows. Final: SDWWTP 397, Broward 101, still-NULL 28 (the 0xxxxx/4xxxxx set),
 -- 0 series-vs-facility contradictions on either facility.
+
+
+-- ============================================================================
+-- ADDENDUM 3 (2026-07-15) - the last 28 (0xxxxx/4xxxxx) resolved by READING the receipt images
+-- ============================================================================
+-- Read the on-file manifest scans (derm_manifest_url) for all 6 remaining tickets. ALL are
+-- Miami-Dade South District WWTP receipts:
+--   * 000068 / 000195 / 000388 = the "Miami-Dade County - South District WWTP - Black Point" form
+--     (a low handwritten number went into our DB; the pre-printed ticket is a 4xxxxx, e.g. 445504).
+--   * 444849 / 444980 / 445331 = the red-stamped "South District WWTP / Miami-Dade Water & Sewer"
+--     form (same as the 8xxxxx book, just the earlier 4xxxxx receipt series).
+-- => Miami-Dade SDWWTP has THREE historical receipt formats: 4xxxxx (early 2026), 8xxxxx (mid 2026),
+--    and the Black-Point form. Broward stays 2xxxxx->3xxxxx. Backup:
+-- backups/2026-07-15_derm_facility_backfill_md_receiptconfirmed_before.json
+UPDATE public.derm_manifests
+SET    disposal_facility_id = 2            -- South District WWTP (Miami-Dade)
+WHERE  deleted_at IS NULL
+  AND  disposal_facility_id IS NULL
+  AND  (white_manifest_number ~ '^[04][0-9]{5}$' OR yellow_ticket_number ~ '^[04][0-9]{5}$');
+-- Applied 2026-07-15: 28 rows. FINAL STATE: every live derm_manifests row now has a facility ->
+-- SDWWTP 425, Broward 101, NULL 0, total 526.
