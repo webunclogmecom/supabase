@@ -73,3 +73,22 @@ WHERE  deleted_at IS NULL
   AND  (white_manifest_number IS NULL OR white_manifest_number = '');
 -- Applied 2026-07-15: 7 rows. Post-fix: 0 series-vs-facility contradictions (SDWWTP all 8xxxxx,
 -- Broward all 3xxxxx/2xxxxx); SDWWTP 397, Broward 36.
+
+
+-- ============================================================================
+-- ADDENDUM 2 (2026-07-15) - Broward NULL-facility backfill (Fred-approved: 39+26)
+-- ============================================================================
+-- After the jurisdiction audit above, the remaining NULL-facility Broward rows were filled to
+-- Water and Wastewater Services (id 3):
+--   * 39 rows = 3xxxxx (both fields)  -> Broward, confirmed by receipt series (ticket 308792 image).
+--   * 26 rows = 2xxxxx                 -> Broward, same sequential receipt book (294999..298064).
+-- Left NULL (unclassifiable by number, need the physical receipt): 28 rows / 6 tickets =
+--   000068, 000195, 000388 (0xxxxx) + 444849, 444980, 445331 (4xxxxx).
+-- Idempotent (fills NULLs only). Backup: backups/2026-07-15_derm_facility_backfill_broward_before.json
+UPDATE public.derm_manifests
+SET    disposal_facility_id = 3            -- Water and Wastewater Services (Broward)
+WHERE  deleted_at IS NULL
+  AND  disposal_facility_id IS NULL
+  AND  (white_manifest_number ~ '^[23][0-9]{5}$' OR yellow_ticket_number ~ '^[23][0-9]{5}$');
+-- Applied 2026-07-15: 65 rows. Final: SDWWTP 397, Broward 101, still-NULL 28 (the 0xxxxx/4xxxxx set),
+-- 0 series-vs-facility contradictions on either facility.
