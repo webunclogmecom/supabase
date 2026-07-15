@@ -75,6 +75,26 @@ line item**: `EXISTS (line_items WHERE job_id=j.id AND invoice_id IS NULL AND se
   *should* get recurring visits, check for an active **non-08** SA/SC line item and cross-reference **Yannick's
   SA-build list** (Airtable base `app6TThMjeY1PRTrR` "list jobs" → `Job Line Items`), never `clients.status` alone.
 
+### 2c. Job billing type — FIXED_PRICE jobs: visits must carry NO line items (2026-07-15)
+
+Every Jobber job has a **billing type**: `VISIT_BASED` (the norm) or `FIXED_PRICE`.
+
+- **`VISIT_BASED`** — each visit is billed, so it *carries* the service line items; the **job total = one visit's
+  template** (adding visits never inflates it). This is how normal SA jobs work (e.g. 168-AVA #99900809: 2 lines,
+  $1575, 3 visits, total stays $1575).
+- **`FIXED_PRICE`** — a flat per-invoice amount, used for **flat-monthly** clients (billing decoupled from visit
+  cadence — see [flat monthly billing]). **The invoice = the SUM of the job's line items, and Jobber attaches the
+  job's template lines to EACH created visit as EXTRA charges that STACK.** So pushing N visits inflates the fixed
+  amount by N×(line total). Krudo 031-KRU #99901021 went **$559.06 → $1,639.06** after two visits were pushed.
+
+**Fix (`jobber-push-visit`, commit `1ed9e3a`, 2026-07-15):** after `visitCreate`, if `job.billingType == 'FIXED_PRICE'`,
+strip the just-inherited lines at the **JOB** level via **`jobDeleteLineItems`**. ⚠ `visitDeleteLineItems` only
+**unlinks** the line item from the visit — the object survives on the job and still inflates the fixed total (only a
+job-level delete, or the Jobber UI, removes it). The strip runs only when a base line-item set exists elsewhere on the
+job (never removes the job's sole/base lines), and is a no-op for `VISIT_BASED`. Net: FIXED_PRICE visits appear in
+Jobber with **zero line items**; the fixed price stays put. (Jobber job-line mutations: `jobCreateLineItems /
+jobDeleteLineItems / jobEditLineItems / jobOrderLineItems`; visit-level are `visit*LineItems`.)
+
 ---
 
 ## 3. Sync timing — inbound Jobber → DB
