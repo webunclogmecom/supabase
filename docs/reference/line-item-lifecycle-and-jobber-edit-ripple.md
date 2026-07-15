@@ -53,6 +53,28 @@ For DB-mastered visits (`source IN ('supabase_cron','visit-calendar')`) `handleV
 the customer work order goes blank. Proof: 082-TFC's newest completed visit 6215 (`supabase_cron`) has zero
 visit-scoped line items, whereas the 4 older Jobber-era completed visits each have one.
 
+### 2b. Which line items generate a VISIT — code 08 (Warranty of Drainage) is billing-only
+
+Not every Service-Agreement line item produces a truck roll. **Code 08 "Warranty of Drainage" is a recurring
+BILLING subscription — a charge, not a visit.** `generate_service_agreement_visits.js` only generates visits for a
+job whose `JOB_PREDICATE` is satisfied, which — beyond `frequency_days>0`, `title ILIKE 'Service Agreement%'`
+(non-`[OLD]`), not archived, and `clients.status IN ('ACTIVE','RECURRING')` — **requires a real physical-service
+line item**: `EXISTS (line_items WHERE job_id=j.id AND invoice_id IS NULL AND service_line_items.reason IN
+('Service Agreement','Service Call') AND code <> '08')`. So a job whose only service item is code 08 (+ fees 25 CC /
+26 ACH) generates **nothing**, correctly.
+
+- **Why the `code <> '08'` guard exists (Fred/Yan 2026-07-02):** code 08 wrongly carried `service_type='WD'`, so
+  `handleVisit`'s GT-default was minting **phantom** visits for warranty-only clients. The guard stopped new phantoms;
+  the generator's stale-cleanup sweep then soft-deleted the existing ones (an `app_source=sql` soft-delete of
+  `source='supabase_cron'` future visits — expected cleanup, not data loss).
+- **The predicate keys on `reason + code`, not `service_type`** — codes 03/04 (grey water / lift station) also have
+  `service_type` NULL, so a type-based rule would wrongly drop them.
+- **Ops consequence:** a client can be `status='RECURRING'` and have a live Warranty-of-Drainage SA job yet
+  **correctly have zero scheduled visits**. Do NOT read that as a scheduling gap. Confirmed 2026-07-15 on the 7
+  "The Carrot Express" (TCE) locations — code-08-only, verified in `line_items` + Jobber. To judge whether a client
+  *should* get recurring visits, check for an active **non-08** SA/SC line item and cross-reference **Yannick's
+  SA-build list** (Airtable base `app6TThMjeY1PRTrR` "list jobs" → `Job Line Items`), never `clients.status` alone.
+
 ---
 
 ## 3. Sync timing — inbound Jobber → DB

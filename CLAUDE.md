@@ -156,6 +156,8 @@ Commercial overnight routes run **~8 PM into the next ~6 AM**, so **`visit_date`
 ### `clients.status` values
 `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE`. AT's old `Recuring` (one r) was a typo — normalized 2026-05-13. populate.js + ops views all use `RECURRING`.
 
+**⚠ `status='RECURRING'` does NOT mean the client generates visits.** Visit-gen keys off the JOB, not the client flag: a client generates SA visits only if it has an active, `frequency_days>0`, non-`[OLD]` `Service Agreement%` job carrying a **physical-service** line item (any SA/SC code **except 08**). **Code 08 "Warranty of Drainage" is a billing-only subscription — a recurring CHARGE, not a truck roll — and generates NO visits** (Fred/Yan 2026-07-02; code 08 wrongly had `service_type='WD'`, so the GT-default made phantom visits — now excluded in the `generate_service_agreement_visits.js` JOB_PREDICATE, which keys on `service_line_items.reason IN ('Service Agreement','Service Call') AND code <> '08'`). So a Warranty-of-Drainage-only client (code 08 + fees 25/26) **correctly has zero scheduled visits even while `status='RECURRING'`** — don't flag it as a scheduling gap. To confirm whether a client should get recurring visits, check its actual non-08 SA/SC line item (+ Yannick's SA-build list, Airtable base `app6TThMjeY1PRTrR` → `Job Line Items`), not the status flag.
+
 ### GDO permits — location-bound (added 2026-05-25, per Fred)
 
 A GDO (Grease Disposal Operator permit) is issued by Miami-Dade DERM to a **physical
