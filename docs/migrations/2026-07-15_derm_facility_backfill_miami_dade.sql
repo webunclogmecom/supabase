@@ -39,3 +39,37 @@ WHERE  deleted_at IS NULL
   AND  (yellow_ticket_number IS NULL OR yellow_ticket_number = '');
 -- Applied to Prod 2026-07-15 via Management API: 294 rows. Verify: SDWWTP count 110 -> 404,
 -- and zero remaining NULL-facility rows match the predicate above.
+
+
+-- ============================================================================
+-- ADDENDUM 2026-07-15 - receipt-confirmed classification audit + 1 correction
+-- ============================================================================
+-- Fred supplied two physical disposal receipts, which CONFIRM the number-series rule above:
+--   * BROWARD  = "Broward County Water and Wastewater Services, Septage Receiving Facility,
+--                 Pompano Beach" (DB facility id 3).  Example ticket 308792 -> 3xxxxx.
+--                 (Its "Service Area: Dade County" + "Mix Load" prove a load can be COLLECTED
+--                  in Dade but DUMPED at Broward, so client county does NOT decide the facility.)
+--   * MIAMI-DADE = "South District Wastewater Treatment Plant, Miami-Dade Water & Sewer"
+--                 (DB facility id 2).  Example receipt 829788 -> 8xxxxx.
+--
+-- Audit (series-vs-facility cross-tab over all live rows):
+--   * All 294 backfilled rows (and all 397 SDWWTP rows) are 8xxxxx  -> Miami-Dade CONFIRMED, no undo.
+--   * The 2xxxxx numbers (294999 Jan-02, 296524 Jan-23, 296623 Jan-26, 298064 Feb-13) are the
+--     EARLIER part of the same sequential Broward receipt book that later reads 305031/306859/
+--     308684/308792 -> so 2xxxxx = Broward too (definitely not Dade's 8xxxxx). Still NULL-facility;
+--     left for a Broward (id 3) backfill decision along with the 39 both-3xxxxx NULL rows.
+--   * 0xxxxx (000068/000195/000388) + 4xxxxx (444849/444980/445331) match neither facility's
+--     format/sequence -> genuinely unclassifiable by number; need the physical receipt.
+--
+-- ONE mis-assignment found + corrected: ticket 308684 (7 rows) is a Broward 3xxxxx receipt with
+-- Broward/Palm-Beach clients but was assigned SDWWTP (id 2). Corrected to Broward (id 3).
+-- (Pre-existing, NOT from the backfill above.) Backup:
+-- backups/2026-07-15_derm_308684_broward_reassign_before.json
+UPDATE public.derm_manifests
+SET    disposal_facility_id = 3            -- Water and Wastewater Services (Broward)
+WHERE  deleted_at IS NULL
+  AND  disposal_facility_id = 2
+  AND  yellow_ticket_number = '308684'
+  AND  (white_manifest_number IS NULL OR white_manifest_number = '');
+-- Applied 2026-07-15: 7 rows. Post-fix: 0 series-vs-facility contradictions (SDWWTP all 8xxxxx,
+-- Broward all 3xxxxx/2xxxxx); SDWWTP 397, Broward 36.
