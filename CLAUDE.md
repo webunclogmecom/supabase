@@ -143,13 +143,14 @@ require explicit Fred sign-off and run via a manual script (see
 ### Truck names are NOT people
 **Moises, David, Goliath** — trucks. **Cloggy** — truck (only daytime-only one). Never respond to "David did the visit" as if David is a person without checking [docs/operations.md](docs/operations.md#truck-name--person-name).
 
-### Overnight shifts → the operating-date rule (refined 2026-07-01)
-Commercial overnight routes run **~8 PM into the next ~6 AM**, so **`visit_date` = the OPERATING NIGHT the route is FOR**, NOT the clock date of `start_at`. ONE canonical derivation, shared by `webhook-jobber.operatingDateET`, `sync-jobber-visit-drift.adoptTarget`, and the DB trigger `trg_aa_reconcile_operating_date` (`OVERNIGHT_CUTOFF = 06:00 ET`):
-- `start_at` NULL, or ET time **00:00:00** (placeholder) → all-day; `visit_date` stands as the operating date.
-- ET time **00:00:01–05:59** (early-AM) → the **PRIOR** ET date (it belongs to the prior night's route).
-- evening / daytime → that ET date.
+### Overnight shifts → the operating-date rule (visit_date = ET CLOCK date; 06:00 cutoff REMOVED 2026-07-02)
+Commercial overnight routes run ~8 PM into the next ~6 AM, but **`visit_date` is simply the ET CLOCK date of `start_at`**: `(start_at AT TIME ZONE 'America/New_York')::date`. The "operating night / which-shift" idea is **metadata for understanding only and does NOT move the date** (Fred 2026-07-02); this matches Jobber. ONE canonical derivation, shared by `webhook-jobber.operatingDateET`, `scripts/lib/operating_date_et.js`, and the live DB BEFORE trigger `fn_reconcile_visit_operating_date` (Branch 3 = `visit_date := (start_at AT TIME ZONE 'America/New_York')::date`).
+- `start_at` NULL → all-day; `visit_date` stands (authoritative).
+- otherwise → `visit_date` = the ET clock date of `start_at`. An early-AM (00:00 to 05:59 ET) visit KEEPS its own clock date (a 2 AM ET visit on Jun 30 is `visit_date` = Jun 30, NOT the prior night).
 
-**Consequence for the apps (esp. Calendar):** evening visits → Calendar date = Jobber date (agree). **Early-AM visits (after midnight)** → the Calendar shows the **prior operating night** while Jobber shows the actual clock date a day later — **intentional, NOT a mismatch** (a 2 AM visit on Jun 30 belongs to the Jun 29 night → `visit_date` = Jun 29). Don't "fix" that gap.
+⚠ **The old 06:00-ET "operating night" cutoff (early-AM shifted to the PRIOR date) was REMOVED 2026-07-02.** Do NOT reintroduce it, and do NOT flag a correct early-AM `visit_date` (which equals its ET clock date) as a timezone bug. Two traps that caused the 2026-07-09 ±1-day oscillation: (1) a raw UTC slice `startAt.slice(0,10)` is +1 day for evening-ET visits (20:00 to 23:59 ET = 00:00 to 03:59 Z next day); (2) re-adding the 06:00 cutoff. Never write `visit_date` standalone: co-write it with a `start_at` change, or write `start_at` and let the trigger derive it. Full spec: [docs/reference/operating-date-rule.md](docs/reference/operating-date-rule.md).
+
+**Consequence for the apps (Calendar):** the Calendar / `visit_date` = Jobber's clock date for BOTH evening and early-AM visits (they agree). There is no longer an intentional early-AM "prior night" gap.
 
 **Safeguards (2026-07-01):** the BEFORE trigger `trg_aa_reconcile_operating_date` keeps the `visit_date`↔`start_at` pair consistent both ways (start_at write → derive date; pure date-drag → move start_at's day, keep the ET wall-clock). The old `handleVisit` +1 bug (took the UTC date-slice) is fixed; `ripple_reschedule_visit` now shifts days in ET (DST-safe). Always query with `visit_date` explicitly. Full spec: [docs/reference/operating-date-rule.md](docs/reference/operating-date-rule.md).
 
@@ -182,7 +183,7 @@ for the client (not just GT). The 2026-05-25 backfill caught the historic gap.
 `public.manifest_visits` is guarded by BEFORE triggers that apply to **every** writer (apps, RPCs, scripts, backfills):
 - **`trg_aa_link_same_client`** — REJECTS a link whose visit belongs to a different client than the manifest (the root cause of the 25 cross-client mis-links remediated 07-06/07). The sanctioned co-loaded-ticket path is **`public.file_manifest_on_shared_ticket(white#, client_id, visit_id)`** (files the client's own sibling manifest inheriting the shared sheet docs + links, idempotent).
 - **`trg_ab_link_one_white`** — one white manifest # per visit (same-white sibling/consolidated-dump re-links allowed).
-- **`trg_ac_link_visit_not_after_dump`** — REJECTS a link whose `visit_date > dump_ticket_date + 1 day` (grease is pumped BEFORE the dump; +1-day grace for entry noise / the 06:00-ET cutoff). Blocks the fuzzy-linker "over-attach the client's NEXT visit" class. NULL dump passes.
+- **`trg_ac_link_visit_not_after_dump`** — REJECTS a link whose `visit_date > dump_ticket_date + 1 day` (grease is pumped BEFORE the dump; +1-day grace for entry noise / overnight operating-date timing). Blocks the fuzzy-linker "over-attach the client's NEXT visit" class. NULL dump passes.
 - **`trg_zz_card_from_link`** (AFTER) — materializes the Stamp Studio card for the (ticket, client) on link.
 - `public.derm_manifests` has **`CHECK service_date <= dump_ticket_date`** (grease dumps after service, never before).
 - **Soft-deleting a `derm_manifests` row re-points its Stamp cards** (`trg_ad_card_reptr_on_delete` → live (ticket,client) sibling, else NULL) and re-filing re-resolves them (`trg_resolve_card_manifest`) — so a delete+re-file never leaves a Stamp card pointing at a dead manifest (which would make it invisible). Writes only `derm.address_row_map`.

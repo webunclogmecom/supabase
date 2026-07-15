@@ -1,0 +1,31 @@
+-- 2026-07-15 · Unlink one impossible manifest_visits link (009-CN)
+-- ---------------------------------------------------------------------------
+-- Found during a full scan of manifest-visit date consistency (Fred flag on the
+-- Stamp Studio "082-TFC" card). One link was genuinely impossible: a visit dated
+-- AFTER its dump ticket, which cannot happen (grease is pumped, THEN dumped).
+--
+--   manifest_visits(manifest_id=898, visit_id=1297)
+--     manifest 898 = 009-CN row of ticket 813222, dumped 2026-01-09
+--     visit 1297   = 009-CN "Grease Trap Pumping [OLD]", visit_date 2026-01-19 (10 days AFTER the dump)
+--
+-- Ticket 813222 is a legitimate Jan-9 dump (5 of its 6 clients were serviced Jan 8-9).
+-- 009-CN has NO Jan 8-9 visit, so the legacy Airtable "nearest visit" linker wrongly
+-- grabbed 009-CN's Jan-19 visit. This link predates trg_ac_link_visit_not_after_dump
+-- (2026-07-07), which now blocks the class (visit_date <= dump_ticket_date + 1).
+--
+-- Fix: remove ONLY the bad link (the sanctioned unlink = DELETE on manifest_visits,
+-- not a hard-delete of business data). The manifest row 898 is KEPT (009-CN is still on
+-- the physical 813222 sheet); visit 1297 is KEPT. After this, visit 1297 correctly has no
+-- manifest (a real DERM gap for 009-CN's Jan-19 visit) and manifest 898 is unlinked
+-- (needs 009-CN's missing Jan-9 visit if it is ever synced).
+--
+-- Backup: backups/2026-07-15_unlink_009CN_impossible_manifest_visit.json
+-- Rollback would re-insert (898,1297) but trg_ac now (correctly) rejects it.
+
+DELETE FROM public.manifest_visits WHERE manifest_id = 898 AND visit_id = 1297;
+-- Applied 2026-07-15: 1 row. Verified: link gone, manifest 898 kept, visit 1297 kept + now 0 manifest links.
+
+-- NOTE: the broader "card date (dump) != linked visit date (service)" pattern seen on the
+-- 082-TFC card is NOT corruption -- derm_manifests.service_date holds the DUMP date, and the
+-- real service date is the linked visit's visit_date. 483/564 links show this benign lag.
+-- See memory reference_derm_service_date_is_dump_date.
