@@ -168,6 +168,15 @@ const M_ASSIGN = `mutation($id: EncodedId!, $input: VisitEditAssignedUsersInput!
 const M_LI_CREATE = `mutation($id: EncodedId!, $input: VisitCreateLineItemInput!){ visitCreateLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
 const M_LI_DELETE = `mutation($id: EncodedId!, $input: VisitDeleteLineItemsInput!){ visitDeleteLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
 const Q_VISIT_LI  = `query($jobId: EncodedId!){ job(id:$jobId){ visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id name } } } } } }`;
+// FIXED-PRICE line-item strip (2026-07-15): on a FIXED_PRICE job the invoice = the SUM of the job's
+// line items, and Jobber attaches the job's template lines to EACH created visit as EXTRA charges
+// that STACK — 031-KRU #99901021 went $559.06 -> $1,639.06 after two visits were pushed. VISIT_BASED
+// jobs are immune (job total = one visit's template; per-visit lines are how it bills). So after
+// creating a visit on a FIXED_PRICE job we remove the just-inherited lines at the JOB level:
+// visitDeleteLineItems only UNLINKS from the visit (the object survives on the job); jobDeleteLineItems
+// removes the object. Only ever strips when a base line-item set exists ELSEWHERE on the job.
+const M_JOB_LI_DELETE = `mutation($id: EncodedId!, $input: JobDeleteLineItemsInput!){ jobDeleteLineItems(jobId:$id, input:$input){ userErrors{ message path } } }`;
+const Q_JOB_FIXED = `query($id: EncodedId!){ job(id:$id){ billingType lineItems(first:50){ nodes{ id } } visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id } } } } } }`;
 // Completion as a first-class two-way field-group (2026-07-10): the Calendar's complete /
 // uncomplete must reach Jobber (visits.visit_status completed<->scheduled), not just our DB.
 // Jobber has dedicated mutations that return the visit so we can VERIFY the result.
@@ -236,6 +245,27 @@ async function syncVisitLineItems(token: string, visit: any, visitGid: string, i
     }
   } catch (e) { console.log(`[push] dedupe skipped: ${e instanceof Error ? e.message : e}`); }
   console.log(`[push] synced ${lineItems.length} line item(s) to Jobber visit ${visitGid}`);
+}
+
+// See M_JOB_LI_DELETE note. Removes a freshly-created visit's inherited lines from a FIXED_PRICE
+// job — but ONLY when a base line-item set exists elsewhere on the job, so we never strip the job's
+// sole/base lines (e.g. the first visit that carries them). No-op for VISIT_BASED. Idempotent; a
+// failure here never blocks the visit's existence in Jobber (best-effort, logged).
+async function stripInheritedLineItemsFixedPrice(token: string, jobGid: string, visitGid: string) {
+  try {
+    const r = await gql(token, Q_JOB_FIXED, { id: jobGid });
+    const job = r.job;
+    if (!job || job.billingType !== "FIXED_PRICE") return;
+    const allJobLi: string[] = (job.lineItems?.nodes || []).map((n: any) => n.id);
+    const vnode = (job.visits?.nodes || []).find((n: any) => n.id === visitGid);
+    const visitLi: string[] = (vnode?.lineItems?.nodes || []).map((n: any) => n.id);
+    if (!visitLi.length) return;
+    const baseElsewhere = allJobLi.filter((id: string) => !visitLi.includes(id));
+    if (!baseElsewhere.length) { console.log(`[push] fixed-price: keeping visit ${visitGid} lines — they are the job's only (base) line items`); return; }
+    const d = await gql(token, M_JOB_LI_DELETE, { id: jobGid, input: { lineItemIds: visitLi } });
+    const de = ue(d.jobDeleteLineItems);
+    console.log(de ? `[push] fixed-price strip warn on ${jobGid}: ${de}` : `[push] fixed-price: stripped ${visitLi.length} inherited line item(s) from job ${jobGid} for visit ${visitGid}`);
+  } catch (e) { console.log(`[push] fixed-price strip skipped: ${e instanceof Error ? e.message : String(e)}`); }
 }
 
 async function handle(op: string, visitId: number, payloadGid?: string, changed?: string[]) {
@@ -428,6 +458,7 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   await linkVisit(visitId, newGid);
   await clearFlag(visitId);
   await syncVisitLineItems(token, visit, newGid, false);
+  await stripInheritedLineItemsFixedPrice(token, job.gid, newGid);
   console.log(`[push] created Jobber visit ${newGid} on job ${job.gid} (our visit ${visitId})`);
   return { ok: true, created: newGid };
 }
