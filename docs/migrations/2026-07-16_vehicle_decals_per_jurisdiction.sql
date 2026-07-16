@@ -121,5 +121,14 @@ ON CONFLICT (vehicle_id, jurisdiction) DO UPDATE SET decal_number = EXCLUDED.dec
        LIMIT 1) AS decal
 */
 
--- OPEN: Cloggy has no decal on record in either county (17 work orders show none), and
--- Goliath (INACTIVE) has none either. Supply them and they resolve with no code change.
+-- DECIDED (Fred 2026-07-16) - neither is an open gap:
+--   * Goliath  - retired, not used anymore. Already status=INACTIVE with zero visits ever
+--                recorded, so it needs no decal in either county. Nothing to do.
+--   * Cloggy   - ACTIVE and still running (last visit 2026-07-16), but its decals are
+--                DELIBERATELY left NULL until Fred supplies them. Its work orders show a blank
+--                decal until then, which is the intended honest state (we do not guess a decal).
+--                When Fred provides them, INSERT one row per county into public.vehicle_decals
+--                and they resolve immediately with no code change:
+--                  INSERT INTO public.vehicle_decals (vehicle_id, jurisdiction, decal_number)
+--                  SELECT id, 'Miami-Dade', '<decal>' FROM public.vehicles WHERE name='Cloggy'
+--                  ON CONFLICT (vehicle_id, jurisdiction) DO UPDATE SET decal_number=EXCLUDED.decal_number;
