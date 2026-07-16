@@ -47,6 +47,21 @@ const DUMPS = {
   },
 } as const;
 
+// ⚠⚠ TEST MODE — THE ONE SWITCH. Fred 2026-07-16: "we're building this from the ground up, so every
+// visit created is only for testing purposes and should be deleted until this is done for production.
+// So do not put the visits on jobber yet."
+//
+//   false = the visit is created in the DB and SHOWS IN THE VISIT CALENDAR, but is kept OFF Jobber.
+//   true  = production: the visit pushes to Jobber exactly as a Calendar-created visit does.
+//
+// Flipping this to `true` is the ENTIRE go-live step for the Jobber side. Do not flip it until Fred
+// says the app is done — the crew works off the real Jobber schedule and test rows land on it.
+// The suppression itself lives in public.create_dump_visit (see
+// docs/migrations/2026-07-16_create_dump_visit_no_push.sql): it must close TWO paths, the AFTER
+// INSERT trigger AND the */3 'resolve-stale-visit-sync-pending' cron, which would otherwise re-drive
+// any 'pending' row to Jobber ~3 minutes later, silently.
+const PUSH_TO_JOBBER = false;
+
 const SERVICE_LINE_ITEM_DUMP = 22; // "22 - Service Call - Labor" — requires_derm=false (explicit false,
                                    // unlike a free-text 'DUMP' item which classifies to NULL/unknown).
 // create_calendar_visit has NO dedupe; a double-tap would create two DB visits AND two Jobber visits.
@@ -69,7 +84,15 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
-const db = createClient(SUPABASE_URL, SERVICE_KEY);
+// x-app-source is what the audit trail attributes the write to. audit.log_change() reads
+// `request.headers ->> 'x-app-source'` (ADR 016) and falls back to 'sql' when it is absent — which is
+// why every DUMP-created visit showed as "System created this visit" in the Calendar's Activity tab
+// (Fred, 2026-07-16). Every other app already stamps itself: 'visit-calendar', 'derm-tracker',
+// 'admin-review'. Ours is 'dump-schedule'. Set it on the client so EVERY PostgREST call from this
+// function carries it — the RPC and the dedupe read alike.
+const db = createClient(SUPABASE_URL, SERVICE_KEY, {
+  global: { headers: { "x-app-source": "dump-schedule" } },
+});
 
 const etDate = () =>
   new Intl.DateTimeFormat("en-CA", {
@@ -151,10 +174,12 @@ Deno.serve(async (req) => {
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + 60 * 60_000);
 
-    // The ONLY sanctioned visit-creating path. It forces source='visit-calendar' (required: 'manual'
-    // is CHECK-legal but is in neither trigger WHEN nor the push gate => would never reach Jobber)
-    // and visit_status='scheduled', and seeds visit_team + line_items + visit_locations.
-    const { data: visit, error } = await db.rpc("create_calendar_visit", {
+    // create_dump_visit wraps the ONE sanctioned visit-creating path (create_calendar_visit) and adds
+    // the Jobber kill-switch. It keeps all of that RPC's validation and its line_items/visit_team/
+    // visit_locations children; when PUSH_TO_JOBBER is false it additionally suppresses the insert
+    // push and flips the row to source='manual' + sync_state='confirmed' so neither the trigger nor
+    // the */3 retry cron can send it to Jobber. The visit still shows in the Visit Calendar.
+    const { data: visit, error } = await db.rpc("create_dump_visit", {
       p_client_id: dump.client_id,
       p_job_id: dump.job_id,
       p_service_line_item_ids: [SERVICE_LINE_ITEM_DUMP],
@@ -166,6 +191,7 @@ Deno.serve(async (req) => {
       p_notes: `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.`,
       p_driver_id: driverId,
       p_team_ids: [driverId],
+      p_push_to_jobber: PUSH_TO_JOBBER,
     });
 
     if (error) {
