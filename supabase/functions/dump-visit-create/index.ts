@@ -8,11 +8,20 @@
 // SECURITY MODEL (mirrors get-derm-doc): anon-callable, so THIS FUNCTION does its own authorization.
 //   - verify_jwt = false  (the driver's phone has no JWT)
 //   - the service_role key lives ONLY here, server-side; the page never sees it
-//   - the QR carries a shared secret (DUMP_QR_KEY). Check is FAIL-CLOSED: a missing env var REJECTS
-//     (copying webhook-airtable:1089-1100 — deliberately NOT sync-jobber-visit-drift:283, which
-//     fails OPEN when its var is unset).
-//   - the client is NEVER taken from the caller: `dump` is a key into a server-side whitelist, so the
-//     worst a leaked URL can do is create a $0 dump visit on one of two fixed disposal sites.
+//
+// NO SHARED SECRET, ON PURPOSE (Fred 2026-07-16: "the idea is to be able to get there with the QR or
+// without it"). The page must work from a bare URL — a bookmark, the crew chat, a typed address — not
+// only from the QR. A secret that must live in a static public bundle to satisfy that is not a secret:
+// it ships in the JS, anyone can read it, and it would buy a false sense of protection. So we don't
+// pretend. What actually bounds this endpoint is STRUCTURAL, and it is much stronger than a leaked key:
+//   1. the client is NEVER caller-supplied — `dump` is a key into a 2-entry server-side whitelist,
+//      so the only rows creatable are on the two disposal sites (never a customer);
+//   2. driver_id must match the server-side roster;
+//   3. idempotency is (site + driver) over 90 min => the ENTIRE endpoint's ceiling is
+//      4 drivers x 2 dumps = 8 visits per 90 minutes, no matter who calls it or how often;
+//   4. every line item is $0, so nothing is billable;
+//   5. anything junk is soft-deletable and the delete propagates back out to Jobber.
+// A `k` in the body/URL is still ACCEPTED and IGNORED so existing QR links keep working unchanged.
 //
 // WHY NOT grant anon EXECUTE on create_calendar_visit: anon is WRITE-NONE by design, established
 // twice (2026-07-11 phase3 visit-lifecycle lock revoked it from PUBLIC+anon in BOTH public.* and
@@ -23,7 +32,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const QR_KEY = Deno.env.get("DUMP_QR_KEY") ?? "";
 
 // Server-side whitelist. Verified against Prod 2026-07-16. The caller sends only the KEY ('DH'|'DP').
 // property_id is deliberately the is_primary row: both dumps carry a billing-address duplicate, and
@@ -85,20 +93,11 @@ async function drivers() {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
-  // FAIL-CLOSED: no configured key => reject everything. Never fall through to "open".
-  if (!QR_KEY) {
-    console.error("[dump] DUMP_QR_KEY not set — rejecting");
-    return json({ ok: false, error: "unauthorized" }, 401);
-  }
-
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ ok: false, error: "bad json" }, 400); }
 
-  if (String(body.k ?? "") !== QR_KEY) {
-    console.warn("[dump] bad key");
-    return json({ ok: false, error: "unauthorized" }, 401);
-  }
-
+  // `k` is accepted and ignored (see the security note at the top): the page must work from a bare
+  // URL, so there is deliberately no shared secret. The endpoint is bounded structurally instead.
   const action = String(body.action ?? "create");
 
   try {
