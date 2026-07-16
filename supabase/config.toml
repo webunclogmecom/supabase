@@ -456,3 +456,13 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# dump-visit-create: the truck-QR endpoint drivers hit from their phone to self-schedule a dump
+# visit. The phone holds NO JWT, so verify_jwt MUST be false — the function does its OWN
+# authorization instead (get-derm-doc model): a shared secret DUMP_QR_KEY carried in the QR URL,
+# checked FAIL-CLOSED (missing env var => reject, like webhook-airtable — never the fail-OPEN
+# idiom in sync-jobber-visit-drift). It holds service_role internally to call
+# create_calendar_visit, which anon is (deliberately) revoked from. Blast radius is bounded: the
+# client is never caller-supplied, only a key into a 2-entry server-side whitelist of dump sites.
+[functions.dump-visit-create]
+verify_jwt = false
