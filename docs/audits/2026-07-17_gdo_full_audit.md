@@ -69,13 +69,55 @@ tenant permits. Our DB holds GDO-16146 ACTIVE on **241-WYN "Wynd 27"** and GDO-1
 "Wynd 28". Which building/client 16146 belongs to (Wynd 27 vs the Wynd 28 tenant locations 5-8)
 needs Fred's Wynd explainer + the PDF address — **do not guess**.
 
-## Part 3 — PDF verification sweep (in progress)
+## Part 3 — PDF verification sweep — ✅ COMPLETE 2026-07-18 (143/143 permits read)
 
-Every distinct valid GDO number on an ACTIVE row → newest OPERATING PERMIT from DERM
-(`api-ecmrer.miamidade.gov/derm/documents`, case-number exact-match on digits) → PDF downloaded +
-text-extracted → `Permit Issued To` / `Facility Location` compared to the client's full address;
-non-exact cases adversarially adjudicated; TIF-only old permits (pypdf can't read) → OCR / the
-Slack `@GDO` bot (one thread per client). Results land in this doc when the sweep completes.
+Every distinct valid GDO number on an ACTIVE row (142, + GDO-11024 from Mila's combined string) →
+newest OPERATING PERMIT from DERM (`api-ecmrer.miamidade.gov/derm/documents`, case-number
+exact-match on digits) → PDF downloaded + `Permit Issued To`/`Facility Location` extracted →
+compared to the client's full address (house + street + zip, street-suffix/direction/ordinal
+normalized, Miami dual-name aliases applied: SW 72 St≡Sunset Dr, NE 1 Ave≡Buena Vista Blvd).
+TIFF-scan permits converted and **vision-read page-by-page**. PDF cache retained in the session
+scratchpad (`gdo_pdf_cache/`, 143 files).
+
+**Verdicts:**
+- **106 verified correct** — exact house+street+zip (97 parser-exact + 4 parser-edge confirms
+  (037-LB, 047-PAM, 133-MUT range, 208-HUB range) + 5 scan-reads:
+  **058-SOH GDO-01179** (Cavalli 2011 @ 19004 NE 29 Ave ✓, expired 2011),
+  **193-FRK GDO-01861** (Pitas & Platters 2009 @ 19062 NE 29 Ave ✓, expired 2009),
+  **114-CI GDO-05104** (REUNION BISTRO 2006 @ **3155 NE 163 ST 33160 — exactly Ceviche Inka's
+  address**; the bot's 07-17 "not confirmed" was wrong for this number; expired 14-JAN-2007),
+  **036-LG GDO-12484** (Urban Bricks Pizza 2019 @ 6144 S Dixie Hwy ✓, expired 2019),
+  **148-MOR GDO-14769** (Moore Club Bev Co @ 4040 NE 2 Ave **FAC. F LVL 4** — distinct facility
+  from GDO-11226's FAC. A LVL 1; both permits legit, as Yan said).
+- **13 zip-variants** — house+street exact, zip clerical differences (DERM vs our record); treated
+  as BELONGS with a zip note: 060-TU(00313), 004-BAO, 008-CV, 012-DKC, 195-MYK, 009-CN(×3),
+  074-TCE, 069-TCE, 045-NU, 034-LG, 170-PV/176-SOU(11433).
+- **20 WRONG → DEMOTED 2026-07-18** (backup `backups/2026-07-18_gdos_sweep_demotions_before.json`),
+  each with the PDF quote in `notes`:
+  - *12 = the June B-list ("wrong, do NOT ingest") that the 06-29 burst ingested anyway:*
+    000-DH/03620, 038-LR/04400, 085-VA/11014, 118-MRJ/07564, 122-BMN/01759, 124-SAF/14336,
+    128-MF/06550, 130-RL/13175, 146-54W/09725, 153-LTC/05395, 198-ARY/05180 (permit correctly
+    remains on 129-BSC), 123-EUC/11260.
+  - *8 NEW finds (first time caught):* **015-FLA**/03603 (school @ 19010 NW 37 Ave; Flame is
+    19010 NE 29 Ave — house coincidence), **112-YA**/04156 (4333 Collins vs 1745 Cleveland Rd),
+    **027-HER**/07916 (12161 SW 152 St vs 161 Camden Dr), **087-BB**/10521 (9543 S Dixie Pinecrest
+    vs 9543 Harding Surfside — house coincidence), **137-BB**/11271 (19565 Biscayne FH-7 vs 18549
+    W Dixie), **182-PAL**/11734 (19650 NW 2 Ave Miami Gardens vs 9650 E Bay Harbor Dr),
+    **180-PV**/14934 (8705 NW 35 Ln Doral vs 8525 Mills Dr Kendall), **243-FE**/00622
+    (730 NW 36 St vs 73 NW 26 St — double digit-shift).
+- **3 held for adjudication (bot / Fred-Yan):**
+  1. **068-TCE GDO-05734** — PDF `2988 GRAND AVE 33133` vs client `2982 Grand Ave` — same block,
+     possibly the same retail building's DERM numbering. Ask the bot / DERM by address.
+  2. **043-MIL (Mila)** — BOTH its numbers point at **800 LINCOLN RD**: GDO-14117 PDF = "800
+     LINCOLN RD (LVL 2)"; GDO-11024 DERM index = "800 LOCCOLN ROAD BUILDING @ 800 LINCOLN RD".
+     Client property (Jobber) = **1636 Meridian Ave**. Either Mila's trap actually sits in the
+     800 Lincoln building (Meridian-facing corner? RDG group facility) or both numbers are wrong.
+     Needs Fred/Yan or a DERM address-search on 1636 Meridian.
+  3. **242-WYN GDO-13814** — permit PDF = **124 NW 28 ST** (matches the NAME "Wynd 28");
+     our 242-WYN property rows say 127 NW 27th St #105 (inherited from the tenant seeding), which
+     is **Wynd 27's (241-WYN) building — where GDO-16146 is an exact match**. Likely fix = correct
+     242-WYN's property to 124 NW 28 St and decide which tenants/locations sit in which building
+     (Fred's Wynd explainer still awaited). Client-data decision — NOT auto-fixed.
 
 Already settled by tonight's fresh reads:
 - **GDO-000313 → 060-TU Talmudic** ✓ (current 2026 permit names TALMUDIC COLLEGE @ 4000 ALTON RD;
