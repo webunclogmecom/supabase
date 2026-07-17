@@ -73,8 +73,9 @@ const IDEMPOTENCY_MINUTES = 90;
 
 // Drivers: ops.v_calendar_driver is NOT a driver list (it returns all 7 active employees incl.
 // Fred/Yannick). Active Technicians auto-appear; DRIVER_EXTRA_IDS covers non-Technician roles who
-// actually drive (Grecia=1 42 assignments/90d, Aaron=26 21). Pending Fred's confirmation.
-const DRIVER_EXTRA_IDS = [1, 26];
+// actually drive: Grecia=1, Aaron=26, Diego=28 (added 2026-07-17, Fred). Jeffrey was requested but
+// there is no active employee by that name (only inactive "Jeffry" id 25) — skipped per Fred.
+const DRIVER_EXTRA_IDS = [1, 26, 28];
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -105,7 +106,7 @@ const mapsUrl = (d: { lat: number; lng: number }) =>
 async function drivers() {
   const { data, error } = await db
     .from("employees")
-    .select("id, full_name, role")
+    .select("id, full_name, role, color_hex") // color_hex = canonical per-driver identity colour (employees.color_hex)
     .eq("status", "ACTIVE")
     .or(`role.eq.Technician,id.in.(${DRIVER_EXTRA_IDS.join(",")})`)
     .order("full_name");
