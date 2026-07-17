@@ -147,8 +147,11 @@ Backups: `2026-07-17_visit_team_jobber_resync_before.json`,
 ## Open for Fred
 - **Frontend TODO (Building Apps)**: apps that display `service_type` GT/CL should switch to the new
   `service_label` column (Calendar drawer/labels, any others). Handed off in the app changelogs.
-- **Ishad Knight / Donald Barron employee records**: role/status are misleading (Ishad was a real driver, now
-  former; Donald never drove per 0 inspections). Consider correcting their `employees.role`.
+- ~~Ishad Knight / Donald Barron employee records~~ — **DONE 2026-07-18** (`2026-07-18_fix_ishad_donald_employee_roles.sql`):
+  Ishad (8) Office→**Technician** (real driver: 55 inspections, drove Moises through Jun 19); Donald (33)
+  Technician→**Office** (dispatch — 0 inspections/GPS, others drove his assigned trucks; Fred-confirmed).
+  Both already INACTIVE (last activity June, nothing since; kept). Role on inactive staff is documentation
+  only — neither is in the active-driver picker.
 - **4 flagged service_type edge cases** (5854 Lift Station; 5127/5125/6989 co-service) — flip or leave? (Low
   impact now: `service_label` shows the real service regardless; these only affect the legacy `service_type`
   used for cadence/lateness.)
