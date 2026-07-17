@@ -139,6 +139,33 @@ Deno.serve(async (req) => {
       });
     }
 
+    // "route" — TODAY'S CLIENT STOPS for the DUMP app's "View Addresses" screen (Fred 2026-07-17:
+    // "the Addresses of the Clients for that day/shift ... excluding the Dump Places (000 clients)").
+    // Reads the SECURITY DEFINER public.dump_route_today() (service_role-only), which selects today's
+    // ET-dated, non-000, soft-delete-safe visits from ops.v_calendar_visit. The DRIVE THERE link is
+    // composed SERVER-SIDE from lat/lng (byte-identical to the happy path) — falling back to the full
+    // address only when geo is missing. The address string is display-only; ", USA" geocoder cruft is
+    // trimmed for legibility.
+    if (action === "route") {
+      const { data, error } = await db.rpc("dump_route_today");
+      if (error) throw new Error(`route: ${error.message}`);
+      const stops = ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+        const lat = r.latitude as number | null, lng = r.longitude as number | null;
+        const dest = (lat != null && lng != null)
+          ? `${lat},${lng}`
+          : encodeURIComponent([r.address, r.city, r.state, r.zip].filter(Boolean).join(", "));
+        const street = String(r.address ?? "").split(/,\s*USA/i)[0].trim();
+        return {
+          code: r.client_code, name: r.client_name, status: r.visit_status,
+          start_at: r.start_at, is_all_day: r.is_all_day,
+          address: street, city: r.city, county: r.county,
+          truck: r.truck_name, driver: r.driver_name, service: r.service_label,
+          maps_url: `https://www.google.com/maps/dir/?api=1&destination=${dest}`,
+        };
+      });
+      return json({ ok: true, date: etDate(), count: stops.length, stops });
+    }
+
     if (action !== "create") return json({ ok: false, error: "unknown action" }, 400);
 
     const dumpKey = String(body.dump ?? "") as keyof typeof DUMPS;
