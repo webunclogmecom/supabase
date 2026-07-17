@@ -324,19 +324,31 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
               `webhook-airtable: skipped gdos write for client ${clientId}/${gdo} — primary property is in Broward county, DERM only issues in Miami-Dade`,
             )
           } else {
-            // UPDATE existing row if (client_id, gdo_number) already present —
-            // also flips status back to ACTIVE if a prior demote (rare).
-            const updateFields: Record<string, unknown> = { status: 'ACTIVE' }
-            if (gdoExp) updateFields.permit_expiration = gdoExp
+            // UPDATE existing row if (client_id, gdo_number) already present.
+            // ⚠ NEVER touch status here (2026-07-17): this path used to force
+            // status='ACTIVE', which silently RE-PROMOTED rows the GDO
+            // reconciliation had demoted as wrong-permit (PDF proves a
+            // different business/address) — Airtable still carries ~28 wrong
+            // GDO numbers, so every AT client touch undid the demotions.
+            // The row's status is OUR curated belongs/doesn't-belong verdict;
+            // AT may refresh the expiration only. New permits INSERT as
+            // ACTIVE below. See docs/audits/2026-07-17_gdo_full_audit.md.
+            if (gdoExp) {
+              const { error: upErr } = await supabase
+                .from('gdos')
+                .update({ permit_expiration: gdoExp })
+                .eq('client_id', clientId)
+                .eq('gdo_number', gdo)
+              if (upErr) console.error(`gdos expiration update failed for ${clientId}/${gdo}:`, upErr.message)
+            }
             const { data: updated, error: upErr } = await supabase
               .from('gdos')
-              .update(updateFields)
+              .select('id')
               .eq('client_id', clientId)
               .eq('gdo_number', gdo)
-              .select('id')
 
             if (upErr) {
-              console.error(`gdos update failed for ${clientId}/${gdo}:`, upErr.message)
+              console.error(`gdos lookup failed for ${clientId}/${gdo}:`, upErr.message)
             } else if (!updated || updated.length === 0) {
               // No existing row — INSERT new canonical permit
               const { error: insErr } = await supabase.from('gdos').insert({
