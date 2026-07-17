@@ -116,6 +116,34 @@ TCE/PV export.
   `2026-07-17_service_type_CL_to_GT_before.json`,
   `2026-07-17_v_calendar_visit_before_inspection_driver.sql`
 
+## Follow-up 2026-07-17b (Fred: "double-check drivers vs Jobber; fix service in the DB too; drop the Excel")
+
+**Driver — Jobber is now authoritative** (`2026-07-17b_calendar_jobber_authority_driver_and_service_label.sql`).
+Re-pulled **live** Jobber `assignedUsers` for **all 1117** non-deleted 2026 visits and reconciled `visit_team`
+by Fred's rule: *Jobber team non-empty & different → use Jobber's; Jobber empty → keep mine.* Only **2**
+drifted (6366 → Grecia; 6468 → Anthony; backup `2026-07-17_visit_team_jobber_resync_before.json`); **5**
+were Jobber-empty and left as-is; 0 unmapped users → the mirror was already 99.8% accurate. Then reordered
+the view's effective-driver COALESCE so a **Jobber crew member always beats the inspection fallback**:
+active crew → any crew (incl. inactive former drivers) → inspection **only when Jobber has no crew** →
+assigned_driver_id. Net: the inspection-recovered Aaron on the Ishad/Donald visits **reverts to Jobber's
+recorded crew** (Ishad/Donald/Steven), because Jobber has a team there; inspection recovery now only fills
+the ~10 visits Jobber left teamless. Verified: **0 visits where the shown driver isn't in the Jobber team**
+(when a team exists); 699 active-crew common-case visits unchanged.
+
+**Service — real taxonomy in the DB.** Added column **`service_label`** to `ops.v_calendar_visit` = the
+canonical `service_line_items.service_kind` (Pumping/Cleaning/Warranty of Drainage/Unclogging/Camera
+Inspection/Dye Test/Assessment/Labor/Parts/Labor BUS), derived from the visit's line items (visit-scoped →
+job template → 'Pumping' for DERM-required). Distribution: Pumping 1230, Cleaning 48, Labor 47, Unclogging
+44, Labor BUS 1, Assessment 1, null 220 (services not derivable from line items — honest blank, not GT/CL).
+`service_type` (GT/CL/WD/LS) stays only for cadence/lateness/`service_configs` joins. **Apps should DISPLAY
+`service_label`, not `service_type`** (frontend change handed to Building Apps). The `service_kind` column on
+this view remains SA/SC (a different concept — not renamed to avoid breaking the frontend).
+
+**Excel** `TCE_PV_MiamiDade_DERMrequired_last45days.xlsx` deleted (Fred no longer needs it).
+
+Backups: `2026-07-17_visit_team_jobber_resync_before.json`,
+`2026-07-17b_v_calendar_visit_before_jobber_authority.sql`.
+
 ## Open for Fred
 - **Ishad Knight / Donald Barron employee records**: both are marked role='Office'/'Technician' but the data
   shows Ishad was a real driver (now former) and Donald never drove. Consider correcting their roles.
