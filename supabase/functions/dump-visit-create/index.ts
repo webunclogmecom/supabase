@@ -155,10 +155,15 @@ Deno.serve(async (req) => {
           ? `${lat},${lng}`
           : encodeURIComponent([r.address, r.city, r.state, r.zip].filter(Boolean).join(", "));
         const street = String(r.address ?? "").split(/,\s*USA/i)[0].trim();
+        // GDO permit # for the DERM address manifest. Only a real Miami-Dade permit (GDO-#### ) is
+        // surfaced — Broward stops are null, and the literal "Not available" data quirk is dropped —
+        // so the app shows the line only when there is a genuine permit to copy onto the manifest.
+        const gdoRaw = String(r.gdo_number ?? "").trim();
+        const gdo = /^GDO-\d+$/.test(gdoRaw) ? gdoRaw : null;
         return {
           code: r.client_code, name: r.client_name, status: r.visit_status,
           start_at: r.start_at, is_all_day: r.is_all_day,
-          address: street, city: r.city, county: r.county,
+          address: street, city: r.city, county: r.county, gdo,
           truck: r.truck_name, driver: r.driver_name, service: r.service_label,
           maps_url: `https://www.google.com/maps/dir/?api=1&destination=${dest}`,
         };

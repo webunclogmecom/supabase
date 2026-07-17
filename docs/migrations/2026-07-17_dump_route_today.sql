@@ -16,7 +16,12 @@
 -- Per the default-privileges gotcha, REVOKE from PUBLIC is not enough — anon/authenticated are
 -- auto-granted by default privileges, so revoke them explicitly.
 
-CREATE OR REPLACE FUNCTION public.dump_route_today()
+-- Drop-then-create (not CREATE OR REPLACE): the RETURNS TABLE shape changed when gdo_number was added
+-- 2026-07-17 (Fred: the route is a reference for filling the DERM address manifest, whose rows carry the
+-- GDO permit #). Idempotent + re-runnable.
+DROP FUNCTION IF EXISTS public.dump_route_today();
+
+CREATE FUNCTION public.dump_route_today()
 RETURNS TABLE (
   client_code   text,
   client_name   text,
@@ -28,6 +33,7 @@ RETURNS TABLE (
   state         text,
   zip           text,
   county        text,
+  gdo_number    text,
   latitude      double precision,
   longitude     double precision,
   truck_name    text,
@@ -50,6 +56,7 @@ AS $$
     v.state,
     v.zip,
     v.county,
+    v.gdo_number,
     v.latitude,
     v.longitude,
     v.truck_name,
