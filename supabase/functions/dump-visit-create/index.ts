@@ -130,7 +130,12 @@ Deno.serve(async (req) => {
       return json({
         ok: true,
         drivers: await drivers(),
-        dumps: Object.entries(DUMPS).map(([k, d]) => ({ key: k, label: d.label, address: d.address, county: d.county })),
+        // maps_url added 2026-07-17 for the redesign's "View Addresses" screen (drive to a dump
+        // without creating a visit). Same server-side lat/lng the create receipt uses — the page
+        // never composes a maps link from a caller-supplied address.
+        dumps: Object.entries(DUMPS).map(([k, d]) => ({
+          key: k, label: d.label, address: d.address, county: d.county, maps_url: mapsUrl(d),
+        })),
       });
     }
 
