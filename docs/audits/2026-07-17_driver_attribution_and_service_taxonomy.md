@@ -145,10 +145,19 @@ Backups: `2026-07-17_visit_team_jobber_resync_before.json`,
 `2026-07-17b_v_calendar_visit_before_jobber_authority.sql`.
 
 ## Open for Fred
-- **Ishad Knight / Donald Barron employee records**: both are marked role='Office'/'Technician' but the data
-  shows Ishad was a real driver (now former) and Donald never drove. Consider correcting their roles.
-- **234-PV Jun 4** (and 2 other no-GPS Jun-4 visits): real driver almost certainly Aaron but no GPS truck to
-  prove it; shown as their Jobber crew. Could be resolved if `derive_visit_vehicle_id` later matches telemetry.
-- **4 flagged service_type edge cases** (5854 Lift Station; 5127/5125/6989 co-service) — flip or leave?
-- **service_type is deprecated** — recommend exposing line-item `service_kind` on `ops.v_calendar_visit` so
-  apps stop showing GT/CL; separate task.
+- **Frontend TODO (Building Apps)**: apps that display `service_type` GT/CL should switch to the new
+  `service_label` column (Calendar drawer/labels, any others). Handed off in the app changelogs.
+- **Ishad Knight / Donald Barron employee records**: role/status are misleading (Ishad was a real driver, now
+  former; Donald never drove per 0 inspections). Consider correcting their `employees.role`.
+- **4 flagged service_type edge cases** (5854 Lift Station; 5127/5125/6989 co-service) — flip or leave? (Low
+  impact now: `service_label` shows the real service regardless; these only affect the legacy `service_type`
+  used for cadence/lateness.)
+- **FYI (not a bug)**: ~5 future SA-generated visits Jobber hasn't crewed yet show a tentative driver from a
+  pre-existing `visit_assignments` row (`assigned_driver_id` is null). Per the "Jobber empty → keep mine"
+  rule this is kept; it self-corrects when Jobber assigns a team. Say the word to suppress tentative drivers
+  on not-yet-crewed future visits.
+
+## Resolved 2026-07-17b
+- ~~Driver double-check vs Jobber~~ — done (live re-verify of all 1117 visits; Jobber-authoritative view).
+- ~~Expose the real service taxonomy in the DB~~ — done (`service_label` column).
+- ~~234-PV Jun 4~~ — moot: Jobber has a team (Ishad/Donald) for it, so it now shows Jobber's crew per the rule.
