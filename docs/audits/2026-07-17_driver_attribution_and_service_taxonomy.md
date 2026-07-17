@@ -157,6 +157,26 @@ Backups: `2026-07-17_visit_team_jobber_resync_before.json`,
   rule this is kept; it self-corrects when Jobber assigns a team. Say the word to suppress tentative drivers
   on not-yet-crewed future visits.
 
+## Follow-up 2026-07-17c — empty-crew residual (Fred: "how can a Team member exist if Jobber has none?")
+
+Fred spotted the ~9 future SA visits still showing a driver with an empty Jobber team and asked whether they
+were Calendar-added — **they were not; it's a bug.** Audit trace: Jobber HAD a crew → webhook mirrored it to
+`visit_team` + `visit_assignments` → Jobber later **unassigned** the crew → `syncVisitTeamFromJobber` DELETEd
+the `visit_team` row (no INSERT) → but `visit_assignments` kept the stale driver. Both the 07-14 FILL-EMPTY and
+the 07-17 FULL-SYNC triggers only fire on visit_team **INSERT**, so a crew **REMOVAL** slipped past — the
+"empty-crew residual" I'd flagged as a known gap.
+
+**Fix** (`2026-07-17c_prune_visit_assignments_on_team_removal.sql`): added an **AFTER DELETE** trigger
+`trg_zz_prune_assignments_on_team_delete` that clears `visit_assignments` rows no longer in `visit_team` for
+the touched **non-completed** visits. With the existing AFTER-INSERT FULL-SYNC, `visit_assignments == visit_team`
+is now an invariant in BOTH directions for pending visits: crew change (DELETE+INSERT) re-syncs; crew removal
+(DELETE-only) clears → the visit shows **no driver until Jobber crews it** (then the INSERT trigger repopulates).
+COMPLETED visits are guarded (keep their historical actual driver even if Jobber later clears the crew); the
+~154 pre-mirror history rows never had a `visit_team` so never fire a DELETE and are untouched. Smoke-tested
+rolled back (scheduled → va cleared; completed → va kept). One-time cleanup cleared the **9** existing
+scheduled orphans (now show "not yet crewed"); backup `2026-07-17c_visit_assignments_orphan_cleanup_before.json`.
+0 scheduled va-orphans remain.
+
 ## Resolved 2026-07-17b
 - ~~Driver double-check vs Jobber~~ — done (live re-verify of all 1117 visits; Jobber-authoritative view).
 - ~~Expose the real service taxonomy in the DB~~ — done (`service_label` column).
