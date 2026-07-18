@@ -24,14 +24,18 @@
 --     Neither exists in the catalog — codes 04/11 correctly say "Lift Station" and code 13 says
 --     "Auxiliary"/"Aux". Historical only, nothing generates them any more.
 --
--- ⚠ STILL LIVE, NOT ACTIONED — 4 stale $0.00 line items on 3 active jobs still carry the old
---   typo'd text and can still be copied onto new visits (most recent occurrence 2026-07-14):
---     job 99900631 (043-MIL Mila)              line_item 82398  $0.00
---     job 99900797 (152-DAV Davinci)           line_items 82519, 82520  $0.00
---     job 99900837 (186-PV Pura Vida Coconut)  line_item 82560  $0.00
---   Each of those jobs ALREADY has a correctly-spelled, properly-priced sibling
---   ($1,620 / $435 / $700), so the typo'd rows are dead duplicates. Clearing them is a DELETE in
---   Jobber, not a rename — awaiting Fred's explicit go-ahead.
+-- ⚠ CORRECTED SAME NIGHT (2026-07-18 full audit — see docs/audits/2026-07-18_qty0_line_item_residue_audit.md):
+--   The block that stood here called the 4 qty-0 typo'd lines on jobs 99900631/99900797/99900837
+--   "dead duplicates ... clearing them is a DELETE in Jobber". THAT WAS WRONG and would have been
+--   destructive: the live id-level probe showed those objects are the LINKED per-visit override
+--   line items of pushed visits — Jobber renders a visit-scoped line at quantity 0 in the
+--   job-scope connection while the owning visit reads the SAME id at qty 1 (no VisitLineItem type
+--   exists; visit and job lines are shared JobLineItem objects). Deleting them would strip lines
+--   off live visits. Their "Drainnage" text is OUR OWN pushed rows (the Calendar picker's old
+--   catalog title), which this migration's catalog fix stops generating. NEVER delete a qty-0
+--   job-scope line by quantity alone — required predicate: qty-0 AND linked to no visit
+--   (quantityFilter:ALL) AND no invoice back-ref. Only 2 truly orphaned deletable lines exist
+--   fleet-wide (job 99900635 / 045-NU: 215806562 $465 + 215806563 $9.99), gated on Fred.
 --
 -- VERIFIED after apply: service_line_items has 0 rows matching 'Drainnage' and 0 matching
 --   'Lyft station'; code 02 service_kind still 'Pumping'.
