@@ -77,6 +77,67 @@ const IDEMPOTENCY_MINUTES = 90;
 // there is no active employee by that name (only inactive "Jeffry" id 25) — skipped per Fred.
 const DRIVER_EXTRA_IDS = [1, 26, 28];
 
+// ---------------------------------------------------------------------------
+// ETA to the dump (docs/09-eta-design.md, Fred 2026-07-18).
+//
+// The driver is never asked where he is: we resolve the truck he is on today (public.dump_driver_origin)
+// and use its Samsara fix. Samsara reports every ~6 seconds while a truck is in use and falls back to
+// hourly heartbeats when it is parked, so a fix is only trustworthy if it is RECENT - hence FRESH_MIN.
+// When the fix is stale we tell the page to ask the phone ONCE (the browser remembers the grant) rather
+// than route from a position we do not believe. A wrong ETA is worse than no ETA: it sends a driver
+// somewhere on a number he trusted.
+const FRESH_MIN = 10;              // minutes; a truck fix older than this is not usable as an origin
+const ROUTES_TIMEOUT_MS = 2500;    // Google Routes budget; on timeout we degrade to no-ETA
+const ETA_THROTTLE_MS = 20_000;    // per (driver, dump, source); a re-rendering page must not spin the meter
+
+// Best-effort, per edge instance. At ~8 dumps/day this is a runaway guard, not a correctness mechanism,
+// so a cold start losing the map is harmless.
+const etaCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+
+type Origin = {
+  lat: number;
+  lng: number;
+  source: "truck" | "phone";
+  gps_age_min: number | null;
+  truck: string | null;
+};
+
+// Resolves the driver's current truck fix, or null when there is nothing fresh enough to trust.
+async function truckOrigin(driverId: number): Promise<Origin | null> {
+  const { data, error } = await db.rpc("dump_driver_origin", { p_driver_id: driverId });
+  if (error) { console.error("[dump] origin rpc failed:", error.message); return null; }
+  const r = Array.isArray(data) ? data[0] : data;
+  if (!r || r.latitude == null || r.longitude == null) return null;
+  const age = Number(r.minutes_ago);
+  if (!Number.isFinite(age) || age > FRESH_MIN) {
+    console.log(`[dump] truck fix too stale for driver ${driverId} (${age} min) - phone fallback`);
+    return null;
+  }
+  return {
+    lat: Number(r.latitude),
+    lng: Number(r.longitude),
+    source: "truck",
+    gps_age_min: Math.round(age),
+    truck: r.vehicle_name ?? null,
+  };
+}
+
+// A caller-supplied coordinate is the ONLY caller-controlled input to the routing call, so bound it.
+function validCoord(lat: unknown, lng: unknown): boolean {
+  const a = Number(lat), b = Number(lng);
+  return Number.isFinite(a) && Number.isFinite(b) &&
+         Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0);
+}
+
+// Real Google Routes call lands next. Until the key exists this returns null, which the eta action
+// surfaces as eta_minutes: null (the page then shows the dump with no ETA line, never a fake number).
+async function computeEta(
+  _o: Origin,
+  _d: typeof DUMPS[keyof typeof DUMPS],
+): Promise<{ eta_minutes: number; arrival_at: string; distance_mi: number | null } | null> {
+  return null;
+}
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -169,6 +230,54 @@ Deno.serve(async (req) => {
         };
       });
       return json({ ok: true, date: etDate(), count: stops.length, stops });
+    }
+
+    // ETA to a dump. Returns one of:
+    //   { ok, eta_minutes, arrival_at, distance_mi, source, gps_age_min, truck, dump, dump_key }
+    //   { ok, need_client_location: true }   -> page asks the phone ONCE, then re-calls with coords
+    // eta_minutes is null (never fabricated) whenever routing is unavailable.
+    if (action === "eta") {
+      const etaDumpKey = String(body.dump ?? "") as keyof typeof DUMPS;
+      const etaDump = DUMPS[etaDumpKey];
+      if (!etaDump) return json({ ok: false, error: "pick a dump" }, 400);
+
+      const etaDriverId = Number(body.driver_id);
+      if (!etaDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+
+      let origin: Origin | null;
+      if (body.client_lat != null || body.client_lng != null) {
+        if (!validCoord(body.client_lat, body.client_lng)) {
+          return json({ ok: false, error: "bad coords" }, 400);
+        }
+        origin = {
+          lat: Number(body.client_lat), lng: Number(body.client_lng),
+          source: "phone", gps_age_min: null, truck: null,
+        };
+      } else {
+        origin = await truckOrigin(etaDriverId);
+        if (!origin) return json({ ok: true, need_client_location: true });
+      }
+
+      const throttleKey = `${etaDriverId}:${etaDumpKey}:${origin.source}`;
+      const cached = etaCache.get(throttleKey);
+      if (cached && Date.now() - cached.at < ETA_THROTTLE_MS) {
+        return json({ ...cached.payload, cached: true });
+      }
+
+      const routed = await computeEta(origin, etaDump);
+      const payload = {
+        ok: true,
+        eta_minutes: routed?.eta_minutes ?? null,
+        arrival_at: routed?.arrival_at ?? null,
+        distance_mi: routed?.distance_mi ?? null,
+        source: origin.source,
+        gps_age_min: origin.gps_age_min,
+        truck: origin.truck,
+        dump: etaDump.label,
+        dump_key: etaDumpKey,
+      };
+      etaCache.set(throttleKey, { at: Date.now(), payload });
+      return json(payload);
     }
 
     if (action !== "create") return json({ ok: false, error: "unknown action" }, 400);
