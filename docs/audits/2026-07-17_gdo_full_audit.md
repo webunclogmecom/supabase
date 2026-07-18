@@ -127,6 +127,49 @@ Already settled by tonight's fresh reads:
 - **148-MOR: both permits legit** (Yan-confirmed)
 - **132-PUM: GDO-000951 = GDO-00951 typo dup** (permit PDFs zero-pad to 6 digits; compare on digits)
 
+## Part 4 — @GDO bot double-check — ✅ COMPLETE 2026-07-18 (Fred-ordered; ONE thread)
+
+All 125 ACTIVE-permit clients were re-verified through the Slack GDO bot in a SINGLE
+#gdo-permit thread (parent ts `1784327168.564039`): first a blind name+address pass (the bot
+independently rediscovers the permit — no number given), then 26 tailored follow-ups (direct
+case-number lookups for every disagreement + address re-asks). **151 bot interactions, 0 timeouts.**
+
+**Outcome: 123 of 125 clients CONFIRMED on their DB numbers.** Every main-pass "disagreement"
+but three turned out to be bot search-recall noise — the direct case-number follow-ups confirmed
+our numbers verbatim (e.g. 033-LG = "LA GRANJA ALLAPATTAH CORP", 069-TCE = "CARROT LOVE TWO LLC",
+174-17 = "SEVENTEEN SUSHI & BAR", 245-MAYU = "AROMAS DEL PERU OF BRICKELL CORP DBA MAYU").
+
+**2 real corrections (bot-found, then PDF-verified before writing — backup
+`backups/2026-07-18_gdos_bot_corrections_before.json`):**
+- **170-PV Pura Vida (1657 N Miami Ave):** held Taula's permit (GDO-11433, unit #E) → demoted;
+  the client's own **GDO-14681** ("PURA VIDA ENTERPRISES LLC" @ 12 NE 17 ST 33136 = the NE-17-St
+  face of the same corner building, Mila-class dual address) reactivated ACTIVE (guard-compliant
+  notes amendment). 176-SOU still holds 11433 — whether 176-SOU IS the Taula operation is a
+  client-identity question for Fred.
+- **238-PV Pura Vida South Miami (6022 S Dixie):** held the suite-B facility's GDO-15650 →
+  demoted; the client's own **GDO-13590** ("PURA VIDA SOUTH MIAMI LLC" @ 6022 S DIXIE HWY
+  SUITE C) inserted ACTIVE.
+
+**1 bot claim REJECTED by PDF (why every claim gets PDF-read):** for 236-LOU the bot proposed
+GDO-16046 "at 2920 NE 207th St Suite 106" — the actual PDF reads **6010 S DIXIE HWY, SOUTH
+MIAMI** (a different Skinny Louie branch; the bot echoed the query address). 236-LOU keeps
+GDO-11696 (PDF: 2920 NE 207 ST 106-A, address-exact). Side lead: SLBURGER5's active South-Miami
+permit has no matching client — possible unregistered branch.
+
+**Held-case resolutions from the run:** 068-TCE keep GDO-05734 (bot concurs; 2988/2982 Grand =
+same venue). 043-MIL keep GDO-14117 — the CURRENT 2026 permit is issued to "MILA FLORIDA LLC DBA
+MILA MIAMI", DERM-indexed "MILA RESTAURANT - BAR/LOUNGE" @ 800 LINCOLN RD (LVL 2) = the Lincoln
+Rd frontage of the 1636 Meridian corner building. 242-WYN keep GDO-13814 — permittee now "PASTA
+WYNWOOD LLC DBA PASTA" @ 124 NW 28 ST (ties tenant "Pasta" to Wynd 28's building; which tenants
+sit in Wynd 27 vs 28 remains Fred/Yan's client-data call). 231-CHE keep GDO-11264 — current
+permittee "CHEESESTEAK FOR SALE, LLC" @ 1522 Washington (the 138-ASW row stays demoted).
+
+**Renewal-lead list (location-correct but EXPIRED per the bot/PDFs — ops/sales follow-up):**
+001-VIN (exp 2020) · 091-SB (2022) · 132-PUM (2023) · 066-TCE (2024) · 179-CIG (2024) ·
+105-CU (2024) · 140-TYO (exp 2025-12-31) · 261-LC (2025) · plus the ancient scans
+114-CI (2007), 193-FRK (2009), 058-SOH (2011), 036-LG (2019). Also DERM ran a 2025
+construction case at Wynd 27 Suite 105 (new FOG system — HRB/PariPari buildout).
+
 ## Open items
 
 - [ ] PDF sweep results + adjudications (Part 3 completion)
