@@ -90,6 +90,15 @@ const FRESH_MIN = 10;              // minutes; a truck fix older than this is no
 const ROUTES_TIMEOUT_MS = 2500;    // Google Routes budget; on timeout we degrade to no-ETA
 const ETA_THROTTLE_MS = 20_000;    // per (driver, dump, source); a re-rendering page must not spin the meter
 
+// HARD DAILY SPEND CAP (Fred 2026-07-18: "so it doesn't go past $2 per day").
+// Routes bills at the Pro SKU: $10 per 1,000 calls = $0.01 per call, so 200 calls = $2.00/day.
+// Real usage is ~8 dump runs/day at 1-4 calls each, so this sits 12-25x above normal traffic and should
+// never bite; it exists to bound a runaway bug, not to ration drivers.
+// Enforced in Postgres (public.dump_eta_take_token), NOT in memory: edge instances do not share state,
+// so an in-process counter would bound each instance rather than the total. See
+// docs/migrations/2026-07-18_dump_eta_daily_cap.sql.
+const ROUTES_DAILY_CAP = 200;
+
 // Best-effort, per edge instance. At ~8 dumps/day this is a runaway guard, not a correctness mechanism,
 // so a cold start losing the map is harmless.
 const etaCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
@@ -141,6 +150,22 @@ async function computeEta(
 ): Promise<{ eta_minutes: number; arrival_at: string; distance_mi: number | null } | null> {
   const key = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
   if (!key) { console.warn("[dump] GOOGLE_MAPS_API_KEY missing - ETA disabled"); return null; }
+
+  // Take a token from the shared daily budget BEFORE spending money. Counting attempts rather than
+  // successes is the deliberate direction for a spend guard. Cache/throttle hits never get here, so a
+  // re-render costs neither a call nor a token.
+  //
+  // FAIL CLOSED: if the counter itself errors we do NOT route. The whole point of this is that the cap
+  // cannot be bypassed, and the failure mode is benign - the page simply shows no ETA line.
+  const { data: token, error: capErr } = await db.rpc("dump_eta_take_token", { p_cap: ROUTES_DAILY_CAP });
+  if (capErr) {
+    console.error("[dump] daily-cap check failed, refusing to route:", capErr.message);
+    return null;
+  }
+  if (token === null || token === undefined) {
+    console.warn(`[dump] daily Routes cap of ${ROUTES_DAILY_CAP} reached - serving no ETA until ET midnight`);
+    return null;
+  }
 
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ROUTES_TIMEOUT_MS);
