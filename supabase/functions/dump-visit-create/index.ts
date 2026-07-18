@@ -129,13 +129,60 @@ function validCoord(lat: unknown, lng: unknown): boolean {
          Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0);
 }
 
-// Real Google Routes call lands next. Until the key exists this returns null, which the eta action
-// surfaces as eta_minutes: null (the page then shows the dump with no ETA line, never a fake number).
+// Traffic-aware ETA from the Google Routes API v2. Server-side only: the key never reaches the phone, so
+// it can be locked to the Routes API in Google Cloud and cannot be scraped out of the page bundle.
+//
+// Returns null on ANY failure (missing key, HTTP error, timeout, unparseable duration). That is
+// deliberate and load-bearing: the page renders NO ETA line when this is null. A driver acts on this
+// number, so the only acceptable failure mode is silence, never a guess.
 async function computeEta(
-  _o: Origin,
-  _d: typeof DUMPS[keyof typeof DUMPS],
+  o: Origin,
+  d: typeof DUMPS[keyof typeof DUMPS],
 ): Promise<{ eta_minutes: number; arrival_at: string; distance_mi: number | null } | null> {
-  return null;
+  const key = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
+  if (!key) { console.warn("[dump] GOOGLE_MAPS_API_KEY missing - ETA disabled"); return null; }
+
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ROUTES_TIMEOUT_MS);
+  try {
+    const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+      method: "POST",
+      signal: ctl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        // The field mask is what keeps this in the cheap tier. Do not widen it casually.
+        "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+      },
+      body: JSON.stringify({
+        origin: { location: { latLng: { latitude: o.lat, longitude: o.lng } } },
+        destination: { location: { latLng: { latitude: d.lat, longitude: d.lng } } },
+        travelMode: "DRIVE",
+        routingPreference: "TRAFFIC_AWARE",
+        departureTime: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[dump] routes http ${res.status}:`, (await res.text()).slice(0, 200));
+      return null;
+    }
+    const j = await res.json();
+    const route = j?.routes?.[0];
+    if (!route?.duration) return null;
+    const secs = Number(String(route.duration).replace(/s$/, ""));
+    if (!Number.isFinite(secs) || secs <= 0) return null;
+    const meters = Number(route.distanceMeters ?? 0);
+    return {
+      eta_minutes: Math.max(1, Math.round(secs / 60)),
+      arrival_at: new Date(Date.now() + secs * 1000).toISOString(),
+      distance_mi: meters > 0 ? Math.round((meters / 1609.34) * 10) / 10 : null,
+    };
+  } catch (e) {
+    console.error("[dump] routes failed:", e instanceof Error ? e.message : String(e));
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const cors = {
