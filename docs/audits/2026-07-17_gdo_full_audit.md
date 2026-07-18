@@ -164,11 +164,20 @@ WYNWOOD LLC DBA PASTA" @ 124 NW 28 ST (ties tenant "Pasta" to Wynd 28's building
 sit in Wynd 27 vs 28 remains Fred/Yan's client-data call). 231-CHE keep GDO-11264 — current
 permittee "CHEESESTEAK FOR SALE, LLC" @ 1522 Washington (the 138-ASW row stays demoted).
 
-**Renewal-lead list (location-correct but EXPIRED per the bot/PDFs — ops/sales follow-up):**
-001-VIN (exp 2020) · 091-SB (2022) · 132-PUM (2023) · 066-TCE (2024) · 179-CIG (2024) ·
-105-CU (2024) · 140-TYO (exp 2025-12-31) · 261-LC (2025) · plus the ancient scans
-114-CI (2007), 193-FRK (2009), 058-SOH (2011), 036-LG (2019). Also DERM ran a 2025
-construction case at Wynd 27 Suite 105 (new FOG system — HRB/PariPari buildout).
+**Renewal-lead list — DEFINITIVE after the 2026-07-18 expiration sync (all ACTIVE rows now carry
+`permit_expiration` parsed from their own PDF; query `permit_expiration < '2026-01-01'`): 20 clients.**
+Exp 2025: 261-LC, 222-SPE, 094-MOZ Mozart Cafe, 140-TYO, 147-OST Maison Ostrow, 183-KRE Kresy ·
+2024: 179-CIG, 047-PAM Pamplemousse, 066-TCE, 105-CU, 004-BAO Baoli · 2023: 132-PUM ·
+2022: 091-SB, 002-41 · 2020: 001-VIN · 2019: 036-LG · 2018: 201-ALA · 2011: 058-SOH ·
+2009: 193-FRK · 2007: 114-CI. Also DERM ran a 2025 construction case at Wynd 27 Suite 105
+(new FOG system — HRB/PariPari buildout).
+
+**Verification stamp (2026-07-18, Fred-ordered):** all 132 ACTIVE valid-format gdos rows now carry
+a notes stamp — "DERM permit PDF read; printed Facility Location matches this client's address" —
+and `permit_expiration` synced from each permit's own PDF (145 parseable; TIFF scans kept their
+known dates). 126 stamped in this pass + the 6 corrected/added rows already carried evidence notes.
+Backup: `backups/2026-07-18_gdos_verified_stamp_before.json`. State: 112 current-2026 / 20 expired
+/ 0 unknown-expiration.
 
 ## Part 5 — Phase 2: active clients WITHOUT a GDO — ✅ COMPLETE 2026-07-18
 
