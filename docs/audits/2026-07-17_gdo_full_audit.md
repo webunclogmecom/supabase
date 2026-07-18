@@ -170,6 +170,35 @@ permittee "CHEESESTEAK FOR SALE, LLC" @ 1522 Washington (the 138-ASW row stays d
 114-CI (2007), 193-FRK (2009), 058-SOH (2011), 036-LG (2019). Also DERM ran a 2025
 construction case at Wynd 27 Suite 105 (new FOG system — HRB/PariPari buildout).
 
+## Part 5 — Phase 2: active clients WITHOUT a GDO — ✅ COMPLETE 2026-07-18
+
+Scope filter: of 290 ACTIVE/RECURRING clients with no valid GDO row, only **64 have pumping
+(`derm_required`) visits** — the rest are residential homes / plumbers / test rows where the FOG
+permit program doesn't apply. Of the 64: **33 Miami-Dade** (bot-queried, same thread) and **31
+Broward/Palm Beach** (out of scope — no Miami-Dade GDO program; yellow-ticket jurisdiction).
+
+**33/33 answered, 0 timeouts. 4 permits FOUND, PDF-verified, and ADDED:**
+| Client | New GDO | PDF evidence |
+|---|---|---|
+| 063-TCE Carrot Express Aventura | **GDO-13939** ACTIVE 2026 | CARROT LOVE, LLC DBA CARROT EXPRESS @ 2440 MIAMI GARDENS DR |
+| 104-PV Pura Vida Miracle Mile | **GDO-06568** ACTIVE 2026 | PURA VIDA MIRACLE MILE LLC @ 244 CORAL WAY (Miracle Mile IS Coral Way) |
+| 223-CHA El Chaman | **GDO-08165** ACTIVE 2026 | EL CHAMAN HOLDINGS LLC @ 14239 SW 42 ST (client 14241 = adjacent storefront) |
+| 222-SPE Le Specialita | **GDO-15268** exp 2025-12-31 | LE SPECIALITA MIAMI LLC @ 40 NE 41 ST — renewal lead |
+
+**2 bot claims rejected by PDF (address-echo failure mode again):** 137-BB — GDO-11271 is the
+client's entity (TEAM FLORIDA BB) but ALL 7 DERM docs bind it to **19565 BISCAYNE BLVD (FH-7)**
+(Esplanade food hall), not 18549 W Dixie; stays demoted; **Fred: which site is the store actually
+at?** 234-PV Wynwood — the bot name-matched GDO-14681, which is 170-PV's (12 NE 17 St).
+
+**True no-permit list (Miami-Dade, pumping visits, DERM has nothing for them at their address) —
+28 clients:** 013-DIM Mikvah, 015-FLA, 016-FIA, 027-HER, 042-MT, 057-BAY, 061-TCE, 083-SHUL,
+084-ULT, 087-BB, 136-BB, 142-57, 150-KOS, 167-FEN, 180-PV, 182-PAL, 187-HAI, 188-ACA, 191-TEN,
+198-ARY, 204-JCC, 232-AC, 233-AH, 234-PV Wynwood, 243-FE Felina, 278-BHC, Adam Nadler, Noel's
+Kiwi Kitchen. Caveat: the condo/residence entries (Herzka, 57 Ocean, Fendi Château, Bay
+Harborview, Nadler) may be exempt (FOG permits cover food-service establishments); the
+restaurants among them (Felina, Pura Vida Wynwood/Kendall, Bagel Boss x2, Kosh, Flame, Noel's…)
+are genuine compliance gaps / sales conversations.
+
 ## Open items
 
 - [ ] PDF sweep results + adjudications (Part 3 completion)
