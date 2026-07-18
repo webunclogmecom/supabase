@@ -159,7 +159,11 @@ async function computeEta(
         destination: { location: { latLng: { latitude: d.lat, longitude: d.lng } } },
         travelMode: "DRIVE",
         routingPreference: "TRAFFIC_AWARE",
-        departureTime: new Date().toISOString(),
+        // departureTime is deliberately OMITTED. Routes defaults it to request time, which is exactly
+        // what we want, and sending our own "now" fails: by the time Google evaluates the request the
+        // timestamp is already in the past and it rejects with
+        // 400 INVALID_ARGUMENT "Timestamp must be set to a future time." (hit 2026-07-18).
+        // Do not "helpfully" add it back.
       }),
     });
     if (!res.ok) {

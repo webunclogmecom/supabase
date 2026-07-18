@@ -67,10 +67,15 @@ const check = (name, cond, detail) => {
   check("missing driver rejected with 400", noDrv.status === 400 && noDrv.body.ok === false);
 
   // 6) with the key configured, the phone path must return a believable number.
-  //    Miami yard -> Homestead is roughly 25 to 60 min depending on traffic; outside 3..180 is a bug.
+  //    Miami yard -> either dump is roughly 25 to 60 min depending on traffic; outside 3..180 is a bug.
+  //    NOTE: this deliberately routes to the OTHER dump than check (2) used. The throttle key is
+  //    (driver, dump, source), so reusing the same dump here would be served the cached payload from
+  //    check (2) and this assertion would silently grade a cached value instead of a fresh route.
+  //    That exact collision masked a real 400 from Google on 2026-07-18. Do not "simplify" it back.
   if (process.env.EXPECT_ETA === "1") {
+    const otherDump = dump === "DH" ? "DP" : "DH";
     const real = await post({
-      action: "eta", driver_id: driverId, dump: "DH",
+      action: "eta", driver_id: driverId, dump: otherDump,
       client_lat: 25.807032, client_lng: -80.206474,
     });
     console.log("REAL ETA:", JSON.stringify(real.body));
