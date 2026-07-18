@@ -208,6 +208,28 @@ Harborview, Nadler) may be exempt (FOG permits cover food-service establishments
 restaurants among them (Felina, Pura Vida Wynwood/Kendall, Bagel Boss x2, Kosh, Flame, Noel's…)
 are genuine compliance gaps / sales conversations.
 
+## Part 6 — Generated-PDF regeneration sweep — ✅ COMPLETE 2026-07-18 (Fred-approved)
+
+The audit fixed the DATA; this pass fixed the ARTIFACTS. All 532 filed manifests' generated
+documents were downloaded and text-scanned for GDO numbers outside the ticket's current valid set.
+
+**Findings:** every one of the 532 `derm_address_url` files is a **JPEG photo of the physical
+county sheet** (uploaded via the DERM Tracker) — real-world scans, unpoisonable, untouched (the
+regen script hard-gates on the pdf-service's `/address.pdf` / `/fog.pdf` paths so an uploaded
+scan can never be overwritten). The exposure was entirely in the customer-facing **FOG
+Manifests: 61 of 532** carried a wrong number — 54 with a now-demoted permit (Shul showing
+Pizzafiore's, Ceviche showing Polynesio's, Pura Vida showing a school's, etc., across the 20
+wrong-permit clients) + Mila's 7 from the combined-string era.
+
+**Fix:** pdf-service `00438c9` first — a regeneration now **re-stamps the ticket's existing
+`derm_address_no`** instead of consuming a new sheet number (first-time generations still
+consume; 17/17 tests). Then all **61 FOG PDFs regenerated** through the live
+`generate-fog-manifest` edge fn (1 transient 502 retried → 61/61 HTTP 200), downloaded, and
+**re-verified clean**: only current valid numbers render (Pummarola prints the literal
+`GDO-00951`, typo form gone; 136-BB renders a blank GDO cell — correct for a no-permit client).
+Review copies: workspace root `2026-07-18 regenerated DERM PDFs/` (61 files). Job log:
+scratchpad `regen_done.json`; scan verdicts: `regen_scan_results.json`.
+
 ## Open items
 
 - [ ] PDF sweep results + adjudications (Part 3 completion)
