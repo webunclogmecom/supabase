@@ -365,6 +365,13 @@ Deno.serve(async (req) => {
       });
     }
 
+    // What the driver actually saw, recorded verbatim on the visit so the office can see the expected
+    // arrival (docs/09-eta-design.md section 9). Display text ONLY: it is never parsed or trusted, so it
+    // is flattened and clamped before it goes anywhere near the note. This is a snapshot at log time,
+    // deliberately not a live field.
+    const etaRaw = typeof body.eta_snapshot === "string" ? body.eta_snapshot : "";
+    const etaNote = etaRaw.replace(/[\r\n]+/g, " ").trim().slice(0, 160);
+
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + 60 * 60_000);
 
@@ -382,7 +389,8 @@ Deno.serve(async (req) => {
       p_start_at: startAt.toISOString(),
       p_end_at: endAt.toISOString(),
       p_title: "Dump",                  // trg_prefix_visit_title prepends "000-DH Homestead Dump - "
-      p_notes: `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.`,
+      p_notes: `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.` +
+               (etaNote ? ` ${etaNote}` : ""),
       p_driver_id: driverId,
       p_team_ids: [driverId],
       p_push_to_jobber: PUSH_TO_JOBBER,
