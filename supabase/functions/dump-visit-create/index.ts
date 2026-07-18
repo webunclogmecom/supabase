@@ -88,7 +88,15 @@ const DRIVER_EXTRA_IDS = [1, 26, 28];
 // somewhere on a number he trusted.
 const FRESH_MIN = 10;              // minutes; a truck fix older than this is not usable as an origin
 const ROUTES_TIMEOUT_MS = 2500;    // Google Routes budget; on timeout we degrade to no-ETA
-const ETA_THROTTLE_MS = 20_000;    // per (driver, dump, source); a re-rendering page must not spin the meter
+const ETA_THROTTLE_MS = 20_000;    // per (driver, dump, source); best-effort only, see ETA_CACHE_TTL_MS
+
+// The REAL repeat-tap guard. Measured 2026-07-18: the in-memory etaCache below is effectively dead in
+// production (edge instances do not share or persist memory), so tapping one dump 6 times cost 6 Routes
+// calls instead of 1. This TTL drives a Postgres-backed cache keyed by (dump, origin rounded to ~110m),
+// which survives instances AND is shared between drivers sitting at the same yard. A hit costs neither
+// money nor a daily-cap token. 5 minutes is well inside the window where traffic could change a 40-minute
+// haul meaningfully. See docs/migrations/2026-07-18_dump_eta_cache.sql.
+const ETA_CACHE_TTL_MS = 5 * 60_000;
 
 // HARD DAILY SPEND CAP (Fred 2026-07-18: "so it doesn't go past $2 per day").
 // Routes bills at the Pro SKU: $10 per 1,000 calls = $0.01 per call, so 200 calls = $2.00/day.
@@ -151,8 +159,35 @@ async function computeEta(
   const key = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
   if (!key) { console.warn("[dump] GOOGLE_MAPS_API_KEY missing - ETA disabled"); return null; }
 
+  // Shared cache first: a hit costs neither money nor a daily-cap token, which is what makes idle
+  // browsing free. Rounding to 3dp (~110m) lets repeat taps AND different drivers at the same yard reuse
+  // one answer, while a truck that has actually driven off lands in a new cell and gets a fresh ETA.
+  const latR = Number(o.lat.toFixed(3));
+  const lngR = Number(o.lng.toFixed(3));
+  const freshSince = new Date(Date.now() - ETA_CACHE_TTL_MS).toISOString();
+  const { data: hit, error: cacheErr } = await db
+    .from("dump_eta_cache")
+    .select("eta_minutes, distance_mi, computed_at")
+    .eq("dump_key", d.label)
+    .eq("lat_r", latR)
+    .eq("lng_r", lngR)
+    .gte("computed_at", freshSince)
+    .maybeSingle();
+  if (cacheErr) console.error("[dump] eta cache read failed (continuing):", cacheErr.message);
+  if (hit) {
+    // Re-derive arrival from NOW, not from when it was computed: the drive still takes eta_minutes from
+    // this moment, and showing a stale arrival clock would be quietly wrong.
+    const mins = Number(hit.eta_minutes);
+    console.log(`[dump] eta cache hit for ${d.label} @${latR},${lngR} - no Routes call`);
+    return {
+      eta_minutes: mins,
+      arrival_at: new Date(Date.now() + mins * 60_000).toISOString(),
+      distance_mi: hit.distance_mi === null ? null : Number(hit.distance_mi),
+    };
+  }
+
   // Take a token from the shared daily budget BEFORE spending money. Counting attempts rather than
-  // successes is the deliberate direction for a spend guard. Cache/throttle hits never get here, so a
+  // successes is the deliberate direction for a spend guard. Cache hits never get here, so a
   // re-render costs neither a call nor a token.
   //
   // FAIL CLOSED: if the counter itself errors we do NOT route. The whole point of this is that the cap
@@ -201,11 +236,26 @@ async function computeEta(
     const secs = Number(String(route.duration).replace(/s$/, ""));
     if (!Number.isFinite(secs) || secs <= 0) return null;
     const meters = Number(route.distanceMeters ?? 0);
-    return {
+    const result = {
       eta_minutes: Math.max(1, Math.round(secs / 60)),
       arrival_at: new Date(Date.now() + secs * 1000).toISOString(),
       distance_mi: meters > 0 ? Math.round((meters / 1609.34) * 10) / 10 : null,
     };
+
+    // Populate the shared cache so the next tap of this dump from this spot is free. Upsert on the
+    // (dump, cell) key: a newer answer simply replaces the older one. A write failure is logged and
+    // ignored - it only means the next tap pays again, never that the driver loses his ETA.
+    const { error: putErr } = await db.from("dump_eta_cache").upsert({
+      dump_key: d.label,
+      lat_r: latR,
+      lng_r: lngR,
+      eta_minutes: result.eta_minutes,
+      distance_mi: result.distance_mi,
+      computed_at: new Date().toISOString(),
+    }, { onConflict: "dump_key,lat_r,lng_r" });
+    if (putErr) console.error("[dump] eta cache write failed (non-fatal):", putErr.message);
+
+    return result;
   } catch (e) {
     console.error("[dump] routes failed:", e instanceof Error ? e.message : String(e));
     return null;
