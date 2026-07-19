@@ -50,7 +50,15 @@ AS $$
     SELECT DISTINCT cv.vehicle_id
     FROM ops.v_calendar_visit cv
     WHERE cv.driver_id = p_driver_id
-      AND cv.visit_date = (now() AT TIME ZONE 'America/New_York')::date
+      -- TODAY **OR YESTERDAY** (ET), deliberately. The dump runs are overnight: a driver who started at
+      -- 10 PM and dumps at 3 AM has crossed the ET calendar date, and per the operating-date rule his
+      -- evening visits keep the PRIOR date while now() is already the next one. Observed live on
+      -- 2026-07-19 at 03:29 ET: driver 37's route was dated 07-18, so a today-only window returned no
+      -- candidates and needlessly pushed him to the phone prompt - the exact friction this feature
+      -- exists to avoid. Widening the window is safe because the caller still gates on FRESH_MIN: a
+      -- truck from yesterday that is not currently reporting can never win, it just cannot be missed.
+      AND cv.visit_date >= (now() AT TIME ZONE 'America/New_York')::date - 1
+      AND cv.visit_date <= (now() AT TIME ZONE 'America/New_York')::date
       AND cv.vehicle_id IS NOT NULL
   )
   SELECT t.vehicle_id,
