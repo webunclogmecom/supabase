@@ -169,6 +169,39 @@ editor shipped — and (2) an `app_source='sql'` write 2 min later (a Claude ses
 test-era trace, and it's why 045-NU alone has PRICED residue (edit RPC falls back to catalog prices)
 and the fleet's only 2 true orphans (a superseded price revision from that editing).
 
+## 9. Addendum 2 — LIVE REPRODUCTION on 112-YA (Fred: "do tests before doing changes")
+
+Full protocol executed 2026-07-19 03:15–03:30 ET on the designated test client's SA job `11100534`
+(Jobber `146650142`; DB said archived — STALE, Jobber said `action_required`; mirror corrected).
+Baseline: 3 priced template lines ($1/$2/$30), 0 visits, 0 invoices. Evidence JSONs:
+`phase0_baseline` → `phase8_final_state` in the session scratchpad. Every mutation on the test
+client only; everything reverted; **production code untouched**.
+
+| Phase | Action (real flow) | Result |
+|---|---|---|
+| 2 | `create_calendar_visit` pick=01 → push | **REPRODUCED — and WORSE than predicted:** our $0 line created + linked; the 3 priced templates were **DESTROYED, not stranded** (unlinked with no other referencing visit → Jobber removes the object). Job screen lost its agreed services. |
+| 3 | services edit [01]→[01,05] → push | Batch replaced; the previous $0 line **destroyed** (same rule). Identical-set edit = no-op (no rev bump — good). |
+| 4 | **Fix simulation**: visit with NO override rows (INSERT, `source='visit-calendar'`) → push | **CLEAN: pure inherit, zero new objects, zero destruction.** Also learned: `jobCreateLineItems` auto-links new job lines onto existing future visits, and `visitCreate` inherits the **entire current collection — including other visits' $0 override objects** (cross-contamination channel). |
+| 5A | HEAL simulation, **gated shape** `['schedule','title']` (direct edge-fn POST) | `did:["schedule","title"]`, **zero line mutations**. The Step-3 gate is verified safe. |
+| 5B | HEAL simulation, **current shape** `[...,'lineitems']` | Job 5→7 objects: new $0 pair rendered **qty-0 at job scope / qty-1 on the visit** — the EXACT fingerprint of the 8 affected jobs (043-MIL match). Accumulation per re-push proven. |
+| 6a | `ops.delete_calendar_visit` on the lined visit | **CANCEL CLASS IS REAL: `visitDelete` STRANDS** — the visit's pair survived as true qty-0 orphans. |
+| 6b | delete the fix-sim visit | All 7 objects survive; template-quantity lines keep qty 1 (visitDelete does NOT zero templates). |
+| 7 | **`jobDeleteLineItems` canary** (1 orphan, then 3) | Clean: `userErrors` empty, `deletedLineItems` returned, templates untouched. Gate B's mechanics de-risked. |
+| 8 | Restore + verify | Final state == baseline (3 lines $1/$2/$30, 0 visits, 0 invoices, `action_required`; template **ids differ** — originals destroyed in Phase 2, re-created via `jobCreateLineItems`). DB: both test visits soft-deleted, ESLs removed, sync confirmed, mirror truthful. |
+
+**Model updates this forces (supersedes §2 where different):**
+- `visitDeleteLineItems` on a line with **no remaining visit refs → the object is REMOVED from the job**
+  — including original priced templates. Destruction, not qty-0 stranding.
+- `visitDelete` (cancel/skip/soft-delete) → the visit's exclusive lines **strand** as qty-0 orphans.
+- Both end states (vanish vs strand) are now reproduced; which one you get depends on the operator.
+- **NEW TOP RISK — template destruction:** a Calendar-created (lined) visit pushed onto an SA job whose
+  priced template is referenced by **no other in-window visit** (brand-new jobs, or jobs whose visits are
+  all Calendar-created) wipes the job's agreed services; the next poll then wipes our mirror, and the
+  job-line-driven visit-generation predicate goes blind for that client. The 8 affected jobs escaped this
+  only because cron visits referenced their templates.
+- Fingerprint match confirmed on the affected client's data (043-MIL): its dupe = linked-to-its-visit,
+  qty-0-at-job, $0, catalog-title — byte-for-byte the Phase-5B signature.
+
 **Consequence for Gate C, sharpened by Fred's stated intent** (*"the idea is to have always the same
 Line Items on the visits of the SA"* — VISIT_BASED: the visit's lines ARE the bill): in every one of
 the 8 office cases the picks equalled the job's own services. The cleanest forward fix is therefore
