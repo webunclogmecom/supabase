@@ -211,6 +211,25 @@ strand 3/3 · `jobDeleteLineItems` clean 5/5 deletes · template survival = exac
 reference rule (survives iff another visit references it).** The causal claim and every fix-relevant
 semantic are now verified on the test client, a healthy production job, and an affected production job.
 
+### Round 3 — two more clients (Fred: "test again with 2 new more clients")
+
+Run 2026-07-19 ~04:30 ET, same gated protocol (`r3_run.js`), adding the **multi-pick** case:
+
+| | HEALTHY multi-service — 191-TEN `99900846` | AFFECTED — 014-JOY `99900583` |
+|---|---|---|
+| Baseline | 3 templates (fee $13.77 / 08 $120 / 01 $270), each refs=5 visits, 1 invoice | template 01 $375 (refs=3) + existing dupe `218166346` (protected), 0 invoices |
+| Create+push | **Picks [01, 08] → EXACTLY 2 born objects** (`219446643/44`, one $0 line per pick — matches the wild 2-orphan cases 142-57/186-PV 1:1) | 1 born object `219446681` — job briefly showed `01` ×3 (Mila multiplication again) |
+| Templates / protected | All intact; invoice untouched | Intact; existing dupe untouched |
+| Cancel class | Both born lines stranded as true orphans | Stranded |
+| Cleanup | `jobDeleteLineItems` OK (2) | OK (1) |
+| Final vs baseline | **BYTE-IDENTICAL** (3 lines, 5 visits, 1 invoice) | **BYTE-IDENTICAL** (2 lines, 4 visits, 0 invoices) |
+| DB | visit 7134 soft-deleted, ESL 0 | visit 7135 soft-deleted, ESL 0 |
+
+**Cumulative across all five arenas** (112-YA, 110-CLA, 064-TCE, 191-TEN, 014-JOY):
+cause reproduced **5/5** · born objects scale 1:1 with picks · cancel-class strand **5/5** ·
+`jobDeleteLineItems` **8/8** clean deletes (incl. next to real invoices) · templates survive
+**4/4** where another visit references them, destroyed only where nothing does (112-YA).
+
 **Model updates this forces (supersedes §2 where different):**
 - `visitDeleteLineItems` on a line with **no remaining visit refs → the object is REMOVED from the job**
   — including original priced templates. Destruction, not qty-0 stranding.
