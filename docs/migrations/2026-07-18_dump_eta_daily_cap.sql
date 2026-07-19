@@ -1,9 +1,14 @@
 -- 2026-07-18 dump_eta_usage + dump_eta_take_token: hard daily spend cap for the DUMP ETA
 --
--- WHY: the ETA feature calls the Google Routes API, billed at the Pro SKU ($10 per 1,000 requests, so
--- $0.01 per call). Fred (2026-07-18) wants a hard guarantee that it can never cost more than $2.00/day,
--- i.e. at most 200 Routes calls per day. The Google Cloud Console quota was the first choice, but it
--- could not be set reliably, so the cap lives here where we control and can test it.
+-- WHY: the ETA feature calls the Google Routes API. A call costs $0.01 at the Pro SKU (traffic-aware)
+-- and $0.005 at Essentials (traffic-free overnight). Fred wants a hard guarantee on the daily spend.
+-- The Google Cloud Console quota was the first choice, but it could not be set reliably, so the cap
+-- lives here where we control and can test it.
+--
+-- The ceiling itself is NOT stored here: the caller passes p_cap, so the dollar target is one constant
+-- in dump-visit-create (ROUTES_DAILY_CAP). It is sized against the EXPENSIVE rate so the dollar ceiling
+-- holds regardless of when calls land. Currently 500/day = $5.00 worst case (Fred 2026-07-19, raised
+-- from 200/$2.00).
 --
 -- WHY DB-BACKED AND NOT IN-MEMORY: edge function instances do not share memory. An in-process counter
 -- bounds each instance, not the total, so N cold-started instances would each happily count to 200. A

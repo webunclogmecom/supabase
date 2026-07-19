@@ -119,14 +119,20 @@ function trafficMattersNow(): boolean {
   return h >= TRAFFIC_HOURS_START_ET && h < TRAFFIC_HOURS_END_ET;
 }
 
-// HARD DAILY SPEND CAP (Fred 2026-07-18: "so it doesn't go past $2 per day").
-// Routes bills at the Pro SKU: $10 per 1,000 calls = $0.01 per call, so 200 calls = $2.00/day.
-// Real usage is ~8 dump runs/day at 1-4 calls each, so this sits 12-25x above normal traffic and should
-// never bite; it exists to bound a runaway bug, not to ration drivers.
+// HARD DAILY SPEND CAP (Fred 2026-07-19: raised from $2 to "$5 cap per day").
+//
+// Sized against the EXPENSIVE rate on purpose. A call costs $0.01 at the Pro SKU (traffic-aware, 06:00
+// to 20:00 ET) and $0.005 at Essentials (traffic-free overnight), so the same call count can be worth
+// two different amounts. Sizing on Pro is the only way the dollar ceiling holds no matter when the calls
+// land: 500 x $0.01 = $5.00 worst case, and $2.50 if the day happens to be all overnight.
+//
+// Measured real usage is ~8 calls on a full night (the Postgres cache collapses a crew's tapping into
+// roughly one call per dump per location per TTL), so this sits ~60x above normal traffic. It bounds a
+// runaway bug; it does not ration drivers.
 // Enforced in Postgres (public.dump_eta_take_token), NOT in memory: edge instances do not share state,
 // so an in-process counter would bound each instance rather than the total. See
 // docs/migrations/2026-07-18_dump_eta_daily_cap.sql.
-const ROUTES_DAILY_CAP = 200;
+const ROUTES_DAILY_CAP = 500;
 
 // Best-effort, per edge instance. At ~8 dumps/day this is a runaway guard, not a correctness mechanism,
 // so a cold start losing the map is harmless.
