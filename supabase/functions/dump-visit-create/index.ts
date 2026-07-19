@@ -92,11 +92,32 @@ const ETA_THROTTLE_MS = 20_000;    // per (driver, dump, source); best-effort on
 
 // The REAL repeat-tap guard. Measured 2026-07-18: the in-memory etaCache below is effectively dead in
 // production (edge instances do not share or persist memory), so tapping one dump 6 times cost 6 Routes
-// calls instead of 1. This TTL drives a Postgres-backed cache keyed by (dump, origin rounded to ~110m),
-// which survives instances AND is shared between drivers sitting at the same yard. A hit costs neither
-// money nor a daily-cap token. 5 minutes is well inside the window where traffic could change a 40-minute
-// haul meaningfully. See docs/migrations/2026-07-18_dump_eta_cache.sql.
-const ETA_CACHE_TTL_MS = 5 * 60_000;
+// calls instead of 1. These TTLs drive a Postgres-backed cache keyed by (dump, origin cell, routing
+// mode), which survives instances AND is shared between drivers sitting at the same yard. A hit costs
+// neither money nor a daily-cap token. See docs/migrations/2026-07-18b_dump_eta_cache_traffic_mode.sql.
+//
+// Origin is rounded to 2dp (~1.1 km). On a 40-minute haul that is worth about a minute of error, and it
+// buys a large hit-rate increase: a whole crew leaving the same yard shares one answer, and a moving
+// truck still re-routes every cell it crosses.
+const ETA_CACHE_TTL_TRAFFIC_MS = 5 * 60_000;   // traffic-aware answers go stale faster
+const ETA_CACHE_TTL_FREE_MS = 15 * 60_000;     // overnight free-flow barely moves
+
+// COST LEVER (Fred 2026-07-18: "is there a way to minimize the costs knowing what we need to do?").
+// TRAFFIC_AWARE is what bills at Google's Pro SKU ($10/1k, 5,000 free/month); TRAFFIC_UNAWARE bills at
+// Essentials ($5/1k, 10,000 free/month). Half the price and double the free tier.
+//
+// The dump runs are OVERNIGHT commercial routes (~8 PM to ~6 AM ET), and at those hours traffic-aware
+// routing tells us nothing free-flow routing does not. So we pay for traffic only when traffic exists:
+// congested hours get TRAFFIC_AWARE, the overnight window gets TRAFFIC_UNAWARE. Daytime accuracy is
+// preserved for the daytime truck (Cloggy) without paying Pro rates all night for identical answers.
+const TRAFFIC_HOURS_START_ET = 6;   // inclusive
+const TRAFFIC_HOURS_END_ET = 20;    // exclusive
+function trafficMattersNow(): boolean {
+  const h = Number(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", hour: "numeric", hour12: false,
+  }).format(new Date()));
+  return h >= TRAFFIC_HOURS_START_ET && h < TRAFFIC_HOURS_END_ET;
+}
 
 // HARD DAILY SPEND CAP (Fred 2026-07-18: "so it doesn't go past $2 per day").
 // Routes bills at the Pro SKU: $10 per 1,000 calls = $0.01 per call, so 200 calls = $2.00/day.
@@ -162,15 +183,18 @@ async function computeEta(
   // Shared cache first: a hit costs neither money nor a daily-cap token, which is what makes idle
   // browsing free. Rounding to 3dp (~110m) lets repeat taps AND different drivers at the same yard reuse
   // one answer, while a truck that has actually driven off lands in a new cell and gets a fresh ETA.
-  const latR = Number(o.lat.toFixed(3));
-  const lngR = Number(o.lng.toFixed(3));
-  const freshSince = new Date(Date.now() - ETA_CACHE_TTL_MS).toISOString();
+  const trafficAware = trafficMattersNow();
+  const latR = Number(o.lat.toFixed(2));
+  const lngR = Number(o.lng.toFixed(2));
+  const ttlMs = trafficAware ? ETA_CACHE_TTL_TRAFFIC_MS : ETA_CACHE_TTL_FREE_MS;
+  const freshSince = new Date(Date.now() - ttlMs).toISOString();
   const { data: hit, error: cacheErr } = await db
     .from("dump_eta_cache")
     .select("eta_minutes, distance_mi, computed_at")
     .eq("dump_key", d.label)
     .eq("lat_r", latR)
     .eq("lng_r", lngR)
+    .eq("traffic_aware", trafficAware)
     .gte("computed_at", freshSince)
     .maybeSingle();
   if (cacheErr) console.error("[dump] eta cache read failed (continuing):", cacheErr.message);
@@ -218,7 +242,7 @@ async function computeEta(
         origin: { location: { latLng: { latitude: o.lat, longitude: o.lng } } },
         destination: { location: { latLng: { latitude: d.lat, longitude: d.lng } } },
         travelMode: "DRIVE",
-        routingPreference: "TRAFFIC_AWARE",
+        routingPreference: trafficAware ? "TRAFFIC_AWARE" : "TRAFFIC_UNAWARE",
         // departureTime is deliberately OMITTED. Routes defaults it to request time, which is exactly
         // what we want, and sending our own "now" fails: by the time Google evaluates the request the
         // timestamp is already in the past and it rejects with
@@ -249,10 +273,11 @@ async function computeEta(
       dump_key: d.label,
       lat_r: latR,
       lng_r: lngR,
+      traffic_aware: trafficAware,
       eta_minutes: result.eta_minutes,
       distance_mi: result.distance_mi,
       computed_at: new Date().toISOString(),
-    }, { onConflict: "dump_key,lat_r,lng_r" });
+    }, { onConflict: "dump_key,lat_r,lng_r,traffic_aware" });
     if (putErr) console.error("[dump] eta cache write failed (non-fatal):", putErr.message);
 
     return result;
