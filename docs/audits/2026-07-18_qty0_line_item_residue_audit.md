@@ -1,5 +1,11 @@
 # Audit — the "qty-0 duplicate line items" on SA jobs are NOT what they looked like
 
+> **⚠ READ §10 (CORRECTIONS) BEFORE ACTING ON ANYTHING BELOW.** This document evolved across five
+> addenda in one night; an adversarial fact-check (2026-07-19) verified 65 claims OK but found the
+> one-line survival rule WRONG as written, several tallies miscounted, and terminology drift in the
+> later sections that could lead a reader back to the dangerous pre-audit "delete the qty-0 lines"
+> conclusion. §10 states the corrected rules and supersedes conflicting text everywhere else.
+
 **Date:** 2026-07-18 (evening ET) · **Trigger:** Fred spotted job 99900631 (043-MIL Mila) showing the
 `02 - …` line item twice in Jobber and asked (a) why, (b) whether visit creation causes it, (c) whether
 other SA jobs have it. Full-fleet audit ordered: DB, our code + docs, Jobber's official docs (online),
@@ -250,3 +256,63 @@ the 8 office cases the picks equalled the job's own services. The cleanest forwa
 job's services should write NO visit-scoped override rows at all — Jobber then auto-inherits the priced
 template and the visit is indistinguishable from a cron visit (the healthy-control state). Overrides
 remain only for deliberate service differences, at real prices, never $0.
+
+---
+
+## 10. CORRECTIONS (2026-07-19 adversarial fact-check — supersedes conflicting text above)
+
+A dedicated fact-check agent re-read every claim in §1–§9 against the archived evidence JSONs:
+**65 claims verified OK**; the following are corrected. A final-state verification also confirmed all
+5 test arenas RESTORED-CLEAN in Jobber id-by-id, zero DB test leftovers, the */3 re-push predicate
+returning 0 rows table-wide, and the fleet qty-0 census byte-identical to the pre-test baseline.
+
+### 10.1 THE SURVIVAL RULE — corrected (the single most important fix)
+
+The Round-2 one-liner *"a line survives iff another visit references it"* is **wrong as written**
+(the "only if" half is falsified by every strand observation and by 99900670's ref-less-but-alive
+templates). The correct, operator- and time-scoped rules:
+
+1. **`visitDeleteLineItems` (unlink):** the object is **destroyed iff no other visit references it AT
+   THAT MOMENT** — confirmed July 2026, 5 arenas.
+2. **`visitDelete` (cancel/skip/delete the visit):** the visit's exclusive lines **strand as qty-0
+   orphans REGARDLESS of references** — 5/5.
+3. **Lines can outlive losing all references** (99900670's templates; every test strand).
+
+**Known counterexample we cannot reproduce:** 045-NU's orphans `215806562/63` survived a June-25
+unlink from a still-existing visit with no known co-reference — rule 1 is confirmed **for July-2026
+behavior only**. Consequence: the birth-side sweep may legitimately find candidates the July tests
+say cannot exist. **Treat any future sweep hit OR zero-hit as informative, never anomalous.**
+
+### 10.2 Factual corrections
+
+- **§4.3 picker example:** 045-NU's picker shows code 01 **three times, all at $465** (1 real + 2
+  priced mirrors) — not "twice: $465 and $0". The $0-variant example is **186-PV**.
+- **`jobDeleteLineItems` tallies:** evidence supports **4** deletes on 112-YA (phase 7: 1+3), **2** in
+  round 2, **3** in round 3 = **9/9 clean**, not "5/5"/"8/8" as stated in the round scorelines.
+- **"Byte-identical" restores** were **content-identical** (line ids/qty/prices + visit and invoice
+  counts all match; the final JSONs simply omit two metadata keys the baselines carried).
+- **142-57 / 186-PV are LINKED live overrides, not "orphan cases"** — §3.4's "strand more" phrasing
+  and the Round-3 comparison drift back into pre-§1 terminology. Fleet-wide, exactly **2** true
+  orphans exist (045-NU). §4's "permanent accumulation" is superseded: accumulation is
+  operator-scoped; unlink can destroy.
+- **"9 of 11 birth events via HEAL" is approximate** — the underlying evidence file's own counts
+  disagree (10 vs 11) and per-event proof was not archived.
+- **"a superseded price revision" (045-NU orphans)** is a hypothesis, not established fact.
+- **Single-observation semantics** (observed once, on 112-YA only, plausible but not multi-arena
+  confirmed): identical-set edit no-ops; `jobCreateLineItems` auto-links onto existing future visits;
+  `visitCreate` inherits the whole current collection; `visitDelete` keeps template quantities.
+- **Legacy DB rows:** 19 from the 2026-04-29 baseline + 1 from 2026-05-21 (223-CHA), not 20 from one date.
+
+### 10.3 Untested outcomes (honest register — none of these were exercised)
+
+Ranked by risk: **FIXED_PRICE lined-visit sequence** (code order suggests the sync could wipe a
+one-visit FP job's base lines BEFORE the strip runs — the 031-KRU class; test only on a throwaway
+job); **completion + B2-freeze + `lineitems` re-push** (the only channel minting PRICED residue on
+completed visits — the 045-NU flavor; freeze has no qty>0 filter); **the 60-day PROMOTE path** (the
+one automatic birth channel the HEAL gate does NOT close — L460 syncs unconditionally on CREATE);
+**pagination past `first:50`** (failure mode flips to additive double-billing on the largest jobs —
+census needed); **$0 invoice generation** (inferred from invoice #2658's denormalization; safely
+closable only by a human draft-and-discard in the Jobber UI); **NULL-job_id lined visits**;
+**racing pushes**; and — **deliberately reserved** — `jobDeleteLineItems` on an invoiced line: the
+$9.99 canary (`215806563`) IS that test, gated behind Fred's Gate B. Full test protocols for each
+are in the 2026-07-19 final-audit workflow output (P1–P12).
