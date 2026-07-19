@@ -142,3 +142,37 @@ Full proposals + attacks in the workflow output. Composite recommendation:
 **Standing rule going forward: NEVER delete a qty-0 job-scope line by quantity alone.** The predicate
 is qty-0 **AND linked to no visit (quantityFilter:ALL, paginated to exhaustion) AND no invoice
 back-ref** — and in automated paths, only ids the same execution just unlinked.
+
+---
+
+## 8. Addendum (same night) — provenance of the 9 birth visits (Fred: "was it from smoke tests?")
+
+Checked against `audit.logs` (visits is audited; actor = JWT email; `record_pk` is jsonb — filter on
+`new_row->>'id'`, not `record_pk`):
+
+| Visit | Client | Created | By | How |
+|---|---|---|---|---|
+| 7050 | 142-57 | 07-03 14:29Z | `contact@unclogme.com` | Calendar Create Visit |
+| 7064 | 064-TCE | 07-08 14:40Z | `contact@unclogme.com` | Calendar Create Visit |
+| 7083 | 152-DAV | 07-09 20:43Z | `contact@unclogme.com` | Calendar Create Visit |
+| 7086–7089 | 043-MIL, 186-PV, 014-JOY, 065-TCE | 07-10 20:31–20:48Z | `contact@unclogme.com` | **batch of 4 in 17 min**, all scheduled for Mon 07-13 |
+| 7103 | 152-DAV | 07-14 18:21Z | `contact@unclogme.com` | Calendar Create Visit |
+| 6054 | 045-NU | 06-24 (cron) | — | services edited later, see below |
+
+**NOT smoke tests — 8 of 9 are real office usage**: the office account creating extra/replacement SA
+visits through the Calendar (visibly a human batching the following Monday's route on Thursday evening).
+Their $0 line rows were written at the exact second of visit creation = the Create-Visit RPC's picks.
+
+**The exception, where Fred's hypothesis IS right: 045-NU.** Its two `line_items_rev` bumps on the cron
+visit 6054 were (1) `fred@ayache.com` via visit-calendar 06-25 22:38Z — the day the drawer services
+editor shipped — and (2) an `app_source='sql'` write 2 min later (a Claude session). That is the
+test-era trace, and it's why 045-NU alone has PRICED residue (edit RPC falls back to catalog prices)
+and the fleet's only 2 true orphans (a superseded price revision from that editing).
+
+**Consequence for Gate C, sharpened by Fred's stated intent** (*"the idea is to have always the same
+Line Items on the visits of the SA"* — VISIT_BASED: the visit's lines ARE the bill): in every one of
+the 8 office cases the picks equalled the job's own services. The cleanest forward fix is therefore
+**template-equivalence, not just catalog prices**: a Calendar-created SA visit whose picks match the
+job's services should write NO visit-scoped override rows at all — Jobber then auto-inherits the priced
+template and the visit is indistinguishable from a cron visit (the healthy-control state). Overrides
+remain only for deliberate service differences, at real prices, never $0.
