@@ -189,6 +189,28 @@ client only; everything reverted; **production code untouched**.
 | 7 | **`jobDeleteLineItems` canary** (1 orphan, then 3) | Clean: `userErrors` empty, `deletedLineItems` returned, templates untouched. Gate B's mechanics de-risked. |
 | 8 | Restore + verify | Final state == baseline (3 lines $1/$2/$30, 0 visits, 0 invoices, `action_required`; template **ids differ** — originals destroyed in Phase 2, re-created via `jobCreateLineItems`). DB: both test visits soft-deleted, ESLs removed, sync confirmed, mirror truthful. |
 
+### Round 2 — same protocol on REAL clients (Fred: "Do the test again with other clients now")
+
+Run 2026-07-19 ~04:00 ET on TWO real jobs, chosen to complete the generalization matrix, each gated by
+the precondition *every qty>0 line referenced by ≥1 other visit* (no template-destruction risk) and an
+abort-on-any-unexpected-state script (`r2_run.js`; evidence `r2_baseline_*` / `r2_*_after_*` /
+`r2_*_final.json`):
+
+| | HEALTHY — 110-CLA `99900746` | AFFECTED — 064-TCE `99900667` |
+|---|---|---|
+| Baseline | 1 template ($1,180, refs=4 visits), 1 invoice | 2 templates + the existing dupe `217635383` (protected id), 2 invoices |
+| Create+push (office flow) | **Dupe born:** `219427848` qty-0/$0 beside the template | **Dupe born:** `219427892` — the job briefly showed the `01` line **three times** (1 priced + 2 qty-0), the exact Mila-style multiplication |
+| Template survival | **INTACT (LOST: none)** — survival-via-other-refs CONFIRMED on a real job | INTACT; existing dupe untouched throughout |
+| Delete visit (real flow) | Born line **STRANDED** as true orphan | Same |
+| Cleanup (`jobDeleteLineItems` on our id only) | OK | OK |
+| Final vs baseline | **BYTE-IDENTICAL** (same ids; 1 line, 4 visits, 1 invoice) | **BYTE-IDENTICAL** (3 lines, 3 visits, 2 invoices) |
+| DB | visit 7132 soft-deleted, ESL 0 | visit 7133 soft-deleted, ESL 0 |
+
+Score across all three arenas (112-YA + healthy + affected): **cause reproduced 3/3 · cancel-class
+strand 3/3 · `jobDeleteLineItems` clean 5/5 deletes · template survival = exactly predicted by the
+reference rule (survives iff another visit references it).** The causal claim and every fix-relevant
+semantic are now verified on the test client, a healthy production job, and an affected production job.
+
 **Model updates this forces (supersedes §2 where different):**
 - `visitDeleteLineItems` on a line with **no remaining visit refs → the object is REMOVED from the job**
   — including original priced templates. Destruction, not qty-0 stranding.
