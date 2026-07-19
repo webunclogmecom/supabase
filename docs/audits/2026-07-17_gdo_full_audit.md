@@ -230,6 +230,16 @@ consume; 17/17 tests). Then all **61 FOG PDFs regenerated** through the live
 Review copies: workspace root `2026-07-18 regenerated DERM PDFs/` (61 files). Job log:
 scratchpad `regen_done.json`; scan verdicts: `regen_scan_results.json`.
 
+**Addendum — multi-GDO FOG refresh (Fred-ordered, same day):** the 11 filed FOG manifests of the
+two multi-GDO clients (8× 009-CN Casa Neos, 3× 148-MOR The Moore) predated the one-row-per-GDO
+expansion — each showed only ONE permit row (valid but incomplete, so the poison sweep correctly
+skipped them). All 11 regenerated via `generate-fog-manifest` and **each file read + verified**:
+every Casa Neos proof now shows all 3 permits with tenant names (Kitchens/Bars/Lounge), every
+Moore proof both permits (11226 + 14769 Main); 1 page each; redaction bars only in the remaining
+slots; zero foreign numbers; 8.48pt labels. Live in the Field Portal (same URLs). Review copies:
+`2026-07-18 multi-GDO smoke test/regenerated FOG/`. Wynd 28 gets the same pass once its tenant
+permits are ingested.
+
 ## Open items
 
 - [ ] PDF sweep results + adjudications (Part 3 completion)
