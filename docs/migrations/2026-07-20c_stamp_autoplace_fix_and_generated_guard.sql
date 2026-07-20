@@ -351,3 +351,26 @@ $function$
 --   * fn_blackout_targets(): 0 pending; fn_request_blackout_sweep() ran clean,
 --     0 rows in derm.redacted_manifest_errors; 519 redacted docs stable.
 -- ============================================================================
+
+-- ============================================================================
+-- SMOKE TESTS (2026-07-20, all run against Prod, all mutations reverted):
+--   A (real sheet, ticket-306915 p1): cleared rows 659+665 via derm.clear_stamp_position →
+--     derm.auto_place_page('ticket-306915',1) returned (placed=2, skipped=0); both rows got
+--     x=8.000 (new fingerprint), y == v_stamp_rows.guess_y_pct EXACTLY (30.600 / 61.800,
+--     empirical branch, guess_confidence='low' as expected — link-order sheet), stamp_page=1,
+--     placed_by='stamp-studio'. Redaction gates held: 0 fn_blackout_targets rows, 0 redacted
+--     docs for 306915 (no extents = fail-closed). Both rows restored EXACTLY from snapshot;
+--     full-folder re-query byte-identical to baseline.
+--   B (#1000+ generated): synthetic manifest white='1001'/derm_address_no=1001 (literal — seq
+--     untouched) + synthetic card 'ticket-1001'. v_stamp_sheets/v_stamp_rows flagged
+--     is_generated=true; set_stamp_position RAISED 'generated sheet 1001: stamping does not
+--     apply'; auto_place_page RAISED 'auto-place refused: generated sheet 1001'; ZERO stamp
+--     writes leaked. Synthetics hard-deleted after JSON backup
+--     (..\backups\2026-07-20_stamp_smokeB_synthetic_rows.json); manifests/rows/seq counts
+--     identical to baseline (553/555/1025), no ghost sheet in the views.
+--   C (manual-path regression): set_stamp_position + clear_stamp_position still work on a real
+--     sheet; all 5 hardened guards RAISE (NULL row/page/x, page=0, x=150 out of range).
+--   App: published to studio.unclogme.app ("Up to date"); live bundle contains auto_place_page,
+--     'Auto-place page', is_generated ×3, 'Show generated', guess_confidence, the generated
+--     tooltip and the low-confidence banner strings (curl-verified).
+-- ============================================================================
