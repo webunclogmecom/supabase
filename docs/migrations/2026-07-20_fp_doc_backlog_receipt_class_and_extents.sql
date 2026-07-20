@@ -37,3 +37,19 @@
 --
 -- Data inserted via Management API (app-source sql); both tables are service-role/machine-written
 -- (ADR-010 audit opt-out class). No schema changes.
+--
+-- OUTCOME (same day, after Fred stamped): stamps for all 4 tickets landed 14:15Z; bands derived
+-- immediately (v_stamp_row_bands, all 6 rows of ticket-830088 line-snapped inside the measured
+-- extent). The */5 sweep (fn_request_blackout_sweep -> redact-manifest-sheet, LIMIT 1/run) began
+-- generating on its next runs but the queue was ~18 pairs (the 4 new tickets + older stamped
+-- sheets) = ~90 min at cron pace, which is why Fred saw nothing after 10 minutes. Drained manually:
+-- invoked fn_request_blackout_sweep in a 25s-spaced loop -> 9 more docs in ~4 min; ALL 10 pairs of
+-- the 4 newly-stamped tickets generated (830088 complete 14:30:42-14:33:00, incl. 150-KOS 14:32:04;
+-- 829788, 830310, 830413 complete). VERIFIED: customer.work_orders uF49IpPjJ6 now serves both docs,
+-- and the actual redacted file (redacted/m1365-063107bc7a.jpg) was downloaded + visually checked:
+-- only the 150-KOS row is readable; the other 5 clients fully blacked; header/certification intact.
+--
+-- ⚠ STUCK RESIDUAL (follow-up, not tonight's issue): 8 older stamped+measured pairs remain that the
+-- sweep does NOT pick up — tickets 306859 (3 pairs), 813912 (1), 827989 (4). fn_blackout_targets is
+-- excluding them via one of its stricter gates (order-consistency / page-identity / staleness
+-- fingerprint — not replicable from the outside). Investigate with the gate function's own logic.
