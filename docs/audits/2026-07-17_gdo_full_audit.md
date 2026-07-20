@@ -298,3 +298,68 @@ address-mismatched permit must not print on a county form. Needs a real-world an
 - [ ] **Airtable corrections for Diego/the office** (28 wrong numbers + 227-PER→GDO-03342 + the
       Casa Neos combined-string convention) — Fred to authorize me applying them via the Airtable MCP,
       or hand the list to the office. Until then the DB guard holds the line.
+
+---
+
+## Part 7 — Wynd complex resolved by FOLIO, not by address (2026-07-20)
+
+**Method change that cracked it.** Every prior Wynd lookup searched DERM by
+*street address* (`127 NW 27th St`) and concluded the tenants had no permits.
+That method is structurally blind here: the Wynd complex is **two parcels with
+five street frontages**, and DERM files each permit under whichever frontage the
+tenant's door is on. Searching one address can only ever return the tenants on
+that address. **Searching by `folio` (the parcel ID) returns them all.**
+
+Source: DERM's own document API (`api-ecmrer.miamidade.gov/derm/documents`,
+`{folio: ...}`), plus the permit PDFs themselves. Not the bot's summary.
+
+| Folio | Frontages | GDO | Facility | Operating permit? |
+|---|---|---|---|---|
+| 0131250290450 | 112 / 127 / 146 NW 28 ST, 127 NW 27 ST | GDO-16146 | HRB WYNWOOD LLC D/B/A PARIPARI | ✅ through 2026-12-31, 60d |
+| ” | ” | **GDO-14760** | **NINO GORDO RESTAURANT** | ⚠️ **EXPIRED 2025-12-31**, 60d |
+| ” | ” | **GDO-14655** | **WYNWOOD F&D LLC DBA PRESIDENTE BAR** | ✅ **issued 2025-06-11** (scanned PDF — expiry unread) |
+| ” | ” | GDO-14993 | NARBONA RESTAURANT | ❌ drawings only, never issued |
+| ” | ” | GDO-15529 | HAND ROLLBAR | ❌ drawings + inspection, never issued |
+| 0131250290610 | 127 NW 27 ST, 124 NW 28 ST | GDO-13814 | WYNWOOD 28 - SHELL → **issued to PASTA WYNWOOD LLC DBA PASTA** | ✅ through 2026-12-31, 90d |
+| ” | ” | GDO-13813 | WYNWOOD 28 - LVL 9 BAR AREA | ❌ drawings + inspection, never issued |
+
+### Three bot claims corrected by primary evidence
+
+1. **"Presidente has no GDO"** → **false.** GDO-14655, operating permit filed
+   2025-06-11, 146 NW 28 ST, same parcel as Pari Pari. Diego must NOT file a new one.
+2. **"Nino Gordo has no GDO"** (2026-07-19) → **false.** GDO-14760 at 112 NW 28 ST.
+   It needs a **renewal**, not a new filing. The 2026-07-20 follow-up found it but
+   reported `pdf_address_confirmed: false`; the PDF plainly reads
+   `Facility Location: 112 NW 28 ST, MIAMI, FL 33127`. The bot's header parser missed
+   it — **`pdf_address_confirmed: false` means "not parsed", never "not present"**.
+3. **"GDO-13813 does not exist, may be a typo"** → **false.** It exists as
+   WYNWOOD 28 - LVL 9 BAR AREA with engineering drawings and a 2024 inspection; DERM
+   simply never issued an operating permit. "No operating permit" ≠ "no such case".
+
+### Corroboration from the engineering drawings (GDO-14655, 2023-11-18)
+
+The Presidente drawings describe the shared FOG system and name its contributors:
+*"166 DFUs (considering this tenant space, a gathering area at suite 902, level 9 and
+Nino Gordo at 112 NW 28 St) … Pump out frequency not to exceed 60 days."* This
+independently confirms (a) Nino Gordo's address, (b) that Presidente, the level-9 bar
+area (= GDO-13813) and Nino Gordo share one interceptor, and (c) the 60-day frequency.
+
+### What this leaves open for Diego
+
+- **CU4** is still unmatched. It is not a DERM facility name anywhere on either folio.
+  The two un-permitted parcel-A businesses are **NARBONA RESTAURANT** and **HAND
+  ROLLBAR** — ask whether either is what we call CU4.
+- **Pasta sits on a different parcel** (…610) from Pari Pari / Nino Gordo / Presidente
+  (…450), and its permit reads **124 NW 28 ST**. So "is Wynd 28 at 124 NW 28th St?" is
+  answered for Pasta but the two parcels are billed to us as one client.
+- Wynd 27 vs Pari Pari duplicate: unchanged, still needs Diego.
+
+### Standing rule this establishes
+
+**Look permits up by folio, not by street address.** Multi-tenant and through-block
+buildings distribute tenants across frontages; an address search silently under-reports
+and reads as "no permit on file", which is the most expensive possible wrong answer
+(it invites a duplicate filing). Address search is a fallback, folio is the truth.
+
+**No DB writes were made from this part** — the Wynd tenant assignment stays PAUSED
+for Fred + Diego per the 2026-07-20 instruction to keep the two existing permits.
