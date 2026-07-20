@@ -60,6 +60,22 @@
 --    was NOT polling — it was real production writers (Jobber polls, pg_cron, the
 --    other session) touching visits/clients. That is precisely the staleness class
 --    this tier exists to fix, and it is now visibly working.
+--  * 2026-07-20 (later) — ROOT-CAUSE FIX: the RLS policy was widened from
+--    `to anon` to `to anon, authenticated`. DERM Tracker and Stamp Studio had
+--    been receiving NOTHING since they were wired on 2026-07-09, because both
+--    apps use real Supabase Auth sign-in (4 users in auth.users, 0 anonymous)
+--    and an authenticated JWT did not match a policy scoped to `anon`.
+--    Proof, with NO app code change whatsoever — only this policy edit:
+--      - DERM Tracker: a 0-row write to derm_manifests now triggers all 5 of its
+--        queries to refetch (visits, manifest_visits, manifests, manifest_health,
+--        derm_manifests) with the tab HIDDEN; a 39s idle control produced ZERO
+--        requests, so the refetch is signal-driven and not a poll.
+--      - Stamp Studio self-reports in its console:
+--        "[realtimeInvalidation] inval:derm_manifests → SUBSCRIBED" and
+--        "inval:address_row_map → SUBSCRIBED" (it logs the error branch on
+--        failure, which is what it had been doing).
+--    The Visit Calendar was unaffected throughout: its Supabase client holds no
+--    auth session, so it matched `anon` and worked from the start.
 -- ============================================================================
 
 -- 1) The broadcast function ---------------------------------------------------
@@ -115,13 +131,28 @@ create trigger zzz_broadcast_inval
   after insert or update or delete on public.manifest_visits
   for each statement execute function public.tg_broadcast_inval();
 
--- 3) The one anon RLS policy — lets anon RECEIVE on inval:* private channels ONLY
+-- 3) The RLS policy — lets clients RECEIVE on inval:* private channels ONLY
 --    (spike-proven: policy-only is sufficient; no table GRANT needed.)
+--
+-- ⚠ MUST cover BOTH `anon` AND `authenticated` (fixed 2026-07-20 — see below).
+-- The original version granted `to anon` only. That silently broke every app
+-- whose users actually SIGN IN: once a Supabase Auth session exists the client
+-- sends an `authenticated` JWT, the policy no longer matches, the private
+-- channel subscribe is DENIED, and the app receives nothing. It fails silently —
+-- the code is correct, the trigger fires, the DB broadcasts, and the UI just
+-- quietly stays stale. DERM Tracker and Stamp Studio ran this way from
+-- 2026-07-09 to 2026-07-20 while both were documented as "live-verified".
+--
+-- Why it was missed: every verification used a raw anon-key subscriber (a Node
+-- script or an unauthenticated tab), which matches `to anon` and passes. The
+-- Visit Calendar also passed because its Supabase client carries no auth
+-- session. **Verify realtime with a client in the SAME auth state as the real
+-- app, not with the anon key.**
 drop policy if exists app_inval_read on realtime.messages;
 create policy app_inval_read
   on realtime.messages
   for select
-  to anon
+  to anon, authenticated
   using (topic like 'inval:%');
 
 -- 4) Phase 2 (Stamp Studio) — DEPLOYED 2026-07-09. Stamp Studio subscribes to
