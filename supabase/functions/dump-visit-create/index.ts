@@ -437,6 +437,45 @@ Deno.serve(async (req) => {
       return json(payload);
     }
 
+    // Both dumps in ONE request. The page needs both to let the driver compare, and doing it as two
+    // requests meant resolving the same origin twice and paying two round trips on a phone network.
+    // Origin is resolved once here, then the two routes run in parallel (each still cache-checked and
+    // cap-gated individually, so cost behaviour is identical to two separate calls).
+    if (action === "etas") {
+      const etaDriverId = Number(body.driver_id);
+      if (!etaDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+
+      let origin: Origin | null;
+      if (body.client_lat != null || body.client_lng != null) {
+        if (!validCoord(body.client_lat, body.client_lng)) {
+          return json({ ok: false, error: "bad coords" }, 400);
+        }
+        origin = {
+          lat: Number(body.client_lat), lng: Number(body.client_lng),
+          source: "phone", gps_age_min: null, truck: null,
+        };
+      } else {
+        origin = await truckOrigin(etaDriverId);
+        if (!origin) return json({ ok: true, need_client_location: true });
+      }
+
+      const keys = Object.keys(DUMPS) as (keyof typeof DUMPS)[];
+      const routed = await Promise.all(keys.map((k) => computeEta(origin!, DUMPS[k])));
+      const etas: Record<string, unknown> = {};
+      keys.forEach((k, i) => {
+        etas[k] = {
+          eta_minutes: routed[i]?.eta_minutes ?? null,
+          arrival_at: routed[i]?.arrival_at ?? null,
+          distance_mi: routed[i]?.distance_mi ?? null,
+          dump: DUMPS[k].label,
+        };
+      });
+      return json({
+        ok: true, etas,
+        source: origin.source, gps_age_min: origin.gps_age_min, truck: origin.truck,
+      });
+    }
+
     if (action !== "create") return json({ ok: false, error: "unknown action" }, 400);
 
     const dumpKey = String(body.dump ?? "") as keyof typeof DUMPS;
