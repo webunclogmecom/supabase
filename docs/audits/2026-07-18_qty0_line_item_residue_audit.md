@@ -316,3 +316,32 @@ closable only by a human draft-and-discard in the Jobber UI); **NULL-job_id line
 **racing pushes**; and — **deliberately reserved** — `jobDeleteLineItems` on an invoiced line: the
 $9.99 canary (`215806563`) IS that test, gated behind Fred's Gate B. Full test protocols for each
 are in the 2026-07-19 final-audit workflow output (P1–P12).
+
+---
+
+## 11. Smoke-test campaign — 5 batches × 5 SA clients (Fred: "batches of 5, do it 5 times, every batch see if there is any issue, fix it and go to the next one")
+
+Run 2026-07-19 evening ET with the corrected §10 rules baked into the runner (`campaign_run.js`):
+precondition gate (every qty>0 line must be referenced by ≥1 visit, else SKIP — template-destruction
+guard), automatic protection of ALL baseline line ids (pre-existing dupes untouchable by construction),
+billingType gate (FIXED_PRICE = SKIP, the class stays untested by design), per-client abort-and-continue,
+content-identical restore check, DB soft-delete/ESL/sync checks, fleet census audit between every batch.
+
+| Batch | Clients | Result |
+|---|---|---|
+| 1 | 032-LG, **021-GRA**, 238-PV, 009-CN, 001-VIN | 4 PASS · **1 SKIP: 021-GRA is FIXED_PRICE** (2nd FP job found besides Krudo — gate caught it, nothing touched) |
+| 2 | 003-BC, 004-BAO, 007-CC, 008-CV, 010-CS | 5 PASS |
+| 3 | 011-CCC, 012-DKC, 013-DIM, **015-FLA**, 016-FIA | 4 PASS + 1 transient **HTTP 502** mid-cycle on 015-FLA → fixed between batches per protocol: the fix pass completed its full protocol (birth verified, strand, cleanup, content-identical restore) → effectively 5 PASS |
+| 4 | 017-FIA, 019-G7, 020-G7, 022-GRO, 023-GRO | 5 PASS |
+| 5 | 024-GRO, 025-GRO [01+04], 026-HAP [02+05], 027-HER [01+06], 028-HUM | 5 PASS — all three multi-pick clients born exactly 2 objects (1:1) |
+
+**Totals (derived from the report files, not memory):** 24 clients fully tested, all PASS ·
+**27 objects born, 27 stranded on cancel, 27 cleaned** (`jobDeleteLineItems` 27/27) · 24/24
+content-identical restores · **0 template losses** (LOST=none on every client) · fleet qty-0 census
+**unchanged (20 legacy rows) after every batch** · all 24 test visits soft-deleted + sync-confirmed +
+ESL-free · stale-push queue empty throughout. Deliberately excluded: 045-NU (Gate B calibration),
+034-LG (job status `today`, drivers possibly active), FIXED_PRICE jobs.
+
+**Cumulative evidence base: 29 distinct SA jobs exercised** (5 earlier arenas + 24 campaign) with
+identical physics on every one. New finding for the FIXED_PRICE register: **021-GRA `21002`** joins
+031-KRU in that class. Evidence: `campaign_batch1..5_report.json` + `camp_<job>_{baseline,final}.json`.
