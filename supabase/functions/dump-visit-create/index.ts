@@ -504,6 +504,24 @@ Deno.serve(async (req) => {
       });
     }
 
+    // OLDER VISITS: the read-only browse list behind VIEW ADDRESSES (Fred 2026-07-20). Deliberately does
+    // NOT call dump_manifest_handout_list, because that RECORDS a hand-out: merely looking at the list
+    // from the menu would burn a visit's single hand-out with no dump attached, hiding it from the driver
+    // who actually dumps it. Browsing must never consume the hand-out.
+    if (action === "outstanding") {
+      const { data, error } = await db
+        .from("dump_outstanding_visits")
+        .select("visit_id, client_code, client_name, address, city, visit_date, completed_at, age_days, truck, gdo_number, needs_office")
+        .order("completed_at", { ascending: false, nullsFirst: false });
+      if (error) {
+        // Loud, never an empty list: "nothing outstanding" and "the request broke" must not look alike.
+        console.error("[dump] outstanding list failed:", error.message);
+        return json({ ok: false, error: "could not load the older visits" }, 500);
+      }
+      const rows = Array.isArray(data) ? data : [];
+      return json({ ok: true, stops: rows, count: rows.length });
+    }
+
     // The manifest crib sheet (Yan, Slack 2026-07-17: "ask the app for the list", "ONLY give the visits
     // to add to manifest ONCE"). Returns the two buckets and records the hand-out.
     // ⚠ This writes NO DERM table. The driver fills the paper sheet at the dump; see
