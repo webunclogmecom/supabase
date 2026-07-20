@@ -196,3 +196,47 @@ COMMIT;
 --            agree, but nothing has exercised it end to end. Test that before generating a ticket
 --            whose combined permit count exceeds 5 (e.g. Casa Neos 3 + Wynd 28 3 on one ticket).
 -- ============================================================================
+
+-- ============================================================================
+-- PAGE-OVERFLOW TEST — result (2026-07-20, Fred-authorised). PASSED, plus one gap found.
+--
+-- Sheet 1029, ticket 999003: 009-CN Casa Neos (3 permits) + 242-WYN Wynd 28 (3) + 003-BC Bagel
+-- Cove (1) = 7 printed rows over 2 pages. Chosen so that (a) a card's first row falls on PAGE 2 and
+-- (b) one client's own rows STRADDLE the page break.
+--
+-- WHAT THE PDF PRINTED                              WHAT THE STUDIO STAMPED
+--   p1 slot 1  25.980%  009-CN  Kitchens  GDO-10877   009-CN  -> p1 slot 1   CORRECT
+--   p1 slot 2  34.624%  009-CN  Bars      GDO-15062
+--   p1 slot 3  41.585%  009-CN  Lounge    GDO-16389
+--   p1 slot 4  49.101%  242-WYN Pasta     GDO-13814   242-WYN -> p1 slot 4   CORRECT
+--   p1 slot 5  57.255%  242-WYN Nino Gordo GDO-14760
+--   p2 slot 1  25.980%  242-WYN Pari Pari GDO-16146   (Wynd's rows straddle the break)
+--   p2 slot 2  34.624%  003-BC  Bagel Cove GDO-02345  003-BC  -> p2 slot 2   CORRECT
+--
+-- So the DB's (slot-1)/5 pagination agrees with the generator's chunk-of-five, and the documented
+-- semantic holds where it matters most: Wynd 28's card marks its FIRST printed row (page 1), not
+-- the page-2 continuation. Page headers print the sheet number as 1029-1 and 1029-2 as designed.
+--
+-- ⚠ GAP FOUND (NOT a geometry bug — a MISSING SURFACE, needs a Fred decision):
+--   derm.v_stamp_sheets reports page_count = 0 for a generated sheet, because
+--   derm.ticket_page_images() derives pages from derm_address_url + derm_address_extra_urls, i.e.
+--   the UPLOADED PHOTOS, and a generated sheet deliberately has none (that is the whole 20f point).
+--   Consequence: the Stamp Studio lists the sheet with its cards, AI badge and completed flag, and
+--   the stamps are provably on the right rows — but there is NO IMAGE to render, so a human cannot
+--   SEE the stamps or drag to correct them. That contradicts Fred's requirement for generated
+--   sheets ("we can also later on, modify them manually... in case there is an error, misplaced
+--   visit/client or wrong client added"). The DB correction path still works (set_stamp_position /
+--   clear / auto_place_page all function); only the visual surface is missing.
+--   RECOMMENDED FIX (not built — Fred's call): have the pdf-service also emit one PNG per page at
+--   generation time and record them so ticket_page_images can return them for generated sheets.
+--   That keeps ONE rendering path in the app, so drag-to-correct works with no app change. The
+--   alternative (embed the PDF in the Studio) means a second renderer and remapping drag
+--   coordinates. Needs a rasteriser dependency in pdf-service + a storage-path decision.
+--
+-- TEARDOWN: verified back to baseline (manifests 553, cards 552, address_sheets 0, photos 535/535,
+-- no ghost rows, 0 storage objects under derm/sheets/, 0 blackout targets). Generated PDF deleted
+-- from the PUBLIC bucket (three real clients' names and addresses under a fake ticket).
+-- Backup ..\backups\2026-07-20_page_overflow_test_scratch_data.json; review copy at the workspace
+-- root: 2026-07-20_two-page_DERM_address_sheet_1029.pdf. Sequence 1028 -> 1029, so the first
+-- production sheet is now 1030.
+-- ============================================================================
