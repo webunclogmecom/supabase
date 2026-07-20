@@ -107,7 +107,21 @@ BEGIN
   RETURN QUERY
   WITH candidate AS (
     SELECT
-      p.visit_id, p.client_code, p.client_name, p.address, p.city, p.visit_date, p.completed_at,
+      p.visit_id, p.client_code, p.client_name,
+      -- The driver COPIES this onto a DERM sheet, so it must read cleanly. Two fixes, both observed on
+      -- the live list: some addresses carry a ", Boca Raton, Florida 33432, USA" tail (strip from USA
+      -- onward, same rule the route screen already uses), and when the address already names the city as
+      -- its own comma-separated segment, return city NULL so the app does not append it twice
+      -- ("...Boca Raton, Florida 33432, USA, Boca Raton"). A street merely CONTAINING the city name,
+      -- like "105 East Hallandale Beach Boulevard" in Hallandale Beach, is not a duplicate and keeps its
+      -- city, which is why the test is on a comma-delimited segment rather than a bare substring.
+      regexp_replace(p.address, ',\s*USA.*$', '', 'i') AS address,
+      CASE
+        WHEN p.city IS NOT NULL
+         AND regexp_replace(p.address, ',\s*USA.*$', '', 'i') ~* (',\s*' || p.city || '(\s*,|\s*$)')
+        THEN NULL ELSE p.city
+      END AS city,
+      p.visit_date, p.completed_at,
       vis.vehicle_id,
       veh.name AS truck_name,
       gd.gdo_number,
