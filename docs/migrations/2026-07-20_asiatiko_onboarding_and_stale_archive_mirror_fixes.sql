@@ -1,0 +1,55 @@
+-- 2026-07-20 — Asiatiko onboarding (client code 286-ASI) + two stale-archive mirror fixes
+--
+-- CONTEXT (Fred): "we have this client Asiatiko [gid Client/111117622], we need to create him a new
+-- client code, and has a job [gid Job/146650904] Service Call, we need to make sure it complies with
+-- our standards of SC."
+--
+-- WHAT WAS FOUND (full recon, read-only, 3 agents):
+--   * The client already existed in our DB (clients.id=141, since the 2026-04-29 baseline) with
+--     client_code NULL — because the Jobber company name carried no "NNN-XXX " prefix, which is what
+--     webhook-jobber handleClient parses into client_code (it self-heals a NULL code on update, never
+--     overwrites an existing one).
+--   * Code chosen: 286-ASI — next real number after 285-NAH, verified free across ALL 3 sources via
+--     scripts/probes/check_client_code_available.js (DB / Airtable / Jobber; exit 0). No confusing
+--     suffix neighbours (nearest: 251-AS, 138-ASW).
+--   * SC-job compliance for #10000783 "Service Call": title exact ✓ · billingType VISIT_BASED ✓ ·
+--     Frequency custom field 0 ✓ (SC = no frequency) · line item is the canonical code-prefixed
+--     catalog title "18 - Service Call - Unclogging - Commercial - Hydrojet" $399 ✓ · DB job-scope
+--     line items empty ✓ (SC rule; the $399 rides the visit, li 85688 on visit 7271). ONE cosmetic
+--     deviation: jobType=RECURRING while the restructure plan says SC = One-off — harmless (SC jobs
+--     never auto-generate; same as the Krudo "as needed" pattern), left as-is.
+--   * Sibling job #10000782 "Service Agreement" is an empty archived shell (no lines, no visits,
+--     archived both sides) — left alone; a real SA gets built if/when Asiatiko joins Yannick's list.
+--   * BLOCKER: our jobs mirror said job #10000783 was 'archived' (2026-06-23 mass archive) while
+--     Jobber reports it LIVE ('today', with a visit 2026-07-20). reconcile_jobs.js SKIPS DB-archived
+--     jobs, so a Jobber-side reopen NEVER self-heals → ops.client_service_options returned 0 rows and
+--     the Calendar Create-Visit picker could not offer this client at all.
+--
+-- ACTIONS TAKEN (all verified in the same run):
+--   1. Jobber: clientEdit → companyName 'Asiatiko' → '286-ASI Asiatiko' (the canonical code carrier;
+--      the webhook parses + strips the prefix and self-heals client_code on future updates).
+--   2. DB (matches what the webhook would write):
+--        UPDATE clients SET client_code='286-ASI' WHERE id=141 AND client_code IS NULL;
+--      guarded by a prior check that no other client holds 286-ASI.
+--   3. Mirror truth fix (Jobber live status read in the same run):
+--        UPDATE jobs SET job_status='today' WHERE id=1014 AND job_status='archived';
+--   4. SWEEP for other Asiatiko-class stale archives (DB-archived jobs with live Jobber-sourced
+--      visits created AFTER the 2026-06-23 mass archive): 3 candidates verified against live Jobber —
+--      147-OST #10000134 and #99900788 genuinely archived both sides (false positives; their visits
+--      predated archiving); 010-CS #99900574 "Service Call" CONFIRMED live in Jobber
+--      ('requires_invoicing', visit 2026-07-16) → fixed:
+--        UPDATE jobs SET job_status='requires_invoicing' WHERE id=1345 AND job_status='archived';
+--
+-- VERIFIED AFTER:
+--   * ops.client_service_options now offers 286-ASI Asiatiko (SC #10000783) and 010-CS shows BOTH
+--     its SA (#99900575) and SC (#99900574) rows.
+--   * clients row 141 = {286-ASI, Asiatiko, ACTIVE}; today's visit 7271 untouched (scheduled, live).
+--
+-- ⚠ SYSTEMIC GAP FLAGGED (follow-up, not fixed here): reconcile_jobs.js only reconciles non-archived
+--   DB jobs, so any job reopened on the Jobber side after a DB-side archive stays wrong forever and
+--   silently drops out of the Calendar picker. Fix candidates for the qty-0 fix bundle: include
+--   DB-archived-but-Jobber-linked jobs in the reconcile sweep, or a weekly "archived-with-recent-
+--   live-visits" tripwire (the detection query used tonight).
+--
+-- No schema changes; three data UPDATEs (above) + one Jobber clientEdit. app_source='sql' throughout.
+-- This file is the executed-change log; the UPDATEs are idempotent (guarded WHERE clauses).
