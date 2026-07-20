@@ -162,3 +162,16 @@ COMMIT;
 --
 -- Sheets 1051-1053 consumed by the rehearsal. FIRST PRODUCTION SHEET = 1054.
 -- ============================================================================
+
+-- ============================================================================
+-- ADDENDUM (Fred: "So the Auto-place worked on them?") — Auto-place run DIRECTLY on all 3 real
+-- sheets (clear 2 human stamps -> auto_place_page -> compare -> restore byte-identical):
+--   829201 (earlier today): deltas vs human placement 0.09 / 0.51 pts
+--   308684:                 deltas 2.34 / 1.38 pts (its bands are wider; midpoint != exact human
+--                           spot inside the band, still squarely ON the row)
+--   829322:                 deltas 0.50 / 0.24 pts
+-- All six placements landed on the correct row; every sheet restored byte-identical; blackout
+-- targets stayed 0 throughout. So: Auto-place verified on the REAL sheets via the handwritten
+-- cascade (bands/extents), and on their generated replicas via the template branch — both halves
+-- of the engine, on the same three production documents.
+-- ============================================================================
