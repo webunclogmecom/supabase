@@ -175,3 +175,30 @@ COMMIT;
 -- cascade (bands/extents), and on their generated replicas via the template branch — both halves
 -- of the engine, on the same three production documents.
 -- ============================================================================
+
+-- ============================================================================
+-- DISCOVERY while rendering the "show me" overlays (2026-07-20): Fred's three sheets are OUR OWN
+-- GENERATED FORMS — preview-era prints that already made the full physical roundtrip. The photos
+-- show typed "Unclogme LLC" + typed client rows and printed sheet numbers 1009-2 (filed as ticket
+-- 829201) and 1010-1/-2 (filed as 829322); 308684's number is hidden under the scanner overlay but
+-- it is the same typed 5-row form. They pre-date the provenance tables (printed via the preview
+-- endpoint, which stores nothing), so fn_sheet_is_generated correctly returns FALSE for them and
+-- they live as "handwritten" sheets — harmless legacy.
+--
+-- THREE CONSEQUENCES:
+--   1. The earlier "6-row pad form" caveat is WRONG for these sheets — they are our 5-row form, so
+--      the geometry numbers (stamps within max 3.68 pts of template slots, framing ±3 pts) are
+--      DIRECT real-world phase-2 evidence on our own form, no caveat needed.
+--   2. The office files returns under the DISPOSAL ticket number (handwritten Ticket No.), not our
+--      printed sheet number — and may file pages out of print order (829322's photos are stored
+--      -2 first; stamp_page's positional semantics absorbed it). Both are now recorded in the
+--      lifecycle doc. Going forward the office must RE-USE the generated manifests when filing a
+--      return (renumbering the ticket is safe — provenance is manifest-id-keyed) rather than filing
+--      duplicate manifests, which would orphan the provenance.
+--   3. 829322's test overlay initially drew its two stamps on the wrong photo because the test
+--      picked rows by the ORIGINAL page column while their stamp_page was 2 — the DATA was always
+--      consistent; only the picture was wrong, re-rendered on the correct page. The measured deltas
+--      stand (near-identical extents on both pages).
+--
+-- Overlay images at the workspace root: 2026-07-20_autoplace_vs_human_{829201,829322,308684}.png.
+-- ============================================================================
