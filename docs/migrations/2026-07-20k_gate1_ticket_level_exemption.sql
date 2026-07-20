@@ -133,3 +133,32 @@ COMMIT;
 -- Campaign runner + verifier kept in the session scratchpad (campaign.js / verify_pdf.py /
 -- s11.js); reports campaign_roundA/B_report.json.
 -- ============================================================================
+
+-- ============================================================================
+-- PRODUCTION DRESS REHEARSAL (2026-07-20, on Fred's 3 REAL prior production sheets:
+-- 308684, 829322, 829201 — read-only on the real sheets; replays on scratch tickets).
+--
+-- TEST A — the 3 real client COMPOSITIONS replayed through the generator: ALL PASS.
+--   308684: 7 clients, ALL Broward (zero Dade permits) -> 7 blank-GDO rows over 2 pages (sheet 1051)
+--   829322: 7 single-permit clients -> 7 rows over 2 pages (sheet 1052)
+--   829201: 10 clients (8 single + 2 zero-permit) -> 10 rows = EXACTLY two full pages (sheet 1053,
+--           a page boundary no synthetic scenario had hit)
+--   Every client printed and auto-stamped on its predicted page/row; torn down to baseline.
+--   Review copies of all 3 rehearsal PDFs at the workspace root (2026-07-20_replay_of_*.pdf).
+--
+-- TEST B — the real RETURNED PHOTOS (6 pages) measured against template geometry:
+--   * Human stamps (ground truth of where rows ARE on real photos) sit within mean 2.3 / max 3.68
+--     percentage points of the template slot positions. A printed row is ~7-8% tall, so template
+--     pre-positions land ON (or at the edge of) the correct row even on real driver photos/scans.
+--   * Framing consistency: across all 6 pages the Section B region's detected top edge stays within
+--     ~±2-3% of its clean-scan position — drivers/office consistently capture the form full-frame.
+--   * HONEST CAVEAT: these photos are of the county PAD form, whose grid has SIX rows (~4.4-5.4%
+--     pitch) vs our generated form's FIVE (~7.8% pitch) — so per-row deltas here are indicative,
+--     not exact. The transferable facts are the framing consistency and the stamp-to-slot bound.
+--     A returned GENERATED sheet is a photo of OUR OWN 5-row form, so its rows will sit within the
+--     same ±2-3% framing envelope of the template positions the AI stamps already use.
+--   * The backstops are unchanged either way: redaction hard-gates on a per-photo measured extent,
+--     and the office reviews at measurement time.
+--
+-- Sheets 1051-1053 consumed by the rehearsal. FIRST PRODUCTION SHEET = 1054.
+-- ============================================================================
