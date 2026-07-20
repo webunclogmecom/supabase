@@ -53,3 +53,22 @@
 -- sweep does NOT pick up — tickets 306859 (3 pairs), 813912 (1), 827989 (4). fn_blackout_targets is
 -- excluding them via one of its stricter gates (order-consistency / page-identity / staleness
 -- fingerprint — not replicable from the outside). Investigate with the gate function's own logic.
+--
+-- STUCK-RESIDUAL RESOLUTION (Fred: "check the other 8 stuck ones and fix them"): the estimated 8
+-- decomposed into exactly THREE genuinely missing docs, each with a different cause:
+--   1. 827989 / 007-CC (manifest 1235) — QUARANTINED since the EXIF/page-order era ("wrong-client
+--      band shows 052-PV", parked to 2030, 99 attempts). Verified against the CURRENT page-2 image:
+--      Cafe Club sits exactly at the stored band (p2, 57.8–63.5) and 052-PV is on page 1 — the page
+--      mapping was repaired 07-11 but the quarantine never revisited. Un-parked with an annotated
+--      retry note -> regenerated -> OUTPUT VISUALLY VERIFIED (only Cafe Club's row readable) ->
+--      FP work order 373dlxXCAC now serves both docs. FIXED.
+--   2. 306859 / 242-WYN (manifest 1205, service 6/10) — NO visit exists near 6/10 on either Wynd
+--      client (241-WYN's nearest is 6/22). No linked live visit -> the gate correctly skips it, and
+--      there is no FP page that could show it. UNDERLYING DATA GAP (missing visit or wrong Wynd
+--      attribution — the known Wynd 27/28 open item). Office decision needed; NOT forced.
+--   3. 813912 / 041-MB (manifest 913, service+dump 1/15) — only candidate visit is 1291 (1/18),
+--      which is AFTER the dump; the trg_ac link guard rightly rejects visit>dump+1d. Either the
+--      manifest dates or the visit date is wrong — January-era data. Office review; NOT forced.
+-- Remaining pairs from the earlier estimate all have docs (the estimate over-counted shared-folder
+-- joins). Standing note: quarantine rows park FOREVER (next_retry 2030) with no review loop — add
+-- the error table to the weekly tripwire so repaired-but-parked cases resurface.
