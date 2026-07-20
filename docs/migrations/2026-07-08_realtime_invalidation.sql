@@ -43,9 +43,23 @@
 --    already covers it). DERM Stamp Studio wired + live-verified (backend write to
 --    address_row_map AND derm_manifests each auto-refetch its v_stamp_sheets query;
 --    idle = no refetch). DERM Tracker (07-09) + Stamp Studio (07-09) both on realtime.
---  * PENDING (coordinate w/ Supabase 2): the `visits` + `clients` triggers below
---    (the hot shared tables). Run those two CREATE TRIGGER statements when ready;
---    Calendar app wiring queued behind them.
+--  * 2026-07-20 — PHASE 0 + 1a COMPLETE: the `visits` + `clients` triggers are
+--    DEPLOYED (all 5 zzz_broadcast_inval triggers now live, all STATEMENT-level,
+--    all enabled) and the Visit Calendar app is WIRED + PUBLISHED + LIVE-VERIFIED.
+--    Backend proof: an ANON supabase-js subscriber (no auth user) SUBSCRIBED to
+--    both inval:visits and inval:clients and received {table,op,at} from 0-row
+--    (WHERE false) writes; row counts identical before/after (visits 2148,
+--    clients 433) => zero data residue; payload carried no business columns.
+--    App proof (calendar.unclogme.app, tab HIDDEN + unfocused throughout, so no
+--    focus-refetch could contribute): 3 external 0-row writes to public.visits
+--    produced exactly 3 refetch batches at +630ms / +518ms / +1023ms — the 400ms
+--    debounce plus network. A 41s IDLE window produced ZERO fetches, proving the
+--    app does not poll and every refetch is signal-driven. All REST calls hit
+--    wbasvhvvismukaqdnouk (no Lovable Cloud repoint — parent CLAUDE.md rule #12).
+--    NOTE worth keeping: an earlier 32s "idle" control saw 2 refetch batches. That
+--    was NOT polling — it was real production writers (Jobber polls, pg_cron, the
+--    other session) touching visits/clients. That is precisely the staleness class
+--    this tier exists to fix, and it is now visibly working.
 -- ============================================================================
 
 -- 1) The broadcast function ---------------------------------------------------
