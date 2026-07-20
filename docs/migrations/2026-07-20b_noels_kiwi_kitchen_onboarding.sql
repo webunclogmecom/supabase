@@ -1,0 +1,27 @@
+-- 2026-07-20b — NOEL'S KIWI KITCHEN MIAMI BEACH onboarded as 287-NKK
+--
+-- CONTEXT (Fred): assign a client code to Jobber Client/145751619 + check its jobs' compliance.
+-- Same playbook as 286-ASI (2026-07-20 migration doc).
+--
+-- STATE FOUND: client already in DB (id 502, since the 07-08 webhook create) with client_code NULL
+-- (no prefix in the Jobber name). One job: #99901014 "Service Call" — COMPLIANT:
+--   title exactly "Service Call" ✓ · billingType VISIT_BASED ✓ · Frequency 0 ✓ ·
+--   line items are canonical coded catalog names (09 Pumping, 13 Aux Cleaning) ✓ ·
+--   DB job-scope line items 0 ✓ (SC rule) · DB mirror status healthy (requires_invoicing, NOT
+--   stale-archived) ✓ · picker already offered the SC job ✓.
+--   Cosmetic deviation, left as-is (same as 286-ASI/Krudo): jobType RECURRING instead of One-off.
+--   Jobber job screen shows the shared-object rendering (09 qty1/$0 + 13 qty0/$399 = the visits'
+--   lines at job scope) — per the 2026-07-18 qty-0 audit rules, NOT residue, do not touch.
+--
+-- ACTIONS:
+--   1. Jobber clientEdit: companyName -> "287-NKK NOEL'S KIWI KITCHEN MIAMI BEACH" (code carrier;
+--      preserves the original name incl. its curly apostrophe after the prefix).
+--   2. UPDATE clients SET client_code='287-NKK' WHERE id=502 AND client_code IS NULL;
+--      (guarded: 287-NKK verified free via the 3-source probe — DB/Airtable/Jobber all clear;
+--       next real number after 286-ASI.)
+-- VERIFIED: picker now shows 287-NKK with the SC job; clients row updated.
+--
+-- ⚠ FLAG FOR INVOICING (not actioned): visit 7068 (2026-07-08, completed) carries pumping line 09
+--   at qty 1 / $0 beside the paid aux-cleaning visits (7069 qty4×$399, 7084 qty1×$399). If the $0
+--   pumping is not an intentional comp, price it before invoicing the job (VISIT_BASED reads the
+--   visit's lines). Line 09 is a pumping code -> the visit is DERM-required by derivation.
