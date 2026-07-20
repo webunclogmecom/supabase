@@ -240,8 +240,55 @@ slots; zero foreign numbers; 8.48pt labels. Live in the Field Portal (same URLs)
 `2026-07-18 multi-GDO smoke test/regenerated FOG/`. Wynd 28 gets the same pass once its tenant
 permits are ingested.
 
+## Part 7 — The three one-worders — ✅ RESOLVED 2026-07-20 (Fred-directed)
+
+The three cases Parts 3-5 could not close on evidence alone. All three are now settled in the DB.
+
+**043-MIL (Mila) — SPLIT. Two real permits, confirmed by the `@GDO` bot** (Fred's lookup, Slack
+`C0AL7A73DPY` thread `1784555625.986959`). The concatenated `"GDO-14117 / GDO-11024"` was never a
+formatting artifact:
+
+| Permit | Facility per DERM | Pump | Valid to |
+|---|---|---|---|
+| GDO-11024 | Mila Miami, 800 Lincoln Road Building | every 90 days | 2026-12-31 |
+| GDO-14117 | Mila Restaurant, Bar/Lounge | every 60 days | 2026-12-31 |
+
+Both issued to MILA FLORIDA LLC DBA MILA MIAMI. Applied: id 157 (combined) demoted to INACTIVE with
+the bot evidence in `notes`; **GDO-11024 inserted as id 230** (ACTIVE, exp 2026-12-31,
+`max_frequency_days=90`) on location 163; **GDO-14117 (id 156)** given `max_frequency_days=60` and
+moved to a **new location 444 "Bar / Lounge"** (`gdos.client_location_id` is UNIQUE, so a second
+permit needs a second location). Location 163 renamed `"Main"` → `"Restaurant"` so the pair reads
+correctly on the county form — behaviour-neutral for `create_calendar_visit`, whose default-location
+fallback orders `(cl.name='Main') DESC, cl.id` and therefore still lands on 163 (lower id than 444).
+
+Verified end-to-end through the live embed and `_facility_rows_for_client`:
+
+```
+Mila - Restaurant   | GDO-11024 | 043-MIL | 1636 Meridian Avenue, Miami Beach, Florida, 33139
+Mila - Bar / Lounge | GDO-14117 | 043-MIL | 1636 Meridian Avenue, Miami Beach, Florida, 33139
+```
+
+(1636 Meridian ≡ 800 Lincoln is the known corner-building dual address — not a mismatch.)
+pdf-service suite: 21/21 pass.
+
+**132-PUM (Pummarola) — GDO-00951 is the keeper** (Fred, 2026-07-20). `GDO-000951` (id 144) was a
+leading-zero typo and stays INACTIVE. Fred said "delete it"; kept as a **soft-delete** per Rule 6 —
+the row is the audit trail for a number that appears in historic paperwork, and hard-deleting it
+would strand `entity_source_links`. Both rows carry the decision in `notes`.
+⚠ Still **EXPIRED (2023-12-31, ~19 months)** — a renewal lead, not a data defect.
+
+**137-BB (Bagel Boss Aventura) — KEPT + FLAGGED, conflict unresolved** (Fred: *"Keep the 11271 for
+now. and flag it"*). GDO-11271 (id 32) stays attached to 137-BB with an explicit `notes` flag stating
+both branches: our client address is 18549 W Dixie Hwy, the permit PDF reads 19565 Biscayne Blvd food
+hall FH-7. Exactly one is true — either the store is at W Dixie and **has no permit for the address we
+service** (compliance gap, new filing), or it is at the Biscayne food hall and **our client address is
+wrong** and the permit merely needs renewal (expired 2025-01-01). Row stays **INACTIVE**: an expired,
+address-mismatched permit must not print on a county form. Needs a real-world answer (Diego/Fred).
+
 ## Open items
 
+- [ ] **137-BB address conflict** (Part 7) — W Dixie vs Biscayne FH-7; determines new-filing vs renewal
+- [ ] **132-PUM renewal** — GDO-00951 expired 2023-12-31 (~19 months)
 - [ ] PDF sweep results + adjudications (Part 3 completion)
 - [ ] 114-CI GDO-05104 — old TIF permit (ANGELOS PIZZARAUNTE, exp 2007): 07-09 sweep said it IS at
       3155 NE 163 St; the GDO bot (07-17, Yan's thread) couldn't confirm the house number in any PDF.
