@@ -79,10 +79,16 @@ pad sheet: a photo of a multi-client compliance document.
 
 ## What the office types when filing the return
 
-The returned sheet's identity is OUR printed number (e.g. `1030`). File it as the ticket
-(white-manifest) number. It cannot collide with county keys: county whites are stored 6-digit
-zero-padded and pad numbers <1000; provenance itself is keyed by manifest id, not by this string,
-so even a typo/renumber cannot un-generate the sheet.
+OBSERVED PRACTICE (2026-07-20, from real preview-era returns 1009/1010): the office files the
+return under the DISPOSAL facility's ticket number (the handwritten "Ticket No." — e.g. 829201),
+not our printed sheet number. That is fine: provenance is keyed by manifest id, so renumbering the
+ticket to the disposal number cannot un-generate the sheet. TWO RULES that make it keep working:
+1. RE-USE the generated manifests when filing (attach the photo / renumber the ticket on the rows
+   created at generation) — do NOT file fresh duplicate manifests, which would carry no provenance
+   and make the sheet read as handwritten.
+2. Prefer filing pages in PRINT order ({n}-1 first). The system tolerated a reversed filing
+   (829322's photos are stored -2 first; stamp_page is positional so everything stayed
+   consistent), but print order keeps the Studio's page tabs intuitive.
 
 ## Open items (Fred to green-light; none block the flow)
 
