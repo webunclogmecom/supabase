@@ -355,3 +355,25 @@ identical physics on every one. New finding for the FIXED_PRICE register: **021-
 Between-batch audit: fleet census unchanged (20 legacy), all 29 campaign test visits soft-deleted +
 confirmed + ESL-free, stale queue empty. **Campaign running total: 29 clients PASS across 6 batches;
 cumulative evidence base 34 distinct SA jobs.**
+
+### Batches 7–27 — FULL FLEET SWEEP COMPLETE (Fred: "next batch, and keep going")
+
+The candidate query was widened from its original LIMIT 40 to the FULL eligible pool (137 SA jobs:
+SA-titled, non-archived/non-`today`, Jobber-linked, coded priced templates, ≥1 live visit; excluding
+045-NU and Krudo). Batches 7–27 ran back-to-back with the between-batch audit bundled into every run.
+
+**Final campaign totals (derived from the 27 report files):**
+- **132 clients/jobs fully tested, ALL PASS** — 131 in-batch + 015-FLA completed via its fix pass.
+- **148 objects born / 148 stranded on cancel / 148 cleaned** (147 in-batch + 015-FLA's 1);
+  16 multi-pick clients each born exactly picks-many objects (1:1 scaling held fleet-wide).
+- **132/132 content-identical restores · 0 template losses · 0 protected-id violations**
+  (all affected jobs re-tested with their existing dupes preserved: 043-MIL, 142-57, 152-DAV, 186-PV).
+- Fleet qty-0 census **unchanged (20 legacy rows) after every one of 27 audits**; stale-push queue
+  empty throughout; all 132 test visits soft-deleted + sync-confirmed + ESL-free.
+- 1 SKIP: 021-GRA `21002` = FIXED_PRICE (2nd FP job; class untested by design).
+- 1 transient infra fault (HTTP 502, batch 3) — fixed between batches per protocol; zero mechanism deviations.
+
+**With the 5 pre-campaign arenas, the ENTIRE eligible fleet of 137 SA jobs has now been exercised —
+137/137 — with identical physics on every job.** The birth mechanism, cancel-class stranding,
+cleanup operation, and restore path hold universally; the FIXED_PRICE class (031-KRU, 021-GRA)
+remains the only untested job class, by design, pending Fred's throwaway-job approval.
