@@ -166,6 +166,24 @@ async function truckOrigin(driverId: number): Promise<Origin | null> {
   };
 }
 
+// Receiving-hours verdict for an arrival instant (public.dump_site_status, Slack 2026-07-17).
+// Returns null only if the lookup itself fails, in which case the page shows NO banner rather than a
+// wrong one: telling a driver a site is open when it is shut sends him on a 40-mile round trip.
+async function siteStatus(dumpKey: string, arrivalIso: string): Promise<
+  { status: string; arrival_et: string | null; last_intake_at: string | null; after_hours_phone: string | null } | null
+> {
+  const { data, error } = await db.rpc("dump_site_status", { p_dump_key: dumpKey, p_arrival: arrivalIso });
+  if (error) { console.error("[dump] site status failed:", error.message); return null; }
+  const r = Array.isArray(data) ? data[0] : data;
+  if (!r?.status) return null;
+  return {
+    status: r.status,
+    arrival_et: r.arrival_et ?? null,
+    last_intake_at: r.last_intake_at ?? null,
+    after_hours_phone: r.after_hours_phone ?? null,
+  };
+}
+
 // A caller-supplied coordinate is the ONLY caller-controlled input to the routing call, so bound it.
 function validCoord(lat: unknown, lng: unknown): boolean {
   const a = Number(lat), b = Number(lng);
@@ -461,6 +479,13 @@ Deno.serve(async (req) => {
 
       const keys = Object.keys(DUMPS) as (keyof typeof DUMPS)[];
       const routed = await Promise.all(keys.map((k) => computeEta(origin!, DUMPS[k])));
+      // Hours verdict for the ARRIVAL time, not now. When there is no ETA we still answer for now, so a
+      // driver on a closed Saturday is told Pompano is shut even if routing failed.
+      const statuses = await Promise.all(keys.map((k, i) => {
+        const mins = routed[i]?.eta_minutes;
+        const arrival = new Date(Date.now() + (typeof mins === "number" ? mins : 0) * 60_000).toISOString();
+        return siteStatus(k, arrival);
+      }));
       const etas: Record<string, unknown> = {};
       keys.forEach((k, i) => {
         etas[k] = {
@@ -468,11 +493,43 @@ Deno.serve(async (req) => {
           arrival_at: routed[i]?.arrival_at ?? null,
           distance_mi: routed[i]?.distance_mi ?? null,
           dump: DUMPS[k].label,
+          site_status: statuses[i]?.status ?? null,
+          after_hours_phone: statuses[i]?.after_hours_phone ?? null,
+          last_intake_at: statuses[i]?.last_intake_at ?? null,
         };
       });
       return json({
         ok: true, etas,
         source: origin.source, gps_age_min: origin.gps_age_min, truck: origin.truck,
+      });
+    }
+
+    // The manifest crib sheet (Yan, Slack 2026-07-17: "ask the app for the list", "ONLY give the visits
+    // to add to manifest ONCE"). Returns the two buckets and records the hand-out.
+    // ⚠ This writes NO DERM table. The driver fills the paper sheet at the dump; see
+    // docs/migrations/2026-07-20_dump_manifest_handout.sql for why that is structural, not stylistic.
+    if (action === "manifest") {
+      const mDriverId = Number(body.driver_id);
+      if (!mDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+      const mDumpVisitId = Number(body.dump_visit_id);
+      if (!mDumpVisitId) return json({ ok: false, error: "missing dump visit" }, 400);
+
+      const { data, error } = await db.rpc("dump_manifest_handout_list", {
+        p_driver_id: mDriverId,
+        p_dump_visit_id: mDumpVisitId,
+      });
+      if (error) {
+        // Fail LOUD, never as an empty list. A blank crib sheet and a broken request look identical to a
+        // driver at 2 AM, and he would skip real DERM paperwork believing there was nothing to report.
+        console.error("[dump] manifest list failed:", error.message);
+        return json({ ok: false, error: "could not load the manifest list" }, 500);
+      }
+      const rows = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
+      return json({
+        ok: true,
+        load: rows.filter((r) => r.bucket === "load"),
+        outstanding: rows.filter((r) => r.bucket === "outstanding"),
+        count: rows.length,
       });
     }
 
@@ -521,6 +578,11 @@ Deno.serve(async (req) => {
     const etaRaw = typeof body.eta_snapshot === "string" ? body.eta_snapshot : "";
     const etaNote = etaRaw.replace(/[\r\n]+/g, " ").trim().slice(0, 160);
 
+    // Fred 2026-07-20: the hours warning WARNS, never blocks, but the outcome is recorded so the office
+    // can see he arrived outside receiving hours. Display text only, flattened and clamped like the ETA.
+    const hoursRaw = typeof body.site_status_note === "string" ? body.site_status_note : "";
+    const hoursNote = hoursRaw.replace(/[\r\n]+/g, " ").trim().slice(0, 80);
+
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + 60 * 60_000);
 
@@ -539,7 +601,8 @@ Deno.serve(async (req) => {
       p_end_at: endAt.toISOString(),
       p_title: "Dump",                  // trg_prefix_visit_title prepends "000-DH Homestead Dump - "
       p_notes: `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.` +
-               (etaNote ? ` ${etaNote}` : ""),
+               (etaNote ? ` ${etaNote}` : "") +
+               (hoursNote ? ` ${hoursNote}` : ""),
       p_driver_id: driverId,
       p_team_ids: [driverId],
       p_push_to_jobber: PUSH_TO_JOBBER,
