@@ -240,3 +240,23 @@ COMMIT;
 -- root: 2026-07-20_two-page_DERM_address_sheet_1029.pdf. Sequence 1028 -> 1029, so the first
 -- production sheet is now 1030.
 -- ============================================================================
+
+-- ============================================================================
+-- CORRECTION (2026-07-20, same evening) — the "GAP FOUND" above is WITHDRAWN.
+--
+-- Fred explained the full physical flow, which was undocumented: the generated sheet is PRINTED,
+-- handed to the driver, filled + stamped by the county at the dump, then PHOTOGRAPHED and uploaded
+-- to Jobber on the 000 dump-client visit; the office files that photo onto the ticket's manifests.
+-- So the image "arrives" on its own in phase 2 — page_count=0 is just the born-digital phase, and
+-- NO rasteriser is needed. Once the photo lands in derm_address_url, ticket_page_images() returns
+-- it, the Studio renders it with the AI stamps already pre-positioned, drag-correct works, and the
+-- 20f blackout re-key ("has a photo to redact") makes the sheet automatically ELIGIBLE for the
+-- standard stamps→bands→extent→redact pipeline. The customer's FP document for a generated sheet
+-- is the REDACTED RETURNED PHOTO, exactly like handwritten sheets — not the born-digital PDF.
+--
+-- This also upgrades the meaning of everything in this migration: the auto-stamps are PRE-POSITIONS
+-- that seed the redaction bands on the returned photo, which is why landing on the client's OWN
+-- printed row (the bug fixed above) matters beyond cosmetics.
+--
+-- Canonical flow doc (new, same cycle): docs/reference/generated-derm-address-lifecycle.md
+-- ============================================================================
