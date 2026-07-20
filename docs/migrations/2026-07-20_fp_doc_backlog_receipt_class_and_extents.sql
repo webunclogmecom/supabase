@@ -1,0 +1,39 @@
+-- 2026-07-20 — FP compliance-doc backlog: 7 receipts vision-classified + 4 sheet extents measured
+--
+-- TRIGGER (Yan via Fred): "Please look at the FP for 150-KOS. The date is 7/9. It's linked to the
+-- manifest but it doesn't show in the FP." Visit uF49IpPjJ6 (id 6736) WAS correctly linked to
+-- manifest 1365 (white 830088, dumped 7/14, 6 co-loaded clients) — the numbers rendered but BOTH
+-- document cards were placeholders because both FP gates were closed:
+--   gate 1 (WWTP receipt card): customer.work_orders.wwtp_receipt_url serves dm.derm_manifest_url
+--     ONLY when that URL is classified 'receipt' in derm.receipt_doc_class. The classifier is a
+--     periodic vision task (last run 2026-07-10, the original 97/97 pass) — 7 photos uploaded since
+--     were unclassified, so their receipt cards were dark.
+--   gate 2 (DERM FOG card): customer.work_orders.derm_manifest_url serves derm.redacted_manifest_docs
+--     for (manifest, client) — generated only for sheets that are STAMPED (bands) AND have a measured
+--     extent in derm.page_block_extents. The 4 recent tickets were neither stamped nor measured.
+--
+-- DONE IN THIS PASS:
+-- 1. Vision-classified ALL 7 outstanding manifest photos (each viewed; per-load disposal receipts,
+--    zero rosters, zero upload swaps — same result as the 97/97 pass) and inserted
+--    derm.receipt_doc_class rows: tickets 821038, 822415, 829788, 830088, 830310, 830413 (SDWWTP)
+--    + Broward septage 308915 (derm/1354). EFFECT: receipt cards live fleet-wide — 539 work orders
+--    now show a receipt (150-KOS uF49IpPjJ6 verified: wwtp_receipt_url NOT NULL). Exactly 1 work
+--    order remains number-without-receipt (no photo uploaded at all).
+-- 2. Measured the 4 new address sheets' full-roster extents (Section B block, generous bounds — the
+--    safe direction per the 2026-07-10 v2-leak rule) and inserted derm.page_block_extents:
+--      ticket-830088 p1 25.5–62.0 · ticket-829788 p1 26.0–63.0 ·
+--      ticket-830310 p1 26.5–65.5 · ticket-830413 p1 25.5–62.5   (source 'vision-pass-2026-07-20')
+--
+-- REMAINING GATE — YANNICK'S STEP: the 4 tickets are UNSTAMPED (address_row_map rows are auto-matched
+-- but stamp_x_pct NULL on all). Until he places stamps in Stamp Studio, bands cannot derive and the
+-- redact sweep will not generate the FOG cards. Tickets to stamp: 829788 (3 clients), 830088
+-- (6 clients — the one Yan reported), 830310 (1), 830413 (2). Once stamped, everything downstream is
+-- automatic (extents already in; the */5 redact-manifest-sweep picks them up).
+--
+-- ⚠ PROCESS GAP FLAGGED: both the receipt classifier and the extent measurement are manual periodic
+-- tasks with no tripwire — new uploads go dark on the FP silently until someone notices (Yan did).
+-- Candidate for the fix bundle: a weekly "unclassified photos / unmeasured stamped sheets /
+-- stamped-but-unredacted" report, or wire the classification into zero-runs.
+--
+-- Data inserted via Management API (app-source sql); both tables are service-role/machine-written
+-- (ADR-010 audit opt-out class). No schema changes.
