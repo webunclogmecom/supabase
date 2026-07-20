@@ -345,3 +345,13 @@ ESL-free · stale-push queue empty throughout. Deliberately excluded: 045-NU (Ga
 **Cumulative evidence base: 29 distinct SA jobs exercised** (5 earlier arenas + 24 campaign) with
 identical physics on every one. New finding for the FIXED_PRICE register: **021-GRA `21002`** joins
 031-KRU in that class. Evidence: `campaign_batch1..5_report.json` + `camp_<job>_{baseline,final}.json`.
+
+### Batch 6 (Fred: "continue with the next batch")
+
+| Batch | Clients | Result |
+|---|---|---|
+| 6 | 029-JOS, 033-LG, 035-LG, 036-LG, 039-HSE | **5 PASS** — 5 born / 5 stranded / 5 cleaned, 5/5 content-identical restores |
+
+Between-batch audit: fleet census unchanged (20 legacy), all 29 campaign test visits soft-deleted +
+confirmed + ESL-free, stale queue empty. **Campaign running total: 29 clients PASS across 6 batches;
+cumulative evidence base 34 distinct SA jobs.**
