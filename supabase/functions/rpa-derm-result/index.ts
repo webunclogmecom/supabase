@@ -99,18 +99,13 @@ Deno.serve(async (req: Request) => {
   if (!attemptedAt || isNaN(attemptedAt.getTime())) {
     return json({ error: 'attempted_at_must_be_iso8601' }, 400)
   }
-  // Clock-skew guard (review finding 8): a future attempted_at would wedge
-  // the manifest's cooldown/data-error gates with no office-side release.
-  const skewMs = attemptedAt.getTime() - Date.now()
-  if (skewMs > 15 * 60 * 1000 || skewMs < -48 * 60 * 60 * 1000) {
-    return json({ error: 'attempted_at_out_of_range_check_clock_use_utc' }, 400)
-  }
-  const dryRun = body.dry_run === true
-  // The no-optimistic-success rule, enforced server-side (review finding 10):
-  // a real SUCCESS must carry whatever confirmation the portal returned.
-  if (status === 'SUCCESS' && !dryRun && !portalConfirmation) {
-    return json({ error: 'success_requires_portal_confirmation' }, 400)
-  }
+  // attempted_at is DISPLAY/AUDIT ONLY (audit 2026-07-21f): the queue gates key
+  // off the server-written created_at, so a skewed bot clock can neither wedge
+  // nor prematurely release the queue. No skew hard-reject — rejecting a genuine
+  // post-county-submission result would re-queue the manifest -> double-filing.
+  // dry_run is DERIVED server-side, never trusted from the bot (audit 2026-07-21f):
+  // the recorded flag must match the manifest's cutoff classification because the
+  // queue gates all filter NOT dry_run. Computed after the manifest lookup below.
   const screenshotB64 = body.screenshot == null ? null : String(body.screenshot)
   const missingReason = body.screenshot_missing_reason == null
     ? null
@@ -122,25 +117,31 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'screenshot_or_screenshot_missing_reason_required' }, 400)
   }
 
+  // Decode the screenshot, but ACCEPT-AND-FLAG rather than reject on any problem
+  // (audit 2026-07-21f): a real county submission must never be lost to a
+  // screenshot issue and re-queued. Oversize/undecodable -> record the attempt
+  // with a screenshot_missing_reason instead of a 4xx.
   let screenshotBytes: Uint8Array | null = null
+  let screenshotDropReason: string | null = null
   if (screenshotB64) {
-    // Reject oversize BEFORE decoding (review finding 2): decoding first
-    // burns the CPU budget and lets the platform kill the request with an
-    // opaque error instead of this clean 400 the bot can act on.
-    const b64 = screenshotB64.replace(/^data:image\/[a-z]+;base64,/, '')
-    if (b64.length > (MAX_SCREENSHOT_BYTES * 4) / 3 + 4096) {
-      return json({ error: 'screenshot_max_5mb_send_compressed_jpeg' }, 400)
-    }
-    try {
-      const bin = atob(b64)
-      const out = new Uint8Array(bin.length)
-      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-      screenshotBytes = out
-    } catch {
-      return json({ error: 'screenshot_invalid_base64' }, 400)
-    }
-    if (screenshotBytes.length > MAX_SCREENSHOT_BYTES) {
-      return json({ error: 'screenshot_max_5mb_send_compressed_jpeg' }, 400)
+    // strip whitespace so the length check matches atob() (which ignores it);
+    // wrapped/MIME base64 inflates length ~1.3% otherwise (audit finding 3).
+    const b64 = screenshotB64.replace(/^data:image\/[a-z]+;base64,/, '').replace(/\s/g, '')
+    if (b64.length > (MAX_SCREENSHOT_BYTES * 4) / 3 + 16) {
+      screenshotDropReason = 'SCREENSHOT_TOO_LARGE'
+    } else {
+      try {
+        const bin = atob(b64)
+        const out = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+        if (out.length > MAX_SCREENSHOT_BYTES) {
+          screenshotDropReason = 'SCREENSHOT_TOO_LARGE'
+        } else {
+          screenshotBytes = out
+        }
+      } catch {
+        screenshotDropReason = 'SCREENSHOT_DECODE_FAILED'
+      }
     }
   }
 
@@ -161,14 +162,15 @@ Deno.serve(async (req: Request) => {
   if (!manifest || manifest.deleted_at) {
     return json({ error: 'manifest_not_found_or_deleted' }, 422)
   }
-  // dry_run is derivable server-side, never trusted (review finding 4): the
-  // dryrun sample is strictly pre-launch-cutoff manifests, the live queue is
-  // strictly on/after the cutoff. A mistagged flag either re-queues a manifest
-  // the county already received or permanently dequeues one it never did.
-  const LAUNCH_CUTOFF = '2026-07-21' // keep in sync with v_derm_portal_queue
-  const isPreCutoff = !!manifest.dump_ticket_date && manifest.dump_ticket_date < LAUNCH_CUTOFF
-  if (dryRun !== isPreCutoff) {
-    return json({ error: 'dry_run_mismatch_for_this_manifest' }, 422)
+  // Derive dry_run from the single-source cutoff (audit 2026-07-21f): store the
+  // DERIVED truth, ignore the bot's echoed flag entirely. No mismatch to reject,
+  // so a genuine live result is never lost; the DB trigger is the final backstop.
+  const { data: cutoffRow } = await sb.rpc('rpa_launch_cutoff')
+  const cutoff = typeof cutoffRow === 'string' ? cutoffRow : '2026-07-21'
+  const dryRun = !!manifest.dump_ticket_date && manifest.dump_ticket_date < cutoff
+  // No optimistic success: a real SUCCESS must carry a portal confirmation.
+  if (status === 'SUCCESS' && !dryRun && !portalConfirmation) {
+    return json({ error: 'success_requires_portal_confirmation' }, 400)
   }
 
   // Idempotency: first write wins; a retried POST is a no-op acknowledgment.
@@ -181,25 +183,24 @@ Deno.serve(async (req: Request) => {
   if (existing) return json({ recorded: true, deduped: true, id: existing.id }, 200)
 
   let screenshotPath: string | null = null
-  let storeFailed = false
+  let evidenceDropReason: string | null = screenshotDropReason
   if (screenshotBytes) {
-    // Deterministic key + upsert (review finding 11): a retried POST rewrites
-    // the same object instead of orphaning one copy per retry.
+    // Deterministic key + upsert: a retried POST rewrites the same object.
     screenshotPath = `${manifestId}/${runId}.jpg`
-    const { error: upErr } = await sb.storage
-      .from('rpa-evidence')
-      .upload(screenshotPath, screenshotBytes, {
-        contentType: 'image/jpeg',
-        upsert: true,
-      })
-    if (upErr) {
-      // Last-resort acceptance (review finding 1): recording the ATTEMPT
-      // matters more than the evidence - a result that can never be stored
-      // would re-queue an already-submitted manifest and double-submit to
-      // the county. Record without the screenshot, flagged.
-      console.error('screenshot upload failed, recording without evidence:', upErr.message)
+    let uploaded = false
+    for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 200 * attempt))
+      const { error: upErr } = await sb.storage
+        .from('rpa-evidence')
+        .upload(screenshotPath, screenshotBytes, { contentType: 'image/jpeg', upsert: true })
+      if (!upErr) { uploaded = true; break }
+      console.error(`screenshot upload attempt ${attempt + 1} failed:`, upErr.message)
+    }
+    if (!uploaded) {
+      // Retries exhausted: record the ATTEMPT without evidence rather than lose
+      // it (a lost result re-queues an already-filed manifest = double-filing).
       screenshotPath = null
-      storeFailed = true
+      evidenceDropReason = 'STORE_FAILED'
     }
   }
 
@@ -214,7 +215,7 @@ Deno.serve(async (req: Request) => {
       portal_confirmation: portalConfirmation,
       attempted_at: attemptedAt.toISOString(),
       screenshot_path: screenshotPath,
-      screenshot_missing_reason: screenshotPath ? null : (storeFailed ? 'STORE_FAILED' : missingReason),
+      screenshot_missing_reason: screenshotPath ? null : (evidenceDropReason ?? missingReason),
       dry_run: dryRun,
     })
     .select('id')

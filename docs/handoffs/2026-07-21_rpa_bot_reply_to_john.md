@@ -21,7 +21,7 @@ Send me the column list of the CSV you read today and I will match the field nam
 2. Audit logging: POST endpoint, same key, also live.
 POST https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result
 Body: { manifest_id, run_id, status, retryable (boolean: true for things like portal timeouts, false for data problems like a missing email), failure_reason, attempted_at (ISO 8601, UTC), portal_confirmation (whatever number or text the portal returns), screenshot (base64 JPEG, max 5MB), screenshot_missing_reason (only when you truly could not capture one, e.g. browser crash; report the failure anyway), dry_run (true when the batch came from ?mode=dryrun; those results are stored separately and never count as real) }.
-Two hard rules on our side: a manifest only counts as SUCCESS if the portal actually confirmed it, no optimistic success ever; and every result carries the screenshot unless capture itself failed. The POST is idempotent on (manifest_id, run_id), so if you do not get a 2xx back, keep the result locally and retry the POST until you do; never treat a manifest as done before we have acknowledged the result. Keep your status vocabulary (SUCCESS, ERROR_MISSING_EMAIL, etc.), short uppercase codes. Three formats the endpoint enforces, so you see a clean 400 instead of a mystery: run_id is letters, digits, dot, dash, underscore only (it becomes part of a storage key); a real SUCCESS must include portal_confirmation (no confirmation, no success); attempted_at must be roughly current UTC (badly skewed clocks are rejected).
+Two hard rules on our side: a manifest only counts as SUCCESS if the portal actually confirmed it, no optimistic success ever; and every result carries the screenshot unless capture itself failed. The POST is idempotent on (manifest_id, run_id), so if you do not get a 2xx back, keep the result locally and retry the POST until you do; never treat a manifest as done before we have acknowledged the result. Two things to pin down: use the exact literal SUCCESS (uppercase) for a confirmed filing, that word specifically is what marks a manifest permanently done (any other confirmed status is fine too as long as you send portal_confirmation, but SUCCESS is the clean signal); and generate run_id ONCE per submission attempt, before you hit the portal, and reuse it verbatim on every retry of that result, that is what makes the retry idempotent. Formats the endpoint enforces so you get a clean 400 not a mystery: run_id is letters, digits, dot, dash, underscore only (it becomes part of a storage key); a real SUCCESS must include portal_confirmation. attempted_at is just recorded for the log, send your best UTC timestamp and do not worry about it (our queue timing uses our own clock, so a skewed bot clock cannot cause a double-filing). If a screenshot is oversized or unreadable we still record the result and just flag the missing evidence, we never drop the attempt.
 
 3. Screenshots: agreed, paths in the DB, never raw images in a table. You do not need storage credentials at all: send the bytes in the result POST, we store them in a private bucket and record the path. The bucket is private because these images contain client data. If screenshots ever run larger than the cap we will switch you to a signed upload URL, but start with base64 in the POST.
 
@@ -55,7 +55,24 @@ Build obligations — STATUS 2026-07-21: items 1-4 BUILT + DEPLOYED + T1-T10 tes
 6. **Watchdog** (later, before batch opens): alert when queue non-empty AND no attempts in 26h, or
    repeated data-errors, so the audit table is not write-only.
 
-Review provenance: 3-lens workflow 2026-07-21 (security / ops-architecture / voice). Key findings
+HARDENING (audit 2026-07-21, migration 2026-07-21f + fn redeploys, all T1-T18 pass): a fresh 3-lens
+audit found the catastrophic double-submit path was the REJECTED-result path (my own 21-fixes'
+clock-skew reject, whitespace-inflated size check, crash-before-POST window, literal-SUCCESS-only
+exit, and a cutoff constant duplicated 3x). Closed: server-clock queue gates (never the bot's
+attempted_at), a dispense LEASE (public.derm_portal_leases; queue GET holds each served manifest 20h
+even before any result lands), SUCCESS-OR-confirmation permanent exit, DB backstop constraints +
+dry_run trigger (compliance invariants now enforced at the data layer, not just the fn),
+single-source public.rpa_launch_cutoff(), accept-and-flag on oversize/undecodable screenshots +
+3x storage-upload retry, and a WATCHDOG (public.v_rpa_derm_health + log_rpa_derm_health() + pg_cron
+rpa-derm-health-check 09:00 ET -> sync_log status='attention'). GO-LIVE PREREQ met.
+
+⚠ PII NOTE (audit contract-ops low): the queue signs URLs to the RAW multi-client address sheet
+(the full roster the FP Blackout system redacts for customers). This is intended (county submission
+needs the real document) but is a wider exposure to an outside vendor than customers get — confirm
+it is covered by Jonathan's access terms; if the portal only needs the client's own row, serve the
+redacted copy instead.
+
+Review provenance: 3-lens BUILD review + 3-lens HARDENING audit, 2026-07-21 (security / ops-architecture / voice). Key findings
 folded in: key separation across trust boundaries, PII rules for his Railway logs, queue-exit +
 idempotency semantics, async 202 + 409 single-flight, retryable flag, dry-run data path, screenshot
 cap + capture-failed path, private repo + clean history, several overclaim/voice fixes.

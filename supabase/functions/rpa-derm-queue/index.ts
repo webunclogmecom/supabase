@@ -137,6 +137,21 @@ Deno.serve(async (req: Request) => {
     })
   }
 
+  // Dispense lease (hardening 2026-07-21f): hold each LIVE manifest we hand out
+  // for 20h even before any result lands, so a crash between the county submit
+  // and the result POST cannot cause a re-dispense -> double-filing. Dryrun
+  // fetches do not lease (re-runnable test data). Best-effort: a lease failure
+  // must not block serving the batch (the submission gates are the backstop).
+  if (mode === 'live' && manifests.length > 0) {
+    const { error: leaseErr } = await sb
+      .from('derm_portal_leases')
+      .upsert(
+        manifests.map((m) => ({ manifest_id: m.manifest_id, leased_at: new Date().toISOString() })),
+        { onConflict: 'manifest_id' },
+      )
+    if (leaseErr) console.error('lease upsert failed (serving anyway):', leaseErr.message)
+  }
+
   return json(
     { generated_at: new Date().toISOString(), mode, count: manifests.length, manifests },
     200,
