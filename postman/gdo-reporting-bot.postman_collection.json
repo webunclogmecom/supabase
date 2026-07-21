@@ -1,0 +1,418 @@
+{
+  "info": {
+    "name": "UnclogMe - GDO Online Reporting Bot API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Test harness for the GDO Online Reporting bot API (Line Item 27).\n\nThe bot reads a QUEUE of code-27 visits to report online on the Miami-Dade DERM portal, and POSTs a RESULT per visit. Both endpoints are live Supabase Edge Functions.\n\n## Setup (once)\n1. Import the environment 'UnclogMe - RPA (Prod)' and select it (top-right).\n2. Paste the bot key into the rpaBotKey environment variable. The value lives in Supabase/.env as RPA_BOT_KEY (never commit it). Auth is one header x-rpa-key set at the collection level, so every request uses it automatically.\n\n## How to test\nRun top to bottom. Start with '1. Queue > Queue - dry-run': it returns real historical code-27 visits and captures the first visit_id into a variable the Result requests reuse. Then run the '2. Result' requests (they send dry_run:true, so they are recorded separately and NEVER affect the live queue or what customers/apps see). '3. Validation' shows the endpoint rejecting bad input.\n\nNotes: the LIVE queue is empty until launch. Result writes create harmless dry_run rows in our log table; clear them anytime, they are invisible to the live pipeline. There is no 'SUCCESS needs confirmation' test here on purpose: that rule (and the double-file guards) apply only to LIVE reports; a dry-run SUCCESS is a test and is deliberately exempt, so it cannot be shown against dry-run data (it is verified on the live path in our own suite)."
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "x-rpa-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{rpaBotKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://wbasvhvvismukaqdnouk.supabase.co/functions/v1",
+      "type": "string"
+    },
+    {
+      "key": "dryRunVisitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "dryRunManifestId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Queue (read) - no side effects",
+      "item": [
+        {
+          "name": "Queue - dry-run (START HERE)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-queue?mode=dryrun",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-queue"
+              ],
+              "query": [
+                {
+                  "key": "mode",
+                  "value": "dryrun"
+                }
+              ]
+            },
+            "description": "Up to 25 REAL historical code-27 visits to report, keyed by visit_id, each with client + service fields, gdo_number, and 4h signed document URLs. Captures the first visit_id/manifest_id for the Result requests. Read-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('mode = dryrun', () => pm.expect(j.mode).to.eql('dryrun'));",
+                  "pm.test('reports is an array', () => pm.expect(j.reports).to.be.an('array'));",
+                  "if (j.reports && j.reports.length) {",
+                  "  const r = j.reports[0];",
+                  "  pm.collectionVariables.set('dryRunVisitId', r.visit_id);",
+                  "  pm.collectionVariables.set('dryRunManifestId', r.manifest_id);",
+                  "  pm.test('report keyed by visit_id, has gdo + signed docs', () => {",
+                  "    pm.expect(r.visit_id, 'visit_id').to.be.a('number');",
+                  "    pm.expect(r, 'gdo_number').to.have.property('gdo_number');",
+                  "    pm.expect(r.documents, 'documents.address').to.have.property('address');",
+                  "  });",
+                  "  console.log('Captured dryRunVisitId=' + r.visit_id + '  (' + r.client_code + ' ' + r.client_name + ', service_date ' + r.service_date + ')');",
+                  "} else { console.warn('No dry-run reports returned.'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Queue - live",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-queue"
+              ]
+            },
+            "description": "The real live queue of code-27 visits awaiting their online report. Empty (count 0) until launch. A visit stays here until the county confirms its report. Read-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('mode = live', () => pm.expect(j.mode).to.eql('live'));",
+                  "console.log('Live queue count = ' + j.count + '  (0 until launch: only code-27 visits serviced on/after the cutoff appear).');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Result (write) - dry-run safe",
+      "item": [
+        {
+          "name": "Report result - retryable failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-result"
+              ]
+            },
+            "description": "Logs a retryable failure (e.g. portal timeout) for the captured visit. Fresh GUID run_id each send. dry_run:true keeps it out of the live pipeline. Expect 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"manifest_id\": {{dryRunManifestId}},\n  \"run_id\": \"{{$guid}}\",\n  \"status\": \"ERROR_PORTAL_TIMEOUT\",\n  \"retryable\": true,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"failure_reason\": \"Postman test - portal timed out\",\n  \"screenshot_missing_reason\": \"no screenshot in test\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
+                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "const j = pm.response.json();",
+                  "pm.test('recorded (201 new or 200 dedupe)', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "pm.test('recorded flag true', () => pm.expect(j.recorded).to.eql(true));",
+                  "console.log('recorded id=' + j.id + '  deduped=' + j.deduped);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Report result - SUCCESS + screenshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-result"
+              ]
+            },
+            "description": "Logs a confirmed report with portal_confirmation and a tiny base64 JPEG screenshot - exercises the private evidence bucket. dry_run:true. Expect 201. In production the bot sends the real portal screenshot bytes here.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"manifest_id\": {{dryRunManifestId}},\n  \"run_id\": \"succ-{{$guid}}\",\n  \"status\": \"SUCCESS\",\n  \"retryable\": false,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"portal_confirmation\": \"TEST-CONF-{{$timestamp}}\",\n  \"screenshot\": \"/9j/4AAQSkZJRgAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICD/2Q==\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
+                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "const j = pm.response.json();",
+                  "pm.test('recorded (201 new or 200 dedupe)', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "pm.test('recorded flag true', () => pm.expect(j.recorded).to.eql(true));",
+                  "console.log('recorded id=' + j.id + '  deduped=' + j.deduped);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Report result - dedupe demo (send twice)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-result"
+              ]
+            },
+            "description": "FIXED run_id 'postman-dedupe-1'. Send once -> 201 {deduped:false}, again -> 200 {deduped:true}: idempotency on (visit_id, run_id) so a retried POST never double-records. (If you already ran it, both are 200 until the dry_run rows are cleared.)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"run_id\": \"postman-dedupe-1\",\n  \"status\": \"ERROR_PORTAL_TIMEOUT\",\n  \"retryable\": true,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"screenshot_missing_reason\": \"dedupe demo\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
+                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "const j = pm.response.json();",
+                  "pm.test('200 or 201', () => pm.expect([200,201]).to.include(pm.response.code));",
+                  "console.log(pm.response.code === 201 ? 'First send -> 201 recorded (deduped=false)' : 'Repeat send -> 200 deduped=' + j.deduped);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Validation (expected 4xx)",
+      "item": [
+        {
+          "name": "Bad run_id -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-result"
+              ]
+            },
+            "description": "run_id 'bad/slash' contains '/', rejected because run_id becomes part of a storage object key. Expect 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"run_id\": \"bad/slash\",\n  \"status\": \"ERROR_PORTAL_TIMEOUT\",\n  \"retryable\": true,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"screenshot_missing_reason\": \"x\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
+                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "pm.test('400 rejected', () => pm.response.to.have.status(400));",
+                  "pm.test('error names run_id', () => pm.expect(pm.response.json().error).to.include('run_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown field -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-result"
+              ]
+            },
+            "description": "Sends an unexpected body field; unknown fields are rejected so a typo cannot silently no-op. Expect 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"run_id\": \"unknown-{{$guid}}\",\n  \"status\": \"ERROR_PORTAL_TIMEOUT\",\n  \"retryable\": true,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"screenshot_missing_reason\": \"x\",\n  \"dry_run\": true,\n  \"totally_made_up_field\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
+                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "pm.test('400 rejected', () => pm.response.to.have.status(400));",
+                  "pm.test('error names the unknown field', () => pm.expect(pm.response.json().error).to.include('unknown_field'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong key -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-queue"
+              ]
+            },
+            "description": "Overrides the collection auth with a wrong x-rpa-key to show the endpoint is secured. Expect 401.",
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "x-rpa-key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "deliberately-wrong-key",
+                  "type": "string"
+                },
+                {
+                  "key": "in",
+                  "value": "header",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 unauthorized', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
