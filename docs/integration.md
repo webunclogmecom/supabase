@@ -11,8 +11,8 @@ Per-source integration details: webhook endpoints, signatures, payloads, registr
 | `webhook-jobber` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-jobber` | Jobber | clients, client_contacts, jobs, visits, visit_assignments, invoices, quotes, properties, photo_links | Deployed; live delivery intermittent |
 | `webhook-airtable` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-airtable` | Airtable | service_configs (via Clients), derm_manifests, routes, receivables, inspections | Live (10 automations) |
 | `webhook-samsara` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-samsara` | Samsara | properties (geofence on clients), employees (drivers), vehicle_telemetry_readings | Deployed; HMAC failing on real events (see runbook §5) |
-| `rpa-derm-queue` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-queue` | RPA DERM-portal bot (GET; `x-rpa-key`) | reads `v_derm_portal_queue` / `v_derm_portal_dryrun` only | Live 2026-07-21; contract in `docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md` |
-| `rpa-derm-result` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result` | RPA DERM-portal bot (POST; `x-rpa-key`) | derm_portal_submissions + `rpa-evidence` bucket (private) | Live 2026-07-21; idempotent on (manifest_id, run_id) |
+| `rpa-derm-queue` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-queue` | GDO Online Reporting bot (GET; `x-rpa-key`) | reads `v_derm_portal_queue` / `v_derm_portal_dryrun` (code-27 VISITS to report) | Live 2026-07-21; contract in `docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md` |
+| `rpa-derm-result` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result` | GDO Online Reporting bot (POST; `x-rpa-key`) | derm_portal_submissions (visit-keyed) + `rpa-evidence` bucket (private) | Live 2026-07-21; idempotent on (visit_id, run_id) |
 
 Every function:
 - Accepts `POST` with JSON body
@@ -303,6 +303,15 @@ services read Prod directly. **Changing the shape of the tables they read breaks
   prior adjudications the bot surfaces.
 - Migrated off Airtable 2026-07-21 (was the last Airtable reader outside PRE-POST inspections).
   Bot-side history: `Slack/GDO Bot/CHANGELOG.md`.
+
+### GDO Online Reporting bot (Jonathan's RPA, `rpa-derm-queue`/`rpa-derm-result`) — since 2026-07-21
+
+- Scope = **Line Item 27 "GDO Online Reporting"** (3 clients: 041-MB, 082-TFC, 111-YC). Work unit
+  = a code-27 VISIT linked to a manifest, not yet reported (eligibility from `fn_visit_is_gdo_reporting`).
+- Event trigger `trg_zz_gdo_reporting_notify` on `manifest_visits` pings the bot's `/run` when a
+  code-27 visit is linked (DORMANT until `app_config` keys `rpa_run_url`/`rpa_run_key` are set).
+- Status surfaces: `derm.gdo_report_status` (DERM Tracker, per visit) + `customer.gdo_reports`
+  (Field Portal). Full design: migration `2026-07-21g` + the handoff doc.
 
 ---
 

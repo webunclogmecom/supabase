@@ -1,7 +1,8 @@
 // ============================================================================
 // rpa-derm-queue/index.ts — Edge Function
 // ============================================================================
-// Read endpoint for Jonathan's RPA DERM-portal bot: "what should I submit?"
+// Read endpoint for Jonathan's GDO Online Reporting bot: "what should I report?"
+// Work unit = a Line-Item-27 VISIT linked to a manifest, not yet reported.
 // Contract: docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md.
 //
 // GET /functions/v1/rpa-derm-queue            → up to 25 live-queue manifests
@@ -13,10 +14,10 @@
 // JWT; this header IS the auth. Server-to-server only, no CORS surface.
 //
 // Response shape (documented for Jonathan in the repo README):
-// { generated_at, mode: 'live'|'dryrun', count, manifests: [{
-//     manifest_id, dry_run, white_manifest_number, dump_ticket_date,
-//     service_date, client_code, client_name, client_email, address, city,
-//     zip, county, gdo_number, disposal_facility,
+// { generated_at, mode: 'live'|'dryrun', count, reports: [{
+//     visit_id, manifest_id, dry_run, client_code, client_name, client_email,
+//     address, city, zip, county, gdo_number, service_date, dump_ticket_date,
+//     white_manifest_number, disposal_facility,
 //     documents: { address: [urls], receipt: [urls] }   // signed, 4h TTL
 // }]}
 //
@@ -111,16 +112,15 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  const manifests = []
+  // One row per code-27 VISIT to report online (its linked manifest gives docs).
+  const reports = []
   for (const r of rows ?? []) {
     const addressDocs = [r.derm_address_url, ...(r.derm_address_extra_urls ?? [])].filter(Boolean)
     const receiptDocs = [r.derm_manifest_url, ...(r.derm_manifest_extra_urls ?? [])].filter(Boolean)
-    manifests.push({
+    reports.push({
+      visit_id: r.visit_id,
       manifest_id: r.manifest_id,
       dry_run: mode === 'dryrun',
-      white_manifest_number: r.white_manifest_number,
-      dump_ticket_date: r.dump_ticket_date,
-      service_date: r.service_date,
       client_code: r.client_code,
       client_name: r.client_name,
       client_email: r.client_email,
@@ -129,6 +129,9 @@ Deno.serve(async (req: Request) => {
       zip: r.zip,
       county: r.county,
       gdo_number: r.gdo_number,
+      service_date: r.visit_date,
+      dump_ticket_date: r.dump_ticket_date,
+      white_manifest_number: r.white_manifest_number,
       disposal_facility: r.disposal_facility,
       documents: {
         address: await Promise.all(addressDocs.map(sign)),
@@ -137,23 +140,23 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  // Dispense lease (hardening 2026-07-21f): hold each LIVE manifest we hand out
-  // for 20h even before any result lands, so a crash between the county submit
-  // and the result POST cannot cause a re-dispense -> double-filing. Dryrun
-  // fetches do not lease (re-runnable test data). Best-effort: a lease failure
-  // must not block serving the batch (the submission gates are the backstop).
-  if (mode === 'live' && manifests.length > 0) {
+  // Dispense lease (hardening 2026-07-21f): hold each LIVE code-27 VISIT we hand
+  // out for 20h even before any result lands, so a crash between the portal
+  // report and the result POST cannot cause a re-dispense -> double-report.
+  // Dryrun fetches do not lease. Best-effort: a lease failure must not block
+  // serving the batch (the submission gates are the backstop).
+  if (mode === 'live' && reports.length > 0) {
     const { error: leaseErr } = await sb
       .from('derm_portal_leases')
       .upsert(
-        manifests.map((m) => ({ manifest_id: m.manifest_id, leased_at: new Date().toISOString() })),
-        { onConflict: 'manifest_id' },
+        reports.map((r) => ({ visit_id: r.visit_id, leased_at: new Date().toISOString() })),
+        { onConflict: 'visit_id' },
       )
     if (leaseErr) console.error('lease upsert failed (serving anyway):', leaseErr.message)
   }
 
   return json(
-    { generated_at: new Date().toISOString(), mode, count: manifests.length, manifests },
+    { generated_at: new Date().toISOString(), mode, count: reports.length, reports },
     200,
   )
 })

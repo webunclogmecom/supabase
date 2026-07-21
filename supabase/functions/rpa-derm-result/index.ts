@@ -1,18 +1,19 @@
 // ============================================================================
 // rpa-derm-result/index.ts — Edge Function
 // ============================================================================
-// Write endpoint for Jonathan's RPA DERM-portal bot: "here is what happened."
+// Write endpoint for Jonathan's GDO Online Reporting bot: "here is what happened."
+// Work key = visit_id (the serviced visit reported); manifest_id is optional context.
 // Contract: docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md.
 //
 // POST /functions/v1/rpa-derm-result
-// Body: { manifest_id, run_id, status, retryable, failure_reason?,
+// Body: { visit_id, manifest_id?, run_id, status, retryable, failure_reason?,
 //         attempted_at (ISO 8601), portal_confirmation?,
 //         screenshot? (base64 JPEG, max 5MB decoded),
 //         screenshot_missing_reason?, dry_run? }
 //
 // Rules enforced HERE (not trusted to the bot):
 // - auth: x-rpa-key against RPA_BOT_KEYS (comma-separated, rotation-friendly);
-// - idempotent on (manifest_id, run_id): a retried POST returns 200
+// - idempotent on (visit_id, run_id): a retried POST returns 200
 //   {deduped:true} and changes nothing — first write wins;
 // - status must be a short uppercase code; failure_reason capped; manifest
 //   must exist and be live; unknown fields rejected;
@@ -34,7 +35,7 @@ const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
   .filter(Boolean)
 
 const ALLOWED_FIELDS = new Set([
-  'manifest_id', 'run_id', 'status', 'retryable', 'failure_reason',
+  'visit_id', 'manifest_id', 'run_id', 'status', 'retryable', 'failure_reason',
   'attempted_at', 'portal_confirmation', 'screenshot',
   'screenshot_missing_reason', 'dry_run',
 ])
@@ -68,9 +69,13 @@ Deno.serve(async (req: Request) => {
     if (!ALLOWED_FIELDS.has(k)) return json({ error: `unknown_field_${k}` }, 400)
   }
 
-  const manifestId = Number(body.manifest_id)
-  if (!Number.isInteger(manifestId) || manifestId <= 0) {
-    return json({ error: 'manifest_id_required_integer' }, 400)
+  const visitId = Number(body.visit_id)
+  if (!Number.isInteger(visitId) || visitId <= 0) {
+    return json({ error: 'visit_id_required_integer' }, 400)
+  }
+  const manifestId = body.manifest_id == null ? null : Number(body.manifest_id)
+  if (manifestId !== null && (!Number.isInteger(manifestId) || manifestId <= 0)) {
+    return json({ error: 'manifest_id_must_be_integer_or_omitted' }, 400)
   }
   const runId = typeof body.run_id === 'string' ? body.run_id.trim() : ''
   if (!/^[A-Za-z0-9_.-]{1,100}$/.test(runId)) {
@@ -150,24 +155,24 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
-  const { data: manifest, error: mErr } = await sb
-    .from('derm_manifests')
-    .select('id, deleted_at, dump_ticket_date')
-    .eq('id', manifestId)
+  const { data: visit, error: vErr } = await sb
+    .from('visits')
+    .select('id, deleted_at, visit_date')
+    .eq('id', visitId)
     .maybeSingle()
-  if (mErr) {
-    console.error('manifest lookup failed:', mErr.message)
-    return json({ error: 'manifest_lookup_failed' }, 500)
+  if (vErr) {
+    console.error('visit lookup failed:', vErr.message)
+    return json({ error: 'visit_lookup_failed' }, 500)
   }
-  if (!manifest || manifest.deleted_at) {
-    return json({ error: 'manifest_not_found_or_deleted' }, 422)
+  if (!visit || visit.deleted_at) {
+    return json({ error: 'visit_not_found_or_deleted' }, 422)
   }
-  // Derive dry_run from the single-source cutoff (audit 2026-07-21f): store the
-  // DERIVED truth, ignore the bot's echoed flag entirely. No mismatch to reject,
-  // so a genuine live result is never lost; the DB trigger is the final backstop.
+  // Derive dry_run from the visit's service date vs the single-source cutoff
+  // (2026-07-21g): store the DERIVED truth, ignore the bot's echoed flag; the
+  // DB trigger is the final backstop.
   const { data: cutoffRow } = await sb.rpc('rpa_launch_cutoff')
   const cutoff = typeof cutoffRow === 'string' ? cutoffRow : '2026-07-21'
-  const dryRun = !!manifest.dump_ticket_date && manifest.dump_ticket_date < cutoff
+  const dryRun = !!visit.visit_date && visit.visit_date < cutoff
   // No optimistic success: a real SUCCESS must carry a portal confirmation.
   if (status === 'SUCCESS' && !dryRun && !portalConfirmation) {
     return json({ error: 'success_requires_portal_confirmation' }, 400)
@@ -177,7 +182,7 @@ Deno.serve(async (req: Request) => {
   const { data: existing } = await sb
     .from('derm_portal_submissions')
     .select('id')
-    .eq('manifest_id', manifestId)
+    .eq('visit_id', visitId)
     .eq('run_id', runId)
     .maybeSingle()
   if (existing) return json({ recorded: true, deduped: true, id: existing.id }, 200)
@@ -186,7 +191,7 @@ Deno.serve(async (req: Request) => {
   let evidenceDropReason: string | null = screenshotDropReason
   if (screenshotBytes) {
     // Deterministic key + upsert: a retried POST rewrites the same object.
-    screenshotPath = `${manifestId}/${runId}.jpg`
+    screenshotPath = `${visitId}/${runId}.jpg`
     let uploaded = false
     for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 200 * attempt))
@@ -207,6 +212,7 @@ Deno.serve(async (req: Request) => {
   const { data: inserted, error: insErr } = await sb
     .from('derm_portal_submissions')
     .insert({
+      visit_id: visitId,
       manifest_id: manifestId,
       run_id: runId,
       status,
@@ -226,7 +232,7 @@ Deno.serve(async (req: Request) => {
       const { data: dup } = await sb
         .from('derm_portal_submissions')
         .select('id')
-        .eq('manifest_id', manifestId)
+        .eq('visit_id', visitId)
         .eq('run_id', runId)
         .maybeSingle()
       return json({ recorded: true, deduped: true, id: dup?.id ?? null }, 200)
