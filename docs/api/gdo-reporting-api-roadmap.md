@@ -1,6 +1,7 @@
 # GDO Online Reporting API — proposed additions (roadmap)
 
-Companion to [`gdo-reporting-api.md`](gdo-reporting-api.md). Output of a 4-lens brainstorm
+Companion to the API reference at [`postman/README.md`](../../postman/README.md) (also the Postman
+collection's own documentation). Output of a 4-lens brainstorm
 (integrator DX / ops-safety / security-privacy / observability) + an adversarial YAGNI critic,
 2026-07-21. Judged against the real shape: **2 endpoints, one trusted server-to-server consumer, 3
 clients, low volume, compliance-critical, 0 submissions yet, rollout imminent.** Nothing here is built;
