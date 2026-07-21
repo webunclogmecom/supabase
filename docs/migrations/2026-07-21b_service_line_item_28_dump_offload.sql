@@ -1,0 +1,86 @@
+-- 2026-07-21b  service_line_items: add code 28 "Disposal - Dump Offload"
+--
+-- ============================================================================
+-- WHY
+-- ============================================================================
+-- Dump visits (the truck discharging its load at a licensed disposal facility) are booked
+-- against the two 000 dump-site clients, 000-DH Homestead Dump (365) and 000-DP DUMP Pompano (76).
+-- They had NO line item, so the operation was carried entirely in free-text visit titles. Measured
+-- 2026-07-21, one operation is spelled SIX ways across live visits:
+--
+--     000-DH Homestead Dump                    8
+--     000-DH Homestead Dump - Dump             8
+--     000-DH Homestead Dump - Service Call     2   <-- latest 2026-07-20
+--     000-DH Homestead Dump - dump             1
+--     000-DP DUMP Pompano - Service Call       1
+--     DUMP Pompano - Dump Pompano              1
+--
+-- Two of them say "Service Call", which is materially wrong: a dump is not a service rendered to a
+-- customer, it is us disposing of what we already collected. Fred asked for a proper line item.
+--
+-- ============================================================================
+-- NAMING
+-- ============================================================================
+-- Fred's starting proposals were "Dump Visit" and "Dump Scheduling"; the chosen name is
+-- "28 - Disposal - Dump Offload", for two reasons drawn from the existing 27 rows:
+--   * EVERY existing title names the WORK PERFORMED, never the record type ("Camera Inspection",
+--     "Dye Test", "Assessment", "Labor", "GDO Online Reporting"). All 27 of them ARE visits, so
+--     "Dump Visit" would be the only entry naming its own container. "Scheduling" also reads wrong
+--     on a COMPLETED record: nobody completes a scheduling, they complete a disposal.
+--   * "Disposal" is already this schema's formal noun for it (public.disposal_facilities,
+--     derm_manifests.disposal_facility_id), while "Dump" is the crew's word and what a driver will
+--     recognise on a Jobber line. The title carries both.
+--
+-- Shape follows the house pattern <code> - <reason> - <service_kind>, same as
+-- "19 - Service Call - Camera Inspection".
+--
+-- ============================================================================
+-- THE THREE SETTINGS THAT MATTER, AND WHY THEY ARE NOT DEFAULTS
+-- ============================================================================
+-- 1. requires_derm = FALSE  <-- THE DANGEROUS ONE.
+--    public.fn_visit_requires_derm reads the requires_derm COLUMN directly (verified 2026-07-21;
+--    it does NOT hardcode the {01,02,03,04,09,10,11} code list, contrary to how ADR 018 is usually
+--    summarised). So a TRUE here would make every dump visit demand a DERM manifest, and the
+--    2-week rule in CLAUDE.md would then surface all of them as compliance gaps forever. A dump is
+--    where a manifest gets USED, never a thing that needs its own manifest.
+--
+-- 2. service_type = NULL. Never 'GT'. handleVisit defaults unknown service types to GT, and a GT
+--    value is what produced the phantom-visit class documented for code 08 (Warranty of Drainage).
+--    A dump has no service type.
+--
+-- 3. reason = 'Disposal', a NEW value. Safe, and checked rather than assumed:
+--      * service_line_items has NO CHECK constraint on reason (only UNIQUE(code) + the PK/FK).
+--      * the ONLY consumer that filters on reason is visit-gen,
+--        scripts/sync/generate_service_agreement_visits.js:81
+--        "slip.reason IN ('Service Agreement','Service Call') AND slip.code <> '08'",
+--        so a 'Disposal' reason is excluded from visit generation automatically. Dump visits are
+--        created on demand by the DUMP app (create_dump_visit), never generated from an agreement.
+--
+-- schedulable = false and unit_price = NULL match the other non-service rows exactly (25 fee,
+-- 26 fee, 27 other). Verified that public.client_service_options does NOT filter on schedulable,
+-- so this does not hide the item from the Calendar's service picker.
+--
+-- ============================================================================
+-- ⚠ THIS IS ONLY THE SUPABASE HALF
+-- ============================================================================
+-- public.line_items holds JOBBER's actual line items and maps to this catalogue by the "NN - "
+-- prefix in the free-text name. The Jobber product must therefore be created with the EXACT
+-- string "28 - Disposal - Dump Offload" or it will not join. That migration is still in progress
+-- generally (307 rows named "01 - Service Agreement - ..." coexist with 1,086 legacy
+-- "Grease Trap Pumping"), so a mismatch here fails silently rather than loudly.
+--
+-- NOT DONE HERE (deliberately): backfilling the 21 existing dump visits onto this code, and
+-- normalising their six title spellings. That touches live visit rows and is a separate,
+-- reversible pass once the Jobber product exists.
+--
+-- AUDIT (ADR 010): service_line_items is a small operator-maintained catalogue, not customer,
+-- billing, DERM-compliance or webhook-secret data. It carries no audit trigger today and this
+-- migration does not add one, consistent with its existing 27 rows. Data change only, no DDL.
+
+INSERT INTO public.service_line_items
+  (code, title, reason, service_kind, service_type, method, location_target,
+   requires_derm, schedulable, active, unit_price)
+VALUES
+  ('28', '28 - Disposal - Dump Offload', 'Disposal', 'Dump Offload', NULL, NULL, NULL,
+   FALSE, FALSE, TRUE, NULL)
+ON CONFLICT (code) DO NOTHING;
