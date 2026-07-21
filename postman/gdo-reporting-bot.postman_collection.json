@@ -170,8 +170,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
-                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', function () {",
+                  "  const v = pm.collectionVariables.get('dryRunVisitId');",
+                  "  pm.expect(v, 'dryRunVisitId (run the dry-run queue first)').to.be.a('number');",
+                  "});",
                   "const j = pm.response.json();",
                   "pm.test('recorded (201 new or 200 dedupe)', () => pm.expect([200,201]).to.include(pm.response.code));",
                   "pm.test('recorded flag true', () => pm.expect(j.recorded).to.eql(true));",
@@ -217,8 +219,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
-                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', function () {",
+                  "  const v = pm.collectionVariables.get('dryRunVisitId');",
+                  "  pm.expect(v, 'dryRunVisitId (run the dry-run queue first)').to.be.a('number');",
+                  "});",
                   "const j = pm.response.json();",
                   "pm.test('recorded (201 new or 200 dedupe)', () => pm.expect([200,201]).to.include(pm.response.code));",
                   "pm.test('recorded flag true', () => pm.expect(j.recorded).to.eql(true));",
@@ -264,8 +268,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
-                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', function () {",
+                  "  const v = pm.collectionVariables.get('dryRunVisitId');",
+                  "  pm.expect(v, 'dryRunVisitId (run the dry-run queue first)').to.be.a('number');",
+                  "});",
                   "const j = pm.response.json();",
                   "pm.test('200 or 201', () => pm.expect([200,201]).to.include(pm.response.code));",
                   "console.log(pm.response.code === 201 ? 'First send -> 201 recorded (deduped=false)' : 'Repeat send -> 200 deduped=' + j.deduped);"
@@ -315,8 +321,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
-                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', function () {",
+                  "  const v = pm.collectionVariables.get('dryRunVisitId');",
+                  "  pm.expect(v, 'dryRunVisitId (run the dry-run queue first)').to.be.a('number');",
+                  "});",
                   "pm.test('400 rejected', () => pm.response.to.have.status(400));",
                   "pm.test('error names run_id', () => pm.expect(pm.response.json().error).to.include('run_id'));"
                 ]
@@ -360,8 +368,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', () =>",
-                  "  pm.expect(pm.collectionVariables.get('dryRunVisitId'), 'dryRunVisitId').to.not.be.empty);",
+                  "pm.test('Run \"Queue - dry-run\" first to capture a visit', function () {",
+                  "  const v = pm.collectionVariables.get('dryRunVisitId');",
+                  "  pm.expect(v, 'dryRunVisitId (run the dry-run queue first)').to.be.a('number');",
+                  "});",
                   "pm.test('400 rejected', () => pm.response.to.have.status(400));",
                   "pm.test('error names the unknown field', () => pm.expect(pm.response.json().error).to.include('unknown_field'));"
                 ]
