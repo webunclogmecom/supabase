@@ -890,6 +890,12 @@ async function handleInspectionRecord(recordId: string, fields: Record<string, u
 // ---- Table handler dispatcher ----
 const RECORD_HANDLERS: Record<string, (recordId: string, fields: Record<string, unknown>) => Promise<void>> = {
   clients: handleClientRecord,
+  // UNREACHABLE as of 2026-07-21 — nothing maps to 'derm' anymore. Both dispatch sites were
+  // checked: ENTITY_TO_HANDLER (severed, see the note there) and TABLE_HANDLERS (fully
+  // commented out, the native changedTablesById path has never been wired). Kept only so the
+  // handler body remains readable next to the rest. Re-pointing anything at this WILL
+  // reintroduce NULL disposal_facility_id inserts, which public.derm_manifests now REJECTS
+  // via derm_manifests_dump_fields_present_chk — you would get a 23514, not a silent NULL.
   derm: handleDermRecord,
   routes: handleRouteRecord,
   past_due: handleReceivableRecord,
@@ -996,7 +1002,33 @@ async function processPayload(payload: any): Promise<{ processed: number; errors
 
 const ENTITY_TO_HANDLER: Record<string, string> = {
   'client': 'clients',
-  'derm_manifest': 'derm',
+  // 'derm_manifest': SEVERED 2026-07-21 (Fred's explicit call). DO NOT RE-ADD.
+  //
+  // CLAUDE.md has said since 2026-06-26 that the AT→DERM automation is retired and
+  // the DERM Tracker is the sole writer of derm_manifests. That was NOT true in code:
+  // this entry was still live and fired 55 times in the 30 days to 2026-07-14.
+  //
+  // Two concrete harms, both measured before removal:
+  //  1. handleDermRecord NEVER sets disposal_facility_id (the column appears 0 times in
+  //     this file), and the `hasData` gate admits a row on a URL alone with no dump date.
+  //     It really did insert such rows (manifests 1245/1250/1251 on 2026-06-30).
+  //  2. Its `.update(row)` sends every key including nulls, so an empty Airtable field
+  //     overwrote a real value — it wiped the dump date on manifests 1061, 579 and 999.
+  //
+  // Business rule (Fred, 2026-07-21): the DERM address manifest is only uploaded AFTER it
+  // comes back from the city, by Diego, reading the finished paper sheet. Both the dump
+  // date and the facility are printed on it at that moment. So the manifest is born
+  // complete, and Airtable has no role in creating one.
+  //
+  // KNOWN, ACCEPTED CONSEQUENCE: this also ends PDF doc-mirroring from Airtable
+  // attachments into Supabase storage (last used 2026-07-14; 545/546 live manifests are
+  // already mirrored, 0 still point at Airtable). Fred accepted this on 2026-07-21:
+  // nobody should be attaching DERM PDFs in Airtable anymore — they go in the DERM Tracker.
+  // Any that still arrive land in webhook_events_log as status='skipped' rather than
+  // vanishing, so the loss is visible. Check there before concluding "the feed is fine".
+  //
+  // Unmapped entities fall through to the !handlerKey branch below: logged as 'skipped'
+  // with HTTP 200, so Airtable gets no error and will not retry-storm.
   'route': 'routes',
   'receivable': 'past_due',
   'inspection': 'inspections',
