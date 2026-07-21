@@ -49,7 +49,8 @@ Cursor/offset pagination (3 clients, depth ≈ 0, 25-cap never hit) · rate limi
 
 ## Decisions for Fred
 
-1. **Raw roster vs redacted address sheet** (the big one; blocks nothing but answer before open). The queue signs the **raw multi-client** address sheet, shipping every other code-27 client's name/address/GDO# to John's box and the county. Ask John: does the DERM portal upload need the full county-issued multi-client document, or only **this client's own row**? If a single-client extract is accepted, switch the queue to sign the **FP-Blackout redacted copy**. **Recommendation: default to redacted unless John confirms the portal needs the full doc.**
+1. **Raw roster vs redacted address sheet** (the big one; blocks nothing but answer before open). The queue signs the **raw multi-client** address sheet, shipping every other code-27 client's name/address/GDO# to John's box and the county. Ask John: does the DERM portal upload need the full county-issued multi-client document, or only **this client's own row**? If a single-client extract is accepted, switch the queue to sign the **FP-Blackout redacted copy**.
+   - **DECIDED (Fred, 2026-07-21): ask John first, do NOT change the queue yet.** Keep raw until he answers what the portal requires. No exposure has happened yet (0 real fetches). If John says a single-client extract is accepted → switch the queue to the redacted FP-Blackout copy; if the full county doc is required → keep raw and add a `document_variant` label so the exposure is explicit/auditable. **PENDING John's answer.**
 
 2. **Rollout gating: allow-list, or bend the cutoff?** "1 live visit you pick" currently needs `rpa_launch_cutoff()` bent so exactly one visit qualifies (brittle, dated). **Recommendation: ship `rpa_rollout_allowlist` (#1)** so "exactly these visits go live" is explicit and the first real county filing exposes one submission, not three clients.
 
