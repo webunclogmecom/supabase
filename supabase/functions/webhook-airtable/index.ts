@@ -290,7 +290,42 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
   // truth). The legacy dual-write to service_configs.permit_* was removed
   // in Phase 4b after view rewires (25t) confirmed no readers depend on
   // the legacy columns. The columns themselves are dropped in migration 25u.
-  const gdo = strVal(fields, 'GDO Number')
+  // GUARD 1c (2026-07-21): normalize zero-padding BEFORE any guard or write.
+  //
+  // public.gdos is unique on (client_id, gdo_number), so "GDO-000951" and "GDO-00951" are two
+  // DIFFERENT keys for the same client and both rows coexist. That is exactly what happened to
+  // 132-PUM Pummarola: inserted padded on 05-20, hand-repaired to GDO-00951 on 05-25, then
+  // RE-CREATED padded by an AT re-ingest on 05-26, after which it was demoted and re-promoted
+  // four times (06-01/06-05, 06-27/06-29, 07-17).
+  //
+  // GUARD 1b below does NOT catch this: "GDO-000951" is a perfectly canonical ^GDO-\d+$ string.
+  // It is not a placeholder, it is a real number with an extra leading zero, so it sails through
+  // and lands as a duplicate permit. Deleting the duplicate row does NOT fix it either — the AT
+  // field still carries the padded value, so the next client touch re-INSERTs it as ACTIVE.
+  // Normalizing on the way in is the only durable fix: the padded form now resolves onto the
+  // existing correct row and UPDATEs it instead of creating a twin.
+  //
+  // Strip leading zeros, then re-pad to the 5-digit house style (all 182 canonical permits in
+  // Prod are 5 digits). Deliberately does NOT cap the length: a genuinely longer permit
+  // (e.g. GDO-123456) has no leading zeros to strip and passes through untouched. Do not
+  // "simplify" this to a fixed-width pad — that would corrupt a real 6+ digit permit.
+  // The hyphen is REQUIRED here on purpose, matching GUARD 1b exactly. A tolerant `GDO-?` would
+  // newly accept "GDO11886", which GUARD 1b rejects today — and 0 hyphenless values have ever been
+  // written to public.gdos, so that tolerance would be unverified widening of a write path. Read
+  // tolerance is the GDO Slack bot's business; writes stay strict. Anything not matching falls
+  // through untouched to GUARD 1 / 1b, which is what rejects it.
+  const normalizeGdo = (raw: string): string => {
+    const m = /^\s*GDO-(\d+)\s*$/i.exec(raw)
+    if (!m) return raw.trim()
+    const digits = m[1].replace(/^0+/, '') || '0'
+    return `GDO-${digits.padStart(5, '0')}`
+  }
+
+  const gdoRaw = strVal(fields, 'GDO Number')
+  const gdo = gdoRaw ? normalizeGdo(gdoRaw) : gdoRaw
+  if (gdoRaw && gdo !== gdoRaw.trim()) {
+    console.log(`webhook-airtable: normalized gdo_number "${gdoRaw}" -> "${gdo}" for client ${clientId}`)
+  }
   const gdoExp = dateVal(fields, 'GDO expiration date')
   if (gdo || gdoExp) {
     // CANONICAL write to public.gdos.
