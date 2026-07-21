@@ -8,10 +8,11 @@
 // GET /functions/v1/rpa-derm-queue            → up to 25 live-queue manifests
 // GET /functions/v1/rpa-derm-queue?mode=dryrun → historical sample (testing)
 //
-// Auth: header `x-rpa-key` matched against the RPA_BOT_KEYS secret
-// (comma-separated list so a key rotation is add-new, swap, remove-old with
-// zero downtime). verify_jwt=false in config.toml — the bot has no Supabase
-// JWT; this header IS the auth. Server-to-server only, no CORS surface.
+// Auth: header `x-rpa-key` matched against the RPA_BOT_KEYS secret (a
+// comma-separated list of `label:secret` entries — one PER CONSUMER, so each
+// integrator can be revoked independently, and a rotation is add-new, swap,
+// remove-old with zero downtime). verify_jwt=false in config.toml — the bot has
+// no Supabase JWT; this header IS the auth. Server-to-server only, no CORS.
 //
 // Response shape (documented for Jonathan in the repo README):
 // { generated_at, mode: 'live'|'dryrun', count, reports: [{
@@ -31,10 +32,38 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SIGNED_URL_TTL_SECONDS = 4 * 60 * 60 // 4 hours, sized to one bot run
 const BATCH_CAP = 25
 
-const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
+// RPA_BOT_KEYS is a comma-separated list of `label:secret` entries so every
+// consumer (John's Railway bot, our Postman harness) holds its OWN key and can
+// be revoked independently without breaking the others (2026-07-21j).
+// Backward compatible ON PURPOSE: a bare `secret` with no `label:` prefix still
+// authenticates and reports as 'unlabelled', so this code is safe to deploy
+// BEFORE the secret is reformatted. Deploy order matters — functions first,
+// secret second; the reverse would 401 every consumer.
+type BotKey = { label: string; secret: string }
+
+const KEYS: BotKey[] = (Deno.env.get('RPA_BOT_KEYS') ?? '')
   .split(',')
-  .map((k) => k.trim())
+  .map((raw) => raw.trim())
   .filter(Boolean)
+  .map((raw) => {
+    const i = raw.indexOf(':')
+    if (i > 0) {
+      const label = raw.slice(0, i)
+      const secret = raw.slice(i + 1)
+      // Only treat the prefix as a label if it actually LOOKS like one: a key
+      // that happens to contain ':' must never be silently truncated into a
+      // wrong secret (that would fail open-ish into a confusing 401 storm).
+      if (secret && /^[A-Za-z0-9_-]{1,40}$/.test(label)) return { label, secret }
+    }
+    return { label: 'unlabelled', secret: raw }
+  })
+
+// Returns the matching credential (so callers can record WHO called), or null.
+function matchKey(presented: string): BotKey | null {
+  if (!presented) return null
+  for (const k of KEYS) if (k.secret === presented) return k
+  return null
+}
 
 function json(body: Record<string, unknown>, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -68,8 +97,8 @@ Deno.serve(async (req: Request) => {
     console.error('RPA_BOT_KEYS secret not configured')
     return json({ error: 'service_not_configured' }, 503)
   }
-  const presented = req.headers.get('x-rpa-key') ?? ''
-  if (!KEYS.includes(presented)) return json({ error: 'unauthorized' }, 401)
+  const caller = matchKey(req.headers.get('x-rpa-key') ?? '')
+  if (!caller) return json({ error: 'unauthorized' }, 401)
 
   const url = new URL(req.url)
   const mode = url.searchParams.get('mode') === 'dryrun' ? 'dryrun' : 'live'
@@ -157,6 +186,10 @@ Deno.serve(async (req: Request) => {
       )
     if (leaseErr) console.error('lease upsert failed (serving anyway):', leaseErr.message)
   }
+
+  // Log WHO pulled the queue (label only, never the key): answers "John says
+  // the queue was empty" without guessing which consumer actually called.
+  console.log(`queue served: consumer=${caller.label} mode=${mode} count=${reports.length}`)
 
   return json(
     { generated_at: new Date().toISOString(), mode, count: reports.length, reports },
