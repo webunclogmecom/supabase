@@ -75,9 +75,12 @@ Deno.serve(async (req: Request) => {
   const mode = url.searchParams.get('mode') === 'dryrun' ? 'dryrun' : 'live'
   const view = mode === 'dryrun' ? 'v_derm_portal_dryrun' : 'v_derm_portal_queue'
 
+  // x-app-source tags the lease writes as 'gdo-report-bot' for the activity
+  // trail (Automated GDO Reporting), not the generic fallback. 2026-07-21i.
   const sb = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { global: { headers: { 'x-app-source': 'gdo-report-bot' } } },
   )
 
   const { data: rows, error } = await sb

@@ -150,9 +150,13 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // x-app-source tags every write from this bot as 'gdo-report-bot' so the
+  // audit trail attributes the action to the Automated GDO Reporting bot
+  // (not the generic service_role/sql fallback). 2026-07-21i.
   const sb = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { global: { headers: { 'x-app-source': 'gdo-report-bot' } } },
   )
 
   const { data: visit, error: vErr } = await sb

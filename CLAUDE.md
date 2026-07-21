@@ -60,6 +60,8 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
 - `app_source = 'field-portal'` — Field Portal (fp.unclogme.app)
 - `app_source = 'admin-review'` — Admin Review (grease-buddy-dash)
 - `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
+- `app_source = 'send-derm-email'` — the DERM email edge fn ("Send DERM to city/clients"); the row also carries `sent_by_email`/`sent_by_user_id` (the human who clicked, from the app-forwarded JWT — 2026-07-21h)
+- `app_source = 'gdo-report-bot'` — the Automated GDO Reporting bot (rpa-derm-queue/result edge fns; 2026-07-21i). Machine actor, not a person.
 - `app_source = 'sql'` — direct Management API / psql / scripts (no PostgREST context)
 - `app_source = 'other:<host>'` — unmapped origin (add to the trigger CASE when an app subdomain is added)
 - explicit `X-App-Source: <name>` header overrides everything — use for scripts, bots, one-off curl
