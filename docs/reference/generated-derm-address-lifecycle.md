@@ -90,20 +90,38 @@ ticket to the disposal number cannot un-generate the sheet. TWO RULES that make 
    (829322's photos are stored -2 first; stamp_page is positional so everything stayed
    consistent), but print order keeps the Studio's page tabs intuitive.
 
-## Open items (Fred to green-light; none block the flow)
+## The production door (OPEN since 2026-07-21 — Fred: "implement it")
 
-1. **Review-on-return tripwire (recommended):** when a photo lands on a generated sheet's manifest,
-   flag the sheet for a quick visual check (or un-complete it) so the office confirms the AI stamps
-   sit on the right rows of the actual photo before it becomes redaction input. Today this is
-   caught indirectly by the stamped-but-unmeasured check (the measurement pass is a human moment
-   anyway); an explicit flag would make it deliberate.
+The office generates sheets from **DERM Tracker `/manifests`**: file the run's manifests pre-dump
+via `/upload` (one shared ticket number, all the run's clients, no photos yet), then the expanded
+ticket row shows **"Generate address sheet"** (only while NO row in the group carries an address
+photo — post-return the button disappears by design). Click → `generate-derm-address-pdf` edge fn
+(data-project client) → the PDF opens in a new tab for printing; the toast + a muted **"Sheet N"**
+chip carry the printed number. Regeneration (add a client, reprint) uses the same button and KEEPS
+the same number. Errors from the backend gates surface verbatim in the toast.
+Sheet-number surfacing: `derm_manifests.derm_address_no` is a **provenance-maintained mirror**
+stamped by MANIFEST ID inside `derm.record_generated_address_sheet` and cleared on sheet
+soft-delete (2026-07-21c; never key it by ticket number — that made ghost sheet 819788).
+
+## Open items — status 2026-07-21
+
+1. **Review-on-return tripwire — ✅ SHIPPED 2026-07-21a.** When a photo lands on a generated
+   sheet's ticket (`derm_address_url` NULL→set), `trg_zx_generated_sheet_return_review`
+   un-completes the sheet's `stamp_sheet_status` row, so the Studio queue resurfaces it and the
+   office verifies/drag-corrects the AI stamps against the real photo before redaction. Photo
+   REPLACEMENTS don't re-flip. Same migration shipped `trg_zw_generated_cards_follow_renumber`:
+   when the office renumbers the ticket to the disposal number at filing (observed practice), the
+   Studio cards' join key follows — without it, generation-time cards would orphan on renumber
+   (the preview-era sheets never hit this only because their cards were created post-renumber).
 2. **Jobber 000-visit photo automation (later):** the driver's upload lands on the Jobber dump
    visit; filing it onto the manifests is manual (DERM Tracker). Auto-suggesting "this dump-visit
    photo looks like sheet 1030's return" is possible once real volume exists.
 3. **First real return = the acceptance test.** Phase 1 is fully E2E-tested (sheets 1027/1028/1029,
-   2026-07-20). Phase 2's chain (photo → pages → bands from AI stamps → measure → redact → FP) is
-   the exact handwritten pipeline, live for 527 documents, but the first REAL returned generated
-   sheet should be walked end to end before trusting it at volume.
+   2026-07-20; live button roundtrip sheet 1054, 2026-07-21). Phase 2's chain (photo → pages →
+   bands from AI stamps → measure → redact → FP) is the exact handwritten pipeline, live for 527
+   documents, but the first REAL returned generated sheet should be walked end to end before
+   trusting it at volume. **Next unconsumed number: first production sheet = 1055** (1054 burned
+   by the live button test, torn down).
 
 ## History of the wrong assumption (kept so it is not re-made)
 
