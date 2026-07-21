@@ -11,12 +11,17 @@ Full API design: `../docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md` and migr
   `rpaBotKey` (secret) to fill in.
 
 ## Import + run (workspace `8033927e-…`)
-1. Postman → **Import** → drop both JSON files.
-2. Select the **UnclogMe - RPA (Prod)** environment (top-right), and paste the bot key into
-   `rpaBotKey`. The value is `RPA_BOT_KEY` in `Supabase/.env` (never commit it).
+1. Postman → **Import** → drop the collection JSON (the environment file is optional).
+2. **Paste the key — no environment needed:** right-click the collection **UnclogMe - GDO Online
+   Reporting Bot API** → **Edit** → **Variables** tab → paste your key into `rpaBotKey`'s
+   **Current value** column → **Save**. The value is `RPA_BOT_KEY` in `Supabase/.env` (never commit it).
+   (If Postman shows **No environment** top-right, that's fine now — the key lives on the collection.)
 3. Run **1. Queue → Queue - dry-run** first — it returns real historical code-27 visits and
    captures a `visit_id` the Result requests reuse. Then run the rest top to bottom, or use the
    Collection Runner.
+
+Common gotcha: a **401 unauthorized** means `rpaBotKey` is still blank (or an empty environment is
+selected and overriding it). Fill the collection variable per step 2.
 
 ## Notes
 - The **live** queue is empty until launch; the **dry-run** queue serves 29 real code-27 visits for testing.

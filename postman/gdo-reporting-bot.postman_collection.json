@@ -2,7 +2,7 @@
   "info": {
     "name": "UnclogMe - GDO Online Reporting Bot API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Test harness for the GDO Online Reporting bot API (Line Item 27).\n\nThe bot reads a QUEUE of code-27 visits to report online on the Miami-Dade DERM portal, and POSTs a RESULT per visit. Both endpoints are live Supabase Edge Functions.\n\n## Setup (once)\n1. Import the environment 'UnclogMe - RPA (Prod)' and select it (top-right).\n2. Paste the bot key into the rpaBotKey environment variable. The value lives in Supabase/.env as RPA_BOT_KEY (never commit it). Auth is one header x-rpa-key set at the collection level, so every request uses it automatically.\n\n## How to test\nRun top to bottom. Start with '1. Queue > Queue - dry-run': it returns real historical code-27 visits and captures the first visit_id into a variable the Result requests reuse. Then run the '2. Result' requests (they send dry_run:true, so they are recorded separately and NEVER affect the live queue or what customers/apps see). '3. Validation' shows the endpoint rejecting bad input.\n\nNotes: the LIVE queue is empty until launch. Result writes create harmless dry_run rows in our log table; clear them anytime, they are invisible to the live pipeline. There is no 'SUCCESS needs confirmation' test here on purpose: that rule (and the double-file guards) apply only to LIVE reports; a dry-run SUCCESS is a test and is deliberately exempt, so it cannot be shown against dry-run data (it is verified on the live path in our own suite)."
+    "description": "Test harness for the GDO Online Reporting bot API (Line Item 27).\n\nThe bot reads a QUEUE of code-27 visits to report online on the Miami-Dade DERM portal, and POSTs a RESULT per visit. Both endpoints are live Supabase Edge Functions.\n\n## Setup (once) - no environment needed\nRight-click this collection -> Edit -> Variables tab -> paste your bot key into rpaBotKey's CURRENT VALUE column -> Save. The value lives in Supabase/.env as RPA_BOT_KEY (never commit it). Auth is one header x-rpa-key set at the collection level, so every request uses it automatically. (An optional 'UnclogMe - RPA (Prod)' environment is also included if you prefer keys there; if you use it, it overrides the collection value.)\n\n## How to test\nRun top to bottom. Start with '1. Queue > Queue - dry-run': it returns real historical code-27 visits and captures the first visit_id into a variable the Result requests reuse. Then run the '2. Result' requests (they send dry_run:true, so they are recorded separately and NEVER affect the live queue or what customers/apps see). '3. Validation' shows the endpoint rejecting bad input.\n\nNotes: the LIVE queue is empty until launch. Result writes create harmless dry_run rows in our log table; clear them anytime, they are invisible to the live pipeline. There is no 'SUCCESS needs confirmation' test here on purpose: that rule (and the double-file guards) apply only to LIVE reports; a dry-run SUCCESS is a test and is deliberately exempt, so it cannot be shown against dry-run data (it is verified on the live path in our own suite)."
   },
   "auth": {
     "type": "apikey",
@@ -28,6 +28,11 @@
     {
       "key": "baseUrl",
       "value": "https://wbasvhvvismukaqdnouk.supabase.co/functions/v1",
+      "type": "string"
+    },
+    {
+      "key": "rpaBotKey",
+      "value": "",
       "type": "string"
     },
     {
