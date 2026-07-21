@@ -213,6 +213,26 @@ Deno.serve(async (req: Request) => {
   const results: Record<string, unknown>[] = []
   const isTest = !!testRecipient
 
+  // Activity-trail attribution (2026-07-21h): this fn runs as service_role, so
+  // the audit trigger cannot see the user. The DERM Tracker forwards the
+  // signed-in user's JWT on functions.invoke; decode it (read-only, the app is
+  // auth-gated) to record WHO triggered the send. Anon/service callers -> null.
+  let actorEmail: string | null = null
+  let actorUserId: string | null = null
+  try {
+    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const part = jwt.split('.')[1]
+    if (part) {
+      let b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+      while (b64.length % 4) b64 += '='
+      const claims = JSON.parse(atob(b64)) as { role?: string; email?: string; sub?: string }
+      if (claims.role && claims.role !== 'anon' && claims.role !== 'service_role') {
+        actorEmail = claims.email ?? null
+        actorUserId = claims.sub ?? null
+      }
+    }
+  } catch { /* leave actor null on any decode issue */ }
+
   // Append-only send log; never throws (a logging failure must not break the email response).
   const logSend = async (
     manifestId: number, clientId: number | null, recipientEmail: string | null,
@@ -223,6 +243,7 @@ Deno.serve(async (req: Request) => {
       const { error } = await sb.from('derm_email_sends').insert({
         manifest_id: manifestId, client_id: clientId, recipient_email: recipientEmail,
         resend_email_id: resendEmailId, status, reason, is_test: isTest, recipient_type: recipientType,
+        sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-derm-email] log insert failed: ${error.message}`)
     } catch (e) {
