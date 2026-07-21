@@ -77,7 +77,11 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: 'invalid_json' }, 400, cors)
   }
 
-  if (typeof body.manifest_id !== 'number' || !Number.isInteger(body.manifest_id) || body.manifest_id <= 0) {
+  // Accept both 42 and "42": PostgREST bigint ids round-trip as strings in
+  // some client paths (the DERM Tracker's first live call sent "1445"), and
+  // rejecting the string form only manufactures avoidable 400s.
+  const manifestId = Number(body.manifest_id)
+  if (!Number.isInteger(manifestId) || manifestId <= 0) {
     return jsonResponse({ error: 'manifest_id_required_integer' }, 400, cors)
   }
 
@@ -91,7 +95,7 @@ Deno.serve(async (req: Request) => {
         Authorization: `Bearer ${PDF_SERVICE_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ manifest_id: body.manifest_id }),
+      body: JSON.stringify({ manifest_id: manifestId }),
     })
   } catch (e) {
     console.error('Forward to PDF service failed:', e)
