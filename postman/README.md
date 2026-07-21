@@ -23,6 +23,14 @@ Full API design: `../docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md` and migr
 Common gotcha: a **401 unauthorized** means `rpaBotKey` is still blank (or an empty environment is
 selected and overriding it). Fill the collection variable per step 2.
 
+## Variables — what you set vs. what fills itself
+- **rpaBotKey** — you paste it (collection variable, or the environment). This is the only one you touch.
+- **baseUrl** — preset to the Edge Functions base URL.
+- **dryRunVisitId / dryRunManifestId** — leave EMPTY. The **Queue - dry-run** request auto-captures
+  them into COLLECTION scope; the Result requests read them back. Do **not** add them to a selected
+  environment: an empty environment copy shadows the captured collection value and blanks out the
+  Result requests. The shipped environment intentionally holds only `rpaBotKey`.
+
 ## Notes
 - The **live** queue is empty until launch; the **dry-run** queue serves 29 real code-27 visits for testing.
 - Result requests send `dry_run: true`, so they write separate rows that never touch the live queue,
