@@ -11,7 +11,7 @@ When you need to see the actual schema, prompt Lovable: *"Show me the columns of
 | Column | Type | Notes |
 |---|---|---|
 | `id` | BIGINT PK | |
-| `client_code` | TEXT | 3-letter prefix code, e.g. `"009-CN"` |
+| `client_code` | TEXT | Full client code `NNN-SUFFIX`, e.g. `"009-CN"` |
 | `name` | TEXT | Display name (Jobber-canonical) |
 | `status` | TEXT | `'ACTIVE'`, `'INACTIVE'`, `'Recuring'` (yes, sic) |
 | `balance` | NUMERIC(12,2) | Outstanding balance |

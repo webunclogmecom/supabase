@@ -279,6 +279,31 @@ Fixtures (JSON files with real-shape payloads) should live in `supabase/function
 
 ---
 
+## Downstream consumers (read-only, non-app)
+
+Besides the Lovable apps (each on its own schema — see the Building Apps manual), these
+services read Prod directly. **Changing the shape of the tables they read breaks them silently
+— check this list before altering those tables.**
+
+### GDO Slack bot (`webunclogmecom/unclogme-gdo-bot`, Railway) — since 2026-07-21
+
+- **Reads only, never writes.** PostgREST with the **service_role key** (data-plane only, not a
+  Management API PAT); sends `X-App-Source: gdo-bot`. On Railway the key is a cross-service
+  reference to unclogme-pdf-service's variable, so rotation is one edit.
+- **Tables:** `gdos` joined to `clients`, `client_locations`, `properties`. Query shape:
+  `gdos?select=gdo_number,permit_expiration,max_frequency_days,status,permit_document_path,notes,clients!inner(client_code,name,status),client_locations(name,properties(address,city,zip,county))`
+  plus portfolio sweeps (expiring / expired / missing-GDO / recently-renewed).
+- **Semantics it depends on:** `gdos.status='ACTIVE'` is its correctness gate (INACTIVE encodes a
+  human adjudication that the permit belongs elsewhere — e.g. 114-CI's demoted GDO-11886; if
+  INACTIVE ever changes meaning, the bot resurrects fixed bugs). One-GDO-per-location grain
+  (multi-location clients render one permit per location). It format-filters `gdo_number` with
+  `^GDO-?\d{3,6}$`, so placeholder strings read as "no permit on file". The `notes` column carries
+  prior adjudications the bot surfaces.
+- Migrated off Airtable 2026-07-21 (was the last Airtable reader outside PRE-POST inspections).
+  Bot-side history: `Slack/GDO Bot/CHANGELOG.md`.
+
+---
+
 ## Future: adding a new source
 
 When we integrate Odoo.sh as a data source (post-May 2026):

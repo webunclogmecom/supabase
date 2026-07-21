@@ -81,7 +81,7 @@ webhook_tokens                — system/ops tables
 | Column | Type | Notes |
 |---|---|---|
 | id | BIGSERIAL PK | |
-| client_code | TEXT | 3-digit prefix, e.g. `"009"` |
+| client_code | TEXT | Full client code `NNN-SUFFIX`, e.g. `"009-CN"`, `"010-CS"`; unique among non-INACTIVE clients (`clients_active_client_code_uniq`). See `docs/reference/client_code_scheme.md` |
 | name | TEXT | Clean display name |
 | status | TEXT | `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE` |
 | client_class | TEXT | `commercial` or `residential`. Default source: Jobber `Client.isCompany`. Added 2026-05-29. ~323 commercial / 86 residential. **Jobber `isCompany` is unreliable for Airtable-coded clients (all `true`)** — verify residential by Google Places address lookup, then pin via `client_class_source='manual'`. See `project_residential_clients.md` — STORE != ACT-on. |

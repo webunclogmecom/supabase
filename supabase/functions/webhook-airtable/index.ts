@@ -305,6 +305,18 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
         console.log(
           `webhook-airtable: skipped gdos write for client ${clientId} — gdo_number="${gdo}" is a BW placeholder, Broward has no GDO program`,
         )
+      } else if (!/^GDO-\d+$/.test(gdo.trim())) {
+        // GUARD 1b (2026-07-21): only canonical GDO-<digits> values may reach
+        // public.gdos. AT's "GDO Number" field also carries placeholders
+        // ("Not available", "Needs review") and combined strings; the 07-17
+        // patch stopped the UPDATE path from re-promoting demoted rows, but
+        // this INSERT path kept landing placeholders as ACTIVE rows (ids
+        // 211/222 on 07-05 + 07-14), which then surfaced as literal permit
+        // numbers on the Field Portal and Calendar. AT is read-only for us
+        // and still carries these values, so without the guard they recur.
+        console.log(
+          `webhook-airtable: skipped gdos write for client ${clientId} — gdo_number="${gdo}" is not a canonical GDO-<digits> permit (placeholder or malformed)`,
+        )
       } else {
         const { data: prop } = await supabase
           .from('properties')

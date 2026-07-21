@@ -363,3 +363,17 @@ and reads as "no permit on file", which is the most expensive possible wrong ans
 
 **No DB writes were made from this part** — the Wynd tenant assignment stays PAUSED
 for Fred + Diego per the 2026-07-20 instruction to keep the two existing permits.
+
+---
+
+## Addendum 2026-07-21 — placeholder class closed (the piece this audit left open)
+
+The 2026-06-29 re-ingest burst had also re-promoted the PLACEHOLDER rows ('Not available' /
+'Needs review'), a class this audit's remediation did not re-demote (it scoped to wrong-VALID-number
+rows). Triggered by the GDO bot session's finding, migration `2026-07-21d` re-demoted the 19
+regressed placeholder rows (restoring the 2026-06-28 cleanup adjudication; customer.permits junk
+permit rows 19 -> 1, Calendar placeholder rows 138 -> 21, remainder all the deliberate
+057-BAY PSO-00025). The remaining INSERT hole in webhook-airtable (placeholder values landed as
+fresh ACTIVE rows on 07-05 and 07-14, post-patch) is closed by GUARD 1b: only canonical
+`^GDO-\d+$` values may reach `public.gdos`. Also: `docs/schema.md` client_code description
+corrected (full `NNN-SUFFIX` code, never a bare 3-digit prefix).
