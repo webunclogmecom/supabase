@@ -11,6 +11,8 @@ Per-source integration details: webhook endpoints, signatures, payloads, registr
 | `webhook-jobber` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-jobber` | Jobber | clients, client_contacts, jobs, visits, visit_assignments, invoices, quotes, properties, photo_links | Deployed; live delivery intermittent |
 | `webhook-airtable` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-airtable` | Airtable | service_configs (via Clients), derm_manifests, routes, receivables, inspections | Live (10 automations) |
 | `webhook-samsara` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-samsara` | Samsara | properties (geofence on clients), employees (drivers), vehicle_telemetry_readings | Deployed; HMAC failing on real events (see runbook §5) |
+| `rpa-derm-queue` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-queue` | RPA DERM-portal bot (GET; `x-rpa-key`) | reads `v_derm_portal_queue` / `v_derm_portal_dryrun` only | Live 2026-07-21; contract in `docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md` |
+| `rpa-derm-result` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result` | RPA DERM-portal bot (POST; `x-rpa-key`) | derm_portal_submissions + `rpa-evidence` bucket (private) | Live 2026-07-21; idempotent on (manifest_id, run_id) |
 
 Every function:
 - Accepts `POST` with JSON body

@@ -466,3 +466,13 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # client is never caller-supplied, only a key into a 2-entry server-side whitelist of dump sites.
 [functions.dump-visit-create]
 verify_jwt = false
+
+# RPA DERM-portal bot endpoints (Jonathan): server-to-server, authenticated by
+# the x-rpa-key header against the RPA_BOT_KEYS secret. Same rule as the
+# webhook receivers — verify_jwt MUST be false or the gateway 401s every call
+# (the bot has no Supabase JWT).
+[functions.rpa-derm-queue]
+verify_jwt = false
+
+[functions.rpa-derm-result]
+verify_jwt = false

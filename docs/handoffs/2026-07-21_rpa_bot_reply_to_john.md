@@ -13,15 +13,15 @@ Hi John, great work getting through the portal automation, that ViewState stuff 
 
 One ground rule up front: no database credentials leave our side, not even read-only ones. Our database is the company's single source of truth and holds customer PII, so external services talk to it through narrow endpoints we control and can revoke. Same approach our other integrations use (Jobber, Airtable, Samsara): they hit endpoints with a secret, never the database directly. You will get two keys: one you send us on every call, and a different one we send you when we trigger your service. Never reuse one for the other.
 
-1. Data source: REST, not a DB connection.
+1. Data source: REST, not a DB connection. The endpoint is already live.
 GET https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-queue
 Auth header: x-rpa-key (value sent privately). Returns JSON: up to 25 manifests ready for submission, oldest first, one object per manifest, with the data fields plus signed URLs for the documents (valid 4 hours, minted fresh on every fetch; download everything at the start of the run and never log or store the URLs). Queue rules so we cannot double-submit: a manifest appears only if it has no SUCCESS on file and no attempt in the last 20 hours; SUCCESS is permanent, it never comes back. The endpoint also takes ?mode=dryrun, which serves already-submitted historical manifests for testing; results from those are tagged dry-run and never count as real.
 Send me the column list of the CSV you read today and I will match the field names wherever they map cleanly and flag the ones that do not. The response field list will be documented in the repo README, so that doubles as your schema doc.
 
-2. Audit logging: POST endpoint, same key.
+2. Audit logging: POST endpoint, same key, also live.
 POST https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result
-Body: { manifest_id, run_id, status, retryable (boolean: true for things like portal timeouts, false for data problems like a missing email), failure_reason, attempted_at (ISO 8601, UTC), portal_confirmation (whatever number or text the portal returns), screenshot (base64 JPEG, max 5MB), screenshot_missing_reason (only when you truly could not capture one, e.g. browser crash; report the failure anyway) }.
-Two hard rules on our side: a manifest only counts as SUCCESS if the portal actually confirmed it, no optimistic success ever; and every result carries the screenshot unless capture itself failed. The POST is idempotent on (manifest_id, run_id), so if you do not get a 2xx back, keep the result locally and retry the POST until you do; never treat a manifest as done before we have acknowledged the result. Keep your status vocabulary (SUCCESS, ERROR_MISSING_EMAIL, etc.), short uppercase codes.
+Body: { manifest_id, run_id, status, retryable (boolean: true for things like portal timeouts, false for data problems like a missing email), failure_reason, attempted_at (ISO 8601, UTC), portal_confirmation (whatever number or text the portal returns), screenshot (base64 JPEG, max 5MB), screenshot_missing_reason (only when you truly could not capture one, e.g. browser crash; report the failure anyway), dry_run (true when the batch came from ?mode=dryrun; those results are stored separately and never count as real) }.
+Two hard rules on our side: a manifest only counts as SUCCESS if the portal actually confirmed it, no optimistic success ever; and every result carries the screenshot unless capture itself failed. The POST is idempotent on (manifest_id, run_id), so if you do not get a 2xx back, keep the result locally and retry the POST until you do; never treat a manifest as done before we have acknowledged the result. Keep your status vocabulary (SUCCESS, ERROR_MISSING_EMAIL, etc.), short uppercase codes. Three formats the endpoint enforces, so you see a clean 400 instead of a mystery: run_id is letters, digits, dot, dash, underscore only (it becomes part of a storage key); a real SUCCESS must include portal_confirmation (no confirmation, no success); attempted_at must be roughly current UTC (badly skewed clocks are rejected).
 
 3. Screenshots: agreed, paths in the DB, never raw images in a table. You do not need storage credentials at all: send the bytes in the result POST, we store them in a private bucket and record the path. The bucket is private because these images contain client data. If screenshots ever run larger than the cap we will switch you to a signed upload URL, but start with base64 in the POST.
 
@@ -31,13 +31,13 @@ Triggers: schedule first, events later. Expose POST /run on your service, gated 
 
 Rollout gates before anything touches the county for real: first a dry-run pass over a couple of weeks of historical manifests (the ?mode=dryrun above), then the first live run on a single manifest I pick, verified on the county side, then the batch opens. County portal login: I will send it to you privately.
 
-Send me the CSV columns and the code link and I will have both endpoints and your keys ready.
+Both endpoints are live and tested end to end (auth, validation, idempotent retries, the queue lifecycle, dry-run isolation, screenshot storage), and your keys are generated. Send me three things and we are integrating the same day: the CSV column list, the confirmation that the record set is Miami-Dade manifests only, and the link to your current code. I will send the keys privately.
 
 ---
 
 ## Internal notes (our side, not for John)
 
-Build obligations this reply commits us to (both edge fns are ours to build; nothing exists yet):
+Build obligations — STATUS 2026-07-21: items 1-4 BUILT + DEPLOYED + T1-T10 tested (see migration 2026-07-21e verification record); item 5 (pg_cron trigger) waits for Jonathan's /run URL; item 6 (watchdog) before the batch opens. EXTRA (found by testing): the live queue has a LAUNCH CUTOFF (dump_ticket_date >= 2026-07-21) — without it the bot's first run would re-submit the entire 534-manifest historical backlog to the county; Fred widens the date deliberately if ever wanted. Keys: RPA_BOT_KEY + RPA_RUN_KEY in Supabase/.env (gitignored); RPA_BOT_KEYS set as a function secret (comma-separated for zero-downtime rotation).
 
 1. **`rpa-derm-queue` edge fn** (verify_jwt=false + `x-rpa-key`): reads a dedicated VIEW (not base
    tables) so the contract is decoupled; filters no-SUCCESS + no-attempt-in-20h; caps 25 oldest
