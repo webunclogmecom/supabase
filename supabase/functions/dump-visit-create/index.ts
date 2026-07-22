@@ -62,8 +62,17 @@ const DUMPS = {
 // any 'pending' row to Jobber ~3 minutes later, silently.
 const PUSH_TO_JOBBER = false;
 
-const SERVICE_LINE_ITEM_DUMP = 22; // "22 - Service Call - Labor" — requires_derm=false (explicit false,
-                                   // unlike a free-text 'DUMP' item which classifies to NULL/unknown).
+const SERVICE_LINE_ITEM_DUMP = 28; // "28 - Disposal - Dump Offload" (service_line_items code 28 = row id 28).
+                                   // requires_derm=false, service_type NULL, so a dump visit never becomes
+                                   // DERM-required and never classifies as GT. Changed from 22 "Service Call
+                                   // - Labor" on 2026-07-22 (Fred): a dump is not a client service, it is us
+                                   // disposing of collected grease. The 22 historical dump visits were
+                                   // backfilled onto code 28 the same day (Jobber for source='jobber' visits,
+                                   // direct DB update for the 3 source='visit-calendar' ones handleVisit does
+                                   // not resync). Verified: create_calendar_visit does NOT require the line
+                                   // item to be schedulable, only active (code 28 is active), and it names the
+                                   // line item from service_line_items.title, so this yields exactly
+                                   // "28 - Disposal - Dump Offload".
 // create_calendar_visit has NO dedupe; a double-tap would create two DB visits AND two Jobber visits.
 // SCOPE IS (site + DRIVER), never site alone: two drivers legitimately hit the same dump within 90
 // minutes on a normal night, and each needs HIS OWN visit to attach HIS OWN manifest photo to. Keying
