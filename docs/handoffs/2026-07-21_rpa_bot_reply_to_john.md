@@ -26,17 +26,17 @@ Two hard rules on our side: a visit only counts as reported if the portal actual
 
 4. Deployment and triggers.
 Environment: Railway, same as our other Python service. New PRIVATE repo under our webunclogmecom GitHub org; send me a link to your current code and I will set it up, Railway auto-deploys from main. Three hygiene rules, non-negotiable because this system touches client data: the portal login and both keys live only in Railway environment variables, never in code or logs. The bot logs visit_id and status only, never request bodies, URLs, or client fields, and it deletes downloaded documents and screenshots from disk once the result POST is acknowledged, so nothing persists between runs. And no real client data, CSVs, screenshots, or portal dumps ever go in the repo; test fixtures are synthetic, and if your current repo has ever contained real data or credentials we start the org repo clean rather than migrating history.
-Triggers: event-driven, exactly like you and Yannick pictured it. The moment we link a serviced visit for one of these clients to its DERM manifest, our database calls your service to run it. So expose POST /run on your service, gated by the second key (the one we send you); we call it with a small body naming the visit. Two requirements: /run returns 202 immediately and does the work in the background, and it returns 409 if a run is already in progress. As a safety net you also poll the GET queue on a slow schedule (say every 15-30 min) and file anything sitting there, so a missed push is never a missed report. Send me your /run URL and I flip the push on; until then the queue poll alone already works.
+Triggers: you own the timing, you poll. Poll the GET queue on a slow schedule (say every 15-30 min), file each report, and POST the result. That is the whole loop. You do not expose any endpoint and there is no second key: nothing on our side calls you, so you need no public URL. It is safe to run as often as you like because the queue only hands you visits still needing a filing (a SUCCESS removes one permanently), each dispensed visit is leased for 20h so a crash cannot get it re-handed-out, and the result POST is idempotent on (visit_id, run_id), so a duplicate or retried run never double-files.
 
 Rollout gates before anything hits the county for real: first a dry-run pass over the historical visits (?mode=dryrun), then the first live report on a single visit I pick, verified on the county side, then it opens for all of them. County portal login: I will send it to you privately.
 
-Both endpoints are live and tested end to end (auth, validation, idempotent retries, the queue lifecycle, dry-run isolation, screenshot storage), and your keys are generated. Send me three things and we are integrating the same day: the CSV column list, your repo link, and your /run URL. I will send the keys privately.
+Both endpoints are live and tested end to end (auth, validation, idempotent retries, the queue lifecycle, dry-run isolation, screenshot storage), and your key is generated. Send me two things and we are integrating the same day: the CSV column list and your repo link. I will send the key privately.
 
 ---
 
 ## Internal notes (our side, not for John)
 
-Build obligations — STATUS 2026-07-21: items 1-4 BUILT + DEPLOYED + T1-T10 tested (see migration 2026-07-21e verification record); item 5 (pg_cron trigger) waits for Jonathan's /run URL; item 6 (watchdog) before the batch opens. EXTRA (found by testing): the live queue has a LAUNCH CUTOFF (dump_ticket_date >= 2026-07-21) — without it the bot's first run would re-submit the entire 534-manifest historical backlog to the county; Fred widens the date deliberately if ever wanted. Keys: RPA_BOT_KEY + RPA_RUN_KEY in Supabase/.env (gitignored); RPA_BOT_KEYS set as a function secret (comma-separated for zero-downtime rotation).
+Build obligations — STATUS 2026-07-21: items 1-4 BUILT + DEPLOYED + T1-T10 tested (see migration 2026-07-21e verification record); **item 5 (event-push trigger) REMOVED 2026-07-21 (migration 21l) — Fred's call: the bot self-manages via POLL, we never push, so there is no `/run` and no run key**; item 6 (watchdog) before the batch opens. EXTRA (found by testing): the live queue has a LAUNCH CUTOFF (dump_ticket_date >= 2026-07-21) — without it the bot's first run would re-submit the entire 534-manifest historical backlog to the county; Fred widens the date deliberately if ever wanted. Keys: **RPA_BOT_KEY** in Supabase/.env (gitignored) is the ONE key; `RPA_RUN_KEY` is now unused (push removed); `RPA_BOT_KEYS` set as a function secret (comma-separated for zero-downtime rotation).
 
 1. **`rpa-derm-queue` edge fn** (verify_jwt=false + `x-rpa-key`): reads a dedicated VIEW (not base
    tables) so the contract is decoupled; filters no-SUCCESS + no-attempt-in-20h; caps 25 oldest
@@ -47,10 +47,12 @@ Build obligations — STATUS 2026-07-21: items 1-4 BUILT + DEPLOYED + T1-T10 tes
    row; dry-run results flagged.
 3. **New table** (audit opt-in per ADR 010) for submission results + run tracking; `retryable=false`
    results leave the queue until the record changes; `retryable=true` stays with the 20h cooldown.
-4. **Two keys**: `x-rpa-key` (bot→us) and a separate run-trigger key (us→bot). Both edge fns accept
-   current+next comma-separated env values so rotation is zero-downtime.
-5. **pg_cron trigger**: pg_net POST to John's `/run` nightly; expects 202; treat 409 as benign.
-   pg_net timeout precedent = 120s max, hence the async-202 requirement on his side.
+4. **One key**: `x-rpa-key` (bot→us). The edge fns accept current+next comma-separated env values so
+   rotation is zero-downtime. (A separate us→bot run-trigger key was planned but dropped — see item 5.)
+5. ~~**pg_cron / event-push trigger**: pg_net POST to John's `/run`.~~ **REMOVED 2026-07-21 (migration
+   21l).** Fred's decision: the bot self-manages via poll, so we never call it — no `/run`, no run key,
+   no push. The event trigger `trg_zz_gdo_reporting_notify` on `manifest_visits` and its function were
+   dropped. Revive from git history only if the push model is ever reinstated.
 6. **Watchdog** (later, before batch opens): alert when queue non-empty AND no attempts in 26h, or
    repeated data-errors, so the audit table is not write-only.
 

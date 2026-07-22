@@ -1,7 +1,7 @@
 # GDO Online Reporting API
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
-**Status:** live on Prod, tested end-to-end. Waiting on the bot's `/run` URL + the rollout gates.
+**Status:** live on Prod, tested end-to-end. The bot polls on its own schedule (no endpoint to expose); only the rollout gates remain.
 **Last updated:** 2026-07-21.
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
@@ -38,13 +38,10 @@ Base URL: `https://wbasvhvvismukaqdnouk.supabase.co`
 Every call carries the header **`x-rpa-key`** (value sent to you privately). There is **no Supabase
 JWT** and no database connection: the key is the auth, checked inside each function.
 
-- The key is matched against a **comma-separated** secret on our side, so we can rotate with zero
-  downtime (add new, you switch, we remove old). You never see the list.
-- **Two different keys, never interchange them:**
-  - `x-rpa-key` — the key **you send us** on every `GET`/`POST` above.
-  - the **run key** — a *different* key **we send you**, used only when our database calls your
-    `/run` endpoint (section 5). One is inbound, one is outbound; keep them separate.
-- Keys live only in your Railway environment variables, never in code or logs.
+- There is **one key** — the `x-rpa-key` you send us on every `GET`/`POST` above. It is matched
+  against a **comma-separated** secret on our side, so we can rotate with zero downtime (add new,
+  you switch, we remove old). You never see the list.
+- The key lives only in your Railway environment variables, never in code or logs.
 
 Missing/invalid key → `401 {"error":"unauthorized"}`. Key not configured on our side →
 `503 {"error":"service_not_configured"}`.
@@ -158,24 +155,18 @@ client data) and record only the path. You never need storage credentials. If im
 
 ---
 
-## 5. Triggers — event push + poll backup
+## 5. How you run it — you poll, on your own schedule
 
-**Event push (primary).** The moment we link a serviced Line-Item-27 visit to its DERM manifest, our
-database calls **your** service to run it. Expose:
+**You own the timing. There is no push from us** — you don't expose any endpoint, and there is no
+second "run" key. Just poll the queue and file whatever it returns:
 
-```
-POST /run        (on your service, gated by the RUN key we send you)
-```
-
-- Returns **`202` immediately** and does the work in the background.
-- Returns **`409`** if a run is already in progress (single-flight).
-- We call it with a small body naming the visit.
-
-Send us your `/run` URL and we flip the push on. Until then the push is dormant and the poll backup
-alone already works.
-
-**Poll backup (safety net).** Independently, poll `GET /rpa-derm-queue` on a **slow schedule**
-(every 15–30 min) and file anything sitting there. A missed push is then never a missed report.
+- Poll `GET /rpa-derm-queue` on a **slow schedule** (every 15–30 min is plenty), file each report,
+  and POST the result. That's the whole loop.
+- Reporting is safe to run as often as you like: the queue only hands you visits that still need
+  filing (a `SUCCESS` permanently removes one), each dispensed visit is **leased for 20h** so a crash
+  can't get it re-handed-out, and `rpa-derm-result` is **idempotent on `(visit_id, run_id)`** — so a
+  duplicate or retried run never double-files.
+- Nothing on our side calls you, so you never need an inbound endpoint or a public URL.
 
 ---
 
@@ -259,9 +250,8 @@ Nothing hits the county for real until, in order:
    already return.
 2. Your **repo link** (we set up a private repo under the `webunclogmecom` org; Railway auto-deploys
    from `main`).
-3. Your **`/run` URL**, so we can flip the event push on.
 
-We send the keys and the county portal login privately.
+We send the key and the county portal login privately. You expose nothing to us — you poll (section 5).
 
 ---
 
