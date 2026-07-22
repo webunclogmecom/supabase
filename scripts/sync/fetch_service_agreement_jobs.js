@@ -64,15 +64,17 @@ const isServiceAgreement = title => /^\s*service agreement\b/i.test(title || '')
   console.log(`Mode: ${EXECUTE ? 'EXECUTE' : 'DRY-RUN'} | client: ${clientArg}\n`);
   const token = await getValidToken();
 
-  // 1. Resolve client + Jobber GID + job GID->dbId map
+  // 1. Resolve client + Jobber GID. The per-job DB id is resolved by a TARGETED
+  //    per-GID query in the loop below (§3) — NOT a global entity_source_links map.
+  //    PostgREST caps an unfiltered select at ~1000 rows, so a global map silently
+  //    drops high/newer job links (>1700 job links exist): 248-CHA's job 1781 was
+  //    reported NOT-SYNCED and its writes skipped even though it IS linked (2026-07-22).
   const clients = await rest(`clients?client_code=eq.${encodeURIComponent(clientArg)}&select=id,client_code,name`);
   if (!clients || !clients.length) { console.error(`client ${clientArg} not found`); process.exit(1); }
   const client = clients[0];
   const cLink = await rest(`entity_source_links?entity_type=eq.client&source_system=eq.jobber&entity_id=eq.${client.id}&select=source_id`);
   const clientGid = cLink && cLink[0] && cLink[0].source_id;
   if (!clientGid) { console.error(`no Jobber GID for client ${clientArg}`); process.exit(1); }
-  const jobLinks = await rest(`entity_source_links?entity_type=eq.job&source_system=eq.jobber&select=entity_id,source_id`);
-  const jobIdByGid = Object.fromEntries((jobLinks || []).map(r => [r.source_id, r.entity_id]));
 
   // 2. Two-phase pull to stay under Jobber's cost-based rate limit:
   //    (a) cheap job list to find the Service Agreement jobs, then
@@ -103,7 +105,9 @@ const isServiceAgreement = title => /^\s*service agreement\b/i.test(title || '')
     const freqCf = (j.customFields || []).find(c => /frequency/i.test(c.label || ''));
     const freq = freqCf && freqCf.valueNumeric != null ? Math.round(freqCf.valueNumeric) : null;
     const items = (j.lineItems && j.lineItems.nodes) || [];
-    const ourJobId = jobIdByGid[j.id];
+    // Resolve the DB job id by a TARGETED per-GID query (not a ~1000-row-capped global map).
+    const jl = await rest(`entity_source_links?entity_type=eq.job&source_system=eq.jobber&source_id=eq.${encodeURIComponent(j.id)}&select=entity_id`);
+    const ourJobId = jl && jl[0] && jl[0].entity_id;
     console.log(`#${j.jobNumber} "${j.title}" [${j.jobStatus}] freq=${freq} days | items=${items.length} | dbJob=${ourJobId || 'NOT-SYNCED'}`);
     items.forEach(it => console.log(`     - ${it.name}`));
     if (!ourJobId) { console.log('     !! job not in our DB (entity_source_links) — skipping writes'); skipped++; continue; }
