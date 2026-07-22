@@ -348,6 +348,71 @@ const etDate = () =>
 const mapsUrl = (d: { lat: number; lng: number }) =>
   `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}`;
 
+// Slack alert to #dump-visits (Fred 2026-07-22). Fires when the driver CONFIRMS the crib-sheet
+// checklist, so the post shows the REAL load (what the driver ticked), plus site/time/truck/team.
+// Best-effort: a Slack failure must NEVER fail the confirm. Posts only when SLACK_DUMP_WEBHOOK_URL is
+// set — Fred provisions the channel + an Incoming Webhook and adds the URL to the edge secrets; until
+// then this is a no-op that logs and returns.
+async function postDumpAlert(
+  dumpVisitId: number,
+  driverName: string,
+  confirmed: { visit_id: number; client_code: string; client_name: string }[],
+) {
+  const url = Deno.env.get("SLACK_DUMP_WEBHOOK_URL");
+  if (!url) { console.log("[dump] SLACK_DUMP_WEBHOOK_URL not set — skipping #dump-visits alert"); return; }
+
+  const { data: v } = await db.from("visits")
+    .select("start_at, client_id, vehicle_id").eq("id", dumpVisitId).maybeSingle();
+  const site = v?.client_id === DUMPS.DH.client_id ? DUMPS.DH.label
+             : v?.client_id === DUMPS.DP.client_id ? DUMPS.DP.label : "Dump";
+  const county = v?.client_id === DUMPS.DH.client_id ? DUMPS.DH.county
+               : v?.client_id === DUMPS.DP.client_id ? DUMPS.DP.county : "";
+
+  const whenET = v?.start_at
+    ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short",
+        month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(v.start_at as string)) + " ET"
+    : "—";
+
+  let truck = "";
+  if (v?.vehicle_id) {
+    const { data: veh } = await db.from("vehicles").select("name").eq("id", v.vehicle_id).maybeSingle();
+    truck = (veh?.name as string) ?? "";
+  }
+
+  const { data: teamRows } = await db.from("visit_team").select("employee_id").eq("visit_id", dumpVisitId);
+  const empIds = (teamRows ?? []).map((r: Record<string, unknown>) => r.employee_id as number);
+  let teamNames: string[] = [];
+  if (empIds.length) {
+    const { data: emps } = await db.from("employees").select("full_name").in("id", empIds);
+    teamNames = (emps ?? []).map((e: Record<string, unknown>) => e.full_name as string).filter(Boolean);
+  }
+  if (!teamNames.length && driverName) teamNames = [driverName];
+
+  const clientLines = confirmed.length
+    ? confirmed.map((c) => `• ${(c.client_code ?? "").trim()} ${(c.client_name ?? "").trim()}`.trim()).join("\n")
+    : "_(no clients marked on this load)_";
+
+  const header = `🚛 Dump at ${site}${county ? ` (${county})` : ""} — ${driverName}`;
+  const fields = [
+    `*Time:* ${whenET}`,
+    truck ? `*Truck:* ${truck}` : null,
+    teamNames.length ? `*Team:* ${teamNames.join(", ")}` : null,
+  ].filter(Boolean).join("\n");
+
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: header, // notification fallback text
+      blocks: [
+        { type: "header", text: { type: "plain_text", text: header, emoji: true } },
+        { type: "section", text: { type: "mrkdwn", text: fields } },
+        { type: "section", text: { type: "mrkdwn", text: `*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
+      ],
+    }),
+  });
+  if (!res.ok) console.error(`[dump] slack webhook ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
 async function drivers() {
   const { data, error } = await db
     .from("employees")
@@ -532,9 +597,10 @@ Deno.serve(async (req) => {
     }
 
     // The manifest crib sheet (Yan, Slack 2026-07-17: "ask the app for the list", "ONLY give the visits
-    // to add to manifest ONCE"). Returns the two buckets and records the hand-out.
-    // ⚠ This writes NO DERM table. The driver fills the paper sheet at the dump; see
-    // docs/migrations/2026-07-20_dump_manifest_handout.sql for why that is structural, not stylistic.
+    // to add to manifest ONCE"). READ-ONLY as of 2026-07-22 (Fred): viewing records NOTHING — the driver
+    // ticks a checklist and calls `manifest_confirm` to record only the chosen visits. Each row carries a
+    // `confirmed` flag so the UI can pre-check what was already confirmed on this dump.
+    // ⚠ Writes NO DERM table. The driver fills the paper sheet at the dump.
     if (action === "manifest") {
       const mDriverId = Number(body.driver_id);
       if (!mDriverId) return json({ ok: false, error: "pick who you are" }, 400);
@@ -558,6 +624,52 @@ Deno.serve(async (req) => {
         outstanding: rows.filter((r) => r.bucket === "outstanding"),
         count: rows.length,
       });
+    }
+
+    // Driver CONFIRMS the crib-sheet checklist (Fred 2026-07-22): records ONLY the ticked visits as
+    // handed out for this dump, then posts the #dump-visits Slack alert with the real load. The confirm
+    // RPC is set-semantics — re-confirming with a changed selection both adds and removes.
+    if (action === "manifest_confirm") {
+      const cDriverId = Number(body.driver_id);
+      const cDumpVisitId = Number(body.dump_visit_id);
+      if (!cDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+      if (!cDumpVisitId) return json({ ok: false, error: "missing dump visit" }, 400);
+      const visitIds = Array.isArray(body.visit_ids)
+        ? (body.visit_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n) && n > 0)
+        : [];
+
+      const { data: confirmed, error } = await db.rpc("dump_manifest_handout_confirm", {
+        p_driver_id: cDriverId, p_dump_visit_id: cDumpVisitId, p_visit_ids: visitIds,
+      });
+      if (error) {
+        console.error("[dump] manifest confirm failed:", error.message);
+        return json({ ok: false, error: "could not confirm the manifest list" }, 500);
+      }
+      const rows = (Array.isArray(confirmed) ? confirmed : []) as { visit_id: number; client_code: string; client_name: string }[];
+
+      const driverName = (await drivers()).find((d) => d.id === cDriverId)?.full_name ?? "Driver";
+      try { await postDumpAlert(cDumpVisitId, driverName, rows); }
+      catch (e) { console.error("[dump] slack alert failed:", e instanceof Error ? e.message : String(e)); }
+
+      return json({ ok: true, confirmed: rows, count: rows.length });
+    }
+
+    // Driver (or office) UNDOES a wrong tick (Fred 2026-07-22): removes the given visits' hand-outs on
+    // this dump. Omitting visit_ids releases ALL of this dump's hand-outs.
+    if (action === "manifest_release") {
+      const rDumpVisitId = Number(body.dump_visit_id);
+      if (!rDumpVisitId) return json({ ok: false, error: "missing dump visit" }, 400);
+      const relIds = Array.isArray(body.visit_ids)
+        ? (body.visit_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n) && n > 0)
+        : null;
+      const { data: released, error } = await db.rpc("dump_manifest_handout_release", {
+        p_dump_visit_id: rDumpVisitId, p_visit_ids: relIds,
+      });
+      if (error) {
+        console.error("[dump] manifest release failed:", error.message);
+        return json({ ok: false, error: "could not release the manifest hand-out" }, 500);
+      }
+      return json({ ok: true, released: released ?? 0 });
     }
 
     if (action !== "create") return json({ ok: false, error: "unknown action" }, 400);
