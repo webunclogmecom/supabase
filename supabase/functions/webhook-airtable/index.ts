@@ -212,11 +212,13 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
     await supabase.from('clients').update(clientUpdate).eq('id', clientId)
   }
 
-  // -- 2. Update primary property (access window + zone + county + manholes) ----
+  // -- 2. Update primary property (access window + county + manholes) ----
   const propUpdate: Record<string, unknown> = {}
   const hin = strVal(fields, 'Hours in');   if (hin)  propUpdate.access_hours_start = hin
   const hout = strVal(fields, 'Hours out'); if (hout) propUpdate.access_hours_end   = hout
-  const zone = strVal(fields, 'Zone');      if (zone) propUpdate.zone = zone
+  // Zone-text enrichment removed 2026-07-21o: public.properties.zone was dropped
+  // (collapsed to zone_id + zones.code — the redundant copy the sweep flagged). AT is
+  // sunset and never authoritative for zone (Rule 4); a revived enrichment sets zone_id.
   const county = strVal(fields, 'County');  if (county) propUpdate.county = county
   const manholesRaw = numVal(fields, 'manholes')
   if (manholesRaw != null && manholesRaw >= 0) propUpdate.grease_trap_manhole_count = Math.round(manholesRaw)
