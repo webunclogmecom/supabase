@@ -434,7 +434,56 @@ Deno.serve(async (req) => {
   // URL, so there is deliberately no shared secret. The endpoint is bounded structurally instead.
   const action = String(body.action ?? "create");
 
+  // Passive device fingerprint (Fred 2026-07-22): identify the phone without a login and feed the
+  // dump_activity trail. device_token is the localStorage id the app sends; IP + user-agent are read
+  // SERVER-SIDE from the request; screen/timezone/platform are client-reported. All best-effort/nullable.
+  const xff = req.headers.get("x-forwarded-for") ?? "";
+  const sig = {
+    token: typeof body.device_token === "string" ? body.device_token : null,
+    ip: (xff.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || null),
+    ua: req.headers.get("user-agent"),
+    screen: typeof body.screen === "string" ? body.screen : null,
+    tz: typeof body.timezone === "string" ? body.timezone : null,
+    platform: typeof body.platform === "string" ? body.platform : null,
+  };
+  // Append-only trail write. Best-effort: a logging failure must NEVER fail the driver's action.
+  const logActivity = async (act: string, driverId: number | null, dumpVisitId: number | null, detail?: unknown) => {
+    try {
+      await db.from("dump_activity").insert({
+        action: act, driver_id: driverId, device_token: sig.token, dump_visit_id: dumpVisitId,
+        ip: sig.ip, user_agent: sig.ua, screen: sig.screen, timezone: sig.tz, platform: sig.platform,
+        detail: detail ?? null,
+      });
+    } catch (e) { console.error("[dump] activity log failed:", e instanceof Error ? e.message : String(e)); }
+  };
+
   try {
+    // Who is this phone? (Fred 2026-07-22) Read-only device->driver lookup for zero-login identify.
+    if (action === "identify") {
+      if (!sig.token) return json({ ok: true, driver: null });
+      const { data, error } = await db.rpc("dump_device_identify", { p_device_token: sig.token });
+      if (error) { console.error("[dump] identify failed:", error.message); return json({ ok: true, driver: null }); }
+      const row = (Array.isArray(data) && data[0]) ? data[0] as Record<string, unknown> : null;
+      await logActivity("identify", (row?.driver_id as number) ?? null, null);
+      return json({ ok: true, driver: row ? { id: row.driver_id, full_name: row.full_name, switch_count: row.switch_count } : null });
+    }
+
+    // Bind / switch this phone to a driver (Fred 2026-07-22). First pick binds; picking a DIFFERENT name
+    // is a switch, recorded old->new in the trail so a wrong first pick is always visible + reattributable.
+    if (action === "bind") {
+      const bDriverId = Number(body.driver_id);
+      if (!sig.token) return json({ ok: false, error: "missing device" }, 400);
+      if (!bDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+      if (!(await drivers()).find((d) => d.id === bDriverId)) return json({ ok: false, error: "unknown driver" }, 400);
+      const { data, error } = await db.rpc("dump_device_bind", {
+        p_device_token: sig.token, p_driver_id: bDriverId,
+        p_ip: sig.ip, p_user_agent: sig.ua, p_screen: sig.screen, p_timezone: sig.tz, p_platform: sig.platform,
+      });
+      if (error) { console.error("[dump] bind failed:", error.message); return json({ ok: false, error: "could not register this phone" }, 500); }
+      const row = (Array.isArray(data) && data[0]) ? data[0] as Record<string, unknown> : null;
+      return json({ ok: true, driver: row ? { id: row.driver_id, full_name: row.full_name } : null, switched: (row?.was_switch as boolean) ?? false });
+    }
+
     // The page calls this on load to render its pickers (anon can't read employees itself).
     if (action === "bootstrap") {
       return json({
@@ -648,6 +697,7 @@ Deno.serve(async (req) => {
       const rows = (Array.isArray(confirmed) ? confirmed : []) as { visit_id: number; client_code: string; client_name: string }[];
 
       const driverName = (await drivers()).find((d) => d.id === cDriverId)?.full_name ?? "Driver";
+      await logActivity("confirm", cDriverId, cDumpVisitId, { count: rows.length });
       try { await postDumpAlert(cDumpVisitId, driverName, rows); }
       catch (e) { console.error("[dump] slack alert failed:", e instanceof Error ? e.message : String(e)); }
 
@@ -669,6 +719,7 @@ Deno.serve(async (req) => {
         console.error("[dump] manifest release failed:", error.message);
         return json({ ok: false, error: "could not release the manifest hand-out" }, 500);
       }
+      await logActivity("release", null, rDumpVisitId, { released: released ?? 0 });
       return json({ ok: true, released: released ?? 0 });
     }
 
@@ -754,6 +805,7 @@ Deno.serve(async (req) => {
     }
 
     const v = Array.isArray(visit) ? visit[0] : visit;
+    await logActivity("create", driverId, (v?.id as number) ?? null, { dump_key: dumpKey });
     console.log(`[dump] created visit ${v?.id} ${dumpKey} driver=${driver.full_name} — trigger will push to Jobber`);
 
     // Every field the receipt renders is echoed here ON PURPOSE — dump_key (drives the wrong-dump
