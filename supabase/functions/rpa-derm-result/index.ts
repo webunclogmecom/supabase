@@ -12,9 +12,7 @@
 //         screenshot_missing_reason?, dry_run? }
 //
 // Rules enforced HERE (not trusted to the bot):
-// - auth: x-rpa-key against RPA_BOT_KEYS (comma-separated `label:secret`
-//   entries, one per consumer — revocable independently, rotation-friendly);
-//   the matched label is stamped onto the row as `consumer`;
+// - auth: x-rpa-key against RPA_BOT_KEYS (comma-separated, rotation-friendly);
 // - idempotent on (visit_id, run_id): a retried POST returns 200
 //   {deduped:true} and changes nothing — first write wins;
 // - status must be a short uppercase code; failure_reason capped; manifest
@@ -31,36 +29,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 
-// RPA_BOT_KEYS is a comma-separated list of `label:secret` entries — one PER
-// CONSUMER (John's Railway bot, our Postman harness) so each can be revoked
-// independently, and so every submission records WHICH consumer filed it
-// (2026-07-21j). Backward compatible: a bare `secret` with no `label:` prefix
-// still authenticates and records as 'unlabelled', so this deploys safely
-// BEFORE the secret is reformatted. Functions first, secret second.
-type BotKey = { label: string; secret: string }
-
-const KEYS: BotKey[] = (Deno.env.get('RPA_BOT_KEYS') ?? '')
+const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
   .split(',')
-  .map((raw) => raw.trim())
+  .map((k) => k.trim())
   .filter(Boolean)
-  .map((raw) => {
-    const i = raw.indexOf(':')
-    if (i > 0) {
-      const label = raw.slice(0, i)
-      const secret = raw.slice(i + 1)
-      // Only treat the prefix as a label if it actually LOOKS like one, so a
-      // key containing ':' is never silently truncated into a wrong secret.
-      if (secret && /^[A-Za-z0-9_-]{1,40}$/.test(label)) return { label, secret }
-    }
-    return { label: 'unlabelled', secret: raw }
-  })
-
-// Returns the matching credential so we can stamp WHO filed the report.
-function matchKey(presented: string): BotKey | null {
-  if (!presented) return null
-  for (const k of KEYS) if (k.secret === presented) return k
-  return null
-}
 
 const ALLOWED_FIELDS = new Set([
   'visit_id', 'manifest_id', 'run_id', 'status', 'retryable', 'failure_reason',
@@ -82,8 +54,7 @@ Deno.serve(async (req: Request) => {
     console.error('RPA_BOT_KEYS secret not configured')
     return json({ error: 'service_not_configured' }, 503)
   }
-  const caller = matchKey(req.headers.get('x-rpa-key') ?? '')
-  if (!caller) {
+  if (!KEYS.includes(req.headers.get('x-rpa-key') ?? '')) {
     return json({ error: 'unauthorized' }, 401)
   }
 
@@ -256,9 +227,6 @@ Deno.serve(async (req: Request) => {
       screenshot_path: screenshotPath,
       screenshot_missing_reason: screenshotPath ? null : (evidenceDropReason ?? missingReason),
       dry_run: dryRun,
-      // WHICH consumer filed this — taken from the matched credential, never
-      // from the request body, so a caller cannot claim to be someone else.
-      consumer: caller.label,
     })
     .select('id')
     .single()

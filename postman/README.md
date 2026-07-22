@@ -38,12 +38,8 @@ Base URL: `https://wbasvhvvismukaqdnouk.supabase.co`
 Every call carries the header **`x-rpa-key`** (value sent to you privately). There is **no Supabase
 JWT** and no database connection: the key is the auth, checked inside each function.
 
-- **You get your OWN key.** Every integrator holds a separate key (ours is a comma-separated list of
-  labelled entries on our side), so a key can be revoked or rotated on its own without disturbing
-  anyone else. You never see the list. Rotation is add-new, you switch, we remove old — zero downtime.
-- Every result you POST is recorded against the key that sent it, so the submission log shows which
-  consumer filed each report. Nothing is taken from the request body for this — it comes from the
-  credential itself, so it cannot be spoofed.
+- The key is matched against a **comma-separated** secret on our side, so we can rotate with zero
+  downtime (add new, you switch, we remove old). You never see the list.
 - **Two different keys, never interchange them:**
   - `x-rpa-key` — the key **you send us** on every `GET`/`POST` above.
   - the **run key** — a *different* key **we send you**, used only when our database calls your

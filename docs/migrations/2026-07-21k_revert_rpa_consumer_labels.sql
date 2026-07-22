@@ -1,0 +1,34 @@
+-- ============================================================================
+-- 2026-07-21k — Revert per-consumer key labelling (back to a single bot key)
+-- ============================================================================
+-- WHY (Fred 2026-07-21, same day as 21j): 21j split RPA_BOT_KEYS into labelled
+-- `label:secret` entries so each integrator held its own key, and stamped the
+-- matching label onto derm_portal_submissions.consumer. Fred's call: there is
+-- effectively ONE consumer (John's bot), so a separate key + per-consumer
+-- attribution is machinery without a purpose. John uses the existing single
+-- RPA_BOT_KEY; the Postman harness uses the same key. YAGNI wins.
+--
+-- WHAT: drop the `consumer` column added in 21j. Safe and clean — it was added
+-- hours earlier, the live queue is still pre-launch, and the only rows that ever
+-- carried a value were dry-run test rows already deleted (0 live rows reference
+-- it). The two edge functions were reverted to the pre-21j `KEYS.includes()`
+-- auth (no label parsing, no consumer stamping) and REDEPLOYED BEFORE this drop,
+-- so nothing writes the column at drop time. The RPA_BOT_KEYS secret was reset
+-- to the single bare key BEFORE the redeploy, so auth never dropped.
+--
+-- Order that was actually executed (each step keeps auth up):
+--   1. secret RPA_BOT_KEYS -> single bare key (a bare key still matched under
+--      the labelled code as 'unlabelled', so auth stayed 200 throughout);
+--   2. revert + redeploy rpa-derm-queue and rpa-derm-result;
+--   3. this migration drops the column.
+--
+-- 21j stays in the migration history as-is (immutable record of what happened);
+-- this is the honest counterpart, not an edit of it.
+--
+-- SAFETY: additive-in-reverse only. No other object references `consumer`
+-- (no view, no index, no policy — 21j added none). Nothing in the queue-gating
+-- logic ever read it.
+-- ============================================================================
+
+alter table public.derm_portal_submissions
+  drop column if exists consumer;
