@@ -634,7 +634,7 @@ Deno.serve(async (req) => {
     if (action === "outstanding") {
       const { data, error } = await db
         .from("dump_outstanding_visits")
-        .select("visit_id, client_code, client_name, address, city, visit_date, completed_at, age_days, truck, gdo_number, needs_office")
+        .select("visit_id, client_code, client_name, address, city, visit_date, completed_at, age_days, truck, gdo_number, needs_office, on_sheet, marked_by, marked_at")
         .order("completed_at", { ascending: false, nullsFirst: false });
       if (error) {
         // Loud, never an empty list: "nothing outstanding" and "the request broke" must not look alike.
@@ -643,6 +643,29 @@ Deno.serve(async (req) => {
       }
       const rows = Array.isArray(data) ? data : [];
       return json({ ok: true, stops: rows, count: rows.length });
+    }
+
+    // VIEW ADDRESSES per-visit toggle (Fred 2026-07-23): the shared "on a manifest" mark. The driver
+    // ticks a visit while browsing; it saves immediately and shows on the dump checklist too. This is the
+    // per-visit MASTER toggle (can unmark any mark). Explicit tap only — browsing records nothing. NO
+    // Slack alert (that belongs to the dump CONFIRM). driver_id is the remembered driver from the app.
+    if (action === "mark") {
+      const mkDriverId = Number(body.driver_id);
+      const mkVisitId = Number(body.visit_id);
+      const mkOn = body.on === true || body.on === "true" || body.on === 1;
+      if (!mkDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+      if (!mkVisitId) return json({ ok: false, error: "missing visit" }, 400);
+      if (!(await drivers()).find((d) => d.id === mkDriverId)) return json({ ok: false, error: "unknown driver" }, 400);
+
+      const { data, error } = await db.rpc("dump_manifest_mark", {
+        p_driver_id: mkDriverId, p_visit_id: mkVisitId, p_on: mkOn,
+      });
+      if (error) {
+        console.error("[dump] mark failed:", error.message);
+        return json({ ok: false, error: "could not update the mark" }, 500);
+      }
+      await logActivity("mark", mkDriverId, null, { visit_id: mkVisitId, on: mkOn });
+      return json({ ok: true, on_sheet: data === true });
     }
 
     // The manifest crib sheet (Yan, Slack 2026-07-17: "ask the app for the list", "ONLY give the visits
