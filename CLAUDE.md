@@ -49,7 +49,7 @@ Every new business table or schema change must **explicitly opt-in or opt-out** 
 - **Disabling audit on an existing table** requires explicit Fred sign-off in the migration header.
 - **No table that touches `customer.*`, billing, DERM compliance, or webhook secrets is allowed to skip audit.** Hard rule.
 
-Current audited set: clients, service_configs, properties, visits, photo_classifications, derm_manifests, manifest_visits *(opted in 2026-05-18 for DERM Tracker)*, disposal_facilities, vehicles, employees, webhook_tokens, derm_email_sends *(opted in 2026-06-04)*, municipality_regulators *(opted in 2026-06-05)*. See ADR 010 for the exclusion list + rationale.
+Current audited set: clients, service_configs, properties, visits, photo_classifications, derm_manifests, manifest_visits *(opted in 2026-05-18 for DERM Tracker)*, disposal_facilities, vehicles, employees, webhook_tokens, derm_email_sends *(opted in 2026-06-04)*, municipality_regulators *(opted in 2026-06-05)*, dump_manifest_handout *(opted in 2026-07-23 — shared "on a manifest" mark, now driver-attributed from two surfaces)*. See ADR 010 for the exclusion list + rationale.
 
 After ANY change to Prod schema, re-check this rule before declaring the migration done.
 
