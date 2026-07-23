@@ -305,9 +305,22 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   }
 
   if (!visit) return { ok: true, note: "visit gone, not a delete" };
-  if (visit.source !== "visit-calendar" && visit.source !== "supabase_cron") { console.log(`[push] visit ${visitId} source=${visit.source} — ignoring (not visit-calendar)`); return { ok: true, note: "not visit-calendar" }; }
+  const CAL_MASTERED = visit.source === "visit-calendar" || visit.source === "supabase_cron";
 
   const existingGid = await jobberGid("visit", visitId);
+  // Jobber-MASTERED visit (source='jobber', born in Jobber, e.g. a Service Call Diego created
+  // there): Jobber owns schedule/crew/title/completion, so we NEVER push those. But the office
+  // CAN edit the visit's LINE ITEMS (the Service-Call services / a per-line description) in the
+  // Calendar drawer, and that SHOULD reach Jobber (2026-07-23d). So honor the 'lineitems' group
+  // ONLY, and only for an already-linked visit — NEVER create a Jobber visit for a jobber-mastered
+  // row (that would duplicate the visit Diego booked in Jobber).
+  if (!CAL_MASTERED) {
+    const li = Array.isArray(changed) ? changed.filter((x: string) => x === "lineitems") : ["lineitems"];
+    if (!li.length) { console.log(`[push] visit ${visitId} source=${visit.source} — non-lineitems change; ignoring`); return { ok: true, note: `source=${visit.source}: non-lineitems change ignored` }; }
+    if (!existingGid) { console.log(`[push] visit ${visitId} source=${visit.source} — unlinked; refusing to create a Jobber visit for a jobber-mastered row`); return { ok: true, note: "jobber-mastered, unlinked — not created" }; }
+    changed = li;
+    console.log(`[push] visit ${visitId} source=${visit.source} — pushing line-items only`);
+  }
   const sched = visitSchedule(visit);
   // Planned crew (public.visit_team; fall back to the legacy single
   // assigned_driver_id) -> Jobber user GIDs. Jobber assigns a TEAM
