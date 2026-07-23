@@ -348,37 +348,34 @@ const etDate = () =>
 const mapsUrl = (d: { lat: number; lng: number }) =>
   `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}`;
 
-// Slack alert to #dump-visits (Fred 2026-07-22). Fires when the driver CONFIRMS the crib-sheet
-// checklist, so the post shows the REAL load (what the driver ticked), plus site/time/truck/team.
-// Best-effort: a Slack failure must NEVER fail the confirm. Posts only when SLACK_DUMP_WEBHOOK_URL is
-// set — Fred provisions the channel + an Incoming Webhook and adds the URL to the edge secrets; until
-// then this is a no-op that logs and returns.
-async function postDumpAlert(
-  dumpVisitId: number,
-  driverName: string,
-  confirmed: { visit_id: number; client_code: string; client_name: string }[],
-) {
-  const url = Deno.env.get("SLACK_DUMP_WEBHOOK_URL");
-  if (!url) { console.log("[dump] SLACK_DUMP_WEBHOOK_URL not set — skipping #dump-visits alert"); return; }
-
+// ---------------------------------------------------------------------------
+// Slack alerts to #dump-visits (Fred 2026-07-22; split + enriched 2026-07-23). Three kinds:
+//   1. postDumpCreatedAlert  — fires on `create` (GO): the dump EVENT, so a dump ALWAYS notifies.
+//   2. postDumpAlert         — fires on `manifest_confirm`: the ticked load + what's still MISSING
+//      (this driver's DERM-required load visits this shift that he did NOT tick).
+//   3. postManifestLinkAlert — fires on `link`: OLDER VISITS catch-up-linked to a chosen dump.
+// The dump title is a link to the dump SITE on Google Maps (the 000 dump client). Best-effort: a Slack
+// failure NEVER fails the driver's action. No-op (logs) when SLACK_DUMP_WEBHOOK_URL is unset.
+// ---------------------------------------------------------------------------
+async function dumpMeta(dumpVisitId: number) {
   const { data: v } = await db.from("visits")
-    .select("start_at, client_id, vehicle_id").eq("id", dumpVisitId).maybeSingle();
-  const site = v?.client_id === DUMPS.DH.client_id ? DUMPS.DH.label
-             : v?.client_id === DUMPS.DP.client_id ? DUMPS.DP.label : "Dump";
-  const county = v?.client_id === DUMPS.DH.client_id ? DUMPS.DH.county
-               : v?.client_id === DUMPS.DP.client_id ? DUMPS.DP.county : "";
-
+    .select("start_at, client_id, vehicle_id, assigned_driver_id").eq("id", dumpVisitId).maybeSingle();
+  const isDH = v?.client_id === DUMPS.DH.client_id;
+  const isDP = v?.client_id === DUMPS.DP.client_id;
+  const site = isDH ? DUMPS.DH.label : isDP ? DUMPS.DP.label : "Dump";
+  const county = isDH ? DUMPS.DH.county : isDP ? DUMPS.DP.county : "";
+  const siteLink = isDH ? mapsUrl(DUMPS.DH) : isDP ? mapsUrl(DUMPS.DP) : null;
+  const title = `Dump at ${site}${county ? ` (${county})` : ""}`;
+  const titleMd = siteLink ? `<${siteLink}|${title}>` : title;   // Slack mrkdwn link -> the dump site
   const whenET = v?.start_at
     ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short",
         month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(v.start_at as string)) + " ET"
     : "—";
-
   let truck = "";
   if (v?.vehicle_id) {
     const { data: veh } = await db.from("vehicles").select("name").eq("id", v.vehicle_id).maybeSingle();
     truck = (veh?.name as string) ?? "";
   }
-
   const { data: teamRows } = await db.from("visit_team").select("employee_id").eq("visit_id", dumpVisitId);
   const empIds = (teamRows ?? []).map((r: Record<string, unknown>) => r.employee_id as number);
   let teamNames: string[] = [];
@@ -386,31 +383,73 @@ async function postDumpAlert(
     const { data: emps } = await db.from("employees").select("full_name").in("id", empIds);
     teamNames = (emps ?? []).map((e: Record<string, unknown>) => e.full_name as string).filter(Boolean);
   }
-  if (!teamNames.length && driverName) teamNames = [driverName];
+  return { site, county, siteLink, title, titleMd, whenET, truck, teamNames, dumpDriverId: (v?.assigned_driver_id as number) ?? null };
+}
 
-  const clientLines = confirmed.length
-    ? confirmed.map((c) => `• ${(c.client_code ?? "").trim()} ${(c.client_name ?? "").trim()}`.trim()).join("\n")
-    : "_(no clients marked on this load)_";
+const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =>
+  rows.map((c) => `• ${(c.client_code ?? "").trim()} ${(c.client_name ?? "").trim()}`.trim()).join("\n");
 
-  const header = `🚛 Dump at ${site}${county ? ` (${county})` : ""} — ${driverName}`;
-  const fields = [
-    `*Time:* ${whenET}`,
-    truck ? `*Truck:* ${truck}` : null,
-    teamNames.length ? `*Team:* ${teamNames.join(", ")}` : null,
-  ].filter(Boolean).join("\n");
-
-  const res = await fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text: header, // notification fallback text
-      blocks: [
-        { type: "header", text: { type: "plain_text", text: header, emoji: true } },
-        { type: "section", text: { type: "mrkdwn", text: fields } },
-        { type: "section", text: { type: "mrkdwn", text: `*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
-      ],
-    }),
-  });
+async function slackPost(text: string, blocks: unknown[]) {
+  const url = Deno.env.get("SLACK_DUMP_WEBHOOK_URL");
+  if (!url) { console.log("[dump] SLACK_DUMP_WEBHOOK_URL not set — skipping #dump-visits alert"); return; }
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, blocks }) });
   if (!res.ok) console.error(`[dump] slack webhook ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+// 1. DUMP CREATED — fires on GO. The dump event; always notifies.
+async function postDumpCreatedAlert(dumpVisitId: number, driverName: string) {
+  const m = await dumpMeta(dumpVisitId);
+  const team = (m.teamNames.length ? m.teamNames : [driverName]).join(", ");
+  const fields = [`*Time:* ${m.whenET}`, m.truck ? `*Truck:* ${m.truck}` : null, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
+  await slackPost(`🚛 ${m.title} — ${driverName} (dumping)`, [
+    { type: "section", text: { type: "mrkdwn", text: `🚛 *${m.titleMd}* — ${driverName} is dumping` } },
+    { type: "section", text: { type: "mrkdwn", text: fields } },
+  ]);
+}
+
+// 2. LOAD REPORTED — fires on CONFIRM. The ticked load + what's still missing.
+async function postDumpAlert(
+  dumpVisitId: number,
+  driverName: string,
+  confirmed: { visit_id: number; client_code: string; client_name: string }[],
+  driverId: number,
+) {
+  const m = await dumpMeta(dumpVisitId);
+  const team = (m.teamNames.length ? m.teamNames : [driverName]).join(", ");
+  const fields = [`*Time:* ${m.whenET}`, m.truck ? `*Truck:* ${m.truck}` : null, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
+  const clientLines = confirmed.length ? clientBullets(confirmed) : "_(no clients marked on this load)_";
+
+  // MISSING = this driver's DERM-required load visits this shift he did NOT tick (bucket='load',
+  // confirmed=false). dump_outstanding_visits is DERM-filtered, so non-DERM (unclog) never appears here.
+  let missing: { client_code?: string; client_name?: string }[] = [];
+  try {
+    const { data: list } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
+    missing = (Array.isArray(list) ? list : []).filter((r: Record<string, unknown>) => r.bucket === "load" && r.confirmed === false) as { client_code?: string; client_name?: string }[];
+  } catch (_e) { /* best-effort — no missing line rather than a failed alert */ }
+
+  const blocks: unknown[] = [
+    { type: "section", text: { type: "mrkdwn", text: `🚛 *${m.titleMd}* — ${driverName}` } },
+    { type: "section", text: { type: "mrkdwn", text: fields } },
+    { type: "section", text: { type: "mrkdwn", text: `*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
+  ];
+  if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing — scheduled today, not added (${missing.length}):*\n${clientBullets(missing)}` } });
+  await slackPost(`🚛 ${m.title} — ${driverName}`, blocks);
+}
+
+// 3. MANIFEST LINK — fires on `link`. OLDER VISITS catch-up-linked to a chosen dump.
+async function postManifestLinkAlert(driverName: string, dumpVisitId: number, linked: { client_code?: string; client_name?: string }[]) {
+  if (!linked.length) return;
+  const m = await dumpMeta(dumpVisitId);
+  let dumpDriver = "";
+  if (m.dumpDriverId) {
+    const { data: e } = await db.from("employees").select("full_name").eq("id", m.dumpDriverId).maybeSingle();
+    dumpDriver = (e?.full_name as string) ?? "";
+  }
+  const sub = [dumpDriver, m.whenET].filter(Boolean).join(" · ");
+  await slackPost(`📝 ${driverName} added ${linked.length} to the ${m.site} dump`, [
+    { type: "section", text: { type: "mrkdwn", text: `📝 *${driverName} added ${linked.length} to the ${m.titleMd}*${sub ? `\n_${sub}_` : ""}` } },
+    { type: "section", text: { type: "mrkdwn", text: clientBullets(linked) } },
+  ]);
 }
 
 async function drivers() {
@@ -721,7 +760,7 @@ Deno.serve(async (req) => {
 
       const driverName = (await drivers()).find((d) => d.id === cDriverId)?.full_name ?? "Driver";
       await logActivity("confirm", cDriverId, cDumpVisitId, { count: rows.length });
-      try { await postDumpAlert(cDumpVisitId, driverName, rows); }
+      try { await postDumpAlert(cDumpVisitId, driverName, rows, cDriverId); }
       catch (e) { console.error("[dump] slack alert failed:", e instanceof Error ? e.message : String(e)); }
 
       return json({ ok: true, confirmed: rows, count: rows.length });
@@ -744,6 +783,101 @@ Deno.serve(async (req) => {
       }
       await logActivity("release", null, rDumpVisitId, { released: released ?? 0 });
       return json({ ok: true, released: released ?? 0 });
+    }
+
+    // Pick-a-dump list (Fred 2026-07-23): when the driver documents OLDER VISITS he picks WHICH recent
+    // dump they were dumped on. Returns the live dumps (000-DH / 000-DP) of the last 7 days, HIS OWN
+    // pinned first (is_yours), each with site/county/when/driver + how many clients are already on it.
+    // READ-ONLY. driver_id is optional (only used to pin the driver's own dumps first).
+    if (action === "recent_dumps") {
+      const rdDriverId = Number(body.driver_id) || null;
+      const sinceIso = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
+      const { data: vs, error } = await db
+        .from("visits")
+        .select("id, client_id, assigned_driver_id, start_at, created_at")
+        .in("client_id", [365, 76])
+        .is("deleted_at", null)
+        .gte("start_at", sinceIso)
+        .order("start_at", { ascending: false })
+        .limit(30);
+      if (error) {
+        console.error("[dump] recent_dumps failed:", error.message);
+        return json({ ok: false, error: "could not load the recent dumps" }, 500);
+      }
+      const dumps = (Array.isArray(vs) ? vs : []) as Record<string, unknown>[];
+      const dumpIds = dumps.map((d) => d.id as number);
+      const driverIds = [...new Set(dumps.map((d) => d.assigned_driver_id as number).filter(Boolean))];
+
+      // one round-trip each for the driver names and the on-manifest counts
+      const nameById = new Map<number, string>();
+      if (driverIds.length) {
+        const { data: emps } = await db.from("employees").select("id, full_name").in("id", driverIds);
+        for (const e of emps ?? []) nameById.set(e.id as number, (e.full_name as string) ?? "");
+      }
+      const countByDump = new Map<number, number>();
+      if (dumpIds.length) {
+        const { data: hs } = await db.from("dump_manifest_handout").select("dump_visit_id").in("dump_visit_id", dumpIds);
+        for (const h of hs ?? []) {
+          const k = h.dump_visit_id as number;
+          countByDump.set(k, (countByDump.get(k) ?? 0) + 1);
+        }
+      }
+
+      const fmt = (iso: string | null) => iso
+        ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short",
+            month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso)) + " ET"
+        : "—";
+      const out = dumps.map((d) => {
+        const isDH = d.client_id === DUMPS.DH.client_id;
+        const drvId = (d.assigned_driver_id as number) ?? null;
+        return {
+          dump_visit_id: d.id as number,
+          dump_key: isDH ? "DH" : "DP",
+          site: isDH ? DUMPS.DH.label : DUMPS.DP.label,
+          county: isDH ? DUMPS.DH.county : DUMPS.DP.county,
+          driver_id: drvId,
+          driver_name: drvId ? (nameById.get(drvId) ?? "") : "",
+          start_at: d.start_at as string | null,
+          when: fmt(d.start_at as string | null),
+          clients_on_it: countByDump.get(d.id as number) ?? 0,
+          is_yours: !!rdDriverId && drvId === rdDriverId,
+        };
+      });
+      // driver's own dumps first, then most recent
+      out.sort((a, b) => (Number(b.is_yours) - Number(a.is_yours)) ||
+        (new Date(b.start_at ?? 0).getTime() - new Date(a.start_at ?? 0).getTime()));
+      return json({ ok: true, dumps: out, count: out.length });
+    }
+
+    // Link OLDER VISITS to a chosen dump (Fred 2026-07-23): the driver ticked older visits in VIEW
+    // ADDRESSES, picked which dump they rode on, and confirms. Writes the ledger with that dump's
+    // visit_id (provenance), then posts the "added to the [dump] manifest" #dump-visits alert.
+    if (action === "link") {
+      const lDriverId = Number(body.driver_id);
+      const lDumpVisitId = Number(body.dump_visit_id);
+      const lVisitIds = Array.isArray(body.visit_ids)
+        ? (body.visit_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n) && n > 0)
+        : [];
+      if (!lDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+      if (!lDumpVisitId) return json({ ok: false, error: "pick a dump" }, 400);
+      if (!lVisitIds.length) return json({ ok: false, error: "no visits to link" }, 400);
+      const driverName = (await drivers()).find((d) => d.id === lDriverId)?.full_name;
+      if (!driverName) return json({ ok: false, error: "unknown driver" }, 400);
+
+      const { data: linked, error } = await db.rpc("dump_manifest_link", {
+        p_driver_id: lDriverId, p_dump_visit_id: lDumpVisitId, p_visit_ids: lVisitIds,
+      });
+      if (error) {
+        console.error("[dump] manifest link failed:", error.message);
+        return json({ ok: false, error: "could not link the visits to that dump" }, 500);
+      }
+      const rows = (Array.isArray(linked) ? linked : []) as { visit_id: number; client_code: string; client_name: string }[];
+      if (!rows.length) return json({ ok: false, error: "that dump is no longer available" }, 400);
+
+      await logActivity("link", lDriverId, lDumpVisitId, { count: rows.length });
+      try { await postManifestLinkAlert(driverName, lDumpVisitId, rows); }
+      catch (e) { console.error("[dump] slack link alert failed:", e instanceof Error ? e.message : String(e)); }
+      return json({ ok: true, linked: rows, count: rows.length });
     }
 
     if (action !== "create") return json({ ok: false, error: "unknown action" }, 400);
@@ -830,6 +964,14 @@ Deno.serve(async (req) => {
     const v = Array.isArray(visit) ? visit[0] : visit;
     await logActivity("create", driverId, (v?.id as number) ?? null, { dump_key: dumpKey });
     console.log(`[dump] created visit ${v?.id} ${dumpKey} driver=${driver.full_name} — trigger will push to Jobber`);
+
+    // SPLIT dump alert #1 (Fred 2026-07-23): "dump created" fires HERE on GO, so a dump ALWAYS notifies
+    // #dump-visits even if the driver never opens the crib sheet. (#2 "load reported" fires on confirm.)
+    // Only on a genuine create — the idempotent-hit path above returns early and never reaches here.
+    if (v?.id) {
+      try { await postDumpCreatedAlert(v.id as number, driver.full_name); }
+      catch (e) { console.error("[dump] slack created alert failed:", e instanceof Error ? e.message : String(e)); }
+    }
 
     // Every field the receipt renders is echoed here ON PURPOSE — dump_key (drives the wrong-dump
     // identity colour), county, label, address, driver, time. The page must render the receipt from
