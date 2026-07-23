@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** live on Prod, tested end-to-end. The bot polls on its own schedule (no endpoint to expose); only the rollout gates remain.
-**Last updated:** 2026-07-21.
+**Last updated:** 2026-07-23.
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -15,7 +15,8 @@
 
 The bot files **GDO Online Reporting** on the Miami-Dade DERM portal. For us that is **Line Item 27**
 on a client's job, so the **unit of work is a serviced VISIT** for one of the clients that carry that
-add-on, not a manifest. When we service such a client and their DERM manifest is filed + linked to the
+add-on, not a manifest — but the queue is **deduped per dump**, so you never receive the same manifest
+twice (see §3). When we service such a client and their DERM manifest is filed + linked to the
 visit, that visit becomes a "please file the online report" job for the bot.
 
 It is a **small, targeted feed** (only a few clients carry Line Item 27), **server-to-server**, and
@@ -93,12 +94,18 @@ start of a run; **never log or persist the URLs**.
 
 ### Queue lifecycle (why a visit does or does not appear)
 
-- A visit stays in the live queue **until it is successfully reported** — so nothing is dropped if the
+- **One row per dump (DERM manifest).** A county report is filed per **dump ticket / manifest**, so the
+  queue returns **one report per manifest** even when more than one visit fed that dump (represented by
+  the visit whose service date is closest to the dump). `visit_id` is still your work key — you just
+  never see the same dump twice in a batch.
+- A dump stays in the live queue **until it is successfully reported** — so nothing is dropped if the
   bot is down for a while.
 - It leaves the queue **permanently** once the county confirms it (a `SUCCESS` result with a
-  `portal_confirmation`, section 4).
-- After any attempt — or the moment we hand it to you — the visit is **held for 20 hours** (a dispense
-  *lease*) so a crash between filing and the result POST can never cause a re-dispense and a double-file.
+  `portal_confirmation`, section 4). This is **manifest-scoped**: reporting *any* visit of a dump clears
+  the whole dump, so a sibling visit can never re-surface an already-filed report.
+- After any attempt — or the moment we hand it to you — the dump is **held for 20 hours** (a dispense
+  *lease*, also manifest-scoped) so a crash between filing and the result POST can never cause a
+  re-dispense and a double-file.
 - The live queue only contains visits with a `dump_ticket_date` on/after a **launch cutoff** (currently
   `2026-07-21`). This exists so the bot's first live run cannot re-submit the entire historical backlog
   to the county. We widen the cutoff deliberately if a backfill is ever wanted.
@@ -235,7 +242,8 @@ Nothing hits the county for real until, in order:
 
 ## 9. Operating notes (our side)
 
-- **Watchdog:** a daily health check surfaces a stuck queue / repeated data errors / storage failures.
+- **Watchdog:** a daily health check surfaces a stuck queue / repeated data errors / storage failures /
+  a code-27 visit whose service is not DERM-manifest-requiring (a mis-applied add-on to flag).
 - **Launch cutoff:** currently `2026-07-21` bounds the live queue.
 - **Evidence retention:** screenshots live in the private `rpa-evidence` bucket keyed `visit_id/run_id.jpg`.
 - **PII note (under review):** the queue currently signs the **raw multi-client** address sheet. This is
