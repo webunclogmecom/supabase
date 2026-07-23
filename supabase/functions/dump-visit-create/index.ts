@@ -40,10 +40,12 @@ const DUMPS = {
   DH: {
     label: "Homestead", client_id: 365, job_id: 1720, property_id: 98,
     address: "8950 SW 232nd Street, Cutler Bay", lat: 25.5517444, lng: -80.3368324, county: "Miami-Dade",
+    jobberClientId: "102873636", // gid://Jobber/Client/102873636 -> secure.getjobber.com/clients/102873636
   },
   DP: {
     label: "Pompano", client_id: 76, job_id: 1662, property_id: 155,
     address: "2401 N Powerline Road, Pompano Beach", lat: 26.2632563, lng: -80.1552085, county: "Broward",
+    jobberClientId: "104148029", // gid://Jobber/Client/104148029 -> secure.getjobber.com/clients/104148029
   },
 } as const;
 
@@ -348,14 +350,26 @@ const etDate = () =>
 const mapsUrl = (d: { lat: number; lng: number }) =>
   `https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lng}`;
 
+// The dump client's page in Jobber (office opens it to attach the manifest). Repo-standard pattern:
+// secure.getjobber.com/clients/<numericClientId> (numeric decodes from the entity_source_links GID).
+const jobberClientUrl = (d: { jobberClientId: string }) =>
+  `https://secure.getjobber.com/clients/${d.jobberClientId}`;
+
+// A small "context" block carrying the Google-Maps directions as a labeled "Route Link" (Fred 2026-07-24:
+// the title links to Jobber; the maps link stays but as a separate, clearly-labeled route link). Empty
+// array when there is no known dump site, so the caller can spread it unconditionally.
+const routeContext = (routeLink: string | null) =>
+  routeLink ? [{ type: "context", elements: [{ type: "mrkdwn", text: `🧭 <${routeLink}|Route Link>` }] }] : [];
+
 // ---------------------------------------------------------------------------
 // Slack alerts to #dump-visits (Fred 2026-07-22; split + enriched 2026-07-23). Three kinds:
 //   1. postDumpCreatedAlert  — fires on `create` (GO): the dump EVENT, so a dump ALWAYS notifies.
 //   2. postDumpAlert         — fires on `manifest_confirm`: the ticked load + what's still MISSING
 //      (this driver's DERM-required load visits this shift that he did NOT tick).
 //   3. postManifestLinkAlert — fires on `link`: OLDER VISITS catch-up-linked to a chosen dump.
-// The dump title is a link to the dump SITE on Google Maps (the 000 dump client). Best-effort: a Slack
-// failure NEVER fails the driver's action. No-op (logs) when SLACK_DUMP_WEBHOOK_URL is unset.
+// The dump title links to the dump CLIENT in Jobber (000-DH/000-DP), where the office attaches the
+// manifest; the Google-Maps directions ride along as a separate labeled "Route Link" context line.
+// Best-effort: a Slack failure NEVER fails the driver's action. No-op (logs) when the webhook is unset.
 // ---------------------------------------------------------------------------
 async function dumpMeta(dumpVisitId: number) {
   const { data: v } = await db.from("visits")
@@ -364,9 +378,10 @@ async function dumpMeta(dumpVisitId: number) {
   const isDP = v?.client_id === DUMPS.DP.client_id;
   const site = isDH ? DUMPS.DH.label : isDP ? DUMPS.DP.label : "Dump";
   const county = isDH ? DUMPS.DH.county : isDP ? DUMPS.DP.county : "";
-  const siteLink = isDH ? mapsUrl(DUMPS.DH) : isDP ? mapsUrl(DUMPS.DP) : null;
+  const routeLink = isDH ? mapsUrl(DUMPS.DH) : isDP ? mapsUrl(DUMPS.DP) : null;         // Google Maps -> "Route Link"
+  const jobberUrl = isDH ? jobberClientUrl(DUMPS.DH) : isDP ? jobberClientUrl(DUMPS.DP) : null; // dump client in Jobber
   const title = `Dump at ${site}${county ? ` (${county})` : ""}`;
-  const titleMd = siteLink ? `<${siteLink}|${title}>` : title;   // Slack mrkdwn link -> the dump site
+  const titleMd = jobberUrl ? `<${jobberUrl}|${title}>` : title;   // Slack mrkdwn link -> the dump client in Jobber
   const whenET = v?.start_at
     ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short",
         month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(v.start_at as string)) + " ET"
@@ -383,7 +398,7 @@ async function dumpMeta(dumpVisitId: number) {
     const { data: emps } = await db.from("employees").select("full_name").in("id", empIds);
     teamNames = (emps ?? []).map((e: Record<string, unknown>) => e.full_name as string).filter(Boolean);
   }
-  return { site, county, siteLink, title, titleMd, whenET, truck, teamNames, dumpDriverId: (v?.assigned_driver_id as number) ?? null };
+  return { site, county, routeLink, jobberUrl, title, titleMd, whenET, truck, teamNames, dumpDriverId: (v?.assigned_driver_id as number) ?? null };
 }
 
 const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =>
@@ -392,7 +407,8 @@ const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =
 async function slackPost(text: string, blocks: unknown[]) {
   const url = Deno.env.get("SLACK_DUMP_WEBHOOK_URL");
   if (!url) { console.log("[dump] SLACK_DUMP_WEBHOOK_URL not set — skipping #dump-visits alert"); return; }
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, blocks }) });
+  // unfurl_links/media false: keep Slack from expanding the maps/Jobber URLs into a raw-URL preview box.
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, blocks, unfurl_links: false, unfurl_media: false }) });
   if (!res.ok) console.error(`[dump] slack webhook ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
@@ -404,6 +420,7 @@ async function postDumpCreatedAlert(dumpVisitId: number, driverName: string) {
   await slackPost(`🚛 ${m.title} — ${driverName} (dumping)`, [
     { type: "section", text: { type: "mrkdwn", text: `🚛 *${m.titleMd}* — ${driverName} is dumping` } },
     { type: "section", text: { type: "mrkdwn", text: fields } },
+    ...routeContext(m.routeLink),
   ]);
 }
 
@@ -433,6 +450,7 @@ async function postDumpAlert(
     { type: "section", text: { type: "mrkdwn", text: `*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
   ];
   if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing — scheduled today, not added (${missing.length}):*\n${clientBullets(missing)}` } });
+  blocks.push(...routeContext(m.routeLink));
   await slackPost(`🚛 ${m.title} — ${driverName}`, blocks);
 }
 
@@ -449,6 +467,7 @@ async function postManifestLinkAlert(driverName: string, dumpVisitId: number, li
   await slackPost(`📝 ${driverName} added ${linked.length} to the ${m.site} dump`, [
     { type: "section", text: { type: "mrkdwn", text: `📝 *${driverName} added ${linked.length} to the ${m.titleMd}*${sub ? `\n_${sub}_` : ""}` } },
     { type: "section", text: { type: "mrkdwn", text: clientBullets(linked) } },
+    ...routeContext(m.routeLink),
   ]);
 }
 
