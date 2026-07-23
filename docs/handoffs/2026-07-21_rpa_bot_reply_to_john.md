@@ -77,3 +77,37 @@ Review provenance: 3-lens BUILD review + 3-lens HARDENING audit, 2026-07-21 (sec
 folded in: key separation across trust boundaries, PII rules for his Railway logs, queue-exit +
 idempotency semantics, async 202 + 409 single-flight, retryable flag, dry-run data path, screenshot
 cap + capture-failed path, private repo + clean history, several overclaim/voice fixes.
+
+---
+
+## UPDATE 2026-07-23 — first dry-run + per-manifest dedup + DERM-required flag
+
+**John's first dry-run (2026-07-22 ~4:44-4:50pm ET): clean end to end.** He pulled the dryrun sample,
+POSTed 24 `DRY_RUN_COMPLETE` results each with a screenshot in `rpa-evidence`, 0 live filings, all
+server-flagged `dry_run=true`. Auth + the full round-trip both work. He also has the bot pausing at the
+portal preview (no submit) during testing.
+
+**Queue is now DEDUPED PER MANIFEST** (migration `2026-07-23_gdo_queue_dedup_per_manifest.sql`). His run
+surfaced one dump twice: GDO-14117 / white **815951** (Mila) came under two visits both linked to the
+one Feb-5 dump, so the per-visit queue served it twice; his own idempotency (permit+manifest) skipped
+the second. Our queue must not depend on the consumer, so `v_derm_portal_queue` + `v_derm_portal_dryrun`
+now emit **ONE row per `manifest_id`** (a dump ticket = the unit of a DERM online report; representative
+= the visit whose service date is closest to the dump), and the queue gates (reported / 20h cooldown /
+non-retryable-fail / lease) are now **manifest-scoped** so a sibling visit can never re-surface an
+already-filed dump. `visit_id` is still the response work key (John's contract unchanged); the dedup
+only guarantees each dump appears once. `v_derm_portal_fields` (still per-visit) + the edge fns untouched.
+Dedup key is `manifest_id`, so genuinely co-loaded dumps across DIFFERENT clients keep separate reports.
+
+**The Mila double was NOT a duplicate visit** — Samsara GPS (`vehicle_telemetry_readings`) proved the
+truck was parked at the property BOTH nights (two real services on a trash-blocked-access account,
+consolidated into one dump). An interim mis-deletion of the Feb-4 visit was reversed same day; the
+per-manifest dedup is the correct + sole fix. Billing was never doubled (Jobber bundles both visits onto
+one invoice).
+
+**DERM-required is enforced by a FLAG, not a queue gate** (Fred 2026-07-23, migration
+`2026-07-23b_gdo_flag_code27_not_derm_required.sql`). GDO reporting only applies to services that
+produce a DERM manifest (pumping). Queue eligibility stays on the `27 - GDO Online Reporting` line item
+ALONE — we do NOT gate on `derm_required`. Instead `public.v_gdo_reporting_derm_mismatch` lists any
+code-27 visit where `fn_visit_requires_derm(v.id)=false` (live fn, so an unstamped NULL is not a false
+positive), surfaced as `v_rpa_derm_health.gdo_not_derm_required` + a daily watchdog attention reason
+`gdo_code27_not_derm_required`. 0 currently. **Do NOT add a derm_required gate to the queue.**
