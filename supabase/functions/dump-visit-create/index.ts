@@ -583,6 +583,11 @@ Deno.serve(async (req) => {
           address: street, city: r.city, county: r.county, gdo,
           truck: r.truck_name, driver: r.driver_name, service: r.service_label,
           maps_url: `https://www.google.com/maps/dir/?api=1&destination=${dest}`,
+          // Manifest selectability (Fred 2026-07-24): only a COMPLETED, DERM, undocumented stop is
+          // pickable (same gate as {mark}/{link}); scheduled stops render read-only. on_sheet/marked_by
+          // carry the shared dump_manifest_handout mark so TODAY'S VISITS and OLDER VISITS agree.
+          visit_id: r.visit_id, pickable: r.pickable === true,
+          on_sheet: r.on_sheet === true, marked_by: r.marked_by ?? null,
         };
       });
       return json({ ok: true, date: etDate(), count: stops.length, stops });
