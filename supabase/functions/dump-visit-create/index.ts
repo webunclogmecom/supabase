@@ -415,17 +415,43 @@ async function slackPost(text: string, blocks: unknown[]) {
   if (!res.ok) console.error(`[dump] slack webhook ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
-// 1. DUMP CREATED — fires on GO. The dump event; always notifies.
-async function postDumpCreatedAlert(dumpVisitId: number, driverName: string) {
+// 1. DUMP CREATED — fires on GO. The dump event; always notifies. Carries two extra signals
+// (Fred 2026-07-24):
+//   * the driver's LOAD count this shift — an EMPTY load reads as an explicit "no completed DERM pickups
+//     to report" line instead of a silently-missing Reported/Missing (which had looked like a bug).
+//   * for an after-hours (Homestead post-intake) dump, whether the driver tapped CALL before going.
+async function postDumpCreatedAlert(
+  dumpVisitId: number,
+  driverName: string,
+  driverId: number | null,
+  opts?: { afterHours?: boolean; calledAhead?: boolean },
+) {
   const m = await dumpMeta(dumpVisitId);
   const tag = m.isTest ? "[TEST] " : "";
   const team = (m.teamNames.length ? m.teamNames : [driverName]).join(", ");
   const fields = [`*Time:* ${m.whenET}`, m.truck ? `*Truck:* ${m.truck}` : null, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
-  await slackPost(`🚛 ${tag}${m.title} — ${driverName} (dumping)`, [
+
+  // Load = this driver's completed, DERM-required, still-undocumented visits this shift (bucket='load').
+  // dump_manifest_handout_list is STABLE (read-only), so counting here records nothing. -1 = couldn't tell.
+  let loadCount = -1;
+  if (driverId) {
+    try {
+      const { data } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
+      loadCount = (Array.isArray(data) ? data : []).filter((r: Record<string, unknown>) => r.bucket === "load").length;
+    } catch (_e) { /* leave -1 — omit the line rather than guess */ }
+  }
+  const extra: string[] = [];
+  if (opts?.afterHours) extra.push(`📞 *Called ahead:* ${opts.calledAhead ? "✅ yes" : "❌ no (went without calling)"}`);
+  if (loadCount === 0) extra.push(`🫙 *No completed DERM pickups to report on this load* — no visits for this driver this shift.`);
+  else if (loadCount > 0) extra.push(`📋 *${loadCount}* completed DERM pickup${loadCount === 1 ? "" : "s"} to report on this load.`);
+
+  const blocks: unknown[] = [
     { type: "section", text: { type: "mrkdwn", text: `🚛 ${tag}*${m.titleMd}* — ${driverName} is dumping` } },
     { type: "section", text: { type: "mrkdwn", text: fields } },
-    ...routeContext(m.routeLink),
-  ]);
+  ];
+  if (extra.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: extra.join("\n") } });
+  blocks.push(...routeContext(m.routeLink));
+  await slackPost(`🚛 ${tag}${m.title} — ${driverName} (dumping)`, blocks);
 }
 
 // 2. LOAD REPORTED — fires on CONFIRM. The ticked load + what's still missing.
@@ -474,6 +500,20 @@ async function postManifestLinkAlert(driverName: string, dumpVisitId: number, li
     { type: "section", text: { type: "mrkdwn", text: `📝 ${tag}*${driverName} added ${linked.length} to the ${m.titleMd}*${sub ? `\n_${sub}_` : ""}` } },
     { type: "section", text: { type: "mrkdwn", text: clientBullets(linked) } },
     ...routeContext(m.routeLink),
+  ]);
+}
+
+// 4. MANIFEST UNLINK — fires on `unmark` (Fred 2026-07-24). The mirror of #3: a driver UNSELECTED visits
+// from the shared "on a manifest" list in VIEW ADDRESSES. Removals were silent before, which read as the
+// app dropping the change. `count` is the number of marks actually cleared; `rows` names them when known.
+// Not dump-specific (the shared mark carries no dump), so no Route Link.
+async function postManifestUnlinkAlert(driverName: string, count: number, rows: { client_code?: string; client_name?: string }[], isTest: boolean) {
+  if (count <= 0) return;
+  const tag = isTest ? "[TEST] " : "";
+  const bullets = rows.length ? clientBullets(rows) : "_(marks cleared)_";
+  await slackPost(`🗑 ${tag}${driverName} removed ${count} from the manifest`, [
+    { type: "section", text: { type: "mrkdwn", text: `🗑 ${tag}*${driverName} removed ${count} from the manifest*` } },
+    { type: "section", text: { type: "mrkdwn", text: bullets } },
   ]);
 }
 
@@ -737,6 +777,43 @@ Deno.serve(async (req) => {
       return json({ ok: true, on_sheet: data === true });
     }
 
+    // VIEW ADDRESSES batch UNSELECT (Fred 2026-07-24): the driver unchecked visits and committed. Clears
+    // the shared "on a manifest" mark for each AND posts ONE "removed from the manifest" Slack alert — the
+    // mirror of `link`, which was the only side that notified. Per-visit `mark` on:false still exists for a
+    // single toggle, but a batch removal routes here so Slack gets one alert, not one per card.
+    if (action === "unmark") {
+      const uDriverId = Number(body.driver_id);
+      if (!uDriverId) return json({ ok: false, error: "pick who you are" }, 400);
+      const uVisitIds = Array.isArray(body.visit_ids)
+        ? (body.visit_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n) && n > 0)
+        : [];
+      if (!uVisitIds.length) return json({ ok: false, error: "no visits to remove" }, 400);
+      const uDriverName = (await drivers()).find((d) => d.id === uDriverId)?.full_name;
+      if (!uDriverName) return json({ ok: false, error: "unknown driver" }, 400);
+
+      // Names first — read BEFORE the delete so the alert can name each removed client. (Unmarking keeps
+      // the visit outstanding, so it usually still lists, but reading first is the safe order.)
+      const { data: infoRows } = await db
+        .from("dump_outstanding_visits")
+        .select("visit_id, client_code, client_name")
+        .in("visit_id", uVisitIds);
+      const removedInfo = (Array.isArray(infoRows) ? infoRows : []) as { client_code?: string; client_name?: string }[];
+
+      let removed = 0;
+      for (const vid of uVisitIds) {
+        const { error } = await db.rpc("dump_manifest_mark", { p_driver_id: uDriverId, p_visit_id: vid, p_on: false });
+        if (error) { console.error(`[dump] unmark ${vid} failed:`, error.message); continue; }
+        removed++;
+      }
+      if (!removed) return json({ ok: false, error: "could not remove the marks" }, 500);
+
+      await logActivity("unmark", uDriverId, null, { visit_ids: uVisitIds, removed });
+      const uIsTest = body.test_mode === true;
+      try { await postManifestUnlinkAlert(uDriverName, removed, removedInfo, uIsTest); }
+      catch (e) { console.error("[dump] slack unlink alert failed:", e instanceof Error ? e.message : String(e)); }
+      return json({ ok: true, removed });
+    }
+
     // The manifest crib sheet (Yan, Slack 2026-07-17: "ask the app for the list", "ONLY give the visits
     // to add to manifest ONCE"). READ-ONLY as of 2026-07-22 (Fred): viewing records NOTHING — the driver
     // ticks a checklist and calls `manifest_confirm` to record only the chosen visits. Each row carries a
@@ -944,6 +1021,25 @@ Deno.serve(async (req) => {
     // idempotency hit (the marker scopes the dupe check).
     const testMode = body.test_mode === true;
 
+    // NO-GO BLOCK (Fred 2026-07-24): a fully-closed dump does not receive drivers, so refuse to create a
+    // phantom visit — the app shows a "closed" message instead. CLOSED is Pompano outside its receiving
+    // hours (no after-hours drop-off); Homestead is AFTER_HOURS (callable), never CLOSED, so it is never
+    // blocked here. Uses the arrival the phone computed when known (the driver is ~40 min out), else now.
+    // Testing mode is exempt: a preview must reach the closed dialog without landing a real visit. This is
+    // the server backstop — the app already refuses to offer "Go to DUMP" for a CLOSED dump.
+    if (!testMode) {
+      const arrivalIso = (typeof body.arrival_at === "string" && !Number.isNaN(Date.parse(body.arrival_at as string)))
+        ? (body.arrival_at as string) : new Date().toISOString();
+      const gate = await siteStatus(dumpKey, arrivalIso);
+      if (gate?.status === "CLOSED") {
+        console.log(`[dump] no-go block: ${dumpKey} CLOSED at ${arrivalIso} — refusing create for ${driver.full_name}`);
+        return json({
+          ok: false, closed: true, dump: dump.label, dump_key: dumpKey,
+          error: `${dump.label} is closed right now and has no after-hours drop-off — you can't dump here until it reopens.`,
+        }, 409);
+      }
+    }
+
     // IDEMPOTENCY — THIS driver double-tapping must not create a second Jobber visit. Scoped to
     // (site + driver): a different driver heading to the same dump gets his own visit (see above).
     const since = new Date(Date.now() - IDEMPOTENCY_MINUTES * 60_000).toISOString();
@@ -985,6 +1081,13 @@ Deno.serve(async (req) => {
     const hoursRaw = typeof body.site_status_note === "string" ? body.site_status_note : "";
     const hoursNote = stripTestTag(hoursRaw).replace(/[\r\n]+/g, " ").trim().slice(0, 80);
 
+    // After-hours call-ahead (Fred 2026-07-24): Homestead can take a driver after last intake ONLY if he
+    // calls up front. The app tells us whether he tapped CALL first. Recorded on the note for the office
+    // and surfaced on the created alert. Only meaningful for an after-hours dump (hoursNote says so).
+    const calledAhead = body.called_ahead === true;
+    const isAfterHours = /AFTER HOURS/i.test(hoursNote);
+    const callNote = isAfterHours ? ` Called ahead: ${calledAhead ? "yes" : "NO"}.` : "";
+
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + 60 * 60_000);
 
@@ -1005,7 +1108,8 @@ Deno.serve(async (req) => {
       p_notes: (testMode ? "[TEST] " : "") +
                `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.` +
                (etaNote ? ` ${etaNote}` : "") +
-               (hoursNote ? ` ${hoursNote}` : ""),
+               (hoursNote ? ` ${hoursNote}` : "") +
+               callNote,
       p_driver_id: driverId,
       p_team_ids: [driverId],
       // A TEST dump must NEVER reach Jobber and must ALWAYS stay source='manual' so test_cleanup can find
@@ -1028,7 +1132,7 @@ Deno.serve(async (req) => {
     // #dump-visits even if the driver never opens the crib sheet. (#2 "load reported" fires on confirm.)
     // Only on a genuine create — the idempotent-hit path above returns early and never reaches here.
     if (v?.id) {
-      try { await postDumpCreatedAlert(v.id as number, driver.full_name); }
+      try { await postDumpCreatedAlert(v.id as number, driver.full_name, driverId, { afterHours: isAfterHours, calledAhead }); }
       catch (e) { console.error("[dump] slack created alert failed:", e instanceof Error ? e.message : String(e)); }
     }
 
