@@ -5,13 +5,21 @@
 -- notes (edge fn `create` with test_mode:true), and the Testing screen's "Remove all test visits" button
 -- calls the edge `test_cleanup` action, which runs this function.
 --
--- SAFETY: this can ONLY touch app-created TEST dumps. It is triple-scoped:
---   client_id IN (365,76)  -- the two dump places (000-DH / 000-DP) only
---   source = 'manual'      -- app-created (real dumps ride in from Jobber as source='jobber')
---   notes LIKE '%[TEST]%'  -- the testing-mode marker
--- A real dump can never match all three, so real grease-disposal history is never at risk. Visits are
--- SOFT-deleted (deleted_at, never hard-deleted -- Rule 6); the app-specific children (dump_manifest_handout,
--- dump_activity, plus the visit's line_items / visit_team) are removed so nothing dangles. Returns the count.
+-- SAFETY: this can ONLY touch app-created TEST dumps. Scoping (client_id IN (365,76) AND source='manual'
+-- AND notes LIKE '%[TEST]%'), with an honest note about which predicate is load-bearing:
+--   * The `[TEST]` notes marker is THE discriminator, and it is trustworthy by construction: it is added
+--     ONLY by the edge fn's own test_mode prefix, and any caller-injected `[TEST]` in the free-text
+--     eta_snapshot/site_status_note is stripped before the notes are written (see stripTestTag). So a real
+--     (non-test) dump never carries the marker and can never be selected here.
+--   * `source='manual'` is a secondary guard. ⚠ In the CURRENT build phase (PUSH_TO_JOBBER=false) EVERY
+--     app dump — real driver dumps included — is written source='manual', so on its own this predicate does
+--     NOT separate real from test; the marker does. It becomes a real second barrier AFTER go-live: a test
+--     dump is forced source='manual' (test_mode overrides the Jobber push), while real dumps then ride in
+--     as source='visit-calendar'/'jobber' and are excluded here twice over.
+--   * client_id IN (365,76) bounds it to the two dump places.
+-- Visits are SOFT-deleted (deleted_at, never hard-deleted -- Rule 6); the app-specific children
+-- (dump_manifest_handout, dump_activity, plus the visit's line_items / visit_team) are removed so nothing
+-- dangles. Returns the count.
 --
 -- AUDIT: visits + dump_manifest_handout are audited (the soft-delete + handout deletes are captured);
 -- dump_activity is the append-only telemetry trail. SECURITY DEFINER, service_role-only (the edge fn).

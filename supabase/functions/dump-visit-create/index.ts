@@ -973,13 +973,17 @@ Deno.serve(async (req) => {
     // arrival (docs/09-eta-design.md section 9). Display text ONLY: it is never parsed or trusted, so it
     // is flattened and clamped before it goes anywhere near the note. This is a snapshot at log time,
     // deliberately not a live field.
+    // ⚠ Strip any caller-injected [TEST] token: on this anon endpoint the free-text ETA/hours notes are
+    // caller-controlled, and [TEST] in visits.notes is the ONLY test-vs-real discriminator test_cleanup
+    // trusts (review finding 2026-07-24). Only the app's own test_mode prefix may add the marker.
+    const stripTestTag = (s: string) => s.replace(/\[\s*test\s*\]/gi, "");
     const etaRaw = typeof body.eta_snapshot === "string" ? body.eta_snapshot : "";
-    const etaNote = etaRaw.replace(/[\r\n]+/g, " ").trim().slice(0, 160);
+    const etaNote = stripTestTag(etaRaw).replace(/[\r\n]+/g, " ").trim().slice(0, 160);
 
     // Fred 2026-07-20: the hours warning WARNS, never blocks, but the outcome is recorded so the office
     // can see he arrived outside receiving hours. Display text only, flattened and clamped like the ETA.
     const hoursRaw = typeof body.site_status_note === "string" ? body.site_status_note : "";
-    const hoursNote = hoursRaw.replace(/[\r\n]+/g, " ").trim().slice(0, 80);
+    const hoursNote = stripTestTag(hoursRaw).replace(/[\r\n]+/g, " ").trim().slice(0, 80);
 
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + 60 * 60_000);
@@ -1004,7 +1008,10 @@ Deno.serve(async (req) => {
                (hoursNote ? ` ${hoursNote}` : ""),
       p_driver_id: driverId,
       p_team_ids: [driverId],
-      p_push_to_jobber: PUSH_TO_JOBBER,
+      // A TEST dump must NEVER reach Jobber and must ALWAYS stay source='manual' so test_cleanup can find
+      // it — even after go-live flips PUSH_TO_JOBBER=true (Fred 2026-07-24, review finding). test_mode is
+      // decoupled from the go-live global on purpose: a preview must never land on the real crew schedule.
+      p_push_to_jobber: testMode ? false : PUSH_TO_JOBBER,
     });
 
     if (error) {
