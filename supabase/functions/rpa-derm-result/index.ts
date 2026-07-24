@@ -194,8 +194,14 @@ Deno.serve(async (req: Request) => {
   let screenshotPath: string | null = null
   let evidenceDropReason: string | null = screenshotDropReason
   if (screenshotBytes) {
-    // Deterministic key + upsert: a retried POST rewrites the same object.
-    screenshotPath = `${visitId}/${runId}.jpg`
+    // Deterministic key + upsert: a retried POST (same run_id) rewrites the same
+    // object. DRY-RUN evidence is test-only, so it uses a PER-VISIT key
+    // (`<visit>/dryrun.jpg`): repeated dry-run test runs OVERWRITE to one file
+    // per visit instead of accumulating a new file per run_id (evidence-dup
+    // cleanup 2026-07-24). LIVE keeps the per-run_id key so every real filing
+    // attempt stays a distinct, non-overwritten evidence file — a genuine
+    // re-attempt must remain visible (it is the double-file signal).
+    screenshotPath = dryRun ? `${visitId}/dryrun.jpg` : `${visitId}/${runId}.jpg`
     let uploaded = false
     for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 200 * attempt))
