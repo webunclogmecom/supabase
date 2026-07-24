@@ -373,7 +373,10 @@ const routeContext = (routeLink: string | null) =>
 // ---------------------------------------------------------------------------
 async function dumpMeta(dumpVisitId: number) {
   const { data: v } = await db.from("visits")
-    .select("start_at, client_id, vehicle_id, assigned_driver_id").eq("id", dumpVisitId).maybeSingle();
+    .select("start_at, client_id, vehicle_id, assigned_driver_id, notes").eq("id", dumpVisitId).maybeSingle();
+  // A dump created in the app's TESTING MODE carries a [TEST] marker in its notes; every alert for it is
+  // prefixed [TEST] so it's obvious in #dump-visits (Fred 2026-07-24).
+  const isTest = ((v?.notes as string) || "").includes("[TEST]");
   const isDH = v?.client_id === DUMPS.DH.client_id;
   const isDP = v?.client_id === DUMPS.DP.client_id;
   const site = isDH ? DUMPS.DH.label : isDP ? DUMPS.DP.label : "Dump";
@@ -398,7 +401,7 @@ async function dumpMeta(dumpVisitId: number) {
     const { data: emps } = await db.from("employees").select("full_name").in("id", empIds);
     teamNames = (emps ?? []).map((e: Record<string, unknown>) => e.full_name as string).filter(Boolean);
   }
-  return { site, county, routeLink, jobberUrl, title, titleMd, whenET, truck, teamNames, dumpDriverId: (v?.assigned_driver_id as number) ?? null };
+  return { site, county, routeLink, jobberUrl, title, titleMd, whenET, truck, teamNames, isTest, dumpDriverId: (v?.assigned_driver_id as number) ?? null };
 }
 
 const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =>
@@ -415,10 +418,11 @@ async function slackPost(text: string, blocks: unknown[]) {
 // 1. DUMP CREATED — fires on GO. The dump event; always notifies.
 async function postDumpCreatedAlert(dumpVisitId: number, driverName: string) {
   const m = await dumpMeta(dumpVisitId);
+  const tag = m.isTest ? "[TEST] " : "";
   const team = (m.teamNames.length ? m.teamNames : [driverName]).join(", ");
   const fields = [`*Time:* ${m.whenET}`, m.truck ? `*Truck:* ${m.truck}` : null, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
-  await slackPost(`🚛 ${m.title} — ${driverName} (dumping)`, [
-    { type: "section", text: { type: "mrkdwn", text: `🚛 *${m.titleMd}* — ${driverName} is dumping` } },
+  await slackPost(`🚛 ${tag}${m.title} — ${driverName} (dumping)`, [
+    { type: "section", text: { type: "mrkdwn", text: `🚛 ${tag}*${m.titleMd}* — ${driverName} is dumping` } },
     { type: "section", text: { type: "mrkdwn", text: fields } },
     ...routeContext(m.routeLink),
   ]);
@@ -432,6 +436,7 @@ async function postDumpAlert(
   driverId: number,
 ) {
   const m = await dumpMeta(dumpVisitId);
+  const tag = m.isTest ? "[TEST] " : "";
   const team = (m.teamNames.length ? m.teamNames : [driverName]).join(", ");
   const fields = [`*Time:* ${m.whenET}`, m.truck ? `*Truck:* ${m.truck}` : null, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
   const clientLines = confirmed.length ? clientBullets(confirmed) : "_(no clients marked on this load)_";
@@ -445,13 +450,13 @@ async function postDumpAlert(
   } catch (_e) { /* best-effort — no missing line rather than a failed alert */ }
 
   const blocks: unknown[] = [
-    { type: "section", text: { type: "mrkdwn", text: `🚛 *${m.titleMd}* — ${driverName}` } },
+    { type: "section", text: { type: "mrkdwn", text: `🚛 ${tag}*${m.titleMd}* — ${driverName}` } },
     { type: "section", text: { type: "mrkdwn", text: fields } },
     { type: "section", text: { type: "mrkdwn", text: `*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
   ];
   if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing — scheduled today, not added (${missing.length}):*\n${clientBullets(missing)}` } });
   blocks.push(...routeContext(m.routeLink));
-  await slackPost(`🚛 ${m.title} — ${driverName}`, blocks);
+  await slackPost(`🚛 ${tag}${m.title} — ${driverName}`, blocks);
 }
 
 // 3. MANIFEST LINK — fires on `link`. OLDER VISITS catch-up-linked to a chosen dump.
@@ -463,9 +468,10 @@ async function postManifestLinkAlert(driverName: string, dumpVisitId: number, li
     const { data: e } = await db.from("employees").select("full_name").eq("id", m.dumpDriverId).maybeSingle();
     dumpDriver = (e?.full_name as string) ?? "";
   }
+  const tag = m.isTest ? "[TEST] " : "";
   const sub = [dumpDriver, m.whenET].filter(Boolean).join(" · ");
-  await slackPost(`📝 ${driverName} added ${linked.length} to the ${m.site} dump`, [
-    { type: "section", text: { type: "mrkdwn", text: `📝 *${driverName} added ${linked.length} to the ${m.titleMd}*${sub ? `\n_${sub}_` : ""}` } },
+  await slackPost(`📝 ${tag}${driverName} added ${linked.length} to the ${m.site} dump`, [
+    { type: "section", text: { type: "mrkdwn", text: `📝 ${tag}*${driverName} added ${linked.length} to the ${m.titleMd}*${sub ? `\n_${sub}_` : ""}` } },
     { type: "section", text: { type: "mrkdwn", text: clientBullets(linked) } },
     ...routeContext(m.routeLink),
   ]);
@@ -904,6 +910,21 @@ Deno.serve(async (req) => {
       return json({ ok: true, linked: rows, count: rows.length });
     }
 
+    // TESTING MODE cleanup (Fred 2026-07-24): the Testing screen's "Remove all test visits" button.
+    // Soft-deletes every [TEST]-flagged app dump (source='manual', 000-DH/000-DP) + its ledger/trail
+    // children. dump_test_cleanup can ONLY touch [TEST]-marked manual dumps, so real Jobber dumps are
+    // never at risk. Returns how many were removed.
+    if (action === "test_cleanup") {
+      const { data, error } = await db.rpc("dump_test_cleanup");
+      if (error) {
+        console.error("[dump] test_cleanup failed:", error.message);
+        return json({ ok: false, error: "could not remove the test visits" }, 500);
+      }
+      const removed = typeof data === "number" ? data : 0;
+      await logActivity("test_cleanup", null, null, { removed });
+      return json({ ok: true, removed });
+    }
+
     if (action !== "create") return json({ ok: false, error: "unknown action" }, 400);
 
     const dumpKey = String(body.dump ?? "") as keyof typeof DUMPS;
@@ -917,19 +938,25 @@ Deno.serve(async (req) => {
     const driver = allowed.find((d) => d.id === driverId);
     if (!driver) return json({ ok: false, error: "unknown driver" }, 400);
 
+    // TESTING MODE (Fred 2026-07-24): the app's Testing screen sends test_mode:true. The visit gets a
+    // [TEST] marker in its notes so it's obviously test data, its Slack alerts are prefixed [TEST], and
+    // it is removable in one tap via the `test_cleanup` action. Real and test dumps never share an
+    // idempotency hit (the marker scopes the dupe check).
+    const testMode = body.test_mode === true;
+
     // IDEMPOTENCY — THIS driver double-tapping must not create a second Jobber visit. Scoped to
     // (site + driver): a different driver heading to the same dump gets his own visit (see above).
     const since = new Date(Date.now() - IDEMPOTENCY_MINUTES * 60_000).toISOString();
-    const { data: dupes, error: dupeErr } = await db
+    let dupeQuery = db
       .from("visits")
       .select("id, public_id, start_at, assigned_driver_id")
       .eq("client_id", dump.client_id)
       .eq("assigned_driver_id", driverId)
       .eq("visit_status", "scheduled")
       .is("deleted_at", null)
-      .gte("start_at", since)
-      .order("start_at", { ascending: false })
-      .limit(1);
+      .gte("start_at", since);
+    dupeQuery = testMode ? dupeQuery.ilike("notes", "%[TEST]%") : dupeQuery.not("notes", "ilike", "%[TEST]%");
+    const { data: dupes, error: dupeErr } = await dupeQuery.order("start_at", { ascending: false }).limit(1);
     if (dupeErr) throw new Error(`dupe check: ${dupeErr.message}`);
 
     if (dupes?.length) {
@@ -971,7 +998,8 @@ Deno.serve(async (req) => {
       p_start_at: startAt.toISOString(),
       p_end_at: endAt.toISOString(),
       p_title: "Dump",                  // trg_prefix_visit_title prepends "000-DH Homestead Dump - "
-      p_notes: `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.` +
+      p_notes: (testMode ? "[TEST] " : "") +
+               `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.` +
                (etaNote ? ` ${etaNote}` : "") +
                (hoursNote ? ` ${hoursNote}` : ""),
       p_driver_id: driverId,
