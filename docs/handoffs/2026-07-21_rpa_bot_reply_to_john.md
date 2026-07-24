@@ -15,7 +15,7 @@ One ground rule up front: no database credentials leave our side, not even read-
 
 1. Data source: REST, not a DB connection. The endpoint is already live.
 GET https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-queue
-Auth header: x-rpa-key (value sent privately). Returns JSON { generated_at, mode, count, reports: [...] }, up to 25 reports to file, oldest first. Each report object: visit_id (the work key, use it in your result POST), manifest_id, client_code, client_name, client_email, address, city, zip, county, gdo_number, service_date, dump_ticket_date, white_manifest_number, disposal_facility, and documents: { address: [signed URLs], receipt: [signed URLs] } (valid 4 hours, minted fresh on every fetch; download everything at the start of the run and never log or store the URLs). A visit appears until it is successfully reported, so nothing is dropped if you are down for a while; it leaves the queue permanently once the county confirms it, and is held 20 hours after any attempt (or the moment we hand it to you) so we can never double-file. ?mode=dryrun serves already-serviced historical visits for testing; those results are tagged dry-run and never count as real. The full field list will live in the repo README, so that is your schema doc. Send me the column list of the CSV you read today so I can flag any field name you expect that we do not already return.
+Auth header: x-rpa-key (value sent privately). Returns JSON { generated_at, mode, count, reports: [...] }, up to 25 reports to file, oldest first. Each report object: visit_id (the work key, use it in your result POST), manifest_id, client_code, client_name, client_email, address, city, zip, county, gdo_number, service_date, dump_ticket_date, ticket_number (see 2026-07-24 addendum), jurisdiction, white_manifest_number, disposal_facility, and documents: { address: [signed URLs], receipt: [signed URLs] } (valid 4 hours, minted fresh on every fetch; download everything at the start of the run and never log or store the URLs). A visit appears until it is successfully reported, so nothing is dropped if you are down for a while; it leaves the queue permanently once the county confirms it, and is held 20 hours after any attempt (or the moment we hand it to you) so we can never double-file. ?mode=dryrun serves already-serviced historical visits for testing; those results are tagged dry-run and never count as real. The full field list will live in the repo README, so that is your schema doc. Send me the column list of the CSV you read today so I can flag any field name you expect that we do not already return.
 
 2. Result logging: POST endpoint, same key, also live. This is what feeds our apps (we show per-client, per-visit "GDO report filed / pending / failed" in our DERM tool and on the customer's portal), so getting the fields right matters.
 POST https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result
@@ -111,3 +111,26 @@ ALONE — we do NOT gate on `derm_required`. Instead `public.v_gdo_reporting_der
 code-27 visit where `fn_visit_requires_derm(v.id)=false` (live fn, so an unstamped NULL is not a false
 positive), surfaced as `v_rpa_derm_health.gdo_not_derm_required` + a daily watchdog attention reason
 `gdo_code27_not_derm_required`. 0 currently. **Do NOT add a derm_required gate to the queue.**
+
+---
+
+## Addendum 2026-07-24 — `ticket_number` + `jurisdiction` added to the queue response
+
+**Why:** John reported the live endpoint returned `white_manifest_number` as null while
+dryrun worked. Root cause was NOT a SQL difference (live and dryrun select it identically) —
+it is **jurisdiction**. Broward / Palm Beach loads carry a **yellow Septage Receiving ticket**,
+not a Miami-Dade white manifest #, so `white_manifest_number` is legitimately null for them.
+The bot's first real live item (visit 6298 / 111-YC) was a Broward-disposed load
+(yellow `309944`), so its white came back null.
+
+**Fix (live 2026-07-24, migration `2026-07-24d` + `rpa-derm-queue` redeploy):** the response
+now includes two fields on every report:
+
+- **`ticket_number`** — the dump-ticket number to file, **regardless of county** (Miami-Dade
+  loads = the white manifest #, Broward/PBC loads = the yellow ticket #). **Use this field.**
+  Confirmed by ops (Diego): white or yellow, it is the number to report. Never null when a
+  number exists (verified: 0 null across the whole queue).
+- **`jurisdiction`** — `'dade'` | `'broward'` | `'unknown'`, if you want to branch.
+
+`white_manifest_number` is kept for back-compat but is **null for Broward** — switch to
+`ticket_number`. All other fields unchanged.

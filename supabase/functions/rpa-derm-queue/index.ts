@@ -17,9 +17,14 @@
 // { generated_at, mode: 'live'|'dryrun', count, reports: [{
 //     visit_id, manifest_id, dry_run, client_code, client_name, client_email,
 //     address, city, zip, county, gdo_number, service_date, dump_ticket_date,
-//     white_manifest_number, disposal_facility,
+//     ticket_number, jurisdiction, white_manifest_number, disposal_facility,
 //     documents: { address: [urls], receipt: [urls] }   // signed, 4h TTL
 // }]}
+// ticket_number (2026-07-24) = the dump-ticket number to file, regardless of
+// county: Miami-Dade loads carry it as the white manifest #, Broward/PBC loads
+// as the yellow Septage Receiving #. USE THIS, not white_manifest_number, which
+// is NULL for Broward loads (kept only for back-compat). jurisdiction is
+// 'dade' | 'broward' | 'unknown'.
 //
 // Lifecycle gates (SUCCESS permanent, 20h attempt cooldown, data-errors held
 // until the manifest changes) live in public.v_derm_portal_queue — the DB is
@@ -134,7 +139,9 @@ Deno.serve(async (req: Request) => {
       gdo_number: r.gdo_number,
       service_date: r.visit_date,
       dump_ticket_date: r.dump_ticket_date,
-      white_manifest_number: r.white_manifest_number,
+      ticket_number: r.ticket_number, // the number to file (white OR yellow), 24d
+      jurisdiction: r.jurisdiction, // 'dade' | 'broward' | 'unknown'
+      white_manifest_number: r.white_manifest_number, // back-compat; NULL for Broward
       disposal_facility: r.disposal_facility,
       documents: {
         address: await Promise.all(addressDocs.map(sign)),
