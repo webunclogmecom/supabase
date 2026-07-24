@@ -30,13 +30,13 @@ Classify from the fields the bot already sends to `rpa-derm-result`:
 
 | Bucket | Bar color | Emoji | Condition (from the result) | Row shows |
 |---|---|---|---|---|
-| **Filed** | green `#2eb67d` | ✅ | `status == "SUCCESS"` | GDO permit # on line 1, then the **DERM manifest number** `#<white_manifest_number>` (as `code`) + time |
+| **Filed** | green `#2eb67d` | ✅ | `status == "SUCCESS"` | GDO permit # on line 1, then `Manifest #<white_manifest_number>` **as a link** to the DERM app (`derm.unclogme.app/manifests?q=<n>`) + time |
 | **Needs review** | amber `#ecb22e` | ⚠️ | an error with `retryable == false` (data problem: email mismatch, missing field, expired permit…) | a short, human reason + the fix |
 | **Failed** | red `#e01e5a` | ❌ | an error with `retryable == true` (transient: portal timeout, portal down, unhandled) | the failure + "will retry" |
 | **In queue** | blue `#36c5f0` | ⏳ | still-unfiled dumps the bot has **not attempted this cycle** (from the queue `count`, not from results) | why it is waiting |
 
 Notes:
-- **The filed row shows the DERM manifest number** (`white_manifest_number`, formatted `#34055`), NOT the `portal_confirmation` string — the county returns no tracking number, and the manifest number is the meaningful identifier ops recognizes. The `portal_confirmation` is still POSTed to `rpa-derm-result` for the audit log; it just isn't shown in the digest. The `gdo_number` + `white_manifest_number` come from the queue report the bot filed.
+- **The filed row shows `Manifest #<white_manifest_number>` as a clickable link** to the DERM app manifest — `<https://derm.unclogme.app/manifests?q=<n>|#<n>>` (plain `?q=`, no quotes — the DERM Tracker link contract; a quoted value returns 0 results). NOT the `portal_confirmation` string — the county returns no tracking number, and the manifest number is the meaningful identifier ops recognizes, now one click from the manifest itself. The `portal_confirmation` is still POSTed to `rpa-derm-result` for the audit log; it just isn't shown in the digest. The `gdo_number` + `white_manifest_number` come from the queue report the bot filed. Note: making it a link means the number is a blue Slack link, not the orange `code` box.
 - On a **dry run** (`dry_run == true`), everything that would be "Filed" is shown as `previewed, not filed` instead of the manifest number, and the phase badge is `🧪 Dry run`.
 - **Empty buckets simply do not appear** — a clean day with 3 filed and nothing else is just one green bar (that is the "quiet day" behavior, no special-casing needed).
 - **Queue length:** on a busy day the queue list can get long. Default is to list it; if it grows past ~5, collapse it to a single count line instead (a one-line variant is in the Python below). Filed / review / failed are always listed in full because they are actionable or notable.
@@ -45,6 +45,7 @@ Notes:
 
 ```python
 GREEN, AMBER, RED, BLUE = "#2eb67d", "#ecb22e", "#e01e5a", "#36c5f0"
+DERM_MANIFEST_URL = "https://derm.unclogme.app/manifests?q="   # plain ?q=<number>, no quotes (DERM Tracker link contract)
 
 def _section(text):
     return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
@@ -73,9 +74,11 @@ def build_digest(date_label, phase, filed, review, failed, queue, last_run, coll
 
     attachments = []
     if filed:
+        def _mlink(f):  # Manifest #<n> as a link to the DERM app
+            return f"Manifest <{DERM_MANIFEST_URL}{f['manifest_number']}|#{f['manifest_number']}>"
         rows = [
-            (f"✅  *{f['code']}*  {f['name']}   ·   {f['gdo_number']}\n`#{f['manifest_number']}`   ·   {f['time']}" if live
-             else f"✅  *{f['code']}*  {f['name']}   ·   {f['gdo_number']}\npreviewed, not filed")
+            (f"✅  *{f['code']}*  {f['name']}   ·   {f['gdo_number']}\n{_mlink(f)}   ·   {f['time']}" if live
+             else f"✅  *{f['code']}*  {f['name']}   ·   {f['gdo_number']}\n{_mlink(f)}   ·   previewed, not filed")
             for f in filed]
         attachments.append({"color": GREEN, "blocks": [_section(r) for r in rows]})
     if review:
@@ -133,8 +136,8 @@ A trimmed example of what `build_digest` produces (2 filed + 1 review):
   ],
   "attachments": [
     { "color": "#2eb67d", "blocks": [
-      { "type": "section", "text": { "type": "mrkdwn", "text": "✅  *041-MB*  Ocean Drive Kitchen   ·   GDO-14117\n`#34055`   ·   5:04 PM ET" } },
-      { "type": "section", "text": { "type": "mrkdwn", "text": "✅  *111-YC*  Yard Cafe   ·   GDO-19204\n`#34061`   ·   5:05 PM ET" } }
+      { "type": "section", "text": { "type": "mrkdwn", "text": "✅  *041-MB*  Ocean Drive Kitchen   ·   GDO-14117\nManifest <https://derm.unclogme.app/manifests?q=825450|#825450>   ·   5:04 PM ET" } },
+      { "type": "section", "text": { "type": "mrkdwn", "text": "✅  *111-YC*  Yard Cafe   ·   GDO-19204\nManifest <https://derm.unclogme.app/manifests?q=825461|#825461>   ·   5:05 PM ET" } }
     ]},
     { "color": "#ecb22e", "blocks": [
       { "type": "section", "text": { "type": "mrkdwn", "text": "⚠️  *082-TFC*  The Fresh Company   ·   email mismatch, fix in Jobber" } }
