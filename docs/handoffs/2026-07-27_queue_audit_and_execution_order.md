@@ -91,6 +91,32 @@ Consequences:
 - **No coordinated same-window change** — the sessions decouple instead of synchronizing.
 - **D3 becomes genuinely optional**: with derived columns there is no cost to keeping the old names forever → defer D3 indefinitely unless PITR is on.
 
+#### ⚠ GAP IN OPTION 3, CLOSED (BA, 2026-07-27): view compat ≠ base-table compat
+
+Option 3 as first stated protected **view** consumers only. Two consumers hit `public.derm_manifests` **directly**. Both verified in source:
+
+1. **`send-derm-email`** (lines 267-268 / 375-376): `.from('derm_manifests').select('id, client_id, white_manifest_number, yellow_ticket_number, …')` then `const number = m.white_manifest_number || m.yellow_ticket_number || String(id)`. **This is the client + city email path — the highest-consequence surface in the queue.** No view is involved, so view-layer compat would not have saved it.
+2. **`webhook-airtable`** (line 542-543 WRITES both columns; 630-638 dup-checks with `.eq()` on them). BA's corollary is correct: **a Postgres GENERATED column fixes the READ but not the WRITE** — generated columns are read-only.
+
+**Resolution — compat lives on the BASE TABLE as GENERATED columns:**
+```sql
+white_manifest_number GENERATED ALWAYS AS (CASE WHEN jurisdiction='dade'    THEN ticket_number END) STORED
+yellow_ticket_number  GENERATED ALWAYS AS (CASE WHEN jurisdiction='broward' THEN ticket_number END) STORED
+```
+Generated (not trigger-maintained) is the deliberate choice: it is *strictly* derived, so the duplicate-value dirt this whole collapse exists to remove **cannot come back**. A trigger-maintained pair would recreate the exact anti-pattern (cf. the `properties.zone` bidirectional-sync trigger we just deleted).
+
+That leaves the two writers, and both are wanted work anyway:
+- **`webhook-airtable`** → **cut the dispatch first** and prove a synthetic event returns `skipped` (the "wired ≠ dead" rule; the `derm_manifest` handler fired 55× after we assumed it dead). Airtable is retired, so preserving write-compat for a dead feed is the wrong trade.
+- **The filing RPCs** (`file_manifest`, `file_manifest_on_shared_ticket`, `derm.file_manifest_and_link`, `edit_manifest`) → mine; updated to write `ticket_number` + `jurisdiction`.
+
+Result: **`send-derm-email` needs no redeploy**, all four view-based apps need no change, and no coordinated window is required.
+
+**Confirmed sweep set** (relations exposing the two columns — `client.derm_manifests` explicitly included, it is 3 days old and easy to miss):
+`public.derm_manifests`, `public.manifest_detail`, `public.v_derm_portal_fields`, `public.v_derm_portal_queue`, `public.v_derm_portal_dryrun`, `client.derm_manifests`, `derm.manifests`, `derm.manifest_health`, `derm.v_extraction_quality`, `derm.v_orphan_manifests`, `derm.v_sheet_client_count`, `derm.v_stamp_linkage_gaps`, `derm.v_stamp_rows`, `derm.v_stamp_sheets`.
+
+⚠ **`derm.address_row_map` also carries a `white_manifest_number` — it is a DIFFERENT PHYSICAL TABLE (Stamp Studio), not a view of this one. Do NOT rename it in the same migration.**
+⚠ `public.v_derm_portal_queue` / `_dryrun` are **Jonathan's external RPA contract** — `white_manifest_number` must keep resolving there (it now sits alongside the `ticket_number` I added 2026-07-24).
+
 ⚠ **One lossy edge case:** across all 587 rows (including soft-deleted) exactly **1 soft-deleted row has BOTH numbers set** — the legacy `815064`-class dirt. The reconstruction cannot represent it, so if restored it would lose one number. The collapse migration must resolve that single row **explicitly**, not silently. Live rows are unaffected.
 
 ---
