@@ -76,8 +76,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
 
-  // resolve the client slug
-  const { data: cl } = await db.from('clients').select('id').eq('client_code', client_code).maybeSingle()
+  // Resolve the client slug — CASE-INSENSITIVE (2026-07-27). The FP route slug is lowercase
+  // ('150-kos') while clients.client_code is uppercase ('150-KOS'), so the old exact `.eq()`
+  // returned 403 on every call; the sibling RPC customer.get_visit_by_slug_and_token already
+  // does `lower(c.client_code) = lower(p_slug)`, so this fn was the inconsistent one. Found by
+  // the Building Apps session during the FP signed-URL re-wire (they shipped an uppercase
+  // workaround frontend-side; this makes it unnecessary and both cases keep working).
+  // ilike with no wildcards = case-insensitive equality; client_code has no % or _ .
+  const { data: cl } = await db.from('clients').select('id').ilike('client_code', client_code).maybeSingle()
   if (!cl) return json({ error: 'forbidden' }, 403, cors)
 
   // Read via the derm.manifests VIEW so address/manifest carry the UNION of sheets across the
