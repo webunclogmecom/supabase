@@ -36,6 +36,22 @@
 | B5 | Verify all 3 apps render + FP customer redacted sheets still serve | Gate |
 | B6 | **Soak 48h**, then delete the public originals | ⚠ DESTRUCTIVE TAIL → Wave D |
 
+#### ⛔ NEW HARD GATE (BA, 2026-07-27): Field Portal must be re-wired BEFORE B2
+
+**The 2026-07-02 FP signed-URL repoint has REGRESSED.** BA read the live deployed bundle: the doc card accepts either `{manifestId, clientCode, kind}` (→ `get-derm-doc`) **or** a direct `{url}`, and short-circuits on `url` first. Both compliance cards pass a raw `url` from `customer.work_orders`, so the signed branch is **unreachable dead code**.
+
+⚠ **Grepping the bundle for `get-derm-doc` is a FALSE PASS** — the dead path is still bundled. That is exactly why it looked verified on 07-02. *(Method lesson: presence of a string in a bundle ≠ that code path executing.)*
+
+**Impact if I move `derm/*` first:** the WWTP Disposal Receipt dies on **544 of 588 work orders** (388 in `GT - Visits Images/derm/*`, 156 in `manifests/derm/*` — all inside the move set), and because the card is number-gated it renders **DOCUMENTED with a dead preview** rather than degrading to PENDING. **Customer-facing.**
+
+→ **F1 (FP re-wire + publish) is BA's and it BLOCKS Wave B.** Two sub-traps BA will handle: `kind:'fog'` returns the *wrong artifact* for current FP (signs `derm_manifests.fog_manifest_url`, a PDF, while the card renders the redacted JPG) so it needs a new kind (e.g. `'redacted'`); and `get-derm-doc`'s raw-path fallback list is hardcoded `['manifests','GT - Visits Images']` → **must add the new bucket** (mine).
+
+#### ⛔ REVERSAL: do NOT drop `Public can read manifests`, and do NOT flip either bucket
+
+BA retracted their own earlier advice and I accept the correction. The `manifests` bucket also holds the **FP-blackout redacted sheets** (`manifests/redacted/m{id}-*.jpg`) served to **customers via raw public URLs on 545 of 588 work orders**. Dropping that anon policy or flipping the bucket private takes the customer-facing FOG eManifest dark. Likewise `GT - Visits Images` must **stay public**: `customer.public_url()` / `thumbnail_url()` hardcode `/object/public/GT%20-%20Visits%20Images/`, so a whole-bucket flip 404s every visit photo.
+
+**Revised Wave B scope:** move `derm/*` out to the private bucket only; **leave both source buckets public and the redacted path readable** until FP is re-wired. The anon-policy drop moves to a later, separate step gated on FP.
+
 ### WAVE C — Client App phase 2 wave 1 (after A1).
 
 | # | Change |
@@ -111,7 +127,30 @@ Consequences:
 - **Cross-impact:** GDO permit writes touch a **DERM compliance** object read by 12 views — a bad write is a compliance data error, not a cosmetic one.
 - **Safeguard:** RPCs are `REVOKE ALL` + explicit `GRANT EXECUTE`; revoke the grant to disable the feature instantly without a frontend republish.
 
-### D1 · Photo cleanup (destructive)
+### ⚠⚠ D1 REDESIGNED 2026-07-27 — the mass delete as scoped was UNSAFE. BA's findings independently verified.
+
+Every claim below I re-ran against live Prod myself; all confirmed:
+
+| Claim | Verified result |
+|---|---|
+| `photo_classifications.photo_link_id` is **ON DELETE CASCADE** | ✅ `confdeltype='c'` |
+| `photo_links` has **NO audit trigger** → deleted links unrecoverable | ✅ zero triggers (`photo_classifications` *is* audited) |
+| The delete destroys **human classifier work** | ✅ **73 of 392** classifications cascade-destroyed (18.6%) |
+| **1,747** links sit on photos whose notes ALL have `visit_id` NULL | ✅ exactly 1,747 — **no positive evidence these are wrong** |
+| Visits dropping to **zero** photos | ✅ **95** completed visits |
+| The row count is **predicate-dependent** | ✅ my earlier 3,784 (rule: "photo linked to >1 visit") vs 3,412 (rule: "link ≠ its note's visit"). Different sets. |
+
+**❗ CORRECTION TO WHAT I TOLD FRED:** I said visit 6989 would go "31 → its real ~9". **Wrong.** Verified: of its 31 links, **0 survive** the strict rule and all 31 belong to note-anchored visit 6835. So 6989 → **0 photos**, not 9. And note the deeper implication: we hold **no** correctly-attributed photos for 6989, yet Jobber shows ~9 — so deletion alone does not produce the right answer, it produces an empty visit. **The complaint would flip from "too many photos" to "the photos disappeared."**
+
+**Revised design (do NOT mass-delete):**
+1. **Pin the predicate first** and publish the count under it — the number is meaningless without the rule.
+2. **Only delete on positive evidence:** the photo's note HAS a `visit_id` AND it points to a *different* visit AND a link to that correct visit already exists (so the photo stays visible where it belongs). **Exclude all 1,747 all-NULL-note links** — absence of an anchor is not evidence of error.
+3. **Move the human work, don't kill it:** `UPDATE photo_classifications SET photo_link_id = <keeper link>` **before** any delete.
+4. **Add an audit trigger to `photo_links` before touching it** — it is currently the only table in this plan whose deletions cannot be reconstructed.
+5. **Backfill, not just delete:** for the 95 visits that would empty out, re-sync their true photos from Jobber first, then clean up. Delete-only is a regression.
+6. Full pre-image export of **both** tables including `id`s (the cascade restore requires the parent link to return with the SAME id).
+
+### D1 · Photo cleanup — original notes (superseded by the redesign above)
 - **Pre-req:** validate `notes.visit_id` reliability across all 252 visits first (one 07-02 note was tagged to a 07-01 visit — if that class is common, the "correct" target is wrong and the delete would be wrong).
 - **Test:** dry-run producing the exact delete set + a per-visit before/after count; spot-check visit 6989 → 31 drops to its real ~9; assert **zero** note-LESS legacy photos in the delete set (82% of photos have no note anchor — the delete must never touch them).
 - **Safeguard:** full pre-image JSON of all 3,784 rows (restore = re-INSERT); run in one transaction; Fred's explicit go.
