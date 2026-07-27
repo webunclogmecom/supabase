@@ -883,15 +883,24 @@ Deno.serve(async (req) => {
     if (action === "outstanding") {
       const { data, error } = await db
         .from("dump_outstanding_visits")
-        .select("visit_id, client_code, client_name, address, city, visit_date, completed_at, age_days, truck, gdo_number, needs_office, on_sheet, marked_by, marked_at")
+        .select("visit_id, client_code, client_name, address, city, visit_date, completed_at, age_days, truck, gdo_number, needs_office, on_sheet, marked_by, marked_at, county, county_bucket, confirmed_hidden")
         .order("completed_at", { ascending: false, nullsFirst: false });
       if (error) {
         // Loud, never an empty list: "nothing outstanding" and "the request broke" must not look alike.
         console.error("[dump] outstanding list failed:", error.message);
         return json({ ok: false, error: "could not load the older visits" }, 500);
       }
-      const rows = Array.isArray(data) ? data : [];
-      return json({ ok: true, stops: rows, count: rows.length });
+      const all = Array.isArray(data) ? data : [];
+      // 6h CONFIRMED-HIDE (Fred 2026-07-28): a row that has been marked for more than 6 hours drops out of
+      // the default browse list. `include_confirmed` brings them back — that toggle is NOT optional
+      // polish: un-ticking is reachable ONLY from this screen (dump_manifest_mark(on:false)), and
+      // dump_manifest_handout_release can never clear an addresses-sourced mark because those rows carry
+      // dump_visit_id = NULL. Without a way back, one wrong tap would be permanently unfixable in-app, for
+      // every driver at once (the ledger PK is visit_id alone).
+      const includeConfirmed = body.include_confirmed === true;
+      const rows = includeConfirmed ? all : all.filter((r: Record<string, unknown>) => r.confirmed_hidden !== true);
+      const hiddenConfirmed = all.length - rows.length;
+      return json({ ok: true, stops: rows, count: rows.length, hidden_confirmed: hiddenConfirmed, total: all.length });
     }
 
     // VIEW ADDRESSES per-visit toggle (Fred 2026-07-23): the shared "on a manifest" mark. The driver
@@ -976,8 +985,30 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "could not load the manifest list" }, 500);
       }
       const rows = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
+
+      // COUNTY GATE REPORTING (Fred 2026-07-28). The RPC has already removed the out-of-county rows for
+      // this dump SITE (Homestead may only be handed Miami-Dade work; Pompano takes both). Fred's call was
+      // to HIDE them, not grey them out — but a shortfall must still be STATED, because this app's own
+      // rule is that a blank list and a broken request must never look alike, and the grease is physically
+      // on the truck either way. So we count what the gate removed and let the UI say
+      // "N hidden — file at Pompano" instead of silently showing a shorter list.
+      let hiddenCounty = 0;
+      let hiddenLabel: string | null = null;
+      try {
+        const { data: siteRow } = await db.from("visits").select("client_id").eq("id", mDumpVisitId).maybeSingle();
+        const siteClient = (siteRow?.client_id as number) ?? null;
+        if (siteClient === DUMPS.DH.client_id) {          // only Homestead can hide anything today
+          const { data: allRows } = await db.from("dump_outstanding_visits").select("county_bucket");
+          hiddenCounty = (Array.isArray(allRows) ? allRows : [])
+            .filter((r: Record<string, unknown>) => r.county_bucket === "BROWARD").length;
+          if (hiddenCounty > 0) hiddenLabel = `${hiddenCounty} Broward visit${hiddenCounty === 1 ? "" : "s"} hidden — file at ${DUMPS.DP.label}`;
+        }
+      } catch (_e) { /* best-effort: a missing count must never fail the crib sheet */ }
+
       return json({
         ok: true,
+        hidden_county: hiddenCounty,
+        hidden_county_label: hiddenLabel,
         load: rows.filter((r) => r.bucket === "load"),
         outstanding: rows.filter((r) => r.bucket === "outstanding"),
         count: rows.length,
