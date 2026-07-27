@@ -180,6 +180,43 @@ async function truckOrigin(driverId: number): Promise<Origin | null> {
 // Receiving-hours verdict for an arrival instant (public.dump_site_status, Slack 2026-07-17).
 // Returns null only if the lookup itself fails, in which case the page shows NO banner rather than a
 // wrong one: telling a driver a site is open when it is shut sends him on a 40-mile round trip.
+// The truck verdict from public.dump_resolve_truck. `vehicle_id` is NULL unless we are CONFIDENT:
+// 'gps' / 'gps+calendar' / 'calendar' carry a truck; 'conflict' and 'none' deliberately carry none.
+type TruckResolution = {
+  vehicle_id: number | null;
+  vehicle_name: string | null;
+  confidence: string;
+  candidates: Record<string, unknown> | null;
+};
+
+// Which truck is this driver in, right now? Accurate-or-silent by design (Fred 2026-07-27): it returns NO
+// truck rather than a guess, because a wrong truck in #dump-visits is worse than no truck, and vehicle_id
+// is an AUDITED business column. Full tier model + the measured hit rates live in the migration header
+// docs/migrations/2026-07-27_dump_truck_resolution.sql. Never throws — a resolver failure must not stop a
+// driver logging his dump.
+async function resolveTruck(driverId: number, lat: unknown, lng: unknown): Promise<TruckResolution | null> {
+  try {
+    const useCoords = validCoord(lat, lng);
+    const { data, error } = await db.rpc("dump_resolve_truck", {
+      p_driver_id: driverId,
+      p_lat: useCoords ? Number(lat) : null,
+      p_lng: useCoords ? Number(lng) : null,
+    });
+    if (error) { console.error("[dump] truck resolve failed:", error.message); return null; }
+    const r = Array.isArray(data) ? data[0] : data;
+    if (!r) return null;
+    return {
+      vehicle_id: (r.vehicle_id as number) ?? null,
+      vehicle_name: (r.vehicle_name as string) ?? null,
+      confidence: (r.confidence as string) ?? "none",
+      candidates: (r.candidates as Record<string, unknown>) ?? null,
+    };
+  } catch (e) {
+    console.error("[dump] truck resolve threw:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 async function siteStatus(dumpKey: string, arrivalIso: string): Promise<
   { status: string; arrival_et: string | null; last_intake_at: string | null; after_hours_phone: string | null } | null
 > {
@@ -407,13 +444,94 @@ async function dumpMeta(dumpVisitId: number) {
 const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =>
   rows.map((c) => `• ${(c.client_code ?? "").trim()} ${(c.client_name ?? "").trim()}`.trim()).join("\n");
 
-async function slackPost(text: string, blocks: unknown[]) {
-  const url = Deno.env.get("SLACK_DUMP_WEBHOOK_URL");
-  if (!url) { console.log("[dump] SLACK_DUMP_WEBHOOK_URL not set — skipping #dump-visits alert"); return; }
+// Posts to #dump-visits and RETURNS the message ts when it can (null otherwise).
+//
+// TWO TRANSPORTS, on purpose (Fred 2026-07-27 — "build it token-ready"):
+//   * chat.postMessage (preferred) — used when SLACK_BOT_TOKEN + SLACK_DUMP_CHANNEL_ID are set. This is the
+//     ONLY transport that returns a message `ts` and accepts `thread_ts`, which is what lets the follow-up
+//     alerts (load reported / manifest add) render as REPLIES under the dump they belong to instead of as
+//     four unrelated top-level posts.
+//   * Incoming Webhook (fallback) — the original transport. A webhook responds with the literal body "ok",
+//     never a ts, and ignores thread_ts, so threading is IMPOSSIBLE on this path. It stays as the fallback
+//     so that if the bot token is missing, or the bot has not been invited to the PRIVATE #dump-visits yet,
+//     alerts keep firing exactly as they do today rather than going silent.
+// Returns null on every failure. Callers treat a null ts as "post top-level", never as an error.
+async function slackPost(text: string, blocks: unknown[], threadTs?: string | null, broadcast = false): Promise<string | null> {
+  const token = Deno.env.get("SLACK_BOT_TOKEN");
+  const channel = Deno.env.get("SLACK_DUMP_CHANNEL_ID");
   // unfurl_links/media false: keep Slack from expanding the maps/Jobber URLs into a raw-URL preview box.
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, blocks, unfurl_links: false, unfurl_media: false }) });
+  const common = { text, blocks, unfurl_links: false, unfurl_media: false };
+
+  if (token && channel) {
+    try {
+      const res = await fetch("https://slack.com/api/chat.postMessage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          channel, ...common,
+          ...(threadTs ? { thread_ts: threadTs } : {}),
+          // reply_broadcast is opt-in per alert, NOT blanket: broadcasting every reply would push them all
+          // back into the channel and defeat the point of threading. Only the CONFIRM alert (the load
+          // report ops actually reads) sets it. Meaningless without thread_ts, so it is gated on both.
+          ...(threadTs && broadcast ? { reply_broadcast: true } : {}),
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (j?.ok) return (j.ts as string) ?? null;
+      // ⚠ ONLY fall through to the webhook when Slack DEFINITIVELY refused (a parsed body saying ok:false —
+      // not_in_channel / channel_not_found, i.e. the bot was never invited to the private channel, and
+      // nothing was posted). If the body could not be parsed we do NOT know whether Slack committed the
+      // message, and re-sending it on the other transport would DOUBLE-POST — worst of all on the parent
+      // create alert, where the copy that actually got a ts is the one we failed to read, so every
+      // follow-up for that dump would then be orphaned. Losing one alert to a rare transport fault beats
+      // duplicating it; this is the same "silence over a wrong answer" rule the ETA path already follows.
+      if (j === null) {
+        console.error(`[dump] chat.postMessage response unreadable (http ${res.status}) — NOT retrying on the webhook (may already have posted)`);
+        return null;
+      }
+      console.error(`[dump] chat.postMessage refused (${j.error ?? "unknown"}) — falling back to webhook`);
+    } catch (e) {
+      // The request may have been fully transmitted and committed before the connection died. Same rule:
+      // do not risk a duplicate.
+      console.error("[dump] chat.postMessage threw — NOT retrying on the webhook (may already have posted):", e instanceof Error ? e.message : String(e));
+      return null;
+    }
+  }
+
+  const url = Deno.env.get("SLACK_DUMP_WEBHOOK_URL");
+  if (!url) { console.log("[dump] no SLACK_BOT_TOKEN and no SLACK_DUMP_WEBHOOK_URL — skipping #dump-visits alert"); return null; }
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(common) });
   if (!res.ok) console.error(`[dump] slack webhook ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return null; // an Incoming Webhook never returns a usable message id
 }
+
+// The parent "dump created" message, so follow-ups can thread under it. Stored as an append row in the
+// existing jsonb dump_activity.detail — NO DDL, and public.dump_test_cleanup() already deletes
+// dump_activity by dump_visit_id, so a [TEST] dump still leaves 0 residue.
+async function saveParentTs(dumpVisitId: number, ts: string, channel: string) {
+  try {
+    await db.from("dump_activity").insert({
+      action: "slack_parent", dump_visit_id: dumpVisitId, detail: { slack_ts: ts, slack_channel: channel },
+    });
+  } catch (e) { console.error("[dump] could not store slack parent ts:", e instanceof Error ? e.message : String(e)); }
+}
+
+async function getParentTs(dumpVisitId: number): Promise<string | null> {
+  try {
+    const { data } = await db.from("dump_activity")
+      .select("detail").eq("dump_visit_id", dumpVisitId).eq("action", "slack_parent")
+      .order("at", { ascending: false }).limit(1).maybeSingle();
+    const ts = (data?.detail as Record<string, unknown> | null)?.slack_ts;
+    return typeof ts === "string" ? ts : null;
+  } catch (_e) { return null; }  // no parent = post top-level, never an error
+}
+
+// A compact "this is an update to that dump" header for the FOLLOW-UP alerts. The parent message carries
+// the big title + Time/Truck/Team block; repeating all of that on every follow-up is exactly what made four
+// posts read as four unrelated events. Inside a thread this is the right density; outside one (no bot
+// token, or a parent that failed to post) it is the graceful degradation.
+const updateContext = (m: { titleMd: string; whenET: string }, driverName: string) =>
+  [{ type: "context", elements: [{ type: "mrkdwn", text: `↳ Update to *${m.titleMd}* · ${driverName} · ${m.whenET}` }] }];
 
 // 1. DUMP CREATED — fires on GO. The dump event; always notifies. Carries two extra signals
 // (Fred 2026-07-24):
@@ -424,12 +542,28 @@ async function postDumpCreatedAlert(
   dumpVisitId: number,
   driverName: string,
   driverId: number | null,
-  opts?: { afterHours?: boolean; calledAhead?: boolean },
+  opts?: { afterHours?: boolean; calledAhead?: boolean; truck?: TruckResolution | null },
 ) {
   const m = await dumpMeta(dumpVisitId);
   const tag = m.isTest ? "[TEST] " : "";
   const team = (m.teamNames.length ? m.teamNames : [driverName]).join(", ");
-  const fields = [`*Time:* ${m.whenET}`, m.truck ? `*Truck:* ${m.truck}` : null, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
+
+  // TRUCK (Fred 2026-07-27). Always render a Truck line now, because a SILENTLY MISSING field reads as a
+  // broken alert while an explicit "not identified" reads as a known gap (same reasoning as the empty-load
+  // line below). m.truck is the truck actually stamped on the visit; the resolver's verdict explains why
+  // there isn't one. A 'conflict' deliberately stamps nothing and shows BOTH candidates so a human can
+  // resolve what is usually a real operational signal (an unrecorded shift-swap, or a wrong Calendar truck).
+  let truckLine: string;
+  if (m.truck) {
+    truckLine = `*Truck:* ${m.truck}`;
+  } else if (opts?.truck?.confidence === "conflict") {
+    const g = opts.truck.candidates?.gps_vehicle_name ?? "?";
+    const c = opts.truck.candidates?.cal_vehicle_name ?? "?";
+    truckLine = `*Truck:* ⚠️ unconfirmed — GPS says ${g}, Calendar says ${c}`;
+  } else {
+    truckLine = `*Truck:* not identified`;
+  }
+  const fields = [`*Time:* ${m.whenET}`, truckLine, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
 
   // Load = this driver's completed, DERM-required, still-undocumented visits this shift (bucket='load').
   // dump_manifest_handout_list is STABLE (read-only), so counting here records nothing. -1 = couldn't tell.
@@ -451,7 +585,10 @@ async function postDumpCreatedAlert(
   ];
   if (extra.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: extra.join("\n") } });
   blocks.push(...routeContext(m.routeLink));
-  await slackPost(`🚛 ${tag}${m.title} — ${driverName} (dumping)`, blocks);
+  // This is the PARENT message of the dump run. Keep its ts so the follow-ups can thread under it.
+  const ts = await slackPost(`🚛 ${tag}${m.title} — ${driverName} (dumping)`, blocks);
+  const channel = Deno.env.get("SLACK_DUMP_CHANNEL_ID");
+  if (ts && channel) await saveParentTs(dumpVisitId, ts, channel);
 }
 
 // 2. LOAD REPORTED — fires on CONFIRM. The ticked load + what's still missing.
@@ -463,8 +600,6 @@ async function postDumpAlert(
 ) {
   const m = await dumpMeta(dumpVisitId);
   const tag = m.isTest ? "[TEST] " : "";
-  const team = (m.teamNames.length ? m.teamNames : [driverName]).join(", ");
-  const fields = [`*Time:* ${m.whenET}`, m.truck ? `*Truck:* ${m.truck}` : null, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
   const clientLines = confirmed.length ? clientBullets(confirmed) : "_(no clients marked on this load)_";
 
   // MISSING = this driver's DERM-required load visits this shift he did NOT tick (bucket='load',
@@ -475,14 +610,17 @@ async function postDumpAlert(
     missing = (Array.isArray(list) ? list : []).filter((r: Record<string, unknown>) => r.bucket === "load" && r.confirmed === false) as { client_code?: string; client_name?: string }[];
   } catch (_e) { /* best-effort — no missing line rather than a failed alert */ }
 
+  // FOLLOW-UP FORMAT (Fred 2026-07-27): no repeated big title, no repeated Time/Truck/Team block, no
+  // repeated Route Link — the parent message already carries all of that. Just a one-line "update to that
+  // dump" context + the payload. Threads under the parent when a bot token is configured.
   const blocks: unknown[] = [
-    { type: "section", text: { type: "mrkdwn", text: `🚛 ${tag}*${m.titleMd}* — ${driverName}` } },
-    { type: "section", text: { type: "mrkdwn", text: fields } },
-    { type: "section", text: { type: "mrkdwn", text: `*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
+    ...updateContext(m, driverName),
+    { type: "section", text: { type: "mrkdwn", text: `📋 ${tag}*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
   ];
   if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing — scheduled today, not added (${missing.length}):*\n${clientBullets(missing)}` } });
-  blocks.push(...routeContext(m.routeLink));
-  await slackPost(`🚛 ${tag}${m.title} — ${driverName}`, blocks);
+  // broadcast=true: the load report is the one ops actually reads, so it still surfaces in-channel even
+  // though it is a thread reply.
+  await slackPost(`📋 ${tag}${m.title} — ${driverName} reported ${confirmed.length} on this load`, blocks, await getParentTs(dumpVisitId), true);
 }
 
 // 3. MANIFEST LINK — fires on `link`. OLDER VISITS catch-up-linked to a chosen dump.
@@ -495,12 +633,14 @@ async function postManifestLinkAlert(driverName: string, dumpVisitId: number, li
     dumpDriver = (e?.full_name as string) ?? "";
   }
   const tag = m.isTest ? "[TEST] " : "";
-  const sub = [dumpDriver, m.whenET].filter(Boolean).join(" · ");
+  // Threads under the dump it was filed against — which matters MOST here, because the pick-a-dump list
+  // spans 7 days, so this follow-up routinely belongs to a dump from days ago. Time-proximity correlation
+  // would be flat wrong; a thread reply is exactly right.
   await slackPost(`📝 ${tag}${driverName} added ${linked.length} to the ${m.site} dump`, [
-    { type: "section", text: { type: "mrkdwn", text: `📝 ${tag}*${driverName} added ${linked.length} to the ${m.titleMd}*${sub ? `\n_${sub}_` : ""}` } },
+    ...updateContext(m, dumpDriver || driverName),
+    { type: "section", text: { type: "mrkdwn", text: `📝 ${tag}*${driverName} added ${linked.length} to the manifest*` } },
     { type: "section", text: { type: "mrkdwn", text: clientBullets(linked) } },
-    ...routeContext(m.routeLink),
-  ]);
+  ], await getParentTs(dumpVisitId));
 }
 
 // 4. MANIFEST UNLINK — fires on `unmark` (Fred 2026-07-24). The mirror of #3: a driver UNSELECTED visits
@@ -1088,6 +1228,13 @@ Deno.serve(async (req) => {
     const isAfterHours = /AFTER HOURS/i.test(hoursNote);
     const callNote = isAfterHours ? ` Called ahead: ${calledAhead ? "yes" : "NO"}.` : "";
 
+    // WHICH TRUCK is he in? Resolved BEFORE the insert so the truck lands on the visit in the same write
+    // the Slack alert reads from (the hourly derive cron lands a median 21.9h later — far too late to be
+    // the answer). Accurate-or-silent: `truck.vehicle_id` is NULL unless GPS and/or the Calendar are
+    // confident, and a GPS-vs-Calendar disagreement stamps nothing and is surfaced in the alert instead.
+    // The phone's cached ETA fix is reused, so there is no new location prompt.
+    const truck = await resolveTruck(driverId, body.client_lat, body.client_lng);
+
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + 60 * 60_000);
 
@@ -1112,6 +1259,11 @@ Deno.serve(async (req) => {
                callNote,
       p_driver_id: driverId,
       p_team_ids: [driverId],
+      // TRUCK (Fred 2026-07-27): NULL unless the resolver is confident. See resolveTruck + the migration
+      // header. Passing NULL is the normal, correct outcome for an unresolvable dump — the hourly
+      // derive-visit-vehicle-id cron only ever touches vehicle_id IS NULL, so it stays the safety net and
+      // can never fight this write.
+      p_vehicle_id: truck?.vehicle_id ?? null,
       // A TEST dump must NEVER reach Jobber and must ALWAYS stay source='manual' so test_cleanup can find
       // it — even after go-live flips PUSH_TO_JOBBER=true (Fred 2026-07-24, review finding). test_mode is
       // decoupled from the go-live global on purpose: a preview must never land on the real crew schedule.
@@ -1125,14 +1277,19 @@ Deno.serve(async (req) => {
     }
 
     const v = Array.isArray(visit) ? visit[0] : visit;
-    await logActivity("create", driverId, (v?.id as number) ?? null, { dump_key: dumpKey });
+    // Provenance for the truck decision rides in the existing jsonb detail — NOT in a source-prefixed
+    // column (Rule 1). This is what lets us audit "why did it say Moises" after the fact.
+    await logActivity("create", driverId, (v?.id as number) ?? null, {
+      dump_key: dumpKey,
+      truck: truck ? { vehicle_id: truck.vehicle_id, name: truck.vehicle_name, confidence: truck.confidence, candidates: truck.candidates } : null,
+    });
     console.log(`[dump] created visit ${v?.id} ${dumpKey} driver=${driver.full_name} — trigger will push to Jobber`);
 
     // SPLIT dump alert #1 (Fred 2026-07-23): "dump created" fires HERE on GO, so a dump ALWAYS notifies
     // #dump-visits even if the driver never opens the crib sheet. (#2 "load reported" fires on confirm.)
     // Only on a genuine create — the idempotent-hit path above returns early and never reaches here.
     if (v?.id) {
-      try { await postDumpCreatedAlert(v.id as number, driver.full_name, driverId, { afterHours: isAfterHours, calledAhead }); }
+      try { await postDumpCreatedAlert(v.id as number, driver.full_name, driverId, { afterHours: isAfterHours, calledAhead, truck }); }
       catch (e) { console.error("[dump] slack created alert failed:", e instanceof Error ? e.message : String(e)); }
     }
 
