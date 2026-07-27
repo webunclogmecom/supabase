@@ -56,6 +56,27 @@
 
 Add `ticket_number` + backfill, repoint the 20 readers equivalence-gated, migrate the unique indexes — **keeping white/yellow as compat columns**. The drop (D3) is then optional and can wait indefinitely. **Do not run this in the same window as Wave B** — both rewrite `derm_manifests` and hit the same 20 views; a failure would be un-diagnosable.
 
+#### ⚠ DESIGN DECISION (2026-07-27, after a BA flag): compat columns must be DERIVED, not NULL
+
+BA flagged that the Client App visit drawer reads `COALESCE(white_manifest_number, yellow_ticket_number)` from `client.derm_manifests` (shipped 2026-07-25), and DERM Tracker renders `derm.manifests` `display_number` / `display_label` / `jurisdiction` everywhere. Two naive options both fail: **dropping** the columns 400s the app's explicit `.select()` (the `properties.zone` / `derm_manifests.deleted_at` class we've now hit twice); **NULL-filled compat columns** are worse — the drawer silently shows "—" for every visit and nothing errors.
+
+**Adopted: reconstruct the old names as REAL derived values in every read view.**
+
+```sql
+white_manifest_number = CASE WHEN jurisdiction = 'dade'    THEN ticket_number END
+yellow_ticket_number  = CASE WHEN jurisdiction = 'broward' THEN ticket_number END
+-- plus the new ticket_number exposed alongside
+```
+
+**Verified against live data, not assumed:** simulated the reconstruction over all **569 live manifests** → **0 white mismatches, 0 yellow mismatches, 0 COALESCE mismatches**. The invariant that makes it lossless also holds exactly: **452 white-only + 117 yellow-only, 0 both-set, 0 neither-set**.
+
+Consequences:
+- **Zero frontend change** for the Client App drawer and for DERM Tracker (`display_*` output names/semantics preserved — CountyBadge and the "always use display_label" rule stay valid).
+- **No coordinated same-window change** — the sessions decouple instead of synchronizing.
+- **D3 becomes genuinely optional**: with derived columns there is no cost to keeping the old names forever → defer D3 indefinitely unless PITR is on.
+
+⚠ **One lossy edge case:** across all 587 rows (including soft-deleted) exactly **1 soft-deleted row has BOTH numbers set** — the legacy `815064`-class dirt. The reconstruction cannot represent it, so if restored it would lose one number. The collapse migration must resolve that single row **explicitly**, not silently. Live rows are unaffected.
+
 ---
 
 ## Per-change: test / cross-impact / safeguard
