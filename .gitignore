@@ -121,3 +121,7 @@ docs/reports/*.pdf
 # Backups live OUTSIDE this repo, in the workspace-level ..\backups\ (root CLAUDE.md §2). A
 # backups/ folder had grown INSIDE the repo with 9 dump-test cleanup files; moved out 2026-07-28.
 /backups/
+
+# PII: client codes, business names and job numbers. Fred: stays local (2026-07-28).
+# Single file, NOT the folder — docs/audits/ is meant to hold committable PDFs.
+docs/audits/2026-06-27_line_item_typos.pdf

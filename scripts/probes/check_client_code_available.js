@@ -1,12 +1,17 @@
 // scripts/probes/check_client_code_available.js
 //
-// Before assigning or renumbering a client code, check ALL THREE source
-// systems (DB + Airtable + Jobber) for any client whose code starts with
-// the proposed numeric prefix. A DB-only check is NOT enough — Airtable
-// can hold a code that hasn't yet been written back to `public.clients.
-// client_code` (e.g. 2026-05-29 Jerusalem Pizza was 226-JER in AT but
-// NULL in DB, which is why the Aromas 214→226 rename earlier today
-// collided with it).
+// Before assigning or renumbering a client code, check BOTH remaining
+// LIVE systems (DB + Jobber) for any client whose code starts with the
+// proposed numeric prefix. A DB-only check is NOT enough — Jobber can hold a
+// code typed into the Company Name that has not been parsed into
+// `public.clients.client_code` yet.
+//
+// AIRTABLE WAS THE THIRD SOURCE AND IS GONE. It was sunsetted 2026-07-24 and
+// must never be queried again (see the workspace CLAUDE.md / memory
+// project_airtable_sunset). Its historical value here was real — on 2026-05-29
+// Jerusalem Pizza was 226-JER in Airtable but NULL in the DB, which is how the
+// Aromas 214→226 rename collided — but that data now lives in `public.clients`,
+// so the DB check covers it. Do NOT re-add an Airtable branch.
 //
 // CLI:
 //   node scripts/probes/check_client_code_available.js 227
@@ -22,8 +27,6 @@ const SB_URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const PROJECT = process.env.SUPABASE_PROJECT_ID;
 const PAT = process.env.SUPABASE_PAT;
-const AT_KEY = process.env.AIRTABLE_API_KEY;
-const AT_BASE = process.env.AIRTABLE_BASE_ID;
 
 const prefix = process.argv[2];
 const suffix = process.argv[3] || null;
@@ -57,21 +60,11 @@ async function dbCheck() {
   return r.json();
 }
 
-async function atCheck() {
-  const params = new URLSearchParams({ pageSize: '100' });
-  params.append('fields[]', 'Client Code #3');
-  params.append('fields[]', 'Client Name');
-  params.append('filterByFormula', `LEFT({Client Code #3}, ${prefix.length + 1}) = "${prefix}-"`);
-  const r = await fetch(`https://api.airtable.com/v0/${AT_BASE}/tbl5lXLtHKUWilDDj?${params}`, {
-    headers: { Authorization: `Bearer ${AT_KEY}` },
-  });
-  const j = await r.json();
-  return (j.records || []).map(rec => ({
-    rec_id: rec.id,
-    client_code: rec.fields['Client Code #3'],
-    name: rec.fields['Client Name'],
-  }));
-}
+// atCheck() removed 2026-07-28: it queried the Airtable Clients table, and Airtable
+// was sunsetted 2026-07-24. Leaving a live call to a dead API here would have made
+// this probe report "(none)" for Airtable forever, which reads as "checked and clear"
+// rather than "not checked" — a false all-clear on the exact question the probe exists
+// to answer. The DB check now covers it; those codes were migrated into public.clients.
 
 async function jobberCheck(token) {
   // Jobber search by company name prefix — paginated `clients` query, filter by name
@@ -87,49 +80,44 @@ async function jobberCheck(token) {
       body: JSON.stringify({ query: q, variables: { after } }),
     });
     const j = await r.json();
-    if (j.errors) { console.error('Jobber:', JSON.stringify(j.errors).slice(0, 300)); break; }
-    const nodes = j.data?.clients?.nodes || [];
+    if (j.errors || !j.data?.clients) { console.error('Jobber unavailable (skipping Jobber check):', JSON.stringify(j.errors || j).slice(0, 200)); return null; }
+    const nodes = j.data.clients.nodes || [];
     // Filter to exactly prefix- since searchTerm is a substring search
     for (const n of nodes) {
       const cn = n.companyName || n.name || '';
       if (new RegExp(`^${prefix}-`).test(cn)) all.push({ gid: n.id, companyName: cn });
     }
-    if (!j.data.clients.pageInfo.hasNextPage) break;
+    if (!j.data.clients.pageInfo?.hasNextPage) break;
     after = j.data.clients.pageInfo.endCursor;
   }
   return all;
 }
 
 (async () => {
-  console.log(`Checking client-code prefix ${prefix}${suffix ? ` (suffix filter: ${suffix})` : ''} across DB + Airtable + Jobber…\n`);
+  console.log(`Checking client-code prefix ${prefix}${suffix ? ` (suffix filter: ${suffix})` : ''} across DB + Jobber…\n`);
 
   const token = await getJobberToken();
-  const [dbRows, atRows, jbRows] = await Promise.all([dbCheck(), atCheck(), jobberCheck(token)]);
+  const [dbRows, jbRows] = await Promise.all([dbCheck(), jobberCheck(token)]);
 
   console.log(`[DB]       public.clients with code prefix ${prefix}-`);
   if (dbRows.length === 0) console.log('  (none)');
   else for (const r of dbRows) console.log(`  id=${r.id}  client_code=${r.client_code}  name=${r.name}  status=${r.status}`);
 
-  console.log(`\n[Airtable] Clients table with Client Code #3 ~ "${prefix}-"`);
-  if (atRows.length === 0) console.log('  (none)');
-  else for (const r of atRows) console.log(`  ${r.rec_id}  ${r.client_code}  ${r.name}`);
-
   console.log(`\n[Jobber]   Clients whose companyName starts with "${prefix}-"`);
-  if (jbRows.length === 0) console.log('  (none)');
+  if (jbRows === null) console.log('  SKIPPED — Jobber unavailable; result reflects the DB only');
+  else if (jbRows.length === 0) console.log('  (none)');
   else for (const r of jbRows) console.log(`  ${r.gid}  "${r.companyName}"`);
 
   // Also check the exact suffix combination if specified
-  let collision = dbRows.length + atRows.length + jbRows.length > 0;
+  let collision = dbRows.length + (jbRows ? jbRows.length : 0) > 0;
   if (suffix) {
     const exact = `${prefix}-${suffix}`;
     const dbExact = dbRows.find(r => r.client_code === exact);
-    const atExact = atRows.find(r => r.client_code === exact);
-    const jbExact = jbRows.find(r => r.companyName.startsWith(exact + ' '));
+    const jbExact = jbRows ? jbRows.find(r => r.companyName.startsWith(exact + ' ')) : null;
     console.log(`\nExact code "${exact}" availability:`);
     console.log(`  DB:       ${dbExact ? `TAKEN (id=${dbExact.id})` : 'free'}`);
-    console.log(`  Airtable: ${atExact ? `TAKEN (${atExact.rec_id})` : 'free'}`);
     console.log(`  Jobber:   ${jbExact ? `TAKEN (${jbExact.gid})` : 'free'}`);
-    if (dbExact || atExact || jbExact) collision = true;
+    if (dbExact || jbExact) collision = true;
   }
 
   console.log(`\nResult: prefix ${prefix} ${collision ? 'has COLLISIONS — pick another number' : 'is AVAILABLE'}`);
