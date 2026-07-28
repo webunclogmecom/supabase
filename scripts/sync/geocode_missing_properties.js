@@ -22,6 +22,21 @@ const https = require('https');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
+// ⚠ FAIL-LOUD GUARD 1/2 (added 2026-07-28). Do not soften this to a warning.
+// This job ran GREEN every Sunday for weeks while geocoding ZERO properties. `GOOGLE_API_KEY` was
+// never added to the repo secrets, so Tier 3 (Google) returned null on its `if (!GOOGLE_API_KEY)`
+// check, Tier 2 (Samsara) is an unconditional-null stub, Tier 1 (Jobber) resolves few — every
+// property fell through to "no source resolved" and the script still exited 0. A green badge on a
+// job that did nothing is worse than a red one, because nobody investigates a pass.
+// Google is the only tier that resolves at scale (285/285 on the 2026-07-28 backfill), so running
+// without the key is not a degraded run, it is a no-op wearing a success badge.
+if (!process.env.GOOGLE_API_KEY) {
+  console.error('FATAL: GOOGLE_API_KEY is not set. Google is the only tier that resolves at scale ' +
+    '(Samsara is a stub, Jobber resolves few), so this run would report success while geocoding ' +
+    'nothing — exactly the failure this guard exists to stop. Set the secret/env var and re-run.');
+  process.exit(2);
+}
+
 function http(opts, body) {
   return new Promise((res, rej) => {
     const payload = body == null ? null : (typeof body === 'string' ? body : JSON.stringify(body));
@@ -168,4 +183,18 @@ async function tryGoogle(prop) {
   console.log(`  Google:    ${stats.google}`);
   console.log(`  Unresolved: ${stats.none}`);
   console.log(`  Total:     ${targets.length}`);
+
+  // ⚠ FAIL-LOUD GUARD 2/2 (added 2026-07-28). Catches the same false-pass from the other direction:
+  // the key can be PRESENT but dead (revoked, quota exhausted, or IP/referrer-restricted so it works
+  // locally and fails from GitHub's runners). In that case every tier returns null and we would again
+  // exit 0 on a total no-op. Zero resolutions out of a non-empty worklist is never a legitimate
+  // outcome — individual bad addresses fail, but not ALL of them — so it is an error, not a result.
+  // Deliberately NOT a ratio/threshold: partial failures are normal (junk addresses exist) and a
+  // threshold would need tuning and would drift. Total failure is unambiguous.
+  if (targets.length > 0 && stats.none === targets.length) {
+    console.error(`\nFATAL: resolved 0 of ${targets.length} properties. Every tier returned nothing, ` +
+      'which means the geocoding path is broken (dead/restricted GOOGLE_API_KEY, quota, or network) ' +
+      'rather than the addresses being bad. Failing instead of reporting a green no-op.');
+    process.exit(2);
+  }
 })().catch(e => { console.error('FATAL:', e.message); process.exit(2); });
