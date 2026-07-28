@@ -75,3 +75,49 @@ docs/reports/*.pdf
 **/_*.json
 **/_*.jsonl
 **/_*.log
+
+# ⚠ PII GUARD — THIS REPO IS PUBLIC. 2026-07-28: 29 untracked image/PDF artifacts were
+# found sitting in the repo root, left over from the 2026-07-10 OCR band-measurement pass
+# (blk_i*.jpg, pg*.jpg, block_*.png). Spot-checked blk_i9.jpg: a full DERM FOG eManifest
+# showing five client names with street addresses, GDO permit numbers, the vehicle plate,
+# the DERM decal number, the driver's name and signature, and the dump ticket number.
+# They were never committed, but nothing stopped a `git add -A` from publishing them.
+# Manifest/page images are ALWAYS client PII and must never be committed. Work on them in
+# the scratchpad, not the repo. Do NOT narrow these globs to "just the known filenames" —
+# the point is that the next ad-hoc pass gets caught too.
+*.jpg
+*.jpeg
+*.png
+*.JPG
+*.JPEG
+*.PNG
+# PDFs only at the repo ROOT (that is where the scratch lands). Deliberately NOT global:
+# docs/audits/ and docs/reports/ hold intentionally-committed PDFs, and a global rule would
+# shadow them. docs/reports/*.pdf already has its own rule above.
+/*.pdf
+# re-allow committed, non-PII product assets (add explicit exceptions here as needed)
+!docs/**/*.png
+!**/app-icon.png
+
+# ⚠ PII GUARD, PART 2 — ROOT-LEVEL SCRATCH. THIS REPO IS PUBLIC.
+# 2026-07-28: 61 untracked scratch files were swept out of the repo root (ad-hoc Management API
+# query dumps: a1.json, o*.json, cli*.json, scratch_*.*, q*.json, dep.txt, and a stray `nul` from a
+# `> nul` redirect). Several held LIVE CLIENT PII — addr.json and c174.json contained client names
+# with street addresses. Nothing was ever committed, but only luck and the absence of a `git add -A`
+# stood between those files and a public repo.
+# Ad-hoc query output belongs in the session scratchpad, NOT in the repo. These globs are anchored
+# with a leading slash so they only bite at the ROOT, where the scratch lands; docs/, scripts/ and
+# supabase/ keep their own .json/.sql/.js normally.
+/*.json
+!/package.json
+!/package-lock.json
+/*.jsonl
+/*.sql
+/*.js
+/*.txt
+/*.csv
+/*.log
+/nul
+# Backups live OUTSIDE this repo, in the workspace-level ..\backups\ (root CLAUDE.md §2). A
+# backups/ folder had grown INSIDE the repo with 9 dump-test cleanup files; moved out 2026-07-28.
+/backups/
