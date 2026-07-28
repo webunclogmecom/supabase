@@ -26,26 +26,47 @@
 -- With this SECURITY DEFINER function the server function needs NO table grant
 -- at all, and the SERVICE_ROLE-or-ANON fallback stops mattering entirely.
 --
--- ── ⚠ AND IT FIXES A REAL DEFECT, NOT JUST A REFACTOR ──────────────────────
--- The existing lookup is `.ilike("client_code", code)` on RAW USER INPUT from
--- the login box. In `ilike`, `%` and `_` are WILDCARDS, so the login field is a
--- pattern-injection point. Measured on live data:
+-- ── DEFENCE IN DEPTH: exact match instead of `ilike` ───────────────────────
+-- ⚠ READ THIS WHOLE SECTION BEFORE CITING IT. An earlier draft of this header
+-- called the old lookup a live pattern injection. THAT WAS WRONG and is
+-- corrected here: it is NOT exploitable on the live app.
+--
+-- The existing lookup is `.ilike("client_code", code)`, and in `ilike` both `%`
+-- and `_` are WILDCARDS. At the QUERY level that is genuinely unsafe on raw
+-- input — measured on live data:
 --
 --     client_code ilike '%'        -> 276 of 439 clients match (first: 053-PV)
 --     client_code ilike '16_-AVA'  -> 1 match  (underscore wildcard)
+--     client_code ilike '168-A%'   -> exactly 1 match
 --     lower(client_code) = lower('%') -> 0     (the safe form)
 --
--- A bare `%` may or may not authenticate depending on how the caller consumes
--- the result — 276 rows would make a `.maybeSingle()` throw. But that is luck,
--- not protection, and it does NOT save the general case: a NARROWING pattern
--- such as `168-A%` matches exactly ONE client and sails through any consumer.
--- So client codes are discoverable by narrowing (`1%` -> `16%` -> `168-A%`)
--- rather than needing to be known up front, which is precisely the property the
--- portal's security model assumes they do not have.
+-- BUT THE INPUT NEVER REACHES THE QUERY. The same server function validates
+-- first, in an `.inputValidator()` I could not see from the DB side:
+--     code = data.code.trim().toUpperCase()
+--     if (!code || code.length > 32 || !/^[A-Z0-9-]+$/.test(code)) throw
+-- `%` and `_` are not in `[A-Z0-9-]`, so they are rejected before PostgREST is
+-- called. BA proved it from the edge log rather than by reading the regex, with
+-- a positive control so the negatives meant something:
+--     168-A%   -> NO DB REQUEST AT ALL (validator threw)
+--     %        -> NO DB REQUEST AT ALL
+--     16_-AVA  -> NO DB REQUEST AT ALL
+--     999-ZZZ  -> GET ...client_code=ilike.999-ZZZ 200  (well-formed, no match)
+--     168-AVA  -> GET ...client_code=ilike.168-AVA 200  (positive control)
 --
--- This function therefore does an EXACT, case-insensitive match and trims
--- whitespace. `%` and `_` become ordinary characters that simply match nothing.
+-- So this migration is NOT an incident fix. The exact match is kept anyway, on
+-- its own merits: today the only thing between raw login input and a LIKE
+-- pattern is one regex in one file, with nothing enforcing that it stays
+-- correct. `lower(x) = lower(btrim(p))` removes the class of bug rather than
+-- relying on a guard holding. `%` and `_` become ordinary characters.
 -- ⚠ DO NOT "restore parity" by putting `ilike` back — the difference is the point.
+--
+-- LESSON (mine, worth keeping): I reasoned from the query shape to
+-- exploitability without being able to see the caller, and asserted a narrowing
+-- attack "sails through any consumer" when in fact nothing reached the consumer.
+-- The validator was invisible from the DB side for exactly the same reason the
+-- `.from("clients")` was invisible to both bundle audits — both live inside that
+-- one server function. **A query-level defect is not a vulnerability until you
+-- have seen the caller. Say "unsafe shape, reachability unverified" instead.**
 --
 -- ── SHAPE (per BA's spec) ──────────────────────────────────────────────────
 --   customer.get_client_by_code('168-AVA') -> {"id":"…","slug":"168-ava","client_code":"168-AVA"}
