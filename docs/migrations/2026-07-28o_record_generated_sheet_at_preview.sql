@@ -193,3 +193,18 @@ grant execute on function public.fn_resolve_generated_sheet_for_ticket(text) to 
 -- ----------------------------------------------------------------------------
 revoke all on function public.record_generated_sheet_preview(bigint, bigint[], bigint[]) from authenticated;
 revoke all on function derm.record_generated_sheet_preview(bigint, bigint[], bigint[]) from authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 2026-07-28o (amendment 3) — close the default grant on the new provenance table.
+-- Supabase ALTER DEFAULT PRIVILEGES grants SELECT on new tables in an exposed
+-- schema to anon AND authenticated, so derm.address_sheet_clients was created
+-- anon-readable without anyone asking for it. It maps client_id -> printed slot
+-- for a dump run, i.e. "these businesses were serviced together on this sheet",
+-- which is exactly the linkage the Stamp Studio PII work is trying to stop
+-- leaking. Nothing reads it directly: both consumers
+-- (record_generated_sheet_preview, fn_resolve_generated_sheet_for_ticket) are
+-- SECURITY DEFINER and run as owner. Locking it to service_role is a no-op for
+-- them and removes the surface.
+-- ----------------------------------------------------------------------------
+revoke all on derm.address_sheet_clients from anon, authenticated;
+grant select, insert, update, delete on derm.address_sheet_clients to service_role;
