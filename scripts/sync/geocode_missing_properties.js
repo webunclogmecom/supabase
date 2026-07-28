@@ -4,13 +4,13 @@
 //
 // Tiered source resolution (cheaper / more authoritative first):
 //   1. Jobber GraphQL — client.billingAddress sometimes has geocoded coords
-//   2. Airtable Clients table — sometimes carries lat/lng (Yan-curated subset)
-//   3. Samsara geofences — customer geofences have center coordinates
-//   4. Google Maps Geocoding API — fallback for anything else
+//   2. Samsara geofences — customer geofences have center coordinates
+//   3. Google Maps Geocoding API — fallback for anything else
+//   (the old Airtable tier was removed 2026-07-28; Airtable was retired 2026-07-24)
 //
 // Idempotent: only operates on properties WHERE latitude IS NULL. Safe to re-run.
 //
-// Logs the source ('jobber' | 'airtable' | 'samsara' | 'google') per write
+// Logs the source ('jobber' | 'samsara' | 'google') per write
 // so we can audit later.
 //
 // Usage:
@@ -83,24 +83,19 @@ async function tryJobber(prop, jobberClientGid) {
   return { lat: winner.coordinates.latitude, lng: winner.coordinates.longitude, source: 'jobber' };
 }
 
-// ---- Tier 2: Airtable Clients table -----
-async function tryAirtable(prop, airtableClientId) {
-  if (!airtableClientId) return null;
-  const r = await http({
-    hostname: 'api.airtable.com',
-    path: `/v0/${process.env.AIRTABLE_BASE_ID}/Clients/${airtableClientId}`,
-    method: 'GET',
-    headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` },
-  });
-  if (r.status !== 200) return null;
-  const j = JSON.parse(r.body);
-  // Airtable field names vary — try common patterns
-  const f = j.fields || {};
-  const lat = f.Latitude || f.latitude || f.Lat || f.lat;
-  const lng = f.Longitude || f.longitude || f.Lng || f.lng || f.Long || f.long;
-  if (lat && lng) return { lat: parseFloat(lat), lng: parseFloat(lng), source: 'airtable' };
-  return null;
-}
+// ---- Tier 2: Airtable Clients table — REMOVED 2026-07-28 -----
+// Airtable was fully retired 2026-07-24 (CLAUDE.md rule 4: never read it). This tier queried
+// api.airtable.com for a Yan-curated lat/lng and, on any failure, did `if (r.status !== 200) return null`
+// — i.e. it degraded to "this property has no Airtable coordinates" rather than "Airtable is gone."
+// That is indistinguishable from a real miss, so the tier silently contributed nothing while still
+// appearing in the tier chain and in the per-write `source` log. Deleted rather than left to fail
+// quietly: a tier that can never succeed is worse than no tier, because it reads as "checked."
+//
+// Nothing else changes. The chain is now Jobber -> Samsara -> Google (tiers 1, 3, 4). Properties that
+// used to resolve from Airtable now fall through to Samsara/Google, which is where they would have
+// landed anyway since the retirement. ADR 013 (tiered-property-geocoding) describes the 4-tier design;
+// the Airtable tier there is now historical.
+// Do NOT re-add an Airtable tier.
 
 // ---- Tier 3: Samsara geofences -----
 async function trySamsara(prop) {
@@ -134,25 +129,22 @@ async function tryGoogle(prop) {
 
   const targets = await pg(`
     SELECT p.id, p.address, p.city, p.state, p.zip, p.client_id,
-      esl_c_jobber.source_id  AS jobber_client_gid,
-      esl_c_airtable.source_id AS airtable_client_id
+      esl_c_jobber.source_id  AS jobber_client_gid
     FROM properties p
     LEFT JOIN entity_source_links esl_c_jobber
       ON esl_c_jobber.entity_type='client' AND esl_c_jobber.entity_id=p.client_id AND esl_c_jobber.source_system='jobber'
-    LEFT JOIN entity_source_links esl_c_airtable
-      ON esl_c_airtable.entity_type='client' AND esl_c_airtable.entity_id=p.client_id AND esl_c_airtable.source_system='airtable'
     WHERE p.latitude IS NULL
       AND p.address IS NOT NULL
     ORDER BY p.id;
   `);
   console.log(`\n${targets.length} properties need geocoding\n`);
 
-  let stats = { jobber: 0, airtable: 0, samsara: 0, google: 0, none: 0 };
+  let stats = { jobber: 0, samsara: 0, google: 0, none: 0 };
 
   for (const prop of targets) {
     let result = null;
     if (!result) result = await tryJobber(prop, prop.jobber_client_gid).catch(() => null);
-    if (!result) result = await tryAirtable(prop, prop.airtable_client_id).catch(() => null);
+    // Tier 2 (Airtable) removed 2026-07-28 — see the note above the former tryAirtable().
     if (!result) result = await trySamsara(prop).catch(() => null);
     if (!result) result = await tryGoogle(prop).catch(() => null);
 
@@ -172,7 +164,6 @@ async function tryGoogle(prop) {
 
   console.log(`\n=== Summary ===`);
   console.log(`  Jobber:    ${stats.jobber}`);
-  console.log(`  Airtable:  ${stats.airtable}`);
   console.log(`  Samsara:   ${stats.samsara}`);
   console.log(`  Google:    ${stats.google}`);
   console.log(`  Unresolved: ${stats.none}`);

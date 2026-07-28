@@ -45,20 +45,25 @@ async function airtableFetchAll(tableNameOrId) {
   return all;
 }
 
+// ⚠ AIRTABLE IS RETIRED (2026-07-24). This function now FAILS LOUDLY instead of returning data.
+//
+// It is kept (rather than deleted) only because `scripts/populate/populate.js` still imports it by
+// name, so removing the export would break that script's require() at load time. It must never
+// silently succeed: every one of those eight `airtableFetchAll()` calls would now come back EMPTY
+// (the fetch helper returns [] on a non-200), so the old body would have printed
+// "clients=0 visits=0 derm=0 …" and handed populate.js an empty-but-valid dataset. A bulk populate
+// fed empty upstream data reads as "Airtable had nothing to add" rather than "Airtable is gone" —
+// and this is the initial-population path, so the blast radius is the whole warehouse.
+//
+// Throwing is the correct behaviour: there is no valid way to complete an Airtable pull today, and a
+// caller that wants Airtable data has a bug that should surface at the call site, immediately.
+// Do NOT restore the body. Jobber + Samsara are the sources (CLAUDE.md rule 4).
 async function pullAirtable() {
-  console.log('  → Airtable...');
-  const [clients, visits, derm, inspections, routeCreation, drivers, pastDue, leads] = await Promise.all([
-    airtableFetchAll('Clients'),
-    airtableFetchAll('Visits'),
-    airtableFetchAll('DERM'),
-    airtableFetchAll('PRE-POST insptection'),
-    airtableFetchAll('Route Creation'),
-    airtableFetchAll('Drivers & Team'),
-    airtableFetchAll('Past due'),
-    airtableFetchAll('Leads'),
-  ]);
-  console.log(`    clients=${clients.length} visits=${visits.length} derm=${derm.length} inspections=${inspections.length} routes=${routeCreation.length} drivers=${drivers.length} pastDue=${pastDue.length} leads=${leads.length}`);
-  return { clients, visits, derm, inspections, routeCreation, drivers, pastDue, leads };
+  throw new Error(
+    'pullAirtable() is retired: Airtable was fully decommissioned 2026-07-24 and every table read ' +
+    'would return empty, which is indistinguishable from "no new records". Use Jobber/Samsara ' +
+    '(CLAUDE.md rule 4). If you hit this from populate.js, drop the Airtable stage from that run.'
+  );
 }
 
 // ----------------------------------------------------------------------------
