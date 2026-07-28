@@ -1,0 +1,106 @@
+-- 2026-07-28l  Fleet-wide: strip stray whitespace from the Jobber catalog and every line item
+--
+-- ASK (Fred, 2026-07-28), following 2026-07-28k (code 27 only): "do the fleet-wide pass on all 7 catalog
+-- entries... fixing it right? not letting them go with the strays whitespaces?"
+--
+-- Same three-step order as 2026-07-28k, and for the same reason: the line items were the SYMPTOM, the
+-- Jobber Products & Services catalog was the CAUSE. Fixing rows without fixing the catalog looks green and
+-- silently regresses on the next line item created.
+--     1. Jobber catalog        - 7 of 63 entries carried whitespace (code 27 done in 28k, 6 more here)
+--     2. Jobber line items     - jobs + visits
+--     3. this file             - the `public.line_items` mirror
+--
+-- ============================================================================
+-- RESULT
+-- ============================================================================
+--   Jobber catalog : 7/7 fixed -> 0 of 63 entries carry whitespace (verified by re-read)
+--   Jobber items   : 345 parents targeted (138 jobs + 207 visits)
+--                      206 fixed   (each read BACK and confirmed 0-dirty before being counted)
+--                      136 already clean   <-- see PROPAGATION below
+--                        3 gone      (visits deleted upstream in Jobber; all 3 already soft-deleted
+--                                     here by cron_jobber_reconcile_anomalies - 5649/021-GRA,
+--                                     5824/104-PV, 5787/167-FEN. Not a data gap.)
+--                        0 write errors, 0 failed verifications
+--   Mirror (below) : 1122 rows trimmed (152 job-scoped, 210 visit-scoped, 760 invoice-scoped)
+--                    -> 0 of 5883 line items now carry whitespace
+--
+-- ⚠ PROPAGATION (discovered mid-run, worth knowing before anyone repeats this): renaming a CATALOG entry
+-- retroactively renames the job/visit line items that reference it. A dry run taken BEFORE the 6 catalog
+-- renames found 38 parents already clean; the live run taken AFTER found 136. So ~98 job/visit items were
+-- cleaned by the catalog rename alone. INVOICES DO NOT BEHAVE THIS WAY - see below.
+--
+-- ============================================================================
+-- ⚠ THE 760 INVOICE ROWS ARE NOT FIXED AT SOURCE, AND CANNOT BE
+-- ============================================================================
+-- 760 of the 1122 (68%) are invoice-scoped. Jobber freezes a COPY of the name onto each invoice line at
+-- issue time, so the catalog rename does not reach them - verified directly on invoice #2233, which still
+-- reads 'Grease Trap Pumping ' (20 chars) in Jobber after the catalog was clean.
+-- And they cannot be edited: the API exposes jobEditLineItems / visitEditLineItems / quoteEditLineItems /
+-- requestEditLineItems but there is **no invoiceEditLineItems**, and `InvoiceEditInput` has no `lineItems`
+-- field (introspected, full field list checked). 753 of the 760 sit on PAID invoices anyway.
+--
+-- CONSEQUENCE - THE ONE THING THAT IS NOT DURABLE. `webhook-jobber.handleInvoice` does
+-- `line_items.delete().eq('invoice_id', …)` then re-inserts `name: n.name` straight from Jobber
+-- (index.ts ~L92-103 of that handler). So if any of those 691 invoices is ever re-synced, its trailing
+-- space comes BACK into the mirror. The trim below is correct today and will decay for invoices only.
+-- The durable fix is a normalize-on-ingest guard, deliberately NOT installed here because it is a
+-- structural change to a core sync table and is Fred's call:
+--     CREATE FUNCTION public.fn_line_items_normalize_name() RETURNS trigger LANGUAGE plpgsql AS $$
+--     BEGIN NEW.name := btrim(NEW.name); RETURN NEW; END $$;
+--     CREATE TRIGGER trg_aa_line_items_normalize_name BEFORE INSERT OR UPDATE OF name
+--       ON public.line_items FOR EACH ROW EXECUTE FUNCTION public.fn_line_items_normalize_name();
+-- It would also catch the free-text class the catalog fix can never reach (see below). Safe to add: no
+-- unique constraint or natural key on `line_items` involves `name` (only PK id + 4 FKs + a scope CHECK).
+--
+-- ============================================================================
+-- CATALOG-DRIVEN vs FREE-TEXT - the catalog fix does not cover everything
+-- ============================================================================
+-- Of 98 distinct dirty names: 6 are catalog names accounting for 962 rows (86%); the other 92 are
+-- hand-typed one-offs accounting for 160 rows (14%) - 'Hydrojet Cleaning AREA ', 'DYE test ',
+-- 'Sump pump cleaning ', ' Warranty of Drainage ' (that one is LEADING space). The catalog fix stops the
+-- 962-row class at source. Nothing stops the free-text class from recurring except the trigger above or
+-- data-entry discipline. This was actively ongoing, not historical: July alone had 194 dirty items, 192
+-- of them visit-scoped, all named after the catalog entries fixed here.
+--
+-- ============================================================================
+-- WHY THE TRIM IS BEHAVIOUR-NEUTRAL - PROVEN, NOT ASSUMED
+-- ============================================================================
+-- `Grease Trap Pumping` (647 rows) is far more load-bearing than code 27 was, so the 28k literal-survey
+-- was not sufficient on its own. Three independent checks, all run against live Prod BEFORE the write:
+--
+-- 1. DERIVATION FUNCTIONS - the real risk, since ripple #4 (`service_type`) and #5 (`derm_required`) are
+--    derived from line-item NAMES (see docs/reference/line-item-lifecycle-and-jobber-edit-ripple.md §4).
+--    Tested every one of the 99 distinct dirty names, dirty vs trimmed:
+--      fn_line_item_requires_derm : 0 flips      fn_line_item_is_gdo_reporting : 0 flips
+--    Both btrim() on every branch. A name-only edit also changes no amount (amounts come from
+--    unit_price/total_price), so ripple #1 cannot move.
+--
+-- 2. CATALOG JOIN - if anything joined `line_items.name` to `service_line_items.title` by exact string,
+--    trimming would newly CONNECT 1124 rows and silently change derived values. Measured:
+--      rows matching a catalog title BEFORE trim: 0        AFTER trim: 0
+--    (these are legacy free-text names; catalog titles are all coded '01 - …' form).
+--
+-- 3. FULL ROLLBACK SIMULATION - ran the exact UPDATE inside BEGIN … ROLLBACK and diffed 9 fingerprints:
+--      customer.work_orders rows + empty-services count, ops.v_calendar_visit rows + SUM(amount),
+--      visits.derm_required (stored column) AND fn_visit_requires_derm() (recomputed),
+--      ops.client_service_options rows, derm.visits rows, GDO item count.
+--    ALL 9 IDENTICAL. Rollback confirmed held (1124 still dirty afterwards) before doing it for real.
+--    Post-change spot-match: GDO item count = 49, same as pre-change.
+--
+-- Structurally safe too: `public.line_items` has NO ripple logic - its only trigger is
+-- `trg_line_items_updated_at` - so a DB-side rename cannot cascade. `updated_at` stays trigger-managed
+-- (Rule 7): NOT set manually below.
+--
+-- RULE 8 (ADR 010): no schema change. `line_items` is a Jobber-sync mirror and carries no audit trigger by
+-- design (sync-only append = documented opt-out). RULE 1: no source-prefixed columns.
+-- RULE 6: no deletes - in-place text normalization only.
+--
+-- Before-state backup, all 1122 rows with id/name/scope (outside the repo - repos are PUBLIC):
+--   ..\backups\2026-07-28_line_items_fleetwide_whitespace_before.json
+-- Rollback = restore names from that file. Reverting the Jobber side would additionally require renaming
+-- the 7 catalog entries back, which would re-infect everything again - so don't, absent a real reason.
+
+UPDATE public.line_items
+SET name = btrim(name)
+WHERE name <> btrim(name);
+-- 1122 rows. Post-condition: SELECT count(*) FROM public.line_items WHERE name <> btrim(name); -> 0
