@@ -2,15 +2,49 @@
 -- 2026-07-28w — stop the `customer` schema serving the entire client book to
 --               anyone holding the publishable key
 -- ============================================================================
--- ⚠ STAGED, NOT APPLIED. Gate: Building Apps confirms the Field Portal is live
--- on customer.get_client_portal() / customer.get_work_order() (migration 28v)
--- and no longer issues .from("<view>") against the customer schema.
--- Same gate that preceded 28r (Stamp Studio), 28s (DERM Tracker), 28u (ops).
+-- ✅ APPLIED 2026-07-28, after Building Apps confirmed and evidenced the gate.
+-- The gate was: Field Portal live on customer.get_client_portal() /
+-- customer.get_work_order() (migration 28v), with no .from("<view>") left
+-- against the customer schema. Same gate that preceded 28r (Stamp Studio),
+-- 28s (DERM Tracker), 28u (ops). It mattered more here than in any of those:
+-- Field Portal is the one surface a paying client actually looks at, so the
+-- blast radius was external.
 --
--- ⚠⚠ APPLYING THIS BEFORE THE APP SHIPS TAKES THE CUSTOMER-FACING PORTAL DOWN.
--- Field Portal is the one surface a paying client actually looks at. Unlike the
--- three revokes before it, the blast radius here is external. Do not apply it
--- because the migration exists and looks ready.
+-- BA's evidence (deployed artifact, extract-then-list, not grep-for-expected):
+--   12 chunks / 761 KB · 0 reads against the 8 customer views · 2 .rpc() sites
+--   the only surviving .from(...) is the gdo-permits storage bucket
+-- Edge log for the window (DevTools showed only preflights because TanStack
+-- runs the loaders server-side under SSR, so the log is the authoritative record):
+--   1x POST /rest/v1/rpc/get_client_portal -> 200 [role=anon]
+--   1x POST /rest/v1/rpc/get_work_order    -> 200 [role=anon]
+--   GET reads against customer views: 0
+-- Parity was proven rather than assumed: old direct-view reads vs RPC payload
+-- returned identical counts, ordering and dates.
+--
+-- Verified by this session at apply time, live on the publishable key:
+--   customer.clients      206 "Pura Vida Edgewater" + address -> 401 42501
+--   work_orders / scheduled_visits / wo_photos / permits / gdo_reports -> 401
+--   rpc get_client_portal('168-ava')      -> 200, 9,143 bytes
+--   rpc get_work_order('wBiSwNzaeS')      -> 200, 9,153 bytes
+--   anon-readable customer objects 9 -> 0; authenticated unchanged at 9
+--
+-- ⚠ ONE DEPENDENCY NEITHER BUNDLE AUDIT COULD SEE, and the reason this did not
+-- take customer logins down by accident. `src/lib/auth.functions.ts` is a
+-- TanStack Start SERVER function — it ships in NO browser chunk, so both my
+-- audit and BA's correctly concluded "all customer reads live in portal-*.js"
+-- while this sat outside the measured surface entirely. It runs
+--   .from("clients").select("id, slug, client_code").ilike("client_code", code)
+-- for the /login code lookup, and picks its key as
+--   PERSONAL_SUPABASE_SERVICE_ROLE_KEY || PERSONAL_SUPABASE_ANON_KEY
+-- so whether this revoke killed every customer login depended on which side of
+-- that `||` is populated at runtime — NOT knowable from the code. BA settled it
+-- with a real login against the edge log: jwt_role = service_role. Safe.
+-- ⚠ BUT IT IS FRAGILE: if that env var is ever cleared, login silently falls
+-- back to the anon key and then dies here, with no code change to blame. A third
+-- SECDEF RPC for the code lookup would remove the dependency; not done yet.
+-- LESSON: a bundle audit measures the SHIPPED BROWSER SURFACE, not the app.
+-- Server functions, edge functions and SSR loaders are invisible to it. On an
+-- SSR framework, search the source tree as well.
 --
 -- ── WHAT THIS CLOSES ───────────────────────────────────────────────────────
 -- All 9 of 9 objects in `customer` are anon-readable and `customer` is
