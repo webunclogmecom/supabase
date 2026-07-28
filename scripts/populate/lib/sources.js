@@ -1,5 +1,5 @@
 // ============================================================================
-// sources.js — Pull live data from Airtable, Samsara, Fillout into memory
+// sources.js — Pull live data from Samsara into memory (Airtable + Fillout are retired)
 // ============================================================================
 
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../../.env') });
@@ -23,27 +23,12 @@ function httpsGet(host, path, headers) {
 }
 
 // ----------------------------------------------------------------------------
-// AIRTABLE
+// AIRTABLE — dead. The fetch helper (airtableFetchAll) and its AT_KEY/AT_BASE/AT_HDR config were
+// DELETED 2026-07-28, not just left unreachable. pullAirtable() below throws, so the helper had no
+// live caller, but it still held a working GET against api.airtable.com inside a shared library —
+// exactly the shape of dead code that gets copy-pasted back into service later. The only remaining
+// mentions of Airtable in this file are comments.
 // ----------------------------------------------------------------------------
-const AT_KEY = process.env.AIRTABLE_API_KEY;
-const AT_BASE = process.env.AIRTABLE_BASE_ID;
-const AT_HDR = { Authorization: `Bearer ${AT_KEY}` };
-
-async function airtableFetchAll(tableNameOrId) {
-  const all = [];
-  let offset = null, pages = 0;
-  do {
-    const q = new URLSearchParams();
-    q.set('pageSize', '100');
-    if (offset) q.set('offset', offset);
-    const r = await httpsGet('api.airtable.com', `/v0/${AT_BASE}/${encodeURIComponent(tableNameOrId)}?${q}`, AT_HDR);
-    all.push(...(r.records || []));
-    offset = r.offset;
-    pages++;
-    if (pages > 50) break;
-  } while (offset);
-  return all;
-}
 
 // ⚠ AIRTABLE IS RETIRED (2026-07-24). This function now FAILS LOUDLY instead of returning data.
 //
