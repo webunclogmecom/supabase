@@ -1,0 +1,97 @@
+-- 2026-07-28k  Strip the trailing space from line item "27 - GDO Online Reporting"
+--
+-- ASK (Fred, 2026-07-28): "fix the trailing space on code 27 across all jobs".
+--
+-- ============================================================================
+-- THE ROOT CAUSE WAS NOT IN THE LINE ITEMS
+-- ============================================================================
+-- The stored name was '27 - GDO Online Reporting ' (26 chars) instead of 25 on 5 rows. The obvious fix
+-- (edit those 5) would NOT have held, and proving that is the point of this file.
+--
+-- Earlier the same day I created three of these items (009-CN, 110-CLA, 168-AVA) via `jobCreateLineItems`
+-- passing a CLEAN 25-char name, and Jobber stored 26 anyway. Jobber had matched the name to a saved
+-- **Products & Services catalog entry** and normalized to the catalog's spelling, which carried the
+-- trailing space:
+--     productOrService  Z2lkOi8vSm9iYmVyL1Byb2R1Y3RPclNlcnZpY2UvNDgzMDQyMzA=
+--     name = '27 - GDO Online Reporting '   (26)
+-- So the catalog was re-infecting every new line item. Fix order therefore had to be:
+--     1. catalog entry (Jobber)  -> stops the bleeding
+--     2. the 4 live job line items (Jobber)
+--     3. the stale mirror rows (this file)
+-- Doing 3 first would have looked green and silently regressed on the next code-27 add.
+--
+-- Step 1 + 2 were applied through the Jobber GraphQL API, not SQL, and are recorded here because they are
+-- the actual fix; the SQL below is only the mirror catching up:
+--     productsAndServicesEdit(productOrServiceId: <above>, input: {name: "27 - GDO Online Reporting"})
+--     jobEditLineItems(jobId: <job>, input: {lineItems:[{lineItemId: <li>, name: "27 - GDO Online Reporting"}]})
+--       009-CN  #99900562   Z2lkOi8vSm9iYmVyL0pvYkxpbmVJdGVtLzIyMDU4ODU5OQ==
+--       110-CLA #99900746   111-YC #99900749   168-AVA #99900809
+-- Patch semantics verified on the first edit before touching the rest: sending ONLY {lineItemId, name}
+-- left description/quantity/unitPrice/totalPrice/taxable byte-identical (drift check: NONE). Do not pass
+-- the other fields "to be safe" - passing them is what risks blanking them.
+--
+-- ⚠ 111-YC is the only code-27 item still priced $35; 009-CN / 110-CLA / 168-AVA are $0 per Diego
+-- (2026-07-28). This migration deliberately did NOT touch prices.
+--
+-- ============================================================================
+-- VERIFICATION: JOBBER IS THE AUTHORITY, THE DB IS NOT
+-- ============================================================================
+-- The mirror and Jobber disagreed in BOTH directions, so neither side alone was a valid survey:
+--   - visit 6298 (111-YC) read 26 in `line_items` but was already 25 in Jobber (stale mirror row).
+-- So every code-27 item was re-read from Jobber directly: 7 jobs + 31 visits.
+--   result: 7/7 jobs clean, 30/31 visits clean, 0 dirty remaining.
+--   the 1 exception is visit 5739 (168-AVA), which returns "Visit not found" from Jobber - the known
+--   deleted-upstream case that `cron_jobber_reconcile_anomalies.js` soft-deletes. Not a code-27 issue.
+--
+-- ============================================================================
+-- WHY THE TRIM IS BEHAVIOUR-NEUTRAL (checked, not assumed)
+-- ============================================================================
+-- A trim is only safe if nothing matches on the literal 26-char string. Verified across Prod:
+--   - views:     8 depend on public.line_items; only `ops.client_jobs` mentions the phrase, and it
+--                matches `lower(btrim(title))` - whitespace-safe (and reads service_line_items.title).
+--   - functions: only `public.fn_line_item_is_gdo_reporting(text)`, which btrims on EVERY branch
+--                ('^0*27\s*-\s' and 'gdo[^,]*report|report[^,]*gdo').
+--   - zero objects contain a trailing-space literal.
+--   - `public.service_line_items` code 27 title was already clean (25) - the taxonomy was never wrong.
+-- Post-change smoke: v_gdo_reporting_derm_mismatch = 0 rows, v_sa_schedule_gaps = 0 rows,
+-- fn_line_item_is_gdo_reporting matches 49 items (44 coded + 5 legacy free-text) - unchanged.
+--
+-- RULE 8 (ADR 010): no schema change; `public.line_items` is a Jobber-sync mirror and carries no audit
+-- trigger by design (sync-only, opt-out) - only `trg_line_items_updated_at`. `updated_at` stays
+-- trigger-managed (Rule 7): it is NOT set manually below.
+-- RULE 1: no source-prefixed columns. RULE 6: no deletes, this is an in-place text normalization.
+--
+-- Before-state backup (5 rows, outside the repo - repos are PUBLIC):
+--   ..\backups\2026-07-28_line_items_code27_trailing_space_before.json
+-- Rollback is `SET name = name || ' '` on those 5 ids, but do NOT roll back without also reverting the
+-- Jobber catalog entry, or the next sync re-cleans them anyway.
+
+UPDATE public.line_items
+SET name = btrim(name)
+WHERE name ILIKE '%GDO Online Reporting%'
+  AND name <> btrim(name);
+-- 5 rows: ids 91635 (visit 6298), 101116, 101265, 101270, 101283 (jobs 1309, 1521, 1524, 1543)
+
+-- Post-condition: exactly ONE spelling of code 27 remains, at 25 chars, across 44 items.
+--   SELECT name, length(name), count(*) FROM public.line_items
+--   WHERE name ILIKE '%GDO%' GROUP BY 1,2;
+--     '27 - GDO Online Reporting' | 25 | 44
+--     'GDO Report'                | 10 |  3   <-- legacy free-text, NOT in scope of this ask
+--     'GDO Report (online)'       | 19 |  1
+--     'GDO Report (Online)'       | 19 |  1
+-- The 5 legacy free-text variants are still matched by fn_line_item_is_gdo_reporting, so nothing is
+-- missed operationally; renaming them to the coded form is a separate decision for Fred.
+
+-- ---------------------------------------------------------------------------
+-- ⚠ NOT FIXED HERE, AND DELIBERATELY SO: this is a FLEET-WIDE catalog problem, not a code-27 one.
+-- 1129 of 5877 rows in public.line_items (19%) carry stray leading/trailing whitespace across 100
+-- distinct names, because 7 of the 63 Jobber Products & Services entries carry it and re-infect every
+-- item created from them - the identical mechanism fixed above:
+--     'Grease Trap Pumping '  647 rows      'Service Agreement '     116 rows
+--     'Camera Inspection '     85 rows      'Hydrojet Unclogging Residential '  72 rows
+--     'Manual Unclogging '     38 rows      'Manual Unclogging Under Warranty of Drainage '  5 rows
+-- The ask was scoped to code 27, so the rest is left for an explicit decision. If it is taken on, do it
+-- in the SAME order: fix the 7 catalog entries in Jobber FIRST, then the items, then the mirror - and
+-- re-check the literal-match survey above, since 'Grease Trap Pumping' is load-bearing in far more
+-- places than code 27 is.
+-- ---------------------------------------------------------------------------
