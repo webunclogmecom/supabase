@@ -1,0 +1,123 @@
+-- ============================================================================
+-- 2026-07-28y — revoke anon SELECT on the `public` schema
+-- ============================================================================
+-- The last and largest leg of the anon-exposure unwind. `public` was always the
+-- front door: an attacker never needed `derm`, `ops` or `customer` at all, because
+-- a plain publishable key with NO Accept-Profile header reads `public` directly.
+--
+-- ── MEASURED, NOT ESTIMATED ────────────────────────────────────────────────
+-- Live anon REST sweep of all 51 anon-readable public objects (2026-07-28),
+-- using the project's publishable key, which ships in every Lovable bundle:
+--   34 objects RETURN DATA. Largest:
+--     photo_links 16016 · photos 10599 · line_items 5888 · visits 2278
+--     jobs 1783 · visit_assignments 1358 · properties 817 (street/zip)
+--     manifest_visits 600 · derm_manifests 587 · client_contacts 570 (email/phone)
+--     client_locations 449 · clients 439 · inspections 319 · gdos 220
+--     employees 18 (staff full_name / email / phone)
+--   17 objects return 0 rows ONLY because their policies name authenticated /
+--   service_role. The grant is wide open behind them: invoices (2283), quotes,
+--   notes, service_configs, webhook_events_log, vehicle_telemetry_readings
+--   (1,214,946). One loosened policy and all of it is public. This migration
+--   makes the GRANT the guard rather than leaving the policy as the only one.
+--
+-- RLS is enabled and FORCED on most of these, which looks protective, but the
+-- policies are blanket `USING (true)` and several name anon outright:
+-- `admin_review_anon_read_visits`, `admin_review_anon_read_clients`,
+-- `admin_review_anon_read_photos`, `admin_review_anon_read_photo_links`,
+-- `Anon read photos`, `Allow anon read on line_items`.
+--
+-- ── WHY THIS IS SAFE: EVERY CONSUMER WAS MAPPED, NOT SAMPLED ───────────────
+-- Seven deployed apps were bundle-audited by generic extract-then-list (never a
+-- grep for expected table names), then each verdict was independently re-fetched
+-- and adversarially refuted by a second pass. Three of the five initial verdicts
+-- were corrected by that refutation, which is why the pass was run.
+--
+--   stamp-studio   does NOT read public — single client db:{schema:'derm'}
+--   client-app     does NOT read public — db:{schema:'client'}
+--   field-portal   does NOT read public — db:{schema:'customer'} (see below)
+--   visit-calendar reads public.zones, zones_with_usage, visits, line_items
+--                  via a SECOND client db:{schema:'public'} — AUTHENTICATED only
+--   derm-tracker   reads public.derm_manifests, manifest_visits,
+--                  manifest_pickable_visits, visits (+ file_manifest /
+--                  edit_manifest / file_manifest_on_shared_ticket RPCs) via a
+--                  second no-schema client — AUTHENTICATED only
+--   admin-review   reads 15 public objects — AUTHENTICATED only
+--   dump-schedule  reads public HEAVILY but ENTIRELY SERVER-SIDE as service_role
+--                  inside edge fn dump-visit-create; the browser holds no key
+--
+-- All five staff apps are hard render-gated: the audit found zero `loader:` and
+-- zero `beforeLoad:` data paths, so nothing fetches before a session exists.
+-- Edge functions: all 16 build service_role clients — ZERO affected.
+-- GitHub Actions / scripts: ZERO affected (service_role or Management API PAT).
+-- Only probe scripts use the anon key, which is their entire purpose.
+--
+-- ── PRE-FLIGHT PROBES (rolled back, run as the real roles) ─────────────────
+-- The rule from CLAUDE.md is to test EVERY view/RPC the affected role uses, not
+-- a sample, because a passing partial check is not a passing check. Both sides
+-- were run inside a transaction that performed this exact revoke and rolled back.
+--
+-- 1. anon, after the revoke — Field Portal's whole surface still works:
+--      customer.clients OK(439)  work_orders OK(591)  scheduled_visits OK(708)
+--      wo_photos OK(313)  permits OK(128)  gdo_reports OK(78)
+--      inspection_items OK(0)  recommendations OK(0)  client_access_photos OK(0)
+--      rpc get_client_portal OK   rpc get_work_order OK
+--    All 9 customer views are postgres-owned with reloptions NULL (owner-rights),
+--    so they LAUNDER the public table grants. gdo_reports specifically survives
+--    because 28t made fn_visit_is_gdo_reporting SECURITY DEFINER.
+--
+-- 2. authenticated, after the revoke — 26 objects, ZERO failures, including all
+--    9 security_invoker views, which is the sharp case since those execute with
+--    the CALLER's rights rather than the owner's:
+--      zones_with_usage · visits_with_review · manifest_pickable_visits ·
+--      manifest_detail · visit_manhole_options · inspections_with_review ·
+--      driver_inspection_status · v_visits_live · v_vehicle_telemetry_latest
+--
+-- ── WHAT THIS DELIBERATELY DOES NOT DO ─────────────────────────────────────
+-- 1. It does NOT touch policies. The 112 blanket `USING (true)` policies stay,
+--    including the ones naming anon. With no grant they return nothing, so the
+--    exposure is closed — but they remain primed if anyone re-grants. Cleaning
+--    them is a separate change because it carries real regression risk:
+--    `public.clients` and `public.inspections` carry `TO public` policies, and
+--    the PUBLIC pseudo-role INCLUDES authenticated, so dropping them takes
+--    authenticated to 0 rows too. That cleanup is a REPLACE (drop + recreate
+--    `TO authenticated`), not a drop, and it deserves its own gated migration.
+-- 2. It does NOT revoke USAGE ON SCHEMA public from anon. anon must still
+--    resolve the schema to call SECURITY DEFINER functions, and revoking it
+--    yields a confusing schema-level error instead of a per-object one.
+-- 3. It does NOT touch `authenticated`, `service_role`, or `yannick_readonly`
+--    (a real NOLOGIN-false role holding SELECT on 108 public objects — Yannick's
+--    read-only access, not part of this unwind and not mine to change).
+-- 4. It does NOT revoke anon EXECUTE on the 39 anon-executable public functions.
+--    27 are INVOKER trigger functions that raise if called directly, and the
+--    SECDEF ones with arguments are read-only helpers that anon-reachable views
+--    depend on. Tidying that is hygiene, tracked separately.
+--
+-- ── ⚠ TWO FINDINGS THIS MIGRATION DOES NOT FIX — DO NOT CALL anon CLOSED ───
+-- a) EDGE FUNCTION `dump-visit-create` IS AN UNAUTHENTICATED DATA PATH BY
+--    DESIGN. verify_jwt=false on the deployed function, and the `?k=` QR param
+--    is accepted and explicitly ignored ("the page must work from a bare URL, so
+--    there is deliberately no shared secret"). A live probe with no Authorization
+--    and no apikey returned 200. Through it, action 'route' returns client_code,
+--    client_name, address, city, county, GDO permit number, truck and driver
+--    name; 'manifest' returns a similar list. It runs as service_role, so grants
+--    are irrelevant to it — this revoke does nothing to it. After today it is
+--    arguably the largest remaining unauthenticated read path. Needs Fred's call
+--    (it is load-bearing for drivers in the field), so it is flagged, not touched.
+-- b) anon can SUBSCRIBE to the DERM Tracker's private realtime broadcast
+--    channels (`inval:derm_manifests`, `inval:manifest_visits`, `inval:visits`),
+--    confirmed unauthenticated at runtime. Those authorize against
+--    realtime.messages, not public grants, so again this revoke does not cover
+--    it. Payloads are invalidation pings rather than row data, but it is a real
+--    unauthenticated subscription and should be closed separately.
+--
+-- ROLLBACK (restores every app instantly):
+--   GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
+--
+-- AUDIT (ADR 010): grant-only change, no data touched.
+-- ============================================================================
+
+begin;
+
+revoke select on all tables in schema public from anon;
+
+commit;
