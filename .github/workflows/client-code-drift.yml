@@ -1,0 +1,62 @@
+name: client_code drift (DB vs Jobber)
+
+# ───────────────────────────────────────────────────────────────────────────
+# Replaces the client_code step of weekly-drift-audit.yml, deleted 2026-07-28.
+#
+# The old step self-healed the DB when Jobber and Airtable AGREED against it —
+# the unambiguous renumber case behind the 2026-06-17 221-MP -> 224-MP incident.
+# Airtable was sunsetted 2026-07-24, so that second opinion is gone and there is
+# no way to tell "the DB drifted" from "someone mistyped the Jobber name".
+# This replacement therefore REPORTS ONLY and heals nothing. Do not add --heal
+# back without a real second source.
+#
+# ⚠ WHY THIS DOES NOT RELY ON THE BADGE. The workflow it replaces sat RED for six
+# consecutive Sundays on an unrelated `column p.zone does not exist` and nobody
+# noticed, because a weekly green tick is not something anyone reads. So the probe
+# posts to Slack on a FINDING or on a FAILURE, and says nothing on a clean run.
+# Silence is the signal that everything is fine; noise would train people to
+# ignore it.
+#
+# EXIT CODES (all three are load-bearing — see the probe header):
+#   0  checked, no drift            -> job green, no Slack
+#   1  drift found                  -> job RED + Slack
+#   2  could not check (degraded)   -> job RED + Slack
+# A degraded run must never be mistaken for a clean one. The predecessor's real
+# defect was returning an empty set on error, so a broken check printed
+# "0 drifts" and exited 0.
+# ───────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # Sundays 14:30 UTC = 10:30 ET (EDT) / 09:30 ET (EST).
+    # Deliberately after weekly-dedup-audit (14:00) so they don't overlap.
+    - cron: '30 14 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: client-code-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci --ignore-scripts || npm i --ignore-scripts
+
+      # No .env exists on the runner, so every value below comes from secrets.
+      # The probe loads dotenv with override:false precisely so real env wins.
+      - name: client_code drift — DB vs Jobber company-name prefix (report only)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: node scripts/probes/audit_client_code_drift.js
