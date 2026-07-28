@@ -101,6 +101,20 @@ async function clearFlag(visitId: number) {
   await db.from("visit_sync_flags").update({ resolved_at: new Date().toISOString() }).eq("visit_id", visitId).is("resolved_at", null);
 }
 
+// Writes a flag ONLY if no unresolved flag already exists (added 2026-07-28).
+// ⚠ flag() upserts on visit_id, so calling it unguarded from the catch-all would OVERWRITE a precise
+// reason written deeper in the push (create_error, no_job_match, unmapped_employee, delete_error…)
+// with a generic one. The specific message is the useful one; the catch-all is the fallback for
+// failures nobody anticipated. Never reverse this precedence.
+async function flagIfNone(visitId: number, reason: string, detail: string) {
+  const { data, error } = await db.from("visit_sync_flags")
+    .select("visit_id, reason").eq("visit_id", visitId).is("resolved_at", null).maybeSingle();
+  // On a read error, write anyway: a possibly-duplicated reason beats losing the only record of why
+  // this failed. Silence is the failure mode this whole change exists to remove.
+  if (!error && data) { console.log(`[push] visit ${visitId}: keeping existing flag "${data.reason}"`); return; }
+  await flag(visitId, reason, detail);
+}
+
 // resolve the target Jobber job GID for a visit
 async function resolveJobGid(visit: any): Promise<{ gid: string } | { error: string }> {
   if (visit.job_id) {
@@ -500,11 +514,25 @@ Deno.serve(async (req) => {
     // (no job match / create error / a thrown error). A sync_state-only UPDATE does not re-fire the
     // push trigger (its WHEN watches visit_date/start_at/title/..., never sync_state) so no loop.
     const settled = res?.ok === true && !res?.flagged;
+    // Resolve any stale flag once the visit actually settles (added 2026-07-28). Without this, a flag
+    // written by an earlier failed attempt survives a later success, and ops.v_calendar_push_health
+    // (which filters resolved_at IS NULL) keeps showing 'push_failed' for a visit that is now fine.
+    // clearFlag was previously called on the create path only, so every other success leaked one.
+    if (settled) await clearFlag(visitId);
     await db.from("visits").update({ sync_state: settled ? "confirmed" : "failed" }).eq("id", visitId);
     return new Response(JSON.stringify(res), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (e) {
-    console.error(`[push] FATAL visit ${visitId}:`, e instanceof Error ? e.message : String(e));
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[push] FATAL visit ${visitId}:`, msg);
+    // Record WHY (added 2026-07-28). Previously this path set sync_state='failed' and nothing else, so
+    // an unanticipated failure — a Jobber 5xx, a network drop, an auth blip — produced a visit flagged
+    // 'not_in_jobber' in the Calendar with reason NULL and detail NULL, and the actual error existed
+    // only in an edge log nobody reads. That is exactly what happened to visits 7409/7410 on
+    // 2026-07-28 during a ~25-minute Jobber failure window: two visits stuck, cause unrecoverable
+    // after the fact. Deliberately BEFORE the sync_state write so the reason exists by the time the
+    // 'failed' state is visible.
+    await flagIfNone(visitId, "push_exception", msg.slice(0, 500));
     await db.from("visits").update({ sync_state: "failed" }).eq("id", visitId);
-    return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: false, error: msg }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 });
