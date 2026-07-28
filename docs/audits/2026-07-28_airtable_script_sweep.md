@@ -103,3 +103,31 @@ fell into. Absence of a bad result is not evidence the check ran.
 One job was red for six weeks and one was green while doing nothing, and both went unnoticed because
 nobody reads a weekly badge. Prefer jobs that fail loudly on a missing dependency over jobs that
 degrade quietly.
+
+---
+
+## ⚠ Correction: where the 34 file moves actually landed in git history
+
+**The 34 archive renames are NOT in the sweep commit `33848bc`.** They are in **`601d32b`**, the
+@Supabase session's commit titled *"Revoke anon SELECT on the five Stamp-Studio-only derm views"* —
+which contains 36 files: its own 2 (the derm-views migration) plus all 34 of these renames.
+
+**Cause.** `git mv` stages immediately. This session ran the 34 moves, then spent ~10 minutes hardening
+the two survivors, checking workflow references and writing this document. During that window the other
+session ran a stage-all commit **in the same working tree** and absorbed the staged renames. Both
+sessions share one checkout, so staged-but-uncommitted work is not private to the session that staged it.
+
+**Impact: none functionally.** Every file is at its correct `_archive/` path, tracked, pushed, and no
+workflow reference broke (verified: all `node scripts/...` paths in `.github/workflows/` resolve).
+The damage is archaeological: `601d32b` claims to be about anon SELECT and silently carries an unrelated
+34-file refactor, while `33848bc`'s message describes archiving files it does not contain.
+
+**Not repaired by rewriting history.** Both commits are pushed and the other session is active; a
+force-push to `main` needs Fred's explicit sign-off (repo CLAUDE.md) and would disrupt a live session.
+This note is the repair: anyone running `git log --follow` on an archived probe will land on `601d32b`
+and find the explanation here.
+
+**Lesson for the parallel-session protocol.** `git mv` / `git add` are shared state, not session-local.
+Either commit moves immediately in the same breath as making them, or claim the path in
+`WORKING-NOW.md` first. This session claimed `public.line_items` and the repo-root sweep but never
+claimed `scripts/`, which is exactly the gap the collision fell through.
