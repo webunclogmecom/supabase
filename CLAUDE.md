@@ -100,6 +100,37 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
 
 ---
 
+## ⚠ Grants, views and functions — the asymmetry that has bitten three times
+
+**TABLES LAUNDER THROUGH AN OWNER-RIGHTS VIEW. FUNCTIONS DO NOT.**
+
+A view owned by `postgres` with `reloptions = NULL` (i.e. **not** `security_invoker`) runs with the
+OWNER's privileges, so a low-privilege caller can read base tables it holds no grant on. That is the
+whole basis of the schema-per-app pattern — `customer.*`, `client.*`, `ops.*` all work this way.
+
+**But a SECURITY INVOKER *function* called from inside that same view still executes with the
+CALLER's privileges** and raises `42501` if the caller lacks SELECT on what the function touches.
+The view laundering the table grant makes it look safe right up until the function fires. Three hits:
+
+| Date | Object | What would have broken |
+|---|---|---|
+| 2026-07-28h | `fn_resolve_gdo_id` granted to `service_role` only | Visit Calendar 42501 for **every** staff user — caught by a rolled-back probe, not by reading the view |
+| 2026-07-28t | `fn_visit_is_gdo_reporting` (INVOKER) inside `customer.gdo_reports` | Field Portal's GDO Permits section, customer-facing, on the `public` anon revoke |
+| ongoing | any anon/authenticated-EXECUTE function that reads a table | the next one |
+
+**Rules:**
+- Before revoking a grant, test **every** view/RPC the affected role uses — not a sample. The Field
+  Portal check passed clean on 4 of 9 views; only the full 9-view sweep found the break. **A passing
+  partial check is not a passing check.**
+- A helper called from an anon-reachable owner-rights view should be `SECURITY DEFINER` with a
+  **pinned `search_path`** (pinning is the actual hardening; SECDEF without it is the footgun).
+- Auditing "who can reach this data" means auditing function EXECUTE separately from table grants.
+  `REVOKE ... ON ALL TABLES` does nothing to `EXECUTE`.
+- Supabase's `ALTER DEFAULT PRIVILEGES` hands out grants nobody wrote: new tables in an exposed
+  schema come out anon-readable, new `public` functions come out `authenticated`-EXECUTABLE. Check
+  every new object, and revoke explicitly. (`derm.address_sheet_clients` and a SECDEF wrapper both
+  needed this on 2026-07-28.)
+
 ## Column-name gotchas
 
 Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Most-repeated mistakes:
