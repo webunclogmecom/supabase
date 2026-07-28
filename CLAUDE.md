@@ -58,13 +58,15 @@ After ANY change to Prod schema, re-check this rule before declaring the migrati
 Every audit row now carries `app_source` and `request_context`. To find "who wrote this":
 - `app_source = 'derm-tracker'` — DERM Tracker UI (derm.unclogme.app)
 - `app_source = 'field-portal'` — Field Portal (fp.unclogme.app)
-- `app_source = 'admin-review'` — Admin Review (grease-buddy-dash)
+- `app_source = 'admin-review'` — Admin Review (`review.unclogme.app`, formerly `grease-buddy-dash`)
+  - ⚠ **HISTORICAL GAP 2026-07-03 → 2026-07-29: these writes landed as `other:review.unclogme.app`, NOT `admin-review`.** The app moved to its custom domain but the trigger's CASE still matched only `%grease-buddy-dash%`, so 232 rows across 4 tables fell through to the `other:` branch. Fixed forward in `2026-07-29c`; **the historical rows were deliberately NOT relabelled** (an audit trail is a record of what was observed, and rewriting it needs Fred's explicit OK). **When running the §5.5(b) "is this grant still used" check over historical data, query `app_source IN ('admin-review','other:review.unclogme.app')` or you will conclude the app went dead on 2026-07-08 when it is writing today.** This is the §5.5(b) detector failing in exactly the way §5.5(b) exists to prevent — see also the `X-App-Source` caveat below.
 - `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
 - `app_source = 'send-derm-email'` — the DERM email edge fn ("Send DERM to city/clients"); the row also carries `sent_by_email`/`sent_by_user_id` (the human who clicked, from the app-forwarded JWT — 2026-07-21h)
 - `app_source = 'gdo-report-bot'` — the Automated GDO Reporting bot (rpa-derm-queue/result edge fns; 2026-07-21i). Machine actor, not a person.
 - `app_source = 'sql'` — direct Management API / psql / scripts (no PostgREST context)
 - `app_source = 'other:<host>'` — unmapped origin (add to the trigger CASE when an app subdomain is added)
 - explicit `X-App-Source: <name>` header overrides everything — use for scripts, bots, one-off curl
+- ⚠ **DO NOT ASSUME AN APP'S `X-App-Source` HEADER COVERS ITS WRITES.** An app can build more than one Supabase client, and the header is per-client. Admin Review sets `X-App-Source: admin-review` on **only** its secondary (legacy "prod mirror") client; the client that performs the writes that actually land sets no header at all, so attribution fell through to the Origin CASE — which was stale. **Origin-based mapping is the durable source and the header is the override, so keep the CASE correct even for apps that "have a header."** As of `2026-07-29c` the CASE pins all four custom domains (`review` / `studio` / `dump` / `clients`.unclogme.app) so a header removal cannot silently open a new `other:` bucket. Specific hosts MUST stay above the `%lovable.app%` catch-all.
 
 Old rows (pre-2026-05-23 18:30 UTC) have `app_source IS NULL` — no attribution available retroactively.
 
