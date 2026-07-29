@@ -320,3 +320,59 @@ service → on confirm, re-call with `p_force: true`. On success, refetch the dr
    `cron.job.command` for `jobber-visit-drift-reconcile` contains a plaintext `x-sync-key`. It should
    be rotated and moved to Vault (as `jobber_push_service_key` already is). Flagged to Fred
    2026-07-29.
+
+
+---
+
+## 9. Post-build corrections (2026-07-29, after the backend shipped)
+
+Two real defects, both found by exercising the system rather than reading it.
+
+### 9.1 The view 403'd for every real user — SECURITY INVOKER inside an owner-rights view
+
+@Building Apps captured `GET /rest/v1/v_calendar_push_health_by_visit?select=… -> 403` from the live
+Calendar. Reproduced as the actual role:
+
+```
+BEGIN; SET LOCAL ROLE authenticated;
+SELECT * FROM ops.v_calendar_push_health_by_visit LIMIT 1;
+-- ERROR 42501: permission denied for table entity_source_links
+-- CONTEXT: SQL function "fn_visit_push_duplicate_of" statement 1
+```
+
+**This is the exact trap §4.1 of this spec warns about, and I verified the wrong half of it.** I checked
+that `authenticated` held EXECUTE on the function — necessary, and not sufficient. The function was
+SECURITY INVOKER, so it read `entity_source_links` as the *caller*, who has no SELECT on that table.
+Table grants launder through an owner-rights view; the function body does not.
+
+Fixed in `2026-07-29b`: the helper is now SECURITY DEFINER with a pinned `search_path`, the pattern
+CLAUDE.md already prescribes. Chosen over granting `authenticated` SELECT on the whole cross-system
+bridge table.
+
+⚠ **Why every test missed it:** all of them ran through the Management API, i.e. as `postgres`, which
+can read everything. `retry_visit_push` also passed because it is SECURITY DEFINER and therefore
+called the helper in a definer context — the view was the only path that ran it as the caller.
+**A grant matrix proves who may EXECUTE; it says nothing about what the function touches once it runs.
+Test as the role, not as the owner.**
+
+### 9.2 `app.suppress_jobber_push` does NOT stop a staged visit from reaching Jobber
+
+Six test visits were staged with the push suppressed, and **five were pushed to Jobber anyway** within
+3 minutes, creating real (test-client) visits that then had to be deleted.
+
+Cause: suppression stops the *synchronous trigger*. It does not remove the row from the
+**`sync_state='pending'` queue**, and a pre-existing pg_cron drains that queue every 3 minutes:
+
+```
+resolve-stale-visit-sync-pending   */3
+  WHERE source IN ('visit-calendar','supabase_cron') AND deleted_at IS NULL
+    AND updated_at < now() - interval '3 minutes'
+    AND visit_status='scheduled' AND sync_state='pending'
+```
+
+`trg_mark_visit_sync_pending` sets `pending` on insert, so a suppressed insert still enqueues.
+
+**Correct way to stage a failed-push visit: set `sync_state='failed'`, not `pending`.** That both
+matches what the row represents and falls outside the drain cron's predicate. Removal is the sanctioned
+path — soft-delete WITHOUT suppression, which pushes the delete and clears Jobber (verified: all five
+returned "Visit not found" afterwards).
