@@ -49,20 +49,54 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const GQL_VERSION = "2026-04-16";
 
+// ⚠ CORS. The Calendar calls this from a BROWSER, which sends an OPTIONS preflight first (custom
+// headers + JSON content-type). Without this the preflight got 405, the POST was never sent, and the
+// feature was 100% unreachable from the only surface that matters — while every server-side test
+// passed, because server-to-server calls do not preflight. Found by @Building Apps driving a real
+// Save, not by any backend test, and it could not have been found by one.
+// These headers must be on EVERY response, not just the OPTIONS reply: a POST answer without them is
+// blocked by the browser after the fact, which looks identical to a network failure.
+// ⚠ ECHO the requested headers; do NOT hardcode the list.
+// First attempt hardcoded "authorization, x-client-info, apikey, content-type" and the preflight
+// returned 200 — but supabase-js still failed, because current versions also send
+// x-supabase-api-version. The browser silently kills the request when ANY requested header is
+// unlisted, and the symptom is "Failed to send a request to the Edge Function" with NO console error
+// and NO POST in the network log: there is nothing to debug from, because the request never exists.
+// A bare fetch() with only Content-Type sailed through, which is what isolated it to the SDK.
+// Echoing means an SDK upgrade that adds a header cannot break this again.
+const ALLOW_FALLBACK = "authorization, x-client-info, apikey, content-type, x-supabase-api-version";
+function cors(req: Request) {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": req.headers.get("access-control-request-headers") ?? ALLOW_FALLBACK,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+  };
+}
+
 // ---- patch partition -------------------------------------------------------
 const PUSHABLE = ["visit_date", "start_at", "end_at", "title", "notes", "team_ids"];
 const LOCAL_ONLY = ["vehicle_id", "driver_id"];
 const LINEITEM_KEYS = ["service_line_item_ids", "line_items", "line_item_prices", "line_item_descriptions"];
 
+// NOTE: no per-request global here on purpose. An earlier draft stashed the Request in a
+// module-level variable so these helpers could echo its headers, but Deno.serve handles requests
+// concurrently, so two overlapping calls would read each other's. Echoing only matters on the
+// PREFLIGHT (where the browser decides whether to send at all) and `req` is in scope there; on the
+// actual response the browser ignores Allow-Headers, so the static list is correct and race-free.
+function hdrs() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": ALLOW_FALLBACK,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+  };
+}
 function fail(code: string, message: string, extra: Record<string, unknown> = {}) {
-  return new Response(JSON.stringify({ ok: false, code, message, ...extra }), {
-    status: 200, headers: { "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify({ ok: false, code, message, ...extra }), { status: 200, headers: hdrs() });
 }
 function done(body: Record<string, unknown>) {
-  return new Response(JSON.stringify({ ok: true, ...body }), {
-    status: 200, headers: { "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify({ ok: true, ...body }), { status: 200, headers: hdrs() });
 }
 
 async function getJobberToken(): Promise<string> {
@@ -149,12 +183,15 @@ function bearerRole(req: Request): string | null {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+  // Preflight FIRST — before auth, before body parsing. A browser preflight carries no
+  // Authorization header, so answering it after the role check would 403 every browser caller.
+  if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: cors(req) });
+  if (req.method !== "POST") return new Response("method not allowed", { status: 405, headers: cors(req) });
 
   const role = bearerRole(req);
   if (role !== "authenticated" && role !== "service_role") {
     return new Response(JSON.stringify({ ok: false, code: "forbidden", message: "Not permitted." }), {
-      status: 403, headers: { "Content-Type": "application/json" },
+      status: 403, headers: hdrs(),
     });
   }
 
@@ -244,6 +281,22 @@ Deno.serve(async (req) => {
     if (pushable.some((k) => ["visit_date", "start_at", "end_at"].includes(k))) {
       const startIso = target.start_at ?? null;
       if (!startIso) throw { code: "bad_request", group: "schedule", why: "all-day visits can't be rescheduled here" };
+
+      // ⚠ PRESERVE DURATION when the patch moves start_at but says nothing about end_at.
+      // Without this, `target` keeps the OLD end_at, so moving a visit to a later date sends
+      // startAt > endAt and Jobber refuses with "startAt needs to be before endAt" — every single
+      // time. A plain date drag is the commonest edit there is, so this was a guaranteed failure on
+      // the most ordinary action. Found by running the function, not by reading it: the test that
+      // caught it was aiming at something else entirely.
+      // Shifting the end by the same delta is what a calendar drag means: move the appointment,
+      // keep its length. An explicit end_at in the patch always wins over this.
+      if (!("end_at" in patch) && visit.start_at && visit.end_at) {
+        const delta = new Date(String(target.start_at)).getTime() - new Date(String(visit.start_at)).getTime();
+        if (Number.isFinite(delta) && delta !== 0) {
+          target.end_at = new Date(new Date(String(visit.end_at)).getTime() + delta).toISOString();
+        }
+      }
+
       const input: any = { startAt: etLocal(startIso) };
       if (target.end_at) input.endAt = etLocal(target.end_at);
       await push("schedule", () => gql(token, M_EDIT_SCHED, { id: gid, input }), (d) => d?.visitEditSchedule);
