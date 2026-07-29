@@ -1,7 +1,22 @@
-# Migration file naming — and the letter-collision problem
+# Migration file naming — and the prefix-collision problem
 
-*Written 2026-07-29 after measuring 19 colliding filenames across 8 dates. Read this before you name
-a new migration.*
+*Written 2026-07-29, corrected twice the same evening as the measurement got sharper. Read this before
+you name a new migration.*
+
+> **⚠ HEADLINE, and it is bigger than either of the first two passes said:
+> 266 of 459 migration files (58%) do NOT have a unique prefix.**
+>
+> ```
+> lettered prefixes used by 2+ files:    19 prefixes  ->   41 files
+> bare-DATE prefixes used by 2+ files:   36 prefixes  ->  225 files
+> TOTAL files with a non-unique prefix:              266 of 459  (58%)
+> ```
+>
+> **The first two passes of this doc both said "19 files" and "55 files". Both were wrong, and wrong
+> in the same way: 19 and 36 are counts of *prefixes*, not of files.** A prefix used by 3 files is one
+> prefix and three ambiguous migrations. Mistaking one unit for the other understated the problem by
+> roughly 5x. Kept here on purpose, because a units error is the easiest way for a careful measurement
+> to produce a confident wrong number: see `feedback_inference_travels_past_measurement` in memory.
 
 ## The problem, measured
 
@@ -27,9 +42,12 @@ understates it, because the **bare date with no letter is itself a shared prefix
 writes another bare-date name. Measured across `docs/migrations/`:
 
 ```
-19 files  share a lettered prefix   (2026-07-29b .. h, 2026-07-20d, 2026-05-17a, ...)
-36 prefixes are a bare DATE used by 2+ files
+19 lettered prefixes used by 2+ files   ->   41 files
+36 bare-DATE prefixes used by 2+ files  ->  225 files
 ```
+
+*(Counts corrected: the original wording here said "19 files" and mixed prefixes with files. The
+bare-date class is by far the larger one, 225 files against 41.)*
 
 The worst is **`2026-05-26`, which names SEVEN different migrations**:
 
@@ -45,8 +63,10 @@ apply / recovery / rollback trio for the same subsystem, i.e. exactly the case w
 one is most damaging. That same date also carries `x`, `y`, `z` suffixes, a third ad-hoc scheme.
 
 **This does not change the fix.** A `HHMM` prefix is unique per minute, so it closes both classes at
-once. It does mean the letter scheme failed **55 times**, not 19, and that the failure predates the
-three-session setup: a single session re-using a bare date on its own is enough to trigger it.
+once. It does mean the scheme failed across **55 prefixes covering 266 files (58% of the directory)**,
+not 19 of anything, and that the failure **predates the three-session setup**: a single session
+re-using a bare date on its own is enough to trigger it. So the letter scheme was never sound; adding
+sessions only made an existing flaw visible.
 
 **Why the recovery recipe below matters more than it looks:** with a bare-date prefix there is not even
 a letter to hint at intended order, so `git log --diff-filter=A` is the *only* way to recover the
