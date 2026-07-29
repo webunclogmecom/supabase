@@ -76,6 +76,59 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
 
+  // ── kind='address' REQUIRES A REAL SIGNED-IN CALLER ──────────────────────
+  // WHY: `address` returns the RAW DERM Address sheet, which rosters EVERY
+  // co-client on a shared dump ticket (business name + street address, up to 19
+  // per sheet). The Field Portal's blackout pipeline exists precisely to hide
+  // that from a customer — but until 2026-07-29 this endpoint handed the
+  // UNREDACTED sheet to anyone, with NO apikey, from ANY origin. Verified:
+  //     POST {manifest_id, client_code, kind:'address'}  (no key, evil origin)
+  //       -> 200 + signed URL -> 288,553 bytes of the raw sheet
+  // The only gate was `client_code`, which is printed on invoices and manifests
+  // and is therefore not a secret. So knowing one client code exposed that
+  // client's whole co-tenancy graph. Privatising the storage buckets does NOT
+  // fix this: the function signs as service_role and reaches the object anyway.
+  //
+  // ⚠ SCOPED TO 'address' ONLY, AND THAT NARROWNESS IS THE POINT.
+  //   fog      — the per-client REDACTED sheet. Field Portal, anon BY DESIGN.
+  //   manifest — the WWTP receipt card. ALSO Field Portal, anon BY DESIGN.
+  // An earlier analysis recommended gating `address` AND `manifest`; that would
+  // have taken the WWTP Disposal Receipt card offline for every customer.
+  // DERM Tracker (the only `address` consumer) is staff-authenticated, so it is
+  // unaffected — its client carries the session, confirmed header-level
+  // (`role: authenticated`, `is_anonymous: false`).
+  //
+  // Accepts a real user JWT, or service_role for server-side callers. The anon
+  // publishable key is rejected in both its JWT and its newer opaque form,
+  // because neither resolves to a user and neither carries role=service_role.
+  if (kind === 'address') {
+    const authz = req.headers.get('Authorization') ?? ''
+    const token = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
+    let allowed = false
+
+    if (token) {
+      const { data } = await db.auth.getUser(token)
+      if (data?.user) allowed = true
+      if (!allowed) {
+        // service_role presents a valid JWT with no `sub`, so getUser() returns
+        // nothing — check the role claim directly rather than rejecting it.
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1] ?? ''))
+          if (payload?.role === 'service_role') allowed = true
+        } catch { /* not a JWT (opaque publishable key) → stays denied */ }
+      }
+    }
+
+    if (!allowed) {
+      // Explicit and loud: a staff app that loses its session must fail
+      // diagnosably, not render an empty gallery that looks like "no documents".
+      return json({
+        error: 'authentication_required',
+        detail: "kind='address' returns the raw multi-client DERM sheet and requires a signed-in staff session",
+      }, 401, cors)
+    }
+  }
+
   // Resolve the client slug — CASE-INSENSITIVE (2026-07-27). The FP route slug is lowercase
   // ('150-kos') while clients.client_code is uppercase ('150-KOS'), so the old exact `.eq()`
   // returned 403 on every call; the sibling RPC customer.get_visit_by_slug_and_token already
