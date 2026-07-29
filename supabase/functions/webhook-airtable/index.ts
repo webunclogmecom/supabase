@@ -1038,7 +1038,27 @@ async function processPayload(payload: any): Promise<{ processed: number; errors
 // already had the record in hand.
 
 const ENTITY_TO_HANDLER: Record<string, string> = {
-  'client': 'clients',
+  // 'client': SEVERED 2026-07-30 (Fred's explicit call). DO NOT RE-ADD.
+  //
+  // Same shape as the derm_manifest severance below, and found the same way: CLAUDE.md and
+  // the memory both said Airtable was fully retired (2026-07-24), but this entry was STILL
+  // LIVE IN CODE. Measured 2026-07-29 before removal:
+  //   - function deployed ACTIVE, verify_jwt=false, REDEPLOYED 2026-07-22 19:10Z, i.e. AFTER
+  //     the sunset, so "it is old code nobody touches" was false too;
+  //   - AIRTABLE_WEBHOOK_TOKEN still a live function secret, so the Bearer route authenticated;
+  //   - webhook_events_log: automation_client processed 367 times, last 2026-07-15.
+  //
+  // WHY IT HAD TO GO NOW, and not "whenever": handleClientRecord blind-overwrites the exact
+  // columns the Client App phase-2 "wave 1" is making user-editable —
+  // properties.access_hours_start/end, access_days, county, grease_trap_manhole_count
+  // (L216-243), plus gdos.permit_expiration (L385-392) and whole-row gdos INSERTs (L403-410).
+  // Shipping wave 1 with this live would have produced the worst failure mode in the phase-2
+  // scoping doc: a user edits a field, sees success, and the value reverts, with the audit
+  // trail blaming an external system.
+  //
+  // The read-only client lookups at L575 and L796 (ilike name -> select id) are NOT writes and
+  // are deliberately left alone; the receivable/route/inspection handlers still need them.
+  //
   // 'derm_manifest': SEVERED 2026-07-21 (Fred's explicit call). DO NOT RE-ADD.
   //
   // CLAUDE.md has said since 2026-06-26 that the AT→DERM automation is retired and
@@ -1083,6 +1103,31 @@ async function handleAutomationRequest(payload: any, startMs: number): Promise<R
 
   // Soft-delete path — unlinks and marks deleted without caring about handler
   if (changeType === 'destroyed') {
+    // ⚠⚠ SEVERANCE GUARD (2026-07-30) — DO NOT REMOVE, AND UNDERSTAND IT BEFORE EDITING ABOVE.
+    //
+    // This branch runs BEFORE the ENTITY_TO_HANDLER lookup further down, and it deliberately
+    // "does not care about handler". So **removing an entity from ENTITY_TO_HANDLER does NOT
+    // stop this path**: it resolves the entity_source_link and blind-writes
+    // `notes = '[Deleted from Airtable <date>]'` on `${entity_type}s` for ANY linked entity.
+    //
+    // That means the 2026-07-30 'client' severance above would have been INCOMPLETE on its own:
+    // a destroyed-client event would still have overwritten clients.notes, which is one of the
+    // wave-1 editable fields. The same gap was left open for derm_manifest by the 2026-07-21
+    // sever, and this guard closes that too.
+    //
+    // Tying this path to the SAME map gives one source of truth for "is this feed still live".
+    // If you re-enable an entity, it becomes writable here again automatically — which is the
+    // correct coupling, but be deliberate about it.
+    if (!ENTITY_TO_HANDLER[entity]) {
+      await logWebhookEvent(supabase, 'airtable', `automation_${entity}`, payload, {
+        event_id: recordId,
+        status: 'skipped',
+        error_message: `Severed feed: entity '${entity}' has no registered handler, so its destroyed-record note-write is refused. Payload captured.`,
+        processing_ms: Date.now() - startMs,
+      })
+      return ok({ skipped: true, reason: `severed feed: ${entity}`, changeType: 'destroyed' })
+    }
+
     try {
       const { data: link } = await supabase
         .from('entity_source_links')
