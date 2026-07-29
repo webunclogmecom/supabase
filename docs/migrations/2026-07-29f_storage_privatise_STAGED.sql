@@ -38,18 +38,66 @@
 -- (public/customer/derm/client). Privatising invalidates STORED DATA, not just
 -- code paths. Consumers verified from live bundles, not from docs:
 --
---   Field Portal   DERM FOG eManifest card passes a `url` prop, and the card
---                  short-circuits: `if (s !== void 0) { ...; return }` — so it
---                  NEVER calls get-derm-doc. This is the same dead branch found
---                  on 2026-07-27 and it is still live. BREAKS.
---                  WWTP Disposal Receipt card passes `kind` -> already signed. OK.
---                  Photos render `<img src={thumbnail_url ?? url}>` raw at 3 sites
---                  against GT - Visits Images. BREAKS.
---   Visit Calendar `Yt.storage.from("gdo-permits").getPublicUrl(t)` — confirmed
---                  in the deployed bundle. The "View permit" link BREAKS.
---   Admin Review   hard-coded https://…/object/public/GT%20-%20Visits%20Images/…
---                  with no auth header at all. Every photo BREAKS.
---   DERM Tracker / Stamp Studio / Client App — see the consumer map.
+-- FULL CONSUMER MAP — 7 targets audited from live bundles/source, then EVERY
+-- verdict independently re-fetched and adversarially refuted. ALL SEVEN BREAK.
+--
+--   Field Portal   BREAKS. FOG card passes a `url` prop and card G short-circuits
+--                  `if (s !== void 0) { …; return }` so get-derm-doc is
+--                  UNREACHABLE for it (the 2026-07-27 dead branch, still live).
+--                  Photos `<img src={thumbnail_url ?? url}>` at 6 sites.
+--                  WWTP card passes `kind` -> already signed, SURVIVES.
+--   Visit Calendar BREAKS. `Yt.storage.from("gdo-permits").getPublicUrl(t)`.
+--   Admin Review   BREAKS. 2 hard-coded /object/public/ base constants, no auth
+--                  header. ⚠ The refuter found the first pass mis-attributed both
+--                  to ONE route; they belong to TWO route modules (/review/:jobId
+--                  AND /review-shift/:shiftId), so the blast radius was understated.
+--   Stamp Studio   BREAKS. ZERO storage-client calls — it renders DB-stored public
+--                  URLs straight into <img> and into new Image()+canvas.toBlob()
+--                  for the ZIP export. Refuter added `derm.v_stamp_rows.image_url`
+--                  (559 rows, 381 GT + 178 manifests) as a second bearing column.
+--   Client App     BREAKS. The first pass said "survives" and was REFUTED against
+--                  its own evidence: `clients._id-*.js` builds
+--                  `…/object/public/gdo-permits/${permit_document_path}` and
+--                  renders it as the "Permit PDF" link.
+--   DERM Tracker   PARTIALLY BREAKS (upload + getPublicUrl + hard-coded).
+--   Edge functions PARTIALLY BREAK. ⚠ The dominant break mode is NOT a .storage
+--                  call at all — it is `fetch(storedPublicUrl)` with no auth.
+--                  ⚠⚠ `send-derm-email/index.ts:162 fetchAttachment()` does
+--                  `await fetch(url)` unauthenticated against 2,109 stored public
+--                  URLs. Privatising SILENTLY BREAKS DERM SUBMISSIONS TO THE CITY.
+--                  That is a compliance path, not a cosmetic one.
+--   Scripts / PDF  PARTIALLY BREAK. 14 hard-coded public URLs. The Railway
+--                  pdf-service is a genuine blind spot: SUPABASE_STORAGE_BUCKET is
+--                  only a DEFAULT in config.py and the deployed value is not
+--                  knowable from the checkout.
+--
+-- ── ⚠⚠ THREE FINDINGS THAT CHANGE THE PLAN, NOT JUST THE CHECKLIST ─────────
+-- 1. `GT - Visits Images` HAS NO anon SELECT POLICY. Verified by probe and against
+--    pg_policies, and disambiguated properly: anon createSignedUrl returns
+--    {"error":"not_found"} HTTP 400, while the SAME encoded path returns 200 on
+--    /object/public/ and 200 when service_role signs it — so it is AUTHORISATION
+--    masked as not_found, not a bad path. CONSEQUENCE: for this bucket,
+--    "just switch getPublicUrl to createSignedUrl" IS NOT A FIX. The anon browser
+--    cannot sign it at all. It needs either a new anon policy (which would let anon
+--    sign any of 25,361 objects — not obviously better than public) or an
+--    edge-function proxy. `manifests` and `gdo-permits` DO have anon policies, so
+--    they are code-only fixes. The two buckets need DIFFERENT solutions.
+-- 2. THUMBNAILS USE A DIFFERENT ENDPOINT. `wo_photos.thumbnail_url` is
+--    `/render/image/public/…?width=400&quality=80&resize=cover` — the transform
+--    endpoint. Signing needs `/render/image/sign/`, not `/object/sign/`. A fix that
+--    only handles /object/ leaves every thumbnail dead.
+-- 3. FP FAILS SILENTLY AND LOOKS FINE. The "Documented" chip is computed from
+--    `state==="ready" && !!url` — the URL STRING being truthy, never the fetch
+--    succeeding. On a private flip the FOG card still renders a green DOCUMENTED
+--    chip over a dead preview and a 400ing download link. It does NOT fall back to
+--    "Pending". So a post-flip smoke test that only looks at the page will PASS.
+--    Any verification must assert on the image request's STATUS CODE.
+--
+-- Also measured: the buckets are NOT cleanly split by content type — DERM manifest
+-- images live in BOTH (`…/GT - Visits Images/derm/51/manifest.jpg` alongside
+-- `…/manifests/derm/1276/manifest_1.JPG`). Do not assume bucket == content class.
+-- And `customer.client_access_photos.url` has 0 non-null rows DB-wide, so that FP
+-- dashboard code path renders for nobody today.
 --
 -- ⚠ NOTE FOR WHOEVER RUNS THIS: I initially concluded gdo-permits was safe to
 -- privatise today because the Field Portal already signs it. That was WRONG —
