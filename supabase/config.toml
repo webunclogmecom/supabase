@@ -399,22 +399,38 @@ verify_jwt = false
 [functions.webhook-samsara]
 verify_jwt = false
 
-# pg_cron pollers: SAME rule as the webhook receivers. Invoked by Supabase pg_cron
-# via pg_net with only an `x-sync-key` header (no Supabase JWT), so verify_jwt MUST
-# be false or the gateway 401s every scheduled run. 2026-06-24 incident: a manual
-# `supabase functions deploy sync-jobber-upcoming-visits` WITHOUT --no-verify-jwt
-# (and without this block) flipped it to verify_jwt=true; the next */15 run was 401'd
-# before it was caught + restored. (jobber-push-visit is exempt — fn_push_visit_to_jobber
-# sends a service-role bearer, so it authenticates regardless.)
+# pg_cron pollers: verify_jwt = TRUE as of 2026-07-29. This REVERSES the previous rule, so read
+# this before "restoring" it.
+#
+# They used to be invoked with only an `x-sync-key` header (no JWT), which forced verify_jwt=false.
+# That shared secret is now RETIRED: all three are invoked by public.fn_request_jobber_sync(target)
+# via pg_cron, which reads `edge_invoke_service_key` from Vault and sends
+# `Authorization: Bearer <service_role JWT>` — the same way fn_request_jobber_push and
+# fn_request_blackout_sweep already call their targets. So the gateway can and must verify.
+#
+# ⚠ WHY THE OLD SETUP HAD TO GO, and why verify_jwt alone is NOT the fix. The handlers gated on
+# `if (TRIGGER_KEY && req.headers.get('x-sync-key') !== TRIGGER_KEY)`, which is FAIL-OPEN: an empty
+# or unset SYNC_TRIGGER_KEY skipped the check entirely, leaving three verify_jwt=false functions
+# open to the internet. And the secret sat as a plaintext literal in cron.job.command, unmasked in
+# every query result and transcript, with both repos PUBLIC.
+# ⚠ verify_jwt=true on its own would be close to no protection, because the PUBLIC anon key is a
+# valid JWT and satisfies the gateway. Each handler therefore ALSO requires role=service_role via
+# bearerRole(), exactly like jobber-push-visit. BOTH halves are load-bearing — never remove the
+# handler check on the grounds that "the gateway already checks it".
+#
+# The 2026-06-24 incident this block used to warn about is now inverted: deploying any of these
+# WITH --no-verify-jwt would silently drop the gateway's signature check, leaving only a decoded
+# (unverified) role claim, which is forgeable. So: never deploy these --no-verify-jwt.
+# Migrations: docs/migrations/2026-07-29e_sync_cron_vault_bearer.sql (+ ...f for the cron cutover).
 [functions.sync-jobber-upcoming-visits]
-verify_jwt = false
+verify_jwt = true
 
 [functions.sync-jobber-poll]
-verify_jwt = false
+verify_jwt = true
 
-# gate #4 drift watchdog: same pg_cron + x-sync-key rule, so verify_jwt MUST be false.
+# gate #4 drift watchdog: same service_role-bearer rule as the two above.
 [functions.sync-jobber-visit-drift]
-verify_jwt = false
+verify_jwt = true
 
 # jobber-push-visit is the EXCEPTION — it MUST be verify_jwt=true. It is invoked by
 # fn_push_visit_to_jobber with a service_role bearer, and its handler only DECODES the JWT

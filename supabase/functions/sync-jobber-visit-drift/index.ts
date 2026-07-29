@@ -37,13 +37,22 @@
 // Reconcile writes (heal + adopt) are ON by default; kill-switch env
 // DRIFT_HEAL_DISABLED=1 (or header x-no-heal:1) -> detect-only. One sync_log row/run.
 // Never reads net._http_response (no visit_id + ~6h TTL). Self-healing: window
-// re-scanned in full every run. Auth: x-sync-key. Deployed --no-verify-jwt.
+// re-scanned in full every run.
+// Auth (CHANGED 2026-07-29): `Authorization: Bearer <service_role JWT>`, FAIL-CLOSED. Deployed WITH
+// verify_jwt=true (pinned in supabase/config.toml) — the gateway verifies the signature and this
+// handler additionally requires role=service_role, because bearerRole only DECODES the token and the
+// PUBLIC anon key would otherwise satisfy the gateway on its own. Same model as jobber-push-visit.
+// Caller is public.fn_request_jobber_sync('drift') via pg_cron.
+// ⚠ The old `x-sync-key: <SYNC_TRIGGER_KEY>` shared secret is RETIRED. This function is the one
+// config.toml named for the FAIL-OPEN idiom: `if (TRIGGER_KEY && ...)` skipped auth entirely whenever
+// SYNC_TRIGGER_KEY was empty, on a verify_jwt=false function. Do not reintroduce it. A manual run now
+// needs the bearer, e.g.
+//   curl -H "Authorization: Bearer $SERVICE_ROLE" -H 'x-sync-wait: 1' -H 'x-no-heal: 1' <url>
 // ============================================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const TRIGGER_KEY = Deno.env.get('SYNC_TRIGGER_KEY') ?? ''
 const HEAL_DISABLED_ENV = (Deno.env.get('DRIFT_HEAL_DISABLED') ?? '') === '1'
 const GRAPHQL_VERSION = '2026-04-16'
 const TZ = 'America/New_York'
@@ -56,6 +65,14 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 // Adopt writes (Jobber->DB) go through this client so audit.logs.app_source='jobber'
 // (per ADR 016: X-App-Source overrides) — the visit's Activity history shows "from Jobber".
 const supabaseJobber = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'jobber' } } })
+
+// Decode-only. The GATEWAY verifies the signature (verify_jwt=true in config.toml); this just reads
+// the role claim so the public anon key cannot invoke the function. Identical to jobber-push-visit.
+function bearerRole(req: Request): string | null {
+  const m = (req.headers.get('authorization') || '').match(/^Bearer (.+)$/)
+  if (!m) return null
+  try { return JSON.parse(atob(m[1].split('.')[1])).role ?? null } catch { return null }
+}
 
 type Cand = { id: number; visit_date: string; start_at: string | null; end_at: string | null; jobber_gid: string }
 type JV = { startAt: string; endAt: string | null }
@@ -280,7 +297,8 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
 }
 
 Deno.serve(async (req) => {
-  if (TRIGGER_KEY && req.headers.get('x-sync-key') !== TRIGGER_KEY) return new Response('forbidden', { status: 403 })
+  // FAIL-CLOSED: no bearer, unparseable bearer, or any role other than service_role is rejected.
+  if (bearerRole(req) !== 'service_role') return new Response('forbidden', { status: 403 })
   const reconcile = !HEAL_DISABLED_ENV && req.headers.get('x-no-heal') !== '1'
   if (req.headers.get('x-sync-wait') === '1') {
     const res = await runSync(reconcile)

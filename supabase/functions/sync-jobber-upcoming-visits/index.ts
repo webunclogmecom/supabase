@@ -16,17 +16,32 @@
 // immediate 202 and the result is written to public.sync_log. Pass `x-sync-wait: 1` to run
 // synchronously and get the result back in the response (used for manual testing).
 //
-// Auth: caller must present `x-sync-key: <SYNC_TRIGGER_KEY>`. Deployed --no-verify-jwt.
+// Auth (CHANGED 2026-07-29): caller must present `Authorization: Bearer <service_role JWT>`,
+// FAIL-CLOSED. Deployed WITH verify_jwt=true (pinned in supabase/config.toml) — the gateway verifies
+// the signature and this handler additionally requires role=service_role, because bearerRole only
+// DECODES the token and the PUBLIC anon key would otherwise satisfy the gateway on its own. Same
+// model as jobber-push-visit. Caller is public.fn_request_jobber_sync('upcoming') via pg_cron.
+// ⚠ The old `x-sync-key: <SYNC_TRIGGER_KEY>` shared secret is RETIRED. Its gate was
+// `if (TRIGGER_KEY && ...)`, which skipped auth entirely whenever SYNC_TRIGGER_KEY was empty, on a
+// verify_jwt=false function. Do not reintroduce that idiom. A manual run now needs the bearer, e.g.
+//   curl -H "Authorization: Bearer $SERVICE_ROLE" -H 'x-sync-wait: 1' <url>
 // Reads/refreshes the Jobber token from public.webhook_tokens.
 // ============================================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const TRIGGER_KEY = Deno.env.get('SYNC_TRIGGER_KEY') ?? ''
 const GRAPHQL_VERSION = '2026-04-16'
 const EXCLUDED_CLIENT_GIDS = new Set<string>([]) // none (112-YA un-excluded 2026-06-24 per Fred; its leftover recurring job is archived). Re-add a GID to exclude a future test account.
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
+
+// Decode-only. The GATEWAY verifies the signature (verify_jwt=true in config.toml); this just reads
+// the role claim so the public anon key cannot invoke the function. Identical to jobber-push-visit.
+function bearerRole(req: Request): string | null {
+  const m = (req.headers.get('authorization') || '').match(/^Bearer (.+)$/)
+  if (!m) return null
+  try { return JSON.parse(atob(m[1].split('.')[1])).role ?? null } catch { return null }
+}
 
 async function gql(token: string, query: string) {
   const r = await fetch('https://api.getjobber.com/api/graphql', {
@@ -187,7 +202,8 @@ async function runSync(): Promise<Record<string, unknown>> {
 }
 
 Deno.serve(async (req) => {
-  if (TRIGGER_KEY && req.headers.get('x-sync-key') !== TRIGGER_KEY) return new Response('forbidden', { status: 403 })
+  // FAIL-CLOSED: no bearer, unparseable bearer, or any role other than service_role is rejected.
+  if (bearerRole(req) !== 'service_role') return new Response('forbidden', { status: 403 })
   if (req.headers.get('x-sync-wait') === '1') {
     const res = await runSync()
     return new Response(JSON.stringify(res), { status: res.error ? 500 : (res.residual_gap ? 207 : 200), headers: { 'Content-Type': 'application/json' } })

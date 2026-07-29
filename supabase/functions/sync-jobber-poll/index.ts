@@ -14,7 +14,15 @@
 // timeout, so the caller gets an immediate 202 and the result lands in public.sync_log.
 // `x-sync-wait: 1` runs synchronously and returns the result (manual testing).
 //
-// Auth: `x-sync-key: <SYNC_TRIGGER_KEY>`. Deploy --no-verify-jwt.
+// Auth (CHANGED 2026-07-29): `Authorization: Bearer <service_role JWT>`, FAIL-CLOSED. Deploy WITH
+// verify_jwt=true (pinned in supabase/config.toml) — the gateway verifies the signature and this
+// handler additionally requires role=service_role, because bearerRole only DECODES the token and
+// the PUBLIC anon key would otherwise satisfy the gateway on its own. Same model as
+// jobber-push-visit. Caller is public.fn_request_jobber_sync('poll') via pg_cron.
+// ⚠ The old `x-sync-key: <SYNC_TRIGGER_KEY>` shared secret is RETIRED. Its gate was
+// `if (TRIGGER_KEY && ...)`, which skipped auth entirely whenever SYNC_TRIGGER_KEY was empty, on a
+// verify_jwt=false function. Do not reintroduce that idiom. A manual run now needs the bearer, e.g.
+//   curl -H "Authorization: Bearer $SERVICE_ROLE" -H 'x-sync-wait: 1' <url>
 // Public tables (webhook_tokens, sync_cursors) via service-role supabase-js; raw.* (not
 // PostgREST-exposed) via a DIRECT Postgres connection (SUPABASE_DB_URL — already a function
 // secret, normal DB privileges, NO admin PAT in the function). queryObject(string) uses the
@@ -27,9 +35,16 @@ import { Client } from 'https://deno.land/x/postgres@v0.19.3/mod.ts'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const DB_URL = Deno.env.get('SUPABASE_DB_URL')!
-const TRIGGER_KEY = Deno.env.get('SYNC_TRIGGER_KEY') ?? ''
 const GRAPHQL_VERSION = '2026-04-16'
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
+
+// Decode-only. The GATEWAY verifies the signature (verify_jwt=true in config.toml); this just reads
+// the role claim so the public anon key cannot invoke the function. Identical to jobber-push-visit.
+function bearerRole(req: Request): string | null {
+  const m = (req.headers.get('authorization') || '').match(/^Bearer (.+)$/)
+  if (!m) return null
+  try { return JSON.parse(atob(m[1].split('.')[1])).role ?? null } catch { return null }
+}
 
 type Exec = (q: string) => Promise<any[]>
 
@@ -192,7 +207,8 @@ async function runSync(): Promise<Record<string, unknown>> {
 }
 
 Deno.serve(async (req) => {
-  if (TRIGGER_KEY && req.headers.get('x-sync-key') !== TRIGGER_KEY) return new Response('forbidden', { status: 403 })
+  // FAIL-CLOSED: no bearer, unparseable bearer, or any role other than service_role is rejected.
+  if (bearerRole(req) !== 'service_role') return new Response('forbidden', { status: 403 })
   if (req.headers.get('x-sync-wait') === '1') {
     const res = await runSync()
     return new Response(JSON.stringify(res), { status: res.error ? 500 : 200, headers: { 'Content-Type': 'application/json' } })
