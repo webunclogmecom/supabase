@@ -168,12 +168,66 @@ pinned `search_path` is mandatory, not decorative.
 Append `duplicate_of_visit_id`, `attempts`, `auto_retry_state`. `CREATE OR REPLACE VIEW` may only
 **append** columns — appending satisfies that, so grants are preserved and no DROP is needed.
 
+### 4.6 ⚠ NEW `ops.v_calendar_push_health_by_visit` — one row per visit (AMENDMENT, 2026-07-29)
+
+**This section exists because @Building Apps caught a live defect in the §5 contract during review.**
+
+The Calendar drawer collapses the health rows into a `Map` keyed on `visit_id`. That assumes one row
+per visit. **The view does not guarantee that** — it is a `UNION ALL` of branches whose predicates
+overlap, so a visit can appear more than once and the Map silently keeps an arbitrary winner.
+
+Reproduced live (rollback transaction, 2026-07-29): visit **7409 returned 2 rows at once —
+`not_in_jobber` + `push_failed`**.
+
+⚠ **This is not an edge case; `c865608` made it the norm.** Now that the push function records a
+reason on every unanticipated failure, *any* failed push on an unlinked Calendar visit produces both
+rows. And the `push_failed` row is the one carrying `reason`/`detail`, so the Map can keep the bare
+`not_in_jobber` row and drop the only row that explains what went wrong — defeating the entire point
+of wiring the failure reason.
+
+**Do NOT fix this by deduping `ops.v_calendar_push_health` itself.** `public.log_calendar_push_health()`
+aggregates *every* row into `sync_log.details` and counts them; deduping would silently shrink the ops
+log and hide real issues. The diagnostic feed must stay complete.
+
+So: add a second, UI-facing view. One rule, in SQL, that cannot drift the way duplicated client-side
+logic would.
+
+```sql
+CREATE VIEW ops.v_calendar_push_health_by_visit AS
+SELECT DISTINCT ON (h.visit_id)
+       h.visit_id, h.client_code, h.client_name, h.visit_date, h.source,
+       h.issue, h.reason, h.detail, h.since,
+       h.duplicate_of_visit_id, h.attempts, h.auto_retry_state,
+       (SELECT array_agg(DISTINCT h2.issue)
+          FROM ops.v_calendar_push_health h2
+         WHERE h2.visit_id = h.visit_id) AS all_issues
+  FROM ops.v_calendar_push_health h
+ ORDER BY h.visit_id,
+          CASE h.issue WHEN 'push_failed'         THEN 1
+                       WHEN 'skip_removal_failed' THEN 2
+                       WHEN 'not_in_jobber'       THEN 3
+                       ELSE 4 END;
+```
+
+Priority is deliberate: **`push_failed` wins because it is the only branch carrying `reason`/`detail`.**
+`all_issues` preserves the full set so nothing is lost by collapsing.
+
+Grants: `SELECT` to `authenticated`, `service_role`, `yannick_readonly` (mirroring the base view);
+**anon excluded**. New views in an exposed schema come out anon-readable under Supabase's default
+privileges — revoke explicitly, do not assume.
+
+**§5 contract changes:** the drawer reads **`v_calendar_push_health_by_visit`**, not
+`v_calendar_push_health`.
+
 ---
 
 ## 5. UI contract (@Building Apps)
 
-**Read** from `ops.v_calendar_push_health`: `issue`, `reason`, `detail`, `attempts`,
-`auto_retry_state`, `duplicate_of_visit_id`.
+**Read** from **`ops.v_calendar_push_health_by_visit`** (NOT the base view — see §4.6): `issue`,
+`reason`, `detail`, `attempts`, `auto_retry_state`, `duplicate_of_visit_id`, `all_issues`.
+⚠ The drawer's `.select()` is an **explicit column list**, not `*`, so the new columns surface only
+once @Building Apps extends that string. The view change will look inert until then — that is
+expected, not a failed migration.
 
 **Drawer amber box** — today it renders only `Sync issue: not_in_jobber`. It must additionally show:
 
@@ -199,6 +253,13 @@ service → on confirm, re-call with `p_force: true`. On success, refetch the dr
   outrank `Mark complete`, which is the primary action on that surface.
 - **States:** disabled + spinner while in flight; success toast; error toast carrying the returned
   message. Never leave the button in a state where a double-click issues two pushes.
+- **Accessibility (@Building Apps amendment, accepted):** the amber box is `role="status"` today,
+  correct for `pending` ("aware, working on it"). For **`blocked_duplicate` and `exhausted` the system
+  has stopped and needs a human**, so those render `role="alert"`. Same colour, same position,
+  different announcement urgency.
+- **No countdown.** The drawer already refetches health every 30s (`staleTime: 30_000`), so relative
+  copy ("retry scheduled, attempt 2 of 4") self-corrects without countdown machinery — and the backoff
+  ladder is "at least this long", not exact (risk #4), so a to-the-minute time would be a lie.
 
 ---
 
@@ -249,9 +310,12 @@ service → on confirm, re-call with `p_force: true`. On success, refetch the dr
 4. **`attempts < 4` with a `*/5` cron means the ladder can drift** — a 1-minute backoff is not honoured
    more precisely than the 5-minute tick. Accepted: the ladder is "at least this long", not exact.
    Do not add a second faster cron to fix this.
-5. **Unverified assumption:** that the Calendar drawer reads `ops.v_calendar_push_health` rather than
-   deriving the flag client-side. @Building Apps must confirm before wiring; if it derives it
-   locally, the contract in §5 changes.
+5. ~~Unverified assumption: that the drawer reads the health view rather than deriving the flag
+   client-side.~~ **RESOLVED 2026-07-29** — @Building Apps confirmed against the deployed bundle:
+   the drawer queries the view directly and `"not_in_jobber"` appears zero times as a literal, so the
+   label is composed from our data. Reviewing that hook is what surfaced the one-row-per-visit defect
+   now fixed in §4.6, and revealed that `reason` is already fetched but never rendered — so half the
+   §5 ask is pre-built.
 6. ⚠ **Pre-existing secret exposure, unrelated to this work but found during it:**
    `cron.job.command` for `jobber-visit-drift-reconcile` contains a plaintext `x-sync-key`. It should
    be rotated and moved to Vault (as `jobber_push_service_key` already is). Flagged to Fred
