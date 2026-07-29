@@ -1,0 +1,123 @@
+-- ============================================================================
+-- 2026-07-29h — finish what 2026-07-28x only half did, and clean up my own
+--               test residue
+-- ============================================================================
+-- Everything here came out of a SELF-AUDIT of the last 14 hours, run because
+-- Fred asked "why are there so many issues?". Two of the three items are my own
+-- mess. Recorded plainly rather than folded into a tidier narrative.
+--
+-- ── ITEM 1: 28x claimed to fix the generator. It fixed ONE THIRD of it. ────
+-- `2026-07-28x` is titled as the root-cause half of the anon lockdown — the
+-- migration that stops `public` minting anon-privileged objects. It ran only:
+--     alter default privileges in schema public revoke all on tables from anon;
+-- Measured now, the other two object classes still hand anon privileges on every
+-- NEW object, from the postgres-owned default ACL:
+--     objtype 'f' (functions) : {postgres=X/postgres, anon=X/postgres, ...}
+--     objtype 'S' (sequences) : {postgres=rwU/postgres, anon=rwU/postgres, ...}
+-- Consequences, both verified by rolled-back probe:
+--   · a NEW function in `public` is born anon-EXECUTABLE. That is the sharpest
+--     one, because after the lockdown SECURITY DEFINER RPCs are the ONLY anon
+--     data path — so the default hands out the exact privilege that now matters
+--     most. I knew this at the time: `2026-07-29b` explicitly writes
+--     `revoke execute on function customer.get_client_by_code(text) from public`
+--     for its own function. I fixed the instance and left the generator.
+--   · 35 of 36 public sequences are anon-UPDATABLE, and
+--     `select setval('public.client_contacts_id_seq', 999999999)` SUCCEEDS as
+--     anon. Negative control: the one sequence anon lacks UPDATE on raises 42501,
+--     so the probe discriminates. 28x removed anon TRUNCATE as defence-in-depth
+--     on exactly this reasoning (latent, unreachable today, but a real privilege)
+--     and then did not apply that reasoning to sequences in the same file.
+-- Reachability today is the same as the TRUNCATE case: anon is NOLOGIN and
+-- PostgREST exposes no sequence verb, so this is defence-in-depth, not an
+-- incident. It is still the generator, and the generator is what 28x was for.
+--
+-- ── ITEM 2: two orphaned probe rows I left in Prod ────────────────────────
+-- `storage.objects` contains exactly two rows named `derm/_probe/x.txt`, one in
+-- `manifests` and one in `GT - Visits Images`, both owner NULL, both metadata
+-- NULL, both created_at 2026-07-28 20:21:11.250565+00 — identical to the
+-- microsecond, i.e. ONE SQL transaction, not two uploads. No S3 object backs
+-- them: the public URL returns 400/404. They are mine, from an anon-write
+-- reachability probe run during the lockdown work, and they were never cleaned
+-- up. That violates the standing "revert test mutations" rule.
+-- ⚠ They are also counted inside the 642 `manifests` rows that every
+-- authenticated storage listing sees, and I sampled that bucket twice tonight
+-- without recognising my own residue in the output.
+-- Deleting the ROW is correct here precisely because there is no object: this is
+-- the one case where `delete from storage.objects` does not orphan bytes in S3.
+-- For real objects that would be wrong — use the Storage API.
+--
+-- ── DELIBERATELY NOT DONE HERE, AND WHY ───────────────────────────────────
+-- (a) The two anon INSERT policies on storage.objects
+--     ("Anon can upload to derm path in manifests" / "... in GT visit images")
+--     ARE live — a rolled-back probe inserted successfully into
+--     `manifests/derm/`, while the same insert into `manifests/redacted/` raised
+--     42501, so the probe discriminates. They are NOT dropped here.
+--     ⚠ The audit that surfaced them argued they were vestigial because "every
+--     real DERM upload carries a non-null owner uuid". THAT IS FALSE, and I
+--     checked before acting: `GT - Visits Images/derm/*` is 2,572 objects with
+--     **0** owners, and `manifests/derm/*` is 97 with 29. Owner-null is the norm,
+--     and service_role uploads are owner-null too, so that column cannot tell an
+--     anon upload from a service_role one. Dropping on that evidence could have
+--     broken DERM filing. Needs the actual upload path confirmed first.
+-- (b) The `gdo-permits` anon SELECT policy — see 2026-07-29i, which deals with
+--     the regression I introduced in 29a. Not mixed into this file.
+--
+-- ROLLBACK:
+--   alter default privileges in schema public grant execute on functions to anon;
+--   alter default privileges in schema public grant usage, update on sequences to anon;
+--   grant usage, update on all sequences in schema public to anon;
+--   (the two probe rows are test residue; do not restore them)
+--
+-- AUDIT (ADR 010): privilege + test-residue cleanup. No business data touched.
+-- ============================================================================
+
+begin;
+
+-- ── 1. functions: PARTIAL. Read this before believing the generator is closed ─
+-- ⚠ THIS DID NOT ACHIEVE WHAT IT SET OUT TO. Recorded as a partial rather than
+-- rewritten to look like a success.
+-- These two statements DO remove `anon` from the postgres default ACL — verified,
+-- it went from
+--     {postgres=X, anon=X, authenticated=X, service_role=X}
+-- to  {postgres=X,        authenticated=X, service_role=X}
+-- But a newly created function STILL comes out anon-executable, because Postgres
+-- applies its BUILT-IN grant of EXECUTE to the PUBLIC pseudo-role, and `anon` is
+-- a member of PUBLIC. Measured on a rolled-back probe after this migration:
+--     proacl = {=X/postgres, postgres=X/postgres, authenticated=X/postgres, ...}
+--                ^^^^^^^^^^ EXECUTE to PUBLIC
+--     has_function_privilege('anon', ..., 'EXECUTE') = TRUE
+-- Re-issuing `ALTER DEFAULT PRIVILEGES ... REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
+-- immediately before the CREATE, in the same transaction, does NOT change that.
+-- ⇒ THE FUNCTION GENERATOR CANNOT BE CLOSED VIA ALTER DEFAULT PRIVILEGES HERE.
+--   The working mitigation is the per-function explicit revoke that `2026-07-29b`
+--   already uses and that must be repeated on every new anon-facing function:
+--       revoke execute on function <fn>(<args>) from public;
+--       grant  execute on function <fn>(<args>) to anon, authenticated;
+--   Current surface: 89 functions in `public`, 40 anon-executable, 12 of those
+--   SECURITY DEFINER. That is a standing item, not something this file fixed.
+alter default privileges in schema public revoke execute on functions from anon;
+alter default privileges in schema public revoke execute on functions from public;
+
+-- ── 2. stop NEW public sequences being born anon-writable, and close the 35 ──
+alter default privileges in schema public revoke usage, update on sequences from anon;
+revoke usage, update on all sequences in schema public from anon;
+
+-- ── 3. the probe rows are NOT deleted here — see below ─────────────────────
+-- ⚠ FIRST ATTEMPT AT THIS MIGRATION FAILED, AND THE DATABASE WAS RIGHT.
+-- I originally ended this file with a plain
+--     delete from storage.objects where name = 'derm/_probe/x.txt' ...
+-- reasoning that it was safe because no S3 object backs those rows. Postgres
+-- refused the whole transaction:
+--     ERROR 42501: Direct deletion from storage tables is not allowed.
+--                  Use the Storage API instead.
+--     HINT: This prevents accidental data loss from orphaned objects.
+--     (trigger storage.protect_delete)
+-- Which is exactly what THIS FILE'S OWN HEADER says to do for real objects. I
+-- wrote the rule, made an exception for myself on a reasoned special case, and a
+-- guard someone else installed caught it. Keeping the note because the reasoning
+-- error is the point: "this instance is safe" is how the rule gets bypassed.
+-- The failure was clean — the migration is transactional, so items 1 and 2 did
+-- not partially apply either. The two rows are removed via the Storage API in a
+-- separate step, which is the sanctioned path.
+
+commit;
