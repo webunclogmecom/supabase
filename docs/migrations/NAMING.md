@@ -15,8 +15,16 @@ you name a new migration.*
 > **The first two passes of this doc both said "19 files" and "55 files". Both were wrong, and wrong
 > in the same way: 19 and 36 are counts of *prefixes*, not of files.** A prefix used by 3 files is one
 > prefix and three ambiguous migrations. Mistaking one unit for the other understated the problem by
-> roughly 5x. Kept here on purpose, because a units error is the easiest way for a careful measurement
-> to produce a confident wrong number: see `feedback_inference_travels_past_measurement` in memory.
+> roughly 5x. Both numbers came from a correct `uniq -d`-style pipeline whose output was then
+> *labelled* wrong.
+>
+> Kept visible on purpose, because this is the cheapest way for a careful measurement to produce a
+> confident wrong number: **the instrument was fine and the interpretation invented a unit.** Two other
+> instances the same night, both self-caught: a checker that printed `PASS: all 0 responses 2xx` over
+> **zero** observations, and a `pg_proc` regex sweep written with `\b` (which in Postgres means
+> BACKSPACE, not a word boundary) that returned 0 rows and read as a clean all-clear. The habit that
+> catches all three is the same: **state the unit in the output, and positive-control every sweep with
+> a pattern you know must match.**
 
 ## The problem, measured
 
