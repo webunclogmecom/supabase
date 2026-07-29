@@ -1,0 +1,127 @@
+-- ============================================================================
+-- 2026-07-29f — STAGED, NOT APPLIED — privatise the three public storage buckets
+-- ============================================================================
+-- ⚠⚠ DO NOT APPLY THIS YET. Applying it today breaks the customer-facing Field
+-- Portal, the Visit Calendar's permit link, DERM Tracker, Stamp Studio and every
+-- photo in Admin Review, all at once and all silently (a dead <img> renders as a
+-- blank box, not an error). It is written now so the work is reviewed, sequenced
+-- and ready — not because it is ready to run.
+--
+-- ── THE EXPOSURE, MEASURED 2026-07-29 (not asserted) ───────────────────────
+-- All three buckets serve files to anyone with NO key and NO headers at all:
+--     manifests           5/6 sampled objects fetched anonymously   642 objects
+--     GT - Visits Images  5/6 sampled objects fetched anonymously 25,361 objects
+--     gdo-permits         6/6 sampled objects fetched anonymously    164 objects
+--
+-- Anonymous fetch only matters if the paths are guessable. They are:
+--     gdo-permits/gdo/<GDO-NUMBER>.pdf   -> 5/5 hit constructing paths from
+--         permit numbers alone. GDO numbers are printed on permits, invoices and
+--         the Calendar drawer. This bucket is FULLY ENUMERABLE.
+--     manifests/derm/<manifest_id>/address_N.jpg -> hit by constructing the path
+--         from a manifest id; ids are sequential integers, so the space is walkable.
+--     GT - Visits Images/derm/<id>/... -> 2,570 objects on the same sequential
+--         pattern.
+-- What a walked address sheet reveals: EVERY co-client on that dump ticket —
+-- business name and street address — which is precisely what the FP blackout
+-- pipeline exists to prevent showing to a customer. The redaction is enforced in
+-- the app while the raw sheet stays fetchable by URL.
+--
+-- One mitigating measurement, which changes priority but not the conclusion:
+--     customer.work_orders.derm_manifest_url  562/562 -> manifests/redacted/
+--         m<id>-<10-hex>.jpg  = HASH-NAMED, not enumerable
+--     customer.work_orders.wwtp_receipt_url   544/544 -> derm/<id>/  = ENUMERABLE
+-- So the customer-facing FOG copy is already unguessable; the raw sheets and the
+-- WWTP receipts are not.
+--
+-- ── WHY THIS CANNOT BE A BUCKET FLIP ───────────────────────────────────────
+-- The database stores 2,617 FULL PUBLIC URLs across ~20 columns
+-- (public/customer/derm/client). Privatising invalidates STORED DATA, not just
+-- code paths. Consumers verified from live bundles, not from docs:
+--
+--   Field Portal   DERM FOG eManifest card passes a `url` prop, and the card
+--                  short-circuits: `if (s !== void 0) { ...; return }` — so it
+--                  NEVER calls get-derm-doc. This is the same dead branch found
+--                  on 2026-07-27 and it is still live. BREAKS.
+--                  WWTP Disposal Receipt card passes `kind` -> already signed. OK.
+--                  Photos render `<img src={thumbnail_url ?? url}>` raw at 3 sites
+--                  against GT - Visits Images. BREAKS.
+--   Visit Calendar `Yt.storage.from("gdo-permits").getPublicUrl(t)` — confirmed
+--                  in the deployed bundle. The "View permit" link BREAKS.
+--   Admin Review   hard-coded https://…/object/public/GT%20-%20Visits%20Images/…
+--                  with no auth header at all. Every photo BREAKS.
+--   DERM Tracker / Stamp Studio / Client App — see the consumer map.
+--
+-- ⚠ NOTE FOR WHOEVER RUNS THIS: I initially concluded gdo-permits was safe to
+-- privatise today because the Field Portal already signs it. That was WRONG —
+-- Visit Calendar builds a public URL for the same bucket. Verifying ONE consumer
+-- and generalising is the mistake that keeps recurring; check every consumer.
+--
+-- ── WHAT ALREADY EXISTS (most of this leg is built) ────────────────────────
+-- Edge fn `get-derm-doc` (verify_jwt=false, origin-restricted, service_role) was
+-- built 2026-07-01 for exactly this migration. Verified working live today:
+--     kind=fog|address|manifest -> 200 with a signed URL; the signed URL fetches
+--     (200 application/pdf 341KB / image/jpeg 288KB / image/jpeg 124KB)
+--     a DIFFERENT client_code -> 403 forbidden (authorisation holds)
+-- Its toBucketPath() already accepts BOTH a stored public URL and a raw
+-- `bucket/path`, so it keeps working before AND after any data migration, and it
+-- spans both buckets (the fog kind resolved into GT - Visits Images).
+-- storage.objects already has `Authenticated can read manifests` and
+-- `Authenticated can read GT visit images`, so signed URLs work for staff apps
+-- the moment they stop calling getPublicUrl.
+--
+-- What get-derm-doc does NOT cover: visit photos (customer.wo_photos.url,
+-- client_access_photos) and gdo-permits. Those need a sibling endpoint or an
+-- extra `kind`.
+--
+-- ── REQUIRED ORDER (each step is safe on its own; skipping breaks something) ─
+--   1. Apps stop building public URLs:
+--        FP        — drop the `url` prop from the FOG card so the signed branch
+--                    runs; route photos through a signing endpoint
+--        Calendar  — getPublicUrl -> createSignedUrl on gdo-permits
+--        Admin Rev — hard-coded URLs -> createSignedUrl
+--        Tracker / Studio / Client App — per the consumer map
+--   2. Fix the WRITERS so they stop persisting public URLs into DB columns,
+--      otherwise the next run re-creates the problem after any backfill.
+--   3. THEN apply this file.
+--   4. THEN narrow the anon storage policies (section 2 below).
+-- Verify after each step with the raw signal: an anonymous HEAD on a known path
+-- must 400, and each app's document/photo must still render.
+--
+-- ROLLBACK: set public = true on the three buckets; instant and total.
+--
+-- AUDIT (ADR 010): bucket-config + policy change. No business data touched.
+-- ============================================================================
+
+-- ⚠ EVERYTHING BELOW IS DELIBERATELY LEFT COMMENTED OUT.
+-- Uncomment only when steps 1 and 2 above are done and verified.
+
+/*
+begin;
+
+-- ── 1. flip the buckets private ─────────────────────────────────────────────
+update storage.buckets set public = false
+ where id in ('manifests', 'GT - Visits Images', 'gdo-permits');
+
+-- ── 2. narrow the anon storage policies ─────────────────────────────────────
+-- These are the LAST anon-roled policies anywhere after 2026-07-29e. They are
+-- LIVE, not inert: storage checks its own RLS and anon reaches it through the
+-- storage API rather than through table grants.
+--
+-- "Public can read manifests" and "Public can read gdo permits" must survive in
+-- SOME form for as long as the Field Portal signs client-side as anon. Once FP
+-- routes ALL document access through get-derm-doc (service_role), drop them:
+--   drop policy "Public can read manifests"    on storage.objects;
+--   drop policy "Public can read gdo permits"  on storage.objects;
+-- ⚠ 2026-07-29a explicitly recorded that its gdo-permits policy MUST be dropped
+-- in the same migration that privatises the bucket, or the bucket goes private
+-- while anon can still sign every permit in it — which would preserve the exact
+-- exposure this leg exists to close, while looking closed.
+--
+-- The two anon INSERT policies are probably dead now that DERM Tracker carries a
+-- session, but that must be CONFIRMED against audit/storage logs before dropping
+-- — "no policy explains it" is not evidence nobody uses it:
+--   drop policy "Anon can upload to derm path in manifests"        on storage.objects;
+--   drop policy "Anon can upload to derm path in GT visit images"  on storage.objects;
+
+commit;
+*/
