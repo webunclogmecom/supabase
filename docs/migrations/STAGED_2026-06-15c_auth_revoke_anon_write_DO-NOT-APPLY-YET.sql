@@ -14,6 +14,56 @@
 -- Rollback: re-create the dropped anon policy (same USING/WITH CHECK) + re-GRANT to anon.
 -- Audit (ADR 010): RLS policy/grant change only.
 -- ============================================================================
+--
+-- ============================================================================
+-- ⛔⛔ STATUS AS MEASURED 2026-07-30 — DO NOT APPLY. NOT "stale but harmless": APPLYING THIS NOW
+--     WOULD PARTLY RE-OPEN THE PHASE-3 VISITS LOCK.
+-- ============================================================================
+-- Measured directly against Prod, not inferred from this file or from the rollout spec.
+--
+-- ALREADY IN EFFECT (so re-running these is a no-op):
+--   * ALL EIGHT `REVOKE`s. anon holds ZERO of the 8 tables' write privileges today
+--     (checked with has_table_privilege per table x privilege; positive controls
+--     service_role/authenticated INSERT both true, so the all-zero result is real and not a
+--     broken query). The 2026-07-12 anon-surface harden plus per-app application got there.
+--   * `visits_calendar_update` (authenticated, source='visit-calendar') EXISTS.
+--   * The derm_required policy EXISTS but under a DIFFERENT NAME:
+--     `visits_authenticated_update_derm_required`, not this file's
+--     `authenticated_update_visit_derm_required`. So it was applied by ANOTHER migration, not
+--     by this one. This file has never been applied as a unit; its intent was reached piecemeal.
+--
+-- ⛔ NOT APPLIED, AND MUST STAY THAT WAY:
+--   * `CREATE POLICY "visits_authenticated_update_manhole" ... FOR UPDATE TO authenticated
+--      USING (true) WITH CHECK (true)` — absent from pg_policies, and it should remain absent.
+--      An unscoped USING(true) UPDATE policy on `visits` turns ANY future column grant into an
+--      all-rows write surface. It is the same hazard class @Supabase has wave-1 of the Client App
+--      blocked on for `properties_anon_update_manhole_authn`, same "manhole" lineage.
+--   * `CREATE POLICY "visits_calendar_insert" ... FOR INSERT TO authenticated` — absent; there is
+--      NO INSERT policy on `public.visits` at all. Phase 3 (2026-07-11) deliberately made the
+--      visits lifecycle RPC-ONLY, driven through the `set_visit_status` / `edit_calendar_visit`
+--      SECDEF wrappers. Re-adding a direct authenticated INSERT path contradicts that.
+--
+-- ⇒ CONSEQUENCE: the "DO NOT APPLY YET" marker is doing REAL work. This is not a leftover to be
+--   tidied away or applied for completeness. Its revokes are redundant and its two unapplied
+--   policies are regressions. The remaining value of the file is as the ROLLBACK record for the
+--   anon-write revoke, which is why it is kept rather than deleted.
+--
+-- ⚠ NOTE ON THE CURRENT `visits` UPDATE POLICY, which is a live instance of the CLAUDE.md warning
+--   that "a grant and a policy can disagree": `visits_app_update_authn` is
+--   `FOR UPDATE TO authenticated USING (deleted_at IS NULL)`, i.e. permissive across every LIVE
+--   row. What actually restricts authenticated from writing `visit_status`/`completed_at` is the
+--   COLUMN-level grant, not the policy. So the grant is the only thing holding that line. Do not
+--   widen those column grants without narrowing this policy first.
+--
+-- ⚠ The filename is referenced by three live docs across two repos, so it is not free to rename:
+--     Building Apps/Client App/docs/2026-07-26_phase2-writes-scoping.md:60
+--     Supabase/docs/handoffs/2026-07-27_queue_audit_and_execution_order.md:26
+--     Supabase/docs/specs/2026-06-15-app-auth-gate-rollout.md:13
+--   See docs/migrations/NAMING.md for why the `STAGED_` PREFIX is the wrong placement (it sorts
+--   under "S", detached from its date, so an alphabetical replay reaches it LAST and applies a
+--   file whose own name says DO-NOT-APPLY). Rename is Fred's call; the header above is the control
+--   that survives one.
+-- ============================================================================
 
 -- ===== SECTION A — Admin Review (apply after grease-buddy-dash.lovable.app login is live) =====
 DROP POLICY IF EXISTS "visit_reviews_anon_insert" ON public.visit_reviews;
