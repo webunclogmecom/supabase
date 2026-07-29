@@ -157,9 +157,51 @@ function buildCityText(clientName: string, address: string, visitDate: string): 
   ].join('\n')
 }
 
+// Service_role client used ONLY to sign storage objects for attachments. Kept at
+// module scope so fetchAttachment can reach it without threading it through every
+// call site.
+const attachmentSigner = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+// Resolve a stored Supabase Storage URL to a service_role-SIGNED url.
+//
+// WHY: fetchAttachment used to do a bare unauthenticated `fetch(url)` against the
+// stored `/object/public/...` values. That works only while the buckets are public.
+// The DERM storage move puts the raw sheets in a PRIVATE bucket, at which point
+// every city submission would fail `pdf_fetch_failed` — a COMPLIANCE path breaking,
+// not a cosmetic one. Signing with service_role works on public AND private buckets,
+// so this is safe to ship BEFORE the move and needs no follow-up during it.
+//
+// ⚠ The bucket segment is PERCENT-ENCODED in the stored data
+// (`GT%20-%20Visits%20Images`, 1,362 urls). Passing that straight to .from() returns
+// 400 in a way that reads like a bad path rather than an encoding bug, so both the
+// bucket and each path segment must be decoded.
+//
+// Non-storage urls are returned unchanged, so any external link keeps working.
+// On a signing failure it returns the original url rather than throwing: the caller
+// is already fail-closed (`if (!att) fetchFailed = true`), so a genuine failure still
+// aborts the send and logs `pdf_fetch_failed` instead of emailing the city a
+// manifest with no attachment.
+async function toSignedUrl(url: string): Promise<string> {
+  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)$/)
+  if (!m) return url
+  try {
+    const bucket = decodeURIComponent(m[1])
+    const path = m[2].split('?')[0].split('/').map(decodeURIComponent).join('/')
+    const { data, error } = await attachmentSigner.storage.from(bucket).createSignedUrl(path, 600)
+    if (error || !data?.signedUrl) return url
+    // supabase-js returns an absolute url on some versions and a root-relative
+    // path on others; normalise so fetch() always gets something absolute.
+    return data.signedUrl.startsWith('http') ? data.signedUrl : `${SUPABASE_URL}/storage/v1${data.signedUrl}`
+  } catch {
+    return url
+  }
+}
+
 // Fetch a URL into a Resend attachment {filename, content(base64), content_type}; null on fetch fail.
+// Note the extension/content-type detection below deliberately keys off the ORIGINAL
+// `url`, not the signed one, because a signed url carries a `?token=` query string.
 async function fetchAttachment(url: string, baseName: string): Promise<{ filename: string; content: string; content_type: string } | null> {
-  const resp = await fetch(url)
+  const resp = await fetch(await toSignedUrl(url))
   if (!resp.ok) return null
   const b64 = encodeBase64(new Uint8Array(await resp.arrayBuffer()))
   const srcCt = (resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
