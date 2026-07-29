@@ -1,0 +1,74 @@
+-- ============================================================================
+-- 2026-07-29i — REVERT the anon policy I added in 29a; permits now go through
+--               the get-permit-doc edge function
+-- ============================================================================
+-- ── WHAT I BROKE IN 29a, AND WHY THIS UNDOES IT ───────────────────────────
+-- `gdo-permits` originally had NO storage.objects policies at all. That meant
+-- anon could not LIST it — it behaved exactly like `GT - Visits Images` does
+-- today (0 rows to an anon LIST, 100 to service_role).
+--
+-- `2026-07-29a` added:
+--     "Public can read gdo permits"  SELECT  TO anon, authenticated
+--                                    USING (bucket_id = 'gdo-permits')
+-- to fix the Field Portal's permit link, which had been dead since 2026-07-08
+-- because anon could not createSignedUrl. Its header claimed
+-- "Net change in what anon can read: zero." **That was measurably false.**
+-- The policy also enabled the LIST endpoint. Measured with only the publishable
+-- key: all 164 permit filenames paginate out, and each then fetches with NO key
+-- at all (GDO-00092.pdf -> HTTP 200, application/pdf, 232,004 bytes).
+--
+-- I reasoned "the bucket is already public, so signing grants nothing new",
+-- verified that signing worked, and never measured what else the policy enabled.
+-- It is the same error as the `redacted/*` "hash-named, NOT enumerable" claim I
+-- corrected six hours later in 29g — and in 29g I even OBSERVED that gdo-permits
+-- was enumerable and blamed the Field Portal requirement rather than the policy
+-- I had added myself.
+--
+-- ── WHY THE FIX IS AN EDGE FUNCTION, NOT JUST A NARROWER POLICY ───────────
+-- RLS cannot separate "sign one object" from "list the bucket": both are SELECT
+-- on storage.objects, and a row predicate cannot see whether the caller asked
+-- for one row or a prefix scan. Any policy that lets the anon browser sign also
+-- lets it enumerate. So the signing has to move server-side.
+--
+-- `get-permit-doc` (deployed, verify_jwt=false) replaces it, and is strictly
+-- stronger than what it removes: the caller sends a client_code + permit_number
+-- and NEVER a storage path, so the path is resolved server-side from public.gdos
+-- only if that permit belongs to that client. Under the old policy an anon caller
+-- could sign ANY object in the bucket, including other clients' permits.
+-- Verified live before this revert:
+--     happy path (lowercase slug, as FP sends)  -> 200, PDF fetches, 231,967 B
+--     client A asks for client B's permit       -> 404 not found
+--     caller supplies a raw storage path        -> 404 not found
+--     unknown client_code                       -> 403 forbidden
+--     missing fields                            -> 400
+--
+-- ── BLAST RADIUS: exactly ONE consumer, and it is the one I broke in 29a ──
+-- Only a SIGNER is affected. A public bucket serves /object/public/ WITHOUT
+-- consulting RLS, so anything reading a public URL is untouched:
+--   Field Portal    storage.from('gdo-permits').createSignedUrl(...) as ANON
+--                   -> BREAKS until it calls get-permit-doc. Its permit link
+--                      returns to the state it was in from 2026-07-08 until
+--                      ~6 hours ago, i.e. the card renders the permit NUMBER as
+--                      plain text with no anchor (it does
+--                      `createSignedUrl(...).catch(() => {})`).
+--   Visit Calendar  getPublicUrl on the same bucket  -> UNAFFECTED
+--   Client App      hard-coded /object/public/ link  -> UNAFFECTED
+--
+-- ⚠ This deliberately re-breaks a customer-facing link for the window until the
+-- Field Portal is wired to get-permit-doc. Taken knowingly: the link was already
+-- dead for three weeks before today, while 164 enumerable permit PDFs is a live
+-- exposure. If that trade is wrong, the rollback below restores the link in one
+-- statement — but it also restores the enumeration.
+--
+-- ROLLBACK (restores the link AND the enumeration — do not do this quietly):
+--   create policy "Public can read gdo permits" on storage.objects
+--     for select to anon, authenticated using (bucket_id = 'gdo-permits');
+--
+-- AUDIT (ADR 010): policy-only. No object moved, copied or deleted.
+-- ============================================================================
+
+begin;
+
+drop policy if exists "Public can read gdo permits" on storage.objects;
+
+commit;

@@ -476,3 +476,6 @@ verify_jwt = false
 
 [functions.rpa-derm-result]
 verify_jwt = false
+
+[functions.get-permit-doc]
+verify_jwt = false
