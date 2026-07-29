@@ -32,6 +32,8 @@ Every secret the project uses, where it lives, and how to rotate.
 | ~~`FILLOUT_API_KEY`~~ | ~~Fillout REST~~ | **Decommissioned 2026-04-29** — remove from `.env` if still present. |
 | `SLACK_WEBHOOK_URL` | Slack incident alerts | `.env` + Edge Function secrets | Slack admin → Incoming Webhooks |
 | GitHub PAT (user-level) | `gh` CLI + git push | Windows Credential Manager / macOS Keychain (via `gh auth login`) | https://github.com/settings/tokens |
+| `edge_invoke_service_key` / `jobber_push_service_key` | service_role bearer used by pg_cron/trigger functions to invoke Edge Functions | **Supabase Vault** (`vault.decrypted_secrets`), read inside SECDEF fns | Rotates with the service_role key; update the Vault rows, not any cron command. Currently the SAME value under two names. |
+| ~~`SYNC_TRIGGER_KEY`~~ / ~~`x-sync-key`~~ | ~~Bespoke shared secret gating the 3 jobber sync Edge Functions~~ | **RETIRED 2026-07-29** (`2026-07-29e/f/g`, commit `44fb5d4`). Was a plaintext literal in `cron.job.command`. No deployed code reads it. The Functions secret may still be set; it is inert. | Do not reissue. Those functions now use the service_role bearer above. |
 
 ### Rules, non-negotiable
 
@@ -40,6 +42,9 @@ Every secret the project uses, where it lives, and how to rotate.
 3. **Never paste secrets into Slack, email, or docs.** If a secret is exposed in any logged channel, treat as compromised.
 4. **Never reuse a dev/local token in production Edge Functions.** Function secrets are set via `supabase secrets set`, not via repo file.
 5. **The `anon` key is public by design** and can be shipped in frontend code — its safety depends on RLS, not on secrecy. The `service_role` key is never public.
+6. **Never put a secret in `cron.job.command`.** It is stored and returned as plaintext, so it leaks into every query result, log, screenshot and transcript that touches `cron.job`, and both repos are public. Put it in **Vault** and have the cron call a `SECURITY DEFINER` function that reads it (`fn_request_jobber_push`, `fn_request_blackout_sweep`, `fn_request_jobber_sync` are the three working examples). Audit with `SELECT jobname FROM cron.job WHERE command ~* '<header-or-key-name>'`.
+7. **Never write a fail-open auth gate, and `verify_jwt=true` is only half of one.** `if (KEY && header !== KEY)` grants everyone access the moment `KEY` is unset, which is the opposite of what an outage should do: prefer `if (!KEY) return 500`. And because the **`anon` key is a public, valid JWT**, the gateway's signature check alone lets anyone in. A function reachable only by machines must ALSO assert `role === 'service_role'` on the decoded token. Both halves, always.
+8. **To verify a pg_net cron, read `net._http_response`, never `cron.job_run_details`.** pg_net is fire-and-forget: the transaction commits before the far end replies, so `status='succeeded'` means only that the queue insert worked. A 401/403/500 records as `succeeded`. The URL is **not** stored on the response row, so correlate by the id returned from `net.http_post` or by an id watermark. Retention is roughly 6 hours. ⚠ And an **empty** result set is inconclusive, not a pass: if the job demonstrably ran and there is no response row, that is a finding.
 
 ---
 
@@ -50,6 +55,7 @@ Every secret the project uses, where it lives, and how to rotate.
 | Date | Token | Reason |
 |---|---|---|
 | 2026-04-28 | `AIRTABLE_WEBHOOK_TOKEN` | Repo moving to public; previous value was hardcoded in `docs/airtable-automation-setup.md` and (briefly) in `scripts/sync/airtable_replay.js`. Old value is no longer accepted by `webhook-airtable`. |
+| 2026-07-29 | `SYNC_TRIGGER_KEY` / `x-sync-key` | **Retired, not reissued.** The value sat as a plaintext literal in `cron.job.command` for jobs 4/5/8, so it was unmasked in every query result, log line and session transcript touching the table, with both repos public. It reached a transcript, which is how it surfaced. Retiring beat rotating because the gate was also **fail-open**: `if (TRIGGER_KEY && header !== TRIGGER_KEY)` skipped auth entirely when the env var was empty, on three `verify_jwt=false` functions. Now: pg_cron calls `public.fn_request_jobber_sync(target)`, which reads a service_role key from Vault and sends it as a bearer; `verify_jwt=true` so the gateway verifies the signature; and each handler additionally requires `role=service_role` (the anon key is a public, valid JWT, so the gateway alone is not enough). Verified via `net._http_response`, never `cron.job_run_details`. Unauthenticated calls to all three now return 401. |
 
 ### Routine (quarterly)
 
