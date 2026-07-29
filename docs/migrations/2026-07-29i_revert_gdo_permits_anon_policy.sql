@@ -60,6 +60,26 @@
 -- exposure. If that trade is wrong, the rollback below restores the link in one
 -- statement — but it also restores the enumeration.
 --
+-- ── ⚠ WHAT THIS DOES *NOT* CLOSE — do not report permits as secured ───────
+-- Enumeration is dead; targeted retrieval is NOT. `gdo-permits` is still a
+-- PUBLIC bucket, so any single permit is fetchable by anyone who knows or guesses
+-- its number, with NO key and NO function:
+--     GET /object/public/gdo-permits/gdo/GDO-02591.pdf -> 200, 231,967 B
+-- GDO numbers are structured (`GDO-#####`) and printed on invoices, manifests and
+-- the Calendar drawer. So the honest status is "bulk harvesting closed, targeted
+-- retrieval still open".
+--
+-- ⚠ AND A CONSEQUENCE FOR get-permit-doc: while the bucket stays PUBLIC, that
+-- function's per-client ownership check is DECORATIVE — it refuses to sign
+-- another client's permit, but the caller can just fetch the public URL instead.
+-- The Building Apps session made this point and it is correct; recording it so
+-- nobody later reads the 403/404 tests in that function as proof permits are
+-- access-controlled. They prove the FUNCTION is scoped, not that the OBJECT is.
+-- The function only becomes load-bearing when `gdo-permits` is privatised, which
+-- is out of the current move set by the 2026-06-24 decision. Until then either
+-- the function OR a plain public URL is a valid way for the Field Portal to
+-- render the permit; the function is simply the one that survives privatisation.
+--
 -- ROLLBACK (restores the link AND the enumeration — do not do this quietly):
 --   create policy "Public can read gdo permits" on storage.objects
 --     for select to anon, authenticated using (bucket_id = 'gdo-permits');
