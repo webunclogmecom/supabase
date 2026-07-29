@@ -1,0 +1,101 @@
+name: Frequent Jobber completion reconcile (14d window)
+
+# ───────────────────────────────────────────────────────────────────────────
+# Every 30 minutes, narrow window. Companion to daily-jobber-completion-reconcile.yml
+# (which stays as-is: once a day, 60-day window, the deep safety net).
+#
+# WHY THIS EXISTS. Yan, 2026-07-29: a driver marked visits complete that he had not done,
+# Diego reviewed the notes and un-completed them in Jobber, and ~45 minutes later the
+# Calendar still showed them completed — so they were still being chased for DERM docs on
+# work that never happened. Root cause was NOT a logic bug: the daily reconcile detects this
+# correctly (verified by dry-run, it found exactly visits 5888/004-BAO and 6316/132-PUM and
+# proposed completed→scheduled). It is a CADENCE problem. The daily job runs 04:30 ET, Diego
+# un-completed after it, so the correction would have sat for up to ~24 hours.
+#
+# Webhooks do not close this gap: cron_jobber.js's visits cursor keys on `completedAt`, so a
+# visit un-completed in Jobber (completedAt → NULL) drops out of the delta query permanently,
+# and VISIT_UPDATE webhooks do not reliably fire for these edits — confirmed 2026-05-27 with
+# the Kendall visit, 7 days of zero webhook events for that record. Polling is the only
+# mechanism that sees it.
+#
+# ⚠ WHY 14 DAYS AND NOT 60. The window is the entire cost driver: one Jobber GraphQL call per
+# candidate visit, every run. Measured 2026-07-29 against live data:
+#     60d = 348 candidates → 16,704 calls/day at */30   ← 48× today's load, for nothing
+#     14d =  97 candidates →  4,656 calls/day at */30
+#      8d =  62 candidates →  2,976 calls/day at */30
+#      2d =  18 candidates →    864 calls/day at */30
+# Running the 60-day window every 30 minutes would re-query hundreds of visits that were
+# completed weeks ago and will never change. The daily job already covers those.
+#
+# Empirical basis for 14: of the 25 most recent real un-completes in audit.logs, the age at
+# correction was 0-2 days (15), 4-8 days (7), 9-14 days (ZERO), 25 days (1). So 14d and 8d
+# have identical historical coverage; 14 is buffer against future behaviour change and costs
+# ~1,700 extra calls/day, which is immaterial (see below). The 25-day outlier is deliberately
+# left to the nightly 60-day sweep — chasing it here would cost 3.6× for one historical case.
+#
+# ⚠ HEADROOM, so nobody has to re-derive it: Jobber allows 2,500 requests / 5 min per
+# (app × account) and a 10,000-point GraphQL cost bucket restoring 500 pts/sec
+# (docs/integration.md → Rate limits). A run issues ~97 requests over ~32s (~3 req/sec), so it
+# uses roughly 4% of the DDoS bucket and the cost bucket restores faster than we spend it.
+# Actions minutes are free — this repo is PUBLIC. A */30 cadence is already precedented here
+# (jobber-token-keepalive is */30, jobber-upcoming-visits is */15).
+# If the fleet grows enough that 14d exceeds ~300 candidates, drop this to 8d rather than
+# raising the cadence; the coverage is identical.
+#
+# ⚠ SHARED CONCURRENCY GROUP with the daily job (`jobber-reconcile`). Deliberate: the two must
+# never run the same reconcile against the same rows simultaneously. cancel-in-progress stays
+# false so a long 60-day nightly run is never killed mid-flight by a 30-minute tick; the tick
+# simply waits, and the next one is 30 minutes away.
+#
+# The script is idempotent, read-then-update, and suppresses the outbound Jobber push
+# (`app.suppress_jobber_push`) because this is a MATCH-JOBBER reconcile — echoing our value
+# back would fight the source of truth. Writes are attributed via X-App-Source (ADR 016).
+# ───────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Window in days (default 14)'
+        required: false
+        default: '14'
+      execute:
+        description: 'Apply updates? (true = execute, false = dry-run)'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: jobber-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Reconcile recent Jobber completion drift
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          JOBBER_CLIENT_ID: ${{ secrets.JOBBER_CLIENT_ID }}
+          JOBBER_CLIENT_SECRET: ${{ secrets.JOBBER_CLIENT_SECRET }}
+        run: |
+          DAYS="${{ github.event.inputs.days || '14' }}"
+          if [ "${{ github.event.inputs.execute || 'true' }}" = "true" ]; then
+            node scripts/sync/cron_jobber_reconcile_completion.js --days=$DAYS --execute
+          else
+            node scripts/sync/cron_jobber_reconcile_completion.js --days=$DAYS
+          fi
