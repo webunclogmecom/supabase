@@ -54,11 +54,33 @@
 --   Visit Calendar    -> gdo-permits. Untouched.
 --   Client App        -> gdo-permits permit link untouched; DERM links sign.
 --
--- ⚠ This is why the move beats the flip: the two buckets that CANNOT be signed
--- by an anon browser (GT - Visits Images has no anon SELECT policy — verified,
--- anon-sign 400 vs service_role-sign 200 on the same path) keep serving their
--- public objects exactly as today. Only service-side consumers touch the private
--- bucket, and service_role can always sign.
+-- ⚠ This is why the move beats the flip: the objects an anon browser cannot sign
+-- keep serving publicly exactly as today, and only service-side consumers touch
+-- the private bucket, where service_role can always sign.
+--
+-- ── ⚠ CORRECTION — WHO CAN SIGN `GT - Visits Images` (I got this wrong first) ──
+-- I earlier wrote "GT - Visits Images has no anon SELECT policy, so switching
+-- getPublicUrl -> createSignedUrl is NOT a fix." That is TRUE FOR anon ONLY, and
+-- I stated it as a property of the BUCKET. Building Apps caught it, and flagged
+-- it as unproven rather than asserting the opposite — so it was settled by
+-- probe, exercising the policy predicate (`auth.uid() IS NOT NULL`) directly:
+--
+--   authenticated WITH a real uid   GT - Visits Images -> 25,367 rows visible
+--   authenticated WITHOUT a uid     GT - Visits Images ->      0 rows visible
+--   anon                            GT - Visits Images ->      0 rows visible
+--
+-- So the rule is about the ROLE, not the bucket:
+--   Field Portal (genuinely anon)  -> cannot sign -> needs the edge proxy.
+--   Admin Review / Client App /
+--   Visit Calendar (authenticated) -> CAN sign client-side. No proxy needed.
+--
+-- ⚠ AND THE MIDDLE ROW IS A NEW TRAP. `authenticated` with NO `sub` claim sees
+-- ZERO rows — the policy tests `auth.uid() IS NOT NULL`, not the role. So a staff
+-- app that calls createSignedUrl before its session hydrates, or with an expired
+-- token, gets 0 rows -> `not_found` -> a blank frame, NOT an auth error. Combined
+-- with the silent-failure note below, that is a bug that looks like a missing
+-- photo. Any staff-side signing must be sequenced after session hydration and
+-- must assert on the status code.
 --
 -- ── THE TWO BLOCKERS, BOTH MUST BE FIXED FIRST ─────────────────────────────
 -- 1. ⛔ `send-derm-email/index.ts:162 fetchAttachment()` does a bare
