@@ -110,6 +110,39 @@ other session had already used, which is exactly the assumption that failed 19 t
 If you must keep a letter (e.g. amending a same-minute pair), append a session tag rather than
 guessing an unused letter: `2026-07-30_0915b_...`.
 
+## ⚠ Where the "do not apply" marker goes — a FOURTH scheme, and this one is a safety issue
+
+Found while reconciling the counts above (@Supabase 2). Two migrations in this directory must **NOT**
+be applied, and they are marked in **two different places**:
+
+```
+STAGED_2026-06-15c_auth_revoke_anon_write_DO-NOT-APPLY-YET.sql   <- marker as PREFIX
+2026-07-29f_storage_privatise_STAGED.sql                          <- marker as SUFFIX
+```
+
+Unlike the prefix collisions, this one can cause a wrong *action* rather than a wrong reference:
+
+1. **A prefix marker breaks date sorting completely.** `STAGED_2026-06-15c_...` sorts under `S`, at the
+   end of the directory, detached from its date. Combined with "sorted order is not application order"
+   above, an alphabetical replay reaches it **last** and applies a migration whose own filename says
+   `DO-NOT-APPLY-YET`. It is also the one file in the directory (1 of 459) whose date prefix does not
+   parse, so any tooling keyed on the date convention skips it silently.
+2. **You cannot reliably FIND staged migrations by grepping the name.** A search for
+   `STAGED|DO-NOT|PENDING` also matches `2026-06-29h_resolve_stale_sync_pending_cron.sql`, which is a
+   normal applied migration that merely has "pending" in its subject. So the marker produces both false
+   negatives (wrong position) and false positives (wrong match).
+
+**Rule going forward: the marker is a SUFFIX, immediately before `.sql`, and the date prefix always
+comes first**, so a staged file still sorts into its own chronological place:
+
+```
+2026-07-30_0915_storage_privatise_STAGED.sql        ✅ sorts by date, greppable as *_STAGED.sql
+STAGED_2026-07-30_0915_storage_privatise.sql        ❌ sorts under "S", date prefix unparseable
+```
+
+The authoritative list of what is applied is the DB, not a filename. Treat `_STAGED` as a hint to go
+check, never as the record.
+
 ## Do NOT rename the existing colliding files
 
 They are referenced by commit messages, `docs/migrations/` headers, app changelogs under
