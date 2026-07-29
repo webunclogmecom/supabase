@@ -54,10 +54,30 @@ BA retracted their own earlier advice and I accept the correction. The `manifest
 
 ### WAVE C — Client App phase 2 wave 1 (after A1).
 
+**⚠ DEPRIORITISED 2026-07-29 — the consumer that justified the urgency no longer exists.**
+Fred cancelled grid inline cell editing outright: *"I don't want inline cell editing."* CANCELLED,
+not deferred. The Building Apps session was the consumer that would have called these RPCs from the
+grid, and that surface is gone permanently — the Client App grid now needs **no write to business
+data at all**, so it is off the phase-2 critical path for good rather than until someone gets to it.
+**If a future grid request appears to need a write, stop and ask Fred rather than reaching for an RPC.**
+
+⚠ **This does NOT cancel Wave C.** GDO permit add/edit, property operational fields and
+`clients.notes` / `group_id` are separate surfaces with their own justification and were never grid
+features — build them on their own merits if and when they are wanted. What is dead is the reasoning
+*"BA needs these for the grid"*; do not treat that as a driver any more. (Recorded as rule #10 in the
+Client App `CLAUDE.md`, commit `f26f92e`, because the older notes said inline editing was "OUT of v1"
+— wording that reads as *coming later*, and a future session finding it next to a callable RPC could
+reasonably conclude it had been unblocked.)
+
+⚠ **The Client App still writes**, and that is unchanged: `client.saved_views` remains the documented
+direct-write exception. Grid v2 stores its grouping state in that table's `config` JSONB, so it is
+now load-bearing for grouping as well as saved views — still non-business data, still RLS-forced,
+still no migration needed because `config` is opaque by design. Do not "tidy" it into typed columns.
+
 | # | Change |
 |---|---|
 | C1 | Audit trigger: add `app_source='client-app'` |
-| C2 | Wave-1 SECDEF RPCs: GDO permit upsert, property operational-fields patch, client notes/group patch |
+| C2 | Wave-1 SECDEF RPCs: GDO permit upsert, property operational-fields patch, client notes/group patch — *no longer grid-driven; build on their own merits* |
 | C3 | BA wires the UI + call sites |
 
 ### WAVE D — destructive tails. **PITR-gated (or per-item pre-image export + Fred's explicit go).**
