@@ -102,8 +102,28 @@
 -- bucket segment to `derm-docs`. Both get-derm-doc's `toBucketPath()` and the
 -- Client App helper derive the bucket FROM the stored string and then re-sign, so
 -- this repoints every signing consumer with ZERO frontend parser change.
--- ⚠ `derm-docs` must be added to get-derm-doc's bucket fallback list in the same
--- change, or it will fail to resolve the new paths.
+-- ⚠ PRECISION ON get-derm-doc's HARDCODED BUCKET LIST (the queue doc calls this a
+-- blocker; read the code before treating it as one). `toBucketPath()` has TWO
+-- branches:
+--   1. full URL  -> regex `/object/(?:public|sign)/([^/]+)/(.+)$` — captures ANY
+--      bucket from the string, so a rewritten `/object/public/derm-docs/…` URL
+--      resolves correctly with NO code change.
+--   2. raw `bucket/path` -> iterates a hardcoded ['manifests','GT - Visits Images'].
+-- Because the decided rewrite format KEEPS the full-URL shape and only swaps the
+-- bucket segment, branch 1 covers the entire move and the hardcoded list is NOT a
+-- blocker. It still must be extended with `derm-docs` — but as DEFENCE, for the
+-- day the pdf-service starts storing raw `bucket/path` values (its documented
+-- future contract). Doing it is cheap; blocking the move on it is wrong, and
+-- skipping it entirely leaves a trap for whoever ships the raw-path contract.
+--
+-- ⚠ SEPARATE, AND A REAL ONE: `kind:'fog'` signs
+-- `derm_manifests.fog_manifest_url`, which is a PDF under `derm/*`, while FP's FOG
+-- card renders the redacted JPG from `customer.work_orders.derm_manifest_url`
+-- (`manifests/redacted/*`). So `'fog'` returns the WRONG ARTIFACT for that card —
+-- simply dropping the card's `url` prop would make it call get-derm-doc and get a
+-- PDF where a JPG is expected. A new kind (e.g. `'redacted'`) is needed for the FP
+-- FOG fix. That fix is NOT a prerequisite for the move (redacted/* stays public),
+-- but it IS a prerequisite for the FP card ever signing.
 --
 -- ── EXECUTION ORDER (each step verifiable on its own) ──────────────────────
 --   1. Create `derm-docs` PRIVATE + an {authenticated} SELECT policy.
