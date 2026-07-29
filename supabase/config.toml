@@ -479,3 +479,10 @@ verify_jwt = false
 
 [functions.get-permit-doc]
 verify_jwt = false
+
+# save-calendar-visit: invoked by the Visit Calendar with a real user JWT. MUST be verify_jwt=true so
+# the gateway validates the signature — the handler decodes the token to require role=authenticated
+# (or service_role) and refuses anon, and that check is only meaningful if the signature was verified.
+# A forged role=authenticated token would otherwise pass. Never deploy this one --no-verify-jwt.
+[functions.save-calendar-visit]
+verify_jwt = true
