@@ -19,6 +19,39 @@ so the same letter gets used twice on the same day. Current state:
                                       2 x 2026-07-29h
 ```
 
+### A SECOND collision class, worse than the letter one (added by @Supabase 2, re-measuring the above)
+
+The 19 letter collisions are exact, confirmed independently. But counting only *lettered* prefixes
+understates it, because the **bare date with no letter is itself a shared prefix**: the convention's
+"first migration of the day gets no letter" means a session that does not know a file already exists
+writes another bare-date name. Measured across `docs/migrations/`:
+
+```
+19 files  share a lettered prefix   (2026-07-29b .. h, 2026-07-20d, 2026-05-17a, ...)
+36 prefixes are a bare DATE used by 2+ files
+```
+
+The worst is **`2026-05-26`, which names SEVEN different migrations**:
+
+```
+2026-05-26_calendar_ops_views.sql              2026-05-26_hr_sandbox_setup.sql
+2026-05-26_calendar_visit_anon_insert_rls.sql  2026-05-26_rollback_hr_sandbox_additions.sql
+2026-05-26_calendar_visit_anon_write_rls.sql   2026-05-26_visits_source_add_visit_calendar.sql
+2026-05-26_hr_sandbox_recovery.sql
+```
+
+So "revert `2026-05-26`" is seven-way ambiguous, and three of those seven are an
+apply / recovery / rollback trio for the same subsystem, i.e. exactly the case where getting the wrong
+one is most damaging. That same date also carries `x`, `y`, `z` suffixes, a third ad-hoc scheme.
+
+**This does not change the fix.** A `HHMM` prefix is unique per minute, so it closes both classes at
+once. It does mean the letter scheme failed **55 times**, not 19, and that the failure predates the
+three-session setup: a single session re-using a bare date on its own is enough to trigger it.
+
+**Why the recovery recipe below matters more than it looks:** with a bare-date prefix there is not even
+a letter to hint at intended order, so `git log --diff-filter=A` is the *only* way to recover the
+sequence for those 36.
+
 **Why it actually hurts, beyond untidiness:**
 
 1. **The filename no longer identifies a migration.** "Revert `2026-07-29g`" is ambiguous: it is both
