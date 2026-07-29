@@ -1,0 +1,77 @@
+-- ============================================================================
+-- 2026-07-29g — stop anon LISTING the storage buckets
+--               (kills enumeration; does NOT touch objects, buckets or data)
+-- ============================================================================
+-- ── ⚠ THIS EXISTS BECAUSE A RATIONALE IN MY OWN STAGED PLAN WAS FALSE ──────
+-- `2026-07-29f_storage_privatise_STAGED.sql` listed the 544 `manifests/redacted/*`
+-- objects under "STAYS PUBLIC" with the rationale that they are hash-named
+-- (`m<id>-<10hex>.jpg`) and therefore "NOT enumerable". **That was measurably
+-- wrong.** The hash defeats path-GUESSING. It does nothing against the Storage
+-- LIST endpoint. Reproduced against Prod 2026-07-29 with ONLY the publishable
+-- anon key (which ships in every app bundle):
+--
+--   POST /storage/v1/object/list/manifests   {"prefix":"redacted/","limit":100}
+--     -> HTTP 200, and full pagination returned ALL 544 filenames over 6 pages
+--   then, with NO KEY AT ALL:
+--   GET /storage/v1/object/public/manifests/redacted/m100-f6b1d7d4a4.jpg
+--     -> HTTP 200, image/jpeg, 733,655 bytes
+--
+-- Same for `manifests/derm/` (40 id-dirs) and `gdo-permits/gdo/` (all 164).
+-- ⚠ The buckets are NOT equivalent: `GT - Visits Images` returns **0 rows** to
+-- anon LIST for both `derm/` and `visits/` prefixes, so that bucket really does
+-- require id-walking. Do not generalise across buckets — that was the original
+-- error in miniature.
+--
+-- ── WHY THIS IS A REAL WIN AND NOT A CONSOLATION PRIZE ────────────────────
+-- Enumeration is the difference between "an attacker must guess a 40-bit hash
+-- per object" and "an attacker asks for the index and gets everything." Closing
+-- LIST collapses 544 + 97 objects from INDEXED back to the guessing problem the
+-- hash naming was supposed to impose, with:
+--     zero data movement · zero deletes · zero app changes · instant rollback
+-- It is independent of, and strictly complementary to, the DERM storage move.
+--
+-- ── HOW IT WORKS (verified live, not reasoned) ─────────────────────────────
+-- LIST goes through `storage.objects` and is therefore governed by RLS.
+-- A PUBLIC bucket's object GET (`/object/public/...`) bypasses RLS entirely.
+-- So removing anon SELECT removes LIST **without** touching the public reads the
+-- apps rely on. Measured by dropping the policy live and restoring it:
+--
+--                                   BEFORE      AFTER
+--   anon LIST manifests/redacted/   100 names   0 names
+--   anon LIST manifests/derm/        40 names   0 names
+--   PUBLIC GET a manifests object    HTTP 200   HTTP 200   <- unchanged
+--   anon SIGN a manifests object     HTTP 200   HTTP 400
+--   gdo-permits LIST + SIGN          unchanged  unchanged
+--
+-- ── WHY ONLY `manifests`, AND NOT `gdo-permits` ───────────────────────────
+-- `gdo-permits` is deliberately NOT included. The Field Portal signs that bucket
+-- **as anon** — `c.storage.from("gdo-permits").createSignedUrl(i,3600)`, the only
+-- `.storage.from(...)` call in its entire bundle — so dropping its anon policy
+-- would break the customer-facing permit link. RLS cannot distinguish a LIST from
+-- a single-object sign: both are SELECT on `storage.objects`, and a row predicate
+-- cannot see whether the caller asked for one row or a prefix scan. Closing LIST
+-- on `gdo-permits` therefore requires an app change first (route FP's permit
+-- access through an edge function, the `get-derm-doc` pattern), OR an explicit
+-- decision to accept it. Flagged for Fred, not silently done.
+--
+-- ── WHAT LOSING anon SIGN ON `manifests` COSTS: nothing measured ───────────
+-- No anon consumer signs `manifests`. Field Portal's only storage call is the
+-- gdo-permits one above; `get-derm-doc` runs as service_role; and Stamp Studio,
+-- DERM Tracker and the Client App sign as **authenticated**, which is served by
+-- the separate `Authenticated can read manifests` policy (unchanged here, and
+-- verified: an authenticated session with a real uid sees all 642 rows).
+-- If something anon does turn out to need it, the rollback is one statement.
+--
+-- ROLLBACK (instant, total):
+--   create policy "Public can read manifests" on storage.objects
+--     for select to anon using (bucket_id = 'manifests');
+--
+-- AUDIT (ADR 010): policy-only. No object moved, copied or deleted; no bucket
+-- flag changed; no business data touched.
+-- ============================================================================
+
+begin;
+
+drop policy if exists "Public can read manifests" on storage.objects;
+
+commit;

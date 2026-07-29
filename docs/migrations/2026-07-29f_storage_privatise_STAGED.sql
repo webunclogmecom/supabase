@@ -29,8 +29,27 @@
 --     manifests/derm/*                 97 objects
 --   STAY PUBLIC (untouched, and this is the whole point of the move)
 --     GT - Visits Images  22,789 visit photos  (FP grids, Admin Review classifier)
---     manifests/redacted/*   544 FP customer-facing FOG sheets — HASH-NAMED
---                                (`m<id>-<10hex>.jpg`), so NOT enumerable
+--     manifests/redacted/*   544 FP customer-facing FOG sheets
+--       ⚠⚠ THE ORIGINAL RATIONALE HERE WAS "HASH-NAMED (`m<id>-<10hex>.jpg`), so
+--       NOT enumerable". THAT WAS MEASURED FALSE ON 2026-07-29 — kept visible
+--       rather than quietly deleted, because the reasoning error matters more
+--       than the line. With ONLY the publishable anon key:
+--           POST /storage/v1/object/list/manifests {"prefix":"redacted/"}
+--             -> HTTP 200, full pagination returned ALL 544 filenames (6 pages)
+--           then GET /object/public/manifests/redacted/<name> with NO KEY
+--             -> HTTP 200, image/jpeg, 733,655 bytes
+--       Same for `manifests/derm/` (40 id-dirs) and `gdo-permits/gdo/` (all 164).
+--       **A hash defeats path-GUESSING; it does nothing against the LIST endpoint.**
+--       I had reasoned about one attack (guessing) and called the object safe,
+--       without checking whether the index was simply readable. `GT - Visits
+--       Images` returns 0 rows to anon LIST, which is exactly why the mistake
+--       survived — the bucket I spot-checked behaved the way I assumed.
+--       ⇒ FIXED INDEPENDENTLY 2026-07-29g: anon SELECT on `storage.objects` for
+--         `manifests` dropped, so LIST now returns 0 while public GET stays 200.
+--         These 544 are now back to a genuine 40-bit guessing problem — which is
+--         what the original line CLAIMED, and is now actually true.
+--       ⇒ Whether they should nonetheless JOIN THE MOVE is Fred's open decision;
+--         see the note at the end of this file. Do not treat 29g as settling it.
 --     manifests (other)        1 brand asset
 --     gdo-permits            164 — separate 2026-06-24 decision, stays public
 --
@@ -143,6 +162,38 @@
 -- bucket. The originals are still there until step 7, so it is fully reversible.
 --
 -- AUDIT (ADR 010): storage + URL-column change; no business row semantics change.
+--
+-- ── ⏸ OPEN DECISION FOR FRED — do the 544 `redacted/*` join the move? ──────
+-- Raised because the reason they were excluded turned out to be false (above).
+-- Re-decide on accurate facts, not on the old "not enumerable" claim:
+--
+--   ARGUMENT FOR LEAVING THEM PUBLIC
+--     · They are the REDACTED copies — co-clients are already blacked out, which
+--       is the entire point of the FP blackout pipeline. The disclosure from one
+--       leaked sheet is the viewing client's OWN data, not a third party's.
+--     · After 29g they are no longer indexed; reaching one needs a 40-bit guess.
+--     · They are served to customers with NO login by design. Moving them private
+--       means every FP document render must go through a signing round-trip, and
+--       FP is the one surface a paying customer looks at.
+--     · Zero work, zero risk, today.
+--
+--   ARGUMENT FOR MOVING THEM
+--     · "Redacted" is a claim about a rendering pipeline, not a guarantee. The
+--       2026-07-10 v2 leak proved the blackout CAN be wrong; if a bad sheet ever
+--       ships, a public bucket means it is world-readable rather than
+--       token-scoped, and unrecallable once a URL is out.
+--     · A signed URL EXPIRES. A public URL is permanent — once it leaks via a
+--       browser history, referrer, forwarded email or support ticket, it is valid
+--       forever. Obscurity does not decay gracefully.
+--     · FP already proves the pattern works: its WWTP card renders through
+--       `get-derm-doc` today with no login and no customer-visible difference.
+--
+--   MY RECOMMENDATION: leave them public for now, and revisit only if the FOG
+--   card is reworked for other reasons. The redaction means the blast radius of
+--   one leaked object is that client's own document; 29g removed the bulk-harvest
+--   path; and the cost is a signing round-trip on the customer-facing surface for
+--   a marginal gain. This is a judgement about acceptable risk, so it is Fred's
+--   to make and I have not acted on it.
 -- ============================================================================
 
 -- ⚠ COMMENTED OUT DELIBERATELY. Uncomment step by step, in order, verifying each.
