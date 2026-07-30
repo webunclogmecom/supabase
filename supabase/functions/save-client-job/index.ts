@@ -156,6 +156,7 @@ function saTitle(lineNames: string[]): string {
 
 // ---- Jobber queries/mutations ----------------------------------------------
 const JOB_FIELDS = `id jobNumber title instructions jobStatus startAt endAt total
+  billingType invoiceSchedule { billingFrequency scheduleSummary }
   client { id } property { id }
   lineItems(first: 100) { nodes { id name quantity unitPrice totalPrice } }`;
 const Q_JOB = `query($id: EncodedId!) { job(id: $id) { ${JOB_FIELDS} } }`;
@@ -323,17 +324,61 @@ Deno.serve(async (req) => {
       title = "Service Call";
     }
 
-    // Billing is REQUIRED (Fred, 2026-07-30): no silent default. The UI always
-    // sends it; a caller that omits it gets a readable refusal, not PER_VISIT.
-    if (p.billing !== "per_visit" && p.billing !== "fixed") {
-      return fail("bad_request", "Billing is required: choose Per visit or Fixed price.");
+    // ---- BILLING, widened to Jobber parity (Fred, 2026-07-30) -------------
+    // Two axes, exactly like Jobber's own form: billing TYPE (visit_based |
+    // fixed) and invoice FREQUENCY (per_visit | monthly_last_day | once_closed
+    // | as_needed | custom+RRULE). Mapping to the API per the billing reference
+    // doc (Building Apps/Client App/docs/2026-07-30_jobber-job-billing-reference.md):
+    //   per_visit        -> PER_VISIT
+    //   monthly_last_day -> PERIODIC + RRULE:FREQ=MONTHLY;BYMONTHDAY=-1
+    //   once_closed      -> ON_COMPLETION
+    //   as_needed        -> NEVER   (nothing is ever generated; Jobber's "no reminders")
+    //   custom           -> PERIODIC + caller-supplied RRULE (validated shape)
+    // Back-compat: the pre-widening key `billing` ('per_visit'|'fixed') still
+    // maps to the old two combinations, so an in-flight old bundle cannot break.
+    let btype: string | null =
+      p.billing_type === "visit_based" || p.billing_type === "fixed" ? p.billing_type
+      : p.billing === "per_visit" ? "visit_based"
+      : p.billing === "fixed" ? "fixed" : null;
+    let bfreq: string | null =
+      ["per_visit", "monthly_last_day", "once_closed", "as_needed", "custom"].includes(p.invoice_frequency)
+        ? p.invoice_frequency
+        : p.billing === "per_visit" ? "per_visit"
+        : p.billing === "fixed" ? "once_closed" : null;
+    if (!btype || !bfreq) {
+      return fail("bad_request", "Billing is required: choose a billing type and an invoice frequency.");
     }
+    if (kind === "SC" && btype === "fixed") {
+      // A Service Call container carries NO job line items (the SA-has-lines rule),
+      // and fixed-price invoices bill from job lines — a fixed-price SC would
+      // invoice $0 forever.
+      return fail("bad_request", "A Service Call bills per visit — fixed price needs job-level line items, which Service Calls don't carry.");
+    }
+    let rrule: string | null = null;
+    if (bfreq === "custom") {
+      rrule = String(p.invoice_rrule ?? "").trim();
+      // Jobber's schema: "Must be prefixed with 'RRULE:'". Shape-validate so a
+      // malformed rule fails here readably instead of as an opaque userError.
+      if (!/^RRULE:FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;[A-Z]+=[A-Za-z0-9,+-]+)*$/.test(rrule)) {
+        return fail("bad_request", "The custom invoice schedule is invalid — it must be an RRULE like RRULE:FREQ=MONTHLY;INTERVAL=2.");
+      }
+    } else if (bfreq === "monthly_last_day") {
+      rrule = "RRULE:FREQ=MONTHLY;BYMONTHDAY=-1";
+    }
+    const invoicing: Record<string, unknown> = {
+      invoicingType: btype === "fixed" ? "FIXED_PRICE" : "VISIT_BASED",
+      invoicingSchedule:
+        bfreq === "per_visit" ? "PER_VISIT"
+        : bfreq === "once_closed" ? "ON_COMPLETION"
+        : bfreq === "as_needed" ? "NEVER"
+        : "PERIODIC",
+    };
+    if (rrule) invoicing.recurrence = rrule;
+
     const input: Record<string, unknown> = {
       propertyId: propGid,
       title,
-      invoicing: p.billing === "fixed"
-        ? { invoicingType: "FIXED_PRICE", invoicingSchedule: "ON_COMPLETION" }
-        : { invoicingType: "VISIT_BASED", invoicingSchedule: "PER_VISIT" },
+      invoicing,
       // NO `scheduling` — ever. See header. And NO timeframe for an SC (on-demand).
     };
     if (kind === "SA") {
@@ -378,6 +423,15 @@ Deno.serve(async (req) => {
         "Jobber created the job but it doesn't match what was sent — check it in Jobber before retrying.",
         { jobber_number: job.jobNumber });
     }
+    // Billing verify: the TYPE must read back exactly. The frequency enum on
+    // InvoiceSchedule is Jobber-derived; treat a mismatch there as verify_failed
+    // too, but compare loosely (PERIODIC reads back as the recurrence itself).
+    const wantType = btype === "fixed" ? "FIXED_PRICE" : "VISIT_BASED";
+    if (String(job.billingType).toUpperCase() !== wantType) {
+      return fail("verify_failed",
+        `Jobber created the job but its billing type reads back as ${job.billingType}, not ${wantType} — check it in Jobber.`,
+        { jobber_number: job.jobNumber });
+    }
 
     const { data: rec, error: recErr } = await db.rpc("fn_record_client_job",
       { p: jobToRecord(clientId, propertyId, job, kind === "SA", kind === "SA" ? freq : 0) });
@@ -388,7 +442,10 @@ Deno.serve(async (req) => {
         `The job WAS created in Jobber (#${job.jobNumber}) but saving it locally failed; it will appear here within ~5 minutes via the sync.`,
         { jobber_number: job.jobNumber });
     }
-    return done({ job_id: rec.job_id, job_number: job.jobNumber, job_status: String(job.jobStatus).toLowerCase() });
+    return done({
+      job_id: rec.job_id, job_number: job.jobNumber, job_status: String(job.jobStatus).toLowerCase(),
+      billing: { type: job.billingType, schedule_summary: job.invoiceSchedule?.scheduleSummary ?? null },
+    });
   }
 
   // ---- shared resolution for edit/close/reopen -----------------------------
