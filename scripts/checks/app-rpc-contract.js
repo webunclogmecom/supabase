@@ -143,6 +143,31 @@ function extract(code) {
       found.get(r.fn).add(r.schema);
     }
 
+    // For the AT-RISK set, look for POSITIVE PROOF the app already reaches them: audit rows whose
+    // request path is /rpc/<name>. Such a row can only exist if the call arrived and succeeded.
+    //
+    // ⚠ THE DIRECTION OF THIS INFERENCE MATTERS AND IS EASY TO GET BACKWARDS.
+    //   rows present  -> PROVEN reachable. Downgrade to ok.
+    //   rows absent   -> proves NOTHING. Stays AT-RISK.
+    // audit.logs records only SUCCESSES, so silence is not evidence of breakage (and plenty of
+    // RPCs touch no audited table at all). Positive evidence may downgrade; absence may never
+    // upgrade. This is the same rule that let a broken zone rename look healthy for weeks.
+    const atRisk = rpcs.filter(fn => {
+      const has = found.get(fn) || new Set();
+      return has.size && schemas.some(s => !has.has(s));
+    });
+    let proven = new Map();
+    if (atRisk.length) {
+      const rows = await sql(`
+        select replace(request_context->>'path','/rpc/','') as fn,
+               count(*)::text as n,
+               to_char(max(changed_at) at time zone 'America/New_York','YYYY-MM-DD') as last_seen
+        from audit.logs
+        where request_context->>'path' in (${atRisk.map(f => `'/rpc/${f.replace(/'/g, "''")}'`).join(',')})
+        group by 1`);
+      for (const r of rows) proven.set(r.fn, r);
+    }
+
     for (const fn of rpcs) {
       const has = found.get(fn) || new Set();
       const missing = schemas.filter(s => !has.has(s));
@@ -150,8 +175,13 @@ function extract(code) {
         console.log(`  🛑 FAIL      ${fn.padEnd(30)} exists in NONE of [${schemas.join(', ')}] — unreachable`);
         failures++;
       } else if (missing.length) {
-        console.log(`  ⚠ AT-RISK   ${fn.padEnd(30)} only in [${[...has].join(', ')}] — missing from [${missing.join(', ')}]`);
-        risks++;
+        const ev = proven.get(fn);
+        if (ev) {
+          console.log(`  ok (proven) ${fn.padEnd(30)} only in [${[...has].join(', ')}], but ${ev.n} successful call(s) through /rpc/${fn}, last ${ev.last_seen}`);
+        } else {
+          console.log(`  ⚠ AT-RISK   ${fn.padEnd(30)} only in [${[...has].join(', ')}] — missing from [${missing.join(', ')}], and NO successful call on record`);
+          risks++;
+        }
       } else {
         console.log(`  ok          ${fn.padEnd(30)} [${[...has].join(', ')}]`);
       }
@@ -166,6 +196,11 @@ function extract(code) {
     console.log(`⚠ ${risks} at-risk RPC(s): present in some pinned schemas but not all.`);
     console.log('  This is the exact shape of the 2026-07-30 dead-button bug. For each one, confirm the');
     console.log('  client that calls it is pinned to a schema where it exists — or add the missing wrapper.');
+    console.log('');
+    console.log('  ⚠ BEFORE TREATING ONE AS A BUG: a READ-ONLY rpc writes no audit row, so "no successful');
+    console.log('    call on record" is EXPECTED for functions that only SELECT (portal reads, search).');
+    console.log('    Absence is not evidence either way — exercise the app surface that calls it instead.');
+    console.log('    Only a WRITING rpc with zero calls on record is genuinely suspicious.');
   }
   if (!failures && !risks) console.log('✅ every RPC resolves in every schema its app pins.');
 
