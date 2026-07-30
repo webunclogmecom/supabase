@@ -140,6 +140,20 @@ function ue(payload: any): string | null {
 const etDate = (iso: string | null | undefined): string | null =>
   iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/New_York" }) : null;
 
+// SA title from the FULL service combination (Fred, 2026-07-30: "make it dynamic
+// which changes depending on the combination of the Line Items"). Rule, shared
+// verbatim with the UI preview — change both or neither:
+//   per line name: strip the leading "NN - " code, strip a leading
+//   "Service Agreement - " if present; join the parts with " & ";
+//   title = "Service Agreement - " + joined.
+// Lines arrive code-sorted from resolveServices, so the title is deterministic
+// regardless of click order. Single-service titles are unchanged from before.
+function saTitle(lineNames: string[]): string {
+  const parts = lineNames.map((n) =>
+    n.replace(/^\d+\s*-\s*/, "").replace(/^Service Agreement\s*-\s*/i, "").trim());
+  return `Service Agreement - ${parts.join(" & ")}`;
+}
+
 // ---- Jobber queries/mutations ----------------------------------------------
 const JOB_FIELDS = `id jobNumber title instructions jobStatus startAt endAt total
   client { id } property { id }
@@ -173,13 +187,27 @@ type Svc = { service_line_item_id: number; unit_price: number; quantity?: number
 async function resolveServices(services: Svc[]): Promise<{ err?: string; lines?: { name: string; unitPrice: number; quantity: number }[] }> {
   if (!Array.isArray(services) || services.length === 0) return { err: "Pick at least one service for a Service Agreement." };
   const ids = services.map((s) => s.service_line_item_id);
-  const { data: cat } = await db.from("service_line_items").select("id, code, title, schedulable").in("id", ids);
+  const { data: cat } = await db.from("service_line_items").select("id, code, title, schedulable, reason").in("id", ids);
   const byId = new Map((cat ?? []).map((c: any) => [c.id, c]));
   const lines: { name: string; unitPrice: number; quantity: number }[] = [];
+  // Deterministic order regardless of click order: catalog code order. The title
+  // derivation below and the UI preview both depend on this.
+  services = [...services].sort((a, b) => {
+    const ca = byId.get(a.service_line_item_id)?.code ?? "99";
+    const cb = byId.get(b.service_line_item_id)?.code ?? "99";
+    return ca.localeCompare(cb);
+  });
   for (const s of services) {
     const c = byId.get(s.service_line_item_id);
     if (!c) return { err: `Service ${s.service_line_item_id} does not exist.` };
     if (!c.schedulable) return { err: `"${c.title}" is not a schedulable service.` };
+    // ⚠ HARD SA/SC SEPARATION (Fred, 2026-07-30): an SA job may only carry
+    // reason='Service Agreement' lines (codes 01-08). SC lines (09-24) belong to
+    // VISITS of a Service Call job, never to the job itself — a Service Call job
+    // is an empty container by the sync's own rule (SA-has-lines/SC-has-none).
+    if (c.reason !== "Service Agreement") {
+      return { err: `"${c.title}" is a Service Call item — it goes on the visit, not on a Service Agreement job.` };
+    }
     const price = Number(s.unit_price);
     if (!Number.isFinite(price) || price < 0) return { err: `"${c.title}" needs a valid price.` };
     // ⚠ service_line_items.title ALREADY carries the code prefix ("01 - Service
@@ -261,8 +289,13 @@ Deno.serve(async (req) => {
     if (!kind) return fail("bad_request", "Job kind must be Service Agreement or Service Call.");
     const propertyId = Number(p.property_id);
     if (!Number.isFinite(propertyId)) return fail("bad_request", "A property is required.");
+    // Service Calls are ON-DEMAND (Fred, 2026-07-30): no start date — the job is a
+    // container; scheduling happens per-visit when the call comes in. Only an SA
+    // carries a timeframe.
     const startDate = String(p.start_date ?? "");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return fail("bad_request", "A start date is required.");
+    if (kind === "SA" && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      return fail("bad_request", "A start date is required for a Service Agreement.");
+    }
 
     // Property must belong to this client AND be Jobber-linked (jobCreate takes
     // propertyId; the client is implied by it).
@@ -282,10 +315,9 @@ Deno.serve(async (req) => {
       const r = await resolveServices(p.services ?? []);
       if (r.err) return fail("bad_request", r.err);
       lines = r.lines!;
-      // Behaviour-class title: 'Service Agreement%' prefix is load-bearing. Derive
-      // from the first service; catalog titles already start 'Service Agreement - …'.
-      const first = lines[0].name.replace(/^\d+\s*-\s*/, "");
-      title = first.startsWith("Service Agreement") ? first : `Service Agreement - ${first}`;
+      // Behaviour-class title: 'Service Agreement%' prefix is load-bearing.
+      // Derived from the FULL combination — rule in saTitle(), shared with the UI.
+      title = saTitle(lines.map((l) => l.name));
     } else {
       // Exact string: ops.client_service_options matches lower(btrim(title))='service call'.
       title = "Service Call";
@@ -297,15 +329,17 @@ Deno.serve(async (req) => {
       invoicing: p.billing === "fixed"
         ? { invoicingType: "FIXED_PRICE", invoicingSchedule: "ON_COMPLETION" }
         : { invoicingType: "VISIT_BASED", invoicingSchedule: "PER_VISIT" },
-      timeframe: { startAt: startDate },
-      // NO `scheduling` — ever. See header.
+      // NO `scheduling` — ever. See header. And NO timeframe for an SC (on-demand).
     };
+    if (kind === "SA") {
+      input.timeframe = { startAt: startDate };
+      if (p.end_date && /^\d{4}-\d{2}-\d{2}$/.test(p.end_date)) {
+        const days = Math.round((Date.parse(p.end_date) - Date.parse(startDate)) / 86_400_000);
+        if (days > 0) input.timeframe = { startAt: startDate, durationUnits: "DAYS", durationValue: days };
+      }
+    }
     const instructions = typeof p.instructions === "string" && p.instructions.trim() ? p.instructions.trim() : null;
     if (instructions) input.instructions = instructions;
-    if (p.end_date && /^\d{4}-\d{2}-\d{2}$/.test(p.end_date)) {
-      const days = Math.round((Date.parse(p.end_date) - Date.parse(startDate)) / 86_400_000);
-      if (days > 0) (input as any).timeframe = { startAt: startDate, durationUnits: "DAYS", durationValue: days };
-    }
     if (lines.length) {
       input.lineItems = lines.map((l) => ({ ...l, saveToProductsAndServices: false }));
     }
@@ -330,7 +364,10 @@ Deno.serve(async (req) => {
     if (!job) return fail("jobber_refused_no_reason", "Jobber returned no job and no reason. Nothing was saved on our side.");
 
     // VERIFY the returned object (the create payload IS a fresh server read).
-    if (job.title !== title || job.property?.id !== propGid || etDate(job.startAt) !== startDate ||
+    // The date check applies only when we SENT a timeframe (SA): an SC has none,
+    // and Jobber fills its own default startAt for undated jobs.
+    if (job.title !== title || job.property?.id !== propGid ||
+        (kind === "SA" && etDate(job.startAt) !== startDate) ||
         (lines.length && (job.lineItems?.nodes ?? []).length !== lines.length)) {
       return fail("verify_failed",
         "Jobber created the job but it doesn't match what was sent — check it in Jobber before retrying.",
@@ -396,6 +433,7 @@ Deno.serve(async (req) => {
   // Pre-flight EVERYTHING before the first mutation (the half-applied lesson).
   const edit: Record<string, unknown> = {};
   if (p.start_date !== undefined || p.end_date !== undefined) {
+    if (!isSA) return fail("bad_request", "Service Calls are on-demand and carry no dates — schedule the visit instead.");
     const sd = String(p.start_date ?? "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(sd)) return fail("bad_request", "A valid start date is required to change dates.");
     const tf: Record<string, unknown> = { startAt: sd };
