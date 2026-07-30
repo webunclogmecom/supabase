@@ -323,6 +323,11 @@ Deno.serve(async (req) => {
       title = "Service Call";
     }
 
+    // Billing is REQUIRED (Fred, 2026-07-30): no silent default. The UI always
+    // sends it; a caller that omits it gets a readable refusal, not PER_VISIT.
+    if (p.billing !== "per_visit" && p.billing !== "fixed") {
+      return fail("bad_request", "Billing is required: choose Per visit or Fixed price.");
+    }
     const input: Record<string, unknown> = {
       propertyId: propGid,
       title,
