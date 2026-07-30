@@ -80,9 +80,64 @@ async function fetchBundle(baseUrl) {
   return { chunks: seen.size, bytes: [...seen.values()].reduce((a, b) => a + b.length, 0), code: [...seen.values()].join('\n') };
 }
 
+/**
+ * TWO extraction passes, because ONE OF THEM SILENTLY MISSES MOST APPS.
+ *
+ * ⚠ 2026-07-30. The original version had only pass A and reported "1 rpc call found" for the
+ * Client App while the app in fact calls four. Not a regex typo — a wrong ASSUMPTION about the
+ * shape of a minified call. Measured across all five live bundles:
+ *
+ *     calendar  8 literal   0 indirect      <- pass A is complete here
+ *     clients   1 literal   indirect        <- pass A finds global_search and MISSES the 3 wave-1 writes
+ *     derm      3 literal   0 indirect
+ *     review    0 literal   indirect
+ *     fp        2 literal   0 indirect
+ *
+ * The Calendar minifies to `.rpc("edit_calendar_visit",{...})` so the name survives as a literal
+ * AT the call site. The Client App routes through a helper, so the call site is `.rpc(e,...)` and
+ * the name only ever appears as a string somewhere else entirely. NO regex over call syntax can
+ * recover it, so pass A is not fixable — it needs a different question.
+ *
+ * PASS B inverts it: harvest every identifier-shaped string literal in the bundle and INTERSECT
+ * with the real function names in the schemas this app pins. Minification cannot hide a string
+ * literal, so this is robust to whatever the bundler does to the call site.
+ *
+ * Cost of B: a false positive is possible when a literal coincidentally equals a function name
+ * (a column called `global_search`, say). That is why the two passes are reported SEPARATELY and
+ * B is labelled `candidate` — a noisy AT-RISK line is cheap; a silent miss is what this file
+ * exists to prevent.
+ *
+ * 🛑 RESIDUAL LIMITATION, STATED SO NOBODY READS THIS CHECK AS COMPLETE. Pass B can only find a
+ * name that EXISTS somewhere in the bundle as a string. Measured on the Client App the same day:
+ * `client` holds three wave-1 write RPCs, and B recovers two.
+ *
+ *     update_property_operational   in the bundle as a literal   -> found
+ *     upsert_gdo_permit             in the bundle as a literal   -> found
+ *     update_client_fields          NOT in the bundle AT ALL     -> invisible to any static scan
+ *
+ * `update_client_fields` has 1 successful call in audit.logs, so something has called it, but the
+ * CURRENTLY DEPLOYED bundle does not contain the string, so the live app cannot be calling it by
+ * name. Flagged to the Client App's owner; it is not this file's job to resolve.
+ *
+ * ⇒ Read this check as: "of the RPCs I can SEE this app naming, do they all resolve?" It is a
+ * lower bound on the RPC surface, and coverage is now stated in the output instead of implied.
+ * The complement to it is audit.logs `/rpc/<name>` paths — names the DB has SEEN called. Neither
+ * alone is the full picture, and neither can prove a call site is absent.
+ */
 function extract(code) {
-  const rpcs = new Set();
-  for (const m of code.matchAll(/\.rpc\(\s*["']([a-zA-Z0-9_]+)["']/g)) rpcs.add(m[1]);
+  // PASS A — the name is a literal at the call site. High confidence: definitely an RPC call.
+  const direct = new Set();
+  for (const m of code.matchAll(/\.rpc\(\s*["']([a-zA-Z0-9_]+)["']/g)) direct.add(m[1]);
+
+  // Every identifier-shaped string literal. Intersected against the catalogue by the caller.
+  const literals = new Set();
+  for (const m of code.matchAll(/["']([a-z][a-z0-9_]{3,60})["']/g)) literals.add(m[1]);
+
+  // COVERAGE TELL. `.rpc(` whose first argument is NOT a literal means pass A is structurally
+  // incomplete for this app. Counted so the check can say so out loud instead of implying zero.
+  // The supabase-js library defines its own `rpc(` method, so a small count is expected noise —
+  // what matters is that we STOP treating pass A's total as the app's RPC surface.
+  const indirect = (code.match(/\.rpc\(\s*[A-Za-z_$][\w$]{0,3}\s*[,)]/g) || []).length;
 
   // Which schemas does this app pin its clients to? Default is `public` when unspecified.
   const schemas = new Set();
@@ -91,7 +146,7 @@ function extract(code) {
 
   // Explicit per-call overrides would defeat the whole-app assumption below.
   const overrides = (code.match(/\.schema\(\s*["'][a-zA-Z0-9_]+["']\s*\)/g) || []).length;
-  return { rpcs: [...rpcs].sort(), schemas: [...schemas].sort(), overrides };
+  return { direct: [...direct].sort(), literals, indirect, schemas: [...schemas].sort(), overrides };
 }
 
 (async () => {
@@ -109,10 +164,33 @@ function extract(code) {
     try { bundle = await fetchBundle(app.url); }
     catch (e) { console.log(`  SKIP — ${e.message}`); continue; }
 
-    const { rpcs, schemas, overrides } = extract(bundle.code);
+    const { direct, literals, indirect, schemas, overrides } = extract(bundle.code);
     console.log(`  bundle: ${bundle.chunks} chunks, ${bundle.bytes.toLocaleString()} bytes`);
     console.log(`  client schemas pinned: ${schemas.join(', ')}`);
     if (overrides) console.log(`  ⚠ ${overrides} per-call .schema() override(s) — verdicts below may be conservative`);
+
+    // PASS B — intersect the bundle's string literals with the REAL function names in the pinned
+    // schemas. One catalogue query, intersected in JS: cheaper and safer than building a giant
+    // IN-list out of every literal in a megabyte of minified code.
+    const catalogue = await sql(`
+      select distinct n.nspname as schema, p.proname as fn
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in (${schemas.map(s => `'${s.replace(/'/g, "''")}'`).join(',')})`);
+    const bySchema = new Map();
+    for (const r of catalogue) {
+      if (!bySchema.has(r.fn)) bySchema.set(r.fn, new Set());
+      bySchema.get(r.fn).add(r.schema);
+    }
+    const candidates = [...bySchema.keys()].filter(fn => literals.has(fn) && !direct.includes(fn)).sort();
+    const rpcs = [...new Set([...direct, ...candidates])].sort();
+
+    if (indirect) {
+      console.log(`  ⚠ ${indirect} .rpc(<variable>) call site(s) — the name is NOT a literal at the call site,`);
+      console.log(`    so the ${direct.length} literal match(es) are a FLOOR, not this app's RPC surface.`);
+      console.log(`    This is why pass B exists. Do not read the literal count as coverage.`);
+    }
+    console.log(`  rpc names: ${direct.length} literal at call site + ${candidates.length} candidate via string-literal ∩ catalogue`);
+    if (candidates.length) console.log(`    candidates: ${candidates.join(', ')}`);
 
     // POSITIVE CONTROL — and note what it tests. The FIRST version of this check treated "zero
     // RPCs" as a broken extractor and hard-failed. That was wrong: Admin Review legitimately makes
@@ -125,23 +203,24 @@ function extract(code) {
       console.log('  🛑 FAIL — no supabase client found in the bundle at all. BROKEN CHECK, not a clean app.');
       failures++; continue;
     }
+    // SECOND POSITIVE CONTROL, for pass B specifically. If the catalogue query came back empty the
+    // intersection is guaranteed to be empty too, and "no candidates" would be a property of the
+    // broken query rather than of the app. An untested instrument, not an all-clear.
+    if (!catalogue.length) {
+      console.log(`  🛑 FAIL — 0 functions found in [${schemas.join(', ')}]. The catalogue query is broken,`);
+      console.log('    so pass B could only ever return zero. BROKEN CHECK, not a clean app.');
+      failures++; continue;
+    }
+    console.log(`  control: ${catalogue.length} function(s) exist in the pinned schema(s), so the intersection is meaningful`);
+
     if (!rpcs.length) {
-      console.log('  ok — no .rpc() call sites (control: supabase client IS present, so zero is real)');
+      console.log('  ok — no RPC names found by either pass (controls: supabase client present, catalogue non-empty)');
       continue;
     }
-    console.log(`  rpc calls found: ${rpcs.length}  (control passed: client present, extractor working)`);
 
-    const rows = await sql(`
-      select n.nspname as schema, p.proname as fn
-      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where p.proname in (${rpcs.map(r => `'${r.replace(/'/g, "''")}'`).join(',')})
-        and n.nspname in (${schemas.map(s => `'${s.replace(/'/g, "''")}'`).join(',')})`);
-
+    // Resolution reuses the catalogue already fetched for pass B — no second round trip.
     const found = new Map();
-    for (const r of rows) {
-      if (!found.has(r.fn)) found.set(r.fn, new Set());
-      found.get(r.fn).add(r.schema);
-    }
+    for (const fn of rpcs) if (bySchema.has(fn)) found.set(fn, bySchema.get(fn));
 
     // For the AT-RISK set, look for POSITIVE PROOF the app already reaches them: audit rows whose
     // request path is /rpc/<name>. Such a row can only exist if the call arrived and succeeded.
@@ -171,8 +250,12 @@ function extract(code) {
     for (const fn of rpcs) {
       const has = found.get(fn) || new Set();
       const missing = schemas.filter(s => !has.has(s));
+      // How we know about this name at all. A `candidate` came FROM the catalogue, so it can never
+      // hit the FAIL branch — only a literal call site can name something that does not exist,
+      // which is precisely the 2026-07-30 dead-button shape.
+      const via = direct.includes(fn) ? 'literal  ' : 'candidate';
       if (!has.size) {
-        console.log(`  🛑 FAIL      ${fn.padEnd(30)} exists in NONE of [${schemas.join(', ')}] — unreachable`);
+        console.log(`  🛑 FAIL      ${fn.padEnd(30)} [${via}] exists in NONE of [${schemas.join(', ')}] — unreachable`);
         failures++;
       } else if (missing.length) {
         const ev = proven.get(fn);
