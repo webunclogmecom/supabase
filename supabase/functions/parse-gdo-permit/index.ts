@@ -257,7 +257,6 @@ Deno.serve(async (req: Request) => {
     if (!parsed.isDermPermit) {
       return json({
         ok: false, isDermPermit: false, reason: 'not_a_derm_permit', chars: parsed.chars,
-        diag: { ...diag },
         message: parsed.chars < 200
           ? 'No readable text in that PDF — it may be a scan. GDO permits from DERM are text PDFs; check you uploaded the permit itself.'
           : 'That PDF does not look like a Miami-Dade DERM operating permit. GDO permits are Miami-Dade only; Broward and Palm Beach use different documents.',
@@ -272,7 +271,59 @@ Deno.serve(async (req: Request) => {
       }, 200, req)
     }
 
-    return json({ ok: true, isDermPermit: true, filename, fields: parsed.fields }, 200, req)
+    // ---- store the PDF, server-side -------------------------------------------
+    // The app CANNOT upload this itself: there is no INSERT policy on
+    // storage.objects for the gdo-permits bucket, so an authenticated client-side
+    // upload is denied by RLS. Doing it here also means permit_document_path is
+    // always server-set, which is why the form no longer has a path field.
+    //
+    // ⚠ NEVER OVERWRITE AN EXISTING PERMIT DOCUMENT. 14 existing rows were found
+    // carrying a PDF belonging to a DIFFERENT permit; an upsert here would let the
+    // next bad upload destroy a good document under a name that looks right. So
+    // upload with upsert:false and fall back to a suffixed name on conflict.
+    const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const url = Deno.env.get('SUPABASE_URL') ?? ''
+    const gdo = String(parsed.fields.gdo_number)
+    let storedPath: string | null = null
+    let storeNote: string | null = null
+
+    if (svc && url) {
+      const attempts: string[] = []
+      const put = async (path: string, upsert: boolean) => {
+        const r = await fetch(`${url}/storage/v1/object/gdo-permits/${path}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${svc}`,
+            apikey: svc,
+            'Content-Type': 'application/pdf',
+            'x-upsert': upsert ? 'true' : 'false',
+          },
+          body: new Blob([pdf], { type: 'application/pdf' }),
+        })
+        if (r.ok) return path
+        attempts.push(`${path} -> ${r.status} ${(await r.text()).slice(0, 120)}`)
+        return null
+      }
+      storedPath = await put(`gdo/${gdo}.pdf`, false)
+      if (!storedPath) {
+        // Name taken. Keep BOTH documents and let a human reconcile.
+        const stamp = new Date().toISOString().slice(0, 10)
+        storedPath = await put(`gdo/${gdo}-uploaded-${stamp}.pdf`, true)
+        storeNote = storedPath
+          ? `A document already existed for ${gdo}, so this upload was stored alongside it as ${storedPath} rather than replacing it. Check which is current.`
+          : null
+      }
+      if (!storedPath) storeNote = 'The permit was read successfully but could not be stored. Try saving again.'
+    }
+
+    return json({
+      ok: true,
+      isDermPermit: true,
+      filename,
+      fields: { ...parsed.fields, permit_document_path: storedPath },
+      stored: !!storedPath,
+      store_note: storeNote,
+    }, 200, req)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return json({ error: 'parse_failed', message: msg.slice(0, 200) }, 500, req)
