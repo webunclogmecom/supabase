@@ -135,9 +135,36 @@ silently trust "Completed": that flag is a human attestation, not a geometry che
    Tracker flow, the feature is not "verified", it is "probed".
 5. Audit rows: `derm.*` is unaudited by design; verify via the tables + Studio UI, not audit.logs.
 
-## Open question for the sessions (asked 2026-07-31)
+## Authorship and intent — ANSWERED by the author (@Supabase, 2026-07-31)
 
-Which session built 28n/28o/28q (Tue 2026-07-28 15:57-21:32), and was the resolver left uncalled
-deliberately (staged go-live awaiting Fred?) or dropped in handoff? The 21:10 n/q same-minute
-collision looks like two files authored in one session's batch where q was drafted from a stale
-view copy — but that is inference; the author should confirm before we overwrite the view.
+**Author: @Supabase (session 1).** Commits `0e70654` (28n/28o/28q, 21:10) and `601d32b` (28r);
+`0e70654`'s own message third-persons this session ("renamed to avoid colliding with the migrations
+Supabase 2 pushed"), which settles it from the record.
+
+**Intent: DROPPED IN HANDOFF, not a staged go-live. Nobody was waiting on Fred.** The author's own
+28o amendment shaped the resolver's grant "so the filing app can trigger resolution" — the caller
+was intended (DERM Tracker filing path) and never built. This spec closes that gap; it does not
+override any decision. **D1 has the author's explicit no-objection** ("it restores what 28n
+intended"), with the clobber reproduced live on their side too.
+
+Three author notes folded into the design above and binding on the implementer:
+
+- **(a) Ordering confirmed load-bearing from the author's side as well**: the generated branch is
+  dead code TODAY (that is why the 28q clobber has been harmless); it goes live the instant
+  resolution works. Geometry lands BEFORE or WITH the wiring, never after.
+- **(b) D1 blast radius, measured by the author**: `v_stamp_rows` has 0 dependent views; its only
+  referencing function is `derm.auto_place_page` (the intended consumer), and crucially
+  **`v_stamp_row_bands` does NOT reference it**, so FP blackout band geometry does not shift under
+  D1. The PII path is mis-placement → blackout serves the wrong client's row — one step further
+  along than "geometry → blackout", same conclusion.
+- **(c) ⚠ THE RESOLVER REFUSES N-1 TIMES PER SHEET, BY DESIGN — DO NOT "FIX" IT.** Manifests are
+  filed one-per-client on a shared ticket, so on an N-client sheet the first N-1 inserts leave the
+  ticket's client set incomplete and the AFTER-INSERT resolver correctly no-ops each time,
+  resolving only when the LAST manifest completes the set. Testing with one manifest and stopping
+  will read as "broken". The exact-set match is the guard that stops cross-client stamping;
+  relaxing it is how the PII bug gets reintroduced.
+
+Unrelated heads-up from the same exchange, recorded for whoever implements: `public.gdos` gained
+`trg_gdo_number_one_address` (2026-07-30_2103, `a9dd79e`) — one ACTIVE `GDO-` number per address,
+a new refusal path for anything WRITING `gdos`. This spec only READS `gdos`
+(`fn_generated_sheet_slot`'s multi-permit expansion), so no impact here.
