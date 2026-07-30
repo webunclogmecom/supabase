@@ -130,11 +130,24 @@ silently trust "Completed": that flag is a human attestation, not a geometry che
   NULL/undefined `filled_by_ai` renders NO badge even at 7/7, and `ai_placed_rows = 0` renders
   nothing rather than "AI 0/7". The DB view yields non-NULL in the measured shapes (the count
   lateral returns 0 on a miss, not NULL), so this is a contract to PRESERVE, not a bug to fix.
-  **⚠ The Studio also reads `v_stamp_rows` directly at three call sites for on-screen stamp
-  positions** (@Building Apps, from the bundle). Nuance: PLACED stamps render from STORED
-  `stamp_x/y_pct` (so the demo sheets' ~3% offset is in their stored values and is fixed by
-  re-placement, not by D1), while UNPLACED rows' previews/AI-button use the view's guess (fixed by
-  D1). Both matter; different fixes.
+  **⚠ The Studio also reads `v_stamp_rows` directly at three call sites — but ONLY the stored
+  columns.** (@Building Apps, full 6-chunk backtick-aware closure, 914,283 bytes, with positive
+  controls: 6 of the view's columns consumed by name, `guess_x_pct`/`guess_y_pct` **0 occurrences**.)
+  Every render site is gated on `placed` and reads stored `stamp_x/y_pct` only, so:
+  - **D1 has NO directly observable effect in the Studio UI.** The guess never reaches the client.
+    The ONLY channel from D1 to visible pixels is `auto_place_page` (confirmed: its body references
+    `v_stamp_rows`; `set_stamp_position`/`clear_stamp_position` do not), which reads the corrected
+    guess and WRITES stored positions.
+  - A "position re-check" of already-placed sheets cannot detect D1 by looking — they render
+    byte-identical before and after. The only real D1 test is: clear one stamp on a generated
+    sheet, press AI, and measure where it lands. (An earlier revision of this section said unplaced
+    previews use the guess; that was wrong — nothing previews the guess.)
+  - Corrections history, kept visible: the demo sheets were first claimed to carry the old ~3%
+    geometry; measured, their stored positions ARE the calibration source for 28n's corrected
+    constants (28.97/37.14/44.11/51.86/60.29..., x 8.0) and are correct as-is.
+  - Studio tooltip copy (full closure): all-AI = "All {t} stamps currently on this sheet were
+    positioned automatically by Stamp Studio. This is not a review or an accuracy check." — which is
+    exactly what `auto_place_page` guarantees, no more.
 
 ## Verification protocol (per last night's lessons: through the transport, no empty-set passes)
 
