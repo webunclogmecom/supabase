@@ -1,4 +1,9 @@
--- 2026-07-30_0614_vehicle_provenance_on_calendar_view.sql
+-- 2026-07-30_0214_vehicle_provenance_on_calendar_view.sql
+--
+-- (Committed first as ..._0614_... That stamp was UTC, not ET. `TZ=America/New_York date` in this
+--  workspace's Git Bash SILENTLY RETURNS UTC: it is byte-identical to `date -u`, and plain `date`
+--  gives machine-local UTC+2. Neither is ET, which the workspace rule requires. Correct ET is
+--  UTC-4 in EDT. Get ET from the DB instead: select now() at time zone 'America/New_York'.)
 --
 -- MAKES THE CALENDAR'S TRUCK DISPLAY HONEST. Purely additive: two trailing columns.
 --
