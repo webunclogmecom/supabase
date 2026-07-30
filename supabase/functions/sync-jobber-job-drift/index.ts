@@ -179,11 +179,22 @@ Deno.serve(async (req) => {
           const { data: have } = await db.from("line_items")
             .select("name, quantity, unit_price")
             .eq("job_id", row.id).is("visit_id", null).is("invoice_id", null);
-          const differs = (have ?? []).length !== want.length ||
-            want.some((w: any) => {
-              const h = (have ?? []).find((x: any) => norm(x.name) === w.name);
-              return !h || !numEq(h.quantity, w.quantity) || !numEq(h.unit_price, w.unit_price);
-            });
+          // ⚠ MULTISET compare, not find-by-name. Jobs legitimately carry 2-3 lines
+          // with the SAME name at different prices (split pricing — measured live:
+          // 10+ jobs). A find-by-name diff always matched the first duplicate,
+          // declared "differs", and wiped/reinserted those jobs' lines EVERY 30-min
+          // run forever (caught by the phase-2 audit: rows_updated ~11 per run,
+          // never converging). Key each line as name|qty|price and compare counts.
+          const bag = (rows2: any[]) => {
+            const m = new Map<string, number>();
+            for (const x of rows2) {
+              const k = `${norm(x.name)}|${Number(x.quantity ?? 1).toFixed(2)}|${Number(x.unit_price ?? 0).toFixed(2)}`;
+              m.set(k, (m.get(k) ?? 0) + 1);
+            }
+            return m;
+          };
+          const hb = bag(have ?? []), wb = bag(want);
+          const differs = hb.size !== wb.size || [...wb].some(([k, n]) => hb.get(k) !== n);
           if (differs) {
             await db.from("line_items").delete().eq("job_id", row.id).is("visit_id", null).is("invoice_id", null);
             if (want.length) {
