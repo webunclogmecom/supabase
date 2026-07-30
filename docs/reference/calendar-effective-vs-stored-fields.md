@@ -82,9 +82,30 @@ explicitly stored one.** Measured today: **0** such rows, so this is currently l
 
 **Do not treat that 0 as an invariant.** It is exactly the shape of
 `reference_clean_data_is_not_proof_of_an_invariant`: it holds because crew and assignment happen to agree
-today, not because anything enforces it. A crew edit that disagrees with `assigned_driver_id` would
-silently win in every Calendar surface. If that matters, the fix is to reverse the COALESCE (stored
-first), which is a deliberate behaviour change and needs Fred, not a quiet patch.
+today, not because anything enforces it.
+
+**✅ DECIDED 2026-07-30: Fred chose to KEEP derived-first. Do not re-open this as a finding.**
+The full trail, so the next auditor starts here instead of re-deriving it:
+- A stored-first reversal was staged, proven by constructed test, and **retired unapplied**
+  (`2026-07-30_0350_calendar_driver_stored_first_STAGED.sql`, created `a5ef1d1`, premise overturned
+  `9da7cb5`, removed after the decision — git holds the body if it is ever wanted).
+- **Derived-first is documented design, not an accident**: Building Apps `CLAUDE.md` rule #4 — the
+  actual (GPS-attributed) driver of a completed visit beats the plan, per the trust hierarchy
+  (Samsara = 100%). A blanket flip would have made a completed visit where GPS disagreed with the
+  plan display the plan.
+- The drawer CANNOT create the crew-vs-stored divergence anyway: both edit RPCs co-write
+  `assigned_driver_id = team_ids[0]` in the same statement, and the deployed bundle hardcodes
+  `p_driver_id: null`. Only raw `sql` writes can desync the pair (@Building Apps, measured from the
+  live bundle; each claim re-verified against Prod).
+- ⚠ The divergence class that DOES exist is inverted: the drawer writes `visit_team`, the view's
+  derived driver reads `visit_assignments` (zero mentions of `visit_team` in the view body), so a
+  team edit on a visit carrying a `visit_assignments` row (940/945 completed, 32/703 scheduled)
+  updates the stored driver while the view keeps showing the old derived person. **Accepted as-is
+  with the decision**; on completed visits that display is the GPS truth, which is the point.
+- A status-scoped variant (stored-first for `scheduled` only) was considered and **declined** with
+  the same decision. If circumstances change, that variant — and the 4-site edit machinery (3
+  COALESCEs + the `driver_color` CASE) with its rolled-back TEMP-view test protocol — is in the git
+  history of the retired file. Re-opening still needs Fred, per rule #4.
 
 ⚠ Step 3 keys on `i.vehicle_id = v.vehicle_id`, the **STORED** vehicle, not the effective one. So a visit
 with no stored truck cannot reach the inspection fallback, which is why 680 of the 728 driver divergences
