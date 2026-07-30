@@ -22,7 +22,40 @@
 -- Returns `visits` unchanged, so it is a drop-in for the existing RPC's shape.
 --
 -- RULE 8 (ADR 010): no table or column change; the underlying edit_calendar_visit keeps its own audit
--- behaviour, and `visits` remains audited, so the write is still attributed.
+-- behaviour, and `visits` remains audited, so the write is still LOGGED.
+--
+-- ⚠⚠ CORRECTION 2026-07-30 — THE ORIGINAL WORDING HERE SAID "so the write is still ATTRIBUTED", AND
+-- THAT WAS FALSE. Found by @Building Apps' adversarial audit. Logged and attributed are not the same
+-- claim, and this header asserted the stronger one without measuring it.
+--
+-- WHAT ACTUALLY HAPPENED. `save-calendar-visit` calls this RPC server-to-server as service_role with
+-- NO browser Origin, and audit.log_change() derives app_source from the request Origin. So every
+-- verified save fell through the CASE to **app_source='sql'** -- indistinguishable from an engineer
+-- running SQL by hand. Measured: 3 such rows with app_source='sql', path='/rpc/
+-- edit_calendar_visit_verified', jwt_claims->>'email' NULL, against a control of 2,064 rows correctly
+-- labelled 'visit-calendar' from the browser era. `get_record_history` could no longer name which
+-- dispatcher changed a visit.
+--
+-- This is the SAME detector failure as the Admin Review `other:review.unclogme.app` gap documented in
+-- CLAUDE.md §5.5(b), and arguably worse: `other:<host>` is at least identifiable as an app, whereas
+-- 'sql' is indistinguishable from manual DBA work. Note it was introduced by the very feature whose
+-- purpose is to stop silent divergence.
+--
+-- FIXED in the edge function, not here: it now builds its client with
+-- `global: { headers: { "x-app-source": "visit-calendar" } }`, which ADR 016 makes an override that
+-- wins over Origin. Same idiom as dump-visit-create and rpa-derm-queue.
+--
+-- ⚠ STILL OPEN, and deliberately not claimed as fixed: that restores the APP, not the PERSON.
+-- jwt_claims still comes from the service_role token, so `jwt_claims->>'email'` remains NULL. Naming
+-- the individual dispatcher needs their identity carried explicitly (the pattern send-derm-email uses
+-- with sent_by_email/sent_by_user_id, 2026-07-21h), because this function is deliberately
+-- service_role-only and therefore cannot be invoked with the caller's own JWT. `visits` has no such
+-- column today, so this is a schema decision, not a one-line fix.
+--
+-- ⚠ ALSO KNOWN, not a data-integrity issue: each verified save writes TWO audit rows for one user
+-- action -- one from edit_calendar_visit and one from the sync_state='confirmed' UPDATE below. Both
+-- are legitimate writes to an audited table. Log noise, documented rather than worked around, because
+-- suppressing the second would mean disabling a trigger, which is worse.
 
 CREATE OR REPLACE FUNCTION public.edit_calendar_visit_verified(p_visit_id bigint, p_patch jsonb)
 RETURNS public.visits

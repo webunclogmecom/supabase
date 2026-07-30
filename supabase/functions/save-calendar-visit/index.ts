@@ -46,7 +46,25 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+// ⚠ x-app-source IS REQUIRED, and its absence was a real regression (found by @Building Apps).
+// audit.log_change() derives app_source from the request Origin, and this function is server-to-server
+// with NO browser Origin, so every verified save fell through the CASE to app_source='sql' -- i.e.
+// indistinguishable from an engineer running SQL by hand. Before the verified path, the Calendar wrote
+// via PostgREST from the browser and attributed correctly ('visit-calendar', 2,064 rows). ADR 016 makes
+// the explicit header an override that wins over Origin, which is exactly what a headless writer needs.
+// Same idiom as dump-visit-create ('dump-schedule') and rpa-derm-queue ('gdo-report-bot').
+//
+// ⚠ THIS RESTORES THE APP, NOT THE PERSON. jwt_claims still comes from the service_role token, so
+// jwt_claims->>'email' remains NULL and get_record_history cannot name which dispatcher made the
+// change. Per-user attribution needs the human's identity carried explicitly (the pattern
+// send-derm-email uses with sent_by_email/sent_by_user_id, 2026-07-21h) because
+// edit_calendar_visit_verified is deliberately service_role-only and so cannot be called with the
+// caller's own JWT. `visits` has no such column today. Tracked as an open item, NOT fixed here.
+const db = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  { global: { headers: { "x-app-source": "visit-calendar" } } },
+);
 const GQL_VERSION = "2026-04-16";
 
 // ⚠ CORS. The Calendar calls this from a BROWSER, which sends an OPTIONS preflight first (custom
@@ -294,6 +312,20 @@ Deno.serve(async (req) => {
         const delta = new Date(String(target.start_at)).getTime() - new Date(String(visit.start_at)).getTime();
         if (Number.isFinite(delta) && delta !== 0) {
           target.end_at = new Date(new Date(String(visit.end_at)).getTime() + delta).toISOString();
+          // ⚠ WRITE IT INTO `patch` TOO, or Jobber and our DB SILENTLY DIVERGE. This is the fix for a
+          // regression this very block introduced (found by @Building Apps' adversarial audit).
+          // The commit at the end sends `patch`, and edit_calendar_visit writes end_at only
+          // `WHEN p_patch ? 'end_at'`. So the synthesised value went to Jobber and never to us:
+          //     visit 09:00-10:00, user edits start to 08:00
+          //     Jobber -> 08:00-09:00     our DB -> 08:00-10:00     toast said "Saved."
+          // `{start_at}` with no end_at is the NORMAL product of editing the start field, since the
+          // drawer builds the two independently, so this was the common path and not an edge case.
+          // Nothing would have caught it later either: the verify step did not compare endAt, and
+          // sync-jobber-visit-drift's isDrift() compares startAt only, so the */30 reconciler can
+          // neither surface nor heal it. 985 live visits carry both timestamps.
+          // Assigning to BOTH here is deliberate: one synthesis, one value, so the two sides cannot
+          // disagree by construction. Do not "clean this up" into target-only.
+          (patch as Record<string, unknown>).end_at = target.end_at;
         }
       }
 
@@ -340,7 +372,29 @@ Deno.serve(async (req) => {
     const got = jv?.startAt ? new Date(jv.startAt).getTime() : NaN;
     if (want !== got) mismatches.push("schedule");
   }
+  // ⚠ endAt MUST be verified, not just startAt (gap found by @Building Apps). Sending start with no
+  // end is the normal shape of a start-field edit, and the duration-preserving synthesis above now
+  // writes that value to BOTH Jobber and our DB -- so if Jobber disagrees about the end, we would
+  // commit a divergence while reporting success. Nothing downstream would catch it either:
+  // sync-jobber-visit-drift's isDrift() compares startAt only.
+  if (applied.includes("schedule") && target.end_at) {
+    const wantEnd = new Date(String(target.end_at)).getTime();
+    const gotEnd = jv?.endAt ? new Date(jv.endAt).getTime() : NaN;
+    if (wantEnd !== gotEnd) mismatches.push("end time");
+  }
   if (applied.includes("title") && target.title && jv?.title !== target.title) mismatches.push("title");
+  // ⚠ notes was COMMITTED UNVERIFIED. Q_VERIFY already fetched `instructions` and nothing ever
+  // compared it, so notes rode on a bare 200 with no userErrors -- precisely the acceptance criterion
+  // this whole function exists to reject. Worse, the app never sets `title`, so of the groups the
+  // drawer can actually route here, notes was the one with NO verification at all.
+  // Gate on what was SENT (`pushable`), not on the label: the visitEdit mutation is labelled "title"
+  // when title is present and "notes" otherwise, so a title+notes save appears in `applied` as
+  // "title" only and a notes-label check would silently never fire.
+  if (pushable.includes("notes") && (applied.includes("notes") || applied.includes("title"))) {
+    const wantNotes = String(target.notes ?? "");
+    const gotNotes = String(jv?.instructions ?? "");   // Jobber returns null for empty; treat as ""
+    if (wantNotes !== gotNotes) mismatches.push("notes");
+  }
   if (applied.includes("crew") && teamGids) {
     const got = new Set(((jv?.assignedUsers?.nodes) || []).map((n: any) => n.id));
     if (teamGids.length !== got.size || !teamGids.every((g) => got.has(g))) mismatches.push("crew");
