@@ -526,6 +526,18 @@ verify_jwt = false
 [functions.save-calendar-visit]
 verify_jwt = true
 
+# save-client-job: the Client App's VERIFIED two-way job saga (create/edit/close/
+# reopen). Browser-called with the real user JWT; the handler additionally
+# requires a staff-domain email claim. Push Jobber -> re-read -> only then DB.
+[functions.save-client-job]
+verify_jwt = true
+
+# sync-jobber-job-drift: the 30-minute jobs reconcile (pg_cron 15,45 * * * * via
+# fn_request_jobber_sync('jobs-drift'), vault bearer). Handler requires
+# role=service_role — verify_jwt alone also admits the public anon key.
+[functions.sync-jobber-job-drift]
+verify_jwt = true
+
 # parse-gdo-permit: reads an uploaded Miami-Dade DERM operating-permit PDF and returns
 # the fields (GDO number, validity window, the SPECIFIC-CONDITIONS cleaning frequency) so
 # the Client App can pre-fill Add/Edit Permit instead of making staff retype the document.
