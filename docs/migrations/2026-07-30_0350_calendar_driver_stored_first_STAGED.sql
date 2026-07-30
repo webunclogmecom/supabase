@@ -1,11 +1,39 @@
 -- 2026-07-30_0350  calendar driver: STORED first, derived fallback — ⛔ STAGED, DO NOT APPLY
 --
 -- ⛔⛔ NOT APPLIED. Prepared on Fred's instruction ("prepare the migration without applying it").
--- Two gates before applying, in this order:
---   1. @Building Apps answers whether the Calendar drawer can actually CREATE the divergent state
---      (crew set independently of assigned driver). If it cannot, and no other writer can, this is
---      theoretical cleanup and may not be worth a behaviour change at all.
---   2. Fred says apply.
+--
+-- ⛔⛔⛔ GATE 1 IS NOW ANSWERED, AND THE ANSWER RECOMMENDS **AGAINST** APPLYING THIS FILE AS-IS.
+-- @Building Apps measured (2026-07-30, live bundle + live function bodies, each claim re-verified
+-- here against Prod before recording it):
+--   * The drawer CANNOT create the crew-vs-stored divergence this file was designed for. Both edit
+--     RPCs CO-WRITE the pair: edit_calendar_visit's team branch runs
+--     `assigned_driver_id = NULLIF(p_patch->'team_ids'->>0,'')::bigint` in the same statement that
+--     replaces the crew, and create_calendar_visit sets `COALESCE(p_team_ids[1], p_driver_id)`.
+--     The deployed Calendar bundle passes `p_driver_id: null` HARDCODED. Only raw `sql` writes can
+--     desync the pair.
+--   * The app-reachable divergence class is INVERTED from the premise: the drawer writes
+--     `visit_team`, but the view's derived driver reads `visit_assignments` (`visit_team` appears
+--     ZERO times in the view body — verified). So a team edit on a visit carrying a
+--     visit_assignments row updates the STORED driver while the view keeps showing the OLD derived
+--     person. Coverage: 940/945 completed and 32/703 scheduled visits carry a va row; divergent
+--     today: 0 (rarity — 22 team edits ever — not protection).
+--   * 🛑 THE BLANKET FLIP CONTRADICTS A DOCUMENTED RULE. Building Apps CLAUDE.md rule #4
+--     (2026-06-24): actual driver of a COMPLETED visit is derived from Samsara GPS attribution,
+--     "driver_id = COALESCE(actual, assigned)", derived-first DELIBERATE — GPS truth beats plan,
+--     per the trust hierarchy (Samsara = 100%). Applying this file would make any future completed
+--     visit where GPS ≠ plan display the PLAN. "0 rows change today" is true of BOTH orders and
+--     decides nothing.
+--
+-- ⇒ IF THE DRAWER'S EDIT SHOULD WIN ANYWHERE, THE DEFENSIBLE SHAPE IS **STATUS-SCOPED**, NOT THIS
+--   FILE: stored-first for `scheduled` (a human's plan should beat a stray va row; only 32
+--   scheduled visits even have one), derived-first for `completed` (GPS is truth). Also 0 rows
+--   change today. The 4-site machinery below (3 COALESCEs + the driver_color CASE) carries over
+--   directly into that variant.
+--
+-- ⇒ REMAINING GATE: FRED, with the rule-#4 conflict in front of him. Do not apply this file, and do
+--   not write the status-scoped variant, until he picks. This file is kept because its body is the
+--   proven mechanical edit and its test protocol transfers to whichever variant is chosen.
+--
 -- The `_STAGED` suffix follows docs/migrations/NAMING.md (suffix, never prefix — a prefix breaks date
 -- sorting and is exactly how STAGED_2026-06-15c ended up sorting under "S").
 --
