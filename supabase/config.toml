@@ -474,12 +474,35 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
 
 # dump-visit-create: the truck-QR endpoint drivers hit from their phone to self-schedule a dump
-# visit. The phone holds NO JWT, so verify_jwt MUST be false — the function does its OWN
-# authorization instead (get-derm-doc model): a shared secret DUMP_QR_KEY carried in the QR URL,
-# checked FAIL-CLOSED (missing env var => reject, like webhook-airtable — never the fail-OPEN
-# idiom in sync-jobber-visit-drift). It holds service_role internally to call
-# create_calendar_visit, which anon is (deliberately) revoked from. Blast radius is bounded: the
-# client is never caller-supplied, only a key into a 2-entry server-side whitelist of dump sites.
+# visit. The phone holds NO JWT, so verify_jwt MUST be false.
+#
+# 🛑 THIS COMMENT PREVIOUSLY CLAIMED A CONTROL THAT DOES NOT EXIST. It said the function "does its
+# OWN authorization instead (get-derm-doc model): a shared secret DUMP_QR_KEY carried in the QR
+# URL, checked FAIL-CLOSED". That was fabricated. Corrected 2026-07-30 after measuring it, and the
+# correction matters more than the usual doc fix because a written safety claim sitting in front of
+# an unauthenticated endpoint is worse than the endpoint: it stops the next reader from looking.
+# It also LOOKED corroborated, because DUMP_QR_KEY really is a live Functions secret.
+#
+# WHAT IS ACTUALLY TRUE. There is NO shared secret, ON PURPOSE — Fred's call 2026-07-16, and the
+# function's own header says so at index.ts:12 and :24: "A `k` in the body/URL is still ACCEPTED
+# and IGNORED so existing QR links keep working unchanged." So it is fail-OPEN by design, not
+# fail-closed. Measured 2026-07-30 with no apikey and no Authorization header:
+#   {"action":"bootstrap"}                 -> 200, 753 bytes  (keys: ok, drivers, dumps)
+#   {"action":"bootstrap","k":"wrong-key"} -> 200, 753 bytes  IDENTICAL, proving `k` is ignored
+#   {"action":"route"}                     -> 200, 2155 bytes (keys: ok, date, count, stops)
+# i.e. anyone on the internet can read the driver roster, both dump sites, and today's client
+# stops. That is the live exposure; treat it as known, not as protected.
+#
+# WHAT DOES bound it, and this part of the old comment was right: the client is never
+# caller-supplied, only a key into a small server-side whitelist of dump sites, and the function
+# holds service_role internally to call create_calendar_visit, which anon is deliberately revoked
+# from. So the write surface is narrow even though the read surface is open.
+#
+# ⚠ Whether a bare QR URL SHOULD return today's stops is Fred's decision and is still open. Do not
+# "fix" this by adding a secret without him: the whole point of the 2026-07-16 design is that a
+# driver can reach it from the QR with nothing else. Note the tension with get-derm-doc, whose
+# kind:'address' path was closed on 2026-07-29 precisely because a printed client_code is not a
+# credential.
 [functions.dump-visit-create]
 verify_jwt = false
 
