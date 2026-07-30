@@ -527,10 +527,21 @@ verify_jwt = false
 verify_jwt = true
 
 # save-client-job: the Client App's VERIFIED two-way job saga (create/edit/close/
-# reopen). Browser-called with the real user JWT; the handler additionally
-# requires a staff-domain email claim. Push Jobber -> re-read -> only then DB.
+# reopen). Browser-called with the real user JWT.
+# ⚠ verify_jwt=false is DELIBERATE and is NOT the fail-open idiom: this project
+# signs session tokens with ES256 and THIS function's gateway rejected a real
+# staff session with 401 UNAUTHORIZED_ASYMMETRIC_JWT (measured 2026-07-30). The
+# handler validates the bearer itself via auth.getUser() (GoTrue checks signature
+# + expiry) AND requires a staff-domain email — strictly stronger than
+# verify_jwt, which the public anon key passes.
+# ⚠ NUANCE, measured the same day: save-calendar-visit (verify_jwt=true, deployed
+# earlier) ACCEPTS the same ES256 token — the gateway behaviour differs between
+# functions, presumably by deployment vintage vs the signing-key migration. So do
+# NOT "harmonise" either direction: the Calendar fn works as configured, and this
+# one must keep in-handler validation. If a redeploy of save-calendar-visit ever
+# starts 401ing real users (UNAUTHORIZED_ASYMMETRIC_JWT), this is why.
 [functions.save-client-job]
-verify_jwt = true
+verify_jwt = false
 
 # sync-jobber-job-drift: the 30-minute jobs reconcile (pg_cron 15,45 * * * * via
 # fn_request_jobber_sync('jobs-drift'), vault bearer). Handler requires

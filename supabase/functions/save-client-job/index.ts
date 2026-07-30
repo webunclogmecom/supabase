@@ -182,8 +182,16 @@ async function resolveServices(services: Svc[]): Promise<{ err?: string; lines?:
     if (!c.schedulable) return { err: `"${c.title}" is not a schedulable service.` };
     const price = Number(s.unit_price);
     if (!Number.isFinite(price) || price < 0) return { err: `"${c.title}" needs a valid price.` };
-    // The name format is the taxonomy join key: `<code> - <title>` (measured live).
-    lines.push({ name: `${c.code} - ${c.title}`, unitPrice: price, quantity: Number(s.quantity) > 0 ? Number(s.quantity) : 1 });
+    // ⚠ service_line_items.title ALREADY carries the code prefix ("01 - Service
+    // Agreement - …"), measured 2026-07-30. An earlier draft composed
+    // `${code} - ${title}` and would have written "01 - 01 - …", silently breaking
+    // the taxonomy join (lpad(substring(name from '^([0-9]+)'))) on every line.
+    // The title IS the canonical line name. Belt-and-braces: assert the prefix.
+    const name = c.title.trim();
+    if (!new RegExp(`^0?${Number(c.code)}\\s*-`).test(name)) {
+      return { err: `Catalog title for code ${c.code} lost its code prefix ("${name}") — tell Fred before creating jobs.` };
+    }
+    lines.push({ name, unitPrice: price, quantity: Number(s.quantity) > 0 ? Number(s.quantity) : 1 });
   }
   return { lines };
 }
@@ -216,15 +224,19 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
   if (req.method !== "POST") return fail("method", "POST only");
 
-  // verify_jwt=true means the gateway verified the signature; the anon key would
-  // also pass that, so require a real staff identity from the claims.
-  try {
-    const claims = JSON.parse(atob((req.headers.get("authorization") ?? "").split(" ")[1].split(".")[1]));
-    const email = String(claims.email ?? "").toLowerCase();
-    if (!claims.sub || (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
-      return fail("forbidden", "Staff account required.");
-    }
-  } catch {
+  // AUTH — in-handler, NOT gateway verify_jwt. Measured 2026-07-30: this project
+  // signs session tokens with ES256 and the gateway's verify_jwt rejects them
+  // outright (401 UNAUTHORIZED_ASYMMETRIC_JWT), so verify_jwt=false in config.toml
+  // is deliberate and documented there. auth.getUser() round-trips to GoTrue,
+  // which validates signature + expiry against the real keys — and is STRONGER
+  // than the gateway check, which the public anon key also passes. A bare claim
+  // decode here would verify nothing (signature unchecked).
+  const m = (req.headers.get("authorization") ?? "").match(/^Bearer (.+)$/);
+  if (!m) return fail("forbidden", "Staff account required.");
+  const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
+  const email = String(userData?.user?.email ?? "").toLowerCase();
+  if (userErr || !userData?.user?.id ||
+      (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail("forbidden", "Staff account required.");
   }
 
