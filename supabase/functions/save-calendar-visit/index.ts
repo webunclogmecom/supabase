@@ -192,12 +192,43 @@ function etLocal(iso: string) {
 // ⚠ verify_jwt=true only proves the caller holds a VALID project JWT — and the anon key is one.
 // This function writes visits and pushes to Jobber, so the role must be checked explicitly.
 // The 2026-07-12 harden made anon read-only on all business data; this must not reopen it.
-function bearerRole(req: Request): string | null {
+function bearerClaims(req: Request): Record<string, unknown> | null {
   const h = req.headers.get("Authorization") || "";
   const t = h.startsWith("Bearer ") ? h.slice(7) : "";
   const p = t.split(".")[1];
   if (!p) return null;
-  try { return JSON.parse(atob(p.replace(/-/g, "+").replace(/_/g, "/"))).role ?? null; } catch { return null; }
+  try { return JSON.parse(atob(p.replace(/-/g, "+").replace(/_/g, "/"))); } catch { return null; }
+}
+
+// ---- per-user attribution --------------------------------------------------
+// ⚠ WHY A SEPARATE WRITE CLIENT. audit.log_change() captures `x-actor-name` into
+// request_context.actor_name; that capture layer has existed since 2026-06-26 (P2b) and
+// webhook-jobber already uses exactly this idiom. Without it, a verified save is logged as
+// 'visit-calendar' but with NO person: jwt_claims comes from the service_role token, so
+// jwt_claims->>'email' is NULL and get_record_history cannot name the dispatcher.
+//
+// ⚠ THE EMAIL, NOT A DISPLAY NAME. get_record_history maps the email to employees.full_name, which is
+// how every other human branch renders. Sending a name would create a second naming path to keep in
+// sync, and would not resolve to an employee row.
+//
+// ⚠ OMIT THE HEADER ENTIRELY when there is no email, rather than sending "". log_change uses
+// NULLIF(...,'') and jsonb_strip_nulls, so an absent header is clean while an empty one is only
+// equivalent by luck. A service_role caller (our own curl tests) legitimately has no email and MUST
+// produce no actor claim rather than a blank one.
+//
+// ⚠ NEVER AN AUTHORIZATION INPUT. This is a caller-supplied header. We derive it from a JWT whose
+// signature the gateway already verified (verify_jwt = true), but PostgREST accepts the header from
+// anyone who can set one, so it is an attribution HINT only. Access control stays on the role check
+// above and on the RPC's own grants.
+function writeClient(actorEmail: string | null) {
+  return createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { global: { headers: {
+      "x-app-source": "visit-calendar",
+      ...(actorEmail ? { "x-actor-name": actorEmail } : {}),
+    } } },
+  );
 }
 
 Deno.serve(async (req) => {
@@ -206,7 +237,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: cors(req) });
   if (req.method !== "POST") return new Response("method not allowed", { status: 405, headers: cors(req) });
 
-  const role = bearerRole(req);
+  // ONE decode: the role gate and the actor both come from the same verified token.
+  const claims = bearerClaims(req);
+  const role = (claims?.role as string) ?? null;
+  // A service_role caller (scripts, our curl tests) has no email and must yield no actor.
+  const actorEmail = typeof claims?.email === "string" && claims.email.trim() ? claims.email.trim() : null;
   if (role !== "authenticated" && role !== "service_role") {
     return new Response(JSON.stringify({ ok: false, code: "forbidden", message: "Not permitted." }), {
       status: 403, headers: hdrs(),
@@ -409,7 +444,12 @@ Deno.serve(async (req) => {
   // 5. COMMIT — only now. Suppressed so the trigger doesn't push a second time.
   //    Both partitions in ONE call: a save changing date AND truck writes both or neither.
   // =========================================================================
-  const { error: werr } = await db.rpc("edit_calendar_visit_verified", { p_visit_id: visitId, p_patch: patch });
+  // ⚠ writeClient, NOT the module-level `db`: this is the only call that must carry the actor, and it
+  // is per-request because the actor differs per caller. A module-level client cannot hold it (and a
+  // mutable module-level global would be unsafe anyway, since Deno.serve handles requests
+  // concurrently -- the same trap that was caught and removed from this file before it shipped).
+  const { error: werr } = await writeClient(actorEmail)
+    .rpc("edit_calendar_visit_verified", { p_visit_id: visitId, p_patch: patch });
   if (werr) {
     return fail("db_write_failed",
       `Jobber was updated but saving here failed: ${werr.message}. The two are now out of step — check the visit in Jobber.`,
