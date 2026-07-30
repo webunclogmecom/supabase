@@ -432,12 +432,35 @@ Deno.serve(async (req: Request) => {
 
         let toEmail: string | null = testRecipient
         if (!toEmail) {
+          // ⚠ THE ORDER BY IS LOAD-BEARING — do not drop it as noise.
+          // This used to be a bare .limit(1) with NO ordering, so with more than one
+          // emailed contact the recipient of a client's DERM manifest was whichever
+          // row Postgres happened to return. That was survivable only because
+          // client_contacts was capped at one row per role per client (max 3).
+          // Migration 2026-07-30_0539 added per-property contacts for the Client App's
+          // "Add Contact", which makes multi-contact clients the normal case — so
+          // unordered selection would mean adding a contact could silently redirect a
+          // client-facing compliance email to a different person.
+          // Deterministic preference: client-level (property_id IS NULL) first, then
+          // the `primary` role, then oldest row. That is the narrowest reading of the
+          // previous intent ("the client's main email").
           const { data: cc } = await sb
             .from('client_contacts')
-            .select('email')
+            .select('email, property_id, contact_role, id')
             .eq('client_id', clientId)
             .not('email', 'is', null)
             .neq('email', '')
+            .order('property_id', { ascending: true, nullsFirst: true })
+            // DESCENDING is deliberate, and it is the one line here that is easy to
+            // "tidy" into a bug. The role vocabulary is exactly three values, fixed by
+            // the CHECK in client.create_client_contact: accounting | city | primary.
+            // Descending alphabetical yields primary > city > accounting, so `primary`
+            // sorts FIRST. Ascending would put `accounting` first and send the client's
+            // DERM manifest to their bookkeeper. PostgREST cannot ORDER BY a CASE
+            // expression, so this ordering carries the preference. ⚠ If a fourth role is
+            // ever added, re-derive this rather than assuming it still holds.
+            .order('contact_role', { ascending: false })
+            .order('id', { ascending: true })
             .limit(1)
             .maybeSingle()
           toEmail = cc?.email ?? null

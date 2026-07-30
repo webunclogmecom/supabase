@@ -425,9 +425,26 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   })
 
   // Upsert client_contacts from Jobber emails/phones
+  //
+  // ⚠ THE onConflict LIST IS PINNED TO A CONSTRAINT — DO NOT SHORTEN IT BACK.
+  // Migration 2026-07-30_0539 replaced UNIQUE (client_id, contact_role) with
+  //   UNIQUE NULLS NOT DISTINCT (client_id, property_id, contact_role)
+  // so the Client App's "Add Contact" can hold one contact per ROLE per PROPERTY.
+  // PostgREST requires onConflict to name a column set backed by a real unique
+  // constraint; the old 2-column form now resolves to nothing and every contact
+  // upsert would fail 42P10. Because the Jobber feed is poll-replayed rather than
+  // fire-and-forget, that failure would repeat on every poll, not once.
+  //
+  // `property_id: null` is sent EXPLICITLY (not left to the column default) because
+  // it is part of the conflict target. Jobber contacts are client-level: Jobber has
+  // no concept of our per-property contacts. NULLS NOT DISTINCT is what keeps the
+  // original guarantee intact here — the NULL is treated as a real value, so this
+  // still de-duplicates to exactly one client-level `primary` row per client
+  // (verified: after this upsert the row count stays 1, it does not become 2).
   if (primaryEmail || primaryPhone) {
     const contactRow = {
       client_id: entityId,
+      property_id: null,
       contact_role: 'primary',
       name: name,
       email: primaryEmail ?? null,
@@ -435,7 +452,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     }
     await supabase
       .from('client_contacts')
-      .upsert(contactRow, { onConflict: 'client_id,contact_role' })
+      .upsert(contactRow, { onConflict: 'client_id,property_id,contact_role' })
   }
 
   // Upsert billing property from Jobber address
