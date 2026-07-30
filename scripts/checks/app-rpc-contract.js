@@ -31,12 +31,20 @@ const PAT = process.env.SUPABASE_PAT;
 const PROJECT = process.env.SUPABASE_PROJECT_ID || 'wbasvhvvismukaqdnouk';
 if (!PAT) { console.error('FAIL: SUPABASE_PAT missing from Supabase/.env'); process.exit(2); }
 
+/**
+ * ⚠ THIS LIST WAS 5 APPS AND THE TWO MISSING ONES WERE NOT THE QUIET ONES (added 2026-07-31).
+ * DERM Stamp Studio makes TEN RPC calls, eight of which write, and was covered by nothing. It was
+ * missed because it is the app nobody logs into (public, obscure-URL gate), which is precisely
+ * backwards as a reason to skip a contract check. Add an app here the day it gets a domain.
+ */
 const APPS = {
   calendar: { label: 'Visit Calendar', url: 'https://calendar.unclogme.app' },
   clients:  { label: 'Client App',     url: 'https://clients.unclogme.app'  },
   derm:     { label: 'DERM Tracker',   url: 'https://derm.unclogme.app'     },
   review:   { label: 'Admin Review',   url: 'https://review.unclogme.app'   },
   fp:       { label: 'Field Portal',   url: 'https://fp.unclogme.app'       },
+  studio:   { label: 'DERM Stamp Studio', url: 'https://studio.unclogme.app' },
+  dump:     { label: 'DUMP Schedule QR',  url: 'https://dump.unclogme.app'   },
 };
 
 async function sql(query) {
@@ -72,8 +80,8 @@ async function fetchBundle(baseUrl) {
     if (!res.ok) { seen.set(p, ''); continue; }
     const body = await res.text();
     seen.set(p, body);
-    for (const m of body.matchAll(/["'](?:\.\/|\/assets\/)([A-Za-z0-9._-]+\.js)["']/g)) {
-      const next = `/assets/${m[1]}`;
+    for (const m of body.matchAll(/(["'`])(?:\.\/|\/assets\/)([A-Za-z0-9._-]+\.js)\1/g)) {
+      const next = `/assets/${m[2]}`;
       if (!seen.has(next)) queue.push(next);
     }
   }
@@ -124,35 +132,97 @@ async function fetchBundle(baseUrl) {
  * The complement to it is audit.logs `/rpc/<name>` paths — names the DB has SEEN called. Neither
  * alone is the full picture, and neither can prove a call site is absent.
  */
+/**
+ * ⚠ EVERY LITERAL MATCHER BELOW ACCEPTS A BACKTICK, AND THAT IS NOT COSMETIC (2026-07-31).
+ *
+ * These regexes were `["']`-only. A bundler is free to emit `.from(`visits`)` / `.rpc(`name`)`,
+ * and the DERM Stamp Studio's live bundle does exactly that — a `["']`-only sweep over it reports
+ * **zero** `.from()` calls, which reads as "this app touches no tables" rather than as a broken
+ * instrument. Measured on the Studio bundle the same day (817,566 bytes, 3 chunks, walked to
+ * closure): `["']` -> 0 tables, backtick-aware -> the real set.
+ *
+ * The delimiter is captured and back-referenced (`(["'\`])...\1`) rather than put in a character
+ * class on both ends, so `"name\`` cannot match as a pair.
+ *
+ * Same family as the pass-A/pass-B split below: a regex over call syntax is an instrument, and an
+ * instrument that returns 0 has told you nothing until a positive control says it can return >0.
+ */
 function extract(code) {
   // PASS A — the name is a literal at the call site. High confidence: definitely an RPC call.
   const direct = new Set();
-  for (const m of code.matchAll(/\.rpc\(\s*["']([a-zA-Z0-9_]+)["']/g)) direct.add(m[1]);
+  for (const m of code.matchAll(/\.rpc\(\s*(["'`])([a-zA-Z0-9_]+)\1/g)) direct.add(m[2]);
 
   // Every identifier-shaped string literal. Intersected against the catalogue by the caller.
   const literals = new Set();
-  for (const m of code.matchAll(/["']([a-z][a-z0-9_]{3,60})["']/g)) literals.add(m[1]);
+  for (const m of code.matchAll(/(["'`])([a-z][a-z0-9_]{3,60})\1/g)) literals.add(m[2]);
 
   // COVERAGE TELL. `.rpc(` whose first argument is NOT a literal means pass A is structurally
   // incomplete for this app. Counted so the check can say so out loud instead of implying zero.
   // The supabase-js library defines its own `rpc(` method, so a small count is expected noise —
   // what matters is that we STOP treating pass A's total as the app's RPC surface.
-  const indirect = (code.match(/\.rpc\(\s*[A-Za-z_$][\w$]{0,3}\s*[,)]/g) || []).length;
+  //
+  // ⚠ The identifier was capped at 4 chars (`[\w$]{0,3}`) on the assumption that every bundle is
+  // aggressively minified. Caught by the extractor self-test 2026-07-31: a bundle that ships a
+  // readable `.rpc(rpcName)` scored indirect = 0, i.e. "pass A is complete here" — the single most
+  // load-bearing false all-clear this file can emit, since it is what licenses reading the literal
+  // count as coverage. Widened. A longer identifier is no less indirect than a short one, and the
+  // trailing `[,)]` still requires the argument to be exactly one bare identifier.
+  const indirect = (code.match(/\.rpc\(\s*[A-Za-z_$][\w$]{0,40}\s*[,)]/g) || []).length;
 
   // Which schemas does this app pin its clients to? Default is `public` when unspecified.
   const schemas = new Set();
-  for (const m of code.matchAll(/schema\s*:\s*["']([a-zA-Z0-9_]+)["']/g)) schemas.add(m[1]);
+  for (const m of code.matchAll(/schema\s*:\s*(["'`])([a-zA-Z0-9_]+)\1/g)) schemas.add(m[2]);
   if (!schemas.size) schemas.add('public');
 
   // Explicit per-call overrides would defeat the whole-app assumption below.
-  const overrides = (code.match(/\.schema\(\s*["'][a-zA-Z0-9_]+["']\s*\)/g) || []).length;
+  const overrides = (code.match(/\.schema\(\s*(["'`])[a-zA-Z0-9_]+\1\s*\)/g) || []).length;
   return { direct: [...direct].sort(), literals, indirect, schemas: [...schemas].sort(), overrides };
+}
+
+/**
+ * POSITIVE CONTROL ON THE EXTRACTOR ITSELF, run before any app is fetched.
+ *
+ * The two controls further down prove the BUNDLE has a supabase client and the CATALOGUE query
+ * returns rows. Neither says anything about whether these regexes can match. The 2026-07-31
+ * backtick gap sat in three of them and every control still passed — a real app would simply have
+ * come back "0 rpc names", indistinguishable from a clean app.
+ *
+ * So: a fixture that exercises every quoting style, asserted at startup. If a future edit narrows
+ * a delimiter class again, this fails loudly instead of the check going quietly blind.
+ */
+function selfTest() {
+  const fixture = [
+    'a.rpc("dq_name",{});',
+    "b.rpc('sq_name',{});",
+    'c.rpc(`bt_name`,{});',
+    'd.rpc(varName,{});',
+    'createClient(u,k,{db:{schema:`bt_schema`}});',
+    'e.schema(`bt_override`).from(`t`);',
+  ].join('\n');
+  const r = extract(fixture);
+  const problems = [];
+  for (const n of ['dq_name', 'sq_name', 'bt_name']) {
+    if (!r.direct.includes(n)) problems.push(`.rpc() missed ${n}`);
+    if (!r.literals.has(n)) problems.push(`literal pass missed ${n}`);
+  }
+  if (r.indirect !== 1) problems.push(`indirect count ${r.indirect}, expected 1`);
+  if (!r.schemas.includes('bt_schema')) problems.push('schema pin missed a backtick literal');
+  if (r.overrides !== 1) problems.push(`override count ${r.overrides}, expected 1`);
+  return problems;
 }
 
 (async () => {
   const only = process.argv[2];
   const keys = only ? [only] : Object.keys(APPS);
   if (only && !APPS[only]) { console.error(`unknown app "${only}" — known: ${Object.keys(APPS).join(', ')}`); process.exit(2); }
+
+  const selfTestProblems = selfTest();
+  if (selfTestProblems.length) {
+    console.error('🛑 EXTRACTOR SELF-TEST FAILED — every result below would be untrustworthy:');
+    for (const p of selfTestProblems) console.error(`   - ${p}`);
+    process.exit(2);
+  }
+  console.log('extractor self-test: ok (double-quote, single-quote and backtick forms all recovered)');
 
   let failures = 0, risks = 0;
 
@@ -199,8 +269,22 @@ function extract(code) {
     // RPCs. So: assert the supabase client library is present in the bundle. If it is and there
     // are no call sites, zero is a real, correct answer.
     const libPresent = /createClient|supabase-js|\.rpc\(/.test(bundle.code);
+    // ⚠ A THIRD TRANSPORT EXISTS, and treating its absence as a broken check is a FALSE FAIL
+    // (found 2026-07-31 the moment DUMP Schedule was added). DUMP ships NO supabase-js: its entire
+    // backend surface is one `fetch` to `.../functions/v1/dump-visit-create`. Measured: createClient
+    // 0, rest/v1 0, .rpc( 0, and all six `.from(` hits are `Array.from`/`Buffer.from`. So zero RPCs
+    // is the CORRECT answer, exactly like Admin Review's legitimate zero above — the control must
+    // prove the instrument can see a backend, not demand one particular client library.
+    const edgeOnly = !libPresent && /\/functions\/v1\//.test(bundle.code);
+    if (edgeOnly) {
+      const fns = [...new Set([...bundle.code.matchAll(/\/functions\/v1\/([a-zA-Z0-9_-]+)/g)].map(m => m[1]))];
+      console.log(`  ok — no PostgREST client; this app calls edge function(s) directly: ${fns.join(', ')}`);
+      console.log('    RPC contract does not apply. Its contract is the edge function\'s own signature.');
+      continue;
+    }
     if (!libPresent) {
-      console.log('  🛑 FAIL — no supabase client found in the bundle at all. BROKEN CHECK, not a clean app.');
+      console.log('  🛑 FAIL — no supabase client and no edge-function URL in the bundle at all.');
+      console.log('    BROKEN CHECK (bad URL / chunk walk stopped early), not a clean app.');
       failures++; continue;
     }
     // SECOND POSITIVE CONTROL, for pass B specifically. If the catalogue query came back empty the
