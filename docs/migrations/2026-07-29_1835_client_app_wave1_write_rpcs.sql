@@ -11,7 +11,12 @@
 --
 -- AUDIT (ADR 010): OPT-IN, inherited. public.clients, public.properties and public.gdos
 -- all already carry audit_<table> triggers, so every write here is captured with
--- app_source='client-app' (pinned in audit.log_change's Origin CASE by 2026-07-29c).
+-- app_source='client-app'. ⚠ CORRECTED 2026-07-30 — the MECHANISM matters: that label comes
+-- from the app's `X-App-Source` HEADER, not from the Origin CASE. audit.log_change computes
+-- COALESCE(header, CASE over Origin), so the header WINS and the clients.unclogme.app pin
+-- shipped in 2026-07-29c is only the fallback if the header is ever removed. The app shipped
+-- sending 'client-view-pro', which made these writes invisible to an app_source='client-app'
+-- check until the header value was corrected. Do not "simplify" by deleting either one.
 -- No new table is created, so there is no new opt-in decision to make.
 --
 -- ---------------------------------------------------------------------------

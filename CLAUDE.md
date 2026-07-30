@@ -49,16 +49,39 @@ Every new business table or schema change must **explicitly opt-in or opt-out** 
 - **Disabling audit on an existing table** requires explicit Fred sign-off in the migration header.
 - **No table that touches `customer.*`, billing, DERM compliance, or webhook secrets is allowed to skip audit.** Hard rule.
 
-Current audited set: clients, service_configs, properties, visits, photo_classifications, derm_manifests, manifest_visits *(opted in 2026-05-18 for DERM Tracker)*, disposal_facilities, vehicles, employees, webhook_tokens, derm_email_sends *(opted in 2026-06-04)*, municipality_regulators *(opted in 2026-06-05)*, dump_manifest_handout *(opted in 2026-07-23 — shared "on a manifest" mark, now driver-attributed from two surfaces)*, **`client.saved_views`** *(opted in 2026-07-29, Fred approved, `2026-07-29_2236`)*. See ADR 010 for the exclusion list + rationale.
+**🛑 DO NOT TRUST A HAND-MAINTAINED LIST HERE — GENERATE IT.** This spot used to carry a list of 15
+table names. **The real audited set was 31**, and the 16 omissions included **`public.zones` and
+`public.gdos`**, the two tables that two separate 2026-07-29 arguments leaned on for recoverability.
+Since §5.5(b) below tells you to *confirm a table is audited before treating audit silence as
+evidence*, a stale list here manufactures the exact false negative that rule exists to prevent.
+Always run:
 
-⚠ **`client.saved_views` is the first audited table OUTSIDE `public`**, and the reason it was opted in
-is worth keeping: it is the ONE documented direct-write exception for the Client App (no SECDEF RPC),
+```sql
+select n.nspname||'.'||c.relname as audited_table
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_namespace n on n.oid = c.relnamespace
+join pg_proc p on p.oid = t.tgfoid
+join pg_namespace pn on pn.oid = p.pronamespace
+where pn.nspname = 'audit' and p.proname = 'log_change' and not t.tgisinternal
+order by 1;
+```
+
+Measured 2026-07-30: **31 tables** — 26 in `public`, 4 in `derm`
+(`address_row_map`, `address_sheet_manifests`, `address_sheets`, `stamp_sheet_status`), 1 in `client`
+(`saved_views`). See ADR 010 for the exclusion list + rationale.
+
+⚠ **`client.saved_views` was opted in 2026-07-29 (Fred approved, `2026-07-29_2236`)** and the reason is
+worth keeping: it is the ONE documented direct-write exception for the Client App (no SECDEF RPC),
 justified on it being "the user's own UI preferences". **`is_shared` broke that justification** — a
 shared view drives what a *different* staff member sees, so a rename/reshare/delete is cross-user state.
 Before the trigger, `audit.logs` held **0** rows for it, which was a false all-clear of exactly the
 §5.5(b) kind: nothing was watching, so provenance had to come from `owner_user_id`. Probed as
 `SET LOCAL ROLE authenticated` before shipping: INSERT, UPDATE and DELETE all captured with
 `table_schema='client'`.
+*(A correction: the commit that added it claimed it was "the first audited table outside `public`".
+That was false — the four `derm.*` tables above have carried the trigger since 2026-07-01. It is the
+first outside `public` **for the Client App**, nothing more.)*
 
 After ANY change to Prod schema, re-check this rule before declaring the migration done.
 
