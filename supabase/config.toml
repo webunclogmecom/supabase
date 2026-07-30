@@ -525,3 +525,15 @@ verify_jwt = false
 # A forged role=authenticated token would otherwise pass. Never deploy this one --no-verify-jwt.
 [functions.save-calendar-visit]
 verify_jwt = true
+
+# parse-gdo-permit: reads an uploaded Miami-Dade DERM operating-permit PDF and returns
+# the fields (GDO number, validity window, the SPECIFIC-CONDITIONS cleaning frequency) so
+# the Client App can pre-fill Add/Edit Permit instead of making staff retype the document.
+# verify_jwt = true ON PURPOSE: unlike the webhook receivers and the truck-QR endpoint,
+# this is staff-only tooling called from a logged-in browser, so the gateway should reject
+# an anonymous caller before our code runs. It answers the CORS preflight BEFORE the auth
+# gate and echoes the requested headers - a hardcoded allow-list breaks the moment the
+# browser asks for one more header, and a 401 on OPTIONS presents as a silent network
+# failure rather than an auth error.
+[functions.parse-gdo-permit]
+verify_jwt = true
