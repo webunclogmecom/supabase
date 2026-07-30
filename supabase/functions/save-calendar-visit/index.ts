@@ -273,8 +273,16 @@ Deno.serve(async (req) => {
   if (!visit || visit.deleted_at) return fail("not_found", "This visit no longer exists.");
 
   // ---- LOCAL-ONLY FAST PATH: never contacts Jobber ------------------------
+  // ⚠ writeClient HERE TOO. Caught by @Building Apps reading the source: my first version used the
+  // module-level `db` and a comment claiming the verified call was "the only call that must carry the
+  // actor". That was wrong. LOCAL_ONLY is `vehicle_id` + `driver_id`, so **assigning a truck or a
+  // driver takes this path** -- and on the Calendar the truck is the primary assignment unit, so this
+  // is a routine dispatcher action, not an edge case. It would have stayed anonymous in the Activity
+  // history while schedule edits were correctly named, which is the worst shape for a bug like this:
+  // attribution that works often enough to look finished.
   if (!pushable.length) {
-    const { error } = await db.rpc("edit_calendar_visit", { p_visit_id: visitId, p_patch: patch });
+    const { error } = await writeClient(actorEmail)
+      .rpc("edit_calendar_visit", { p_visit_id: visitId, p_patch: patch });
     if (error) return fail("db_write_failed", `Couldn't save: ${error.message}`);
     return done({ code: "local_only", message: "Saved.", applied: [] });
   }
@@ -444,10 +452,15 @@ Deno.serve(async (req) => {
   // 5. COMMIT — only now. Suppressed so the trigger doesn't push a second time.
   //    Both partitions in ONE call: a save changing date AND truck writes both or neither.
   // =========================================================================
-  // ⚠ writeClient, NOT the module-level `db`: this is the only call that must carry the actor, and it
-  // is per-request because the actor differs per caller. A module-level client cannot hold it (and a
-  // mutable module-level global would be unsafe anyway, since Deno.serve handles requests
-  // concurrently -- the same trap that was caught and removed from this file before it shipped).
+  // ⚠ writeClient, NOT the module-level `db`. Per-request because the actor differs per caller: a
+  // module-level client cannot hold it, and a mutable module-level global would be unsafe anyway
+  // since Deno.serve handles requests concurrently (the same trap caught and removed from this file
+  // before it shipped).
+  // ⚠ BOTH writes in this function use writeClient -- this one and the LOCAL-ONLY path above. An
+  // earlier comment here claimed this was "the only call that must carry the actor"; that was wrong
+  // and left truck/driver assignments anonymous. If a third write is ever added, it needs this too.
+  // The reads (webhook_tokens, visits, entity_source_links, employees) deliberately use `db`: they
+  // write nothing, so they have no attribution to carry.
   const { error: werr } = await writeClient(actorEmail)
     .rpc("edit_calendar_visit_verified", { p_visit_id: visitId, p_patch: patch });
   if (werr) {
