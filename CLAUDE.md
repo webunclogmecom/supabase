@@ -49,7 +49,16 @@ Every new business table or schema change must **explicitly opt-in or opt-out** 
 - **Disabling audit on an existing table** requires explicit Fred sign-off in the migration header.
 - **No table that touches `customer.*`, billing, DERM compliance, or webhook secrets is allowed to skip audit.** Hard rule.
 
-Current audited set: clients, service_configs, properties, visits, photo_classifications, derm_manifests, manifest_visits *(opted in 2026-05-18 for DERM Tracker)*, disposal_facilities, vehicles, employees, webhook_tokens, derm_email_sends *(opted in 2026-06-04)*, municipality_regulators *(opted in 2026-06-05)*, dump_manifest_handout *(opted in 2026-07-23 — shared "on a manifest" mark, now driver-attributed from two surfaces)*. See ADR 010 for the exclusion list + rationale.
+Current audited set: clients, service_configs, properties, visits, photo_classifications, derm_manifests, manifest_visits *(opted in 2026-05-18 for DERM Tracker)*, disposal_facilities, vehicles, employees, webhook_tokens, derm_email_sends *(opted in 2026-06-04)*, municipality_regulators *(opted in 2026-06-05)*, dump_manifest_handout *(opted in 2026-07-23 — shared "on a manifest" mark, now driver-attributed from two surfaces)*, **`client.saved_views`** *(opted in 2026-07-29, Fred approved, `2026-07-29_2236`)*. See ADR 010 for the exclusion list + rationale.
+
+⚠ **`client.saved_views` is the first audited table OUTSIDE `public`**, and the reason it was opted in
+is worth keeping: it is the ONE documented direct-write exception for the Client App (no SECDEF RPC),
+justified on it being "the user's own UI preferences". **`is_shared` broke that justification** — a
+shared view drives what a *different* staff member sees, so a rename/reshare/delete is cross-user state.
+Before the trigger, `audit.logs` held **0** rows for it, which was a false all-clear of exactly the
+§5.5(b) kind: nothing was watching, so provenance had to come from `owner_user_id`. Probed as
+`SET LOCAL ROLE authenticated` before shipping: INSERT, UPDATE and DELETE all captured with
+`table_schema='client'`.
 
 After ANY change to Prod schema, re-check this rule before declaring the migration done.
 
@@ -132,6 +141,28 @@ The view laundering the table grant makes it look safe right up until the functi
   schema come out anon-readable, new `public` functions come out `authenticated`-EXECUTABLE. Check
   every new object, and revoke explicitly. (`derm.address_sheet_clients` and a SECDEF wrapper both
   needed this on 2026-07-28.)
+
+### ✅ `public.zones_hard_delete` is INTENTIONAL admin tooling — do NOT "harden" it (settled 2026-07-29)
+
+Recorded because it **looks** exactly like a finding and was flagged as one (by me) before being
+measured. It is SECURITY DEFINER, `authenticated` can EXECUTE it, and it bulk-NULLs `properties.zone_id`
+then hard-deletes a `zones` row. An auditor sees "any staff user can null 247 properties". The measured
+picture says leave it:
+
+- **It is careful, deliberate tooling**: `search_path` pinned to `public`, raises `no_data_found` on an
+  unknown code, and **RETURNS `unlinked_properties`** so the caller sees the blast radius.
+- **The delete is audited** (`zones` carries audit triggers; the function body says so), so a mistaken
+  delete is recoverable from `audit.logs.old_row`. Reversible, not destructive.
+- **Small and deliberate**: 11 zones exist, it takes an exact `code`, one zone per call, and there have
+  been **2 deletes ever** across 64 zone audit rows.
+- **Zones are a staff taxonomy, not client business data**, and staff already manage them
+  (`app_source='visit-calendar'` is a recorded writer).
+- Nulling `zone_id` when its zone is deleted is **correct cascade semantics**, not corruption — including
+  for the Client App wave-1 surface that now edits `zone_id`.
+
+The one real tension is rule #6 (never hard-delete). Narrowing it would require inventing a role model,
+and **parent Building Apps rule #7 explicitly defers role-gated delete until auth roles land**, so
+changing it now would be a policy decision rather than a fix. Revisit with the role work, not before.
 
 ## Column-name gotchas
 
