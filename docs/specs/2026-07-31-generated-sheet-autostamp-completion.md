@@ -116,8 +116,25 @@ silently trust "Completed": that flag is a human attestation, not a geometry che
   guessing is not").
 - The scanned-sheet (vision) lane. The one-shot 2026-07-01 vision pass and the 23 vision-less
   folders are a separate gap with a separate economics question.
-- Studio UI changes. The AI badge already keys off `stamp_placed_by='stamp-studio-ai'` (28q).
-  @Building Apps should only VERIFY the badge renders once stamps exist.
+- Studio UI changes. **⚠ Badge contract, corrected by @Building Apps from the live bundle and
+  verified here against the DB**: the Studio never sees `stamp_placed_by`. The badge binds to three
+  aggregates on `derm.v_stamp_sheets`:
+  `placed_rows` / `ai_placed_rows` / `filled_by_ai`, where (measured)
+  `ai_placed_rows = count(*) FILTER (WHERE stamp_placed_by='stamp-studio-ai')` and
+  `filled_by_ai = (placed_rows > 0 AND ai_placed_rows = placed_rows)`. So the chain from D3's
+  attribution string to the badge holds TRANSITIVELY, and no Studio change is needed — but anything
+  altering how those aggregates are computed changes the badge without touching the Studio.
+  Live shapes today: `ticket-310429` = 0/0/false (no badge, correct), demo `ticket-309898` =
+  5/5/true (badge "AI").
+  **⚠ The badge component is strict on BOTH branches** (`r === true`, `r !== false`): a
+  NULL/undefined `filled_by_ai` renders NO badge even at 7/7, and `ai_placed_rows = 0` renders
+  nothing rather than "AI 0/7". The DB view yields non-NULL in the measured shapes (the count
+  lateral returns 0 on a miss, not NULL), so this is a contract to PRESERVE, not a bug to fix.
+  **⚠ The Studio also reads `v_stamp_rows` directly at three call sites for on-screen stamp
+  positions** (@Building Apps, from the bundle). Nuance: PLACED stamps render from STORED
+  `stamp_x/y_pct` (so the demo sheets' ~3% offset is in their stored values and is fixed by
+  re-placement, not by D1), while UNPLACED rows' previews/AI-button use the view's guess (fixed by
+  D1). Both matter; different fixes.
 
 ## Verification protocol (per last night's lessons: through the transport, no empty-set passes)
 
