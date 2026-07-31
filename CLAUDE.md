@@ -250,6 +250,12 @@ Commercial overnight routes run ~8 PM into the next ~6 AM, but **`visit_date` is
 
 > 🛑 **CORRECTED 2026-07-31 (Fred) — "code 08 generates NO visits" was too strong and this file used to say it.** The accurate rule is **no RECURRING visits**. Read it the old way and a legitimate warranty visit looks like corruption to the next person auditing.
 > **What Warranty of Drainage actually is:** a **subscription** — the client pays a recurring fee so that, *in addition to* their regular scheduled visits, we come out if they think their grease trap is clogged. **That call-out IS a real visit**, booked ad-hoc as a **Service Call, normally at $0** because the subscription already covers it. Live examples: `132-PUM` and `021-GRA` carry **$0** visit-scoped 08 lines; `191-TEN` bills its warranty visits at **$120** each (a sanctioned variant — Fred 2026-07-31).
+> **THE PRECISE RULE — it differs by LEVEL, and conflating the two is the trap (measured 2026-07-31):**
+> | level | rule | evidence |
+> |---|---|---|
+> | a **WD-only JOB** (line 08 + fees only — the TCE shape) | **has NO visits at all**, recurring or ad-hoc | **71 of 71 such jobs carry 0 alive visits** |
+> | code 08 as a **LINE ITEM on a visit** | **legitimate** — this is the call-out | 14 rows; they sit on *pumping/cleaning* jobs ("Grease Trap Pumping & Warranty" etc.), never on a WD-only job |
+> ⇒ So "a WD-only job should have no visits" is TRUE and safe to assert. "Code 08 never appears on a visit" is FALSE and would delete real call-outs.
 > ⇒ **`service_line_items.code='08'` is correctly `schedulable = true`. Do NOT "fix" it to false.** Besides being semantically right, `save-client-job` refuses any line item with `schedulable=false`, so flipping it would stop Warranty of Drainage being addable to a job at all. The no-recurring rule lives in the generator predicate, which is the right place for it.
 > **Why TCE has a WD-only SA job:** they are invoiced for the warranty on a fixed day on its own cadence, so it is its own job rather than a line on their visit-generating SA. Both shapes are legal: WD as its own job, or WD as a line item inside an SA job alongside 01/02/04 — in the latter case the prices split by code (01-04 Pumping, 05-07 Cleaning, 08 Warranty). See [[project_client_app_billing_model]]. To confirm whether a client should get recurring visits, check its actual non-08 SA/SC line item (+ Yannick's SA-build list, which is no longer in Airtable since the 2026-07-24 retirement: ask Fred or Yannick for the current copy), not the status flag.
 
