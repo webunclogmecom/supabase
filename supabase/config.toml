@@ -543,6 +543,13 @@ verify_jwt = true
 [functions.save-client-job]
 verify_jwt = false
 
+# save-client-fields: the Client App's VERIFIED client name/client_code saga
+# (Edit-client dialog, 2026-07-31). Same auth model + same ES256 rationale as
+# save-client-job directly above: in-handler auth.getUser + staff-domain gate,
+# so verify_jwt=false is deliberate here too.
+[functions.save-client-fields]
+verify_jwt = false
+
 # sync-jobber-job-drift: the 30-minute jobs reconcile (pg_cron 15,45 * * * * via
 # fn_request_jobber_sync('jobs-drift'), vault bearer). Handler requires
 # role=service_role — verify_jwt alone also admits the public anon key.
