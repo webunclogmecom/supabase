@@ -293,9 +293,18 @@ Deno.serve(async (req) => {
     // Service Calls are ON-DEMAND (Fred, 2026-07-30): no start date — the job is a
     // container; scheduling happens per-visit when the call comes in. Only an SA
     // carries a timeframe.
+    // ⚠ START DATE IS OPTIONAL ON AN SA AS OF 2026-07-31 (Fred): "i want to have
+    // the option of not setting a Start Date, first, because we might want to add
+    // that later, and when we do that we can then run the cron job of creating the
+    // visits". A dateless SA is a real state: the agreement exists, scheduling has
+    // not begun. The visit generator refuses to schedule such a job until a date
+    // is set (guard in scripts/sync/generate_service_agreement_visits.js) — WITHOUT
+    // that guard the generator would anchor on today+frequency and start booking
+    // trucks immediately, the exact opposite of the ask.
     const startDate = String(p.start_date ?? "");
-    if (kind === "SA" && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-      return fail("bad_request", "A start date is required for a Service Agreement.");
+    const hasStart = /^\d{4}-\d{2}-\d{2}$/.test(startDate);
+    if (kind === "SA" && startDate !== "" && !hasStart) {
+      return fail("bad_request", "Start date must be a real date (YYYY-MM-DD), or left empty.");
     }
 
     // Property must belong to this client AND be Jobber-linked (jobCreate takes
@@ -381,7 +390,9 @@ Deno.serve(async (req) => {
       invoicing,
       // NO `scheduling` — ever. See header. And NO timeframe for an SC (on-demand).
     };
-    if (kind === "SA") {
+    // A dateless SA sends NO timeframe at all — Jobber accepts that (it fills its
+    // own default startAt for undated jobs, the same behaviour an SC relies on).
+    if (kind === "SA" && hasStart) {
       input.timeframe = { startAt: startDate };
       if (p.end_date && /^\d{4}-\d{2}-\d{2}$/.test(p.end_date)) {
         const days = Math.round((Date.parse(p.end_date) - Date.parse(startDate)) / 86_400_000);
@@ -417,7 +428,7 @@ Deno.serve(async (req) => {
     // The date check applies only when we SENT a timeframe (SA): an SC has none,
     // and Jobber fills its own default startAt for undated jobs.
     if (job.title !== title || job.property?.id !== propGid ||
-        (kind === "SA" && etDate(job.startAt) !== startDate) ||
+        (kind === "SA" && hasStart && etDate(job.startAt) !== startDate) ||
         (lines.length && (job.lineItems?.nodes ?? []).length !== lines.length)) {
       return fail("verify_failed",
         "Jobber created the job but it doesn't match what was sent — check it in Jobber before retrying.",

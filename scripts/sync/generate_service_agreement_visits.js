@@ -124,6 +124,9 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
   const clientFilter = FILTER_CLIENT ? `AND c.client_code = '${FILTER_CLIENT.replace(/'/g, "''")}'` : '';
   const jobs = await pg(`
     SELECT j.id AS job_id, j.job_number, j.title, j.frequency_days,
+           -- start_at drives the 2026-07-31 not-started guard + the no-history
+           -- anchor. MUST be in the GROUP BY below (this query aggregates).
+           j.start_at,
            c.id AS client_id, c.client_code, c.name AS client_name,
            -- derm_required: canonical taxonomy classifier (ADR-018), NOT a crude name match.
            -- Keying off service_line_items.requires_derm via fn_line_item_requires_derm avoids
@@ -146,7 +149,7 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
     LEFT JOIN line_items li ON li.job_id = j.id AND li.invoice_id IS NULL
     WHERE ${JOB_PREDICATE}
       ${clientFilter}
-    GROUP BY j.id, j.job_number, j.title, j.frequency_days, c.id, c.client_code, c.name
+    GROUP BY j.id, j.job_number, j.title, j.frequency_days, j.start_at, c.id, c.client_code, c.name
     ORDER BY c.client_code, j.job_number;`);
   console.log(`${jobs.length} Service Agreement job(s) with a frequency:\n`);
 
@@ -166,9 +169,29 @@ function endOfHorizon(iso) { const [y, m] = iso.split('-').map(Number); return n
       .filter(v => v.visit_status === 'scheduled' && v.visit_date >= today)
       .reduce((mx, v) => v.visit_date > mx ? v.visit_date : mx, '');
 
+    // ⚠ NOT-STARTED GUARD (2026-07-31, Fred): an SA may now be created with NO
+    // start date — "we might want to add that later, and when we do that we can
+    // then run the cron job of creating the visits". A job with neither a start
+    // date NOR any visit has not started; scheduling it would book trucks from
+    // today+frequency, the opposite of the intent.
+    // ⚠ SCOPED DELIBERATELY TO **BOTH** CONDITIONS. Measured 2026-07-31: 9 LIVE
+    // SA jobs carry start_at = NULL and are generating today (232-AC, 231-CHE,
+    // 053-PV, 032-LG, 242-WYN, 241-WYN, 243-FE, 244-URI, 233-AH — 59 upcoming
+    // visits between them). Gating on `start_at IS NULL` alone would silently
+    // stop all nine. They each already have visits, so requiring "no visits
+    // either" grandfathers them: measured blast radius of this guard today = 0.
+    if (!job.start_at && existing.length === 0) {
+      console.log(`#${job.job_number} "${job.title}" (db job ${job.job_id}) — SKIPPED: no start date and no visits yet (set a start date to begin scheduling)`);
+      continue;
+    }
+
     let anchor, anchorSrc;
     if (maxScheduledFuture) { anchor = addDays(maxScheduledFuture, job.frequency_days); anchorSrc = 'job_scheduled+freq'; }
     else if (lastCompleted) { anchor = addDays(lastCompleted, job.frequency_days); anchorSrc = 'client_completed+freq'; }
+    // A dated job with no history starts AT its start date (not today+freq) —
+    // otherwise the date the user just set would be ignored. Past dates fall
+    // forward via the `cur < today` skip in the loop below.
+    else if (job.start_at) { anchor = String(job.start_at).slice(0, 10); anchorSrc = 'job_start_at'; }
     else { anchor = addDays(today, job.frequency_days); anchorSrc = 'today+freq'; }
 
     const dates = [];
