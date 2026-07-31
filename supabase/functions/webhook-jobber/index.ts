@@ -227,6 +227,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
         phones { number primary description }
         billingAddress { street city province postalCode }
         balance isArchived
+        customFields { __typename ... on CustomFieldText { label valueText } }
       }
     }`,
     { id: gid }
@@ -269,16 +270,49 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   //   "000- Kaffe"                   — bare   (3 digits + dash + ws only, no alpha suffix)
   // The trailing `\s+` requires whitespace between the prefix and the real
   // business name so we don't accidentally strip part of a real name.
+  //
+  // ⚠⚠ 2026-07-31 — THE NAME IS NO LONGER THE SOURCE OF THE CODE.
+  // Yannick added a `Client Code` custom field on Jobber clients and the naming
+  // convention flips from "CODE name" to "name - CODE". Read the FIELD first and
+  // treat the name only as a legacy fallback, because after the rename there is
+  // no prefix left to parse.
+  //
+  // ⚠ THIS ORDERING IS LOAD-BEARING — DO NOT "SIMPLIFY" BACK TO PREFIX-ONLY.
+  // The old parser matched `^NNN-XX ` and stored the REMAINDER as clients.name,
+  // which is why our names are clean and codes live in their own column. Against
+  // a renamed client ("Herzka Residence - 027-HER") it matches nothing, so it
+  // would store the WHOLE STRING — code included — as the display name, for all
+  // 274 renamed clients, within one */5 poll, and every app that renders a client
+  // name inherits it. Measured before the migration; this block is the fix.
+  //
+  // Code charset includes '&' (131-M&U is live). The old class was [A-Z0-9]*,
+  // which is exactly why 131-M&U is the ONE client whose stored name still
+  // carries its prefix today — a working preview of the fleet-wide failure.
+  const CODE_RE = String.raw`\d{2,3}\s*-\s*[A-Za-z0-9&]+`
   let parsedCode: string | null = null
   let nameNormalized = name
-  const codeMatch = name.match(/^\s*(\d{3})-\s*([A-Z0-9]*)\s+/)
-  if (codeMatch) {
-    const [fullMatch, numericPart, alphaPart] = codeMatch
-    // Only treat as a valid client_code if it has the NNN-XX shape. Bare
-    // "000-" prefixes are pollution — still strip from the name but don't
-    // promote the orphan numeric part to client_code.
-    if (alphaPart) parsedCode = `${numericPart}-${alphaPart}`
-    nameNormalized = name.replace(fullMatch, '').trim()
+
+  // 1) the custom field — authoritative once Yannick's backfill has run
+  const cfCode = (c.customFields ?? [])
+    .find((f: any) => String(f?.label ?? '').trim().toLowerCase() === 'client code')
+    ?.valueText
+  if (cfCode && new RegExp(`^${CODE_RE}$`).test(String(cfCode).trim())) {
+    parsedCode = String(cfCode).trim().replace(/\s+/g, '')
+  }
+
+  // 2) strip the code out of the display name wherever it sits, so clients.name
+  //    stays the clean business name through BOTH naming conventions.
+  //    Order matters: suffix (new) -> parenthetical -> prefix (legacy).
+  const mSuffix = name.match(new RegExp(`^(.*?)\\s+-\\s+(${CODE_RE})\\s*$`))
+  const mParen  = name.match(new RegExp(`^(.*?)\\s*[([]\\s*(${CODE_RE})\\s*[)\\]]\\s*$`))
+  const mPrefix = name.match(new RegExp(`^\\s*(${CODE_RE})[\\s,:-]+(.+)$`))
+  if (mSuffix)      { nameNormalized = mSuffix[1].trim(); parsedCode ??= mSuffix[2].replace(/\s+/g, '') }
+  else if (mParen)  { nameNormalized = mParen[1].trim();  parsedCode ??= mParen[2].replace(/\s+/g, '') }
+  else if (mPrefix) { nameNormalized = mPrefix[2].trim(); parsedCode ??= mPrefix[1].replace(/\s+/g, '') }
+  else {
+    // legacy bare "000- Kaffe" pollution: strip, but never promote to a code.
+    const bare = name.match(/^\s*\d{3}-\s+/)
+    if (bare) nameNormalized = name.replace(bare[0], '').trim()
   }
 
   // Check if client already exists via entity_source_links.
