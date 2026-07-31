@@ -75,6 +75,30 @@ Final verification, run independently against the API after the fact:
 DB: 0 coded clients whose clients.name contains a code
 ```
 
+## ⚠ NON-COMPANY CLIENTS RENDER A DIFFERENT FIELD (found by the post-migration audit)
+
+Jobber renders the client name as **firstName + lastName** when `isCompany = false`, and as
+**companyName** when `isCompany = true`. The first pass wrote **only `companyName`**, so **11 coded
+clients (all `isCompany=false`) stored the new format but still DISPLAYED the old one** — one of them
+(292-BPM) was still showing the legacy prefix. Fixed in a second pass that writes the person-name
+halves.
+
+**Rules for any future client-name work:**
+
+- **Branch on `isCompany`.** Companies → `companyName`. People → the firstName/lastName pair.
+- **Append the code to the LAST POPULATED half**, never to `firstName` blindly. With
+  `firstName="Andrew", lastName="Saka"`, writing the whole styled string to `firstName` produced
+  **`"Andrew Saka - 251-AS Saka"`** — the read-back caught it on the single-client canary, before
+  it reached the other ten.
+- **Strip the old code from BOTH halves before appending.** 292-BPM carried its prefix in
+  `firstName` (`"292-BPM BHRE"`) while the suffix went onto `lastName`, yielding the doubled
+  **`"292-BPM BHRE Property Management - 292-BPM"`**.
+- 🛑 **AUDIT THE RENDERED NAME, NOT ONLY WHAT YOU WROTE.** The original audit inspected
+  `companyName` — its own output — and passed 292-BPM while Jobber displayed a doubled code. It was
+  caught by *looking at the client in the browser*. `cc_fullaudit.js` now checks `name` as well;
+  that is the check that generalises, and the reason a visual pass is worth running even after a
+  green automated audit.
+
 ## Traps caught along the way (all cost a real failed attempt)
 
 - **`ClientEditInput`, not `ClientEditAttributes`.** Jobs use `*Attributes`, clients use `*Input`.
