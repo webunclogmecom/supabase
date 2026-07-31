@@ -149,6 +149,21 @@ silently trust "Completed": that flag is a human attestation, not a geometry che
     positioned automatically by Stamp Studio. This is not a review or an accuracy check." — which is
     exactly what `auto_place_page` guarantees, no more.
 
+  **🛑 TRAP THAT PRODUCED A CONFIDENT WRONG CONCLUSION — READ BEFORE VERIFYING GEOMETRY.**
+  Two relations expose a `band_y0_pct` column and they DISAGREE:
+  - `derm.v_stamp_rows.band_y0_pct` — **NULL** on both generated sheets. This is the relation the
+    guess CASE actually guards on, so the band branch CANNOT fire there.
+  - `derm.v_stamp_row_bands.band_y0_pct` — **populated** for the same row ids (25.840, 33.760, …).
+  Joining the second while reasoning about the first, I concluded "all 7 cards have bands, so the
+  band branch wins and the D1 proof didn't discriminate", and computed a 0.338% divergence between
+  two sources that never compete on these sheets. **All of that was wrong.** Measured correctly:
+  `guess_y_pct` on ticket-310429 is 29.800 / 37.720 / … — i.e. `fn_generated_row_geometry`, the D1
+  branch. **The D1 proof HOLDS**, and D1 is load-bearing for **100% of generated sheets**, not a
+  minority edge case (0 banded rows on the two generated sheets, against 520 of 582 workspace-wide —
+  the positive control proving the band mechanism is visible and simply does not apply here).
+  ⇒ **Read the value on the row from the relation the code actually reads.** A population statistic
+  plus a CASE-order argument is not a measurement. Caught by @Building Apps.
+
 ## Verification protocol (per last night's lessons: through the transport, no empty-set passes)
 
 1. **Probe, rolled back**: BEGIN; call the resolver for `310429`; assert `address_sheet_manifests`
