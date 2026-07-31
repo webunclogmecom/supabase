@@ -1,4 +1,13 @@
 // ============================================================================
+// 🛑 OBSOLETE — DO NOT RUN (2026-07-31). This script encodes the PRE-2026-04-29
+// convention: step 4 + its final pass rewrite base64 GID source_ids to RAW
+// NUMERICS — the exact format the a017311 redo abolished. Running --execute
+// today would convert every jobber ESL row back to numerics, which Jobber's
+// API rejects as EncodedId and which broke a client.jobs view scan (22023).
+// The last 8 numeric rows it (or its era) left behind were removed by
+// docs/migrations/2026-07-31_1119_esl_numeric_gid_cleanup.sql. Kept only as
+// history of the April dedupe; candidate for scripts/_archive.
+// ============================================================================
 // dedup_jobber_links.js — merge webhook-created duplicates into populate-era rows
 // ============================================================================
 // Problem: entity_source_links has two formats for source_system='jobber':
