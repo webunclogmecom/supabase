@@ -60,6 +60,35 @@
 > frequency change is a separate, *destructive* concern (it moves visits already
 > pushed to Jobber, possibly already on a driver's route). Folding it in would let
 > the per-client button silently reschedule booked work.
+>
+> ### 🛑 And before anyone builds re-spacing: `frequency_days` is JOBBER-MASTERED
+>
+> The cadence lives in a Jobber **numeric custom field labelled `Frequency`**
+> (config `…/3743514`). Both `webhook-jobber` and `sync-jobber-job-drift` read it, so
+> **a DB-only write to `jobs.frequency_days` is reverted within 30 minutes.**
+> Measured on job 1593 (191-TEN), from `audit.logs`:
+>
+> ```
+> 12:16:07  app_source=sql      20 -> 21    (raw SQL write)
+> 12:45:10  app_source=jobber   21 -> 20    <- reverted 29 minutes later
+> ```
+>
+> Over 30 days: `client-app` 18 frequency writes, `sql` 2, `jobber` **1** — and that
+> one jobber write *is* the revert. It is the only one because it is the only time
+> anyone wrote the DB without also writing Jobber.
+>
+> ⚠ **The revert is invisible**: no error, no `sync_log` row, and `audit.logs` shows
+> it as an ordinary `app_source='jobber'` write.
+>
+> `fn_generate_sa_visits` reads `jobs.frequency_days`, so a cadence change that never
+> reaches Jobber will appear to work, generate once against the new value, and then
+> silently revert. **Any re-spacing feature must write Jobber** — via
+> `save-client-job` (which already sets that config GID, which is why the Client
+> App's 18 writes were never reverted) or a direct `jobEdit`.
+>
+> ⚠ **191-TEN is NOT a usable re-spacing test case** — it was re-spaced by hand on
+> 2026-07-31 (29 `ripple_reschedule_visit` calls from the Visit Calendar) and every
+> future gap is now exactly 21 days. Pick another from the at-horizon set.
 
 > **Activation (2026-06-24):** the generator (`scripts/sync/generate_service_agreement_visits.js`) + the daily cron (`.github/workflows/sa-visit-generation.yml`, cron `0 10 * * *` = 06:00 ET) are LIVE. Backfilled **676 SA visits across 143 clients / 164 jobs**, all pushed + GID-linked to Jobber (0 orphans; `ops.v_calendar_push_health` clean; 0 duplicates). **Rolling horizon = 6 months** (`--horizon-months=6`). Pre-activation hardening (commit before backfill): `derm_required` seeded via canonical `fn_line_item_requires_derm` (not crude name match), `service_type` derived from line items (no NULLs → fixes ops views + the rebound-duplicate vector), client-status guard (`ACTIVE`/`RECURRING` only), and `jobber-push-visit` now retries on Jobber `THROTTLED`/429. The old `service_configs`-based generator (`generate-recurring-visits.yml`) is **retired/superseded** by this. **Test / non-serviceable accounts are excluded from generation** (`EXCLUDED_CLIENT_CODES` = `112-YA`, `777-YA` (Yan's test restaurants), `000-DH` (Homestead Dump), plus any null-`client_code` client) — the exclusion applies even to an explicit `--client` run. The 6 cron visits accidentally generated for 112-YA on 2026-06-24 were soft-deleted (and `visitDelete`'d from Jobber). **Stale-cleanup sweep (2026-06-24):** on each `--all` run the generator also soft-deletes any future `supabase_cron` visit whose SA job no longer qualifies (archived/deleted, Frequency removed, retitled/[OLD]-tagged, or client set inactive) — which pushes a `visitDelete` to Jobber, keeping both sides in sync as SAs come and go. Generation + cleanup share ONE `JOB_PREDICATE` so they can't drift; the sweep is capped at `MAX_CLEANUP=40` (aborts + alerts above that, to avoid a mass-delete from a bulk data error).
 
