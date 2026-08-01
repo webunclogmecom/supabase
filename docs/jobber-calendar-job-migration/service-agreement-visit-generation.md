@@ -63,8 +63,17 @@
 >
 > ### 🛑 And before anyone builds re-spacing: `frequency_days` is JOBBER-MASTERED
 >
-> The cadence lives in a Jobber **numeric custom field labelled `Frequency`**
-> (config `…/3743514`). Both `webhook-jobber` and `sync-jobber-job-drift` read it, so
+> **§8.1 below has said WHERE the cadence lives since 2026-06-03** — a Jobber numeric
+> custom field labelled `Frequency`, not native recurrence — and §8.4/L219 even
+> records that `recurrenceSchedule: null` is the *documented normal* for our jobs.
+> ⚠ **Two sessions independently re-derived that from the Jobber API on 2026-08-01,
+> one of them concluding the opposite ("Jobber stores no frequency") because a null
+> `recurrenceSchedule` looked like a finding rather than the documented non-event it
+> is.** `grep -i frequency docs/` would have settled it in seconds. **Read §8.1
+> before probing the Jobber API about cadence.**
+>
+> What is genuinely NEW here is the *write* consequence, which §8.1 does not cover:
+> both `webhook-jobber` and `sync-jobber-job-drift` READ that field, so
 > **a DB-only write to `jobs.frequency_days` is reverted within 30 minutes.**
 > Measured on job 1593 (191-TEN), from `audit.logs`:
 >

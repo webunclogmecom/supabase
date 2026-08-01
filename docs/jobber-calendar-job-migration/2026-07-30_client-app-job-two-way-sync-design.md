@@ -161,3 +161,78 @@ visits soft-deleted; reopen → both sides again; create SA with line items + pr
 items visible in Jobber + DB; close it (cleanup — closed jobs linger on 112-YA by Jobber's
 design). Reconcile: run `sync-jobber-job-drift` manually, verify 0 diffs after the tests, then
 flip one DB field, run again, verify it heals inbound.
+
+---
+
+## 6. The full `jobEdit` surface — INTROSPECTED 2026-08-01, so nobody re-derives it
+
+⚠ **Recorded here, in the shared repo, on purpose.** The two Claude sessions do **not** share a
+memory folder (root `CLAUDE.md` §1: workspace-root sessions load a different `memory/` than the
+`Supabase/`-rooted one). Anything a session records only in memory is invisible to the other, so
+durable API facts belong in the repo. Both sessions independently re-derived Jobber's frequency
+storage on 2026-08-01 — one of them reaching the wrong answer — while it had been documented in
+`service-agreement-visit-generation.md` §8.1 since June. **Read before probing.**
+
+Introspected from the live schema (`api.getjobber.com/api/graphql`,
+`X-JOBBER-GRAPHQL-VERSION: 2026-04-16`):
+
+```
+JobEditInput:  jobNumber, title, instructions, signature, timeframe, scheduling,
+               arrivalWindow, invoicing, customFields, salespersonId,
+               allowReviewRequest, jobFormIds, visitTitles
+               -> NO propertyId, NO clientId, NO lineItems
+
+JobCreateAttributes additionally has: propertyId, quoteId, requestId, notes, lineItems
+JobInvoicingAttributes:    invoicingType: BillingStrategy, invoicingSchedule: BillingFrequencyEnum,
+                           recurrence: ICalendarRule
+BillingStrategy:           FIXED_PRICE | VISIT_BASED
+BillingFrequencyEnum:      ON_COMPLETION | PERIODIC | PER_VISIT | NEVER
+JobSchedulingAttributes:   createVisits, notifyTeam, assignedTo, startTime, endTime,
+                           recurrence: ICalendarRule, visitConfirmationStatus
+JobEditLineItemAttributes: lineItemId, name, description, unitPrice, quantity, taxable,
+                           category, totalPrice, unitCost, productOrServiceId
+Job mutations (12): jobClose, jobCreate, jobCreateLineItems, jobCreateNote, jobDeleteLineItems,
+                    jobDeleteNote, jobEdit, jobEditLineItems, jobEditNote, jobNoteAddAttachment,
+                    jobOrderLineItems, jobReopen
+```
+
+**What that settles:**
+
+| Attribute | Editable after create? | Note |
+|---|---|---|
+| `invoicing` (billing type + schedule) | ✅ | any blocker on our side is self-imposed |
+| `title` | ✅ | we still never accept free text — it is a behaviour class |
+| line items | ✅ | incl. `name`; our create-then-delete dance is because we diff BY name |
+| `customFields` (the `Frequency` field) | ✅ | this is how cadence is written — see below |
+| **`propertyId`** | 🛑 **NO** | create-only, and there is **no job-move mutation**. A job can never change property. |
+| **job kind SA ↔ SC** | 🛑 not via the API | `scheduling.recurrence` exists but we **deliberately never send it** — our generator mints visits and a Jobber RRULE would double-generate. Here the kind IS the title class + Frequency field + line items, so converting is a migration: close and recreate. |
+| **delete a job** | 🛑 **no `jobDelete` exists** | "Delete" is `jobClose(modifyIncompleteVisitsBy: DESTROY_ALL)`. |
+
+### 🛑 Two combinations Jobber REJECTS (from real userErrors, not docs)
+
+```
+FIXED_PRICE + PER_VISIT ->
+  "If invoicing schedule is PER_VISIT invoicing type should be VISIT_BASE."
+  "If invoicing type is FIXED_PRICE invoicing schedule can not be PER_VISIT"
+```
+`save-client-job` refuses that pair itself with an actionable message so it never reaches the API.
+
+### ⚠ `Job.invoiceSchedule` never exposes the RRULE
+
+It returns `billingFrequency` plus a human `scheduleSummary` ("Every 2 months on the 22nd day of the
+month"), **never the underlying rule**. Two consequences, both load-bearing:
+
+1. **Billing type and invoice frequency must be sent TOGETHER** on an edit — the missing half cannot
+   be recovered from a read, so a partial patch could silently downgrade a PERIODIC schedule.
+2. **24 jobs were deliberately left with NULL billing** in the 2026-08-01 backfill (23 TCE warranty
+   jobs on "every 2 months on the 22nd" + 031-KRU). "Every 2 months" carries no anchor month, so a
+   derived RRULE could shift a client's invoice date. Guessing there is the exact failure the
+   `jobs.billing_type` / `invoice_frequency` columns exist to prevent.
+
+### Cadence writes must go to Jobber
+
+`jobs.frequency_days` is **Jobber-mastered** via the numeric `Frequency` custom field. Both
+`webhook-jobber` and `sync-jobber-job-drift` read it, so a DB-only write is reverted within ~30
+minutes — silently: no error, no `sync_log` row, and `audit.logs` shows it as an ordinary
+`app_source='jobber'` write. Measured on job 1593 (191-TEN): `sql` 20→21 at 12:16, `jobber` 21→20 at
+12:45. Full detail in `service-agreement-visit-generation.md`.
