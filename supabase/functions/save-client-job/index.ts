@@ -189,6 +189,15 @@ function resolveBilling(p: any, isSA: boolean, opts: { legacy: boolean }): Billi
     // invoice $0 forever.
     return { err: "A Service Call bills per visit — fixed price needs job-level line items, which Service Calls don't carry." };
   }
+  // ⚠ JOBBER'S OWN RULE, learned the hard way 2026-08-01: PER_VISIT and
+  // FIXED_PRICE are mutually exclusive. Sending the pair returns
+  //   "If invoicing schedule is PER_VISIT invoicing type should be VISIT_BASE."
+  //   "If invoicing type is FIXED_PRICE invoicing schedule can not be PER_VISIT"
+  // Caught here so the user gets a sentence they can act on instead of two
+  // raw Jobber userErrors — and so the invalid pair never reaches the API.
+  if (btype === "fixed" && bfreq === "per_visit") {
+    return { err: "Fixed price cannot invoice per visit — a fixed-price job bills a set amount on a schedule. Pick a different invoice frequency (for example on the last day of the month), or keep the billing type as Visit based." };
+  }
   let rrule: string | null = null;
   if (bfreq === "custom") {
     rrule = String(p.invoice_rrule ?? "").trim();
