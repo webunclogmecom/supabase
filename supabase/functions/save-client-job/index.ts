@@ -154,6 +154,64 @@ function saTitle(lineNames: string[]): string {
   return `Service Agreement - ${parts.join(" & ")}`;
 }
 
+// Billing -> Jobber `invoicing`, in ONE place. It used to live inline in the
+// create branch only, which is exactly why editing billing was a silent no-op:
+// the edit branch never read billing_type / invoice_frequency at all, so a
+// billing-only patch fell through to the `no_changes` early return and reported
+// success while changing nothing (Fred, 2026-08-01).
+// Returns the enum pair alongside the Jobber block so the caller can persist
+// what was actually confirmed.
+type Billing = {
+  err?: string;
+  invoicing?: Record<string, unknown>;
+  billing_type?: string;
+  invoice_frequency?: string;
+  invoice_rrule?: string | null;
+};
+function resolveBilling(p: any, isSA: boolean, opts: { legacy: boolean }): Billing {
+  // Back-compat: the pre-widening key `billing` ('per_visit'|'fixed') still maps
+  // to the old two combinations, so an in-flight old bundle cannot break.
+  const btype: string | null =
+    p.billing_type === "visit_based" || p.billing_type === "fixed" ? p.billing_type
+    : opts.legacy && p.billing === "per_visit" ? "visit_based"
+    : opts.legacy && p.billing === "fixed" ? "fixed" : null;
+  const bfreq: string | null =
+    ["per_visit", "monthly_last_day", "once_closed", "as_needed", "custom"].includes(p.invoice_frequency)
+      ? p.invoice_frequency
+      : opts.legacy && p.billing === "per_visit" ? "per_visit"
+      : opts.legacy && p.billing === "fixed" ? "once_closed" : null;
+  if (!btype || !bfreq) {
+    return { err: "Billing is required: choose a billing type and an invoice frequency." };
+  }
+  if (!isSA && btype === "fixed") {
+    // A Service Call container carries NO job line items (the SA-has-lines rule),
+    // and fixed-price invoices bill from job lines — a fixed-price SC would
+    // invoice $0 forever.
+    return { err: "A Service Call bills per visit — fixed price needs job-level line items, which Service Calls don't carry." };
+  }
+  let rrule: string | null = null;
+  if (bfreq === "custom") {
+    rrule = String(p.invoice_rrule ?? "").trim();
+    // Jobber's schema: "Must be prefixed with 'RRULE:'". Shape-validate so a
+    // malformed rule fails here readably instead of as an opaque userError.
+    if (!/^RRULE:FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;[A-Z]+=[A-Za-z0-9,+-]+)*$/.test(rrule)) {
+      return { err: "The custom invoice schedule is invalid — it must be an RRULE like RRULE:FREQ=MONTHLY;INTERVAL=2." };
+    }
+  } else if (bfreq === "monthly_last_day") {
+    rrule = "RRULE:FREQ=MONTHLY;BYMONTHDAY=-1";
+  }
+  const invoicing: Record<string, unknown> = {
+    invoicingType: btype === "fixed" ? "FIXED_PRICE" : "VISIT_BASED",
+    invoicingSchedule:
+      bfreq === "per_visit" ? "PER_VISIT"
+      : bfreq === "once_closed" ? "ON_COMPLETION"
+      : bfreq === "as_needed" ? "NEVER"
+      : "PERIODIC",
+  };
+  if (rrule) invoicing.recurrence = rrule;
+  return { invoicing, billing_type: btype, invoice_frequency: bfreq, invoice_rrule: rrule };
+}
+
 // ---- Jobber queries/mutations ----------------------------------------------
 const JOB_FIELDS = `id jobNumber title instructions jobStatus startAt endAt total
   billingType invoiceSchedule { billingFrequency scheduleSummary }
@@ -225,7 +283,10 @@ async function resolveServices(services: Svc[]): Promise<{ err?: string; lines?:
   return { lines };
 }
 
-function jobToRecord(clientId: number, propertyId: number | null, j: any, includeLines: boolean, freq?: number | null) {
+function jobToRecord(
+  clientId: number, propertyId: number | null, j: any, includeLines: boolean,
+  freq?: number | null, billing?: Billing,
+) {
   const rec: Record<string, unknown> = {
     gid: j.id,
     client_id: clientId,
@@ -239,6 +300,17 @@ function jobToRecord(clientId: number, propertyId: number | null, j: any, includ
     notes: j.instructions ?? null,
   };
   if (freq !== undefined) rec.frequency_days = freq == null ? "" : String(freq);
+  // Billing is recorded ONLY when this call actually set it, and only after the
+  // caller has verified j.billingType reads back as the requested type. The
+  // columns are `last confirmed by us`, never a guess — a NULL means "we have
+  // never confirmed this job's billing", which the UI must surface as a
+  // question rather than defaulting to Visit based (2026-08-01_1120 header).
+  // ⚠ Key-presence-aware on the DB side: omitting these leaves them untouched.
+  if (billing?.billing_type) {
+    rec.billing_type = billing.billing_type;
+    rec.invoice_frequency = billing.invoice_frequency ?? "";
+    rec.invoice_rrule = billing.invoice_rrule ?? "";
+  }
   if (includeLines) {
     rec.line_items = (j.lineItems?.nodes ?? []).map((n: any) => ({
       name: n.name, quantity: String(n.quantity), unit_price: String(n.unitPrice),
@@ -345,44 +417,10 @@ Deno.serve(async (req) => {
     //   custom           -> PERIODIC + caller-supplied RRULE (validated shape)
     // Back-compat: the pre-widening key `billing` ('per_visit'|'fixed') still
     // maps to the old two combinations, so an in-flight old bundle cannot break.
-    let btype: string | null =
-      p.billing_type === "visit_based" || p.billing_type === "fixed" ? p.billing_type
-      : p.billing === "per_visit" ? "visit_based"
-      : p.billing === "fixed" ? "fixed" : null;
-    let bfreq: string | null =
-      ["per_visit", "monthly_last_day", "once_closed", "as_needed", "custom"].includes(p.invoice_frequency)
-        ? p.invoice_frequency
-        : p.billing === "per_visit" ? "per_visit"
-        : p.billing === "fixed" ? "once_closed" : null;
-    if (!btype || !bfreq) {
-      return fail("bad_request", "Billing is required: choose a billing type and an invoice frequency.");
-    }
-    if (kind === "SC" && btype === "fixed") {
-      // A Service Call container carries NO job line items (the SA-has-lines rule),
-      // and fixed-price invoices bill from job lines — a fixed-price SC would
-      // invoice $0 forever.
-      return fail("bad_request", "A Service Call bills per visit — fixed price needs job-level line items, which Service Calls don't carry.");
-    }
-    let rrule: string | null = null;
-    if (bfreq === "custom") {
-      rrule = String(p.invoice_rrule ?? "").trim();
-      // Jobber's schema: "Must be prefixed with 'RRULE:'". Shape-validate so a
-      // malformed rule fails here readably instead of as an opaque userError.
-      if (!/^RRULE:FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;[A-Z]+=[A-Za-z0-9,+-]+)*$/.test(rrule)) {
-        return fail("bad_request", "The custom invoice schedule is invalid — it must be an RRULE like RRULE:FREQ=MONTHLY;INTERVAL=2.");
-      }
-    } else if (bfreq === "monthly_last_day") {
-      rrule = "RRULE:FREQ=MONTHLY;BYMONTHDAY=-1";
-    }
-    const invoicing: Record<string, unknown> = {
-      invoicingType: btype === "fixed" ? "FIXED_PRICE" : "VISIT_BASED",
-      invoicingSchedule:
-        bfreq === "per_visit" ? "PER_VISIT"
-        : bfreq === "once_closed" ? "ON_COMPLETION"
-        : bfreq === "as_needed" ? "NEVER"
-        : "PERIODIC",
-    };
-    if (rrule) invoicing.recurrence = rrule;
+    const bill = resolveBilling(p, kind === "SA", { legacy: true });
+    if (bill.err) return fail("bad_request", bill.err);
+    const invoicing = bill.invoicing!;
+    const btype = bill.billing_type!;
 
     const input: Record<string, unknown> = {
       propertyId: propGid,
@@ -445,7 +483,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: rec, error: recErr } = await db.rpc("fn_record_client_job",
-      { p: jobToRecord(clientId, propertyId, job, kind === "SA", kind === "SA" ? freq : 0) });
+      { p: jobToRecord(clientId, propertyId, job, kind === "SA", kind === "SA" ? freq : 0, bill) });
     if (recErr) {
       // The one honest window: Jobber has the job, our DB write failed. The next
       // */5 poll imports it (createdAt cursor) — say so, do not pretend failure.
@@ -530,12 +568,45 @@ Deno.serve(async (req) => {
     edit.customFields = [{ customFieldConfigurationId: FREQ_CF_GID, valueNumeric: newFreq }];
   }
   let wantLines: { name: string; unitPrice: number; quantity: number }[] | null = null;
+  // Non-service (fee/admin) lines found on the job — never touched, asserted
+  // still present in the verify block. See the toDelete comment below.
+  let preserved: string[] = [];
   if (p.services !== undefined) {
     if (!isSA) return fail("bad_request", "Only Service Agreements carry service line items.");
     const r = await resolveServices(p.services ?? []);
     if (r.err) return fail("bad_request", r.err);
     wantLines = r.lines!;
+    // The SA title is DERIVED from the full service combination, so changing the
+    // services makes the stored title stale — "Service Agreement - Pumping" on a
+    // job that now also cleans. jobEdit accepts `title` (verified against
+    // JobEditInput), and it is still never free text: it is recomputed by the
+    // same saTitle() the create path and the UI preview use.
+    // ⚠ The 'Service Agreement' PREFIX is a behaviour class the backend branches
+    // on (isSA above, ops.client_service_options, client.fn_is_current_sa_job) —
+    // saTitle always emits it, so re-deriving can never reclassify the job.
+    const reTitle = saTitle(wantLines.map((l) => l.name));
+    if (reTitle !== jobRow.title) edit.title = reTitle;
   }
+  // BILLING on edit (added 2026-08-01). Previously the edit branch never read
+  // these keys at all, so a billing-only patch fell straight through to the
+  // no_changes return below and reported success having changed nothing.
+  // ⚠ BOTH keys are required together, deliberately. The dialog sends only
+  // CHANGED keys, and Jobber's `invoicing` block needs invoicingType AND
+  // invoicingSchedule — inferring the missing half from Jobber's read cannot
+  // recover the RRULE behind a PERIODIC schedule (Job.invoiceSchedule exposes
+  // billingFrequency and a summary string, not the rule), so a half patch could
+  // silently downgrade a custom schedule. Requiring the pair keeps intent explicit.
+  let bill: Billing | null = null;
+  if (p.billing_type !== undefined || p.invoice_frequency !== undefined) {
+    if (p.billing_type === undefined || p.invoice_frequency === undefined) {
+      return fail("bad_request", "Send the billing type and the invoice frequency together — a partial billing change could overwrite the other half.");
+    }
+    const r = resolveBilling(p, isSA, { legacy: false });
+    if (r.err) return fail("bad_request", r.err);
+    bill = r;
+    edit.invoicing = r.invoicing;
+  }
+
   if (Object.keys(edit).length === 0 && wantLines === null) {
     return done({ job_id: jobId, no_changes: true });
   }
@@ -546,7 +617,11 @@ Deno.serve(async (req) => {
     if (!res.ok) return fail("jobber_rejected", `Jobber refused the edit: ${res.detail}`, { applied });
     const uerr = ue(res.data.jobEdit);
     if (uerr) return fail("jobber_rejected", `Jobber refused the edit: ${uerr}`, { applied });
-    applied.push(...Object.keys(edit).map((k) => (k === "customFields" ? "frequency" : k === "timeframe" ? "dates" : k)));
+    applied.push(...Object.keys(edit).map((k) =>
+      k === "customFields" ? "frequency"
+      : k === "timeframe" ? "dates"
+      : k === "invoicing" ? "billing"
+      : k));
   }
 
   // 2. line items: create-first, edit by Jobber id, delete LAST (never a
@@ -562,7 +637,22 @@ Deno.serve(async (req) => {
       const c = curByName.get(l.name);
       return c && (Number(c.unitPrice) !== l.unitPrice || Number(c.quantity) !== l.quantity);
     });
-    const toDelete = curLines.filter((n) => !wantByName.has(n.name));
+    // 🛑 DELETE ONLY *SERVICE* LINES (catalogue codes 01-08). A job also carries
+    // fee/admin lines the Services picker never shows and the caller therefore
+    // never submits — so the old predicate (`everything not submitted`) silently
+    // STRIPPED THEM FROM JOBBER on any service edit. Measured 2026-08-01 over
+    // the 175 live SA jobs: 110 of them carry at least one such line —
+    //   "25 - Credit card fee (3.53%)"  61 jobs, $885.50
+    //   "26 - ACH Fee (1%)"             47 jobs, $151.50
+    //   "27 - GDO Online Reporting"      7 jobs,  $85.00
+    // The verify block below only asserts that the WANTED lines landed, so the
+    // loss was invisible on both sides. Codes 01-08 are exactly what
+    // resolveServices() can produce (service_line_items.reason='Service
+    // Agreement'), which is what makes this predicate the correct inverse.
+    // ⚠ NEVER widen this to "everything not submitted" again.
+    const isServiceLine = (name: unknown) => /^\s*0[1-8]\s*-/.test(String(name ?? ""));
+    const toDelete = curLines.filter((n) => isServiceLine(n.name) && !wantByName.has(n.name));
+    preserved = curLines.filter((n) => !isServiceLine(n.name)).map((n) => String(n.name));
     if (toCreate.length) {
       const res = await gql(token, M_LI_CREATE, { jobId: jobGid, input: { lineItems: toCreate.map((l) => ({ ...l, saveToProductsAndServices: false })) } });
       const err = !res.ok ? res.detail : ue(res.data.jobCreateLineItems);
@@ -591,6 +681,31 @@ Deno.serve(async (req) => {
   if (edit.instructions !== undefined && (j.instructions ?? "") !== edit.instructions) {
     return fail("verify_failed", "Jobber accepted the instructions but reads back different text — check Jobber.", { applied });
   }
+  if (edit.title !== undefined && j.title !== edit.title) {
+    return fail("verify_failed", "Jobber accepted the services but the job title reads back differently — check Jobber.", { applied });
+  }
+  if (bill) {
+    const wantType = bill.billing_type === "fixed" ? "FIXED_PRICE" : "VISIT_BASED";
+    if (String(j.billingType).toUpperCase() !== wantType) {
+      return fail("verify_failed",
+        `Jobber accepted the edit but the billing type reads back as ${j.billingType}, not ${wantType} — check it in Jobber.`,
+        { applied });
+    }
+  }
+  // ⚠ THE CHECK WHOSE ABSENCE HID THE BUG. The old verify only asserted that
+  // the WANTED lines landed, so deleting a fee line passed verification
+  // cleanly. Assert the non-service lines we chose not to touch are still on
+  // the job, so any future widening of `toDelete` fails loudly instead of
+  // quietly costing money.
+  if (preserved.length) {
+    const names = new Set((j.lineItems?.nodes ?? []).map((n: any) => String(n.name)));
+    const lost = preserved.filter((n) => !names.has(n));
+    if (lost.length) {
+      return fail("verify_failed",
+        `Saved, but these non-service line items are no longer on the Jobber job: ${lost.join(", ")}. Check the job in Jobber before editing it again.`,
+        { applied });
+    }
+  }
   if (wantLines !== null) {
     const names = new Set((j.lineItems?.nodes ?? []).map((n: any) => n.name));
     for (const l of wantLines) {
@@ -598,11 +713,18 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 4. only now, our DB — from the READ-BACK, not from the patch
-  const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && wantLines !== null, newFreq);
+  // 4. only now, our DB — from the READ-BACK, not from the patch.
+  // `bill` is passed so billing_type / invoice_frequency / invoice_rrule are
+  // persisted (they were previously never stored, which is why the dialog could
+  // not show a job's real billing); it is undefined when billing was not part of
+  // this edit, and fn_record_client_job is key-presence-aware, so the stored
+  // values are then left alone rather than wiped.
+  const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && wantLines !== null, newFreq, bill ?? undefined);
   const { error: recErr } = await db.rpc("fn_record_client_job", { p: rec });
   if (recErr) {
     return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied });
   }
-  return done({ job_id: jobId, applied });
+  // `preserved` is returned so the UI can say what it did NOT touch — a silent
+  // "saved" is what let the fee-line deletion go unnoticed for a month.
+  return done({ job_id: jobId, applied, preserved_line_items: preserved });
 });
