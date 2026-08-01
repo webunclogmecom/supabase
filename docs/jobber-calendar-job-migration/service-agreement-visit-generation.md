@@ -1,6 +1,65 @@
 # Service Agreement vs Service Call — visit generation model
 
-**Source:** Fred, verbal explanation 2026-06-02. **Status:** ✅ **ACTIVATED 2026-06-24** — generator + daily cron live for ALL clients (no longer 112-YA-only).
+**Source:** Fred, verbal explanation 2026-06-02. **Status:** ✅ **ACTIVATED 2026-06-24** — generator + daily cron live for ALL clients (no longer 112-YA-only). **⚙ MOVED INTO THE DATABASE 2026-08-01** — see the box directly below; the GitHub workflow and the Node script no longer exist.
+
+> ## ⚙ 2026-08-01 — generation now runs IN POSTGRES, not GitHub Actions
+>
+> `scripts/sync/generate_service_agreement_visits.js` and
+> `.github/workflows/sa-visit-generation.yml` are **DELETED**. Everything below that
+> describes *what* gets generated is still accurate; only the *where* changed.
+>
+> | Now | Was |
+> |---|---|
+> | `public.fn_generate_sa_visits(p_client_id, p_horizon_months, p_dry_run)` | a 288-line Node script |
+> | pg_cron `sa-visit-generation`, `0 10 * * *` | GitHub Actions, same cron |
+> | pg_cron `sa-visit-promote`, `20 * * * *` | the script's PROMOTE loop |
+> | `client.generate_visits_for_client(id)` — per-client, from the Client App | *(did not exist)* |
+>
+> **Why.** Two sessions measured it independently and agreed: @Supabase found the
+> script made **305 sequential Management-API round-trips** per run (152 jobs × 2
+> per-job queries + 1) at ~0.5–0.7s each = the whole 150–210s runtime; @Supabase 2
+> ran the same logic as one SQL statement — **12.688 ms**, `shared hit=5979`, zero
+> I/O. The script was never slow, the transport was. Moving to a Deno edge function
+> would have preserved the round-trip design and inherited a wall-clock limit it
+> never needed.
+>
+> **Verified before cutover:** the SQL dry run planned **byte-identical output** to
+> the JS dry run — 80 visits, zero differences in either direction, per
+> `(job_id, visit_date)`.
+>
+> ⚠ **But that diff proves almost nothing on its own**, which @Supabase 2 caught:
+> live data exercises only anchor branch 1 (149 jobs) and branch 2 (1 job).
+> **Branches 3 (`job_start_at`), 4 (`today+freq`) and the not-started guard fire on
+> ZERO live jobs** — so a faithful port and a port that deleted those three paths
+> would produce identical output. And those are exactly the paths the new Client App
+> button runs. They are covered instead by **synthetic fixtures in a rolled-back
+> transaction** (in the `2026-08-01_1450` migration), asserting the exact planned
+> dates — including that a completed **CL** visit must not anchor a **GT** agreement.
+>
+> **Three deliberate behaviour changes:**
+> 1. **Cleanup runs only on the full sweep** (`p_client_id IS NULL`). It was gated on
+>    the `--all` CLI flag, so per-client and full-run semantics already differed *by
+>    accident of a flag*. Cleanup soft-deletes future visits, which pushes
+>    `visitDelete` to Jobber — the per-client button must never reach it.
+> 2. **The function returns a structured result** (generated / skipped / per-job skip
+>    reason), not void. The not-started guard means "new client, fresh SA job, press
+>    Generate" legitimately produces nothing, and a button that silently does nothing
+>    is a bug report.
+> 3. **PROMOTE is its own cron.** It re-pushes visits that rolled into Jobber's
+>    60-day window as days pass — a fact about the passage of time, not about
+>    generation, and it must run on days when nothing is generated. Removing it also
+>    took the last HTTP call out of the generation path, which is what lets
+>    generation be **one transaction** — so its `sync_log` row cannot report success
+>    for work that rolled back.
+>
+> **`sync_log.sync_source = 'sa-visit-generation'`** now exists. Before this, SA
+> generation appeared in neither `sync_log` nor `cron.job`, so anyone auditing
+> pg_cron would have concluded it was dead.
+>
+> 🛑 **Generation is INSERT-only and must stay that way.** Re-spacing visits after a
+> frequency change is a separate, *destructive* concern (it moves visits already
+> pushed to Jobber, possibly already on a driver's route). Folding it in would let
+> the per-client button silently reschedule booked work.
 
 > **Activation (2026-06-24):** the generator (`scripts/sync/generate_service_agreement_visits.js`) + the daily cron (`.github/workflows/sa-visit-generation.yml`, cron `0 10 * * *` = 06:00 ET) are LIVE. Backfilled **676 SA visits across 143 clients / 164 jobs**, all pushed + GID-linked to Jobber (0 orphans; `ops.v_calendar_push_health` clean; 0 duplicates). **Rolling horizon = 6 months** (`--horizon-months=6`). Pre-activation hardening (commit before backfill): `derm_required` seeded via canonical `fn_line_item_requires_derm` (not crude name match), `service_type` derived from line items (no NULLs → fixes ops views + the rebound-duplicate vector), client-status guard (`ACTIVE`/`RECURRING` only), and `jobber-push-visit` now retries on Jobber `THROTTLED`/429. The old `service_configs`-based generator (`generate-recurring-visits.yml`) is **retired/superseded** by this. **Test / non-serviceable accounts are excluded from generation** (`EXCLUDED_CLIENT_CODES` = `112-YA`, `777-YA` (Yan's test restaurants), `000-DH` (Homestead Dump), plus any null-`client_code` client) — the exclusion applies even to an explicit `--client` run. The 6 cron visits accidentally generated for 112-YA on 2026-06-24 were soft-deleted (and `visitDelete`'d from Jobber). **Stale-cleanup sweep (2026-06-24):** on each `--all` run the generator also soft-deletes any future `supabase_cron` visit whose SA job no longer qualifies (archived/deleted, Frequency removed, retitled/[OLD]-tagged, or client set inactive) — which pushes a `visitDelete` to Jobber, keeping both sides in sync as SAs come and go. Generation + cleanup share ONE `JOB_PREDICATE` so they can't drift; the sweep is capped at `MAX_CLEANUP=40` (aborts + alerts above that, to avoid a mass-delete from a bulk data error).
 

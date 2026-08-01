@@ -15,9 +15,21 @@ const ref = (readEnv('SUPABASE_URL') || '').match(/https?:\/\/([^.]+)\./)[1];
 function pg(sql) { return new Promise((res, rej) => { const body = JSON.stringify({ query: sql }); const req = https.request({ hostname: 'api.supabase.com', path: '/v1/projects/' + ref + '/database/query', method: 'POST', headers: { Authorization: 'Bearer ' + PAT, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => { if (r.statusCode >= 300) return rej(new Error(r.statusCode + ': ' + d.slice(0, 300))); res(JSON.parse(d)); }); }); req.on('error', rej); req.write(body); req.end(); }); }
 
 const SYNC = path.resolve(__dirname, '../sync');
-const GEN = path.join(SYNC, 'generate_service_agreement_visits.js');
 const FETCH = path.join(SYNC, 'fetch_service_agreement_jobs.js');
-function runGen() { return execSync(`node "${GEN}" --client=112-YA --execute`, { encoding: 'utf8' }); }
+// ⚠ 2026-08-01: generation moved INTO the database (public.fn_generate_sa_visits);
+// generate_service_agreement_visits.js was deleted, so this no longer shells out.
+// ⚠⚠ AND THIS PROBE CANNOT PASS AS WRITTEN: 112-YA is in the generator's
+// EXCLUDED_CLIENT_CODES ('112-YA','777-YA','000-DH'), which are refused even when
+// named explicitly — so generation for 381 correctly returns 0. That exclusion
+// predates the port; the probe was already inert. Left in place rather than
+// deleted so the next person sees WHY, but it needs rewriting against a
+// non-excluded fixture client before it means anything. The anchor branches it
+// was trying to cover are now covered by the rolled-back fixtures in
+// docs/migrations/2026-08-01_1450 (branches 3/4 + the not-started guard).
+async function runGen() {
+  const r = await pg(`select public.fn_generate_sa_visits(${CID}, 6, false) as v`);
+  return JSON.stringify(r[0].v);
+}
 function runFetch() { try { return execSync(`node "${FETCH}" --client=112-YA --execute`, { encoding: 'utf8' }); } catch (e) { return 'FETCH-ERR: ' + (e.message || '').slice(0, 120); } }
 
 const CID = 381, JOB = 765;

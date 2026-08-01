@@ -379,7 +379,7 @@ Deno.serve(async (req) => {
     // that later, and when we do that we can then run the cron job of creating the
     // visits". A dateless SA is a real state: the agreement exists, scheduling has
     // not begun. The visit generator refuses to schedule such a job until a date
-    // is set (guard in scripts/sync/generate_service_agreement_visits.js) — WITHOUT
+    // is set (the not-started guard in public.fn_generate_sa_visits) — WITHOUT
     // that guard the generator would anchor on today+frequency and start booking
     // trucks immediately, the exact opposite of the ask.
     const startDate = String(p.start_date ?? "");
