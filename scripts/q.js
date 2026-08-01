@@ -1,9 +1,18 @@
 // q.js — run a SQL file against Prod via the Management API, write JSON to a file.
 // Usage: node scripts/q.js <sqlfile> <outfile>
 // Windows note: results go to a FILE and are JSON.parse'd by the caller; tool-output can corrupt.
-require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+// Parse .env directly rather than requiring dotenv: this script must keep working
+// when node_modules is absent (it is gitignored and gets cleaned up regularly).
 const https = require('https');
 const fs = require('fs');
+const path = require('path');
+for (const line of fs.readFileSync(path.resolve(__dirname, '../.env'), 'utf8').split(/\r?\n/)) {
+  const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+  if (!m) continue;
+  let v = m[2].trim();
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+  if (!(m[1] in process.env)) process.env[m[1]] = v;
+}
 
 function query(sql) {
   return new Promise((resolve, reject) => {
