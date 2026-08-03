@@ -30,7 +30,10 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const SIGNED_TTL = 3600 // 1 hour
 
 const ALLOWED_ORIGINS = new Set(['https://fp.unclogme.app', 'https://derm.unclogme.app'])
-const KINDS = new Set(['fog', 'address', 'manifest'])
+// 'gdo_report' (2026-08-02) — the Miami-Dade GDO filing confirmation screenshot for the Field
+// Portal's "Online Report" section. Manifest-keyed like the others, so it reuses the entitlement
+// check below unchanged; no validation was loosened to add it.
+const KINDS = new Set(['fog', 'address', 'manifest', 'gdo_report'])
 
 function corsHeadersFor(origin: string | null): Record<string, string> {
   const allowed = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://fp.unclogme.app'
@@ -54,7 +57,7 @@ function toBucketPath(v: unknown): { bucket: string; path: string } | null {
   const m = v.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)$/)
   if (m) return { bucket: decodeURIComponent(m[1]), path: decodeURIComponent(m[2].split('?')[0]) }
   const raw = v.replace(/^\/+/, '')
-  for (const b of ['manifests', 'GT - Visits Images']) {
+  for (const b of ['manifests', 'GT - Visits Images', 'rpa-evidence']) {
     if (raw.startsWith(b + '/')) return { bucket: b, path: raw.slice(b.length + 1).split('?')[0] }
   }
   return null
@@ -71,7 +74,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const client_code = (body.client_code ?? '').trim()
   const kind = body.kind ?? ''
   if (!Number.isInteger(manifest_id) || manifest_id <= 0 || !client_code || !KINDS.has(kind)) {
-    return json({ error: 'manifest_id (positive int), client_code, and kind (fog|address|manifest) are required' }, 400, cors)
+    return json({ error: 'manifest_id (positive int), client_code, and kind (fog|address|manifest|gdo_report) are required' }, 400, cors)
   }
 
   const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
@@ -162,6 +165,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
   let values: unknown[]
   if (kind === 'address') values = [v.address_photo_url, ...(Array.isArray(v.address_photo_extra_urls) ? v.address_photo_extra_urls : [])]
   else if (kind === 'manifest') values = [v.manifest_photo_url, ...(Array.isArray(v.manifest_photo_extra_urls) ? v.manifest_photo_extra_urls : [])]
+  else if (kind === 'gdo_report') {
+    // 🛑 LIVE SUCCESS ONLY — this filter is a SECURITY control, not a tidiness one.
+    // `rpa-evidence` holds two kinds of screenshot and they are NOT equally safe (verified by
+    // opening one of each, 2026-08-02):
+    //   LIVE  `<visit>/<run_id>.jpg` -> the county's bare "Report Submitted" page. No client data.
+    //   DRY   `<visit>/dryrun.jpg`   -> the full Preview FORM: facility name, address, phone, our
+    //                                   transporter # and company details.
+    // A dry-run image served here would leak ANOTHER facility's details to a customer. Also note
+    // dry-run paths are a FIXED filename per visit, so they are trivially guessable — the filter is
+    // the only thing standing between a caller and one. Never relax to `status <> 'ERROR%'`.
+    const { data: sub } = await db.from('derm_portal_submissions')
+      .select('screenshot_path')
+      .eq('manifest_id', manifest_id)
+      .eq('dry_run', false)
+      .eq('status', 'SUCCESS')
+      .not('screenshot_path', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1).maybeSingle()
+    // Prefix the bucket so toBucketPath resolves it; the column stores a bare object path.
+    values = sub?.screenshot_path ? [`rpa-evidence/${sub.screenshot_path}`] : []
+  }
   else { // fog — per-client redacted FOG, from the raw table (the view doesn't expose it)
     const { data: raw } = await db.from('derm_manifests').select('fog_manifest_url').eq('id', manifest_id).is('deleted_at', null).maybeSingle()
     values = raw ? [raw.fog_manifest_url] : []
