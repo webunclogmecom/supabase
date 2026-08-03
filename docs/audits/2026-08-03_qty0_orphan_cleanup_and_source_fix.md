@@ -78,3 +78,26 @@ pricing on completed visits.
   2026-04-29 with 89 orphaned links. It cannot answer sync questions about line items.
 - Do **not** dedupe `public.line_items` directly: the drift reconciler multiset-diffs against Jobber
   and re-inserts within 30 minutes.
+
+## Post-cleanup convergence, and a decision that must not be re-litigated
+
+`jobber_job_drift` ran at 20:15 UTC after the deletions (`line_syncs: 3`) and converged all three
+**live** jobs I cleaned (99900885, 99900562, 99900635 — each now byte-matches Jobber).
+
+The other four (10000171, 10000188, 2505, 10000196) are **archived**, and the reconciler excludes
+them by design: `.not("job_status", "in", "(archived,closed,destroyed)")`. **They will never
+converge and that is correct.** Measured: those four appear **0 times** in
+`ops.client_service_options`, which filters `job_status <> 'archived'`, so no app surface reads them.
+
+🛑 **Fred, 2026-08-03: "leave it, don't extend the reconciler to archived jobs."** Do NOT add archived
+jobs to the drift sweep. It would add a Jobber API cost to every 30-minute run, forever, for records
+no app queries. The stale rows are inert.
+
+⚠ Also inert, and NOT introduced by this work: archived job 10000196 has 4 job-scope rows on our side
+and 5 in Jobber, i.e. drift in the *opposite* direction. Pre-existing, left alone under the same
+decision.
+
+⚠ **The 15 duplicate groups still reported on live jobs are NOT orphans.** They are faithful mirrors
+of Jobber's live per-visit overrides. Verified: 99900635 holds 4 rows / 2 at qty-0 in our DB and
+4 rows / 2 at qty-0 in Jobber. Anyone re-running the naive duplicate query will see a non-zero count
+and must not "clean" it — check the qty-0 line's visit references first.
