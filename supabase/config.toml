@@ -543,6 +543,13 @@ verify_jwt = true
 [functions.save-client-job]
 verify_jwt = false
 
+# adopt-visit-from-jobber: the Calendar's "Sync from Jobber" button on a surfaced drift warning.
+# Staff-authenticated IN-HANDLER (this project signs session tokens with ES256, which the gateway
+# rejects with 401 UNAUTHORIZED_ASYMMETRIC_JWT), so verify_jwt MUST stay false and the handler does
+# auth.getUser() + an @ayache.com/@unclogme.com domain check. Same pattern as save-client-job.
+[functions.adopt-visit-from-jobber]
+verify_jwt = false
+
 # save-client-fields: the Client App's VERIFIED client name/client_code saga
 # (Edit-client dialog, 2026-07-31). Same auth model + same ES256 rationale as
 # save-client-job directly above: in-handler auth.getUser + staff-domain gate,

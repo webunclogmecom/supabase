@@ -170,7 +170,8 @@ WITH last_completed AS (
             WHEN v.vehicle_id IS NOT NULL THEN 'assigned'::text
             WHEN effv.vehicle_id IS NOT NULL THEN 'default'::text
             ELSE 'none'::text
-        END AS vehicle_source
+        END AS vehicle_source,
+    COALESCE(pz.color_hex, ppz.color_hex) AS zone_color
    FROM visits v
      JOIN clients c ON c.id = v.client_id
      LEFT JOIN properties prop ON prop.id = v.property_id

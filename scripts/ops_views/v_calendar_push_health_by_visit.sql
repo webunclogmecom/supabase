@@ -13,10 +13,7 @@ SELECT DISTINCT ON (h.visit_id) h.visit_id,
     h.source,
     h.issue,
     h.reason,
-        CASE
-            WHEN h.issue = 'drift_surfaced'::text THEN 'This visit was changed in Jobber by a person and our copy disagrees. '::text || 'Someone needs to decide which one is right - retrying would overwrite their change.'::text
-            ELSE h.detail
-        END AS detail,
+    h.detail,
     h.since,
         CASE
             WHEN h.issue = 'drift_surfaced'::text THEN NULL::bigint

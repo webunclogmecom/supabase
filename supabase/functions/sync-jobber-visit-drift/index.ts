@@ -191,7 +191,15 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
     const healable: Cand[] = []
     const adoptable: Cand[] = []
     const refinedIds: number[] = []
-    const surfaced: Array<{ id: number; jobber_date: string; reason: string; app_source: string | null }> = []
+    // Surfaced records carry Jobber's ACTUAL value, not just its date, so the Calendar can word the
+    // warning honestly. Before 2026-08-03 every surfaced visit got the single reason
+    // 'jobber_value_unexpected' and the UI printed "changed in Jobber by a person" — an assertion the
+    // reconciler never verified and which was wrong for 2 of the 3 visits surfaced that day (both were
+    // same-DATE time disagreements, one of them a time that had originally come FROM Jobber).
+    const surfaced: Array<{
+      id: number; jobber_date: string; reason: string; app_source: string | null
+      jobber_start_at?: string | null; jobber_all_day?: boolean; our_start_at?: string | null
+    }> = []
     // null-safe instant compare (audit JSONB text vs PostgREST ISO text — formats differ, compare epochs)
     const sameInstant = (a: string | null | undefined, b: string | null | undefined): boolean =>
       (a == null && b == null) || (a != null && b != null && new Date(a).getTime() === new Date(b).getTime())
@@ -242,7 +250,19 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
           adoptable.push(c)
           refinedIds.push(c.id)
         } else {
-          surfaced.push({ id: c.id, jobber_date: jDate, reason: 'jobber_value_unexpected', app_source: last.app_source ?? null })  // ambiguous -> review, never auto-revert
+          // ambiguous -> review, NEVER auto-revert. Classify precisely: the three shapes need very
+          // different wording, and only the first is a real "which day is right" conflict.
+          //   jobber_date_differs        — genuine disagreement about the DAY
+          //   jobber_all_day_vs_our_time — same day; Jobber has no time, we do (the guard above)
+          //   jobber_time_differs        — same day, both timed, clock times differ
+          const jobberAllDay = t.start_at === null
+          const reason = jDate !== c.visit_date ? 'jobber_date_differs'
+                       : jobberAllDay            ? 'jobber_all_day_vs_our_time'
+                                                 : 'jobber_time_differs'
+          surfaced.push({
+            id: c.id, jobber_date: jDate, reason, app_source: last.app_source ?? null,
+            jobber_start_at: jv.startAt, jobber_all_day: jobberAllDay, our_start_at: c.start_at ?? null,
+          })
         }
       }
     }

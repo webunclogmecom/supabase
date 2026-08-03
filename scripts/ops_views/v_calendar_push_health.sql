@@ -57,7 +57,13 @@ UNION ALL
     v.source,
     'drift_surfaced'::text AS issue,
     sv.sv ->> 'reason'::text AS reason,
-    'DB schedule disagrees with a human Jobber edit - reconciler SURFACEd it; decide adopt-from-Jobber vs re-push (see project_gate4_drift_watchdog)'::text AS detail,
+        CASE sv.sv ->> 'reason'::text
+            WHEN 'jobber_date_differs'::text THEN ('Jobber has this visit on a different day ('::text || COALESCE(sv.sv ->> 'jobber_date'::text, '?'::text)) || ') than we do. Decide which is right - syncing from Jobber will move the visit.'::text
+            WHEN 'jobber_all_day_vs_our_time'::text THEN 'Same day in both, but Jobber has no set time (all-day) while we have one. Syncing from Jobber will clear the time.'::text
+            WHEN 'jobber_time_differs'::text THEN 'Same day in both, but the times differ. Syncing from Jobber will use Jobber''s time.'::text
+            WHEN 'audit_read_fail'::text THEN 'We could not read this visit''s edit history, so the difference was not classified. It is re-checked every run.'::text
+            ELSE 'Our schedule and Jobber''s disagree and the reconciler could not resolve it safely.'::text
+        END AS detail,
     sl.started_at AS since
    FROM ( SELECT sync_log.started_at,
             sync_log.details
