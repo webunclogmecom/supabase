@@ -13,7 +13,7 @@ WITH driver_visits AS (
             count(DISTINCT v.visit_date) AS active_days,
             sum(i.total) AS attributed_revenue
            FROM visit_assignments va
-             JOIN visits v ON v.id = va.visit_id
+             JOIN v_visits_live v ON v.id = va.visit_id
              LEFT JOIN invoices i ON i.id = v.invoice_id
           WHERE v.visit_status = 'completed'::text AND v.visit_date >= (CURRENT_DATE - '30 days'::interval)
           GROUP BY va.employee_id

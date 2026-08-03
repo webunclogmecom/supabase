@@ -8,7 +8,7 @@
 CREATE OR REPLACE VIEW ops.v_revenue_summary AS
 SELECT date_trunc('month'::text, v.visit_date::timestamp with time zone)::date AS month,
     v.service_type,
-    p.zone,
+    p_z.code AS zone,
     veh.name AS truck,
     count(DISTINCT v.id) AS visit_count,
     count(DISTINCT v.client_id) AS client_count,
@@ -16,10 +16,11 @@ SELECT date_trunc('month'::text, v.visit_date::timestamp with time zone)::date A
     sum(i.outstanding_amount) AS outstanding_ar,
     sum(i.total - i.outstanding_amount) AS collected_revenue,
     round(100.0 * sum(i.total - i.outstanding_amount) / NULLIF(sum(i.total), 0::numeric), 1) AS collection_rate_pct
-   FROM visits v
+   FROM v_visits_live v
      JOIN invoices i ON i.id = v.invoice_id
      LEFT JOIN properties p ON p.id = v.property_id
      LEFT JOIN vehicles veh ON veh.id = v.vehicle_id
+     LEFT JOIN zones p_z ON p_z.id = p.zone_id
   WHERE v.visit_status = 'completed'::text AND v.visit_date >= (CURRENT_DATE - '1 year'::interval)
-  GROUP BY (date_trunc('month'::text, v.visit_date::timestamp with time zone)), v.service_type, p.zone, veh.name
+  GROUP BY (date_trunc('month'::text, v.visit_date::timestamp with time zone)), v.service_type, p_z.code, veh.name
   ORDER BY (date_trunc('month'::text, v.visit_date::timestamp with time zone)::date) DESC, (sum(i.total)) DESC;

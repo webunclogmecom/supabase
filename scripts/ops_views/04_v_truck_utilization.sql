@@ -13,7 +13,7 @@ WITH truck_stats AS (
             count(DISTINCT v.visit_date) AS active_days,
             sum(i.total) AS attributed_revenue,
             round(sum(EXTRACT(epoch FROM v.end_at - v.start_at)) FILTER (WHERE v.start_at IS NOT NULL AND v.end_at IS NOT NULL) / 3600.0, 1) AS total_hours_onsite
-           FROM visits v
+           FROM v_visits_live v
              LEFT JOIN invoices i ON i.id = v.invoice_id
           WHERE v.visit_status = 'completed'::text AND v.visit_date >= (CURRENT_DATE - '30 days'::interval)
           GROUP BY v.vehicle_id

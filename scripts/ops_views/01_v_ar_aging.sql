@@ -10,7 +10,7 @@ SELECT c.id AS client_id,
     c.client_code,
     c.name AS client_name,
     c.status AS client_status,
-    p.zone,
+    p_z.code AS zone,
     p.address,
     p.city,
     p.county,
@@ -36,5 +36,6 @@ SELECT c.id AS client_id,
      JOIN clients c ON c.id = i.client_id
      LEFT JOIN client_contacts cc ON cc.client_id = c.id AND cc.contact_role = 'primary'::text
      LEFT JOIN properties p ON p.client_id = c.id AND p.is_primary = true
+     LEFT JOIN zones p_z ON p_z.id = p.zone_id
   WHERE i.outstanding_amount > 0::numeric
-  ORDER BY p.zone, (CURRENT_DATE - i.due_date) DESC NULLS LAST;
+  ORDER BY p_z.code, (CURRENT_DATE - i.due_date) DESC NULLS LAST;

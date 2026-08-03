@@ -34,17 +34,71 @@
 --     replaced FIRST, below, so the trigger evaluates the NEW vocabulary while
 --     the mass UPDATE runs.
 --
--- VERIFIED SAFE (read from pg_get_triggerdef, not inferred)
---   A service_type-only UPDATE does NOT push to Jobber and does NOT enqueue
---   sync_state: trg_push_visit_update and trg_mark_visit_sync_pending both
---   carry WHEN clauses that omit service_type. Do not add it.
+-- VERIFIED SAFE — a service_type-only UPDATE does NOT push to Jobber and does
+--   NOT enqueue sync_state. The two triggers reach that result by DIFFERENT
+--   mechanisms, and an earlier version of this header wrongly said both used a
+--   WHEN clause:
+--     * trg_push_visit_update  — HAS a WHEN clause, listing visit_date,
+--       start_at, end_at, title, notes, job_id, service_line_item_id,
+--       line_items_rev, team_rev, deleted_at, visit_status. service_type absent.
+--     * trg_mark_visit_sync_pending — has NO WHEN clause at all (tgqual IS NULL);
+--       it fires on every INSERT/UPDATE and the column guard lives INSIDE
+--       fn_mark_visit_sync_pending, whose change list also omits service_type.
+--   Both verified via pg_get_triggerdef + pg_get_functiondef. Do not add
+--   service_type to either. If you re-verify, read the FUNCTION for the second
+--   one — reading only the trigger definition will look like it has no guard.
 --
--- APPROVED CADENCE DELTAS (Fred, 2026-08-03) — folding LS into Pumping pulls
---   15 previously-excluded visits into ops.v_calendar_visit's cadence CTEs for
---   the first time. Measured read-only beforehand; these are EXPECTED, not bugs:
---       057-BAY   median gap  2 -> 3 days
---       083-SHUL  median gap 57 -> 42 days
---       168-AVA   median gap 12 -> 9 days
+-- APPROVED DELTAS — folding LS into Pumping pulls 15 previously-excluded
+--   visits into ops.v_calendar_visit for the first time. All are EXPECTED.
+--
+--   🛑 THE FIRST PUBLISHED VERSION OF THESE NUMBERS WAS WRONG. It read
+--   "057-BAY 2 -> 3, 083-SHUL 57 -> 42, 168-AVA 12 -> 9". Those came from a
+--   simulation that omitted the `days_since_prev BETWEEN 5 AND 200` filter the
+--   live observed_cadence CTE actually carries. 057-BAY's lift-station work is
+--   consecutive-day (gaps of 1-2 days), so the real CTE discards it entirely.
+--   Re-measured WITH the filter, only TWO series move and neither matches the
+--   original claim:
+--       057-BAY   NO cadence at all -> 32 days   (n 0 -> 5 gaps)
+--       083-SHUL  57 -> 42 days                  (n 3 -> 4 gaps)  [this one held]
+--       168-AVA   UNCHANGED at 21 days           (does not move)
+--   057-BAY is the notable one: it gains an observed cadence where it had none,
+--   so the Calendar will start showing an expected date for a client that
+--   previously had no computed one.
+--
+--   CONFIG-DERIVED COLUMNS ALSO MOVE, on the same 15 visits. Their empty LS
+--   service_config is retired, so they now join the client's Pumping config and
+--   inherit its numbers. THE COMPLETE measured diff over every column of
+--   ops.v_calendar_visit (key-by-key via to_jsonb, not an enumerated list):
+--       service_type          1672 rows      visit_updated_at     1672 rows
+--       expected_date           16 rows      frequency_days         15 rows
+--       amount_estimated        15 rows      sc_first_visit         15 rows
+--       sc_last_visit           15 rows      service_kind           14 rows
+--       last_completed_date      4 rows      equipment_size_gallons  2 rows
+--       EVERY OTHER COLUMN: 0 rows — including late_status, sa_group,
+--       service_label and amount.
+--   Concretely: visit 1553 (083-SHUL) starts showing 1,000 gal and $1,800, and
+--   the thirteen 057-BAY visits show freq 30 / $375.
+--
+--   ⚠ service_kind (14 rows) is the SA/SC chip, and was found ONLY by the
+--   key-by-key diff — an enumerated column list missed it, as did a full
+--   adversarial review. observed_job_cadence excluded LS, so those jobs had no
+--   median gap and fell through to the ELSE 'SC' branch; inside the Pumping
+--   series they gain one and flip to 'SA'. All 14 are completed "Lyft station
+--   cleaning" visits on 057-BAY and 083-SHUL. Display-only, historical.
+--   ⇒ LESSON: snapshot to_jsonb(t) and diff per key. Naming the columns you
+--   expect to move is how you miss the one that actually did.
+--
+--   ⚠ expected_date moves on 2 rows that are NOT LS visits (6627 and 1598, both
+--   057-BAY / 083-SHUL grease-trap visits). That is correct, not corruption: the
+--   lateness anchor is prev_live_date, partitioned by (client, service_type), so
+--   once LS visits join the Pumping series they become the previous live visit
+--   for a neighbouring grease-trap visit.
+--
+--   WHY THIS IS ACCEPTABLE: all 15 LS visits are COMPLETED. Zero are scheduled
+--   and zero are dated today or later, so nothing about future scheduling,
+--   lateness or dispatch changes. amount (real line items) is untouched; only
+--   amount_estimated, which is a fallback for visits without line items, moves.
+--   The effect is display-only, on historical records.
 --
 -- RULE #6 EXCEPTION — HARD DELETE, EXPLICITLY APPROVED
 --   The 7 LS service_configs rows are hard-deleted. Fred's word, 2026-08-03:

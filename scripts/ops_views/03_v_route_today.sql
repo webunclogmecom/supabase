@@ -17,7 +17,7 @@ SELECT v.id AS visit_id,
     c.id AS client_id,
     c.client_code,
     c.name AS client_name,
-    COALESCE(vp.zone, pp.zone) AS zone,
+    COALESCE(vp_z.code, pp_z.code) AS zone,
     COALESCE(vp.address, pp.address) AS address,
     COALESCE(vp.city, pp.city) AS city,
     COALESCE(vp.county, pp.county) AS county,
@@ -41,7 +41,7 @@ SELECT v.id AS visit_id,
     veh.grease_tank_capacity_gallons,
     string_agg(e.full_name, ', '::text ORDER BY e.full_name) AS crew,
     v.duration_minutes
-   FROM visits v
+   FROM v_visits_live v
      JOIN clients c ON c.id = v.client_id
      LEFT JOIN properties vp ON vp.id = v.property_id
      LEFT JOIN properties pp ON pp.client_id = c.id AND pp.is_primary = true
@@ -50,6 +50,8 @@ SELECT v.id AS visit_id,
      LEFT JOIN vehicles veh ON veh.id = v.vehicle_id
      LEFT JOIN visit_assignments va ON va.visit_id = v.id
      LEFT JOIN employees e ON e.id = va.employee_id
+     LEFT JOIN zones vp_z ON vp_z.id = vp.zone_id
+     LEFT JOIN zones pp_z ON pp_z.id = pp.zone_id
   WHERE v.visit_date = CURRENT_DATE AND (v.visit_status = ANY (ARRAY['UPCOMING'::text, 'LATE'::text, 'completed'::text]))
-  GROUP BY v.id, v.visit_date, v.start_at, v.end_at, v.visit_status, v.service_type, v.is_gps_confirmed, c.id, c.client_code, c.name, vp.zone, vp.address, vp.city, vp.county, vp.latitude, vp.longitude, vp.access_hours_start, vp.access_hours_end, pp.zone, pp.address, pp.city, pp.county, pp.latitude, pp.longitude, pp.access_hours_start, pp.access_hours_end, cc.name, cc.phone, sc.equipment_size_gallons, v.property_id, veh.name, veh.grease_tank_capacity_gallons, v.duration_minutes
-  ORDER BY v.start_at, (COALESCE(vp.zone, pp.zone)), c.name;
+  GROUP BY v.id, v.visit_date, v.start_at, v.end_at, v.visit_status, v.service_type, v.is_gps_confirmed, c.id, c.client_code, c.name, vp_z.code, vp.address, vp.city, vp.county, vp.latitude, vp.longitude, vp.access_hours_start, vp.access_hours_end, pp_z.code, pp.address, pp.city, pp.county, pp.latitude, pp.longitude, pp.access_hours_start, pp.access_hours_end, cc.name, cc.phone, sc.equipment_size_gallons, v.property_id, veh.name, veh.grease_tank_capacity_gallons, v.duration_minutes
+  ORDER BY v.start_at, (COALESCE(vp_z.code, pp_z.code)), c.name;

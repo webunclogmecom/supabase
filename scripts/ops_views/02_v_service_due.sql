@@ -1,18 +1,3 @@
--- DO NOT APPLY THIS FILE AS-IS - IT IS A STALE SNAPSHOT (flagged 2026-08-03).
---
--- These checked-in view definitions have drifted from the live database, and
--- re-applying one REVERTS whatever shipped since it was captured. Measured
--- 2026-08-03 against Prod:
---   * 06_v_derm_compliance.sql still filters unmatched_visits on
---     service_type = GT. LIVE uses derm_required (ADR 018, line-item-derived).
---     Applying the file would revert DERM-required to the unreliable proxy.
---   * v_calendar_visit.sql is 6.3 KB against a 13.6 KB live definition, i.e.
---     roughly half the view is missing.
---
--- They also carry the legacy GT/CL/WD/LS vocabulary, retired on 2026-08-03.
--- REGENERATE FROM LIVE (pg_get_viewdef) before trusting or applying any of them.
--- Tracked in docs/plans/2026-08-03_service_type_vocabulary_migration_plan.md.
-
 -- ============================================================================
 -- ops.v_service_due — AUTO-GENERATED from the live view definition.
 -- Do NOT hand-edit the body. To change this view: apply a migration to the LIVE
@@ -24,7 +9,7 @@ CREATE OR REPLACE VIEW ops.v_service_due AS
 WITH actual_last_visit AS (
          SELECT visits.client_id,
             max(visits.visit_date) AS last_visit_actual
-           FROM visits
+           FROM v_visits_live visits
           WHERE visits.visit_status = 'completed'::text
           GROUP BY visits.client_id
         )
@@ -32,7 +17,7 @@ WITH actual_last_visit AS (
     c.client_code,
     c.name AS client_name,
     c.status AS client_status,
-    p.zone,
+    p_z.code AS zone,
     p.address,
     p.city,
     p.county,
@@ -61,16 +46,17 @@ WITH actual_last_visit AS (
             ELSE 'on_schedule'::text
         END AS service_status
    FROM clients c
-     JOIN service_configs sc ON sc.client_id = c.id AND (sc.service_type = ANY (ARRAY['GT'::text, 'CL'::text]))
+     JOIN service_configs sc ON sc.client_id = c.id AND (sc.service_type = ANY (ARRAY['Pumping'::text, 'Cleaning'::text]))
      LEFT JOIN client_contacts cc ON cc.client_id = c.id AND cc.contact_role = 'primary'::text
      LEFT JOIN properties p ON p.client_id = c.id AND p.is_primary = true
      LEFT JOIN actual_last_visit alv ON alv.client_id = c.id
+     LEFT JOIN zones p_z ON p_z.id = p.zone_id
   WHERE (c.status = ANY (ARRAY['ACTIVE'::text, 'RECURRING'::text])) AND (COALESCE(sc.last_visit, alv.last_visit_actual) IS NULL OR (CURRENT_DATE - COALESCE(sc.last_visit, alv.last_visit_actual)) >= (COALESCE(sc.frequency_days, 90) - 14))
   ORDER BY (
         CASE
             WHEN (CURRENT_DATE - COALESCE(sc.last_visit, alv.last_visit_actual)) > 90 THEN 1
             ELSE 2
-        END), p.zone, (
+        END), p_z.code, (
         CASE
             WHEN COALESCE(sc.last_visit, alv.last_visit_actual) IS NULL THEN 1
             WHEN (CURRENT_DATE - COALESCE(sc.last_visit, alv.last_visit_actual)) >= sc.frequency_days THEN 2

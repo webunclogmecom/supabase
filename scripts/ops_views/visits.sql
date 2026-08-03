@@ -33,4 +33,4 @@ SELECT id,
     trap_condition_notes,
     derm_required,
     service_line_item_id
-   FROM visits;
+   FROM v_visits_live visits;
