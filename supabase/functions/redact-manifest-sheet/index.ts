@@ -162,9 +162,24 @@ Deno.serve(async (req) => {
       // disposal footer) — black ONLY the other clients' block region: [blocks_top..own_y0] and
       // [own_y1..blocks_bottom], full width (contiguous => no boundary slivers).
       const bTop = Math.max(0, Math.round((H * Number(t.blocks_top ?? t.band_y0)) / 100));
-      const bBot = Math.min(H, Math.round((H * Number(t.blocks_bottom ?? t.band_y1)) / 100));
-      if (bTop + 1 < y0) img.drawBox(1, bTop + 1, W, y0 - bTop - 1, BLACK);
-      if (y1 < bBot) img.drawBox(1, y1 + 1, W, bBot - y1, BLACK);
+      // Clamp to H-1: these are 0-based ROW INDICES and the boxes below now write UP TO bBot
+      // inclusive, so H would be one past the last row.
+      const bBot = Math.min(H - 1, Math.round((H * Number(t.blocks_bottom ?? t.band_y1)) / 100));
+      // 🛑 OFF-BY-ONE FIX (2026-08-03). ImageScript's drawBox does `y = ~~(y - 1)` and then fills
+      // rows [y, y+h-1], i.e. its y argument is 1-BASED. The v2 code claimed "contiguous => no
+      // boundary slivers" (comment above) but was off by one in BOTH boxes:
+      //   upper covered [bTop, y0-2]  -> left row y0-1 VISIBLE = the bottom sliver of the PREVIOUS
+      //                                  client's address line. This is a real, if thin, leak.
+      //   lower covered [y1, bBot-1]  -> ate the last row of the client's OWN band, and left row
+      //                                  bBot visible.
+      // Measured on the live fleet BEFORE the fix, by per-row brightness on the actual JPEGs:
+      // the visible window began 0.185% above band_y0 on m1637 (vision-measured extent) and 0.20%
+      // on m1645 (synthetic extent) — i.e. pre-existing and fleet-wide, not introduced by the
+      // generated-sheet extents in 2026-08-03_0046. Zoomed, the exposed sliver of
+      // "9460 Harding Avenue, Surfside, Florida, 33154" was legible.
+      // Correct target: black EXACTLY [bTop, y0-1] and [y1+1, bBot]; visible band = [y0, y1].
+      if (bTop < y0) img.drawBox(1, bTop + 1, W, y0 - bTop, BLACK);
+      if (y1 < bBot) img.drawBox(1, y1 + 2, W, bBot - y1, BLACK);
 
       const out = await img.encodeJPEG(80);
       const name = `redacted/m${t.manifest_id}-${String(t.fingerprint).slice(0, 10)}.jpg`;
