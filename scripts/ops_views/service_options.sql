@@ -16,7 +16,7 @@ SELECT id,
             ELSE regexp_replace(title, '^[0-9]+ - '::text, ''::text)
         END AS level1,
         CASE
-            WHEN reason = ANY (ARRAY['Service Agreement'::text, 'Service Call'::text]) THEN service_kind
+            WHEN reason = ANY (ARRAY['Service Agreement'::text, 'Service Call'::text]) THEN service_type
             ELSE NULL::text
         END AS level2,
         CASE

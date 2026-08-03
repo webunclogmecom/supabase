@@ -22,8 +22,8 @@ SELECT c.id AS client_id,
     svc.primary_group AS job_service_group
    FROM jobs j
      JOIN clients c ON c.id = j.client_id
-     LEFT JOIN LATERAL ( SELECT json_agg(json_build_object('service_line_item_id', sli.id, 'code', sli.code, 'title', sli.title, 'requires_derm', sli.requires_derm, 'service_type', sli.service_type, 'service_kind', sli.service_kind, 'service_group', ops.fn_service_group(sli.reason, sli.service_kind, sli.location_target), 'unit_price', li.unit_price) ORDER BY sli.code) AS services,
-            (array_agg(ops.fn_service_group(sli.reason, sli.service_kind, sli.location_target) ORDER BY sli.code))[1] AS primary_group
+     LEFT JOIN LATERAL ( SELECT json_agg(json_build_object('service_line_item_id', sli.id, 'code', sli.code, 'title', sli.title, 'requires_derm', sli.requires_derm, 'service_type', sli.service_type, 'service_kind', sli.service_type, 'service_group', ops.fn_service_group(sli.reason, sli.service_type, sli.location_target), 'unit_price', li.unit_price) ORDER BY sli.code) AS services,
+            (array_agg(ops.fn_service_group(sli.reason, sli.service_type, sli.location_target) ORDER BY sli.code))[1] AS primary_group
            FROM line_items li
              JOIN service_line_items sli ON sli.code = lpad("substring"(btrim(li.name), '^([0-9]+)'::text), 2, '0'::text)
           WHERE li.job_id = j.id AND sli.schedulable = true) svc ON true
