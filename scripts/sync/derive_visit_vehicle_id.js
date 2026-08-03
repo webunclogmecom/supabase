@@ -70,16 +70,16 @@ const GOLIATH_DECOMMISSION_DATE = '2026-01-01';
 // commercial/overnight work).
 // (8/15 Moises+Cloggy ambiguous commercial visits, audit 2026-05-22.)
 //
-// ⚠ Holds BOTH vocabularies deliberately. service_type was renamed from
-// GT/CL/WD/LS to the real service names on 2026-08-03. This script runs HOURLY
-// via a workflow that checks out main at job start, so there is a window of up
-// to an hour where it runs against migrated data with pre-migration code.
-// Membership is a read-only classification here, so accepting both is free and
-// removing the legacy half early would silently reclassify every commercial
-// visit as non-commercial. Safe to drop the legacy half after Phase C.
+// service_type was renamed from GT/CL/WD/LS to the real service names on
+// 2026-08-03. This set briefly held BOTH vocabularies, because the script runs
+// HOURLY from a workflow that checks out main at job start and so can lag the
+// database by up to an hour. The legacy half was removed with Phase C1, which
+// narrowed the CHECK constraints so a legacy value can no longer exist.
+// ⚠ If this vocabulary ever changes again, widen this set BEFORE the data moves:
+// a value missing here is not an error, it silently reclassifies a commercial
+// visit as non-commercial and changes truck attribution.
 const COMMERCIAL_SERVICE_TYPES = new Set([
   'Pumping', 'Cleaning', 'Warranty of Drainage',
-  'GT', 'CL', 'LS', 'WD',
 ]);
 
 // ---- helpers ----------------------------------------------------------------

@@ -706,22 +706,16 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     return null
   }
 
-  // 🛑 TRANSITIONAL: accept BOTH vocabularies when LOOKING UP an existing row.
-  // This edge function deploys separately from the SQL migration, so there is
-  // necessarily a window where the DB holds one vocabulary and this code emits
-  // the other. The placeholder-promotion query below matches on service_type;
-  // if the two disagree the match silently fails and we INSERT A DUPLICATE
-  // VISIT rather than promoting the existing placeholder -- no error anywhere.
-  // Matching on both values makes the deploy order irrelevant in both
-  // directions. Safe to reduce to the single value once Phase C has landed and
-  // no legacy value remains (verify with: select distinct service_type from visits).
-  const SVC_EQUIVALENTS: Record<string, string[]> = {
-    'Pumping': ['Pumping', 'GT', 'LS'],
-    'Cleaning': ['Cleaning', 'CL'],
-    'Warranty of Drainage': ['Warranty of Drainage', 'WD'],
-  }
-  const svcMatchSet = (s: unknown): string[] =>
-    (typeof s === 'string' && SVC_EQUIVALENTS[s]) ? SVC_EQUIVALENTS[s] : (typeof s === 'string' ? [s] : [])
+  // The transitional dual-vocabulary lookup was REMOVED 2026-08-03 with Phase C1.
+  // It existed because this edge function deploys separately from the SQL
+  // migration, so there was necessarily a window where the DB held one
+  // vocabulary and this code emitted the other -- and the placeholder-promotion
+  // query below matches on service_type, so a mismatch silently INSERTED A
+  // DUPLICATE VISIT instead of promoting the placeholder, with no error anywhere.
+  // That window is closed: the CHECK constraints now admit only the real service
+  // names, so a legacy value cannot exist to be matched. Reintroduce this shape
+  // for any future vocabulary change -- the duplicate-visit failure is silent.
+  const svcMatchSet = (s: unknown): string[] => (typeof s === 'string' ? [s] : [])
 
   // Track whether the derive is CONCRETE (line item or explicit title match) vs the bare default,
   // so the inbound UPDATE path can avoid clobbering a stored value with the default when a Jobber
@@ -820,10 +814,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     // before inserting a new row. This keeps the Supabase cron's planned
     // schedule and Jobber's actual execution as a SINGLE row through the
     // visit lifecycle. Match criteria (kept tight to avoid false promotions):
-    //   - client_id matches, and service_type matches in EITHER vocabulary
-    //     (see SVC_EQUIVALENTS above — a placeholder written before the
-    //     2026-08-03 migration still says GT/CL/WD/LS, and failing to match it
-    //     duplicates the visit silently instead of promoting it)
+    //   - client_id and service_type both match.
+    //     ⚠ THIS MATCH IS THE SILENT FAILURE POINT OF ANY VOCABULARY CHANGE.
+    //     If this handler and the stored placeholder ever disagree on the value,
+    //     the match does not error — it finds nothing and INSERTS A DUPLICATE
+    //     VISIT instead of promoting the placeholder. During the 2026-08-03
+    //     rename this accepted both vocabularies for exactly that reason; that
+    //     shim was removed with Phase C1 once legacy values became impossible.
+    //     Reintroduce it before any future vocabulary change, not after.
     //   - visit_status='scheduled'
     //   - source='supabase_cron' (i.e., it's a placeholder, not a real Jobber row)
     //   - visit_date within ±7 days of the incoming Jobber visit
