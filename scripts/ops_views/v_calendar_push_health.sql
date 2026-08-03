@@ -64,7 +64,7 @@ UNION ALL
             WHEN 'audit_read_fail'::text THEN 'We could not read this visit''s edit history, so the difference was not classified. It is re-checked every run.'::text
             ELSE 'Our schedule and Jobber''s disagree and the reconciler could not resolve it safely.'::text
         END AS detail,
-    sl.started_at AS since
+    onset.first_seen AS since
    FROM ( SELECT sync_log.started_at,
             sync_log.details
            FROM sync_log
@@ -73,4 +73,13 @@ UNION ALL
          LIMIT 1) sl
      CROSS JOIN LATERAL jsonb_array_elements(sl.details -> 'surfaced_visits'::text) sv(sv)
      JOIN visits v ON v.id = ((sv.sv ->> 'id'::text)::bigint) AND v.deleted_at IS NULL AND v.visit_status = 'scheduled'::text
-     JOIN clients c ON c.id = v.client_id;
+     JOIN clients c ON c.id = v.client_id
+     LEFT JOIN LATERAL ( SELECT min(r.started_at) AS first_seen
+           FROM sync_log r
+          WHERE r.sync_source = 'jobber_visit_drift'::text AND r.details ? 'surfaced_visits'::text AND (EXISTS ( SELECT 1
+                   FROM jsonb_array_elements(r.details -> 'surfaced_visits'::text) e(value)
+                  WHERE ((e.value ->> 'id'::text)::bigint) = v.id)) AND r.started_at > COALESCE(( SELECT max(r2.started_at) AS max
+                   FROM sync_log r2
+                  WHERE r2.sync_source = 'jobber_visit_drift'::text AND r2.details ? 'surfaced_visits'::text AND NOT (EXISTS ( SELECT 1
+                           FROM jsonb_array_elements(r2.details -> 'surfaced_visits'::text) e2(value)
+                          WHERE ((e2.value ->> 'id'::text)::bigint) = v.id))), '-infinity'::timestamp with time zone)) onset ON true;

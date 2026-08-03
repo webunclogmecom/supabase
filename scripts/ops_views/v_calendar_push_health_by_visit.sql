@@ -25,7 +25,10 @@ SELECT DISTINCT ON (h.visit_id) h.visit_id,
     ( SELECT array_agg(DISTINCT h2.issue) AS array_agg
            FROM ops.v_calendar_push_health h2
           WHERE h2.visit_id = h.visit_id) AS all_issues,
-    h.issue = ANY (ARRAY['not_in_jobber'::text, 'push_failed'::text]) AS is_auto_retryable
+    h.issue = ANY (ARRAY['not_in_jobber'::text, 'push_failed'::text]) AS is_auto_retryable,
+    ( SELECT max(sl2.started_at) AS max
+           FROM sync_log sl2
+          WHERE sl2.sync_source = 'jobber_visit_drift'::text AND sl2.details ? 'surfaced_visits'::text) AS observed_at
    FROM ops.v_calendar_push_health h
      LEFT JOIN visit_sync_flags f ON f.visit_id = h.visit_id AND f.resolved_at IS NULL
   ORDER BY h.visit_id, (
