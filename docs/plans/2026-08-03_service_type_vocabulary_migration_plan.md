@@ -95,6 +95,27 @@ Newest CL row was created **today**.
 - No deployed app **sends or filters** on `service_type` — every app use is display-only. The six
   Lovable bundles do **not** need a lockstep republish. This is what makes the whole change tractable.
 
+### ✅ The two Calendar RPCs SELF-MIGRATE — they derive from the catalogue, they do not hard-code
+
+Two audits appeared to disagree here (one said no app sends `service_type`; the other said
+`create_calendar_visit` / `edit_calendar_visit` "accept whatever the caller passes"). **Settled by
+reading the signature: there is no `service_type` parameter. The app cannot pass it.** Both RPCs
+*derive* it:
+
+```
+SELECT service_type INTO v_service_type FROM service_line_items WHERE id = p_service_line_item_ids[1]
+```
+
+**Consequence, and it removes two writers from Phase A:** the moment
+`service_line_items.service_type` holds the new vocabulary, both RPCs start writing the new vocabulary
+with **zero code change**. They are pass-throughs from the catalogue, not hard-coded emitters.
+
+**Side benefit the migration delivers for free.** Because the catalogue's `service_type` is NULL on 11
+of 20 codes today, the Calendar has been writing NULL: of its 97 alive visits, **52 are NULL** (28 GT,
+17 CL), newest today. Populating the catalogue means those visits start carrying a real value instead
+of NULL — so they gain a cadence anchor and a config join they have never had. **This is a fix, not
+just a rename**, and it is the same defect class as the LS anchor gap in §4/D2.
+
 ---
 
 ## 4. Three decisions that need Fred before the migration is written
