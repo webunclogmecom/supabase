@@ -1,3 +1,18 @@
+-- DO NOT APPLY THIS FILE AS-IS - IT IS A STALE SNAPSHOT (flagged 2026-08-03).
+--
+-- These checked-in view definitions have drifted from the live database, and
+-- re-applying one REVERTS whatever shipped since it was captured. Measured
+-- 2026-08-03 against Prod:
+--   * 06_v_derm_compliance.sql still filters unmatched_visits on
+--     service_type = GT. LIVE uses derm_required (ADR 018, line-item-derived).
+--     Applying the file would revert DERM-required to the unreliable proxy.
+--   * v_calendar_visit.sql is 6.3 KB against a 13.6 KB live definition, i.e.
+--     roughly half the view is missing.
+--
+-- They also carry the legacy GT/CL/WD/LS vocabulary, retired on 2026-08-03.
+-- REGENERATE FROM LIVE (pg_get_viewdef) before trusting or applying any of them.
+-- Tracked in docs/plans/2026-08-03_service_type_vocabulary_migration_plan.md.
+
 -- ============================================================================
 -- ops.v_gdo_expiry — AUTO-GENERATED from the live view definition.
 -- Do NOT hand-edit the body. To change this view: apply a migration to the LIVE

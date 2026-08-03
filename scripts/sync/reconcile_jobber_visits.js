@@ -51,15 +51,20 @@ const FETCH_UNTIL  = arg('until', null) ||
 const EXCLUDED_CLIENT_GIDS = new Set(['Z2lkOi8vSm9iYmVyL0NsaWVudC8xMDY1Njc0MDQ=']);
 
 // ---- status + service_type derivation (copied verbatim from webhook-jobber) -
+//
+// ⚠ THIS IS A DUPLICATE OF webhook-jobber's LOGIC. Fixing that file does NOT
+// fix this one, and a grep of supabase/functions/ alone will not surface it.
+// Keep the two in step. Vocabulary renamed 2026-08-03 (GT/CL/WD/LS -> the real
+// service names); Lift Station folds into Pumping per the catalogue sheet.
 const statusMap = { completed: 'completed', requires_invoicing: 'completed', upcoming: 'scheduled',
   today: 'scheduled', late: 'scheduled', unscheduled: 'scheduled', approved: 'scheduled', unvisited: 'scheduled' };
 function inferServiceType(title) {
   if (!title) return null;
   const t = title.toLowerCase();
-  if (/lyft\s*station/.test(t)) return 'LS';
-  if (/grease trap|grease pump|grey water|gray water|\bgt\b/.test(t)) return 'GT';
-  if (/service call|\bclog|emergency|hydrojet|\bdrain|\briser|fire pump|warranty|\brepair/.test(t)) return 'CL';
-  if (/\bservice\b/.test(t) && !/dump/.test(t)) return 'CL';
+  if (/lyft\s*station/.test(t)) return 'Pumping';
+  if (/grease trap|grease pump|grey water|gray water|\bgt\b/.test(t)) return 'Pumping';
+  if (/service call|\bclog|emergency|hydrojet|\bdrain|\briser|fire pump|warranty|\brepair/.test(t)) return 'Cleaning';
+  if (/\bservice\b/.test(t) && !/dump/.test(t)) return 'Cleaning';
   return null;
 }
 

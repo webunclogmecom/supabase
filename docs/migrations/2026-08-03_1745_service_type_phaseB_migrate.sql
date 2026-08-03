@@ -74,8 +74,16 @@ begin
                     and pg_get_constraintdef(oid) like '%Dump Offload%') then
     raise exception 'Phase A has not been applied — the widened CHECK is missing. Run 2026-08-03_1730 first.';
   end if;
-  if exists (select 1 from public.visits where service_type = 'Pumping' limit 1) then
-    raise exception 'Phase B appears to have run already (Pumping rows exist). Refusing to run twice.';
+  -- ⚠ The double-apply guard must NOT be "a Pumping row exists". Once the new
+  --   webhook-jobber is deployed it writes the new vocabulary immediately, so
+  --   Pumping rows legitimately appear BEFORE this migration runs and that
+  --   guard would refuse to run at all. Guard on the thing that is actually
+  --   true only after a successful run: nothing left to migrate.
+  if not exists (select 1 from public.visits where service_type in ('GT','CL','WD','LS'))
+     and not exists (select 1 from public.service_configs where service_type in ('GT','CL','WD','LS'))
+     and not exists (select 1 from public.service_line_items where service_type in ('GT','CL','WD','LS'))
+  then
+    raise exception 'Nothing left to migrate — Phase B appears to have run already. Refusing to run twice.';
   end if;
 end $$;
 
@@ -182,28 +190,70 @@ begin
   raise notice 'Retired % empty LS service_configs (expected 7)', n_deleted;
 end $$;
 
--- 2b. service_configs values. LS is already gone, so no collision is possible.
-update public.service_configs
-   set service_type = case service_type
-         when 'GT' then 'Pumping'
-         when 'CL' then 'Cleaning'
-         when 'WD' then 'Warranty of Drainage'
-       end
- where service_type in ('GT','CL','WD');
+-- 2b/2c. The value rewrite, with its own before/after check.
+--
+--   ⚠ COUNTS ARE ASSERTED AS DELTAS, NOT ABSOLUTES. Once the new webhook-jobber
+--   is deployed it writes the new vocabulary continuously, so an absolute
+--   assertion like "Pumping must equal 1757" fails the moment a single Jobber
+--   visit lands between Phase A and Phase B. That would be a FALSE failure of a
+--   correct migration. What must hold is: every legacy row present when this
+--   statement ran is now converted, and none remain.
+do $$
+declare
+  n_cfg_before int; n_cfg_upd int;
+  n_vis_before int; n_vis_upd int;
+  n_left       int;
+begin
+  select count(*) into n_cfg_before from public.service_configs
+   where service_type in ('GT','CL','WD','LS');
+  select count(*) into n_vis_before from public.visits
+   where service_type in ('GT','CL','WD','LS');
 
--- 2c. visits values. ALL rows including soft-deleted ones — deliberately not
---     filtered on deleted_at. v_calendar_visit's three cadence CTEs have no
---     deleted_at filter (a pre-existing defect, logged separately), so soft-
---     deleted rows already influence every median. Migrating them uniformly
---     keeps that defect from surfacing as an apparent cadence regression.
-update public.visits
-   set service_type = case service_type
-         when 'GT' then 'Pumping'
-         when 'CL' then 'Cleaning'
-         when 'WD' then 'Warranty of Drainage'
-         when 'LS' then 'Pumping'
-       end
- where service_type in ('GT','CL','WD','LS');
+  -- service_configs. LS is already retired above, so no collision is possible.
+  update public.service_configs
+     set service_type = case service_type
+           when 'GT' then 'Pumping'
+           when 'CL' then 'Cleaning'
+           when 'WD' then 'Warranty of Drainage'
+         end
+   where service_type in ('GT','CL','WD');
+  get diagnostics n_cfg_upd = row_count;
+
+  -- visits. ALL rows including soft-deleted ones — deliberately NOT filtered on
+  -- deleted_at. v_calendar_visit's three cadence CTEs have no deleted_at filter
+  -- (a pre-existing defect, logged separately), so soft-deleted rows already
+  -- influence every median. Migrating them uniformly keeps that defect from
+  -- surfacing as an apparent cadence regression.
+  update public.visits
+     set service_type = case service_type
+           when 'GT' then 'Pumping'
+           when 'CL' then 'Cleaning'
+           when 'WD' then 'Warranty of Drainage'
+           when 'LS' then 'Pumping'
+         end
+   where service_type in ('GT','CL','WD','LS');
+  get diagnostics n_vis_upd = row_count;
+
+  if n_cfg_upd <> n_cfg_before then
+    raise exception 'service_configs: saw % legacy rows but updated %', n_cfg_before, n_cfg_upd;
+  end if;
+  if n_vis_upd <> n_vis_before then
+    raise exception 'visits: saw % legacy rows but updated %', n_vis_before, n_vis_upd;
+  end if;
+
+  -- NEGATIVE CONTROL: this migration must actually DO something. A no-op
+  -- produces zero diffs everywhere and would otherwise look like a clean pass.
+  if n_vis_upd = 0 then
+    raise exception 'NEGATIVE CONTROL: 0 visits updated — nothing was migrated';
+  end if;
+
+  select count(*) into n_left from public.visits where service_type in ('GT','CL','WD','LS');
+  if n_left > 0 then
+    raise exception '% legacy visits survived the UPDATE', n_left;
+  end if;
+
+  raise notice 'Values migrated: % visits, % service_configs', n_vis_upd, n_cfg_upd;
+end $$;
 
 -- 2d. The catalogue. service_type becomes the real name, i.e. exactly
 --     service_kind. Both columns now hold identical values; service_kind is
@@ -1213,23 +1263,30 @@ begin
       n_legacy_v, n_legacy_c, n_legacy_s;
   end if;
 
-  -- 7b. Counts must match the documented mapping exactly (all rows, incl. soft-deleted)
+  -- 7b. Counts. Asserted as FLOORS, not equalities: the new webhook-jobber
+  --     writes the new vocabulary continuously, so exact totals drift upward
+  --     legitimately between Phase A and here. The exact conversion is already
+  --     proven by the delta check in section 2b/2c; this is a sanity floor.
+  --     Baseline at authoring time: 1741 GT + 16 LS = 1757 Pumping, 304
+  --     Cleaning, 141 Warranty of Drainage.
   select count(*) filter (where service_type = 'Pumping'),
          count(*) filter (where service_type = 'Cleaning'),
          count(*) filter (where service_type = 'Warranty of Drainage')
     into n_pump, n_clean, n_warr
     from public.visits;
-  if n_pump <> 1757 then   -- 1741 GT + 16 LS
-    raise exception 'visits Pumping = %, expected 1757 (1741 GT + 16 LS)', n_pump;
+  if n_pump < 1757 then
+    raise exception 'visits Pumping = %, expected at least 1757 (1741 GT + 16 LS)', n_pump;
   end if;
-  if n_clean <> 304 then
-    raise exception 'visits Cleaning = %, expected 304', n_clean;
+  if n_clean < 304 then
+    raise exception 'visits Cleaning = %, expected at least 304', n_clean;
   end if;
-  if n_warr <> 141 then
-    raise exception 'visits Warranty of Drainage = %, expected 141', n_warr;
+  if n_warr < 141 then
+    raise exception 'visits Warranty of Drainage = %, expected at least 141', n_warr;
   end if;
 
-  -- 7c. service_configs: 270 - 7 retired LS = 263
+  -- 7c. service_configs: 270 - 7 retired LS = 263. Nothing writes this table on
+  --     a timer, so an equality is safe here (the Client App capacity RPC is the
+  --     only writer and it is user-driven).
   select count(*) into n_cfg from public.service_configs;
   if n_cfg <> 263 then
     raise exception 'service_configs = % rows, expected 263 (270 less the 7 retired LS)', n_cfg;

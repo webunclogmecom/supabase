@@ -666,38 +666,71 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // Order matters: LS before GT (so "lyft station cleaning" doesn't get
   // pulled into a future "cleaning"→GT branch); GT before CL (so
   // "gt & cleaning" resolves to GT instead of falling through to CL).
+  // ⚠ VOCABULARY CHANGED 2026-08-03. service_type now carries the real service
+  // names (Pumping / Cleaning / Warranty of Drainage) rather than GT/CL/WD/LS.
+  // Lift Station folds into Pumping, per the service catalogue sheet's column G,
+  // which classifies code 04 "Lift Station & Tank Cleaning" as Pumping.
+  // The branch below is KEPT even though it now returns the same value as the
+  // grease-trap branch: it preserves the documented ordering, and the equipment
+  // distinction still lives in service_line_items.location_target.
   const inferServiceType = (title: string | null): string | null => {
     if (!title) return null
     const t = title.toLowerCase()
-    if (/lyft\s*station/.test(t)) return 'LS'
-    if (/grease trap|grease pump|grey water|gray water|\bgt\b/.test(t)) return 'GT'
-    if (/service call|\bclog|emergency|hydrojet|\bdrain|\briser|fire pump|warranty|\brepair/.test(t)) return 'CL'
-    if (/\bservice\b/.test(t) && !/dump/.test(t)) return 'CL'
+    if (/lyft\s*station/.test(t)) return 'Pumping'
+    if (/grease trap|grease pump|grey water|gray water|\bgt\b/.test(t)) return 'Pumping'
+    if (/service call|\bclog|emergency|hydrojet|\bdrain|\briser|fire pump|warranty|\brepair/.test(t)) return 'Cleaning'
+    if (/\bservice\b/.test(t) && !/dump/.test(t)) return 'Cleaning'
     return null
   }
 
   // Derive service_type from the visit's LINE ITEMS (canonical), falling back to the title
-  // guess, then defaulting to 'GT' so a registered visit is never left without one (Fred
-  // 2026-06-08). Codes map per public.service_line_items; non-concrete kinds (grey water,
-  // lift station, unclogging, camera, labor, fees) carry no GT/CL/WD -> default GT.
-  const CODE_SVC: Record<string, string> = { '01': 'GT', '02': 'GT', '09': 'GT', '05': 'CL', '06': 'CL', '07': 'CL', '12': 'CL', '13': 'CL', '14': 'CL', '08': 'WD' }
+  // guess, then defaulting to 'Pumping' so a registered visit is never left without one (Fred
+  // 2026-06-08). Codes map per public.service_line_items.service_kind. This map is a pure
+  // translation of the old one -- deliberately NOT extended to cover codes 03/04/10/11/15-18
+  // etc., because adding them would change which visits get which value, and this change is a
+  // rename, not a reclassification. Enrich it separately if ever wanted.
+  const CODE_SVC: Record<string, string> = {
+    '01': 'Pumping', '02': 'Pumping', '09': 'Pumping',
+    '05': 'Cleaning', '06': 'Cleaning', '07': 'Cleaning',
+    '12': 'Cleaning', '13': 'Cleaning', '14': 'Cleaning',
+    '08': 'Warranty of Drainage',
+  }
   const lineItemSvc = (name: string | null): string | null => {
     if (!name) return null
     const code = name.match(/^\s*(\d{2})\s*-/)?.[1]
     if (code && CODE_SVC[code]) return CODE_SVC[code]
     const t = name.toLowerCase()
-    if (/grease trap/.test(t)) return 'GT'
-    if (/warranty of drain/.test(t)) return 'WD'
-    if (/main line|auxiliary|aux cleaning|tank cleaning|\bcleaning\b/.test(t)) return 'CL'
+    if (/grease trap/.test(t)) return 'Pumping'
+    if (/warranty of drain/.test(t)) return 'Warranty of Drainage'
+    if (/main line|auxiliary|aux cleaning|tank cleaning|\bcleaning\b/.test(t)) return 'Cleaning'
     return null
   }
-  // Track whether the derive is CONCRETE (line item or explicit title match) vs the bare 'GT' default,
-  // so the inbound UPDATE path can avoid clobbering a stored LS/CL with the default when a Jobber title
-  // edit drops the keyword (2026-06-27 clobber-class fix). The 'GT' default applies only to INSERT/promote.
+
+  // 🛑 TRANSITIONAL: accept BOTH vocabularies when LOOKING UP an existing row.
+  // This edge function deploys separately from the SQL migration, so there is
+  // necessarily a window where the DB holds one vocabulary and this code emits
+  // the other. The placeholder-promotion query below matches on service_type;
+  // if the two disagree the match silently fails and we INSERT A DUPLICATE
+  // VISIT rather than promoting the existing placeholder -- no error anywhere.
+  // Matching on both values makes the deploy order irrelevant in both
+  // directions. Safe to reduce to the single value once Phase C has landed and
+  // no legacy value remains (verify with: select distinct service_type from visits).
+  const SVC_EQUIVALENTS: Record<string, string[]> = {
+    'Pumping': ['Pumping', 'GT', 'LS'],
+    'Cleaning': ['Cleaning', 'CL'],
+    'Warranty of Drainage': ['Warranty of Drainage', 'WD'],
+  }
+  const svcMatchSet = (s: unknown): string[] =>
+    (typeof s === 'string' && SVC_EQUIVALENTS[s]) ? SVC_EQUIVALENTS[s] : (typeof s === 'string' ? [s] : [])
+
+  // Track whether the derive is CONCRETE (line item or explicit title match) vs the bare default,
+  // so the inbound UPDATE path can avoid clobbering a stored value with the default when a Jobber
+  // title edit drops the keyword (2026-06-27 clobber-class fix). The default applies only to
+  // INSERT/promote.
   let serviceTypeConcrete: string | null = null
   for (const li of (v.lineItems?.nodes ?? [])) { const s = lineItemSvc(li?.name ?? null); if (s) { serviceTypeConcrete = s; break } }
   if (!serviceTypeConcrete) serviceTypeConcrete = inferServiceType(v.title ?? null)
-  const serviceType = serviceTypeConcrete ?? 'GT'
+  const serviceType = serviceTypeConcrete ?? 'Pumping'
 
   const visitRow: Record<string, unknown> = {
     title: v.title ?? null,
@@ -774,8 +807,10 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
       console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion + fill-hour-if-empty sync`)
       return { entity_id: existingId }
     }
-    // Standard update path — Jobber-mastered visit. Do NOT clobber a stored LS/CL service_type with
-    // the bare 'GT' default: when the derive is non-concrete, omit service_type so the stored value sticks.
+    // Standard update path — Jobber-mastered visit. Do NOT clobber a stored service_type with
+    // the bare default: when the derive is non-concrete, omit service_type so the stored value sticks.
+    // This also protects a legacy-vocabulary row from being rewritten piecemeal during the
+    // migration window; the SQL migration owns that conversion, not this handler.
     const updateRow = serviceTypeConcrete ? visitRow : (() => { const { service_type: _drop, ...rest } = visitRow; return rest })()
     const { error } = await supabaseJobber.from('visits').update(updateRow).eq('id', existingId)
     if (error) throw new Error(`Visit update failed: ${error.message}`)
@@ -785,7 +820,10 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     // before inserting a new row. This keeps the Supabase cron's planned
     // schedule and Jobber's actual execution as a SINGLE row through the
     // visit lifecycle. Match criteria (kept tight to avoid false promotions):
-    //   - client_id, service_type both match
+    //   - client_id matches, and service_type matches in EITHER vocabulary
+    //     (see SVC_EQUIVALENTS above — a placeholder written before the
+    //     2026-08-03 migration still says GT/CL/WD/LS, and failing to match it
+    //     duplicates the visit silently instead of promoting it)
     //   - visit_status='scheduled'
     //   - source='supabase_cron' (i.e., it's a placeholder, not a real Jobber row)
     //   - visit_date within ±7 days of the incoming Jobber visit
@@ -797,7 +835,7 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
         .from('visits')
         .select('id, visit_date')
         .eq('client_id', clientId)
-        .eq('service_type', visitRow.service_type)
+        .in('service_type', svcMatchSet(visitRow.service_type))
         .eq('visit_status', 'scheduled')
         .eq('source', 'supabase_cron')
         .gte('visit_date', addDaysISO(targetDate, -7))

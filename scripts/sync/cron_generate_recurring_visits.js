@@ -57,16 +57,25 @@
 //   in mid-day; the cron won't re-create them next morning because the filter
 //   excludes them.
 //
-// LS service type
-//   Recognized as a valid service category. If a client has a service_configs
-//   row with service_type='LS' and frequency_days > 0, LS visits get generated
-//   just like GT/CL/WD.
+// 🛑 SUPERSEDED — SA visit generation runs IN POSTGRES as of 2026-08-01:
+//   public.fn_generate_sa_visits, driven by the pg_cron job 'sa-visit-generation'.
+//   This script's GitHub schedule has been PAUSED since 2026-06-02 (Fred) because
+//   it does not attach the per-visit service line items. It remains manually
+//   dispatchable, which is the only reason it is kept in step below. Prefer the
+//   in-Postgres generator; do not revive this one without re-reading why it was
+//   paused.
+//
+// Lift Station
+//   Was its own service category ('LS'). As of the 2026-08-03 vocabulary rename
+//   it folds into Pumping, per the service catalogue sheet's column G, which
+//   classifies code 04 "Lift Station & Tank Cleaning" as Pumping. The equipment
+//   distinction lives in service_line_items.location_target, not here.
 //
 // CLI
 //   node scripts/sync/cron_generate_recurring_visits.js               # full run
 //   node scripts/sync/cron_generate_recurring_visits.js --dry-run     # no writes
 //   node scripts/sync/cron_generate_recurring_visits.js --client=NNN-XXX  # one client
-//   node scripts/sync/cron_generate_recurring_visits.js --service=GT  # one service type
+//   node scripts/sync/cron_generate_recurring_visits.js --service=Pumping # one service type
 // ============================================================================
 
 const https = require('https');
@@ -83,11 +92,14 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const clientArg = process.argv.find(a => a.startsWith('--client='));
 const FILTER_CLIENT = clientArg ? clientArg.split('=')[1] : null;
 const serviceArg = process.argv.find(a => a.startsWith('--service='));
-const FILTER_SERVICE = serviceArg ? serviceArg.split('=')[1].toUpperCase() : null;
+// NOT uppercased any more: the vocabulary is 'Pumping'/'Cleaning'/'Warranty of
+// Drainage' as of 2026-08-03, so .toUpperCase() would produce 'PUMPING' and
+// silently match nothing.
+const FILTER_SERVICE = serviceArg ? serviceArg.split('=')[1] : null;
 
 const IDEMPOTENCY_TOLERANCE_DAYS = 7;
 const ALLOWED_CLIENT_STATUSES = ['ACTIVE', 'RECURRING'];
-const ALLOWED_SERVICE_TYPES = ['GT', 'CL', 'WD', 'LS'];
+const ALLOWED_SERVICE_TYPES = ['Pumping', 'Cleaning', 'Warranty of Drainage'];
 // Test / non-serviced accounts that must NEVER auto-generate visits, even
 // though they're kept ACTIVE for app-testing purposes. (112-YA "Yan's
 // Restaurant" is Yan's test account — confirmed by Fred 2026-05-30.)

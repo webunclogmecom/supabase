@@ -63,12 +63,24 @@ const FALLBACK_DURATION_MS = 60 * 60 * 1000;      // when completed_at is null
 const GOLIATH_DECOMMISSION_DATE = '2026-01-01';
 
 // Cloggy is primarily the day-shift plumbing truck (Grecia); commercial
-// service (GT/CL/LS/WD) is mostly Moises (Kenworth T880). When Moises and
-// Cloggy BOTH ping a commercial client (daytime pass-by) we prefer Moises —
-// a TIE-BREAK in the match loop, not a hard exclusion — so a Cloggy-only ping
-// still attributes Cloggy (Cloggy does run some commercial/overnight work).
+// service (pumping/cleaning/warranty) is mostly Moises (Kenworth T880). When
+// Moises and Cloggy BOTH ping a commercial client (daytime pass-by) we prefer
+// Moises — a TIE-BREAK in the match loop, not a hard exclusion — so a
+// Cloggy-only ping still attributes Cloggy (Cloggy does run some
+// commercial/overnight work).
 // (8/15 Moises+Cloggy ambiguous commercial visits, audit 2026-05-22.)
-const COMMERCIAL_SERVICE_TYPES = new Set(['GT', 'CL', 'LS', 'WD']);
+//
+// ⚠ Holds BOTH vocabularies deliberately. service_type was renamed from
+// GT/CL/WD/LS to the real service names on 2026-08-03. This script runs HOURLY
+// via a workflow that checks out main at job start, so there is a window of up
+// to an hour where it runs against migrated data with pre-migration code.
+// Membership is a read-only classification here, so accepting both is free and
+// removing the legacy half early would silently reclassify every commercial
+// visit as non-commercial. Safe to drop the legacy half after Phase C.
+const COMMERCIAL_SERVICE_TYPES = new Set([
+  'Pumping', 'Cleaning', 'Warranty of Drainage',
+  'GT', 'CL', 'LS', 'WD',
+]);
 
 // ---- helpers ----------------------------------------------------------------
 
