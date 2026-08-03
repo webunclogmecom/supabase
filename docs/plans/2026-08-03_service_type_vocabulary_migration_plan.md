@@ -1,8 +1,33 @@
 # Plan — retire the GT/CL/WD/LS vocabulary, keep the column name `service_type`
 
-**Status: PLAN ONLY. Nothing in here has been executed.** Fred asked for a full audit and a plan
-before any change. Four parallel audits ran on 2026-08-03 against live Prod; every number below is
-measured, not estimated.
+> ## ✅ EXECUTED IN FULL, 2026-08-03. This document is the PLAN as written beforehand; keep it for the
+> ## reasoning, but **[reference/service-type-vocabulary.md](../reference/service-type-vocabulary.md)
+> ## is the current-state spec.**
+>
+> All five migrations shipped and are verified in Prod: Phase A (expand) → `webhook-jobber` deploy →
+> Phase B (migrate) → Phase C1 (narrow CHECKs) → C2 (drop `service_kind`) → collapse the duplicate
+> app-facing field. 2,202 visit rows and 263 configs rewritten, 0 legacy values remain, 0 objects hold
+> a legacy literal, all 7 apps smoke-tested in-UI.
+>
+> **Where the plan turned out WRONG, and it matters:**
+> 1. **The approved cadence deltas in §4/D2 were wrong.** "057-BAY 2→3, 083-SHUL 57→42, 168-AVA 12→9"
+>    came from a simulation that omitted the `days_since_prev BETWEEN 5 AND 200` filter the live CTE
+>    carries. Re-measured: **057-BAY gains a cadence where it had NONE (none → 32 days)**, 083-SHUL
+>    57 → 42 (correct), **168-AVA does not move at all**.
+> 2. **The plan missed a whole class of consequence.** A key-by-key `to_jsonb` diff found **14 completed
+>    visits flip their SA/SC chip from `SC` to `SA`**, plus `visit_updated_at` on 1,672 rows. An
+>    enumerated column list — and a 22-agent adversarial review — both missed it.
+> 3. **"The job editor payload" was not read by any app.** `ops.client_service_options` turned out to be
+>    dead (calls frozen since 2026-06-23), so the "two identical fields" the plan worried about were not
+>    reaching the Client App at all.
+> 4. **The `service_kind` reader count was 10 by name, 7 in reality** — three views build their own
+>    SA/SC value and never touch the catalogue.
+> 5. **`webhook-jobber`'s placeholder-promotion filter was a silent duplicate-visit hazard in BOTH
+>    deploy directions.** The plan under-stated it as an ordering preference; it needed a
+>    dual-vocabulary lookup to make deploy order irrelevant.
+
+**Status when written: PLAN ONLY.** Fred asked for a full audit and a plan before any change. Four
+parallel audits ran on 2026-08-03 against live Prod; every number below is measured, not estimated.
 
 **Fred's decisions already taken (2026-08-03):**
 1. Full catalogue vocabulary on `visits`; the recurring subset on `service_configs`. **Approved.**

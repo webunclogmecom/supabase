@@ -323,8 +323,8 @@ gh workflow run generate-recurring-visits.yml -f dry_run=true
 # scoped to one client:
 gh workflow run generate-recurring-visits.yml -f client_filter=042-MT
 
-# scoped to one service type (GT/CL/WD/LS):
-gh workflow run generate-recurring-visits.yml -f service_filter=GT
+# scoped to one service type (Pumping/Cleaning/Warranty of Drainage):
+gh workflow run generate-recurring-visits.yml -f service_filter=Pumping
 ```
 
 Or fire from the GitHub Actions UI: **Actions → Generate recurring visits (Supabase-native) → Run workflow**. Inputs appear inline.

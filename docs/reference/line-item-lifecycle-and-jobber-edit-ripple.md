@@ -124,7 +124,7 @@ Ordered by blast radius. Cascades are gated by `visits.line_items_rev`, not the 
 | 1 | Per-visit `amount` = `COALESCE(sum visit-scoped, sum job-scoped)`; rolls into day/month totals. Job-scoped add → all inheriting visits change at once. | `ops.v_calendar_visit` → Calendar | **Critical** | **Footgun:** any *partial* visit-scoped write flips that visit off the job fallback → amount collapses to just the written line. Write the full set if going visit-scoped. |
 | 2 | Drawer line list shows the new item (same COALESCE). | `ops.v_calendar_visit_detail` | Medium | Desired (display). |
 | 3 | `edit_calendar_visit` → `line_items_rev`++ → push → **replaces** the Jobber visit's inherited SA lines. | visits trigger → Jobber | **High** | Guard: don't route through `edit_calendar_visit`; a raw insert = no rev bump = no push. |
-| 4 | `service_type` re-derived (GT>CL>WD, default GT). Codes 25/27 ≠ GT/CL/WD. | `visits.service_type` | Low | No change. |
+| 4 | `service_type` re-derived from the visit line-item codes (01/02/09→`Pumping`, 05/06/07/12/13/14→`Cleaning`, 08→`Warranty of Drainage`; default `Pumping`). Fee codes 25-27 map to nothing. *(Was GT>CL>WD before the 2026-08-03 rename.)* | `visits.service_type` | Low | No change. |
 | 5 | `derm_required` (`fn_visit_requires_derm`, monotonic). Code 27 non-pumping; already TRUE from code 01. | `visits.derm_required` | Medium / none here | Guard: `edit_calendar_visit` with a patch that drops the pumping line on an unlocked visit **demotes** derm to FALSE. |
 | 6 | Field Portal work-order `services` (visit-scoped, completed-only). | `customer.work_orders` | Low / **latent gap** | The gap this design fixes. |
 | 7 | New/Edit-visit service picker. | `ops.client_service_options` | Low | Cosmetic. |

@@ -202,6 +202,37 @@ Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Mo
 | `m.manifest_number` | `m.white_manifest_number` | derm_manifests |
 | `v.tank_capacity_gallons` | `v.fuel_tank_capacity_gallons` or `v.grease_tank_capacity_gallons` | vehicles |
 
+### ⚠ `service_type` holds REAL SERVICE NAMES, and `service_kind` means two different things (2026-08-03)
+
+**The `GT` / `CL` / `WD` / `LS` codes are RETIRED and are now REJECTED (`23514`).** `service_type` holds
+`Pumping`, `Cleaning`, `Warranty of Drainage` and the rest of the catalogue taxonomy (11 values,
+including **`Dump Offload`** — writing a CHECK from "the three recurring services" silently rejects 30
+live visits). `service_configs` is held to the recurring three; `visits` allows the full set **and NULL**
+(206 rows; NULL means not derivable and is the honest answer, never "default to Pumping").
+
+**🛑 THE TRAP: `service_kind` is TWO DIFFERENT CONCEPTS.**
+
+| Object | Meaning | Status |
+|---|---|---|
+| `public.service_line_items.service_kind` | was the service taxonomy | **DROPPED 2026-08-03** — use `service_type` |
+| `ops.v_calendar_visit.service_kind` | **`SA` / `SC`** (Service Agreement vs Service Call) | **ALIVE — the most-read column in `ops`** |
+| `ops.v_calendar_visit_detail`, `derm.v_stamp_unlinked_visits`, `derm.v_stamp_row_candidate_visits` | same SA/SC classifier | alive |
+
+16 app queries read the SA/SC one, up to 4,186 calls each, and the Visit Calendar **equality-filters**
+on it. **A find-and-replace on `service_kind` destroys it in four views with no error.** A name sweep
+reports 10 objects when only **7** ever read the catalogue column. Rewrite only `sli.`-qualified
+references; inspect every unqualified one by hand. This is also why `visits.service_type` was NOT
+renamed to `service_kind` — the name was already taken with a different vocabulary.
+
+**Also: `ops.fn_service_group`'s THIRD ARGUMENT is `location_target`, not `service_type`** (the
+parameter is still *named* `p_type`; `CREATE OR REPLACE` cannot rename one while callers depend on it).
+After the rename `service_type` reads `Pumping` for both grease trap and lift station, so it can no
+longer split `PUMPING_GT` from `PUMPING_OTHER`. Passing `service_type` again repaints ~1,006 Calendar
+chips silently.
+
+**Full spec — read it before touching either name:**
+[docs/reference/service-type-vocabulary.md](docs/reference/service-type-vocabulary.md).
+
 ### Soft-delete on visits (added 2026-05-29)
 
 `public.visits.deleted_at TIMESTAMPTZ` is set by
@@ -246,7 +277,7 @@ Commercial overnight routes run ~8 PM into the next ~6 AM, but **`visit_date` is
 ### `clients.status` values
 `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE`. AT's old `Recuring` (one r) was a typo — normalized 2026-05-13. populate.js + ops views all use `RECURRING`.
 
-**⚠ `status='RECURRING'` does NOT mean the client generates visits.** Visit-gen keys off the JOB, not the client flag: a client generates SA visits only if it has an active, `frequency_days>0`, non-`[OLD]` `Service Agreement%` job carrying a **physical-service** line item (any SA/SC code **except 08**). Code 08 is excluded in the `public.fn_generate_sa_visits` job predicate (it lived in `generate_service_agreement_visits.js` until the 2026-08-01 port), which keys on `service_line_items.reason IN ('Service Agreement','Service Call') AND code <> '08'` (Fred/Yan 2026-07-02; code 08 wrongly had `service_type='WD'`, so the GT-default made phantom visits). So a Warranty-of-Drainage-only client (code 08 + fees 25/26) **correctly has zero SCHEDULED recurring visits even while `status='RECURRING'`** — don't flag it as a scheduling gap.
+**⚠ `status='RECURRING'` does NOT mean the client generates visits.** Visit-gen keys off the JOB, not the client flag: a client generates SA visits only if it has an active, `frequency_days>0`, non-`[OLD]` `Service Agreement%` job carrying a **physical-service** line item (any SA/SC code **except 08**). Code 08 is excluded in the `public.fn_generate_sa_visits` job predicate (it lived in `generate_service_agreement_visits.js` until the 2026-08-01 port), which keys on `service_line_items.reason IN ('Service Agreement','Service Call') AND code <> '08'` (Fred/Yan 2026-07-02; code 08 wrongly had `service_type='WD'` — the legacy code, today `'Warranty of Drainage'` — so the pumping default made phantom visits). So a Warranty-of-Drainage-only client (code 08 + fees 25/26) **correctly has zero SCHEDULED recurring visits even while `status='RECURRING'`** — don't flag it as a scheduling gap.
 
 > 🛑 **CORRECTED 2026-07-31 (Fred) — "code 08 generates NO visits" was too strong and this file used to say it.** The accurate rule is **no RECURRING visits**. Read it the old way and a legitimate warranty visit looks like corruption to the next person auditing.
 > **What Warranty of Drainage actually is:** a **subscription** — the client pays a recurring fee so that, *in addition to* their regular scheduled visits, we come out if they think their grease trap is clogged. **That call-out IS a real visit**, booked ad-hoc as a **Service Call, normally at $0** because the subscription already covers it. Live examples: `132-PUM` and `021-GRA` carry **$0** visit-scoped 08 lines; `191-TEN` bills its warranty visits at **$120** each (a sanctioned variant — Fred 2026-07-31).
@@ -313,7 +344,7 @@ from banded-card math alone (that was the v2 leak, caught by Fred 2026-07-10 —
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
 
-> **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01–04/09–11); `service_type='GT'` is unreliable (handleVisit defaults to GT; grey-water pumping is coded CL). Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic — never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
+> **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01–04/09–11); `service_type` is unreliable as a proxy — `handleVisit` falls back to a default when the line-item derive is non-concrete, and grey-water pumping was coded as cleaning. *(That default was `GT` and grey water was `CL` until the 2026-08-03 rename; today they read `Pumping` and `Cleaning`. The unreliability is unchanged — this is why the derive keys off line items, not off this column.)* Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic — never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
 
 To find a missing DERM link, work in the Supabase DB. **Airtable is fully retired (2026-07-24) and must not be read** — there is no AT DERM table to cross-reference any more:
 1. **`derm_manifests`** — match on `white_manifest_number` + `client_id`, then compare `service_date` to the candidate visit's `visit_date`. Never match on `dump_ticket_date` alone: dump dates lag service dates by weeks.
@@ -342,6 +373,7 @@ Historical note on why those links were missed: `webhook-airtable`'s link logic 
 | [docs/security.md](docs/security.md) | Secrets / tokens / RLS / rotation |
 | [docs/migration-plan.md](docs/migration-plan.md) | Jobber sunset + cutover (⚠ two stale threads in that doc: Airtable's sunset is DONE, it was fully retired 2026-07-24, and Odoo was dropped 2026-07-08; successor = in-house Client App) |
 | [docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md](docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md) | Jobs↔visits↔calendar workflow + 2026-06-23 restructure + the Calendar Create Visit DB layer |
+| [docs/reference/service-type-vocabulary.md](docs/reference/service-type-vocabulary.md) | **Before touching `service_type` or `service_kind`** — the vocabulary, the two-meanings collision, and how to tell whether an app really reads a column |
 | [docs/reference/line-item-lifecycle-and-jobber-edit-ripple.md](docs/reference/line-item-lifecycle-and-jobber-edit-ripple.md) | Line-item scopes; how scheduled vs completed visits reflect services; Jobber job-edit ripple + propagation |
 | [docs/reports/sa-status-report.md](docs/reports/sa-status-report.md) | Regenerating the SA status report (coverage gaps + old open jobs PDF) |
 | [docs/company.md](docs/company.md) | Business context: fleet, clients, compliance |

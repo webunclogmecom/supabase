@@ -1,4 +1,27 @@
-# `service_type` vs `service_kind` — why the legacy column stays (2026-08-03)
+# `service_type` vs `service_kind` — the analysis behind the 2026-08-03 vocabulary retirement
+
+> # 🛑 SUPERSEDED / HISTORICAL — every measurement below describes the **PRE-migration** state.
+>
+> The rename **SHIPPED the same day**. `service_type` now holds the real service names and
+> `GT`/`CL`/`WD`/`LS` **cannot be written** (both CHECKs reject them, `23514`).
+> `public.service_line_items.service_kind` **was dropped**.
+>
+> **⇒ For CURRENT state read [service-type-vocabulary.md](service-type-vocabulary.md).**
+>
+> Specifically superseded below:
+> - The old title ("why the legacy column stays") and **§4 "What to do" → "Nothing to the key"** —
+>   the key WAS rewritten.
+> - **§1's "five columns"** — `service_line_items` now has four; `service_kind` is gone.
+> - **§2's blockers** — the 7 GT+LS clients were resolved by deleting the 7 empty LS configs, and the
+>   cadence figures quoted there came from a simulation that omitted the
+>   `days_since_prev BETWEEN 5 AND 200` filter the live CTE carries, so they are wrong. Real deltas:
+>   057-BAY none → 32 days, 083-SHUL 57 → 42, 168-AVA unchanged.
+> - **The `fn_service_group` note in §1** — its third argument is now `location_target`, NOT
+>   `service_type` (the parameter is still *named* `p_type`).
+> - **The "Live defect: LS visits have no lateness anchor"** — resolved; LS folded into `Pumping`.
+>
+> Kept because the reasoning, the measurements and the wrong turns are the record of how the decision
+> was reached — including a conclusion I got backwards twice before Fred corrected it.
 
 **Fred asked:** *"should that not be the 'pumping', 'cleaning' and 'warranty' instead? because
 they're the real 'type' of a service, because having `service_kind` and `service_type` is the same

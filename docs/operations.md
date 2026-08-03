@@ -113,7 +113,7 @@ SELECT c.name, sc.service_type, sc.last_visit, sc.frequency_days,
        CURRENT_DATE - sc.next_visit AS days_overdue
 FROM service_configs sc
 JOIN clients c ON c.id = sc.client_id
-WHERE sc.service_type = 'GT'
+WHERE sc.service_type = 'Pumping'   -- was 'GT' until 2026-08-03
   AND sc.next_visit < CURRENT_DATE
   AND sc.status IN ('Late','Critical')
 ORDER BY days_overdue DESC;
@@ -168,7 +168,7 @@ Currently `service_configs` carries `permit_number` and `permit_document_path` o
 - If a property changes client, all the new client's `service_configs` rows lose the GDO
   data until someone manually re-enters it.
 - The same GDO ends up duplicated across multiple `service_configs` rows for the same
-  property (one per service type GT/CL/WD/LS — fixed today by the 2026-05-25 backfill,
+  property (one per service type Pumping/Cleaning/Warranty of Drainage — GT/CL/WD/LS before 2026-08-03 — fixed today by the 2026-05-25 backfill,
   but the schema still has the data at the wrong level of abstraction).
 
 **Forward design (not yet implemented):** GDO data belongs on `properties`, not

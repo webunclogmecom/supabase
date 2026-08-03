@@ -13,7 +13,7 @@ Camera/Dye/Assessment, Labor, Parts, Warranty, fees, GDO reporting) does **not**
 `service_line_items.requires_derm = true` for exactly codes **{01, 02, 03, 04, 09, 10, 11}** (all Pumping;
 01–04 = Service Agreement, 09–11 = Service Call). This column is already correct and matches the sheet.
 
-`visits.service_type` (GT/CL/LS) is **too blunt** and is NOT the DERM signal: `handleVisit` *defaults*
+`visits.service_type` is **too blunt** and is NOT the DERM signal: `handleVisit` *defaults*
 service_type to GT (so cleaning visits looked GT), and grey-water pumping is coded CL but DOES need DERM.
 The line items are the real signal.
 
@@ -128,7 +128,7 @@ manifest, no over-linked visits). v5830 (053-PV): human not-required decision PR
 - `derm.visits.needs_manifest` = `COALESCE(derm_required, true)` (DERM Tracker "Missing Docs").
 - `customer.work_orders` — `WHERE COALESCE(derm_required, true) = true` (Field Portal grease-trap work orders).
 - `ops.v_derm_compliance` — missing-manifest count now uses `derm_required` (was `service_type='GT'`);
-  the view stays **GT-config-roster scoped** (it joins `service_configs` GT for equipment/frequency), so
+  the view stays **Pumping-config-roster scoped** (`service_type = 'Pumping'`, formerly 'GT') (it joins `service_configs` GT for equipment/frequency), so
   grey-water/lift-station-**only** clients are tracked via `derm.visits`, not this ops dashboard.
 
 ## Live result (2026-06-24 backfill, 706 completed visits)

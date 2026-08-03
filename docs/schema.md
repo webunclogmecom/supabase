@@ -186,7 +186,7 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 |---|---|---|
 | id | BIGSERIAL PK | |
 | client_id | BIGINT FK → clients | |
-| service_type | TEXT | `GT`, `CL`, `WD`, `AUX`, `SUMP`, `GREY_WATER`, `WARRANTY` |
+| service_type | TEXT NOT NULL | **`Pumping`, `Cleaning`, `Warranty of Drainage`** — enforced by `service_configs_service_type_chk`. ⚠ See the note below. |
 | frequency_days | INTEGER | Always stored in DAYS (see note below) |
 | first_visit / last_visit / stop_date | DATE | |
 | price_per_visit | NUMERIC(12,2) | |
@@ -197,6 +197,24 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 | created_at, updated_at | TIMESTAMPTZ | |
 
 **Unique:** `(client_id, service_type)`
+
+> ⚠ **`service_type` VOCABULARY CHANGED 2026-08-03 — and this table was wrong before that too.**
+> It used to be documented here as `GT, CL, WD, AUX, SUMP, GREY_WATER, WARRANTY`. **Four of those
+> (`AUX`, `SUMP`, `GREY_WATER`, `WARRANTY`) never had a single row**, and `LS` — the only value that
+> actually mattered, because it collided on the unique key — was missing from the list entirely.
+> Anyone scoping work from this table planned for four values that did not exist and missed the one
+> that did.
+>
+> The legacy `GT`/`CL`/`WD`/`LS` codes are now **retired and rejected** (`23514`). `service_configs`
+> holds only the three recurring service names; `public.visits` and `public.service_line_items` hold
+> the wider catalogue taxonomy (11 values, including **`Dump Offload`**).
+>
+> **Do not hand-maintain a value list here.** Generate it:
+> ```sql
+> select pg_get_constraintdef(oid) from pg_constraint
+>  where conname in ('service_configs_service_type_chk','visits_service_type_chk');
+> ```
+> Full spec, including the `service_kind` name collision: [reference/service-type-vocabulary.md](reference/service-type-vocabulary.md)
 
 **Frequency normalization at sync time:**
 - GT / CL frequency from Airtable (MONTHS) × 30 → days
@@ -268,7 +286,7 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 | start_at / end_at / completed_at | TIMESTAMPTZ | |
 | duration_minutes | INTEGER | |
 | title | TEXT | |
-| service_type | TEXT | `GT`, `CL`, `AUX`, `HYDROJET`, `CAMERA`, `EMERGENCY` |
+| service_type | TEXT | Nullable. The catalogue taxonomy: `Pumping`, `Cleaning`, `Warranty of Drainage`, `Unclogging`, `Camera Inspection`, `Dye Test`, `Assessment`, `Labor`, `Parts`, `Labor BUS`, `Dump Offload`. Enforced by `visits_service_type_chk`. **NULL is legal and honest** (206 rows) — it means not derivable, never "default to Pumping". ⚠ Was `GT`/`CL`/`WD`/`LS` until 2026-08-03; `AUX`/`HYDROJET`/`CAMERA`/`EMERGENCY` were documented here but never existed in the data. See [reference/service-type-vocabulary.md](reference/service-type-vocabulary.md). |
 | visit_status | TEXT | CHECK domain = `scheduled`, `completed`, `cancelled`, `skipped` (2026-07-03). `skipped` = deliberately not serviced this cycle (e.g. client temporarily closed) but kept for the record + removed from Jobber — set via `skip_visit()`/`unskip_visit()`; see migration `2026-07-03c_skip_visit_status.sql`. |
 | skip_reason | TEXT | Why a visit was skipped (only when `visit_status='skipped'`). Set by `skip_visit()`, cleared by `unskip_visit()`. NOT pushed to Jobber. |
 | actual_arrival_at / actual_departure_at | TIMESTAMPTZ | GPS enrichment from Samsara |

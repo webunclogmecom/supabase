@@ -82,7 +82,7 @@ If any step throws, `webhook_events_log.status` is flipped to `failed` with the 
 - **Receiver:** `supabase/functions/webhook-airtable/index.ts`
 - **Sunset:** May 2026 — replaced by Odoo.sh
 - **Owns (100% trusted)**: `derm_manifests` (white/yellow manifest numbers, dump dates), `inspections` (PRE-POST insptection table — driver, truck, sludge/water levels, gas, valve, issues)
-- **Best-effort enrichment** (used because no alternative source): `service_configs` (GT/CL/WD frequencies, prices, GDO permit numbers + expirations, equipment size), `client_contacts` (Operation/Accounting/City contact roles), `properties` (zone, access hours/days, county)
+- **Best-effort enrichment** (used because no alternative source): `service_configs` (Pumping/Cleaning/Warranty-of-Drainage frequencies, prices, GDO permit numbers + expirations, equipment size), `client_contacts` (Operation/Accounting/City contact roles), `properties` (zone, access hours/days, county)
 - **Never trusted over Jobber/Samsara**: identity fields, addresses, money, employees, route assignments, payment status
 - **Rate limits:** 5 req/sec per base (hard cap, all tiers), 50 req/sec per token across all bases
 
@@ -97,17 +97,29 @@ Yannick's normal entry range: 10–180 days. Anything > 180d is an Airtable data
 
 Inspection ingestion migrated to Airtable's PRE-POST table; expense ingestion dropped (Ramp owns expenses). All `pullFillout`, `cache.fillout`, `_fillout_name`, `employeeByFilloutName` references removed from `populate.js`. The Edge Function for Fillout (if any was wired) is no longer referenced.
 
-### Service type vocabulary
+### Service type vocabulary (rewritten 2026-08-03)
 
-| Code | Meaning | Where it appears |
+`service_type` holds the **real service names**. The `GT` / `CL` / `WD` / `LS` codes are retired and
+are now **rejected** by both CHECK constraints (`23514`).
+
+| Value | Meaning | Where it appears |
 |---|---|---|
-| `GT` | Grease Trap (commercial, DERM-regulated) | `service_configs.service_type`, `visits.service_type` |
-| `CL` | Cleaning (drain cleaning) | same |
-| `WD` | Water Drain | same |
-| `AUX` | Auxiliary / other | same |
-| `SUMP`, `GREY_WATER`, `WARRANTY` | Rare | `service_configs` only |
-| `HYDROJET`, `CAMERA` | Job type shorthand | `visits.service_type` |
-| `EMERGENCY` | Visit-level only | `visits.service_type` (never a service_config row) |
+| `Pumping` | Grease trap / grey water / lift-station pumping (DERM-regulated) | `service_configs`, `visits`, `service_line_items` |
+| `Cleaning` | Line / tank cleaning | same |
+| `Warranty of Drainage` | The warranty subscription | same |
+| `Unclogging`, `Camera Inspection`, `Dye Test`, `Assessment`, `Labor`, `Parts`, `Labor BUS`, `Dump Offload` | The rest of the catalogue taxonomy | `visits`, `service_line_items` — **NOT** `service_configs` |
+| `NULL` | Not derivable — the honest value, never "default to Pumping" | `visits` only (206 rows) |
+
+⚠ **The old version of this table was wrong even before the rename.** It listed `AUX`, `SUMP`,
+`GREY_WATER`, `WARRANTY`, `HYDROJET`, `CAMERA` and `EMERGENCY` — **none of which ever had a single
+row** — and omitted `LS`, the one value that actually mattered because it collided on
+`UNIQUE (client_id, service_type)`.
+
+⚠ **`Dump Offload` (code 28) is live on 30 visits.** A CHECK written from "the three recurring
+services" silently rejects it.
+
+⚠ **`service_kind` is a DIFFERENT concept in the `ops`/`derm` views** — it means `SA`/`SC` there and is
+heavily used. See [reference/service-type-vocabulary.md](reference/service-type-vocabulary.md).
 
 ---
 
