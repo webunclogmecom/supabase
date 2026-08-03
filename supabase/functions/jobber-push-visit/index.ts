@@ -208,6 +208,33 @@ function ue(payload: any): string | null { const e = payload?.userErrors; return
 async function syncVisitLineItems(token: string, visit: any, visitGid: string, isUpdate: boolean) {
   const { data: items } = await db.from("line_items").select("name,description,quantity,unit_price").eq("visit_id", visit.id);
   if (!items || !items.length) return;
+  // ⚠ NO-OP OVERRIDE GUARD (2026-08-03, Fred: "stop the bleeding at the source").
+  // create_calendar_visit writes one visit-scoped row per picked service at
+  // COALESCE(p_line_item_prices…, s.unit_price, 0). MEASURED: service_line_items.unit_price is NULL
+  // on ALL 28 catalogue rows, so with no user price override every row lands at $0 with no
+  // description. Pushing that set is actively harmful in two ways, because visitCreateLineItems
+  // MINTS BRAND-NEW shared JobLineItem objects on the JOB and then unlinks the inherited priced
+  // templates:
+  //   (a) the visit's real price is replaced by $0, and
+  //   (b) when that visit is later deleted/skipped/cancelled the minted objects are STRANDED on the
+  //       job forever as qty-0 orphans — Jobber has no VisitLineItem type, so a per-visit override
+  //       renders quantity 0 at job scope and shows up as a duplicate service.
+  // That is the duplicate-line-item bug Fred reported (15 jobs), reproduced on 137/137 eligible SA
+  // jobs in docs/audits/2026-07-18_qty0_line_item_residue_audit.md, and observed live on
+  // 2026-08-03: visit 7648 created 18:21:53Z -> Jobber objects 221733691/221733692 born 18:21:55Z.
+  // An all-zero, description-less set carries NO information the inherited template does not
+  // already carry, so skip the push entirely and let Jobber keep its own priced templates.
+  // MEASURED 2026-08-03: 525 of 1519 visit-scoped rows are in this category; the other 994 carry a
+  // real price from p_line_item_prices and MUST still push, which is why this is per-VISIT
+  // (items.some) and not per-row — a visit mixing a priced line with a $0 line still pushes in full.
+  const carriesInfo = items.some((it: any) =>
+    (Number.isFinite(Number(it.unit_price)) && Number(it.unit_price) > 0) ||
+    ((it.description ?? "").trim() !== "")
+  );
+  if (!carriesInfo) {
+    console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0 with no description — skipping visitCreateLineItems so Jobber keeps the job's priced templates (prevents qty-0 orphans)`);
+    return;
+  }
   // ALWAYS reconcile (create + update). CREATE-FIRST-THEN-DELETE-OLD (reordered 2026-07-09
   // push-safety audit): the old delete-then-create left the Jobber visit with ZERO line items
   // if the create failed mid-flight (throttle/5xx) — and nothing retries 'lineitems', so a
