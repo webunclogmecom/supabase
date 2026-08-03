@@ -4,9 +4,53 @@
 they're the real 'type' of a service, because having `service_kind` and `service_type` is the same
 but with different wording, be critic and think first before answering."*
 
-**Answer: he is right about the words, and right that the two columns are the same axis. He is
-wrong that this makes it a rename.** `visits.service_type` is not a duplicate label, it is a
-**series key**. Do the label fix (already done), leave the key alone.
+## 🛑 CONCLUSION REVISED 2026-08-03 — FRED IS RIGHT. THE RENAME SHOULD HAPPEN.
+
+An earlier version of this document concluded "keep the key, it is not a rename". **That was
+wrong, and it was wrong because I argued from the constraint instead of measuring the data.**
+Three checks overturned it:
+
+**1. The sheet is the authority, and it says the type is column G.** Read live from
+`19ArflSwdhcpnu1U6Lii5q2VFmDLjwskurDCghN0aanE` on 2026-08-03. Column F = reason, **column G =
+the service type**, column H = the equipment, column I = method. Row for code 04:
+`Service Agreement | Pumping | Lift Station & Tank Cleaning`. **The sheet itself calls Lift
+Station "Pumping".** Diffed all 20 rows against the DB: `service_kind` matches column G
+**20 of 20, zero mismatches**; `location_target` matches column H on 19 of 20 (code 13 differs
+only by a double space).
+
+**2. `service_type` is not a taxonomy, it is a sparse legacy label.** It is **NULL on 11 of the
+20** catalogue codes: 03 Grey Water, 04 Lift Station, 08 Warranty, 10, 11, 15-18 Unclogging,
+19 Camera Inspection, 20 Dye Test. It only ever covered grease trap and cleaning.
+
+**3. LS is dead, so the "blockers" were hollow.** Measured:
+   - All **7 LS `service_configs` rows are completely empty** — 0 have a frequency, 0 have a price.
+     Deleting or folding them costs nothing; the UNIQUE-violation objection evaporates.
+   - **15 LS visits exist in total**, all `completed`, all `source='jobber'`, **0 scheduled in the
+     future**, last one 2026-05-24. Eleven belong to one client (057-BAY), many on consecutive days,
+     which is one-off work and not a cadence.
+   - LS is **already excluded** from all three cadence filters, so those visits contribute nothing
+     today. Folding them into Pumping *gives* them an anchor they currently lack rather than
+     corrupting one.
+
+**So the end state is `Pumping` / `Cleaning` / `Warranty of Drainage`, with LS folded into Pumping.**
+What remains is mechanical, not conceptual, and is listed in §2 below: 13 literal call sites, 2 CHECK
+constraints, `fn_check_gdo_on_visit`, `webhook-jobber`, and the `client_services_flat` GT/CL/WD pivot.
+It must land as ONE migration — rewriting `visits` but not `service_configs` breaks every join
+silently rather than loudly — and should be proven by a before/after comparison of every client's
+computed cadence.
+
+⚠ The one genuinely separate issue: **CL is only 36% actually Cleaning** at the visit level (54 of
+151 derivable). That is a data-quality problem that exists today under the name "CL" and will still
+exist under the name "Cleaning". Fix it separately; it is not a reason to keep the old vocabulary.
+
+---
+
+*The original analysis follows. Its §2 (what depends on the column) and §3 (CL accuracy) are still
+accurate and are the migration checklist. Its top-line conclusion is superseded by the above.*
+
+**Superseded answer:** *he is right about the words, and right that the two columns are the same
+axis, but wrong that this makes it a rename;* `visits.service_type` *is a series key, so do the
+label fix and leave the key alone.*
 
 ---
 
