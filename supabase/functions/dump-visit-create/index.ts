@@ -34,8 +34,34 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 // Server-side whitelist. Verified against Prod 2026-07-16. The caller sends only the KEY ('DH'|'DP').
-// property_id is deliberately the is_primary row: both dumps carry a billing-address duplicate, and
-// Pompano's billing dup (Oakland Park) is a genuinely different address ~4mi from the facility.
+// property_id is deliberately the is_primary row: both dumps carry a billing-address duplicate.
+//
+// 🛑 THIS LIST IS WHY "the app does not hardcode the address" IS A TRAP. The DUMP app's bundle
+// contains NO address at all - it renders whatever this edge function hands it (see the /sites
+// response below). A scan of the app bundles alone returns a confident, wrong "nothing to change".
+// If a dump address ever changes, IT CHANGES HERE, not in Lovable.
+//
+// POMPANO ADDRESS CORRECTED 2026-08-04 (Fred: "we need to change the Address for Pompano dump to
+// 3100 North Powerline Road"). It was '2401 N Powerline Road, Pompano Beach'. Jobber's service
+// property for client 76 (Z2lkOi8vSm9iYmVyL1Byb3BlcnR5LzExMTI2OTUxNw==, our properties.id 155)
+// reads '3100 n Powerline Road / Oakland Park / 33309', geoStatus FOUND, and public.properties was
+// re-synced to match in migration 2026-08-04_1650.
+//
+// ⚠ AND THE OLD COMMENT HERE WAS MEASURABLY WRONG. It said Pompano's Oakland Park billing duplicate
+// was "a genuinely different address ~4mi from the facility". The two points are 726 m apart
+// (~0.45 mi), not 4 miles - N Powerline Road runs through both cities at this latitude. That wrong
+// belief is probably why the Oakland Park address was dismissed as a billing artifact in the first
+// place.
+//
+// ⚠⚠ lat/lng ARE DELIBERATELY UNCHANGED, AND THEY NOW DISAGREE WITH THE ADDRESS BY 726 m.
+// These coordinates are the DRIVER'S NAVIGATION TARGET (the Routes API destination and the Google
+// Maps dir link), so moving them sends trucks somewhere new. Jobber geocodes the new address to
+// 26.2683192,-80.1506092. I did NOT adopt that, because our own data cannot say which point is the
+// real gate: there are 4 Pompano dump visits EVER, and across 6,861 telemetry pings in the +/-3h
+// windows, ZERO fall within 250 m of EITHER point (closest 2,062 m old / 1,925 m new). Keeping the
+// existing target is the no-regression choice - drivers still route where they always have.
+// Pending Fred: if the physical gate did move, update lat/lng here AND the hardcoded geofence in
+// public.dump_investigate, which carries its own copy of the old point.
 const DUMPS = {
   DH: {
     label: "Homestead", client_id: 365, job_id: 1720, property_id: 98,
@@ -44,7 +70,7 @@ const DUMPS = {
   },
   DP: {
     label: "Pompano", client_id: 76, job_id: 1662, property_id: 155,
-    address: "2401 N Powerline Road, Pompano Beach", lat: 26.2632563, lng: -80.1552085, county: "Broward",
+    address: "3100 n Powerline Road, Oakland Park", lat: 26.2632563, lng: -80.1552085, county: "Broward",
     jobberClientId: "104148029", // gid://Jobber/Client/104148029 -> secure.getjobber.com/clients/104148029
   },
 } as const;
