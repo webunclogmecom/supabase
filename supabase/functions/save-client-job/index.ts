@@ -221,6 +221,43 @@ function resolveBilling(p: any, isSA: boolean, opts: { legacy: boolean }): Billi
   return { invoicing, billing_type: btype, invoice_frequency: bfreq, invoice_rrule: rrule };
 }
 
+// Tokens that Jobber's invoiceSchedule.scheduleSummary MUST contain for the RRULE we
+// sent, so a silently-different day fails verification instead of being recorded as
+// confirmed. Jobber exposes NO RRULE field on Job.invoiceSchedule (only
+// billingFrequency + scheduleSummary), so the rendered summary is the only read-back
+// available — measured live 2026-08-03:
+//   "Monthly on the 18th day of the month"       FREQ=MONTHLY;BYMONTHDAY=18
+//   "Every 2 months on the 22nd day of the month" FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=22
+//   "Monthly on the last day of the month"        FREQ=MONTHLY;BYMONTHDAY=-1
+//
+// ⚠ RETURNS [] FOR SHAPES WHOSE WORDING WE HAVE NOT MEASURED (weekly, yearly,
+// nth-weekday). That is deliberate: guessing the phrasing would produce a
+// verify_failed on a perfectly good save. For those the schedule is still verified at
+// the billingFrequency level (PERIODIC), just not down to the day. When one is first
+// used in production, capture the real summary and tighten this.
+function summaryTokensForRrule(rrule: string): string[] {
+  if (!rrule) return [];
+  const part = (k: string) => new RegExp(`(?:^|[:;])${k}=([^;]+)`).exec(rrule)?.[1] ?? null;
+  if (part("FREQ") !== "MONTHLY") return [];          // weekly / yearly: unmeasured
+  const byday = part("BYDAY");
+  if (byday) return [];                                // nth-weekday: unmeasured
+  const md = part("BYMONTHDAY");
+  if (!md) return [];
+  const interval = Number(part("INTERVAL") ?? "1");
+  const toks: string[] = [];
+  if (md === "-1") toks.push("last day");
+  else if (/^\d{1,2}$/.test(md)) {
+    const n = Number(md);
+    if (n < 1 || n > 31) return [];
+    const suffix = (n % 100 >= 11 && n % 100 <= 13) ? "th"
+      : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
+    toks.push(`${n}${suffix}`);
+  } else return [];
+  // interval wording: 1 -> "Monthly on ...", n>1 -> "Every n months on ..."
+  toks.push(interval === 1 ? "monthly" : `${interval} months`);
+  return toks;
+}
+
 // ---- Jobber queries/mutations ----------------------------------------------
 const JOB_FIELDS = `id jobNumber title instructions jobStatus startAt endAt total
   billingType invoiceSchedule { billingFrequency scheduleSummary }
@@ -699,6 +736,32 @@ Deno.serve(async (req) => {
       return fail("verify_failed",
         `Jobber accepted the edit but the billing type reads back as ${j.billingType}, not ${wantType} — check it in Jobber.`,
         { applied });
+    }
+    // ⚠ THE GAP THIS CLOSES. Until 2026-08-03 the verify asserted ONLY billingType,
+    // yet jobToRecord writes billing_type AND invoice_frequency AND invoice_rrule —
+    // the last two straight from resolveBilling(), i.e. from what the CALLER ASKED
+    // FOR. So a schedule change was recorded as confirmed even if Jobber applied
+    // something else. (The 2026-08-01_1120 migration header claimed all three came
+    // from "the VERIFIED post-mutation read". Only one of them did.)
+    const wantSched = String((bill.invoicing as Record<string, unknown>)?.invoicingSchedule ?? "");
+    const gotSched = String(j.invoiceSchedule?.billingFrequency ?? "").toUpperCase();
+    if (wantSched && gotSched && gotSched !== wantSched.toUpperCase()) {
+      return fail("verify_failed",
+        `Jobber accepted the edit but the invoice schedule reads back as ${gotSched}, not ${wantSched} — check it in Jobber.`,
+        { applied });
+    }
+    // And for a day-of-month rule, assert the DAY actually landed. Jobber exposes no
+    // RRULE field, but scheduleSummary is a full rendering and carries both the
+    // interval and the day: measured live as "Every 2 months on the 22nd day of the
+    // month", "Monthly on the 18th day of the month", "Monthly on the last day of
+    // the month". That is enough to catch a silently-different day.
+    for (const tok of summaryTokensForRrule(bill.invoice_rrule ?? "")) {
+      const summary = String(j.invoiceSchedule?.scheduleSummary ?? "");
+      if (!summary.toLowerCase().includes(tok.toLowerCase())) {
+        return fail("verify_failed",
+          `Jobber accepted the schedule but reads it back as "${summary}", which does not mention "${tok}" — check it in Jobber.`,
+          { applied });
+      }
     }
   }
   // ⚠ THE CHECK WHOSE ABSENCE HID THE BUG. The old verify only asserted that
