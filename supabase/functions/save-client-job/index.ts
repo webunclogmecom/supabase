@@ -221,46 +221,70 @@ function resolveBilling(p: any, isSA: boolean, opts: { legacy: boolean }): Billi
   return { invoicing, billing_type: btype, invoice_frequency: bfreq, invoice_rrule: rrule };
 }
 
-// Tokens that Jobber's invoiceSchedule.scheduleSummary MUST contain for the RRULE we
-// sent, so a silently-different day fails verification instead of being recorded as
-// confirmed. Jobber exposes NO RRULE field on Job.invoiceSchedule (only
-// billingFrequency + scheduleSummary), so the rendered summary is the only read-back
-// available — measured live 2026-08-03:
-//   "Monthly on the 18th day of the month"       FREQ=MONTHLY;BYMONTHDAY=18
-//   "Every 2 months on the 22nd day of the month" FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=22
-//   "Monthly on the last day of the month"        FREQ=MONTHLY;BYMONTHDAY=-1
+// ---- RRULE read-back verification ------------------------------------------
+// 🛑 CORRECTION, measured 2026-08-03. An earlier version of this file asserted that
+// "Jobber exposes NO RRULE field on Job.invoiceSchedule" and therefore matched English
+// tokens against the rendered `scheduleSummary`. THAT WAS WRONG, and it made the verify
+// weaker than it needed to be while also leaving weekly / yearly / nth-weekday
+// unverifiable (their wording had never been measured, so the token matcher had to
+// return [] and assert nothing).
 //
-// ⚠ RETURNS [] FOR SHAPES WHOSE WORDING WE HAVE NOT MEASURED (weekly, yearly,
-// nth-weekday). That is deliberate: guessing the phrasing would produce a
-// verify_failed on a perfectly good save. For those the schedule is still verified at
-// the billingFrequency level (PERIODIC), just not down to the day. When one is first
-// used in production, capture the real summary and tighten this.
-function summaryTokensForRrule(rrule: string): string[] {
-  if (!rrule) return [];
-  const part = (k: string) => new RegExp(`(?:^|[:;])${k}=([^;]+)`).exec(rrule)?.[1] ?? null;
-  if (part("FREQ") !== "MONTHLY") return [];          // weekly / yearly: unmeasured
-  const byday = part("BYDAY");
-  if (byday) return [];                                // nth-weekday: unmeasured
-  const md = part("BYMONTHDAY");
-  if (!md) return [];
-  const interval = Number(part("INTERVAL") ?? "1");
-  const toks: string[] = [];
-  if (md === "-1") toks.push("last day");
-  else if (/^\d{1,2}$/.test(md)) {
-    const n = Number(md);
-    if (n < 1 || n > 31) return [];
-    const suffix = (n % 100 >= 11 && n % 100 <= 13) ? "th"
-      : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
-    toks.push(`${n}${suffix}`);
-  } else return [];
-  // interval wording: 1 -> "Monthly on ...", n>1 -> "Every n months on ..."
-  toks.push(interval === 1 ? "monthly" : `${interval} months`);
-  return toks;
+// `InvoiceSchedule.recurrenceSchedule.calendarRule` returns the rule VERBATIM.
+// Introspected + read live, read-only, GQL 2026-04-16:
+//   job 1202      FREQ=MONTHLY;BYMONTHDAY=-1
+//   job 10000308  FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=22
+//   job 10000414  recurrenceSchedule ABSENT (PER_VISIT)   <- negative control fired
+// So the schedule is verifiable EXACTLY, for every shape, and no phrasing is guessed.
+//
+// Two normalizations are load-bearing, not cosmetic:
+//   1. Jobber returns the rule WITHOUT the "RRULE:" prefix; we store it WITH one
+//      (its own schema demands the prefix on write, and the DB CHECK requires it).
+//   2. INTERVAL=1 is the RFC 5545 default and Jobber omits it on read-back. Without
+//      collapsing it, every "Monthly on the 10th" save we send as INTERVAL=1 would
+//      fail verification against a stored rule that simply left it out.
+// List-valued parts (BYDAY, BYMONTHDAY) are compared as SETS — "MO,WE" and "WE,MO"
+// are the same rule, and asserting on order would invent failures.
+function parseRrule(s: string): Record<string, string> | null {
+  const body = String(s ?? "").trim().replace(/^RRULE:/i, "");
+  if (!body) return null;
+  const out: Record<string, string> = {};
+  for (const part of body.split(";")) {
+    const i = part.indexOf("=");
+    if (i < 1) continue;
+    const k = part.slice(0, i).toUpperCase();
+    let v = part.slice(i + 1).toUpperCase();
+    if (v.includes(",")) v = v.split(",").map((x) => x.trim()).sort().join(",");
+    out[k] = v;
+  }
+  if (out.INTERVAL === "1") delete out.INTERVAL;
+  return out;
+}
+// null  => Jobber stored a rule that MEANS what we sent.
+// string => a sentence naming the exact difference, for the verify_failed message.
+function rruleMismatch(sent: string | null | undefined, got: string | null | undefined): string | null {
+  const a = parseRrule(sent ?? "");
+  if (!a) return null;                       // we sent no rule; nothing to assert
+  const b = parseRrule(got ?? "");
+  if (!b) return "Jobber stored no recurrence rule at all";
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+  const diffs = keys.filter((k) => a[k] !== b[k])
+    .map((k) => `${k}: sent ${a[k] ?? "(none)"}, stored ${b[k] ?? "(none)"}`);
+  return diffs.length ? diffs.join("; ") : null;
+}
+// The rule Jobber actually holds, re-prefixed for storage. This is what gets
+// persisted — NOT the rule from the request — so invoice_rrule means "last confirmed
+// by us" in the same sense billing_type already did.
+function confirmedRrule(j: any): string | null {
+  const cr = j?.invoiceSchedule?.recurrenceSchedule?.calendarRule;
+  const body = String(cr ?? "").trim();
+  if (!body) return null;
+  return body.toUpperCase().startsWith("RRULE:") ? body : `RRULE:${body}`;
 }
 
 // ---- Jobber queries/mutations ----------------------------------------------
 const JOB_FIELDS = `id jobNumber title instructions jobStatus startAt endAt total
-  billingType invoiceSchedule { billingFrequency scheduleSummary }
+  billingType invoiceSchedule { billingFrequency scheduleSummary
+    recurrenceSchedule { calendarRule } }
   client { id } property { id }
   lineItems(first: 100) { nodes { id name quantity unitPrice totalPrice } }`;
 const Q_JOB = `query($id: EncodedId!) { job(id: $id) { ${JOB_FIELDS} } }`;
@@ -355,7 +379,14 @@ function jobToRecord(
   if (billing?.billing_type) {
     rec.billing_type = billing.billing_type;
     rec.invoice_frequency = billing.invoice_frequency ?? "";
-    rec.invoice_rrule = billing.invoice_rrule ?? "";
+    // ⚠ The RULE comes from the VERIFIED READ-BACK (recurrenceSchedule.calendarRule),
+    // not from the request — the caller has already failed the save if the two
+    // disagree, so by here they mean the same thing, and taking Jobber's copy keeps
+    // the column honestly "what Jobber holds". It also stores Jobber's canonical
+    // form (it drops a redundant INTERVAL=1), so our value and theirs stay
+    // byte-comparable for future drift checks. Falls back to the requested rule only
+    // when Jobber exposes none, which for a non-recurring schedule is correct: "".
+    rec.invoice_rrule = confirmedRrule(j) ?? billing.invoice_rrule ?? "";
   }
   if (includeLines) {
     rec.line_items = (j.lineItems?.nodes ?? []).map((n: any) => ({
@@ -518,13 +549,27 @@ Deno.serve(async (req) => {
         "Jobber created the job but it doesn't match what was sent — check it in Jobber before retrying.",
         { jobber_number: job.jobNumber });
     }
-    // Billing verify: the TYPE must read back exactly. The frequency enum on
-    // InvoiceSchedule is Jobber-derived; treat a mismatch there as verify_failed
-    // too, but compare loosely (PERIODIC reads back as the recurrence itself).
+    // Billing verify: the TYPE must read back exactly.
     const wantType = btype === "fixed" ? "FIXED_PRICE" : "VISIT_BASED";
     if (String(job.billingType).toUpperCase() !== wantType) {
       return fail("verify_failed",
         `Jobber created the job but its billing type reads back as ${job.billingType}, not ${wantType} — check it in Jobber.`,
+        { jobber_number: job.jobNumber });
+    }
+    // ...and so must the SCHEDULE. This branch previously asserted the type alone,
+    // so a created job's invoice schedule was never verified at all even though
+    // jobToRecord goes on to store invoice_frequency + invoice_rrule as confirmed.
+    const wantSchedC = String((bill.invoicing as Record<string, unknown>)?.invoicingSchedule ?? "");
+    const gotSchedC = String(job.invoiceSchedule?.billingFrequency ?? "").toUpperCase();
+    if (wantSchedC && gotSchedC && gotSchedC !== wantSchedC.toUpperCase()) {
+      return fail("verify_failed",
+        `Jobber created the job but its invoice schedule reads back as ${gotSchedC}, not ${wantSchedC} — check it in Jobber.`,
+        { jobber_number: job.jobNumber });
+    }
+    const rmmC = rruleMismatch(bill.invoice_rrule, job.invoiceSchedule?.recurrenceSchedule?.calendarRule);
+    if (rmmC) {
+      return fail("verify_failed",
+        `Jobber created the job but stored a different invoice schedule (${rmmC}). Its summary reads "${job.invoiceSchedule?.scheduleSummary ?? "?"}" — check it in Jobber.`,
         { jobber_number: job.jobNumber });
     }
 
@@ -636,14 +681,25 @@ Deno.serve(async (req) => {
   // BILLING on edit (added 2026-08-01). Previously the edit branch never read
   // these keys at all, so a billing-only patch fell straight through to the
   // no_changes return below and reported success having changed nothing.
-  // ⚠ BOTH keys are required together, deliberately. The dialog sends only
-  // CHANGED keys, and Jobber's `invoicing` block needs invoicingType AND
-  // invoicingSchedule — inferring the missing half from Jobber's read cannot
-  // recover the RRULE behind a PERIODIC schedule (Job.invoiceSchedule exposes
-  // billingFrequency and a summary string, not the rule), so a half patch could
-  // silently downgrade a custom schedule. Requiring the pair keeps intent explicit.
+  // ⚠ BOTH keys are required together, deliberately: Jobber's `invoicing` block needs
+  // invoicingType AND invoicingSchedule, so a half patch could silently downgrade a
+  // custom schedule. Requiring the pair keeps intent explicit.
+  // 🛑 The ORIGINAL justification for that rule was WRONG and is corrected here rather
+  // than left in place: it said inference was impossible because "Job.invoiceSchedule
+  // exposes billingFrequency and a summary string, not the rule". It exposes
+  // recurrenceSchedule.calendarRule, which IS the rule (measured 2026-08-03). So the
+  // pair could now be inferred from a Jobber read. The requirement is kept anyway —
+  // explicit intent beats inference for a field that decides when a client is billed,
+  // and the caller (the job dialog) sends the trio together, so it costs nothing.
   let bill: Billing | null = null;
-  if (p.billing_type !== undefined || p.invoice_frequency !== undefined) {
+  // ⚠ `invoice_rrule` MUST be in this condition. Until 2026-08-03 it was not, and the
+  // consequence was the exact defect the comment block above was written to fix,
+  // reintroduced one key over: a patch carrying ONLY invoice_rrule (a user moving a
+  // custom schedule from the 10th to the 15th, with the type and frequency unchanged)
+  // never entered this branch, `edit` stayed empty, and the call returned
+  // `no_changes: true` — a silent false success. Latent until the custom-schedule UI
+  // shipped, at which point it becomes the single most likely billing edit there is.
+  if (p.billing_type !== undefined || p.invoice_frequency !== undefined || p.invoice_rrule !== undefined) {
     if (p.billing_type === undefined || p.invoice_frequency === undefined) {
       return fail("bad_request", "Send the billing type and the invoice frequency together — a partial billing change could overwrite the other half.");
     }
@@ -750,18 +806,15 @@ Deno.serve(async (req) => {
         `Jobber accepted the edit but the invoice schedule reads back as ${gotSched}, not ${wantSched} — check it in Jobber.`,
         { applied });
     }
-    // And for a day-of-month rule, assert the DAY actually landed. Jobber exposes no
-    // RRULE field, but scheduleSummary is a full rendering and carries both the
-    // interval and the day: measured live as "Every 2 months on the 22nd day of the
-    // month", "Monthly on the 18th day of the month", "Monthly on the last day of
-    // the month". That is enough to catch a silently-different day.
-    for (const tok of summaryTokensForRrule(bill.invoice_rrule ?? "")) {
-      const summary = String(j.invoiceSchedule?.scheduleSummary ?? "");
-      if (!summary.toLowerCase().includes(tok.toLowerCase())) {
-        return fail("verify_failed",
-          `Jobber accepted the schedule but reads it back as "${summary}", which does not mention "${tok}" — check it in Jobber.`,
-          { applied });
-      }
+    // And assert the RULE ITSELF landed — the interval, the day, the weekdays. This
+    // compares against recurrenceSchedule.calendarRule, which is the rule verbatim,
+    // so a silently-coerced day or a dropped BYDAY fails loudly for EVERY shape
+    // (weekly and nth-weekday included, which the old summary matcher could not check).
+    const rmm = rruleMismatch(bill.invoice_rrule, j.invoiceSchedule?.recurrenceSchedule?.calendarRule);
+    if (rmm) {
+      return fail("verify_failed",
+        `Jobber accepted the edit but stored a different invoice schedule (${rmm}). Its summary reads "${j.invoiceSchedule?.scheduleSummary ?? "?"}" — check it in Jobber.`,
+        { applied });
     }
   }
   // ⚠ THE CHECK WHOSE ABSENCE HID THE BUG. The old verify only asserted that
