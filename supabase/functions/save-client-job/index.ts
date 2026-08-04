@@ -709,6 +709,27 @@ Deno.serve(async (req) => {
     edit.invoicing = r.invoicing;
   }
 
+  // ⚠ JOBBER'S RULE, learned from a real userError on the first live custom-schedule
+  // save (2026-08-03): "If invoicing recurrence is informed, startAt is required."
+  // A job cannot carry a recurring invoice schedule unless it HAS a start date.
+  // Confirmed read-only across all 444 live jobs, with no counterexample:
+  //   recurrence + startAt = 27,  recurrence + NO startAt = 0
+  // and 252 of those 444 have no startAt at all, so this is the majority case rather
+  // than an edge one. Checked BEFORE the mutation, and against JOBBER rather than our
+  // own jobs.start_at, because a stale local NULL would refuse a perfectly good save
+  // (and a stale local date would let a doomed one through). Costs one read, and only
+  // when a recurrence is being set without a date in the same patch.
+  if ((edit.invoicing as Record<string, unknown> | undefined)?.recurrence && edit.timeframe === undefined) {
+    const cur = await gql(token, Q_JOB, { id: jobGid });
+    if (!cur.ok) {
+      return fail("jobber_no_answer", "Couldn't reach Jobber to check the job's start date. Nothing was changed.");
+    }
+    if (!cur.data.job?.startAt) {
+      return fail("start_date_required",
+        "Jobber won't put a job on an invoice schedule until the job has a start date. Set this agreement's start date, then choose the schedule again. (Setting a start date also lets the Calendar start generating this agreement's visits.)");
+    }
+  }
+
   if (Object.keys(edit).length === 0 && wantLines === null) {
     return done({ job_id: jobId, no_changes: true });
   }
