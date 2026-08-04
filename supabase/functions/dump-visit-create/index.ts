@@ -652,15 +652,46 @@ async function postManifestLinkAlert(driverName: string, dumpVisitId: number, li
 // 4. MANIFEST UNLINK — fires on `unmark` (Fred 2026-07-24). The mirror of #3: a driver UNSELECTED visits
 // from the shared "on a manifest" list in VIEW ADDRESSES. Removals were silent before, which read as the
 // app dropping the change. `count` is the number of marks actually cleared; `rows` names them when known.
-// Not dump-specific (the shared mark carries no dump), so no Route Link.
-async function postManifestUnlinkAlert(driverName: string, count: number, rows: { client_code?: string; client_name?: string }[], isTest: boolean) {
+//
+// THREADED as of 2026-08-04 (Fred: "yes do the removal alert too"). This was the last alert still landing
+// top-level. The old comment here claimed it could not thread because "the shared mark carries no dump" —
+// ⚠ THAT IS NOT TRUE OF THE LIVE DATA. Measured 2026-08-04: all 7 ledger rows carry a dump_visit_id,
+// including the one written with source='addresses'. So the removal CAN be threaded under the dump the
+// visit was marked against, and now is.
+//
+// `dumpVisitId` is null when the batch spans MORE THAN ONE dump, because then there is no single honest
+// parent and inventing one would file the removal under a dump it only partly concerns. Null also covers
+// "no dump on the ledger". In both cases this posts top-level exactly as before, and slackPost already
+// falls back to top-level when a dump has no stored parent ts (true of older dumps: of the 3 dumps with
+// live marks, 7469 predates parent-ts storage and has none, while 7675 and 7676 have one).
+async function postManifestUnlinkAlert(
+  driverName: string,
+  count: number,
+  rows: { client_code?: string; client_name?: string }[],
+  isTest: boolean,
+  dumpVisitId: number | null,
+) {
   if (count <= 0) return;
   const tag = isTest ? "[TEST] " : "";
   const bullets = rows.length ? clientBullets(rows) : "_(marks cleared)_";
+
+  // Only fetch the dump's metadata when we will actually thread — dumpMeta is a round trip, and a
+  // top-level removal keeps its existing standalone format with no dump context line.
+  let threadTs: string | null = null;
+  let context: unknown[] = [];
+  if (dumpVisitId) {
+    threadTs = await getParentTs(dumpVisitId);
+    if (threadTs) {
+      try { context = updateContext(await dumpMeta(dumpVisitId), driverName); }
+      catch (_e) { context = []; }  // never lose the alert over a missing context line
+    }
+  }
+
   await slackPost(`🗑 ${tag}${driverName} removed ${count} from the manifest`, [
+    ...context,
     { type: "section", text: { type: "mrkdwn", text: `🗑 ${tag}*${driverName} removed ${count} from the manifest*` } },
     { type: "section", text: { type: "mrkdwn", text: bullets } },
-  ]);
+  ], threadTs);
 }
 
 async function drivers() {
@@ -954,6 +985,22 @@ Deno.serve(async (req) => {
         .in("visit_id", uVisitIds);
       const removedInfo = (Array.isArray(infoRows) ? infoRows : []) as { client_code?: string; client_name?: string }[];
 
+      // Which dump were these marked against? Read BEFORE the loop below, because clearing a mark deletes
+      // the ledger row that carries dump_visit_id.
+      // ⚠ Read it from the LEDGER, not from dump_outstanding_visits: since 2026-08-03_1945 that view
+      // excludes visits already placed on a generated DERM sheet, so a sheet-assigned visit is simply
+      // absent from it and would silently yield no dump id (and no name either — that is why `rows` can be
+      // empty and the alert falls back to "(marks cleared)").
+      const { data: ledgerRows } = await db
+        .from("dump_manifest_handout")
+        .select("visit_id, dump_visit_id")
+        .in("visit_id", uVisitIds);
+      const uDumpIds = [...new Set((Array.isArray(ledgerRows) ? ledgerRows : [])
+        .map((r: Record<string, unknown>) => Number(r.dump_visit_id))
+        .filter((n) => Number.isFinite(n) && n > 0))];
+      // Exactly one dump => thread under it. Zero or several => top-level, see postManifestUnlinkAlert.
+      const uDumpId = uDumpIds.length === 1 ? uDumpIds[0] : null;
+
       let removed = 0;
       for (const vid of uVisitIds) {
         const { error } = await db.rpc("dump_manifest_mark", { p_driver_id: uDriverId, p_visit_id: vid, p_on: false });
@@ -964,7 +1011,7 @@ Deno.serve(async (req) => {
 
       await logActivity("unmark", uDriverId, null, { visit_ids: uVisitIds, removed });
       const uIsTest = body.test_mode === true;
-      try { await postManifestUnlinkAlert(uDriverName, removed, removedInfo, uIsTest); }
+      try { await postManifestUnlinkAlert(uDriverName, removed, removedInfo, uIsTest, uDumpId); }
       catch (e) { console.error("[dump] slack unlink alert failed:", e instanceof Error ? e.message : String(e)); }
       return json({ ok: true, removed });
     }
