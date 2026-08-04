@@ -269,6 +269,42 @@ broken rows (e.g. completed-then-rescheduled visits ops cannot operate on)
 require explicit Fred sign-off and run via a manual script (see
 2026-05-29 visit 5146 009-CN repair for the audited pattern).
 
+### Jobber PROPERTY sync — enabled 2026-08-04, hourly, and it was dead before that
+
+**Until 2026-08-04, a Jobber-side edit to a SERVICE property address never reached us.** Not slowly —
+never. `PROPERTY_UPDATE` had produced **zero events in the lifetime of the system**, so
+`public.properties` addresses were frozen at whatever the last manual full sync wrote (2026-05-27).
+Found because the DUMP Pompano address was two months stale.
+
+**Why it was invisible.** Two separate mechanisms each *looked* like they covered it:
+- `sync-jobber-poll` (the LIVE poll, pg_cron `*/5`) simply had no `properties` entity, and its comment
+  said properties "ride webhooks / a daily `--full`". **Both halves were false.** Jobber sends us **no
+  webhooks at all** — this poll IS the webhook replacement (ADR 009) — and `--full` lives in
+  `scripts/sync/cron_jobber.js`, whose schedule was **retired 2026-06-09**, with no workflow passing
+  the flag.
+- **BILLING addresses did flow**, because they ride `CLIENT_UPDATE` (`webhook-jobber` ~line 493). So a
+  spot check of "do property addresses update?" could come back green off the billing duplicate while
+  every service address was frozen. That is exactly how it hid.
+
+**Now:** `properties` is in `sync-jobber-poll`'s `ENTITIES`, pulled as a **full 468-row sweep gated to
+one run per hour** (`PROPERTY_SWEEP_MINUTE`), because properties have no `updatedAt` filter to page on.
+
+**Three rules for anyone touching this:**
+1. **Dry-run before widening it.** `scripts/sync/dryrun_property_poll.js` computes the exact row
+   `handleProperty` would write for all 468 and diffs it against ours. It is what caught the
+   name-blanking bug below, and it reported the real blast radius (23 changed, 79 would insert)
+   before anything was scheduled.
+2. **`?? null` does not catch an empty string.** Jobber returns `""`, not `null`, for an unlabelled
+   property, so `name: p.name ?? null` would have overwritten a real name with blank — measured, one
+   genuine loss (`"Burger Fi Doral"` → `""`). A blank from Jobber now never overwrites a name we hold.
+3. **🛑 THE REPLAY IS CAPPED AT 10/CYCLE, AND RAISING IT FAILS SILENTLY.** Each replayed row is a
+   sequential HTTP round-trip. At 40, pg_cron kept reporting `succeeded` and properties kept draining
+   (each replay is its own request), but the **outer invocation was killed before writing its
+   `sync_log` row** — 3 cycles did real work while logging nothing, so the next reader would see "last
+   successful sync 20:05" and conclude the poll was dead. **If you raise the cap, verify a `sync_log`
+   row still appears every cycle.** Work continuing while observability vanishes is worse than a
+   clean failure.
+
 ### Truck names are NOT people
 **Moises, David, Goliath** — trucks. **Cloggy** — truck (only daytime-only one). Never respond to "David did the visit" as if David is a person without checking [docs/operations.md](docs/operations.md#truck-name--person-name).
 
