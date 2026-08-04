@@ -471,8 +471,12 @@ async function slackPost(text: string, blocks: unknown[], threadTs?: string | nu
           channel, ...common,
           ...(threadTs ? { thread_ts: threadTs } : {}),
           // reply_broadcast is opt-in per alert, NOT blanket: broadcasting every reply would push them all
-          // back into the channel and defeat the point of threading. Only the CONFIRM alert (the load
-          // report ops actually reads) sets it. Meaningless without thread_ts, so it is gated on both.
+          // back into the channel and defeat the point of threading. Meaningless without thread_ts, so it
+          // is gated on both.
+          // ⚠ As of 2026-08-04 NO caller passes broadcast=true. The CONFIRM alert used to, and Fred asked
+          // for it to stop ("only gets send as a thread message and not on the channel also"). The
+          // parameter is kept so a future alert can opt in deliberately, but adding it back to the confirm
+          // alert re-creates the "Also sent to the channel" duplicate he asked to remove.
           ...(threadTs && broadcast ? { reply_broadcast: true } : {}),
         }),
       });
@@ -618,9 +622,11 @@ async function postDumpAlert(
     { type: "section", text: { type: "mrkdwn", text: `📋 ${tag}*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
   ];
   if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing — scheduled today, not added (${missing.length}):*\n${clientBullets(missing)}` } });
-  // broadcast=true: the load report is the one ops actually reads, so it still surfaces in-channel even
-  // though it is a thread reply.
-  await slackPost(`📋 ${tag}${m.title} — ${driverName} reported ${confirmed.length} on this load`, blocks, await getParentTs(dumpVisitId), true);
+  // THREAD-ONLY (Fred 2026-08-04): "can we change it so the updates only gets send as a thread message
+  // and not on the channel also?". This used to pass broadcast=true, which added reply_broadcast and made
+  // Slack render the "Also sent to the channel" copy on top of the threaded reply. The load report now
+  // lives ONLY under its parent dump. Do not re-add the 4th argument here.
+  await slackPost(`📋 ${tag}${m.title} — ${driverName} reported ${confirmed.length} on this load`, blocks, await getParentTs(dumpVisitId));
 }
 
 // 3. MANIFEST LINK — fires on `link`. OLDER VISITS catch-up-linked to a chosen dump.
