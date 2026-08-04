@@ -654,10 +654,22 @@ async function postManifestLinkAlert(driverName: string, dumpVisitId: number, li
 // app dropping the change. `count` is the number of marks actually cleared; `rows` names them when known.
 //
 // THREADED as of 2026-08-04 (Fred: "yes do the removal alert too"). This was the last alert still landing
-// top-level. The old comment here claimed it could not thread because "the shared mark carries no dump" —
-// ⚠ THAT IS NOT TRUE OF THE LIVE DATA. Measured 2026-08-04: all 7 ledger rows carry a dump_visit_id,
-// including the one written with source='addresses'. So the removal CAN be threaded under the dump the
-// visit was marked against, and now is.
+// top-level. It now threads WHEN there is a dump to thread under, which is not always.
+//
+// ⚠ CORRECTION TO MY OWN FIRST VERSION OF THIS COMMENT, which asserted that the old "the shared mark
+// carries no dump" note was false. IT IS NOT FALSE. `public.dump_manifest_mark` inserts
+// `(visit_id, NULL, driver_id, 'addresses', now())` — dump_visit_id is LITERALLY NULL for the per-visit
+// toggle in VIEW ADDRESSES. I read a 7-row live sample where every row DID carry a dump id and concluded
+// the comment was stale; the sample simply contained no mark-created row, because the one
+// source='addresses' row came from `dump_manifest_link`, which DOES set a dump id. Clean data is not
+// proof of an invariant — read the function body, not the rows.
+//
+// So, precisely:
+//   * removed a visit attached via the dump crib sheet (`dump_manifest_handout_confirm`, source='dump')
+//     or catch-up linked (`dump_manifest_link`, source='addresses' WITH a dump) -> THREADS.
+//   * removed a VIEW ADDRESSES per-visit toggle (`dump_manifest_mark`, dump_visit_id NULL) -> TOP-LEVEL,
+//     because there is genuinely no dump it belongs to. Do not "fix" this by guessing the driver's most
+//     recent dump: that would file the removal under a dump it has nothing to do with.
 //
 // `dumpVisitId` is null when the batch spans MORE THAN ONE dump, because then there is no single honest
 // parent and inventing one would file the removal under a dump it only partly concerns. Null also covers
