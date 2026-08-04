@@ -1240,13 +1240,20 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
     return { entity_id: 0 }
   }
 
+  // ⚠ `?? null` does NOT catch an EMPTY STRING, and Jobber returns "" rather than null for a
+  // property with no label. Found by dry-running the property poll before enabling it
+  // (scripts/sync/dryrun_property_poll.js): of 389 matched properties, 4 would have had their
+  // name rewritten, and one of those was a real loss - property 206 "Burger Fi Doral" -> "".
+  // The other 3 were NULL -> "", pure churn that makes every future diff noisier.
+  // So: blank from Jobber never overwrites a name we already hold.
+  const jobberName = typeof p.name === 'string' ? p.name.trim() : null
   const row: Record<string, unknown> = {
-    name: p.name ?? null,
     address: p.address?.street ?? null,
     city: p.address?.city ?? null,
     state: p.address?.province ?? 'FL',
     zip: p.address?.postalCode ?? null,
   }
+  if (jobberName) row.name = jobberName
   if (clientId) row.client_id = clientId
   // Coordinates: only set if Jobber returned a non-null value, so we don't
   // overwrite an existing geocoded/Samsara value with NULL.

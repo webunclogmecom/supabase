@@ -48,8 +48,28 @@ function bearerRole(req: Request): string | null {
 
 type Exec = (q: string) => Promise<any[]>
 
-// Incremental entity set — matches cron_jobber's default run. properties + users have no
-// updatedAt filter (would re-fetch ~400 rows each cycle); they ride webhooks / a daily --full.
+// Incremental entity set — matches cron_jobber's default run.
+//
+// 🛑 PROPERTIES ARE NOW IN THIS LIST, ON AN HOURLY GATE (added 2026-08-04, Fred approved after a
+// dry run). The old comment here said properties "ride webhooks / a daily --full". BOTH halves were
+// false and together they meant a Jobber-side edit to a SERVICE property address NEVER reached us:
+//   * Jobber sends us no webhooks at all — this poll IS the webhook replacement (ADR 009).
+//   * `--full` lives in scripts/sync/cron_jobber.js, whose schedule was retired 2026-06-09; no
+//     workflow passes the flag, so it had not run since 2026-05-27.
+// Measured before the change: PROPERTY_UPDATE had produced ZERO events ever, the `properties`
+// sync_cursor still read 2020-01-01, and 342 rows sat in raw.jobber_pull_properties with
+// needs_populate=TRUE, staged in May and never replayed. That is what left the DUMP Pompano address
+// two months stale.
+//
+// Properties have no updatedAt filter, so this is a FULL sweep (468 rows, ~5 pages). Running that
+// every 5 minutes would be pure waste, hence PROPERTY_SWEEP_MINUTE: pg_cron fires this function
+// */5, so gating on minute < 5 means exactly one sweep per hour. Addresses do not change faster
+// than that.
+//
+// Blast radius was measured first, not assumed — scripts/sync/dryrun_property_poll.js computes the
+// exact row handleProperty would write for all 468 and diffs it: 23 properties change, 79 unlinked
+// Jobber properties would be inserted. Re-run that script before widening this.
+const PROPERTY_SWEEP_MINUTE = 5
 const CURSOR_FIELD: Record<string, string> = { clients: 'updatedAt', jobs: 'createdAt', visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt' }
 const NODE_TIME_FIELD: Record<string, string> = { clients: 'updatedAt', jobs: 'updatedAt', visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt' }
 const FILTER_TYPE: Record<string, string> = { clients: 'Client', jobs: 'Job', visits: 'Visit', invoices: 'Invoice', quotes: 'Quote' }
@@ -58,6 +78,7 @@ const ENTITIES = [
   { name: 'jobs',     rawTable: 'jobber_pull_jobs',     topic: 'JOB_UPDATE',     fields: 'id jobNumber title client { id } property { id } jobStatus startAt endAt total updatedAt' },
   { name: 'visits',   rawTable: 'jobber_pull_visits',   topic: 'VISIT_UPDATE',   fields: 'id title startAt endAt completedAt completedBy visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
   { name: 'invoices', rawTable: 'jobber_pull_invoices', topic: 'INVOICE_UPDATE', fields: 'id invoiceNumber invoiceStatus issuedDate dueDate subject amounts { subtotal total invoiceBalance depositAmount } client { id } updatedAt' },
+  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE', fields: 'id name address { street city province postalCode coordinates { latitude longitude } }', replayLimit: 10 },
   { name: 'quotes',   rawTable: 'jobber_pull_quotes',   topic: 'QUOTE_UPDATE',   fields: 'id quoteNumber quoteStatus amounts { subtotal total depositAmount } client { id } updatedAt' },
 ] as const
 
@@ -154,7 +175,23 @@ async function setCursor(name: string, ts: string, rows: number) {
 async function replayFlagged(exec: Exec, clientSecret: string) {
   const summary: { table: string; ok: number; fail: number }[] = []
   for (const e of ENTITIES) {
-    const rows = await exec(`SELECT data->>'id' AS gid FROM raw.${e.rawTable} WHERE needs_populate=TRUE`)
+    // ⚠ CAP THE REPLAY. Each replayed row is a sequential HTTP round-trip to webhook-jobber, and
+    // the properties backlog was 342 rows staged in May. Uncapped, the function exceeded its CPU
+    // budget and the whole invocation died with a bare 500 -- after doing 25 rows of real work, so
+    // it was neither a clean success nor a clean failure. Capped, every cycle finishes cleanly and
+    // the backlog drains across cycles.
+    //
+    // ⚠ 40 WAS STILL TOO HIGH, AND THE FAILURE MODE WAS DECEPTIVE. pg_cron kept reporting
+    // `succeeded` and properties kept draining (each replay is its own webhook-jobber request and
+    // completes on its own), but the OUTER invocation was killed before reaching the sync_log
+    // insert at the end of runSync. Measured: 3 consecutive cycles did real work while writing NO
+    // sync_log row at all -- 267 -> 220 pending, 75 -> 122 PROPERTY_UPDATE events, zero log rows.
+    // Work continuing while the observability silently disappears is worse than a clean failure,
+    // because the next person reads "last successful sync 20:05" and concludes the poll is dead.
+    // 10 keeps a cycle near its normal ~7s and still drains ~120/hour, far above the real change
+    // rate once caught up. If you raise this, verify a sync_log row still appears every cycle.
+    const cap = (e as any).replayLimit as number | undefined
+    const rows = await exec(`SELECT data->>'id' AS gid FROM raw.${e.rawTable} WHERE needs_populate=TRUE${cap ? ` LIMIT ${cap}` : ''}`)
     if (!rows.length) continue
     let ok = 0, fail = 0
     for (const { gid } of rows) {
@@ -177,13 +214,19 @@ async function runSync(): Promise<Record<string, unknown>> {
     const { token, clientSecret } = await getCreds()
     let totalPulled = 0
     const pulls: Record<string, number> = {}
+    const sweepProperties = new Date().getUTCMinutes() < PROPERTY_SWEEP_MINUTE
     for (const entity of ENTITIES) {
+      // Full sweep, so only once an hour. Skipping the PULL still leaves replayFlagged free to
+      // drain anything already staged, which is how the 342-row May backlog gets worked off.
+      if (entity.name === 'properties' && !sweepProperties) { pulls[entity.name] = -2; continue }
       const cursor = await getCursor(entity.name)
       let nodes: any[]
       try { nodes = await pullDelta(token, entity, cursor) } catch { pulls[entity.name] = -1; continue }
       if (nodes.length) {
         await upsertRaw(exec, entity.rawTable, nodes)
-        const newCursor = nodes.reduce((max, n) => { const ts = n._cursorTime || n.updatedAt || n.createdAt; return ts && ts > max ? ts : max }, cursor || '2020-01-01T00:00:00Z')
+        const newCursor = entity.name === 'properties'
+          ? new Date().toISOString()
+          : nodes.reduce((max, n) => { const ts = n._cursorTime || n.updatedAt || n.createdAt; return ts && ts > max ? ts : max }, cursor || '2020-01-01T00:00:00Z')
         await setCursor(entity.name, newCursor, nodes.length)
         totalPulled += nodes.length; pulls[entity.name] = nodes.length
       } else { await setCursor(entity.name, new Date().toISOString(), 0); pulls[entity.name] = 0 }
