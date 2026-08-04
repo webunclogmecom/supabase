@@ -58,6 +58,31 @@
 --   with app_source='sql'. No new table, no trigger change. Opt-in unchanged.
 -- REVERSIBLE: yes. Set the three columns back to NULL for these 25 ids
 --   (audit.logs.old_row holds the pre-state either way).
+--
+-- 🛑 ADDENDUM (added post-apply, same day, from an adversarial review of this file)
+--   THIS MAPPING IS A ONE-SHOT BACKFILL. NEVER WIRE IT INTO A RECONCILER, AND NEVER
+--   RE-RUN IT OVER ROWS WHERE billing_type IS NOT NULL.
+--
+--   The rule -> frequency direction is NOT injective. 'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1'
+--   has TWO legal encodings that are byte-identical:
+--     invoice_frequency='monthly_last_day'  - resolveBilling hard-codes exactly that
+--                                             string (save-client-job index.ts ~209)
+--     invoice_frequency='custom'            - the Client App's custom builder emits the
+--                                             same string from Month / "On a date" /
+--                                             "Last day" at interval 1 (INTERVAL=1 is
+--                                             omitted, so the strings match exactly)
+--   The second encoding did not exist before the custom-schedule builder shipped
+--   earlier the same day, which is why this was safe to write now and would not be
+--   safe to re-run later. A reconciler applying this mapping to a non-NULL row would
+--   silently relabel a user who deliberately chose "Last day" INSIDE the custom builder
+--   from 'custom' to 'monthly_last_day'. Both produce the same Jobber state, so nothing
+--   would error and no invoice would move - only the control the dialog shows selected
+--   would change under the user, with no record that we did it.
+--
+--   ⇒ invoice_frequency is NOT derivable from invoice_rrule. Both columns are the
+--     record, which is why both are stored rather than one computed from the other.
+--   ⇒ Applying this to billing_type IS NULL rows only, as it does, is unambiguous:
+--     a NULL row has no user intent to overwrite.
 -- =====================================================================
 
 begin;
