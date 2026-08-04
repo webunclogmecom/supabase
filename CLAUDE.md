@@ -90,7 +90,12 @@ After ANY change to Prod schema, re-check this rule before declaring the migrati
 Every audit row now carries `app_source` and `request_context`. To find "who wrote this":
 - `app_source = 'derm-tracker'` — DERM Tracker UI (derm.unclogme.app)
 - `app_source = 'field-portal'` — Field Portal (fp.unclogme.app)
-- `app_source = 'admin-review'` — Admin Review (`review.unclogme.app`, formerly `grease-buddy-dash`)
+- `app_source = 'admin-review'` — Admin Review (**`admin.unclogme.app`** since 2026-08-04; previously
+  `review.unclogme.app`, and before that `grease-buddy-dash`). ⚠ It moved because Yannick's new **Review
+  Builder** app took **`reviews.unclogme.app`** (plural) and the two hosts read almost identically. All
+  three Admin Review hosts stay mapped in the CASE so historical rows keep their meaning and a rollback
+  is free. **`reviews.unclogme.app` is a DIFFERENT APP** and maps to `review-builder`; it runs on its own
+  Supabase project (`rkgzdvktclalevibuubb`), not Prod, so that branch is a guard and never fires today.
   - ⚠ **HISTORICAL GAP 2026-07-03 → 2026-07-29: these writes landed as `other:review.unclogme.app`, NOT `admin-review`.** The app moved to its custom domain but the trigger's CASE still matched only `%grease-buddy-dash%`, so 232 rows across 4 tables fell through to the `other:` branch. Fixed forward in `2026-07-29c`; **the historical rows were deliberately NOT relabelled** (an audit trail is a record of what was observed, and rewriting it needs Fred's explicit OK). **When running the §5.5(b) "is this grant still used" check over historical data, query `app_source IN ('admin-review','other:review.unclogme.app')` or you will conclude the app went dead on 2026-07-08 when it is writing today.** This is the §5.5(b) detector failing in exactly the way §5.5(b) exists to prevent — see also the `X-App-Source` caveat below.
 - `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
 - `app_source = 'send-derm-email'` — the DERM email edge fn ("Send DERM to city/clients"); the row also carries `sent_by_email`/`sent_by_user_id` (the human who clicked, from the app-forwarded JWT — 2026-07-21h)

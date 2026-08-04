@@ -41,7 +41,10 @@ const APPS = {
   calendar: { label: 'Visit Calendar', url: 'https://calendar.unclogme.app' },
   clients:  { label: 'Client App',     url: 'https://clients.unclogme.app'  },
   derm:     { label: 'DERM Tracker',   url: 'https://derm.unclogme.app'     },
-  review:   { label: 'Admin Review',   url: 'https://review.unclogme.app'   },
+  // Admin Review moved review.unclogme.app -> admin.unclogme.app on 2026-08-04, because Yannick's new
+  // "Review Builder" app took reviews.unclogme.app (plural) and the two read alike. Verified that day:
+  // admin.* serves 200 and review.* no longer serves at all, so this URL was BROKEN until it was changed.
+  review:   { label: 'Admin Review',   url: 'https://admin.unclogme.app'    },
   fp:       { label: 'Field Portal',   url: 'https://fp.unclogme.app'       },
   studio:   { label: 'DERM Stamp Studio', url: 'https://studio.unclogme.app' },
   dump:     { label: 'DUMP Schedule QR',  url: 'https://dump.unclogme.app'   },
