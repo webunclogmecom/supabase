@@ -256,10 +256,26 @@ applies no DERM filter while `customer.work_orders` does, *therefore* the filter
   already been fixed, i.e. stale numbers with sound reasoning. **Both errors sat in the layer nobody
   was auditing.**
 
-⚠ **STILL OPEN and NOT part of the closed view question:** **21 completed visits carry a
-`manifest_visits` link while `derm_required = false`** (18 derived, 3 human-marked). A manifest on file
-is evidence DERM work happened, so either the flag or the link is wrong. Nobody has been asked to
-investigate; do not let it get filed under the view scoping question and disappear.
+**⚠ THIS SHAPE HIT THREE TIMES IN ONE DAY (2026-08-05), AND NOT ONE WAS A BAD NUMBER:**
+
+| # | the measurement (correct) | the sentence wrapped around it (wrong) |
+|---|---|---|
+| 1 | `scheduled_visits` has no DERM filter, `work_orders` does | "therefore the filter is unintentional" |
+| 2 | 9 of the 21 manifest links fall in the May bulk window | "therefore they mostly trace to it" (a plurality is not a concentration; 7 have no audit trail, 5 are July, by 3 writers) |
+| 3 | one RPC call writes 2/3/1 audit rows | stated unconditionally — it holds only for the DERM origin, and **inverts the hour step 3 ships** |
+
+⇒ **The number is almost never the weak link; the claim built on it is.** Verifying a measurement
+harder cannot catch any of these. Only #2 was caught in-flight, and only because a reviewer was
+briefed to attack the conclusions with the numbers assumed correct. **Instrument the inference.**
+
+⚠ **STILL OPEN and NOT part of the closed view question:** completed visits carrying a
+`manifest_visits` link while `derm_required = false`. **21 total, but scoped down to 3 that are
+load-bearing (1260, 1476, 3923)** — the other 18 sit on manifests that already carry a correct pumping
+link, so they are not evidence of a missing obligation. (An earlier version of this note said "21,
+18 derived / 3 human-marked" and implied all 21 needed investigation; that was instance #2 above.)
+A manifest on file is evidence DERM work happened, so for those 3 either the flag or the link is
+wrong. Nobody has been asked to investigate; do not let it get filed under the view scoping question
+and disappear.
 
 ### ✅ `public.zones_hard_delete` is INTENTIONAL admin tooling — do NOT "harden" it (settled 2026-07-29)
 
