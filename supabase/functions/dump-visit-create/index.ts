@@ -53,15 +53,23 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // belief is probably why the Oakland Park address was dismissed as a billing artifact in the first
 // place.
 //
-// ⚠⚠ lat/lng ARE DELIBERATELY UNCHANGED, AND THEY NOW DISAGREE WITH THE ADDRESS BY 726 m.
-// These coordinates are the DRIVER'S NAVIGATION TARGET (the Routes API destination and the Google
-// Maps dir link), so moving them sends trucks somewhere new. Jobber geocodes the new address to
-// 26.2683192,-80.1506092. I did NOT adopt that, because our own data cannot say which point is the
-// real gate: there are 4 Pompano dump visits EVER, and across 6,861 telemetry pings in the +/-3h
-// windows, ZERO fall within 250 m of EITHER point (closest 2,062 m old / 1,925 m new). Keeping the
-// existing target is the no-regression choice - drivers still route where they always have.
-// Pending Fred: if the physical gate did move, update lat/lng here AND the hardcoded geofence in
-// public.dump_investigate, which carries its own copy of the old point.
+// 🛑 DUMP POMPANO IS **TWO PHYSICAL SITES**, ~726 m apart on N Powerline Road (Fred, 2026-08-04):
+//     2401 N Powerline Road, Pompano Beach  26.2632563,-80.1552085   the OTHER one
+//     3100 n Powerline Road, Oakland Park   26.2683192,-80.1506092   THE ONE WE FREQUENT
+// That is why the addresses looked like a service/billing duplicate and were not one. The old
+// comment in this file called Oakland Park "a genuinely different address" and was RIGHT about that
+// and wrong only about the distance ("~4mi"; it is 0.45 mi).
+//
+// lat/lng point at the FREQUENTED site (3100), because these coordinates are the DRIVER'S
+// NAVIGATION TARGET - the Routes API destination and the Google Maps dir link. Routing to the site
+// we rarely use is the actual regression, which is what an earlier version of this comment settled
+// for while waiting to learn which point was real.
+//
+// ⚠ THE GEOFENCE IS A DIFFERENT PROBLEM AND IS SOLVED DIFFERENTLY. Navigation needs ONE target;
+// detection must accept EITHER site, because a truck that tips at 2401 is still at Pompano. A single
+// 250 m radius around either point EXCLUDES the other (they are 726 m apart), so
+// public.dump_investigate now measures to BOTH and takes the nearer. Do not "simplify" that back to
+// one point.
 const DUMPS = {
   DH: {
     label: "Homestead", client_id: 365, job_id: 1720, property_id: 98,
@@ -70,7 +78,7 @@ const DUMPS = {
   },
   DP: {
     label: "Pompano", client_id: 76, job_id: 1662, property_id: 155,
-    address: "3100 n Powerline Road, Oakland Park", lat: 26.2632563, lng: -80.1552085, county: "Broward",
+    address: "3100 n Powerline Road, Oakland Park", lat: 26.2683192, lng: -80.1506092, county: "Broward",
     jobberClientId: "104148029", // gid://Jobber/Client/104148029 -> secure.getjobber.com/clients/104148029
   },
 } as const;
