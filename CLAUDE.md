@@ -205,6 +205,62 @@ the DELETE grant and an unrestricted DELETE policy, so the function laundered no
 been anon-only, the same code would have handed every staff user a delete they did not have.
 (`2026-08-05_0508_derm_manual_lock_bulk_rpc.sql`.)
 
+### ⚠ Verifying a TRIGGER GUARD: both baselines, a changing value, and the old body as control (2026-08-05)
+
+Three lessons from one defect, all cheap, all learned the expensive way. **This lives here and not only
+in a memory folder, because memory is keyed by working directory and does NOT reach the other sessions
+(root CLAUDE.md §1) — the repos do.**
+
+- **🛑 A guard predicated on `OLD.<col>` CAN ONLY FIRE FROM ONE BASELINE. Test both.**
+  `fn_lock_manual_derm_required`'s revert leg needs `OLD.derm_required_locked IS TRUE`. I verified
+  `set_visit_derm_required_manual` against the right variable (a non-derm origin) but from an
+  **unlocked** baseline, where that branch is unreachable. The test passed and proved nothing.
+  164 rows were locked, so the baseline I skipped was the COMMON one, and the RPC turned out to honour
+  requests only from the DERM origin — the exact dependency it existed to remove.
+- **🛑 IT IS ALSO VALUE-DEPENDENT.** Requesting `false` on a row already `false` PASSED even on the
+  broken body, because `NEW.… IS DISTINCT FROM OLD.…` never fired. So picking the right baseline and a
+  no-op value still misses. Enumerate **combinations** (baseline value × baseline flag × requested
+  value × origin), not one cell per variable.
+- **✅ KEEP THE OLD BODY AS A POSITIVE CONTROL.** A matrix reporting 0 failures is an untested
+  instrument. Re-create the previous implementation under a temp name, run the identical assertions,
+  and confirm it FAILS. Mine went 24/24 on the new body and 4-pass/2-fail on the old; the second number
+  is what made the first mean anything. Drop the temp object and verify it is gone.
+- **🛑 TRIGGER FIRING ORDER IS ALPHABETICAL, AND IT IS LOAD-BEARING FOR ANY OBSERVER.**
+  `trg_aa_derm_required_shadow` must sort BEFORE `trg_derm_required_lock`, or it would inspect
+  `NEW.derm_required` *after* the revert, match nothing, and **log zero forever while looking healthy.**
+  Renaming such a trigger is a breaking change. (`2026-08-05_0556`.)
+
+### 🛑 STRUCTURE TELLS YOU WHAT A THING DOES, NEVER WHAT IT IS FOR — ask Fred (2026-08-05)
+
+**Fred:** *"don't drop the derm_required filter from work_orders, because we only show derms required
+jobs to the work orders."* `customer.work_orders` is the client's **DERM compliance surface by design**,
+not a service history; a non-DERM job is CORRECTLY absent. There was nothing to remediate.
+
+Both Supabase sessions recommended widening it. **Every number was right** (367 completed visits
+excluded by `COALESCE(derm_required,true)=true`; 39 scheduled queued to be excluded; ~20/week, which is
+simply the normal rate of non-pumping work completing). The reasoning was: `customer.scheduled_visits`
+applies no DERM filter while `customer.work_orders` does, *therefore* the filter is unintentional.
+**That does not follow — two views can simply have different jobs.**
+
+- **Warning signs you are deducing intent:** "X has no such filter, therefore Y's is accidental";
+  "no comment explains it"; "this looks like a service history". Measure freely; **recommend only with
+  a source.** Asking costs one question.
+- **⚠ CORRELATED BLINDNESS — the reason cross-checking did not save us.** Both sessions reached the
+  same wrong conclusion independently and then each verified the *asymmetry*, which felt like
+  corroboration but was two parties re-measuring the half never in doubt. One session ran 5 probes with
+  5 adversarial refuters and got zero refutations; **all ten agents were pointed at a MEASUREMENT**, so
+  no amount of them could catch it. **Redundancy scales confidence, not coverage.**
+  ⇒ For anything ending in a recommendation, put one reviewer on the **CONCLUSION**, briefed to attack
+  the inference and assume the numbers are right.
+- Compare the mirror-image failure the same day: a probe returned REFUTED against a body that had
+  already been fixed, i.e. stale numbers with sound reasoning. **Both errors sat in the layer nobody
+  was auditing.**
+
+⚠ **STILL OPEN and NOT part of the closed view question:** **21 completed visits carry a
+`manifest_visits` link while `derm_required = false`** (18 derived, 3 human-marked). A manifest on file
+is evidence DERM work happened, so either the flag or the link is wrong. Nobody has been asked to
+investigate; do not let it get filed under the view scoping question and disappear.
+
 ### ✅ `public.zones_hard_delete` is INTENTIONAL admin tooling — do NOT "harden" it (settled 2026-07-29)
 
 Recorded because it **looks** exactly like a finding and was flagged as one (by me) before being
