@@ -574,3 +574,11 @@ verify_jwt = true
 # failure rather than an auth error.
 [functions.parse-gdo-permit]
 verify_jwt = true
+
+# Sheet-number reader for the Stamp auto-place gate. verify_jwt = TRUE and the handler ALSO
+# asserts role=service_role -- the gateway only proves the JWT is signed, and the anon key is a
+# validly signed JWT, so verify_jwt alone is half a gate. Invoked only by pg_cron via
+# public.fn_request_sheet_number_ocr() with a Vault-backed service_role bearer. Never deploy this
+# with --no-verify-jwt: it holds ANTHROPIC_API_KEY and would become an open vision endpoint.
+[functions.ocr-address-sheet-number]
+verify_jwt = true
