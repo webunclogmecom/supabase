@@ -68,6 +68,41 @@
 -- keep their existing audit.log_change triggers; every write here is captured.
 --
 -- ROLLBACK: re-apply 2026-08-05_0457 and 2026-08-05_0508 to restore the prior bodies.
+--
+-- ============================================================================
+-- ADDENDUM, measured after apply (2026-08-05): HOW MANY audit.logs ROWS ONE CALL WRITES
+-- ============================================================================
+-- 🛑 IT IS 1, 2 OR 3, IT IS NOT FIXED, AND IT DEPENDS ON THE REQUEST ORIGIN.
+-- Do NOT write a 1:1 call-to-audit-row assumption into any reconciliation or alert.
+--
+-- Mechanism: statement 2 (`SET derm_required = p_value`) FIRES trg_derm_required_lock. From
+-- the DERM origin the arm branch sets `NEW.derm_required_locked := true` in the SAME row
+-- version, so statements 2 and 3 collapse into ONE audit row whenever the final lock is true
+-- (statement 3 then writes a value the row already holds, which audit.log_change skips).
+-- From any other origin the arm branch does not fire and no collapse happens.
+--
+-- Measured, `authenticated`, every case with a REAL value change, all rolled back:
+--
+--        case                                   DERM origin    any other origin
+--        locked,   value changes -> false            2               3
+--        locked,   value changes -> NULL (UNLOCK)    3               2
+--        unlocked, value changes -> true             1               2
+--
+--   DERM origin today:  rows = (1 if row was already locked) + 1 + (1 if p_value IS NULL)
+--   Other origins:      rows = (1 if row was already locked)
+--                            + (1 if the value actually changes)
+--                            + (1 if p_value IS NOT NULL)
+--
+-- ⚠ THE "OTHER ORIGINS" COLUMN IS ALSO THE POST-STEP-3 BEHAVIOUR FOR *EVERY* ORIGIN.
+-- Step 3 removes the arm branch, which is the only thing causing the collapse, so once it
+-- ships the DERM origin starts producing the right-hand column. **The UNLOCK case changes
+-- from 3 rows to 2**, and the unlock is the compliance-sensitive action - it is the release
+-- of a human lock. Anyone reconciling audit rows across the step-3 boundary must switch
+-- formulas at that commit, or they will silently mis-count exactly the releases.
+--
+-- (Credit: @Supabase derived the mechanism and the DERM-origin formula with a falsifiable
+-- prediction and a control; the origin dependence and the post-step-3 consequence were
+-- found by re-running their cases against a second origin.)
 
 -- ============================================================ singular
 CREATE OR REPLACE FUNCTION public.set_visit_derm_required_manual(
