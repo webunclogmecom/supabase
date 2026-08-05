@@ -184,10 +184,37 @@ BEGIN
   v_app_source := COALESCE(
     v_x_app_source,
     CASE
+      -- 🛑 SYNCED FROM THE LIVE FUNCTION 2026-08-04. This baseline had drifted to 5 branches
+      -- while production ran 14. A rebuild from this file would have silently sent Admin
+      -- Review, Client App, Visit Calendar, Stamp Studio, DUMP Schedule and Review Builder
+      -- into other:<host> — i.e. it would have reinstated the exact 2026-07 bug this CASE
+      -- exists to prevent. If you add a host to the live CASE, add it HERE in the same change.
       WHEN v_origin = '' THEN 'sql'
       WHEN v_origin LIKE '%derm.unclogme.app%'    THEN 'derm-tracker'
       WHEN v_origin LIKE '%fp.unclogme.app%'      THEN 'field-portal'
+      -- Review Builder (Yannick, 2026-08-04). NEW APP on reviews.unclogme.app. Listed FIRST so that a
+      -- future loosening of the review.* pattern below cannot swallow it. Verified today that
+      -- 'https://reviews.unclogme.app' LIKE '%review.unclogme.app%' is FALSE, so the two do not collide
+      -- as written, but the ordering makes that independent of the pattern staying exactly as it is.
+      WHEN v_origin LIKE '%reviews.unclogme.app%' THEN 'review-builder'
+      -- Admin Review is moving OFF review.unclogme.app because it reads almost identically to the new
+      -- app's domain. Both candidate replacements are pinned NOW, before DNS changes, so the cutover
+      -- cannot reproduce the 2026-07-03..07-29 failure where 232 rows landed as
+      -- other:review.unclogme.app and a usage check reported the app dead while it was writing daily.
+      -- All three Admin Review hosts stay mapped: whichever is chosen, and the old one for rollback.
+      WHEN v_origin LIKE '%admin.unclogme.app%'   THEN 'admin-review'
+      WHEN v_origin LIKE '%audit.unclogme.app%'   THEN 'admin-review'
       WHEN v_origin LIKE '%grease-buddy-dash%'    THEN 'admin-review'
+      WHEN v_origin LIKE '%review.unclogme.app%'  THEN 'admin-review'
+      WHEN v_origin LIKE '%studio.unclogme.app%'  THEN 'derm-stamp-studio'
+      -- stamp.unclogme.app: the Studio's CURRENT custom domain (studio.* redirects here as of
+      -- 2026-07-30). Both patterns are kept: the old one still matches 71 historical rows, and a
+      -- redirect can be undone. Attribution was surviving ONLY on the per-client X-App-Source
+      -- header, which is the Admin Review failure shape (232 rows lost to other:review.unclogme.app).
+      WHEN v_origin LIKE '%stamp.unclogme.app%'   THEN 'derm-stamp-studio'
+      WHEN v_origin LIKE '%dump.unclogme.app%'    THEN 'dump-schedule'
+      WHEN v_origin LIKE '%clients.unclogme.app%' THEN 'client-app'
+      WHEN v_origin LIKE '%calendar.unclogme.app%' THEN 'visit-calendar'
       WHEN v_origin LIKE '%6533c3ee%'             THEN 'visit-calendar'
       WHEN v_origin LIKE '%lovable.app%'          THEN 'lovable-preview'
       ELSE 'other:' || COALESCE(pg_catalog.substring(v_origin, 'https?://([^/]+)'), v_origin)

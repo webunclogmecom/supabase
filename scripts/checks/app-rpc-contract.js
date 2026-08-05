@@ -233,9 +233,19 @@ function selfTest() {
     const app = APPS[key];
     process.stdout.write(`\n=== ${app.label}  (${app.url}) ===\n`);
 
+    // 🛑 AN UNREACHABLE HOST IS A FAILURE, NOT A SKIP (2026-08-04).
+    // This used to `console.log('SKIP') ; continue`, which meant a dead domain produced NO failure, the
+    // run printed "✅ every RPC resolves" and exited 0. That is exactly how review.unclogme.app sailed
+    // through after Admin Review moved: the one check that should have caught a domain going dead was
+    // defeated by the very condition it exists to detect. A check that cannot fail is not a check.
     let bundle;
     try { bundle = await fetchBundle(app.url); }
-    catch (e) { console.log(`  SKIP — ${e.message}`); continue; }
+    catch (e) {
+      console.log(`  🛑 FAIL — cannot reach ${app.url}: ${e.message}`);
+      console.log('     Either the app moved domain (update APPS above, and the audit.log_change Origin');
+      console.log('     CASE, and the Auth uri_allow_list) or it is genuinely down. Both are worth a stop.');
+      failures++; continue;
+    }
 
     const { direct, literals, indirect, schemas, overrides } = extract(bundle.code);
     console.log(`  bundle: ${bundle.chunks} chunks, ${bundle.bytes.toLocaleString()} bytes`);
