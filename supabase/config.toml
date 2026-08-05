@@ -582,3 +582,11 @@ verify_jwt = true
 # with --no-verify-jwt: it holds ANTHROPIC_API_KEY and would become an open vision endpoint.
 [functions.ocr-address-sheet-number]
 verify_jwt = true
+
+# Generalized dispatch-side drive time (depot->job, job->job, job->dump) for the Visit Calendar's
+# Day Start/End markers. verify_jwt = TRUE and the handler ALSO asserts the role is authenticated or
+# service_role -- the anon key is a validly signed JWT, so verify_jwt alone would leave this open to
+# anyone with the public key, and it spends real Google Routes quota. Browser-called by the Calendar
+# (which carries a staff session), so it answers OPTIONS before auth. Never deploy --no-verify-jwt.
+[functions.calculate-driving-time]
+verify_jwt = true
