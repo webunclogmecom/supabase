@@ -174,6 +174,37 @@ The view laundering the table grant makes it look safe right up until the functi
   every new object, and revoke explicitly. (`derm.address_sheet_clients` and a SECDEF wrapper both
   needed this on 2026-07-28.)
 
+### ⚠ A SECDEF function BYPASSES RLS — so wrapping a write in one can silently WIDEN it (2026-08-05)
+
+**`postgres` has `rolbypassrls = true`** (measured; it is not a superuser, but it holds the attribute).
+RLS is **enabled AND FORCED** on `public.visits` and `public.manifest_visits`. So moving a statement
+the app runs as `authenticated` into a `SECURITY DEFINER` function owned by `postgres` **removes every
+policy that was constraining it** — the caller gains reach they never had, and nothing errors.
+
+This is the same privilege-laundering shape as the view/function asymmetry above, one level up: the
+table grant is not the control, the *policy* is, and SECDEF drops the policy silently.
+
+**⇒ Before wrapping any write in SECDEF, check the caller's POLICIES, not just their grants**, and probe
+`SET LOCAL ROLE authenticated` both ways (direct statement vs through the function) to prove the
+reachable set is unchanged. Two traps that make reading the catalogue give the wrong answer:
+
+- **🛑 PERMISSIVE POLICIES `OR` TOGETHER, so a narrow one can be DEAD while looking like the control.**
+  `visits_authenticated_update_derm_required USING (visit_status = 'completed')` reads like the guard on
+  who may write that compliance column. It restricts **nothing**: `visits_app_update_authn
+  USING (deleted_at IS NULL)` is OR'd alongside it and swallows it whole. Measured — `authenticated`
+  updates `derm_required` on a **scheduled** visit fine (1 row). **Never quote one policy as the limit;
+  enumerate every permissive policy for that role+command and OR them in your head.**
+- **🛑 POLICY NAMES LIE ABOUT WHICH ROLE THEY TARGET.** Every policy on `public.manifest_visits` is named
+  `anon_*` (`anon_delete_manifest_visits_authn`, `anon_insert_…`, `Allow anon read on …`) and **every one
+  has `polroles = {authenticated}`**. A sweep answering "what can anon do" from policy names reports the
+  opposite of the truth. **Read `polroles`, never the name.**
+
+Worked example, and why it did NOT block the change: folding the `manifest_visits` unlink into
+`set_visits_derm_required_manual` was safe **because it was measured** — `authenticated` already held both
+the DELETE grant and an unrestricted DELETE policy, so the function laundered nothing. Had that policy
+been anon-only, the same code would have handed every staff user a delete they did not have.
+(`2026-08-05_0508_derm_manual_lock_bulk_rpc.sql`.)
+
 ### ✅ `public.zones_hard_delete` is INTENTIONAL admin tooling — do NOT "harden" it (settled 2026-07-29)
 
 Recorded because it **looks** exactly like a finding and was flagged as one (by me) before being
