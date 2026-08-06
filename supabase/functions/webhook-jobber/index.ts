@@ -1132,19 +1132,32 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
     match_method: 'webhook',
   })
 
-  // Sync job-scoped line items per the rule: Service Agreement jobs carry their agreed services;
-  // Service Call jobs carry none. Idempotent: wipe job-scoped rows + re-insert only for SA jobs.
-  const isSA = (j.title ?? '').toLowerCase().startsWith('service agreement')
+  // Sync job-scoped line items. Idempotent: wipe job-scoped rows + re-insert what Jobber holds.
+  //
+  // 🛑 THE `if (isSA)` GATE WAS REMOVED 2026-08-06. It encoded "Service Agreement jobs carry
+  // their agreed services; Service Call jobs carry none", which stopped being true when the
+  // Client App gained fee lines (codes 25/26/27) on Service Call jobs. With the gate in place a
+  // fee pushed to an SC job was real in Jobber but wiped from our mirror within 5 minutes, so
+  // the job dialog rendered it UNCHECKED and the next save deleted it from Jobber for real.
+  //
+  // ⚠ This is writer 2 of THREE that must agree. The others are jobToRecord's `includeLines`
+  // in save-client-job and `want = isSA ? nodes : []` in sync-jobber-job-drift. Re-introducing
+  // the gate in any one of them re-arms the self-deleting fee. They are one change.
+  //
+  // ⚠ Safe for DERM only because 2026-08-06_1448 made fee lines answer NULL rather than FALSE
+  // in fn_line_item_requires_derm. Mirroring a fee makes it an SC visit's only reachable line,
+  // and FALSE would have derived "definitively not required".
+  //
+  // Measured before the change: of 630 SC jobs, the only 8 holding job-scoped lines in Jobber
+  // were archived, so this widens what we mirror with no live back-fill surprise.
+  const jobLineNodes: any[] = j.lineItems?.nodes ?? []
   await supabase.from('line_items').delete().eq('job_id', entityId)
-  if (isSA) {
-    const jobLineNodes: any[] = j.lineItems?.nodes ?? []
-    if (jobLineNodes.length > 0) {
-      await supabase.from('line_items').insert(jobLineNodes.map((n: any) => ({
-        job_id: entityId, name: n.name, description: n.description ?? '',
-        quantity: n.quantity ?? 1, unit_price: n.unitPrice ?? 0,
-        total_price: n.totalPrice ?? 0, taxable: !!n.taxable,
-      })))
-    }
+  if (jobLineNodes.length > 0) {
+    await supabase.from('line_items').insert(jobLineNodes.map((n: any) => ({
+      job_id: entityId, name: n.name, description: n.description ?? '',
+      quantity: n.quantity ?? 1, unit_price: n.unitPrice ?? 0,
+      total_price: n.totalPrice ?? 0, taxable: !!n.taxable,
+    })))
   }
 
   return { entity_id: entityId }

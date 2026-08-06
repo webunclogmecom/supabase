@@ -184,10 +184,12 @@ function resolveBilling(p: any, isSA: boolean, opts: { legacy: boolean }): Billi
     return { err: "Billing is required: choose a billing type and an invoice frequency." };
   }
   if (!isSA && btype === "fixed") {
-    // A Service Call container carries NO job line items (the SA-has-lines rule),
-    // and fixed-price invoices bill from job lines — a fixed-price SC would
-    // invoice $0 forever.
-    return { err: "A Service Call bills per visit — fixed price needs job-level line items, which Service Calls don't carry." };
+    // 🛑 THE GUARD STAYS, BUT ITS ORIGINAL REASON EXPIRED ON 2026-08-06 and is corrected here
+    // rather than left to mislead. It used to say a Service Call carries NO job line items; an
+    // SC can now carry FEE lines. The guard is still right for a better reason: a fixed-price
+    // invoice bills from the JOB's lines, and an SC's services live on its VISITS, so a
+    // fixed-price SC would invoice its fees ALONE and never the work.
+    return { err: "A Service Call bills per visit — a fixed price would invoice only the job's fee lines, not the work, because a Service Call's services live on its visits." };
   }
   // ⚠ JOBBER'S OWN RULE, learned the hard way 2026-08-01: PER_VISIT and
   // FIXED_PRICE are mutually exclusive. Sending the pair returns
@@ -901,13 +903,25 @@ Deno.serve(async (req) => {
     }
   }
   if (feeWorkRequested) {
-    // SC fee support is NOT shipped yet and must not be faked: three separate writers
-    // (jobToRecord's includeLines, webhook-jobber ~1137, sync-jobber-job-drift ~172)
-    // wipe job line items for non-SA jobs, so a fee on an SC would be real in Jobber,
-    // invisible here, and deleted by the next save. Refuse loudly instead.
-    if (!isSA) {
-      return fail("bad_request", "Fee lines on a Service Call job aren't supported yet — they would be removed by the next Jobber sync.");
-    }
+    // ✅ SERVICE CALL FEES ARE SUPPORTED (2026-08-06, Fred asked for them explicitly).
+    // 🛑 THIS ONLY HOLDS BECAUSE ALL THREE LINE-ITEM MIRROR WRITERS NOW KEEP NON-SA LINES.
+    // Until 2026-08-06 each of them wiped job-scoped rows for anything not titled
+    // "Service Agreement", so an SC fee was real in Jobber, absent from our mirror, rendered
+    // UNCHECKED by the dialog, and deleted by the very next save:
+    //   1. jobToRecord's `includeLines` was gated on isSA        (below in this file)
+    //   2. webhook-jobber ~1137: delete by job_id, re-insert only if (isSA)
+    //   3. sync-jobber-job-drift ~172: want = isSA ? nodes : []  — every 30 minutes
+    // ⚠ IF ANY OF THOSE THREE IS EVER REVERTED, SC FEES SILENTLY DELETE THEMSELVES AGAIN.
+    // They are one change; do not treat them as three independent edits.
+    //
+    // ⚠ ALSO REQUIRED FIRST, and already shipped: 2026-08-06_1448 made a fee line answer NULL
+    // rather than FALSE for DERM. Mirroring a fee onto an SC job makes it the visit's only
+    // reachable line, and FALSE would have derived "definitively not required" and evicted
+    // 33 live visits from customer.work_orders.
+    //
+    // Note the SA title is NOT at risk here: saTitle() runs only inside the `p.services`
+    // branch, which still refuses non-SA, and fees never enter `wantLines`. An SC edit
+    // therefore cannot re-derive a "Service Agreement …" title and reclassify the job.
     // 🛑 BOTH KEYS OR NEITHER — same doctrine as the billing pair below, and for a worse
     // reason. The two carry OPPOSITE conventions: `rendered_fee_ids` is a statement of
     // fact ("I showed these"), `fees` is a desired end state ("keep exactly these"). If
@@ -1260,7 +1274,10 @@ Deno.serve(async (req) => {
   // catalogue. If a fee is pushed to Jobber but not mirrored locally, the picker renders
   // that fee UNCHECKED, the next save reports it as rendered-and-not-submitted, and the
   // delete path removes a fee the user never touched. Mirroring it closes that loop.
-  const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && (wantLines !== null || feeReq !== null), newFreq, bill ?? undefined);
+  // ⚠ NO LONGER GATED ON isSA (2026-08-06). A Service Call job can now carry fee lines, and if
+  // they are pushed to Jobber but not mirrored here the dialog renders them unchecked and the
+  // next save deletes them. This is writer 1 of the three named above.
+  const rec = jobToRecord(clientId, jobRow.property_id, j, (wantLines !== null || feeReq !== null), newFreq, bill ?? undefined);
   const { error: recErr } = await db.rpc("fn_record_client_job", { p: rec });
   if (recErr) {
     return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied });

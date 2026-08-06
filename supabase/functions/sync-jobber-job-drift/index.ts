@@ -168,14 +168,21 @@ Deno.serve(async (req) => {
             stats.updated++;
           }
 
-          // Line items: SA carries the set, everything else carries none.
-          const isSA = norm(j.title || row.title).toLowerCase().startsWith("service agreement");
-          const want = isSA
-            ? (j.lineItems?.nodes ?? []).map((n: any) => ({
-                name: norm(n.name), quantity: Number(n.quantity ?? 1),
-                unit_price: Number(n.unitPrice ?? 0), total_price: n.totalPrice != null ? Number(n.totalPrice) : null,
-              }))
-            : [];
+          // Line items: mirror whatever Jobber holds, for EVERY job kind.
+          //
+          // 🛑 THIS WAS `isSA ? nodes : []` UNTIL 2026-08-06. That encoded "SA carries the set,
+          // everything else carries none", which stopped being true when the Client App gained
+          // fee lines (25/26/27) on Service Call jobs. With that gate, this reconciler DELETED
+          // an SC job's fee from our mirror every 30 minutes while it stayed real in Jobber, so
+          // the job dialog rendered it UNCHECKED and the next save deleted it for real.
+          //
+          // ⚠ Writer 3 of THREE that must agree: jobToRecord's `includeLines` in
+          // save-client-job, webhook-jobber ~1137, and this. Restoring the gate in any one of
+          // them re-arms the self-deleting fee. They are one change, not three.
+          const want = (j.lineItems?.nodes ?? []).map((n: any) => ({
+            name: norm(n.name), quantity: Number(n.quantity ?? 1),
+            unit_price: Number(n.unitPrice ?? 0), total_price: n.totalPrice != null ? Number(n.totalPrice) : null,
+          }));
           const { data: have } = await db.from("line_items")
             .select("name, quantity, unit_price")
             .eq("job_id", row.id).is("visit_id", null).is("invoice_id", null);
