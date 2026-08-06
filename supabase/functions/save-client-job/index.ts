@@ -353,6 +353,187 @@ async function resolveServices(services: Svc[]): Promise<{ err?: string; lines?:
   return { lines };
 }
 
+// ============================================================================
+// FEE LINES (catalogue codes 25/26/27) — 2026-08-05, Fred
+// ============================================================================
+// 🛑 FEES TRAVEL IN THEIR OWN `fees` KEY AND THEIR OWN RESOLVER, ON PURPOSE.
+// The obvious implementation — letting fee codes through resolveServices() — was
+// designed, reviewed and REJECTED because it silently arms four separate defects,
+// one of which destroys data:
+//
+//  1. `services.length === 0` is the "pick at least one service" guard. A fee would
+//     satisfy it, so a user could uncheck every service, leave the pre-checked ACH
+//     fee, and save. The job's 01-08 lines are stripped, it falls out of
+//     fn_generate_sa_visits' EXISTS (reason in Service Agreement/Service Call and
+//     code <> 08), and that same predicate feeds the generator's CLEANUP arm, which
+//     runs `update visits set deleted_at = now()`. MEASURED EXPOSURE: 111 SA jobs /
+//     486 future visits, and the 40-per-run abort guard never fires because no job
+//     holds more than 40. Keeping fees out of `services` makes this UNREACHABLE
+//     rather than defended against.
+//  2. saTitle() runs on the emitted set, so the job title would become
+//     "Service Agreement - Cleaning - Aux Cleaning & Credit card fee (3.53%)" —
+//     and fn_generate_sa_visits copies the job title onto every visit it mints, so
+//     the card-fee percentage would appear on the crew's Calendar and Field Portal.
+//  3. Widening `isServiceLine` would delete 25/26/27 from `preserved`, disarming the
+//     exact regression alarm rule 2c installed after the 2026-08-01 loss. 165 of the
+//     175 non-service job lines ARE codes 25/26/27.
+//  4. Delete-by-absence over lines this app has never written (all 166 were created
+//     by a human in Jobber's UI, two of them the same day this shipped).
+//
+// ⇒ resolveServices(), saTitle(), isServiceLine() and the service half of toDelete
+//   are BYTE-IDENTICAL to before this change. Keep them that way.
+//
+// HOW A FEE MAY BE DELETED (Fred chose delete-on-uncheck, so this had to be safe):
+// the caller sends `rendered_fee_ids` — every fee it actually PUT ON SCREEN. A fee is
+// removed only when it was rendered AND was not submitted, i.e. the user demonstrably
+// saw that line and unchecked it. An old or cached bundle sends no `rendered_fee_ids`,
+// so it can delete NOTHING. ⚠ This is deliberately NOT a "this build knows about fees"
+// capability flag: that asserts the BUILD understands fees, while the delete decision
+// needs the CALLER to have seen THIS line. The gap between those two propositions is
+// exactly where the 2026-08-01 loss lived.
+//
+// PERCENT MODE IS COMPUTED HERE, NEVER BY THE CLIENT. The server already holds the
+// service subtotal, and a stale bundle must not be able to decide what a customer is
+// billed. Rate lives on service_line_items.default_rate_pct (2026-08-05_1806); the
+// percent/amount MODE is derived by the UI, never stored.
+// `expected_unit_price` is the amount the DIALOG DISPLAYED. In percent mode it is REQUIRED
+// and must match what the server computes, which is how "the user saw what will be billed"
+// becomes enforceable instead of hoped for. Without it, opening a job and pressing Save
+// silently reprices the fee: measured, 7 live lines would move on the next save, including
+// job 1777 by +$3.89 and three jobs by exactly +$0.01 (3.53% of $750 is $26.475 — a float
+// `0.0353*750` truncates to 26.47 while exact arithmetic rounds to 26.48). A cent moved
+// without anyone seeing it is still a bill nobody authorised.
+type FeeReq = {
+  service_line_item_id: number;
+  mode?: string;
+  unit_price?: number;
+  quantity?: number;
+  expected_unit_price?: number;
+};
+
+const isFeeReason = (r: unknown) => r === "fee" || r === "other";
+
+// `servicesChanged` + `currentAmounts` implement Fred's rule (2026-08-05): "only reprice
+// when the services actually changed". A percent fee already on the job KEEPS its amount
+// on a save that did not touch the services, so opening a job and pressing Save can never
+// move money. Repricing happens on exactly two occasions, both of them deliberate acts:
+// the services really changed, or the fee is being added to the job now.
+// ⚠ This deliberately leaves the three known one-cent divergences (jobs 1394/1598/1600,
+// where a float 0.0353*750 truncated to 26.47 and exact arithmetic gives 26.48) alone
+// rather than nudging three customers because our rounding differs. Job 1777, which is
+// genuinely stale at $19.06 against a correct $22.95, is corrected the moment its services
+// are next edited — which is the event that made it wrong in the first place.
+async function resolveFees(
+  fees: FeeReq[],
+  renderedIds: number[],
+  serviceSubtotal: number,
+  servicesChanged: boolean,
+  currentAmounts: Map<string, number>,
+): Promise<{
+  err?: string;
+  lines?: { name: string; unitPrice: number; quantity: number }[];
+  deletableNames?: Set<string>;
+}> {
+  // ⚠ DEDUPE BY ID. The catalogue lookup was already deduped, but the EMIT loop was not,
+  // so the same fee sent twice produced two identical jobCreateLineItems rows — verify
+  // passed (the name is present) and the job was then permanently tripped up by the
+  // duplicate guard on every later save. Last-one-wins matches the dialog's semantics.
+  const want = Array.isArray(fees)
+    ? [...new Map(fees.map((f) => [f.service_line_item_id, f])).values()]
+    : [];
+  const rendered = Array.isArray(renderedIds) ? renderedIds : [];
+  // Every submitted fee must have been rendered. Without this, a caller can write a line
+  // it never showed the user, and that line is then outside the delete set forever.
+  const renderedSet = new Set(rendered);
+  for (const f of want) {
+    if (!renderedSet.has(f.service_line_item_id)) {
+      return { err: `Fee ${f.service_line_item_id} was submitted but not listed as rendered — refusing a line the dialog did not show.` };
+    }
+  }
+  const ids = [...new Set([...want.map((f) => f.service_line_item_id), ...rendered])];
+  if (!ids.length) return { lines: [], deletableNames: new Set<string>() };
+
+  const { data: cat } = await db.from("service_line_items")
+    .select("id, code, title, reason, schedulable, default_rate_pct").in("id", ids);
+  const byId = new Map((cat ?? []).map((c: any) => [c.id, c]));
+
+  // The deletable set is EXACTLY what the caller rendered — see the block comment.
+  const deletableNames = new Set<string>();
+  for (const id of rendered) {
+    const c = byId.get(id);
+    if (!c) return { err: `Fee ${id} does not exist.` };
+    if (!isFeeReason(c.reason)) return { err: `"${c.title}" is not a fee line, so it cannot be sent as one.` };
+    deletableNames.add(String(c.title).trim());
+  }
+
+  const lines: { name: string; unitPrice: number; quantity: number }[] = [];
+  for (const f of want) {
+    const c = byId.get(f.service_line_item_id);
+    if (!c) return { err: `Fee ${f.service_line_item_id} does not exist.` };
+    if (!isFeeReason(c.reason)) {
+      return { err: `"${c.title}" is a service, not a fee — it belongs in the services list.` };
+    }
+    // Belt-and-braces: 25/26/27 must stay schedulable=false. That flag is what keeps a
+    // credit-card fee out of the Calendar's New Visit picker and the vehicle resolution.
+    if (c.schedulable) return { err: `"${c.title}" is marked schedulable and cannot be used as a fee.` };
+
+    // Name first: the percent branch needs it to find what this fee is billing today.
+    const name = String(c.title).trim();
+    // Same prefix assertion the services path makes, and it holds for two-digit codes:
+    // Number('25') = 25, so /^0?25\s*-/ matches "25 - Credit card fee (3.53%)".
+    if (!new RegExp(`^0?${Number(c.code)}\\s*-`).test(name)) {
+      return { err: `Catalog title for code ${c.code} lost its code prefix ("${name}") — tell Fred before saving fees.` };
+    }
+
+    let amount: number;
+    // ⚠ QUANTITY IS FORCED TO 1 IN PERCENT MODE. `amount` is already the WHOLE fee, so a
+    // quantity of 2 would bill 7.06% instead of 3.53% — and quantity is chosen by the
+    // client, which must never be able to multiply a computed charge.
+    let qty = Number(f.quantity) > 0 ? Number(f.quantity) : 1;
+    const billedToday = currentAmounts.get(name);
+    if (f.mode === "percent" && billedToday !== undefined && !servicesChanged) {
+      // HOLD. This fee is already on the job and the services did not move, so there is
+      // nothing to reprice and no money may change.
+      amount = billedToday;
+      qty = 1;
+      // ⚠ The disclosure gate still applies, in the opposite direction. If the dialog
+      // displayed a freshly-computed percentage while the server is holding the stored
+      // amount, the user is looking at a number that is not what gets billed. The dialog's
+      // contract is to show the amount CURRENTLY on the job whenever the services have not
+      // changed; this is what makes that contract enforceable rather than aspirational.
+      const shownHold = Number(f.expected_unit_price);
+      if (Number.isFinite(shownHold) && Math.abs(shownHold - billedToday) >= 0.005) {
+        return { err: `"${name}" is billing $${billedToday.toFixed(2)} on this job and the services haven't changed, but the screen showed $${shownHold.toFixed(2)}. Reopen the job so the amount on screen matches what is billed.` };
+      }
+    } else if (f.mode === "percent") {
+      if (c.default_rate_pct == null) {
+        return { err: `"${c.title}" has no percentage rate — send a precise amount instead.` };
+      }
+      if (!(serviceSubtotal > 0)) {
+        return { err: `"${c.title}" is a percentage of the services, but this job has no service total to take a percentage of. Enter a precise amount instead, or price the services first.` };
+      }
+      // rate is in PERCENT UNITS (3.53 = 3.53%), so amount = rate * subtotal / 100.
+      // Worked: 3.53 * 650 = 2294.5 -> round 2295 -> 22.95, i.e. 3.53% of $650.
+      amount = Math.round(Number(c.default_rate_pct) * serviceSubtotal) / 100;
+      qty = 1;
+      // 🛑 DISCLOSURE GATE. The dialog must send the amount it showed, and it must match.
+      const shown = Number(f.expected_unit_price);
+      if (!Number.isFinite(shown)) {
+        return { err: `"${c.title}" is a percentage line, so the dialog must send the amount it displayed (expected_unit_price) before it can be saved.` };
+      }
+      if (Math.abs(shown - amount) >= 0.005) {
+        return { err: `"${c.title}" would be saved as $${amount.toFixed(2)} (${c.default_rate_pct}% of $${serviceSubtotal.toFixed(2)}), but the screen showed $${shown.toFixed(2)}. Reopen the job so you can see the current amount before saving.` };
+      }
+    } else {
+      amount = Number(f.unit_price);
+      if (!Number.isFinite(amount) || amount < 0) return { err: `"${c.title}" needs a valid amount.` };
+      amount = Math.round(amount * 100) / 100;
+    }
+    lines.push({ name, unitPrice: amount, quantity: qty });
+  }
+  return { lines, deletableNames };
+}
+
 function jobToRecord(
   clientId: number, propertyId: number | null, j: any, includeLines: boolean,
   freq?: number | null, billing?: Billing,
@@ -437,6 +618,16 @@ Deno.serve(async (req) => {
     const p = body.patch ?? {};
     const kind = p.kind === "SA" ? "SA" : p.kind === "SC" ? "SC" : null;
     if (!kind) return fail("bad_request", "Job kind must be Service Agreement or Service Call.");
+    // Fees are an EDIT-ONLY capability for now (2026-08-05). Refusing loudly rather than
+    // ignoring the key: a silently dropped fee on create is a billing miss that nothing
+    // downstream would ever surface, and "the save succeeded" would be a lie.
+    // ⚠ Refuse only on an ACTUAL fee. A dialog that shares one patch builder will send
+    // `rendered_fee_ids: []` on create too, and refusing that would break job creation
+    // entirely with a message about fees the user never touched. A new job has nothing to
+    // delete, so a rendered list alone is meaningless here and is simply ignored.
+    if (Array.isArray(p.fees) && p.fees.length) {
+      return fail("bad_request", "Fee lines can't be set while creating a job yet — create it first, then add the fee from the job's edit dialog.");
+    }
     const propertyId = Number(p.property_id);
     if (!Number.isFinite(propertyId)) return fail("bad_request", "A property is required.");
     // Service Calls are ON-DEMAND (Fred, 2026-07-30): no start date — the job is a
@@ -659,9 +850,16 @@ Deno.serve(async (req) => {
     edit.customFields = [{ customFieldConfigurationId: FREQ_CF_GID, valueNumeric: newFreq }];
   }
   let wantLines: { name: string; unitPrice: number; quantity: number }[] | null = null;
-  // Non-service (fee/admin) lines found on the job — never touched, asserted
-  // still present in the verify block. See the toDelete comment below.
+  // Lines found on the job that this call did not manage at all — returned to the UI.
   let preserved: string[] = [];
+  // Every current line this call did NOT decide to delete. This is the regression
+  // alarm asserted in the verify block; see the toDelete comment below for why it is
+  // no longer the inverse of a regex.
+  let survivors: string[] = [];
+  // Resolved fee lines, hoisted so the verify block can assert they actually landed —
+  // the same assertion the service lines get. A fee that silently fails to land is a
+  // billing miss, so it does not get a weaker check than a service.
+  let feeLinesForVerify: { name: string; unitPrice: number; quantity: number }[] = [];
   if (p.services !== undefined) {
     if (!isSA) return fail("bad_request", "Only Service Agreements carry service line items.");
     const r = await resolveServices(p.services ?? []);
@@ -677,6 +875,54 @@ Deno.serve(async (req) => {
     // saTitle always emits it, so re-deriving can never reclassify the job.
     const reTitle = saTitle(wantLines.map((l) => l.name));
     if (reTitle !== jobRow.title) edit.title = reTitle;
+  }
+  // FEES — parsed here, RESOLVED later inside the line-item block, because the
+  // percent base needs the live Jobber read (a fee may be edited without touching
+  // the services, in which case the subtotal comes from what is on the job now).
+  // ⚠ `fees` and `rendered_fee_ids` are read INDEPENDENTLY of `services`, so a
+  // fee-only edit works and does not drag the service diff along with it.
+  let feeReq: { fees: FeeReq[]; rendered: number[] } | null = null;
+  // 🛑 GATE ON THE PAYLOAD, NOT ON KEY PRESENCE. A dialog that shares one patch builder
+  // sends `fees: []` and `rendered_fee_ids: []` on EVERY save, including Service Calls.
+  // Keying on presence made that a "fee request", which then hit the SA-only refusal and
+  // broke editing on all 270 live non-SA jobs (measured) — and on SA jobs it dragged two
+  // extra Jobber reads and the stale-view refusal into saves that touch no fee at all,
+  // while making the `no_changes` short-circuit unreachable. Empty-and-empty is a no-op.
+  // ⚠ `fees: []` with a NON-empty rendered list is NOT a no-op: it means "remove them all".
+  const feeKeysPresent = p.fees !== undefined || p.rendered_fee_ids !== undefined;
+  const feeWorkRequested = feeKeysPresent &&
+    (((Array.isArray(p.fees) ? p.fees.length : 0) > 0) ||
+     ((Array.isArray(p.rendered_fee_ids) ? p.rendered_fee_ids.length : 0) > 0));
+  if (feeKeysPresent && !feeWorkRequested) {
+    // Shape-validate anyway so a malformed key still fails loudly rather than silently.
+    if (p.fees !== undefined && !Array.isArray(p.fees)) return fail("bad_request", "`fees` must be a list.");
+    if (p.rendered_fee_ids !== undefined && !Array.isArray(p.rendered_fee_ids)) {
+      return fail("bad_request", "`rendered_fee_ids` must be a list.");
+    }
+  }
+  if (feeWorkRequested) {
+    // SC fee support is NOT shipped yet and must not be faked: three separate writers
+    // (jobToRecord's includeLines, webhook-jobber ~1137, sync-jobber-job-drift ~172)
+    // wipe job line items for non-SA jobs, so a fee on an SC would be real in Jobber,
+    // invisible here, and deleted by the next save. Refuse loudly instead.
+    if (!isSA) {
+      return fail("bad_request", "Fee lines on a Service Call job aren't supported yet — they would be removed by the next Jobber sync.");
+    }
+    // 🛑 BOTH KEYS OR NEITHER — same doctrine as the billing pair below, and for a worse
+    // reason. The two carry OPPOSITE conventions: `rendered_fee_ids` is a statement of
+    // fact ("I showed these"), `fees` is a desired end state ("keep exactly these"). If
+    // `rendered_fee_ids` arrived alone, `fees ?? []` would read as "keep none" and EVERY
+    // rendered fee would be deleted — the 2026-08-01 loss reintroduced through a new key,
+    // and invisible because `survivors` and `preserved` both exclude those lines by
+    // construction. A dialog that omits `fees` when no fee changed is the normal shape of
+    // this file's own "only the provided groups are touched" contract, so this is a
+    // likely payload, not an exotic one.
+    if ((p.fees === undefined) !== (p.rendered_fee_ids === undefined)) {
+      return fail("bad_request", "Send `fees` and `rendered_fee_ids` together — one without the other cannot say whether a missing fee means 'remove it' or 'I never saw it'.");
+    }
+    if (!Array.isArray(p.fees)) return fail("bad_request", "`fees` must be a list.");
+    if (!Array.isArray(p.rendered_fee_ids)) return fail("bad_request", "`rendered_fee_ids` must be a list.");
+    feeReq = { fees: p.fees as FeeReq[], rendered: p.rendered_fee_ids as number[] };
   }
   // BILLING on edit (added 2026-08-01). Previously the edit branch never read
   // these keys at all, so a billing-only patch fell straight through to the
@@ -746,8 +992,102 @@ Deno.serve(async (req) => {
     }
   }
 
-  if (Object.keys(edit).length === 0 && wantLines === null) {
+  if (Object.keys(edit).length === 0 && wantLines === null && feeReq === null) {
     return done({ job_id: jobId, no_changes: true });
+  }
+
+  // ── FEE PREFLIGHT: everything that can say "no" runs BEFORE any Jobber mutation.
+  // 🛑 A `bad_request` raised AFTER step 1 leaves Jobber holding the new frequency or
+  // invoice schedule while `public.jobs` keeps the old one, `fn_record_client_job` never
+  // runs, and the user is shown a validation error implying nothing saved. Those columns
+  // are "last confirmed by us" and the drift reconciler does not compare them, so the
+  // divergence is PERMANENT and the job half-applies again on every retry. Two live jobs
+  // sit in exactly that shape today: 1369 (carries a duplicate fee line) and 1589 (a real
+  // SA job with a $0.00 service subtotal and a fee), so this is measured, not theoretical.
+  let feeLines: { name: string; unitPrice: number; quantity: number }[] = [];
+  let deletableFeeNames = new Set<string>();
+  let preLines: any[] = [];
+  if (feeReq !== null) {
+    const pre = await gql(token, Q_JOB, { id: jobGid });
+    if (!pre.ok) {
+      return fail("jobber_no_answer", "Jobber didn't answer while reading this job's line items. Nothing was changed.");
+    }
+    preLines = pre.data.job?.lineItems?.nodes ?? [];
+
+    // ⚠ STALE-VIEW GUARD — the one thing `rendered_fee_ids` CANNOT do.
+    // The dialog derives its checked state from OUR MIRROR, and the only refresh path is
+    // pg_cron `jobber-job-drift-reconcile` at `15,45 * * * *` (verified; the */5 poll
+    // touches no line items). So the mirror runs up to 30 minutes behind Jobber. Every one
+    // of the existing fee lines was created by a human in Jobber's UI, which makes "a fee
+    // added in Jobber a few minutes ago" the NORMAL case: it renders unchecked, and an
+    // unchecked box would otherwise be read as "remove it". Comparing the two sides is
+    // what distinguishes "the user unchecked this" from "the user was never shown it".
+    // The code pattern here is a DETECTION heuristic only — it never decides a delete.
+    // ⚠ COMPARE NAME **AND MONEY**, not membership. A membership-only check misses a price
+    // corrected in Jobber inside the 30-minute window: the dialog still shows the old
+    // amount, `toEdit` sees a difference and pushes the stale figure straight back, undoing
+    // the correction silently. Code 27 is amount-mode only, so this is its ONLY protection.
+    const looksLikeFee = (n: unknown) => /^\s*2[567]\s*-/.test(String(n ?? ""));
+    const money = (v: unknown) => Number(v ?? 0).toFixed(2);
+    const bag = (name: unknown, price: unknown, qty: unknown) =>
+      `${String(name)}|${money(price)}|${money(qty)}`;
+    const { data: mirrorRows, error: mirrorErr } = await db.from("line_items")
+      .select("name, unit_price, quantity").eq("job_id", jobId).is("invoice_id", null);
+    // A failed read returns an empty set — exactly the shape this guard exists to detect —
+    // so it must be an error, never a silent pass.
+    if (mirrorErr) {
+      return fail("db_read_failed", "Couldn't check this job's fees against our records. Nothing was changed — try again.");
+    }
+    const jobberFees = new Set(preLines.filter((n: any) => looksLikeFee(n.name))
+      .map((n: any) => bag(n.name, n.unitPrice, n.quantity)));
+    const mirrorFees = new Set((mirrorRows ?? []).filter((r: any) => looksLikeFee(r.name))
+      .map((r: any) => bag(r.name, r.unit_price, r.quantity)));
+    const inSync = jobberFees.size === mirrorFees.size && [...jobberFees].every((n) => mirrorFees.has(n));
+    if (!inSync) {
+      return fail("stale_view", "This job's fees changed in Jobber since this dialog was opened, so what you're looking at is out of date. Close the job, reopen it, and make the change again.");
+    }
+
+    // Percent base: the services being SAVED when they are part of this edit, otherwise
+    // the service lines currently on the job. Never the Jobber job total, which already
+    // includes the fees themselves.
+    const serviceSubtotal = wantLines !== null
+      ? wantLines.reduce((a, l) => a + l.unitPrice * l.quantity, 0)
+      : preLines.filter((n: any) => /^\s*0[1-8]\s*-/.test(String(n.name ?? "")))
+          .reduce((a: number, n: any) => a + Number(n.unitPrice ?? 0) * Number(n.quantity ?? 0), 0);
+
+    // Did the SERVICES actually move? Compare name+price+qty, not just membership, so a
+    // price-only change still counts. `wantLines === null` means the services were not part
+    // of this patch at all, which is by definition no change.
+    const svcBag = (n: unknown, p: unknown, q: unknown) =>
+      `${String(n)}|${Number(p ?? 0).toFixed(2)}|${Number(q ?? 0).toFixed(2)}`;
+    const curSvc = new Set(preLines
+      .filter((n: any) => /^\s*0[1-8]\s*-/.test(String(n.name ?? "")))
+      .map((n: any) => svcBag(n.name, n.unitPrice, n.quantity)));
+    const wantSvc = new Set((wantLines ?? []).map((l) => svcBag(l.name, l.unitPrice, l.quantity)));
+    const servicesChanged = wantLines !== null &&
+      (curSvc.size !== wantSvc.size || [...wantSvc].some((b) => !curSvc.has(b)));
+
+    // What each fee bills TODAY, so an untouched percent fee can be held at its current
+    // amount rather than recomputed.
+    const currentAmounts = new Map<string, number>(
+      preLines.map((n: any) => [String(n.name), Number(n.unitPrice ?? 0)]),
+    );
+
+    const rf = await resolveFees(feeReq.fees, feeReq.rendered, serviceSubtotal, servicesChanged, currentAmounts);
+    if (rf.err) return fail("bad_request", rf.err);
+    feeLines = rf.lines!;
+    feeLinesForVerify = feeLines;
+    deletableFeeNames = rf.deletableNames!;
+
+    // ⚠ Guard over the UNION of rendered and submitted names. Checking only the rendered
+    // set let a payload that submits a fee it never rendered slip past — and on job 1369
+    // that silently doubles the card fee by editing one of two identical rows.
+    for (const nm of new Set([...deletableFeeNames, ...feeLines.map((l) => l.name)])) {
+      if (preLines.filter((n: any) => String(n.name) === nm).length > 1) {
+        return fail("bad_request",
+          `This job carries "${nm}" more than once in Jobber. Remove the duplicate there first — saving from here would merge them and change what the client is billed.`);
+      }
+    }
   }
 
   // 1. scalar groups in ONE jobEdit
@@ -765,14 +1105,21 @@ Deno.serve(async (req) => {
 
   // 2. line items: create-first, edit by Jobber id, delete LAST (never a
   //    zero-line window — the $0-invoice lesson).
-  if (wantLines !== null) {
+  if (wantLines !== null || feeReq !== null) {
     const cur = await gql(token, Q_JOB, { id: jobGid });
     if (!cur.ok) return fail("jobber_no_answer", "Jobber didn't answer while reading line items.", { applied, failed: "line items" });
     const curLines: any[] = cur.data.job?.lineItems?.nodes ?? [];
     const curByName = new Map(curLines.map((n) => [n.name, n]));
-    const wantByName = new Map(wantLines.map((l) => [l.name, l]));
-    const toCreate = wantLines.filter((l) => !curByName.has(l.name));
-    const toEdit = wantLines.filter((l) => {
+    // 🛑 UNCHANGED, and the service half of the delete predicate below still depends
+    // on it being exactly the inverse of what resolveServices() can emit.
+    const isServiceLine = (name: unknown) => /^\s*0[1-8]\s*-/.test(String(name ?? ""));
+
+    // Fees were resolved and fully validated in the PREFLIGHT above, before any Jobber
+    // mutation. Nothing here may reject — from this point a failure is `partial_push`.
+    const wantAll = [...(wantLines ?? []), ...feeLines];
+    const wantByName = new Map(wantAll.map((l) => [l.name, l]));
+    const toCreate = wantAll.filter((l) => !curByName.has(l.name));
+    const toEdit = wantAll.filter((l) => {
       const c = curByName.get(l.name);
       return c && (Number(c.unitPrice) !== l.unitPrice || Number(c.quantity) !== l.quantity);
     });
@@ -789,9 +1136,32 @@ Deno.serve(async (req) => {
     // resolveServices() can produce (service_line_items.reason='Service
     // Agreement'), which is what makes this predicate the correct inverse.
     // ⚠ NEVER widen this to "everything not submitted" again.
-    const isServiceLine = (name: unknown) => /^\s*0[1-8]\s*-/.test(String(name ?? ""));
-    const toDelete = curLines.filter((n) => isServiceLine(n.name) && !wantByName.has(n.name));
-    preserved = curLines.filter((n) => !isServiceLine(n.name)).map((n) => String(n.name));
+    //
+    // 2026-08-05: fees became deletable too, but ONLY the ones the caller rendered —
+    // `deletableFeeNames` is built from `rendered_fee_ids`, never from a code pattern.
+    // A caller that renders no fees (an old or cached bundle) therefore deletes no fees.
+    // ⚠ THE SERVICE HALF IS GATED ON `wantLines !== null`: a fee-only edit must never
+    // delete a service line just because it was not resubmitted.
+    const toDelete = curLines.filter((n) =>
+      ((wantLines !== null && isServiceLine(n.name)) || deletableFeeNames.has(String(n.name)))
+      && !wantByName.has(n.name));
+    // 🛑 SURVIVORS is the regression alarm, and it is computed from the delete decision
+    // ACTUALLY TAKEN rather than as the complement of a regex. The old `preserved` was
+    // the literal inverse of the delete predicate, so widening the predicate would have
+    // silently shrunk the alarm at the same moment it needed to be loudest — 165 of the
+    // 175 non-service job lines are exactly the codes now being made deletable.
+    const deleteIds = new Set(toDelete.map((n) => String(n.id)));
+    survivors = curLines.filter((n) => !deleteIds.has(String(n.id))).map((n) => String(n.name));
+    // `preserved` = the non-service lines this call is LEAVING ALONE, and it is still the
+    // rule-2c alarm, so it must not go vacuous. Filtering out every rendered fee would have
+    // emptied it on precisely the saves it exists to watch: measured, 114 of the 114
+    // non-service lines on live SA jobs are fee codes. Excluding only the fees actually
+    // being REMOVED keeps it non-empty and, unlike `survivors`, keeps it derived from
+    // INTENT rather than from the delete decision — so it can still contradict a wrong one.
+    preserved = curLines
+      .filter((n) => !isServiceLine(n.name) &&
+        !(deletableFeeNames.has(String(n.name)) && !wantByName.has(n.name)))
+      .map((n) => String(n.name));
     if (toCreate.length) {
       const res = await gql(token, M_LI_CREATE, { jobId: jobGid, input: { lineItems: toCreate.map((l) => ({ ...l, saveToProductsAndServices: false })) } });
       const err = !res.ok ? res.detail : ue(res.data.jobCreateLineItems);
@@ -859,18 +1229,22 @@ Deno.serve(async (req) => {
   // cleanly. Assert the non-service lines we chose not to touch are still on
   // the job, so any future widening of `toDelete` fails loudly instead of
   // quietly costing money.
-  if (preserved.length) {
+  // Two assertions, deliberately not one. `preserved` is derived from INTENT (what this
+  // call meant to leave alone) and `survivors` from the DELETE DECISION actually taken.
+  // Only the first can contradict a wrong decision; only the second catches a third-party
+  // delete between the two reads. Rule 2c's alarm is the first one.
+  if (preserved.length || survivors.length) {
     const names = new Set((j.lineItems?.nodes ?? []).map((n: any) => String(n.name)));
-    const lost = preserved.filter((n) => !names.has(n));
+    const lost = [...new Set([...preserved, ...survivors])].filter((n) => !names.has(n));
     if (lost.length) {
       return fail("verify_failed",
-        `Saved, but these non-service line items are no longer on the Jobber job: ${lost.join(", ")}. Check the job in Jobber before editing it again.`,
+        `Saved, but these line items are no longer on the Jobber job: ${lost.join(", ")}. Check the job in Jobber before editing it again.`,
         { applied });
     }
   }
-  if (wantLines !== null) {
+  if (wantLines !== null || feeLinesForVerify.length) {
     const names = new Set((j.lineItems?.nodes ?? []).map((n: any) => n.name));
-    for (const l of wantLines) {
+    for (const l of [...(wantLines ?? []), ...feeLinesForVerify]) {
       if (!names.has(l.name)) return fail("verify_failed", `Line item "${l.name}" did not land in Jobber — check Jobber.`, { applied });
     }
   }
@@ -881,12 +1255,25 @@ Deno.serve(async (req) => {
   // not show a job's real billing); it is undefined when billing was not part of
   // this edit, and fn_record_client_job is key-presence-aware, so the stored
   // values are then left alone rather than wiped.
-  const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && wantLines !== null, newFreq, bill ?? undefined);
+  // 🛑 `includeLines` MUST cover a fee-only edit, and this is not cosmetic. The dialog
+  // derives its checked state by joining the job's lines FROM OUR DB MIRROR against the
+  // catalogue. If a fee is pushed to Jobber but not mirrored locally, the picker renders
+  // that fee UNCHECKED, the next save reports it as rendered-and-not-submitted, and the
+  // delete path removes a fee the user never touched. Mirroring it closes that loop.
+  const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && (wantLines !== null || feeReq !== null), newFreq, bill ?? undefined);
   const { error: recErr } = await db.rpc("fn_record_client_job", { p: rec });
   if (recErr) {
     return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied });
   }
   // `preserved` is returned so the UI can say what it did NOT touch — a silent
   // "saved" is what let the fee-line deletion go unnoticed for a month.
-  return done({ job_id: jobId, applied, preserved_line_items: preserved });
+  // `preserved` is returned so the UI can say what it did NOT touch. `fee_lines` is
+  // returned so the dialog can show the amount a percent-mode fee actually resolved to —
+  // the server computes it, so the client must be told rather than left to guess.
+  return done({
+    job_id: jobId,
+    applied,
+    preserved_line_items: preserved,
+    fee_lines: feeLinesForVerify.map((l) => ({ name: l.name, unit_price: l.unitPrice, quantity: l.quantity })),
+  });
 });
