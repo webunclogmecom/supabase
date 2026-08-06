@@ -590,3 +590,10 @@ verify_jwt = true
 # (which carries a staff session), so it answers OPTIONS before auth. Never deploy --no-verify-jwt.
 [functions.calculate-driving-time]
 verify_jwt = true
+
+# Calendar day markers (Day Start/End/Dump) -> Jobber Tasks. Invoked by a DB trigger via pg_net with
+# a service_role bearer. verify_jwt = TRUE and the handler ALSO asserts role=service_role, because the
+# anon key is a validly signed JWT and this function holds the Jobber WRITE token. Never deploy this
+# one --no-verify-jwt.
+[functions.jobber-push-task]
+verify_jwt = true
