@@ -910,25 +910,27 @@ Deno.serve(async (req) => {
     }
   }
   if (feeWorkRequested) {
-    // ✅ SERVICE CALL FEES ARE SUPPORTED (2026-08-06, Fred asked for them explicitly).
-    // 🛑 THIS ONLY HOLDS BECAUSE ALL THREE LINE-ITEM MIRROR WRITERS NOW KEEP NON-SA LINES.
-    // Until 2026-08-06 each of them wiped job-scoped rows for anything not titled
-    // "Service Agreement", so an SC fee was real in Jobber, absent from our mirror, rendered
-    // UNCHECKED by the dialog, and deleted by the very next save:
-    //   1. jobToRecord's `includeLines` was gated on isSA        (below in this file)
-    //   2. webhook-jobber ~1137: delete by job_id, re-insert only if (isSA)
-    //   3. sync-jobber-job-drift ~172: want = isSA ? nodes : []  — every 30 minutes
-    // ⚠ IF ANY OF THOSE THREE IS EVER REVERTED, SC FEES SILENTLY DELETE THEMSELVES AGAIN.
-    // They are one change; do not treat them as three independent edits.
+    // 🛑 A SERVICE CALL JOB CARRIES NO JOB-LEVEL LINE ITEMS AT ALL — NOT EVEN FEES.
     //
-    // ⚠ ALSO REQUIRED FIRST, and already shipped: 2026-08-06_1448 made a fee line answer NULL
-    // rather than FALSE for DERM. Mirroring a fee onto an SC job makes it the visit's only
-    // reachable line, and FALSE would have derived "definitively not required" and evicted
-    // 33 live visits from customer.work_orders.
+    // Fred, 2026-08-06, correcting me: "the SC shouldn't have any kind of Line Item … SC can
+    // only have line items at the moment of creating a visit. Because it's for the visit."
     //
-    // Note the SA title is NOT at risk here: saTitle() runs only inside the `p.services`
-    // branch, which still refuses non-SA, and fees never enter `wantLines`. An SC edit
-    // therefore cannot re-derive a "Service Agreement …" title and reclassify the job.
+    // THE MECHANISM (also Fred): "if you add line items on a job, every visit will have for
+    // default those line items, and we don't want that on the SC jobs, it's ok on the SA
+    // though." Jobber INHERITS a job's line items onto every visit it creates. For a Service
+    // Agreement that is the point — the agreed services repeat. For a Service Call every visit
+    // is different work, so EVERYTHING it charges, fees included, is attached when the VISIT
+    // is created.
+    //
+    // ⚠ I BUILT SC FEE SUPPORT ON 2026-08-06 AND IT WAS WRONG. Fred had told me the mechanism
+    // and separately said an SC fee "bills once per visit"; I inferred that a job-level fee was
+    // a wanted exception because it would ride every call. It is not an exception — the fee
+    // bills per visit BECAUSE IT GOES ON THE VISIT. That inference was mine, never his.
+    // ⇒ Do not re-derive this from the mechanism. A fee on an SC JOB is wrong even though it
+    //   would "work", because it silently defaults onto every future visit of that job.
+    if (!isSA) {
+      return fail("bad_request", "A Service Call job carries no line items — its charges, fees included, go on the visit when the visit is created.");
+    }
     // 🛑 BOTH KEYS OR NEITHER — same doctrine as the billing pair below, and for a worse
     // reason. The two carry OPPOSITE conventions: `rendered_fee_ids` is a statement of
     // fact ("I showed these"), `fees` is a desired end state ("keep exactly these"). If
@@ -1281,10 +1283,10 @@ Deno.serve(async (req) => {
   // catalogue. If a fee is pushed to Jobber but not mirrored locally, the picker renders
   // that fee UNCHECKED, the next save reports it as rendered-and-not-submitted, and the
   // delete path removes a fee the user never touched. Mirroring it closes that loop.
-  // ⚠ NO LONGER GATED ON isSA (2026-08-06). A Service Call job can now carry fee lines, and if
-  // they are pushed to Jobber but not mirrored here the dialog renders them unchecked and the
-  // next save deletes them. This is writer 1 of the three named above.
-  const rec = jobToRecord(clientId, jobRow.property_id, j, (wantLines !== null || feeReq !== null), newFreq, bill ?? undefined);
+  // Gated on isSA again: only a Service Agreement carries job-level line items at all, so only
+  // an SA edit has any to mirror. `feeReq` can no longer be non-null on a non-SA job — the fee
+  // branch above refuses those outright.
+  const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && (wantLines !== null || feeReq !== null), newFreq, bill ?? undefined);
   const { error: recErr } = await db.rpc("fn_record_client_job", { p: rec });
   if (recErr) {
     return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied });

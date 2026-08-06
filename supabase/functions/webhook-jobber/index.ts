@@ -1150,27 +1150,16 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   //
   // Measured before the change: of 630 SC jobs, the only 8 holding job-scoped lines in Jobber
   // were archived, so this widens what we mirror with no live back-fill surprise.
-  // ⚠ AN EARLIER VERSION OF THIS FIX MIRRORED EVERYTHING FOR EVERY KIND, WHICH IS TOO WIDE AS
-  // A MODEL: Jobber inherits a job's lines onto every visit it creates, so a Service Call's
-  // SERVICES belong on the VISIT and only FEES ride the job (Fred, 2026-08-06). Non-SA
-  // therefore mirrors FEE LINES ONLY.
-  // 🛑 I first reported that the wide version had imported hundreds of rows. It had not — see
-  // the fuller correction in sync-jobber-job-drift. This narrowing prevents drift; it repaired
-  // no damage, because there was none.
+  // 🛑 A Service Agreement carries its agreed services; EVERY OTHER JOB KIND CARRIES NONE.
+  // Fred, 2026-08-06: "the SC shouldn't have any kind of Line Item … SC can only have line
+  // items at the moment of creating a visit. Because it's for the visit." Jobber inherits a
+  // job's line items onto every visit it creates, so anything on a Service Call JOB silently
+  // becomes the default for every future call.
+  // ⚠ I widened this twice on 2026-08-06 to allow fee lines on SC jobs. Both were wrong — a
+  // fee on an SC job "works" and still defaults onto every future visit. See the fuller note
+  // in sync-jobber-job-drift.
   const isSA = (j.title ?? '').toLowerCase().startsWith('service agreement')
-  const allNodes: any[] = j.lineItems?.nodes ?? []
-  // Fee codes read from the catalogue, not hardcoded; a failed read keeps the known set rather
-  // than an empty one, since empty would silently stop mirroring every SC fee.
-  let feeCodes = new Set(['25', '26', '27'])
-  if (!isSA) {
-    const { data: fc } = await supabase.from('service_line_items').select('code').in('reason', ['fee', 'other'])
-    if (fc && fc.length) feeCodes = new Set(fc.map((r: any) => String(r.code).padStart(2, '0')))
-  }
-  const isFeeLine = (name: unknown) => {
-    const m = String(name ?? '').trim().match(/^([0-9]{1,2})\s*-/)
-    return !!m && feeCodes.has(m[1].padStart(2, '0'))
-  }
-  const jobLineNodes = isSA ? allNodes : allNodes.filter((n: any) => isFeeLine(n.name))
+  const jobLineNodes: any[] = isSA ? (j.lineItems?.nodes ?? []) : []
   await supabase.from('line_items').delete().eq('job_id', entityId)
   if (jobLineNodes.length > 0) {
     await supabase.from('line_items').insert(jobLineNodes.map((n: any) => ({

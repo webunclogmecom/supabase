@@ -89,22 +89,6 @@ const Q_JOBS = `query($ids: [EncodedId!]) {
 
 const norm = (s: unknown) => String(s ?? "").trim();
 
-// Fee/admin catalogue codes, FETCHED rather than hardcoded so that adding a fourth fee to
-// service_line_items does not silently drop out of the non-SA mirror. Resolved once per
-// invocation; falls back to the known set if the read fails, because returning an EMPTY set
-// would silently stop mirroring every SC fee — a false "nothing to sync" of exactly the kind
-// this file has been bitten by before.
-let FEE_CODES = new Set<string>(["25", "26", "27"]);
-async function loadFeeCodes() {
-  const { data, error } = await db.from("service_line_items").select("code").in("reason", ["fee", "other"]);
-  if (!error && data && data.length) {
-    FEE_CODES = new Set(data.map((r: any) => String(r.code).padStart(2, "0")));
-  }
-}
-const isFeeLineName = (name: unknown) => {
-  const m = String(name ?? "").trim().match(/^([0-9]{1,2})\s*-/);
-  return !!m && FEE_CODES.has(m[1].padStart(2, "0"));
-};
 const numEq = (a: unknown, b: unknown) => Math.abs(Number(a ?? 0) - Number(b ?? 0)) < 0.005;
 
 Deno.serve(async (req) => {
@@ -112,8 +96,6 @@ Deno.serve(async (req) => {
   if (bearerRole(req) !== "service_role") {
     return new Response(JSON.stringify({ error: "service_role required" }), { status: 403 });
   }
-
-  await loadFeeCodes();
 
   const started = new Date().toISOString();
   const stats = { checked: 0, updated: 0, gone_archived: 0, line_syncs: 0, errors: 0, db_only_drift: [] as string[], error_samples: [] as string[] };
@@ -187,39 +169,36 @@ Deno.serve(async (req) => {
             stats.updated++;
           }
 
-          // Line items: an SA job mirrors its whole set; a non-SA job mirrors ONLY FEE LINES.
+          // Line items: an SA job carries the set, EVERY OTHER KIND CARRIES NONE.
           //
-          // 🛑 THIS WAS `isSA ? nodes : []` UNTIL 2026-08-06, which deleted an SC job's fee from
-          // our mirror every 30 minutes while it stayed real in Jobber — so the dialog rendered
-          // it UNCHECKED and the next save deleted it from Jobber for real.
+          // 🛑 THIS IS THE RULE, NOT AN IMPLEMENTATION DETAIL. Fred, 2026-08-06:
+          // "the SC shouldn't have any kind of Line Item … SC can only have line items at the
+          // moment of creating a visit. Because it's for the visit."
+          // Jobber INHERITS a job's line items onto every visit it creates, so anything left on
+          // a Service Call JOB silently becomes the default on every future call.
           //
-          // ⚠ AND IT WAS BRIEFLY `nodes` FOR EVERY KIND, WHICH IS TOO WIDE AS A MODEL.
-          // Fred, 2026-08-06: Jobber INHERITS a job's line items onto every visit it creates,
-          // so a Service Call's SERVICES belong on the VISIT and only FEES ride the job.
-          // Mirroring an SC job's service lines would also feed fn_visit_requires_derm, which
-          // walks job-scoped lines when deriving a compliance flag.
-          // ⇒ Non-SA mirrors fee lines ONLY.
+          // ⚠ ON 2026-08-06 I WIDENED THIS TWICE AND BOTH WERE WRONG, so do not re-derive it:
+          //   - first to `nodes` for every kind, to support fee lines on SC jobs;
+          //   - then to "non-SA mirrors fee lines only", still wrong for the same reason.
+          // A fee on an SC JOB "works" and is still wrong: it defaults onto every future visit.
+          // The fee belongs on the VISIT, which is exactly why it bills once per call.
           //
-          // 🛑 CORRECTION TO MY OWN FIRST ACCOUNT, kept because the mistake is instructive.
-          // I reported that the wide version had imported 627 rows onto 452 non-SA jobs and
-          // called it damage. IT HAD NOT. Those rows were created 2026-04-29 to 2026-06-23 and
-          // sit almost entirely on 347 LEGACY FREE-TEXT-TITLED jobs ("Grease Trap Pumping" is a
-          // job TITLE, not a Service Call). Only THREE job-scoped rows were written all day, all
-          // three mine from acceptance tests. I had compared "jobs whose title is not
-          // 'Service Agreement%'" against a remembered figure about SERVICE CALL jobs — two
-          // different populations — and read months-old data as my own doing. `line_syncs: 78`
-          // was likewise the normal rate, not a mass import; the next pass returned 0.
-          // ⇒ This narrowing prevents future drift. It repaired nothing.
+          // ⚠ AND A SEPARATE CORRECTION worth keeping: while widened, I reported that it had
+          // imported 627 rows onto 452 non-SA jobs and called it damage. IT HAD NOT. Those rows
+          // date from 2026-04-29 to 2026-06-23 and sit almost entirely on legacy free-text-titled
+          // jobs ("Grease Trap Pumping" is a job TITLE, not a Service Call). I had compared
+          // "jobs not titled Service Agreement%" against a remembered figure about SERVICE CALL
+          // jobs — two different populations — and read months-old data as my own doing.
           //
           // ⚠ Writer 3 of THREE that must agree: jobToRecord's `includeLines` in
           // save-client-job, webhook-jobber ~1137, and this. They are one change, not three.
           const isSA = norm(j.title || row.title).toLowerCase().startsWith("service agreement");
-          const allNodes = (j.lineItems?.nodes ?? []);
-          const want = (isSA ? allNodes : allNodes.filter((n: any) => isFeeLineName(n.name)))
-            .map((n: any) => ({
-              name: norm(n.name), quantity: Number(n.quantity ?? 1),
-              unit_price: Number(n.unitPrice ?? 0), total_price: n.totalPrice != null ? Number(n.totalPrice) : null,
-            }));
+          const want = isSA
+            ? (j.lineItems?.nodes ?? []).map((n: any) => ({
+                name: norm(n.name), quantity: Number(n.quantity ?? 1),
+                unit_price: Number(n.unitPrice ?? 0), total_price: n.totalPrice != null ? Number(n.totalPrice) : null,
+              }))
+            : [];
           const { data: have } = await db.from("line_items")
             .select("name, quantity, unit_price")
             .eq("job_id", row.id).is("visit_id", null).is("invoice_id", null);
