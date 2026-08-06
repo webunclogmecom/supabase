@@ -105,7 +105,13 @@ async function askVision(bytes: Uint8Array, mediaType: string): Promise<string> 
   });
   if (!r.ok) throw new Error(`anthropic ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = await r.json();
-  return (j?.content?.[0]?.text ?? "").trim();
+  // 🛑 NOT content[0].text — the content array can lead with a non-text block (thinking), making
+  // content[0].text undefined, which reads back as "UNREADABLE" on a legible sheet. Because a
+  // no-read is treated as "no opinion" by the placement gate, that failure is SILENT: the sheet just
+  // never gets a read and nobody sees an error. Found 2026-08-06 in the sibling roster reader, where
+  // it zeroed 3 of 5 pages nondeterministically. Select text blocks by TYPE.
+  return ((j?.content ?? []).filter((c: any) => c?.type === "text")
+                            .map((c: any) => c?.text ?? "").join("\n")).trim();
 }
 
 Deno.serve(async (req) => {

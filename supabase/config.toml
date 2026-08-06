@@ -597,3 +597,10 @@ verify_jwt = true
 # one --no-verify-jwt.
 [functions.jobber-push-task]
 verify_jwt = true
+
+# Reads the ordered Section B roster off a scanned address sheet so a stamp's row can be MEASURED
+# rather than inferred from client-set arithmetic. verify_jwt = TRUE and the handler ALSO asserts
+# role=service_role: the anon key is a validly signed JWT, and this holds ANTHROPIC_API_KEY, so
+# verify_jwt alone would leave an open vision endpoint. Never deploy --no-verify-jwt.
+[functions.ocr-address-sheet-rows]
+verify_jwt = true
