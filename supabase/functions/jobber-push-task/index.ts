@@ -15,12 +15,14 @@
 // Jobber AI itself notes an Event is "not a true single-person assignment ... visible to all team
 // members". And the crew ALREADY uses Tasks exactly this way: 11 in one week, 7 with no client.
 //
-// 🛑 MARKERS ARE UNASSIGNED ON PURPOSE (v1). A marker is per-TRUCK; a Jobber Task assigns to a
-// PERSON. There is no stable truck→driver mapping to derive one from — measured over 30 days,
-// truck 1 had 5 distinct drivers, truck 2 five, truck 3 three, and public.dump_driver_truck maps
-// truck 1 to Mark AND Aaron AND Anthony simultaneously. Guessing would drop a marker onto a real
-// crew member's real schedule. The truck goes in the TITLE instead. 16 employees do carry a Jobber
-// user link, so assignment is a one-line change the day Fred decides the rule. Do not invent one.
+// 🛑 ASSIGNMENT: EVERYONE ON THAT TRUCK THAT DAY (Fred, 2026-08-06). A marker is per-TRUCK; a Jobber
+// Task assigns to PEOPLE — and `assignedTo` is a LIST, which is what makes this honest. Measured over
+// 30 days, a truck-day is NOT one driver: 42 had one, 13 had two, 2 had three. So assign them all;
+// picking "the" driver would put the marker on the wrong person about a quarter of the time.
+// ⚠ And on FUTURE dates nobody is usually known yet — next 14 days, all 50 visits carry a truck but
+// only 11 carry a driver. Markers are placed ahead of time, so "unassigned" is the NORMAL early state.
+// We send `assignedTo` only when we resolved someone: sending [] on an edit would STRIP an assignment
+// a dispatcher set by hand, and "we don't know" must never overwrite "somebody decided".
 //
 // AUTH: invoked by a DB trigger (pg_net) with a service_role bearer. Deployed verify_jwt=true, and
 // the handler ALSO asserts role=service_role — the anon key is a validly signed JWT, so the gateway
@@ -125,6 +127,44 @@ function errsOf(res: any, field: string): string[] {
   return [...top, ...user].filter(Boolean);
 }
 
+// Who is on this truck on this date? (Fred, 2026-08-06: "assign it to whoever is on that truck that
+// day.") Returns Jobber user ids, possibly several, possibly none.
+//
+// 🛑 IT IS OFTEN MORE THAN ONE PERSON, AND assignedTo IS A LIST — SO ASSIGN THEM ALL. Measured over
+// 30 days: 42 truck-days had one driver, 13 had two, 2 had three. Picking "the" driver would put the
+// marker on the wrong person's schedule roughly a quarter of the time.
+//
+// 🛑 AND IT IS OFTEN NOBODY YET, WHICH IS NORMAL, NOT AN ERROR. Markers get placed ahead of time.
+// Over the next 14 days ALL 50 visits carry a truck but only 11 carry a driver. So an empty result is
+// the common case for a future marker: return [], leave the Task unassigned, never guess. A later
+// re-push picks the driver up once it is known (taskEdit accepts assignedTo).
+//
+// driver_id on ops.v_calendar_visit is COALESCE(GPS actual, assigned) — the app's canonical
+// "effective driver" — so this matches what the Calendar itself shows for that day.
+async function assigneesFor(vehicleId: number | null, dateISO: string): Promise<string[]> {
+  if (!vehicleId) return [];
+  const { data: visits, error: vErr } = await ops.from("v_calendar_visit")
+    .select("driver_id").eq("vehicle_id", vehicleId).eq("visit_date", dateISO)
+    .not("driver_id", "is", null);
+  if (vErr) { console.error("[task] driver lookup failed:", vErr.message); return []; }
+  const driverIds = [...new Set((visits ?? []).map((v: any) => v.driver_id))];
+  if (!driverIds.length) return [];
+
+  const { data: links, error: lErr } = await db.from("entity_source_links")
+    .select("entity_id, source_id")
+    .eq("entity_type", "employee").eq("source_system", "jobber").in("entity_id", driverIds);
+  if (lErr) { console.error("[task] employee link lookup failed:", lErr.message); return []; }
+
+  const found = (links ?? []).map((l: any) => l.source_id).filter(Boolean);
+  // A driver with no Jobber user link is dropped rather than failing the push — the marker is still
+  // worth showing. Log it, because it means someone's employee link is missing.
+  if (found.length < driverIds.length) {
+    const linked = new Set((links ?? []).map((l: any) => l.entity_id));
+    console.warn(`[task] drivers with no Jobber user link: ${driverIds.filter((d) => !linked.has(d)).join(",")}`);
+  }
+  return found;
+}
+
 const TITLES: Record<string, string> = { start: "Day Start", end: "Day End", dump: "Dump" };
 
 Deno.serve(async (req) => {
@@ -197,11 +237,17 @@ Deno.serve(async (req) => {
     truck ? `(${truck})` : null,
   ].filter(Boolean).join(" ");
 
-  const input = {
+  const assignedTo = await assigneesFor(m.vehicle_id, m.marker_date);
+
+  // assignedTo is sent ONLY when we actually resolved someone. Sending [] on an edit would strip an
+  // assignment a dispatcher may have set by hand in Jobber, which is a silent destructive write —
+  // "we don't know" must not overwrite "somebody decided".
+  const input: Record<string, unknown> = {
     title,
     instructions: "Route marker from the UnclogMe Visit Calendar. Edit it there, not here.",
     startAt, endAt, allDay: false,
   };
+  if (assignedTo.length) input.assignedTo = assignedTo;
 
   let taskId = link?.source_id as string | undefined;
   if (taskId) {
@@ -222,8 +268,8 @@ Deno.serve(async (req) => {
   // think. Read the Task back and confirm the fields; only then record the link. Without this a
   // failed-but-quiet push leaves a marker that CLAIMS it synced, which is the exact false success
   // the Calendar/Jobber write rule exists to prevent.
-  const check = await gql(token, `query($id: EncodedId!){ task(id: $id){ id title startAt endAt } }`,
-    { id: taskId });
+  const check = await gql(token, `query($id: EncodedId!){ task(id: $id){ id title startAt endAt
+    assignedUsers(first:10){ nodes{ id name{ full } } } } }`, { id: taskId });
   const t = check?.data?.task;
   const startMatches = t?.startAt && Math.abs(new Date(t.startAt).getTime() - new Date(startAt).getTime()) < 60_000;
   if (!t || t.title !== title || !startMatches) {
@@ -261,7 +307,11 @@ Deno.serve(async (req) => {
     }, 200);
   }
 
-  return json({ ok: true, op: link ? "edit" : "create", task: taskId, title, startAt, endAt });
+  return json({
+    ok: true, op: link ? "edit" : "create", task: taskId, title, startAt, endAt,
+    assigned: (t.assignedUsers?.nodes ?? []).map((u: any) => u?.name?.full).filter(Boolean),
+    assigned_count: assignedTo.length,
+  });
 });
 
 function json(b: Record<string, unknown>, status = 200) {
