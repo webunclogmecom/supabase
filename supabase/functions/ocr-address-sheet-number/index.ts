@@ -120,19 +120,48 @@ Deno.serve(async (req) => {
 
   const started = Date.now();
   let limit = DEFAULT_LIMIT;
-  try { limit = Math.max(1, Math.min(10, Number((await req.json())?.limit) || DEFAULT_LIMIT)); } catch { /* no body */ }
+  let tickets: string[] = [];
+  try {
+    const b = await req.json();
+    limit = Math.max(1, Math.min(60, Number(b?.limit) || DEFAULT_LIMIT));
+    if (Array.isArray(b?.tickets)) tickets = b.tickets.map((t: any) => String(t).trim()).filter((t: string) => /^\d{4,8}$/.test(t));
+  } catch { /* no body */ }
 
-  // Targets come from derm.fn_sheet_number_ocr_targets — the selection logic (and the two traps it
-  // encodes) lives in SQL where it can be tested in a transaction, not in this handler.
-  const tr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_sheet_number_ocr_targets`, {
-    method: "POST", headers: dermHeaders, body: JSON.stringify({ p_limit: limit }),
-  });
-  if (!tr.ok) return json({ error: "targets rpc failed", status: tr.status, detail: (await tr.text()).slice(0, 300) }, 500);
-  const rows: { dump_folder: string; ticket: string; page: number; image_url: string }[] = await tr.json();
+  let rows: { dump_folder: string; ticket: string; page: number; image_url: string }[] = [];
+
+  if (tickets.length) {
+    // EXPLICIT MODE (2026-08-06). Read the sheet number for named tickets regardless of placement state.
+    //
+    // WHY THIS EXISTS: derm.fn_sheet_number_ocr_targets deliberately offers only folders with an
+    // UNPLACED row, on the reasoning that reading a fully-placed sheet "changes no decision". That is
+    // true for the auto-place gate and false for identity. Ticket 831710 was fully placed, completed,
+    // and linked to the WRONG sheet (paper reads 1008, DB recorded 1079) — and the cron could never
+    // have looked at it, because it was already placed. The sweep was structurally blind to the exact
+    // defect it would have caught. This mode answers "WHICH SHEET IS THIS?", not "what can I stamp?".
+    //
+    // Also not restricted to `ticket-%` folders: the pre-2026-07 sets use `derm/<n>` and
+    // `backfill-<n>` shapes, and those are precisely the ones old enough to predate sheet recording.
+    // (The `window<N>-sheet<M>` exclusion in the cron target list stands for the cron's own purpose.)
+    const qr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_sheet_number_ocr_targets_for`, {
+      method: "POST", headers: dermHeaders, body: JSON.stringify({ p_tickets: tickets, p_limit: limit }),
+    });
+    if (!qr.ok) return json({ error: "explicit targets rpc failed", status: qr.status, detail: (await qr.text()).slice(0, 300) }, 500);
+    rows = await qr.json();
+  } else {
+    // Targets come from derm.fn_sheet_number_ocr_targets — the selection logic (and the two traps it
+    // encodes) lives in SQL where it can be tested in a transaction, not in this handler.
+    const tr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_sheet_number_ocr_targets`, {
+      method: "POST", headers: dermHeaders, body: JSON.stringify({ p_limit: Math.min(limit, 10) }),
+    });
+    if (!tr.ok) return json({ error: "targets rpc failed", status: tr.status, detail: (await tr.text()).slice(0, 300) }, 500);
+    rows = await tr.json();
+  }
 
   const out: any[] = [];
   for (const r of rows) {
-    if (Date.now() - started > TIME_BUDGET_MS) { out.push({ stopped: "time budget" }); break; }
+    // Explicit mode is driven by a caller that loops until the backlog is empty, so it may use a
+    // longer window; the cron path keeps the tight budget that protects its 5-minute schedule.
+    if (Date.now() - started > (tickets.length ? 55000 : TIME_BUDGET_MS)) { out.push({ stopped: "time budget" }); break; }
     let raw = "", cls = { sheet_no: null as string | null, confidence: "unreadable" };
     try {
       const img = await fetch(r.image_url);
