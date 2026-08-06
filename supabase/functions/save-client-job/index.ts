@@ -184,11 +184,18 @@ function resolveBilling(p: any, isSA: boolean, opts: { legacy: boolean }): Billi
     return { err: "Billing is required: choose a billing type and an invoice frequency." };
   }
   if (!isSA && btype === "fixed") {
-    // 🛑 THE GUARD STAYS, BUT ITS ORIGINAL REASON EXPIRED ON 2026-08-06 and is corrected here
-    // rather than left to mislead. It used to say a Service Call carries NO job line items; an
-    // SC can now carry FEE lines. The guard is still right for a better reason: a fixed-price
-    // invoice bills from the JOB's lines, and an SC's services live on its VISITS, so a
-    // fixed-price SC would invoice its fees ALONE and never the work.
+    // 🛑 THE GUARD STAYS. Its original reason was "a Service Call carries NO job line items",
+    // which stopped being literally true on 2026-08-06 when SC jobs gained FEE lines.
+    //
+    // ✅ THE ACTUAL REASON, from Fred 2026-08-06 — and it is the mechanism, not a convention:
+    // "if you add line items on a job, every visit will have for default those line items, and
+    // we don't want that on the SC jobs, it's ok on the SA though."
+    // Jobber INHERITS a job's line items onto every visit it creates. For a Service Agreement
+    // that is exactly right — the agreed services repeat every visit. For a Service Call it is
+    // wrong, because every call is different work, which is why SC SERVICES live on the VISIT
+    // and never on the job. Fee lines are the deliberate exception: inheritance is the POINT
+    // there, since the card/ACH fee is meant to ride every call ("it bills once per visit").
+    // ⇒ A fixed-price SC would therefore invoice the inherited FEES alone and never the work.
     return { err: "A Service Call bills per visit — a fixed price would invoice only the job's fee lines, not the work, because a Service Call's services live on its visits." };
   }
   // ⚠ JOBBER'S OWN RULE, learned the hard way 2026-08-01: PER_VISIT and
