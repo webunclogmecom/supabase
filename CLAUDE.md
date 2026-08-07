@@ -116,6 +116,32 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
 
 Old rows (pre-2026-05-23 18:30 UTC) have `app_source IS NULL` — no attribution available retroactively.
 
+#### 🛑 `audit.logs.changed_by` HAS NEVER BEEN POPULATED. Read `jwt_claims->>'email'` instead (2026-08-07)
+
+Measured across the whole table, with a control: **54,756 rows, `changed_by` non-null in 0 of them**,
+`count(distinct changed_by) = 0`. The control is `app_source`, non-null on 49,551 rows in the same
+query, so this is not a reader returning NULL for everything.
+
+**Why:** `audit.log_change` reads `current_setting('request.jwt.claim.sub')` — **singular `claim`**.
+PostgREST sets `request.jwt.claims` (plural, a JSON object). The singular key is never set, so the
+column has been NULL since the trigger was written.
+
+⚠ **Do not over-correct this into "audit.logs cannot tell us who did it."** It can, just not through
+that column: `jwt_claims->>'email'` is populated on **4,578** rows. So the query is
+
+```sql
+select changed_at, table_name, operation, app_source, jwt_claims->>'email' as who
+  from audit.logs where ... ;      -- NOT changed_by, which is always NULL
+```
+
+Two consequences worth carrying:
+- Any past reasoning of the form *"audit.logs will record who did this"* that leaned on `changed_by`
+  was wrong. Re-check anything that concluded a table was safe on that basis.
+- `db_role` does not help either: `audit.log_change` is SECURITY DEFINER owned by `postgres` and
+  stores `CURRENT_USER`, so **every** row reads `db_role = 'postgres'` regardless of the writing
+  role. A write made as `authenticated` through PostgREST is captured (with `old_row` intact, so it
+  is recoverable) but `db_role` will not reveal that a browser rather than an edge function did it.
+
 ---
 
 ## Collaboration rules
@@ -178,6 +204,29 @@ The view laundering the table grant makes it look safe right up until the functi
   schema come out anon-readable, new `public` functions come out `authenticated`-EXECUTABLE. Check
   every new object, and revoke explicitly. (`derm.address_sheet_clients` and a SECDEF wrapper both
   needed this on 2026-07-28.)
+  - 🛑 **IT HAPPENED AGAIN ON 2026-08-07, TO SOMEONE WHO HAD READ THIS BULLET THAT MORNING**, so
+    the rule as written is not enough and here is the missing half. `public.job_frequency_changes`
+    shipped with `authenticated` holding **SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and
+    TRIGGER**, RLS off, no policies: a signed-in staff browser could edit, delete or truncate a
+    compliance history table through PostgREST. The migration's own header asserted the opposite
+    ("`authenticated` holds nothing"), and its GRANT statements were all correct. `CREATE TABLE` had
+    already handed out everything **before** they ran, and a GRANT cannot remove what it did not
+    create. Fixed by `2026-08-07_1420`.
+  - ⇒ **A migration that verifies its own GRANT statements passes while the table stays wide open.**
+    The pre-apply probe tested the constraints, the audit trigger and the grants that were WRITTEN.
+    It never asked what else was there. **Read `relacl` AFTER the fact and compare it against the
+    INTENDED set**, in the migration itself, with a sibling table as the control:
+    ```sql
+    select c.relacl from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relname = '<new_table>';
+    -- must equal the sibling's, and has_table_privilege('authenticated', ..., 'SELECT') must be false
+    ```
+  - 🛑 **AND A PROBE OVER THE MANAGEMENT API CANNOT SEE THIS AT ALL.** That transport runs as
+    `postgres`, which is the table OWNER and holds `rolbypassrls`, and **an owner bypasses the GRANT
+    system entirely**. So "a valid row inserts cleanly" is true no matter what the ACL says, and
+    every permission probe written that way is measuring nothing. `SET LOCAL ROLE authenticated`
+    (and `anon`) before asserting anything grant-shaped, or use `has_table_privilege(<role>, ...)`
+    which does not depend on who is asking.
 
 ### ⚠ A SECDEF function BYPASSES RLS — so wrapping a write in one can silently WIDEN it (2026-08-05)
 
