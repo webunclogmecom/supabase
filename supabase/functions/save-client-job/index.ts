@@ -642,6 +642,17 @@ Deno.serve(async (req) => {
     // items at the moment of creating a visit." Jobber inherits a job's lines onto every
     // visit it creates, so a fee on an SC JOB silently becomes the default on every
     // future call. Do not re-derive an exception from the mechanism. See index.ts:931.
+    // 🛑 SHAPE-VALIDATE BEFORE THE Array.isArray GATES BELOW READ IT. Every fee gate on
+    // this path is `Array.isArray(p.fees) && p.fees.length`, so `fees` sent as an OBJECT
+    // rather than a list evaluates false at every one of them: the job is created with no
+    // fee and the response is `ok: true, fee_lines: []`. A billing miss reported as a
+    // success is the one outcome this whole feature exists to prevent, and the edit path
+    // already refuses the identical payload ("`fees` must be a list"). Silence here and a
+    // refusal there is the asymmetry, not the strictness.
+    if (p.fees !== undefined && !Array.isArray(p.fees)) return fail("bad_request", "`fees` must be a list.");
+    if (p.rendered_fee_ids !== undefined && !Array.isArray(p.rendered_fee_ids)) {
+      return fail("bad_request", "`rendered_fee_ids` must be a list.");
+    }
     if (kind !== "SA" && Array.isArray(p.fees) && p.fees.length) {
       return fail("bad_request",
         "A Service Call job carries no line items at all, fees included. Everything it charges goes on the visit when the visit is created.");
@@ -791,6 +802,22 @@ Deno.serve(async (req) => {
         "Jobber created the job but it doesn't match what was sent — check it in Jobber before retrying.",
         { jobber_number: job.jobNumber });
     }
+    // ⚠ The count above is a CARDINALITY check and cannot see a substitution at the same
+    // count. The edit path asserts every wanted line by NAME (see the verify block near the
+    // end of this file), so without this the newer path carried the weaker of the two
+    // checks for the same class of failure. Assert names here too, fees included: a fee
+    // that quietly does not land is a billing miss, which is the whole reason the fee lines
+    // were added to the count in the first place.
+    {
+      const landed = new Set((job.lineItems?.nodes ?? []).map((n: any) => String(n.name)));
+      for (const l of allLines) {
+        if (!landed.has(l.name)) {
+          return fail("verify_failed",
+            `Jobber created the job but "${l.name}" is not on it — check it in Jobber before retrying.`,
+            { jobber_number: job.jobNumber });
+        }
+      }
+    }
     // Billing verify: the TYPE must read back exactly.
     const wantType = btype === "fixed" ? "FIXED_PRICE" : "VISIT_BASED";
     if (String(job.billingType).toUpperCase() !== wantType) {
@@ -933,7 +960,18 @@ Deno.serve(async (req) => {
     if (!Number.isFinite(newFreq) || newFreq < 1 || newFreq > 365) {
       return fail("bad_request", "Frequency must be between 1 and 365 days.");
     }
-    const prevFreq = Number.isFinite(Number(jobRow.frequency_days)) ? Number(jobRow.frequency_days) : null;
+    // 🛑 `Number(null)` is 0, and `Number.isFinite(0)` is true, so writing this as
+    //    Number.isFinite(Number(x)) ? Number(x) : null
+    // makes the null branch DEAD and records old_frequency_days = 0 for a job that had
+    // no cadence on record. That is a lie with a plausible face, because 0 is a real
+    // live value on an SA job (all 23 Warranty-of-Drainage jobs carry it), so "was 0,
+    // now 90" and "had none, now 90" become indistinguishable in the history.
+    // Test it against null explicitly. Currently latent (0 of 176 non-archived SA jobs
+    // hold a NULL frequency; the 347 that do are all archived), which is exactly why it
+    // would have sat here unnoticed.
+    const prevFreq = jobRow.frequency_days === null || jobRow.frequency_days === undefined
+      ? null
+      : (Number.isFinite(Number(jobRow.frequency_days)) ? Number(jobRow.frequency_days) : null);
     // Only an ACTUAL change is a change. Demanding a reason when the dialog resubmits the
     // same number would make every unrelated save impossible, and would fill the table
     // with rows recording that nothing happened (the DB constraint refuses those anyway).
@@ -1212,9 +1250,9 @@ Deno.serve(async (req) => {
   // 1. scalar groups in ONE jobEdit
   if (Object.keys(edit).length) {
     const res = await gql(token, M_EDIT, { jobId: jobGid, input: edit });
-    if (!res.ok) return fail("jobber_rejected", `Jobber refused the edit: ${res.detail}`, { applied });
+    if (!res.ok) return fail("jobber_rejected", `Jobber refused the edit: ${res.detail}`, { applied, start_date_first_set: startDateFirstSet });
     const uerr = ue(res.data.jobEdit);
-    if (uerr) return fail("jobber_rejected", `Jobber refused the edit: ${uerr}`, { applied });
+    if (uerr) return fail("jobber_rejected", `Jobber refused the edit: ${uerr}`, { applied, start_date_first_set: startDateFirstSet });
     applied.push(...Object.keys(edit).map((k) =>
       k === "customFields" ? "frequency"
       : k === "timeframe" ? "dates"
@@ -1301,23 +1339,23 @@ Deno.serve(async (req) => {
 
   // 3. VERIFY: re-read and compare every changed group (ET dates, not raw strings)
   const ver = await gql(token, Q_JOB, { id: jobGid });
-  if (!ver.ok) return fail("verify_failed", "Saved in Jobber but the verification read failed — check Jobber.", { applied });
+  if (!ver.ok) return fail("verify_failed", "Saved in Jobber but the verification read failed — check Jobber.", { applied, start_date_first_set: startDateFirstSet });
   const j = ver.data.job;
   if (edit.timeframe && etDate(j.startAt) !== (edit.timeframe as any).startAt) {
-    return fail("verify_failed", "Jobber accepted the date change but reads back a different date — check Jobber.", { applied });
+    return fail("verify_failed", "Jobber accepted the date change but reads back a different date — check Jobber.", { applied, start_date_first_set: startDateFirstSet });
   }
   if (edit.instructions !== undefined && (j.instructions ?? "") !== edit.instructions) {
-    return fail("verify_failed", "Jobber accepted the instructions but reads back different text — check Jobber.", { applied });
+    return fail("verify_failed", "Jobber accepted the instructions but reads back different text — check Jobber.", { applied, start_date_first_set: startDateFirstSet });
   }
   if (edit.title !== undefined && j.title !== edit.title) {
-    return fail("verify_failed", "Jobber accepted the services but the job title reads back differently — check Jobber.", { applied });
+    return fail("verify_failed", "Jobber accepted the services but the job title reads back differently — check Jobber.", { applied, start_date_first_set: startDateFirstSet });
   }
   if (bill) {
     const wantType = bill.billing_type === "fixed" ? "FIXED_PRICE" : "VISIT_BASED";
     if (String(j.billingType).toUpperCase() !== wantType) {
       return fail("verify_failed",
         `Jobber accepted the edit but the billing type reads back as ${j.billingType}, not ${wantType} — check it in Jobber.`,
-        { applied });
+        { applied, start_date_first_set: startDateFirstSet });
     }
     // ⚠ THE GAP THIS CLOSES. Until 2026-08-03 the verify asserted ONLY billingType,
     // yet jobToRecord writes billing_type AND invoice_frequency AND invoice_rrule —
@@ -1330,7 +1368,7 @@ Deno.serve(async (req) => {
     if (wantSched && gotSched && gotSched !== wantSched.toUpperCase()) {
       return fail("verify_failed",
         `Jobber accepted the edit but the invoice schedule reads back as ${gotSched}, not ${wantSched} — check it in Jobber.`,
-        { applied });
+        { applied, start_date_first_set: startDateFirstSet });
     }
     // And assert the RULE ITSELF landed — the interval, the day, the weekdays. This
     // compares against recurrenceSchedule.calendarRule, which is the rule verbatim,
@@ -1340,7 +1378,7 @@ Deno.serve(async (req) => {
     if (rmm) {
       return fail("verify_failed",
         `Jobber accepted the edit but stored a different invoice schedule (${rmm}). Its summary reads "${j.invoiceSchedule?.scheduleSummary ?? "?"}" — check it in Jobber.`,
-        { applied });
+        { applied, start_date_first_set: startDateFirstSet });
     }
   }
   // ⚠ THE CHECK WHOSE ABSENCE HID THE BUG. The old verify only asserted that
@@ -1358,13 +1396,13 @@ Deno.serve(async (req) => {
     if (lost.length) {
       return fail("verify_failed",
         `Saved, but these line items are no longer on the Jobber job: ${lost.join(", ")}. Check the job in Jobber before editing it again.`,
-        { applied });
+        { applied, start_date_first_set: startDateFirstSet });
     }
   }
   if (wantLines !== null || feeLinesForVerify.length) {
     const names = new Set((j.lineItems?.nodes ?? []).map((n: any) => n.name));
     for (const l of [...(wantLines ?? []), ...feeLinesForVerify]) {
-      if (!names.has(l.name)) return fail("verify_failed", `Line item "${l.name}" did not land in Jobber — check Jobber.`, { applied });
+      if (!names.has(l.name)) return fail("verify_failed", `Line item "${l.name}" did not land in Jobber — check Jobber.`, { applied, start_date_first_set: startDateFirstSet });
     }
   }
 
@@ -1385,7 +1423,7 @@ Deno.serve(async (req) => {
   const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && (wantLines !== null || feeReq !== null), newFreq, bill ?? undefined);
   const { error: recErr } = await db.rpc("fn_record_client_job", { p: rec });
   if (recErr) {
-    return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied });
+    return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied, start_date_first_set: startDateFirstSet });
   }
   // 5. the cadence reason, LAST, and deliberately non-fatal.
   // Jobber already holds the new frequency and it has been read back and verified, so a
