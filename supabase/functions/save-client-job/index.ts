@@ -627,15 +627,24 @@ Deno.serve(async (req) => {
     const p = body.patch ?? {};
     const kind = p.kind === "SA" ? "SA" : p.kind === "SC" ? "SC" : null;
     if (!kind) return fail("bad_request", "Job kind must be Service Agreement or Service Call.");
-    // Fees are an EDIT-ONLY capability for now (2026-08-05). Refusing loudly rather than
-    // ignoring the key: a silently dropped fee on create is a billing miss that nothing
-    // downstream would ever surface, and "the save succeeded" would be a lie.
+    // FEES AT CREATE — opened up 2026-08-07 (Fred, on being asked to make a Service
+    // Agreement while switching a client to Recurring): "it didn't show the Fees line
+    // items". It was an edit-only capability from 2026-08-05 to 2026-08-07, which meant
+    // the ONE flow that forces a job to be created (Active to Recurring needs a current
+    // format SA job) could not put the client's card fee on it, and the fee then had to
+    // be added in a second pass nobody was prompted to make.
     // ⚠ Refuse only on an ACTUAL fee. A dialog that shares one patch builder will send
     // `rendered_fee_ids: []` on create too, and refusing that would break job creation
     // entirely with a message about fees the user never touched. A new job has nothing to
     // delete, so a rendered list alone is meaningless here and is simply ignored.
-    if (Array.isArray(p.fees) && p.fees.length) {
-      return fail("bad_request", "Fee lines can't be set while creating a job yet — create it first, then add the fee from the job's edit dialog.");
+    // 🛑 SERVICE CALL STAYS REFUSED, AND THIS IS THE RULING, NOT AN OVERSIGHT. Fred,
+    // 2026-08-06: "the SC shouldn't have any kind of Line Item ... SC can only have line
+    // items at the moment of creating a visit." Jobber inherits a job's lines onto every
+    // visit it creates, so a fee on an SC JOB silently becomes the default on every
+    // future call. Do not re-derive an exception from the mechanism. See index.ts:931.
+    if (kind !== "SA" && Array.isArray(p.fees) && p.fees.length) {
+      return fail("bad_request",
+        "A Service Call job carries no line items at all, fees included. Everything it charges goes on the visit when the visit is created.");
     }
     const propertyId = Number(p.property_id);
     if (!Number.isFinite(propertyId)) return fail("bad_request", "A property is required.");
@@ -682,6 +691,39 @@ Deno.serve(async (req) => {
       title = "Service Call";
     }
 
+    // ---- FEES, resolved AFTER the services and kept OUT of them ---------------
+    // 🛑 `title` is already fixed above, from `lines` ALONE. That ordering is
+    // load-bearing, not incidental: saTitle() runs on the emitted set, and
+    // fn_generate_sa_visits copies the job title onto every visit it mints, so a fee
+    // reaching saTitle() would print "& Credit card fee (3.53%)" on the crew's Calendar
+    // and on the client's Field Portal. Never move this block above the title.
+    let createFeeLines: { name: string; unitPrice: number; quantity: number }[] = [];
+    if (kind === "SA" && Array.isArray(p.fees) && p.fees.length) {
+      // Same both-keys-or-neither contract the edit path enforces. It buys less here
+      // (a new job has nothing to delete, so `rendered_fee_ids` is not acting as the
+      // delete authority) but resolveFees still refuses a fee that was not rendered,
+      // which is what stops a caller writing a line it never showed anyone.
+      if (!Array.isArray(p.rendered_fee_ids)) {
+        return fail("bad_request",
+          "Fees must arrive with `rendered_fee_ids` listing every fee the dialog put on screen.");
+      }
+      // The percent base is the services in THIS payload; there is no prior job to read.
+      const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+      // `servicesChanged = true` and an EMPTY currentAmounts are both correct and both
+      // deliberate: on a brand new job every service is new, so there is no stored amount
+      // to hold and the "only reprice when the services actually changed" hold-branch is
+      // unreachable by construction. The disclosure gate still applies in full, so a
+      // percent fee must still send the amount the dialog displayed.
+      const rf = await resolveFees(p.fees as FeeReq[], p.rendered_fee_ids as number[],
+                                   subtotal, true, new Map<string, number>());
+      if (rf.err) return fail("bad_request", rf.err);
+      createFeeLines = rf.lines!;
+    }
+    // Everything that must land in Jobber, services first. The VERIFY below counts this,
+    // not `lines`: counting services alone would pass while a fee silently failed to land,
+    // which is the same shape as the 2026-08-01 loss.
+    const allLines = [...lines, ...createFeeLines];
+
     // ---- BILLING, widened to Jobber parity (Fred, 2026-07-30) -------------
     // Two axes, exactly like Jobber's own form: billing TYPE (visit_based |
     // fixed) and invoice FREQUENCY (per_visit | monthly_last_day | once_closed
@@ -716,8 +758,8 @@ Deno.serve(async (req) => {
     }
     const instructions = typeof p.instructions === "string" && p.instructions.trim() ? p.instructions.trim() : null;
     if (instructions) input.instructions = instructions;
-    if (lines.length) {
-      input.lineItems = lines.map((l) => ({ ...l, saveToProductsAndServices: false }));
+    if (allLines.length) {
+      input.lineItems = allLines.map((l) => ({ ...l, saveToProductsAndServices: false }));
     }
     if (kind === "SA") {
       input.customFields = [{ customFieldConfigurationId: FREQ_CF_GID, valueNumeric: freq }];
@@ -744,7 +786,7 @@ Deno.serve(async (req) => {
     // and Jobber fills its own default startAt for undated jobs.
     if (job.title !== title || job.property?.id !== propGid ||
         (kind === "SA" && hasStart && etDate(job.startAt) !== startDate) ||
-        (lines.length && (job.lineItems?.nodes ?? []).length !== lines.length)) {
+        (allLines.length && (job.lineItems?.nodes ?? []).length !== allLines.length)) {
       return fail("verify_failed",
         "Jobber created the job but it doesn't match what was sent — check it in Jobber before retrying.",
         { jobber_number: job.jobNumber });
@@ -785,13 +827,19 @@ Deno.serve(async (req) => {
     return done({
       job_id: rec.job_id, job_number: job.jobNumber, job_status: String(job.jobStatus).toLowerCase(),
       billing: { type: job.billingType, schedule_summary: job.invoiceSchedule?.scheduleSummary ?? null },
+      fee_lines: createFeeLines.map((l) => ({ name: l.name, unit_price: l.unitPrice, quantity: l.quantity })),
+      // See the block on the edit path's copy of this flag. An SA created WITH a start
+      // date is the other moment visits become schedulable, so it carries the flag too:
+      // without it, removing the "Generate visits" button would mean a brand new dated
+      // agreement sat unscheduled until the 06:00 ET sweep.
+      start_date_first_set: kind === "SA" && hasStart,
     });
   }
 
   // ---- shared resolution for edit/close/reopen -----------------------------
   const jobId = Number(body.job_id);
   if (!Number.isFinite(jobId)) return fail("bad_request", "job_id is required.");
-  const { data: jobRow } = await db.from("jobs").select("id, client_id, property_id, title, frequency_days").eq("id", jobId).maybeSingle();
+  const { data: jobRow } = await db.from("jobs").select("id, client_id, property_id, title, frequency_days, start_at").eq("id", jobId).maybeSingle();
   if (!jobRow || jobRow.client_id !== clientId) return fail("bad_request", "That job does not belong to this client.");
   const jobGid = await gidFor("job", jobId);
   if (!jobGid) return fail("job_not_in_jobber", "This job has no Jobber link, so it cannot be synced. Tell Fred.");
@@ -834,10 +882,25 @@ Deno.serve(async (req) => {
 
   // Pre-flight EVERYTHING before the first mutation (the half-applied lesson).
   const edit: Record<string, unknown> = {};
+  // 🛑 THE MOMENT AN AGREEMENT BECOMES SCHEDULABLE, and the reason the "Generate visits"
+  // button could be dropped (Fred, 2026-08-07): "if we have a [job] that doesn't have a
+  // Start Date, then when we add the start date it's like that generate button and
+  // generates the visit ... That means we won't need the button Generate Visits."
+  // A dateless SA with no visits is the ONE case fn_generate_sa_visits deliberately skips
+  // ('no start date and no visits yet'), so the transition from no-date to date is exactly
+  // when generation becomes possible. The flag is computed here and returned; the app runs
+  // client.generate_visits_for_client, which is staff-gated, per-client and INSERT-only.
+  // ⚠ Read from OUR MIRROR on purpose. It is what the dialog showed the user, and its two
+  // failure modes are asymmetric: a false positive costs one wasted call that returns
+  // "nothing to schedule" (generation is INSERT-only and dedupes within 7 days), while a
+  // false negative cannot happen, because jobs.start_at is only ever written from a
+  // verified Jobber read-back.
+  let startDateFirstSet = false;
   if (p.start_date !== undefined || p.end_date !== undefined) {
     if (!isSA) return fail("bad_request", "Service Calls are on-demand and carry no dates — schedule the visit instead.");
     const sd = String(p.start_date ?? "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(sd)) return fail("bad_request", "A valid start date is required to change dates.");
+    startDateFirstSet = !jobRow.start_at;
     const tf: Record<string, unknown> = { startAt: sd };
     if (p.end_date && /^\d{4}-\d{2}-\d{2}$/.test(p.end_date)) {
       const days = Math.round((Date.parse(p.end_date) - Date.parse(sd)) / 86_400_000);
@@ -850,11 +913,36 @@ Deno.serve(async (req) => {
     edit.instructions = typeof p.instructions === "string" ? p.instructions.trim() : "";
   }
   let newFreq: number | undefined;
+  // WHY A CADENCE CHANGE CARRIES A REASON (Fred, 2026-08-07): "When changing a Job
+  // frequency we also need a reason for it, same as we ask for a reason when changing the
+  // client status." Recorded in public.job_frequency_changes, the sibling of
+  // public.client_status_changes (migration 2026-08-07_1235).
+  // ⚠ public.jobs IS audited, so the VALUE change is already in audit.logs. What is being
+  // captured here is the sentence a human typed, which no audit trigger can produce.
+  // 🛑 THIS IS PERMISSIVE IN THIS DEPLOY AND DEMANDING IN THE NEXT ONE, ON PURPOSE.
+  // docs/09-known-issues.md 0g: client.update_client_status's required third argument
+  // shipped ahead of the UI that supplies it and broke every status change in the live app
+  // for hours. So deploy A records a reason when one arrives and never asks for one;
+  // the Lovable dialog then learns to ask; only then does deploy B turn the demand on.
+  // The demand lives at the marker DEPLOY-B-FREQ-REASON below.
+  let freqReason: string | null = null;
+  let oldFreqForLog: number | null = null;
   if (p.frequency_days !== undefined) {
     if (!isSA) return fail("bad_request", "Frequency only applies to Service Agreements.");
     newFreq = Number(p.frequency_days);
     if (!Number.isFinite(newFreq) || newFreq < 1 || newFreq > 365) {
       return fail("bad_request", "Frequency must be between 1 and 365 days.");
+    }
+    const prevFreq = Number.isFinite(Number(jobRow.frequency_days)) ? Number(jobRow.frequency_days) : null;
+    // Only an ACTUAL change is a change. Demanding a reason when the dialog resubmits the
+    // same number would make every unrelated save impossible, and would fill the table
+    // with rows recording that nothing happened (the DB constraint refuses those anyway).
+    if (prevFreq !== newFreq) {
+      oldFreqForLog = prevFreq;
+      const r = String(p.frequency_reason ?? "").trim();
+      // DEPLOY-B-FREQ-REASON: this becomes a refusal once the dialog asks for the reason.
+      //   if (r.length < 3) return fail("reason_required", "...");
+      if (r.length >= 3) freqReason = r;
     }
     edit.customFields = [{ customFieldConfigurationId: FREQ_CF_GID, valueNumeric: newFreq }];
   }
@@ -1291,6 +1379,24 @@ Deno.serve(async (req) => {
   if (recErr) {
     return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied });
   }
+  // 5. the cadence reason, LAST, and deliberately non-fatal.
+  // Jobber already holds the new frequency and it has been read back and verified, so a
+  // failure here cannot un-save anything. Reporting failure would be a lie about what
+  // happened to the job. But it is not swallowed either: `frequency_reason_recorded`
+  // comes back false and the UI can say the change went through while its note did not.
+  let freqReasonRecorded: boolean | null = null;
+  if (freqReason !== null && newFreq !== undefined) {
+    const { error: fcErr } = await db.from("job_frequency_changes").insert({
+      job_id: jobId,
+      client_id: clientId,
+      old_frequency_days: oldFreqForLog,
+      new_frequency_days: newFreq,
+      reason: freqReason,
+      changed_by: userData?.user?.id ?? null,
+      changed_by_email: email,
+    });
+    freqReasonRecorded = !fcErr;
+  }
   // `preserved` is returned so the UI can say what it did NOT touch — a silent
   // "saved" is what let the fee-line deletion go unnoticed for a month.
   // `preserved` is returned so the UI can say what it did NOT touch. `fee_lines` is
@@ -1301,5 +1407,9 @@ Deno.serve(async (req) => {
     applied,
     preserved_line_items: preserved,
     fee_lines: feeLinesForVerify.map((l) => ({ name: l.name, unit_price: l.unitPrice, quantity: l.quantity })),
+    // The app runs client.generate_visits_for_client when this is true. See the block
+    // where it is computed for why our mirror is the right source for it.
+    start_date_first_set: startDateFirstSet,
+    frequency_reason_recorded: freqReasonRecorded,
   });
 });
