@@ -173,19 +173,42 @@ Two of my figures move under this slice:
   targets, so the sites the office genuinely cannot see a shape for before the re-ingest is **44**.
 - The "nothing to show at all" case (linked, no type, no radius) is **20**.
 
-### ⚠ OPEN — for Fred, and it outranks the map-library question
+### ✅ DECIDED: v1 is edit **AND** create (Fred, 2026-08-07)
 
-**Does "two-way" include CREATING a Samsara address for a site that has none?**
+The office can create a Samsara address for a site that has none. That is a genuine write of a **new
+object** into Samsara and needs its own verify-then-store, exactly like the edit path.
 
-- **Edit only** — the 213 unlinked service sites render "not in Samsara" and are inert. Ships sooner;
-  half the clients see a dead card.
-- **Edit + create** — the office creates the Samsara address from the Client App. That is a genuine
-  write of a **new object** into Samsara, needing its own verify-then-store, its own naming
-  convention (**193 of 249** Samsara names already follow `NNN-XXX`, so there is one to honour), and
-  a duplicate check: **6 unlinked Samsara addresses already exist**, and a create path without an
-  "is this already there?" check grows that number rather than shrinking it.
+Two constraints on it, both measured:
 
-Satellite-or-not decides which library we install. **Create-or-not decides what the feature is.**
+**1. A duplicate check is mandatory.** **6 unlinked Samsara addresses already exist.** A create path
+without an "is this already there?" check grows that number instead of shrinking it. Check by
+coordinates and by name before creating, and offer to LINK rather than create when a candidate is found.
+
+**2. 🛑 THE NAMING CONVENTION CANNOT BE APPLIED TO 55% OF THE SITES WE WOULD CREATE.**
+
+193 of 249 existing Samsara addresses follow `NNN-XXX ClientName`, so there is a convention to
+honour. But of the 213 unlinked service sites:
+
+```
+ 95  client HAS a client_code   -> can be named conformingly
+118  client_code is NULL        -> CANNOT be named conformingly
+     by status: ACTIVE 182 (118 of them codeless) · RECURRING 30 (0 codeless) · PAUSED 1
+     all 213 DO have lat/lng, so there is a coordinate to create from
+```
+
+Every RECURRING client already has a code. **All 118 codeless sites belong to ACTIVE clients.**
+
+This is the `client_code`-is-NULL correction from Phase 0 arriving with teeth. Creating those 118
+with a fallback name would **grow the 56 non-conforming names** — the precise problem the migration
+exists to fix — and break every future join done by name.
+
+**Recommendation: creating a Samsara address REQUIRES a `client_code`.** If the client has none, the
+editor says so and refuses, surfacing a real data gap instead of papering over it. Per `CLAUDE.md`,
+assigning a client code is a business decision (Yannick's SA-build list, or Fred), not something the
+app should invent.
+
+⚠ **This needs Fred's confirmation**, because the alternative — inventing a naming fallback — is a
+product decision with a long tail, not an engineering one.
 
 ## Phase 3 — The editor (app + edge fn)
 
