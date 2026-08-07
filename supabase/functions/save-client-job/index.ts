@@ -940,9 +940,17 @@ Deno.serve(async (req) => {
     if (prevFreq !== newFreq) {
       oldFreqForLog = prevFreq;
       const r = String(p.frequency_reason ?? "").trim();
-      // DEPLOY-B-FREQ-REASON: this becomes a refusal once the dialog asks for the reason.
-      //   if (r.length < 3) return fail("reason_required", "...");
-      if (r.length >= 3) freqReason = r;
+      // DEPLOY-B-FREQ-REASON: ON as of 2026-08-07, and only after the published bundle was
+      // read to prove the dialog cannot send one without the other. The live chunk reads
+      //   k !== ie.frequency && me && (m.frequency_days = ue, m.frequency_reason = O.trim())
+      // so an empty reason means NEITHER key is sent and this branch is never reached from
+      // the app at all. That check is what makes turning the refusal on safe rather than a
+      // repeat of 0g; "the UI was asked to send it" would not have been.
+      if (r.length < 3) {
+        return fail("reason_required",
+          "Say why the cadence is changing. It goes on the job's record, the same way a client status change does.");
+      }
+      freqReason = r;
     }
     edit.customFields = [{ customFieldConfigurationId: FREQ_CF_GID, valueNumeric: newFreq }];
   }
