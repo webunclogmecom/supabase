@@ -91,7 +91,7 @@ CHECK (
 ```
 
 That CHECK is not theoretical. **Measured right now: 128 rows say `polygon`, and only 62 carry a
-radius. So 66 rows claim a shape we cannot reconstruct from our side at all** — no vertices, no
+radius. So 66 rows claim a shape we cannot reconstruct from our side at all**: no vertices, no
 radius, just the word. Those 66 are the concrete cost of the discard-at-ingest bug, and the CHECK is
 what stops it recurring. (It has to go on `NOT VALID` first, obviously, then a repair pass, then
 `VALIDATE`.)
@@ -123,7 +123,7 @@ current defect is that it has two.** So fix the canonical form first, in this or
 
 ## 3. Clean before or after?
 
-**Before** — and your instinct is right, but for a sharper reason than "hygiene". The push path
+**Before**, and your instinct is right, but for a sharper reason than "hygiene". The push path
 resolves `property → Samsara address`. While two property rows resolve to one address under different
 key shapes, that resolver is ambiguous, and an ambiguous resolver on a two-way write is how one
 client's geofence lands on another's site. You cannot test your way out of it afterwards because the
@@ -161,7 +161,7 @@ rows and the 128/167-vs-117/132 mirror drift both exist because nobody wrote tha
 **No, provided you name it for the concept and not the vendor.**
 
 Rule #1 forbids source-prefixed columns carrying **cross-system identity** — `jobber_id`,
-`samsara_address_id` — because identity belongs in `entity_source_links`. A geofence polygon is not
+`samsara_address_id`) because identity belongs in `entity_source_links`. A geofence polygon is not
 identity. It is *our business fact about our site*, in exactly the same class as
 `properties.latitude` / `longitude`, which we already store unprefixed and nobody considers a
 violation.
