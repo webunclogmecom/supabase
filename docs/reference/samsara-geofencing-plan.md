@@ -64,8 +64,22 @@ shares. Keyed on `is_billing`, never on the link id format. Handles the states t
 
 - a group with one property (73 groups) — that row is the site
 - a group with a service/billing pair (391) — the service row is the site
-- **a site with no client at all** — 2 of the 8 cross-client pairs have a null client on the service
-  side, one literally named *"NOT USE bayshore plaza"*. This is a real state, not an error.
+- 🛑 **a real client whose `client_code` is NULL** — **318 properties, 37% of the table.**
+
+> ⚠ **CORRECTION (2026-08-07).** An earlier version of this line said *"a site with no client at
+> all"* and cited 2 properties. **That was false, and it was my error propagated from a bad query.**
+> Measured across all 855: `client_id IS NULL` = **0**, dangling FK = **0**, real client with a NULL
+> `client_code` = **318**. The two I named do have clients — prop 185 → client 262 "Richard Mahfood"
+> (ACTIVE), prop 301 → client 155 "NOT USE bayshore plaza" (INACTIVE).
+>
+> The NULL came from `array_agg(distinct c.client_code)` over a LEFT JOIN, read as "the join failed".
+> **A NULL in an aggregated joined column means that column is null, not that there was no match.**
+> Check `c.id IS NULL` for join failure. (Caught by @Supabase, who wrote the original query and
+> corrected it.)
+>
+> The distinction is load-bearing: anything that resolves, groups, logs or **displays** by
+> `client_code` degrades for **37% of properties**, and a resolver treating a null code as "unlinked"
+> would reject valid rows. This is a display and grouping problem, not a data-integrity one.
 
 Nothing else changes in this phase. It is the foundation the other three stand on.
 
@@ -114,13 +128,64 @@ their vertices.** We discard them at ingest (`backfill_geo_from_samsara.js:94` a
 4. **Fix the two ingest paths that discard polygons**, or the next webhook silently undoes the
    backfill.
 
-**This is the cheapest moment this will ever be.** The geofence columns are read by exactly two
-pass-through views (`client.properties`, `ops.properties`) and **nothing computes with them** — the
-app bundle does not reference `geofence_type` or `radius_meters` at all. The drift has cost nobody
-anything yet, so it can be overwritten rather than reconciled.
+**This is the cheapest moment this will ever be** — but *"nothing computes with them"* was too strong
+and is corrected here. Nothing **derives** from the geofence columns, and the app bundle does not
+reference `geofence_type` or `radius_meters` at all. But `pg_stat_statements` (control: 262 of 4,932
+statements mention `properties`) shows they **are read**:
+
+```
+UPDATE properties SET address, geofence_radius_meters ...              317 calls
+UPDATE properties SET address, geofence_type ...                       109 calls
+SELECT id, address, city, state, zip, geofence_radius_meters,
+       latitude, longitude FROM properties
+       WHERE client_id = $1 AND is_primary = $2                         41 calls, 2 rows/call
+```
+
+That 41-call query is parameterised on `client_id` + `is_primary` — an app or script shape, not an
+ad-hoc survey. **Identify that caller BEFORE the re-ingest, not after**: if something displays
+`geofence_radius_meters`, silently overwriting the 66 shapeless rows changes what a user sees. It is
+the only `is_primary`-filtered geofence read in the list, so it is cheap to find. (Raised by
+@Supabase running the stronger oracle after I settled for the catalogue version.)
 
 ⚠ **Rule #1 is not breached.** A polygon is our business fact about our site, the same class as
 `properties.latitude`, which we already store unprefixed. `geofence_polygon` yes, `samsara_polygon` no.
+
+## 🛑 The population the editor actually faces — and the open scope question
+
+Sliced by `is_billing` × link state, which neither the survey nor my first plan did (@Building Apps):
+
+```
+SERVICE properties   421 total ->  208 linked (49.4%)  ·  213 NOT LINKED
+BILLING properties   434 total ->   74 linked          ·  360 not linked (never push targets)
+
+clients with >=1 unlinked SERVICE site:  209  (of 439 clients holding any property)
+```
+
+**Roughly half of clients hit "this site is not in Samsara" on their first visit to the feature.**
+That is not a tail case, and v1 must not be designed against the other 49% and discover it later.
+
+Of the 208 linked service rows: **102 circle · 95 polygon · 11 neither**. Polygons are **46% of
+linked service sites** — half the work, not an edge case.
+
+Two of my figures move under this slice:
+
+- The **66 radius-less polygons** are **44 service + 22 billing**. Billing rows are never push
+  targets, so the sites the office genuinely cannot see a shape for before the re-ingest is **44**.
+- The "nothing to show at all" case (linked, no type, no radius) is **20**.
+
+### ⚠ OPEN — for Fred, and it outranks the map-library question
+
+**Does "two-way" include CREATING a Samsara address for a site that has none?**
+
+- **Edit only** — the 213 unlinked service sites render "not in Samsara" and are inert. Ships sooner;
+  half the clients see a dead card.
+- **Edit + create** — the office creates the Samsara address from the Client App. That is a genuine
+  write of a **new object** into Samsara, needing its own verify-then-store, its own naming
+  convention (**193 of 249** Samsara names already follow `NNN-XXX`, so there is one to honour), and
+  a duplicate check: **6 unlinked Samsara addresses already exist**, and a create path without an
+  "is this already there?" check grows that number rather than shrinking it.
+
+Satellite-or-not decides which library we install. **Create-or-not decides what the feature is.**
 
 ## Phase 3 — The editor (app + edge fn)
 
@@ -146,8 +211,23 @@ Load-bearing rules:
   editor's `stale_view`, deliberately: a 30-minute lag is a lag, 15 days is an absence of evidence.
 - **Define the ceiling for shapes we cannot represent.** Samsara allows polygons to 2048 vertices. If
   a shape exceeds what we can round-trip, **degrade to read-only — never simplify**.
-- The UI must render **"this Samsara address is shared with another client"** and **"this site has no
-  client"** as real states, not errors.
+- The UI must render **"this Samsara address is shared with another client"** and **"this client has
+  no client_code"** (318 properties) as real states, not errors.
+- 🛑 **BLOCK THE SAVE on a polygon site whose vertices are not yet re-ingested** (44 service sites).
+  A pin-only editor over a site whose real shape we do not hold is exactly how 44 polygons become
+  circles, and it would look like a successful save. **Two independent guards** — this block *and*
+  the server-side no-radius rule — because the payload rule is one `if` away from being wrong.
+  (@Building Apps.) The editor is otherwise **not gated on the backfill**: gating trades a small
+  honest gap for a feature nobody can use.
+
+**Four states the editor must handle**, of which only one is degraded:
+
+| state | count | what the office sees |
+|---|---|---|
+| circle, linked | 102 | full editor — pin + radius |
+| polygon with vertices (post re-ingest) | 95 | shape read-only, radius control **disabled** with the reason shown |
+| polygon, vertices not re-ingested | 44 | pin only, "a custom shape exists in Samsara and is not loaded yet", **save blocked** |
+| not linked to Samsara | 213 | "not in Samsara" — behaviour depends on the open scope question above |
 
 **Map library:** Mapbox for satellite (mature polygon rendering). A JS SDK key is public by nature;
 the control is **HTTP-referrer restriction on the vendor side, not secrecy**. There is **no CSP on the
@@ -193,7 +273,19 @@ configuration job.
 - **@Building Apps' first bundle scan walked 3 chunks and its `latitude` control did not fire.** It
   would have produced a confident "no map library". Seed a bundle scan from a real route and make a
   control fire before believing a zero.
-- **Three sessions produced three different wrong things**, each caught by another: my "37 duplicate
-  links" (canonicalisation, not corruption), @Supabase's namespace-based resolver (wrong 50 times),
-  and the entity_type filter that hid the three-way link. None of these were bad measurements — every
-  number was right. The errors were all in the sentence wrapped around the number.
+- **`is_billing` is now load-bearing for a PUSH**, which is heavier duty than it has carried before.
+  It has **no NOT NULL constraint** — it happens to be non-null on all 855 rows, which is luck rather
+  than a guarantee. A future NULL insert leaves the resolver with no service row, and the editor then
+  either blocks everything or silently falls back. **Add the constraint in the same migration as the
+  normalised uniqueness**, so the UI can treat "exactly one service row" as an invariant rather than
+  a hope. (@Building Apps.)
+- **Four sessions-worth of wrong conclusions, every one caught by another, and NOT ONE was a bad
+  number:**
+  - mine: "37 duplicate links" — canonicalisation, not corruption
+  - mine: "a site with no client at all" — 0 such rows; it is 318 with a null `client_code`
+  - @Supabase's: a namespace-based resolver — wrong 50 of 282, and already wrong inside the 16-row
+    sample it was generalised from
+  - @Supabase's: "nothing computes with them" — nothing *derives*, but they are read 400+ times
+  - the `entity_type` filter that hid the three-way link — my query filtered and missed the shape,
+    theirs did not filter and found it
+  **The errors were all in the sentence wrapped around the number.** Instrument the inference.
