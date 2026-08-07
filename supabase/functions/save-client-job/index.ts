@@ -447,6 +447,21 @@ async function resolveFees(
   // so the same fee sent twice produced two identical jobCreateLineItems rows — verify
   // passed (the name is present) and the job was then permanently tripped up by the
   // duplicate guard on every later save. Last-one-wins matches the dialog's semantics.
+  // ⚠ ENTRY-LEVEL SHAPE, not just list-level. Both call sites now check `Array.isArray`,
+  // but an array whose ENTRIES are null or primitives still reaches here, and
+  // `f.service_line_item_id` on a null throws a TypeError. There is no top-level
+  // try/catch around Deno.serve in this file, so that surfaces as a bare 500 rather than
+  // a message naming the problem. It fails safe (it can never report success) and the
+  // dialog cannot produce it, but the whole point of the list check was that malformed
+  // input should fail READABLY. Doing it here rather than at the two call sites means
+  // create and edit cannot drift apart again.
+  if (Array.isArray(fees)) {
+    for (const f of fees) {
+      if (f === null || typeof f !== "object" || Array.isArray(f)) {
+        return { err: "Each entry in `fees` must be an object with a service_line_item_id." };
+      }
+    }
+  }
   const want = Array.isArray(fees)
     ? [...new Map(fees.map((f) => [f.service_line_item_id, f])).values()]
     : [];
