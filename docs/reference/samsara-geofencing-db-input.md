@@ -28,8 +28,27 @@ both service .................................. 0
 same street address on both sides ............. 32
 ```
 
-Every bare-numeric `source_id` points at the **service** property (`is_billing = false`); every
-`addr_`-prefixed one points at the **billing** property (`is_billing = true`). Sample:
+🛑 **CORRECTED 2026-08-07, SAME DAY. THE SENTENCE THAT WAS HERE WAS WRONG AND @Supabase 2 CAUGHT IT.**
+It read: *"Every bare-numeric `source_id` points at the service property; every `addr_`-prefixed one
+points at the billing property."* **The prefix does NOT encode the role.** Measured across all 282:
+
+```
+bare numeric  ->  191 service ·  33 BILLING
+addr_ prefix  ->   41 billing ·  17 SERVICE
+                              => 50 of 282 contradict the rule
+```
+
+⚠ And it was already false **inside the 37 pairs I actually looked at**: 29/8/8/29, i.e. wrong on
+16 of those 74 links. I read a `LIMIT 16` sample, saw a perfect pattern, and generalised it twice
+over: first to all 37 pairs, then to all 282. The measurement was fine; the rule I wrapped around it
+was not. Exactly the shape this repo keeps documenting.
+
+⇒ **The discriminator must be `properties.is_billing` directly.** The prefix records which script
+wrote the row, not what the row means. A prefix-keyed resolver would push a geofence onto **33 billing
+rows across 33 distinct clients**, which is precisely the case the rule below exists to prevent.
+
+The conclusion below still stands; only the mechanism changed. Sample of the pairs (the pattern holds
+here, which is how it fooled me):
 
 ```
 322485224  167-FEN  prop 21  service   9349 Collins Avenue
