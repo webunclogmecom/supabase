@@ -160,7 +160,7 @@ rows and the 128/167-vs-117/132 mirror drift both exist because nobody wrote tha
 
 **No, provided you name it for the concept and not the vendor.**
 
-Rule #1 forbids source-prefixed columns carrying **cross-system identity** — `jobber_id`,
+Rule #1 forbids source-prefixed columns carrying **cross-system identity** (`jobber_id`,
 `samsara_address_id`) because identity belongs in `entity_source_links`. A geofence polygon is not
 identity. It is *our business fact about our site*, in exactly the same class as
 `properties.latitude` / `longitude`, which we already store unprefixed and nobody considers a
