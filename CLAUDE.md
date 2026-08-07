@@ -122,7 +122,7 @@ Measured across the whole table, with a control: **54,756 rows, `changed_by` non
 `count(distinct changed_by) = 0`. The control is `app_source`, non-null on 49,551 rows in the same
 query, so this is not a reader returning NULL for everything.
 
-**Why:** `audit.log_change` reads `current_setting('request.jwt.claim.sub')` — **singular `claim`**.
+**Why:** `audit.log_change` reads `current_setting('request.jwt.claim.sub')`, **singular `claim`**.
 PostgREST sets `request.jwt.claims` (plural, a JSON object). The singular key is never set, so the
 column has been NULL since the trigger was written.
 
