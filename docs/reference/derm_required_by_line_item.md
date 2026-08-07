@@ -123,6 +123,40 @@ has_manifest). All other integrity checks zero (no links to deleted visits/manif
 manifest, no over-linked visits). v5830 (053-PV): human not-required decision PRESERVED (dump ticket
 828601 does not cover 053-PV) — stays on the review surface.
 
+### 2026-08-05: 7 value-less locks cleared, and **two that must never be unlocked**
+
+Migration `2026-08-05_0620_derm_unlock_seven_null_locked_visits.sql` (commit `35fdb13`). A lock whose
+`derm_required` is **NULL** carries no human decision at all: the lock trigger fires on any DERM-Tracker
+touch, so a row could be locked without a value ever being set. Those locks only block the nightly
+re-derive, so clearing them lets the derive fill the unknown.
+
+**Unlocked and re-derived to `true`** (verified live 2026-08-06, all 7 are now `derm_required = true`,
+`derm_required_locked = false`): **1334, 1547, 1597, 5100, 5101, 5745, 5830**.
+
+🛑 **1260 (083-SHUL) and 1476 (133-MUT) WERE DELIBERATELY HELD BACK. DO NOT UNLOCK THEM.**
+Both are `derm_required IS NULL`, locked, and **`fn_visit_requires_derm` derives `false`** for each,
+and both carry a `manifest_visits` link. Unlocking them lets the re-derive write `false`, and
+`customer.work_orders` filters on `COALESCE(derm_required, true) = true` **by design** (Fred, 2026-08-05:
+*"we only show derms required jobs to the work orders"*). So the visit would not merely lose a DERM chip,
+its **entire service record would disappear from the client's Field Portal** while a real manifest sits on
+file. `NULL` is fail-safe here and `false` is not. Re-verified against live data 2026-08-06.
+
+**1533 (175-PV) was also skipped**, for the opposite reason: it derives `NULL`, so unlocking it is inert.
+
+⚠ **This caveat applies to the unlock recipe above.** Before clearing `derm_required_locked` on ANY
+NULL-valued lock, check `fn_visit_requires_derm(visit_id)` first. If it derives `false` and the visit has
+a manifest link, leave the lock alone.
+
+⚠ **Do not quote a frozen lock count.** The migration recorded 164 -> 157 alive locks; measured 2026-08-06
+it was already **158**, because every DERM-Tracker touch locks another row. The number drifts upward by
+design. Count it, do not cite it.
+
+⚠ **Two different trios are in circulation and they are NOT the same set.** This migration held back
+**1260, 1476, 1533** (selected on "would unlocking cause harm"). `Supabase/CLAUDE.md` separately tracks
+**1260, 1476, 3923** as load-bearing manifest-link contradictions (selected on "a manifest is on file
+while `derm_required` is not true"). 3923 (165-LPB) is a different situation: it is `false` and **not
+locked**. Do not treat one list as a copy of the other.
+
 ## Consumers (all key off `derm_required`, NULL-safe)
 - `public.manifest_pickable_visits` — `WHERE completed AND (derm_required IS NULL OR = true) AND no manifest`.
 - `derm.visits.needs_manifest` = `COALESCE(derm_required, true)` (DERM Tracker "Missing Docs").
