@@ -92,9 +92,14 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
 - `app_source = 'field-portal'` — Field Portal (fp.unclogme.app)
 - `app_source = 'admin-review'` — Admin Review (**`admin.unclogme.app`** since 2026-08-04; previously
   `review.unclogme.app`, and before that `grease-buddy-dash`). ⚠ It moved because Yannick's new **Review
-  Builder** app took **`reviews.unclogme.app`** (plural) and the two hosts read almost identically. All
-  three Admin Review hosts stay mapped in the CASE so historical rows keep their meaning and a rollback
-  is free. **`reviews.unclogme.app` is a DIFFERENT APP** and maps to `review-builder`; it runs on its own
+  Builder** app took **`reviews.unclogme.app`** (plural) and the two hosts read almost identically.
+  ⚠ **FOUR patterns map to `admin-review`, not three** (corrected 2026-08-07; the earlier "all three
+  Admin Review hosts" wording undercounted). Read off `2026-08-04_1439`:
+  `%admin.unclogme.app%`, `%audit.unclogme.app%`, `%grease-buddy-dash%`, `%review.unclogme.app%`.
+  The old hosts stay mapped so historical rows keep their meaning and a rollback is free; **`audit.*`
+  is a candidate replacement host pinned in ADVANCE** and has never served traffic, so Fred renaming
+  the app again does not need a DB change. Do not "clean up" an arm because it has zero rows: that is
+  the point of it. **`reviews.unclogme.app` is a DIFFERENT APP** and maps to `review-builder`; it runs on its own
   Supabase project (`rkgzdvktclalevibuubb`), not Prod, so that branch is a guard and never fires today.
   - ⚠ **HISTORICAL GAP 2026-07-03 → 2026-07-29: these writes landed as `other:review.unclogme.app`, NOT `admin-review`.** The app moved to its custom domain but the trigger's CASE still matched only `%grease-buddy-dash%`, so 232 rows across 4 tables fell through to the `other:` branch. Fixed forward in `2026-07-29c`; **the historical rows were deliberately NOT relabelled** (an audit trail is a record of what was observed, and rewriting it needs Fred's explicit OK). **When running the §5.5(b) "is this grant still used" check over historical data, query `app_source IN ('admin-review','other:review.unclogme.app')` or you will conclude the app went dead on 2026-07-08 when it is writing today.** This is the §5.5(b) detector failing in exactly the way §5.5(b) exists to prevent — see also the `X-App-Source` caveat below.
 - `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
@@ -135,7 +140,7 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
 - **OS:** Windows. Use forward-slash inside code strings; tool calls use `C:\Users\FRED\Desktop\Virtrify\Yannick\Claude\Supabase\...`
 - **Node ≥ 20**, npm, Supabase CLI, `gh` CLI (keyring-authed — never embed PATs in URLs).
 - **Supabase projects (all in `Dev - Unclogme` org, us-east-1):**
-  - **Prod** `wbasvhvvismukaqdnouk` — source of truth, Pro plan, RLS hardened. **The staff Lovable apps Visit Calendar, Admin Review, DERM Tracker, and the Client App (`clients.unclogme.app`, 2026-07-24) are Supabase-Auth-gated (Google + email/pw, `@ayache.com`/`@unclogme.com`-restricted, email-confirm enforced). ✅ **DERM Stamp Studio IS NOW AUTH-GATED TOO (changed 2026-07-30, supersedes the 2026-07-24 "it is PUBLIC" note).** It moved to **`stamp.unclogme.app`** (`studio.unclogme.app` redirects there) and serves the canonical Command Deck login. Verified live 2026-07-30 while signed in: "Sign out" in the header, and the bundle builds ONE client with `db:{schema:'derm'}` + `persistSession`/`autoRefreshToken` and carries `signInWithPassword`/`signInWithOAuth`. **⇒ Its reads run as `authenticated`, so an anon-key replay of its requests correctly returns `42501` — that is the revoke working, NOT a broken app.** A session hit exactly that on 2026-07-30 and read "anon is revoked yet the public app renders" as a contradiction; the premise had simply expired. ⚠ **`audit.log_change`'s Origin CASE still pins only `%studio.unclogme.app%` and has NO pattern for `stamp.unclogme.app`** — measured 16 rows already arriving from the new origin, labelled correctly ONLY because the client sends `X-App-Source`. That is the per-client header dependency this file warns about below; pin the new host in the CASE.** **`visits` lifecycle is RPC-only as of Phase 3 (2026-07-11):** anon/authenticated can NO LONGER directly UPDATE `visit_status`/`completed_at`, nor EXECUTE the create/edit/delete/ripple/skip/unskip lifecycle RPCs (revoked in **both** `public.*` and `ops.*`); the Calendar drives lifecycle through the `set_visit_status` / `ops.set_visit_status` SECDEF wrappers (authenticated-only). **As of the 2026-07-12 anon-surface harden, anon is READ-ONLY on all business data** — it can no longer write any table/column or EXECUTE any write/exposure RPC (all revoked → authenticated + service_role; only FP `customer.*` reads + pure immutable helpers remain anon-callable). This also closed an owner-rights auto-updatable-view bypass of the Phase-3 visits lock (`v_visits_live`). Field Portal stays anon read-only. Full model + negative-test matrix: [docs/security.md](docs/security.md#publicvisits--anonauthenticated-write-model-2026-07-09-159e1c6).
+  - **Prod** `wbasvhvvismukaqdnouk` — source of truth, Pro plan, RLS hardened. **The staff Lovable apps Visit Calendar, Admin Review, DERM Tracker, and the Client App (`clients.unclogme.app`, 2026-07-24) are Supabase-Auth-gated (Google + email/pw, `@ayache.com`/`@unclogme.com`-restricted, email-confirm enforced). ✅ **DERM Stamp Studio IS NOW AUTH-GATED TOO (changed 2026-07-30, supersedes the 2026-07-24 "it is PUBLIC" note).** It moved to **`stamp.unclogme.app`** (`studio.unclogme.app` redirects there) and serves the canonical Command Deck login. Verified live 2026-07-30 while signed in: "Sign out" in the header, and the bundle builds ONE client with `db:{schema:'derm'}` + `persistSession`/`autoRefreshToken` and carries `signInWithPassword`/`signInWithOAuth`. **⇒ Its reads run as `authenticated`, so an anon-key replay of its requests correctly returns `42501` — that is the revoke working, NOT a broken app.** A session hit exactly that on 2026-07-30 and read "anon is revoked yet the public app renders" as a contradiction; the premise had simply expired. ✅ **DONE, DO NOT RE-DO IT: `stamp.unclogme.app` is pinned in `audit.log_change`'s Origin CASE** (`2026-07-30_2030`, applied the same day). This paragraph used to carry a "pin the new host in the CASE" TODO; it was completed on 2026-07-30 and the instruction is retired here (2026-08-07) because a stale TODO sends a reader to do work that is already done. **Both patterns are kept**: `%studio.unclogme.app%` still matches 71 historical rows and a redirect can be undone. Worth keeping is *why it was urgent while nothing looked broken*: 16 rows were already arriving from the new origin and were labelled correctly ONLY because the Studio's single client sends `X-App-Source`, which ADR 016 makes a per-CLIENT override. Add a second Supabase client or drop that header and Studio writes would have started landing as `other:stamp.unclogme.app`, which is the per-client header dependency this file warns about below and the exact shape that cost Admin Review 232 mislabelled rows over 26 days.** **`visits` lifecycle is RPC-only as of Phase 3 (2026-07-11):** anon/authenticated can NO LONGER directly UPDATE `visit_status`/`completed_at`, nor EXECUTE the create/edit/delete/ripple/skip/unskip lifecycle RPCs (revoked in **both** `public.*` and `ops.*`); the Calendar drives lifecycle through the `set_visit_status` / `ops.set_visit_status` SECDEF wrappers (authenticated-only). **As of the 2026-07-12 anon-surface harden, anon is READ-ONLY on all business data** — it can no longer write any table/column or EXECUTE any write/exposure RPC (all revoked → authenticated + service_role; only FP `customer.*` reads + pure immutable helpers remain anon-callable). This also closed an owner-rights auto-updatable-view bypass of the Phase-3 visits lock (`v_visits_live`). Field Portal stays anon read-only. Full model + negative-test matrix: [docs/security.md](docs/security.md#publicvisits--anonauthenticated-write-model-2026-07-09-159e1c6).
   - **Sandbox #1 `ubtlwpcyntelgbykdatn` — DELETED 2026-06-11.** Verified zero consumers (0 API requests/7d; every Lovable app runs on Prod or Lovable Cloud; review data migrated to Prod canonical 2026-06-08). `sandbox-refresh.yml` retired (schedule removed + disabled); audit parity checks retired. Final backup of its unique tables: `..\backups\sandbox1_final_backup_2026-06-11.json` (parent folder, outside repo).
   - **HR Sandbox** `klgtrdwrasrlxbmfyvdh` (renamed from *Field Portal Sandbox*) — Yannick's **HR app** project (Field Portal app reads Prod directly since 2026-05-16). Legacy April-clone schema (keep as-is); data re-seeded fresh 2026-06-11 (full employees/vehicles/inspections + live subset visits). Also hosts the `frozen_leads` schema — don't touch. One-time-seed model, no periodic refresh.
   - **Client App Mirror** `mjxjhwxktedrrnochwli` (org Unclogme, created 2026-07-08) — hourly-refreshed full-snapshot mirror of Prod's client domain (19 tables) for the Client App build phase; Prod strictly read-only in the pipeline; ~$10/mo Micro. See [docs/reference/client-app-mirror.md](docs/reference/client-app-mirror.md).
@@ -230,6 +235,43 @@ in a memory folder, because memory is keyed by working directory and does NOT re
   `NEW.derm_required` *after* the revert, match nothing, and **log zero forever while looking healthy.**
   Renaming such a trigger is a breaking change. (`2026-08-05_0556`.)
 
+### 🛑 `CREATE OR REPLACE`: COPY THE WHOLE BODY, NEVER RETYPE IT (2026-08-06)
+
+`CREATE OR REPLACE FUNCTION` takes the **entire** body. So "I changed one clause" and "I rewrote the
+function from memory" produce migrations that look identical, and **everything you fail to reproduce is
+silently deleted**. The header will then honestly describe the change you *intended*, which is why this
+class of defect survives review: the file reads correctly and the object does not match it.
+
+**What it cost on live Prod.** `2026-08-06_1316` replaced `derm.fn_resolve_generated_sheet_for_ticket`.
+Its header said the anti-AI auto-complete clause was the only change and that the rest was restated in
+full *"not because any of it moved."* The body had been retyped rather than copied, and it lost:
+
+| what the retype dropped | consequence |
+|---|---|
+| candidate selection became `select s.sheet_id … having count(*) = 1` with **no GROUP BY** | `42803` at runtime. The resolver **RAISED for every unresolved ticket for ~3.5 hours** (13:16 to 16:55) instead of returning null. |
+| the `derm_manifests.derm_address_no` write | resolved tickets stopped recording which sheet number they landed on |
+| `deleted_at is null` on `address_sheets`, in both the already-resolved lookup and candidacy | a soft-deleted sheet could be resolved onto |
+| `on conflict (sheet_id, manifest_id) do update set slot` flipped to `do nothing` | a corrected slot stopped being applied |
+| the sheet-number gate inside CANDIDATE SELECTION | kept only at placement, so a wrong candidate could be chosen |
+| `and s.o_y_pct is not null` on placement, and the not-completed upsert guard | placement and completion guards gone |
+| `min(m.service_date)` became `max(m.dump_ticket_date)` | causality moved from "when the work happened" to the dump date, which is not the same question |
+
+Corrected forward (not rewritten, per the audit-trail rule) in
+[`docs/migrations/2026-08-06_1655_stamp_row_confirmed_placement.sql`](docs/migrations/2026-08-06_1655_stamp_row_confirmed_placement.sql).
+**Its PART 0 is the primary record: read that file, do not re-derive this list.** Re-deriving from
+memory is the exact failure being documented here.
+
+**Procedure, every time:**
+1. **Copy the previous body. Do not retype it.**
+   `awk '/^CREATE OR REPLACE FUNCTION <name>/,/^\$function\$;/' docs/migrations/<previous>.sql`
+   and edit THAT copy. Editing the live `pg_get_functiondef` output is equally good and is what
+   `2026-07-30_2030` did: anchor asserted to match exactly once, every other byte unchanged.
+2. **Diff old against new** and confirm every removed line was meant to go.
+3. **EXERCISE the new body** in a rolled-back probe. PL/pgSQL is **not parsed at creation time**, so
+   "the migration applied" says nothing about whether the function runs. A `42803` sails straight
+   through `CREATE OR REPLACE` and only fires on the first real call.
+4. **"Nothing else moved" is a CLAIM, not a note.** Prove it with the diff, or delete the sentence.
+
 ### 🛑 STRUCTURE TELLS YOU WHAT A THING DOES, NEVER WHAT IT IS FOR — ask Fred (2026-08-05)
 
 **Fred:** *"don't drop the derm_required filter from work_orders, because we only show derms required
@@ -276,6 +318,26 @@ link, so they are not evidence of a missing obligation. (An earlier version of t
 A manifest on file is evidence DERM work happened, so for those 3 either the flag or the link is
 wrong. Nobody has been asked to investigate; do not let it get filed under the view scoping question
 and disappear.
+
+> 🛑 **CORRECTED 2026-08-07, AND THE CORRECTION IS A SAFETY ONE. "`derm_required = false`" above is
+> wrong for two of the three, and the wrong version invites the harmful action.**
+> **1260 (083-SHUL) and 1476 (133-MUT) are `derm_required IS NULL` and LOCKED**, not `false`. Only
+> **3923 (165-LPB)** is actually `false`, and it is **not** locked, so it is a genuinely different
+> situation. Do not treat the three as one shape.
+> **🛑 DO NOT UNLOCK 1260 OR 1476.** They were deliberately held back from
+> `2026-08-05_0620_derm_unlock_seven_null_locked_visits.sql` (commit `35fdb13`, which unlocked the
+> other seven: 1334, 1547, 1597, 5100, 5101, 5745, 5830, all of which re-derived to `true` with no
+> client-visible change). Both of these derive **`false`** from `fn_visit_requires_derm`, and
+> `customer.work_orders` filters `COALESCE(derm_required, true) = true` **by design** (Fred,
+> 2026-08-05). So unlocking either lets the nightly re-derive write `false` and the client's **entire**
+> service record for that visit leaves their Field Portal (driver, truck, decal, manholes, ticket, trap
+> condition, facility), not just a DERM chip, while a real manifest sits on file. **`NULL` is fail-safe
+> here and `false` is not.** 1533 (175-PV) was skipped for the opposite reason: it derives NULL, so
+> unlocking it is inert.
+> ⚠ **This open question is NOT licence to unlock them.** Investigating "is the flag or the link
+> wrong?" is a question for a person; clearing the lock is an action that answers it destructively.
+> Full workings, including the "two trios in circulation" trap:
+> [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
 
 ### ✅ `public.zones_hard_delete` is INTENTIONAL admin tooling — do NOT "harden" it (settled 2026-07-29)
 
@@ -408,6 +470,29 @@ one run per hour** (`PROPERTY_SWEEP_MINUTE`), because properties have no `update
    row still appears every cycle.** Work continuing while observability vanishes is worse than a
    clean failure.
 
+### 🛑 The line-item drift reconciler IGNORES ARCHIVED JOBS ON PURPOSE. Do not "fix" it (Fred, 2026-08-03)
+
+**Fred, 2026-08-03: *"leave it, don't extend the reconciler to archived jobs."*** Settled, not deferred.
+
+`sync-jobber-job-drift` builds its candidate set with
+`.not("job_status", "in", "(archived,closed,destroyed)")` (index.ts line 110), plus a 14-day
+recent-terminal arm for jobs that went terminal in our DB but are still open in Jobber. Four archived
+jobs (**10000171, 10000188, 2505, 10000196**) therefore hold stale line-item rows that will **never**
+converge, and that is the correct outcome:
+
+- Measured: those four appear **0 times** in `ops.client_service_options`, which filters
+  `job_status <> 'archived'`. **No app surface reads them.**
+- Widening the sweep adds a Jobber API call cost to **every 30-minute run, forever**, for records
+  nothing queries. The reconciler is already the object of a measured throttling budget (see the
+  BATCH / LINE_PAGE cost math in that file's header).
+- **10000196 drifts in the OPPOSITE direction** (4 job-scope rows on our side, 5 in Jobber). It is
+  pre-existing, it is not evidence the exclusion is wrong, and it is inert under the same decision.
+
+⚠ A related trap in the same area: **never dedupe `public.line_items` DB-side.** The reconciler
+multiset-diffs against Jobber and re-inserts within 30 minutes. And the duplicate groups still visible
+on **live** jobs are faithful mirrors of Jobber's per-visit overrides, not orphans. Full workings:
+[`docs/audits/2026-08-03_qty0_orphan_cleanup_and_source_fix.md`](docs/audits/2026-08-03_qty0_orphan_cleanup_and_source_fix.md).
+
 ### Truck names are NOT people
 **Moises, David, Goliath** — trucks. **Cloggy** — truck (only daytime-only one). Never respond to "David did the visit" as if David is a person without checking [docs/operations.md](docs/operations.md#truck-name--person-name).
 
@@ -472,6 +557,31 @@ it next must keep the same write-to-all-rows behaviour.
 
 ⚠ **Restore/backfill gotcha:** replaying a backup that contains an OLD cross-client pair now RAISES (BEFORE triggers fire before `ON CONFLICT`) and aborts the transaction — filter those pairs out first. Only 1 sanctioned legacy cross-client row exists (815064, pending Diego). Also: `trg_ae_ticket_key_unambiguous` RAISES when a white# collides with an existing yellow-only ticket key (or vice versa) — same filter-first rule for restores.
 
+### 🛑 A DERM SHEET IS A REGULATOR-FACING COMPLIANCE FORM: FILL IT, NEVER MARK IT (Fred, 2026-08-04)
+
+**Fred, verbatim:** *"The sheets cannot have a QR Code, so don't do it, the sheets should only be
+filled with data, any modifications to it we already did them for the Manifest Generator, adding a QR
+code is not valid."*
+
+This binds **every generator and every pixel-writer in this repo**, above all `redact-manifest-sheet`
+(which composites black boxes onto the sheet image) and the whole `derm.*` stamp-geometry / row-band
+pipeline. **No QR, no barcode, no watermark, no tracking mark, no "tiny corner glyph"** on a DERM
+address sheet or manifest, however small and however useful it would be to us. The only sanctioned
+modification to the form is the data the form asks for, in the fields the form provides. The pdf-service
+carries the same rule (`Building Apps/unclogme-pdf-service/CLAUDE.md`).
+
+**⚠ THIS WILL BE RE-PROPOSED, AND IT SOUNDS LIKE THE OBVIOUS ANSWER.** "Print a QR of the `sheet_no` so
+we can tell which sheet the driver actually used" is the natural fix for the 2026-08-04 mis-stamp (a
+generated 1-client sheet was resolved onto a ticket where the driver had filled a different 3-facility
+pad sheet). It was raised in that brainstorm and **rejected**. Do not re-derive it from the mechanism
+and ship it.
+
+**✅ What IS allowed: READING what DERM already prints.** The sheet number in the top right and the
+facility names on each Section B row are already on the paper, and OCR **observes** the document rather
+than altering it. That is why sheet identity is verified by
+`derm.address_sheet_scan_reads` / `derm.address_sheet_row_reads` and the `ocr-address-sheet-*` edge
+functions, and it is the ONLY sanctioned route to sheet-identity verification.
+
 ### FP Blackout — customer-safe redacted DERM sheets (added 2026-07-10, Fred-approved)
 
 The Field Portal's "DERM FOG eManifest" card serves a **server-side redacted copy** of the shared
@@ -488,6 +598,44 @@ classified). ⚠ RULES: NEW stamped pages generate NOTHING until a measurement p
 (rerun: export pages → `ocr-band-measure` workflow → `apply_bands.js`); NEVER widen the visible region
 from banded-card math alone (that was the v2 leak, caught by Fred 2026-07-10 — see
 `docs/audits/2026-07-10_ocr_band_refinement.md` + migrations `2026-07-10_fp_blackout_*.sql`).
+
+**Update 2026-08-03: the GENERATED sheets have now been measured, and there is a SECOND way to snap
+a page.** Two things above were true when written and are incomplete now.
+
+1. **The 9 generated-sheet manifests were the live proof of the "no extent, no doc" rule, and they are
+   fixed.** Generated sheets (#1000+) had never been through a vision pass, so `fn_blackout_targets`
+   hard-gating on a `derm.page_block_extents` row returned **0 rows, nothing even queued**, and the FP
+   FOG card was a permanent placeholder on all 9. Fred found it through his own invariant ("specially
+   if they have a GDO Online Report, they must have a FoG eManifest", 041-MB / sheet 1072).
+   `2026-08-03_0046` added the extents; `2026-08-03_0309` tightened them after Fred rejected the first
+   pass on sight (*"you're removing too much, these top and bottom parts are not needed to be blacked
+   out"*). Final values are the **measured span between the first and last printed form rule**, not a
+   guess: `ticket-310429` p1 **25.8 / 64.4**, p2 **25.8 / 63.7**, `ticket-831325` p1 **25.8 / 64.4**
+   (that scan is too light for the ink-density threshold, so it inherits p1's geometry).
+   - 🛑 **NARROWING is the leak direction, widening is not.** The two boxes are opaque overwrites, so
+     widening can only add black; a roster row above `blocks_top` or below `blocks_bottom` is served to
+     the customer as-is.
+   - 🛑 **NEVER re-derive an extent from `derm.v_stamp_row_bands`.** It is built
+     `WHERE stamp_y_pct IS NOT NULL` and is therefore blind to a printed-but-UNSTAMPED slot. Sheet 1072
+     page 2 has five printed slots and two stamped: a band-derived extent stops at 41.85% and serves
+     everything below it. The extent must cover every printed slot, empty ones included.
+   - The same release fixed an off-by-one in `redact-manifest-sheet` itself: ImageScript's `drawBox`
+     takes a **1-based** y and fills `[y, y+h-1]`, so both boxes stopped one row short and a sliver of
+     the previous client's address line survived. Pre-existing and fleet-wide; all 553 redacted docs
+     were regenerated in place (same filenames, same URLs). Customer-side write-up:
+     `Building Apps/Field Portal/docs/08-changelog.md`.
+2. **`ocr-band-measure` + `apply_bands.js` is no longer the only route.** `2026-08-03_0340` added
+   machine **band line-snapping** behind a confidence gate, backed by the new table
+   `derm.page_row_rules` (PK `dump_folder, effective_page, rule_pct`: detected printed form-rule
+   geometry as a % of page height). It writes through the EXISTING manual-override channel
+   (`address_row_map.band_y0_pct` / `band_y1_pct`), so no view changed.
+   🛑 **The gate is ALL-OR-NOTHING PER PAGE and must stay that way** (G1: every boundary finds a rule
+   within 1.5% of page height; G2: bands stay monotonic and non-overlapping after snapping).
+   Half-snapped bands stop tiling the roster, and a gap between two bands is a strip belonging to
+   nobody, which is exactly how a neighbour's row becomes visible.
+   ⚠ `band_source` is NOT written on that path, so a row showing `band_is_manual = true` may have been
+   snapped by machine and not touched by a human. Full detail:
+   `Building Apps/DERM Stamp Studio/docs/08-changelog.md`.
 
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.

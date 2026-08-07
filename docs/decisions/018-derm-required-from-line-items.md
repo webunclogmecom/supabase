@@ -21,9 +21,10 @@ derived a per-visit signal from the visit's actual line items.
 
 Populate `visits.derm_required` from each visit's line items via two SQL functions:
 
-- `fn_line_item_requires_derm(name)` — taxonomy code → authoritative flag; else a free-text classifier
-  (PUMP regex evaluated **before** NONPUMP, so a pumping line is never downgraded by a co-occurring
-  fee/cleaning token); else NULL.
+- `fn_line_item_requires_derm(name)` — taxonomy code → authoritative flag **for service codes only**
+  (see the 2026-08-06 amendment: fee/admin codes 25/26/27 abstain and return NULL); else a free-text
+  classifier (PUMP regex evaluated **before** NONPUMP, so a pumping line is never downgraded by a
+  co-occurring fee/cleaning token); else NULL.
 - `fn_visit_requires_derm(visit_id)` — classifies the **UNION** of the visit's line items across the
   visit/invoice/job scopes: any pumping → true; all-classified-none-pumping → false; else NULL.
 
@@ -43,6 +44,37 @@ Consumers (`manifest_pickable_visits`, `derm.visits.needs_manifest`, `customer.w
 keyed off `derm_required` NULL-safe and auto-corrected on populate; `ops.v_derm_compliance` was switched
 from `service_type='GT'` to `derm_required` (it stays GT-config-roster-scoped — grey-water/LS-only
 clients are covered by `derm.visits`).
+
+## Amendment 2026-08-06: a fee line ABSTAINS; the taxonomy branch is not authoritative for 25/26/27
+
+Migration `2026-08-06_1448_fee_lines_are_derm_neutral.sql` (commit `0af47f1`). The Decision above said
+"taxonomy code → authoritative flag" with no exception. That is now false for three codes, and the
+exception is a **compliance** change, not a tidy-up.
+
+Codes **25 (Credit card fee), 26 (ACH Fee), 27 (GDO Online Reporting)** carry
+`service_line_items.reason IN ('fee','other')`. `fn_line_item_requires_derm` returns **NULL** for them
+regardless of the catalogue column. Rationale: on code 05 (Main Line Cleaning) a FALSE is a genuine
+statement about the work; on a credit card fee it is not a statement at all. `service_line_items.
+requires_derm` is **NOT NULL** and so cannot express "this line does not say", which is why the
+distinction lives in the function (the semantic layer) rather than in the column.
+
+**What it protects.** `fn_visit_requires_derm` folds with `bool_or` and `customer.work_orders` ends
+`COALESCE(v.derm_required, true) = true`. A Service Call visit reaches no job-scoped line today and
+therefore derives NULL, which every consumer reads as "still needs a manifest". The moment a fee line is
+mirrored onto that job, the visit reaches exactly one line; a FALSE there would derive FALSE, the
+nightly `derm-required-rederive` would write that NULL to FALSE fill, and the monotonic guard would not
+block it (it only protects a known TRUE). **33 live visits across 22 non-SA jobs are in that shape**,
+and Fred ruled on 2026-08-05 that `customer.work_orders` is the client's DERM compliance surface by
+design, so eviction from it is a real loss.
+
+**Measured impact was zero, with the control printed beside it** (826 visits reach a fee line today, the
+positive control; 1741 reach any line; **0** derives changed) because a real service line already
+decides those visits. A guard installed ahead of the hazard, so "it changed nothing" is not grounds to
+remove it.
+
+**Scope is deliberately narrow:** only the authoritative taxonomy branch changed. The free-text branch
+still answers FALSE for a fee-ish string, because that same regex also covers cleaning/camera/labour
+where FALSE genuinely is evidence. Splitting that branch is a separate change with its own blast radius.
 
 ## Alternatives considered
 

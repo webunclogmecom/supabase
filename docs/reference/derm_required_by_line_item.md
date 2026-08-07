@@ -7,11 +7,24 @@ ADR [018](../decisions/018-derm-required-from-line-items.md)). Supersedes the 20
 
 ## The rule
 **A visit requires a DERM manifest iff it includes a "Pumping" line item** — Grease Trap (incl. grease
-*interceptor*), Grey Water, or Lift Station pumping. Everything else (Cleaning, Hydrojet, Unclogging,
-Camera/Dye/Assessment, Labor, Parts, Warranty, fees, GDO reporting) does **not**.
+*interceptor*), Grey Water, or Lift Station pumping. Every other **service** (Cleaning, Hydrojet,
+Unclogging, Camera/Dye/Assessment, Labor, Parts, Warranty) does **not**.
+
+🛑 **FEE AND ADMIN LINES ARE A THIRD CATEGORY: THEY ABSTAIN, and they are NOT in the "does not" set.**
+Corrected 2026-08-06 (migration `2026-08-06_1448_fee_lines_are_derm_neutral.sql`, commit `0af47f1`);
+this line previously listed "fees, GDO reporting" alongside Cleaning and Labor, which was the exact
+encoding removed as a compliance hazard. Codes **25 (Credit card fee), 26 (ACH Fee), 27 (GDO Online
+Reporting)** carry `service_line_items.reason IN ('fee','other')`, and `fn_line_item_requires_derm`
+answers **NULL** for them. On code 05 (Main Line Cleaning) a FALSE is a real statement: a cleaning
+service genuinely does not require DERM. On a credit card fee it is not a statement at all. A payment
+fee says nothing about whether the work needed a manifest, and storing "no" where the truth is "this
+line does not say" is what makes the SC fee mirror dangerous (worked through under the derivation
+section below).
 
 `service_line_items.requires_derm = true` for exactly codes **{01, 02, 03, 04, 09, 10, 11}** (all Pumping;
 01–04 = Service Agreement, 09–11 = Service Call). This column is already correct and matches the sheet.
+⚠ It is **NOT NULL**, so it cannot express "this line does not say". That is why the abstention lives in
+the function and not in the column: widening the column would have touched all 28 catalogue rows.
 
 `visits.service_type` is **too blunt** and is NOT the DERM signal: `handleVisit` *defaults*
 service_type to GT (so cleaning visits looked GT), and grey-water pumping is coded CL but DOES need DERM.
@@ -20,7 +33,14 @@ The line items are the real signal.
 ## How `visits.derm_required` is derived
 
 `public.fn_line_item_requires_derm(name)` → boolean (nullable):
-1. **Taxonomy-formatted** `"NN - ..."` → authoritative `requires_derm` for that code.
+1. **Taxonomy-formatted** `"NN - ..."` → the catalogue's `requires_derm` for that code, **except**
+   `reason IN ('fee','other')` (codes 25/26/27), which return **NULL**.
+   ⚠ **This step used to read "authoritative `requires_derm`" with no exception. That is FALSE as of
+   2026-08-06.** The taxonomy branch is authoritative for *service* codes only and abstains on
+   fee/admin codes. **Scope is deliberately narrow:** only this authoritative branch changed, because a
+   mirrored line always hits it ("25 - Credit card fee (3.53%)" carries its code prefix). The free-text
+   branch (3) still answers FALSE for a fee-ish string, since that same regex also covers
+   cleaning/camera/labour where FALSE genuinely IS evidence.
 2. else **free-text PUMPING** (`fn`'s `PUMP_RE`): a regulated vessel (grease trap / grease interceptor /
    interceptor / grey water / lift station, typo-tolerant "Tap"/"Lyft") near a pump word in either order,
    or an explicit pump-out (any word-form: pump/pumped/pumping/pumps out) → **true**. PUMP is tested
@@ -39,6 +59,35 @@ line items across all three scopes (visit-scoped `visit_id`, invoice-scoped `inv
 **NULL is the safe default** — every consumer treats `derm_required IS NULL OR = true` as *still needs a
 manifest* (surfaced for review), so a genuinely-ambiguous visit is never silently dropped. False
 negatives (hiding a real DERM visit) are worse than noise.
+
+### 🛑 Why the fee abstention is load-bearing: reverting 25/26/27 to FALSE evicts 33 live visits
+
+This is the mechanism, and it is worth following once because the "simplification" back to FALSE looks
+harmless from the catalogue side.
+
+`fn_visit_requires_derm` folds the reachable lines with `bool_or`, and `customer.work_orders` ends
+`COALESCE(v.derm_required, true) = true`. That view is the client's **DERM compliance surface by
+design** (Fred, 2026-08-05: *"we only show derms required jobs to the work orders"*), so a FALSE does
+not merely drop a chip, it removes the visit from the client's Field Portal record.
+
+1. A Service Call visit reaches **no** job-scoped line today, so it derives **NULL**, which every
+   consumer reads as "still needs a manifest".
+2. Mirror a fee line onto that job and the visit now reaches **exactly one** line.
+3. If that line answered **FALSE**, the visit derives FALSE, i.e. "definitively not required".
+4. The nightly `derm-required-rederive` writes precisely that NULL to FALSE fill, and the monotonic
+   guard does not stop it: it only blocks demoting a known TRUE.
+
+**33 live visits across 22 non-SA jobs sit in exactly that shape.** Measured impact of the abstention
+itself was **zero** and the zero is instrumented: 826 visits reach a fee line today (positive control,
+must be non-zero), 1741 reach any line, **0** derives changed, because on every one of them a real
+service line already decides the outcome through `bool_or`. This is a guard installed ahead of the
+hazard, not a repair, so "it changed nothing" is not an argument for removing it.
+
+⚠ The first version of that measurement was **vacuous and also said 0 of 1741**: the regex was written
+`'^\\s*2[567]\\s*-'` from a JS string, and a doubled backslash in SQL is a literal backslash, so it
+matched nothing and the control returned 0 visits reaching a fee line, which is impossible with 166 fee
+rows live. Rewritten with the escape-free POSIX class `[[:space:]]` the control returned 826 and the
+real answer was still 0. **Never accept a 0 here without the control printed beside it.**
 
 ## Keeping it fresh (three writers)
 - **Calendar** — `create_calendar_visit` RPC sets it from the chosen `service_line_item` ids (`bool_or(requires_derm)`).
@@ -78,6 +127,18 @@ flipped back to Required**.
     + `set_visit_derm_required` are belt-and-suspenders (they don't even attempt a locked row).
 - **No DERM Tracker app change** — the existing "DERM not required" button now sticks automatically.
 - To hand a visit back to auto-classification: set `derm_required_locked = false` explicitly.
+  🛑 **THIS IS THE HARMFUL ACTION ON SOME ROWS. Check the derive first.** Unlocking hands the row to the
+  nightly re-derive, and where the derive lands **FALSE** the visit disappears from
+  `customer.work_orders` entirely, taking the client's whole service record with it (driver, truck,
+  decal, manholes, ticket, trap condition, facility), not just a DERM flag. Two visits are
+  **deliberately excluded and must never be unlocked: 1260 (083-SHUL) and 1476 (133-MUT)** (both derive
+  FALSE while carrying a real manifest link). Run `fn_visit_requires_derm(visit_id)` before clearing any
+  lock, and read the 2026-08-05 section below before touching one at all.
+
+  ⚠ Note also that the DERM Tracker no longer takes this path. Since 2026-08-05 the app writes through
+  `set_visit_derm_required_manual` / `set_visits_derm_required_manual`, where `p_value = NULL` means
+  "I have no opinion" and RELEASES the lock. A direct `UPDATE` on `derm_required` from an app is
+  prohibited; this SQL recipe is an operator action only.
 
 Verified 2026-07-03: restored + locked all 139 human decisions; ran the real cron → **0** promoted, 0
 residual; Missing-Docs **52 → 23**; trigger blocks an auto-writer on a locked row and still lets an
@@ -105,6 +166,23 @@ view `ops.v_derm_human_override_conflict` lists them (worst-overdue first) so Ya
 "not required" call was correct rather than trusting it blindly. To re-require one: **clear
 `derm_required_locked` FIRST (its own UPDATE — the lock trigger doesn't fire on a lock-only change),
 then set `derm_required = true`** (a single combined UPDATE gets the value reverted by the lock trigger).
+
+🛑 **THE TWO RECIPES ON THIS PAGE ARE NOT INTERCHANGEABLE, AND ONE OF THEM CAN HIDE A CLIENT'S RECORD
+(annotated 2026-08-07).**
+
+| action | where `derm_required` ends up | what the client sees |
+|---|---|---|
+| **RE-REQUIRE**: unlock, then write `true` (the recipe directly above) | `true`, locked again by the write | record stays visible in `customer.work_orders`. **Always safe.** |
+| **UNLOCK AND LET IT RE-DERIVE** (the bare `derm_required_locked = false` recipe under the model section) | whatever `fn_visit_requires_derm` returns, which may be **`false`** | on a `false` the visit leaves `customer.work_orders` and the client's **entire** service record for it disappears |
+
+The second is not hypothetical. **1260 (083-SHUL) and 1476 (133-MUT) both derive `false` while carrying
+a real `manifest_visits` link**, so unlocking either erases that client's record while a manifest sits
+on file. They were deliberately held back on 2026-08-05; see the section below.
+
+⚠ **And the 2026-07-03 precedent immediately following is NOT a template for them.** Those 6 rows were
+re-required to `true` *and then* unlocked, which is safe precisely because they carry pumping line items
+and re-derive to `true`. Applying "re-required + unlocked" to a visit that derives `false` produces the
+opposite outcome overnight. Check `fn_visit_requires_derm(visit_id)` before you copy the pattern.
 
 **2026-07-03 (later): the 6 `has_manifest=true` rows were FIXED** (Fred approved; found by Supabase 2 via
 v5842/104-PV): visits 1707, 5028, 4901, 4836, 5841, 5842 each had a REAL linked manifest (white #s

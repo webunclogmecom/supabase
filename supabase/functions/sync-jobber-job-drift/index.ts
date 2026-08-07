@@ -13,6 +13,20 @@
 //     unable to self-heal because the old reconciler skipped DB-archived rows).
 //  3. Batch reads — jobs(filter:{ids:[…50]}) — instead of one call per job.
 //
+// 🛑 THE ARCHIVED EXCLUSION IS DELIBERATE AND FRED-SETTLED (2026-08-03). DO NOT WIDEN IT.
+//    The candidate query below filters `.not("job_status","in","(archived,closed,destroyed)")`.
+//    Fred: "leave it, don't extend the reconciler to archived jobs."
+//    Four archived jobs (10000171, 10000188, 2505, 10000196) hold stale line-item rows that will
+//    NEVER converge, and that is the correct outcome: measured, they appear 0 times in
+//    ops.client_service_options (which filters job_status <> 'archived'), so no app surface reads
+//    them. Widening the sweep buys a Jobber API cost on every 30-minute run, forever, for records
+//    nothing queries, charged against the leaky-bucket budget documented under BATCH/LINE_PAGE.
+//    ⚠ 10000196 drifts in the OPPOSITE direction (4 job-scope rows ours, 5 in Jobber). It is
+//    pre-existing, it is NOT evidence the exclusion is wrong, and it is inert under the same
+//    decision. Note the exclusion is not absolute: hole #2's 14-day recent-terminal arm is the
+//    sanctioned way a terminal-here / open-in-Jobber job still self-heals.
+//    Workings: docs/audits/2026-08-03_qty0_orphan_cleanup_and_source_fix.md
+//
 // DIRECTION: Jobber → DB only. With the verified-synchronous writer
 // (save-client-job), any DB-side divergence means something bypassed the saga;
 // that is a FINDING (surfaced in the sync_log details), never an outbound push.

@@ -85,8 +85,36 @@
 --
 -- AUDIT (ADR 010): storage.buckets is Supabase-managed infrastructure config, carries no audit
 --   trigger, and cannot get one; this file is the only record the change happened.
---   public.derm_portal_submissions is likewise unaudited (verified: no audit_* trigger), so a
---   screenshot_path change leaves no audit row. Called out rather than silently accepted.
+--
+-- 🛑 CORRECTION, 2026-08-07. THE SENTENCE THAT USED TO FOLLOW HERE WAS FACTUALLY WRONG.
+--   It read: "public.derm_portal_submissions is likewise unaudited (verified: no audit_* trigger),
+--   so a screenshot_path change leaves no audit row." That is FALSE. Only the storage.buckets half
+--   of this paragraph was ever correct.
+--
+--   MEASURED LIVE against Prod:
+--     trigger audit_derm_portal_submissions -> audit.log_change ....... PRESENT, tgenabled='O'
+--     created in .................................................. 2026-07-21e, lines 210-213
+--       (opted IN under CLAUDE.md Rule 8: "no table that touches DERM compliance skips audit")
+--     dropped since ................................................ never, in any migration
+--     audit.logs rows for the table ................................ 657
+--     of which, written by assertion block (g) IN THIS FILE ........... 2
+--       at 2026-08-06 21:06:37.752074+00, app_source='sql', the .jpg -> .png -> .jpg round trip
+--     real app writes, app_source='derm-tracker' ...................... 3 (one at 21:31 that evening)
+--
+--   So the probe further down this same file generated the very audit rows the header claimed
+--   could not exist. The claim was restated from memory and never checked.
+--
+--   🛑 THE RULE: NEVER RESTATE ANOTHER TABLE'S AUDIT STATUS FROM MEMORY IN A MIGRATION HEADER.
+--   Grep the migrations for the trigger name first (`audit_<table>`), or run the generator query in
+--   CLAUDE.md rule 8. A wrong "unaudited" claim is not cosmetic: it converts a later audit.logs
+--   SILENCE from evidence into a FALSE ALL-CLEAR, which is exactly the detector failure that root
+--   CLAUDE.md 5.5(b) exists to prevent, produced by the rule's own paperwork.
+--
+--   ⚠ AND IT CUTS THE OTHER WAY TOO. Because the table IS audited, "zero audit rows were written,
+--   therefore the write never happened" is a VALID instrument here: it could have fired and did
+--   not. Do not revise the DERM Tracker changelog entry that rests on it
+--   (Building Apps/DERM Tracker/docs/08-changelog.md line 174). That evidence stands, and it
+--   stands precisely BECAUSE the trigger is present.
 
 BEGIN;
 
