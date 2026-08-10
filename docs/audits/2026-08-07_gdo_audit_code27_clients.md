@@ -108,7 +108,29 @@ individually revertible.
 facility-name search for "MILA" returns 93 candidates and **0 matches**; the address search finds it
 immediately. That is the bot's address-first design earning its keep.
 
-### 🛑 3. Claudie: RECOMMENDATION IS **DO NOT MOVE THE PERMIT**
+### ✅ 3 CLOSED (2026-08-10): Claudie is ONE site with two addresses. Binding stays.
+
+**Asked Diego directly, and his answer resolves what coordinates could not.** Verbatim:
+
+> *"La entrada de la trampa de grasa está ubicada en la torre 1100. Pero la locación como tal es la 1101."*
+
+**The grease trap is reached through the 1100 tower; the business itself is 1101.** So
+1100 Brickell Bay Drive and 1101 Brickell Avenue are the **same site**, which is exactly the
+"one building, two frontages" case the 80-metre measurement could not distinguish from
+"two separate properties". Neither address is wrong, and **there is nothing to correct**.
+
+**Outcome: the permit stays on property 38 and nothing was changed.** Diego's answer is now appended
+to `gdos` row 2's notes, together with the reason, so the next person who notices the mismatch finds
+the explanation rather than repeating the analysis. The note was **appended**, leaving the 2026-05 /
+06 / 07 provenance intact.
+
+🛑 **Property 501 must NOT be retired either.** My earlier recommendation offered that as an option
+if it turned out to be a duplicate. **It is not a duplicate** — it is the real, permit-bearing address
+of the business. Retiring it would delete the only record of where Claudie actually is.
+
+The reasoning below is kept because it is why the obvious fix is wrong, and it still applies.
+
+### 🛑 Why moving the permit would have been a regression (retained)
 
 Moving `gdos` row 2 to property 501 (1101 Brickell Ave, the address DERM confirms) looks like the
 obvious correction. **It would cause a client-facing compliance regression.**
@@ -135,7 +157,7 @@ DERM status. **A cosmetic address mismatch would become a real compliance regres
 They are **80 metres apart**, both Jobber-linked, created 5 days apart. That is too close to call
 "two different sites" and too far to call "one building, two frontages" from coordinates alone.
 
-**Recommended order:**
+**What was decided (superseded by Diego's answer above, kept for the reasoning):**
 1. **Now: change nothing.** The permit is correct, current, and its compliance link works.
 2. **Ask the client which address Claudie actually operates from.** That is the only thing that
    resolves it, and it is a question for a person.
