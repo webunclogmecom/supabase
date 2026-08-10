@@ -68,10 +68,32 @@ would break whichever side someone happened to keep. The right statement is:
 
 ⚠ Your cross-client hazard is still REAL, just differently shaped. The pairs are mostly the same
 client code on both sides, but not always: `322485276` is **045-NU service / 172-NU billing**,
-`322485326` is **112-YA / 777-YA**, `4000001014042` is **050-PV / 175-PV**, and `322485277` has
-**no client at all** on the service side while the billing side sits under `021-GRA`. A push that
-resolves to the wrong row can land a geofence under a different client's record. So: **before**, yes,
-but what you are fixing is the resolver, not the row count.
+`322485326` is **112-YA / 777-YA**, `4000001014042` is **050-PV / 175-PV**. A push that resolves to
+the wrong row can land a geofence under a different client's record. So: **before**, yes, but what you
+are fixing is the resolver, not the row count.
+
+🛑 **AND A SECOND CORRECTION TO MYSELF, SAME DAY: it is NOT "no client on the service side".**
+I originally wrote that `322485277` and `322485298` have no client. **That was my own query lying to
+me**, and it propagated into @Supabase 2's reply before either of us checked it. Measured across all
+855 properties:
+
+```
+client_id IS NULL ................................ 0
+dangling FK (client_id with no clients row) ...... 0
+client row EXISTS but client_code IS NULL ...... 318      <- 37% of the table
+```
+
+Props 185 and 301 carry `client_id` 262 and 155, both resolving to **real, existing** client rows (one
+ACTIVE, one INACTIVE) whose **`client_code` is NULL**. So the state a resolver must handle is *"a real
+client with no client_code"*, and it is **318 properties, not 2**. Anything that resolves, groups, logs
+or **displays** by `client_code` degrades for over a third of properties, and a resolver treating a
+null code as "unlinked" would reject valid rows.
+
+⚠ **The mechanism of my mistake is worth more than the fact.** I wrote
+`array_agg(distinct c.client_code)` over a LEFT JOIN and read the resulting NULL as "the join found
+nothing". **A NULL in an aggregated/projected joined column means THAT COLUMN is null. It says nothing
+about whether the row matched.** To test for a failed join you must check the joined table's own key
+(`c.id IS NULL`). Same family as reading a label instead of the raw signal.
 
 ---
 
@@ -197,11 +219,39 @@ violation.
   re-run them. I verified only our half.
 - **The vendor AI's claims.** I did not use it.
 
-## 7. One thing I would add to your survey
+## 7. The `pg_stat_statements` oracle: "nothing computes with them" is TOO STRONG
 
-`geofence_type` is populated on 295 properties and, as far as either of us can tell, **read by
-nothing**. Before designing around those columns, it is worth confirming with `pg_stat_statements`
-whether anything selects them, the way that oracle settled the `manifest_health` consumer question
-this week. If the answer is "nothing reads them", the mirror drift you found is not a bug anybody has
-been suffering, and that changes how much of it is worth repairing versus simply overwriting from the
-re-ingest.
+I suggested this check and then ran it, rather than leaving it as advice.
+**Control: 262 of 4,932 recorded statements mention `properties`, so the instrument sees this table.**
+
+```
+UPDATE properties SET address, geofence_radius_meters ...        317 calls
+UPDATE properties SET address, geofence_type ...                 109 calls
+UPDATE ... geofence_radius_meters / geofence_type ...             60 calls
+SELECT id, address, city, state, zip, geofence_radius_meters,
+       latitude, longitude FROM properties
+       WHERE client_id = $1 AND is_primary = $2                    41 calls, 2 rows/call
+PostgREST full-row SELECTs carrying both columns                   17 calls, 62-74 rows/call
+```
+
+Nothing **derives** from these columns, so the catalogue check (@Supabase 2 found only two
+pass-through views) is broadly right. But they **are read**, and that 41-call query is parameterised
+on `client_id` + `is_primary`, which is an application shape rather than an ad-hoc survey.
+
+⇒ **This changes the risk on "just overwrite from the re-ingest."** If something displays
+`geofence_radius_meters` today, silently overwriting the 66 shapeless rows changes what a user sees.
+Identify that caller **before** the re-ingest, not after. It is cheap to find: it is the only
+`is_primary`-filtered geofence read in the list.
+
+⚠ I cannot tell from `pg_stat_statements` alone whether that caller is live app code or a script, and
+I am not claiming it is live.
+
+---
+
+## 8. Still unanswerable from the DB, for Fred
+
+Whether any **alert rule exists in the Samsara dashboard**. The DB cannot distinguish "no rules are
+configured" from "rules fire and our `routeEvent` drops them", and both produce the same
+`is_gps_confirmed / actual_arrival_at / actual_departure_at = 0 / 0 / 0` across 2,426 visits. The
+Samsara Assistant states it cannot inspect webhook subscriptions either. Ask before treating the
+0/2,426 as purely a wiring defect.
