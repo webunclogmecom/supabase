@@ -116,6 +116,39 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
 
 Old rows (pre-2026-05-23 18:30 UTC) have `app_source IS NULL` — no attribution available retroactively.
 
+#### 🛑 `anon` READS NOTHING TODAY, INCLUDING `customer.*`. "Field Portal stays anon read-only" is STALE (measured 2026-08-10)
+
+Triggered by Lovable flagging *"Client contact details (phone, email) exposed publicly"* as a
+**critical** issue on the Visit Calendar. **At the database layer that is not true.** Measured with
+`has_table_privilege`, which does not depend on a role switch behaving:
+
+| object | anon | authenticated |
+|---|---|---|
+| `public.clients`, `client_contacts`, `properties`, `visits` | **no** | yes |
+| `ops.v_calendar_visit`, `ops.v_route_today` | **no** | yes |
+| **all 9 `customer.*` views** | **no (0 of 9)** | yes |
+
+Every `customer.*` view reads `authenticated=r` + `service_role=r` and nothing else.
+
+⚠ **This contradicts two statements elsewhere in this file** ("Field Portal stays anon read-only",
+"only FP `customer.*` reads + pure immutable helpers remain anon-callable"). The drift is in the
+SAFE direction, the surface is tighter than documented, but a reader planning work on the assumption
+that `anon` can serve the Field Portal would be wrong. **Do not widen anything back to `anon` on the
+strength of those older lines without re-measuring.**
+
+⚠ **HOW I NEARLY MISREAD THIS.** My first probe used `SET LOCAL ROLE anon` with `customer.clients`
+as the must-pass control, on the assumption the docs were right. The control **failed**, and the
+honest reading of a failed control is "the instrument is untrusted, conclude nothing". Re-measuring
+with `has_table_privilege` showed the instrument was fine and **the control's PREMISE was wrong**.
+A failing control means stop, not "the target is broken".
+
+**Scope of that measurement, stated so nobody over-reads it:** it covers DB grants only. It does NOT
+cover the PUBLIC storage buckets (`gdo-permits`, `manifests`, `GT - Visits Images` are all
+`public: true`), edge functions running `verify_jwt = false`, or what a signed-in staff user can see
+(which for an internal ops tool is the point). The Lovable finding is most likely the scanner
+reasoning from client-side code without knowing about the auth gate, but **"the DB does not leak it"
+is not the same claim as "nothing leaks it"**.
+
 #### 🛑 `audit.logs.changed_by` HAS NEVER BEEN POPULATED. Read `jwt_claims->>'email'` instead (2026-08-07)
 
 Measured across the whole table, with a control: **54,756 rows, `changed_by` non-null in 0 of them**,
