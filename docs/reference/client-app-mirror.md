@@ -1,8 +1,34 @@
-# Client App Mirror — up-to-date Prod mirror for Yannick's Client App
+# Client App Mirror — DELETED 2026-08-10. Historical record.
+
+> 🛑 **THE PROJECT NO LONGER EXISTS. Everything below is history, not operating instructions.**
+> Deleted 2026-08-10 on Fred's instruction, 33 days after it was created and 17 days after its only
+> consumer left. `GET /v1/projects` no longer lists it and a query against the ref returns
+> `400 Resource has been removed` (control: the identical call against Prod returns `201`).
+>
+> **Why it went:** the Client App was repointed to Prod on 2026-07-24, and the live bundle at
+> `clients.unclogme.app` carries only the Prod ref (verified over 10 chunks with a positive control).
+> The mirror had no consumer for 17 days.
+>
+> **Nothing was lost, and that was checked rather than assumed.** Ids present in the mirror but absent
+> from Prod: clients 0, properties 0, client_contacts 0, jobs 0, gdos 0. Auth users 0, storage objects
+> 0, buckets 0. So unlike Sandbox #1 there was no unique data to back up. A final metadata snapshot
+> (table counts + `mirror_meta`, no row data) is at
+> `backups/client_app_mirror_final_2026-08-10.json`, outside the repos and git-ignored.
+>
+> ⚠ **It was not merely idle, it was actively wrong, and the failure shape is the lesson.** The refresh
+> workflow had failed **154 consecutive runs since 2026-07-28**, yet `mirror_meta.last_refresh_at` kept
+> advancing every hour (17:16 UTC on the last day), so the mirror *looked* fresh. Its circuit breaker
+> was skipping deletes: `visit_team` held **1,453** rows against Prod's **131**, and `visit_locations`
+> **2,501** against **182**. Roughly 3,600 rows that Prod had deleted lived on, and anyone building
+> against it saw them. **A freshness timestamp written by the job is not evidence the job succeeded**
+> (see also: `cron.job_run_details` proves dispatch, `sync_log` proves success).
+>
+> `.github/workflows/client-mirror-refresh.yml` (cron `23 * * * *`) was removed in `7f0ac2f`, before
+> the project was deleted, so the hourly job could not fire against a dead ref.
 
 *Created 2026-07-08 (Fred-approved; design passed a two-agent adversarial audit the same day).
 Supabase project **`mjxjhwxktedrrnochwli`** ("Client App Mirror"), org Unclogme, us-east-1.
-Bills ~$10/mo (Micro compute — the org is Pro, so there are no free projects).*
+Billed ~$10/mo (Micro compute — the org is Pro, so there are no free projects).*
 
 ## What it is
 
