@@ -8,8 +8,13 @@ all correct and flag them the ones that are not."*
 across the seven clients were confirmed against DERM. Nothing we bill for online reporting is
 filed against a wrong or lapsed permit.
 
-**Three things are wrong, and none of them is a value.** Two are documents (one stale, one
-missing) and one is a location binding. They are listed under "Flagged" below.
+**Three things were wrong, and none of them was a value.** Two were documents (one stale, one
+missing) and one looked like a location binding.
+
+> ✅ **ALL THREE ARE NOW CLOSED (2026-08-10).** Both documents were pulled from DERM and filed, so
+> **all 10 active permits hold a document**. The third turned out **not to be a defect at all**:
+> Claudie's two addresses are one site. See "RESOLUTION" below. The original findings are kept
+> in full underneath, because the reasoning is why the obvious fix to the third one was wrong.
 
 ---
 
@@ -62,11 +67,11 @@ single lookups from three days earlier.
 | 009-CN Casa Neos | GDO-10877 KITCHENS | active to 2026-12-31, 60d | same | clean |
 | 009-CN | GDO-15062 BARS | active to 2026-12-31, 90d | same | clean |
 | 009-CN | GDO-16389 LOUNGE | active to 2026-12-31, 30d | same | clean |
-| 041-MB Marie Blachere | GDO-14965 | active to 2026-12-31, 90d | same | **stale PDF** |
-| 043-MIL Mila | GDO-11024 restaurant | active to 2026-12-31, 90d | same | **no PDF** |
+| 041-MB Marie Blachere | GDO-14965 | active to 2026-12-31, 90d | same | ~~stale PDF~~ **FIXED 08-10** |
+| 043-MIL Mila | GDO-11024 restaurant | active to 2026-12-31, 90d | same | ~~no PDF~~ **FIXED 08-10** |
 | 043-MIL | GDO-14117 bar/lounge | active to 2026-12-31, 60d | same | clean |
 | 082-TFC The Fresh Carrot | GDO-09853 | active to 2026-12-31, 30d | same | clean |
-| 110-CLA Claudie | GDO-12517 | active to 2026-12-31, 90d | same | **wrong property** |
+| 110-CLA Claudie | GDO-12517 | active to 2026-12-31, 90d | same | ~~wrong property~~ **NOT A DEFECT, one site, two addresses** |
 | 111-YC Yann Couvreur | GDO-13263 | active to 2026-12-31, 90d | same | clean |
 | 168-AVA AVA | GDO-15675 | active to 2026-12-31, 90d | same | clean |
 
