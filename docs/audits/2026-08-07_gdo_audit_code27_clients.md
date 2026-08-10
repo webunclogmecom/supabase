@@ -76,6 +76,81 @@ looser than their permit allows.
 
 ---
 
+---
+
+## RESOLUTION (2026-08-10)
+
+**Two of the three findings are CLOSED. All 10 active permits across the 7 clients now hold a
+document (10 of 10).** The third is a recommendation, below, deliberately not acted on.
+
+### ✅ 1 and 2 closed: both PDFs pulled from DERM and filed
+
+Taken from the **authoritative source**, DERM's document API (the same endpoint and payload the GDO
+bot uses), not re-uploaded from a Slack copy.
+
+| row | client | was | now |
+|---|---|---|---|
+| 69 | 041-MB | `gdo/GDO-14965.pdf` (**the 2023 permit**) | `gdo/GDO-14965-uploaded-2026-08-10.pdf` |
+| 230 | 043-MIL | **NULL** | `gdo/GDO-11024-uploaded-2026-08-10.pdf` |
+
+**The audit's diagnosis was exactly right about Marie Blachere: DERM holds TWO documents for
+GDO-14965**, one expiring 2026-12-31 and one 2023-12-31, and we had filed the 2023 one.
+
+🛑 **Every document was PARSED AND ASSERTED BEFORE THE ROW WAS RE-POINTED** (number, expiry and
+frequency all had to match the row, and it had to be a real DERM permit). Pointing a row at the
+wrong document is worse than leaving it empty: it looks correct and nobody re-checks it.
+
+Uploaded with `x-upsert: false`, so **nothing was overwritten** and the 2023 document survives at its
+old path. `public.gdos` is audited, so `old_row` holds the previous value and either row is
+individually revertible.
+
+⚠ **Mila is filed at DERM under "800 LOCCOLN ROAD BUILDING"**, their typo for Lincoln. A
+facility-name search for "MILA" returns 93 candidates and **0 matches**; the address search finds it
+immediately. That is the bot's address-first design earning its keep.
+
+### 🛑 3. Claudie: RECOMMENDATION IS **DO NOT MOVE THE PERMIT**
+
+Moving `gdos` row 2 to property 501 (1101 Brickell Ave, the address DERM confirms) looks like the
+obvious correction. **It would cause a client-facing compliance regression.**
+
+`customer.permits` computes "last serviced", and therefore `over_gdo_max` and `compliant`, with:
+
+```sql
+WHERE v.client_id = g.client_id AND v.visit_status = 'completed' AND v.deleted_at IS NULL
+  AND ( v.property_id = g.property_id
+        OR lower(btrim(vp.address)) = lower(btrim(gp.address)) )
+```
+
+Measured for Claudie: the permit currently links to **7 completed visits via `property_id`**, and
+**0 via the address string**. Move it to 501 and **both arms fail** (501 has 0 visits, and the two
+address strings differ), so the compliance date goes NULL and the client's Field Portal loses its
+DERM status. **A cosmetic address mismatch would become a real compliance regression.**
+
+| | property 38 | property 501 |
+|---|---|---|
+| address | 1100 Brickell Bay Drive | 1101 Brickell Avenue s 113 |
+| jobs / visits | **10 / 9** | 0 / 0 |
+| holds the GDO | yes | no |
+
+They are **80 metres apart**, both Jobber-linked, created 5 days apart. That is too close to call
+"two different sites" and too far to call "one building, two frontages" from coordinates alone.
+
+**Recommended order:**
+1. **Now: change nothing.** The permit is correct, current, and its compliance link works.
+2. **Ask the client which address Claudie actually operates from.** That is the only thing that
+   resolves it, and it is a question for a person.
+3. **If 501 is a duplicate, retire 501** (0 jobs, 0 visits, so it is free to retire). The
+   discrepancy then disappears without ever touching the permit.
+4. **Never option 3-from-the-other-direction**: do not move the permit to 501 while the visits are
+   on 38.
+
+⚠ **A wider fragility found while measuring this, worth its own look:** that address-string arm means
+**anyone tidying the address text on either property silently breaks compliance** for whoever relies
+on it. Across 136 active permits: 88 link by `property_id`, **2 link ONLY by the address string**,
+and 46 link by neither (so their compliance date is already NULL). The 2 are the exposed ones.
+
+---
+
 ## Flagged
 
 ### 1. 041-MB Marie Blachere: the PDF on file is the 2023 permit (`gdos` row 69)
