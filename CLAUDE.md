@@ -354,6 +354,33 @@ memory is the exact failure being documented here.
    through `CREATE OR REPLACE` and only fires on the first real call.
 4. **"Nothing else moved" is a CLAIM, not a note.** Prove it with the diff, or delete the sentence.
 
+### 🛑 "WHO READS THIS COLUMN?" — A WHOLE-ROW RPC READS IT WITHOUT NAMING IT (2026-08-10)
+
+Before dropping or renaming a column, the two obvious sweeps are a regex over `pg_proc.prosrc` and a
+`pg_depend` walk. **Both return a confident ZERO for a function shaped like this**, which is the
+standard Client App RPC shape in this repo:
+
+```sql
+declare v_row public.properties;                 -- a %ROWTYPE local
+insert into public.properties (...) returning * into v_row;
+return to_jsonb(v_row);                          -- emits every column, names none
+```
+
+Measured on `client.create_property` (2026-08-10): the body contains the string `access` **zero**
+times, `pg_depend` holds **0** `pg_proc` rows against `public.properties`, and `to_jsonb(v_row)`
+returns **27 keys, 5 of them `access*`**. A regex sweep found 1 of the 2 real function consumers.
+
+⇒ **Dropping a column silently changes the JSON an app receives, with no error at either end.**
+So enumerate whole-row returns separately: grep for `returning * into`, `%ROWTYPE`,
+`to_jsonb(v_row)` and `select * from`, and treat every hit as a consumer of **every** column.
+The same applies to `select("*")` on the app side and to any full-table mirror job.
+
+⚠ **And a string match is not a measurement.** My check of this very finding matched
+`'%v_row public.properties%'` with one space; the declaration uses five, so the probe returned
+`false` and briefly looked like a refutation of a correct finding. **Read `pg_get_functiondef` and
+look at it** rather than asking a `LIKE` whether something is there. Compare the §5 regex-transport
+trap in the root `CLAUDE.md`: same failure class, different layer.
+
 ### 🛑 STRUCTURE TELLS YOU WHAT A THING DOES, NEVER WHAT IT IS FOR — ask Fred (2026-08-05)
 
 **Fred:** *"don't drop the derm_required filter from work_orders, because we only show derms required

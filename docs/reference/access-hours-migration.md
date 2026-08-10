@@ -12,9 +12,13 @@ and for it to be applied on all the apps."*
 
 | column | what it is | populated |
 |---|---|---|
-| `access_schedule` (jsonb) | **the authoritative copy.** `{"mon":{"open":"22:00","close":"06:00"}, ...}` | **198 of 856** |
+| `access_schedule` (jsonb) | **the authoritative copy.** `{"mon":{"open":"22:00","close":"06:00"}, ...}` | **198** of 861 |
 | `access_hours_start` / `_end` (text) | one window for the whole property. **A compatibility mirror now, not storage** | 198 |
 | `access_days` (text[]) | which days that window applies to | 201 |
+
+⚠ **The denominator MOVES.** It was 856 on 2026-08-07 and is **861** today: the hourly Jobber
+property sweep inserts rows while this migration is in flight. New properties arrive with all four
+columns NULL, so they need no backfill, but never quote a "N of TOTAL" figure as if it were stable.
 
 Step 1 shipped: `docs/migrations/2026-08-07_1649_access_hours_backfill_schedule.sql`.
 **Every property that has access hours now has a schedule. There are ZERO legacy-only rows.**
@@ -110,7 +114,7 @@ The sweeps found 5 views and 1 function. The real surface is much wider:
 | missed consumer | why it matters |
 |---|---|
 | **`scripts/sync/refresh_client_mirror.js`** + `.github/workflows/client-mirror-refresh.yml`, **cron `23 * * * *`** | **A LIVE HOURLY JOB** copying `properties` whole-table to the Client App Mirror project. Verified: the workflow exists and `properties` is in its table list. |
-| **`client.create_property`** | A second SECURITY DEFINER RPC, `authenticated`-executable, that declares and emits all five access columns. Absent from the original list. |
+| **`client.create_property`** | A second SECURITY DEFINER RPC, `authenticated`-executable, that emits all five access columns. **Invisible to both standard detection methods — see below.** |
 | **`client.properties` view** | The Client App's *only* property read path, omitted from that app's own report. |
 | **Return contract of both property RPCs** | Both end `to_jsonb(v_row)`, so **dropping a column silently changes the JSON shape the app receives**. The sweep marked this "does not break". It does. |
 | **`schema/v2_schema.sql`** | The schema-of-record snapshot declares the three columns and reproduces all four ops views. |
@@ -121,7 +125,63 @@ The sweeps found 5 views and 1 function. The real surface is much wider:
 | `docs/migrations/2026-08-10_1212_*` | My own padding migration from an hour earlier, writing the trio. Missed by the repo sweep. |
 
 ⚠ **The Visit Calendar alone has 13 distinct consumers of the trio, every one of which breaks if it
-is dropped.**
+is dropped.** Its published bundle names the three legacy columns 15 times and `access_schedule`
+**zero** times. Two of its PostgREST calls name the columns **explicitly** rather than `select *`,
+and one of them **filters** on a legacy column
+(`.select("access_hours_start, access_hours_end, access_days").not("access_hours_start","is",null)`),
+so a drop is a `42703` on the whole grid query, not a blank field.
+
+## 🛑 THE DETECTION TRAP: A WHOLE-ROW RPC CONSUMES EVERY COLUMN WHILE NAMING NONE
+
+**This is the part worth carrying to any future column-drop audit, and it caught my own sweep.**
+
+`client.create_property` does this:
+
+```sql
+declare v_row public.properties;      -- line 21
+insert into public.properties ... returning * into v_row;   -- 142-148
+return to_jsonb(v_row);               -- 150
+```
+
+**The body never contains the string `access`.** Measured:
+
+| detection method | result | why it fails |
+|---|---|---|
+| regex over `pg_proc.prosrc` | **1 function found**, not 2 | the column names are never written down |
+| `pg_depend` → `pg_proc` vs `public.properties` | **0 rows** | a `%ROWTYPE` local creates no column dependency |
+| `to_jsonb(v_row)` key count | **27 keys, 5 of them `access*`** | the columns are all there at runtime |
+
+⇒ Both catalogue-based methods return a confident zero. **Dropping a column silently changes the
+JSON shape this RPC returns to the app — no error, at either end.**
+
+⚠ **And my confirming check of the audit's finding was itself wrong**, in the same class: I matched
+`'%v_row public.properties%'` with one space, the declaration uses five, so my probe returned `false`
+and briefly looked like a refutation. **A string match is not a measurement.** Reading
+`pg_get_functiondef` settled it in one call.
+
+## Runtime usage, which changes the priority order
+
+From `pg_stat_statements` (control: 4,890 statements tracked, nonsense token 0 calls):
+
+| view | calls ever |
+|---|---|
+| `ops.v_calendar_visit` | **37,290** |
+| `ops.v_service_due` | 3,636 |
+| `ops.properties` | **7** |
+| `ops.v_route_today` | **4** |
+
+**Two of the four `ops` views are effectively dead.** The migration's real exposure is one view and
+one app, not four and six.
+
+## Two more consumers, both dormant rather than harmless
+
+- **`scripts/ops_views/{properties,v_calendar_visit,02_v_service_due,03_v_route_today}.sql`** are
+  checked-in copies of exactly the four view bodies. **Re-applying a stale copy after the switch
+  silently reverts the view**, with no error. They must move in the same commit as any view change.
+- **`supabase/functions/webhook-airtable/index.ts`** writes `access_hours_start` (L217) and
+  `access_days` (L234) in `handleClientRecord`. `'client'` was severed from `ENTITY_TO_HANDLER` on
+  2026-07-30 and carries a `DO NOT RE-ADD`, so it is unreachable — but it is the one thing that could
+  re-create a legacy-only row if anyone ever re-adds the entity.
 
 ## Verdict: FINISHING means "one authoritative source", NOT "drop the columns"
 
@@ -135,7 +195,7 @@ consumers and an app nobody had listed, and it would **lose data for 5 propertie
 
 | step | state |
 |---|---|
-| 1. `access_schedule` populated and authoritative | ✅ `2026-08-07_1649`, 198 of 856, zero legacy-only-hours rows |
+| 1. `access_schedule` populated and authoritative | ✅ `2026-08-07_1649`, 198 rows, zero legacy-only-hours rows |
 | 2. Stored trio normalised so it equals what the schedule derives | ✅ `2026-08-10_1212`, 20 rows padded |
 | 3. Expose `access_schedule` on the four `ops` views | **not done, and now known to be worth little** until per-day data exists |
 | 4. Drop the trio | **NOT SAFE. See above.** |
