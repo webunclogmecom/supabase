@@ -359,7 +359,57 @@ Deno.serve(async (req: Request) => {
         // clients / 4 sheets). Attach the primary + EVERY extra so the City gets the full
         // manifest. Same for the Transporter Manifest. Require all to fetch (a missing sheet
         // = the bug we're fixing — fail loudly rather than send an incomplete manifest).
-        const addressUrls = [m.derm_address_url, ...(((m.derm_address_extra_urls as string[] | null) || []))].filter(Boolean)
+        // 🛑 2026-08-10 (Fred, relaying Yannick): the City gets the BLACKED-OUT sheet, not the full one.
+        //
+        // WHY. The DERM Address sheet is SHARED across every client on one dump run, so attaching it
+        // whole hands a municipal regulator the compliance rows of businesses they have no
+        // jurisdiction over. Measured before this change: of the 114 city sends possible today,
+        // **114 disclosed other clients** and **0 disclosed none**, averaging 7.15 other clients and
+        // peaking at 18. There was no benign case.
+        //
+        // We already produce exactly the right artifact. The Field Portal blackout
+        // (`derm.redacted_manifest_docs`) renders one image per (manifest, client) with ONLY that
+        // client's band visible and every other facility row blacked, while keeping the transporter
+        // block, both certifications, the disposal facility, ticket number and gallons intact.
+        // 114 of 114 city-eligible pairs already have one, so nothing needs generating.
+        //
+        // ⚠ THIS SUPERSEDES THE PARAGRAPH ABOVE, AND THAT PARAGRAPH'S REASON STILL MATTERS.
+        // On 2026-07-09 the City was sent only sheet 1 of a 4-sheet run (#829216, 12 clients) and
+        // warned about the clients it could not see, which is why every extra sheet was attached.
+        // Redaction answers that differently: we no longer claim the other clients at all, so there
+        // is nothing dangling for the regulator to chase. **If a city ever objects that the document
+        // looks incomplete, that is the trade being made here, and it is Fred's call to revisit.**
+        //
+        // 🛑 NEVER FALL BACK TO THE FULL SHEET. A missing redaction SKIPS the send. Falling back
+        // would silently restore the exact disclosure this exists to prevent, on the one path where
+        // nobody would be looking.
+        const rdRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/redacted_manifest_docs?manifest_id=eq.${id}&client_id=eq.${clientId}&select=url`,
+          { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Accept-Profile': 'derm' } },
+        )
+        // Both branches SKIP, but they are different problems and must not share a label. A failed
+        // lookup ("Accept-Profile dropped", schema cache cold, 500) would otherwise be indexed under
+        // "no redacted sheet" and send someone to regenerate artifacts that already exist.
+        // Verified 2026-08-10 with three controls: a known pair returns the row; an impossible pair
+        // returns 200 `[]`; the same call without `Accept-Profile: derm` returns 404 (PGRST205).
+        // So `[]` genuinely means absent, and a non-ok response genuinely means the lookup broke.
+        if (!rdRes.ok) {
+          const rdErr = await rdRes.text().catch(() => '')
+          console.error(`[send-derm-email] redaction lookup failed manifest=${id} client=${clientId} status=${rdRes.status} ${rdErr.slice(0, 200)}`)
+          results.push({ manifest_id: id, status: 'skipped', reason: 'redaction_lookup_failed', client: clientName })
+          await logSend(id, logClientId, null, null, 'skipped', 'redaction_lookup_failed', 'city')
+          continue
+        }
+        const rdRows = await rdRes.json()
+        const redactedUrl: string | null = Array.isArray(rdRows) && rdRows[0]?.url ? String(rdRows[0].url) : null
+        if (!redactedUrl) {
+          results.push({ manifest_id: id, status: 'skipped', reason: 'no_redacted_sheet', client: clientName })
+          await logSend(id, logClientId, null, null, 'skipped', 'no_redacted_sheet', 'city')
+          continue
+        }
+        // ONE image by design: the redaction targets the page carrying this client's row
+        // (`effective_page`), so the other pages are exactly the ones we are declining to disclose.
+        const addressUrls = [redactedUrl]
         const transUrls = [m.derm_manifest_url, ...(((m.derm_manifest_extra_urls as string[] | null) || []))].filter(Boolean)
         const attachments: { filename: string; content: string; content_type: string }[] = []
         let fetchFailed = false
