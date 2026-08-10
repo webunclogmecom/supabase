@@ -78,7 +78,88 @@ decision, not a cleanup. **Ask before either app changes its interpretation.**
 
 ---
 
-## What is left, and why none of it shipped with step 1
+---
+
+# 🛑 AUDIT, 2026-08-10: THE COLUMNS CANNOT BE DROPPED YET, AND THE REASON IS NOT WHAT ANYONE EXPECTED
+
+Fred: *"Do an audit for the access hours migration, and finish it."* The audit ran five parallel
+sweeps (database, Client App bundle, Calendar bundle, all other apps, repo code), then a second pass
+whose only job was to find a consumer each sweep had missed.
+
+**All five sweeps were refuted. 25 consumers were missed between them.** That is the finding.
+
+## The two facts that reframe the whole migration
+
+**1. 🛑 `access_schedule` CONTAINS NO PER-DAY DATA. Zero of 198 schedules hold more than one
+distinct window.** The backfill copied one window across N days, and nobody has entered genuinely
+per-day hours since. So moving any app onto `access_schedule` today gains it **nothing**: it would
+read the same single window by a longer route. The migration's value is *future* capability and
+*one* source of truth, not richer data today.
+
+**2. 🛑 FIVE PROPERTIES HAVE NO LOSSLESS DESTINATION.** 521 (227-PER), 157 (176-SOU), 73 (140-TYO),
+362 (094-MOZ), 109 (109-RAB) hold `access_days` with **`access_hours_start` NULL**. `access_schedule`
+requires `open` and `close` per day (the RPC raises `22023` otherwise), so "these days, hours
+unknown" **cannot be expressed in the new format at all**. Three of the five have live visits.
+⚠ The earlier claim "zero properties have legacy hours without a schedule" is true **for hours** and
+**false for days**.
+
+## What the adversarial pass found that the sweeps missed
+
+The sweeps found 5 views and 1 function. The real surface is much wider:
+
+| missed consumer | why it matters |
+|---|---|
+| **`scripts/sync/refresh_client_mirror.js`** + `.github/workflows/client-mirror-refresh.yml`, **cron `23 * * * *`** | **A LIVE HOURLY JOB** copying `properties` whole-table to the Client App Mirror project. Verified: the workflow exists and `properties` is in its table list. |
+| **`client.create_property`** | A second SECURITY DEFINER RPC, `authenticated`-executable, that declares and emits all five access columns. Absent from the original list. |
+| **`client.properties` view** | The Client App's *only* property read path, omitted from that app's own report. |
+| **Return contract of both property RPCs** | Both end `to_jsonb(v_row)`, so **dropping a column silently changes the JSON shape the app receives**. The sweep marked this "does not break". It does. |
+| **`schema/v2_schema.sql`** | The schema-of-record snapshot declares the three columns and reproduces all four ops views. |
+| **`docs/field-portal-compatibility-views.sql` L104-109** | **Executable DDL**, not prose: builds a customer-facing string from all three legacy columns. |
+| **`scripts/populate/populate.js`** | Live population procedure, documented in the duplication guide, writes the trio. |
+| Calendar drawer visit-to-visit navigation | A second `.from("v_calendar_visit").select("*")` the Calendar sweep missed. |
+| "UnclogMe Admin Management" | **An app absent from the app list entirely.** |
+| `docs/migrations/2026-08-10_1212_*` | My own padding migration from an hour earlier, writing the trio. Missed by the repo sweep. |
+
+⚠ **The Visit Calendar alone has 13 distinct consumers of the trio, every one of which breaks if it
+is dropped.**
+
+## Verdict: FINISHING means "one authoritative source", NOT "drop the columns"
+
+Dropping them today would buy **no capability** (fact 1), while requiring a cutover across an hourly
+cron, two RPC response shapes, a schema-of-record file, executable compatibility DDL, 13 Calendar
+consumers and an app nobody had listed, and it would **lose data for 5 properties** (fact 2).
+
+**So the columns stay, deliberately, and this is the decision rather than an omission.**
+
+### Done, and it is the part that actually mattered
+
+| step | state |
+|---|---|
+| 1. `access_schedule` populated and authoritative | ✅ `2026-08-07_1649`, 198 of 856, zero legacy-only-hours rows |
+| 2. Stored trio normalised so it equals what the schedule derives | ✅ `2026-08-10_1212`, 20 rows padded |
+| 3. Expose `access_schedule` on the four `ops` views | **not done, and now known to be worth little** until per-day data exists |
+| 4. Drop the trio | **NOT SAFE. See above.** |
+
+### The open decisions, which are Fred's
+
+1. **The 5 days-only properties.** All five record all seven days, which conveys the same as "no
+   restriction", so the information loss from dropping `access_days` is close to zero. But it is
+   three clients with live visits. Accept the loss, or keep `access_days` as a column?
+2. **Is the drop worth doing at all** before anyone enters genuinely per-day hours? Today it is pure
+   risk for no user-visible gain.
+
+### A latent defect found on the way, worth closing regardless
+
+`client.update_property_operational` re-derives `access_hours_start/_end` from `access_schedule` on
+every schedule write, but **never re-derives `access_days`**. A caller sending `access_schedule`
+without `access_days` leaves the two disagreeing silently.
+✅ **Not reachable from the Client App**: its patch builder sends `access_days`, `access_schedule`
+and the hours pair together, all built from the same selected-day set (verified in the published
+bundle). So this is latent, reachable only by a script. Worth closing when the RPC is next touched.
+
+---
+
+## What was left after step 1 (retained, superseded in part by the audit above)
 
 Step 1 was deliberately **additive**: it filled the new column, changed no view, and moved nothing on
 any screen.
