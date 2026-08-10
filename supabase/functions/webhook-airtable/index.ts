@@ -213,6 +213,13 @@ async function handleClientRecord(recordId: string, fields: Record<string, unkno
   }
 
   // -- 2. Update primary property (access window + county + manholes) ----
+  // DEAD SINCE 2026-07-30: 'client' was severed from ENTITY_TO_HANDLER, so nothing
+  // reaches this. Left in place, but note that re-adding the entity would now FAIL:
+  // public.properties.access_hours_start / access_hours_end / access_days were DROPPED
+  // on 2026-08-10 (STAGED_2026-08-10_1415), so these three writes raise 42703. Access
+  // hours live in public.properties.access_schedule, a jsonb keyed mon..sun with
+  // {open,close} per day; the legacy trio is now DERIVED in the views via
+  // public.fn_sched_open/_close/_days. Anyone reviving this must write the schedule.
   const propUpdate: Record<string, unknown> = {}
   const hin = strVal(fields, 'Hours in');   if (hin)  propUpdate.access_hours_start = hin
   const hout = strVal(fields, 'Hours out'); if (hout) propUpdate.access_hours_end   = hout

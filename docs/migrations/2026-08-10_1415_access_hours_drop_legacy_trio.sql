@@ -1,14 +1,26 @@
 -- ============================================================================
--- 2026-08-10_1415: drop the legacy access trio (STAGED -- NOT YET APPLIED)
+-- 2026-08-10_1415: drop the legacy access trio  [APPLIED 2026-08-10]
 -- ============================================================================
 -- Step 4, the last one. Fred, 2026-08-10: "once that is complete we can drop the
 -- old way."
 --
--- 🛑 THIS FILE IS DESTRUCTIVE AND NEEDS FRED'S EXPLICIT GO BEFORE IT IS APPLIED.
--- CLAUDE.md: "Ask before destructive ops. DROP, DELETE, git reset --hard,
--- git push --force -> explicit confirmation." His sentence authorised the PLAN and
--- was conditional on the checks he had not yet seen. It is dry-run verified below
--- and applying it is a single command; it simply is not mine to run unasked.
+-- ✅ APPLIED 2026-08-10 on Fred's explicit go ("go ahead and apply it"), after the
+-- dry run below was shown to him. It was held first because CLAUDE.md requires
+-- explicit confirmation for a DROP, and his earlier "once that is complete we can
+-- drop the old way" authorised the PLAN conditional on checks he had not yet seen.
+--
+-- VERIFIED LIVE AFTER APPLYING, not only inside the migration's own transaction:
+--   public.properties now holds only access_schedule + access_notes
+--   client.properties  198 hours / 198 day arrays   ops.properties 198
+--   ops.v_calendar_visit 1,512                      ops.v_service_due 151
+--   properties rowtype 27 keys -> 24
+-- and through the LIVE APPS, signed in, with their own anon key and session:
+--   Calendar grid 200, 093-KC still 23:00-05:00 with all seven days, count 1,512
+--   Calendar create-visit lookup (which FILTERS on a legacy column) 200
+--   Client App client.properties 200, 31 keys, a 5-day property still mon,tue,wed,thu,sun
+--   PostgREST on the BASE table now 400 "column properties.access_hours_start does not
+--   exist" -- the negative control proving the columns really went and this is not a
+--   false pass from a cached view.
 --
 -- WHY THE RPC CHANGE AND THE DROP ARE ONE MIGRATION AND NOT TWO.
 -- Split them and you get one of two broken intermediate states:

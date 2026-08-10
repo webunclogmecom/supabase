@@ -401,6 +401,11 @@ function buildPrimaryProperty(jc, ac, sa) {
     longitude: sa?.longitude || null,
     geofence_radius_meters: sa?.geofence?.circle?.radiusMeters || null,
     geofence_type: sa?.geofence?.circle ? 'circle' : (sa?.geofence?.polygon ? 'polygon' : null),
+    // DEAD, AND IT WOULD NOW RAISE 42703. Airtable was fully retired 2026-07-24, and
+    // these three columns were DROPPED from public.properties on 2026-08-10
+    // (STAGED_2026-08-10_1415). Access hours live in properties.access_schedule, a
+    // jsonb keyed mon..sun with {open,close}; the legacy trio is DERIVED in the views
+    // via public.fn_sched_open/_close/_days. Reviving this means writing the schedule.
     access_hours_start: ac ? N.atField(ac, 'Hours in') : null,
     access_hours_end: ac ? N.atField(ac, 'Hours out') : null,
     access_days: ac ? N.atField(ac, 'Days of the week') : null,

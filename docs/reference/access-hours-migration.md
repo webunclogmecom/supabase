@@ -207,11 +207,33 @@ apps, and do smoke tests to also check the DB, and once that is complete we can 
 | 2a. Hours padded so stored == derived | ✅ `2026-08-10_1212`, 20 rows |
 | 2b. Days normalised so stored == derived | ✅ `2026-08-10_1305`, 7 properties |
 | 3. Five views derive the trio from `access_schedule` | ✅ `2026-08-10_1330` |
-| 4. Drop the trio | **STAGED, dry-run verified, awaiting Fred's explicit go** |
+| 4. Drop the trio | ✅ `2026-08-10_1415`, applied on Fred's explicit go |
 
-Step 4 is `docs/migrations/STAGED_2026-08-10_1415_access_hours_drop_legacy_trio.sql`. It is
-destructive, so per `CLAUDE.md` it needs Fred's word before it runs. Fred's sentence authorised the
-plan and was conditional on checks he had not yet seen.
+**THE MIGRATION IS COMPLETE.** `public.properties` now holds `access_schedule` and `access_notes`
+and nothing else access-related. The three legacy columns exist only as **derived output** of the
+five views, so every app still reads the same field names and nothing on any screen moved.
+
+Verified live after applying, and again through the apps' own sessions:
+
+| | |
+|---|---|
+| base table columns remaining | `access_schedule`, `access_notes` |
+| `client.properties` / `ops.properties` | 198 hours, 198 day arrays / 198 |
+| `ops.v_calendar_visit` / `ops.v_service_due` | 1,512 / 151 |
+| `properties` rowtype | 27 keys → **24** |
+| Calendar, signed in | 093-KC still `23:00`–`05:00`, all seven days, count **1,512** |
+| Client App, signed in | 200, 31 keys, a 5-day property still `mon,tue,wed,thu,sun` |
+| **PostgREST on the BASE table** | **400, `column properties.access_hours_start does not exist`** |
+
+That last row is the negative control. Without it, "the apps still work" is equally consistent with
+the drop never having happened.
+
+### How to put a column back, if it ever matters
+
+Nothing was lost: `access_schedule` holds everything the trio held, proven by `stored == derived` on
+all 198 rows before the drop. Re-adding is
+`alter table public.properties add column access_hours_start text` then
+`update public.properties set access_hours_start = public.fn_sched_open(access_schedule)`.
 
 ### What the derivation is, in one place
 
