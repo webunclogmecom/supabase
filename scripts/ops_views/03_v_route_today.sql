@@ -23,8 +23,8 @@ SELECT v.id AS visit_id,
     COALESCE(vp.county, pp.county) AS county,
     COALESCE(vp.latitude, pp.latitude) AS latitude,
     COALESCE(vp.longitude, pp.longitude) AS longitude,
-    COALESCE(vp.access_hours_start, pp.access_hours_start) AS access_hours_start,
-    COALESCE(vp.access_hours_end, pp.access_hours_end) AS access_hours_end,
+    COALESCE(fn_sched_open(vp.access_schedule), fn_sched_open(pp.access_schedule)) AS access_hours_start,
+    COALESCE(fn_sched_close(vp.access_schedule), fn_sched_close(pp.access_schedule)) AS access_hours_end,
     cc.name AS contact_name,
     cc.phone AS contact_phone,
     sc.equipment_size_gallons,
@@ -53,5 +53,5 @@ SELECT v.id AS visit_id,
      LEFT JOIN zones vp_z ON vp_z.id = vp.zone_id
      LEFT JOIN zones pp_z ON pp_z.id = pp.zone_id
   WHERE v.visit_date = CURRENT_DATE AND (v.visit_status = ANY (ARRAY['UPCOMING'::text, 'LATE'::text, 'completed'::text]))
-  GROUP BY v.id, v.visit_date, v.start_at, v.end_at, v.visit_status, v.service_type, v.is_gps_confirmed, c.id, c.client_code, c.name, vp_z.code, vp.address, vp.city, vp.county, vp.latitude, vp.longitude, vp.access_hours_start, vp.access_hours_end, pp_z.code, pp.address, pp.city, pp.county, pp.latitude, pp.longitude, pp.access_hours_start, pp.access_hours_end, cc.name, cc.phone, sc.equipment_size_gallons, v.property_id, veh.name, veh.grease_tank_capacity_gallons, v.duration_minutes
+  GROUP BY v.id, v.visit_date, v.start_at, v.end_at, v.visit_status, v.service_type, v.is_gps_confirmed, c.id, c.client_code, c.name, vp_z.code, vp.address, vp.city, vp.county, vp.latitude, vp.longitude, vp.access_schedule, pp_z.code, pp.address, pp.city, pp.county, pp.latitude, pp.longitude, pp.access_schedule, cc.name, cc.phone, sc.equipment_size_gallons, v.property_id, veh.name, veh.grease_tank_capacity_gallons, v.duration_minutes
   ORDER BY v.start_at, (COALESCE(vp_z.code, pp_z.code)), c.name;
