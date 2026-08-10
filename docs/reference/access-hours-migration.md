@@ -183,39 +183,89 @@ one app, not four and six.
   2026-07-30 and carries a `DO NOT RE-ADD`, so it is unreachable — but it is the one thing that could
   re-create a legacy-only row if anyone ever re-adds the entity.
 
-## Verdict: FINISHING means "one authoritative source", NOT "drop the columns"
+## 🛑 THE 2026-08-10 12:00 VERDICT ("the columns stay") IS SUPERSEDED. Read this instead.
 
-Dropping them today would buy **no capability** (fact 1), while requiring a cutover across an hourly
-cron, two RPC response shapes, a schema-of-record file, executable compatibility DDL, 13 Calendar
-consumers and an app nobody had listed, and it would **lose data for 5 properties** (fact 2).
+That verdict said dropping bought no capability while requiring a cutover across an hourly cron, two
+RPC response shapes, 13 Calendar consumers and an unlisted app. **Every fact in it was right and the
+conclusion did not follow** — the same shape as the three failures catalogued in `CLAUDE.md` under
+"structure tells you what a thing does".
 
-**So the columns stay, deliberately, and this is the decision rather than an omission.**
+It assumed the only route was **porting every app to read `access_schedule`**. There is a second
+route: **make the views DERIVE the trio**, so the apps never learn anything changed. The column
+names, types and positions stay identical; only where the values come from moves. That deletes the
+entire cutover cost the verdict was built on.
 
-### Done, and it is the part that actually mattered
+Fred, 2026-08-10, setting the order that made this obvious: *"we can just do the migration for the
+old way of the access hours to the current one, and once that is complete to do view checks on the
+apps, and do smoke tests to also check the DB, and once that is complete we can drop the old way."*
+
+## Where it actually stands
 
 | step | state |
 |---|---|
-| 1. `access_schedule` populated and authoritative | ✅ `2026-08-07_1649`, 198 rows, zero legacy-only-hours rows |
-| 2. Stored trio normalised so it equals what the schedule derives | ✅ `2026-08-10_1212`, 20 rows padded |
-| 3. Expose `access_schedule` on the four `ops` views | **not done, and now known to be worth little** until per-day data exists |
-| 4. Drop the trio | **NOT SAFE. See above.** |
+| 1. `access_schedule` populated and authoritative | ✅ `2026-08-07_1649`, 198 rows |
+| 2a. Hours padded so stored == derived | ✅ `2026-08-10_1212`, 20 rows |
+| 2b. Days normalised so stored == derived | ✅ `2026-08-10_1305`, 7 properties |
+| 3. Five views derive the trio from `access_schedule` | ✅ `2026-08-10_1330` |
+| 4. Drop the trio | **STAGED, dry-run verified, awaiting Fred's explicit go** |
 
-### The open decisions, which are Fred's
+Step 4 is `docs/migrations/STAGED_2026-08-10_1415_access_hours_drop_legacy_trio.sql`. It is
+destructive, so per `CLAUDE.md` it needs Fred's word before it runs. Fred's sentence authorised the
+plan and was conditional on checks he had not yet seen.
 
-1. **The 5 days-only properties.** All five record all seven days, which conveys the same as "no
-   restriction", so the information loss from dropping `access_days` is close to zero. But it is
-   three clients with live visits. Accept the loss, or keep `access_days` as a column?
-2. **Is the drop worth doing at all** before anyone enters genuinely per-day hours? Today it is pure
-   risk for no user-visible gain.
+### What the derivation is, in one place
 
-### A latent defect found on the way, worth closing regardless
+Three pure `IMMUTABLE STRICT` helpers, reproducing the exact rule the RPC already used (modal open /
+modal close, ties broken lexically ascending):
 
-`client.update_property_operational` re-derives `access_hours_start/_end` from `access_schedule` on
-every schedule write, but **never re-derives `access_days`**. A caller sending `access_schedule`
-without `access_days` leaves the two disagreeing silently.
-✅ **Not reachable from the Client App**: its patch builder sends `access_days`, `access_schedule`
-and the hours pair together, all built from the same selected-day set (verified in the published
-bundle). So this is latent, reachable only by a script. Worth closing when the RPC is next touched.
+`public.fn_sched_open(jsonb)` · `fn_sched_close(jsonb)` · `fn_sched_days(jsonb)`
+
+🛑 **They are `fn_sched_*` and not `fn_access_*` on purpose.** `fn_access_days` *contains* the string
+`access_days`, so a later find-and-replace on the column name would maul the function and every call
+site — the `service_kind` collision again. The generator's guard (legacy names may survive only as
+output aliases) **failed** under the old name. The rename is what makes the guard mean anything.
+
+🛑 **`authenticated` needs EXECUTE on all three.** The views are owner-rights and launder the *table*
+grant, but a SECURITY INVOKER function called from inside one runs as the **caller**. Without the
+grant every staff user gets `42501` on the Calendar grid — the `fn_resolve_gdo_id` failure of
+2026-07-28h. Asserted with `has_function_privilege`, which does not depend on a role switch behaving.
+
+### Verified after applying, not before
+
+| check | result |
+|---|---|
+| views naming the base columns | **0** (was 5) |
+| `pg_depend` rows on the three columns | **0** — control: **5** on `access_schedule`, so the zero is meaningful |
+| PostgREST reads of them off the base table | **0**; every read is `ops.v_calendar_visit` |
+| `authenticated` UPDATE on them | **false** (only `grease_trap_manhole_count`, `sample_port_count`) |
+| all five views read as `authenticated` | clean, no `42501` |
+| `route_today`'s expression across every live visit | **1,759 checked, 0 mismatches**, control 1,512 non-null |
+| **Visit Calendar, live, signed in** | **1,512 rows**, overnight windows intact (23:00–05:00), day arrays correct |
+| **Client App, live, signed in** | 200, 31 keys, 198 hours, 198 day arrays; a 5-day property derives in correct `mon..sun` order |
+
+⚠ `ops.v_route_today` returned **0 rows** in the role probe because no visit is dated today. That
+proves it *executes* (a bad `GROUP BY` raises at plan time) but not its values — hence the separate
+1,759-visit check of its expression. It has **4 calls ever**, so this is proportionate.
+
+### The two open questions from the morning audit, both now closed
+
+1. **The 5 days-only properties** — closed by `2026-08-10_1305`. All five recorded **all seven days**,
+   which says the same as "no restriction", and `access_schedule` cannot express "these days, hours
+   unknown" at all. Cleared, audited, revertible.
+2. **Is the drop worth it** — the question was really "is the cutover worth it", and the derivation
+   removed the cutover. What remains is one `ALTER TABLE`.
+
+### The latent defect is now moot
+
+`client.update_property_operational` re-derived `access_hours_start/_end` from the schedule but never
+`access_days`, so the two could silently disagree. The staged migration **removes all three
+assignments**, so there is nothing left to disagree.
+
+🛑 **Its accepted-key allowlist is deliberately NOT touched.** Removing a key does not make the RPC
+ignore it, it makes the RPC **refuse the whole patch** — every property save from any cached bundle
+would fail. The three keys are accept-and-ignore from here on. A legacy-**only** patch (the keys
+*without* `access_schedule`) raises `22023` rather than being silently discarded, because "saved"
+with nothing saved is the worst of the three options.
 
 ---
 
