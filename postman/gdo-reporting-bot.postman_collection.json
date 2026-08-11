@@ -70,7 +70,7 @@
                 }
               ]
             },
-            "description": "Up to 25 REAL historical code-27 visits to report, keyed by visit_id, each with client + service fields, gdo_number, and 4h signed document URLs. Captures the first visit_id/manifest_id for the Result requests. Read-only."
+            "description": "Up to 25 REAL historical code-27 visits to report, keyed by visit_id, each with client + service fields, gdo_number, and 4h signed document URLs. Captures the first visit_id/manifest_id for the Result requests. Read-only.\n\n--- 2026-08-11: ONE ROW PER (TICKET, PERMIT) ---\nA client with N active GDO permits owes Miami-Dade N reports per qualifying dump ticket (we pump both traps). Each row now carries gdo_number for the permit THAT ROW IS FOR, plus a new gdo_id column.\nThe queue serves at most ONE permit per ticket per batch: the 20h manifest-grained lease holds the rest until the served one is filed. So a multi-permit ticket appears again on a later poll with its next permit, and a three-permit client files over about two days. Nothing about the 25-row cap changes.\nYou do NOT need to send the permit back. We resolve it server-side from the pair we served."
           },
           "event": [
             {
@@ -112,7 +112,7 @@
                 "rpa-derm-queue"
               ]
             },
-            "description": "The real live queue of code-27 visits awaiting their online report. Empty (count 0) until launch. A visit stays here until the county confirms its report. Read-only."
+            "description": "The real live queue of code-27 visits awaiting their online report. Empty (count 0) until launch. A visit stays here until the county confirms its report. Read-only.\n\n--- 2026-08-11: ONE ROW PER (TICKET, PERMIT) ---\nA client with N active GDO permits owes Miami-Dade N reports per qualifying dump ticket (we pump both traps). Each row now carries gdo_number for the permit THAT ROW IS FOR, plus a new gdo_id column.\nThe queue serves at most ONE permit per ticket per batch: the 20h manifest-grained lease holds the rest until the served one is filed. So a multi-permit ticket appears again on a later poll with its next permit, and a three-permit client files over about two days. Nothing about the 25-row cap changes.\nYou do NOT need to send the permit back. We resolve it server-side from the pair we served."
           },
           "event": [
             {
@@ -153,7 +153,7 @@
                 "rpa-derm-result"
               ]
             },
-            "description": "Logs a retryable failure (e.g. portal timeout) for the captured visit. Fresh GUID run_id each send. dry_run:true keeps it out of the live pipeline. Expect 201.",
+            "description": "Logs a retryable failure (e.g. portal timeout) for the captured visit. Fresh GUID run_id each send. dry_run:true keeps it out of the live pipeline. Expect 201.\n\n--- 2026-08-11: RESPONSE NOW REPORTS WHETHER THE EVIDENCE LANDED ---\nEvery 200/201 now also returns:\n  screenshot_stored          boolean, true only if the image is actually in the bucket\n  screenshot_missing_reason  our drop reason when it is not (SCREENSHOT_TOO_LARGE, SCREENSHOT_DECODE_FAILED, STORE_FAILED), else null\nAn oversize, undecodable or unstorable image is still recorded as a filing and still answers 201: a real county filing must never be lost over a screenshot problem. You can now SEE the drop instead of having to infer it.\nOn a deduped 200 these describe the STORED row, not what you just posted, because a dedupe uploads nothing.\n\ngdo_id and gdo_number are ACCEPTED AND IGNORED. You do not need to send them; we resolve the permit ourselves. They are accepted only so a bot built against the earlier draft contract cannot 400 on a filing that already happened.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"manifest_id\": {{dryRunManifestId}},\n  \"run_id\": \"{{$guid}}\",\n  \"status\": \"ERROR_PORTAL_TIMEOUT\",\n  \"retryable\": true,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"failure_reason\": \"Postman test - portal timed out\",\n  \"screenshot_missing_reason\": \"no screenshot in test\",\n  \"dry_run\": true\n}",
@@ -177,7 +177,12 @@
                   "const j = pm.response.json();",
                   "pm.test('recorded (201 new or 200 dedupe)', () => pm.expect([200,201]).to.include(pm.response.code));",
                   "pm.test('recorded flag true', () => pm.expect(j.recorded).to.eql(true));",
-                  "console.log('recorded id=' + j.id + '  deduped=' + j.deduped);"
+                  "console.log('recorded id=' + j.id + '  deduped=' + j.deduped);",
+                  "pm.test('screenshot_stored is false when no image was sent', function () {",
+                  "  const r = pm.response.json();",
+                  "  pm.expect(r).to.have.property('screenshot_stored');",
+                  "  pm.expect(r.screenshot_stored).to.eql(false);",
+                  "});"
                 ]
               }
             }
@@ -202,7 +207,7 @@
                 "rpa-derm-result"
               ]
             },
-            "description": "Logs a confirmed report with portal_confirmation and a tiny base64 JPEG screenshot - exercises the private evidence bucket. dry_run:true. Expect 201. In production the bot sends the real portal screenshot bytes here.",
+            "description": "Logs a confirmed report with portal_confirmation and a tiny base64 JPEG screenshot - exercises the private evidence bucket. dry_run:true. Expect 201. In production the bot sends the real portal screenshot bytes here.\n\n--- 2026-08-11: RESPONSE NOW REPORTS WHETHER THE EVIDENCE LANDED ---\nEvery 200/201 now also returns:\n  screenshot_stored          boolean, true only if the image is actually in the bucket\n  screenshot_missing_reason  our drop reason when it is not (SCREENSHOT_TOO_LARGE, SCREENSHOT_DECODE_FAILED, STORE_FAILED), else null\nAn oversize, undecodable or unstorable image is still recorded as a filing and still answers 201: a real county filing must never be lost over a screenshot problem. You can now SEE the drop instead of having to infer it.\nOn a deduped 200 these describe the STORED row, not what you just posted, because a dedupe uploads nothing.\n\ngdo_id and gdo_number are ACCEPTED AND IGNORED. You do not need to send them; we resolve the permit ourselves. They are accepted only so a bot built against the earlier draft contract cannot 400 on a filing that already happened.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"manifest_id\": {{dryRunManifestId}},\n  \"run_id\": \"succ-{{$guid}}\",\n  \"status\": \"SUCCESS\",\n  \"retryable\": false,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"portal_confirmation\": \"TEST-CONF-{{$timestamp}}\",\n  \"screenshot\": \"/9j/4AAQSkZJRgAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICD/2Q==\",\n  \"dry_run\": true\n}",
@@ -226,7 +231,12 @@
                   "const j = pm.response.json();",
                   "pm.test('recorded (201 new or 200 dedupe)', () => pm.expect([200,201]).to.include(pm.response.code));",
                   "pm.test('recorded flag true', () => pm.expect(j.recorded).to.eql(true));",
-                  "console.log('recorded id=' + j.id + '  deduped=' + j.deduped);"
+                  "console.log('recorded id=' + j.id + '  deduped=' + j.deduped);",
+                  "pm.test('screenshot_stored reports the image landed', function () {",
+                  "  pm.expect(j).to.have.property('screenshot_stored');",
+                  "  pm.expect(j.screenshot_stored, 'a valid JPEG was posted, so it must have stored').to.eql(true);",
+                  "  pm.expect(j.screenshot_missing_reason, 'stored images carry no drop reason').to.eql(null);",
+                  "});"
                 ]
               }
             }
@@ -251,7 +261,7 @@
                 "rpa-derm-result"
               ]
             },
-            "description": "FIXED run_id 'postman-dedupe-1'. Send once -> 201 {deduped:false}, again -> 200 {deduped:true}: idempotency on (visit_id, run_id) so a retried POST never double-records. (If you already ran it, both are 200 until the dry_run rows are cleared.)",
+            "description": "FIXED run_id 'postman-dedupe-1'. Send once -> 201 {deduped:false}, again -> 200 {deduped:true}: idempotency on (visit_id, run_id) so a retried POST never double-records. (If you already ran it, both are 200 until the dry_run rows are cleared.)\n\n--- 2026-08-11: RESPONSE NOW REPORTS WHETHER THE EVIDENCE LANDED ---\nEvery 200/201 now also returns:\n  screenshot_stored          boolean, true only if the image is actually in the bucket\n  screenshot_missing_reason  our drop reason when it is not (SCREENSHOT_TOO_LARGE, SCREENSHOT_DECODE_FAILED, STORE_FAILED), else null\nAn oversize, undecodable or unstorable image is still recorded as a filing and still answers 201: a real county filing must never be lost over a screenshot problem. You can now SEE the drop instead of having to infer it.\nOn a deduped 200 these describe the STORED row, not what you just posted, because a dedupe uploads nothing.\n\ngdo_id and gdo_number are ACCEPTED AND IGNORED. You do not need to send them; we resolve the permit ourselves. They are accepted only so a bot built against the earlier draft contract cannot 400 on a filing that already happened.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"visit_id\": {{dryRunVisitId}},\n  \"run_id\": \"postman-dedupe-1\",\n  \"status\": \"ERROR_PORTAL_TIMEOUT\",\n  \"retryable\": true,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"screenshot_missing_reason\": \"dedupe demo\",\n  \"dry_run\": true\n}",

@@ -53,6 +53,32 @@ Missing/invalid key → `401 {"error":"unauthorized"}`. Key not configured on ou
 
 Returns up to **25** reports to file, **oldest first**.
 
+### 🛑 One report per ACTIVE PERMIT, not per ticket (changed 2026-08-11)
+
+We pump **both** grease traps on a visit, so a client holding N active GDO permits owes Miami-Dade
+**N reports per qualifying dump ticket**. Until 2026-08-11 this queue offered one, which was
+under-reporting.
+
+| | |
+|---|---|
+| `gdo_number` | now means **the permit this row is for**, not "the client's permit" |
+| `gdo_id` | **new column**, our stable integer id for that permit |
+
+**You still receive at most one permit per ticket at a time.** The 20-hour dispense lease is held
+against the whole ticket, so the remaining permits stay back until the served one is filed. A
+multi-permit ticket therefore reappears on a later poll carrying its next permit, and a three-permit
+client (009-CN Casa Neos) files over roughly two days. The DERM deadline is the 15th of the following
+month, so that is immaterial.
+
+**Nothing about your contract changes.** Batch cap is still 25 rows, `visit_id` is still unique within
+a batch, and you do **not** send the permit back: we resolve it ourselves from the pair we served.
+
+⚠ Permit numbers render three different ways. The county email prints the bare integer (`12517`), our
+`gdo_number` is a zero-padded string (`GDO-09853`), and the permit PDF prints `GDO-012517-2026/2026`.
+**Compare as integers everywhere.** Four integer collisions exist across 135 active permits, all of
+them the same number held by two different client records, and **none within a single client**, so
+integer matching can never merge one client's own permits.
+
 **Query params**
 
 | Param | Values | Meaning |
@@ -150,8 +176,24 @@ Unknown fields → `400 {"error":"unknown_field_<name>"}`.
 
 | Code | Body | Meaning |
 |---|---|---|
-| `201` | `{"recorded":true,"deduped":false,"id":<n>}` | New result stored. |
-| `200` | `{"recorded":true,"deduped":true,"id":<n>}` | Duplicate `(visit_id, run_id)`; no-op ack. |
+| `201` | `{"recorded":true,"deduped":false,"id":<n>,"screenshot_stored":<bool>,"screenshot_missing_reason":<str\|null>}` | New result stored. |
+| `200` | `{"recorded":true,"deduped":true,"id":<n>,"screenshot_stored":<bool>,"screenshot_missing_reason":<str\|null>}` | Duplicate `(visit_id, run_id)`; no-op ack. |
+
+**`screenshot_stored` (added 2026-08-11)** tells you whether the image is actually in the bucket.
+
+An oversize, undecodable or unstorable image is **still recorded as a filing and still answers 201**,
+with the image dropped. That is deliberate: a real county filing must never be lost over a screenshot
+problem. Before this field existed you could not tell "filed with evidence" from "filed without it"
+by reading the response. Now you can.
+
+- `screenshot_missing_reason` carries **our** drop reason when we dropped it: `SCREENSHOT_TOO_LARGE`,
+  `SCREENSHOT_DECODE_FAILED`, `STORE_FAILED`. It overrides whatever you sent in that field.
+- On a **deduped 200** both fields describe the **stored row**, not what you just posted, because a
+  dedupe uploads nothing. That is the number that tells you whether the stored filing has evidence.
+
+**`gdo_id` and `gdo_number` are accepted and ignored.** You do not need to send them. We resolve which
+permit a filing covered server-side, from the pair the queue served. They are accepted only so a bot
+built against the earlier draft contract cannot get a `400` on a filing that already happened.
 
 **If you do not get a 2xx, keep the result locally and retry the same POST** (same `run_id`) until you
 do. Never treat a report as done before we acknowledge it.
