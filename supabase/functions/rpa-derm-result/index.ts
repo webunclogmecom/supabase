@@ -34,10 +34,17 @@ const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
   .map((k) => k.trim())
   .filter(Boolean)
 
+// gdo_id / gdo_number are ACCEPTED AND IGNORED (2026-08-11). We resolve the permit
+// server-side, so the bot never needs to send them. They are listed here purely so
+// that a bot built against the earlier draft contract cannot break a real filing:
+// an unknown field is a 400, and a rejected result is a county filing we have no
+// record of, which then gets served and filed AGAIN. Accept-and-ignore is the only
+// safe way to retire a field someone may already be sending.
 const ALLOWED_FIELDS = new Set([
   'visit_id', 'manifest_id', 'run_id', 'status', 'retryable', 'failure_reason',
   'attempted_at', 'portal_confirmation', 'screenshot',
   'screenshot_missing_reason', 'dry_run',
+  'gdo_id', 'gdo_number',
 ])
 
 function json(body: Record<string, unknown>, status: number): Response {
@@ -203,6 +210,26 @@ Deno.serve(async (req: Request) => {
     }, 200)
   }
 
+  // Which GDO permit this filing covered (2026-08-11). The queue serves ONE
+  // (ticket, permit) pair per ticket at a time -- the 20h manifest-grained lease is
+  // what guarantees that -- so there is exactly one permit this result can be for.
+  // The rule lives in the DB (fn_resolve_rpa_permit) and is the same predicate as
+  // gate 1 of v_derm_portal_queue, so the endpoint and the queue cannot drift apart.
+  // Resolved BEFORE the insert, because our own row would otherwise change the answer.
+  // A failure here is LOGGED AND SWALLOWED on purpose: a real county filing must never
+  // be rejected over the permit field. NULL is the safe value, since the queue reads a
+  // null-permit submission as retiring the whole manifest (under-serve, never re-file).
+  let gdoId: number | null = null
+  {
+    const { data: resolved, error: gErr } = await sb
+      .rpc('fn_resolve_rpa_permit', { p_visit_id: visitId })
+    if (gErr) {
+      console.error('permit resolve failed (recording without a permit):', gErr.message)
+    } else if (typeof resolved === 'number') {
+      gdoId = resolved
+    }
+  }
+
   let screenshotPath: string | null = null
   let evidenceDropReason: string | null = screenshotDropReason
   if (screenshotBytes) {
@@ -236,6 +263,7 @@ Deno.serve(async (req: Request) => {
     .insert({
       visit_id: visitId,
       manifest_id: manifestId,
+      gdo_id: gdoId,
       run_id: runId,
       status,
       retryable: body.retryable,
