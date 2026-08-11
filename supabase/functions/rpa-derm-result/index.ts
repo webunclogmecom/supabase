@@ -183,13 +183,25 @@ Deno.serve(async (req: Request) => {
   }
 
   // Idempotency: first write wins; a retried POST is a no-op acknowledgment.
+  // screenshot_path/_missing_reason are selected so the deduped response can report
+  // the STORED row's evidence state (2026-08-11): the caller cannot otherwise tell
+  // "filed with evidence" from "filed without it", and on a dedupe we upload nothing,
+  // so the honest answer is what is already on the row rather than what was posted.
   const { data: existing } = await sb
     .from('derm_portal_submissions')
-    .select('id')
+    .select('id, screenshot_path, screenshot_missing_reason')
     .eq('visit_id', visitId)
     .eq('run_id', runId)
     .maybeSingle()
-  if (existing) return json({ recorded: true, deduped: true, id: existing.id }, 200)
+  if (existing) {
+    return json({
+      recorded: true,
+      deduped: true,
+      id: existing.id,
+      screenshot_stored: existing.screenshot_path !== null,
+      screenshot_missing_reason: existing.screenshot_missing_reason ?? null,
+    }, 200)
+  }
 
   let screenshotPath: string | null = null
   let evidenceDropReason: string | null = screenshotDropReason
@@ -241,15 +253,30 @@ Deno.serve(async (req: Request) => {
     if (insErr.code === '23505') {
       const { data: dup } = await sb
         .from('derm_portal_submissions')
-        .select('id')
+        .select('id, screenshot_path, screenshot_missing_reason')
         .eq('visit_id', visitId)
         .eq('run_id', runId)
         .maybeSingle()
-      return json({ recorded: true, deduped: true, id: dup?.id ?? null }, 200)
+      return json({
+        recorded: true,
+        deduped: true,
+        id: dup?.id ?? null,
+        screenshot_stored: dup ? dup.screenshot_path !== null : false,
+        screenshot_missing_reason: dup?.screenshot_missing_reason ?? null,
+      }, 200)
     }
     console.error('result insert failed:', insErr.message)
     return json({ error: 'result_store_failed_retry' }, 500)
   }
 
-  return json({ recorded: true, deduped: false, id: inserted.id }, 201)
+  // screenshot_stored mirrors EXACTLY what was written to the row above, so the
+  // response can never disagree with the record. It stays 201 either way: an image
+  // problem must never turn a real county filing into an unrecorded one.
+  return json({
+    recorded: true,
+    deduped: false,
+    id: inserted.id,
+    screenshot_stored: screenshotPath !== null,
+    screenshot_missing_reason: screenshotPath ? null : (evidenceDropReason ?? missingReason),
+  }, 201)
 })
