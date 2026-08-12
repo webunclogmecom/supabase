@@ -299,7 +299,14 @@ Deno.serve(async (req) => {
     // property whose only link is a synthetic "<gid>_billing" id, which is not a
     // real EncodedId and which jobCreate rejects. 8 live jobs already sit on that
     // shape. properties[] alone yields one real, job-capable property.
-    properties: [{ street1: street, city, postalCode, province: "FL", country: "USA" }],
+    //
+    // ⚠ THE ADDRESS IS NESTED. PropertyAttributes is { address: AddressAttributes!,
+    // name, contacts, customFields, taxRateId } - the street/city/postalCode fields
+    // live on AddressAttributes, NOT on PropertyAttributes. Introspected 2026-08-11
+    // after a flat payload was rejected with "Field is not defined on
+    // PropertyAttributes". The rejection happened at GraphQL VALIDATION, so nothing
+    // was created, which is the only reason that mistake was free.
+    properties: [{ address: { street1: street, city, postalCode, province: "FL", country: "USA" } }],
     customFields: [{ customFieldConfigurationId: CODE_CF_GID, valueText: code }],
   };
   if (isCompany) {
