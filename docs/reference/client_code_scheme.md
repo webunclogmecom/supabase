@@ -103,3 +103,48 @@ renumbers of clients that already exist.
 Fred: "every client with a 2026 Jobber visit should be in the DB and have a code." Audit (4-agent workflow + adversarial critique) confirmed **all 220 Jobber-2026-visit clients were already in the DB** (0 missing), and **39** of them were code-less. Assigned `247`–`285` sequentially by created_at (2 tweaks: DUMP Pompano → `000-DP` dump-band, Millennium Mgmt → `271-MLN` to avoid a confusable "MM" dup with Mr. Madar) — all verified free across DB+Airtable+Jobber. **26 commercial + 13 residential** (10 person-name + 3 companyName-carriers).
 
 **Write mechanism (the canonical client-code push):** `clientEdit(clientId, input:{companyName})` sets Jobber Company Name to `"<code> <name>"`, composed from a **fresh per-client Jobber read** with any existing `NNN-XX ` prefix stripped (never stack), `userErrors` checked, re-read to verify, **skip-if-already-correct**. Saga per client with strict rollback (DB `client_code` reverted to NULL if the Jobber push fails). Uses the write app (`jobber_write`) — but that app currently **lacks `write_clients` scope** (add it in the Jobber Developer Center + re-auth; the 2026-07-06 wave used the read app `jobber`/fbd14714 token which already carries `write_clients`). Backup: `backups/2026-07-06_client_code_wave_backup.json`; apply script recorded in this repo. Result: 39/39 DB=Jobber parity, 0 code-less-with-2026-visits remaining. The **echo is idempotent** — the */5 poll re-ingests the renamed client, `handleClient` parses our own code back (`cur.client_code` already set → no heal fight; name write is prefix-stripped-identical).
+
+---
+
+## 2026-08-12 — the `247` collision, and what it proves about the check
+
+**Two live clients shared the number 247 for five weeks**, and nothing surfaced it. Resolved on
+Fred's instruction by renumbering Excelsior Condo **`247-EC` → `300-EC`** (Jobber custom field +
+display name first, verified by re-read, then `public.clients`; backup in
+`..\..\backups\2026-08-12_renumber_excelsior_before.json`).
+
+**How it happened, from `audit.logs` rather than from reasoning:**
+
+| when | what |
+|---|---|
+| 2026-07-03 | `Skinny Louie Coral Gables` imported from Jobber with `client_code` **NULL** |
+| 2026-07-06 | the bulk wave assigns **`247-EC`** to Excelsior Condo (`app_source='sql'`). 247 was genuinely free. |
+| 2026-07-14 | Skinny Louie gets **`247-LOU`**, arriving via `app_source='jobber'` — i.e. **a human typed it into Jobber**, eight days later |
+
+🛑 **THE LESSON: THE COLLISION CAME IN THROUGH JOBBER, AND NOTHING IN THE SYSTEM COULD SEE IT.**
+
+- **Jobber enforces nothing.** It has no concept of our numbering. Both records look perfectly normal
+  in its UI: `Excelsior Condo - 247-EC` and `Skinny Louie Coral Gables - 247-LOU`, each with its own
+  `Client Code` custom field. Nothing anywhere shows that they share `247`.
+- **Our only constraint is on the WHOLE STRING.** `clients_active_client_code_uniq` is
+  `UNIQUE (client_code)`, and `247-EC` ≠ `247-LOU`, so it never fired. The rule at the top of this
+  document says the NUMBER is the identity and the tag is cosmetic — **and that had never been
+  enforced by anything, anywhere.**
+- **`handleClient`'s duplicate guard also keys on the exact code**, so the `*/5` poll imported
+  `247-LOU` without a murmur.
+- **The `create-client` reservation added the same day does NOT close this hole.** It makes two
+  concurrent *app* creates mutually exclusive on both the code and the number, but a person typing a
+  code straight into Jobber never touches that path. **This remains open.** Closing it would mean a
+  number-aware guard in `handleClient` (warn, not block — `000-DP`/`000-DH` is a legitimate shared
+  band) or a periodic sweep.
+
+**What to do about it in the meantime:** when assigning a code by hand, check the **number**, not the
+code:
+
+```sql
+select client_code, name, status from public.clients
+ where client_code like '247-%';      -- NOT  = '247-EC'
+```
+
+⚠ And do not read "no rows" from `= '<full code>'` as "the number is free". That is the same
+one-directional mistake the duplicate NAME check had, and it is why this pair survived five weeks.
