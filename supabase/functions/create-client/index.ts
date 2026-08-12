@@ -301,10 +301,44 @@ Deno.serve(async (req) => {
   }
 
   // ---- duplicate name pre-check, both sides --------------------------------
-  const { data: dbDupes } = await db.from("clients").select("id,name,status,client_code").ilike("name", `%${name}%`).limit(5);
+  // 🛑 TWO SEARCHES, AND THE SECOND ONE IS THE POINT. `ilike '%<full name>%'` only
+  // matches a client whose name CONTAINS the new name, so it catches a re-entry of
+  // an existing client but is BLIND to a new location, which is the commonest real
+  // near-duplicate we have. Measured 2026-08-12 with both controls: "Pura Vida Sunny
+  // Isles Beach Marina" returned 0/0 and did not warn, while bare "Pura Vida"
+  // returned 5/5 and "Qxzzy Vornblat Holdings" returned 0/0. So the check was alive
+  // and discriminating, and still silent on the case it exists for. Found by
+  // creating a client through the UI and noticing the confirmation step never came.
+  //
+  // The fix costs nothing new: brandKey() is already computed for the code proposal,
+  // and when the proposal reports "reused existing brand", that IS a duplicate
+  // signal we were throwing away.
+  const brand = brandKey(name);
+  const [{ data: byFull }, { data: byBrand }] = await Promise.all([
+    db.from("clients").select("id,name,status,client_code").ilike("name", `%${name}%`).limit(5),
+    brand ? db.from("clients").select("id,name,status,client_code").ilike("name", `${brand}%`).limit(5)
+          : Promise.resolve({ data: [] as any[] }),
+  ]);
+  const seenDb = new Set<number>();
+  const dbDupes = [...(byFull ?? []), ...(byBrand ?? [])]
+    .filter((r: any) => !seenDb.has(r.id) && seenDb.add(r.id))
+    .slice(0, 5);
+
   const nameSearch = await gql(token, Q_SEARCH, { t: name });
   if (!nameSearch.ok) return fail("jobber_unavailable", `Jobber duplicate check failed (${nameSearch.kind}): ${nameSearch.detail}`);
-  const jobberDupes = (nameSearch.data?.clients?.nodes ?? []).map((n: any) => ({ id: n.id, name: n.name, code: cfCode(n) }));
+  // Jobber's searchTerm behaves the same way, so the brand needs its own query there
+  // too. Skipped when the brand IS the name, which would just repeat the call.
+  let jobberNodes = nameSearch.data?.clients?.nodes ?? [];
+  if (brand && brand !== name.toLowerCase()) {
+    const brandSearch = await gql(token, Q_SEARCH, { t: brand });
+    if (!brandSearch.ok) return fail("jobber_unavailable", `Jobber brand duplicate check failed (${brandSearch.kind}): ${brandSearch.detail}`);
+    jobberNodes = [...jobberNodes, ...(brandSearch.data?.clients?.nodes ?? [])];
+  }
+  const seenJb = new Set<string>();
+  const jobberDupes = jobberNodes
+    .filter((n: any) => !seenJb.has(n.id) && seenJb.add(n.id))
+    .slice(0, 5)
+    .map((n: any) => ({ id: n.id, name: n.name, code: cfCode(n) }));
 
   // ---- the exact payload the live arm would send ---------------------------
   const input: Record<string, unknown> = {
