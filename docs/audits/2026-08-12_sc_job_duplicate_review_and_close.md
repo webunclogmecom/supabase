@@ -119,6 +119,41 @@ this document came from the Jobber API for that reason.
 *(766's 49 lines are all quantity 0. Per [`docs/audits/2026-07-18_qty0_line_item_residue_audit.md`](2026-07-18_qty0_line_item_residue_audit.md)
 that is stranded per-visit-override residue from its 27 soft-deleted visits — **not** junk to delete.)*
 
+### 3. 🛑 The root cause of the false "duplicate" reading: 50 open jobs had no `property_id`
+
+This is the important one, because **it is what made real jobs look like duplicates.** Read from
+our own database, 275-MLP's three open SC jobs all showed property = *(none)* — the exact signature
+of a duplicate. Read from Jobber they sit at three different addresses.
+
+```
+open jobs missing property_id ....  50 / 451  (11%)
+  open Service Call .............  41 / 271  (15%)
+  open Service Agreement ........   6 / 176  (3%)   <- control
+by month created:  Apr 0/25 (0%)  Jun 20/382 (5%)  Jul 27/38 (71%)  Aug 3/5 (60%)
+```
+
+⚠ **My first diagnosis was wrong and the data refuted it.** I attributed this to the property sweep
+bug (no property to point at). Measured: all 50 carry a property in Jobber and **49 already had it
+linked on our side.** The mechanism is *ordering* — `webhook-jobber:1105` reads
+`if (propertyId) jobRow.property_id = propertyId`, so a job populated **before** its property exists
+is **silently skipped** rather than erroring, and nothing re-populates it. The sweep bug widened the
+window; the silent skip is the defect.
+
+**Fixed the data** in [`2026-08-12_1550_backfill_job_property_id.sql`](../migrations/2026-08-12_1550_backfill_job_property_id.sql):
+49 jobs linked, 0 cross-client, 0 billing rows, 1 remaining (job 1838, created 15:45 ET, self-heals
+when the sweep links its property). A targeted one-column UPDATE, deliberately **not** a
+`needs_populate` replay, which would have rewritten every field from stale raw and could have
+reverted the three job statuses corrected at 14:20 today.
+
+**⇒ NOT FIXED: the silent skip itself.** A job populated ahead of its property will still come out
+NULL. That belongs in `handleJob`.
+
+### 4. 166 clients have a NULL `client_code`
+
+Noted, not investigated. It also broke a query in this very audit: grouping open SC jobs by
+`client_code` collapsed every null-code client into one row reading *"6 open SC jobs"* for a client
+that does not exist. **Group by `client_id`.**
+
 ---
 
 ## Procedure notes for the next person
