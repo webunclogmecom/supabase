@@ -229,8 +229,7 @@ Deno.serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { return fail("bad_request", "Invalid JSON body."); }
 
-  const dryRun = body?.dry_run !== false; // STEP 2: default true, live arm lands in step 4
-  if (!dryRun) return fail("not_implemented", "The live arm ships in step 4. Send dry_run: true.");
+  const dryRun = body?.dry_run === true; // live is the default now; the UI must opt IN to a preview
 
   // ---- validate ------------------------------------------------------------
   const name = norm(body?.name);
@@ -321,18 +320,146 @@ Deno.serve(async (req) => {
   if (email_in) input.emails = [{ description: "MAIN", primary: true, address: email_in }];
   if (phone_in) input.phones = [{ description: "MAIN", primary: true, number: phone_in }];
 
+  const duplicate_check = {
+    db: dbDupes ?? [],
+    jobber: jobberDupes,
+    jobber_total: nameSearch.data?.clients?.totalCount ?? 0,
+    // The caller decides. Jobber does not enforce name uniqueness and two
+    // locations of one brand are legitimate, so this warns, it does not block.
+    possible_duplicate: (dbDupes?.length ?? 0) > 0 || jobberDupes.length > 0,
+  };
+
+  if (dryRun) {
+    return done({
+      dry_run: true,
+      would_send: { mutation: "clientCreate", input },
+      client_code: { value: code, source: supplied ? "supplied" : "proposed", proposal },
+      duplicate_check,
+      requested_by: email,
+    });
+  }
+
+  // ==========================================================================
+  // LIVE ARM. Everything above this line rejects BEFORE any Jobber write, which
+  // is the half-applied lesson from save-client-job: a validation failure raised
+  // AFTER the mutation leaves Jobber changed and our DB not.
+  // ==========================================================================
+
+  // ---- idempotency: the ledger row goes in BEFORE the irreversible call ----
+  const idem: string = typeof body?.idempotency_key === "string" && body.idempotency_key.length >= 8
+    ? body.idempotency_key
+    : crypto.randomUUID();
+
+  const { data: prior } = await db.from("client_create_attempts")
+    .select("status, jobber_client_gid").eq("idempotency_key", idem).maybeSingle();
+  if (prior) {
+    // 🛑 NEVER auto-retry an 'unknown'. Jobber has no clientDelete, so a second
+    // clientCreate makes a second real client that nobody can remove.
+    if (prior.status === "unknown") {
+      return fail("needs_reconciliation",
+        "A previous attempt with this key reached Jobber and we never saw the answer. Someone has to check Jobber before this is retried.");
+    }
+    if (prior.status === "created") {
+      return fail("already_created", "This request was already completed.", { jobber_client_gid: prior.jobber_client_gid });
+    }
+    if (prior.status === "started") {
+      return fail("in_flight", "An attempt with this key is already running.");
+    }
+    // 'failed' is the one status that is safe to retry: it means we are certain
+    // no Jobber client exists.
+  }
+
+  await db.from("client_create_attempts").upsert({
+    idempotency_key: idem, requested_by: email, payload: input as any, status: "started",
+  }, { onConflict: "idempotency_key" });
+
+  // ---- the irreversible call ----------------------------------------------
+  const M_CREATE = `mutation($input: ClientCreateInput!) {
+    clientCreate(input: $input) { client { id name companyName } userErrors { message path } } }`;
+  const created = await gql(token, M_CREATE, { input });
+
+  if (!created.ok) {
+    // "rejected" is a GraphQL error array: the query never executed, so nothing
+    // was created and this is safely retryable. Anything else means we do not know.
+    const certain = created.kind === "rejected";
+    await db.from("client_create_attempts").update({
+      status: certain ? "failed" : "unknown", failure_reason: `${created.kind}: ${created.detail}`.slice(0, 300),
+    }).eq("idempotency_key", idem);
+    return certain
+      ? fail("jobber_rejected", `Jobber rejected the request and created nothing: ${created.detail}`)
+      : fail("needs_reconciliation",
+          `We could not confirm whether Jobber created this client (${created.kind}). Do not retry; check Jobber first.`,
+          { idempotency_key: idem });
+  }
+
+  const ueMsg = (created.data?.clientCreate?.userErrors ?? []).map((e: any) => e.message).join("; ");
+  if (ueMsg) {
+    await db.from("client_create_attempts").update({ status: "failed", failure_reason: ueMsg.slice(0, 300) }).eq("idempotency_key", idem);
+    return fail("jobber_rejected", ueMsg);
+  }
+
+  const gid: string = created.data.clientCreate.client.id;
+  await db.from("client_create_attempts").update({ status: "created", jobber_client_gid: gid }).eq("idempotency_key", idem);
+
+  // ---- re-read and verify BY VALUE, not by cardinality ---------------------
+  const Q_VERIFY = `query($id: EncodedId!) { client(id: $id) {
+    id name companyName isCompany
+    customFields { __typename ... on CustomFieldText { label valueText } }
+    clientProperties(first: 5) { nodes { id } } } }`;
+  const back = await gql(token, Q_VERIFY, { id: gid });
+  const verified = back.ok ? back.data?.client : null;
+  const propGid: string | null = verified?.clientProperties?.nodes?.[0]?.id ?? null;
+  if (!verified || cfCode(verified) !== code) {
+    // The client EXISTS. Do not archive as compensation, and do not retry.
+    return fail("verify_failed",
+      "The client was created in Jobber but did not read back as expected. It exists; someone should look at it before anything else is done.",
+      { jobber_client_gid: gid, idempotency_key: idem });
+  }
+
+  // ---- materialise through OUR OWN handler, CLIENT then PROPERTY ------------
+  // handleProperty defers with entity_id 0 when the owning client is not canonical
+  // yet, so this order is load-bearing rather than stylistic.
+  const { data: secretRow } = await db.from("webhook_tokens").select("client_secret").eq("source_system", "jobber").single();
+  if (!secretRow?.client_secret) {
+    return fail("verify_failed", "Created in Jobber but the webhook secret is missing, so we could not import it.",
+      { jobber_client_gid: gid, idempotency_key: idem });
+  }
+  const replay = async (topic: string, itemId: string) => {
+    const payload = JSON.stringify({ topic, webHookEvent: { itemId, occurredAt: new Date().toISOString() } });
+    const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(secretRow.client_secret),
+      { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const sigBuf = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(payload));
+    const sig = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
+    const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/webhook-jobber`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-jobber-hmac-sha256": sig }, body: payload });
+    try { return await r.json(); } catch { return {}; }
+  };
+
+  const rc = await replay("CLIENT_UPDATE", gid);
+  const clientId = Number(rc?.entity_id);
+  if (!(clientId > 0)) {
+    // entity_id -1 means webhook-jobber's junk-name filter fired. We reject those
+    // names before the mutation, so this should be unreachable.
+    return fail("import_failed",
+      "Created in Jobber but our importer did not accept it. The client exists in Jobber and needs a look.",
+      { jobber_client_gid: gid, entity_id: rc?.entity_id, idempotency_key: idem });
+  }
+  if (propGid) await replay("PROPERTY_CREATE", propGid);
+
+  // ---- repair the primary property (see 2026-08-11_2030) -------------------
+  // Jobber back-fills billingAddress from properties[0] regardless of what we
+  // send, so the billing row is created first and takes primary, leaving the
+  // real, job-capable property non-primary. CLIENT-before-PROPERTY is required,
+  // so this cannot be fixed by reordering.
+  await db.rpc("fn_fix_billing_primary_property", { p_client_id: clientId });
+
+  await db.from("client_create_attempts").update({ jobber_property_gid: propGid }).eq("idempotency_key", idem);
+
   return done({
-    dry_run: true,
-    would_send: { mutation: "clientCreate", input },
-    client_code: { value: code, source: supplied ? "supplied" : "proposed", proposal },
-    duplicate_check: {
-      db: dbDupes ?? [],
-      jobber: jobberDupes,
-      jobber_total: nameSearch.data?.clients?.totalCount ?? 0,
-      // The caller decides. Jobber does not enforce name uniqueness and two
-      // locations of one brand are legitimate, so this warns, it does not block.
-      possible_duplicate: (dbDupes?.length ?? 0) > 0 || jobberDupes.length > 0,
-    },
-    requested_by: email,
+    client_id: clientId,
+    client_code: code,
+    jobber_client_gid: gid,
+    duplicate_check,
+    idempotency_key: idem,
   });
 });
