@@ -152,13 +152,46 @@ async function pullDelta(token: string, entity: typeof ENTITIES[number], cursor:
   return all
 }
 
+// ⚠ ONLY FLAG needs_populate WHEN THE PAYLOAD ACTUALLY CHANGED (fixed 2026-08-12).
+// This used to re-flag every row it re-staged. For the entities that pull by cursor that
+// was harmless, because a cursor pull only returns rows that moved. For PROPERTIES it was
+// not: properties have no updatedAt to page on, so the sweep restages ALL ~470 every hour,
+// and every one came back needs_populate=TRUE. The replay clears 10 per 5-minute cycle,
+// so 120/hour drained against 470/hour re-flagged. It could never catch up.
+//
+// The visible symptom was 43 Jobber properties that had NEVER been written to
+// public.properties in the 8 days since the sweep was enabled, including all five of
+// Wynd 28's units (Presidente, Pari Pari, CU4, Pasta, Nino Gordo) and 112-YA's
+// 9401 Collins Avenue. The replay reported ok:10 fail:0 every single cycle, so nothing
+// looked broken from the log: it was draining honestly, just slower than it refilled.
+// The SELECT below also had no ORDER BY, so the same rows were revisited and the tail
+// starved rather than the backlog rotating.
+//
+// 🛑 THE CONDITION IS DELIBERATELY ASYMMETRIC. A row is left FALSE only when it is
+// byte-identical AND was already populated. A row still pending stays pending, so this
+// can never clear a flag that has not been acted on. Getting that backwards would
+// silently strand exactly the rows this is meant to rescue.
 async function upsertRaw(exec: Exec, rawTable: string, nodes: any[]) {
   for (let i = 0; i < nodes.length; i += 50) {
     const batch = nodes.slice(i, i + 50)
     const ids = batch.map((n) => sqlEsc(n.id)).join(', ')
-    await exec(`DELETE FROM raw.${rawTable} WHERE data->>'id' IN (${ids})`)
-    const values = batch.map((n) => `(${sqlEsc(JSON.stringify(n))}::jsonb, now(), TRUE)`).join(',')
-    await exec(`INSERT INTO raw.${rawTable} (data, ingested_at, needs_populate) VALUES ${values}`)
+    const values = batch.map((n) => `(${sqlEsc(JSON.stringify(n))}::jsonb)`).join(',')
+    // One statement: `settled` is evaluated against the PRE-DELETE snapshot, because every
+    // CTE in a data-modifying statement sees the same snapshot.
+    await exec(`
+      WITH incoming(d) AS (VALUES ${values}),
+           settled AS (
+             SELECT i.d->>'id' AS gid
+               FROM incoming i
+               JOIN raw.${rawTable} r
+                 ON r.data->>'id' = i.d->>'id'
+                AND r.data = i.d
+                AND r.needs_populate = FALSE
+           ),
+           del AS (DELETE FROM raw.${rawTable} WHERE data->>'id' IN (${ids}))
+      INSERT INTO raw.${rawTable} (data, ingested_at, needs_populate)
+      SELECT i.d, now(), (i.d->>'id') NOT IN (SELECT gid FROM settled)
+        FROM incoming i`)
   }
 }
 
@@ -191,7 +224,10 @@ async function replayFlagged(exec: Exec, clientSecret: string) {
     // 10 keeps a cycle near its normal ~7s and still drains ~120/hour, far above the real change
     // rate once caught up. If you raise this, verify a sync_log row still appears every cycle.
     const cap = (e as any).replayLimit as number | undefined
-    const rows = await exec(`SELECT data->>'id' AS gid FROM raw.${e.rawTable} WHERE needs_populate=TRUE${cap ? ` LIMIT ${cap}` : ''}`)
+    // ORDER BY id so the backlog ROTATES instead of starving its tail. Without it Postgres
+    // returns whatever physical order it likes, and after a DELETE+INSERT sweep the reused
+    // pages meant the same rows were replayed every cycle while 43 were never reached at all.
+    const rows = await exec(`SELECT data->>'id' AS gid FROM raw.${e.rawTable} WHERE needs_populate=TRUE ORDER BY id${cap ? ` LIMIT ${cap}` : ''}`)
     if (!rows.length) continue
     let ok = 0, fail = 0
     for (const { gid } of rows) {
