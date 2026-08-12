@@ -120,3 +120,14 @@ $do$;
 -- If these genuinely should be one job per client, they must be closed in JOBBER; the poll
 -- will carry that across within the hour.
 -- ============================================================================
+--
+-- ---------------------------------------------------------------------------
+-- FOLLOW-UP, same day. Fred then said "close the duplicate SC jobs in jobber".
+-- Everything above still stands and nothing here contradicts it. On measurement against
+-- the live Jobber API, exactly ONE of the seven was a duplicate (112-YA #99901049 --
+-- same client, same property and same title as the live #99900535, 0 visits); it was
+-- closed in Jobber. The other six sit at six DIFFERENT service addresses and were kept.
+-- Full workings, plus two mirror gaps found along the way (an upcoming Jobber visit we do
+-- not hold, and 0 job-scoped line_items mirrored on all 271 open SC jobs):
+--   docs/audits/2026-08-12_sc_job_duplicate_review_and_close.md
+-- ---------------------------------------------------------------------------
