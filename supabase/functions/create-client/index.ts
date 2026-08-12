@@ -245,6 +245,21 @@ Deno.serve(async (req) => {
       `Names starting with "test" or "NOT USE", and names of the form "X 12", are rejected here on purpose.`);
   }
 
+  // ---- propose_only: the form's live client-code default -------------------
+  // The form needs a proposed code while the user is still typing the name, and
+  // proposeCode() reuses an EXISTING brand's tag when the name matches one, which
+  // needs every client_code in the table. A browser cannot do that without either
+  // fetching all 443 clients or reimplementing the scheme, and a second
+  // implementation is one that drifts. So the proposal stays server-side and the
+  // form asks for it.
+  //
+  // Deliberately BEFORE the address requirement and the Jobber calls: it is a
+  // suggestion, not an attempt, and it must be cheap enough to run on a debounce.
+  // It creates nothing and writes no ledger row.
+  if (body?.propose_only === true) {
+    return done({ proposal: await proposeCode(name) });
+  }
+
   const isCompany = body?.is_company !== false; // default: a business
   const street = norm(body?.street);
   const city = norm(body?.city);
