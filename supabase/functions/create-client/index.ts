@@ -195,7 +195,11 @@ async function proposeCode(name: string): Promise<Proposal> {
   // ⚠ NO status filter. clients_active_client_code_uniq is a PARTIAL index
   // (WHERE status <> 'INACTIVE'), so an INACTIVE row can hold a number the index
   // will not defend. Two such pairs are live today (050-PV, 239-COM). Read all.
-  const { data } = await db.from("clients").select("client_code,name").not("client_code", "is", null);
+  const { data, error: scanErr } = await db.from("clients").select("client_code,name").not("client_code", "is", null);
+  // 🛑 FAIL CLOSED. On error supabase-js returns data:null, which would fall through to an empty
+  // parsed[] -> maxNormal 0 -> a confident proposal of "001-XXX", a number certainly already taken.
+  // A failed read must not look like an empty table.
+  if (scanErr) throw new Error(`could not read existing client codes: ${scanErr.message}`);
 
   // 🛑 THE PROPOSAL MUST SEE IN-FLIGHT RESERVATIONS, NOT JUST COMMITTED CLIENTS.
   // Found by testing the concurrency fix rather than by reading it: two simultaneous
@@ -533,9 +537,24 @@ Deno.serve(async (req) => {
   // ==========================================================================
 
   // ---- idempotency: the ledger row goes in BEFORE the irreversible call ----
-  const idem: string = typeof body?.idempotency_key === "string" && body.idempotency_key.length >= 8
+  // 🛑 REFUSE RATHER THAN INVENT ONE. This used to fall back to crypto.randomUUID(),
+  // which looks harmless and is the opposite: a caller that omits the key gets a
+  // brand-new one on EVERY request, so the prior-attempt guard below can never
+  // match and the request has ZERO idempotency protection, silently. The whole
+  // ledger exists because Jobber has no clientDelete; a request we cannot
+  // recognise on retry is exactly the thing that mints a second client nobody can
+  // remove. Better to reject the call than to run the one operation we cannot undo
+  // without the safety net the caller forgot to bring.
+  const idem: string | null = typeof body?.idempotency_key === "string" && body.idempotency_key.length >= 8
     ? body.idempotency_key
-    : crypto.randomUUID();
+    : null;
+  if (!idem) {
+    return fail("bad_request",
+      "This request carried no idempotency key, so it was refused before anything was created. " +
+      "The create path will not run without one: Jobber has no way to delete a client, so a request " +
+      "we cannot recognise on a retry can leave a duplicate that nobody can remove.",
+      { field: "idempotency_key" });
+  }
 
   const { data: prior } = await db.from("client_create_attempts")
     .select("status, jobber_client_gid").eq("idempotency_key", idem).maybeSingle();
