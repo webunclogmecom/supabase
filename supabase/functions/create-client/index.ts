@@ -208,10 +208,19 @@ async function proposeCode(name: string): Promise<Proposal> {
   // opening the form at the same moment now see 300 and 301, so the collision is
   // avoided before either of them types anything, instead of being reported at
   // submit time.
-  const { data: held } = await db.from("client_create_attempts")
+  //
+  // ⚠ 'created' is deliberately NOT in this set, and that is not an oversight. By the time an
+  // attempt reaches 'created' the client row already exists in public.clients (the webhook replay
+  // runs first), so the code is protected by clients_active_client_code_uniq and by the scan above.
+  // Holding it here as well would make the ledger a permanent second registry that keeps blocking a
+  // number after its client is renumbered or removed.
+  const { data: held, error: heldErr } = await db.from("client_create_attempts")
     .select("code_number")
-    .in("status", ["started", "unknown", "created", "orphaned"])
+    .in("status", ["started", "unknown", "orphaned"])
     .not("code_number", "is", null);
+  // 🛑 FAIL CLOSED here too. A silently-empty reservation set would re-propose a number another
+  // staff member is mid-way through claiming, which is the exact collision this exists to prevent.
+  if (heldErr) throw new Error(`could not read live code reservations: ${heldErr.message}`);
   const reserved = new Set<number>((held ?? []).map((h: any) => Number(h.code_number)).filter((n: number) => n > 0));
 
   const parsed = (data ?? []).map((r: any) => {
@@ -335,7 +344,17 @@ Deno.serve(async (req) => {
   }
 
   // DB uniqueness across ALL rows, INACTIVE included (the partial index does not defend those)
-  const { data: clash } = await db.from("clients").select("id,name,status,client_code").eq("client_code", code);
+  // 🛑 FAIL CLOSED. This was `const { data: clash } = ...` with the error discarded, and that is
+  // the worst possible default here: on a transient DB failure `clash` comes back null, the
+  // emptiness test below is false, and "the query broke" is indistinguishable from "the code is
+  // free" -- so a database blip became a green light for an IRREVERSIBLE Jobber create. Every
+  // guard in front of that mutation now refuses to proceed when it could not actually check.
+  const { data: clash, error: clashErr } = await db.from("clients").select("id,name,status,client_code").eq("client_code", code);
+  if (clashErr) {
+    return fail("jobber_unavailable",
+      `Could not check whether ${code} is free, so nothing was created. Try again in a moment.`,
+      { detail: clashErr.message });
+  }
   if (clash && clash.length) {
     // ONE payload shape for both collision sources. The DB branch used to return
     // `holders` and the Jobber branch `jobber_holders` under the SAME error code,
