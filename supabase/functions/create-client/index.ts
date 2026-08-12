@@ -276,6 +276,80 @@ const cfCode = (c: any): string | null => {
 };
 
 // ============================================================================
+// ---- non-blocking WARNINGS --------------------------------------------------
+// Fred, 2026-08-12: "remember we need warnings, required of key data, etc."
+// These never stop a create. They flag things that will be silently wrong
+// afterwards if nobody looks, which is worse than an error because nothing
+// announces it.
+//
+// 🛑 EXTRACTED SO THE FORM CAN ASK BEFORE IT SUBMITS. When this was inlined it
+// only ran on the dry-run leg of Create, so the user first saw "this will get a
+// blank county" while the client was already being created. A warning you cannot
+// act on is decoration. propose_only now calls this too, so the form surfaces it
+// while the user is still typing.
+async function computeWarnings(
+  { city, postalCode, email_in, code, supplied }:
+  { city: string; postalCode: string; email_in: string; code: string; supplied: string },
+): Promise<{ field: string; message: string }[]> {
+  const warnings: { field: string; message: string }[] = [];
+  if (!city && !postalCode && !email_in && !code) return warnings;
+
+  // 1. COUNTY. properties.county is inferred from the city by a hardcoded list in
+  //    webhook-jobber (inferCountyFromCity), which returns NULL for anything not
+  //    in it -- and its Broward set has six entries. Measured 2026-08-12: 18 live
+  //    properties carry a NULL county from real cities (Davie, Plantation, Coral
+  //    Springs, Palmetto Bay, Oakland Park...). County drives DERM routing, so a
+  //    silent NULL matters.
+  //    ⚠ Deliberately NOT a copy of that list. Duplicating it would drift the
+  //    moment either side is edited. Instead ask the live data whether we have
+  //    ever resolved a county for this city, which stays true by construction.
+  //    ⚠ AND IT ASKS THE RIGHT QUESTION, WHICH TOOK TWO GOES. The first version
+  //    asked "do we know this city's county?" and went quiet for Davie, because one
+  //    Davie property carries a hand-set 'Broward'. But inferCountyFromCity still
+  //    does not know Davie, so a NEW Davie property is still created NULL. The
+  //    operative question is "does the importer RESOLVE this city?", and the
+  //    observable proxy for that is whether any property in the city was left NULL.
+  if (city) {
+  const { data: cityRows } = await db.from("properties").select("county").ilike("city", city);
+  const known = (cityRows ?? []).map((r: any) => r.county).filter(Boolean);
+  const anyNull = (cityRows ?? []).some((r: any) => !r.county);
+  if (!cityRows || cityRows.length === 0) {
+    warnings.push({ field: "city", message:
+      `We have no property in "${city}" yet, so its county will probably be left blank. ` +
+      `County drives DERM routing; set it once the client exists.` });
+  } else if (anyNull) {
+    warnings.push({ field: "city", message:
+      `Our importer does not recognise "${city}", so this property will very likely be created with a blank county` +
+      (known.length ? `. Existing records put ${city} in ${[...new Set(known)].join("/")}, so set that afterwards.` : `. Set it once the client exists.`) });
+  }
+
+  }
+
+  // 2. The address is sent to Jobber with province FL and country USA hardcoded.
+  if (postalCode && !/^\d{5}(-\d{4})?$/.test(postalCode)) {
+    warnings.push({ field: "postal_code", message:
+      `"${postalCode}" is not a 5-digit US ZIP. The address is filed as Florida, USA.` });
+  }
+  if (email_in && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email_in)) {
+    warnings.push({ field: "email", message: `"${email_in}" does not look like an email address. It is sent to Jobber as typed.` });
+  }
+
+  // 3. A supplied code that reuses an existing NUMBER. Legitimate for the 000 dump
+  //    band, and 247-EC/247-LOU shows it also happens by accident, so: warn, never block.
+  if (supplied && Number.isFinite(Number(code.split("-")[0]))) {
+    const n = Number(code.split("-")[0]);
+    const { data: sameNum } = await db.from("clients")
+      .select("client_code,name").like("client_code", `${String(n).padStart(3, "0")}-%`).limit(3);
+    if (sameNum && sameNum.length) {
+      warnings.push({ field: "client_code", message:
+        `Number ${String(n).padStart(3, "0")} is already used by ${sameNum.map((c: any) => `${c.client_code} (${c.name})`).join(", ")}. ` +
+        `The client code scheme treats the NUMBER as the identity, so this is usually a mistake outside the 000 dump band.` });
+    }
+  }
+
+  return warnings;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
   if (req.method !== "POST") return fail("method_not_allowed", "POST only.");
@@ -322,7 +396,19 @@ Deno.serve(async (req) => {
   // suggestion, not an attempt, and it must be cheap enough to run on a debounce.
   // It creates nothing and writes no ledger row.
   if (body?.propose_only === true) {
-    return done({ proposal: await proposeCode(name) });
+    // Warnings ride along so the form can show them WHILE the user types, on
+    // whatever fields it has so far. Every argument is optional here; the helper
+    // skips anything blank.
+    return done({
+      proposal: await proposeCode(name),
+      warnings: await computeWarnings({
+        city: norm(body?.city),
+        postalCode: norm(body?.postal_code),
+        email_in: norm(body?.email),
+        code: norm(body?.client_code).toUpperCase(),
+        supplied: norm(body?.client_code).toUpperCase(),
+      }),
+    });
   }
 
   const isCompany = body?.is_company !== false; // default: a business
@@ -463,61 +549,7 @@ Deno.serve(async (req) => {
     possible_duplicate: (dbDupes?.length ?? 0) > 0 || jobberDupes.length > 0,
   };
 
-  // ---- non-blocking WARNINGS -----------------------------------------------
-  // Fred, 2026-08-12: "remember we need warnings, required of key data, etc."
-  // These do not stop the create. They are things that will be silently wrong
-  // afterwards if nobody looks, which is worse than an error.
-  const warnings: { field: string; message: string }[] = [];
-
-  // 1. COUNTY. properties.county is inferred from the city by a hardcoded list in
-  //    webhook-jobber (inferCountyFromCity), which returns NULL for anything not
-  //    in it -- and its Broward set has six entries. Measured 2026-08-12: 18 live
-  //    properties carry a NULL county from real cities (Davie, Plantation, Coral
-  //    Springs, Palmetto Bay, Oakland Park...). County drives DERM routing, so a
-  //    silent NULL matters.
-  //    ⚠ Deliberately NOT a copy of that list. Duplicating it would drift the
-  //    moment either side is edited. Instead ask the live data whether we have
-  //    ever resolved a county for this city, which stays true by construction.
-  //    ⚠ AND IT ASKS THE RIGHT QUESTION, WHICH TOOK TWO GOES. The first version
-  //    asked "do we know this city's county?" and went quiet for Davie, because one
-  //    Davie property carries a hand-set 'Broward'. But inferCountyFromCity still
-  //    does not know Davie, so a NEW Davie property is still created NULL. The
-  //    operative question is "does the importer RESOLVE this city?", and the
-  //    observable proxy for that is whether any property in the city was left NULL.
-  const { data: cityRows } = await db.from("properties").select("county").ilike("city", city);
-  const known = (cityRows ?? []).map((r: any) => r.county).filter(Boolean);
-  const anyNull = (cityRows ?? []).some((r: any) => !r.county);
-  if (!cityRows || cityRows.length === 0) {
-    warnings.push({ field: "city", message:
-      `We have no property in "${city}" yet, so its county will probably be left blank. ` +
-      `County drives DERM routing; set it once the client exists.` });
-  } else if (anyNull) {
-    warnings.push({ field: "city", message:
-      `Our importer does not recognise "${city}", so this property will very likely be created with a blank county` +
-      (known.length ? `. Existing records put ${city} in ${[...new Set(known)].join("/")}, so set that afterwards.` : `. Set it once the client exists.`) });
-  }
-
-  // 2. The address is sent to Jobber with province FL and country USA hardcoded.
-  if (!/^\d{5}(-\d{4})?$/.test(postalCode)) {
-    warnings.push({ field: "postal_code", message:
-      `"${postalCode}" is not a 5-digit US ZIP. The address is filed as Florida, USA.` });
-  }
-  if (email_in && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email_in)) {
-    warnings.push({ field: "email", message: `"${email_in}" does not look like an email address. It is sent to Jobber as typed.` });
-  }
-
-  // 3. A supplied code that reuses an existing NUMBER. Legitimate for the 000 dump
-  //    band, and 247-EC/247-LOU shows it also happens by accident, so: warn, never block.
-  if (supplied && Number.isFinite(Number(code.split("-")[0]))) {
-    const n = Number(code.split("-")[0]);
-    const { data: sameNum } = await db.from("clients")
-      .select("client_code,name").like("client_code", `${String(n).padStart(3, "0")}-%`).limit(3);
-    if (sameNum && sameNum.length) {
-      warnings.push({ field: "client_code", message:
-        `Number ${String(n).padStart(3, "0")} is already used by ${sameNum.map((c: any) => `${c.client_code} (${c.name})`).join(", ")}. ` +
-        `The client code scheme treats the NUMBER as the identity, so this is usually a mistake outside the 000 dump band.` });
-    }
-  }
+  const warnings = await computeWarnings({ city, postalCode, email_in, code, supplied });
 
   if (dryRun) {
     return done({
