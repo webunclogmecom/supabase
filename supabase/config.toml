@@ -604,3 +604,15 @@ verify_jwt = true
 # verify_jwt alone would leave an open vision endpoint. Never deploy --no-verify-jwt.
 [functions.ocr-address-sheet-rows]
 verify_jwt = true
+
+# create-client: creates a client in Jobber, verifies by re-read, then replays a
+# SIGNED SYNTHETIC webhook into our own webhook-jobber so handleClient materialises
+# the row. The app never writes public.clients itself, which keeps one writer of
+# client identity during the Jobber bridge.
+# ⚠ verify_jwt=false is DELIBERATE and is not fail-open: the gateway rejects ES256
+# session tokens and the public anon key satisfies it on its own, so the gateway is
+# not a control. The in-handler auth.getUser() plus the @ayache.com/@unclogme.com
+# domain gate is the control, and it is strictly stronger. Same pattern as
+# save-client-job and save-client-fields.
+[functions.create-client]
+verify_jwt = false
