@@ -14,6 +14,16 @@ A zero-padded **number**, a hyphen, then a short **brand tag**.
 - Assigned **sequentially by onboarding order**. The number — not the letters — is what must be globally unique.
 - **Gaps are normal and expected.** Deletions/renames leave holes (≈560 unused numbers in the 0–242 range). **Do NOT backfill gaps** — always take the next number up.
 - **700+ is a reserved/vanity band**, not part of the sequence. Current example: `777-YA` = *Yan's Restaurant* (founder vanity code). Ignore the reserved band when computing "the next number."
+- 🛑 **`000` IS A SECOND RESERVED BAND, AND IT IS SHARED BY MORE THAN ONE ROW ON PURPOSE.**
+  `000-DP` (*DUMP Pompano*) and `000-DH` (*Homestead Dump*) are both ACTIVE and both hold number
+  **0**. They are the disposal facilities we haul grease TO, carried as clients so work can be
+  scheduled and costed against them, deliberately parked on `000` rather than consuming a customer
+  number. **This is not a collision and they must not be renumbered.**
+  ⚠ This section previously documented only the 700+ band, so a "find duplicate client numbers"
+  sweep written from this page reports these two as a 247-style collision. One did, on 2026-08-12,
+  and correctly refused a migration until the band was excluded. **Any uniqueness check on the
+  number must bound itself to `1..699`.** It also means the sentence below, "the number is what
+  must be globally unique", is true only within that range.
 - **Next number = (highest normal number, i.e. < 700) + 1.** 🛑 **Do not read a number out of this
   document.** It used to pin "the next is `286`" as of 2026-07-06; by 2026-08-12 the real answer was
   `300`, and a stale number here is worse than none because it looks authoritative. Ask the endpoint

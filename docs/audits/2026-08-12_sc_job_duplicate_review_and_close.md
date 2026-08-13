@@ -9,8 +9,12 @@ Fred, in order:
 3. (after the DB-side removal was refused, because Jobber held them all open)
    *"close the duplicate SC jobs in jobber"*
 
-**Outcome: one job closed in Jobber. Six kept. Four of the six are open questions for Fred, not
-data defects.** No DB row was deleted at any point.
+**Outcome: one job closed in Jobber. Six kept.** No DB row was deleted at any point.
+
+**✅ Fred settled it the same day: *"a job goes per property."*** Only the 112-YA pair was ever a
+duplicate. Everything else was a multi-site client correctly holding one Service Call per site. See
+[the ruling](#-settled-by-fred-2026-08-12-a-job-goes-per-property-do-not-re-flag-this) before
+re-opening this.
 
 ---
 
@@ -46,10 +50,10 @@ from the Jobber API, the seven open SC jobs sit at **six different service addre
 | 112-YA | 766 | 99900535 | 1745 Cleveland Rd | 7 (1 **upcoming 08-16**) | keep |
 | 112-YA | 1807 | 99901049 | 1745 Cleveland Rd ← **same** | 0 | **closed** |
 | 128-MF | 1683 | 99900936 | 301 Arthur Godfrey Rd | 0 | keep |
-| 128-MF | 1791 | 99901035 | 1747 Alton Rd | 1 completed | ask Fred |
-| 275-MLP | 1280 | 10001049 | 47 NW 49th St | 1 completed | ask Fred |
+| 128-MF | 1791 | 99901035 | 1747 Alton Rd | 1 completed | keep (Fred) |
+| 275-MLP | 1280 | 10001049 | 47 NW 49th St | 1 completed | keep (Fred) |
 | 275-MLP | 1790 | 99901034 | **341** NW 43rd Ave | 0 | keep |
-| 275-MLP | 1836 | 99901055 | 160 NW 45th St | 1 completed | ask Fred |
+| 275-MLP | 1836 | 99901055 | 160 NW 45th St | 1 completed | keep (Fred) |
 
 275-MLP (Milas LP) is a **property manager with three sites**; 128-MF has two. A call at a second
 site needs its own job, and **295 of the 297 jobs where the property is visible serve exactly one
@@ -64,16 +68,35 @@ job is absence of a second call, not evidence of a one-per-client rule.
 **⇒ The rule, for the fourth time today: before deleting anything as a duplicate, ask Jobber. If
 Jobber has it, we are mirroring correctly and the fix belongs in Jobber, not here.**
 
-### Left for Fred
+### ✅ SETTLED BY FRED, 2026-08-12: a job goes PER PROPERTY. Do not re-flag this.
 
-Three of the six (1791, 1280, 1836) have their work **completed and already invoiced**, 0
-incomplete visits. Closing them would destroy nothing and is normal Jobber lifecycle — 378 SC jobs
-are already closed. But they are **finished jobs, not duplicates**, so closing them executes Fred's
-words against a premise he now knows is false. That is a one-question business call, not a data fix.
+**Fred, verbatim:** *"About the jobs is because they have multiple properties and a job goes per
+property."*
 
-1683 and 1790 are kept under **both** readings of the instruction: each is its client's only *empty*
-SC, so it is the natural survivor if Fred wants one per client, and the site container if he wants
-one per site.
+That is the rule, from the person who owns it, and it closes the question. A client with three
+service addresses correctly holds three open Service Call jobs. **Nothing further is to be closed**,
+including the three "finished" jobs listed below, which are kept.
+
+🛑 **This will look like a duplicate again.** The shape (one client, several open jobs, same title)
+is exactly what a duplicate looks like from a list, and it recurs by design every time a multi-site
+client books a second call. Before acting on it: check the **property**, and if the properties
+differ, it is correct. See the repo rule *"structure tells you what a thing DOES, never what it is
+FOR"* in `CLAUDE.md`. This is the fifth instance of that failure in one day.
+
+### Kept, not closed (record of what was considered)
+
+Three of the six (1791, 1280, 1836) have their work **completed and already invoiced** with 0
+incomplete visits, so closing them would have destroyed nothing and is normal Jobber lifecycle (378
+SC jobs are already closed). They were put to Fred as a business call rather than a data fix, and
+**he ruled to keep them**: a job goes per property, and these are three separate sites.
+
+Two details surfaced while checking them, neither affected by the keep decision:
+- **Job 1280 carries TWO paid invoices for the same amount** (#2602 and #2680, $361.32 each) against
+  a single completed visit. Possibly a legitimate re-issue, possibly a double charge. Raised with
+  Fred; not acted on here.
+- **Two of the three still have money outstanding**: 1791 invoice #2922 $413.08 awaiting payment,
+  1836 invoice #2964 $549.13 **past due**. Closing a job does not touch its invoices, so this is
+  independent of the lifecycle question, but "finished" is not the same as "settled".
 
 ---
 
@@ -148,11 +171,31 @@ reverted the three job statuses corrected at 14:20 today.
 **⇒ NOT FIXED: the silent skip itself.** A job populated ahead of its property will still come out
 NULL. That belongs in `handleJob`.
 
-### 4. 166 clients have a NULL `client_code`
+### 4. 166 clients have a NULL `client_code`, but only 6 of them matter
 
-Noted, not investigated. It also broke a query in this very audit: grouping open SC jobs by
-`client_code` collapsed every null-code client into one row reading *"6 open SC jobs"* for a client
-that does not exist. **Group by `client_id`.**
+It first broke a query in this very audit: grouping open SC jobs by `client_code` collapsed every
+null-code client into one row reading *"6 open SC jobs"* for a client that does not exist.
+**Group by `client_id`.**
+
+Measured properly: 160 ACTIVE and 6 INACTIVE. Of the 160, only **6 have an open job** and only 5
+have ever had a visit. The other 154 are one-off Jobber customers (120 have an invoice, 40 have
+nothing at all) plus obvious non-clients (`Doug Test`, `Example None`, `Truck Maintenance`,
+`Parking`, two `NOT USE` rows, and four competing plumbers). The control makes the split clear:
+123 ACTIVE clients **do** have a code and 92 of them have visits.
+
+⇒ **The 154 are not assumed to be a defect.** `client_code` appears to mark the managed roster,
+not every Jobber contact. Fred assigned codes to the 6 live ones
+([`2026-08-12_1615`](../migrations/2026-08-12_1615_assign_client_codes_six_clients.sql), codes
+301-306) and the rest were deliberately left alone. Do not re-flag all 160.
+
+### 5. `000` is a reserved band and the code scheme did not say so
+
+The code migration's duplicate-number assertion **refused on its first run** against a pre-existing
+pair: `000-DP` (DUMP Pompano) and `000-DH` (Homestead Dump), both ACTIVE, both on number 0. They
+are disposal facilities carried as clients, deliberately parked outside the customer sequence, so
+this is a sentinel band like 700+ and **not** a 247-style collision.
+[`client_code_scheme.md`](../reference/client_code_scheme.md) documented only the 700+ band, so any
+uniqueness sweep written from it flags these two. Fixed there; bound such checks to `1..699`.
 
 ---
 
