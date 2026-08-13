@@ -619,6 +619,27 @@ Commercial overnight routes run ~8 PM into the next ~6 AM, but **`visit_date` is
 ### `clients.status` values
 `ACTIVE`, `RECURRING`, `PAUSED`, `INACTIVE`. AT's old `Recuring` (one r) was a typo — normalized 2026-05-13. populate.js + ops views all use `RECURRING`.
 
+**🛑 `clients.status_source` ('jobber' | 'manual') GATES THE POLL'S REACTIVATION. Do not remove it or
+"simplify" the branch (2026-08-13).** `webhook-jobber`'s `handleClient` reactivates any client it finds
+INACTIVE-and-not-archived. That is correct for a Jobber unarchive and **wrong for a deliberate
+deactivation**: setting a client INACTIVE in the Client App was silently undone by the next `*/5` poll,
+landing as an ordinary `app_source='jobber'` audit row with **nothing to announce it**. Jobber has no
+idea we changed anything, so there is no upstream signal to read — the intent has to be stored here.
+`client.update_client_status` writes `'manual'`; the branch now skips those rows. This is the same pin
+`client_class_source` already provides for `client_class`, honoured a few lines above in that same
+function — **do not invent a second mechanism for the next column that needs it.**
+
+⚠ **Only the reactivation branch is gated.** `c.isArchived` still forces INACTIVE, because there both
+sides agree. ⚠ **And a status that arrived FROM Jobber stays `'jobber'`** — the pin protects human
+answers, not every INACTIVE row.
+
+**How it was proven, because the obvious test gives a false pass:** flag the client's own
+`raw.jobber_pull_clients` row `needs_populate` and invoke `sync-jobber-poll`, so the poll signs and
+POSTs the `CLIENT_UPDATE` itself. Then A/B the SAME row on `status_source` alone — unpinned reverted in
+6s, pinned held. **Two controls are required**: the staged payload must carry `isArchived=false` (or the
+archive branch is what held it), and `needs_populate` must go `TRUE → FALSE` (or the replay never ran and
+"it stayed INACTIVE" proves nothing). Migration `2026-08-13_0130`, commit `b875064`.
+
 **⚠ `status='RECURRING'` does NOT mean the client generates visits.** Visit-gen keys off the JOB, not the client flag: a client generates SA visits only if it has an active, `frequency_days>0`, non-`[OLD]` `Service Agreement%` job carrying a **physical-service** line item (any SA/SC code **except 08**). Code 08 is excluded in the `public.fn_generate_sa_visits` job predicate (it lived in `generate_service_agreement_visits.js` until the 2026-08-01 port), which keys on `service_line_items.reason IN ('Service Agreement','Service Call') AND code <> '08'` (Fred/Yan 2026-07-02; code 08 wrongly had `service_type='WD'` — the legacy code, today `'Warranty of Drainage'` — so the pumping default made phantom visits). So a Warranty-of-Drainage-only client (code 08 + fees 25/26) **correctly has zero SCHEDULED recurring visits even while `status='RECURRING'`** — don't flag it as a scheduling gap.
 
 > 🛑 **CORRECTED 2026-07-31 (Fred) — "code 08 generates NO visits" was too strong and this file used to say it.** The accurate rule is **no RECURRING visits**. Read it the old way and a legitimate warranty visit looks like corruption to the next person auditing.
