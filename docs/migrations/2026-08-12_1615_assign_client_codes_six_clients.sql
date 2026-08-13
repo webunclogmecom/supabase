@@ -1,6 +1,14 @@
 -- ============================================================================
 -- 2026-08-12_1615: assign client_code to the 6 coded-less clients that are actually live
 -- ============================================================================
+-- 🛑 THE FILENAME IS WRONG ABOUT WHEN THIS RAN. It actually applied at
+-- **2026-08-13 02:24 ET**, read off audit.logs, not 2026-08-12 16:15. The session ran past
+-- midnight and the name was chosen hours before the migration was applied. The file is NOT
+-- renamed because it is already pushed and referenced by hash in WORKING-NOW.md and the day
+-- summary; correcting forward beats a dangling reference. Take the time from this line, not
+-- from the name. (The other four migrations that day are within ~20 minutes of their names;
+-- this is the only one off by a day.)
+--
 -- Fred, 2026-08-12: "give the 6 clients codes."
 --
 -- CONTEXT. 160 ACTIVE clients carry a NULL client_code, but that number badly overstates the
