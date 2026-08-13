@@ -101,7 +101,32 @@ renumbers of clients that already exist.
 - **INACTIVE tombstones may share a code with their ACTIVE successor** — that's the *same* client, not a collision (e.g. `050-PV` has one ACTIVE row + one old INACTIVE row, both Pura Vida Brickell).
 - **Don't backfill gaps**; don't reuse a retired number.
 - **Reserved band (700+)** is for vanity/special codes — don't auto-assign from it.
-- **Residential / no-code clients**: historically many Jobber clients had no `client_code` (residential, call-only). **Superseded by Fred 2026-07-06:** any client that had a **2026 visit** gets a code regardless of type/status (incl. residential person-name accounts). For a residential (`isCompany=false`) client, write the code into Jobber **Company Name** as `"<code> <FirstName LastName>"` (e.g. `281-MA Mr. Avi`) and **leave firstName/lastName untouched** — the code is then searchable in Jobber without corrupting the person's name (note: the webhook parser reads first/last for `isCompany=false`, so a companyName code doesn't round-trip through it, but the DB `client_code` is authoritative). Never-visited leads/one-offs (~160) are still intentionally left uncoded pending a separate decision.
+- **Residential / no-code clients**: historically many Jobber clients had no `client_code` (residential, call-only). **Superseded by Fred 2026-07-06:** any client that had a **2026 visit** gets a code regardless of type/status (incl. residential person-name accounts). For a residential (`isCompany=false`) client, write the code into Jobber **Company Name**.
+> 🛑 **CORRECTED 2026-08-13 — THE TWO SPECIFICS BELOW WERE BOTH STALE.** This used to say the format
+> is a PREFIX, `"<code> <FirstName LastName>"` e.g. `281-MA Mr. Avi`, and that you should **leave
+> firstName/lastName untouched**. Measured against nine coded clients in Jobber, neither holds:
+> ```
+> 281-MA   companyName "Mr. Avi - 281-MA"        firstName "Mr. Avi - 281-MA"    lastName ""
+> 251-AS   companyName "Andrew Saka - 251-AS"    firstName "Andrew"   lastName "Saka - 251-AS"
+> 297-MAR  companyName "Mark Aquinin - 297-MAR"  firstName "Mark"     lastName "Aquinin - 297-MAR"
+> 300-EC   companyName "Excelsior Condo - 300-EC" firstName "Excelsior Condo - 300-EC"
+> 295-NAD  companyName "Blue Suede Hospitality Group - 295-NAD"  firstName "Adam Nadler - 295-NAD"
+> ```
+> The live convention is a **SUFFIX** (`"<Name> - <code>"`), confirmed by Fred 2026-08-13
+> (*"add the new clients codes on jobber suffix and in the custom field client code"*), and the code
+> lands in **both** `companyName` **and** the first/last field, not companyName alone. `281-MA`, the
+> example this document used for the prefix rule, is itself a suffix.
+>
+> ⚠ **The "don't corrupt the person's name" concern is real and is NOT resolved by current practice.**
+> For `isCompany=false`, Jobber's display `name` is first+last, so `302-SAR` now reads
+> *"Allison  Sarbin - 302-SAR"* to the client. Six existing clients are already like this, so it is
+> the norm rather than a mistake, but if a code should never appear on client-facing output the fix
+> is to set `companyName` only and restore first/last across all of them — a decision, not a cleanup.
+
+**Also set the `Client Code` custom field** (Text, `ALL_CLIENTS`) to the bare code. Added by Yannick
+2026-07-31 and it is now the **authoritative** source: `webhook-jobber` reads that field first and
+only falls back to parsing the name. It also strips a trailing ` - CODE` from the display name, so
+`public.clients.name` stays the clean business name through both naming conventions. Never-visited leads/one-offs (~160) are still intentionally left uncoded pending a separate decision.
 - **Renames/renumbers** are the riskiest operation. Check the candidate against **both** the DB (all
   rows) and Jobber before writing anything. (This used to say "the 3-source check"; the third source
   was Airtable and it is gone. Two sources is now the complete check, not a degraded one.)
