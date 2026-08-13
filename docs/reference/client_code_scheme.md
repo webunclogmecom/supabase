@@ -158,3 +158,33 @@ select client_code, name, status from public.clients
 
 ⚠ And do not read "no rows" from `= '<full code>'` as "the number is free". That is the same
 one-directional mistake the duplicate NAME check had, and it is why this pair survived five weeks.
+
+### ⚠ A RENUMBER DOES NOT REACH `visits.title`, AND THAT IS ESTATE-WIDE, NOT A BUG THIS RENUMBER CREATED
+
+Immediately after the Excelsior renumber the Client App's activity timeline still showed
+**`247-EC Excelsior Condo - Service Call`**. Measured rather than assumed:
+
+- `jobs.title` holds plain `Service Call` — **no code**. Zero job titles anywhere embed one.
+- `visits.title` holds the full Jobber-composed label, frozen at the time the visit was created,
+  from the **old prefix-era** naming (`NNN-XX Name`), and nothing updates it afterwards.
+- **56 live visits estate-wide** carry a title whose embedded code no longer matches their client
+  (control: 1,615 live titles embed a code at all, so the zero-cases are meaningful).
+  **53 of those predate this renumber**; Excelsior contributed 3.
+
+**Whether a DB-side fix would stick depends on `visits.source`:**
+
+| source | n | fixable in our DB? |
+|---|---|---|
+| `jobber` | 40 | **no** — Jobber-mastered, the poll rewrites `title` |
+| `supabase_cron` | 13 | yes, `handleVisit` does not clobber ours |
+| `visit-calendar` | 3 | yes, same |
+
+`handleVisit` (webhook-jobber ~:755-775) refuses to touch `title` for visits we master
+(`visit-calendar` / `supabase_cron`) and does write it for Jobber-mastered ones.
+
+**Nothing was changed.** It is cosmetic label text in an activity feed, it is pre-existing, and
+rewriting 56 live business records is Fred's call, not a side effect of one renumber. Recorded so the
+next person who spots a stale code in the UI knows it is display history rather than a broken join.
+
+⚠ **And do not "fix" the `audit.logs` copies.** 35 audit rows carry `247-EC` in their row snapshots.
+Those are the record of what the values WERE, which is the entire point of an audit trail.
