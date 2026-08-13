@@ -182,9 +182,31 @@ Immediately after the Excelsior renumber the Client App's activity timeline stil
 `handleVisit` (webhook-jobber ~:755-775) refuses to touch `title` for visits we master
 (`visit-calendar` / `supabase_cron`) and does write it for Jobber-mastered ones.
 
-**Nothing was changed.** It is cosmetic label text in an activity feed, it is pre-existing, and
-rewriting 56 live business records is Fred's call, not a side effect of one renumber. Recorded so the
-next person who spots a stale code in the UI knows it is display history rather than a broken join.
+**UPDATE — Fred: *"fix those 3 visit titles too."* The three Excelsior ones WERE fixed** (this section
+first said "nothing was changed", which was true for about an hour). `247-EC …` → `300-EC …` on visits
+**7076, 7463, 7688**, in BOTH systems. **The other 53 are still untouched and still Fred's call.**
+
+🛑 **AND IT IS NOT A PLAIN UPDATE — `trg_prefix_visit_title` WOULD HAVE DOUBLE-PREFIXED IT.** That
+trigger prepends `"<current code> <name> - "` to any `visit-calendar` / `supabase_cron` visit whose
+title does not already start with the client's **current** code. So writing the base title, or touching
+any other column on that row, produces:
+
+```
+300-EC Excelsior Condo - 247-EC Excelsior Condo - Service Call
+```
+
+The fix therefore writes the **full corrected string**, which already starts with `300-EC ` and makes
+the trigger a no-op. Verified afterwards: **0 double-prefixed titles estate-wide.**
+
+⚠ **It also pushes to Jobber, and that is wanted.** Jobber held the same stale title on all three, so a
+DB-only fix would have left permanent drift. `trg_push_visit_update` fires `changed:['title']` and
+`jobber-push-visit` (~line 415) sets **only** `attrs.title`; the complete/uncomplete path requires
+`"completion"` in `changed`, which a title-only edit never adds. **All three are COMPLETED visits and
+stayed completed** — same `completed_at` and `completed_by` (Diego, Grecia, Grecia) on our side, and
+`COMPLETED` with `completedAt` intact in Jobber.
+
+Backup: `..\..\backups\2026-08-12_excelsior_visit_titles_before.json`. Estate-wide stale count went
+**56 → 53**, which is exactly the three.
 
 ⚠ **And do not "fix" the `audit.logs` copies.** 35 audit rows carry `247-EC` in their row snapshots.
 Those are the record of what the values WERE, which is the entire point of an audit trail.
