@@ -557,6 +557,16 @@ verify_jwt = false
 [functions.save-client-fields]
 verify_jwt = false
 
+# save-client-contact: the primary contact's email/phone. Same reason as the two
+# above — the browser sends an ES256 session token the gateway rejects outright,
+# so the staff-domain check is in-handler (auth.getUser + @ayache.com/@unclogme.com).
+# It is the ONLY sanctioned writer of the client-level primary contact: the DB RPC
+# client.update_client_contact refuses that row on purpose, because the */5 poll
+# re-upserts it from Jobber. This function pushes to Jobber FIRST and verifies, so
+# the poll converges instead of reverting.
+[functions.save-client-contact]
+verify_jwt = false
+
 # sync-jobber-job-drift: the 30-minute jobs reconcile (pg_cron 15,45 * * * * via
 # fn_request_jobber_sync('jobs-drift'), vault bearer). Handler requires
 # role=service_role — verify_jwt alone also admits the public anon key.
