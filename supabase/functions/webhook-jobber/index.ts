@@ -347,7 +347,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     //   - reactivating INACTIVE → ACTIVE
     //   - otherwise             → leave status untouched (preserve AT value)
     const { data: cur } = await supabase
-      .from('clients').select('client_code, status, client_class_source').eq('id', existingId).maybeSingle()
+      .from('clients').select('client_code, status, client_class_source, status_source').eq('id', existingId).maybeSingle()
     // Respect a manual client_class override (e.g. residential clients that Jobber
     // reports isCompany=true — 119-ME/121-FRO/126-YM). The DB trigger
     // trg_clients_protect_manual_class also enforces this, but dropping the field
@@ -358,7 +358,18 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     }
     if (c.isArchived) {
       clientRow.status = 'INACTIVE'
-    } else if (cur && cur.status === 'INACTIVE') {
+    } else if (cur && cur.status === 'INACTIVE'
+               && (cur as { status_source?: string }).status_source !== 'manual') {
+      // 🛑 DO NOT REVIVE A CLIENT A HUMAN SWITCHED OFF (2026-08-13).
+      // This branch is right for its original case: a client archived in Jobber and later
+      // UNARCHIVED should come back to ACTIVE. But it could not tell that from "a human set
+      // INACTIVE in the Client App", and Jobber has no idea we changed anything — so a
+      // deliberate deactivation survived only until the next */5 poll touched that client,
+      // and the revert landed as an ordinary app_source='jobber' audit row with nothing to
+      // announce it.
+      // clients.status_source ('jobber' | 'manual', migration 2026-08-13_0130) is the same pin
+      // client_class_source already provides for client_class, honoured a few lines below.
+      // An explicit archive in Jobber still wins, above — there both sides agree.
       clientRow.status = 'ACTIVE'
     }
     // Self-heal client_code only if missing — Airtable owns the authoritative value,
