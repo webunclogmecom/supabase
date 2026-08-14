@@ -79,7 +79,9 @@ function request({ host, path, method = 'GET', headers = {}, body = null }) {
       headers: { ...headers, ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}) },
     }, (res) => {
       let d = ''; res.on('data', c => (d += c));
-      res.on('end', () => resolve({ status: res.statusCode, body: d }));
+      // headers exposed so callers can tell a GraphQL reply from Jobber's HTML waiting room;
+      // the status code is 200 for both, so it cannot be used to distinguish them.
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: d }));
     });
     req.on('error', reject);
     req.setTimeout(60_000, () => req.destroy(new Error('timeout')));
@@ -173,7 +175,34 @@ async function gqlVisit(gid) {
   });
   if (r.status === 401) throw new Error('token-expired');
   if (r.status >= 500) throw new Error(`gql ${r.status}`);
+
+  // 🛑 AN UNANSWERED QUESTION IS NOT AN ORPHAN (2026-08-13).
+  // The orphan branch below fires on `!res.data?.visit`, which cannot distinguish
+  //   "Jobber answered, and this visit is gone"      <- a real orphan, soft-delete it
+  // from
+  //   "Jobber did not answer"                        <- an outage, touch nothing
+  // and a full run soft-deletes EVERY candidate it asks about: 756 visits at --days=90,
+  // 512 of them completed history and 269 carrying manifest_visits DERM links, which would
+  // drop those compliance records out of customer.work_orders and the Field Portal. There is
+  // no cap: --limit bounds rows SCANNED and defaults to none. So the two cases must be
+  // separated HERE, before that branch can see them. Both guards THROW, and the caller's
+  // catch records the row as an error and skips it — failing closed by construction.
+  //
+  // (a) Jobber sheds load with an HTML "Waiting Room" page at HTTP 200 (measured live
+  //     2026-08-13, ~40 min). JSON.parse already throws on that, which is protective by
+  //     accident; this makes the reason legible instead of a bare SyntaxError.
+  const ctype = String((r.headers && (r.headers['content-type'] || r.headers['Content-Type'])) || '');
+  if (ctype && !ctype.includes('json')) {
+    throw new Error(`jobber-not-json (${ctype} at HTTP ${r.status}) — Jobber is shedding load, not answering`);
+  }
   const j = JSON.parse(r.body);
+  // (b) THE ONE THAT ACTUALLY MATTERS. A well-formed GraphQL reply ALWAYS carries a `data`
+  //     key, even when the field inside it is null. Its ABSENCE means the request never ran:
+  //     a THROTTLED envelope, a JSON-shaped auth error, a 429 with a JSON body. Those PARSE
+  //     FINE, so (a) does not catch them, and `!j.data?.visit` reads them as "gone".
+  if (!Object.prototype.hasOwnProperty.call(j, 'data')) {
+    throw new Error(`jobber-no-data (${(j.errors || []).map(e => e.message).join('; ').slice(0, 120) || 'no errors array either'})`);
+  }
   return { data: j.data, errors: j.errors };
 }
 
@@ -243,6 +272,14 @@ async function updateDate(id, startAt, endAt) {
   console.log(`Universe: ${rows.length} Jobber-linked visits to reconcile.\n`);
 
   const orphans = [], dateDrift = [], inversions = [], errors = [];
+  // 🛑 CIRCUIT BREAKER. The guards in gqlVisit already make an outage harmless (every row
+  // errors and is skipped), but without this the run still fires up to 756 sequential Jobber
+  // requests at ~80ms spacing with no backoff — which is itself a plausible way to CAUSE the
+  // throttling it cannot interpret. Consecutive, so a handful of genuinely bad GIDs scattered
+  // through the set never trips it; only a sustained wall of failures does.
+  let consecutiveJobberFailures = 0;
+  const MAX_CONSECUTIVE_FAILURES = 10;
+  let abortedEarly = null;
   let processed = 0, lastTokenRefresh = Date.now();
 
   for (const v of rows) {
@@ -262,14 +299,23 @@ async function updateDate(id, startAt, endAt) {
       if (e.message === 'token-expired') {
         await getJobberToken();
         lastTokenRefresh = Date.now();
-        try { res = await gqlVisit(v.jobber_gid); } catch (e2) { errors.push({ id: v.id, err: e2.message }); continue; }
+        try { res = await gqlVisit(v.jobber_gid); }
+        catch (e2) {
+          errors.push({ id: v.id, err: e2.message });
+          if (++consecutiveJobberFailures >= MAX_CONSECUTIVE_FAILURES) { abortedEarly = e2.message; break; }
+          continue;
+        }
       } else {
         errors.push({ id: v.id, err: e.message });
+        if (++consecutiveJobberFailures >= MAX_CONSECUTIVE_FAILURES) { abortedEarly = e.message; break; }
         continue;
       }
     }
+    consecutiveJobberFailures = 0;   // Jobber answered; the streak is broken
 
-    // (1) Orphan: Jobber says Visit not found OR data.visit is null
+    // (1) Orphan: Jobber ANSWERED and said this visit is not found / is null.
+    //     Reaching here means gqlVisit returned, so `data` was present — an unanswered
+    //     request threw above and never gets this far. See the guards in gqlVisit.
     if (isNotFound(res.errors) || !res.data?.visit) {
       orphans.push(v);
       try {
@@ -315,6 +361,13 @@ async function updateDate(id, startAt, endAt) {
   const elapsed = Math.round((Date.now() - t0) / 1000);
   console.log(`\nScanned ${processed} visits in ${elapsed}s.`);
   console.log('\n=== Summary =================================================');
+  if (abortedEarly) {
+    // Loud, and ABOVE the counts: a partial run whose numbers look small must never be
+    // mistaken for a clean run that found little.
+    console.log(`  🛑 ABORTED EARLY after ${MAX_CONSECUTIVE_FAILURES} consecutive Jobber failures: ${abortedEarly}`);
+    console.log(`     Jobber was not answering, so the remaining visits were NOT checked and NOTHING`);
+    console.log(`     was soft-deleted on their behalf. Re-run once Jobber is healthy.`);
+  }
   console.log(`  ORPHANS soft-deleted${EXECUTE ? '' : ' (would be)'}: ${orphans.length}`);
   for (const o of orphans) console.log(`    id=${o.id} ${o.client_code || '?'} ${o.client_name} visit_date=${o.visit_date}`);
   console.log(`\n  DATE DRIFT updated${EXECUTE ? '' : ' (would be)'}: ${dateDrift.length}`);
