@@ -14,7 +14,14 @@
 //      reconcile_completion only checks completed visits. Result: visit sits
 //      in our DB on the old date forever.
 //      Action: UPDATE visit_date / start_at / end_at to Jobber's current
-//      values when DB visit_status='scheduled' AND drift > 0.
+//      values when DB visit_status='scheduled' AND drift > 0
+//      🛑 AND `visits.source='jobber'` — this script owns Jobber-born visits ONLY
+//      (ADR 015). A Calendar- or generator-born visit is mastered elsewhere, so its
+//      drift is REPORTED (summary + `drift_skipped_not_ours` in the JSON) and never
+//      adopted. Added 2026-08-14; before it, 33 of 34 schedule rewrites this script
+//      had ever made landed on rows it does not own. Full note at branch (2).
+//      ⚠ The gate is on the BRANCH, not on fetchCandidates: branch 1 must still see
+//      every source, or a visit deleted in Jobber lingers on the Calendar forever.
 //
 //   3. INVERTED TIMELINE — Jobber's completedAt < startAt by more than 1 day.
 //      Means someone in Jobber rescheduled an already-completed visit. The
@@ -213,10 +220,18 @@ function isNotFound(errs) {
 // ---------------------------------------------------------------------------
 
 async function fetchCandidates() {
-  // Only rows that are (a) Jobber-sourced, (b) not already soft-deleted,
+  // Only rows that are (a) Jobber-LINKED, (b) not already soft-deleted,
   // (c) in the ±DAYS window.
+  //
+  // ⚠ "Jobber-LINKED" is NOT "Jobber-BORN", and this comment used to say "Jobber-sourced",
+  // which conflated them. Every Calendar-created visit gets an entity_source_links row the
+  // moment our own push records its GID, so this join admits visit-calendar and supabase_cron
+  // rows too. Measured 2026-08-14 over the ±90d window: 381 supabase_cron / 262 jobber /
+  // 113 visit-calendar. That is deliberate for the ORPHAN branch and wrong for the DRIFT
+  // branch — see the SCHEDULE_OWNER note at branch (2). `v.source` is selected so that branch
+  // can tell them apart; do not remove it.
   return pg(`
-    SELECT v.id, v.visit_date, v.visit_status, v.title,
+    SELECT v.id, v.visit_date, v.visit_status, v.title, v.source,
            v.start_at, v.end_at, v.completed_at,
            c.client_code, c.name AS client_name,
            esl.source_id AS jobber_gid
@@ -272,6 +287,8 @@ async function updateDate(id, startAt, endAt) {
   console.log(`Universe: ${rows.length} Jobber-linked visits to reconcile.\n`);
 
   const orphans = [], dateDrift = [], inversions = [], errors = [];
+  // Drift we SAW but refused to adopt because the row is not ours (see SCHEDULE_OWNER below).
+  const driftSkippedNotOurs = [];
   // 🛑 CIRCUIT BREAKER. The guards in gqlVisit already make an outage harmless (every row
   // errors and is skipped), but without this the run still fires up to 756 sequential Jobber
   // requests at ~80ms spacing with no backoff — which is itself a plausible way to CAUSE the
@@ -332,16 +349,43 @@ async function updateDate(id, startAt, endAt) {
     const jDate = operatingDateET(j.startAt);
 
     // (2) Scheduled-visit date drift
+    //
+    // 🛑 SCHEDULE_OWNER: ADOPT JOBBER'S DATE ONLY ONTO A JOBBER-BORN VISIT (2026-08-14, Fred).
+    // ADR 015 divides the visit estate by `visits.source`: the recurring generator owns
+    // 'supabase_cron', and THIS script owns **'jobber'**. The candidate join is by GID, not by
+    // source, so until now this branch adopted Jobber's startAt onto Calendar-mastered rows as
+    // well — the exact write Visit Calendar rule #7 forbids ("a Jobber-side reschedule of it is
+    // intentionally ignored and our push re-asserts the Calendar's schedule"). updateDate() runs
+    // with app.suppress_jobber_push='on', so our copy silently moved to match Jobber and the
+    // Calendar never re-asserted: silent in both directions.
+    //
+    // Measured before the fix, from audit.logs (app_source='jobber-daily-anomaly-reconcile',
+    // rows where visit_date/start_at/end_at changed): supabase_cron 24, visit-calendar 9,
+    // jobber 1. So 33 of 34 schedule rewrites landed on rows this script does not own.
+    // It is structural, not luck — only 2 scheduled source='jobber' visits exist in the whole
+    // DB, against 710 supabase_cron and 16 visit-calendar.
+    //
+    // ⚠ THIS GATE IS DELIBERATELY NOT ON fetchCandidates. The ORPHAN branch (1) must keep
+    // seeing every source: a human deleting a visit in Jobber is a real signal for a
+    // Calendar-born visit too, and all 8 visit-calendar orphans it soft-deleted were verified
+    // genuinely absent from Jobber. Filtering the candidate set instead would leave phantom
+    // visits on the Calendar forever, with a dead GID and no way to notice.
     if (
       v.visit_status === 'scheduled' &&
       jDate && jDate !== v.visit_date &&
       j.startAt && j.endAt
     ) {
-      dateDrift.push({ id: v.id, code: v.client_code, dbDate: v.visit_date, jDate, jStartAt: j.startAt, jEndAt: j.endAt });
-      try {
-        await updateDate(v.id, j.startAt, j.endAt);
-      } catch (e) {
-        errors.push({ id: v.id, err: `updateDate failed: ${e.message}` });
+      if (v.source !== 'jobber') {
+        // Counted and printed, never silent — a suppressed write that nobody can see is how
+        // "the reconciler stopped working" gets diagnosed as a bug six months from now.
+        driftSkippedNotOurs.push({ id: v.id, code: v.client_code, source: v.source, dbDate: v.visit_date, jDate });
+      } else {
+        dateDrift.push({ id: v.id, code: v.client_code, dbDate: v.visit_date, jDate, jStartAt: j.startAt, jEndAt: j.endAt });
+        try {
+          await updateDate(v.id, j.startAt, j.endAt);
+        } catch (e) {
+          errors.push({ id: v.id, err: `updateDate failed: ${e.message}` });
+        }
       }
     }
 
@@ -370,8 +414,10 @@ async function updateDate(id, startAt, endAt) {
   }
   console.log(`  ORPHANS soft-deleted${EXECUTE ? '' : ' (would be)'}: ${orphans.length}`);
   for (const o of orphans) console.log(`    id=${o.id} ${o.client_code || '?'} ${o.client_name} visit_date=${o.visit_date}`);
-  console.log(`\n  DATE DRIFT updated${EXECUTE ? '' : ' (would be)'}: ${dateDrift.length}`);
+  console.log(`\n  DATE DRIFT updated${EXECUTE ? '' : ' (would be)'}: ${dateDrift.length}   [source='jobber' only]`);
   for (const d of dateDrift) console.log(`    id=${d.id} ${d.code}: DB=${d.dbDate} → JOBBER=${d.jDate}`);
+  console.log(`\n  DRIFT SEEN BUT NOT OURS (ADR 015 — left for the Calendar/generator to own): ${driftSkippedNotOurs.length}`);
+  for (const d of driftSkippedNotOurs) console.log(`    id=${d.id} ${d.code} [${d.source}]: DB=${d.dbDate} vs JOBBER=${d.jDate} — NOT adopted`);
   console.log(`\n  INVERSIONS flagged (no auto-action): ${inversions.length}`);
   for (const i of inversions) console.log(`    id=${i.id} ${i.code} ${i.client_name}: scheduled=${i.startAt} completed=${i.completedAt} (${i.hours_inverted}h inversion)`);
   console.log(`\n  ERRORS: ${errors.length}`);
@@ -390,6 +436,10 @@ async function updateDate(id, startAt, endAt) {
     scanned: processed,
     elapsed_seconds: elapsed,
     orphans, dateDrift, inversions, errors,
+    // Drift observed on rows this script does not own (ADR 015). Kept in the artifact so the
+    // Jobber-vs-Calendar disagreement stays VISIBLE after the adopt was withheld — otherwise
+    // suppressing the write also suppresses the evidence that there is anything to decide.
+    drift_skipped_not_ours: driftSkippedNotOurs,
   }, null, 2));
   console.log(`\nWrote: ${out}`);
 

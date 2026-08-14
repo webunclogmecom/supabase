@@ -7,7 +7,10 @@ name: Daily Jobber anomaly reconcile
 #
 #   - Scheduled visits where Jobber's startAt has moved (rescheduling not
 #     caught by the completedAt-cursor pull) get visit_date/start_at/end_at
-#     synced back to Jobber's current values.
+#     synced back to Jobber's current values — but ONLY for visits.source='jobber',
+#     which is the estate this script owns under ADR 015 (2026-08-14). Drift on a
+#     Calendar- or generator-born visit is reported in the run JSON as
+#     drift_skipped_not_ours and deliberately NOT adopted.
 #
 #   - Inverted-timeline cases (Jobber.completedAt < startAt by >24h, i.e.
 #     visits rescheduled after completion) are flagged in the run JSON but
