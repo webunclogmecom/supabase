@@ -162,7 +162,13 @@ let _budget = { available: null, max: null, rate: null };
 
 async function jobberGraphQL(query, variables = {}, _retries = 0) {
   const body = JSON.stringify({ query, variables });
-  const r = await httpRequest({
+  // TRANSPORT RETRY 2026-08-14. This helper already backs off on 429/5xx, but the
+  // request REJECTS on a socket error and on its own timeout, and nothing caught that,
+  // so ECONNRESET / ENOTFOUND / a hung connection still aborted the whole run.
+  // Same gap @Building Apps found in cron_jobber_reconcile_anomalies.js.
+  let r;
+  try {
+    r = await httpRequest({
     hostname: 'api.getjobber.com',
     path: '/api/graphql',
     method: 'POST',
@@ -173,6 +179,13 @@ async function jobberGraphQL(query, variables = {}, _retries = 0) {
       'Content-Length': Buffer.byteLength(body),
     },
   }, body);
+  } catch (_e) {
+    if (_retry < 6) {
+      await new Promise(rs => setTimeout(rs, Math.min(60000, 2000 * Math.pow(2, _retry))));
+      return sbQuery(sql, _retry + 1);
+    }
+    throw _e;
+  }
 
   const parsed = JSON.parse(r.body.toString());
 

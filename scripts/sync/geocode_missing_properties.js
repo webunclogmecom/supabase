@@ -54,14 +54,34 @@ function http(opts, body) {
   });
 }
 
-async function pg(sql) {
-  const r = await http({
+async function pg(sql, _attempt = 1) {
+  // TRANSPORT RETRY 2026-08-14. The status-code retry below is not enough alone:
+  // this request helper REJECTS on a socket error and on its own timeout, so
+  // ECONNRESET / ENOTFOUND / a hung connection bypassed it and still aborted the run.
+  // Found by @Building Apps in the reconciler copy of this same block.
+  let r;
+  try {
+    r = await http({
     hostname: 'api.supabase.com',
     path: `/v1/projects/${process.env.SUPABASE_PROJECT_ID}/database/query`,
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.SUPABASE_PAT}`, 'Content-Type': 'application/json' }
   }, JSON.stringify({ query: sql }));
-  if (r.status >= 300) throw new Error(`PG ${r.status}: ${r.body.slice(0, 200)}`);
+  } catch (_e) {
+    if (_attempt < 5) { await new Promise(res => setTimeout(res, 2000 * _attempt)); return pg(sql, _attempt + 1); }
+    throw _e;
+  }
+  // RETRY ADDED 2026-08-14. A bare throw here aborted the whole scheduled run on a
+  // transient blip: daily-jobber-anomaly-reconcile died 2026-08-11 on "PG 502".
+  // 5xx/429 only; a 4xx is a real bug and retrying hides it. See lib/pg_retry.js.
+  if (r.status >= 300) {
+    const _retryable = r.status === 429 || r.status >= 500;
+    if (_retryable && _attempt < 5) {
+      await new Promise(res => setTimeout(res, 2000 * _attempt));
+      return pg(sql, _attempt + 1);
+    }
+    throw new Error(`PG ${r.status}: ${r.body.slice(0, 200)}`);
+  }
   return JSON.parse(r.body);
 }
 

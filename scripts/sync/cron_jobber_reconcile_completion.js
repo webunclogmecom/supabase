@@ -92,7 +92,17 @@ async function rest(qs, opts = {}) {
 // ---- token + GraphQL ---------------------------------------------------------
 
 async function getJobberToken() {
-  const r = await rest('/webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,expires_at');
+  // TRANSPORT RETRY 2026-08-14. The status-code retry below is not enough on its own:
+  // this request helper REJECTS on a socket error and on its own timeout, so ECONNRESET,
+  // ENOTFOUND and a hung connection bypassed it entirely and still aborted the run.
+  // Found by @Building Apps in the reconciler's copy of this same block.
+  let r;
+  try {
+    r = await rest('/webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,expires_at');
+  } catch (_e) {
+    if (_attempt < 5) { await new Promise(res => setTimeout(res, 2000 * _attempt)); return pg(sql, _attempt + 1); }
+    throw _e;
+  }
   if (r.status !== 200) throw new Error(`webhook_tokens read failed: ${r.status} ${r.body}`);
   const row = JSON.parse(r.body)[0];
   if (!row) throw new Error('No jobber webhook_tokens row');
@@ -146,7 +156,7 @@ async function jobberVisit(token, gid) {
 
 // ---- DB helpers (Management API for SQL) --------------------------------------
 
-async function pg(sql) {
+async function pg(sql, _attempt = 1) {
   const PAT = process.env.SUPABASE_PAT;
   const PROD = process.env.SUPABASE_PROJECT_ID;
   if (!PAT || !PROD) throw new Error('SUPABASE_PAT + SUPABASE_PROJECT_ID required for raw SQL');
@@ -155,7 +165,17 @@ async function pg(sql) {
     headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: sql }),
   });
-  if (r.status >= 300) throw new Error(`PG ${r.status}: ${r.body.slice(0, 400)}`);
+  // RETRY ADDED 2026-08-14. A bare throw here aborted the whole scheduled run on a
+  // transient blip: daily-jobber-anomaly-reconcile died 2026-08-11 on "PG 502".
+  // 5xx/429 only; a 4xx is a real bug and retrying hides it. See lib/pg_retry.js.
+  if (r.status >= 300) {
+    const _retryable = r.status === 429 || r.status >= 500;
+    if (_retryable && _attempt < 5) {
+      await new Promise(res => setTimeout(res, 2000 * _attempt));
+      return pg(sql, _attempt + 1);
+    }
+    throw new Error(`PG ${r.status}: ${r.body.slice(0, 400)}`);
+  }
   return JSON.parse(r.body);
 }
 

@@ -103,12 +103,25 @@ function http(opts, body) {
 
 async function pg(sql, _retry = 0) {
   if (!PAT || !PROJECT) throw new Error('SUPABASE_PAT and SUPABASE_PROJECT_ID required for queries');
-  const r = await http({
+  // TRANSPORT RETRY 2026-08-14. This helper already backs off on 429/5xx, but the
+  // request REJECTS on a socket error and on its own timeout, and nothing caught that,
+  // so ECONNRESET / ENOTFOUND / a hung connection still aborted the whole run.
+  // Same gap @Building Apps found in cron_jobber_reconcile_anomalies.js.
+  let r;
+  try {
+    r = await http({
     hostname: 'api.supabase.com',
     path: `/v1/projects/${PROJECT}/database/query`,
     method: 'POST',
     headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json' }
   }, JSON.stringify({ query: sql }));
+  } catch (_e) {
+    if (_retry < 6) {
+      await new Promise(rs => setTimeout(rs, Math.min(60000, 2000 * Math.pow(2, _retry))));
+      return pg(sql, _retry + 1);
+    }
+    throw _e;
+  }
   // Mgmt API throttles around 60 req/min. Back off + retry on 429 / 5xx.
   if ((r.status === 429 || (r.status >= 500 && r.status < 600)) && _retry < 6) {
     const waitMs = Math.min(60_000, 2_000 * Math.pow(2, _retry));
