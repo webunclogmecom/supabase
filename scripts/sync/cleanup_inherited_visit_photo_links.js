@@ -52,7 +52,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function http(opts, body) {
   return new Promise((res, rej) => {
-    const r = https.request(opts, x => { const ch = []; x.on('data', c => ch.push(c)); x.on('end', () => res({ status: x.statusCode, body: Buffer.concat(ch) })); });
+    const r = https.request(opts, x => { const ch = []; x.on('data', c => ch.push(c)); x.on('end', () => res({ status: x.statusCode, headers: x.headers, body: Buffer.concat(ch) })); });
     r.on('error', rej); if (body) r.write(body); r.end();
   });
 }
@@ -77,6 +77,7 @@ async function gql(query, variables, retries = 5) {
   const ctype = String(r.headers?.['content-type'] || '');
   if (r.status < 300 && ctype && !ctype.includes('json')) throw new Error(`Jobber busy (${ctype})`);
   if (r.status >= 300) {
+    if (r.status === 401 && retries > 0) { JOBBER_TOKEN = await getReadToken(true); return gql(query, variables, retries - 1); }
     if (retries > 0 && (r.status === 429 || r.status >= 500)) { await sleep((6 - retries) * 4000); return gql(query, variables, retries - 1); }
     throw new Error(`Jobber ${r.status}`);
   }
@@ -91,13 +92,29 @@ async function gql(query, variables, retries = 5) {
 }
 const sqlEsc = v => v == null ? 'NULL' : (typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'");
 
+// Jobber access tokens expire in ~60 min. The first run of this script had no 401
+// handling and burned 809 of 940 visits on `Jobber 401` once the token aged out.
+// Copied verbatim from sync_jobber_note_photos.js so the two cannot drift.
+async function getReadToken(force) {
+  const rows = await pg(`SELECT access_token, refresh_token, client_id, client_secret, expires_at FROM public.webhook_tokens WHERE source_system='jobber'`);
+  const t = rows[0]; if (!t) throw new Error('no jobber read token in webhook_tokens');
+  if (!force && new Date(t.expires_at).getTime() > Date.now() + 120000) return t.access_token;
+  const body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(t.refresh_token)}&client_id=${encodeURIComponent(t.client_id)}&client_secret=${encodeURIComponent(t.client_secret)}`;
+  const r = await http({ hostname: 'api.getjobber.com', path: '/api/oauth/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, body);
+  if (r.status >= 300) throw new Error(`read token refresh ${r.status}`);
+  const j = JSON.parse(r.body.toString());
+  const exp = JSON.parse(Buffer.from(j.access_token.split('.')[1], 'base64').toString()).exp * 1000;
+  await pg(`UPDATE public.webhook_tokens SET access_token=${sqlEsc(j.access_token)}, refresh_token=${sqlEsc(j.refresh_token || t.refresh_token)}, expires_at=${sqlEsc(new Date(exp).toISOString())}, updated_at=now() WHERE source_system='jobber'`);
+  return j.access_token;
+}
+
 const Q = `query($id:EncodedId!,$after:String){ visit(id:$id){ notes(first:10,after:$after){ nodes{ __typename
   ... on ClientNote { id createdAt fileAttachments(first:100){ nodes{ id } pageInfo{ hasNextPage } } }
   ... on JobNote    { id createdAt fileAttachments(first:100){ nodes{ id } pageInfo{ hasNextPage } } }
 } pageInfo{ hasNextPage endCursor } } } }`;
 
 (async () => {
-  if (!JOBBER_TOKEN) { console.error('No Jobber token. Run: cd Slack && JT=$(./jobber-token.sh) and export JT.'); process.exit(1); }
+  JOBBER_TOKEN = await getReadToken(false);   // always start from a live, non-expiring token
   console.log(`cleanup_inherited_visit_photo_links  ${EXECUTE ? 'EXECUTE' : 'DRY-RUN'}  window=+/-${NOTE_WINDOW_DAYS}d${ONLY_VISIT ? `  visit=${ONLY_VISIT}` : ''}`);
 
   // Visits that hold at least one Jobber-sourced, still-alive visit link.
