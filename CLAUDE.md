@@ -36,6 +36,20 @@ Every sync/population script uses `ON CONFLICT` on natural keys. Re-runnable wit
 ### 6. Never hard-delete
 Business data uses `status = 'INACTIVE'` or equivalent. Hard deletes break `entity_source_links` and historical joins. Only deletes allowed: `webhook_events_log` retention trimming + legacy `entity_source_links` archival post-sunset.
 
+🛑 **WHEN A DELETE *IS* SANCTIONED, CHECK WHETHER THE TABLE IS AUDITED FIRST — THAT IS WHAT DECIDES
+IF IT IS RECOVERABLE (2026-08-14).** The `zones_hard_delete` note below argues a delete is acceptable
+partly *because* `zones` carries audit triggers, so `audit.logs.old_row` can restore it. **That
+reasoning silently transfers to tables where it is false.** `public.entity_source_links` has **zero
+triggers**: a DELETE there leaves **no record of any kind**, and the only recovery is a file you
+remembered to write beforehand. Measured when Fred approved clearing 2 dead link rows; they were
+backed up to `backups/` first, and that file is now the sole restore path.
+⇒ Run the rule-8 trigger query against the specific table **before** deleting, and if it comes back
+empty, write a JSON backup with a restore hint or do not proceed. Do not infer recoverability from
+the fact that *other* tables in `public` are audited — the audited set is 31 tables, not all of them.
+⇒ And pin the statement to primary keys **while re-asserting the predicate that made the rows
+deletable** (`... WHERE id IN (...) AND NOT EXISTS (<the thing that makes it an orphan>)`), so it
+cannot fire if the world changed between your read and your write.
+
 ### 7. Timestamps in UTC, money in `NUMERIC(12,2)`
 All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`. `updated_at` trigger-managed — **never set it manually**.
 
