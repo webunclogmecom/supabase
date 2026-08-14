@@ -29,7 +29,7 @@ const http = require('http');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function request(urlStr, body, headers) {
+function request(urlStr, body, headers, timeoutMs) {
   const u = new URL(urlStr);
   const mod = u.protocol === 'https:' ? https : http;
   const opts = {
@@ -48,6 +48,18 @@ function request(urlStr, body, headers) {
       // reads undefined is decoration. That exact bug shipped once already.
       x.on('end', () => res({ status: x.statusCode, headers: x.headers, body: Buffer.concat(ch).toString() }));
     });
+    // 🛑 SOCKET TIMEOUT (added 2026-08-14). Without it a half-open connection hangs until the OS
+    // gives up, and the retry loop above never gets a turn — the run stalls to the workflow's
+    // `timeout-minutes: 30` instead of failing in 60s and retrying.
+    // ⚠ This is NOT a nicety: cron_jobber_reconcile_anomalies.js carried `req.setTimeout(60_000)`
+    // in its own inlined helper, so adopting this lib WITHOUT a timeout would have been a straight
+    // regression for that caller. It lands here rather than at the call site so every script that
+    // adopts pgFactory gets it — none of them has a timeout today.
+    // `destroy(err)` surfaces through 'error' -> rej, i.e. as a RETRYABLE transport failure, which
+    // is the correct classification: a timeout is exactly the transient blip this file exists for.
+    if (timeoutMs) {
+      r.setTimeout(timeoutMs, () => r.destroy(new Error(`socket timeout after ${timeoutMs}ms`)));
+    }
     r.on('error', rej);
     r.write(body);
     r.end();
@@ -61,11 +73,16 @@ function request(urlStr, body, headers) {
  * @param {string} [o.endpoint] full URL override, for tests
  * @param {number} [o.attempts=5] total attempts including the first
  * @param {number} [o.backoffMs=2000] base backoff, multiplied by attempt number
+ * @param {number} [o.timeoutMs=60000] per-attempt socket timeout; 0 disables it
  */
 function pgFactory(o = {}) {
   const endpoint = o.endpoint || `https://api.supabase.com/v1/projects/${o.project}/database/query`;
   const maxAttempts = o.attempts ?? 5;
   const backoffMs = o.backoffMs ?? 2000;
+  // Matches the 60s that cron_jobber_reconcile_anomalies.js applied in its own helper before it
+  // adopted this lib. Per ATTEMPT, not per call: 5 attempts can still span several minutes, which
+  // the workflow's timeout-minutes: 30 bounds.
+  const timeoutMs = o.timeoutMs ?? 60000;
   const headers = o.pat ? { Authorization: `Bearer ${o.pat}` } : {};
 
   return async function pg(sql) {
@@ -74,7 +91,7 @@ function pgFactory(o = {}) {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       let r;
       try {
-        r = await request(endpoint, body, headers);
+        r = await request(endpoint, body, headers, timeoutMs);
       } catch (e) {
         // transport-level blip (ENOTFOUND, ECONNRESET) is retryable too
         last = e;

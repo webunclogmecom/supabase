@@ -51,6 +51,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env'), override: true });
 const https = require('https');
 const { operatingDateET } = require('../lib/operating_date_et');
+const { pgFactory } = require('./lib/pg_retry');
 
 // app_source attribution (ADR 016) — so the Calendar activity feed shows this
 // reconcile by name instead of the opaque "System".
@@ -129,26 +130,24 @@ async function rest(p, opts = {}) {
 // statement that actually committed before the 5xx affects 0 rows on the replay.
 // Do NOT add a non-idempotent statement to this script without revisiting that.
 //
-// Semantics match scripts/sync/lib/pg_retry.js, which is unit-tested
-// (node scripts/sync/lib/pg_retry.test.js) including a control that reproduces the
-// 2026-08-11 abort and a negative control that a 4xx is not retried.
-async function pg(sql, attempt = 1) {
-  const MAX = 5;
-  const r = await request({
-    host: 'api.supabase.com', path: `/v1/projects/${PROJECT}/database/query`, method: 'POST',
-    headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: sql }),
-  });
-  if (r.status >= 300) {
-    const retryable = r.status === 429 || r.status >= 500;
-    if (retryable && attempt < MAX) {
-      await new Promise(res => setTimeout(res, 2000 * attempt));
-      return pg(sql, attempt + 1);
-    }
-    throw new Error(`PG ${r.status}: ${r.body.slice(0, 400)}`);
-  }
-  return JSON.parse(r.body);
-}
+// 🛑 THIS IS NOW THE LIB, NOT A COPY OF IT (2026-08-14, @Building Apps).
+// The inlined version that used to sit here said "Semantics match scripts/sync/lib/pg_retry.js".
+// On one path it did not, and it was the path that matters here: it handled retryable STATUS CODES
+// but had no try/catch around `await request(...)`, while `request()` REJECTS on a socket error and
+// on its own setTimeout. So `ECONNRESET` / `ENOTFOUND` / a hung connection still aborted the whole
+// nightly run — the exact failure shape the 502 fix was written to stop, one layer down.
+//
+// ⇒ Fixed by DELETING the second copy rather than patching it, so the artifact that is unit-tested
+// is the artifact that runs. "Semantics match" is a claim to diff, not a note to write; keeping two
+// implementations in sync by comment is what produced the gap.
+//
+// The lib carries the same policy (5xx + 429 only, 5 attempts, 2000ms * attempt backoff, transport
+// blips retried) plus the 60s per-attempt socket timeout this script used to apply in its own
+// `request()` — see lib/pg_retry.js. Tests: node scripts/sync/lib/pg_retry.test.js (9 cases,
+// including a legacy-helper control for both the 502 and the dropped-socket path).
+//
+// ⚠ `request()` below is STILL USED by rest() and gqlVisit() — do not delete it with this.
+const pg = pgFactory({ project: PROJECT, pat: PAT });
 
 let JOBBER_TOKEN = null;
 async function getJobberToken() {
