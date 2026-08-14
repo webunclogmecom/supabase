@@ -77,6 +77,15 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
     },
     body: JSON.stringify({ query, variables }),
   });
+  // 🛑 Jobber sheds load with an HTML "Waiting Room" page at HTTP 200 (measured live 2026-08-13).
+  // `.catch(() => ({}))` below turns that into an empty object, which every reader here treats as
+  // "no errors, no data" — i.e. success with nothing in it. Returned as a synthetic top-level
+  // `errors` envelope so errsOf() picks it up and callers fail closed, matching this helper's
+  // existing return shape rather than introducing a second one.
+  const ctype = r.headers.get("content-type") ?? "";
+  if (!ctype.includes("json")) {
+    return { errors: [{ message: `Jobber returned ${ctype || "an unknown content type"} at HTTP ${r.status} (its waiting room), not GraphQL` }] };
+  }
   const j = await r.json().catch(() => ({}));
   const throttled = r.status === 429 ||
     (Array.isArray(j.errors) && j.errors.some((e: any) =>
@@ -207,7 +216,27 @@ Deno.serve(async (req) => {
     // gone. Only then drop the link. Dropping the link first is unrecoverable — without it there is
     // no handle on the Task at all.
     const check = await gql(token, `query($id: EncodedId!){ task(id: $id){ id } }`, { id: link.source_id });
-    if (check?.data?.task?.id) {
+
+    // 🛑 REQUIRE POSITIVE PROOF THAT JOBBER ANSWERED (2026-08-14). The check below used to be
+    // `if (check?.data?.task?.id) keep-link`, which only kept the link when the Task was FOUND.
+    // Every other outcome fell through to the delete — including a response with no `data` at all
+    // (Jobber's HTML waiting room, a THROTTLED envelope, a JSON auth error), because
+    // `undefined?.task?.id` is falsy in exactly the same way as a genuine `{"data":{"task":null}}`.
+    // Absence of evidence was being read as evidence of absence, and the function then reported
+    // `verified_gone: true`.
+    // ⚠ That is UNRECOVERABLE, which is why it gets a positive test rather than a tidier negative
+    //   one: entity_source_links carries NO audit trigger (0 rows in audit.logs), so once the link
+    //   row is gone the Task GID exists nowhere in our system and the Task lives on the crew's
+    //   Jobber schedule forever. A marker drag is delete+insert, so it would also mint a second one.
+    // The link is the only handle we have. Drop it ONLY on proof the Task is really gone.
+    const answered = !!check && typeof check === "object" &&
+      Object.prototype.hasOwnProperty.call(check, "data") &&
+      !!check.data && typeof check.data === "object";
+    if (!answered) {
+      return json({ ok: false, task: link.source_id,
+        error: "verify unconfirmed — Jobber did not return an answer, so the task may still exist; link KEPT. Retry once Jobber is responding." }, 200);
+    }
+    if (check.data.task?.id) {
       return json({ ok: false, error: "verify failed — task still exists in Jobber; link KEPT", task: link.source_id }, 200);
     }
     await db.from("entity_source_links").delete().eq("id", link.id);

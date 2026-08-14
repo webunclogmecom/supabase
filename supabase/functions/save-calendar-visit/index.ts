@@ -140,6 +140,16 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
     // Threw before any response existed -> the request provably never arrived.
     return { ok: false, kind: "unreachable", detail: e instanceof Error ? e.message : String(e) };
   }
+  // 🛑 JOBBER SHEDS LOAD WITH AN HTML "WAITING ROOM" PAGE AT HTTP 200 (measured live 2026-08-13,
+  // ~40 minutes). Not 429, not 5xx, no `errors` array — every check below says "success". The
+  // `catch { j = {} }` on the next line turns that page into an empty object, so this returns
+  // ok:true with data UNDEFINED, and the verify step downstream reads a missing visit as a visit
+  // whose fields are all empty. Content-type is the only honest discriminator; the status lies.
+  const ctype = r.headers.get("content-type") ?? "";
+  if (!ctype.includes("json")) {
+    return { ok: false, kind: "busy",
+      detail: `Jobber returned ${ctype || "an unknown content type"} at HTTP ${r.status} (its waiting room), not GraphQL` };
+  }
   let j: any = {};
   try { j = await r.json(); } catch { j = {}; }
 
@@ -409,6 +419,23 @@ Deno.serve(async (req) => {
       { applied, failed: null });
   }
   const jv = v.data?.visit;
+  // 🛑 AN EMPTY ANSWER IS NOT AN EMPTY FIELD (2026-08-14). Every comparison below coerces a
+  // missing `jv` to a NEUTRAL value: notes becomes String(undefined ?? "") = "", crew becomes an
+  // empty Set. So a save that CLEARS a field verified successfully against a response containing
+  // nothing at all — "" === "" and 0 === 0 — and we then committed, hard-DELETEd the visit_team
+  // rows (edit_calendar_visit does `DELETE FROM visit_team WHERE visit_id=…`), nulled
+  // assigned_driver_id, set sync_state='confirmed' (evicting the row from the */3 re-push queue),
+  // and told the dispatcher "Saved." while Jobber still held the old crew.
+  // ⚠ `!v.ok` above does NOT cover this: the waiting room returns ok:true with data undefined, and
+  //   a well-formed `{"data":{"visit":null}}` is ok:true too. The read must be proven to have
+  //   HAPPENED before any field is compared, and Q_VERIFY selects `id` precisely so it can be.
+  // ⚠ This is why the hole was invisible: it only bites when the new value is EMPTY, so every
+  //   test that sets a real value passes. Clearing is the untested half of every field.
+  if (!jv?.id) {
+    return fail("verify_failed",
+      "The change was sent to Jobber but Jobber did not return the visit, so it could not be confirmed and nothing was saved here. Check the visit in Jobber.",
+      { applied, failed: null });
+  }
   const mismatches: string[] = [];
   if (applied.includes("schedule") && target.start_at) {
     const want = new Date(target.start_at).getTime();
