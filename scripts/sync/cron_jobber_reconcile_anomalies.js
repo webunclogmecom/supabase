@@ -114,13 +114,39 @@ async function rest(p, opts = {}) {
   });
 }
 
-async function pg(sql) {
+// 🛑 RETRY ADDED 2026-08-14, AFTER A REAL OUTAGE. This function used to be a bare
+// `if (r.status >= 300) throw`. On 2026-08-11 (run 31481104974) the entire nightly
+// reconcile died 17 seconds in with the whole error being:
+//     Error: PG 502: error code: 502
+// One transient blip from api.supabase.com, and the run that soft-deletes visits
+// Jobber no longer returns did not happen at all. Nobody noticed for two days.
+//
+// Retries 5xx and 429 only. A 4xx is a real bug in our SQL or auth, and retrying it
+// just hides it four times more slowly.
+//
+// ⚠ RETRYING A WRITE IS ONLY SAFE BECAUSE THESE WRITES ARE IDEMPOTENT: the soft-delete
+// carries `AND deleted_at IS NULL` and the date fix re-sets identical values, so a
+// statement that actually committed before the 5xx affects 0 rows on the replay.
+// Do NOT add a non-idempotent statement to this script without revisiting that.
+//
+// Semantics match scripts/sync/lib/pg_retry.js, which is unit-tested
+// (node scripts/sync/lib/pg_retry.test.js) including a control that reproduces the
+// 2026-08-11 abort and a negative control that a 4xx is not retried.
+async function pg(sql, attempt = 1) {
+  const MAX = 5;
   const r = await request({
     host: 'api.supabase.com', path: `/v1/projects/${PROJECT}/database/query`, method: 'POST',
     headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: sql }),
   });
-  if (r.status >= 300) throw new Error(`PG ${r.status}: ${r.body.slice(0, 400)}`);
+  if (r.status >= 300) {
+    const retryable = r.status === 429 || r.status >= 500;
+    if (retryable && attempt < MAX) {
+      await new Promise(res => setTimeout(res, 2000 * attempt));
+      return pg(sql, attempt + 1);
+    }
+    throw new Error(`PG ${r.status}: ${r.body.slice(0, 400)}`);
+  }
   return JSON.parse(r.body);
 }
 
