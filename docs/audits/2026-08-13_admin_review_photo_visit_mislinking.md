@@ -1,5 +1,22 @@
 # 2026-08-13 — Admin Review: photos showing on the wrong visit. Root cause found, LIVE and ongoing
 
+> 🛑 **SUPERSEDED ON THE ROOT CAUSE, 2026-08-14. READ
+> [`2026-08-14_photo_note_linking_audit.md`](2026-08-14_photo_note_linking_audit.md) INSTEAD.**
+>
+> The numbers here hold. **The mechanism named below is WRONG.** This document blames *inherited
+> **Client**Notes*. The real cause is **JOB-level** inheritance: Jobber's `Visit.notes` field is
+> documented by Jobber as *"The notes attached to the associated job"*, so every visit of a
+> recurring job returns that job's entire note history.
+>
+> The ClientNote filter I pointed at was added in commit `4d69719` on 2026-07-01 21:47 UTC and it
+> **works**. The offending writer's first link landed ten minutes later, so **100% of its output was
+> produced with that filter already in place**. Anyone reading only this file would "fix" a filter
+> that is already correct and change nothing.
+>
+> Confirmed live against the Jobber API on 2026-08-14: visits 6826 (2026-06-27) and 7743
+> (2026-08-10), two visits of job 1720 six weeks apart, return an **identical** note set, 16 notes
+> and 42 attachments, all shared.
+
 Fred: *"I see a lot of them that have pictures from others visits, so we need to do a full audit
 about that."*
 
