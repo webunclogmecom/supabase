@@ -470,6 +470,54 @@ The one real tension is rule #6 (never hard-delete). Narrowing it would require 
 and **parent Building Apps rule #7 explicitly defers role-gated delete until auth roles land**, so
 changing it now would be a policy decision rather than a fix. Revisit with the role work, not before.
 
+### 🛑 JOBBER SHEDS LOAD WITH AN HTML "WAITING ROOM" AT **HTTP 200** — AND 12 OF OUR 13 CALLERS MISREAD IT (2026-08-13)
+
+Observed live: `POST https://api.getjobber.com/api/graphql` returned **HTTP 200**,
+`content-type: text/html`, body `<title>Jobber | Waiting Room</title>`. **Not 429. Not 5xx. No
+`errors` array.** Every signal our helpers check says "success".
+
+The `gql` helper copied across these functions does:
+
+```ts
+let j: any = {};
+try { j = await r.json(); } catch { j = {}; }      // <- the HTML becomes {}
+if (r.status >= 500) ...                            // 200, so no
+if (Array.isArray(j.errors) && j.errors.length) ... // undefined, so no
+return { ok: true, data: j.data };                  // data === UNDEFINED, ok === TRUE
+```
+
+So the caller receives **`ok: true` with `data: undefined`**, reads `data?.client` (or `?.job`,
+`?.visit`) as null, and reports *its own* not-found message. `save-client-contact` said
+**"Jobber has no client at that id — the link is stale"**, which sends a person to repair a link that
+is perfectly healthy. **An outage gets reported as data corruption.**
+
+**⇒ Check the RESPONSE content-type. The status code lies.**
+
+```ts
+const ctype = r.headers.get("content-type") ?? "";
+if (!ctype.includes("json")) return { ok: false, kind: "busy", detail: `Jobber returned ${ctype} at HTTP ${r.status}` };
+```
+
+**Measured 2026-08-13 with a control** (`grep 'headers.get("content-type")'`, response-side only —
+the naive grep also matches the *request* header and reports everything as fine):
+
+| inspects response content-type | functions |
+|---|---|
+| **yes (1)** | `save-client-contact` |
+| **no (12)** | `adopt-visit-from-jobber`, `create-client`, `jobber-push-task`, `jobber-push-visit`, `save-calendar-visit`, `save-client-fields`, `save-client-job`, `sync-jobber-job-drift`, `sync-jobber-poll`, `sync-jobber-upcoming-visits`, `sync-jobber-visit-drift`, `webhook-jobber` |
+
+🛑 **The bad error message is the MILD case. The dangerous case is the sync layer.** For the drift
+reconcilers and the poll, "Jobber returned nothing for this entity" is exactly the shape of "this
+entity was deleted upstream" — and that is a branch which **soft-deletes visits** (`visits.deleted_at`
+is set when Jobber reports a visit missing). A waiting-room event during a reconcile run is therefore
+a plausible mass-soft-delete trigger. **Nobody has confirmed that path fires on `undefined` vs a real
+"not found", so treat it as an open risk, not an established bug** — but do not widen any
+Jobber-absence branch until it has been checked.
+
+⚠ A verified refusal is the SAFE outcome here and it is worth keeping: during the live event
+`save-client-contact` returned `jobber_unavailable` and wrote **nothing**, leaving the contact intact.
+Fail-closed is what you want when the upstream is unreadable.
+
 ## Column-name gotchas
 
 Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Most-repeated mistakes:
