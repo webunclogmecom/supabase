@@ -503,8 +503,28 @@ the naive grep also matches the *request* header and reports everything as fine)
 
 | inspects response content-type | functions |
 |---|---|
-| **yes (1)** | `save-client-contact` |
-| **no (12)** | `adopt-visit-from-jobber`, `create-client`, `jobber-push-task`, `jobber-push-visit`, `save-calendar-visit`, `save-client-fields`, `save-client-job`, `sync-jobber-job-drift`, `sync-jobber-poll`, `sync-jobber-upcoming-visits`, `sync-jobber-visit-drift`, `webhook-jobber` |
+| **yes (3)** | `save-client-contact`, `save-calendar-visit`, `jobber-push-task` |
+| **no (10)** | `adopt-visit-from-jobber`, `create-client`, `jobber-push-visit`, `save-client-fields`, `save-client-job`, `sync-jobber-job-drift`, `sync-jobber-poll`, `sync-jobber-upcoming-visits`, `sync-jobber-visit-drift`, `webhook-jobber` |
+
+**Every path that WROTE on an unanswered Jobber has been closed (2026-08-14).** The remaining 10
+produce a misleading error message and nothing worse — each was traced to a named stopper (an
+unhandled TypeError, a positive-match verify, or an early return), not merely "no path was found".
+The three fixed ones were fixed because they wrote:
+
+| what was fixed | it used to |
+|---|---|
+| `scripts/sync/cron_jobber_reconcile_anomalies.js` | soft-delete **756 visits** (512 completed, 269 with DERM links) — see the note below |
+| `save-calendar-visit` | commit a cleared notes/crew save and hard-`DELETE` `visit_team`, reporting "Saved." |
+| `jobber-push-task` (delete) | drop the `entity_source_links` row and report `verified_gone: true` |
+
+🛑 **THE SHAPE THEY ALL SHARED, and it is the thing to check in the remaining 10 before trusting
+them: a MISSING answer was coerced into a NEUTRAL value and then compared.** `String(undefined ?? "")`
+is `""`; `(undefined || []).map(...)` is `[]`; `undefined?.task?.id` is falsy exactly like a real
+`null`. So the verify passed by comparing nothing to nothing. **This is invisible to normal testing
+because it only bites when the intended new value is EMPTY** — every test that sets a real value
+passes. Clearing is the untested half of every field.
+⇒ Require the read to have HAPPENED (a selected `id`, a `data` key) *before* comparing any field.
+A content-type guard alone is NOT sufficient: a well-formed `{"data":{"visit":null}}` still needs it.
 
 🛑 **The bad error message is the MILD case. The dangerous case is the sync layer.** For the drift
 reconcilers and the poll, "Jobber returned nothing for this entity" is exactly the shape of "this
