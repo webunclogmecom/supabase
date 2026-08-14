@@ -122,6 +122,19 @@ async function gql(token: string, query: string, variables: Record<string, unkno
   } catch (e) {
     return { ok: false, kind: "unreachable", detail: e instanceof Error ? e.message : String(e) };
   }
+  // 🛑 JOBBER SHEDS LOAD WITH AN HTML "WAITING ROOM" PAGE AT HTTP 200 (measured 2026-08-13).
+  // Not 429, not 5xx, no `errors` array - a text/html body with a 200. The inherited helper did
+  // `try { j = await r.json() } catch { j = {} }`, so that body became {}, sailed past both the
+  // status check and the errors check, and returned ok:true with data UNDEFINED. Every caller
+  // then read `data?.client` as null and reported its own not-found message: this function said
+  // "Jobber has no client at that id - the link is stale", which sends someone to repair a link
+  // that is perfectly healthy. An outage was being reported as data corruption.
+  // Content-type is the only honest discriminator here, because the status code lies.
+  const ctype = r.headers.get("content-type") ?? "";
+  if (!ctype.includes("json")) {
+    return { ok: false, kind: "busy",
+      detail: `Jobber returned ${ctype || "an unknown content type"} at HTTP ${r.status} (its waiting room), not GraphQL` };
+  }
   let j: any = {};
   try { j = await r.json(); } catch { j = {}; }
   const throttled = r.status === 429 ||
