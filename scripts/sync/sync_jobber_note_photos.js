@@ -37,6 +37,10 @@ const STORAGE_BUCKET = 'GT - Visits Images';
 const STORAGE_SIZE_LIMIT = 52428800;
 const EXECUTE = process.argv.includes('--execute');
 const DAYS = Number((process.argv.find(a => a.startsWith('--days=')) || '').split('=')[1] || 45);
+// +/- days between a NOTE's createdAt and the visit's date for its attachments to
+// belong to that visit. Matches jobber_notes_photos.js NOTE_CLASSIFIER_WINDOW_DAYS.
+// NOT the same thing as --days, which only chooses which visits to refresh.
+const NOTE_WINDOW_DAYS = Number((process.argv.find(a => a.startsWith('--note-window=')) || '').split('=')[1] || 2);
 const ONLY_VISIT = (process.argv.find(a => a.startsWith('--visit=')) || '').split('=')[1] || null;
 // Removals default OFF for local dry-runs; the cron passes --enable-remove. Now
 // SAFE because removes are NOTE-ANCHORED (only a photo whose own note is still on
@@ -103,7 +107,7 @@ async function getReadToken(force) {
   console.log(`sync_jobber_note_photos  ${EXECUTE ? 'EXECUTE' : 'DRY-RUN'}${ENABLE_REMOVE ? ' +remove' : ' (add-only)'}  ${ONLY_VISIT ? `visit=${ONLY_VISIT}` : `last ${DAYS}d`}`);
   if (!JOBBER_TOKEN) JOBBER_TOKEN = await getReadToken();
   const target = await pg(`
-    SELECT v.id AS visit_id, v.client_id, esl.source_id AS visit_gid, c.client_code
+    SELECT v.id AS visit_id, v.client_id, v.visit_date, esl.source_id AS visit_gid, c.client_code
     FROM visits v
     JOIN entity_source_links esl ON esl.entity_type='visit' AND esl.entity_id=v.id AND esl.source_system='jobber'
     JOIN clients c ON c.id=v.client_id
@@ -111,7 +115,7 @@ async function getReadToken(force) {
       ${ONLY_VISIT ? `AND v.id=${Number(ONLY_VISIT)}` : `AND v.visit_date >= (current_date - ${DAYS})`}
     ORDER BY v.id`);
   console.log(`${target.length} visit(s) to check`);
-  let added = 0, removed = 0, errors = 0, changedVisits = 0;
+  let added = 0, removed = 0, errors = 0, changedVisits = 0, windowSkipped = 0;
 
   for (const t of target) {
     // our jobber-sourced photos for THIS visit: att_gid + the Jobber note it came
@@ -131,8 +135,8 @@ async function getReadToken(force) {
     try {
       do {
         const d = await gql(`query($id:EncodedId!,$after:String){ visit(id:$id){ notes(first:10,after:$after){ nodes{ __typename
-          ... on ClientNote { id pinned message fileAttachments(first:100){ nodes{ id fileName contentType fileSize url } pageInfo{ hasNextPage } } }
-          ... on JobNote    { id pinned message fileAttachments(first:100){ nodes{ id fileName contentType fileSize url } pageInfo{ hasNextPage } } }
+          ... on ClientNote { id pinned message createdAt fileAttachments(first:100){ nodes{ id fileName contentType fileSize url } pageInfo{ hasNextPage } } }
+          ... on JobNote    { id pinned message createdAt fileAttachments(first:100){ nodes{ id fileName contentType fileSize url } pageInfo{ hasNextPage } } }
         } pageInfo{ hasNextPage endCursor } } } }`, { id: t.visit_gid, after: cursor });
         const vn = d.visit?.notes; if (!vn) break; notes.push(...vn.nodes); cursor = vn.pageInfo.hasNextPage ? vn.pageInfo.endCursor : null;
       } while (cursor && notes.length < 200);
@@ -141,10 +145,20 @@ async function getReadToken(force) {
     // curAtt: every current attachment (for the empty-guard + remove context).
     // noteAtts: per-note attachment set (for note-anchored REMOVE). incompleteNotes:
     // notes whose attachment page is truncated (>100) — excluded from removes.
-    // We only ADD JobNote attachments to a visit: JobNotes are visit/job-specific,
-    // while ClientNotes are CLIENT-level and Jobber returns the SAME ClientNotes on
-    // EVERY visit of the client — attaching them per-visit over-attaches (the same
-    // photo on all visits). Client-note photos are handled at the client level.
+    // 🛑 CORRECTED 2026-08-14. The comment that used to sit here said "JobNotes are
+    // visit/job-specific, while ClientNotes are CLIENT-level ... attaching them
+    // per-visit over-attaches". The first half is FALSE and it was the whole bug.
+    // Jobber's `Visit.notes` is documented by Jobber as "The notes attached to the
+    // associated JOB" (JobNoteUnionConnection), so EVERY visit of a recurring job
+    // returns that job's ENTIRE note history, identically. Confirmed live: visits
+    // 6826 (2026-06-27) and 7743 (2026-08-10), both on job 1720, returned the same
+    // 16 notes and the same 42 attachments.
+    // The ClientNote filter below is correct and stays, but it never was the
+    // protection it looked like: it closed the client-level leak while the
+    // job-level one produced 2,600 surplus links between 2026-07-01 and 2026-08-14.
+    // Full audit: docs/audits/2026-08-14_photo_note_linking_audit.md
+    // ⇒ The JobNote check is NOT sufficient on its own. The note-date window added
+    //   below is what actually binds an attachment to THIS visit.
     const curAtt = new Map(); const noteAtts = new Map(); const incompleteNotes = new Set(); const jobNoteGids = new Set();
     for (const n of notes) {
       if (n.pinned) continue;
@@ -152,10 +166,27 @@ async function getReadToken(force) {
       if (fa?.pageInfo?.hasNextPage) incompleteNotes.add(n.id);
       if (n.__typename === 'JobNote') jobNoteGids.add(n.id);
       noteAtts.set(n.id, new Set((fa?.nodes || []).map(f => f.id)));
-      for (const f of (fa?.nodes || [])) curAtt.set(f.id, { ...f, noteGid: n.id, noteMsg: n.message || '', noteType: n.__typename });
+      for (const f of (fa?.nodes || [])) curAtt.set(f.id, { ...f, noteGid: n.id, noteMsg: n.message || '', noteType: n.__typename, noteCreatedAt: n.createdAt || null });
     }
 
-    const toAdd = [...curAtt.keys()].filter(g => curAtt.get(g).noteType === 'JobNote' && !ourByGid.has(g));
+    // ±NOTE_WINDOW_DAYS between the NOTE's own createdAt and this visit's date.
+    // This is the same rule scripts/migrate/jobber_notes_photos.js has always used
+    // (NOTE_CLASSIFIER_WINDOW_DAYS = 2) and the one Fred expects the system to obey.
+    // 🛑 FAILS CLOSED: no parseable note date => the attachment is NOT linked.
+    // recover_visit_note_photos_window2d.js does `Math.abs(a-b) > window`, which is
+    // false for NaN and therefore fails OPEN. Do not copy that shape.
+    const visitMs = Date.parse(`${String(t.visit_date).slice(0, 10)}T12:00:00Z`);
+    const withinWindow = (iso) => {
+      if (!iso) return false;
+      const n = Date.parse(iso);
+      if (!Number.isFinite(n) || !Number.isFinite(visitMs)) return false;
+      return Math.abs(n - visitMs) <= NOTE_WINDOW_DAYS * 86400000;
+    };
+
+    const jobNoteCandidates = [...curAtt.keys()].filter(g => curAtt.get(g).noteType === 'JobNote' && !ourByGid.has(g));
+    const toAdd = jobNoteCandidates.filter(g => withinWindow(curAtt.get(g).noteCreatedAt));
+    const skippedByWindow = jobNoteCandidates.length - toAdd.length;
+    if (skippedByWindow > 0) windowSkipped += skippedByWindow;
     // NOTE-ANCHORED remove: only a JOB-note photo whose own note is STILL on the visit
     // (positive confirmation it exists) but no longer holds this attachment. Legacy
     // note-less photos, client-note photos, and photos on a truncated/absent note are
@@ -180,7 +211,7 @@ async function getReadToken(force) {
         // ensure note row (job note -> visit-scoped)
         let noteRow = await pg(`SELECT entity_id FROM entity_source_links WHERE entity_type='note' AND source_system='jobber' AND source_id=${sqlEsc(att.noteGid)} LIMIT 1`);
         let noteId = noteRow[0]?.entity_id;
-        if (!noteId) { const ins = await pg(`INSERT INTO notes (client_id, visit_id, body, note_date, source) VALUES (${t.client_id}, ${t.visit_id}, ${sqlEsc(att.noteMsg)}, now(), 'jobber_note_sync') RETURNING id`); noteId = ins[0].id; await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('note',${noteId},'jobber',${sqlEsc(att.noteGid)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`); }
+        if (!noteId) { const ins = await pg(`INSERT INTO notes (client_id, visit_id, body, note_date, source) VALUES (${t.client_id}, ${t.visit_id}, ${sqlEsc(att.noteMsg)}, ${att.noteCreatedAt ? sqlEsc(att.noteCreatedAt) : 'now()'}, 'jobber_note_sync') RETURNING id`); noteId = ins[0].id; await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('note',${noteId},'jobber',${sqlEsc(att.noteGid)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`); }
         // reuse an existing photo for this attachment gid ONLY if the photo row still
         // exists — there are ~4k stale photo esls (source_system='jobber') pointing at
         // photos a historical cleanup deleted (esl has no cascade). The JOIN filters
@@ -206,13 +237,22 @@ async function getReadToken(force) {
     // (recoverable; a re-add re-links, orphan storage swept by cleanup later).
     if (doRemove) for (const r of toRemove) {
       try {
-        await pg(`DELETE FROM photo_classifications WHERE photo_link_id IN (SELECT id FROM photo_links WHERE photo_id=${r.photo_id})`);
-        await pg(`DELETE FROM photo_links WHERE photo_id=${r.photo_id}`);
+        // SCOPED 2026-08-14. These used to be `WHERE photo_id=${r.photo_id}` with no
+        // entity predicate, so one visit deciding a photo was removable would have
+        // deleted that photo's link on EVERY other visit and its note anchor too, and
+        // cascaded to all of its classifications. It never fired (0 removals in 151
+        // runs) only because the trigger condition was unreachable, not because
+        // anything prevented it. Only ever unlink the visit being processed.
+        await pg(`DELETE FROM photo_classifications WHERE photo_link_id IN (
+                    SELECT id FROM photo_links WHERE photo_id=${r.photo_id}
+                     AND entity_type='visit' AND entity_id=${t.visit_id})`);
+        await pg(`DELETE FROM photo_links WHERE photo_id=${r.photo_id}
+                   AND entity_type='visit' AND entity_id=${t.visit_id}`);
         removed++;
       } catch (e) { errors++; console.log(`    remove ${r.att_gid} ERR: ${e.message.slice(0, 70)}`); }
     }
     await sleep(80);
   }
-  console.log(`\n=== ${EXECUTE ? 'DONE' : 'DRY-RUN'} === visits changed: ${changedVisits} | photos added: ${added} | removed: ${removed} | errors: ${errors}`);
+  console.log(`\n=== ${EXECUTE ? 'DONE' : 'DRY-RUN'} === visits changed: ${changedVisits} | photos added: ${added} | removed: ${removed} | skipped by note-window: ${windowSkipped} | errors: ${errors}`);
   if (EXECUTE) await pg(`INSERT INTO public.sync_log (sync_source, started_at, finished_at, rows_updated, rows_errored, status, details) VALUES ('jobber_note_photo_sync', now(), now(), ${added + removed}, ${errors}, ${errors ? "'partial'" : "'success'"}, ${sqlEsc(JSON.stringify({ added, removed, changedVisits, days: DAYS }))})`).catch(() => {});
 })().catch(e => { console.error('FATAL', e.message); process.exit(1); });
