@@ -626,3 +626,13 @@ verify_jwt = true
 # save-client-job and save-client-fields.
 [functions.create-client]
 verify_jwt = false
+
+# 2026-08-15 — the Admin Review "Send email to City" button (body + the visit's
+# classified photos). verify_jwt = true is the OUTER gate only: the public anon key
+# is itself a valid JWT, so the gateway alone would let any browser bundle call this.
+# The real control is in the handler, which calls auth.getUser() on the bearer token
+# and refuses anything without a signed-in user. Both halves are deliberate.
+# ⚠ send-derm-email has NO block in this file at all and asserts no role in its
+# handler, which is why it is reachable with the anon key. Do not copy that shape.
+[functions.send-visit-photos-email]
+verify_jwt = true
