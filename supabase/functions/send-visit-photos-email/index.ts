@@ -26,9 +26,19 @@
 // other half.
 // ============================================================================
 
+// 🛑 2026-08-15, SECOND PASS: THE ATTACHMENT IS NOW ONE PDF, NOT N LOOSE PHOTOS.
+// Fred, after visually checking a real send: "we attached the image on the email ... but
+// we can't know which images are for before and after service, so instead of those images,
+// I think it's better if we get the report from the FP App, which let's us save it as a
+// PDF." He is right, and loose attachments could not be fixed by naming them: Gmail shows
+// thumbnails, so Before-1.jpg / After-1.jpg told the recipient nothing.
+// The Field Portal already renders a print-ready 2-page Service Report with LABELLED
+// "Before Service Pictures" / "After Service Pictures" sections, so that document is the
+// answer and it is rendered to PDF by the pdf-service.
+// ⇒ The whole ImageScript resize path is GONE, and with it the memory ceiling that capped
+// attachments at 10 photos. One PDF carries every photo.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
-import { decode, Image } from 'https://deno.land/x/imagescript@1.3.0/mod.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Unclogme <onboarding@resend.dev>'
@@ -40,47 +50,24 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const TEST_RECIPIENT = 'fred@ayache.com'
 const IS_TEST = true
 
-const BUCKET = 'GT - Visits Images'
+// The Field Portal report, rendered to PDF by the pdf-service on Railway. Both secrets
+// already exist for generate-fog-manifest / generate-derm-address-pdf; reused, not new.
+const PDF_SERVICE_URL = Deno.env.get('PDF_SERVICE_URL')
+const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
+// ⚠ MUST EXCEED THE RENDERER'S OWN WORST CASE, OR WE GIVE UP FIRST AND LOG A TIMEOUT
+// FOR A RENDER THAT WAS ABOUT TO SUCCEED. Measured on the pdf-service: 30s render wall
+// + up to 10s context close + up to 10s browser close = ~50s worst case. 45s was under
+// that and would have produced misleading "pdf_service_unreachable" rows.
+const PDF_TIMEOUT_MS = 65_000
 
-// Attachment budget. Measured 2026-08-15 over the 57 visits that have classified
-// photos: avg 9.9MB of source, p90 24.8MB, max 36.9MB, and one SINGLE source photo
-// is 28.9MB. Raw attachment would exceed Resend's 40MB ceiling and would bounce off
-// most municipal mail servers long before that (many .gov gateways cap at 10-25MB).
-// So every image is re-encoded down before it is attached.
-const MAX_EDGE_PX = 1280      // longest side
-const JPEG_QUALITY = 72
-const MAX_SOURCE_BYTES = 30 * 1024 * 1024   // refuse to decode a pathological source
-
-// 🛑 THE WALL IS MEMORY, NOT CPU, AND THE FIRST DIAGNOSIS HERE WAS WRONG.
-// Measured live, all three runs:
-//     10 photos, all re-encoded          -> 200, 1.6MB, 6.6s
-//     17 photos, all re-encoded          -> 546 WORKER_RESOURCE_LIMIT at 7.0s
-//     17 photos, decode skipped entirely -> 546 WORKER_RESOURCE_LIMIT at 3.0s
-// Removing every decode made it fail SOONER, which rules out compute: without the
-// resize the buffers are bigger, so the accumulation hits the ceiling earlier. Two
-// things pile up. Attachments must all be resident at once because Resend takes one
-// JSON body, and base64 inflates by 4/3, then JSON.stringify and fetch each copy it.
-// And ImageScript holds a full RGBA raster while decoding, which is width x height x 4
-// (a 12MP phone photo is ~48MB) on top of that.
-// So the control that matters is the TOTAL BYTES RESIDENT, not the photo count.
-// Boundary found by bisection against the live worker, not chosen by taste:
-//     10 photos, all re-encoded -> 200 (1.6MB, 6.6s)   <- works
-//     12 photos, pass-through   -> 546                  <- fails
-//     17 photos, either way     -> 546                  <- fails
-// So RESIZE EVERYTHING (small output is what keeps the payload resident-safe) and stop
-// at 10. Re-encoding is not the cost; carrying big buffers is.
-const MAX_TOTAL_BYTES = 6 * 1024 * 1024
-const MAX_PHOTOS = 10
-const RESIZE_ABOVE_BYTES = 0          // 0 = always re-encode
-const MAX_DECODES_PER_CALL = 10
-
-// 🛑 PRIORITY IS NOT COSMETIC, IT DECIDES WHAT SURVIVES THE CAP. Fred's own copy calls
-// the attachment a "Job Completion Report (with before & after photos)", so before and
-// after are the evidence the municipality is actually being sent; internal and extra
-// ride along only if there is room. Anything dropped is reported in `skipped` and
-// recorded in the send log, never silently.
-const PHASE_RANK: Record<string, number> = { before: 0, after: 1, internal: 2, extra: 3 }
-
+// 🛑 THE OLD 10-PHOTO CAP IS GONE, AND SO IS THE REASON FOR IT.
+// The first version attached N re-encoded JPEGs and hit the worker's MEMORY ceiling
+// (measured: 10 photos worked at 1.6MB/6.6s; 17 returned WORKER_RESOURCE_LIMIT, and 17
+// with every decode REMOVED failed FASTER, at 3.0s, which is what ruled out CPU).
+// Attaching a single server-rendered PDF removes that whole class of problem: nothing is
+// decoded here, one document carries every photo, and the FP report labels which are
+// before and which are after. The Resend ceiling is 40MB and a rendered report is a
+// couple of MB, so the only guard still needed is the sanity check on the returned bytes.
 const ALLOWED_ORIGINS = new Set([
   'https://admin.unclogme.app',
   'https://audit.unclogme.app',
@@ -183,14 +170,17 @@ function detailRow(label: string, value: string): string {
 </tr>`
 }
 
-function buildHtml(v: VisitRow, photos: Prepared[]): string {
+// `counts` is the CLASSIFICATION tally for the visit, not a count of attachments: there
+// is exactly one attachment now (the report), and it contains all of the photos.
+function buildHtml(v: VisitRow, counts: Record<string, number>): string {
   const name = escapeHtml(v.client_name)
   const addr = escapeHtml(v.address)
   const vdate = escapeHtml(fmtDate(v.visit_date))
-  const beforeN = photos.filter((p) => p.phase === 'before').length
-  const afterN = photos.filter((p) => p.phase === 'after').length
+  const beforeN = counts.before ?? 0
+  const afterN = counts.after ?? 0
+  const totalN = Object.values(counts).reduce((a, b) => a + b, 0)
   const breakdown = (['before', 'after', 'internal', 'extra'] as const)
-    .map((p) => [PHASE_LABEL[p], photos.filter((x) => x.phase === p).length] as const)
+    .map((p) => [PHASE_LABEL[p], counts[p] ?? 0] as const)
     .filter(([, n]) => n > 0)
     .map(([l, n]) => `${l} ${n}`)
     .join(' &middot; ')
@@ -231,10 +221,10 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 <tr><td style="padding:0 36px 24px 36px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8fafc;border:1px solid #e6e8eb;border-radius:10px;"><tr><td style="padding:16px 18px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="middle" width="40" style="width:40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" height="40" style="width:40px;height:40px;background-color:#f14714;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">${photos.length}</td></tr></table></td>
+<td valign="middle" width="40" style="width:40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" height="40" style="width:40px;height:40px;background-color:#f14714;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">PDF</td></tr></table></td>
 <td valign="middle" style="padding-left:14px;font-family:${FONT_STACK};">
 <div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Job Completion Report${beforeN > 0 && afterN > 0 ? ' (with before &amp; after photos)' : ' (service photos)'}</div>
-<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${breakdown}</div>
+<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${totalN} photo${totalN === 1 ? '' : 's'}${breakdown ? ' &middot; ' + breakdown : ''}</div>
 </td></tr></table>
 </td></tr></table>
 </td></tr>
@@ -259,7 +249,8 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 
 // Plain-text alternative. Resend sends both; a text part measurably helps deliverability
 // to municipal gateways, which is the whole audience for this message.
-function buildText(v: VisitRow, photos: Prepared[]): string {
+function buildText(v: VisitRow, counts: Record<string, number>): string {
+  const totalN = Object.values(counts).reduce((a, b) => a + b, 0)
   return [
     'Dear Environmental Compliance Team,', '',
     'We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.', '',
@@ -268,7 +259,7 @@ function buildText(v: VisitRow, photos: Prepared[]): string {
     `  - Location: ${v.address}.`,
     `  - Service Date: ${fmtDate(v.visit_date)}.`,
     `  - Service Type: ${SERVICE_TYPE_LABEL}.`, '',
-    `Attached: Job Completion Report (${photos.length} photo${photos.length === 1 ? '' : 's'})`, '',
+    `Attached: Job Completion Report (${totalN} photo${totalN === 1 ? '' : 's'})`, '',
     'Please note: The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.', '',
     `If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at ${CONTACT_EMAIL} or call us directly at ${CONTACT_PHONE}.`, '',
     'Thank you for your continued partnership in keeping our community compliant and clean.', '',
@@ -281,7 +272,7 @@ function buildText(v: VisitRow, photos: Prepared[]): string {
 
 interface VisitRow {
   visit_id: number; client_name: string; client_code: string | null
-  address: string; visit_date: string
+  address: string; visit_date: string; public_id: string | null
 }
 interface Prepared {
   filename: string; content: string; content_type: string; phase: string; bytes: number
@@ -340,7 +331,7 @@ Deno.serve(async (req: Request) => {
       // ⚠ properties columns are address / city / state / zip. NOT address_line1 or
       // postal_code: those were a guess, and PostgREST reported them only at runtime
       // (the deploy succeeded regardless, so nothing caught it until the first call).
-      .select('id, visit_date, deleted_at, client_id, property_id, clients(name, client_code), properties(address, city, state, zip)')
+      .select('id, visit_date, deleted_at, client_id, property_id, public_id, derm_required, clients(name, client_code), properties(address, city, state, zip)')
       .eq('id', visitId)
       .maybeSingle()
     if (vErr) throw new Error(`visit lookup failed: ${vErr.message}`)
@@ -355,6 +346,30 @@ Deno.serve(async (req: Request) => {
       client_code: cl?.client_code ?? null,
       address: composeAddress(pr?.address, pr?.city, pr?.state, pr?.zip),
       visit_date: String(v.visit_date ?? '').slice(0, 10),
+      public_id: (v as Record<string, any>).public_id ?? null,
+    }
+
+    // -- GATE 1: the visit must be DERM-required ------------------------------
+    // 🛑 Fred, 2026-08-15: "it means the visit needs to be DERM Required, because the way
+    // it shows in the FP app is if it's a derm required." That is not a preference, it is
+    // a hard dependency: the FP report reads `customer.work_orders`, which ends with
+    // `AND COALESCE(v.derm_required, true) = true`, so a non-DERM visit has NO report at
+    // all. Verified live: visit 7751 (true) renders the full 2-page report; visit 7674
+    // (false) renders "Report not available".
+    // ⚠ THE EXPRESSION IS `COALESCE(..., true)`, NOT `IS TRUE`. NULL counts as required
+    // and is the fail-safe answer (39 completed NULL visits ARE visible in the portal).
+    // Writing `=== true` here would silently refuse those.
+    const dermRequired = (v as Record<string, any>).derm_required
+    if (dermRequired === false) {
+      await logSend('skipped', 'not_derm_required', 0, 0, null, null)
+      return json({
+        error: 'not_derm_required',
+        detail: 'The Field Portal only publishes a Service Report for DERM-required visits, so there is nothing to attach.',
+      }, 409, cors)
+    }
+    if (!visitRow.client_code || !visitRow.public_id) {
+      await logSend('skipped', 'no_report_url', 0, 0, null, null)
+      return json({ error: 'no_report_url', detail: 'Visit has no client_code or public_id, so the report URL cannot be built.' }, 409, cors)
     }
 
     // -- the gate: EVERY image on this visit must be classified --------------
@@ -395,75 +410,97 @@ Deno.serve(async (req: Request) => {
       }, 409, cors)
     }
 
-    // -- fetch, downscale, attach -------------------------------------------
-    const ordered = [...images].sort((a: any, b: any) => {
-      const rank = (id: number) => PHASE_RANK[phaseBy.get(id) ?? 'extra'] ?? 3
-      return rank(a.id) - rank(b.id)
-    })
+    // -- render the Field Portal Service Report to PDF -----------------------
+    // ONE attachment, produced from the FP page the client already sees, so the
+    // municipality gets labelled "Before Service Pictures" / "After Service Pictures"
+    // sections instead of N indistinguishable images.
+    if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
+      await logSend('error', 'pdf_service_not_configured', 0, 0, null, null)
+      return json({ error: 'service_not_configured', detail: 'PDF_SERVICE_URL / PDF_SERVICE_API_KEY not set' }, 503, cors)
+    }
 
-    const prepared: Prepared[] = []
-    const skipped: { file: string; reason: string }[] = []
-    let total = 0
-    let decodes = 0
+    const phaseCounts = { before: 0, after: 0, internal: 0, extra: 0 } as Record<string, number>
+    for (const p of phaseBy.values()) if (p in phaseCounts) phaseCounts[p]++
 
-    for (const l of ordered) {
-      if (prepared.length >= MAX_PHOTOS) { skipped.push({ file: l.photos.file_name ?? String(l.id), reason: 'photo_cap' }); continue }
-      if (total >= MAX_TOTAL_BYTES) { skipped.push({ file: l.photos.file_name ?? String(l.id), reason: 'size_cap' }); continue }
-      const srcBytes = Number(l.photos.size_bytes ?? 0)
-      if (srcBytes > MAX_SOURCE_BYTES) { skipped.push({ file: l.photos.file_name ?? String(l.id), reason: 'source_too_large' }); continue }
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), PDF_TIMEOUT_MS)
+    let pdfBytes: Uint8Array
+    try {
+      const target = `${PDF_SERVICE_URL.replace(/\/$/, '')}/generate/visit-report`
+      const up = await fetch(target, {
+        method: 'POST', signal: ctrl.signal,
+        headers: { Authorization: `Bearer ${PDF_SERVICE_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_code: visitRow.client_code, public_id: visitRow.public_id }),
+      })
 
-      try {
-        const { data: blob, error: dErr } = await sb.storage.from(BUCKET).download(l.photos.storage_path)
-        if (dErr || !blob) { skipped.push({ file: l.photos.file_name ?? String(l.id), reason: 'download_failed' }); continue }
-        const raw = new Uint8Array(await blob.arrayBuffer())
-
-        let out: Uint8Array
-        let ct = String(l.photos.content_type ?? 'image/jpeg')
-        let ext = ct === 'image/png' ? 'png' : ct === 'image/webp' ? 'webp' : 'jpg'
-
-        if (raw.byteLength <= RESIZE_ABOVE_BYTES || decodes >= MAX_DECODES_PER_CALL) {
-          // Already small enough to attach as-is. Skipping the decode is what keeps
-          // this call inside the worker's compute budget.
-          out = raw
-        } else {
-          decodes++
-          try {
-            const img = await decode(raw)
-            if (!(img instanceof Image)) throw new Error('not a raster image')
-            if (Math.max(img.width, img.height) > MAX_EDGE_PX) {
-              if (img.width >= img.height) img.resize(MAX_EDGE_PX, Image.RESIZE_AUTO)
-              else img.resize(Image.RESIZE_AUTO, MAX_EDGE_PX)
-            }
-            out = await img.encodeJPEG(JPEG_QUALITY)
-            ct = 'image/jpeg'; ext = 'jpg'
-          } catch {
-            // Undecodable (HEIC, corrupt, animated). Attach the original only if it is
-            // small enough to be worth it; never blow the budget on it.
-            if (raw.byteLength > 4 * 1024 * 1024) { skipped.push({ file: l.photos.file_name ?? String(l.id), reason: 'undecodable_and_large' }); continue }
-            out = raw
-          }
-        }
-
-        if (total + out.byteLength > MAX_TOTAL_BYTES) { skipped.push({ file: l.photos.file_name ?? String(l.id), reason: 'size_cap' }); continue }
-        total += out.byteLength
-
-        const phase = phaseBy.get(l.id) ?? 'extra'
-        const n = prepared.filter((p) => p.phase === phase).length + 1
-        prepared.push({
-          filename: `${PHASE_LABEL[phase] ?? 'Photo'}-${n}.${ext}`,
-          content: encodeBase64(out),
-          content_type: ct,
-          phase, bytes: out.byteLength,
-        })
-      } catch (e) {
-        skipped.push({ file: l.photos.file_name ?? String(l.id), reason: String((e as Error)?.message ?? e).slice(0, 80) })
+      // 🛑 409 means the renderer REFUSED, and every reason it refuses is a reason not
+      // to send. Never fall through and email a PDF of an error page to a regulator.
+      //   report_not_available -> the FP page showed the placeholder. For a DERM-required
+      //                           visit that should be impossible, so it means something
+      //                           upstream changed and a human needs to look.
+      //   client_mismatch      -> the rendered report is for a DIFFERENT client than the
+      //                           one we asked about. Measured 2026-08-15: the FP report
+      //                           resolves purely from public_id and IGNORES the client
+      //                           slug in the URL, so /293-alc/visit/<306-16 id>/report
+      //                           happily serves 306-16's report. Sending that would put
+      //                           one client's compliance document in a regulator's inbox
+      //                           under another client's name.
+      if (up.status === 409) {
+        let code = 'report_not_available'
+        try { code = (await up.clone().json())?.error ?? code } catch { /* keep default */ }
+        await logSend('skipped', code, 0, 0, null, null)
+        return json({
+          error: code,
+          detail: code === 'client_mismatch'
+            ? 'The rendered report belongs to a different client. Nothing was sent.'
+            : 'The Field Portal has no report for this visit.',
+        }, 409, cors)
       }
+      // The renderer caps concurrent Chromium instances; a burst is a retry, not a failure.
+      if (up.status === 503) {
+        await logSend('skipped', 'renderer_busy', 0, 0, null, null)
+        return json({ error: 'renderer_busy', detail: 'The report renderer is busy. Try again in a moment.' }, 503, cors)
+      }
+      if (!up.ok) {
+        const detail = (await up.text().catch(() => '')).slice(0, 300)
+        await logSend('error', `pdf_service_${up.status}`, 0, 0, null, null)
+        return json({ error: 'pdf_service_failed', status: up.status, detail }, 502, cors)
+      }
+
+      // ⚠ Check the CONTENT TYPE, not just the status. The repo has been bitten by an
+      // upstream returning HTML at HTTP 200 (Jobber's waiting room), and a PDF-shaped
+      // pipeline that accepts HTML would attach an error page.
+      const ctype = up.headers.get('content-type') ?? ''
+      if (!ctype.includes('pdf')) {
+        await logSend('error', `pdf_service_bad_ctype:${ctype.slice(0, 40)}`, 0, 0, null, null)
+        return json({ error: 'pdf_service_bad_content_type', detail: ctype }, 502, cors)
+      }
+      pdfBytes = new Uint8Array(await up.arrayBuffer())
+    } catch (e) {
+      const msg = ctrl.signal.aborted ? `timeout after ${PDF_TIMEOUT_MS}ms` : String((e as Error)?.message ?? e)
+      await logSend('error', `pdf_service:${msg}`.slice(0, 200), 0, 0, null, null)
+      return json({ error: 'pdf_service_unreachable', detail: msg }, 502, cors)
+    } finally {
+      clearTimeout(timer)
     }
 
-    if (prepared.length === 0) {
-      await logSend('error', 'no_attachable_photos', 0, 0, null, null)
-      return json({ error: 'no_attachable_photos', skipped }, 502, cors)
+    // A PDF starts with %PDF. Cheap structural check so a 0-byte or truncated render
+    // cannot be emailed as if it were a document.
+    if (pdfBytes.byteLength < 1000 || String.fromCharCode(...pdfBytes.slice(0, 4)) !== '%PDF') {
+      await logSend('error', `pdf_invalid:${pdfBytes.byteLength}b`, 0, 0, null, null)
+      return json({ error: 'pdf_invalid', bytes: pdfBytes.byteLength }, 502, cors)
     }
+
+    const total = pdfBytes.byteLength
+    const reportName = `Service-Report-${visitRow.client_code}-${visitRow.visit_date}.pdf`
+    const prepared: Prepared[] = [{
+      filename: reportName,
+      content: encodeBase64(pdfBytes),
+      content_type: 'application/pdf',
+      phase: 'report',
+      bytes: total,
+    }]
+    const skipped: { file: string; reason: string }[] = []
 
     // Fred's subject line, verbatim: "Grease Trap Service Completed — [Client Name],
     // [Address] ([Date])". While IS_TEST the real subject is prefixed so a stray copy in
@@ -478,8 +515,8 @@ Deno.serve(async (req: Request) => {
         to: [TEST_RECIPIENT],
         reply_to: CONTACT_EMAIL,
         subject,
-        html: buildHtml(visitRow, prepared),
-        text: buildText(visitRow, prepared),
+        html: buildHtml(visitRow, phaseCounts),
+        text: buildText(visitRow, phaseCounts),
         attachments: prepared.map((p) => ({ filename: p.filename, content: p.content, content_type: p.content_type })),
       }),
     })
