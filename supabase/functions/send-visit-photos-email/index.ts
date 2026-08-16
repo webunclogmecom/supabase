@@ -172,14 +172,33 @@ function detailRow(label: string, value: string): string {
 
 // `counts` is the CLASSIFICATION tally for the visit, not a count of attachments: there
 // is exactly one attachment now (the report), and it contains all of the photos.
+// 🛑 THE PHASES THE ATTACHMENT ACTUALLY CONTAINS. `internal` is deliberately absent.
+// ONE definition, used by BOTH builders. There were two independent `Object.values(counts)` sums
+// here (HTML and plain text) and fixing only the first left the plain-text body still saying
+// "(17 photos)" — which is the exact line the regulator reads. Keeping two copies in step by
+// hand is what produced this defect; do not re-inline it.
+const CUSTOMER_PHASES = ['before', 'after', 'extra'] as const
+const customerPhotoCount = (counts: Record<string, number>): number =>
+  CUSTOMER_PHASES.reduce((a, p) => a + (counts[p] ?? 0), 0)
+
 function buildHtml(v: VisitRow, counts: Record<string, number>): string {
   const name = escapeHtml(v.client_name)
   const addr = escapeHtml(v.address)
   const vdate = escapeHtml(fmtDate(v.visit_date))
   const beforeN = counts.before ?? 0
   const afterN = counts.after ?? 0
-  const totalN = Object.values(counts).reduce((a, b) => a + b, 0)
-  const breakdown = (['before', 'after', 'internal', 'extra'] as const)
+  // 🛑 THE COUNT MUST MATCH THE ATTACHMENT, AND `internal` IS NOT IN THE ATTACHMENT (2026-08-16).
+  // This summed EVERY classification, internal included, so the covering email told a municipal
+  // regulator "(17 photos)" while the PDF carried 14. Measured on visit 7751: before 5 + after 5 +
+  // extra 4 = 14 in the report, internal 3, total 17 in the email. A regulator who counts the
+  // photos finds three fewer than promised, which on a compliance document reads as withheld
+  // evidence — the exact impression the internal filter exists to prevent.
+  // ⚠ `internal` is ALSO struck from the breakdown below: naming it would announce to the city that
+  // photos exist which they are not being shown. Worse than the wrong total.
+  // ⇒ Anything added to PHASE_LABEL that the customer payload does not serve must be excluded here
+  // too. The rule is "count what is in the attachment", not "count what we hold".
+  const totalN = customerPhotoCount(counts)
+  const breakdown = CUSTOMER_PHASES
     .map((p) => [PHASE_LABEL[p], counts[p] ?? 0] as const)
     .filter(([, n]) => n > 0)
     .map(([l, n]) => `${l} ${n}`)
@@ -250,7 +269,7 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 // Plain-text alternative. Resend sends both; a text part measurably helps deliverability
 // to municipal gateways, which is the whole audience for this message.
 function buildText(v: VisitRow, counts: Record<string, number>): string {
-  const totalN = Object.values(counts).reduce((a, b) => a + b, 0)
+  const totalN = customerPhotoCount(counts)   // NOT Object.values(counts) — that included internal
   return [
     'Dear Environmental Compliance Team,', '',
     'We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.', '',
