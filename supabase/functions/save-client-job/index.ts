@@ -999,9 +999,26 @@ Deno.serve(async (req) => {
       // so an empty reason means NEITHER key is sent and this branch is never reached from
       // the app at all. That check is what makes turning the refusal on safe rather than a
       // repeat of 0g; "the UI was asked to send it" would not have been.
-      if (r.length < 3) {
+      // 🛑 PROOF, NOT PROSE (Yannick, 2026-08-17): "in red its not about putting a few words
+      // its about proof that it was approved, so we need the slack link OR a screenshot of
+      // whatsapp". A 3-character floor accepted "ok" — a record that something was TYPED, not a
+      // record that anyone APPROVED. The requirement is a LINK to the approval.
+      //
+      // ⚠ DEPLOY ORDER, AND THIS FILE ALREADY PAID FOR THE LESSON ONCE (see the
+      // DEPLOY-B-FREQ-REASON note above, and known-issue 0g). This refusal was tightened only
+      // AFTER the published bundle was read and proven to block a linkless save:
+      //     $e = ke && !/https?:\/\/\S+/.test(reason)      // ke = frequency actually changed
+      //     Be = p ? (… && !$e && …) : He                  // !$e is IN the submit-ready flag
+      // so the dialog cannot send frequency_days with a linkless reason. Turning this on first
+      // would have failed every frequency save from the then-current bundle.
+      //
+      // ⚠ ANY http(s) URL is accepted, not slack.com only. Over-narrowing would block a real
+      // save with no workaround while screenshot upload is still deferred (Fred, same thread:
+      // "when we need to save pictures in our DB, it needs to have a structure for it"), and the
+      // approval may legitimately be linked from somewhere other than Slack.
+      if (!/https?:\/\/\S+/.test(r)) {
         return fail("reason_required",
-          "Say why the cadence is changing. It goes on the job's record, the same way a client status change does.");
+          "A cadence change needs proof it was approved, not a description. Paste the Slack link to the approval.");
       }
       freqReason = r;
     }
