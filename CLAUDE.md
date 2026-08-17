@@ -661,6 +661,41 @@ one run per hour** (`PROPERTY_SWEEP_MINUTE`), because properties have no `update
    row still appears every cycle.** Work continuing while observability vanishes is worse than a
    clean failure.
 
+### 🛑 JOBBER CUSTOM FIELDS HAVE NEVER SYNCED, AND A NAIVE COPY DESTROYS DATA (2026-08-17)
+
+Yannick in Slack: the Grease Trap Size and Client Code custom fields are not reaching us, and the
+15-minute crons should be doing it. **The crons are healthy and irrelevant.** Measured: of the six
+entities `sync-jobber-poll` pulls, **zero request `customFields`**, and `handleProperty` issues its
+own query that does not either. There is no path, so there is nothing to be slow or broken. A cron
+audit answers "is the poll running", never "does the poll ask for this field".
+
+**🛑 THE REASON THIS CANNOT BE FIXED BY JUST ADDING THE FIELD TO THE QUERY.** Jobber's numeric
+custom field has `defaultValue: 0`, **no null state, and no `updatedAt`**. Every one of 474
+properties returns a materialized `CustomFieldNumeric` row, 419 of them reading `0`. **A property
+nobody has ever typed into is byte-identical to one a human deliberately set to zero.** So "copy
+Jobber's value when it differs from ours" is not a sync, it is a wipe: measured, it would zero
+**69 of our properties and destroy 47,732 recorded gallons**, plus overwrite 10 more (9 downward).
+⚠ And `??` does not save you the way it does for the name-blanking bug above: Jobber sends a hard
+`0`, and `0 ?? null` is `0`. Any guard keying on falsiness drops a legitimate zero too.
+
+⇒ **Change detection requires a stored "last seen" shadow**, which is what
+`sync.source_field_shadow` + `sync.fn_shadow_decision` are (`2026-08-17_1636`). Adopt only when
+Jobber's current value differs from what we last saw there; unchanged means "not an edit" whatever
+the value, so `0 -> 0` can never be copied while `0 -> 190` is. First run seeds silently and adopts
+nothing. Both-sides-changed is recorded as CONFLICT and frozen: it is a human question.
+
+**STATUS, and do not misread it: BUILT, NOT WIRED.** The table ships empty, both scripts
+(`scripts/sync/seed_jobber_custom_field_shadow.js`, `adopt_jobber_custom_fields.js`) are dry-run by
+default, no cron references it, and `sync-jobber-poll` / `webhook-jobber` are untouched. **Custom
+fields still do not sync today.** Outbound is possible (`propertyEdit` accepts a customFields-only
+edit, config `3061111` is `readOnly:false`) but is not built.
+
+⚠ **Bind by configuration GID, never by label.** Four numeric grease-trap fields exist; two differ
+only by a capital S and one of those is archived, and "GT size" appears twice.
+⚠ **When `customFields` is finally added to the poll's `fields` string, the payload bytes of all 476
+staged rows change at once**, so the first sweep flips every row to `needs_populate` and drains at 10
+per cycle, roughly 4 hours. A full-fleet replay is expected there, not a fault.
+
 ### 🛑 The line-item drift reconciler IGNORES ARCHIVED JOBS ON PURPOSE. Do not "fix" it (Fred, 2026-08-03)
 
 **Fred, 2026-08-03: *"leave it, don't extend the reconciler to archived jobs."*** Settled, not deferred.
