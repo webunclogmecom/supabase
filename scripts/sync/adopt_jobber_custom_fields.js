@@ -78,7 +78,23 @@ const PAGE = Number(flag('--page', 25));
 const MIN_COVERAGE = Number(flag('--min-coverage', 0.9));
 const LIMIT = Number(flag('--limit', Infinity));
 const JSON_OUT = flag('--json', null);
-const ONLY = String(flag('--only', '')).split(',').map((s) => Number(s.trim())).filter(Number.isFinite);
+// 🛑 SPLIT THE EMPTY STRING AND YOU GET [''], NOT []. Number('') is 0, and 0 is finite, so
+// the obvious one-liner made ONLY default to [0] on every run WITHOUT the flag: the fleet-wide
+// path then narrowed to a property id that cannot exist and aborted before deciding anything.
+// Shipped in 1f169fa and invisible for an hour because the only run made after it was --only 217.
+// The filter must reject non-numeric TEXT before Number() is allowed to coerce it.
+const ONLY = String(flag('--only', '')).split(',')
+  .map((s) => s.trim()).filter((s) => s !== '')
+  .map(Number).filter((n) => Number.isFinite(n) && n > 0);
+// Self-test, at module load, because the defect above was a DEFAULT-path defect: it could only
+// ever be caught by exercising the absent-flag case, which no --only run does by construction.
+for (const [input, expect] of [['', []], ['217', [217]], [' 217 , 218 ', [217, 218]], ['217,,', [217]]]) {
+  const got = String(input).split(',').map((s) => s.trim()).filter((s) => s !== '')
+    .map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (JSON.stringify(got) !== JSON.stringify(expect)) {
+    throw new Error(`--only parser drift: ${JSON.stringify(input)} -> ${JSON.stringify(got)}, expected ${JSON.stringify(expect)}`);
+  }
+}
 const APP_SOURCE = 'jobber-custom-field-sync';
 
 /** Only used for range/clearing checks. NOT for deciding whether to adopt. */
@@ -286,28 +302,91 @@ function adoptionRefusal(field, value) {
   // fn_record_shadow directly with hand-built arguments; nothing had ever run the
   // COMPOSED statement this loop emits. Same class as a migration that verifies its
   // own GRANT statements and never asks what CREATE TABLE already handed out.
-  let done = 0, applied = { SEED: 0, IN_SYNC: 0, IGNORE: 0, ADOPT: 0, CONFLICT: 0 };
+  //
+  // 🛑 AND OUR SIDE IS RE-READ **INSIDE** THIS STATEMENT, NOT TAKEN FROM THE PLAN.
+  // r.our_now is read once by loadOurProperties at the top of the run, minutes before this
+  // loop reaches a given property (a ~19-page Jobber walk at 3s/page, then one sequential
+  // round trip per property). It was the ONLY our-side input the guard had, and nothing in
+  // the emitted block re-read the column, so:
+  //   * a staff edit landing in that window was overwritten with no error,
+  //   * the state was a real CONFLICT by this design's own rule (both sides moved since the
+  //     last sync) and was executed as a plain ADOPT, so nobody was ever asked about it,
+  //   * adopted_from recorded a value we never held, making the row's provenance a fiction,
+  //   * and the next pass reads IN_SYNC, so the overwrite is unrecoverable through this path.
+  // The column is live: audit.logs holds 120 capacity changes by 3 distinct app_sources, and
+  // client.update_property_capacity is EXECUTE-able by authenticated from the Client App.
+  // ⇒ Decide from the LIVE value, and pin the UPDATE to it. Two independent stoppers, because
+  // the gap between the re-read and the UPDATE is itself a (much smaller) window.
+  let done = 0, stale = 0;
+  const staleRows = [];
+  let applied = { SEED: 0, IN_SYNC: 0, IGNORE: 0, ADOPT: 0, CONFLICT: 0 };
   for (const r of actionable) {
     const willAdopt = r.effective === 'ADOPT' && adoptIds.has(r.property_id);
     const adoptedTo = willAdopt ? jlit(r.source_now) : 'null::jsonb';
-    const out = await sql(`
+    const ourLit = r.our_now === null ? 'null::jsonb' : jlit(r.our_now);
+    let out;
+    try {
+      out = await sql(`
       do $adopt$
-      declare v_decision text;
+      declare v_decision text; v_our_live jsonb; v_live text;
       begin
         perform set_config('request.headers', ${lit(JSON.stringify({ 'x-app-source': APP_SOURCE }))}, true);
-        ${willAdopt ? `update ${FIELD.ourTable}
+
+        select to_jsonb(t.${FIELD.ourColumn}) into v_our_live
+          from ${FIELD.ourTable} t where t.id = ${r.property_id};
+
+        -- Re-decide from what we hold RIGHT NOW. If our side moved under the plan this
+        -- returns CONFLICT (or IN_SYNC) rather than ADOPT, and we refuse instead of writing.
+        v_live := sync.fn_shadow_decision(
+          (select true from sync.source_field_shadow s
+            where s.entity_type = ${lit(FIELD.entityType)} and s.entity_id = ${r.property_id}::bigint
+              and s.source_system = ${lit(FIELD.sourceSystem)} and s.field_key = ${lit(FIELD.fieldKey)}),
+          ${jlit(r.source_now)},
+          (select s.source_value from sync.source_field_shadow s
+            where s.entity_type = ${lit(FIELD.entityType)} and s.entity_id = ${r.property_id}::bigint
+              and s.source_system = ${lit(FIELD.sourceSystem)} and s.field_key = ${lit(FIELD.fieldKey)}),
+          v_our_live,
+          (select s.our_value from sync.source_field_shadow s
+            where s.entity_type = ${lit(FIELD.entityType)} and s.entity_id = ${r.property_id}::bigint
+              and s.source_system = ${lit(FIELD.sourceSystem)} and s.field_key = ${lit(FIELD.fieldKey)}));
+
+        if v_live is distinct from ${lit(r.effective)} then
+          raise exception 'PLAN_STALE property %: planned %, live %, our column now %',
+            ${r.property_id}, ${lit(r.effective)}, v_live, v_our_live;
+        end if;
+        ${willAdopt ? `
+        -- Pinned to the value we just decided against. A write landing between the SELECT
+        -- above and this UPDATE matches 0 rows rather than clobbering the newcomer.
+        update ${FIELD.ourTable}
              set ${FIELD.ourColumn} = ${r.source_now === null ? 'null' : Number(r.source_now)}
-           where id = ${r.property_id};` : ''}
+           where id = ${r.property_id}
+             and to_jsonb(${FIELD.ourColumn}) is not distinct from ${ourLit};
+        if not found then
+          raise exception 'PLAN_STALE property %: our column moved between the re-read and the write',
+            ${r.property_id};
+        end if;` : ''}
         v_decision := sync.fn_record_shadow(
           ${lit(FIELD.entityType)}, ${r.property_id}::bigint, ${lit(FIELD.sourceSystem)},
           ${lit(FIELD.fieldKey)}, ${lit(FIELD.label)},
-          ${jlit(r.source_now)}, ${jlit(r.our_now)}, ${adoptedTo});
+          ${jlit(r.source_now)}, v_our_live, ${adoptedTo});
         if v_decision <> ${lit(r.effective)} then
           raise exception 'decision drifted between the dry run and the write for property %: planned %, got %',
             ${r.property_id}, ${lit(r.effective)}, v_decision;
         end if;
       end
       $adopt$;`);
+    } catch (e) {
+      // A stale plan is the guard working, not a run failure. The property is left exactly
+      // as it was (the whole DO block rolls back) and the next run re-reads and re-decides
+      // it. Aborting the sweep here would let one concurrently-edited property stop the
+      // other 457. Anything else -- a transport 502, a permission error -- still aborts,
+      // because those mean the instrument is untrustworthy rather than the data being live.
+      if (!/PLAN_STALE/.test(String(e && e.message))) throw e;
+      stale += 1;
+      staleRows.push({ property_id: r.property_id, name: r.name, planned: r.effective,
+        detail: String(e.message).replace(/\s+/g, ' ').slice(0, 200) });
+      continue;
+    }
     applied[r.effective] = (applied[r.effective] || 0) + 1;
     done += 1;
     if (done % 25 === 0) process.stdout.write(`\r  written ${done}/${actionable.length}`);
@@ -316,6 +395,16 @@ function adoptionRefusal(field, value) {
 
   console.log('\n=== applied ===');
   for (const [k, v] of Object.entries(applied)) if (v) console.log(`  ${k.padEnd(9)} ${v}`);
+  if (stale) {
+    console.log(`\n=== REFUSED, plan went stale under us (${stale}) ===`);
+    console.log('  Someone wrote our column while this run was in flight. Nothing was written');
+    console.log('  for these; re-run and they will be re-decided against the current values.');
+    for (const s of staleRows.slice(0, 25)) {
+      console.log(`  property ${String(s.property_id).padStart(5)}  planned ${s.planned}  ${s.name ?? ''}`);
+      console.log(`     ${s.detail}`);
+    }
+    if (staleRows.length > 25) console.log(`  ... +${staleRows.length - 25} more`);
+  }
 
   const after = await sql(`
     select count(*)::int                                          as shadow_rows,
