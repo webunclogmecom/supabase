@@ -205,9 +205,31 @@ function coinTag(s: string): string {
   // that pushes to Jobber's companyName + Client Code custom field and strands visits.title rows
   // (the Excelsior renumber needed exactly that cleanup). Only the PROPOSER changes here.
   while (w.length && /^\d+$/.test(w[0])) w.shift();
-  if (!w.length) return "XX";
-  if (w.length === 1) return w[0].slice(0, 3).toUpperCase();
-  return w.slice(0, 3).map((x) => x[0]).join("").toUpperCase();
+  if (!w.length) return "XXX";
+  // 🛑 THREE LETTERS, ALWAYS (Fred, 2026-08-17): "it only puts 2 letters besides the number, make it
+  // show it puts 3 letters instead." The field's own hint has always said `300-ABC`.
+  //
+  // ⚠ THE FIX IS NOT "PAD THE INITIALS" — the shape depends on the word count, and the estate
+  // answers which shape. Measured over the 104 two-word client names carrying a letter tag:
+  //     first 3 letters of word 1   26   (Jerusalem Pizza -> JER, Josh's Deli -> JOS, Hummus Achla -> HUM)
+  //     2-letter initials           49   <- the behaviour being replaced
+  //     word1[0..1] + word2[0]       1
+  //     word1[0] + word2[0..1]       2
+  //     human judgement            26   (Fresko Bakery -> FRK, Jonny Safar -> SAF)
+  // So for 1-2 words the house style is the FIRST WORD's letters, not a blend. For 3+ words the
+  // existing initials rule already yields 3 and matches 19 live codes (Vino Salon Studio -> VSS),
+  // so it is left exactly as it was.
+  //
+  // ⚠ An earlier version of this measurement compared "first three" against "initials" across ALL
+  // names and read 71 vs 19. That was biased and would have justified changing the 3-word branch
+  // too: three-letter initials REQUIRE three words, so two-word names could never match them. Scope
+  // the measurement to the case you are changing.
+  if (w.length >= 3) return w.slice(0, 3).map((x) => x[0]).join("").toUpperCase();
+  // 1-2 words: take the first word, then top up from the second if it is short.
+  // "Mr Jones" -> MR + J = MRJ, which is the code a human actually assigned that client.
+  let tag = w[0].slice(0, 3);
+  for (let i = 1; i < w.length && tag.length < 3; i++) tag += w[i][0];
+  return tag.toUpperCase().slice(0, 3);
 }
 
 type Proposal = { code: string; tag: string; number: number; basis: string };
@@ -474,6 +496,39 @@ Deno.serve(async (req) => {
     return fail("code_taken", `Client code ${code} is already held by ${clash[0].name} (${clash[0].status}).`,
       { field: "client_code", next_free: proposal.code !== code ? proposal.code : null,
         holders: clash.map((c: any) => ({ source: "db", id: c.id, name: c.name, status: c.status, client_code: c.client_code })) });
+  }
+
+  // 🛑 THE **NUMBER** IS THE IDENTITY, SO A SHARED NUMBER IS A COLLISION EVEN WHEN THE CODE DIFFERS.
+  // Fred, 2026-08-17, after 609 Lenox LLC took 168 while 168-AVA already held it: *"that shouldn't be
+  // able to happen."* The check above compares the FULL string, so `168-609` vs `168-AVA` passed it.
+  //
+  // ⚠ THIS USED TO BE A WARNING ON PURPOSE, and the note said "warn, never block" because
+  // `247-EC`/`247-LOU` showed an accidental share happening in the wild. **That precedent no longer
+  // exists** — measured 2026-08-17, only `247-LOU` remains, and the only shared numbers left are the
+  // 000 dump band (deliberate) and two INACTIVE-paired replacements (deliberate). The reason to warn
+  // rather than block expired, so it blocks.
+  //
+  // Mirrors `clients_active_client_number_uniq` exactly: the 000 dump band shares a number by design,
+  // and an INACTIVE holder frees its number for a replacement. If the two ever disagree, the DB wins
+  // and the caller gets a raw 23505 instead of this sentence.
+  const numPart = code.split("-")[0];
+  if (/^\d{3}$/.test(numPart) && numPart !== "000") {
+    const { data: numClash, error: numErr } = await db.from("clients")
+      .select("id,name,status,client_code").like("client_code", `${numPart}-%`).neq("status", "INACTIVE");
+    // Same fail-closed posture as above: an unchecked collision in front of an irreversible Jobber
+    // create is exactly what the discarded-error lesson was about.
+    if (numErr) {
+      return fail("jobber_unavailable",
+        `Could not check whether number ${numPart} is free, so nothing was created. Try again in a moment.`,
+        { detail: numErr.message });
+    }
+    if (numClash && numClash.length) {
+      return fail("code_taken",
+        `Number ${numPart} is already used by ${numClash.map((c: any) => `${c.client_code} (${c.name})`).join(", ")}. ` +
+        `The client code scheme treats the NUMBER as the identity, so two clients cannot share one outside the 000 dump band.`,
+        { field: "client_code", next_free: proposal.code !== code ? proposal.code : null,
+          holders: numClash.map((c: any) => ({ source: "db", id: c.id, name: c.name, status: c.status, client_code: c.client_code })) });
+    }
   }
 
   let token: string;

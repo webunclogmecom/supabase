@@ -234,11 +234,44 @@ Deno.serve(async (req) => {
   // code uniqueness on any code CHANGE (all rows, INACTIVE included — the
   // 239-COM lesson). The recorder re-checks with the same change-only scope.
   if (targetCode && targetCode !== (dbClient.client_code ?? null)) {
-    const { data: clash } = await db.from("clients").select("id, name, status")
+    const { data: clash, error: clashErr } = await db.from("clients").select("id, name, status")
       .eq("client_code", targetCode).neq("id", clientId).limit(1);
+    // Destructured and checked: a discarded error returns data null, the emptiness test reads as
+    // "no clash", and the guard fails OPEN in front of a Jobber rename.
+    if (clashErr) {
+      return fail("db_error", `Could not check whether ${targetCode} is free, so nothing was changed.`,
+        { detail: clashErr.message });
+    }
     if (clash && clash.length) {
       return fail("code_taken",
-        `Client code ${targetCode} already belongs to "${clash[0].name}" (${clash[0].status}).`);
+        `Client code ${targetCode} already belongs to "${clash[0].name}" (${clash[0].status}).`,
+        { field: "client_code" });
+    }
+
+    // 🛑 AND THE NUMBER, WHICH IS THE ACTUAL IDENTITY. THIS IS THE HOLE 168 CAME THROUGH.
+    // Fred, 2026-08-17: *"I changed 609 Lenox LLC client code to 168 which was supposed to be for
+    // 168-AVA, that shouldn't be able to happen."* The check above compares the whole string, so
+    // `168-609` was not equal to `168-AVA` and sailed straight past it — and the DB's
+    // `clients_active_client_code_uniq` is unique on the string too, so nothing else caught it
+    // either. The edit reached Jobber, which is why the repair needed clearing on BOTH sides.
+    // Now mirrored by `clients_active_client_number_uniq` (2026-08-17_2355); this check exists to
+    // produce a sentence naming the owner instead of a raw 23505.
+    const numPart = targetCode.split("-")[0];
+    if (/^\d{3}$/.test(numPart) && numPart !== "000") {
+      const { data: numClash, error: numErr } = await db.from("clients")
+        .select("id, name, status, client_code")
+        .like("client_code", `${numPart}-%`).neq("id", clientId).neq("status", "INACTIVE");
+      if (numErr) {
+        return fail("db_error", `Could not check whether number ${numPart} is free, so nothing was changed.`,
+          { detail: numErr.message });
+      }
+      if (numClash && numClash.length) {
+        return fail("code_taken",
+          `Number ${numPart} is already used by ${numClash.map((c) => `${c.client_code} (${c.name})`).join(", ")}. ` +
+          `The client code scheme treats the NUMBER as the identity, so two clients cannot share one outside the 000 dump band.`,
+          { field: "client_code",
+            holders: numClash.map((c) => ({ id: c.id, name: c.name, status: c.status, client_code: c.client_code })) });
+      }
     }
   }
 
