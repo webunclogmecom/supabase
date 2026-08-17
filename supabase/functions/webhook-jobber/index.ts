@@ -217,6 +217,43 @@ async function gql(query: string, variables: Record<string, unknown> = {}): Prom
 // Entity Handlers
 // ============================================================================
 
+// ---- client-code NUMBER collisions (2026-08-17) -----------------------------
+// The client-code scheme treats the NUMBER as the identity and the letters as a cosmetic tag, so
+// `168-609` and `168-AVA` are the SAME client code wearing different clothes. Every guard in this
+// file compared the full string and therefore could not see that.
+//
+// 🛑 THIS IS A REPLAY-LOOP GUARD, NOT A DATA-QUALITY NICETY. Since `2026-08-17_2355` the DB carries
+// `clients_active_client_number_uniq`, so writing a colliding number now raises 23505, `handleClient`
+// throws, and the */5 poll re-delivers the same CLIENT_UPDATE forever. That is precisely the
+// 288-failures/day 145-NON loop the full-string guards were written to stop, one identity level up.
+//
+// Returns the LIVE holders of this code's number, excluding `selfId`. Empty means the number is free.
+// ⚠ Mirrors the index predicate exactly — number = everything before the first '-', the `000` dump
+// band is exempt (it shares a number by design), and INACTIVE holders are ignored (a retired client
+// frees its number). Keep the two in lockstep: if this is looser than the index, the write 23505s and
+// the loop returns; if it is tighter, codes get withheld that the DB would have accepted.
+async function liveNumberHolders(
+  code: string,
+  selfId: number | null,
+): Promise<Array<{ id: number; name: string; client_code: string }>> {
+  const num = String(code).split('-')[0]
+  if (!num || num === '000') return []
+  let q = supabase
+    .from('clients').select('id, name, client_code')
+    .like('client_code', `${num}-%`)
+    .neq('status', 'INACTIVE')
+    .limit(5)
+  if (selfId != null) q = q.neq('id', selfId)
+  const { data, error } = await q
+  // ⚠ FAIL SAFE, AND "SAFE" HERE MEANS WITHHOLDING THE CODE. A discarded error would return [] and
+  // read as "the number is free", which is the one answer that leads to the 23505 and the replay
+  // loop. Claiming a collision costs a NULL code and a warning row; claiming freedom costs the sync.
+  if (error) {
+    return [{ id: -1, name: `(could not verify: ${error.message})`, client_code: `${num}-?` }]
+  }
+  return (data ?? []) as Array<{ id: number; name: string; client_code: string }>
+}
+
 async function handleClient(numericId: string, topic: string): Promise<{ entity_id: number }> {
   const gid = btoa(`gid://Jobber/Client/${numericId}`)
   const data: any = await gql(
@@ -398,6 +435,35 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
         .limit(1)
       if (codeHolder && codeHolder.length) healCode = false
     }
+    // 🛑 AND THE NUMBER, which is the actual identity. WITHOUT THIS THE GUARD ABOVE IS HALF A GUARD
+    // AND THE 288-FAILURES/DAY REPLAY LOOP IT EXISTS TO PREVENT COMES STRAIGHT BACK (2026-08-17).
+    // The check above compares the FULL string, so `168-609` is not `168-AVA` and healCode stays
+    // true. Since 2026-08-17_2355 the DB also carries `clients_active_client_number_uniq`, so that
+    // write now 23505s, `Client update failed` throws, and the */5 poll replays the same
+    // CLIENT_UPDATE forever — exactly the 145-NON loop, one identity level up.
+    // ⚠ Mirrors the index predicate EXACTLY: everything before the first '-', skipping the 000 dump
+    // band (which shares a number by design) and INACTIVE holders (a retired client frees its
+    // number). If the two ever drift apart, this stops being a guard and becomes a second opinion.
+    if (healCode) {
+      const numHolders = await liveNumberHolders(parsedCode as string, existingId)
+      if (numHolders.length) {
+        healCode = false
+        // REPORT, don't just skip. The existing code-collision branch is deliberately silent, which
+        // is fine when a human typed the same code twice and the weekly dedup audit will see it. A
+        // NUMBER collision is invisible to a code-keyed audit, so nothing else would ever surface it.
+        await supabase.from('webhook_events_log').insert({
+          source_system: 'jobber',
+          event_type: 'client_code_number_collision',
+          status: 'warning',
+          error_message:
+            `Jobber offers code ${parsedCode} for client ${existingId} ("${name}"), but number ` +
+            `${String(parsedCode).split('-')[0]} is already held by ` +
+            `${numHolders.map((h) => `${h.id}/${h.client_code}/${h.name}`).join(' | ')}. ` +
+            `The code was NOT written; the client synced normally. Assign a free number, or merge.`,
+          payload: { gid, client_id: existingId, offered_code: parsedCode, holders: numHolders },
+        })
+      }
+    }
     if (healCode) clientRow.client_code = parsedCode
     // supabaseJobber: handleClient is only ever CLIENT_CREATE/UPDATE/DESTROY -> audit
     // app_source='jobber' ("Changed in Jobber") instead of bare 'sql'/"System".
@@ -409,6 +475,30 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     // client is in Airtable.
     clientRow.status = c.isArchived ? 'INACTIVE' : 'ACTIVE'
     if (parsedCode) clientRow.client_code = parsedCode
+    // 🛑 SYMMETRIC NUMBER GUARD. Same reasoning as the UPDATE path above, and it must run BEFORE the
+    // dup sanity-check below, because that one is keyed on the full code and would let a number
+    // collision through to the INSERT — which now 23505s on clients_active_client_number_uniq and
+    // puts the new client into the replay loop instead of importing it.
+    // The client is ALWAYS inserted; only the code is withheld. Jobber's GID is the source of truth
+    // for the client's existence, and losing the client because its code clashes would be a far
+    // worse outcome than a client with a NULL code that a human assigns later.
+    if (parsedCode) {
+      const numHolders = await liveNumberHolders(parsedCode, null)
+      if (numHolders.length) {
+        delete clientRow.client_code
+        await supabase.from('webhook_events_log').insert({
+          source_system: 'jobber',
+          event_type: 'client_code_number_collision',
+          status: 'warning',
+          error_message:
+            `New Jobber client "${name}" (gid ${gid.slice(0, 24)}…) offered code ${parsedCode}, but ` +
+            `number ${parsedCode.split('-')[0]} is already held by ` +
+            `${numHolders.map((h) => `${h.id}/${h.client_code}/${h.name}`).join(' | ')}. ` +
+            `The client WAS imported, without a code. Assign a free number, or merge.`,
+          payload: { new_gid: gid, new_name: name, offered_code: parsedCode, holders: numHolders },
+        })
+      }
+    }
     // Sanity check before INSERT: warn if a client with the same client_code,
     // email, or phone already exists. We DO insert (Jobber GID is the source
     // of truth), but log a warning so the weekly dedup audit can catch the

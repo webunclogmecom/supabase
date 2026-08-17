@@ -214,13 +214,40 @@ display name first, verified by re-read, then `public.clients`; backup in
 > numbers left in the table are the two deliberate exemptions. A rule kept alive by a precedent that
 > no longer exists is worth re-checking before quoting it.
 >
-> 🛑 **STILL OPEN, AND NARROWER THAN BEFORE: a code typed straight into Jobber.** Jobber enforces
-> nothing and the `*/5` poll imports what it finds. What changed is the failure MODE, not the
-> coverage: an incoming Jobber-side collision now hits the unique index and **errors for that client**
-> instead of importing silently. That is the better failure — visible rather than invisible — but it
-> means a person renaming a client in Jobber can now stall that one client's sync. If that becomes a
-> nuisance, the fix is a number-aware branch in `handleClient` that quarantines and reports rather
-> than one that widens the index.
+> ✅ **THE JOBBER-SIDE PATH IS CLOSED TOO, SAME DAY.** For a few hours the index made an incoming
+> collision **error** for that client, which was a real hazard rather than a theoretical one: writing
+> a colliding number raises `23505`, `handleClient` throws `Client update failed`, and the `*/5` poll
+> re-delivers the same `CLIENT_UPDATE` forever. **That is exactly the 288-failures/day `145-NON`
+> replay loop** the full-string guards in that file were written to stop, one identity level up.
+>
+> `webhook-jobber` now carries **`liveNumberHolders()`**, used by BOTH the UPDATE heal branch and the
+> INSERT branch. The client always syncs; only the **code** is withheld, and a
+> **`client_code_number_collision`** warning row is written to `webhook_events_log` naming the current
+> holder. Reporting matters here specifically: the pre-existing collision branch is deliberately
+> silent because a code-keyed dedup audit would find it later — **a NUMBER collision is invisible to a
+> code-keyed audit**, so nothing else would ever surface it.
+>
+> ⚠ **`liveNumberHolders` fails SAFE, and safe means WITHHOLDING the code.** A discarded error would
+> return `[]`, read as "the number is free", and produce the 23505 and the loop. Claiming a collision
+> costs a NULL code and a warning row; claiming freedom costs the sync.
+>
+> **Verified end-to-end 2026-08-17** by planting `168-609` back on the real Jobber record for
+> `609 Lenox LLC`, flagging `needs_populate` and invoking `sync-jobber-poll` so the poll signed and
+> POSTed the `CLIENT_UPDATE` itself:
+>
+> | check | result |
+> |---|---|
+> | `needs_populate` TRUE → FALSE | the replay actually ran — **the control**; without it "no failures" proves nothing |
+> | client 160 | synced, name intact, `client_code` still **NULL** |
+> | `webhook_events_log` | one `client_code_number_collision` warning naming `305/168-AVA/AVA` |
+> | failures | **zero** |
+>
+> Jobber was reverted to the bare name afterwards, verified by re-read.
+>
+> ⚠ **The UPDATE path was exercised; the INSERT path was NOT.** It is the symmetric guard and was
+> verified by reading, but exercising it needs a *new* Jobber client carrying a colliding code, and
+> Jobber has no client delete — the residue is not worth it. Treat it as deployed-and-reviewed rather
+> than proven.
 
 **What to do about it in the meantime:** when assigning a code by hand, check the **number**, not the
 code:
