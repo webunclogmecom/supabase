@@ -121,6 +121,42 @@ Placing the marker at 22:30 produced, on the chip:
 `Homestead is after hours (last intake 22:00 ET) · 786-268-5623`. Real, useful, and it means a
 late-evening dump time is a supported case rather than a mistake to prevent.
 
+### ✅ FIXED 2026-08-17 — `dump_visit_id` + `trg_zz_dump_visit_cleanup`
+
+Both defects below were fixed the same day (Fred: *"fix the vehicle_id and make marker delete remove
+the orphan visit"*). **The two paragraphs after this one are the PRE-FIX record — keep them, they
+explain why the column and the trigger exist.**
+
+`ops.calendar_day_markers` gained **`dump_visit_id bigint`** (FK → `public.visits(id)`,
+`ON DELETE SET NULL`), written by the app when it places a Dump marker. An AFTER DELETE trigger
+**`trg_zz_dump_visit_cleanup`** → `ops.fn_cleanup_dump_visit_on_marker_delete()` soft-deletes that
+visit when the marker goes.
+
+🛑 **The guard is the whole point, and it fails SAFE.** It soft-deletes only when the linked visit is
+`visit_status='scheduled'` **and** `source='manual'` **and** `deleted_at IS NULL`. A completed dump is
+a real business record and is left alone; anything Jobber-sourced is out of scope by construction; a
+second delete is a no-op rather than an error. Every excluded case leaves the visit **alive** — the
+failure direction is "an orphan survives", never "a real record was destroyed".
+
+**Why a stored link and not a match on (date, site, minute):** two trucks may legally dump at the same
+site in the same minute (the unique index on this table covers only start/end markers), so a
+heuristic's failure mode is deleting *the other truck's* visit. The id makes that impossible.
+
+⚠ **It does NOT call `public.delete_calendar_visit`** — that function RAISES when it finds no
+undeleted row, and "correctly do nothing" must not abort the user's marker delete.
+
+⚠ **It is SECURITY DEFINER on purpose.** `authenticated` cannot write the visit lifecycle directly
+(Phase 3), which is exactly why the cleanup cannot live in the app; the guard above is the control on
+that widening.
+
+⚠ **A dump marker placed BEFORE 2026-08-17 has `dump_visit_id = NULL`**, so the trigger no-ops and its
+visit must be cleaned up by hand. There were **0** markers in existence when the column was added, so
+in practice there is no backlog — but do not assume a NULL link means "no visit was created".
+
+✅ Migration: `docs/migrations/2026-08-17_1200_dump_marker_visit_link_and_cleanup.sql`. Verified by a
+6-case guard matrix in a rolled-back probe **plus a positive control** (the trigger dropped, case A
+re-run, visit survives) — without that control the 6 passes would be an untested instrument.
+
 ### ⚠ Deleting the marker does NOT delete the visit it created
 
 Measured: removing the marker deleted the marker row, the `entity_source_links` row and the Jobber
@@ -130,7 +166,19 @@ marker leaves an orphan Dump Offload visit behind**, and under a truck filter th
 board to reveal it (see the next item). Clean up with `public.delete_calendar_visit(<id>)`, which
 soft-deletes.
 
-### 🛑 THE APP HARDCODES `p_vehicle_id: null`, SO A DUMP VISIT NEVER CARRIES ITS TRUCK
+### ✅ FIXED 2026-08-17 — the app now sends the truck
+
+The app calls `create_dump_visit` with **`p_vehicle_id: e.vehicleId ?? null`** (the marker's own
+truck). **Keep the `?? null`** — a whole-day marker has no truck and that is a supported value.
+
+Proven on the DB *before* the app was touched, so the edit was made against a known-good chain:
+`p_vehicle_id => 3` reaches `visits.vehicle_id = 3`, `null` stays null, inertness contract intact.
+Verified live afterwards on the side that used to hide it: with the **David** filter Monday went
+`1 visit` → **`2 visits`** and the dump renders with a **`D`** badge instead of `–`.
+
+⚠ **The pre-fix write-up below is kept deliberately** — it is the trap, not just history.
+
+### 🛑 (PRE-FIX RECORD) THE APP HARDCODED `p_vehicle_id: null`, SO A DUMP VISIT NEVER CARRIED ITS TRUCK
 
 Read straight out of the live bundle (`/assets/index-*.js`, 3-chunk recursive walk):
 
@@ -157,13 +205,20 @@ visit it creates cannot.
 dump visits (7059, 7123, 7280, 7580, 7682) *do* carry a truck; I did not chase how they got it, and
 this path cannot be the explanation. Do not read those rows as evidence the app sets it.
 
-### ⚠ The marker's "Remove marker" × is covered by the visit chip it creates
+### ⚠ The marker's "Remove marker" × versus the visit chip — and how fix 1 made it worse
 
 The × is `opacity: 0` (hover-reveal) and the created dump visit chip is absolutely positioned at
-`z-index: 10` over the marker's top-right corner, so at "All trucks" a click at the ×'s exact centre
-lands on the visit chip (`elementsFromPoint` puts the chip first, the button fifth). With a truck
-filter applied — which hides the visit, per the item above — the × is the top element and clicks
-normally. Two defects that happen to cancel each other out.
+`z-index: 10` over the marker's top-right corner, so a click at the ×'s exact centre lands on the
+visit chip. Before fix 1 this only bit at "All trucks" — a truck filter hid the visit, so the × was
+clear. **The two defects were cancelling each other out.**
+
+🛑 **Fix 1 removed that accident.** Once the dump visit carried its truck it rendered in the same
+filtered column as its marker, so the overlap became permanent: measured **60 of 64 sampled points
+inside the 16×16 button returned the visit chip**, leaving a 2px strip. Raised in the same session —
+an unreachable delete control would defeat the cleanup fix entirely.
+
+⇒ **Worth carrying: fixing one of two interacting defects can expose the other.** Nothing about the
+× changed; what changed is that the thing covering it started always being there.
 
 ## What reaches Jobber
 
