@@ -603,6 +603,131 @@ function jobToRecord(
 }
 
 // ============================================================================
+// APPROVAL-PROOF IMAGES — shared by the frequency-change path and by `attach_proof`.
+// Design: docs/superpowers/specs/2026-08-17-frequency-change-proof-upload-design.md
+//
+// 🛑 EXTRACTED SO THE TWO PATHS CANNOT DRIFT. Duplicating the validation would let the caps or the
+// mime rule mean one thing on a cadence change and another on a later attach, and the second copy
+// is the one nobody re-tests.
+// ============================================================================
+const PROOF_MAX = 3;
+const PROOF_MAX_BYTES = 2_500_000;              // decoded; ~2MB after the client's re-encode
+type ProofIn = { file_name: string; content_type: string; data_base64: string };
+
+// `budget` is how many MORE images this change may carry: PROOF_MAX for a fresh cadence change,
+// PROOF_MAX minus the live count for an attach. That makes the cap per-CHANGE, not per-REQUEST —
+// otherwise three separate attach calls of three images each would put nine on one change.
+function parseProofImages(
+  raw: unknown,
+  budget: number,
+): { ok: true; items: ProofIn[] } | { ok: false; message: string } {
+  const arr = Array.isArray(raw) ? raw : [];
+  if (arr.length > budget) {
+    return {
+      ok: false,
+      message: budget <= 0
+        ? `This change already has the maximum of ${PROOF_MAX} proof images. Remove one before adding another.`
+        : `Attach at most ${budget} image${budget === 1 ? "" : "s"} as proof.`,
+    };
+  }
+  const items: ProofIn[] = [];
+  for (const raw_ of arr) {
+    const r = raw_ as Record<string, unknown> | null;
+    const ct = String(r?.content_type ?? "").toLowerCase();
+    // Mirrors the bucket's allowed_mime_types. ⚠ A mime allow-list does NOT cover EXIF — the
+    // browser re-encodes through a canvas to strip it, which is why only JPEG/PNG arrive here.
+    if (ct !== "image/jpeg" && ct !== "image/png") {
+      return { ok: false, message: "Proof images must be JPEG or PNG." };
+    }
+    const b64 = String(r?.data_base64 ?? "").replace(/^data:[^;]+;base64,/, "");
+    if (!b64) return { ok: false, message: "A proof image arrived empty." };
+    // 4 base64 chars -> 3 bytes; cheap size check without decoding first.
+    if (Math.floor(b64.length * 3 / 4) > PROOF_MAX_BYTES) {
+      return {
+        ok: false,
+        message: "That image is too large even after compression. Try a screenshot rather than a photo.",
+      };
+    }
+    items.push({
+      file_name: String(r?.file_name ?? "proof").slice(0, 120),
+      content_type: ct,
+      data_base64: b64,
+    });
+  }
+  return { ok: true, items };
+}
+
+// Uploads each image and links it to `changeId`. NEVER throws: a storage failure must not be able to
+// report a committed cadence change as failed. Returns per-image outcomes so the caller can say what
+// landed. Orphan note: if the object uploads but `photos` or `photo_links` then fails, the FILE is
+// left behind with nothing pointing at it. That is deliberate — the alternative is deleting a file we
+// may have just failed to record, and the bucket is private, small and job-foldered, so an orphan is
+// inert rather than a leak.
+async function storeProofImages(
+  images: ProofIn[],
+  jobId: number,
+  changeId: number,
+  email: string,
+): Promise<{ saved: number; errors: string[] }> {
+  const errors: string[] = [];
+  let saved = 0;
+  if (!images.length) return { saved, errors };
+  // employees.id, not the auth uid: photos.uploaded_by_employee_id is an FK to employees. No match
+  // means NULL rather than a failed upload — attribution is not worth losing the evidence over.
+  //
+  // 🛑 AND THAT NULL IS COMMON, SO THE EMAIL IS STORED SEPARATELY BELOW. An earlier version of this
+  // comment said audit.logs records the real actor via jwt_claims->>'email' regardless. **That is
+  // FALSE for this write path and was measured 2026-08-17:** audit.logs holds 4,138 rows for
+  // photo_links and only 13 carry an email, because these inserts are made with the SERVICE KEY, so
+  // there are no PostgREST JWT claims for the trigger to read. Meanwhile 3 of the 6 accounts that
+  // pass the staff gate have no employees row at all. Both halves failing together means a proof
+  // uploaded by those accounts would have had NO attribution anywhere.
+  const { data: emp } = await db.from("employees").select("id").ilike("email", email).limit(1).maybeSingle();
+  for (const img of images) {
+    try {
+      const bytes = Uint8Array.from(atob(img.data_base64), (c) => c.charCodeAt(0));
+      const ext = img.content_type === "image/png" ? "png" : "jpg";
+      const path = `client-app/job-frequency/${jobId}/${crypto.randomUUID()}.${ext}`;
+      const up = await db.storage.from("approval-proof")
+        .upload(path, bytes, { contentType: img.content_type, upsert: false });
+      if (up.error) { errors.push(up.error.message); continue; }
+
+      const { data: photo, error: pErr } = await db.from("photos").insert({
+        storage_path: path,
+        file_name: img.file_name,
+        content_type: img.content_type,
+        size_bytes: bytes.byteLength,
+        uploaded_by_employee_id: emp?.id ?? null,
+        source: "client_app_upload",
+      }).select("id").single();
+      if (pErr) { errors.push(pErr.message); continue; }
+
+      const { error: lErr } = await db.from("photo_links").insert({
+        photo_id: photo.id,
+        entity_type: "job_frequency_change",
+        entity_id: changeId,
+        role: "approval_proof",
+        // WHO SUPPLIED THIS EVIDENCE, from the GoTrue-verified session — see the block above for why
+        // neither uploaded_by_employee_id nor audit.logs can be relied on for it.
+        // ⚠ This overloads `caption`, and that is a deliberate trade rather than an oversight: the
+        // alternative is a new column on a table shared by every photo kind. It is legible in the UI
+        // as "Attached by <email>", photo_links IS audited so the value lands in audit.logs.new_row
+        // as a second copy, and `photos` carries no audit trigger at all.
+        // 🛑 It matters most for an attach-after-the-fact, where the person supplying the proof is
+        // NOT necessarily job_frequency_changes.changed_by_email. Never render that column as the
+        // proof's author.
+        caption: email,
+      });
+      if (lErr) { errors.push(lErr.message); continue; }
+      saved++;
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+  return { saved, errors };
+}
+
+// ============================================================================
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
   if (req.method !== "POST") return fail("method", "POST only");
@@ -627,8 +752,161 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return fail("bad_request", "Invalid JSON body."); }
   const action = String(body.action ?? "");
   const clientId = Number(body.client_id);
-  if (!["create", "edit", "close", "reopen"].includes(action)) return fail("bad_request", "Unknown action.");
+  if (!["create", "edit", "close", "reopen", "attach_proof", "remove_proof"].includes(action)) return fail("bad_request", "Unknown action.");
   if (!Number.isFinite(clientId)) return fail("bad_request", "client_id is required.");
+
+  // ==========================================================================
+  // ATTACH PROOF to a frequency change that ALREADY happened
+  // ==========================================================================
+  // WHY THIS EXISTS: spec §5. When Jobber commits a cadence change and the image upload then fails,
+  // the change stands and is reported as saved with frequency_proof_saved: 0 — correctly, because
+  // claiming failure would send someone to re-apply a change that already happened. Without a way to
+  // attach afterwards that leaves a change which can NEVER be proven, so the warning would be a dead
+  // end. This is that remedy.
+  //
+  // 🛑 IT RUNS BEFORE getJobberToken() ON PURPOSE. Attaching proof touches nothing in Jobber, and the
+  // situation this exists to repair is most likely to occur while Jobber is unhealthy. Placing it
+  // after the token fetch would make the remedy unavailable during exactly the outage that creates
+  // the need for it.
+  if (action === "attach_proof") {
+    const changeId = Number(body.change_id);
+    if (!Number.isFinite(changeId)) return fail("bad_request", "change_id is required.");
+
+    // AUTHORIZATION — check the change's own client_id AND the owning job's client_id.
+    // 🛑 BOTH, because nothing keeps them equal. job_frequency_changes has two INDEPENDENT FKs
+    // (client_id -> clients, job_id -> jobs) and no composite FK, no trigger, and no CHECK tying
+    // client_id to jobs.client_id. Measured 2026-08-17: 0 of 13 rows disagree today, which is a
+    // fact about the data, not a guarantee about the schema. Trusting either one alone would let a
+    // single mislabelled row become a cross-client write.
+    const { data: chg, error: chgErr } = await db
+      .from("job_frequency_changes").select("id, job_id, client_id").eq("id", changeId).maybeSingle();
+    if (chgErr) return fail("db_error", "Couldn't read that frequency change.", { detail: chgErr.message });
+    if (!chg) return fail("not_found", "That frequency change no longer exists.");
+    if (Number(chg.client_id) !== clientId) {
+      return fail("forbidden", "That frequency change belongs to a different client.");
+    }
+    const { data: ownerJob, error: jobErr } = await db
+      .from("jobs").select("id, client_id").eq("id", chg.job_id).maybeSingle();
+    if (jobErr) return fail("db_error", "Couldn't read the job for that change.", { detail: jobErr.message });
+    if (!ownerJob || Number(ownerJob.client_id) !== clientId) {
+      return fail("forbidden", "That frequency change belongs to a different client.");
+    }
+
+    // The cap counts LIVE links only. Removing a proof soft-deletes its link, and freeing the slot is
+    // the intended behaviour — otherwise a mistaken upload would permanently consume one of three.
+    const { count: liveCount, error: cntErr } = await db
+      .from("photo_links").select("id", { count: "exact", head: true })
+      .eq("entity_type", "job_frequency_change").eq("entity_id", changeId)
+      .eq("role", "approval_proof").is("deleted_at", null);
+    // ⚠ Destructured and checked: a discarded error here returns count null, which coalesces to 0 and
+    // hands out a full budget of 3 on a change that already has 3.
+    if (cntErr) return fail("db_error", "Couldn't count the proof already attached.", { detail: cntErr.message });
+
+    const parsed = parseProofImages(body.frequency_proof, PROOF_MAX - (liveCount ?? 0));
+    if (!parsed.ok) return fail("bad_request", parsed.message, { field: "frequency_proof" });
+    if (!parsed.items.length) {
+      return fail("bad_request", "Attach at least one image.", { field: "frequency_proof" });
+    }
+
+    const stored = await storeProofImages(parsed.items, Number(chg.job_id), changeId, email);
+
+    // 🛑 THIS PATH FAILS LOUDLY, AND THAT IS THE OPPOSITE OF THE CADENCE PATH ON PURPOSE.
+    // There, a storage failure must not report the save as failed, because Jobber is already
+    // committed and cannot be rolled back. HERE nothing else happened: no Jobber call, no DB write
+    // beyond the images themselves. So a total failure is safe to surface and safe to retry, and
+    // reporting success with 0 saved would be the dead end this action exists to remove.
+    if (stored.saved === 0) {
+      return fail("proof_upload_failed",
+        "Couldn't save the proof image. The frequency change itself is untouched — try again.",
+        { detail: stored.errors.join("; ").slice(0, 300) || null, frequency_proof_saved: 0 });
+    }
+
+    return done({
+      change_id: changeId,
+      job_id: Number(chg.job_id),
+      frequency_proof_saved: stored.saved,
+      frequency_proof_attempted: parsed.items.length,
+      // Partial success is real: 2 of 3 can land. The caller is told both numbers rather than a bare
+      // "saved", so a half-attached set is visible instead of silently looking complete.
+      frequency_proof_error: stored.errors.length ? stored.errors.join("; ").slice(0, 300) : null,
+      proof_count: (liveCount ?? 0) + stored.saved,
+    });
+  }
+
+  // ==========================================================================
+  // REMOVE a proof image from a frequency change
+  // ==========================================================================
+  // 🛑 THIS EXISTS BECAUSE THE BROWSER PHYSICALLY CANNOT DO IT, and the failure would be SILENT.
+  // Measured 2026-08-17 by reading polroles (never policy names): public.photo_links has RLS enabled
+  // and, for `authenticated`, exactly one INSERT policy and two SELECT policies — NO UPDATE and NO
+  // DELETE policy — while `authenticated` DOES hold the UPDATE and DELETE grants. So a browser
+  // `update photo_links set deleted_at = now()` matches ZERO rows, and PostgREST reports success with
+  // no error. The tile would stay on screen, nothing would be logged, and the operator would be told
+  // it worked. The grant and the policy disagree, which is exactly the shape the repo's own
+  // "a grant and a policy can disagree" rule warns about.
+  // ⚠ It is also required for the cap to be honest: attach_proof refuses a 4th image with "Remove one
+  // before adding another", so without a working remove that message promises something impossible.
+  //
+  // SOFT-DELETE ONLY, and the LINK not the photo: `photos` has no deleted_at and no audit trigger, so
+  // deleting there would be an untraceable hard delete that CASCADEs. The file stays in the bucket.
+  if (action === "remove_proof") {
+    const linkId = Number(body.link_id);
+    if (!Number.isFinite(linkId)) return fail("bad_request", "link_id is required.");
+
+    const { data: link, error: linkErr } = await db
+      .from("photo_links").select("id, entity_type, entity_id, role, deleted_at")
+      .eq("id", linkId).maybeSingle();
+    if (linkErr) return fail("db_error", "Couldn't read that proof link.", { detail: linkErr.message });
+    if (!link) return fail("not_found", "That proof no longer exists.");
+    if (link.entity_type !== "job_frequency_change" || link.role !== "approval_proof") {
+      // Refuse to touch any other photo kind through this action. Without this, a link_id from a
+      // visit or a DERM manifest would be soft-deleted by a job-scoped endpoint.
+      return fail("forbidden", "That image is not frequency-change proof.");
+    }
+    // Idempotent: already gone is a success, not an error — two clicks must not read as a failure.
+    // ⚠ It still returns the CURRENT count rather than null, so the caller can refresh its row from
+    // this response alone. Returning null here forced every caller to special-case the one branch
+    // that is most likely to be hit by an impatient double-click.
+    if (link.deleted_at) {
+      const { count: n } = await db
+        .from("photo_links").select("id", { count: "exact", head: true })
+        .eq("entity_type", "job_frequency_change").eq("entity_id", link.entity_id)
+        .eq("role", "approval_proof").is("deleted_at", null);
+      return done({ link_id: linkId, change_id: Number(link.entity_id), already_removed: true, proof_count: n ?? 0 });
+    }
+
+    // SAME two-sided ownership check as attach_proof: the change's client_id AND the owning job's.
+    const { data: chg, error: chgErr } = await db
+      .from("job_frequency_changes").select("id, job_id, client_id").eq("id", link.entity_id).maybeSingle();
+    if (chgErr) return fail("db_error", "Couldn't read the frequency change.", { detail: chgErr.message });
+    if (!chg || Number(chg.client_id) !== clientId) {
+      return fail("forbidden", "That proof belongs to a different client.");
+    }
+    const { data: ownerJob, error: ojErr } = await db
+      .from("jobs").select("id, client_id").eq("id", chg.job_id).maybeSingle();
+    if (ojErr) return fail("db_error", "Couldn't read the job for that change.", { detail: ojErr.message });
+    if (!ownerJob || Number(ownerJob.client_id) !== clientId) {
+      return fail("forbidden", "That proof belongs to a different client.");
+    }
+
+    const reason = String(body.reason ?? "").trim().slice(0, 300) || `Removed in the Client App by ${email}`;
+    const { data: updated, error: updErr } = await db.from("photo_links")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: userData.user.id, deleted_reason: reason })
+      .eq("id", linkId).is("deleted_at", null)   // re-assert the predicate: never re-stamp an existing removal
+      .select("id");
+    if (updErr) return fail("db_error", "Couldn't remove that proof.", { detail: updErr.message });
+    // ⚠ Zero rows here is the silent-no-op shape this whole action exists to avoid. Say so rather
+    // than reporting success on an update that changed nothing.
+    if (!updated || updated.length === 0) {
+      return fail("not_found", "That proof was already removed by someone else.");
+    }
+
+    const { count: liveCount } = await db
+      .from("photo_links").select("id", { count: "exact", head: true })
+      .eq("entity_type", "job_frequency_change").eq("entity_id", link.entity_id)
+      .eq("role", "approval_proof").is("deleted_at", null);
+    return done({ link_id: linkId, change_id: Number(link.entity_id), proof_count: liveCount ?? 0 });
+  }
 
   let token: string;
   try { token = await getJobberToken(); } catch (e) {
@@ -928,34 +1206,10 @@ Deno.serve(async (req) => {
   // cannot be rolled back. The upload itself happens far below, only once the change row exists.
   // ⚠ Caps are enforced server-side as well as in the browser. The bucket also refuses >5MB, but
   //   relying on that would mean discovering the problem after Jobber was already written.
-  const PROOF_MAX = 3;
-  const PROOF_MAX_BYTES = 2_500_000;              // decoded; ~2MB after the client's re-encode
-  type ProofIn = { file_name: string; content_type: string; data_base64: string };
-  const proofRaw = Array.isArray(body.frequency_proof) ? body.frequency_proof : [];
-  if (proofRaw.length > PROOF_MAX) {
-    return fail("bad_request", `Attach at most ${PROOF_MAX} images as proof.`, { field: "frequency_proof" });
-  }
-  const proofIn: ProofIn[] = [];
-  for (const raw of proofRaw) {
-    const ct = String(raw?.content_type ?? "").toLowerCase();
-    // Mirrors the bucket's allowed_mime_types. ⚠ A mime allow-list does NOT cover EXIF — the
-    // browser re-encodes through a canvas to strip it, which is why only JPEG/PNG arrive here.
-    if (ct !== "image/jpeg" && ct !== "image/png") {
-      return fail("bad_request", "Proof images must be JPEG or PNG.", { field: "frequency_proof" });
-    }
-    const b64 = String(raw?.data_base64 ?? "").replace(/^data:[^;]+;base64,/, "");
-    if (!b64) return fail("bad_request", "A proof image arrived empty.", { field: "frequency_proof" });
-    // 4 base64 chars -> 3 bytes; cheap size check without decoding first.
-    if (Math.floor(b64.length * 3 / 4) > PROOF_MAX_BYTES) {
-      return fail("bad_request", "That image is too large even after compression. Try a screenshot rather than a photo.",
-        { field: "frequency_proof" });
-    }
-    proofIn.push({
-      file_name: String(raw?.file_name ?? "proof").slice(0, 120),
-      content_type: ct,
-      data_base64: b64,
-    });
-  }
+  // A brand-new change starts empty, so the whole PROOF_MAX budget is available here.
+  const proofParsed = parseProofImages(body.frequency_proof, PROOF_MAX);
+  if (!proofParsed.ok) return fail("bad_request", proofParsed.message, { field: "frequency_proof" });
+  const proofIn = proofParsed.items;
 
   // Pre-flight EVERYTHING before the first mutation (the half-applied lesson).
   const edit: Record<string, unknown> = {};
@@ -1559,43 +1813,11 @@ Deno.serve(async (req) => {
   // happened. Same posture as frequency_reason_recorded above. The count comes back so the UI can
   // say the cadence saved while its proof did not, and the operator can re-attach it.
   let proofSaved = 0;
-  const proofErrors: string[] = [];
+  let proofErrors: string[] = [];
   if (proofIn.length && freqChangeId) {
-    // employees.id, not the auth uid: photos.uploaded_by_employee_id is an FK to employees. No match
-    // means NULL rather than a failed upload — attribution is not worth losing the evidence over, and
-    // audit.logs records the real actor via jwt_claims->>'email' regardless.
-    const { data: emp } = await db.from("employees").select("id").ilike("email", email).limit(1).maybeSingle();
-    for (const img of proofIn) {
-      try {
-        const bytes = Uint8Array.from(atob(img.data_base64), (c) => c.charCodeAt(0));
-        const ext = img.content_type === "image/png" ? "png" : "jpg";
-        const path = `client-app/job-frequency/${jobId}/${crypto.randomUUID()}.${ext}`;
-        const up = await db.storage.from("approval-proof")
-          .upload(path, bytes, { contentType: img.content_type, upsert: false });
-        if (up.error) { proofErrors.push(up.error.message); continue; }
-
-        const { data: photo, error: pErr } = await db.from("photos").insert({
-          storage_path: path,
-          file_name: img.file_name,
-          content_type: img.content_type,
-          size_bytes: bytes.byteLength,
-          uploaded_by_employee_id: emp?.id ?? null,
-          source: "client_app_upload",
-        }).select("id").single();
-        if (pErr) { proofErrors.push(pErr.message); continue; }
-
-        const { error: lErr } = await db.from("photo_links").insert({
-          photo_id: photo.id,
-          entity_type: "job_frequency_change",
-          entity_id: freqChangeId,
-          role: "approval_proof",
-        });
-        if (lErr) { proofErrors.push(lErr.message); continue; }
-        proofSaved++;
-      } catch (e) {
-        proofErrors.push(e instanceof Error ? e.message : String(e));
-      }
-    }
+    const stored = await storeProofImages(proofIn, jobId, freqChangeId, email);
+    proofSaved = stored.saved;
+    proofErrors = stored.errors;
   }
   // `preserved` is returned so the UI can say what it did NOT touch — a silent
   // "saved" is what let the fee-line deletion go unnoticed for a month.
