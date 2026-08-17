@@ -187,9 +187,17 @@ function adoptionRefusal(field, value) {
   for (const r of rows) r.decision = decisions.get(r.property_id) ?? 'UNKNOWN';
 
   // --------------------------------------------------------------- refusals
+  // 🛑 A ROW ALREADY CARRYING conflict_at IS FROZEN AND IS NOT ELIGIBLE FOR ANYTHING BUT
+  // IN_SYNC. already_in_conflict was loaded here from the start and then never read, so a
+  // row explicitly held for a person was fully eligible for a later ADOPT: their value in
+  // public.properties would be overwritten while the flag still said nobody had looked.
+  // fn_record_shadow now refuses this outright (2026-08-18_0120) and that refusal is the
+  // real guarantee; classifying it here just turns an exception into a readable report.
   for (const r of rows) {
     r.refusal = r.decision === 'ADOPT' ? adoptionRefusal(FIELD, r.source_now) : null;
-    if (r.refusal) r.effective = 'REFUSED'; else r.effective = r.decision;
+    if (r.already_in_conflict && r.decision !== 'IN_SYNC') r.effective = 'FROZEN';
+    else if (r.refusal) r.effective = 'REFUSED';
+    else r.effective = r.decision;
   }
 
   const by = (d) => rows.filter((r) => r.effective === d);
@@ -211,11 +219,11 @@ function adoptionRefusal(field, value) {
   // ⚠ Computed HERE, above the dry-run gate, on purpose: the dry run prints the size of the
   // exact array the write loop iterates, so `--limit` is observable without --apply.
   const actionable = rows.filter((r) =>
-    r.effective !== 'REFUSED' && r.effective !== 'UNKNOWN' &&
+    r.effective !== 'REFUSED' && r.effective !== 'UNKNOWN' && r.effective !== 'FROZEN' &&
     !(r.effective === 'ADOPT' && !adoptIds.has(r.property_id)));
 
   console.log('\n=== decisions ===');
-  for (const d of ['SEED', 'IN_SYNC', 'IGNORE', 'ADOPT', 'CONFLICT', 'REFUSED', 'UNKNOWN']) {
+  for (const d of ['SEED', 'IN_SYNC', 'IGNORE', 'ADOPT', 'CONFLICT', 'FROZEN', 'REFUSED', 'UNKNOWN']) {
     const n = by(d).length;
     if (n) console.log(`  ${d.padEnd(9)} ${String(n).padStart(4)}`);
   }
@@ -255,6 +263,17 @@ function adoptionRefusal(field, value) {
     }
     if (conflicts.length > 25) console.log(`  ... +${conflicts.length - 25} more`);
     console.log('  Fred 2026-08-17: these are a human question, not a data question.');
+  }
+  const frozen = by('FROZEN');
+  if (frozen.length) {
+    console.log(`\n=== FROZEN (${frozen.length}) — an open conflict is still waiting on a person ===`);
+    console.log('  These are skipped entirely, in either direction, until someone resolves them.');
+    console.log('  They release automatically only when both systems hold the SAME value.');
+    for (const r of frozen.slice(0, 25)) {
+      console.log(`  property ${String(r.property_id).padStart(5)}  jobber ${JSON.stringify(r.source_now)}` +
+        `  |  ours ${JSON.stringify(r.our_now)}  (would otherwise be ${r.decision})   ${r.name ?? ''}`);
+    }
+    if (frozen.length > 25) console.log(`  ... +${frozen.length - 25} more`);
   }
   if (unresolved.length) console.log(`\n  unresolved (no matching Jobber property): ${unresolved.length}`);
 
@@ -381,7 +400,7 @@ function adoptionRefusal(field, value) {
       // it. Aborting the sweep here would let one concurrently-edited property stop the
       // other 457. Anything else -- a transport 502, a permission error -- still aborts,
       // because those mean the instrument is untrustworthy rather than the data being live.
-      if (!/PLAN_STALE/.test(String(e && e.message))) throw e;
+      if (!/PLAN_STALE|CONFLICT_FROZEN/.test(String(e && e.message))) throw e;
       stale += 1;
       staleRows.push({ property_id: r.property_id, name: r.name, planned: r.effective,
         detail: String(e.message).replace(/\s+/g, ' ').slice(0, 200) });

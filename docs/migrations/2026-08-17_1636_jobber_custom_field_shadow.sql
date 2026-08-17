@@ -141,6 +141,28 @@
 -- in public.entity_source_links, so no single FK target exists.
 -- ============================================================================
 
+-- STOP. THIS FILE IS SUPERSEDED IN PART BY 2026-08-18_0120, AND RE-APPLYING IT WOULD
+-- REVERT THAT FIX. It CREATE OR REPLACEs sync.fn_record_shadow, so a successful re-run
+-- silently restores the body in which an open conflict did NOT freeze the row, and a row
+-- explicitly held for a person becomes eligible for a silent overwrite again.
+--
+-- Until 0120 existed this was prevented only by accident: the VERIFY block at the end
+-- asserted the table was empty, which stopped being true once seeding ran, and the abort
+-- rolled the replacement back. Relying on an unrelated assertion to protect a later fix is
+-- not a guard, it is luck. This is the guard.
+--
+-- A fresh database (0120 not yet applied) passes straight through, which is what makes
+-- this a supersession check rather than a permanent lock.
+do $supersede$
+begin
+  if to_regprocedure('sync.fn_record_shadow(text,bigint,text,text,text,jsonb,jsonb,jsonb)') is not null
+     and pg_get_functiondef('sync.fn_record_shadow(text,bigint,text,text,text,jsonb,jsonb,jsonb)'::regprocedure)
+         like '%CONFLICT_FROZEN%' then
+    raise exception 'refusing to re-apply 2026-08-17_1636: 2026-08-18_0120 is already applied and this file would revert its conflict freeze. Apply 0120 instead, or drop this guard deliberately if you really mean to roll back.';
+  end if;
+end
+$supersede$;
+
 create schema if not exists sync;
 
 comment on schema sync is
@@ -609,8 +631,16 @@ begin
 
   ---------------------------------------------------------------------------
   -- 6. the migration itself adopted nothing and seeded nothing.
+  --
+  -- SCOPED TO ROWS THIS RUN COULD HAVE CREATED. It used to count the WHOLE table,
+  -- which was true only for as long as the table shipped empty. Once seed_jobber_custom_
+  -- field_shadow.js ran for real (458 rows, 2026-08-17), re-applying this file raised here
+  -- and rolled back its own CREATE OR REPLACE of fn_shadow_decision and fn_record_shadow --
+  -- so the file broke the rule-5 idempotency its own header claims, and broke it in the
+  -- direction of reverting later fixes. An assertion about what THIS migration did must not
+  -- be written as an assertion about the state of the world.
   ---------------------------------------------------------------------------
-  select count(*) into v_rows from sync.source_field_shadow;
+  select count(*) into v_rows from sync.source_field_shadow where first_seen_at >= now();
   if v_rows <> 0 then
     raise exception 'the migration left % shadow rows; it must ship EMPTY (seeding is a separate, dry-runnable script)', v_rows;
   end if;

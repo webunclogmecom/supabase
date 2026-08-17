@@ -69,12 +69,22 @@ const JSON_OUT = flag('--json', null);
   const { properties: jobber, total } = await fetchJobberProperties({ pageSize: PAGE });
 
   // ------------------------------------------------------------------ classify
+  // 🛑 MEASURE THE INSTRUMENT ON EVERY ROW, THEN SKIP THE WORK. The already-seeded rows used
+  // to be `continue`d BEFORE the GID join was attempted and were then subtracted out of
+  // `matched`, which made the control a WORK-QUEUE SIZE wearing the label of an instrument
+  // check. The healthier the system, the more broken it claimed to be: at steady state
+  // (458 of 459 shadowed) it printed "matched by GID: 0 <-- BROKEN" and `--apply` threw
+  // "a control came back zero, so the instrument is untested" on a system with nothing wrong
+  // with it. A control must answer "does the join work", never "how much is left to do".
   const toSeed = [], unresolved = [], notMaterialised = [], skipped = [];
+  let matchedAll = 0, materialisedAll = 0;
   for (const r of ours) {
-    if (r.shadow_exists) { skipped.push(r.property_id); continue; }
     const j = jobber.get(r.gid);
     if (!j) { unresolved.push({ property_id: r.property_id, name: r.property_name, gid: r.gid }); continue; }
+    matchedAll += 1;
     const cf = j.byConfig.get(FIELD.fieldKey);
+    if (cf) materialisedAll += 1;
+    if (r.shadow_exists) { skipped.push(r.property_id); continue; }
     if (!cf) notMaterialised.push(r.property_id);
     const sourceNow = cf ? cf.value : null;
     const ourNow = r.our_value === null || r.our_value === undefined ? null : Number(r.our_value);
@@ -88,16 +98,21 @@ const JSON_OUT = flag('--json', null);
   }
 
   // -------------------------------------------------------------- the controls
-  const matched = ours.length - unresolved.length - skipped.length;
-  const consideredForCoverage = toSeed.length;
-  const materialised = toSeed.filter((r) => r.materialised).length;
+  // Fleet-wide, so they mean the same thing on run 1 and on run 100.
+  const matched = matchedAll;
+  const consideredForCoverage = matchedAll;
+  const materialised = materialisedAll;
   const coverage = consideredForCoverage ? materialised / consideredForCoverage : 0;
+  // Kept separate and reported, because "how much is left" is still worth seeing; it is
+  // just not evidence about the instrument.
+  const pending = toSeed.length;
 
   console.log('\n=== controls ===');
   console.log(`  jobber properties fetched : ${jobber.size} of ${total} ${jobber.size > 0 ? '(fetch works)' : '<-- BROKEN'}`);
   console.log(`  our rows loaded           : ${ours.length} ${ours.length > 0 ? '(db read works)' : '<-- BROKEN'}`);
   console.log(`  matched by GID            : ${matched} ${matched > 0 ? '(the join works)' : '<-- BROKEN, every row would look unresolved'}`);
   console.log(`  field materialised on     : ${materialised}/${consideredForCoverage} = ${(coverage * 100).toFixed(1)}%  (threshold ${(MIN_COVERAGE * 100).toFixed(0)}%)`);
+  console.log(`  still to seed             : ${pending}  (work remaining, NOT a control)`);
   if (notMaterialised.length) {
     console.log(`  ⚠ ${notMaterialised.length} matched properties returned NO row for this configuration GID`);
   }
@@ -176,6 +191,7 @@ const JSON_OUT = flag('--json', null);
     console.log('\nNothing to seed. Every linked property already carries a shadow row.');
     return;
   }
+
 
   // -------------------------------------------------------------------- write
   // Guarded INSERT only. It is structurally incapable of adopting or of altering an
