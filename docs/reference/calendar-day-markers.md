@@ -80,6 +80,91 @@ so nobody uses that number to check whether the markers worked.
 
 ---
 
+## Dump markers — the third type, and the only one that writes a VISIT
+
+Smoke-tested 2026-08-17 on truck David, site Homestead, alongside the Start/End test above.
+
+A Dump marker does everything a Start/End marker does **and** calls `public.create_dump_visit`
+(client/job/property ids read from `ops.v_dump_sites`, service line item **28**). Order is
+**marker row first, visit second** — the reverse leaves a real Dump Offload visit with nothing on
+the calendar.
+
+**`dump_site` must be the decorated `marker_value`, never the bare `label`.** The table's CHECK is
+`dump_site = ANY (ARRAY['Homestead (000-DH)','Pompano (000-DP)'])`; writing `Homestead` fails `23514`.
+Measured value written: `Homestead (000-DH)`.
+
+### 🛑 The created visit is deliberately INERT to Jobber — and that is the assertion to test
+
+The app passes `p_push_to_jobber = false`. `create_dump_visit` then suppresses the push for the
+transaction **and** stamps the row `source = 'manual'`, `sync_state = 'confirmed'`, which makes it
+permanently invisible to the trigger, the cron and the push gate. Measured on visit 7772:
+
+| check | result |
+|---|---|
+| `source` / `sync_state` | `manual` / `confirmed` ✅ |
+| `entity_source_links` rows of `entity_type='visit'` for it | **0** ✅ |
+| Jobber's Mon 17 visit count, before and after | **2 → 2**, unchanged ✅ |
+| the marker's Jobber **Task** | created, assigned to Grecia ✅ |
+
+⇒ **The marker reaches Jobber; the visit deliberately does not.** If you ever see a dump visit in
+Jobber that came from this path, something has changed — check `p_push_to_jobber` first.
+
+### Third leg type: last stop → dump site
+
+Start computes depot→first, End computes last→depot, and **Dump computes last stop → the dump site**.
+Measured: `25.69,-80.31` (077-TCE Kendall) → `25.55,-80.34` (Homestead), **16.1 mi / 25 min**,
+traffic-aware. The chip renders `25 min in from The carrot express Kendall`.
+
+### `dump_site_status` warns on after-hours arrivals, with the callout number
+
+Placing the marker at 22:30 produced, on the chip:
+`Homestead is after hours (last intake 22:00 ET) · 786-268-5623`. Real, useful, and it means a
+late-evening dump time is a supported case rather than a mistake to prevent.
+
+### ⚠ Deleting the marker does NOT delete the visit it created
+
+Measured: removing the marker deleted the marker row, the `entity_source_links` row and the Jobber
+Task (`verified_gone: true`) — and left `public.visits` row 7772 alive and `scheduled`. Defensible
+(the visit is a business record, the marker is a calendar pin), but it means **a mis-placed Dump
+marker leaves an orphan Dump Offload visit behind**, and under a truck filter there is nothing on the
+board to reveal it (see the next item). Clean up with `public.delete_calendar_visit(<id>)`, which
+soft-deletes.
+
+### 🛑 THE APP HARDCODES `p_vehicle_id: null`, SO A DUMP VISIT NEVER CARRIES ITS TRUCK
+
+Read straight out of the live bundle (`/assets/index-*.js`, 3-chunk recursive walk):
+
+```js
+Ht.rpc("create_dump_visit",{ p_client_id:…, p_job_id:…, p_property_id:…,
+  p_service_line_item_ids:[28], p_visit_date:…, p_start_at:…, p_end_at:…,
+  p_title:`Dump Offload - ${e.site.label}`, p_notes:null,
+  p_driver_id:null, p_team_ids:null, p_vehicle_id:null, p_push_to_jobber:!1 })
+```
+
+The DB function is fine — it forwards `p_vehicle_id` positionally as `create_calendar_visit`'s 11th
+argument, and its own comment says the hardcoded NULL was *"fixed 2026-07-27"*. **That fix landed on
+the DB side only.** The app has never sent a vehicle, so the marker knows it is David's dump and the
+visit it creates cannot.
+
+**Measured consequence, both sides of the partition:**
+
+| truck filter | Monday header | the dump visit |
+|---|---|---|
+| **David** | `1 visit` | **not rendered** |
+| **All trucks** | `3 visits` | rendered, truck badge shows **`–`** |
+
+⇒ A dump visit is invisible on the very truck board it was created from. ⚠ Five older app-created
+dump visits (7059, 7123, 7280, 7580, 7682) *do* carry a truck; I did not chase how they got it, and
+this path cannot be the explanation. Do not read those rows as evidence the app sets it.
+
+### ⚠ The marker's "Remove marker" × is covered by the visit chip it creates
+
+The × is `opacity: 0` (hover-reveal) and the created dump visit chip is absolutely positioned at
+`z-index: 10` over the marker's top-right corner, so at "All trucks" a click at the ×'s exact centre
+lands on the visit chip (`elementsFromPoint` puts the chip first, the button fifth). With a truck
+filter applied — which hides the visit, per the item above — the × is the top element and clicks
+normally. Two defects that happen to cancel each other out.
+
 ## What reaches Jobber
 
 `jobber-push-task` creates a Jobber **Task** (not an Event, not a Visit — see its header for why):
