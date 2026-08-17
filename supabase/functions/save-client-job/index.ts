@@ -1016,9 +1016,25 @@ Deno.serve(async (req) => {
       // save with no workaround while screenshot upload is still deferred (Fred, same thread:
       // "when we need to save pictures in our DB, it needs to have a structure for it"), and the
       // approval may legitimately be linked from somewhere other than Slack.
-      if (!/https?:\/\/\S+/.test(r)) {
+      // 🛑 A LINK IS NOT REQUIRED. Fred, 2026-08-17, correcting my over-reading of Yannick's
+      // "we need the slack link OR a screenshot of whatsapp":
+      //   "Whatsapp is just an example, he meant any kind of image as proof … we can support that
+      //    claim using a photo or the whole claim could be the photo … but something must be
+      //    required, either they put a photo, or a text (message or link or anything)"
+      // So the rule is AT LEAST ONE OF {text, image}, and the text may be a message, a link, or
+      // anything. I had briefly made an http(s) URL mandatory, which blocked every cadence change
+      // whose approval lived somewhere unlinkable — the exact case the image half exists to cover.
+      //
+      // ⚠ 10 rather than the original 3: Fred asked for "a real reason, not 3 characters of
+      // anything", so "ok" / "n/a" / "yes" are still refused. Tunable; it is a lint, not a policy.
+      // ⚠ RELAXING inverts the deploy order that TIGHTENING needed. This server change ships FIRST,
+      // because a server that accepts more than the UI sends is always safe, whereas relaxing the UI
+      // first would send text the server still refused. The tightening note above is the mirror case.
+      // ⚠ When image upload lands, this becomes (text OK) || (>=1 image linked) — and the image arm
+      // MUST be checked server-side too, or the requirement is only a UI suggestion.
+      if (r.length < 10) {
         return fail("reason_required",
-          "A cadence change needs proof it was approved, not a description. Paste the Slack link to the approval.");
+          "Give a real reason for the cadence change, or attach proof. A couple of characters is not a record.");
       }
       freqReason = r;
     }
