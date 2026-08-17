@@ -60,6 +60,8 @@
  *   node scripts/sync/adopt_jobber_custom_fields.js --apply         # writes
  *   optional: --field grease_trap_size  --page 25  --allow-clear
  *             --limit N (cap the number of adoptions in one run)  --json out.json
+ *             --only 217,218 (act on named properties only; the fleet-wide controls are
+ *                             still measured over all 458 rows before this narrows)
  * ============================================================================
  */
 const fs = require('fs');
@@ -76,6 +78,7 @@ const PAGE = Number(flag('--page', 25));
 const MIN_COVERAGE = Number(flag('--min-coverage', 0.9));
 const LIMIT = Number(flag('--limit', Infinity));
 const JSON_OUT = flag('--json', null);
+const ONLY = String(flag('--only', '')).split(',').map((s) => Number(s.trim())).filter(Number.isFinite);
 const APP_SOURCE = 'jobber-custom-field-sync';
 
 /** Only used for range/clearing checks. NOT for deciding whether to adopt. */
@@ -122,6 +125,11 @@ function adoptionRefusal(field, value) {
     });
   }
 
+  // 🛑 THE CONTROLS ARE COMPUTED OVER THE WHOLE FLEET, BEFORE --only NARROWS ANYTHING.
+  // The coverage threshold exists to catch "Jobber stopped answering for this field", and
+  // a threshold measured over a single hand-picked property would pass on 1/1 = 100% while
+  // the field had vanished everywhere else. Narrowing must never be able to satisfy a
+  // control that the full sweep would have failed.
   const matched = rows.length;
   const coverage = matched ? materialised / matched : 0;
   console.log('\n=== controls ===');
@@ -129,6 +137,16 @@ function adoptionRefusal(field, value) {
   console.log(`  our rows loaded           : ${ours.length} ${ours.length > 0 ? '(db read works)' : '<-- BROKEN'}`);
   console.log(`  matched by GID            : ${matched} ${matched > 0 ? '(the join works)' : '<-- BROKEN'}`);
   console.log(`  field materialised on     : ${materialised}/${matched} = ${(coverage * 100).toFixed(1)}%  (threshold ${(MIN_COVERAGE * 100).toFixed(0)}%)`);
+
+  // --only <id,id,...>: act on named properties only. For targeted verification (edit one
+  // value in Jobber, watch exactly that one land) without a 458-row sweep, which is both
+  // slow and a needless exposure to a transient Management API 502 mid-loop.
+  if (ONLY.length) {
+    const before = rows.length;
+    rows.splice(0, rows.length, ...rows.filter((r) => ONLY.includes(r.property_id)));
+    console.log(`  --only                    : ${rows.length} of ${before} rows kept (${ONLY.join(', ')})`);
+    if (!rows.length) throw new Error(`--only matched no linked property: ${ONLY.join(', ')}`);
+  }
 
   // ---------------------------------------------------- decide, IN THE DATABASE
   // One round trip. sync.fn_shadow_decision is the single implementation and its
@@ -252,6 +270,22 @@ function adoptionRefusal(field, value) {
   // sync.fn_record_shadow, which owns the freeze-on-conflict behaviour. Passing
   // p_adopted_to is what makes the shadow re-baseline to the ADOPTED value, so the
   // next pass sees IN_SYNC rather than a phantom conflict.
+  //
+  // 🛑 p_our_now IS OUR **PRE-ADOPT** VALUE, ALWAYS. Do not "helpfully" pass the value
+  // being adopted just because the UPDATE above has already run. fn_record_shadow does
+  // the post-adopt substitution ITSELF (`our_value = coalesce(p_adopted_to, excluded.
+  // our_value)`) and stores `adopted_from = p_our_now` as the record of what we
+  // overwrote. This used to pass source_now on an adopt, which broke two things:
+  //   * fn_shadow_decision then saw source_now = our_now, took the IN_SYNC branch
+  //     (it sits ABOVE ADOPT), and the drift guard below aborted the whole run with
+  //     "planned ADOPT, got IN_SYNC". THE ADOPT PATH COULD NEVER COMPLETE.
+  //   * adopted_from came out equal to adopted_to, so the provenance of the
+  //     overwritten value was destroyed on the way past.
+  // Caught by the first real smoke test (2026-08-17, property 217 Wynd 28). It was
+  // invisible to every earlier check because those exercised fn_shadow_decision and
+  // fn_record_shadow directly with hand-built arguments; nothing had ever run the
+  // COMPOSED statement this loop emits. Same class as a migration that verifies its
+  // own GRANT statements and never asks what CREATE TABLE already handed out.
   let done = 0, applied = { SEED: 0, IN_SYNC: 0, IGNORE: 0, ADOPT: 0, CONFLICT: 0 };
   for (const r of actionable) {
     const willAdopt = r.effective === 'ADOPT' && adoptIds.has(r.property_id);
@@ -267,7 +301,7 @@ function adoptionRefusal(field, value) {
         v_decision := sync.fn_record_shadow(
           ${lit(FIELD.entityType)}, ${r.property_id}::bigint, ${lit(FIELD.sourceSystem)},
           ${lit(FIELD.fieldKey)}, ${lit(FIELD.label)},
-          ${jlit(r.source_now)}, ${jlit(willAdopt ? r.source_now : r.our_now)}, ${adoptedTo});
+          ${jlit(r.source_now)}, ${jlit(r.our_now)}, ${adoptedTo});
         if v_decision <> ${lit(r.effective)} then
           raise exception 'decision drifted between the dry run and the write for property %: planned %, got %',
             ${r.property_id}, ${lit(r.effective)}, v_decision;
