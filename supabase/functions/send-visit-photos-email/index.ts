@@ -50,6 +50,63 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const TEST_RECIPIENT = 'fred@ayache.com'
 const IS_TEST = true
 
+// 🛑 THE TEST RECIPIENT IS CALLER-SUPPLIED BUT DOMAIN-LOCKED, AND THE LOCK LIVES HERE.
+// Fred, 2026-08-16, asked for a modal to choose which address the test goes to. That
+// reintroduces a caller-supplied recipient, which is exactly the shape of the
+// send-derm-email defect: it accepts `test_recipient` as ANY string containing '@' with
+// no allowlist, so whoever can reach the function decides who receives a client's
+// compliance documents. The difference that makes this acceptable is the allowlist below:
+// the worst a caller can do is reach an internal inbox.
+// ⚠ THE UI ALSO VALIDATES. THAT IS CONVENIENCE, NOT A CONTROL. A UI check is bypassed by
+// anyone posting directly, so this regex is the only thing actually holding the line.
+const ALLOWED_RECIPIENT_DOMAINS = ['ayache.com', 'unclogme.com']
+
+// 🛑 A REGEX LITERAL, NOT A STRING PASSED TO new RegExp(). This was written the other way
+// first and it was silently WRONG: inside a JS string literal '\s' is not a recognised
+// escape and collapses to a bare 's', and '\.' collapses to '.', so
+//     new RegExp('^[^@\s]+@(' + ... + ')$')
+// compiled to ^[^@s]+@(ayache.com|unclogme.com)$ — MEASURED, that is the literal .source
+// of the broken version. Two independent defects, in opposite directions:
+//   accepts  fred@ayacheXcom, fred@ayache-com, fred@unclogmeQcom   (unescaped dots match
+//            ANY character, so a lookalike domain passes the allowlist)
+//   rejects  swanson@ayache.com                                    ([^@s] excludes the
+//            letter "s", not whitespace, so valid addresses are refused)
+// The false-ACCEPT is the one that matters: a domain allowlist that admits arbitrary
+// lookalike domains is not an allowlist. Same class of bug as the SQL regex-transport
+// trap in the root CLAUDE.md: the escape never survived the layer it was written in.
+// A literal has no such layer.
+const RECIPIENT_RE = /^[^@\s]+@(ayache\.com|unclogme\.com)$/i
+
+// The literal above and the list are two statements of one rule, so assert they agree at
+// module load rather than discovering a drift when a send is refused.
+for (const d of ALLOWED_RECIPIENT_DOMAINS) {
+  if (!RECIPIENT_RE.test(`probe@${d}`)) {
+    throw new Error(`recipient allowlist drift: ${d} is listed but rejected by RECIPIENT_RE`)
+  }
+}
+if (RECIPIENT_RE.test('probe@evil.com') || RECIPIENT_RE.test('probeXayache!com')) {
+  throw new Error('recipient allowlist is too permissive; check the escaping in RECIPIENT_RE')
+}
+
+// 🛑 AT PROD CUTOVER THIS WHOLE PARAMETER IS DELETED, ALONG WITH THE MODAL.
+// Fred, 2026-08-16: "when changed to prod we need to remove that modal. On prod it needs
+// to send directly to the correct email set for it." The real recipient must then be
+// resolved server-side from public.municipality_regulators, matched on the property's
+// city, the way send-derm-email does. NEVER from the request.
+// While IS_TEST is true the blast radius of a caller-supplied address is an internal
+// inbox; the moment city sending is enabled it becomes "anyone can direct a client's DERM
+// document anywhere". So do not flip IS_TEST without removing this in the same change.
+// Checklist: Building Apps/Admin Review/docs/11-city-email.md
+function resolveTestRecipient(raw: unknown): { email: string } | { error: string } {
+  if (raw === undefined || raw === null || raw === '') return { email: TEST_RECIPIENT }
+  if (typeof raw !== 'string') return { error: 'recipient_not_allowed' }
+  const candidate = raw.trim()
+  // ⚠ fullmatch semantics: the anchors plus the [^@\s]+ class mean a trailing newline or a
+  // second address cannot be smuggled in. "a@ayache.com,b@evil.com" fails, as it must.
+  if (!RECIPIENT_RE.test(candidate)) return { error: 'recipient_not_allowed' }
+  return { email: candidate }
+}
+
 // The Field Portal report, rendered to PDF by the pdf-service on Railway. Both secrets
 // already exist for generate-fog-manifest / generate-derm-address-pdf; reused, not new.
 const PDF_SERVICE_URL = Deno.env.get('PDF_SERVICE_URL')
@@ -322,6 +379,18 @@ Deno.serve(async (req: Request) => {
   if (!Number.isFinite(visitId) || visitId <= 0) return json({ error: 'visit_id_required' }, 400, cors)
   const confirmResend = body?.confirm_resend === true
 
+  const resolved = resolveTestRecipient((body as Record<string, unknown>)?.test_recipient)
+  if ('error' in resolved) {
+    // Refused BEFORE any render or send, and deliberately not logged to
+    // visit_photo_email_sends: nothing was attempted, so a log row would imply one was.
+    return json({
+      error: 'recipient_not_allowed',
+      detail: `Test emails may only go to ${ALLOWED_RECIPIENT_DOMAINS.map((d) => '@' + d).join(' or ')}.`,
+      allowed_domains: ALLOWED_RECIPIENT_DOMAINS,
+    }, 422, cors)
+  }
+  const recipient = resolved.email
+
   const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
     global: { headers: { 'x-app-source': 'send-visit-photos-email' } },
   })
@@ -332,7 +401,7 @@ Deno.serve(async (req: Request) => {
   ) => {
     try {
       const { error } = await sb.from('visit_photo_email_sends').insert({
-        visit_id: visitId, recipient_email: TEST_RECIPIENT, status, reason,
+        visit_id: visitId, recipient_email: recipient, status, reason,
         is_test: IS_TEST, photo_count: photoCount, bytes_sent: bytes,
         resend_email_id: resendId, subject,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
@@ -531,7 +600,7 @@ Deno.serve(async (req: Request) => {
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: RESEND_FROM,
-        to: [TEST_RECIPIENT],
+        to: [recipient],
         reply_to: CONTACT_EMAIL,
         subject,
         html: buildHtml(visitRow, phaseCounts),
@@ -548,7 +617,7 @@ Deno.serve(async (req: Request) => {
     const resendId = (er as { id?: string })?.id ?? null
     await logSend('sent', null, prepared.length, total, resendId, subject)
     return json({
-      ok: true, is_test: IS_TEST, sent_to: TEST_RECIPIENT, visit_id: visitId,
+      ok: true, is_test: IS_TEST, sent_to: recipient, visit_id: visitId,
       attached: prepared.length, bytes: total,
       by_phase: prepared.reduce((a, p) => { a[p.phase] = (a[p.phase] ?? 0) + 1; return a }, {} as Record<string, number>),
       skipped, resend_email_id: resendId, subject,
