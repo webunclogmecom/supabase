@@ -188,9 +188,39 @@ display name first, verified by re-read, then `public.clients`; backup in
   `247-LOU` without a murmur.
 - **The `create-client` reservation added the same day does NOT close this hole.** It makes two
   concurrent *app* creates mutually exclusive on both the code and the number, but a person typing a
-  code straight into Jobber never touches that path. **This remains open.** Closing it would mean a
-  number-aware guard in `handleClient` (warn, not block — `000-DP`/`000-DH` is a legitimate shared
-  band) or a periodic sweep.
+  code straight into Jobber never touches that path.
+
+> ✅ **CLOSED 2026-08-17 for every path that goes through us** (`2026-08-17_2355`, `efa470a`), after
+> it recurred: Fred set `609 Lenox LLC` to **`168-609`** while **`168-AVA`** already held 168, from
+> the Client App's Edit dialog, and every guard let it through for exactly the reason described
+> above. **The app-side guards compared the whole string too** — `save-client-fields` did
+> `.eq("client_code", targetCode)` and `create-client` the same — so the "our only constraint is on
+> the WHOLE STRING" problem was three layers deep, not one.
+>
+> **`clients_active_client_number_uniq`** is now `UNIQUE (split_part(client_code,'-',1))`
+> `WHERE client_code IS NOT NULL AND status <> 'INACTIVE' AND client_code NOT LIKE '000-%'`.
+> Both edge functions check the number as well, so a collision returns a sentence naming the current
+> holder instead of a raw `23505`. Verified by replaying Fred's exact edit: it now raises
+> `23505 … Key (split_part(client_code, '-'::text, 1))=(168) already exists`, with a free number as
+> the positive control so the rejection is not just "the index refuses everything".
+>
+> **The two exemptions are deliberate and must stay:** the `000` dump band shares a number by design
+> (`000-DP` / `000-DH`), and `INACTIVE` is excluded so a retired client frees its number — two live
+> pairs depend on that (`050-PV`, `239-COM`, each with one INACTIVE member).
+>
+> ⚠ **`create-client`'s number check used to be a WARNING on purpose**, justified by this very
+> incident ("`247-EC`/`247-LOU` shows it also happens by accident, so: warn, never block"). That
+> justification had **expired** — measured 2026-08-17, only `247-LOU` survives, and the only shared
+> numbers left in the table are the two deliberate exemptions. A rule kept alive by a precedent that
+> no longer exists is worth re-checking before quoting it.
+>
+> 🛑 **STILL OPEN, AND NARROWER THAN BEFORE: a code typed straight into Jobber.** Jobber enforces
+> nothing and the `*/5` poll imports what it finds. What changed is the failure MODE, not the
+> coverage: an incoming Jobber-side collision now hits the unique index and **errors for that client**
+> instead of importing silently. That is the better failure — visible rather than invisible — but it
+> means a person renaming a client in Jobber can now stall that one client's sync. If that becomes a
+> nuisance, the fix is a number-aware branch in `handleClient` that quarantines and reports rather
+> than one that widens the index.
 
 **What to do about it in the meantime:** when assigning a code by hand, check the **number**, not the
 code:
