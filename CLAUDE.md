@@ -684,11 +684,37 @@ Jobber's current value differs from what we last saw there; unchanged means "not
 the value, so `0 -> 0` can never be copied while `0 -> 190` is. First run seeds silently and adopts
 nothing. Both-sides-changed is recorded as CONFLICT and frozen: it is a human question.
 
-**STATUS, and do not misread it: BUILT, NOT WIRED.** The table ships empty, both scripts
+**STATUS, and do not misread it: SEEDED AND SMOKE-TESTED, STILL NOT WIRED.** As of 2026-08-17 the
+shadow holds **458 rows** (Fred: *"seed it for real, then do a smoke test"*). Both scripts
 (`scripts/sync/seed_jobber_custom_field_shadow.js`, `adopt_jobber_custom_fields.js`) are dry-run by
-default, no cron references it, and `sync-jobber-poll` / `webhook-jobber` are untouched. **Custom
-fields still do not sync today.** Outbound is possible (`propertyEdit` accepts a customFields-only
-edit, config `3061111` is `readOnly:false`) but is not built.
+default, no cron references either, and `sync-jobber-poll` / `webhook-jobber` are untouched.
+**Custom fields still do not sync on their own.** Outbound is possible (`propertyEdit` accepts a
+customFields-only edit, config `3061111` is `readOnly:false`) but is not built; the smoke test drove
+it by hand for one property.
+
+🛑 **THE SMOKE TEST FOUND THAT THE ADOPT PATH HAD NEVER WORKED, AND AN ADVERSARIAL SWEEP OF THE
+RESULT FOUND FIVE MORE. Every one was a COMPOSITION defect: the pieces were individually correct and
+individually tested, and nothing had ever run the statement the script actually emits.** Worth
+carrying because the checks that passed were not weak ones, they were pointed at the wrong level:
+a 16-case truth table over `fn_shadow_decision` and a sentinel lifecycle over `fn_record_shadow`,
+both with hand-built arguments, both green while the composed path could not complete.
+
+| defect | why it was invisible |
+|---|---|
+| adopt passed our POST-adopt value, so `IN_SYNC` (which sits above `ADOPT`) won and the drift guard aborted every adoption | both functions were correct in isolation |
+| the drift guard read our value from a minutes-old snapshot, so a concurrent staff edit was overwritten and a real CONFLICT executed as an ADOPT | the guard fired correctly on *shadow* drift, so it looked alive |
+| an open `conflict_at` did not freeze the row: an ordinary IGNORE re-baselined it and re-armed a later silent overwrite | `already_in_conflict` was loaded and never read |
+| the seed script's `matched` control was a work-queue size, so a fully-seeded fleet reported `BROKEN` and refused to run | it read correctly on run 1, when the queue was full |
+| re-applying `2026-08-17_1636` would silently revert the freeze fix | prevented only by an unrelated assertion, i.e. by luck |
+| a Jobber non-answer was adopted as "empty"; under `--allow-clear` that is an UPDATE to NULL | checked in aggregate (a 10% tolerance) instead of per row |
+
+⇒ **When you verify tooling like this, exercise the emitted statement, not the functions it calls.**
+The technique that worked: render the real template out of the source file (never retype it), run it
+against arranged state in a rolled-back transaction, and **keep the pre-fix version as a control that
+must still fail**. Three passing cases proved nothing until the fourth one broke.
+⇒ And `public.properties.grease_trap_size_gallons` is **live** (120 changes, 3 `app_source`s,
+`client.update_property_capacity` EXECUTE-able by `authenticated`), so any batch write to it needs a
+value predicate, not a plan captured minutes earlier.
 
 ⚠ **Bind by configuration GID, never by label.** Four numeric grease-trap fields exist; two differ
 only by a capital S and one of those is archived, and "GT size" appears twice.
