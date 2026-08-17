@@ -134,6 +134,15 @@ function adoptionRefusal(field, value) {
       name: r.property_name,
       shadow_exists: !!r.shadow_exists,
       source_now: cf ? cf.value : null,
+      // 🛑 KEEP "JOBBER DID NOT ANSWER" SEPARATE FROM "JOBBER SAYS EMPTY". `cf ? cf.value : null`
+      // collapses them, and the two mean opposite things: the first is a broken read, the second
+      // is a fact about the property. The seed script keeps the distinction per row and refuses
+      // to record a fleet of nulls; this script used to check it only in AGGREGATE (the coverage
+      // threshold), and an aggregate tolerates up to 10% of the fleet failing to answer. Under
+      // --allow-clear each of those non-answers becomes an UPDATE to NULL: at the gate's own
+      // limit that is 45 properties and 58,351 gallons erased by a read failure. Same shape as
+      // every other defect here, a value that is inert in one script and destructive in another.
+      materialised: !!cf,
       our_now: r.our_value === null || r.our_value === undefined ? null : Number(r.our_value),
       source_seen: r.shadow_source_value === null || r.shadow_source_value === undefined ? null : JSON.parse(r.shadow_source_value),
       our_seen: r.shadow_our_value === null || r.shadow_our_value === undefined ? null : JSON.parse(r.shadow_our_value),
@@ -194,7 +203,13 @@ function adoptionRefusal(field, value) {
   // fn_record_shadow now refuses this outright (2026-08-18_0120) and that refusal is the
   // real guarantee; classifying it here just turns an exception into a readable report.
   for (const r of rows) {
-    r.refusal = r.decision === 'ADOPT' ? adoptionRefusal(FIELD, r.source_now) : null;
+    // A non-answer is never an edit. Refused per row, unconditionally, and NOT behind
+    // --allow-clear: that flag exists to authorise a human's deliberate clear, and it must
+    // not double as permission to act on a read that failed.
+    r.refusal = r.decision === 'ADOPT'
+      ? (r.materialised ? adoptionRefusal(FIELD, r.source_now)
+        : 'jobber returned no value for this configuration (a failed read, not an empty field)')
+      : null;
     if (r.already_in_conflict && r.decision !== 'IN_SYNC') r.effective = 'FROZEN';
     else if (r.refusal) r.effective = 'REFUSED';
     else r.effective = r.decision;
