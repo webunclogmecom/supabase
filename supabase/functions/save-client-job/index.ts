@@ -922,6 +922,41 @@ Deno.serve(async (req) => {
   const applied: string[] = [];
   const isSA = String(jobRow.title ?? "").toLowerCase().startsWith("service agreement");
 
+  // ---- approval-proof images for a frequency change -------------------------
+  // Design: docs/superpowers/specs/2026-08-17-frequency-change-proof-upload-design.md
+  // Validated HERE, before Jobber is touched, because a rejection after Jobber has committed
+  // cannot be rolled back. The upload itself happens far below, only once the change row exists.
+  // ⚠ Caps are enforced server-side as well as in the browser. The bucket also refuses >5MB, but
+  //   relying on that would mean discovering the problem after Jobber was already written.
+  const PROOF_MAX = 3;
+  const PROOF_MAX_BYTES = 2_500_000;              // decoded; ~2MB after the client's re-encode
+  type ProofIn = { file_name: string; content_type: string; data_base64: string };
+  const proofRaw = Array.isArray(body.frequency_proof) ? body.frequency_proof : [];
+  if (proofRaw.length > PROOF_MAX) {
+    return fail("bad_request", `Attach at most ${PROOF_MAX} images as proof.`, { field: "frequency_proof" });
+  }
+  const proofIn: ProofIn[] = [];
+  for (const raw of proofRaw) {
+    const ct = String(raw?.content_type ?? "").toLowerCase();
+    // Mirrors the bucket's allowed_mime_types. ⚠ A mime allow-list does NOT cover EXIF — the
+    // browser re-encodes through a canvas to strip it, which is why only JPEG/PNG arrive here.
+    if (ct !== "image/jpeg" && ct !== "image/png") {
+      return fail("bad_request", "Proof images must be JPEG or PNG.", { field: "frequency_proof" });
+    }
+    const b64 = String(raw?.data_base64 ?? "").replace(/^data:[^;]+;base64,/, "");
+    if (!b64) return fail("bad_request", "A proof image arrived empty.", { field: "frequency_proof" });
+    // 4 base64 chars -> 3 bytes; cheap size check without decoding first.
+    if (Math.floor(b64.length * 3 / 4) > PROOF_MAX_BYTES) {
+      return fail("bad_request", "That image is too large even after compression. Try a screenshot rather than a photo.",
+        { field: "frequency_proof" });
+    }
+    proofIn.push({
+      file_name: String(raw?.file_name ?? "proof").slice(0, 120),
+      content_type: ct,
+      data_base64: b64,
+    });
+  }
+
   // Pre-flight EVERYTHING before the first mutation (the half-applied lesson).
   const edit: Record<string, unknown> = {};
   // 🛑 THE MOMENT AN AGREEMENT BECOMES SCHEDULABLE, and the reason the "Generate visits"
@@ -1032,11 +1067,29 @@ Deno.serve(async (req) => {
       // first would send text the server still refused. The tightening note above is the mirror case.
       // ⚠ When image upload lands, this becomes (text OK) || (>=1 image linked) — and the image arm
       // MUST be checked server-side too, or the requirement is only a UI suggestion.
-      if (r.length < 10) {
+      // 🛑 THE RULE IS (TEXT >= 10) || (>= 1 IMAGE), AND THE IMAGE ARM IS ENFORCED HERE.
+      // Fred: "something must be required, either they put a photo, or a text (message or link or
+      // anything)". If only the browser checked the image arm, the requirement would be a UI
+      // suggestion — the same class of gap as every client-side-only validation in this repo.
+      // ⚠ Read from body, NOT from the patch: the patch is diffed against Jobber field-groups, and a
+      // base64 blob in there would be treated as a job attribute to push.
+      if (r.length < 10 && proofIn.length === 0) {
         return fail("reason_required",
-          "Give a real reason for the cadence change, or attach proof. A couple of characters is not a record.");
+          "Give a real reason for the cadence change, or attach proof. A couple of characters is not a record.",
+          { field: "frequency_reason" });
       }
-      freqReason = r;
+      // 🛑 AN IMAGE-ONLY SAVE STILL NEEDS REASON TEXT, BECAUSE THE COLUMN DEMANDS IT.
+      // public.job_frequency_changes.reason is NOT NULL with
+      //   CHECK (reason ~ '[[:alnum:]]')            -- job_frequency_changes_reason_not_blank
+      // so "" fails it. That insert runs AFTER Jobber is already committed, so the failure could not
+      // be rolled back: the cadence would change in Jobber and be recorded nowhere, with only
+      // frequency_reason_recorded:false to show for it. Found by reading the constraint rather than
+      // by hitting it in production.
+      // Fred's rule allows the photo to BE the whole claim ("the whole claim could be the photo"), so
+      // the stored sentence points at the image instead of pretending to be a justification.
+      // ⚠ Do NOT "simplify" this by relaxing the CHECK: a blank reason column would make every
+      //   historical row's meaning ambiguous, and the CHECK is what keeps that table readable.
+      freqReason = r.length > 0 ? r : "Approval proof attached as an image; see the attached file.";
     }
     edit.customFields = [{ customFieldConfigurationId: FREQ_CF_GID, valueNumeric: newFreq }];
   }
@@ -1479,8 +1532,9 @@ Deno.serve(async (req) => {
   // happened to the job. But it is not swallowed either: `frequency_reason_recorded`
   // comes back false and the UI can say the change went through while its note did not.
   let freqReasonRecorded: boolean | null = null;
+  let freqChangeId: number | null = null;
   if (freqReason !== null && newFreq !== undefined) {
-    const { error: fcErr } = await db.from("job_frequency_changes").insert({
+    const { data: fcRow, error: fcErr } = await db.from("job_frequency_changes").insert({
       job_id: jobId,
       client_id: clientId,
       old_frequency_days: oldFreqForLog,
@@ -1488,8 +1542,60 @@ Deno.serve(async (req) => {
       reason: freqReason,
       changed_by: userData?.user?.id ?? null,
       changed_by_email: email,
-    });
+    }).select("id").maybeSingle();
     freqReasonRecorded = !fcErr;
+    freqChangeId = fcRow?.id ?? null;
+  }
+
+  // ---- approval-proof images: storage LAST, and only if the change is on the record ----------
+  // 🛑 THE ORDER IS THE DESIGN. Jobber is committed and verified, the job is written, and the change
+  // row exists BEFORE a single byte reaches storage. That is why there is no staging path and no
+  // orphan sweeper: an object cannot exist for a change that did not happen. The alternative — the
+  // browser uploading first — would need an INSERT policy on a bucket deliberately left closed, and
+  // would leak a file on every abandoned save.
+  //
+  // 🛑 A FAILURE HERE MUST NOT REPORT THE SAVE AS FAILED. Jobber already holds the new cadence and
+  // cannot be rolled back; claiming failure would send someone to re-apply a change that already
+  // happened. Same posture as frequency_reason_recorded above. The count comes back so the UI can
+  // say the cadence saved while its proof did not, and the operator can re-attach it.
+  let proofSaved = 0;
+  const proofErrors: string[] = [];
+  if (proofIn.length && freqChangeId) {
+    // employees.id, not the auth uid: photos.uploaded_by_employee_id is an FK to employees. No match
+    // means NULL rather than a failed upload — attribution is not worth losing the evidence over, and
+    // audit.logs records the real actor via jwt_claims->>'email' regardless.
+    const { data: emp } = await db.from("employees").select("id").ilike("email", email).limit(1).maybeSingle();
+    for (const img of proofIn) {
+      try {
+        const bytes = Uint8Array.from(atob(img.data_base64), (c) => c.charCodeAt(0));
+        const ext = img.content_type === "image/png" ? "png" : "jpg";
+        const path = `client-app/job-frequency/${jobId}/${crypto.randomUUID()}.${ext}`;
+        const up = await db.storage.from("approval-proof")
+          .upload(path, bytes, { contentType: img.content_type, upsert: false });
+        if (up.error) { proofErrors.push(up.error.message); continue; }
+
+        const { data: photo, error: pErr } = await db.from("photos").insert({
+          storage_path: path,
+          file_name: img.file_name,
+          content_type: img.content_type,
+          size_bytes: bytes.byteLength,
+          uploaded_by_employee_id: emp?.id ?? null,
+          source: "client_app_upload",
+        }).select("id").single();
+        if (pErr) { proofErrors.push(pErr.message); continue; }
+
+        const { error: lErr } = await db.from("photo_links").insert({
+          photo_id: photo.id,
+          entity_type: "job_frequency_change",
+          entity_id: freqChangeId,
+          role: "approval_proof",
+        });
+        if (lErr) { proofErrors.push(lErr.message); continue; }
+        proofSaved++;
+      } catch (e) {
+        proofErrors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
   }
   // `preserved` is returned so the UI can say what it did NOT touch — a silent
   // "saved" is what let the fee-line deletion go unnoticed for a month.
@@ -1505,5 +1611,10 @@ Deno.serve(async (req) => {
     // where it is computed for why our mirror is the right source for it.
     start_date_first_set: startDateFirstSet,
     frequency_reason_recorded: freqReasonRecorded,
+    // How many proof images actually landed. Reported rather than thrown: see the block above for
+    // why a storage failure cannot be allowed to look like a failed save.
+    frequency_proof_saved: proofSaved,
+    frequency_proof_attempted: proofIn.length,
+    frequency_proof_error: proofErrors.length ? proofErrors.join("; ").slice(0, 300) : null,
   });
 });

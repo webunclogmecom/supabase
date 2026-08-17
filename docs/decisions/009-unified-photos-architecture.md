@@ -67,7 +67,15 @@ Dropped tables: `visit_photos`, `inspection_photos`. Both were empty at the time
 **Positive:**
 - **One photo, multiple uses.** A single file can be "after Monday's visit" AND "before Friday's visit" AND a property overview with three link rows and one file.
 - **All photo metadata in one place.** EXIF, uploader, device — query once across every photo in the system.
-- **Zero schema churn when adding a photo-owning entity.** New `entity_type` value is a new row, not a new table. Matches the `entity_source_links` pattern the team already works with.
+- ~~**Zero schema churn when adding a photo-owning entity.** New `entity_type` value is a new row, not a new table.~~
+  🛑 **CORRECTED 2026-08-17: this is NOT true, and believing it costs a debugging session.**
+  `photo_links` carries `photo_links_entity_type_chk`, a CHECK **whitelist** — as of today
+  `derm_manifest`, `inspection`, `job_frequency_change`, `note`, `visit`. **A new kind needs a
+  migration.** The ADR is right that it needs no new TABLE, which is the substantive claim; it is
+  wrong that it needs no schema change at all. This is the same trap `entity_source_links` has (its
+  `entity_type` is a CHECK whitelist too), so "matches the `entity_source_links` pattern" turned out to
+  be truer than intended. Adding `job_frequency_change` needed
+  `docs/migrations/2026-08-17_2210_approval_proof_bucket.sql`.
 - **Clean migration target.** The Jobber notes migration extracts photos from notes and inserts one `photos` row + one `photo_links` row per attachment, classified at insert time.
 
 **Negative / accepted trade-offs:**
