@@ -24,7 +24,12 @@
 //   CONVERGES on this saga's values instead of reverting them.
 // - ClientEditInput (clients use *Input; jobs use *Attributes — the canary-
 //   caught trap). Mutations return HTTP 200 with userErrors.
-// - Code REMOVAL is not supported (patch.client_code must be a real code).
+// - Code REMOVAL **IS** supported since 2026-08-17 (Fred: "We need to be able to put an empty
+//   client code and it updates to be a empty client code"). Send `client_code: ""`. It clears BOTH
+//   Jobber surfaces — the " - CODE" suffix on companyName and the Client Code custom field — and
+//   only then nulls our column, via fn_record_client_identity's p_clear_code.
+//   ⚠ OMITTING `client_code` still means "leave it alone". Empty string means REMOVE. One null
+//   cannot carry both meanings, which is why the flag exists all the way down to the recorder.
 //   Uncoded clients CAN be given their first code here.
 // ============================================================================
 
@@ -196,10 +201,17 @@ Deno.serve(async (req) => {
     if (!newName) return fail("bad_request", "Client name cannot be empty.");
     if (newName.length > 120) return fail("bad_request", "Client name is too long (120 max).");
   }
+  // 🛑 REMOVAL IS SUPPORTED AS OF 2026-08-17 (Fred): *"We need to be able to put an empty client code
+  // and it updates to be a empty client code."* This used to `fail("Removing a client code is not
+  // supported")`, which is why clearing 609 Lenox LLC needed a hand-written one-off that bypassed
+  // this saga entirely.
+  // ⚠ `newCode = null` ALREADY MEANT "the caller did not mention the code", so removal cannot reuse
+  // it — one null cannot carry both meanings. An explicit flag distinguishes them, all the way down
+  // to fn_record_client_identity's p_clear_code (2026-08-18_0030).
   let newCode: string | null = null;
-  if ("client_code" in patch) {
+  const clearCode = "client_code" in patch && String(patch.client_code ?? "").trim() === "";
+  if ("client_code" in patch && !clearCode) {
     newCode = String(patch.client_code ?? "").trim().toUpperCase();
-    if (!newCode) return fail("bad_request", "Removing a client code is not supported.");
     if (!CODE_EXACT.test(newCode)) return fail("bad_request", "Client code must look like NNN-XX (digits, dash, letters/digits).");
   }
 
@@ -216,7 +228,11 @@ Deno.serve(async (req) => {
   const gid = link.source_id;
 
   const targetName = newName ?? norm(dbClient.name);
-  const targetCode = newCode ?? (dbClient.client_code ? String(dbClient.client_code).trim().toUpperCase() : null);
+  // An explicit removal forces the target to null; otherwise unchanged (null = "not mentioned",
+  // so fall back to what we already hold).
+  const targetCode = clearCode
+    ? null
+    : (newCode ?? (dbClient.client_code ? String(dbClient.client_code).trim().toUpperCase() : null));
   if (!targetName) return fail("bad_request", "Client has no name and none was provided.");
   // The EFFECTIVE name must be bare — checked here (not only on patch.name) so a
   // legacy code-shaped DB name cannot ride a code-only patch into Jobber and then
@@ -293,7 +309,12 @@ Deno.serve(async (req) => {
   // Refuse unless the human states the code EXPLICITLY in this edit.
   const beforeCf = cfCode(before);
   const beforeSuffix = (norm(before.companyName).match(/-\s*([0-9]{2,3}-[A-Za-z0-9&]+)\s*$/) || [])[1] ?? null;
-  if (!newCode) {
+  // ⚠ `clearCode` EXEMPTS THIS GUARD, and it must. The guard exists for a SILENT disagreement — our
+  // DB has no code, Jobber does, and a name-only edit would blindly strip Jobber's suffix. A removal
+  // is the opposite: the human is stating, explicitly, that the code should go on both sides. Without
+  // this exemption the feature could never run on the clients that most need it (the ones where
+  // Jobber still carries a code we do not).
+  if (!newCode && !clearCode) {
     if (!targetCode && (beforeCf || beforeSuffix)) {
       return fail("code_mismatch",
         `Jobber carries client code ${beforeCf ?? beforeSuffix} but our DB has none for this client. State the code explicitly in this edit so both sides agree.`);
@@ -312,9 +333,14 @@ Deno.serve(async (req) => {
     input.firstName = halves.firstName;
     input.lastName = halves.lastName;
   }
-  const wroteCf = !!(targetCode && squash(targetCode) !== squash(beforeCf ?? ""));
+  // On a removal we must actively CLEAR Jobber's custom field, not merely omit it. Leaving it set
+  // would put the two sides back in the `code_mismatch` state this edit exists to resolve, and the
+  // */5 poll's parser reads that field first — so a stale value would heal the code straight back.
+  const wroteCf = clearCode
+    ? !!beforeCf
+    : !!(targetCode && squash(targetCode) !== squash(beforeCf ?? ""));
   if (wroteCf) {
-    input.customFields = [{ customFieldConfigurationId: CODE_CF_GID, valueText: targetCode }];
+    input.customFields = [{ customFieldConfigurationId: CODE_CF_GID, valueText: targetCode ?? "" }];
   }
 
   // Revert to the BEFORE snapshot, verified. Only touches fields the forward
@@ -354,11 +380,21 @@ Deno.serve(async (req) => {
   const after = post.ok ? post.data?.client : null;
   const rendered = norm(after?.name);
   const companyOk = norm(after?.companyName) === norm(targetCompany);
+  // 🛑 THE REMOVAL LEG VERIFIES ABSENCE, and it has to be checked positively. `rendered.length > 0`
+  // and "the CF still matches what it was" are both TRUE when nothing was removed at all, so the
+  // pre-existing no-code branch would report a removal as verified without looking.
   const renderedOk = targetCode
     ? (squash(rendered).endsWith(squash(`- ${targetCode}`)) &&
        squash(rendered).split(squash(targetCode)).length - 1 === 1)
-    : rendered.length > 0;
-  const cfOk = targetCode ? squash(cfCode(after)) === squash(targetCode) : squash(cfCode(after) ?? "") === squash(beforeCf ?? "");
+    : clearCode
+      // the old code must be GONE from the displayed name, and a name must remain
+      ? (rendered.length > 0 && !CODE_ANYWHERE.test(rendered))
+      : rendered.length > 0;
+  const cfOk = targetCode
+    ? squash(cfCode(after)) === squash(targetCode)
+    : clearCode
+      ? !cfCode(after)                                   // must be empty, not merely unchanged
+      : squash(cfCode(after) ?? "") === squash(beforeCf ?? "");
 
   if (!after || !companyOk || !renderedOk || !cfOk) {
     const reverted = await revertJobber();
@@ -375,6 +411,9 @@ Deno.serve(async (req) => {
   for (let attempt = 0; attempt < 2; attempt++) {
     const r = await db.rpc("fn_record_client_identity", {
       p_client_id: clientId, p_name: targetName, p_client_code: targetCode,
+      // Without this the recorder's `coalesce(p_client_code, c.client_code)` would KEEP the old code,
+      // and the removal would land in Jobber but not here — the worst of the two failure directions.
+      p_clear_code: clearCode,
     });
     rec = r.data; recErr = r.error;
     if (!recErr) break;
