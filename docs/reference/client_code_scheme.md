@@ -40,8 +40,27 @@ A zero-padded **number**, a hyphen, then a short **brand tag**.
 - Coining a tag for a **new** brand:
   - Drop noise words: `The`, `LLC`/`Inc`/`Corp`, `Miami`, `Restaurant`, `Cafe`.
   - Use initials or a recognizable short form: *Vincenzos*→`VIN`, *Bagel Cove*→`BC`, *Casa Neos*→`CN`, *Cine Citta Cafe*→`CCC`, *The Joyce*→`JOY`.
-  - A leading number in the name can BE the tag: *41 Pizza and Bakery*→`41`.
+  - 🛑 **A TAG IS LETTERS. A LEADING NUMBER IN THE NAME IS SKIPPED, NEVER USED AS THE TAG**
+    (Fred, 2026-08-17 — this REVERSES the previous rule, which read *"A leading number in the name
+    can BE the tag: 41 Pizza and Bakery→41"*). So *1681 Lenox - Excel Plumbing Services inc.*→`LEP`,
+    *9072 Froude LLC*→`FRO`, *609 Lenox LLC*→`LEN`, *16 Handles*→`HAN`.
+    Fred hit it on the Generate button: `1681 Lenox…` proposed **307-1681**, and the field's own
+    hint says the format is `123-ABC`.
+    - ⚠ **Only a LEADING number is skipped. Digits later in the name still count**, and that is
+      deliberate: *Wynd 28*→`W2`, *Pura Vida 41*→`PV4`, *Kitchen 35*→`K3`. Filtering every numeric
+      word was written, measured and **rejected** — it changed the tag for 7 clients whose names do
+      not start with a number and collapsed *Wynd 27* and *Wynd 28* both to `WYN`.
+    - ⚠ **The 5 pre-existing numeric codes are NOT being changed**: `002-41` (41 Pizza and Bakery),
+      `142-57`, `174-17`, `272-1265`, `306-16`. A live `client_code` change is a rename that pushes
+      to Jobber's `companyName` **and** its `Client Code` custom field and strands `visits.title`
+      rows — the Excelsior renumber needed exactly that cleanup. Only the **proposer** changed.
+    - ⚠ **Those 5 tags will still PROPAGATE to siblings, and that is correct.** Tag-reuse for a known
+      brand runs *before* coining, so a second *41 Pizza* location legitimately reuses `41`. Sibling
+      consistency outranks the letters-only preference; do not "fix" that.
+    - ✅ Corroboration the rule matches human judgement: *9072 Froude LLC* now coins `FRO`, and the
+      code a human actually assigned that client is **121-FRO**.
   - Pick something not visually confusable with an existing tag for an unrelated brand.
+  - ⚠ Two-letter tags are normal, not a bug: `042-MT`, and *57 Ocean Residences*→`OR`.
 
 ---
 

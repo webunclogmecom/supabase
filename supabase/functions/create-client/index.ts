@@ -184,8 +184,28 @@ const stripLead = (w: string[]) => { const a = [...w]; while (a.length && NOISE_
 const brandKey = (s: string) => stripLead(words(s)).slice(0, 2).join(" ");
 function coinTag(s: string): string {
   const w = stripLead(words(s)).filter((x) => !NOISE_WORD.has(x)).filter((x) => x.length >= 2 || /^\d+$/.test(x));
+  // 🛑 A TAG IS LETTERS, NEVER A BARE NUMBER (Fred, 2026-08-17). The line this replaces was
+  //   `if (/^\d+$/.test(w[0])) return w[0];`
+  // i.e. a name whose first word is all digits got that number AS its tag. Fred hit it on
+  // "1681 Lenox - Excel Plumbing Services inc." -> 307-1681, and the field's own hint says
+  // the format is 123-ABC. ⚠ It was a deliberate rule, not a slip: 5 live codes are in that
+  // shape (002-41, 142-57, 174-17, 272-1265, 306-16). Fred is overriding the convention.
+  //
+  // ⚠ DROP ONLY *LEADING* DIGIT WORDS. The obvious fix — filter every pure-number word — was
+  // written, measured, and REJECTED: it changed the tag for 7 clients whose names do not start
+  // with a number, and collapsed "Wynd 27" and "Wynd 28" both to WYN. Digits in later positions
+  // are load-bearing (Wynd 28 -> W2, Pura Vida 41 -> PV4, Kitchen 35 -> K3); only a LEADING one
+  // is noise. Measured on all 434 named clients: 13 affected, and **0 of the other 433 change**.
+  // It can no longer return a pure number for any live client name (checked: 0).
+  //
+  // Corroboration that this matches human judgement: "9072 Froude LLC" now coins FRO, and the
+  // code a human actually assigned that client is 121-FRO.
+  //
+  // 🛑 THE 5 EXISTING NUMERIC CODES ARE NOT TOUCHED. Changing a live client_code is a rename
+  // that pushes to Jobber's companyName + Client Code custom field and strands visits.title rows
+  // (the Excelsior renumber needed exactly that cleanup). Only the PROPOSER changes here.
+  while (w.length && /^\d+$/.test(w[0])) w.shift();
   if (!w.length) return "XX";
-  if (/^\d+$/.test(w[0])) return w[0];
   if (w.length === 1) return w[0].slice(0, 3).toUpperCase();
   return w.slice(0, 3).map((x) => x[0]).join("").toUpperCase();
 }
