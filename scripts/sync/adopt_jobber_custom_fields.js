@@ -160,6 +160,25 @@ function adoptionRefusal(field, value) {
 
   const by = (d) => rows.filter((r) => r.effective === d);
   const adopts = by('ADOPT').slice(0, LIMIT === Infinity ? undefined : LIMIT);
+  const adoptIds = new Set(adopts.map((r) => r.property_id));
+
+  // 🛑 AN ADOPT ROW HELD BACK BY --limit MUST BE DEFERRED, NOT RECORDED. It used to fall
+  // through to fn_record_shadow with p_adopted_to = null, which re-baselines source_value
+  // to the CURRENT Jobber value while writing nothing to properties. The next run then
+  // reads source_now = source_seen and decides IGNORE, so the human's Jobber edit is
+  // discarded and NO future run re-detects it. Proven with a sentinel:
+  //     jobber 0 -> 190, caller adopts nothing  ->  ADOPT, source_value re-baselined to 190
+  //     next run, same state                    ->  IGNORE   <- the edit is gone
+  // It fails toward not writing, so no wrong value ever reaches properties, which is why it
+  // survived the first safety review. REFUSED was already excluded for the same reason; this
+  // is the one case that slipped through. Skipping the row leaves the shadow untouched, so
+  // the next run sees the same ADOPT and picks it up.
+  //
+  // ⚠ Computed HERE, above the dry-run gate, on purpose: the dry run prints the size of the
+  // exact array the write loop iterates, so `--limit` is observable without --apply.
+  const actionable = rows.filter((r) =>
+    r.effective !== 'REFUSED' && r.effective !== 'UNKNOWN' &&
+    !(r.effective === 'ADOPT' && !adoptIds.has(r.property_id)));
 
   console.log('\n=== decisions ===');
   for (const d of ['SEED', 'IN_SYNC', 'IGNORE', 'ADOPT', 'CONFLICT', 'REFUSED', 'UNKNOWN']) {
@@ -167,8 +186,10 @@ function adoptionRefusal(field, value) {
     if (n) console.log(`  ${d.padEnd(9)} ${String(n).padStart(4)}`);
   }
   if (LIMIT !== Infinity && by('ADOPT').length > LIMIT) {
-    console.log(`  (--limit ${LIMIT}: ${by('ADOPT').length - LIMIT} adoptions held back this run)`);
+    console.log(`  (--limit ${LIMIT}: ${by('ADOPT').length - LIMIT} adoptions DEFERRED to a later run;`);
+    console.log('   their shadow is left untouched, so the next run re-detects them)');
   }
+  console.log(`  ${'writeset'.padEnd(9)} ${String(actionable.length).padStart(4)}  <- rows this run would touch`);
 
   if (adopts.length) {
     console.log('\n=== would ADOPT ===');
@@ -231,8 +252,6 @@ function adoptionRefusal(field, value) {
   // sync.fn_record_shadow, which owns the freeze-on-conflict behaviour. Passing
   // p_adopted_to is what makes the shadow re-baseline to the ADOPTED value, so the
   // next pass sees IN_SYNC rather than a phantom conflict.
-  const actionable = rows.filter((r) => r.effective !== 'REFUSED' && r.effective !== 'UNKNOWN');
-  const adoptIds = new Set(adopts.map((r) => r.property_id));
   let done = 0, applied = { SEED: 0, IN_SYNC: 0, IGNORE: 0, ADOPT: 0, CONFLICT: 0 };
   for (const r of actionable) {
     const willAdopt = r.effective === 'ADOPT' && adoptIds.has(r.property_id);
