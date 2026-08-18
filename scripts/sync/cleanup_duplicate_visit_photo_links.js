@@ -21,37 +21,45 @@
 //   "simplify" this by moving the logic into the sync.
 //   Full reasoning: Building Apps/Admin Review/docs/14-jobber-photos-brainstorm.md
 //
-// EVIDENCE, strongest first, both compared against the visit's WINDOW:
+// EVIDENCE, strongest first, both scored against the visit's `completed_at`:
 //   1. camera EXIF DateTime from the image bytes  (~19% coverage, crew-dependent)
 //   2. Jobber note createdAt                       (~100%, independent of crews)
 // 🛑 The note time is read from the JOBBER API, never from `notes.note_date`:
 //    ours is a now() ingest fallback on 287 of 310 note_sync rows (92.6%).
-// 🛑 Compared against [start_at, completed_at], NEVER against visit_date. An
-//    overnight visit starting 07-13 and finishing 00:40 on 07-14 legitimately
-//    owns a photo stamped 07-14 00:07.
 //
-// THE FOUR GUARDS. Each exists because of a real near-miss:
+// 🛑 THE ANCHOR IS `completed_at` ALONE (changed 2026-08-18). NEVER REINTRODUCE `start_at`.
+// The old rule tested containment in [start_at, completed_at]. Wrong at the root: `start_at` is a
+// SCHEDULED SLOT, not a measured start (:00 seconds on 1,072 of 1,072 completed visits vs 17 of
+// 1,072 for completed_at), so the pair was never a work window and its ordering was never an
+// invariant. That misreading stalled 71 of 80 groups on a "bad upstream data" theory that was false.
+//
+// CALIBRATION (ground truth, 2026-08-18). A correct note is created AT THE COMPLETION TAP:
+//   median 2.2 SECONDS from completed_at over 900 known-correct links; 84.2% within 60s;
+//   96.8% within 30 min; 99.29% inside [-2h, +6h]. An independent EXIF-labelled set (n=262)
+//   agrees (median 4.0s) and shows ZERO of 488 photos captured AFTER completion.
+//   Band = -GRACE_AFTER_H .. +LOOKBACK_H. The late tail has a HARD EDGE: of 143 correct links
+//   whose note followed completion, 141 are within 60 min and the 1-2h/2-4h/4-6h/6-12h bins are
+//   ALL EMPTY. So grace beyond ~1h buys nothing until 12h, and 2h is the honest stopping point.
+//   Backtest: 89.4% correct / 0.08% WRONG / 10.5% declined; on the EXIF set 0 wrong in 5,240 trials.
+//
+// THE FIVE GUARDS. Each exists because of a real near-miss:
 //   G1 never remove a photo's LAST alive visit link  -> that is deleting a
 //      client's photo, not moving it. Stopped link 42263 on 2026-08-18.
 //   G2 never remove a CLASSIFIED link                -> classified means
 //      PUBLISHED (customer.wo_photos INNER JOINs photo_classifications), so
-//      removing one changes what a client sees. 49 such links exist today.
-//   G3 DECLINE the group if ANY candidate's window is unusable -> 38 visits
-//      have completed_at < start_at and 98 exceed
-//      24h. 🛑 Do NOT "just skip the bad one and choose among the rest": that is how
-//      a guard produces a confident WRONG answer. Proven on job 1544.
-//      🛑 CORRECTED 2026-08-18: an earlier version of this comment called those 38
-//      "all wrong in JOBBER, not ours" and pointed at a person to fix them upstream.
-//      THAT IS WITHDRAWN. Re-measured live: our copy matches Jobber to the second on
-//      all 38 (0 drift), and `start_at` is a SCHEDULED SLOT, not a measured start
-//      (1,072/1,072 completed visits carry :00 seconds on start_at vs 17/1,072 on
-//      completed_at). So their ordering was never an invariant and there is nothing
-//      upstream to repair. G3 stays exactly as it is — declining is still correct —
-//      but the 71 groups it declines are blocked by THIS RULE anchoring on the wrong
-//      column, not by bad data. The fix is to anchor on completed_at alone.
-//      Full workings: docs/audits/2026-08-18_august_photo_placement_audit.md section 14.
+//      removing one changes what a client sees.
+//   G3 DECLINE the group if ANY candidate lacks `completed_at` -> the true owner
+//      could be the one we cannot score.
+//      🛑 RANK ALL CANDIDATES FIRST, THEN GATE THE WINNER ON THE BAND. Do NOT filter
+//      candidates to the band and choose among the survivors. Proven on job 1544: excluding a
+//      candidate made the remaining choice look MORE certain while removing the visit that
+//      probably owned the photo. A guard that narrows the field must WIDEN the doubt.
 //   G4 decline when ambiguous                        -> two candidates within
-//      AMBIGUOUS_MIN minutes, or the stamp inside more than one window.
+//      AMBIGUOUS_MIN minutes of each other in distance.
+//   G5 decline a ClientNote attachment               -> ClientNotes are CLIENT-scoped,
+//      not job-scoped, so createdAt carries no visit signal: median 13.73h from completion
+//      vs 2.2 SECONDS for a JobNote, and this rule run on them is 8.45% wrong vs 0.05%.
+//      The kind is readable straight out of the base64 GID, so the guard is free.
 //
 // DRY RUN BY DEFAULT. Writes only with --apply.
 //
@@ -86,8 +94,13 @@ const APPLY = process.argv.includes('--apply');
 const SINCE = arg('since', null);
 const ONLY_JOB = arg('job', null);
 const LIMIT = Number(arg('limit', '0')) || 0;
-const AMBIGUOUS_MIN = Number(arg('ambiguous-minutes', '30'));
-const MAX_WINDOW_H = Number(arg('max-window-hours', '24'));
+// ── THE ANCHOR, calibrated on ground truth 2026-08-18. See docs/audits/2026-08-18_photo_anchor_audit.md.
+// A correct note is created at the MOMENT OF THE COMPLETION TAP: median 2.2 SECONDS from
+// completed_at across 900 known-correct links, 84.2% within 60s, 96.8% within 30 min.
+// So the band is deliberately tight; it is not a guess.
+const AMBIGUOUS_MIN = Number(arg('ambiguous-minutes', '90'));   // rival this close in distance -> decline
+const LOOKBACK_H    = Number(arg('lookback-hours', '6'));       // stamp may precede completed_at by this much
+const GRACE_AFTER_H = Number(arg('grace-after-hours', '2'));    // ...or follow it by this much
 
 function sql(q) {
   return new Promise((res, rej) => {
@@ -179,7 +192,7 @@ const sqlEsc = s => "'" + String(s).replace(/'/g, "''") + "'";
   }
 
   console.log(`cleanup_duplicate_visit_photo_links  ${APPLY ? '*** APPLY ***' : '(dry run)'}`);
-  console.log(`  ambiguity threshold ${AMBIGUOUS_MIN} min | max usable window ${MAX_WINDOW_H}h` +
+  console.log(`  anchor completed_at, band -${GRACE_AFTER_H}h..+${LOOKBACK_H}h | ambiguity ${AMBIGUOUS_MIN} min` +
     `${SINCE ? ` | since ${SINCE}` : ''}${ONLY_JOB ? ` | job ${ONLY_JOB}` : ''}${LIMIT ? ` | limit ${LIMIT}` : ''}\n`);
 
   // Candidates: photos linked to more than one LIVE visit of the SAME job.
@@ -255,12 +268,23 @@ const sqlEsc = s => "'" + String(s).replace(/'/g, "''") + "'";
     await new Promise(r => setTimeout(r, 120));
   }
 
-  const usableWindow = r => {
-    if (!r.start_at || !r.completed_at) return false;
-    const s = Date.parse(r.start_at), e = Date.parse(r.completed_at);
-    if (!(e > s)) return false;                                   // G3: backwards
-    if ((e - s) > MAX_WINDOW_H * 3600e3) return false;            // G3: implausibly long
-    return true;
+  // 🛑 THE ANCHOR IS `completed_at` ALONE. `start_at` IS NOT USED AND MUST NOT BE REINTRODUCED.
+  // The old rule tested containment in [start_at, completed_at]. That was wrong at the root:
+  // `start_at` is a SCHEDULED SLOT, not a measured start (:00 seconds on 1,072 of 1,072 completed
+  // visits, vs 17 of 1,072 for completed_at), so the pair was never a work window and its ordering
+  // was never an invariant. 38 visits have completed_at < start_at; every one matches Jobber to the
+  // second, so there was nothing upstream to repair. That misreading is what stalled 71 of 80 groups.
+  const anchorOk = r => !!r.completed_at && Number.isFinite(Date.parse(r.completed_at));
+
+  // Jobber attachment GIDs are base64 of `gid://Jobber/<Kind>/<id>`.
+  // 🛑 A ClientNoteFile is CLIENT-scoped, not job-scoped, so its createdAt carries NO visit signal:
+  // measured median 13.73h from completion (IQR 7.57-23.73h) against 2.2 SECONDS for a JobNote, and
+  // running this rule on them produces an 8.45% wrong-removal rate versus 0.05%. A 160x difference,
+  // and the guard costs nothing because the GID says which kind it is with no API call.
+  const attKind = gid => {
+    if (!gid) return null;
+    try { return (Buffer.from(String(gid), 'base64').toString('utf8').match(/gid:\/\/Jobber\/([A-Za-z]+)\//) || [])[1] || null; }
+    catch { return null; }
   };
 
   const removals = [];
@@ -278,34 +302,34 @@ const sqlEsc = s => "'" + String(s).replace(/'/g, "''") + "'";
     const stamp = Date.parse(iso);
     if (!Number.isFinite(stamp)) { decline('unparseable note timestamp'); continue; }
 
-    // 🛑 G3, AND THE SUBTLE HALF OF IT. If ANY candidate has an unusable window we must DECLINE
-    // the whole group, not adjudicate among the survivors. Excluding a candidate makes the
-    // remaining choice look MORE confident while removing the very visit that might own the photo.
-    // Measured 2026-08-18 on job 1544: visit 6955's window is -12.2h (backwards, one of the 38),
-    // so it was dropped, and the note timed 7 SECONDS before 6955's completion was then confidently
-    // assigned to 6835 instead. A silent wrong answer produced BY a safety guard.
-    const usable = links.filter(usableWindow);
-    if (usable.length !== links.length) {
-      decline('a candidate visit has an unusable window, so the true owner may have been excluded');
-      continue;
-    }
-    if (usable.length < 2) { decline('fewer than 2 candidates have a usable window'); continue; }
+    // G5: a ClientNote attachment carries no visit signal at all. Decline before adjudicating.
+    const kind = attKind(links[0].att_gid);
+    if (kind && /^ClientNote/i.test(kind)) { decline('attachment is a ClientNote (client-scoped, no visit signal)'); continue; }
 
-    const inside = usable.filter(r => stamp >= Date.parse(r.start_at) && stamp <= Date.parse(r.completed_at));
-    let winner = null;
-    if (inside.length === 1) {
-      winner = inside[0];
-    } else if (inside.length > 1) {
-      decline('stamp falls inside more than one visit window'); continue;   // G4
-    } else {
-      const sorted = usable
-        .map(r => ({ r, d: Math.abs(stamp - Date.parse(r.completed_at)) }))
-        .sort((a, b) => a.d - b.d);
-      if (sorted.length > 1 && (sorted[1].d - sorted[0].d) < AMBIGUOUS_MIN * 60e3) {
-        decline(`nearest two candidates within ${AMBIGUOUS_MIN} min`); continue;   // G4
-      }
-      winner = sorted[0].r;
+    // G3, restated for the anchor: every candidate must HAVE the anchor, or the true owner
+    // could be the one we cannot score. Decline the whole group rather than score the rest.
+    if (!links.every(anchorOk)) { decline('a candidate visit has no completed_at, so the true owner cannot be scored'); continue; }
+    if (links.length < 2) { decline('fewer than 2 candidates'); continue; }
+
+    // 🛑 ORDER IS LOAD-BEARING: rank ALL candidates FIRST, then gate the winner on the band.
+    // Do NOT filter candidates to the band and pick among the survivors. That is precisely the
+    // failure already recorded on job 1544, where excluding a candidate made the remaining choice
+    // look MORE certain while removing the visit that probably owned the photo. Ranking first turns
+    // "the true owner is nowhere near this note" into a DECLINE; pre-filtering turns it into a
+    // confident WRONG removal. A guard that narrows the field must widen the doubt, not shrink it.
+    const sorted = links
+      .map(r => ({ r, delta: Date.parse(r.completed_at) - stamp, d: Math.abs(Date.parse(r.completed_at) - stamp) }))
+      .sort((a, b) => a.d - b.d);
+
+    if (sorted.length > 1 && (sorted[1].d - sorted[0].d) < AMBIGUOUS_MIN * 60e3) {
+      decline(`nearest two candidates within ${AMBIGUOUS_MIN} min`); continue;   // G4
     }
+
+    // Band gate, applied to the winner only. delta > 0 means the note preceded the completion tap.
+    const best = sorted[0];
+    if (best.delta > LOOKBACK_H * 3600e3) { decline(`winner outside band: note ${(best.delta / 3600e3).toFixed(1)}h before completion`); continue; }
+    if (best.delta < -GRACE_AFTER_H * 3600e3) { decline(`winner outside band: note ${(-best.delta / 3600e3).toFixed(1)}h after completion`); continue; }
+    const winner = best.r;
 
     // everything on this photo that is NOT the winner is surplus, subject to G1 and G2
     const losers = links.filter(r => r.link_id !== winner.link_id);
