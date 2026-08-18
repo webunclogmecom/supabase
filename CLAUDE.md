@@ -1052,8 +1052,11 @@ same-date, where the crew is identical in 11 of 11 and only `completed_at` separ
 - the two-anchor rule (distance on `completed_at`, eligibility on `noon(visit_date)`, so a photo
 can never be handed to a sibling that later refuses it), the 24h trust cutoff on `completed_at`
 (109 of 1,072 completed visits sit further from their own visit_date, worst case 34 days), and the
-**80 links + 136 multi-visit photos still mis-attributed in the data, deliberately NOT repaired**
-(0 cross-client; the 102 cross-job ones are all May `jobber_migration`, none since August).
+repair that ran on 2026-08-18: **99 cross-job links soft-deleted** after Jobber was asked which job
+owns each attachment (102 disputed, 3 fail-closed skips, 0 photos orphaned, 0 cross-client, all of
+them May `jobber_migration`). ⚠ **34 same-job duals and 80 same-job "farther visit" links were
+deliberately LEFT ALONE**: inside one job Jobber does not link notes to visits at all, so only a
+heuristic could decide them.
 
 ⚠ **The sync is ADD-ONLY**: it can put a photo on the right visit but never takes it off the wrong
 one, so shipping a better rule does not heal history.

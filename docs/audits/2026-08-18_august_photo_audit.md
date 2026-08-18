@@ -62,6 +62,7 @@ pages (first:20); their "clean" verdicts are unverified. Both caveats are ⚠REV
 | Audit probe fetches `pinned`, notes truncation, splits by noteType | `audit_august_photos_vs_jobber.js` | v2 run 144/144 |
 | Client-note photos read-only in the app (decision 1) | `visit-client-note-photos`, `060791e` + `8037e30` | 6537 renders 7, 6995 renders none, `v_visit_photo_counts` unchanged; shipped invisible first because a global `X-App-Source` header failed the CORS preflight |
 | Same-day tie-break moved onto `completed_at` | `sync_jobber_note_photos.js`, `fcbb641` | old body as control on visit 1741: 13 adds vs 9 adds + 4 handed to the closer sibling |
+| 99 cross-job photo links soft-deleted, Jobber arbitrating | `repair_cross_job_photo_links.js` | control 5/5 found before deciding anything; 3 fail-closed skips; 3 fixes hand-verified; 0 photos orphaned; no affected visit had been emailed |
 | The job-scoping model written down | [docs/reference/jobber-note-photo-attribution.md](../reference/jobber-note-photo-attribution.md) | proven on Jobber: 0 JobNotes shared between a client's two same-day visits on different jobs |
 
 Worst-case photo invisibility drops from ~6h to ~1h, and the mechanism that made 6537 confusing is

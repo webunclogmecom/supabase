@@ -79,30 +79,54 @@ which also covers the overnight routes.
 matching each visit's completion exactly): old rule adds 13 photos, new rule adds 9 and hands 4
 to the closer sibling. A matrix that fails nowhere is an untested instrument.
 
-## 5. What is still wrong in the data (measured 2026-08-18, NOT yet repaired)
+## 5. The cross-job repair (applied 2026-08-18)
 
-Photos whose own note timestamp is closer to a sibling visit than to the visit they are linked to:
+**Fred:** *"if you're 100% sure the photos are from a different visit then move them to the
+correct ones."* Job scoping is what makes certainty possible, so exactly one class qualified.
 
-| class | links | photos | source | note |
-|---|---|---|---|---|
-| both visits in window, sibling closer by completion time | 78 | 60 | 42 `jobber_migration`, 30 `jobber_note_sync`, 6 `jobber_late_recovery` | the tie class this fix prevents going forward |
-| own visit **outside** the 2-day window, sibling inside | 2 | 2 | `jobber_note_sync` | closer by 752h; a real defect, 1 client |
+**102 photos held alive links to visits on TWO DIFFERENT JOBS.** A JobNote belongs to one job,
+so one link in each pair was provably wrong, and Jobber can say which. Every one traced to the
+May `jobber_migration`; none since August; **zero cross-client**.
 
-Separately, photos linked to more than one visit:
+`scripts/probes/repair_cross_job_photo_links.js` asks Jobber which job holds each attachment,
+then soft-deletes only the links on the other job.
 
 ```
-136 photos on multiple visits
-  102 span two JOBS   - ALL from jobber_migration (May), 0 since August, 0 cross-client,
-                        the two visits are 0-1 days apart. Job scoping says exactly one
-                        link in each pair is wrong, and Jobber can arbitrate which.
-   34 within one job  - 17 migration, 11 note_sync, 6 late_recovery: the date-tie class.
+102 disputed photos, 204 links, 24 jobs read
+     99 repaired      (99 links soft-deleted; all 99 kept their link on the owning job,
+                       so nothing had to be re-attached and no photo was orphaned)
+      3 skipped       1 attachment lives on a ClientNote (client-scoped, no job owns it)
+                      2 a candidate job's notes could not be read to completion
 ```
 
-**Nothing above has been repaired.** Existing links were left alone per Fred's 2026-08-14 ruling
-("keep the ones inside the 2 day window"), and moving 60+ photos between visits changes what
-appears in a customer-facing report, so it is his call, not a cleanup. The repair is
-deterministic when he wants it: for each photo, ask Jobber which job holds the attachment, keep
-the link on that job's nearest-by-completion visit, soft-delete the other.
+**How certainty was established, in order:**
+1. **Positive control first.** Five undisputed photos were looked up on their own jobs and all
+   five were FOUND. Without that, a "not found" is an untested instrument, not evidence.
+2. **Fails closed** on: not found, found as a JobNote on more than one job, any candidate job
+   not read whole, or any non-JSON answer from Jobber (the HTTP-200 waiting room).
+3. **Three fixes hand-verified** against Jobber independently of the probe: in each case the
+   attachment was a JobNote on the owner job and **absent** from the job being unlinked.
+4. **Independent corroboration.** Visit 1439 (177-PV, job 163) lost all 22 of its photos, and
+   the separate scoping proof in section 1 had already found that this exact visit carries
+   **zero JobNotes** in Jobber. Two measurements, taken for different reasons, agreeing.
+5. The write is pinned to `(link_id, proven owner job)` and re-asserts `v.job_id <> owner`, so
+   it cannot fire on a stale premise. Backup + full decision record:
+   `backups/2026-08-18_cross_job_photo_link_repair.json`.
+
+⚠ **Five visits dropped to zero photos** (1397, 1439, 1601, 1707, 5801). That is the honest
+state: none of those photos were ever theirs. **No city email had been sent for any affected
+visit**, so nothing regulator-facing changed.
+
+### What was deliberately NOT repaired
+
+| class | count | why it stays |
+|---|---|---|
+| photos dual-linked **within one job** | 34 | Jobber does not link notes to visits at all, so inside a job the only tie-break is the completion-time heuristic. Not "100% sure". |
+| links sitting on a farther visit **of the same job** | 80 | same reason; unchanged by the repair, which is expected since that metric is same-job by construction |
+| the 3 skipped above | 3 | fail-closed, listed with reasons in the decision record |
+
+The forward fix for both remaining classes is the section-4 tie-break, which prevents new ones.
+Neither can be resolved by asking Jobber; they need either a human or an accepted heuristic.
 
 ## 6. Traps
 
