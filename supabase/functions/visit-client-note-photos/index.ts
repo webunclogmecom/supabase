@@ -43,10 +43,27 @@ const WINDOW_MS = 2 * 86400000
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY)
 
-const cors = {
+// 🛑 CORS: REFLECT the requested headers, never hand-maintain the list.
+// This shipped with a fixed list of four (authorization, x-client-info, apikey,
+// content-type) and the section rendered NOTHING in the app while every manual probe
+// returned 200 with 7 photos. The Admin Review supabase client sets a GLOBAL
+// `X-App-Source: admin-review` header (ADR 016 attribution), so the browser's preflight
+// asked for a fifth header, the allow-list did not name it, and Chrome BLOCKED the POST
+// before it was ever sent. Nothing reached this function: no log, no gateway row, and
+// supabase-js surfaced only a generic fetch error, which the app renders as "no photos".
+// A hand-written allow-list is a copy of someone else's header list that goes stale
+// silently - the same class as every hand-maintained list this repo warns about.
+const baseCors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Max-Age': '86400',
+  'Vary': 'Origin, Access-Control-Request-Headers',
 }
+const corsFor = (req: Request) => ({
+  ...baseCors,
+  'Access-Control-Allow-Headers':
+    req.headers.get('access-control-request-headers') ??
+    'authorization, content-type, x-client-info, apikey, x-app-source',
+})
 const json = (body: unknown, status: number, headers: Record<string, string>) =>
   new Response(JSON.stringify(body), { status, headers: { ...headers, 'Content-Type': 'application/json' } })
 
@@ -78,14 +95,16 @@ async function getJobberToken(): Promise<string> {
 }
 
 Deno.serve(async (req: Request) => {
+  const cors = corsFor(req)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
+    console.log(`[cnp] req ua=${(req.headers.get('user-agent') ?? '').slice(0, 40)} ci=${req.headers.get('x-client-info') ?? '-'}`)
     // ---- staff auth (the SERVER check is the gate; the app hiding things is convenience) --
     const authHeader = req.headers.get('Authorization') ?? ''
     const userClient = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
     const { data: userData, error: uErr } = await userClient.auth.getUser()
     const email = userData?.user?.email?.toLowerCase() ?? ''
-    if (uErr || !email) return json({ error: 'auth_required' }, 401, cors)
+    if (uErr || !email) { console.log(`[cnp] auth_required uErr=${uErr?.message ?? '-'}`); return json({ error: 'auth_required' }, 401, cors) }
     if (!email.endsWith('@ayache.com') && !email.endsWith('@unclogme.com')) {
       return json({ error: 'staff_only' }, 403, cors)
     }
@@ -118,9 +137,14 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({ query: q, variables: { id: jl.source_id } }),
     })
     const ctype = r.headers.get('content-type') ?? ''
-    if (!ctype.includes('json')) return json({ error: 'jobber_busy', detail: `Jobber returned ${ctype} at HTTP ${r.status}` }, 503, cors)
+    if (!ctype.includes('json')) {
+      // diagnostic: the app was observed getting 503s while manual replicas got 200 (2026-08-18)
+      console.log(`[cnp] non-json from Jobber: ctype=${ctype} http=${r.status} visit=${visitId}`)
+      return json({ error: 'jobber_busy', detail: `Jobber returned ${ctype} at HTTP ${r.status}` }, 503, cors)
+    }
     const g = await r.json()
     if (g.errors?.some((e: any) => e.extensions?.code === 'THROTTLED')) {
+      console.log(`[cnp] THROTTLED visit=${visitId}`)
       return json({ error: 'jobber_busy', detail: 'throttled' }, 503, cors)
     }
     if (g.errors || !('data' in g)) return json({ error: 'jobber_error', detail: JSON.stringify(g.errors ?? {}).slice(0, 200) }, 502, cors)
@@ -146,6 +170,7 @@ Deno.serve(async (req: Request) => {
         })
       }
     }
+    console.log(`[cnp] ok visit=${visitId} photos=${photos.length}`)
     return json({ photos, truncated_notes: truncated, urls_expire: true }, 200, cors)
   } catch (e) {
     console.error('[visit-client-note-photos]', (e as Error).message)
