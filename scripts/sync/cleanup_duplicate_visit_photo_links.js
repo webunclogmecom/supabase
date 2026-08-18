@@ -37,9 +37,19 @@
 //      PUBLISHED (customer.wo_photos INNER JOINs photo_classifications), so
 //      removing one changes what a client sees. 49 such links exist today.
 //   G3 DECLINE the group if ANY candidate's window is unusable -> 38 visits
-//      have completed_at < start_at (all wrong in JOBBER, not ours) and 98 exceed
+//      have completed_at < start_at and 98 exceed
 //      24h. 🛑 Do NOT "just skip the bad one and choose among the rest": that is how
 //      a guard produces a confident WRONG answer. Proven on job 1544.
+//      🛑 CORRECTED 2026-08-18: an earlier version of this comment called those 38
+//      "all wrong in JOBBER, not ours" and pointed at a person to fix them upstream.
+//      THAT IS WITHDRAWN. Re-measured live: our copy matches Jobber to the second on
+//      all 38 (0 drift), and `start_at` is a SCHEDULED SLOT, not a measured start
+//      (1,072/1,072 completed visits carry :00 seconds on start_at vs 17/1,072 on
+//      completed_at). So their ordering was never an invariant and there is nothing
+//      upstream to repair. G3 stays exactly as it is — declining is still correct —
+//      but the 71 groups it declines are blocked by THIS RULE anchoring on the wrong
+//      column, not by bad data. The fix is to anchor on completed_at alone.
+//      Full workings: docs/audits/2026-08-18_august_photo_placement_audit.md section 14.
 //   G4 decline when ambiguous                        -> two candidates within
 //      AMBIGUOUS_MIN minutes, or the stamp inside more than one window.
 //

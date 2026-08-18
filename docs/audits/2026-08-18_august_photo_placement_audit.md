@@ -65,6 +65,8 @@ because its window cannot be used to rule it in or out.
 
 ## 🛑 Spin-off finding: 38 visits fleet-wide have a backwards window
 
+🛑 **SUPERSEDED BY SECTION 14 (same day). These 38 are NOT corrupt and need no upstream fix.** Our copy matches Jobber exactly on all 38; `start_at` is a scheduled slot, not a measured start, so its ordering against `completed_at` was never an invariant. Read section 14 before acting on anything below.
+
 Not part of the photo question, and worth more than it.
 
 | | |
@@ -231,9 +233,103 @@ declined for a stated reason:
 | the note stamp falls inside more than one window | 7 |
 | no note timestamp for that attachment | 2 |
 
+⇒ ⚠ **THE NEXT PARAGRAPH IS WITHDRAWN — see section 14.** The 71 are blocked by an adjudication rule anchored on the wrong column, NOT by upstream data awaiting a human. Original text kept as the record:
+
 ⇒ **71 of the 80 remaining are blocked by the 38 backwards visit windows**, which are wrong in Jobber
 and not ours. **Fixing those upstream is what unblocks the rest of this cleanup**, including the Mila
 cluster. That is now the single highest-value manual action in this area.
 
 Nothing further can be done here automatically without either those upstream corrections or a
 different class of evidence.
+
+---
+
+## 14. 🛑 CORRECTION 2026-08-18: the 38 "backwards" visits are NOT corrupt, and there is NOTHING to backfill
+
+**Fred: "jobber should have the correct data, so if we need to do a backfill it should be to our db.
+But first show me the list of why you think they're wrong in jobber."** Asked for the list, I
+re-measured, and **the list refutes the claim it was meant to support.** Sections 11 and 13 above say
+all 38 are "wrong in Jobber" and that a person correcting them upstream is the highest-value action
+in this area. **That recommendation is withdrawn. Do not act on it.**
+
+### What is actually true
+
+| check | result |
+|---|---|
+| all 38 pulled live from Jobber | 38 / 38, **zero query failures** |
+| our `start_at` + `completed_at` vs Jobber's, to the second | **identical on 38 of 38** |
+| drifted from Jobber | **0** |
+| still backwards in Jobber | 38 |
+
+⇒ **Our copy is already a faithful mirror. A backfill from Jobber would write the same bytes back.**
+There is no discrepancy to close, in either direction.
+
+### 🛑 THE REAL ERROR WAS MINE: `[start_at, completed_at]` IS NOT A WORK WINDOW
+
+Measured across **all 1,072** completed visits, so the 38 cannot bias it:
+
+| | seconds `= :00` | on a quarter hour |
+|---|---|---|
+| `start_at` | **1,072 / 1,072** | 1,070 / 1,072 |
+| `completed_at` | **17 / 1,072** | 73 / 1,072 |
+
+`start_at` is a **scheduled slot**, machine-tidy, and `endAt - startAt == duration` on 38 of 38.
+`completed_at` is a **measured tap**, ragged to the second. **They are not two ends of one
+measurement**, so their ordering was never an invariant and "backwards" is not a defect class.
+
+**A visit completed before its scheduled slot opened is an ordinary thing**: the crew went early, or
+the slot was dragged later afterwards. Confirmed in `audit.logs` — the slot moved *after* completion:
+
+```
+7757  08-14 14:30  app_source=jobber                            08-13 15:30 -> 08-14 17:45  (scheduled)
+7757  08-14 17:17  app_source=jobber-daily-completion-reconcile 08-14 17:45 -> 08-14 19:45  (already COMPLETED 15:17)
+6592  07-01 07:39  app_source=sql                               06-30 04:15 -> 07-01 04:15  (already completed)
+6592  07-02 07:09  app_source=sql                               07-01 04:15 -> 07-02 04:15  (already completed)
+```
+
+`scripts/sync/cron_jobber_reconcile_completion.js` reads `visit(id:){ startAt endAt completedAt }`
+and writes `start_at = jbVisit.startAt`. **It is a pure mirror**, which is why drift is zero: the
+value moved in Jobber and we copied it.
+
+### Severity, so nobody treats 38 as 38 problems
+
+| gap | visits |
+|---|---|
+| under 1 hour | **9** |
+| 1 to 6 hours | 20 |
+| 6 to 24 hours | 6 |
+| over 24 hours | **3** (6592 -44.7h, 5160 -43.4h, 5837 -26.0h) |
+| flagged `allDay` in Jobber | 3 |
+
+29 distinct clients, Jan to Aug. **Only the top 3 are odd enough to be worth a human glance**, and
+even those are most likely a completed visit whose schedule was rolled forward afterwards.
+
+### Does Jobber hold a better start time? No.
+
+`Visit.timeSheetEntries` exists and carries `startAt` / `endAt` / `finalDuration` — real work times.
+**The 38 have zero entries.**
+⚠ **My first control was confounded and I nearly shipped it as a finding.** Sampling the 25 *most
+recent* completed visits gave 11/25 with entries, which looks like a stark contrast — but timesheet
+use is recent and the 38 span January onward. **Date-matched** (one normal completed visit nearest
+in time to each of the 38): **2 / 38 vs 0 / 38.** No real difference. Nobody used the timer in that
+era, so there is no actual-start value to import.
+
+### What this means for the cleanup pass
+
+`cleanup_duplicate_visit_photo_links.js` declines **71 of its 80 remaining groups** on G3 ("a
+candidate visit has an unusable window"). **G3's behaviour is still correct** — declining is right —
+but its stated reason was wrong, and so was the conclusion drawn from it. **The 71 are not blocked
+by bad upstream data waiting on a human. They are blocked by an adjudication rule anchored on the
+wrong column.**
+
+⇒ The improvement is to anchor on **`completed_at` alone**, which is the measured signal, instead of
+containment in `[start_at, completed_at]`. **Not built** — recorded here rather than shipped,
+because it changes what the pass would remove and that is Fred's call.
+
+### The lesson, which is the one this workspace keeps relearning
+
+Every number in sections 11 and 13 was **right**. "38 backwards", "38 also backwards in Jobber",
+"0 drifted" — all still reproduce today. **The sentence wrapped around them was wrong**: I read a
+structural property (`completed_at < start_at`) as a defect without ever asking what the two columns
+*are*. Same shape as `customer.work_orders`' DERM filter, and the same fix would have worked —
+**one question about intent, before the recommendation.**
