@@ -78,7 +78,10 @@ Not part of the photo question, and worth more than it.
 Any reasoning that uses a visit window is silently wrong on those 38. That includes this audit, and it
 would include any future ownership rule built the same way.
 
-✅ **The 48 h settling window shipped 2026-08-17 is NOT affected**: it keys on `completed_at` alone and
+🛑 **CORRECTED 2026-08-18: there IS no settling window any more.** Fred overruled it the same day; 48 h
+is the crew posting deadline, not a send delay. Verified on deployed version 12: `SETTLING_HOURS` and the
+`not_settled` gate are both gone. The original point still holds in the sense that mattered: nothing in
+the send path forms a visit window, so the 38 backwards pairs cannot corrupt it. It keys on
 never forms a window, so a backwards pair cannot corrupt it.
 
 ## What I would do
