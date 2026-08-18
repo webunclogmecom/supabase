@@ -16,7 +16,16 @@ name: Jobber note-photo diff sync (every 6h)
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # 00:00 / 06:00 / 12:00 / 18:00 UTC
+    - cron: '0 */6 * * *'   # 00:00 / 06:00 / 12:00 / 18:00 UTC — full 14d sweep
+    # HOT-WINDOW sweep (2026-08-18, from the August photo audit): photos posted between the
+    # 6h runs were invisible for up to 6h, which is exactly what Yannick hit on visit 6537.
+    # Hourly at :30 (offset so it never fires the same minute as the 6h run), --days=3 only
+    # (~20 completed visits/run — measured — so the Jobber cost is a fraction of the full
+    # sweep's). The shared concurrency group makes overlapping runs QUEUE, not collide.
+    # ⚠ A scheduled run CANNOT read workflow_dispatch inputs — days must branch on
+    # github.event.schedule below, or the hourly run silently does the full 14d sweep
+    # 24 times a day (the adversarial review caught this before it shipped).
+    - cron: '30 * * * *'
   workflow_dispatch:
     inputs:
       days:
@@ -42,4 +51,4 @@ jobs:
           SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
           SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/sync/sync_jobber_note_photos.js --execute --enable-remove --days=${{ github.event.inputs.days || '14' }}
+        run: node scripts/sync/sync_jobber_note_photos.js --execute --enable-remove --days=${{ github.event.schedule == '30 * * * *' && '3' || github.event.inputs.days || '14' }}

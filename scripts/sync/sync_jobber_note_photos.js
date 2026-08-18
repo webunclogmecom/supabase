@@ -161,7 +161,19 @@ async function getReadToken(force) {
     //   below is what actually binds an attachment to THIS visit.
     const curAtt = new Map(); const noteAtts = new Map(); const incompleteNotes = new Set(); const jobNoteGids = new Set();
     for (const n of notes) {
-      if (n.pinned) continue;
+      // 🛑 PINNED JOB NOTES ARE NOT SKIPPED ANY MORE (2026-08-18). `if (n.pinned) continue`
+      // sat here from this file's first commit with no written rationale, and it was measured
+      // to lose a real visit photo: visit 6840 (031-KRU), a driver's "3 manholes, located at
+      // front of the restaurant" JobNote with a photo, pinned, within the window — skipped by
+      // 13 consecutive sweeps while the audit kept flagging it missing. The pin is a Jobber UI
+      // prominence flag, not a statement about content; the NOTE-DATE WINDOW below is the
+      // attribution guard, and it applies to pinned notes identically (a months-old pinned
+      // note fails the window and stays out). Pinned CLIENT notes remain excluded: they are
+      // standing instructions/albums, client-level, and the ClientNote filter excludes them
+      // from ADD anyway — keeping them out of the maps also keeps the REMOVE arm off them.
+      // ⚠ The audit probe must fetch `pinned` too, or this class is invisible to it
+      // (scripts/probes/audit_august_photos_vs_jobber.js).
+      if (n.pinned && n.__typename === 'ClientNote') continue;
       const fa = n.fileAttachments;
       if (fa?.pageInfo?.hasNextPage) incompleteNotes.add(n.id);
       if (n.__typename === 'JobNote') jobNoteGids.add(n.id);
@@ -184,8 +196,40 @@ async function getReadToken(force) {
     };
 
     const jobNoteCandidates = [...curAtt.keys()].filter(g => curAtt.get(g).noteType === 'JobNote' && !ourByGid.has(g));
-    const toAdd = jobNoteCandidates.filter(g => withinWindow(curAtt.get(g).noteCreatedAt));
-    const skippedByWindow = jobNoteCandidates.length - toAdd.length;
+    const inWindow = jobNoteCandidates.filter(g => withinWindow(curAtt.get(g).noteCreatedAt));
+    const skippedByWindow = jobNoteCandidates.length - inWindow.length;
+
+    // 🛑 NEAREST-VISIT TIE-BREAK (2026-08-18). Two completed visits of one job within 4 days
+    // of each other both satisfy the ±2d window for the same note, and this loop processes
+    // visits independently — so the same attachment was linked to BOTH (measured live: the
+    // 18:21Z sweep attached 3 photos to both 155-PV visits 7770 and 7802 minutes after the
+    // audit predicted it; 56 such ambiguous pairs existed in August). A photo on two visits
+    // ends up in two city emails.
+    // Rule: the note's photos belong to the visit whose date is NEAREST the note date. Skip
+    // the add when a STRICTLY closer sibling visit exists (completed, alive, same job) —
+    // whether or not it has been processed yet; the sweep will link it there on its turn.
+    // Exact ties keep today's dual-link behaviour (rare, and a human classifies anyway).
+    // ⚠ This changes only future ADDs. Existing in-window links are untouched, per Fred's
+    // 2026-08-14 ruling ("keep the ones inside the 2 day window").
+    let toAdd = inWindow;
+    if (inWindow.length) {
+      const sibs = await pg(`SELECT v2.id, v2.visit_date FROM visits v2
+        WHERE v2.job_id = (SELECT job_id FROM visits WHERE id=${t.visit_id})
+          AND v2.id <> ${t.visit_id} AND v2.deleted_at IS NULL AND v2.visit_status='completed'`);
+      if (sibs.length) {
+        const myDist = (iso) => Math.abs(Date.parse(iso) - visitMs);
+        toAdd = inWindow.filter(g => {
+          const noteTs = Date.parse(curAtt.get(g).noteCreatedAt);
+          const closer = sibs.some(sv => {
+            const svMs = Date.parse(`${String(sv.visit_date).slice(0, 10)}T12:00:00Z`);
+            return Math.abs(noteTs - svMs) < myDist(curAtt.get(g).noteCreatedAt) &&
+                   Math.abs(noteTs - svMs) <= NOTE_WINDOW_DAYS * 86400000;
+          });
+          if (closer) console.log(`    tie-break: ${curAtt.get(g).fileName} goes to a closer sibling visit, skipping here`);
+          return !closer;
+        });
+      }
+    }
     if (skippedByWindow > 0) windowSkipped += skippedByWindow;
     // NOTE-ANCHORED remove: only a JOB-note photo whose own note is STILL on the visit
     // (positive confirmation it exists) but no longer holds this attachment. Legacy

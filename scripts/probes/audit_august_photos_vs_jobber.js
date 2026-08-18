@@ -135,8 +135,8 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
   // 50x20 costs ~1,000. pageInfo.hasNextPage still flags truncation explicitly.
   const NOTES_Q = `query($id: EncodedId!) { job(id: $id) { id jobNumber notes(first: 50) { nodes {
       __typename
-      ... on ClientNote { id message createdAt fileAttachments(first:20){ nodes{ id fileName contentType fileSize createdAt } pageInfo{ hasNextPage } } }
-      ... on JobNote    { id message createdAt lastEditedAt fileAttachments(first:20){ nodes{ id fileName contentType fileSize createdAt } pageInfo{ hasNextPage } } }
+      ... on ClientNote { id pinned message createdAt fileAttachments(first:20){ nodes{ id fileName contentType fileSize createdAt } pageInfo{ hasNextPage } } }
+      ... on JobNote    { id pinned message createdAt lastEditedAt fileAttachments(first:20){ nodes{ id fileName contentType fileSize createdAt } pageInfo{ hasNextPage } } }
     } pageInfo { hasNextPage } } } }`;
 
   const jobNotes = new Map(); const fetchFailures = [];
@@ -163,6 +163,7 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
     per_visit: [], job_level: [], late_additions: [], summary: {} };
 
   let missing = 0, wrongVisit = 0, extra = 0, orphans = 0, ambiguous = 0, late = 0, cleanVisits = 0;
+  const byType = { missing: { JobNote: 0, ClientNote: 0 }, orphans: { JobNote: 0, ClientNote: 0 }, late: { JobNote: 0, ClientNote: 0 } };
   for (const [jobGid, vs] of byJob) {
     const job = jobNotes.get(jobGid);
     if (!job || job.missing) continue;
@@ -174,7 +175,7 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
       for (const f of (fa?.nodes ?? [])) {
         atts.push({ gid: f.id, ct: f.contentType || '', fileName: f.fileName, noteCreated: n.createdAt, attCreated: f.createdAt || null, noteType: n.__typename });
         if (f.createdAt && n.createdAt && (new Date(f.createdAt) - new Date(n.createdAt)) > 2 * 3600000) {
-          late += 1;
+          late += 1; byType.late[n.__typename] = (byType.late[n.__typename] || 0) + 1;
           report.late_additions.push({ job: dec(jobGid), att: f.fileName, note_created: n.createdAt, att_created: f.createdAt, gap_h: Math.round((new Date(f.createdAt) - new Date(n.createdAt)) / 3600000) });
         }
       }
@@ -202,6 +203,7 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
       const oursGids = new Set(ours.map(l => l.att_gid).filter(Boolean));
       const oursNoGid = ours.filter(l => !l.att_gid);
       const win = winByVisit.get(v.visit_id) || new Set();
+      const attByGid = new Map(images.map(a => [a.gid, a]));
       const missingHere = [...win].filter(g => !oursGids.has(g));
       const missingElsewhere = missingHere.filter(g => (gidToVisits.get(g) || new Set()).size > 0);
       const trulyMissing = missingHere.filter(g => (gidToVisits.get(g) || new Set()).size === 0);
@@ -210,20 +212,23 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
         report.per_visit.push({ visit_id: v.visit_id, client: v.client_code, date: v.visit_date, status: v.visit_status,
           ours_images: ours.length, jobber_in_window: win.size,
           missing_never_imported: trulyMissing.length,
+          missing_detail: trulyMissing.map(g => { const a = attByGid.get(g) || {}; return { gid_tail: dec(g).slice(-12), noteType: a.noteType, noteCreated: a.noteCreated, attCreated: a.attCreated, file: a.fileName }; }),
           in_window_but_linked_to_other_visit: missingElsewhere.map(g => ({ gid: dec(g).slice(-14), on_visits: [...(gidToVisits.get(g) || [])] })),
           extra_not_on_this_job: extraHere.length,
           ours_without_jobber_gid: oursNoGid.map(l => l.source) });
       } else cleanVisits += 1;
       missing += trulyMissing.length; wrongVisit += missingElsewhere.length; extra += extraHere.length;
+      for (const g of trulyMissing) { const a = attByGid.get(g); if (a) byType.missing[a.noteType] = (byType.missing[a.noteType] || 0) + 1; }
     }
     // orphans: on the job, in no august visit's window, never imported anywhere
     const anyWin = new Set(); for (const s of winByVisit.values()) for (const g of s) anyWin.add(g);
     const orphanGids = images.filter(a => !anyWin.has(a.gid) && !(gidToVisits.get(a.gid) || new Set()).size);
     if (orphanGids.length || truncatedNotes) {
       report.job_level.push({ job: dec(jobGid), august_visits: vs.map(v => v.visit_id),
-        window_orphans_never_imported: orphanGids.map(a => ({ file: a.fileName, note_created: a.noteCreated, att_created: a.attCreated })),
+        window_orphans_never_imported: orphanGids.map(a => ({ file: a.fileName, noteType: a.noteType, note_created: a.noteCreated, att_created: a.attCreated })),
         notes_with_truncated_attachment_page: truncatedNotes });
       orphans += orphanGids.length;
+      for (const a of orphanGids) byType.orphans[a.noteType] = (byType.orphans[a.noteType] || 0) + 1;
     }
   }
 
@@ -244,6 +249,12 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
     window_orphans_never_imported: orphans,
     ambiguous_two_plus_visits: ambiguous,
     late_additions_gt2h_same_note: late,
+    // THE INSTRUMENT CAVEAT, quantified: the sync imports JOB notes only (client notes
+    // repeat on every visit and would over-attach), so ClientNote counts here are
+    // "skipped BY DESIGN", not defects. And orphans window only against AUGUST visits,
+    // so long-lived jobs' older photos inflate that bucket; read it as "unattributed on
+    // this job", not "lost".
+    by_note_type: byType,
   };
   const out = process.argv[2] || path.join(__dirname, 'august_photo_audit.json');
   fs.writeFileSync(out, JSON.stringify(report, null, 1));

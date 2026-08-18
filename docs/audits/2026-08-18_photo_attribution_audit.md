@@ -60,6 +60,10 @@ the injection probe used to publish a foreign photo. Live evidence it is reachab
 correct, which is an empirical zero over n=6.
 
 Proof the lack of a FK already bites: **14 alive links point at visit 1795, which does not exist.**
+> ⚠ **CORRECTION 2026-08-18 (later the same day):** the adversarial review of the August photo
+> audit re-measured and found **28**, not 14 — visits 4326 (4 links) and 4717 (10) also do not
+> exist. The "all other visit links resolve" line further down was wrong. All 28 are soft-deleted
+> and a BEFORE INSERT existence guard now blocks the class (`2026-08-18_1450`).
 
 ⇒ The all-clear rests on the apps never sending a wrong visit id, with **no database check behind it**.
 A `client_id` predicate on the insert policy would turn the measured zero into an impossibility.
