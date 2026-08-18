@@ -104,6 +104,30 @@ curl -s https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/create-client \
 A full create (no `dry_run`) additionally checks the code against **Jobber** and refuses on a
 collision, so the two-system rule above is enforced in code, not by remembering to run a script.
 
+#### Removing a code (added 2026-08-18)
+
+**A code can be REMOVED, and this page used to imply it could not.** Fred: *"We need to be able to put
+an empty client code and it updates to be a empty client code."* Send `client_code: ""` to
+`save-client-fields`; it clears **all three surfaces** — our column, Jobber's ` - CODE` suffix on
+`companyName`, and Jobber's **Client Code custom field** — then verifies by re-read.
+
+- ⚠ **Omitting `client_code` still means "leave it alone". An EMPTY STRING means remove.** One NULL
+  cannot carry both meanings, which is why `fn_record_client_identity` gained an explicit
+  `p_clear_code` flag rather than a sentinel. Before that its
+  `client_code = coalesce(p_client_code, c.client_code)` made removal impossible at the DB layer, and
+  clearing `609 Lenox LLC` needed a hand-written one-off that bypassed the saga.
+- 🛑 **The custom field must be ACTIVELY cleared, not omitted.** `webhook-jobber`'s parser reads that
+  field FIRST, so a stale value heals the code straight back on the next `*/5` poll and the removal
+  silently undoes itself.
+- **Does removal free the number for re-use?** Yes, mechanically: `clients_active_client_number_uniq`
+  excludes NULL codes, so nothing stops the number being taken again. **That does not overrule the
+  "do not backfill gaps" rule above** — a removal is for a client that should carry no code, not a way
+  to recycle numbers. Take the next number up unless Fred says otherwise.
+
+Full reasoning and the two-sided assertions:
+[`docs/migrations/2026-08-18_0030_client_identity_allow_code_removal.sql`](../migrations/2026-08-18_0030_client_identity_allow_code_removal.sql).
+App-side rules: `Building Apps/Client App/CLAUDE.md` item 2m.
+
 ⚠ **The two probe scripts this section used to recommend are STALE. Do not reach for them first.**
 `scripts/probes/propose_client_code.js` does not run at all (`Cannot find module 'dotenv'`), and both
 it and `scripts/probes/check_client_code_available.js` still query **Airtable**, which no longer
@@ -297,10 +321,9 @@ Immediately after the Excelsior renumber the Client App's activity timeline stil
 first said "nothing was changed", which was true for about an hour). `247-EC …` → `300-EC …` on visits
 **7076, 7463, 7688**, in BOTH systems. **The other 53 are still untouched and still Fred's call.**
 
-🛑 **AND IT IS NOT A PLAIN UPDATE — `trg_prefix_visit_title` WOULD HAVE DOUBLE-PREFIXED IT.** That
-trigger prepends `"<current code> <name> - "` to any `visit-calendar` / `supabase_cron` visit whose
-title does not already start with the client's **current** code. So writing the base title, or touching
-any other column on that row, produces:
+🛑 **THE INSERT PATH WOULD HAVE DOUBLE-PREFIXED IT — `trg_prefix_visit_title`.** That trigger
+prepends `"<current code> <name> - "` to a `visit-calendar` / `supabase_cron` visit whose title does
+not already start with the client's **current** code, so writing a bare base title produces:
 
 ```
 300-EC Excelsior Condo - 247-EC Excelsior Condo - Service Call
@@ -308,6 +331,18 @@ any other column on that row, produces:
 
 The fix therefore writes the **full corrected string**, which already starts with `300-EC ` and makes
 the trigger a no-op. Verified afterwards: **0 double-prefixed titles estate-wide.**
+
+> 🛑 **CORRECTED 2026-08-18 — this block used to say the trigger also fires when "touching any other
+> column on that row", i.e. on any UPDATE. THAT IS FALSE, and it is the kind of sentence that gets
+> quoted into an app doc as a rule.** Measured against Prod:
+> `CREATE TRIGGER trg_prefix_visit_title **BEFORE INSERT** ON public.visits FOR EACH ROW EXECUTE
+> FUNCTION fn_prefix_visit_title()` — and it is the only trigger on `public.visits` that calls that
+> function (checked `pg_trigger` joined to `pg_proc`, not the name). `2026-06-29e` agrees and no later
+> migration recreates it.
+> ⇒ **An UPDATE cannot double-prefix.** Every Visit Calendar title edit is an UPDATE (they route
+> through `visitEdit`), so there is no such hazard there and the rule must NOT be copied into
+> `Visit Calendar/CLAUDE.md`. What remains true is the narrower statement above: writing a BARE base
+> title on an INSERT gets the prefix, which is why the fix wrote the full corrected string.
 
 ⚠ **It also pushes to Jobber, and that is wanted.** Jobber held the same stale title on all three, so a
 DB-only fix would have left permanent drift. `trg_push_visit_update` fires `changed:['title']` and

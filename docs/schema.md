@@ -421,7 +421,7 @@ One photo can attach to many entities with different roles.
 | entity_type | TEXT | `visit` \| `property` \| `inspection` \| `note` \| `vehicle` |
 | entity_id | BIGINT | Polymorphic — points at the table named by `entity_type` |
 | role | TEXT | Semantics depend on `entity_type` (see below) |
-| caption | TEXT | Per-link caption |
+| caption | TEXT | Per-link caption. ⚠ **OVERLOADED for `entity_type='job_frequency_change'`: it holds the GoTrue-verified UPLOADER EMAIL, not a caption** (2026-08-17). Do not render it as prose for that kind, and do not assume it is free text when writing a generic photo UI. Why it is not on `photos`: `uploaded_by_employee_id` is NULL for 3 of the 6 accounts that pass the staff gate (no `employees` row), and `audit.logs` carries an email on only 13 of 4,138 `photo_links` rows because these are service-key writes with no PostgREST claims — so both obvious attribution sources fail. `photo_links` is audited; `photos` is not. See `Building Apps/Client App/CLAUDE.md` item 2k. |
 | created_at | TIMESTAMPTZ | |
 
 **Unique:** `(photo_id, entity_type, entity_id, role)`
