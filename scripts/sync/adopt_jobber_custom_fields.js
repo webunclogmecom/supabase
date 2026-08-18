@@ -357,64 +357,44 @@ function adoptionRefusal(field, value) {
   for (const r of actionable) {
     const willAdopt = r.effective === 'ADOPT' && adoptIds.has(r.property_id);
     const adoptedTo = willAdopt ? jlit(r.source_now) : 'null::jsonb';
-    const ourLit = r.our_now === null ? 'null::jsonb' : jlit(r.our_now);
     let out;
     try {
+      // 🛑 THE RPC IS THE SINGLE WRITER. This script used to compose its own DO block: read
+      // our column, re-decide, UPDATE, record the shadow, assert. The live poll now needs the
+      // same sequence, and a second assembly of one rule is precisely how yesterday's defects
+      // were born (pieces correct, composition never exercised). So the whole sequence lives in
+      // public.fn_sync_property_custom_field and BOTH callers go through it. Do not reinstate a
+      // local UPDATE here, however small the change seems.
+      //
+      // p_source_present carries the distinction the RPC cannot recover on its own: a
+      // configuration missing from Jobber's payload is a FAILED READ, not an empty field.
       out = await sql(`
-      do $adopt$
-      declare v_decision text; v_our_live jsonb; v_live text;
-      begin
-        perform set_config('request.headers', ${lit(JSON.stringify({ 'x-app-source': APP_SOURCE }))}, true);
-
-        select to_jsonb(t.${FIELD.ourColumn}) into v_our_live
-          from ${FIELD.ourTable} t where t.id = ${r.property_id};
-
-        -- Re-decide from what we hold RIGHT NOW. If our side moved under the plan this
-        -- returns CONFLICT (or IN_SYNC) rather than ADOPT, and we refuse instead of writing.
-        v_live := sync.fn_shadow_decision(
-          (select true from sync.source_field_shadow s
-            where s.entity_type = ${lit(FIELD.entityType)} and s.entity_id = ${r.property_id}::bigint
-              and s.source_system = ${lit(FIELD.sourceSystem)} and s.field_key = ${lit(FIELD.fieldKey)}),
-          ${jlit(r.source_now)},
-          (select s.source_value from sync.source_field_shadow s
-            where s.entity_type = ${lit(FIELD.entityType)} and s.entity_id = ${r.property_id}::bigint
-              and s.source_system = ${lit(FIELD.sourceSystem)} and s.field_key = ${lit(FIELD.fieldKey)}),
-          v_our_live,
-          (select s.our_value from sync.source_field_shadow s
-            where s.entity_type = ${lit(FIELD.entityType)} and s.entity_id = ${r.property_id}::bigint
-              and s.source_system = ${lit(FIELD.sourceSystem)} and s.field_key = ${lit(FIELD.fieldKey)}));
-
-        if v_live is distinct from ${lit(r.effective)} then
-          raise exception 'PLAN_STALE property %: planned %, live %, our column now %',
-            ${r.property_id}, ${lit(r.effective)}, v_live, v_our_live;
-        end if;
-        ${willAdopt ? `
-        -- Pinned to the value we just decided against. A write landing between the SELECT
-        -- above and this UPDATE matches 0 rows rather than clobbering the newcomer.
-        update ${FIELD.ourTable}
-             set ${FIELD.ourColumn} = ${r.source_now === null ? 'null' : Number(r.source_now)}
-           where id = ${r.property_id}
-             and to_jsonb(${FIELD.ourColumn}) is not distinct from ${ourLit};
-        if not found then
-          raise exception 'PLAN_STALE property %: our column moved between the re-read and the write',
-            ${r.property_id};
-        end if;` : ''}
-        v_decision := sync.fn_record_shadow(
-          ${lit(FIELD.entityType)}, ${r.property_id}::bigint, ${lit(FIELD.sourceSystem)},
-          ${lit(FIELD.fieldKey)}, ${lit(FIELD.label)},
-          ${jlit(r.source_now)}, v_our_live, ${adoptedTo});
-        if v_decision <> ${lit(r.effective)} then
-          raise exception 'decision drifted between the dry run and the write for property %: planned %, got %',
-            ${r.property_id}, ${lit(r.effective)}, v_decision;
-        end if;
-      end
-      $adopt$;`);
+      select public.fn_sync_property_custom_field(
+        ${r.property_id}::bigint,
+        ${lit(FIELD.fieldKey)},
+        ${lit(FIELD.label)},
+        ${jlit(r.source_now)},
+        ${r.materialised ? 'true' : 'false'}::boolean,
+        ${ALLOW_CLEAR ? 'true' : 'false'}::boolean) as decision;`);
+      const decision = out && out[0] ? out[0].decision : null;
+      // The RPC re-decides against the LIVE column, so a mismatch here means the world moved
+      // between the plan and the write. That is the guard doing its job, not a run failure:
+      // report the row and carry on, and the next run re-decides it against current values.
+      if (decision !== r.effective) {
+        stale += 1;
+        staleRows.push({ property_id: r.property_id, name: r.name, planned: r.effective,
+          detail: `rpc returned ${decision}` });
+        continue;
+      }
     } catch (e) {
       // A stale plan is the guard working, not a run failure. The property is left exactly
       // as it was (the whole DO block rolls back) and the next run re-reads and re-decides
       // it. Aborting the sweep here would let one concurrently-edited property stop the
       // other 457. Anything else -- a transport 502, a permission error -- still aborts,
       // because those mean the instrument is untrustworthy rather than the data being live.
+      // The RPC RETURNS its refusals, so a throw here is a genuine fault (transport, permission)
+      // and must still abort. The message match is kept only as a backstop for the raise
+      // fn_record_shadow can still emit if a row freezes between the RPC's check and its write.
       if (!/PLAN_STALE|CONFLICT_FROZEN/.test(String(e && e.message))) throw e;
       stale += 1;
       staleRows.push({ property_id: r.property_id, name: r.name, planned: r.effective,
