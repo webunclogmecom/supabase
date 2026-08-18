@@ -319,3 +319,60 @@ not absent, and it is one bulk action away.
 control. Ground truth from 900 known-correct links and an independent 262-link EXIF set. Nothing in
 this document was written from inference where a measurement was available, and where I inferred, it
 says so.*
+
+---
+
+## 9. APPLIED 2026-08-18 15:26 ET — 96 surplus links removed on the `completed_at` anchor
+
+**Fred: "yes go with that split and apply the 96."** Applied after he authorised it; @Supabase 2 never
+answered the go/no-go ask, and `photo_links` had been quiet for 46 minutes.
+
+| | before | after | expected |
+|---|---|---|---|
+| alive visit links | 7,293 | **7,197** | −96 ✅ |
+| **distinct photos holding a visit link** | **7,040** | **7,040** | **0 ✅** |
+| `photo_classifications` | 708 | **708** | 0 ✅ |
+| `customer.wo_photos` | 431 | **431** | 0 ✅ |
+| rows live to clients | 386 | **386** | 0 ✅ |
+| photos total | 11,583 | **11,583** | 0 ✅ |
+| candidate groups remaining | 80 | **34** | (46 resolved) |
+
+**0 failed checks.** The second row is the load-bearing one: **7,040 photos held a visit link before
+and 7,040 hold one after. Not one photo lost its place.** Combined with client-visible rows unchanged
+at 386, this is a de-duplication, not a deletion.
+
+### Independent post-apply verification
+
+| check | result |
+|---|---|
+| audit rows for this run, `old_row` intact | **96 / 96**, all alive beforehand ⇒ fully reversible |
+| photos touched | 68 |
+| ...still holding a live visit link | **68 of 68**, **orphaned = 0** |
+| classified links among those removed (G2) | **0** |
+| control: the audit filter also sees 5 other reasons | ✅ not a filter that matches everything |
+
+### The 34 that remain, and why each is correct
+
+| reason | groups |
+|---|---|
+| a surplus link is **classified**, i.e. published (G2) | **23** |
+| two candidates within 90 minutes (G4) | 9 |
+| no note timestamp for the attachment | 2 |
+
+The 23 are the interesting ones: they are *published* to a client, so removing one would change what
+that client sees. **Refusing them is the guard working**, not a shortfall. They need a human decision,
+not a wider rule.
+
+### 🛑 What this does NOT fix
+
+**The ingest still produces duplicates.** The 18:00 UTC cron re-created them 34 minutes after the
+morning pass. This run cleaned the backlog as of 15:26 ET; without a scheduled re-run and an
+ingest-side decision it will drift again. **That half is now @Supabase 2's** under the split Fred set:
+
+| | |
+|---|---|
+| **@Building Apps** | duplicates **within one job** — done, calibrated, applied |
+| **@Supabase 2** | the **cross-job** case + the **ingest** rule |
+
+My pass groups by `(photo_id, job_id)` and never touches cross-job duplicates (102 rows, all
+same-client, historical residue), so the two halves do not overlap.
