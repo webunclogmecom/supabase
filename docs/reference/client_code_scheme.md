@@ -42,8 +42,16 @@ A zero-padded **number**, a hyphen, then a short **brand tag**.
   - `PV` = Pura Vida (26 locations), `TCE` = The Carrot Express (23), `LG` = La Granja (6), `BB` = Bagel Boss, `GRO` = Grove Kosher, `LOU` = Skinny Louie…
 - Coining a tag for a **new** brand:
   - Drop noise words: `The`, `LLC`/`Inc`/`Corp`, `Miami`, `Restaurant`, `Cafe`.
-  - Use initials or a recognizable short form: *Vincenzos*→`VIN`, *Cine Citta Cafe*→`CCC`,
-    *The Joyce*→`JOY`.
+  - Use initials or a recognizable short form: *Vincenzos*→`VIN`, *The Joyce*→`JOY`.
+  - 🛑 **NOISE WORDS ARE STRIPPED BEFORE THE WORD COUNT, WHICH CHANGES WHICH BRANCH YOU LAND IN.**
+    `NOISE_WORD` holds `llc, inc, corp, co, of, and, miami, restaurant, cafe, dba`. So
+    *Cine Citta Cafe* is a **2**-word name to `coinTag`, not 3: it drops `cafe`, takes
+    `w[0].slice(0,3)` and coins **`CIN`**. The live client `011-CCC` was coded by hand years ago and
+    the generator would not propose that code today (on its full registered name,
+    *Cine Citta Cafe (Franck Taieb)*, it proposes `CCF`).
+    ⚠ This file previously offered `CCC` as a coining example. It was wrong for the same reason the
+    two-letter examples were, and it survived one round of correcting them — check an example against
+    the actual function before trusting it.
   - 🛑 **The two-letter examples this line used to give are now WRONG as guidance**, though the
     codes themselves are live and correct. `coinTag` today takes the first three initials for a
     3+ word name, and for a 1-2 word name takes `w[0].slice(0,3)` topped up from the second

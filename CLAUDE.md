@@ -807,9 +807,23 @@ team picker but still drops every Jobber-side assignment. Both are required:
    is the **FULL base64 GID** `Z2lkOi8vSm9iYmVyL1VzZXIv...`, never the bare numeric id from the
    `manage_team` URL. All existing employee links store the full GID.
 
-⚠ **Naming follows a convention that is not obvious.** Every ACTIVE driver is stored first-name-only
-(Mark, Anthony, Grecia, Aaron); the FULL names in the table are all INACTIVE duplicates of those same
-people. So a new driver goes in first-name-only, or he reads as the retired-duplicate shape.
+⚠ **Naming follows a convention that is not obvious.** ACTIVE drivers are stored **first-name-only**
+(Grecia, Fred, Aaron, Yannick, Diego, Mark, Anthony, Michael), and the full-name rows are retired
+duplicates of those same people. So a new driver goes in first-name-only, or he reads as the
+retired-duplicate shape.
+
+🛑 **THERE IS ONE LIVE EXCEPTION AND IT IS A DUPLICATE, NOT A COUNTER-EXAMPLE (measured
+2026-08-18).** An earlier version of this paragraph said the full-name rows are "all INACTIVE". That
+is false: `employees` **41 "Michael Escobar" is ACTIVE**, created 2026-08-17 15:39 ET, **67 minutes
+after** id 40 "Michael" which the migration below created at 14:32. Id 41 holds **zero**
+`entity_source_links`, so it can never receive a Jobber assignment: it is a second row for the same
+person, almost certainly hand-created in the Calendar team picker while the bridge row was being
+sorted out.
+
+⇒ Two ACTIVE Michaels are in the picker today, and only id 40 works. **Not resolved here** —
+retiring an employee row changes what the Calendar offers, so it is Fred's call, and `employees` uses
+`status` for exactly this (rule 6: never hard-delete). Recorded so the next reader does not "correct"
+the convention above on the strength of a row that is itself the bug.
 
 ⚠ **This will recur on the next hire.** Nothing detects it: there is no "Jobber has a user we do not"
 check anywhere. Until an employee sync exists, adding a driver is a manual two-step, and the symptom
