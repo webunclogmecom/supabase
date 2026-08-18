@@ -636,3 +636,8 @@ verify_jwt = false
 # handler, which is why it is reachable with the anon key. Do not copy that shape.
 [functions.send-visit-photos-email]
 verify_jwt = true
+
+# Read-only window into Jobber's CLIENT-note photos for one visit (Fred's option c,
+# 2026-08-18). Staff-JWT gated in the handler too — verify_jwt is half a gate.
+[functions.visit-client-note-photos]
+verify_jwt = true
