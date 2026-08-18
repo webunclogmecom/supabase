@@ -50,22 +50,30 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const TEST_RECIPIENT = 'fred@ayache.com'
 const IS_TEST = true
 
-// 🛑 THE SETTLING WINDOW. Photos keep arriving after a visit is completed, so a report
-// sent too early can be missing one. Fred chose 48h on 2026-08-17 from these numbers,
-// measured over 268 visits completed in the last 90 days (migration sources excluded,
-// they backfilled months-old visits and produce a fake 2821h tail):
+// 🛑 THE 48 HOURS IS THE CREW'S POSTING DEADLINE, NOT A SEND DELAY (Fred, 2026-08-18).
+// This constant used to drive a hard time gate: no send until completed_at + 48h, always.
+// Fred overruled it the day after choosing it, with the business rule the number actually
+// comes from: *"if it already had the images uploaded once, then it's okay, because when
+// they upload the pictures they post all of them ... the 48 hours is: after the visit is
+// done, they put at the latest 48 hours on the notes."* So:
 //
-//   last photo lands within  6h 69.0% | 12h 89.9% | 24h 97.4% | 48h 100.0%
-//   median 4.27h · p90 12.06h · worst case actually observed 42.40h
+//   photos present + all classified  =>  sendable NOW, no waiting
+//   zero photos                      =>  blocked by the no_photos gate below, and THIS
+//                                        constant only feeds that message ("the crew has
+//                                        up to 48h to post")
 //
-// ⚠ 24h leaves 7 of 268 visits (1 in 38) still receiving photos. 48h clears the worst
-// observed case by only 5.6h, so treat this as SAFE, NOT CERTAIN: zero events in 268
-// observations bounds the true miss rate at roughly 1 in 90, it does not prove zero.
-// The `confirm_resend` path stays the backstop for the miss.
-// 🛑 A "quiet for N hours since the last photo" rule was measured and REJECTED: the
-// largest gap between consecutive photos on one visit is 35.68h, so a quiet rule needs
-// ~36h to match this one. No safer, more moving parts. Do not reintroduce it.
-const SETTLING_HOURS = 48
+// ⚠ THE RESIDUAL RISK IS REAL AND MEASURED, AND FRED IS TAKING IT KNOWINGLY. 17% of
+// photo-bearing visits (69 of 407, last 90d) received images in more than one IMPORT
+// batch (>2h apart); 16 had gaps over 24h. Import times conflate driver behaviour with
+// our 6h sync cadence, so the true multi-post rate is lower, but it is not zero — the
+// prior measurement saw a 35.68h gap between consecutive photos on one visit. What holds
+// the line instead of the clock:
+//   * the classification gate below: a photo arriving AFTER classification makes the
+//     visit unclassified again (is_reopened), and an unclassified visit cannot send;
+//   * the Reopened chip in the Admin Review queue, so a person sees it;
+//   * confirm_resend, for a straggler that arrives after a send.
+// 🛑 Do NOT reintroduce a time gate here without Fred reversing the 2026-08-18 ruling.
+const CREW_POSTING_DEADLINE_HOURS = 48
 
 // 🛑 THE TEST RECIPIENT IS CALLER-SUPPLIED BUT DOMAIN-LOCKED, AND THE LOCK LIVES HERE.
 // Fred, 2026-08-16, asked for a modal to choose which address the test goes to. That
@@ -485,7 +493,14 @@ Deno.serve(async (req: Request) => {
     if (lErr) throw new Error(`photo lookup failed: ${lErr.message}`)
 
     const images = (links ?? []).filter((l: any) => String(l.photos?.content_type ?? '').startsWith('image/'))
-    if (images.length === 0) { await logSend('skipped', 'no_photos', 0, 0, null, null); return json({ error: 'no_photos' }, 409, cors) }
+    if (images.length === 0) {
+      await logSend('skipped', 'no_photos', 0, 0, null, null)
+      return json({
+        error: 'no_photos',
+        detail: `No photos have arrived for this visit yet. The crew has up to ${CREW_POSTING_DEADLINE_HOURS} hours after completion to post them to Jobber notes; they import on the next sync after that.`,
+        crew_posting_deadline_hours: CREW_POSTING_DEADLINE_HOURS,
+      }, 409, cors)
+    }
 
     const { data: cls, error: cErr } = await sb
       .from('photo_classifications')
@@ -500,35 +515,14 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'not_classified', unclassified, total: images.length }, 409, cors)
     }
 
-    // -- GATE: the photo set must have SETTLED (see SETTLING_HOURS at the top) -----
-    // This runs AFTER the classification gate on purpose: if photos are still untagged,
-    // "go classify them" is the more useful thing to say than "come back tomorrow".
-    // ⚠ It is the SERVER check that is the control. The app hides the button too, but
-    // per docs/11-city-email.md Rule 3 the UI check is convenience, never the gate.
-    const completedAtRaw = (v as Record<string, any>).completed_at
-    const completedAt = completedAtRaw ? new Date(completedAtRaw) : null
-    if (!completedAt || Number.isNaN(completedAt.getTime())) {
-      // Fail CLOSED. A visit with no completion time has no clock to measure against, so
-      // we cannot show the window has passed, and "cannot show it passed" is not "passed".
-      await logSend('skipped', 'not_settled:no_completed_at', 0, 0, null, null)
-      return json({
-        error: 'not_settled',
-        detail: 'This visit has no completion time recorded, so the 48 hour settling window cannot be checked.',
-      }, 409, cors)
-    }
-    const readyAt = new Date(completedAt.getTime() + SETTLING_HOURS * 3600_000)
-    const msLeft = readyAt.getTime() - Date.now()
-    if (msLeft > 0) {
-      const hoursLeft = Math.ceil(msLeft / 3600_000)
-      await logSend('skipped', `not_settled:${hoursLeft}h`, 0, 0, null, null)
-      return json({
-        error: 'not_settled',
-        detail: `Photos can still arrive for up to ${SETTLING_HOURS} hours after a visit is completed. This one can be sent in about ${hoursLeft} hour${hoursLeft === 1 ? '' : 's'}.`,
-        ready_at: readyAt.toISOString(),
-        hours_left: hoursLeft,
-        settling_hours: SETTLING_HOURS,
-      }, 409, cors)
-    }
+    // -- (REMOVED 2026-08-18, Fred's ruling) THE TIME-BASED SETTLING GATE STOOD HERE ----
+    // It blocked every send until completed_at + 48h, even with a full classified photo
+    // set. Fred: photos are posted all at once, so once they have arrived there is
+    // nothing to wait for; the 48h is the crew's deadline to post, which is now carried
+    // by the no_photos message above. The late-straggler case is covered by the
+    // classification gate (a new photo makes the visit unclassified again and the queue
+    // shows it as Reopened) and by confirm_resend after a send. See the block comment on
+    // CREW_POSTING_DEADLINE_HOURS for the measured residual risk that ruling accepts.
 
     // -- idempotency: send-derm-email has none, and it double-sent 9 times ----
     const { data: prior, error: pErr } = await sb
