@@ -1342,6 +1342,13 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
         name
         client { id }
         address { street city province postalCode country coordinates { latitude longitude } }
+        customFields {
+          __typename
+          ... on CustomFieldNumeric {
+            valueNumeric
+            customFieldConfiguration { id }
+          }
+        }
       }
     }`,
     { id: gid }
@@ -1414,6 +1421,48 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
     const { data: inserted, error } = await supabase.from('properties').insert(insertRow).select('id').single()
     if (error || !inserted) throw new Error(`Property insert failed: ${error?.message}`)
     entityId = inserted.id
+  }
+
+  // --------------------------------------------------------------- custom fields
+  // Jobber's numeric custom field has defaultValue 0, no null state and no updatedAt, so a
+  // property nobody ever typed into is byte-identical to one a human set to 0. A straight
+  // copy would zero 69 properties and destroy 47,732 recorded gallons. Adoption therefore
+  // compares against sync.source_field_shadow (what we LAST SAW) and fires only on a real
+  // change. ALL of that lives in the RPC, which is the single sanctioned writer of this
+  // column; do not inline any part of the decision here. See
+  // docs/migrations/2026-08-18_0210_sync_property_custom_field_rpc.sql.
+  //
+  // p_source_present is the load-bearing argument: `customFields` missing the configuration
+  // means Jobber did not answer, which is NOT the same as "the field is empty", and only the
+  // caller can tell those apart. Passing the value alone would let a failed read clear a
+  // recorded capacity.
+  //
+  // A failure here must NOT throw. The property row is already written; throwing would fail
+  // the whole replay, leave raw.jobber_pull_properties.needs_populate set, and have the poll
+  // retry the same property every cycle forever. The shadow means nothing is lost by
+  // skipping: the next pass re-reads and re-decides.
+  try {
+    const cfConfigGid = 'gid://Jobber/CustomFieldConfigurationNumeric/3061111'
+    const cfNode = (p.customFields ?? []).find((c: any) =>
+      c?.__typename === 'CustomFieldNumeric' &&
+      c?.customFieldConfiguration?.id === btoa(cfConfigGid))
+    const { data: cfDecision, error: cfError } = await supabase.rpc('fn_sync_property_custom_field', {
+      p_property_id: entityId,
+      p_field_key: cfConfigGid,
+      p_field_label: 'Grease Trap size',
+      p_source_now: cfNode ? cfNode.valueNumeric : null,
+      p_source_present: !!cfNode,
+    })
+    if (cfError) {
+      console.error(`[handleProperty] custom-field sync failed for property ${entityId}: ${cfError.message}`)
+    } else if (cfDecision && cfDecision !== 'IGNORE' && cfDecision !== 'IN_SYNC') {
+      // SEED is normal on a new property. ADOPT / CONFLICT / FROZEN / REFUSED / RACE /
+      // NO_ANSWER all mean something a person may want to know about, so they are logged
+      // rather than swallowed.
+      console.log(`[handleProperty] grease trap size ${cfDecision} for property ${entityId}`)
+    }
+  } catch (e) {
+    console.error(`[handleProperty] custom-field sync threw for property ${entityId}: ${(e as Error).message}`)
   }
 
   await upsertEntityLink({

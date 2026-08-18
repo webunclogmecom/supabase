@@ -73,12 +73,24 @@ const PROPERTY_SWEEP_MINUTE = 5
 const CURSOR_FIELD: Record<string, string> = { clients: 'updatedAt', jobs: 'createdAt', visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt' }
 const NODE_TIME_FIELD: Record<string, string> = { clients: 'updatedAt', jobs: 'updatedAt', visits: 'completedAt', invoices: 'updatedAt', quotes: 'updatedAt' }
 const FILTER_TYPE: Record<string, string> = { clients: 'Client', jobs: 'Job', visits: 'Visit', invoices: 'Invoice', quotes: 'Quote' }
+// custom fields are selected on `properties` so that a Jobber-side edit to one CHANGES THE
+// STAGED PAYLOAD and therefore flips needs_populate. Without them here the poll cannot see a
+// custom-field-only edit at all: the address bytes are identical and the row is never
+// restaged, so handleProperty is never replayed and the adoption never runs. The value is
+// still re-read by handleProperty against Jobber; this selection exists purely for CHANGE
+// DETECTION. See docs/migrations/2026-08-18_0210_sync_property_custom_field_rpc.sql.
+//
+// EXPECTED ON THE FIRST SWEEP AFTER DEPLOY: every one of the ~476 staged rows changes bytes
+// at once, so all of them flip to needs_populate and drain at replayLimit=10 per 5-minute
+// cycle, roughly 4 hours. That is a full-fleet replay, not a fault. Do NOT raise replayLimit
+// to speed it up: at 40 the outer invocation was killed before writing its sync_log row, so
+// work continued while observability vanished.
 const ENTITIES = [
   { name: 'clients',  rawTable: 'jobber_pull_clients',  topic: 'CLIENT_UPDATE',  fields: 'id firstName lastName companyName isCompany isArchived emails { address primary description } phones { number primary description } billingAddress { street city province postalCode country } balance updatedAt' },
   { name: 'jobs',     rawTable: 'jobber_pull_jobs',     topic: 'JOB_UPDATE',     fields: 'id jobNumber title client { id } property { id } jobStatus startAt endAt total updatedAt' },
   { name: 'visits',   rawTable: 'jobber_pull_visits',   topic: 'VISIT_UPDATE',   fields: 'id title startAt endAt completedAt completedBy visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
   { name: 'invoices', rawTable: 'jobber_pull_invoices', topic: 'INVOICE_UPDATE', fields: 'id invoiceNumber invoiceStatus issuedDate dueDate subject amounts { subtotal total invoiceBalance depositAmount } client { id } updatedAt' },
-  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE', fields: 'id name address { street city province postalCode coordinates { latitude longitude } }', replayLimit: 10 },
+  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE', fields: 'id name address { street city province postalCode coordinates { latitude longitude } } customFields { __typename ... on CustomFieldNumeric { valueNumeric customFieldConfiguration { id } } }', replayLimit: 10 },
   { name: 'quotes',   rawTable: 'jobber_pull_quotes',   topic: 'QUOTE_UPDATE',   fields: 'id quoteNumber quoteStatus amounts { subtotal total depositAmount } client { id } updatedAt' },
 ] as const
 
