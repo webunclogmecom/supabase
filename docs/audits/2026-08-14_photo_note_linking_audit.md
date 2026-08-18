@@ -11,6 +11,31 @@ days" rule and the writer producing the month are different pieces of code.**
 Supersedes the root cause in [`2026-08-13_admin_review_photo_visit_mislinking.md`](2026-08-13_admin_review_photo_visit_mislinking.md).
 **Nothing has been changed.** Read-only audit.
 
+> 🛑 **CLOSED THE SAME DAY. READ THIS BEFORE ACTING ON ANYTHING BELOW.**
+> This file is the read-only audit as it stood before the fix, and it is kept in that state
+> because it is the record of what was measured. **Two things in it are now false, and one of
+> them tells you to do something Fred explicitly refused.**
+>
+> | the audit says | what is true since 2026-08-14 |
+> |---|---|
+> | *"Nothing has been changed"* | the sync was fixed (`a3561c3`) and the backlog cleaned up (`546992b`, `5f1f7ae`) |
+> | `sync_jobber_note_photos.js` has **NONE** (no window), **LIVE** every 6h, **PRIMARY** writer | it now stores the real note timestamp and gates on a window, default **2 days**, fail-closed on an unparseable date |
+> | *"Still bleeding at roughly 60 links a day"* | the bleed is stopped; the daily rate is not a live number any more |
+> | Recommended order step 1: **comment out the `schedule:` cron** | 🛑 **Fred refused this.** The cron stays scheduled. The window is the fix, not switching the importer off. Do not comment it out. |
+>
+> **What actually shipped**, and where the current behaviour is documented:
+> - `a3561c3` — `createdAt` added to both note fragments, the real note timestamp stored instead
+>   of `now()`, the add gated on `NOTE_WINDOW_DAYS` (default 2, fail-closed), and both removal
+>   statements scoped to the visit being processed.
+> - `7afe763` — `photo_links` gained soft delete, its first audit trigger, and
+>   `soft_delete_photo_link`. Before this the table had **no** triggers, so a delete there left
+>   no record at all.
+> - `546992b` / `5f1f7ae` — the inherited-photo cleanup, run and verified, keeping the 2-day
+>   window. Soft delete only, never a hard delete.
+>
+> ⇒ **Steps 2 and 3 of "Recommended order" below are DONE.** Step 1 is rejected policy. Treat
+> the rest of this file as history, not as a work list.
+
 ---
 
 ## 🛑 The mechanism: Jobber's `Visit.notes` is JOB-scoped, not visit-scoped

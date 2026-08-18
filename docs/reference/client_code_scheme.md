@@ -34,12 +34,22 @@ A zero-padded **number**, a hyphen, then a short **brand tag**.
   (`050-PV`, `239-COM`).
 
 ### `XXX` — the brand tag (human-readable, NOT unique)
-- A short mnemonic (2–4 chars) derived from the client **name**.
+- A short mnemonic derived from the client **name**.
+  ⚠ **EXISTING tags are 2 to 4 chars and stay valid** (`PV`, `LG`, `BB`, `BC`, `CN` are all live).
+  **NEWLY COINED tags are always exactly 3**, because `coinTag` in `create-client` ends with
+  `.slice(0, 3)` after topping up. Describe the data as 2-4; coin at 3.
 - **SHARED across every location of the same brand/chain.** A chain gets ONE tag; each location gets its own number:
   - `PV` = Pura Vida (26 locations), `TCE` = The Carrot Express (23), `LG` = La Granja (6), `BB` = Bagel Boss, `GRO` = Grove Kosher, `LOU` = Skinny Louie…
 - Coining a tag for a **new** brand:
   - Drop noise words: `The`, `LLC`/`Inc`/`Corp`, `Miami`, `Restaurant`, `Cafe`.
-  - Use initials or a recognizable short form: *Vincenzos*→`VIN`, *Bagel Cove*→`BC`, *Casa Neos*→`CN`, *Cine Citta Cafe*→`CCC`, *The Joyce*→`JOY`.
+  - Use initials or a recognizable short form: *Vincenzos*→`VIN`, *Cine Citta Cafe*→`CCC`,
+    *The Joyce*→`JOY`.
+  - 🛑 **The two-letter examples this line used to give are now WRONG as guidance**, though the
+    codes themselves are live and correct. `coinTag` today takes the first three initials for a
+    3+ word name, and for a 1-2 word name takes `w[0].slice(0,3)` topped up from the second
+    word. So *Bagel Cove* coins **`BAG`** (not `BC`) and *Casa Neos* coins **`CAS`** (not `CN`).
+    Do not "restore" the old examples: they describe how those specific clients were coded by
+    hand years ago, not what the generator will propose now.
   - 🛑 **A TAG IS LETTERS. A LEADING NUMBER IN THE NAME IS SKIPPED, NEVER USED AS THE TAG**
     (Fred, 2026-08-17 — this REVERSES the previous rule, which read *"A leading number in the name
     can BE the tag: 41 Pizza and Bakery→41"*). So *1681 Lenox - Excel Plumbing Services inc.*→`LEP`,

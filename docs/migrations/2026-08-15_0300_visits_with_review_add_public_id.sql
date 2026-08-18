@@ -19,6 +19,10 @@
 -- APPEND ONLY. CREATE OR REPLACE VIEW cannot reorder or insert a column mid-list
 -- (42P16); appending at the end is the one safe edit, so public_id goes last.
 -- Body otherwise copied verbatim from pg_get_viewdef, not retyped.
+--
+-- AUDIT (rule #8): a view, so no table changed and there is nothing to opt in or out of.
+-- `public.visits` keeps its own audit trigger. Added 2026-08-18 after a documentation sweep
+-- found this header was the one migration that quarter missing its rule-8 line.
 -- ============================================================================
 
 create or replace view public.visits_with_review as

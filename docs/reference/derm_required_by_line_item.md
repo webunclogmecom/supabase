@@ -90,7 +90,19 @@ rows live. Rewritten with the escape-free POSIX class `[[:space:]]` the control 
 real answer was still 0. **Never accept a 0 here without the control printed beside it.**
 
 ## Keeping it fresh (three writers)
-- **Calendar** — `create_calendar_visit` RPC sets it from the chosen `service_line_item` ids (`bool_or(requires_derm)`).
+- **Calendar** — the RPCs set it from the chosen `service_line_item` ids, **via**
+  `fn_line_item_requires_derm`, and they now ALLOW THE DERIVE TO ABSTAIN (2026-08-14, `5990a44`).
+  🛑 They used to read `service_line_items.requires_derm` directly and write
+  `COALESCE(v_derm, false)`. That column is NOT NULL so it cannot abstain, but three catalogue
+  lines genuinely have no DERM opinion (fees **25** and **26**, and **27** GDO Online Reporting),
+  and the helper returns NULL for them. So a visit whose lines all abstain was written a hard
+  `false`. **That is not cosmetic:** the nightly re-derive fills only NULLs, so it never repairs
+  it, and `customer.work_orders` filters `COALESCE(derm_required,true)=true`, so the visit's
+  entire service record leaves the client's Field Portal. Building Apps hit exactly that from
+  the other end, with 11 of Diego's photos invisible on a cleaning visit.
+  ⚠ It was **three** call sites, not two, and the third already called the helper and was still
+  coercing the NULL away. NULL means "unknown", and unknown is the honest answer that keeps the
+  visit visible; never coerce it to `false`.
 - **Jobber sync** — `webhook-jobber.handleVisit` calls `set_visit_derm_required(visit_id)` after storing
   the visit's line items (near-real-time, every poll).
 - **Nightly catch-up** — pg_cron `derm-required-rederive` (03:20 ET) runs `rederive_visits_derm_required()`

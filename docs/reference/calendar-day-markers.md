@@ -157,7 +157,13 @@ in practice there is no backlog — but do not assume a NULL link means "no visi
 6-case guard matrix in a rolled-back probe **plus a positive control** (the trigger dropped, case A
 re-run, visit survives) — without that control the 6 passes would be an untested instrument.
 
-### ⚠ Deleting the marker does NOT delete the visit it created
+### ⚠ Deleting the marker used to leave the visit behind. FIXED 2026-08-17 (`d3ad027`)
+
+> 🛑 **The heading below is the SMOKE-TEST FINDING, not current behaviour.** Removing a
+> marker now also removes the visit it created: `2026-08-17_1200_dump_marker_visit_link_and_cleanup.sql`
+> links the marker to its visit and cleans it up on delete. The measurement that follows is kept
+> because it is the record of the defect, and because the reasoning about what "defensible"
+> would have meant is still worth reading. Do not read it as a description of today.
 
 Measured: removing the marker deleted the marker row, the `entity_source_links` row and the Jobber
 Task (`verified_gone: true`) — and left `public.visits` row 7772 alive and `scheduled`. Defensible

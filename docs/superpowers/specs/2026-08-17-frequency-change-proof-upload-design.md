@@ -1,6 +1,9 @@
 # Approval-proof image upload for job frequency changes
 
-- **Status:** Design approved 2026-08-17 (Fred). Not implemented.
+- **Status:** ✅ **SHIPPED 2026-08-17**, including the §5 attach remedy. Design approved by Fred
+  the same day. (This line read "Not implemented" for a day after it shipped.)
+  Bucket + link kind: `99d54d9` / `2026-08-17_2210_approval_proof_bucket.sql`.
+  Attach/remove on past changes: `56d217d`. Text-OR-image rule: `f092893`.
 - **Asked for by:** Yannick, [Slack](https://unclogme.slack.com/archives/C0BD3VDPB9S/p1786979623871639)
 - **Scope owner:** Client App (UI) + Supabase (bucket, migration, edge fn)
 
@@ -75,7 +78,13 @@ same cycle.
 
 ⚠ **`uploaded_by_employee_id` is an FK to `employees`, but the actor is an auth user identified by
 email.** Map email → `employees.id`; leave NULL when there is no match. Attribution must not fail the
-upload. (`audit.logs` records the real actor via `jwt_claims->>'email'` regardless — note that
+upload.
+🛑 **CORRECTION (`56d217d`): `audit.logs` does NOT reliably record the actor on this path,
+and the sentence that followed here claimed it did.** Measured: only **13 of 4,138**
+`photo_links` audit rows carry an email at all. So `uploaded_by_employee_id` is not a
+nice-to-have backed by a reliable audit trail, it is the ONLY attribution this feature gets.
+Leaving it NULL leaves the upload genuinely unattributed. Original note, kept for context:
+(`audit.logs` records the real actor via `jwt_claims->>'email'` regardless — note that
 `changed_by` is always NULL and is not the column to read.)
 
 ⚠ **Soft-delete asymmetry, and it decides where deletion happens.** `photo_links` has

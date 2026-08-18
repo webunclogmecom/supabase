@@ -540,13 +540,27 @@ passes. Clearing is the untested half of every field.
 ⇒ Require the read to have HAPPENED (a selected `id`, a `data` key) *before* comparing any field.
 A content-type guard alone is NOT sufficient: a well-formed `{"data":{"visit":null}}` still needs it.
 
-🛑 **The bad error message is the MILD case. The dangerous case is the sync layer.** For the drift
-reconcilers and the poll, "Jobber returned nothing for this entity" is exactly the shape of "this
-entity was deleted upstream" — and that is a branch which **soft-deletes visits** (`visits.deleted_at`
-is set when Jobber reports a visit missing). A waiting-room event during a reconcile run is therefore
-a plausible mass-soft-delete trigger. **Nobody has confirmed that path fires on `undefined` vs a real
-"not found", so treat it as an open risk, not an established bug** — but do not widen any
-Jobber-absence branch until it has been checked.
+🛑 **The bad error message was the MILD case. The dangerous case was the sync layer, and it is
+CLOSED (2026-08-14, `09fc892`).** For the drift reconcilers and the poll, "Jobber returned nothing for
+this entity" is exactly the shape of "this entity was deleted upstream", and that is a branch which
+**soft-deletes visits** (`visits.deleted_at` is set when Jobber reports a visit missing). The orphan
+branch in `scripts/sync/cron_jobber_reconcile_anomalies.js` fired on
+`isNotFound(res.errors) || !res.data?.visit`, which cannot tell "Jobber answered no" from "Jobber did
+not answer".
+
+⚠ **AND THE MECHANISM WAS NOT WHAT THIS SECTION FIRST ASSUMED. Do not carry the original guess
+forward.** The HTML waiting room never reached that branch at all: the script's bare `JSON.parse`
+throws on HTML, which was accidentally protective. The reachable shape was a **well-formed JSON reply
+with no `data` key** (a throttle or an error payload), which parses cleanly and then reads as
+"missing". A content-type guard alone would not have caught it.
+
+**What closed it**, both in `gqlVisit`, both THROWING so the orphan branch can never see the value:
+a non-JSON content-type is rejected, and a reply with no `data` key is rejected. Plus a
+**10-consecutive-failure circuit breaker** so a real outage stops the run instead of walking the
+fleet. Mutation-tested with the pre-fix body as the control.
+
+⇒ Still true and still the rule: **do not widen any Jobber-absence branch** without proving it can
+distinguish an answer of "no" from no answer at all.
 
 ⚠ A verified refusal is the SAFE outcome here and it is worth keeping: during the live event
 `save-client-contact` returned `jobber_unavailable` and wrote **nothing**, leaving the contact intact.
