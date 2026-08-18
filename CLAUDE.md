@@ -807,23 +807,37 @@ team picker but still drops every Jobber-side assignment. Both are required:
    is the **FULL base64 GID** `Z2lkOi8vSm9iYmVyL1VzZXIv...`, never the bare numeric id from the
    `manage_team` URL. All existing employee links store the full GID.
 
-⚠ **Naming follows a convention that is not obvious.** ACTIVE drivers are stored **first-name-only**
-(Grecia, Fred, Aaron, Yannick, Diego, Mark, Anthony, Michael), and the full-name rows are retired
-duplicates of those same people. So a new driver goes in first-name-only, or he reads as the
-retired-duplicate shape.
+⚠ **Naming.** Most ACTIVE staff are stored first-name-only (Grecia, Fred, Aaron, Yannick, Diego,
+Mark, Anthony); **Michael Escobar is stored under his full name** because Fred named that record
+explicitly on 2026-08-18. There is no enforced convention, so match Jobber and do not "normalise" an
+existing row on the strength of the majority shape.
+⚠ **`employees.full_name` is UNIQUE.** Two people with the same name cannot both exist, and
+retiring a duplicate requires freeing the string before the survivor can take it (a rename that
+ignores this raises `23505`).
 
-🛑 **THERE IS ONE LIVE EXCEPTION AND IT IS A DUPLICATE, NOT A COUNTER-EXAMPLE (measured
-2026-08-18).** An earlier version of this paragraph said the full-name rows are "all INACTIVE". That
-is false: `employees` **41 "Michael Escobar" is ACTIVE**, created 2026-08-17 15:39 ET, **67 minutes
-after** id 40 "Michael" which the migration below created at 14:32. Id 41 holds **zero**
-`entity_source_links`, so it can never receive a Jobber assignment: it is a second row for the same
-person, almost certainly hand-created in the Calendar team picker while the bridge row was being
-sorted out.
+🛑 **DUPLICATE EMPLOYEES COME FROM SAMSARA, NOT FROM PEOPLE DOUBLE-ENTERING, AND IT WILL
+RECUR (measured 2026-08-18).** We had two Michaels for a day. Not a fat-fingered picker entry: two
+source systems each produced a row for the same human, 67 minutes apart.
 
-⇒ Two ACTIVE Michaels are in the picker today, and only id 40 works. **Not resolved here** —
-retiring an employee row changes what the Calendar offers, so it is Fred's call, and `employees` uses
-`status` for exactly this (rule 6: never hard-delete). Recorded so the next reader does not "correct"
-the convention above on the strength of a row that is itself the bug.
+| row | created | link | how |
+|---|---|---|---|
+| 40 `Michael` | 08-17 14:32 ET | `jobber` `gid://Jobber/User/4255910` | `2026-08-17_1210`, `match_method='manual'` |
+| 41 `Michael Escobar` | 08-17 15:39 ET | `samsara 60524052` | **`match_method='webhook_new'`, auto-created by the Samsara driver feed** |
+
+**The Samsara feed inserts an employee without reconciling against existing rows**, so anyone who is
+both a Jobber user and a Samsara driver can land twice. The correct end state is what Grecia, Mark
+and Anthony already look like: **ONE row carrying BOTH a `jobber` and a `samsara` link**, which is
+exactly what `entity_source_links` is for. `Mark noltion` (36) and `Anthony Clark` (38) are the
+residue of this happening before and being cleaned up the same way: INACTIVE, links moved off.
+
+⇒ Resolved for Michael by `2026-08-18_1545`: samsara link moved 41 -> 40, 40 renamed, 41 retired.
+⇒ **The generator is not fixed.** The next person who exists in both systems will duplicate again.
+When it happens, consolidate onto the row that holds the `visit_team` history rather than the newer
+row, and move the link rather than re-creating it.
+
+✅ **COVERAGE, measured 2026-08-18: 8 ACTIVE employees, 8 with a Jobber link, 0 without.** Fred's
+standing rule: *"all the drivers and team members should have a link to their Jobber reference."*
+The `active_without_jobber_link` check at the end of `2026-08-18_1545` is a re-runnable probe for it.
 
 ⚠ **This will recur on the next hire.** Nothing detects it: there is no "Jobber has a user we do not"
 check anywhere. Until an employee sync exists, adding a driver is a manual two-step, and the symptom
