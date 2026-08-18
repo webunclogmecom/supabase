@@ -684,13 +684,35 @@ Jobber's current value differs from what we last saw there; unchanged means "not
 the value, so `0 -> 0` can never be copied while `0 -> 190` is. First run seeds silently and adopts
 nothing. Both-sides-changed is recorded as CONFLICT and frozen: it is a human question.
 
-**STATUS, and do not misread it: SEEDED AND SMOKE-TESTED, STILL NOT WIRED.** As of 2026-08-17 the
-shadow holds **458 rows** (Fred: *"seed it for real, then do a smoke test"*). Both scripts
-(`scripts/sync/seed_jobber_custom_field_shadow.js`, `adopt_jobber_custom_fields.js`) are dry-run by
-default, no cron references either, and `sync-jobber-poll` / `webhook-jobber` are untouched.
-**Custom fields still do not sync on their own.** Outbound is possible (`propertyEdit` accepts a
-customFields-only edit, config `3061111` is `readOnly:false`) but is not built; the smoke test drove
-it by hand for one property.
+**STATUS: LIVE INBOUND SINCE 2026-08-18. Outbound is still NOT built.** Fred: *"wire it to the
+poll."* A Jobber-side edit to the Grease Trap size now reaches `public.properties` on its own,
+proven unattended: Jobber was edited by hand, nothing was flagged, and the scheduled `*/5` cron
+swept at 01:00 ET, restaged the property, replayed it and adopted 1800 -> 2500 with
+`adopted_from`/`adopted_to` intact and its own audit label. **Outbound is still not built**: nothing
+we change is pushed to Jobber (`propertyEdit` accepts a customFields-only edit and config `3061111`
+is `readOnly:false`, so it is possible, just not written).
+
+**TWO PLACES, AND MISSING EITHER MAKES IT SILENTLY INERT.** The poll does not hand its staged
+payload to the handler; it POSTs an id and `handleProperty` re-queries Jobber itself.
+- `sync-jobber-poll` selects `customFields` on `properties` **only for CHANGE DETECTION**. Without
+  it a custom-field-only edit leaves the staged address bytes identical, the row is never restaged,
+  and the handler is never replayed.
+- `webhook-jobber`'s `handleProperty` selects them in its own query and passes the value on.
+
+**🛑 THE DECISION AND THE WRITE LIVE IN ONE PLACE: `public.fn_sync_property_custom_field`**
+(`2026-08-18_0210`, SECDEF, service_role only). Both the poll and
+`scripts/sync/adopt_jobber_custom_fields.js` go through it. **Never write
+`grease_trap_size_gallons` from a caller directly**, however small the change looks: a second
+assembly of one rule is how every defect below was born. It carries all six guards, including
+that a configuration missing from Jobber's payload is a FAILED READ and never an empty field.
+
+**⚠ `p_allow_clear` is FALSE from the poll and must stay that way.** A clearing adopt is the most
+destructive write this sync can make.
+
+**⚠ A full-fleet replay is EXPECTED after any change to the poll's `fields` string.** Adding
+`customFields` changed the payload bytes of all 476 staged rows at once, so every row flipped to
+`needs_populate` and drained at 10 per 5-minute cycle, about 4 hours. That is the shape change, not
+drift.
 
 🛑 **THE SMOKE TEST FOUND THAT THE ADOPT PATH HAD NEVER WORKED, AND AN ADVERSARIAL SWEEP OF THE
 RESULT FOUND FIVE MORE. Every one was a COMPOSITION defect: the pieces were individually correct and
@@ -707,6 +729,8 @@ both with hand-built arguments, both green while the composed path could not com
 | the seed script's `matched` control was a work-queue size, so a fully-seeded fleet reported `BROKEN` and refused to run | it read correctly on run 1, when the queue was full |
 | re-applying `2026-08-17_1636` would silently revert the freeze fix | prevented only by an unrelated assertion, i.e. by luck |
 | a Jobber non-answer was adopted as "empty"; under `--allow-clear` that is an UPDATE to NULL | checked in aggregate (a 10% tolerance) instead of per row |
+| the `--only` flag defaulted to `[0]`, so every run WITHOUT it aborted before deciding anything | `''.split(',')` is `['']` and `Number('')` is a finite `0`; only an absent-flag run could catch it |
+| the RPC raised `23502` for every property whose capacity is NULL (353 of 458), so the shadow never recorded | `to_jsonb(NULL::integer)` is SQL NULL, not JSON null, and the caller swallows the error: replay 200, `sync_log` success, dashboards green |
 
 ⇒ **When you verify tooling like this, exercise the emitted statement, not the functions it calls.**
 The technique that worked: render the real template out of the source file (never retype it), run it
@@ -715,6 +739,14 @@ must still fail**. Three passing cases proved nothing until the fourth one broke
 ⇒ And `public.properties.grease_trap_size_gallons` is **live** (120 changes, 3 `app_source`s,
 `client.update_property_capacity` EXECUTE-able by `authenticated`), so any batch write to it needs a
 value predicate, not a plan captured minutes earlier.
+⇒ **A green pipeline is not evidence the feature ran.** The NULL-capacity defect sailed past a 200
+replay, a cleared `needs_populate` and a `success` `sync_log` row, because the caller deliberately
+cannot fail the property sync. **Ask what the feature WROTE, not whether the run succeeded**: the
+check that found it was "did the RPC record a shadow for all ten replayed properties, or only for
+the one that adopted?"
+⇒ **And test every BASELINE, not one cell per variable.** Both the `--only` and the NULL-capacity
+defects were reachable only from the baseline nobody exercised (flag absent; capacity NULL). The
+`2026-08-18_0210` VERIFY shipped ten assertions and every one used a sentinel created WITH a value.
 
 ⚠ **Bind by configuration GID, never by label.** Four numeric grease-trap fields exist; two differ
 only by a capital S and one of those is archived, and "GT size" appears twice.
