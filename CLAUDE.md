@@ -754,6 +754,56 @@ only by a capital S and one of those is archived, and "GT size" appears twice.
 staged rows change at once**, so the first sweep flips every row to `needs_populate` and drains at 10
 per cycle, roughly 4 hours. A full-fleet replay is expected there, not a fault.
 
+### 🛑 WE DO NOT SYNC EMPLOYEES FROM JOBBER AT ALL, AND AN UNKNOWN CREW MEMBER IS DROPPED SILENTLY (2026-08-17)
+
+Yannick in Slack: *"for some reason Michael Escobar does not show on calendar, he has been in jobber
+for few weeks"*. **It was not a Calendar bug.** There is no employee sync, so a new Jobber team member
+never arrives on his own. Employees are hand-created, and that manual step is not written down
+anywhere a person would look.
+
+Re-measured against the live code 2026-08-18, not taken from the original migration header:
+
+| | |
+|---|---|
+| entities `sync-jobber-poll` pulls | `clients`, `invoices`, `jobs`, `properties`, `quotes`, `visits`. **No users.** |
+| user handler in `webhook-jobber` | **zero** matches for `USER_UPDATE` / `USER_CREATE` / `handleUser` |
+
+🛑 **AND THE FAILURE IS SILENT, NOT LOUD.** Visits DO pull `assignedUsers { nodes { id } }`, and
+`syncVisitTeamFromJobber` does this:
+
+```ts
+for (const member of (nodes || [])) {
+  const empId = await findEntityBySourceId('employee', 'jobber', member.id)
+  if (empId) want.add(empId)              // <-- unknown user skipped, no error, no log
+}
+await supabase.from('visit_team').delete().eq('visit_id', visitId)   // crew wiped FIRST
+if (ids.length) await supabase.from('visit_team').insert(...)
+await supabase.from('visits').update({ assigned_driver_id: ids[0] ?? null })
+```
+
+With no bridge row the id resolves to null and is dropped. A visit assigned **only** to that person
+therefore ends with an **empty `visit_team` and a null `assigned_driver_id`**, which is exactly the
+"does not show on calendar" symptom, and it had been true for the weeks he was in Jobber.
+
+**⇒ THE BRIDGE ROW IS THE LOAD-BEARING HALF.** An `employees` row alone puts someone in the Calendar
+team picker but still drops every Jobber-side assignment. Both are required:
+
+1. `public.employees` row, `status='ACTIVE'` (the picker lists ACTIVE only), and
+2. `public.entity_source_links` (`entity_type='employee'`, `source_system='jobber'`) whose `source_id`
+   is the **FULL base64 GID** `Z2lkOi8vSm9iYmVyL1VzZXIv...`, never the bare numeric id from the
+   `manage_team` URL. All existing employee links store the full GID.
+
+⚠ **Naming follows a convention that is not obvious.** Every ACTIVE driver is stored first-name-only
+(Mark, Anthony, Grecia, Aaron); the FULL names in the table are all INACTIVE duplicates of those same
+people. So a new driver goes in first-name-only, or he reads as the retired-duplicate shape.
+
+⚠ **This will recur on the next hire.** Nothing detects it: there is no "Jobber has a user we do not"
+check anywhere. Until an employee sync exists, adding a driver is a manual two-step, and the symptom
+if it is forgotten is not an error but a quietly empty crew.
+
+Worked example, including the 443-visit Jobber sweep used to find every visit he was on:
+`docs/migrations/2026-08-17_1210_add_michael_escobar_driver.sql` and `..._1230_backfill_michael_visit_team.sql`.
+
 ### 🛑 The line-item drift reconciler IGNORES ARCHIVED JOBS ON PURPOSE. Do not "fix" it (Fred, 2026-08-03)
 
 **Fred, 2026-08-03: *"leave it, don't extend the reconciler to archived jobs."*** Settled, not deferred.
