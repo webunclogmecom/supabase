@@ -46,8 +46,18 @@ const APPS = {
   // admin.* serves 200 and review.* no longer serves at all, so this URL was BROKEN until it was changed.
   review:   { label: 'Admin Review',   url: 'https://admin.unclogme.app'    },
   fp:       { label: 'Field Portal',   url: 'https://fp.unclogme.app'       },
-  studio:   { label: 'DERM Stamp Studio', url: 'https://studio.unclogme.app' },
+  // Stamp Studio moved studio.unclogme.app -> stamp.unclogme.app on 2026-07-30. The old host still
+  // REDIRECTS, which is why this stale URL kept passing and nobody noticed it for three weeks: a
+  // check pointed at a redirect measures the right app for the wrong reason, and stops working the
+  // day the redirect is retired. Point checks at the canonical host, never at a redirect.
+  studio:   { label: 'DERM Stamp Studio', url: 'https://stamp.unclogme.app'  },
   dump:     { label: 'DUMP Schedule QR',  url: 'https://dump.unclogme.app'   },
+  // Apps Hub, added 2026-08-18 the day it was built. Uses the Lovable default host because
+  // hub.unclogme.app is not pointed yet (GoDaddy Domain Connect is Fred's click); switch this to
+  // https://hub.unclogme.app once DNS lands.
+  // ⚠ Zero RPCs and zero table reads is the CORRECT answer for this app - its only backend contact
+  // is Supabase Auth. Same shape as `dump` below: do not read an empty result as a broken scan.
+  hub:      { label: 'Apps Hub',          url: 'https://radiant-start-board.lovable.app' },
 };
 
 async function sql(query) {
