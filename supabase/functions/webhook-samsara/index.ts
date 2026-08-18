@@ -197,6 +197,84 @@ async function handleAddress(
 // Driver Handlers → employees
 // ============================================================================
 
+/** Normalise a name or email for comparison: trim, lowercase, collapse whitespace. */
+const normId = (v: unknown) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * Find the employee this Samsara driver already IS, without guessing.
+ *
+ * Returns the id when exactly ONE candidate matches, null when none does, and
+ * `ambiguous` when several do. Ambiguity is never resolved by picking the first row:
+ * merging two different people is far worse than leaving one driver unlinked.
+ *
+ * ⚠ THE MATCHERS ARE ORDERED BY STRENGTH AND CONSTRAINED BY WHAT THE DATA ACTUALLY HAS.
+ * Measured 2026-08-18 over all 20 employees: 6 carry an email, **0 carry a phone**, so a
+ * phone matcher would be dead code. Samsara also sent NO email and NO phone for the driver
+ * that caused the duplicate, so name matching is the only rule that could have caught it.
+ * Most staff are stored first-name-only ("Michael"), while Samsara sends the full name
+ * ("Michael Escobar"), which is what rule 3 exists for.
+ */
+async function reconcileEmployee(
+  name: string,
+  email: string | null,
+): Promise<{ id: number; how: string } | { ambiguous: true; how: string } | null> {
+  const { data: rows, error } = await supabase
+    .from('employees')
+    .select('id, full_name, email, status')
+  if (error) throw new Error(`employee reconcile read failed: ${error.message}`)
+  const all = rows ?? []
+
+  const pick = (cands: any[], how: string) => {
+    if (cands.length === 1) return { id: cands[0].id as number, how }
+    if (cands.length > 1) return { ambiguous: true as const, how }
+    return null
+  }
+
+  // 1. email, exact. The only genuinely unambiguous key we hold.
+  const e = normId(email)
+  if (e) {
+    const hit = pick(all.filter((r) => normId(r.email) === e), 'email')
+    if (hit) return hit
+  }
+
+  const n = normId(name)
+  if (!n) return null
+
+  // 🛑 NAME RULES SEARCH **ACTIVE** EMPLOYEES ONLY. Retired rows are mostly duplicates of
+  // people who are still here (`Anthony Clark` is a retired duplicate of the live `Anthony`, and
+  // `Michael Escobar (samsara duplicate, retired ...)` of the live `Michael Escobar`), so matching
+  // them does two bad things: it makes a live driver look AMBIGUOUS because his own retired twin
+  // also matches, and where it does resolve it attaches live telemetry to a DEAD row, which is
+  // worse than not linking at all. Both were caught by running this matcher against the real
+  // employees table before shipping it, not by reading it.
+  // Email is deliberately exempt (it is checked above, across all rows): it is unambiguous
+  // identity, so it may legitimately land on someone who is currently inactive.
+  const live = all.filter((r) => r.status === 'ACTIVE')
+
+  // 2. full name, exact.
+  const exact = pick(live.filter((r) => normId(r.full_name) === n), 'full_name')
+  if (exact) return exact
+
+  // 3. Samsara's FIRST token equals a first-name-only employee row. "Michael Escobar" -> "Michael".
+  const first = n.split(' ')[0]
+  if (first && first !== n) {
+    const byFirst = pick(live.filter((r) => normId(r.full_name) === first), 'samsara_first_name')
+    if (byFirst) return byFirst
+  }
+
+  // 4. The reverse: Samsara sends one token and we store the full name.
+  const byStored = pick(
+    live.filter((r) => {
+      const f = normId(r.full_name)
+      return f.includes(' ') && f.split(' ')[0] === n
+    }),
+    'stored_first_name',
+  )
+  if (byStored) return byStored
+
+  return null
+}
+
 async function handleDriver(
   driver: any,
   action: 'created' | 'updated'
@@ -204,49 +282,72 @@ async function handleDriver(
   const samsaraId = String(driver.id)
   const name = driver.name ?? `${driver.firstName ?? ''} ${driver.lastName ?? ''}`.trim()
 
-  let empId = await findEntityBySourceId('employee', 'samsara', samsaraId)
+  const empId = await findEntityBySourceId('employee', 'samsara', samsaraId)
 
-  // v2 employees: full_name, role, status, shift, email, phone, hire_date, notes, access_level
-  const empRow: Record<string, unknown> = {
-    full_name: name || null,
-    phone: driver.phone ?? null,
-    email: driver.email ?? null,
+  // 🛑 SAMSARA MUST NEVER OVERWRITE A VALUE WE ALREADY HOLD. It may only FILL A BLANK.
+  // This handler used to write `{ full_name: name || null, phone: driver.phone ?? null,
+  // email: driver.email ?? null }` on every update, so a driver payload without an email
+  // BLANKED the employee's email. `?? null` does not protect you: null is exactly what
+  // Samsara sends for a field it has nothing for. Same class as the property name-blanking
+  // bug in CLAUDE.md, and it became live for Michael the moment his samsara link moved onto
+  // the row that holds his real email.
+  // Rule 4 also settles the direction: Jobber owns employees; Samsara owns field telemetry.
+  const enrichOnly = async (id: number) => {
+    const { data: cur, error: readErr } = await supabase
+      .from('employees').select('full_name, email, phone').eq('id', id).maybeSingle()
+    if (readErr) throw new Error(`employee read failed: ${readErr.message}`)
+    const patch: Record<string, unknown> = {}
+    const blank = (v: unknown) => v === null || v === undefined || String(v).trim() === ''
+    if (blank(cur?.full_name) && !blank(name)) patch.full_name = name
+    if (blank(cur?.email) && !blank(driver.email)) patch.email = driver.email
+    if (blank(cur?.phone) && !blank(driver.phone)) patch.phone = driver.phone
+    if (Object.keys(patch).length === 0) return
+    const { error } = await supabase.from('employees').update(patch).eq('id', id)
+    if (error) throw new Error(`Employee enrich failed: ${error.message}`)
+    console.log(`[handleDriver] enriched employee ${id} with ${Object.keys(patch).join(', ')}`)
   }
 
   if (empId) {
-    const { error } = await supabase.from('employees').update(empRow).eq('id', empId)
-    if (error) throw new Error(`Employee update failed: ${error.message}`)
-  } else {
-    // New driver — determine access level
-    const officeStaff = ['yannick', 'aaron', 'diego']
-    const isOffice = officeStaff.some((n) => name.toLowerCase().includes(n))
-
-    // Role enum (audited 2026-05-13): 'Admin' | 'Office' | 'Owner' | 'Technician'.
-    // Handler previously wrote 'Office Manager' which wasn't a valid enum value —
-    // new Samsara drivers tagged as office would land with a bogus role string.
-    empRow.status = 'ACTIVE'
-    empRow.role = isOffice ? 'Office' : 'Technician'
-    empRow.access_level = isOffice ? 'office' : 'field'
-
-    const { data: inserted, error } = await supabase
-      .from('employees')
-      .insert(empRow)
-      .select('id')
-      .single()
-    if (error || !inserted) throw new Error(`Employee insert failed: ${error?.message}`)
-    empId = inserted.id
+    await enrichOnly(empId)
+    await upsertEntityLink({
+      entity_type: 'employee', entity_id: empId, source_system: 'samsara',
+      source_id: samsaraId, source_name: name,
+      match_method: action === 'created' ? 'webhook_new' : 'webhook_update',
+    })
+    return { entity_type: 'employee', entity_id: empId }
   }
 
-  await upsertEntityLink({
-    entity_type: 'employee',
-    entity_id: empId!,
-    source_system: 'samsara',
-    source_id: samsaraId,
-    source_name: name,
-    match_method: action === 'created' ? 'webhook_new' : 'webhook_update',
-  })
+  // 🛑 AN UNKNOWN SAMSARA ID IS NOT AUTOMATICALLY A NEW PERSON, AND THIS NO LONGER CREATES ONE.
+  // It used to INSERT unconditionally, which is how we ended up with two Michaels 67 minutes
+  // apart: the Jobber side had already created him, Samsara did not look, and inserted a second
+  // row. `Mark noltion` and `Anthony Clark` are older residue of the same thing.
+  // The correct end state is ONE employee carrying BOTH a jobber and a samsara link, which is
+  // what entity_source_links exists for and what Grecia, Mark and Anthony already look like.
+  const match = await reconcileEmployee(name, driver.email ?? null)
 
-  return { entity_type: 'employee', entity_id: empId! }
+  if (match && 'id' in match) {
+    await enrichOnly(match.id)
+    await upsertEntityLink({
+      entity_type: 'employee', entity_id: match.id, source_system: 'samsara',
+      source_id: samsaraId, source_name: name,
+      match_method: `reconciled_${match.how}`,
+    })
+    console.log(`[handleDriver] samsara driver ${samsaraId} "${name}" matched existing employee ${match.id} by ${match.how}; linked, not created`)
+    return { entity_type: 'employee', entity_id: match.id }
+  }
+
+  // No confident match. Do NOT invent an employee: return 0 so the dispatcher logs this as
+  // `skipped` WITH THE FULL PAYLOAD in webhook_events_log, where a person can see it and
+  // create the employee properly (employees originate from Jobber, per rule 4). Nothing is
+  // lost; the next driver event for the same id will reconcile once the row exists.
+  console.warn(
+    `[handleDriver] SKIPPED samsara driver ${samsaraId} "${name}": ` +
+    (match && 'ambiguous' in match
+      ? `several employees matched by ${match.how}, refusing to guess`
+      : 'no employee matched') +
+    '. Create the employee (with its Jobber link) and this will attach on the next event.'
+  )
+  return { entity_type: 'employee', entity_id: 0 }
 }
 
 // ============================================================================
