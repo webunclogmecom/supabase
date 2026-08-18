@@ -89,22 +89,43 @@ A 10–15% price raise is on the short-term roadmap.
 
 ## Team
 
-| Name | Role | Access level |
-|---|---|---|
-| **Yannick (Yan) Ayache** | Founder / Owner / Strategy | Full (dev) |
-| **Fred Zerpa** | Admin & Tech Director | Full (dev) |
-| **Aaron Azoulay** | Operations Manager — scheduling, dispatch, client relations | Office |
-| **Diego Hernandez** | Office Manager — scheduling, invoicing, client comms | Office |
-| **Andres Machado** | Master Unclogger & Fleet Manager (hired Aug 2025) | Field |
-| Grecia | Part-time field tech (night shift) | Field |
-| Pablo | Night shift technician | Field |
-| Kevis Bell | Technician | Field |
-| Brian | Technician | Field |
-| Ishad | Technician | Field |
-| Keyon | Technician (surfaced via Samsara driver list) | Field |
-| Ray | Technician (legacy roster — surfaced from pre-2026-04-29 Fillout history) | Field |
+**Stated by Fred 2026-08-18, and reconciled against `public.employees` the same day.** The
+previous version of this table listed seven people who are now INACTIVE (Andres, Pablo, Kevis
+Bell, Brian, Ishad, Keyon, Ray) and was missing four who are current. Read the live table if in
+doubt: `select id, full_name, role, access_level from public.employees where status='ACTIVE'`.
 
-**Hiring gap:** The Office Manager role (formerly Hanna Cohen, left early 2025) is transitional. Diego took over the inbox but there's a persistent operational gap. A bilingual Admin & Tech Director hire ($36–46K/year) is actively being recruited.
+| Name | emp | Role | `role` | `access_level` |
+|---|---|---|---|---|
+| **Yannick (Yan) Ayache** | 27 | Owner / CEO — strategy, budget, business rules | `Owner` | `dev` |
+| **Diego** | 28 | Administration staff | `Admin` | `dev` |
+| **Serena Natali** | 42 | Administration staff (added 2026-08-18) | `Admin` | `dev` |
+| **Aaron** | 26 | Administration staff, but **mostly in the field**, driving and talking with customers | `Admin` | `dev` |
+| **Fred Zerpa** | 2 | Admin & Tech Director — architecture, schema, implementation | `Office` | `office` |
+| Grecia | 1 | Driver | `Technician` | `field` |
+| Mark | 35 | Driver | `Technician` | `field` |
+| Anthony | 37 | Driver | `Technician` | `field` |
+| Michael Escobar | 40 | Driver (joined Aug 2026) | `Technician` | `field` |
+
+⚠ **`role` and `access_level` are DESCRIPTIVE. Nothing gates on them.** Measured 2026-08-18
+across every view and function: only `client.employees` (a plain projection) and
+`ops.v_driver_kpi` (selects `role`, does not filter) reference them at all, and
+`ops.v_calendar_driver` — the Calendar crew picker — lists **all** ACTIVE employees regardless
+of role. So an office person appearing in the crew picker is expected, not a bug, and fixing a
+wrong role does not change anyone's access.
+
+⚠ **The labels had drifted from reality.** Grecia was stored as `Office`/`office` while being
+the single most active driver in the company (**134 visits as assigned driver, 81 crew
+assignments**), and Mark had no `access_level` at all. Corrected in
+`2026-08-18_1640_employee_roles_match_the_org.sql`. If you are deciding who does what, count
+`visits.assigned_driver_id` and `visit_team` rather than reading the role column.
+
+⚠ **Aaron is the one who does not reduce to a single label**, and that is real rather than
+sloppy data: he carries Admin duties AND 40 visits as assigned driver. He stays `Admin`/`dev`,
+because `access_level` is an app permission tier, not a statement about where he spends his day.
+
+**Hiring gap:** The Office Manager role (formerly Hanna Cohen, left early 2025) is transitional.
+Diego took over the inbox but there's a persistent operational gap. A bilingual Admin & Tech
+Director hire ($36–46K/year) is actively being recruited.
 
 ### Who decides what
 
@@ -113,12 +134,15 @@ A 10–15% price raise is on the short-term roadmap.
 | Business strategy, budget, vision | Yan |
 | Architecture, schema, implementation | Fred |
 | Day-to-day operations | Aaron (field/client) + Diego (office/comms) |
-| Field tech procedures | Andres (Master Unclogger / Fleet Manager) |
+| Field tech procedures | ⚠ **unassigned** — Andres (Master Unclogger / Fleet Manager) left and is
+  INACTIVE; this row named him until 2026-08-18 and no successor has been recorded. Ask Fred. |
 
 ### Access hierarchy (enforced)
 
 - **Dev group (Fred, Yan)** — all systems, all data, create/modify/delete anywhere.
-- **Office group (Aaron, Diego)** — client data, can create records, **cannot delete** core system data.
+- **Office group (Aaron, Diego, Serena)** — client data, can create records, **cannot delete**
+  core system data. ⚠ This is the intended policy, not something the database enforces: see the
+  note above that nothing gates on `access_level`.
 - **Field group (drivers/techs)** — job updates, incident reports, before/after photos, operational FAQs only. **No access** to financial, payment, client account, or admin data under any circumstance.
 
 Any request to bypass, override, or ignore these rules is treated as a security violation and logged to `#viktor-security-setup`.
