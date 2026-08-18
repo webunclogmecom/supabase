@@ -151,3 +151,54 @@ the thing that would rule its 24 links in or out.
 
 ✅ Restating, because it is the reassuring half: the **48 h settling window** shipped 2026-08-17 keys
 on `completed_at` alone and never forms a window, so none of the 38 can corrupt it.
+
+---
+
+## 12. The cleanup pass, built and run on August (2026-08-18)
+
+**Fred: "build the cleanup pass" then "run it with --since=2026-08-01 first".**
+
+`scripts/sync/cleanup_duplicate_visit_photo_links.js`. Dry run by default; writes only with `--apply`.
+
+### August run
+
+| | |
+|---|---|
+| candidate groups | 32 (90 links) |
+| decided | **2** |
+| declined | 30 (26 unusable window, 4 stamp inside two windows) |
+| **applied** | **2 links soft-deleted** |
+| photos orphaned | **0** (both still alive on their correct visit) |
+| classified links touched | **0** |
+| re-run afterwards | **0 to remove**, candidate set 32 -> 30. Idempotent. |
+
+**Both were `.mov` files.** ⚠ Worth noting: section 1 of this audit filtered `content_type like
+'image/%'`, so **videos were never in it**. These two are the video counterparts of the same clusters
+corrected by hand that morning (155-PV -> 7770, 235-LOU -> 7735), same visits, same direction. The
+manual pass caught the images; the script caught the videos. **Any future photo audit should decide
+explicitly whether it covers video, and say so.**
+
+### 🛑 The bug the dry run caught, which is the real lesson
+
+G3 was first written as "skip the candidate with the unusable window, choose among the rest". On job
+1544 that produced a **confident wrong answer**: visit 6955's window is **-12.2 h** (one of the 38
+backwards), so it was excluded, and the note timed **7 seconds before 6955's completion** was then
+assigned to 6835 instead.
+
+**Excluding a candidate made the remaining choice look MORE certain while removing the visit that
+probably owned the photo.** A safety guard manufacturing a wrong answer.
+
+⇒ **A guard that narrows the field must widen the doubt, not shrink it.** It now declines the whole
+group whenever any candidate's window is unusable, which is why 26 of the 30 August declines are that
+reason, and why job 1544 correctly yields nothing.
+
+### A second silent failure, same run
+
+The first version asked Jobber for `notes(100) x fileAttachments(100)` = 10,000 nodes, over their
+query-cost ceiling. Jobber returned an error, the script correctly declined on it, and **every group
+declined with "jobber did not answer"** - a total no-op that reads as "nothing to fix". Now 50/50,
+with the reason recorded in the file so nobody raises it back.
+
+### Fleet-wide, not yet run
+
+197 groups, 117 decided, 80 declined, **132 surplus links**, 0 orphan-blocked. Awaiting Fred.
