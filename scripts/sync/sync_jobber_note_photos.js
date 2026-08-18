@@ -107,7 +107,7 @@ async function getReadToken(force) {
   console.log(`sync_jobber_note_photos  ${EXECUTE ? 'EXECUTE' : 'DRY-RUN'}${ENABLE_REMOVE ? ' +remove' : ' (add-only)'}  ${ONLY_VISIT ? `visit=${ONLY_VISIT}` : `last ${DAYS}d`}`);
   if (!JOBBER_TOKEN) JOBBER_TOKEN = await getReadToken();
   const target = await pg(`
-    SELECT v.id AS visit_id, v.client_id, v.visit_date, esl.source_id AS visit_gid, c.client_code
+    SELECT v.id AS visit_id, v.client_id, v.visit_date, v.completed_at, esl.source_id AS visit_gid, c.client_code
     FROM visits v
     JOIN entity_source_links esl ON esl.entity_type='visit' AND esl.entity_id=v.id AND esl.source_system='jobber'
     JOIN clients c ON c.id=v.client_id
@@ -211,19 +211,49 @@ async function getReadToken(force) {
     // Exact ties keep today's dual-link behaviour (rare, and a human classifies anyway).
     // ⚠ This changes only future ADDs. Existing in-window links are untouched, per Fred's
     // 2026-08-14 ruling ("keep the ones inside the 2 day window").
+    // 🛑 THE TIE-BREAK COMPARES COMPLETION TIMESTAMPS, THE WINDOW STILL COMPARES DATES.
+    // Two anchors on purpose (2026-08-18, Fred: "we have a better and certain linking"):
+    //   * ELIGIBILITY (who is allowed to take the photo) stays on noon(visit_date), because
+    //     that is exactly how each sibling will judge its own window when its turn comes.
+    //     If eligibility were judged on completed_at here, this visit could hand the photo
+    //     to a sibling that then REFUSES it on its own pass, and the photo would land
+    //     NOWHERE. Losing a photo is worse than dual-linking one.
+    //   * DISTANCE (who is nearest) uses completed_at, which is strictly more precise.
+    // Why it matters, measured over 180 days: 11 same-job pairs share a visit_date, so a
+    // date-only distance is an exact tie and both visits keep the photo. Their crews are
+    // identical in 11 of 11 cases (so the note's author cannot break the tie) but their
+    // completed_at differs in 11 of 11 (249-LOU 2026-08-14: 18:10 vs 07:07, eleven hours).
+    // A visit with no completed_at falls back to noon(visit_date); mixing anchors is fine,
+    // the comparison only needs a total order, and each side uses its best available time.
     let toAdd = inWindow;
     if (inWindow.length) {
-      const sibs = await pg(`SELECT v2.id, v2.visit_date FROM visits v2
+      const sibs = await pg(`SELECT v2.id, v2.visit_date, v2.completed_at FROM visits v2
         WHERE v2.job_id = (SELECT job_id FROM visits WHERE id=${t.visit_id})
           AND v2.id <> ${t.visit_id} AND v2.deleted_at IS NULL AND v2.visit_status='completed'`);
       if (sibs.length) {
-        const myDist = (iso) => Math.abs(Date.parse(iso) - visitMs);
+        const noonMs = (d) => Date.parse(`${String(d).slice(0, 10)}T12:00:00Z`);
+        // 🛑 completed_at IS ONLY TRUSTED WHEN IT IS NEAR THE VISIT DATE. It records when
+        // someone MARKED the visit complete, not when the work happened: measured over the
+        // last 365 days, 109 of 1,072 completed visits (10%) sit more than 24h from their
+        // own visit_date, 11 of them beyond 7 days, worst case 819h (34 days). Feeding a
+        // late admin marking into the distance would pull a photo onto the wrong sibling
+        // with more confidence than the date rule it replaced. 963 of 1,072 (90%) are
+        // within 24h, which also covers the overnight routes, so that is the cutoff.
+        const COMPLETED_TRUST_MS = 24 * 3600000;
+        const anchorOf = (completedAt, visitDate) => {
+          const noon = noonMs(visitDate);
+          const c = completedAt ? Date.parse(completedAt) : NaN;
+          if (!Number.isFinite(c)) return noon;
+          if (!Number.isFinite(noon)) return c;
+          return Math.abs(c - noon) <= COMPLETED_TRUST_MS ? c : noon;
+        };
+        const myAnchor = anchorOf(t.completed_at, t.visit_date);
         toAdd = inWindow.filter(g => {
           const noteTs = Date.parse(curAtt.get(g).noteCreatedAt);
+          const myDist = Math.abs(noteTs - myAnchor);
           const closer = sibs.some(sv => {
-            const svMs = Date.parse(`${String(sv.visit_date).slice(0, 10)}T12:00:00Z`);
-            return Math.abs(noteTs - svMs) < myDist(curAtt.get(g).noteCreatedAt) &&
-                   Math.abs(noteTs - svMs) <= NOTE_WINDOW_DAYS * 86400000;
+            const eligible = Math.abs(noteTs - noonMs(sv.visit_date)) <= NOTE_WINDOW_DAYS * 86400000;
+            return eligible && Math.abs(noteTs - anchorOf(sv.completed_at, sv.visit_date)) < myDist;
           });
           if (closer) console.log(`    tie-break: ${curAtt.get(g).fileName} goes to a closer sibling visit, skipping here`);
           return !closer;
