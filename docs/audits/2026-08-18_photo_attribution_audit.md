@@ -151,3 +151,37 @@ is why cross-client is structurally zero. The visit is a guess in the largest on
 `WORKING-NOW.md` earlier carried **"77 visits hold 614 shared links"**, taken from the 6835
 investigation. This audit measures **322 photos / 405 surplus links / 34 visits** on the strict rule.
 The 614 figure counted every link of a shared photo rather than the surplus, and is superseded.
+
+---
+
+## 10. CORRECTION 2026-08-18, found while applying the 7103 fix
+
+**I said "the client sees the same 6 photos twice, on 07-13 and again on 07-14". That was WRONG**, and
+it is the exact trap section 1 of this document warns about: I counted `customer.wo_photos` without
+joining `customer.work_orders`.
+
+```
+7083  vqQ4UExiN4  2026-07-13  derm column FALSE / function TRUE  work_orders 0  wo_photos 6
+7103  rz1Rr3OoXT  2026-07-14  derm column TRUE  / function TRUE  work_orders 1  wo_photos 6 -> 0
+```
+
+`wo_photos` holds rows for BOTH visits, but **7083 has no `work_orders` row**, so the Field Portal
+answers **"Work order not found"** for it. The 6 photos were therefore visible on **7103 only**, i.e.
+exclusively on the wrong visit. Seeing them twice was never possible.
+
+⇒ **The fix is still correct and its effect is unchanged**: the client has stopped seeing another
+day's work on the 07-14 compliance page.
+
+🛑 **But it exposes the real problem for this client, which is NOT the photo link.** Visit 7083 is one
+of the **56 visits where `derm_required = false` while `fn_visit_requires_derm` returns TRUE**. Its
+own six photos are now visible nowhere, because the visit they belong to publishes no report at all,
+on the strength of a stale boolean.
+
+**Do not simply flip it.** The same flip on the other affected visits publishes 22 wrong photos (see
+section 4), and `derm_required` carries a locking trigger. The right sequence is: clear the wrong-visit
+links first, then reconcile the column to the function, and only then will 7083 publish its own work.
+
+⚠ **The general lesson, restated because I proved it the hard way within minutes of writing it:**
+`customer.wo_photos` alone is NOT the published surface. It overstates by 45 rows. The published
+surface is `wo_photos` INNER JOIN `work_orders`, and `work_orders` gates on
+`visit_status='completed' AND client_id IS NOT NULL AND COALESCE(derm_required,true)=true`.
