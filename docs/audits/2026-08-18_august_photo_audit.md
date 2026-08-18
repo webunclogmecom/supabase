@@ -60,13 +60,21 @@ pages (first:20); their "clean" verdicts are unverified. Both caveats are ⚠REV
 | Property backfill (1,269 alive visits) + generator carries `property_id` | `2026-08-18_1520` | August: 0 NULL-property visits remain; fleet: 22 honest NULLs (job has no property); the row-corridor guard caught a missing `deleted_at` filter on the first apply |
 | Hourly hot-window sweep (`30 * * * *`, `--days=3`) alongside the 6h full sweep | `jobber-note-photo-sync.yml` | ⚠REVIEW: a scheduled run cannot read dispatch inputs, so days branches on `github.event.schedule` — without that the hourly run would silently do the full 14-day sweep 24×/day |
 | Audit probe fetches `pinned`, notes truncation, splits by noteType | `audit_august_photos_vs_jobber.js` | v2 run 144/144 |
+| Client-note photos read-only in the app (decision 1) | `visit-client-note-photos`, `060791e` + `8037e30` | 6537 renders 7, 6995 renders none, `v_visit_photo_counts` unchanged; shipped invisible first because a global `X-App-Source` header failed the CORS preflight |
+| Same-day tie-break moved onto `completed_at` | `sync_jobber_note_photos.js`, `fcbb641` | old body as control on visit 1741: 13 adds vs 9 adds + 4 handed to the closer sibling |
+| The job-scoping model written down | [docs/reference/jobber-note-photo-attribution.md](../reference/jobber-note-photo-attribution.md) | proven on Jobber: 0 JobNotes shared between a client's two same-day visits on different jobs |
 
 Worst-case photo invisibility drops from ~6h to ~1h, and the mechanism that made 6537 confusing is
 labelled in the app (Reopened + driver notes).
 
 ## Decision items for Fred (deliberately NOT implemented)
 
-1. **ClientNote photos — 23 unique images in-window this month.** Drivers/office use client notes
+1. ✅ **DECIDED (c), SHIPPED 2026-08-18** - Fred: *"for the client notes go with option c, show
+   them read-only."* Admin Review now renders a read-only "Client-note photos" section from
+   Jobber (edge fn `visit-client-note-photos`); nothing is imported, no URL is stored, and the
+   images cannot reach classification, the photo counts, or the city email. The original options
+   are kept below because the reasoning still binds anyone tempted to revisit it.
+   **ClientNote photos — 23 unique images in-window this month.** Drivers/office use client notes
    as albums (399 unattributed on these jobs). The importer skips them by design because client
    notes repeat on every visit of the client. ⚠REVIEW: "import them with the window rule" is a
    NO-OP as stated — ClientNote albums carry years-old note dates with fresh attachments, and the
