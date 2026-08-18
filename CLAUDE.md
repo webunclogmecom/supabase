@@ -1034,6 +1034,30 @@ a page.** Two things above were true when written and are incomplete now.
    snapped by machine and not touched by a human. Full detail:
    `Building Apps/DERM Stamp Studio/docs/08-changelog.md`.
 
+### 🛑 JOBBER NOTES ARE SCOPED TO THE **JOB**, NOT THE VISIT (Fred, 2026-08-18)
+
+`Visit.notes` reads like a per-visit field and is not one. **JobNote is JOB-scoped** (every visit
+of the job returns the whole job's note history), **ClientNote is CLIENT-scoped** (repeats on every
+visit of that client, for ever). Proven on Jobber with a control, on a client with two completed
+visits on the SAME DAY on different jobs: **0 JobNotes shared**, and the one note they do share is
+the ClientNote.
+
+⇒ A driver's photo can only belong to a visit **of that note's job**, which is why two visits close
+in time usually disambiguate themselves: they are normally different jobs (measured: **70 of 140**
+same-client pairs inside the 2-day window, exactly half). The residual 70 are same-job, 11 of them
+same-date, where the crew is identical in 11 of 11 and only `completed_at` separates them.
+
+**Before touching photo attribution, read
+[docs/reference/jobber-note-photo-attribution.md](docs/reference/jobber-note-photo-attribution.md)**
+- the two-anchor rule (distance on `completed_at`, eligibility on `noon(visit_date)`, so a photo
+can never be handed to a sibling that later refuses it), the 24h trust cutoff on `completed_at`
+(109 of 1,072 completed visits sit further from their own visit_date, worst case 34 days), and the
+**80 links + 136 multi-visit photos still mis-attributed in the data, deliberately NOT repaired**
+(0 cross-client; the 102 cross-job ones are all May `jobber_migration`, none since August).
+
+⚠ **The sync is ADD-ONLY**: it can put a photo on the right visit but never takes it off the wrong
+one, so shipping a better rule does not heal history.
+
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
 
