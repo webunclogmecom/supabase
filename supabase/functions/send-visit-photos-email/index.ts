@@ -50,6 +50,23 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const TEST_RECIPIENT = 'fred@ayache.com'
 const IS_TEST = true
 
+// 🛑 THE SETTLING WINDOW. Photos keep arriving after a visit is completed, so a report
+// sent too early can be missing one. Fred chose 48h on 2026-08-17 from these numbers,
+// measured over 268 visits completed in the last 90 days (migration sources excluded,
+// they backfilled months-old visits and produce a fake 2821h tail):
+//
+//   last photo lands within  6h 69.0% | 12h 89.9% | 24h 97.4% | 48h 100.0%
+//   median 4.27h · p90 12.06h · worst case actually observed 42.40h
+//
+// ⚠ 24h leaves 7 of 268 visits (1 in 38) still receiving photos. 48h clears the worst
+// observed case by only 5.6h, so treat this as SAFE, NOT CERTAIN: zero events in 268
+// observations bounds the true miss rate at roughly 1 in 90, it does not prove zero.
+// The `confirm_resend` path stays the backstop for the miss.
+// 🛑 A "quiet for N hours since the last photo" rule was measured and REJECTED: the
+// largest gap between consecutive photos on one visit is 35.68h, so a quiet rule needs
+// ~36h to match this one. No safer, more moving parts. Do not reintroduce it.
+const SETTLING_HOURS = 48
+
 // 🛑 THE TEST RECIPIENT IS CALLER-SUPPLIED BUT DOMAIN-LOCKED, AND THE LOCK LIVES HERE.
 // Fred, 2026-08-16, asked for a modal to choose which address the test goes to. That
 // reintroduces a caller-supplied recipient, which is exactly the shape of the
@@ -419,7 +436,7 @@ Deno.serve(async (req: Request) => {
       // ⚠ properties columns are address / city / state / zip. NOT address_line1 or
       // postal_code: those were a guess, and PostgREST reported them only at runtime
       // (the deploy succeeded regardless, so nothing caught it until the first call).
-      .select('id, visit_date, deleted_at, client_id, property_id, public_id, derm_required, clients(name, client_code), properties(address, city, state, zip)')
+      .select('id, visit_date, completed_at, deleted_at, client_id, property_id, public_id, derm_required, clients(name, client_code), properties(address, city, state, zip)')
       .eq('id', visitId)
       .maybeSingle()
     if (vErr) throw new Error(`visit lookup failed: ${vErr.message}`)
@@ -481,6 +498,36 @@ Deno.serve(async (req: Request) => {
     if (unclassified > 0) {
       await logSend('skipped', `not_classified:${unclassified}`, 0, 0, null, null)
       return json({ error: 'not_classified', unclassified, total: images.length }, 409, cors)
+    }
+
+    // -- GATE: the photo set must have SETTLED (see SETTLING_HOURS at the top) -----
+    // This runs AFTER the classification gate on purpose: if photos are still untagged,
+    // "go classify them" is the more useful thing to say than "come back tomorrow".
+    // ⚠ It is the SERVER check that is the control. The app hides the button too, but
+    // per docs/11-city-email.md Rule 3 the UI check is convenience, never the gate.
+    const completedAtRaw = (v as Record<string, any>).completed_at
+    const completedAt = completedAtRaw ? new Date(completedAtRaw) : null
+    if (!completedAt || Number.isNaN(completedAt.getTime())) {
+      // Fail CLOSED. A visit with no completion time has no clock to measure against, so
+      // we cannot show the window has passed, and "cannot show it passed" is not "passed".
+      await logSend('skipped', 'not_settled:no_completed_at', 0, 0, null, null)
+      return json({
+        error: 'not_settled',
+        detail: 'This visit has no completion time recorded, so the 48 hour settling window cannot be checked.',
+      }, 409, cors)
+    }
+    const readyAt = new Date(completedAt.getTime() + SETTLING_HOURS * 3600_000)
+    const msLeft = readyAt.getTime() - Date.now()
+    if (msLeft > 0) {
+      const hoursLeft = Math.ceil(msLeft / 3600_000)
+      await logSend('skipped', `not_settled:${hoursLeft}h`, 0, 0, null, null)
+      return json({
+        error: 'not_settled',
+        detail: `Photos can still arrive for up to ${SETTLING_HOURS} hours after a visit is completed. This one can be sent in about ${hoursLeft} hour${hoursLeft === 1 ? '' : 's'}.`,
+        ready_at: readyAt.toISOString(),
+        hours_left: hoursLeft,
+        settling_hours: SETTLING_HOURS,
+      }, 409, cors)
     }
 
     // -- idempotency: send-derm-email has none, and it double-sent 9 times ----
