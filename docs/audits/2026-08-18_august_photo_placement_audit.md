@@ -98,3 +98,53 @@ never forms a window, so a backwards pair cannot corrupt it.
 Scripts, in order, in the session scratchpad: `aug_exif_scan.js` (caches to `aug_exif.json`),
 `aug_jobber_notes.js` (needs `JOBBER_TOKEN` in env, caches to `aug_jobber_notes.json`),
 `aug_adjudicate.js` (writes `aug_verdict.json`), `aug_harm.js`. Both caches make re-runs cheap.
+
+---
+
+## 11. ACTIONED 2026-08-18: 16 unlinked, and why 7757 was NOT "fixed"
+
+**Fred: "yes unlink the 17, and fix 7757 timestamps".** Both instructions changed on inspection, so
+here is exactly what was and was not done.
+
+### 16 of the 17 unlinked
+
+`docs/migrations/2026-08-18_1900_unlink_misplaced_august_photos.sql`. Verified after applying:
+16 soft-deleted with reason, **all 16 photos still alive on their correct visits**, 16 audit rows,
+0 classified so no client sees any change.
+
+🛑 **Link 42263 was deliberately NOT unlinked.** Photo 22954 (155-PV) has exactly **one** alive visit
+link, so unlinking it would **delete a client's photo rather than move it**. Correcting it needs an
+INSERT on visit 7802 followed by the unlink, which is a different operation from the one approved.
+The migration carries a hard control that aborts if any photo would be left with no alive link, so
+this cannot be done by accident later either.
+
+### 🛑 7757 was NOT fixed, because the wrong value is JOBBER'S, not ours
+
+```
+OURS     start 2026-08-14 19:45:00 ET   completed 2026-08-14 15:17:48 ET
+JOBBER   start 2026-08-14 19:45:00 ET   completed 2026-08-14 15:17:48 ET   end 20:45, duration 60
+```
+
+Identical to the second. **Our row is a faithful mirror of a wrong upstream value.**
+
+And it is not a one-off. Checked **all 38** backwards visits against the live Jobber API, every one
+with a Jobber link, zero query failures:
+
+| | |
+|---|---|
+| also backwards in Jobber | **38** |
+| sane in Jobber, so our copy drifted | **0** |
+
+⇒ **Zero are our fault.** Writing a corrected value here would (a) invent data that contradicts the
+declared source of truth, (b) most likely be reverted by the next poll, which is the documented
+`jobs.frequency_days` failure mode, and (c) hide a real upstream problem behind a tidy-looking table.
+
+**The fix belongs in Jobber, done by a person.** The shape of the error suggests either a visit
+completed against the wrong occurrence, or a schedule moved after completion: 7757 is scheduled
+19:45 to 20:45 yet marked complete at 15:17.
+
+⚠ **Until they are fixed upstream, the Mila cluster cannot be adjudicated**, because 7757's window is
+the thing that would rule its 24 links in or out.
+
+✅ Restating, because it is the reassuring half: the **48 h settling window** shipped 2026-08-17 keys
+on `completed_at` alone and never forms a window, so none of the 38 can corrupt it.
