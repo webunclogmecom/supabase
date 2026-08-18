@@ -202,3 +202,38 @@ with the reason recorded in the file so nobody raises it back.
 ### Fleet-wide, not yet run
 
 197 groups, 117 decided, 80 declined, **132 surplus links**, 0 orphan-blocked. Awaiting Fred.
+
+---
+
+## 13. Fleet-wide cleanup applied (2026-08-18)
+
+**Fred: "run it on the rest".**
+
+| | before | after |
+|---|---|---|
+| alive visit photo links | 7,438 | **7,308** (-130, exactly the planned count) |
+| `photo_classifications` | 700 | **700** |
+| rows live to clients (`wo_photos` JOIN `work_orders`) | 380 | **380** |
+| **distinct photos holding a visit link** | **7,041** | **7,041** |
+| photos orphaned | | **0** |
+| audit rows | | **132** (130 + the 2 from the August run) |
+
+🛑 **The load-bearing line is the fourth.** 7,041 photos held a visit link before and 7,041 hold one
+after. **Not one photo lost its place**; only duplicate links went. That, plus `live_to_clients`
+unchanged at 380, is what makes this a de-duplication rather than a deletion.
+
+**Settled state:** a re-run now examines **80 groups and decides 0**. Every remaining candidate is
+declined for a stated reason:
+
+| reason | groups |
+|---|---|
+| a candidate visit's window is unusable | **71** |
+| the note stamp falls inside more than one window | 7 |
+| no note timestamp for that attachment | 2 |
+
+⇒ **71 of the 80 remaining are blocked by the 38 backwards visit windows**, which are wrong in Jobber
+and not ours. **Fixing those upstream is what unblocks the rest of this cleanup**, including the Mila
+cluster. That is now the single highest-value manual action in this area.
+
+Nothing further can be done here automatically without either those upstream corrections or a
+different class of evidence.
