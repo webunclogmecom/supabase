@@ -367,6 +367,34 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     // skip the throw, still unlink, let the handler mark sync_state='confirmed'.
     // Only a GENUINE error (anything not matching ALREADY_GONE) aborts.
     const ALREADY_GONE = /not found|could not be found|does not exist/i;
+
+    // 🛑 CAPTURE THIS VISIT'S LINE IDS **BEFORE** THE DELETE, OR THEY BECOME UNFINDABLE.
+    // `visitDeleteLineItems` only UNLINKS; the JobLineItem object survives at job scope and
+    // renders as a qty-0 duplicate for ever (see docs/audits/2026-08-03_qty0_orphan_cleanup
+    // _and_source_fix.md). Deleting the visit has the same effect, so a visit whose lines we
+    // minted strands them. MEASURED 2026-08-19 on Excelsior job 99901029: deleting a probe
+    // visit left "12 - Service Call - Cleaning - Main Line Cleaning" x0 behind, and the job
+    // page then showed that service TWICE. Once the visit is gone we can no longer tell which
+    // job lines were its, so the read has to happen first.
+    let mintedByThisVisit: string[] = [];
+    try {
+      const jobGidForCleanup = visit ? await jobberGid("job", visit.job_id) : null;
+      if (jobGidForCleanup) {
+        const jr = await gql(token, Q_JOB_FIXED, { id: jobGidForCleanup });
+        const mine = (jr.job?.visits?.nodes || []).find((n: any) => n.id === gid);
+        const mineIds: string[] = (mine?.lineItems?.nodes || []).map((x: any) => x.id);
+        // keep only lines NO OTHER visit also references - a shared line is not ours to remove
+        const othersIds = new Set<string>(
+          (jr.job?.visits?.nodes || [])
+            .filter((n: any) => n.id !== gid)
+            .flatMap((n: any) => (n.lineItems?.nodes || []).map((x: any) => x.id)),
+        );
+        mintedByThisVisit = mineIds.filter((id) => !othersIds.has(id));
+      }
+    } catch (e) {
+      console.log(`[push] delete: could not pre-read line items for cleanup (${e instanceof Error ? e.message : String(e)}) — proceeding with the delete`);
+    }
+
     try {
       const d = await gql(token, M_DELETE, { ids: [gid] });
       const err = ue(d.visitDelete);
@@ -379,6 +407,31 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
       if (!ALREADY_GONE.test(msg)) { await flag(visitId, "delete_error", msg); throw e; }
       console.log(`[push] delete: Jobber visit ${gid} already gone (${msg}) — treating as deleted (visit ${visitId})`);
     }
+    // Now remove the stranded lines. Best-effort and AFTER the visit is gone, so a failure
+    // here can never block the delete itself; re-checked against the live job so we only touch
+    // lines that really ended up referenced by nobody.
+    if (mintedByThisVisit.length) {
+      try {
+        const jobGidForCleanup = visit ? await jobberGid("job", visit.job_id) : null;
+        if (jobGidForCleanup) {
+          const jr2 = await gql(token, Q_JOB_FIXED, { id: jobGidForCleanup });
+          const stillReferenced = new Set<string>(
+            (jr2.job?.visits?.nodes || []).flatMap((n: any) => (n.lineItems?.nodes || []).map((x: any) => x.id)),
+          );
+          const orphaned = mintedByThisVisit.filter((id) => !stillReferenced.has(id));
+          if (orphaned.length) {
+            const dl = await gql(token, M_JOB_LI_DELETE, { id: jobGidForCleanup, input: { lineItemIds: orphaned } });
+            const dle = ue(dl.jobDeleteLineItems);
+            console.log(dle
+              ? `[push] delete: orphan cleanup warn on job ${jobGidForCleanup}: ${dle}`
+              : `[push] delete: removed ${orphaned.length} line item(s) stranded by visit ${visitId}`);
+          }
+        }
+      } catch (e) {
+        console.log(`[push] delete: orphan cleanup skipped (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
+
     // unlink so a later un-cancel (upsert) cleanly re-creates instead of editing a dead GID
     await db.from("entity_source_links").delete()
       .eq("entity_type", "visit").eq("entity_id", visitId).eq("source_system", "jobber");
