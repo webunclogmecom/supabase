@@ -12,6 +12,41 @@
 
 ---
 
+## 🛑 THE STANDING PROTOCOL: AUDIT FIRST, THEN VERIFY IN BOTH SYSTEMS
+
+**Fred, 2026-08-19:** *"we need to do audits first on every step and do visual checks too, make sure
+it's all as you said, and i mean checks in our db and in jobber."*
+
+This overrides the ordinary "run the step, check the output" rhythm. **Every step runs as three
+parts, and none of them is optional:**
+
+1. **AUDIT FIRST.** Before changing anything, measure the CURRENT state of exactly what the step will
+   touch, and write the numbers down in the execution log. A step that changes something you never
+   measured cannot be verified afterwards, because there is no before.
+2. **DO the step.**
+3. **VERIFY IN BOTH SYSTEMS.** Our DB *and* Jobber, separately. Neither one alone is evidence:
+   - **Our DB** answers "did we record it", by SQL against Prod.
+   - **Jobber** answers "does it exist upstream", by **looking at the Jobber UI**, not only by
+     GraphQL. A GraphQL read and the write that preceded it can share a wrong assumption; a human
+     looking at the job on the client's page cannot.
+   - When they disagree, **the disagreement IS the finding.** Stop and report it. Do not reconcile it
+     by re-running the write.
+
+**Why the visual half is not ceremony.** This estate has repeatedly produced green API results over
+broken reality: a Jobber waiting-room reply at HTTP 200 that read as success, a `sync_log` success row
+written while the feature wrote nothing, a `needs_populate = 0` queue that was hiding rows it had
+silently given up on. Every one of those passed an API check. **Ask what the feature WROTE, and then
+go and look at it.**
+
+⚠ **A screenshot of the Jobber UI is the artifact.** Capture one for every step that touches Jobber,
+and state in the log what it shows. "I checked it" is not a record.
+
+⚠ **Some steps touch only one system.** A migration touches only the DB, and a dry run touches
+neither. Say so explicitly in the log rather than silently skipping the half that does not apply, so
+a reader can tell "not applicable" from "not done".
+
+---
+
 ## Read this before Task 1
 
 **There is no unit-test framework for edge functions in this repo.** Do not invent one. The established
