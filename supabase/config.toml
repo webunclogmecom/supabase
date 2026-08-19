@@ -647,3 +647,15 @@ verify_jwt = true
 # 2026-08-18). Staff-JWT gated in the handler too — verify_jwt is half a gate.
 [functions.visit-client-note-photos]
 verify_jwt = true
+
+# 2026-08-19 — records a GDO Online Report a PERSON filed with Miami-Dade by hand,
+# for the visits John's bot cannot file (visit 6617 has four straight
+# ERROR_LOGIN_FAILED runs on permit 11024). verify_jwt = true is the OUTER gate
+# only, per the note above: the handler calls auth.getUser() and refuses anything
+# that is not an @ayache.com / @unclogme.com account, and that email becomes
+# filed_by_email on the row.
+# ⚠ This function must stay the ONLY caller of fn_record_manual_gdo_report, which
+# is granted to service_role alone (2026-08-19_1645). It uploads the evidence
+# BEFORE it inserts the row, because the row is what suppresses the bot.
+[functions.record-manual-gdo-report]
+verify_jwt = true
