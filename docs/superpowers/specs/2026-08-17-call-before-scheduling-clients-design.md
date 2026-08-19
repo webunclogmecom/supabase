@@ -222,3 +222,58 @@ Each has a **recommended default**, so the spec is buildable even if none are an
    *Recommended:* **3 days before**, and store it as a single global constant rather than a per-client
    column until someone actually needs it to vary. Reaching a client who screens calls takes more than
    one attempt, and 226's gap ran 17 days past its permit ceiling with zero lead time.
+
+---
+
+## 🛑 CORRECTION 2026-08-19 — THE CLEANUP LIST ABOVE IS NOW UNSAFE. DO NOT RUN IT AS WRITTEN.
+
+Re-measured against live Prod on 2026-08-19, before anyone acts on the deferred cleanup. **The
+central premise of this spec has changed since it was written on 2026-08-17.**
+
+### What the spec says, and what is now true
+
+> *"**None of them is ever completed** — all 4 still `scheduled`"* … *"The SA never participates; its
+> visits are never completed."*
+
+**Both sentences are now false.**
+
+| visit | job | status NOW | completed (ET) | in Jobber | photos |
+|---|---|---|---|---|---|
+| 5644 | 10000360 | completed | 06-02 01:18 | yes | 5 |
+| 7256 | **99900892** (SA) | scheduled, **SOFT-DELETED** | — | no | 0 |
+| **6537** | **99900892** (SA) | **COMPLETED** | **08-18 02:31** | **yes** | **8** |
+| 7797 | 99900891 | completed | 08-17 13:39 | yes | **0** |
+| 6538 | 99900892 (SA) | scheduled | — | **yes** | 0 |
+| 6539 | 99900892 (SA) | scheduled | — | no | 0 |
+| 6953 | 99900892 (SA) | scheduled | — | no | 0 |
+
+### Three things this changes
+
+1. **🛑 6537 CANNOT BE CANCELLED.** Step 1 of the deferred cleanup says *"Cancel the 4 SA-generated
+   visits: 6537, 6538, 6539, 6953."* **6537 is now a completed service record carrying 8 photos** —
+   the only photos of that service. Cancelling it would destroy real evidence. The remaining three
+   (6538, 6539, 6953) are still `scheduled` and still cancellable; **6538 is live on Jobber** and must
+   leave both sides.
+
+2. **🛑 THE SAME SERVICE IS RECORDED TWICE.** 2026-08-17 produced **two completed visits**: 7797 (the
+   correct Service Call, 0 photos) and 6537 (the SA visit, 8 photos). So the SA did *not* stay inert —
+   somebody completed it, and **the crew's photos landed on the SA visit rather than on the Service
+   Call**. That is the opposite of what this spec assumed, and it means the double-booking already has
+   a real consequence: whichever visit a person opens, one of them looks unserviced.
+
+3. **A fifth visit exists that this spec never mentions:** 7256 (2026-07-24, job 99900892,
+   `source='visit-calendar'`), already soft-deleted. Any cleanup keyed to "the 4 visits" is working
+   from an incomplete list.
+
+⚠ **The scheduled dates also drifted** from what this spec recorded — 6538 is now 2026-10-16 (spec
+said 10-13), 6539 is 2026-12-15 (said 12-12), 6953 is 2027-02-13 (said 02-10). Do not pin a cleanup to
+the dates in this document; re-read them at the time.
+
+### What does NOT change
+
+The design itself still stands: an SA is the wrong carrier for a reminder, the approval path already
+works, and only the trigger is missing. **If anything this strengthens it** — the SA visit being
+completed alongside the real Service Call is exactly the confusion the spec predicts, now observed.
+
+**Status remains: DESIGN APPROVED, NOT BUILT.** The three open questions are still open, and Yannick
+has not replied in the Slack thread since Fred asked for his view on 2026-08-17 23:17 CEST.
