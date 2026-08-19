@@ -1126,6 +1126,70 @@ a page.** Two things above were true when written and are incomplete now.
    snapped by machine and not touched by a human. Full detail:
    `Building Apps/DERM Stamp Studio/docs/08-changelog.md`.
 
+**🛑 UPDATE 2026-08-19, AND IT IS THE MOST IMPORTANT RULE IN THIS SECTION: AN EXTENT DOES NOT
+REDACT ANYTHING. IT OPENS THE GATE ONTO WHATEVER BANDS ALREADY EXIST. NEVER ADD ONE TO A SHEET
+WHOSE BANDS ARE STILL DERIVED.** Adding a `page_block_extents` row is the *unsafe* act, not the safe
+one, because `fn_blackout_targets` then starts publishing that page using bands that were never on
+the paper. A DERIVED band is a stamp-midpoint heuristic (`v_stamp_row_bands`), and the stamp template
+is a FIXED set of y values reused across sheets, so it does not match any particular scan.
+
+Measured the hard way. Six extents were inserted at 21:06:58Z with the blanket values `25.8 / 64.4`
+copied from `2026-08-03_0309` (which measured a *different* sheet), and the `*/5` sweep published
+**30 redacted documents in 90 seconds**. Three separate exposures, all confirmed by opening the
+served files, not by reasoning:
+  - **ticket-833049** served its five `effective_page` 1 clients a page they do not appear on. Tell:
+    the object name carries the fingerprint, and all five page-1/page-2 pairs were byte-identical
+    (`m1713-a6eaf476ac.jpg` == `m1716-a6eaf476ac.jpg`, 144,028 bytes).
+  - **ticket-311780 / ticket-832487** left the top of the first client's slot unblacked for every
+    page-mate, plus interior slivers to 1.665pp (~10px, a full text line).
+  - **ticket-310590 p2**, live since 2026-08-10 and unrelated: **165-LPB is PRINTED on the sheet but
+    owns no `address_row_map` row**, so the derived bands stretched across its slot from both sides.
+    004-BAO's document showed 165-LPB's GDO number and name; 186-PV's showed its street address.
+Repaired in `2026-08-19_2355`: 28 bands snapped to detected rules, 6 extents corrected, all 38
+mis-redacted documents withdrawn, 28 regenerated and verified 129/129 regions per-pixel.
+
+Rules that fall out of it, and the reasoning is what matters, not the numbers:
+- **An unowned printed slot is the dangerous shape**, and there are two kinds: an *empty* slot (fine,
+  nothing to leak) and a slot printed for a client we hold **no row for** (leaks). Derived bands do
+  not know a slot exists, so they stretch across it. Snapped bands leave it to nobody and both black
+  boxes cover it. **Check for a printed-but-unrowed facility before trusting any page.**
+- **`band_y0`/`band_y1` must each BE a detected `page_row_rules.rule_pct`.** That is the only check
+  that fails on derived bands, on a uniformly shifted tiling, and on a partly-stamped roster.
+  "Bands tile contiguously" and "each stamp sits inside its own band" both PASS on the bands that
+  leaked, so neither is evidence of anything.
+- **The extent is bound to the printed roster, never to the band envelope.** Assert
+  `top_pct <= min(band_y0)` and `bottom_pct >= max(band_y1)`, never equality: `ticket-310590` p1's
+  fifth slot is empty, so its extent is deliberately WIDER than its bands. Equality would shrink the
+  extent off the empty slot, which is the `2026-08-03_0046` leak.
+- **G1 in `2026-08-03_0340` is NOT a gate to override.** If it fails, you are almost certainly
+  evaluating it against DERIVED bands, which is the wrong operand. Against snapped bands it passes at
+  distance 0.000 by construction. A first draft of `2026-08-19_2355` framed this as an override and
+  was wrong; the same page's residual (1.665) appeared in that draft as both "the worst leak we
+  prevent" and "not a G1 failure".
+- **`fn_blackout_targets`' page-identity check is scoped to `source='claude-vision-v1'` and is
+  therefore INERT for every `derm-link` sheet**, which is all of these. Until that changes, a person
+  reading the client names off each scan is the only page-identity check that exists. Do it.
+- **Reverse image order is NOT itself a defect.** `ticket-310590`'s `address_1` is the sheet printed
+  "Page 2 of 2" and it is correct, because all that matters is that `imgs[effective_page]` holds the
+  clients assigned to that `effective_page`. `ticket-833049` fails that real test; 310590 does not.
+- 🛑 **Deleting an extent does NOT withdraw a published document.** `customer.work_orders` reads
+  `derm.redacted_manifest_docs.url` directly and nothing garbage-collects it, so closing the gate
+  leaves every bad document served *forever* and unregenerable. Withdrawing means deleting the
+  `redacted_manifest_docs` row. And roll back in the order extents -> bands -> docs: NULLing bands
+  first re-stales the fingerprint and the sweep republishes from the derived bands.
+
+**🛑 `ticket-833049` IS HELD BY A DATABASE CONSTRAINT** (`page_block_extents_no_ticket_833049`).
+`ticket_page_images` groups on `address_row_map.page`, and nine of its ten rows say page=1 while one
+says page=2, so it emits `[address_1, address_1, address_2]` and `effective_page` 1 resolves to the
+physical page 2 image. ⚠ **The obvious one-line fix (normalise the page=2 row) DOUBLES the exposure
+from 5 clients to 10 and erases the only machine-visible tell** - and that row is in fact the only
+one that agrees with the paper. It is also a handwritten **6-slot** form carrying 5-slot template
+bands. Read PART 5 of `docs/migrations/2026-08-19_2355` before dropping that constraint.
+
+**⚠ STILL OPEN, needs Fred: 31 already-serving pages carrying 109 documents are still on DERIVED
+bands.** Tonight's sheets were simply the ones that got extents. Every one of those pages has the
+same class of misalignment and wants the same snap.
+
 ### 🛑 JOBBER NOTES ARE SCOPED TO THE **JOB**, NOT THE VISIT (Fred, 2026-08-18)
 
 `Visit.notes` reads like a per-visit field and is not one. **JobNote is JOB-scoped** (every visit
