@@ -1053,6 +1053,41 @@ classified). ⚠ RULES: NEW stamped pages generate NOTHING until a measurement p
 from banded-card math alone (that was the v2 leak, caught by Fred 2026-07-10 — see
 `docs/audits/2026-07-10_ocr_band_refinement.md` + migrations `2026-07-10_fp_blackout_*.sql`).
 
+**Update 2026-08-19: IT RECURRED, and there is now a DETECTOR. Read this before the 08-03 note.**
+
+Fred, on client 306-16: *"i can't see the blackedout manifest even though is stamped by AI and then
+manually by us"*. The stamp was real; the MEASUREMENT was missing, so `fn_blackout_targets` returned
+nothing and the card was a permanent placeholder. **34 clients were in that state**, not one.
+
+🛑 **THE FAILURE IS INVISIBLE BY CONSTRUCTION.** `redact-manifest-sweep` reports `succeeded` every
+five minutes throughout, because **an empty work queue is a successful run**. Nothing else looks at
+it. That is why it took a client noticing a blank card.
+
+✅ **`derm.v_blackout_blocked_sheets` now names the state directly** (`2026-08-19_2320`). Empty is
+healthy. Non-empty means those clients are seeing nothing. **Watch it after any stamping session.**
+
+🛑 **KEY ON (dump_folder, effective_page), NEVER ON THE FOLDER.** My own first sweep asked whether a
+FOLDER had any extent and found 4 blocked folders. The gate is per PAGE, and the detector found
+**5 folders / 8 pages** — `window5-sheet3` has an extent for page 2 and none for page 1, which a
+folder-level check cannot see. The migration's VERIFY caught my wrong expectation and rolled the
+whole thing back.
+⚠ And `effective_page` is `COALESCE(stamp_page, page)`, i.e. the STAMP page. These genuinely differ:
+ticket-311780's 306-16 row is `page=1, stamp_page=2`. Keying an extent on `page` writes rows that
+satisfy nothing while the migration looks applied.
+
+🛑 **THE DOCUMENTED RERUN PATH DOES NOT EXIST.** The 07-10 note below says to rerun
+`ocr-band-measure` + `apply_bands.js`. **Neither is real** — grep finds them only in prose. Every
+`page_block_extents` write in this repo's history has been a hand-authored migration. So a
+measurement pass is a manual task, and nothing prevents the backlog rebuilding. It has now rebuilt
+twice.
+
+✅ **GENERATED sheets (#1000+) can be templated at `25.8 / 64.4`**, the value measured for
+ticket-310429, 831325 and 831938 and unchanged since. Their geometry comes from our own pdf-service,
+so it is deterministic. **SCANNED sheets cannot** — measured fleet range is 23.6-29.4 top,
+58.8-66.4 bottom, and templating one would be a guess about a customer-facing redaction. Two scanned
+sheets (`ticket-832996`, `window5-sheet3`) are deliberately still blocked for that reason and need a
+real vision pass.
+
 **Update 2026-08-03: the GENERATED sheets have now been measured, and there is a SECOND way to snap
 a page.** Two things above were true when written and are incomplete now.
 
