@@ -1135,8 +1135,14 @@ Deno.serve(async (req) => {
         { jobber_number: job.jobNumber });
     }
 
+    // 🛑 actor_email ATTESTS THE HUMAN so the Activity trail names a person, not "client-app".
+    //    `email` here is the address auth.getUser() returned for the bearer token at the top of this
+    //    request, so it is verified, not client-supplied. fn_record_client_job sets it into
+    //    request.jwt.claims for its own transaction, which is the only scope audit.log_change can
+    //    see. Fred, 2026-08-19: "this should also show in the activity history who created that job."
     const { data: rec, error: recErr } = await db.rpc("fn_record_client_job",
-      { p: jobToRecord(clientId, propertyId, job, kind === "SA", kind === "SA" ? freq : 0, bill) });
+      { p: { ...jobToRecord(clientId, propertyId, job, kind === "SA", kind === "SA" ? freq : 0, bill),
+             actor_email: email } });
     if (recErr) {
       // The one honest window: Jobber has the job, our DB write failed. The next
       // */5 poll imports it (createdAt cursor) — say so, do not pretend failure.
@@ -1173,7 +1179,7 @@ Deno.serve(async (req) => {
     const uerr = ue(res.data.jobClose);
     if (uerr) return fail("jobber_rejected", `Jobber refused to close the job: ${uerr}`);
     const st = String(res.data.jobClose.job?.jobStatus ?? "archived").toLowerCase();
-    const { error: recErr } = await db.rpc("fn_record_client_job", { p: { gid: jobGid, job_status: st } });
+    const { error: recErr } = await db.rpc("fn_record_client_job", { p: { gid: jobGid, job_status: st, actor_email: email } });
     if (recErr) return fail("db_write_failed", "Closed in Jobber but the local update failed; the 30-minute sync will settle it.");
     const { data: n } = await db.rpc("fn_close_job_visits", { p_job_id: jobId });
     return done({ job_id: jobId, job_status: st, visits_removed: n ?? 0 });
@@ -1188,7 +1194,7 @@ Deno.serve(async (req) => {
     const uerr = ue(res.data.jobReopen);
     if (uerr) return fail("jobber_rejected", `Jobber refused to reopen the job: ${uerr}`);
     const st = String(res.data.jobReopen.job?.jobStatus ?? "active").toLowerCase();
-    const { error: recErr } = await db.rpc("fn_record_client_job", { p: { gid: jobGid, job_status: st } });
+    const { error: recErr } = await db.rpc("fn_record_client_job", { p: { gid: jobGid, job_status: st, actor_email: email } });
     if (recErr) return fail("db_write_failed", "Reopened in Jobber but the local update failed; the 30-minute sync will settle it.");
     return done({ job_id: jobId, job_status: st });
   }
@@ -1776,7 +1782,10 @@ Deno.serve(async (req) => {
   // an SA edit has any to mirror. `feeReq` can no longer be non-null on a non-SA job — the fee
   // branch above refuses those outright.
   const rec = jobToRecord(clientId, jobRow.property_id, j, isSA && (wantLines !== null || feeReq !== null), newFreq, bill ?? undefined);
-  const { error: recErr } = await db.rpc("fn_record_client_job", { p: rec });
+  // actor_email on the EDIT path too. Attributing creates but not edits would be worse than
+  // attributing neither: the trail would name a person on some rows and "client-app" on others,
+  // and a reader would reasonably conclude the unnamed ones were machine-made.
+  const { error: recErr } = await db.rpc("fn_record_client_job", { p: { ...rec, actor_email: email } });
   if (recErr) {
     return fail("db_write_failed", "Saved and verified in Jobber but the local write failed; the 30-minute sync will settle it.", { applied, start_date_first_set: startDateFirstSet });
   }
