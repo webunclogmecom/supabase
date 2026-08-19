@@ -550,6 +550,12 @@ verify_jwt = false
 [functions.adopt-visit-from-jobber]
 verify_jwt = false
 
+# push-visit-to-jobber: the mirror twin of adopt-visit-from-jobber — "Keep Calendar's schedule",
+# Jobber adopts OUR data via the existing fn_request_jobber_push saga. Same ES256 reason for
+# verify_jwt=false; the in-handler staff gate (@ayache.com/@unclogme.com) is the real control.
+[functions.push-visit-to-jobber]
+verify_jwt = false
+
 # save-client-fields: the Client App's VERIFIED client name/client_code saga
 # (Edit-client dialog, 2026-07-31). Same auth model + same ES256 rationale as
 # save-client-job directly above: in-handler auth.getUser + staff-domain gate,
