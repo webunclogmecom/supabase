@@ -95,6 +95,7 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
   // ---- our side ------------------------------------------------------------------
   const visits = await pg(`
     SELECT v.id AS visit_id, v.visit_date::text, v.visit_status, v.job_id, c.client_code,
+           v.completed_at::text AS completed_at,
            ev.source_id AS visit_gid, ej.source_id AS job_gid
       FROM visits v
       JOIN clients c ON c.id = v.client_id
@@ -118,6 +119,31 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
      WHERE esl.entity_type='photo' AND esl.source_system='jobber'`);
   const gidToVisits = new Map();
   for (const r of allGidLinks) { if (!gidToVisits.has(r.att_gid)) gidToVisits.set(r.att_gid, new Set()); gidToVisits.get(r.att_gid).add(Number(r.visit_id)); }
+
+  // ---- the PILLS: exactly what the green "Photos classified" bar shows ---------------
+  // Fred, 2026-08-19: "including the pills data to be certain". The bar reads
+  // "N before . N after . N internal . N extra" off photo_classifications.service_phase,
+  // joined through photo_links, and the header count comes from v_visit_photo_counts.
+  // Auditing the photos WITHOUT these can pass while the reviewer sees wrong numbers.
+  const pillRows = await pg(`
+    SELECT pc.visit_id, pc.total_images, pc.classified_images, pc.late_unclassified_images, pc.is_reopened,
+           coalesce(sum(case when x.service_phase='before'   then 1 else 0 end), 0) AS before_n,
+           coalesce(sum(case when x.service_phase='after'    then 1 else 0 end), 0) AS after_n,
+           coalesce(sum(case when x.service_phase='internal' then 1 else 0 end), 0) AS internal_n,
+           coalesce(sum(case when x.service_phase='extra'    then 1 else 0 end), 0) AS extra_n,
+           coalesce(sum(case when x.service_phase is not null
+                         and x.service_phase not in ('before','after','internal','extra')
+                        then 1 else 0 end), 0) AS other_phase_n
+      FROM v_visit_photo_counts pc
+      LEFT JOIN (
+        SELECT pl.entity_id AS visit_id, cl.service_phase
+          FROM photo_links pl
+          JOIN photo_classifications cl ON cl.photo_link_id = pl.id
+         WHERE pl.entity_type='visit' AND pl.deleted_at IS NULL
+      ) x ON x.visit_id = pc.visit_id
+     WHERE pc.visit_id IN (${visits.map(v => v.visit_id).join(',') || '0'})
+     GROUP BY pc.visit_id, pc.total_images, pc.classified_images, pc.late_unclassified_images, pc.is_reopened`);
+  const pills = new Map(pillRows.map(r => [Number(r.visit_id), r]));
 
   const byJob = new Map(); // job_gid -> visits[]
   const noJobLink = [];
@@ -198,6 +224,36 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
     ambiguous += ambiguousGids.length;
 
     const allJobGids = new Set(images.map(a => a.gid));
+
+    // ---- EXPECTED OWNER, using the rule the sync actually ships (2026-08-18) ----------
+    // JobNote only; eligibility on noon(visit_date) +/-2d; nearest by completed_at, which is
+    // trusted only within 24h of the visit date. Mirrors sync_jobber_note_photos.js - if that
+    // rule changes and this does not, the audit starts reporting phantom findings.
+    const noonMs = d => Date.parse(`${String(d).slice(0, 10)}T12:00:00Z`);
+    const anchorOf = (completedAt, visitDate) => {
+      const noon = noonMs(visitDate);
+      const c = completedAt ? Date.parse(completedAt) : NaN;
+      if (!Number.isFinite(c)) return noon;
+      if (!Number.isFinite(noon)) return c;
+      return Math.abs(c - noon) <= 24 * 3600000 ? c : noon;
+    };
+    const completedVs = vs.filter(v => v.visit_status === 'completed');
+    const expectedOwner = new Map(); // gid -> visit_id (null when tied)
+    for (const a of images) {
+      if (a.noteType !== 'JobNote') continue;             // ClientNotes are never imported
+      const tn = Date.parse(a.noteCreated);
+      if (!Number.isFinite(tn)) continue;                 // the sync fails closed here too
+      const eligible = completedVs.filter(v => Math.abs(tn - noonMs(v.visit_date)) <= WINDOW_MS);
+      if (!eligible.length) continue;
+      let best = null, bestD = Infinity, tied = false;
+      for (const v of eligible) {
+        const d = Math.abs(tn - anchorOf(v.completed_at, v.visit_date));
+        if (d < bestD) { best = v; bestD = d; tied = false; }
+        else if (d === bestD) tied = true;
+      }
+      expectedOwner.set(a.gid, tied ? null : (best ? Number(best.visit_id) : null));
+    }
+
     for (const v of vs) {
       const ours = ourLinks.filter(l => Number(l.visit_id) === Number(v.visit_id) && String(l.content_type || '').startsWith('image/'));
       const oursGids = new Set(ours.map(l => l.att_gid).filter(Boolean));
@@ -215,7 +271,19 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
           missing_detail: trulyMissing.map(g => { const a = attByGid.get(g) || {}; return { gid_tail: dec(g).slice(-12), noteType: a.noteType, noteCreated: a.noteCreated, attCreated: a.attCreated, file: a.fileName }; }),
           in_window_but_linked_to_other_visit: missingElsewhere.map(g => ({ gid: dec(g).slice(-14), on_visits: [...(gidToVisits.get(g) || [])] })),
           extra_not_on_this_job: extraHere.length,
-          ours_without_jobber_gid: oursNoGid.map(l => l.source) });
+          ours_without_jobber_gid: oursNoGid.map(l => l.source),
+          // what the sync's OWN rule says should be here, split by note type. A ClientNote
+          // image is shown read-only in Admin Review and must NOT be imported, so counting
+          // it as "missing" would manufacture a finding out of correct behaviour.
+          missing_that_rule_assigns_here: trulyMissing.filter(g => expectedOwner.get(g) === Number(v.visit_id)).length,
+          missing_jobnote: trulyMissing.filter(g => (attByGid.get(g) || {}).noteType === 'JobNote').length,
+          missing_clientnote_readonly: trulyMissing.filter(g => (attByGid.get(g) || {}).noteType === 'ClientNote').length,
+          pills: (() => { const p = pills.get(Number(v.visit_id)); if (!p) return null;
+            return { total: Number(p.total_images), classified: Number(p.classified_images),
+                     before: Number(p.before_n), after: Number(p.after_n),
+                     internal: Number(p.internal_n), extra: Number(p.extra_n),
+                     other_phase: Number(p.other_phase_n), reopened: p.is_reopened,
+                     late_unclassified: Number(p.late_unclassified_images) }; })() });
       } else cleanVisits += 1;
       missing += trulyMissing.length; wrongVisit += missingElsewhere.length; extra += extraHere.length;
       for (const g of trulyMissing) { const a = attByGid.get(g); if (a) byType.missing[a.noteType] = (byType.missing[a.noteType] || 0) + 1; }
@@ -255,6 +323,45 @@ const dec = s => Buffer.from(s, 'base64').toString('utf8');
     // so long-lived jobs' older photos inflate that bucket; read it as "unattributed on
     // this job", not "lost".
     by_note_type: byType,
+    // ---- PILL AUDIT: the numbers the reviewer reads in the green bar -----------------
+    // A visit whose photos match Jobber perfectly can still DISPLAY wrong counts, so this
+    // is checked for every august visit, not only the ones with photo discrepancies.
+    pills: (() => {
+      let checked = 0, sumMismatch = 0, classifiedMismatch = 0, reopened = 0,
+          otherPhase = 0, unclassified = 0, withImages = 0;
+      const offenders = [];
+      for (const v of visits) {
+        const p = pills.get(Number(v.visit_id));
+        if (!p) continue;
+        checked += 1;
+        const total = Number(p.total_images), cls = Number(p.classified_images);
+        const parts = Number(p.before_n) + Number(p.after_n) + Number(p.internal_n) + Number(p.extra_n);
+        const other = Number(p.other_phase_n);
+        if (total > 0) withImages += 1;
+        if (other > 0) otherPhase += other;
+        // the four pills plus any other phase must equal what the header calls classified
+        if (parts + other !== cls) {
+          classifiedMismatch += 1;
+          offenders.push({ visit_id: v.visit_id, client: v.client_code, kind: 'pills_vs_classified',
+                           pills: parts, other_phase: other, classified: cls, total });
+        }
+        // and classified can never exceed the total the header shows
+        if (cls > total) {
+          sumMismatch += 1;
+          offenders.push({ visit_id: v.visit_id, client: v.client_code, kind: 'classified_gt_total',
+                           classified: cls, total });
+        }
+        if (p.is_reopened) reopened += 1;
+        if (total - cls > 0) unclassified += (total - cls);
+      }
+      return { visits_checked: checked, visits_with_images: withImages,
+               pills_do_not_sum_to_classified: classifiedMismatch,
+               classified_greater_than_total: sumMismatch,
+               photos_in_a_non_standard_phase: otherPhase,
+               unclassified_images_total: unclassified,
+               visits_flagged_reopened: reopened,
+               offenders: offenders.slice(0, 20) };
+    })(),
   };
   const out = process.argv[2] || path.join(__dirname, 'august_photo_audit.json');
   fs.writeFileSync(out, JSON.stringify(report, null, 1));
