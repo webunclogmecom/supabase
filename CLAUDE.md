@@ -869,6 +869,63 @@ multiset-diffs against Jobber and re-inserts within 30 minutes. And the duplicat
 on **live** jobs are faithful mirrors of Jobber's per-visit overrides, not orphans. Full workings:
 [`docs/audits/2026-08-03_qty0_orphan_cleanup_and_source_fix.md`](docs/audits/2026-08-03_qty0_orphan_cleanup_and_source_fix.md).
 
+### ⚠ ACCESS HOURS: the store is `properties.access_schedule` (jsonb), 24h `"HH:MM"`, and it is now CHECKed (2026-08-19)
+
+Fred asked whether access hours should be stored 24h or 12h. **24h, and it is not really a choice:**
+12h sorts wrong lexically (`"9:00 PM" < "9:00 AM"`), needs parsing on every read, is locale-dependent,
+and breaks the `::time` casts queries use. **12h is a display concern only** — the Visit Calendar
+converts at render (its CLAUDE.md rule 9).
+
+**Where it lives, which is not where people look.** `public.properties.access_schedule` is **jsonb**,
+per-day `{"mon":{"open":"21:00","close":"06:00"}, …}`. The flat `access_hours_start` / `access_hours_end`
+you see on `client.properties`, `ops.properties`, `ops.v_calendar_visit`, `ops.v_route_today` and
+`ops.v_service_due` are **DERIVED** (`public.fn_sched_open/_close/_days`) — the legacy trio was dropped
+from the table on 2026-08-10. Read the derived pair; **write only `access_schedule`.**
+
+⚠ **`text` vs `time` is MOOT here** — the values live *inside* jsonb, which has no `time` type. The only
+reason to want one is to stop malformed values, and that is what the constraint now does.
+
+**`properties_access_schedule_shape_chk`** (`2026-08-19_0130`) pins every day entry's `open`/`close` to
+24h `"HH:MM"` via `jsonb_path_exists` + `like_regex`. Measured before applying: 901 properties, 199 with
+a schedule, **0 would fail**, so it is **VALIDATED**, not NOT VALID. Mutation-tested with a 17-case
+truth table, all correct.
+
+- **Accepts:** NULL · `{}` · same-day · **overnight (`open > close`, 1,006 of 1,331 entries — 76%)** ·
+  the `00:00`–`00:00` "All day" sentinel (32 properties / 222 calendar visits).
+- **Rejects:** 12h `"9:00 AM"` · hour 25 · minute 75 · single-digit hour · truncated minutes · json
+  null · missing key · number instead of string · `"HH:MM:SS"` · array · one bad day among good ones.
+
+🛑 **THE REGEX IS DUPLICATED ON PURPOSE — CHANGE BOTH TOGETHER.** `client.update_property_operational`
+is the **only** function that writes this column and it already validates the identical pattern (plus
+the day keys, which a CHECK cannot do: set-returning functions like `jsonb_object_keys` are illegal in
+a CHECK). **The constraint is not for that path — it is for the BYPASS path**, and that is not
+hypothetical: `app_source='sql'` was the single largest writer in `audit.logs` over the preceding 12
+hours at **314 rows**. A migration, script or console query reaches the column without the RPC.
+
+⚠ `jsonb_path_exists(jsonb, jsonpath)` is IMMUTABLE and legal in a CHECK; its `_tz` sibling is STABLE
+and must never be used there.
+
+⚠ **Overnight is IMPLICIT and no column type would capture it.** `close <= open` means "into the next
+morning" — correct for the commercial night routes, and 76% of the data. It is a semantic gap, not a
+type gap, so every consumer computing "is arrival inside the window" must handle wraparound. Also
+measured: **0 properties currently vary hours by day**, so the derived flat pair is lossless *today* —
+but lossy by construction the moment one does.
+
+### ⚠ CACHE INVALIDATION IS A DB TRIGGER SENDING A PRIVATE BROADCAST — AND IT FAILS SILENTLY
+
+`public.tg_broadcast_inval`, attached as `zzz_broadcast_inval` on **`visits`, `clients`,
+`derm_manifests`, `manifest_visits`, `address_row_map`**, calls
+`realtime.send(payload, 'inval', 'inval:'||tg_table_name, true)`. The Visit Calendar subscribes to those
+private `inval:*` channels and refetches on receipt. **No app subscribes to `postgres_changes`.**
+
+🛑 **The trigger body is wrapped in `exception when others then null`.** A broken send logs **nothing**
+— no error, no failed request, no audit row — and the apps simply stop refreshing. Verified working
+2026-08-18; re-verify by calling `realtime.send(...)` directly as `postgres`, which is the real path and
+**writes no row**.
+⚠ `realtime.messages` has exactly one policy: `app_inval_read`, **read-only**, `using (topic ~~ 'inval:%')`.
+Clients receive and cannot send, so a broadcast attempted with a user token returns **202 Accepted** and
+is silently dropped. 202 means accepted for delivery, not delivered.
+
 ### Truck names are NOT people
 **Moises, David, Goliath** — trucks. **Cloggy** — truck (only daytime-only one). Never respond to "David did the visit" as if David is a person without checking [docs/operations.md](docs/operations.md#truck-name--person-name).
 
