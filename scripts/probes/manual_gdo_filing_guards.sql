@@ -1,5 +1,6 @@
 -- ============================================================================
--- Manual GDO filing - full guard suite.  Everything rolls back; nothing is kept.
+-- Manual GDO filing - full guard suite. (Updated 2026-08-19_1915: code-27 and the
+-- manifest-link block were removed; case 12 flipped accordingly.)  Everything rolls back; nothing is kept.
 --   node scripts/q.js scripts/probes/manual_gdo_filing_guards.sql <out.json>
 -- A PASS is reported by RAISE EXCEPTION at the end, which is also what rolls the work back.
 --
@@ -90,7 +91,10 @@ BEGIN
     r_failedok := true;
   EXCEPTION WHEN others THEN r_failedok := false; err := SQLERRM; END;
 
-  -- ---- 8. a post-cutoff visit with NO manifest link must be refused -----------------------------
+  -- ---- 8. a post-cutoff visit with NO manifest link is now ACCEPTED (2026-08-19_1915) ----------
+  -- The hard block was removed when Fred widened this to every visit. An unlinked visit has no row
+  -- in v_derm_portal_fields, so it was never in the bot's queue and there is nothing to stop;
+  -- refusing it would gut the feature. The view reports suppresses_bot=false instead.
   DELETE FROM public.derm_portal_submissions WHERE visit_id = v_visit;
   DELETE FROM public.manifest_visits WHERE visit_id = v_visit;
   BEGIN
@@ -110,7 +114,7 @@ BEGIN
   RAISE NOTICE ' 9 excluded PERMANENTLY        -> %           (want t)', q_permanent;
   RAISE NOTICE '10 second filing same visit    -> accepted %  (want f)', r_dupe;
   RAISE NOTICE '11 after a FAILED bot attempt  -> accepted %  (want t)', r_failedok;
-  RAISE NOTICE '12 post-cutoff, no manifest    -> accepted %  (want f)', r_nolink;
+  RAISE NOTICE '12 post-cutoff, no manifest    -> accepted %  (want t, block removed)', r_nolink;
 
   IF r_nopath     THEN RAISE EXCEPTION 'FAIL 1: a filing with no stored evidence was accepted'; END IF;
   IF NOT q_before THEN RAISE EXCEPTION 'FAIL 2: control - the visit never entered the queue, so leaving it proves nothing'; END IF;
@@ -123,7 +127,7 @@ BEGIN
   IF NOT q_permanent THEN RAISE EXCEPTION 'FAIL 9: suppressed only by the cooldown, which expires'; END IF;
   IF r_dupe       THEN RAISE EXCEPTION 'FAIL 10: a duplicate filing was accepted'; END IF;
   IF NOT r_failedok THEN RAISE EXCEPTION 'FAIL 11: a failed bot attempt still blocks the manual path: %', err; END IF;
-  IF r_nolink     THEN RAISE EXCEPTION 'FAIL 12: an unlinked post-cutoff filing was accepted'; END IF;
+  IF NOT r_nolink THEN RAISE EXCEPTION 'FAIL 12: an unlinked visit is still blocked - Fred asked for every visit'; END IF;
 
   RAISE EXCEPTION 'ALL TWELVE PASSED - rolling back, nothing kept';
 END $suite$;
