@@ -173,3 +173,47 @@ else.
 orphan when **ZERO visits reference it**. The automatic cleanup above applies that test twice, and
 a manual sweep must too — 33 live overrides would have been destroyed by a naive "delete all qty-0
 lines" in August.
+
+---
+
+## 2026-08-19 — THE FIRST LINE PUSHED TO AN EMPTY JOB BECOMES THE JOB'S BASE LINE
+
+Fred, looking at a job page: *"it says quantity 1, is that not the problem that now when creating
+a new visit it will automatically add that line item?"* Correct instinct. Measured answer:
+
+**Job-scope quantity tells you which kind of line it is:**
+
+| job-scope qty | what it is | who sees it |
+|---|---|---|
+| **1** | the job's **base line** | every visit of the job that has no line of its own |
+| **0** | a **per-visit override** | only the visit that owns it |
+
+**The first push to a job with NO lines creates the base line.** Confirmed on two jobs: 99901029
+("18 - Unclogging Hydrojet", pushed 2026-07-30 pre-guard, qty 1, and it is SHARED by visits 7463
+AND 7688 - the same object, which is exactly why 7688 displays a service it never had) and 99901061
+("22 - Labor", pushed 2026-08-19 by the backfill, qty 1). Every later push on the same job lands as
+a qty-0 override.
+
+**Fred's SA/SC model is right, and the data agrees.** Of the 14 jobs carrying visits with no line
+items of ours:
+
+```
+SA jobs with a qty>0 base line : 10 of 10   <- CORRECT. An agreement's service applies to
+                                               every visit; that is what the base line is for.
+SC jobs with a qty>0 base line :  2         <- residue. A one-off call's service should not
+                                               carry to the next call.
+```
+
+A healthy SC job looks like **99900535: 40 line items, ALL qty 0, none shared** - every visit owns
+its own service.
+
+⚠ **A base line does NOT guarantee the display.** Of the 2 exposed SC visits only **v7812** actually
+shows an inherited service; v7345 (job 99901027) shows nothing although its job carries a qty>0
+line. The display rule is not fully derivable from what the API exposes, so **measure the visit,
+never infer from the job**.
+
+⇒ **Consequence for the 2026-08-19 line-item fix:** pushing to a previously-empty SC job creates a
+base line there. Calendar visits are unaffected (their own push overrides it - proven: a probe visit
+on 99901029 dispatched "14 - Tank Cleaning" displayed only that, with 18-Hydrojet at qty 0 for it).
+The exposure is visits we never push, i.e. **Jobber-created visits**: 22 exist fleet-wide, and today
+exactly **one** displays an inherited service.
