@@ -237,9 +237,33 @@ The dialog degrades to plain typing until that is fixed. It does not block this 
 Every check below needs a control that must fire, because a sweep returning zero is an untested
 instrument.
 
-1. **Contract probe before building:** confirm Jobber accepts `clientCreate` with `billingAddress`
-   and no `properties[]`, and observe exactly what property rows that mints. This is the one part of
-   the `none` path not yet verified. Do it as a dry run first.
+1. ✅ **Contract probe: DONE 2026-08-19, and the `none` path works exactly as ruled.** Measured with
+   three real Jobber clients (named `TEST ...` so `webhook-jobber`'s junk filter refuses to import
+   them), each read back and then archived:
+
+   | `property_mode` sent | Jobber `billingAddress` | Jobber `clientProperties` | property street |
+   |---|---|---|---|
+   | `client_address` | 1 Client Street | **1** | 1 Client Street |
+   | `separate` | 1 Client Street | **1** | 2 Property Way |
+   | `none` | 1 Client Street | **0** | none |
+
+   Confirmed visually in the Jobber UI for both the target and the control: the `none` client shows
+   the empty "Add properties so you can organize work by location" state, while `client_address`
+   lists a real property. Our DB was unchanged throughout (448 clients, 901 properties).
+
+   🛑 **AND IT CORRECTS A BELIEF THIS SPEC WAS BUILT ON.** `client_address` mints **ONE** Jobber
+   property, not two. Jobber back-fills `billingAddress` FROM `properties[0]` but creates no separate
+   billing property. **The billing twin is OUR row, not Jobber's**: `handleClient` inserts it from
+   `billingAddress` (webhook-jobber:628). That is precisely why its link is the synthetic
+   `<gid>_billing` string rather than a real Property GID, and it is why `ensureServiceCallJob` must
+   select on link shape. The exclusion rule is unchanged and now rests on a measured mechanism rather
+   than an inference.
+
+   ⚠ **How the probe first lied, worth keeping:** its read query asked for `client { properties }`,
+   which is not a field (the real one is `clientProperties`), and it discarded `errors`. It returned
+   `property_count: 0` for **all three** modes, including the one we know produces a property. A
+   confident zero across the board, from a query that never ran. Print the errors, and keep a case
+   in every probe whose answer you already know.
 2. **`ensureServiceCallJob` idempotency:** call it twice against the same property. Second call must
    return `created: false` and Jobber must hold exactly one Service Call. Control: a property with
    no SC job must return `created: true` in the same run.
