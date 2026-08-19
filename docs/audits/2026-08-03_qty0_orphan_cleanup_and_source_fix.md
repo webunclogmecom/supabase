@@ -151,10 +151,25 @@ is already a superset of what we dispatched. That is what preserves the price an
 | non-invoiced affected visits re-pushed under v3 | 61 checked: **59 show their own service**, 1 blank (stale Jobber link, pre-existing), 1 dump visit where Jobber's "28 - Dump Offload" is the sensible value |
 | a visit created AND deleted today (smoke test 7818 on job 99901061) | left **no** stranded line |
 
-⚠ **Honest limit:** that last row is one delete, not proof the stranding mechanism is gone — 9 real
-orphans existed historically. The exposure is unchanged in kind and now applies to Service Call jobs
-with no templates: if such a visit is later deleted, skipped or cancelled, its line can strand. The
-distinction that made the 2026-08-03 cleanup safe still governs any future cleanup: **a qty-0 job
-line is only an orphan when ZERO visits reference it.** 33 live overrides were left untouched then,
-and the same rule protects the 56 lines pushed on 2026-08-19, all of which are attached to live
-visits.
+### The stranding mechanism was real, and the delete path now cleans it up (2026-08-19)
+
+The note here previously said residue "was not observed" on one delete. **That reading was luck.**
+A second smoke test with a **visual** check on the Jobber job page showed
+"12 - Service Call - Cleaning - Main Line Cleaning" listed **twice**, one entry without a
+"quantity varies" note: an orphan left when a probe visit was deleted. The narrowed push guard
+makes this reachable on Service Call jobs, which is exactly the trade-off the question raised.
+
+**Fixed in the delete branch of `jobber-push-visit`:** it captures the visit's line ids **before**
+the delete (afterwards there is no way to tell which job lines were its), keeps only ids no other
+visit references, re-checks against the live job after the delete, and removes what really ended
+up orphaned. Best-effort and after the fact, so it can never block the delete.
+
+**Verified on job 99901029:** create a probe visit + delete it took the job from 4 line items to
+3 with **no new orphan**, where the same sequence had previously left one. The pre-existing orphan
+was cleaned via `jobDeleteLineItems`, and the job page now reads two real services and nothing
+else.
+
+🛑 **The rule for any future cleanup is unchanged and still governs:** a qty-0 job line is only an
+orphan when **ZERO visits reference it**. The automatic cleanup above applies that test twice, and
+a manual sweep must too — 33 live overrides would have been destroyed by a naive "delete all qty-0
+lines" in August.
