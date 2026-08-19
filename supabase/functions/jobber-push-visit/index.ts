@@ -232,8 +232,45 @@ async function syncVisitLineItems(token: string, visit: any, visitGid: string, i
     ((it.description ?? "").trim() !== "")
   );
   if (!carriesInfo) {
-    console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0 with no description — skipping visitCreateLineItems so Jobber keeps the job's priced templates (prevents qty-0 orphans)`);
-    return;
+    // 🛑 THE SKIP IS ONLY SAFE WHEN THERE IS SOMETHING TO INHERIT (2026-08-19, Fred:
+    // "we see everything except the correct line items for it").
+    // The guard above protects the job's priced templates. On a job that HAS none, the
+    // same skip deletes information instead of protecting it: the Jobber visit ends up
+    // showing NO services at all, while our Calendar shows the one the office picked.
+    // Reproduced on visit 7817 (112-YA, job 99901061, "22 - Service Call - Labor"):
+    // our DB holds the line item, Jobber holds an empty visit, and the job carries no
+    // lines to fall back on. MEASURED the same day: of 148 all-$0 visits since June,
+    // 17 sit on a job WITH templates (skip is correct) and 131 sit on a job with NONE
+    // (skip leaves them blank). Visit 6829, pushed BEFORE this guard existed, still
+    // shows "22 - Service Call - Labor $0" in Jobber, which is the proof that pushing a
+    // $0 line is both possible and what the office expects to see.
+    //
+    // ⚠ "Does the job have line items" is NOT `job.lineItems.length > 0`. Jobber has no
+    // VisitLineItem type, so a visit's OWN lines are job lines linked to the visit and
+    // would count themselves as inheritable. The test must exclude this visit's lines,
+    // exactly as stripInheritedLineItemsFixedPrice already does.
+    let inheritable = 0;
+    try {
+      const jobGidForCheck = await jobberGid("job", visit.job_id);
+      if (jobGidForCheck) {
+        const jr = await gql(token, Q_JOB_FIXED, { id: jobGidForCheck });
+        const allJobLi: string[] = (jr.job?.lineItems?.nodes || []).map((n: any) => n.id);
+        const vnode = (jr.job?.visits?.nodes || []).find((n: any) => n.id === visitGid);
+        const ownLi: string[] = (vnode?.lineItems?.nodes || []).map((n: any) => n.id);
+        inheritable = allJobLi.filter((id: string) => !ownLi.includes(id)).length;
+      }
+    } catch (e) {
+      // Fail toward the OLD behaviour: if Jobber cannot be read we do not know whether
+      // templates exist, and minting $0 lines onto a job that has real ones is the
+      // harmful direction. Skipping only leaves the visit as it already is.
+      console.log(`[push] visit ${visit.id}: could not read job line items (${e instanceof Error ? e.message : String(e)}) — keeping the conservative skip`);
+      return;
+    }
+    if (inheritable > 0) {
+      console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0 with no description, and the job carries ${inheritable} other line item(s) — skipping visitCreateLineItems so Jobber keeps its priced templates (prevents qty-0 orphans)`);
+      return;
+    }
+    console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0, but the job has NOTHING to inherit — pushing them so the visit is not blank in Jobber`);
   }
   // ALWAYS reconcile (create + update). CREATE-FIRST-THEN-DELETE-OLD (reordered 2026-07-09
   // push-safety audit): the old delete-then-create left the Jobber visit with ZERO line items
