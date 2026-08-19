@@ -34,7 +34,12 @@
 -- the visit simply ran outside the scheduled window. The narrow window was the defect,
 -- not the data. -4h/+28h also covers the overnight routes (CLAUDE.md operating-date rule).
 --
--- ⚠ RADIUS: 75m, FRED'S EXPLICIT CHOICE, and the trade-off was measured BEFORE he chose
+-- 🛑 SUPERSEDED THE SAME DAY: THE RADIUS IS NOW 150m. Fred, 2026-08-19: "go with 150m
+-- instead". See 2026-08-19_0410_time_on_site_radius_150.sql. The paragraph below is kept
+-- because it records the measurement that informed both choices, but the DEFAULT IN THIS
+-- FILE (75) IS NO LONGER WHAT RUNS. Read the live signature, not this text.
+--
+-- ⚠ RADIUS: 75m, FRED'S EXPLICIT CHOICE AT THE TIME, and the trade-off was measured BEFORE he chose
 -- and reported after. Over one week (58 visits): 150m resolves 51 (88%), 100m resolves 47
 -- (81%), 75m resolves 46 (79%). Tightening does NOT reduce the long readings it was meant
 -- to curb - average stays 54 min and the maximum stays ~177 min at every radius - it only
