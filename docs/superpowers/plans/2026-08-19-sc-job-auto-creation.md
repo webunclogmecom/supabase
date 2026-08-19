@@ -413,6 +413,34 @@ git push origin main
 
 ## Task 3: The `ensureServiceCallJob` helper
 
+> ✅ **DONE 2026-08-19, AND SHIPPED HARDER THAN THE CODE BELOW.** An adversarial review of the first
+> implementation (5 reviewers, one per failure lens) returned **two blockers and one major**, all
+> three verified against Prod and Jobber before acting. The shipped file is authoritative; the code
+> in this task is kept as the starting point, not as the current state.
+>
+> 1. 🛑 **BLOCKER: `jobs.property_id` is a best-effort mirror and the idempotency check trusted it.**
+>    `webhook-jobber` sets it only when the property is already linked at import time, and the jobs
+>    cursor is `createdAt`, so a job imported before its property was linked keeps a NULL forever.
+>    Measured: 57 of 1811 jobs, **2 of them LIVE Service Calls**. Verified end to end: Jobber job
+>    #99901056 sits on Jobber property `...LzE1NTkxOTQ1Mg==` = our property **1069** (126 NW 48th St,
+>    275-MLP), and `jobs where property_id = 1069` returns **zero rows**. The helper would have minted
+>    a second, permanently undeletable job. Fixed with a fail-closed ambiguity guard: any live
+>    Service Call on this client that we cannot place refuses the create as `job_lookup_ambiguous`.
+> 2. 🛑 **BLOCKER: post-create failures were reported as "nothing was left behind".**
+>    `save-client-job:1143` returns `db_write_failed` with the literal message *"The job WAS created
+>    in Jobber (#N) but saving it locally failed"*, and `verify_failed` / `jobber_no_answer` are the
+>    same class. All of them mapped to `job_create_failed`, whose `job_step` value this plan's own
+>    migration defines as *nothing was left behind* - so `v_client_create_attention` could never fire
+>    for the exact orphan it was built for, and a retry would duplicate the job. Now branched on
+>    `j.code`, with **unrecognised codes failing safe to orphan-class**.
+> 3. ⚠ **MAJOR: a lost reply was treated as a lost write.** The unreachable and non-JSON branches
+>    returned immediately without ever re-reading `public.jobs`, even though the success path does
+>    exactly that. Both now re-read: if the job is there, it worked and we simply did not hear back.
+>
+> **Verification: 21/21 behavioural cases pass, and all four guards are mutation-proven** (remove
+> `.trim()`; treat NULL status as terminal; move `db_write_failed` to the safe list; drop the
+> ambiguity guard). Each mutation broke exactly one test and the file was restored byte-identical.
+
 **Files:**
 - Create: `supabase/functions/_shared/service-call-job.ts`
 
@@ -548,7 +576,7 @@ export async function ensureServiceCallJob(opts: {
 - [ ] **Step 2: Type-check it**
 
 ```bash
-cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && deno check supabase/functions/_shared/service-call-job.ts
+cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && node --experimental-strip-types --check supabase/functions/_shared/service-call-job.ts
 ```
 
 Expected: no errors. If `deno` is not on PATH, skip this step; the deploy in Task 6 will surface any
@@ -653,9 +681,16 @@ or a differently-titled job would suppress the one we owe the property.
 
 The probe above proves the fixtures exist. It does not prove the helper does the right thing with
 them, and the helper is a module that no deployed function exposes on its own. Test the branches
-directly with a stubbed client. Deno's test runner is built in, so nothing needs installing.
+directly with a stubbed client.
 
-Create `supabase/functions/_shared/service-call-job.test.ts`:
+⚠ **THERE IS NO DENO ON THIS MACHINE.** Checked 2026-08-19: not on PATH, not in scoop, not in
+`~/.deno`. Do NOT install one for this. **Node 22's built-in type stripping runs the real module**,
+and the test below uses it. Two mechanics are load-bearing and will waste your time if you skip them:
+Node treats a bare `.ts` as CommonJS and throws `SyntaxError: Unexpected token 'export'`, so the
+module is **COPIED** to `.mts` (copied byte for byte, never retyped, or the test exercises a file we
+do not ship); and `globalThis.Deno` must be stubbed because the module reads `Deno.env.get`.
+
+The test is already written at `scripts/probes/service_call_job_behaviour.mjs` and covers 13 cases.
 
 ```ts
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
@@ -741,20 +776,26 @@ Deno.test("a Service-Agreement job does NOT satisfy the check", async () => {
 Run it:
 
 ```bash
-cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && deno test --allow-net --allow-env supabase/functions/_shared/service-call-job.test.ts
+cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && node --experimental-strip-types scripts/probes/service_call_job_behaviour.mjs
 ```
 
-Expected: `ok | 6 passed | 0 failed`.
+Expected: `13/13 passed`.
 
-The last test is the mutation control. Comment out the `.trim()` in `findServiceCall()` and re-run:
-the `"  Service call  "` idempotency test MUST fail. Restore it. A suite that cannot fail is not
-testing anything.
+**Then mutation-test it, because a suite that cannot fail proves nothing.** Back the file up, make
+each mutation, re-run, restore, and confirm the file is byte-identical afterwards:
+
+| mutation | the ONLY test that may fail |
+|---|---|
+| remove `.trim()` from the title comparison | `idempotent: an existing "  Service call  " ...` |
+| make `isLive` return `false` for an empty/NULL status | `a NULL-status Service Call DOES satisfy it ...` |
+
+Both were run on 2026-08-19 and behaved exactly so (12/13 each time, the right one failing).
 
 - [ ] **Step 4: Commit**
 
 ```bash
 cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase"
-git add scripts/probes/ensure_sc_job.js supabase/functions/_shared/service-call-job.test.ts
+git add scripts/probes/ensure_sc_job.js scripts/probes/service_call_job_behaviour.mjs
 git commit -m "Probe the free arms of ensureServiceCallJob
 
 Fixtures for the billing-twin and already-has-a-job cases, plus a positive
