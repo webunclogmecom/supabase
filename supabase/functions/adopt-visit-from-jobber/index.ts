@@ -139,7 +139,10 @@ Deno.serve(async (req) => {
 
     // ---- write via the existing RPC. p_enforce_expected: refuse if the row moved since we read it
     //      (someone dragged it in the Calendar while this request was in flight) rather than clobber. ----
-    const { data: ok, error: rpcErr } = await db.rpc("adopt_visit_schedule_from_jobber", {
+    // 🛑 THE `_as` VARIANT: records WHICH dispatcher clicked "Sync from Jobber". This adopts
+    //    Jobber's schedule onto our row, so knowing who authorised it matters. Wrapper: 2026-08-19_2230.
+    const { data: ok, error: rpcErr } = await db.rpc("adopt_visit_schedule_from_jobber_as", {
+      p_actor_email: email,
       p_visit_id: visitId,
       p_visit_date: target.visit_date, p_start_at: target.start_at, p_end_at: target.end_at,
       p_expected_visit_date: v.visit_date, p_expected_start_at: v.start_at,

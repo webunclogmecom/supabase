@@ -409,7 +409,12 @@ Deno.serve(async (req) => {
   // One retry for transient failures; the recorder is idempotent.
   let rec: any = null, recErr: any = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await db.rpc("fn_record_client_identity", {
+    // 🛑 THE `_as` VARIANT, NOT THE BARE RPC. It attests the verified staff email into
+    //    request.jwt.claims for its own transaction so audit.logs names the person rather than
+    //    "client-app". `email` came from auth.getUser() at the top of this request, so it is
+    //    verified, not client-supplied. Wrapper: 2026-08-19_2230.
+    const r = await db.rpc("fn_record_client_identity_as", {
+      p_actor_email: email,
       p_client_id: clientId, p_name: targetName, p_client_code: targetCode,
       // Without this the recorder's `coalesce(p_client_code, c.client_code)` would KEEP the old code,
       // and the removal would land in Jobber but not here — the worst of the two failure directions.
