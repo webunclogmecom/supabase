@@ -217,3 +217,28 @@ base line there. Calendar visits are unaffected (their own push overrides it - p
 on 99901029 dispatched "14 - Tank Cleaning" displayed only that, with 18-Hydrojet at qty 0 for it).
 The exposure is visits we never push, i.e. **Jobber-created visits**: 22 exist fleet-wide, and today
 exactly **one** displays an inherited service.
+
+### 🛑 AN INHERITED BASE LINE CANNOT BE SUPPRESSED ON ONE VISIT. DO NOT RETRY THESE (2026-08-19)
+
+Fred asked to make visit 7812 (112-YA, job 99901061, created in Jobber, no services in our DB)
+stop displaying the job's base line. **It is not possible while that line is the job's only one**,
+and both attempts cost something. Written down so the next person does not repeat them.
+
+| attempt | expectation | what actually happened |
+|---|---|---|
+| `visitDeleteLineItems(v7812, [lineId])` | unlink from that visit only - the code's own comment says "only UNLINKS from the visit (the object survives on the job)" | **both visits lost the line.** 7812 and 7817 referenced the SAME object (`JobLineItem/224316840`); there is no per-visit link to sever. Restored by re-pushing 7817, which recreated the base line and 7812 inherited again. |
+| `visitCreateLineItems(v7812, qty 0)` | a zero-quantity override suppresses the display | created a SECOND job line (`x1` + `x0`) and **7812 still showed `x1`**. Achieved nothing and put a duplicate on the job. Removed via `jobDeleteLineItems`. |
+
+**Why:** a job's single service is its **base line**; Jobber applies it to every visit lacking an
+override, and an override cannot express "none" - quantity 0 does not suppress the row. So there is
+no state where one visit shows the service and a sibling shows nothing.
+
+**Decision (Fred, 2026-08-19): LEAVE IT.** Defensible on its own terms - 7812 is a real visit on the
+*Emergency call* job, and that job's service is Labor, so displaying Labor is not wrong. The
+structurally correct fix, if it ever matters, is to give such a visit a real service in the Calendar
+so it gets its own override instead of inheriting.
+
+⚠ **Process note, worth more than the finding:** the destructive attempt was made directly on a
+shared production object without first proving it safe on something disposable, and on **112-YA,
+which the other session had claimed as its active test client**. State was fully restored (job
+carries one line, 0 orphans, 7817 intact, our DB untouched), but the sequencing was wrong.
