@@ -115,28 +115,40 @@ premise is false on a job with no templates, where the skip left the visit showi
 job 99901029: the Aug 6 visit was dispatched as "22 - Labor" and displayed "18 - Unclogging
 Hydrojet", the line minted by the Jul 30 visit before this guard existed.
 
-So `syncVisitLineItems` now skips only when the job carries line items **other than this visit's
-own** (Jobber has no VisitLineItem type, so a visit's lines are job lines linked to it and would
-otherwise count themselves as inheritable). If Jobber cannot be read, the old skip stands.
+### 🛑 It took three attempts, and the first two were wrong in opposite directions
+
+Fred's question ("does it clash with the duplicate problem, specially for SA jobs?") is what
+forced each one to be probed live. Both failures were caught by a probe, not by reading:
+
+| version | rule | what it did |
+|---|---|---|
+| v1 | skip when the job has any line that is **not mine** | another visit's override counted as inheritable, so a new visit on a job that already had one **displayed that other visit's service** — probe: visit 7819 dispatched "12 - Main Line Cleaning" onto job 99901029, Jobber showed "18 - Unclogging Hydrojet" |
+| v2 | skip when the job has lines **no visit references** (true templates) | on a real SA job every line was already visit-linked, so it **PUSHED and minted a duplicate**: job 99900820 went 2 job lines → 3, and the visit's previous line was **orphaned** (visitDeleteLineItems only UNLINKS) — the exact residue this audit exists to prevent. Orphan cleaned via `jobDeleteLineItems`. |
+| **v3 (shipped)** | skip when **Jobber already shows THIS VISIT every service we dispatched** | correct in both directions |
+
+**v3 compares NAMES on the visit itself**, as a subset test rather than equality, so a visit
+legitimately carrying extra priced lines is never stripped back to our smaller $0 set. If Jobber
+cannot be read, the conservative skip stands.
 
 ### Why the SA duplicate problem cannot come back
 
-| job kind | templates? | behaviour after the change | visits |
-|---|---|---|---|
-| **SA job** | yes | **STILL SKIPS — unchanged** | **16 of 16** |
-| Service Call / other | yes | still skips | 20 |
-| Service Call / other | **no** | now pushes | 163 |
+**Verified live on v3, both directions, same push mechanism:**
 
-**Every SA visit in the affected set sits on a job with templates, so the new branch never fires on
-an SA job.** Verified live as well: a control push of visit 7454 (templated job) left its Jobber
-line item ids byte-identical.
+| case | visit | job lines before → after | result |
+|---|---|---|---|
+| SA job — must not churn | 7454 | 3 → 3 unchanged | skipped, shows "02 - Service Agreement…" ✓ |
+| wrong-service visit — must correct | 7819 | 3 → 3 unchanged | now shows its own "12 - Main Line Cleaning" ✓ |
+
+The SA visit is skipped because the inherited priced line carries the **same service name**, so it
+is already a superset of what we dispatched. That is what preserves the price and mints nothing.
 
 ### The three symptoms from this audit, re-measured after the change and after re-pushing 56 visits
 
 | check | result |
 |---|---|
 | duplicate entries in the New Visit picker (`ops.client_service_options`, 176 jobs) | **0** — the `2026-08-03d` view guard (excludes `visit_id IS NOT NULL` and `quantity = 0`) still holds |
-| orphaned qty-0 job lines on the two jobs exercised today | **0** — every job-scope line is referenced by a live visit |
+| orphaned qty-0 job lines after all work | **0** — including the one v2 created on SA job 99900820, which was found and deleted |
+| non-invoiced affected visits re-pushed under v3 | 61 checked: **59 show their own service**, 1 blank (stale Jobber link, pre-existing), 1 dump visit where Jobber's "28 - Dump Offload" is the sensible value |
 | a visit created AND deleted today (smoke test 7818 on job 99901061) | left **no** stranded line |
 
 ⚠ **Honest limit:** that last row is one delete, not proof the stranding mechanism is gone — 9 real

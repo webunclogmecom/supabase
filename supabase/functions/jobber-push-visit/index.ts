@@ -232,45 +232,49 @@ async function syncVisitLineItems(token: string, visit: any, visitGid: string, i
     ((it.description ?? "").trim() !== "")
   );
   if (!carriesInfo) {
-    // 🛑 THE SKIP IS ONLY SAFE WHEN THERE IS SOMETHING TO INHERIT (2026-08-19, Fred:
-    // "we see everything except the correct line items for it").
-    // The guard above protects the job's priced templates. On a job that HAS none, the
-    // same skip deletes information instead of protecting it: the Jobber visit ends up
-    // showing NO services at all, while our Calendar shows the one the office picked.
-    // Reproduced on visit 7817 (112-YA, job 99901061, "22 - Service Call - Labor"):
-    // our DB holds the line item, Jobber holds an empty visit, and the job carries no
-    // lines to fall back on. MEASURED the same day: of 148 all-$0 visits since June,
-    // 17 sit on a job WITH templates (skip is correct) and 131 sit on a job with NONE
-    // (skip leaves them blank). Visit 6829, pushed BEFORE this guard existed, still
-    // shows "22 - Service Call - Labor $0" in Jobber, which is the proof that pushing a
-    // $0 line is both possible and what the office expects to see.
+    // 🛑 THE QUESTION IS NOT "DOES THE JOB HAVE TEMPLATES". It is "does Jobber already
+    // show THIS VISIT what we dispatched". Two earlier attempts got this wrong and both
+    // were caught by live probes, so the history is worth keeping:
+    //   v1 "skip when the job has any line that is not mine" — a job line belonging to a
+    //      DIFFERENT visit counted as something to inherit, so a new visit on a job that
+    //      already had one silently displayed that other visit's service. Measured: visit
+    //      7819 dispatched "12 - Main Line Cleaning" onto Excelsior job 99901029 and Jobber
+    //      showed "18 - Unclogging Hydrojet".
+    //   v2 "skip when the job has lines no visit references (true templates)" — on a real SA
+    //      job every line was already visit-linked, so it PUSHED and minted a duplicate:
+    //      job 99900820 went from 2 job lines to 3, and the visit's previous line was
+    //      orphaned, because visitDeleteLineItems only UNLINKS (the object survives on the
+    //      job). That is exactly the qty-0 residue the 2026-08-03 guard exists to prevent.
     //
-    // ⚠ "Does the job have line items" is NOT `job.lineItems.length > 0`. Jobber has no
-    // VisitLineItem type, so a visit's OWN lines are job lines linked to the visit and
-    // would count themselves as inheritable. The test must exclude this visit's lines,
-    // exactly as stripInheritedLineItemsFixedPrice already does.
-    let inheritable = 0;
+    // So compare NAMES against what this visit displays today:
+    //   * every dispatched service already shown  -> SKIP. Nothing to add, and pushing would
+    //     churn the objects, replace a priced line with $0, and strand the old one.
+    //   * anything missing (blank visit, or it is showing someone else's service) -> PUSH.
+    // This keeps the SA protection (the inherited priced template carries the same service
+    // name, so it is a subset and we leave it alone) while fixing both blank and wrong-service
+    // visits on jobs with no template of their own.
+    let alreadyShown = false;
     try {
       const jobGidForCheck = await jobberGid("job", visit.job_id);
       if (jobGidForCheck) {
-        const jr = await gql(token, Q_JOB_FIXED, { id: jobGidForCheck });
-        const allJobLi: string[] = (jr.job?.lineItems?.nodes || []).map((n: any) => n.id);
+        const jr = await gql(token, Q_VISIT_LI, { jobId: jobGidForCheck });
         const vnode = (jr.job?.visits?.nodes || []).find((n: any) => n.id === visitGid);
-        const ownLi: string[] = (vnode?.lineItems?.nodes || []).map((n: any) => n.id);
-        inheritable = allJobLi.filter((id: string) => !ownLi.includes(id)).length;
+        const shown = new Set<string>((vnode?.lineItems?.nodes || []).map((x: any) => String(x.name).trim()));
+        // subset test, never equality: a job whose visit legitimately carries EXTRA priced
+        // lines must not be stripped back to our smaller $0 set.
+        alreadyShown = shown.size > 0 && items.every((it: any) => shown.has(String(it.name).trim()));
       }
     } catch (e) {
-      // Fail toward the OLD behaviour: if Jobber cannot be read we do not know whether
-      // templates exist, and minting $0 lines onto a job that has real ones is the
-      // harmful direction. Skipping only leaves the visit as it already is.
-      console.log(`[push] visit ${visit.id}: could not read job line items (${e instanceof Error ? e.message : String(e)}) — keeping the conservative skip`);
+      // Fail toward the conservative skip: if Jobber cannot be read we do not know what the
+      // visit shows, and minting $0 lines blind is the harmful direction.
+      console.log(`[push] visit ${visit.id}: could not read the visit's Jobber line items (${e instanceof Error ? e.message : String(e)}) — keeping the conservative skip`);
       return;
     }
-    if (inheritable > 0) {
-      console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0 with no description, and the job carries ${inheritable} other line item(s) — skipping visitCreateLineItems so Jobber keeps its priced templates (prevents qty-0 orphans)`);
+    if (alreadyShown) {
+      console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0 with no description, and Jobber already shows this visit every one of them — skipping visitCreateLineItems (no churn, no qty-0 residue)`);
       return;
     }
-    console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0, but the job has NOTHING to inherit — pushing them so the visit is not blank in Jobber`);
+    console.log(`[push] visit ${visit.id}: ${items.length} line item(s) all $0, and Jobber is NOT showing this visit all of them — pushing so it shows its own service instead of blank or another visit's`);
   }
   // ALWAYS reconcile (create + update). CREATE-FIRST-THEN-DELETE-OLD (reordered 2026-07-09
   // push-safety audit): the old delete-then-create left the Jobber visit with ZERO line items
