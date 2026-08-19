@@ -101,3 +101,48 @@ decision.
 of Jobber's live per-visit overrides. Verified: 99900635 holds 4 rows / 2 at qty-0 in our DB and
 4 rows / 2 at qty-0 in Jobber. Anyone re-running the naive duplicate query will see a non-zero count
 and must not "clean" it — check the qty-0 line's visit references first.
+
+---
+
+## 2026-08-19 — the source fix was NARROWED, and why it does not undo any of the above
+
+**Fred:** *"But with that fix does it clash with the duplicate of putting multiple line items on
+the job? specially that was a problem for the SA jobs."* Fair question. Measured answer: **no.**
+
+The guard shipped above skips an all-$0 set so Jobber keeps its **own priced templates**. That
+premise is false on a job with no templates, where the skip left the visit showing **no services**
+(131 visits), or worse, **silently inheriting an older visit's service** — Excelsior Condo 300-EC,
+job 99901029: the Aug 6 visit was dispatched as "22 - Labor" and displayed "18 - Unclogging
+Hydrojet", the line minted by the Jul 30 visit before this guard existed.
+
+So `syncVisitLineItems` now skips only when the job carries line items **other than this visit's
+own** (Jobber has no VisitLineItem type, so a visit's lines are job lines linked to it and would
+otherwise count themselves as inheritable). If Jobber cannot be read, the old skip stands.
+
+### Why the SA duplicate problem cannot come back
+
+| job kind | templates? | behaviour after the change | visits |
+|---|---|---|---|
+| **SA job** | yes | **STILL SKIPS — unchanged** | **16 of 16** |
+| Service Call / other | yes | still skips | 20 |
+| Service Call / other | **no** | now pushes | 163 |
+
+**Every SA visit in the affected set sits on a job with templates, so the new branch never fires on
+an SA job.** Verified live as well: a control push of visit 7454 (templated job) left its Jobber
+line item ids byte-identical.
+
+### The three symptoms from this audit, re-measured after the change and after re-pushing 56 visits
+
+| check | result |
+|---|---|
+| duplicate entries in the New Visit picker (`ops.client_service_options`, 176 jobs) | **0** — the `2026-08-03d` view guard (excludes `visit_id IS NOT NULL` and `quantity = 0`) still holds |
+| orphaned qty-0 job lines on the two jobs exercised today | **0** — every job-scope line is referenced by a live visit |
+| a visit created AND deleted today (smoke test 7818 on job 99901061) | left **no** stranded line |
+
+⚠ **Honest limit:** that last row is one delete, not proof the stranding mechanism is gone — 9 real
+orphans existed historically. The exposure is unchanged in kind and now applies to Service Call jobs
+with no templates: if such a visit is later deleted, skipped or cancelled, its line can strand. The
+distinction that made the 2026-08-03 cleanup safe still governs any future cleanup: **a qty-0 job
+line is only an orphan when ZERO visits reference it.** 33 live overrides were left untouched then,
+and the same rule protects the 56 lines pushed on 2026-08-19, all of which are attached to live
+visits.
