@@ -195,6 +195,13 @@ Diego/Yannick create/update clients + create visits in Jobber. **Ownership model
   re-asserts the same schedule). Smoke-tested 5/5 via the real poll with a positive control (a jobber visit
   clobbered while the cron visit was preserved). **Still Fred's call: keep inbound Jobber on, or re-decouple
   entirely** — this is the safe interim either way.
+  ⚠ **THE GUARD HAS A DELIBERATE EXCEPTION — DO NOT MAKE THE SKIP UNCONDITIONAL (2026-06-26).**
+  `handleVisit` fills `start_at`/`end_at` from Jobber **when ours is NULL AND Jobber's `allDay===false`**,
+  even on Calendar/cron-mastered rows. That is how Diego's hours (dragging an all-day visit onto a time in
+  Jobber) flow back to date-only Calendar visits. "Never clobber start_at" means never OVERWRITE a value we
+  hold; an empty-only fill is the sanctioned half. Hardening this guard into "never touch start_at at all"
+  silently stops Diego's hours syncing, with nothing erroring. (Relocated 2026-08-19 from the memory file
+  `project_calendar_create_visit`; original record: `docs/audits/2026-06-26_calendar_session_worklog.md`.)
 - ✅ **Calendar→Jobber push-completeness probe** (2026-06-24 audit follow-up #4, `2026-06-24_calendar_push_health.sql`):
   the push is fire-and-forget, so a failed push left a silently un-synced visit. New `ops.v_calendar_push_health`
   view surfaces (a) unresolved `visit_sync_flags` (explicit push failures) + (b) calendar/cron scheduled visits
