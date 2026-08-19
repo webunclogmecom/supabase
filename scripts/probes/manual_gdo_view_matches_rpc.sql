@@ -15,14 +15,14 @@
 -- ============================================================================
 DO $agree$
 DECLARE
-  r record; v_run text; v_path text; v_bucket text;
+  r record; v_run text; v_path text; v_bucket text; v_pick bigint;
   predicted bool; actual bool; err text;
-  n int := 0; mismatches int := 0; yes_ok int := 0; no_ok int := 0;
+  n int := 0; mismatches int := 0; yes_ok int := 0; no_ok int := 0; multi int := 0;
 BEGIN
   SELECT id INTO v_bucket FROM storage.buckets WHERE name = 'rpa-evidence';
 
   FOR r IN
-    SELECT e.visit_id, e.can_record_manual, e.blocked_reason
+    SELECT e.visit_id, e.can_record_manual, e.blocked_reason, e.permit_count
       FROM derm.visit_gdo_manual_eligibility e
       JOIN public.visits v ON v.id = e.visit_id
      WHERE e.has_code27 AND v.visit_status = 'completed'
@@ -30,6 +30,7 @@ BEGIN
   LOOP
     n := n + 1;
     predicted := r.can_record_manual;
+    IF r.permit_count > 1 THEN multi := multi + 1; END IF;
 
     v_run  := 'manual-agree' || r.visit_id::text;
     v_path := r.visit_id::text || '/' || v_run || '.jpg';
@@ -37,9 +38,18 @@ BEGIN
     VALUES (v_bucket, v_path, '{"mimetype":"image/jpeg","size":1}'::jsonb)
     ON CONFLICT DO NOTHING;
 
+    -- Mirror the UI: when the visit has more than one permit the person is REQUIRED to choose one,
+    -- so the probe chooses one too. Passing NULL here would measure the missing-argument error and
+    -- report it as an eligibility disagreement, which is the instrument being wrong, not the code.
+    v_pick := NULL;
+    IF r.permit_count > 1 THEN
+      SELECT gdo_id INTO v_pick FROM derm.visit_gdo_our_record
+       WHERE visit_id = r.visit_id AND gdo_id IS NOT NULL ORDER BY gdo_id LIMIT 1;
+    END IF;
+
     BEGIN
       PERFORM public.fn_record_manual_gdo_report(
-        r.visit_id, 'AGREE-PROBE', now() - interval '1 hour', v_run, v_path, 'fred@ayache.com');
+        r.visit_id, 'AGREE-PROBE', now() - interval '1 hour', v_run, v_path, 'fred@ayache.com', v_pick);
       actual := true;
     EXCEPTION WHEN others THEN actual := false; err := SQLERRM; END;
 
@@ -59,6 +69,7 @@ BEGIN
   RAISE NOTICE 'code-27 completed visits checked : %', n;
   RAISE NOTICE '  agreed, both YES               : %', yes_ok;
   RAISE NOTICE '  agreed, both NO                : %', no_ok;
+  RAISE NOTICE '  of which multi-permit          : %', multi;
   RAISE NOTICE '  MISMATCHES                     : %', mismatches;
 
   -- Both controls must be non-zero, or the comparison never exercised one of the branches and a
@@ -66,6 +77,7 @@ BEGIN
   IF n = 0        THEN RAISE EXCEPTION 'CONTROL FAILED: no visits examined at all'; END IF;
   IF yes_ok = 0   THEN RAISE EXCEPTION 'CONTROL FAILED: not one visit was accepted, so agreement on YES is unproven'; END IF;
   IF no_ok = 0    THEN RAISE EXCEPTION 'CONTROL FAILED: not one visit was refused, so agreement on NO is unproven'; END IF;
+  IF multi = 0    THEN RAISE EXCEPTION 'CONTROL FAILED: no multi-permit visit was exercised, so the permit branch is unproven'; END IF;
   IF mismatches>0 THEN RAISE EXCEPTION 'FAIL: % visit(s) where the view and the function disagree', mismatches; END IF;
 
   RAISE EXCEPTION 'PASSED: view and function agree on all % visits (% yes, % no) - rolling back', n, yes_ok, no_ok;

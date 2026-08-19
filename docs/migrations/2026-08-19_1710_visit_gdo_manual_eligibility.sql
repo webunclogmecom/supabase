@@ -21,6 +21,12 @@
 -- blocked_reason is written for a person to read in a disabled-button tooltip. It is ordered by
 -- severity, not by the order the RPC checks things, because the first thing a human can DO about it
 -- is what matters: link the manifest, then worry about the rest.
+--
+-- 2026-08-19 17:45 AMENDED: permit_count added. 44% of eligible visits carry 2-3 GDO permits, and
+-- fn_record_manual_gdo_report now REFUSES a multi-permit visit unless the caller says which permit
+-- was used. The UI needs to know that before it renders the form, or it shows a submit button that
+-- cannot succeed. can_record_manual deliberately stays TRUE for those visits - the person may file,
+-- they just have to choose - so eligibility and input-completeness stay separate questions.
 -- ============================================================================
 
 BEGIN;
@@ -65,7 +71,11 @@ SELECT
                        AND (s.status = 'SUCCESS' OR s.portal_confirmation IS NOT NULL))
     AND (v.visit_date < public.rpa_launch_cutoff()
          OR EXISTS (SELECT 1 FROM public.manifest_visits mv WHERE mv.visit_id = v.id))
-  ) AS can_record_manual
+  ) AS can_record_manual,
+  -- appended LAST on purpose: CREATE OR REPLACE VIEW may only add columns at the end, and trying to
+  -- slot this in before can_record_manual fails as "cannot change name of view column".
+  (SELECT count(DISTINCT f.gdo_id) FROM public.v_derm_portal_fields f
+    WHERE f.visit_id = v.id AND f.gdo_id IS NOT NULL)::int AS permit_count
 FROM public.visits v
 WHERE v.deleted_at IS NULL;
 

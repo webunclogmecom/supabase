@@ -33,7 +33,14 @@
 //     confirmation: string,          // the portal's confirmation / tracking text - required
 //     attempted_at: string,          // ISO instant the person filed it
 //     screenshot_b64: string,        // JPEG or PNG, <=5MB decoded - required, it is the evidence
+//     gdo_id?: number,               // REQUIRED when the visit has >1 GDO permit (see below)
 //     acknowledge_stops_bot?: bool } // required ONLY when the visit is post-cutoff (see below)
+//
+// ⚠ gdo_id is not optional in practice. 44% of eligible visits carry 2-3 GDO permits, and the RPC
+// refuses those unless it is told which one was filed under - recording the wrong permit is worse
+// than recording nothing, because the row still suppresses the bot while the permit that was
+// actually filed looks handled. The app reads permit_count from
+// derm.visit_gdo_manual_eligibility and makes the person choose.
 //
 // Auth: verify_jwt = true. The caller must be a signed-in @unclogme.com / @ayache.com staff
 // account; their email is recorded as filed_by_email so the card can say who filed it.
@@ -122,6 +129,12 @@ Deno.serve(async (req) => {
   const confirmation = String(body.confirmation ?? '').trim()
   const attemptedAt = String(body.attempted_at ?? '').trim()
   const screenshotB64 = String(body.screenshot_b64 ?? '')
+  // Absent means "the visit has one permit or none, let the function fill it in". A malformed value
+  // is NOT coerced to absent: that would quietly turn a chosen permit into a guessed one.
+  const gdoId = body.gdo_id === undefined || body.gdo_id === null ? null : Number(body.gdo_id)
+  if (gdoId !== null && !Number.isInteger(gdoId)) {
+    return json({ error: 'bad_request', message: 'gdo_id must be a whole number.' }, 400, cors)
+  }
 
   if (!Number.isInteger(visitId) || visitId <= 0) {
     return json({ error: 'bad_request', message: 'visit_id is required.' }, 400, cors)
@@ -206,6 +219,7 @@ Deno.serve(async (req) => {
     p_run_id: runId,
     p_screenshot_path: path,
     p_filed_by_email: email,
+    p_gdo_id: gdoId,
   })
 
   if (rpcErr) {
