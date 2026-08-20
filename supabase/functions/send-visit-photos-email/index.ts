@@ -263,7 +263,7 @@ const CUSTOMER_PHASES = ['before', 'after', 'extra'] as const
 const customerPhotoCount = (counts: Record<string, number>): number =>
   CUSTOMER_PHASES.reduce((a, p) => a + (counts[p] ?? 0), 0)
 
-function buildHtml(v: VisitRow, counts: Record<string, number>): string {
+function buildHtml(v: VisitRow, counts: Record<string, number>, includePhotos = true): string {
   const name = escapeHtml(v.client_name)
   const addr = escapeHtml(v.address)
   const vdate = escapeHtml(fmtDate(v.visit_date))
@@ -296,7 +296,7 @@ function buildHtml(v: VisitRow, counts: Record<string, number>): string {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Grease Trap Service Completed</title></head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Grease trap service completed for ${name} at ${addr} on ${vdate}. Job Completion Report with before &amp; after photos attached.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Grease trap service completed for ${name} at ${addr} on ${vdate}. Job Completion Report${includePhotos ? ' with before &amp; after photos' : ''} attached.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
 ${testStrip}
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;">
@@ -331,8 +331,8 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
 <td valign="middle" width="40" style="width:40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" height="40" style="width:40px;height:40px;background-color:#f14714;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">PDF</td></tr></table></td>
 <td valign="middle" style="padding-left:14px;font-family:${FONT_STACK};">
-<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Job Completion Report${beforeN > 0 && afterN > 0 ? ' (with before &amp; after photos)' : ' (service photos)'}</div>
-<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${totalN} photo${totalN === 1 ? '' : 's'}${breakdown ? ' &middot; ' + breakdown : ''}</div>
+<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Job Completion Report${!includePhotos ? '' : (beforeN > 0 && afterN > 0 ? ' (with before &amp; after photos)' : ' (service photos)')}</div>
+<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${!includePhotos ? 'Service details only &middot; photos not included' : `${totalN} photo${totalN === 1 ? '' : 's'}${breakdown ? ' &middot; ' + breakdown : ''}`}</div>
 </td></tr></table>
 </td></tr></table>
 </td></tr>
@@ -356,7 +356,7 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 
 // Plain-text alternative. Resend sends both; a text part measurably helps deliverability
 // to municipal gateways, which is the whole audience for this message.
-function buildText(v: VisitRow, counts: Record<string, number>): string {
+function buildText(v: VisitRow, counts: Record<string, number>, includePhotos = true): string {
   const totalN = customerPhotoCount(counts)   // NOT Object.values(counts) — that included internal
   return [
     'Dear Environmental Compliance Team,', '',
@@ -366,7 +366,9 @@ function buildText(v: VisitRow, counts: Record<string, number>): string {
     `  - Location: ${v.address}.`,
     `  - Service Date: ${fmtDate(v.visit_date)}.`,
     `  - Service Type: ${SERVICE_TYPE_LABEL}.`, '',
-    `Attached: Job Completion Report (${totalN} photo${totalN === 1 ? '' : 's'})`, '',
+    includePhotos
+      ? `Attached: Job Completion Report (${totalN} photo${totalN === 1 ? '' : 's'})`
+      : 'Attached: Job Completion Report (service details only, photos not included)', '',
     'Please note: The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.', '',
     `If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at ${CONTACT_EMAIL} or call us directly at ${CONTACT_PHONE}.`, '',
     'Thank you for your continued partnership in keeping our community compliant and clean.', '',
@@ -409,6 +411,11 @@ Deno.serve(async (req: Request) => {
   const visitId = Number(body?.visit_id)
   if (!Number.isFinite(visitId) || visitId <= 0) return json({ error: 'visit_id_required' }, 400, cors)
   const confirmResend = body?.confirm_resend === true
+  // 🛑 DEFAULT IS PHOTOS-IN, AND THE TEST IS `!== false`, NOT `=== true`.
+  // Admin Review's checkbox is "Send email with photos", checked by default. Every
+  // caller that predates it sends no such key, and must keep sending photos. Reading
+  // `=== true` would silently strip the photos from every existing integration.
+  const includePhotos = (body as Record<string, unknown>)?.include_photos !== false
 
   const resolved = resolveTestRecipient((body as Record<string, unknown>)?.test_recipient)
   if ('error' in resolved) {
@@ -434,7 +441,7 @@ Deno.serve(async (req: Request) => {
       const { error } = await sb.from('visit_photo_email_sends').insert({
         visit_id: visitId, recipient_email: recipient, status, reason,
         is_test: IS_TEST, photo_count: photoCount, bytes_sent: bytes,
-        resend_email_id: resendId, subject,
+        resend_email_id: resendId, subject, include_photos: includePhotos,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-visit-photos-email] log insert failed: ${error.message}`)
@@ -499,7 +506,20 @@ Deno.serve(async (req: Request) => {
     if (lErr) throw new Error(`photo lookup failed: ${lErr.message}`)
 
     const images = (links ?? []).filter((l: any) => String(l.photos?.content_type ?? '').startsWith('image/'))
-    if (images.length === 0) {
+
+    // 🛑 BOTH PHOTO GATES ARE ABOUT THE ATTACHMENT, SO NEITHER APPLIES WHEN THE SENDER
+    // HAS DELIBERATELY EXCLUDED THE PHOTOS (2026-08-20).
+    //   no_photos       exists so a regulator is never promised evidence that is not
+    //                   there. With include_photos=false nothing is promised.
+    //   not_classified  exists so a photo cannot reach a city labelled as the wrong
+    //                   phase, and so a late straggler re-opens the visit. With no
+    //                   photos in the attachment there is nothing to mislabel.
+    // Keeping them would make the checkbox refuse exactly the visits it is most useful
+    // for: the ones whose photos have not arrived or are not yet classified.
+    // ⚠ This is the one place the two features interact. If a THIRD reason to block is
+    //   ever added here, decide explicitly whether it is about the attachment or about
+    //   the visit, and only skip it if it is about the attachment.
+    if (includePhotos && images.length === 0) {
       await logSend('skipped', 'no_photos', 0, 0, null, null)
       return json({
         error: 'no_photos',
@@ -516,7 +536,7 @@ Deno.serve(async (req: Request) => {
     const phaseBy = new Map<number, string>((cls ?? []).map((c: any) => [c.photo_link_id, c.service_phase]))
 
     const unclassified = images.length - phaseBy.size
-    if (unclassified > 0) {
+    if (includePhotos && unclassified > 0) {
       await logSend('skipped', `not_classified:${unclassified}`, 0, 0, null, null)
       return json({ error: 'not_classified', unclassified, total: images.length }, 409, cors)
     }
@@ -565,7 +585,11 @@ Deno.serve(async (req: Request) => {
       const up = await fetch(target, {
         method: 'POST', signal: ctrl.signal,
         headers: { Authorization: `Bearer ${PDF_SERVICE_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_code: visitRow.client_code, public_id: visitRow.public_id }),
+        body: JSON.stringify({
+          client_code: visitRow.client_code,
+          public_id: visitRow.public_id,
+          include_photos: includePhotos,
+        }),
       })
 
       // 🛑 409 means the renderer REFUSED, and every reason it refuses is a reason not
@@ -650,8 +674,8 @@ Deno.serve(async (req: Request) => {
         to: [recipient],
         reply_to: CONTACT_EMAIL,
         subject,
-        html: buildHtml(visitRow, phaseCounts),
-        text: buildText(visitRow, phaseCounts),
+        html: buildHtml(visitRow, phaseCounts, includePhotos),
+        text: buildText(visitRow, phaseCounts, includePhotos),
         attachments: prepared.map((p) => ({ filename: p.filename, content: p.content, content_type: p.content_type })),
       }),
     })
