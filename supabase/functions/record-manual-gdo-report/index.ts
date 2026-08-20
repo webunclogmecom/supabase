@@ -30,7 +30,7 @@
 //
 // Input (POST JSON):
 //   { visit_id: number,
-//     confirmation: string,          // the portal's confirmation / tracking text - required
+//     (NO confirmation field - see below)
 //     attempted_at: string,          // ISO instant the person filed it
 //     screenshot_b64: string,        // JPEG or PNG, <=5MB decoded - required, it is the evidence
 //     gdo_id?: number,               // REQUIRED when the visit has >1 GDO permit (see below)
@@ -140,7 +140,15 @@ Deno.serve(async (req) => {
   }
 
   const visitId = Number(body.visit_id)
-  const confirmation = String(body.confirmation ?? '').trim()
+  // 🛑 NO `confirmation` INPUT, AND DO NOT ADD ONE BACK.
+  // Fred: "it asks for a confirmation number, but there is not such a thing." Measured across all
+  // 535 rows, portal_confirmation has held three values ever, and every live success carries the
+  // same literal, which itself says "no tracking number". Twelve DB objects reference the column and
+  // all twelve only test IS NULL / IS NOT NULL - nothing parses it.
+  // It is also CLIENT-FACING: customer.gdo_reports exposes it to the Field Portal, where 84 reports
+  // across 7 clients read it today under a heading that says "Confirmation". So the sentence is
+  // written by fn_record_manual_gdo_report as a constant, and no caller can inject text a paying
+  // customer reads.
   const attemptedAt = String(body.attempted_at ?? '').trim()
   const screenshotB64 = String(body.screenshot_b64 ?? '')
   // Absent means "the visit has one permit or none, let the function fill it in". A malformed value
@@ -152,12 +160,6 @@ Deno.serve(async (req) => {
 
   if (!Number.isInteger(visitId) || visitId <= 0) {
     return json({ error: 'bad_request', message: 'visit_id is required.' }, 400, cors)
-  }
-  if (!confirmation) {
-    return json({ error: 'bad_request', message: 'Enter the confirmation number the portal gave you.' }, 400, cors)
-  }
-  if (confirmation.length > 200) {
-    return json({ error: 'bad_request', message: 'That confirmation is too long (200 characters max).' }, 400, cors)
   }
   if (!attemptedAt || Number.isNaN(Date.parse(attemptedAt))) {
     return json({ error: 'bad_request', message: 'Enter the date you filed it.' }, 400, cors)
@@ -238,7 +240,6 @@ Deno.serve(async (req) => {
 
   const { data: row, error: rpcErr } = await sb.rpc('fn_record_manual_gdo_report', {
     p_visit_id: visitId,
-    p_confirmation: confirmation,
     p_attempted_at: toInstant(attemptedAt),
     p_run_id: runId,
     p_screenshot_path: path,
