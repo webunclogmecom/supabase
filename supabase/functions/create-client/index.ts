@@ -35,6 +35,7 @@
 // ============================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { ensureServiceCallJob } from "../_shared/service-call-job.ts";
 
 const GQL_VERSION = "2026-04-16";
 // CustomFieldConfigurationText "Client Code", appliesTo ALL_CLIENTS. Account-stable.
@@ -873,6 +874,53 @@ Deno.serve(async (req) => {
   // so this cannot be fixed by reordering.
   await db.rpc("fn_fix_billing_primary_property", { p_client_id: clientId });
 
+  // ---- the Service Call job -------------------------------------------------
+  // 🛑 ORDER: after fn_fix_billing_primary_property, because that repair decides which property is
+  //    primary, and after the PROPERTY_CREATE replay, because the helper needs a real property link
+  //    to exist. A job cannot be created before its property is canonical here.
+  // 🛑 A FAILURE HERE NEVER ROLLS BACK THE CLIENT OR THE PROPERTY. There is no clientDelete. The
+  //    client is real and correct; only the job is missing, and that is a repairable state that the
+  //    attention view surfaces.
+  let jobStep: "skipped" | "created" | "existing" | "failed" | "orphaned" = "skipped";
+  let jobId: number | null = null;
+  let jobNote: string | null = null;
+
+  if (property_mode === "none") {
+    jobNote = "No property was created, so this client has no Service Call job and cannot be scheduled yet.";
+  } else {
+    const { data: realProp } = await db
+      .from("properties").select("id").eq("client_id", clientId).eq("is_billing", false)
+      .order("id", { ascending: false }).limit(1).maybeSingle();
+    if (!realProp?.id) {
+      jobStep = "orphaned";
+      jobNote = "The property did not materialise here, so no Service Call job was created.";
+    } else {
+      const res = await ensureServiceCallJob({
+        db,
+        authHeader: req.headers.get("authorization") ?? "",
+        clientId,
+        propertyId: Number(realProp.id),
+      });
+      if (res.ok) {
+        jobStep = res.created ? "created" : "existing";
+        jobId = res.job_id;
+        jobNote = res.detail;
+      } else {
+        // 🛑 'job_not_recorded' is the dangerous one: save-client-job reported success but no job is
+        //    on the property, so Jobber may hold one we never wrote down. That is the ONLY reason
+        //    that earns 'orphaned', because 'orphaned' is what puts the attempt in front of a human.
+        //    Every other reason refused BEFORE Jobber was touched and left nothing behind, so it is
+        //    'failed', never 'skipped': skipped means the flow correctly did not try.
+        jobStep = res.reason === "job_not_recorded" ? "orphaned" : "failed";
+        jobNote = res.detail;
+      }
+    }
+  }
+
+  await db.from("client_create_attempts")
+    .update({ job_step: jobStep, job_id: jobId })
+    .eq("idempotency_key", idem);
+
   // ---- report what LANDED, not what we intended ----------------------------
   // 🛑 THIS RETURNED `client_code: code` -- the value we ASKED for, never re-read.
   // handleClient (webhook-jobber:426) deliberately DROPS the code and imports the
@@ -902,5 +950,9 @@ Deno.serve(async (req) => {
     jobber_client_gid: gid,
     duplicate_check,
     idempotency_key: idem,
+    job: { step: jobStep, job_id: jobId, note: jobNote },
+    // The caller needs ONE boolean it can act on. A client with no Service Call job cannot be
+    // dispatched from the Calendar, and that is invisible from client_code alone.
+    schedulable: jobStep === "created" || jobStep === "existing",
   });
 });
