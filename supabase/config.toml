@@ -573,6 +573,15 @@ verify_jwt = false
 [functions.save-client-contact]
 verify_jwt = false
 
+# save-client-property: adds a property to an EXISTING client, Jobber first, then materialises it
+# through webhook-jobber's handleProperty and creates the property's Service Call job via the shared
+# _shared/service-call-job.ts helper. First propertyCreate caller in this repo.
+# verify_jwt = false matches its siblings: the staff gate INSIDE the function (auth.getUser + an
+# @ayache.com / @unclogme.com domain check) is stricter than the gateway check, which the public anon
+# key also passes.
+[functions.save-client-property]
+verify_jwt = false
+
 # sync-jobber-job-drift: the 30-minute jobs reconcile (pg_cron 15,45 * * * * via
 # fn_request_jobber_sync('jobs-drift'), vault bearer). Handler requires
 # role=service_role — verify_jwt alone also admits the public anon key.
