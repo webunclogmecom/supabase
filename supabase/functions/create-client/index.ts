@@ -135,6 +135,17 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
   } catch (e) {
     return { ok: false, kind: "unreachable", detail: e instanceof Error ? e.message : String(e) };
   }
+  // 🛑 JOBBER SHEDS LOAD WITH AN HTML "WAITING ROOM" AT HTTP 200. Not 429, not 5xx, no errors array.
+  // Without this, `r.json()` throws, `j` becomes {}, neither the 500 check nor the errors check
+  // fires, and this returns ok:true with data UNDEFINED. In THIS function that lands before the
+  // mutation: the Jobber-side client-code uniqueness check and both duplicate searches read a
+  // missing answer as "the code is free" and "there are no duplicates". An outage then presents as
+  // a green pre-check. Content-type is the only honest discriminator; the status lies.
+  const ctype = r.headers.get("content-type") ?? "";
+  if (!ctype.includes("json")) {
+    return { ok: false, kind: "busy",
+      detail: `Jobber returned ${ctype || "an unknown content type"} at HTTP ${r.status} (its waiting room), not GraphQL` };
+  }
   let j: any = {};
   try { j = await r.json(); } catch { j = {}; }
   const throttled = r.status === 429 ||
