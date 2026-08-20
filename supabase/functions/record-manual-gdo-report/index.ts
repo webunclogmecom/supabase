@@ -83,6 +83,20 @@ function sniffImage(b: Uint8Array): { ext: 'jpg' | 'png'; mime: string } | null 
   return null
 }
 
+// 🛑 A BARE DATE MUST NOT BECOME MIDNIGHT UTC, OR EVERY FILING DISPLAYS A DAY EARLY.
+// The form sends "2026-08-20". `new Date("2026-08-20")` is parsed as midnight UTC, and every app
+// here renders in Eastern, so it came out as "Aug 19, 8:00 PM ET" - the day before the person
+// filed. `new Date(y, m, d)` is not the fix either: it anchors to the BROWSER's zone, and this
+// workspace runs from Spain half the time.
+// Anchoring a bare date at 12:00 UTC lands at 08:00 ET, the same calendar day, and stays on the
+// right day across both DST offsets. A full ISO instant is passed through untouched, so a caller
+// that knows the real time still gets it stored exactly.
+function toInstant(input: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(input)
+    ? new Date(input + 'T12:00:00Z').toISOString()
+    : new Date(input).toISOString()
+}
+
 function decodeB64(s: string): Uint8Array | null {
   // strip any data: prefix and whitespace so the length maths matches atob(), which ignores it
   const b64 = s.replace(/^data:image\/[a-z+]+;base64,/, '').replace(/\s/g, '')
@@ -168,29 +182,39 @@ Deno.serve(async (req) => {
     global: { headers: { 'x-app-source': 'derm-tracker' } },
   })
 
-  // ---- the post-cutoff acknowledgement --------------------------------------------------------
-  // Recording a filing on a post-cutoff visit REMOVES it from the bot's queue permanently, so the
-  // person has to know that is what they are doing. On a PRE-cutoff visit the bot was never going
-  // to touch it, so demanding the same acknowledgement would be asking them to confirm a
-  // consequence that does not exist. The warning has to be true or it stops being read.
+  // ---- the bot-suppression acknowledgement -----------------------------------------------------
+  // Recording a filing on a visit the bot actually works REMOVES it from the queue permanently, so
+  // the person has to know that is what they are doing. On a visit the bot was never going to
+  // touch, demanding the same acknowledgement would be asking them to confirm a consequence that
+  // does not exist. The warning has to be true or it stops being read.
   const { data: visitRow, error: visitErr } = await sb
     .from('visits').select('visit_date').eq('id', visitId).maybeSingle()
   if (visitErr) return json({ error: 'server_error', message: 'Could not read the visit.' }, 500, cors)
   if (!visitRow) return json({ error: 'not_found', message: `Visit ${visitId} was not found.` }, 404, cors)
 
-  // Destructure the error and FAIL CLOSED. A discarded error here returns data:null, which would
-  // read as "not post-cutoff" and silently skip the acknowledgement on exactly the visits that
-  // need it. A guard that cannot prove its own precondition must refuse, not wave things through.
-  const { data: cutoff, error: cutoffErr } = await sb.rpc('rpa_launch_cutoff')
-  if (cutoffErr || !cutoff) {
-    console.error('rpa_launch_cutoff unavailable:', cutoffErr?.message ?? 'null result')
-    return json({ error: 'server_error', message: 'Could not check the bot cutoff date, so nothing was recorded.' }, 500, cors)
+  // 🛑 READ suppresses_bot FROM THE VIEW. Do NOT recompute it from post_cutoff here.
+  // This function originally gated on `visit_date >= rpa_launch_cutoff()`. The UI was moved onto
+  // derm.visit_gdo_manual_eligibility.suppresses_bot 25 minutes later (96a90c7) and this was never
+  // revisited, which made the two disagree and produced a DEAD END: the UI only renders the
+  // acknowledgement when suppresses_bot is true, so on a post-cutoff visit where it is false it
+  // never sends acknowledge_stops_bot, and this returned 409 confirm_required with no control
+  // anywhere on screen that could satisfy it. Measured 2026-08-20: 204 of 1,079 recordable visits
+  // (19%) were in exactly that state - every eligible post-cutoff visit, because suppresses_bot is
+  // true for none of them. The manual path has never committed a row in its history.
+  // One rule, one place: the view decides, both sides read it.
+  const { data: elig, error: eligErr } = await sb
+    .from('visit_gdo_manual_eligibility')
+    .select('suppresses_bot')
+    .eq('visit_id', visitId)
+    .maybeSingle()
+  if (eligErr || !elig) {
+    console.error('eligibility lookup failed:', eligErr?.message ?? 'no row')
+    return json({ error: 'server_error', message: 'Could not check whether this stops the bot, so nothing was recorded.' }, 500, cors)
   }
-  const postCutoff = String(visitRow.visit_date) >= String(cutoff)
-  if (postCutoff && body.acknowledge_stops_bot !== true) {
+  if (elig.suppresses_bot === true && body.acknowledge_stops_bot !== true) {
     return json({
       error: 'confirm_required',
-      post_cutoff: true,
+      suppresses_bot: true,
       message: 'Recording this stops the bot from filing this visit. Confirm to continue.',
     }, 409, cors)
   }
@@ -215,7 +239,7 @@ Deno.serve(async (req) => {
   const { data: row, error: rpcErr } = await sb.rpc('fn_record_manual_gdo_report', {
     p_visit_id: visitId,
     p_confirmation: confirmation,
-    p_attempted_at: new Date(attemptedAt).toISOString(),
+    p_attempted_at: toInstant(attemptedAt),
     p_run_id: runId,
     p_screenshot_path: path,
     p_filed_by_email: email,
