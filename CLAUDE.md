@@ -1193,8 +1193,8 @@ same class of misalignment and wants the same snap.
 > **MOSTLY CLOSED 2026-08-20 by `2026-08-20_1538_snap_remaining_derived_bands.sql`.** Re-measured
 > against the real test (does the row carry a `band_y0_pct`/`band_y1_pct` override) rather than the
 > counts above: **71 served documents on derived bands, not 109**. 63 rows across 17 pages were
-> snapped onto detected printed rules and are regenerating. **17 documents across 8 pages remain and
-> need a person**, split three ways, because the three groups need different answers:
+> snapped onto detected printed rules and are regenerating. `2026-08-20_1610` then fitted 4 more.
+> **13 documents across 7 pages remain and need a person**, split three ways, because the three groups need different answers:
 >
 > | group | pages | what is true |
 > |---|---|---|
@@ -1205,6 +1205,31 @@ same class of misalignment and wants the same snap.
 > 🛑 **Do NOT quote the raw numbers for the middle group (23.3pp, 17.4pp, 11.4pp).** Only 3 rules
 > were detected where 4 edges were needed, so every edge snapped to the same rule and the arithmetic
 > is an artifact of a failed instrument. The honest word is "unknown".
+>
+> **🛑 THE FORM PRINTS MID-SLOT DIVIDERS AS WELL AS SLOT BOUNDARIES, SO "SNAP TO THE NEAREST
+> RULE" IS AMBIGUOUS. This is the most reusable thing learned here.** Detected rules sit ~3.5pp
+> apart while a client's printed slot is ~7.8pp, so a nearest-rule snap can land on a divider. On
+> `ticket-310607` one edge had candidates 1.82 and 2.34 away: a coin flip, not a measurement. **That
+> ambiguity, not the size of the derived error, is what makes a page unsafe to snap.**
+>
+> ⇒ Fit a **contiguous tiling** across the whole roster instead, and believe it only when three
+> independent checks agree: (T1) every client's `stamp_y_pct` falls strictly inside its assigned
+> slot, which is strong because a human placed that stamp on that client's own row; (T2) the tiling
+> is contiguous, monotonic and no two clients share a slot; (T3) the chain's first and last boundary
+> match the independently measured extent. `2026-08-20_1610` did this for `ticket-310607` (4 rows,
+> each old band reaching 1.16-1.57pp past a printed rule into the row below).
+> ⚠ Independent corroboration worth knowing: the true boundaries ink **darker** than the dividers
+> between them (0.82 vs 0.75 mean). Do not use ink to choose the tiling, but do check it agrees.
+> ⚠ **A tiling that "passes" can still be wrong.** Two pages passed T1-T3 and were rejected by eye:
+> their slots were unevenly spaced (11.7 / 14.4 / 11.9) and on one the stamp sat 0.08pp off a
+> boundary, so T1 passed on a technicality. Require roughly uniform spacing and real clearance.
+>
+> **✅ A PROVABLY LEAK-FREE FALLBACK EXISTS, and it needs a product decision rather than more
+> analysis.** Setting a band to the two detected rules that BRACKET its stamp cannot leak: every
+> slot boundary is itself a detected rule, so a bracketing interval can never cross one. The cost is
+> that where a divider falls between them the client sees about half of their own row. That is a
+> customer-visible degradation, so it is Fred's call, not a cleanup. Withdrawing the document is the
+> other option and produces the blank FOG card he objected to on 2026-08-19.
 >
 > ⚠ **`fn_blackout_targets(p_limit integer DEFAULT 3)`.** Calling it with no argument returns 3 rows
 > and looks like an empty backlog. I read that as "only 3 of 63 will regenerate" and nearly reported
