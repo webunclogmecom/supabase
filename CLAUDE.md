@@ -1190,6 +1190,31 @@ bands. Read PART 5 of `docs/migrations/2026-08-19_2355` before dropping that con
 bands.** Tonight's sheets were simply the ones that got extents. Every one of those pages has the
 same class of misalignment and wants the same snap.
 
+> **MOSTLY CLOSED 2026-08-20 by `2026-08-20_1538_snap_remaining_derived_bands.sql`.** Re-measured
+> against the real test (does the row carry a `band_y0_pct`/`band_y1_pct` override) rather than the
+> counts above: **71 served documents on derived bands, not 109**. 63 rows across 17 pages were
+> snapped onto detected printed rules and are regenerating. **17 documents across 8 pages remain and
+> need a person**, split three ways, because the three groups need different answers:
+>
+> | group | pages | what is true |
+> |---|---|---|
+> | measured neighbour exposure | `ticket-311045` p1 (1.60pp), `ticket-310607` p1 (1.57pp), `ticket-832194` p2 (1.40pp), `ticket-831047` p1 (1.01pp) | real, same order as the 1.665pp leak confirmed on 2026-08-19 |
+> | detection failed, exposure UNKNOWN | `ticket-831102` p1+p2, `ticket-831325` p1 | dark scans (roster median 210-216 vs 244-255 everywhere that worked) |
+> | no exposure, left alone deliberately | `ticket-831710` p1 | fails G1 at 1.512 but every error is INWARD, so it crops its own row and reveals nobody |
+>
+> 🛑 **Do NOT quote the raw numbers for the middle group (23.3pp, 17.4pp, 11.4pp).** Only 3 rules
+> were detected where 4 edges were needed, so every edge snapped to the same rule and the arithmetic
+> is an artifact of a failed instrument. The honest word is "unknown".
+>
+> ⚠ **`fn_blackout_targets(p_limit integer DEFAULT 3)`.** Calling it with no argument returns 3 rows
+> and looks like an empty backlog. I read that as "only 3 of 63 will regenerate" and nearly reported
+> the migration as inert. Pass a real limit.
+>
+> ⚠ **4 rows on `ticket-828604` were snapped but will NEVER regenerate**: `fn_blackout_targets`
+> gates on `stamp_placed_at IS NOT NULL` and those rows have none. Their documents are frozen
+> snapshots carrying bands whose source no longer exists (7 such rows fleet-wide). Improving the
+> data does not republish them.
+
 ### 🛑 JOBBER NOTES ARE SCOPED TO THE **JOB**, NOT THE VISIT (Fred, 2026-08-18)
 
 `Visit.notes` reads like a per-visit field and is not one. **JobNote is JOB-scoped** (every visit
