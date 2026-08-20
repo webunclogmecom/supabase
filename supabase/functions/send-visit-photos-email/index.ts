@@ -299,12 +299,19 @@ function buildHtml(v: VisitRow, counts: Record<string, number>): string {
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Grease trap service completed for ${name} at ${addr} on ${vdate}. Job Completion Report with before &amp; after photos attached.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
 ${testStrip}
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;border-top:4px solid #f14714;">
-<tr><td style="padding:28px 36px 20px 36px;border-bottom:1px solid #eef0f2;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;">
+<tr><td style="padding:26px 36px 18px 36px;border-bottom:2px solid #f14714;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
 
-<tr><td style="padding:32px 36px 8px 36px;font-family:${FONT_STACK};">
-<p style="margin:0 0 18px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">Dear Environmental Compliance Team,</p>
-<p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.</p>
+<tr><td style="padding:30px 36px 0 36px;font-family:${FONT_STACK};">
+<p style="margin:0 0 16px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">Dear Environmental Compliance Team,</p>
+<p style="margin:0 0 20px 0;font-size:15px;line-height:1.65;color:#374151;">We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.</p>
+</td></tr>
+
+<tr><td style="padding:0 36px 20px 36px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eff5ff;border:1px solid #bfdbfe;border-radius:10px;"><tr>
+<td width="52" valign="top" style="width:52px;padding:16px 0 16px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="26" height="26" style="width:26px;height:26px;line-height:26px;background-color:#2563eb;border-radius:13px;font-family:${FONT_STACK};font-size:15px;font-weight:700;color:#ffffff;">i</td></tr></table></td>
+<td valign="top" style="padding:16px 18px 16px 4px;font-family:${FONT_STACK};font-size:14px;line-height:1.6;color:#1e3a8a;"><strong style="font-weight:700;">Please note:</strong> The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.</td>
+</tr></table>
 </td></tr>
 
 <tr><td style="padding:0 36px 24px 36px;">
@@ -331,7 +338,6 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 </td></tr>
 
 <tr><td style="padding:0 36px 8px 36px;font-family:${FONT_STACK};">
-<p style="margin:0 0 20px 0;font-size:14px;line-height:1.65;color:#374151;background-color:#f8fafc;border-left:3px solid #cbd5e1;padding:12px 14px;border-radius:0 6px 6px 0;"><strong style="color:#111827;">Please note:</strong> The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.</p>
 <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at <a href="mailto:${CONTACT_EMAIL}" style="color:#d63d12;text-decoration:underline;font-weight:600;">${CONTACT_EMAIL}</a> or call us directly at <a href="tel:${CONTACT_TEL}" style="color:#d63d12;text-decoration:underline;font-weight:600;">${CONTACT_PHONE}</a>.</p>
 <p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">Thank you for your continued partnership in keeping our community compliant and clean.</p>
 <p style="margin:0 0 4px 0;font-size:15px;line-height:1.65;font-weight:700;color:#111827;">The UnclogMe Team</p>
