@@ -468,10 +468,31 @@ Deno.serve(async (req) => {
   const street = norm(body?.street);
   const city = norm(body?.city);
   const postalCode = norm(body?.postal_code);
+
+  // ---- property_mode -------------------------------------------------------
+  // client_address : the one address becomes the first property (today's behaviour, the DEFAULT,
+  //                  so every existing caller keeps its exact current shape by omitting the field)
+  // separate       : property_* is the property; the client's own address becomes billingAddress
+  // none           : no property at all; the address is stored as billingAddress only
+  const property_mode = body?.property_mode === undefined ? "client_address" : String(body.property_mode);
+  if (!["client_address", "separate", "none"].includes(property_mode)) {
+    return fail("bad_request", `property_mode must be client_address, separate or none. Got "${property_mode}".`);
+  }
+  const propStreet = norm(body?.property_street);
+  const propCity = norm(body?.property_city);
+  const propPostalCode = norm(body?.property_postal_code);
+
   if (!street || !city || !postalCode) {
     return fail("bad_request",
-      "Street, city and ZIP are required. A client with no property cannot be given a job later: jobCreate needs a Jobber propertyId, and our own create-property path never registers one.",
+      property_mode === "none"
+        ? "Street, city and ZIP are required as the client's billing address, even with no property."
+        : "Street, city and ZIP are required. A client with no property cannot be given a job later: jobCreate needs a Jobber propertyId, and our own create-property path never registers one.",
       { fields: [!street ? "street" : null, !city ? "city" : null, !postalCode ? "postal_code" : null].filter(Boolean) });
+  }
+  if (property_mode === "separate" && (!propStreet || !propCity || !propPostalCode)) {
+    return fail("bad_request",
+      "The property address needs a street, city and ZIP. Tick 'use this address as the first property' to reuse the client's address instead.",
+      { fields: [!propStreet ? "property_street" : null, !propCity ? "property_city" : null, !propPostalCode ? "property_postal_code" : null].filter(Boolean) });
   }
 
   const email_in = norm(body?.email);
@@ -600,20 +621,33 @@ Deno.serve(async (req) => {
   // ---- the exact payload the live arm would send ---------------------------
   const input: Record<string, unknown> = {
     isCompany,
+    customFields: [{ customFieldConfigurationId: CODE_CF_GID, valueText: code }],
+  };
+  // ⚠ THE ADDRESS IS NESTED. PropertyAttributes is { address: AddressAttributes!,
+  // name, contacts, customFields, taxRateId } - the street/city/postalCode fields
+  // live on AddressAttributes, NOT on PropertyAttributes. Introspected 2026-08-11
+  // after a flat payload was rejected with "Field is not defined on
+  // PropertyAttributes". The rejection happened at GraphQL VALIDATION, so nothing
+  // was created, which is the only reason that mistake was free.
+  const asAddress = (s: string, c: string, z: string) =>
+    ({ street1: s, city: c, postalCode: z, province: "FL", country: "USA" });
+
+  if (property_mode === "client_address") {
     // ⚠ NO billingAddress. Sending one makes Jobber mint a second, billing-only
     // property whose only link is a synthetic "<gid>_billing" id, which is not a
     // real EncodedId and which jobCreate rejects. 8 live jobs already sit on that
     // shape. properties[] alone yields one real, job-capable property.
-    //
-    // ⚠ THE ADDRESS IS NESTED. PropertyAttributes is { address: AddressAttributes!,
-    // name, contacts, customFields, taxRateId } - the street/city/postalCode fields
-    // live on AddressAttributes, NOT on PropertyAttributes. Introspected 2026-08-11
-    // after a flat payload was rejected with "Field is not defined on
-    // PropertyAttributes". The rejection happened at GraphQL VALIDATION, so nothing
-    // was created, which is the only reason that mistake was free.
-    properties: [{ address: { street1: street, city, postalCode, province: "FL", country: "USA" } }],
-    customFields: [{ customFieldConfigurationId: CODE_CF_GID, valueText: code }],
-  };
+    input.properties = [{ address: asAddress(street, city, postalCode) }];
+  } else if (property_mode === "separate") {
+    input.properties = [{ address: asAddress(propStreet, propCity, propPostalCode) }];
+    input.billingAddress = asAddress(street, city, postalCode);
+  } else {
+    // none: no properties[] at all. MEASURED, not assumed (Task 2,
+    // scripts/probes/jobber_property_mode_contract.js): with properties omitted and only a
+    // billingAddress sent, Jobber minted ZERO clientProperties. So this branch genuinely
+    // produces a property-less client, and the caller must be told it is not schedulable.
+    input.billingAddress = asAddress(street, city, postalCode);
+  }
   if (isCompany) {
     // The convention: Jobber renders companyName for isCompany=true, and the
     // code suffix is what makes the */5 poll converge on our value.
@@ -640,7 +674,7 @@ Deno.serve(async (req) => {
   if (dryRun) {
     return done({
       dry_run: true,
-      would_send: { mutation: "clientCreate", input },
+      would_send: { mutation: "clientCreate", input, property_mode },
       client_code: { value: code, source: supplied ? "supplied" : "proposed", proposal },
       duplicate_check,
       warnings,
