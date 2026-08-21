@@ -238,10 +238,27 @@ evidence object stored at the derived path and signed back at 200. Repeated clea
 test rows and objects removed; live-row count back to its baseline of 11; backup at
 `backups/2026-08-21_manual_gdo_e2e_test_rows.json`; the two DELETEs are in `audit.logs`.
 
-**D1b. The modal does not close on success (open, minor).** Confirmed on a clean single-click submit
-on visit 7270: the toast reads *"Manual GDO filing recorded."*, the card behind refetches correctly
-and shows the filing, and the form stays open. A person could press **Record filing** again, which the
-duplicate guard then refuses. App-side fix, not shipped.
+**D1b. ~~The modal does not close on success.~~ WITHDRAWN 2026-08-21: THERE IS NO BUG. This entry
+was an artifact of my own automation and it is left here, corrected, because the retraction is the
+lesson.**
+
+The automated tab reports `document.visibilityState === "hidden"`, and **CSS animations do not
+advance in a backgrounded tab**. Radix keeps a dialog mounted until its exit animation completes, so
+the element stays in the DOM, fully visible, with `body { pointer-events: none }`, forever. Measured
+on the live page: `data-state="closed"` (React HAD closed it) while the `exit` animation sat at
+`playState: "running", currentTime: 0` on a 0.2s animation.
+
+**The control that settled it:** pressing **Cancel**, which submits nothing and runs no success
+handler, produces the **identical** symptom. So the success path was never implicated.
+
+⚠ **Cost of getting this wrong:** two Lovable build-and-publish cycles were spent "fixing" it. Those
+changes are benign (an explicit form reset on success, plus a redundant `setTimeout(() => onOpenChange(false), 0)`),
+but the redundant timeout is cruft born of a phantom defect and should be removed the next time that
+file is touched.
+
+⚠ This is `Building Apps/CLAUDE.md` **rule 20**, which was already written down and which I did not
+reach for. **Before reporting any UI state as broken under automation, check `document.visibilityState`
+first.** If it is `hidden`, anything animated or transitioned is not evidence of anything.
 
 **D1c. A visit outside `derm.visits` renders "Loading..." forever (open, minor).** Visit 7280 is one
 of 32 completed visits excluded from that view (`derm_required = false`), and `/visits/7280` hangs on
