@@ -204,7 +204,14 @@ Deno.serve(async (req) => {
   // (19%) were in exactly that state - every eligible post-cutoff visit, because suppresses_bot is
   // true for none of them. The manual path has never committed a row in its history.
   // One rule, one place: the view decides, both sides read it.
+  // 🛑 .schema('derm') IS LOAD-BEARING. This view lives in `derm`, and `sb` is built without a
+  // `db.schema` option, so it resolves names against `public` by default. Without this the read
+  // failed for EVERY visit and the function returned the 500 below, which is why the manual path
+  // had never committed a single row. Measured end to end on 2026-08-21 (visit 7276).
+  // Do NOT "fix" this by pinning the whole client to `derm`: the other two calls in this function
+  // (.from('visits') and .rpc('fn_record_manual_gdo_report')) are both `public` and would break.
   const { data: elig, error: eligErr } = await sb
+    .schema('derm')
     .from('visit_gdo_manual_eligibility')
     .select('suppresses_bot')
     .eq('visit_id', visitId)
