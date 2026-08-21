@@ -1,0 +1,158 @@
+
+// ============================================================================
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
+  if (req.method !== "POST") return fail("method_not_allowed", "POST only.");
+
+  // ---- staff gate ----------------------------------------------------------
+  // Stricter than the gateway's verify_jwt, which the public anon key also passes.
+  const m = (req.headers.get("authorization") ?? "").match(/^Bearer (.+)$/);
+  if (!m) return fail("forbidden", "Staff account required.");
+  const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
+  const email = String(userData?.user?.email ?? "").toLowerCase();
+  if (userErr || !userData?.user?.id ||
+      (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
+    return fail("forbidden", "Staff account required.");
+  }
+
+  const body = await req.json().catch(() => null);
+  const clientId = Number(body?.client_id);
+  const action = String(body?.action ?? "archive").toLowerCase();
+  const closeJobs = body?.close_jobs === true;
+  const reason = String(body?.reason ?? "").trim() || null;
+  if (!clientId) return fail("bad_request", "client_id is required.");
+  if (action !== "archive" && action !== "unarchive") {
+    return fail("bad_request", "action must be 'archive' or 'unarchive'.");
+  }
+
+  // ---- our row + its Jobber link ------------------------------------------
+  const { data: row, error: rowErr } = await db.from("clients")
+    .select("id,name,client_code,status").eq("id", clientId).maybeSingle();
+  // 🛑 DESTRUCTURE THE ERROR: a discarded error returns data:null and the guard fails OPEN.
+  if (rowErr) return fail("db_error", rowErr.message);
+  if (!row) return fail("not_found", `No client ${clientId} here.`);
+  const label = row.client_code ?? row.name;
+
+  const { data: link, error: linkErr } = await db.from("entity_source_links")
+    .select("source_id").eq("entity_type", "client").eq("source_system", "jobber")
+    .eq("entity_id", clientId).maybeSingle();
+  if (linkErr) return fail("db_error", linkErr.message);
+  if (!link?.source_id) {
+    return fail("no_jobber_link",
+      `${label} has no Jobber link, so it cannot be archived there. Change its status here instead.`);
+  }
+
+  const token = await getJobberToken();
+  const READ =
+    `query C($id:EncodedId!){ client(id:$id){ id isArchived jobs(first:50){ nodes { id jobStatus jobNumber title } } } }`;
+
+  const before = await gql(token, READ, { id: link.source_id });
+  if (!before.ok) {
+    return fail("jobber_unavailable", `Jobber did not answer, so nothing was changed. (${before.detail})`);
+  }
+  const jc = before.data?.client;
+  if (!jc) return fail("not_in_jobber", "Jobber has no client at that id. Nothing was changed.");
+
+  // ============================ UNARCHIVE ===================================
+  if (action === "unarchive") {
+    if (!jc.isArchived) {
+      const r = await setStatus(m[1], clientId, "ACTIVE", reason);
+      return done({ action, already: true, status_write: r });
+    }
+    const un = await gql(token,
+      `mutation U($clientId:EncodedId!){ clientUnarchive(clientId:$clientId){ client { id isArchived } userErrors { message } } }`,
+      { clientId: link.source_id });
+    if (!un.ok) {
+      return fail("jobber_unavailable", `Jobber did not complete the unarchive, so nothing was changed here. (${un.detail})`);
+    }
+    const uerr = ue(un.data?.clientUnarchive);
+    if (uerr) return fail("unarchive_failed", `Jobber refused: ${uerr}`);
+
+    // `&&` (not `||`) so TypeScript narrows the GqlResult union before .data is read.
+    const back = await gql(token, READ, { id: link.source_id });
+    const backOk = back.ok && back.data?.client?.isArchived === false;
+    if (!backOk) {
+      return fail("unarchive_unverified",
+        "Jobber accepted the unarchive but re-reading the client still shows it archived. Nothing was changed here.");
+    }
+    const r = await setStatus(m[1], clientId, "ACTIVE", reason);
+    return done({ action, unarchived: true, status_write: r });
+  }
+
+  // ============================= ARCHIVE ====================================
+  const TERMINAL = new Set(["archived", "closed", "destroyed"]);
+  const open = (jc.jobs?.nodes ?? []).filter((j: any) => !TERMINAL.has(String(j.jobStatus).toLowerCase()));
+
+  // Already archived upstream: converge our side and stop. Idempotent (rule 5).
+  if (jc.isArchived) {
+    const r = await setStatus(m[1], clientId, "INACTIVE", reason);
+    return done({ action, already_archived: true, status_write: r, open_jobs: open.length });
+  }
+
+  // ---- open jobs: ASK, never act -------------------------------------------
+  if (open.length && !closeJobs) {
+    return fail("open_jobs",
+      `${label} still has ${open.length} open job${open.length === 1 ? "" : "s"} in Jobber. Closing a job destroys its remaining visits, so confirm before continuing.`,
+      { jobs: open.map((j: any) => ({ id: j.id, number: j.jobNumber, title: j.title, status: j.jobStatus })) });
+  }
+
+  // ---- explicit teardown ----------------------------------------------------
+  const closed: unknown[] = [];
+  if (open.length && closeJobs) {
+    for (const j of open) {
+      const res = await gql(token,
+        `mutation X($jobId:EncodedId!,$input:JobCloseInput!){ jobClose(jobId:$jobId, input:$input){ job { id jobStatus } userErrors { message } } }`,
+        { jobId: j.id, input: { modifyIncompleteVisitsBy: "DESTROY_ALL" } });
+      if (!res.ok) {
+        return fail("jobber_unavailable",
+          `Closing job ${j.jobNumber} failed, so the client was NOT archived. (${res.detail})`, { jobs_closed: closed });
+      }
+      const err = ue(res.data?.jobClose);
+      if (err) {
+        return fail("job_close_failed",
+          `Job ${j.jobNumber}: ${err}. The client was NOT archived.`, { jobs_closed: closed });
+      }
+      closed.push({ number: j.jobNumber, status: res.data?.jobClose?.job?.jobStatus });
+    }
+  }
+
+  // ---- archive, then VERIFY BY RE-READING -----------------------------------
+  const arch = await gql(token,
+    `mutation A($clientId:EncodedId!){ clientArchive(clientId:$clientId){ client { id isArchived } userErrors { message } } }`,
+    { clientId: link.source_id });
+  if (!arch.ok) {
+    return fail("jobber_unavailable",
+      `Jobber did not complete the archive, so nothing was changed here. (${arch.detail})`, { jobs_closed: closed });
+  }
+  const aerr = ue(arch.data?.clientArchive);
+  if (aerr) return fail("archive_failed", `Jobber refused: ${aerr}`, { jobs_closed: closed });
+
+  // `&&` (not `||`) so TypeScript narrows the GqlResult union before .data is read.
+  const after = await gql(token, READ, { id: link.source_id });
+  const verified = after.ok && after.data?.client?.isArchived === true;
+  if (!verified) {
+    // 🛑 DO NOT touch our status here. An unverified archive is exactly the drift this exists to end.
+    return fail("archive_unverified",
+      "Jobber accepted the archive but re-reading the client does not show it archived. Nothing was changed here.",
+      { jobs_closed: closed });
+  }
+
+  const statusWrite = await setStatus(m[1], clientId, "INACTIVE", reason);
+  return done({ action, archived: true, jobs_closed: closed, status_write: statusWrite });
+});
+
+// Writes our side through the 3-ARG overload, as the CALLER, so the gate inside the RPC still
+// applies, status_source is pinned to 'manual', and audit.logs names the human.
+async function setStatus(jwt: string, clientId: number, status: string, reason: string | null) {
+  const asUser = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: `Bearer ${jwt}`, "x-app-source": "client-app" } } },
+  );
+  const { data, error } = await asUser.schema("client").rpc("update_client_status", {
+    p_client_id: clientId, p_status: status, p_reason: reason,
+  });
+  // 🛑 DESTRUCTURE THE ERROR. A discarded error returns data:null and the guard fails OPEN.
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, result: data };
+}

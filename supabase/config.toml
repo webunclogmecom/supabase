@@ -668,3 +668,14 @@ verify_jwt = true
 # BEFORE it inserts the row, because the row is what suppresses the bot.
 [functions.record-manual-gdo-report]
 verify_jwt = true
+
+# archive-client: the Clients App "Archive client" / "Reactivate" button. Archives the client in
+# JOBBER FIRST, verifies by re-reading isArchived, and only then flips public.clients.status through
+# the 3-arg client.update_client_status (which pins status_source='manual'). That order exists
+# because the old app-only deactivate left 5 of 12 INACTIVE clients still live in Jobber.
+# There is no clientDelete in the Jobber API and rule 6 forbids hard-deleting business data, so this
+# is archive + INACTIVE and it is reversible via action:'unarchive'.
+# verify_jwt = false matches its siblings: the staff gate INSIDE the function (auth.getUser + an
+# @ayache.com / @unclogme.com check) is stricter than the gateway's, which the public anon key passes.
+[functions.archive-client]
+verify_jwt = false
