@@ -566,6 +566,66 @@ distinguish an answer of "no" from no answer at all.
 `save-client-contact` returned `jobber_unavailable` and wrote **nothing**, leaving the contact intact.
 Fail-closed is what you want when the upstream is unreadable.
 
+### 🛑 THE NEVER-EXECUTED REPORT: `scripts/checks/never-executed.mjs` (added 2026-08-21)
+
+**Run it before trusting any dispatch surface, and after adding one.** `node scripts/checks/never-executed.mjs`
+
+**Why it exists.** `handlePropertyDestroy` was structurally incapable of succeeding for the entire
+life of this integration and nothing knew, because **the handler had never once executed**. We found
+out when it fired on a real customer property and failed. The same audit found **13 of 22 Jobber
+webhook handlers with no execution on record at all**: the poll only ever synthesised `*_UPDATE`
+events, so every CREATE / DESTROY / CLOSED / SENT / APPROVED path was unreachable dead code, and all
+of them became reachable at once the moment the payload-shape fix landed. Production was doing our
+testing. This report makes "this code has never run" a state a person can see.
+
+**It covers 259 surfaces:** the 22 webhook topics (parsed from `TOPIC_HANDLERS` in the live source,
+never hardcoded), 20 pg_cron jobs, 34 edge functions, 160 app-reachable RPCs, 23 GitHub workflows.
+
+**🛑 THE DESIGN RULE, AND THE REASON TO TRUST THE OUTPUT: THREE VERDICTS, NEVER TWO.**
+
+| verdict | meaning |
+|---|---|
+| `RAN` | evidence exists and shows execution (plus a `⏳ Nd ago` annotation past 30 days) |
+| `NEVER` | an evidence source covers this surface and shows zero |
+| `NO EVIDENCE` | **nothing in this system can answer the question** |
+
+Collapsing `NO EVIDENCE` into `NEVER`, or into "fine", is the exact false all-clear this estate keeps
+paying for. Every section prints its own evidence source and window, and every section carries a
+**positive control that must report RAN**; if a control does not fire the section says its clean rows
+prove nothing and the process exits 2. Mutation-tested both ways: pointing section 1's control at a
+never-run topic correctly poisons that section, and breaking the topic parser throws instead of
+reporting a clean zero.
+
+**⚠ Two detectors in the first version were WRONG and both are worth knowing, because they are the
+shapes any successor will hit:**
+- **A pg_cron command does not name the edge function.** It calls a SQL wrapper
+  (`SELECT public.fn_request_jobber_sync('poll')`) whose BODY holds `.../functions/v1/sync-jobber-poll`.
+  Matching the cron command alone reported **29 of 34 functions unevidenced, including
+  `sync-jobber-poll`, whose cron has 20,953 successes.** The report now resolves wrapper bodies too.
+  **The tell was implausibility, not an error.**
+- **PostgREST renders an RPC as a `pgrst_call` CTE with the function SCHEMA-QUALIFIED**
+  (`"derm"."fn_blackout_targets"`) and **no opening paren after the closing quote**. Matching
+  `"name"(` found zero of 160, which reads exactly like a healthy-but-idle surface.
+
+**⚠ KNOWN BLIND SPOTS, stated so a clean run is not over-read:**
+- **RPCs are structurally blind.** `track_functions = none`, so `pg_stat_user_functions` is empty and
+  the only signal is `pg_stat_statements`, a volatile ~16h buffer any restart clears. 144 of 160 RPCs
+  report NO EVIDENCE and that is not a finding. **Setting `track_functions = pl` is the one change
+  that would make this section real** - a project config decision, not something the report assumes.
+- **Edge functions have no invocation counter at all.** That section is PROXY evidence only (cron
+  chain, `audit.logs.app_source`, `sync_log.sync_source`, `webhook_events_log`). A function invoked
+  only from a browser leaves no trace any of those tables can see, so 22 sit at NO EVIDENCE.
+- **`webhook_events_log` is trimmed** (90-day retention job; oldest row currently 2026-07-22). So
+  webhook `NEVER` means "no delivery in the retained window", not "never in history".
+
+**✅ Measured 2026-08-21 on the removal handlers, so nobody re-does it:** all six `softStatusFlip`
+writes complete against real rows (rolled back, with a control proving junk status is rejected
+`23514`), the GID round-trip resolves for **6 of 6** entity types, and the one real `JOB_DESTROY`
+demonstrably wrote (`audit.logs`: job 1848 `action_required -> destroyed` at 05:24:57, which the poll
+then converged to `archived` 20 minutes later). **No second `handlePropertyDestroy`-class defect.**
+⚠ That last detail matters on its own: `job_status='destroyed'` is TRANSIENT, so a query looking for
+it finds nothing even though the handler worked.
+
 ## Column-name gotchas
 
 Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Most-repeated mistakes:
