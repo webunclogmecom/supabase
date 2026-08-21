@@ -25,7 +25,7 @@ BEGIN
     SELECT e.visit_id, e.can_record_manual, e.blocked_reason, e.permit_count
       FROM derm.visit_gdo_manual_eligibility e
       JOIN public.visits v ON v.id = e.visit_id
-     WHERE e.has_code27 AND v.visit_status = 'completed'
+     WHERE v.visit_status = 'completed'   -- has_code27 no longer gates anything (2026-08-19_1915)
      ORDER BY e.visit_id
   LOOP
     n := n + 1;
@@ -49,7 +49,7 @@ BEGIN
 
     BEGIN
       PERFORM public.fn_record_manual_gdo_report(
-        r.visit_id, 'AGREE-PROBE', now() - interval '1 hour', v_run, v_path, 'fred@ayache.com', v_pick);
+        r.visit_id, now() - interval '1 hour', v_run, v_path, 'fred@ayache.com', v_pick);
       actual := true;
     EXCEPTION WHEN others THEN actual := false; err := SQLERRM; END;
 

@@ -2,6 +2,8 @@
 -- The permit-choice rules on fn_record_manual_gdo_report.  Everything rolls back.
 --   node scripts/q.js scripts/probes/manual_gdo_permit_choice.sql <out.json>
 --
+-- ⚠ SIGNATURE: p_confirmation was REMOVED 2026-08-20. Calls here are
+--   (visit_id, attempted_at, run_id, screenshot_path, filed_by_email, gdo_id).
 -- 44% of eligible visits carry 2-3 GDO permits, so "which permit was this filed under" is a real
 -- question and the answer must never be guessed. Each case below is paired with the outcome that
 -- proves the rule discriminates rather than just refusing everything.
@@ -47,7 +49,7 @@ BEGIN
 
   -- 1. multi-permit, no permit given -> REFUSED
   BEGIN
-    PERFORM public.fn_record_manual_gdo_report(v_multi,'C',now()-interval '1 h','manual-permitprobe',
+    PERFORM public.fn_record_manual_gdo_report(v_multi,now()-interval '1 h','manual-permitprobe',
               v_multi::text||'/manual-permitprobe.jpg','fred@ayache.com', NULL);
     r_noarg := true;
   EXCEPTION WHEN others THEN r_noarg := false; e1 := SQLERRM; END;
@@ -55,7 +57,7 @@ BEGIN
   -- 2. multi-permit, a permit belonging to a DIFFERENT visit -> REFUSED
   IF other_gdo IS NOT NULL THEN
     BEGIN
-      PERFORM public.fn_record_manual_gdo_report(v_multi,'C',now()-interval '1 h','manual-permitprobe',
+      PERFORM public.fn_record_manual_gdo_report(v_multi,now()-interval '1 h','manual-permitprobe',
                 v_multi::text||'/manual-permitprobe.jpg','fred@ayache.com', other_gdo);
       r_foreign := true;
     EXCEPTION WHEN others THEN r_foreign := false; e2 := SQLERRM; END;
@@ -64,7 +66,7 @@ BEGIN
 
   -- 3. multi-permit, one of ITS OWN permits -> ACCEPTED, and stored as the one chosen
   BEGIN
-    PERFORM public.fn_record_manual_gdo_report(v_multi,'C',now()-interval '1 h','manual-permitprobe',
+    PERFORM public.fn_record_manual_gdo_report(v_multi,now()-interval '1 h','manual-permitprobe',
               v_multi::text||'/manual-permitprobe.jpg','fred@ayache.com', b_gdo);
     r_valid := true;
   EXCEPTION WHEN others THEN r_valid := false; e3 := SQLERRM; END;
@@ -74,7 +76,7 @@ BEGIN
 
   -- 4. single-permit, no permit given -> ACCEPTED (callers should not have to care)
   BEGIN
-    PERFORM public.fn_record_manual_gdo_report(v_single,'C',now()-interval '1 h','manual-permitprobe',
+    PERFORM public.fn_record_manual_gdo_report(v_single,now()-interval '1 h','manual-permitprobe',
               v_single::text||'/manual-permitprobe.jpg','fred@ayache.com', NULL);
     r_single := true;
   EXCEPTION WHEN others THEN r_single := false; END;
@@ -82,7 +84,7 @@ BEGIN
   -- 5. no-permit visit, no permit given -> ACCEPTED with a NULL permit
   IF v_none IS NOT NULL THEN
     BEGIN
-      PERFORM public.fn_record_manual_gdo_report(v_none,'C',now()-interval '1 h','manual-permitprobe',
+      PERFORM public.fn_record_manual_gdo_report(v_none,now()-interval '1 h','manual-permitprobe',
                 v_none::text||'/manual-permitprobe.jpg','fred@ayache.com', NULL);
       r_none := true;
     EXCEPTION WHEN others THEN r_none := false; END;
