@@ -295,11 +295,13 @@ Deno.serve(async (req: Request) => {
 
   if (target === 'city') {
     // ===== CITY: both PDFs to the municipal FOG office, formal letter, BCC compliance =====
-    const { data: regs } = await sb.from('municipality_regulators').select('municipality, emails').eq('status', 'ACTIVE')
-    const regByCity = new Map<string, { municipality: string; emails: string[] }>()
-    for (const r of (regs || []) as { municipality: string; emails: string[] }[]) {
-      regByCity.set(String(r.municipality).trim().toLowerCase(), { municipality: r.municipality, emails: (r.emails || []) })
-    }
+    // 🛑 THE CITY INBOX MOVED FROM THE CITY TO THE PROPERTY (2026-08-21,
+    //    docs/migrations/2026-08-21_2130_property_city_emails_per_property.sql).
+    //    There is no municipality_regulators lookup here any more: that table still holds its rows
+    //    for history, but it is EMPTY of live addresses and no longer feeds anything. Reading it
+    //    now would resolve zero recipients and every send would log 'no_city_email' - a silent,
+    //    total failure that looks exactly like "no city has been configured yet".
+    //    Recipients come from public.properties.city_emails, per property.
 
     for (const rec of recipients) {
       const id = rec.manifest_id
@@ -320,20 +322,31 @@ Deno.serve(async (req: Request) => {
         // Guard: BOTH PDFs required (Manifest Form + Transporter Manifest)
         if (!m.derm_manifest_url || !m.derm_address_url) { results.push({ manifest_id: id, status: 'skipped', reason: 'missing_attachments', client: clientName }); await logSend(id, logClientId, null, null, 'skipped', 'missing_attachments', 'city'); continue }
 
-        // Resolve the client's covered-municipality regulator emails + a served address
-        const { data: props } = await sb.from('properties').select('address, city').eq('client_id', clientId)
-        const matched: { municipality: string; emails: string[] }[] = []
-        const seenMuni = new Set<string>()
+        // Resolve the client's city inboxes off ITS OWN PROPERTIES + a served address.
+        // ⚠ DEDUPE BY EMAIL, NOT BY MUNICIPALITY. The old code kept the FIRST regulator row per
+        //   municipality and skipped the rest, which was right when the address belonged to the
+        //   city (every property in Miami resolved the same row). Now two properties in the SAME
+        //   city can legitimately carry DIFFERENT addresses, so keying the set on municipality
+        //   would silently drop the second one and mail only the first property's contact.
+        // ⚠ deleted_at IS NULL is new here and deliberate: a soft-deleted property must not drag
+        //   its stale inbox into a live send. client.properties already filters the same way.
+        const { data: props } = await sb.from('properties')
+          .select('address, city, city_emails').eq('client_id', clientId).is('deleted_at', null)
+        const cityEmailSet = new Set<string>()
+        const muniSet = new Set<string>()
         let servedAddress = ''
-        for (const p of (props || []) as { address: string | null; city: string | null }[]) {
-          const reg = regByCity.get(String(p.city || '').trim().toLowerCase())
-          if (reg) {
-            if (!seenMuni.has(reg.municipality)) { matched.push(reg); seenMuni.add(reg.municipality) }
-            if (!servedAddress && p.address) servedAddress = p.address
-          }
+        for (const p of (props || []) as { address: string | null; city: string | null; city_emails: string[] | null }[]) {
+          const emails = (p.city_emails || [])
+            .map((e) => String(e ?? '').trim().toLowerCase())
+            .filter((e) => e.includes('@'))
+          if (!emails.length) continue
+          for (const e of emails) cityEmailSet.add(e)
+          const muni = String(p.city ?? '').trim()
+          if (muni) muniSet.add(muni)
+          if (!servedAddress && p.address) servedAddress = p.address
         }
-        const cityEmails = [...new Set(matched.flatMap((r) => r.emails))].filter(Boolean)
-        const municipality = matched.map((r) => r.municipality).join(', ')
+        const cityEmails = [...cityEmailSet]
+        const municipality = [...muniSet].join(', ')
         const toList = testRecipient ? [testRecipient] : cityEmails
         if (toList.length === 0) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_city_email', client: clientName }); await logSend(id, logClientId, null, null, 'skipped', 'no_city_email', 'city'); continue }
         logEmail = testRecipient ? testRecipient : cityEmails.join(', ')

@@ -4,7 +4,8 @@ const env = Object.fromEntries(readFileSync('.env','utf8').split(/\r?\n/).filter
 let q = readFileSync(process.argv[2],'utf8');
 if (process.argv[3] === 'rehearse') {
   const before = q.length;
-  q = q.replace(/\ncommit;\s*$/, '\nrollback;\n');
+  // case-insensitive: migrations in this repo are written with an upper-case COMMIT;
+  q = q.replace(/\ncommit;\s*$/i, '\nrollback;\n');
   if (q.length === before) throw new Error('could not swap commit for rollback');
   console.log('REHEARSAL: commit swapped for rollback');
 }

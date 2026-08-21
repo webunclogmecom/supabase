@@ -5,7 +5,7 @@
 // it's gonna be a text i give you + the classified photos attached to it."
 //
 // 🛑 THIS IS NOT send-derm-email. That one mails manifest PDFs to municipal FOG
-// inboxes resolved from public.municipality_regulators. This one mails a body plus
+// inboxes resolved from public.properties.city_emails (per property since 2026-08-21). This one mails a body plus
 // the visit's CLASSIFIED PHOTOS. Different payload, different gate, different log
 // table (public.visit_photo_email_sends, NOT derm_email_sends).
 //
@@ -116,8 +116,12 @@ if (RECIPIENT_RE.test('probe@evil.com') || RECIPIENT_RE.test('probeXayache!com')
 // 🛑 AT PROD CUTOVER THIS WHOLE PARAMETER IS DELETED, ALONG WITH THE MODAL.
 // Fred, 2026-08-16: "when changed to prod we need to remove that modal. On prod it needs
 // to send directly to the correct email set for it." The real recipient must then be
-// resolved server-side from public.municipality_regulators, matched on the property's
-// city, the way send-derm-email does. NEVER from the request.
+// resolved server-side from public.properties.city_emails for the property in question,
+// the way send-derm-email does. NEVER from the request.
+// ⚠ UPDATED 2026-08-21: this used to say municipality_regulators. The city inbox moved from the
+//   CITY to the PROPERTY, and that table is now empty of live addresses, so following the old
+//   instruction at cutover would resolve ZERO recipients and look like "no city configured".
+//   See docs/migrations/2026-08-21_2130_property_city_emails_per_property.sql.
 // While IS_TEST is true the blast radius of a caller-supplied address is an internal
 // inbox; the moment city sending is enabled it becomes "anyone can direct a client's DERM
 // document anywhere". So do not flip IS_TEST without removing this in the same change.

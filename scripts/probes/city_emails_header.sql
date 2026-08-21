@@ -1,0 +1,70 @@
+-- 2026-08-21_2130_property_city_emails_per_property.sql
+--
+-- WHAT: move the city inbox from the CITY to the PROPERTY.
+--         - public.properties.city_emails text[]        -> the new, per-property store
+--         - client.update_property_city_email(id, [])   -> now writes ONE property, nothing else
+--         - client.properties / public.v_visit_city_email / derm.manifest_recipients /
+--           derm.manifests                              -> all read the property, not the city
+--         - public.municipality_regulators              -> KEPT (rule 6) but no longer feeds any app
+--
+-- WHY (Fred, 2026-08-21): he added a test address as the City email on ONE property and the app
+--      reported it had set the email for Miami. *"we can't have that, for now the email city should
+--      be independent, if i put a email city in the property of a client it shouldn't change the
+--      email of any other client properties, not even the city email of the same client on other
+--      properties."*
+--
+-- 🛑 THIS DELIBERATELY REVERSES `2026-08-13_2130_property_city_email.sql`, WHICH TOLD US NOT TO.
+--      That migration ends: *"Do NOT 'fix' this into a per-property column later without re-reading
+--      the paragraph above."* It was re-read, and its argument was put back to Fred WITH the numbers
+--      re-measured today, not the ones from 2026-08-13:
+--
+--          Miami Beach        250 properties / 126 clients     <- ONE city row would light all 250
+--          Miami              230 / 114
+--          Surfside            73 /  36   (has a row)
+--          North Miami Beach   43 /  22
+--          Hallandale Beach    37 /  19   (has a row)
+--          915 properties total, 340 lit today
+--
+--      **Fred reaffirmed per-property after seeing that.** So this is a decision taken with the
+--      trade-off visible, not an oversight, and the earlier note is superseded rather than ignored.
+--      ⚠ THE COST IS REAL AND IS NOW OWNED: lighting up a city becomes N property edits instead of
+--        one row. Miami Beach is 250 edits. If that later becomes the blocker for enabling city
+--        sending, the fix is a bulk "apply to every property in this city" ACTION, not a quiet
+--        return to a shared row: the shared row is precisely what made one edit hit 114 clients.
+--
+-- 🛑 A STATUS FLIP IS NOT A CLEANUP HERE, AND THAT IS MEASURED, NOT PREDICTED.
+--      The bad Miami row was deactivated at 15:29 and the Client App set it back to ACTIVE at 15:44
+--      (audit.logs, app_source='client-app'). The old RPC forces status='ACTIVE' whenever the email
+--      list is non-empty, so ANY re-save of any property in that city resurrects it. The value has
+--      to be CLEARED, not deactivated. Step 3 clears it.
+--
+-- ⚠ THE VIEWS ARE `CREATE OR REPLACE`d, NEVER DROPPED. `DROP VIEW` discards the ACL, and these
+--      carry real grants (client.properties: authenticated=r, service_role=r; derm.manifests:
+--      authenticated=r, service_role=arwdDxtm). Column names, types and order are unchanged, which
+--      is what makes REPLACE legal.
+--
+-- ⚠ GRANTS: public.properties has a TABLE-level SELECT to `authenticated`, so the new column is
+--      covered automatically (the 26 rows in information_schema.column_privileges are that grant
+--      expanded, not a column-scoped grant). `authenticated` has NO table-level UPDATE, only a
+--      2-column grant, so the write still has to go through the SECURITY DEFINER RPC. Assertion (E)
+--      checks the read AS `authenticated` rather than trusting this paragraph.
+--
+-- ⚠ THE RPC'S RETURN SHAPE CHANGES. It used to return properties_affected / clients_affected so the
+--      UI could announce the blast radius. There is no blast radius any more, so it now returns
+--      property_id / emails. The Client App is updated in the SAME cycle; an RPC contract change
+--      shipped without its caller is what broke status changes for hours on 2026-07-31.
+--
+-- AUDIT (ADR 010): public.properties already carries `audit_properties` -> audit.log_change and
+--      `trg_properties_updated_at` (verified in pg_trigger before writing this), so the new column is
+--      captured with no trigger change, and updated_at must never be set by hand (rule #7).
+--
+-- NOT CHANGED HERE, ON PURPOSE:
+--      - `supabase/functions/send-derm-email` target='city' still resolves recipients from
+--        municipality_regulators. It is updated in the same commit, but it is CODE, not schema, and
+--        keeping it out of the transaction means a failed deploy cannot leave the schema half-moved.
+--      - `public.municipality_regulators` keeps its rows, grants, triggers and audit history. It is
+--        the historical record of what was sent where, and rule 6 forbids deleting business data.
+
+BEGIN;
+
+SET LOCAL search_path = public;
