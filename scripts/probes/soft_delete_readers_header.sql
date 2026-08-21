@@ -1,0 +1,73 @@
+-- 2026-08-21_1200_properties_soft_delete_readers.sql
+--
+-- 🛑 GENERATED, DO NOT HAND-EDIT. Regenerate with:
+--       node scripts/probes/build_soft_delete_view_migration.mjs
+--    Every body below is the LIVE pg_get_viewdef / pg_get_functiondef output with ONE anchored
+--    replacement, asserted at generation time to match exactly once. That is the only defence
+--    against the CREATE OR REPLACE hazard in CLAUDE.md: the statement takes the WHOLE body, so
+--    anything not reproduced is silently deleted while the header still reads as a one-line change.
+--
+-- WHAT: teaches the readers of public.properties about deleted_at, added by 2026-08-21_0530.
+--
+-- WHY:  until now the column was a marker nothing read. A property removed in Jobber was retired
+--       here and still appeared in every list, so the soft-delete recorded the fact and changed
+--       nothing a person sees.
+--
+-- 🛑 THE TIERING RULE, AND IT IS NOT "app-facing vs internal". That was the first proposal and it
+--    is WRONG in a way that would have destroyed customer-facing compliance history.
+--    The question is what the view IS:
+--
+--      A WORKLIST  (things to act on)      -> hide the retired property
+--      A RECORD    (things that happened)  -> keep it, always
+--
+--    customer.work_orders is customer-facing AND a record: it is the client's DERM compliance
+--    history. Filtering it would delete completed work orders from a regulator-facing surface
+--    because the property was later removed in Jobber. Same for every derm.* view, ops.v_ar_aging,
+--    ops.v_revenue_summary, ops.v_derm_compliance, public.visits_recent and public.visits_with_status.
+--
+-- 🛑 THE SECOND RULE IS ABOUT GRAIN, AND IT IS WHY ONLY 7 OF 30 VIEWS ARE TOUCHED.
+--    Of the 30 views reading public.properties, most reach it through a LEFT JOIN whose grain is a
+--    VISIT or a MANIFEST, with properties only supplying an address. Adding `p.deleted_at IS NULL`
+--    to a WHERE there does not hide a property, it DELETES THE VISIT. The filter is only safe where
+--    properties is the driving table, or inside an aggregate/subquery whose result is a single
+--    field, or in a LEFT JOIN's ON clause (which nulls columns and keeps the row).
+--    See feedback_reused_gate_carries_its_old_grain: the copied filter deletes exactly the rows the
+--    change exists to produce.
+--
+-- CHANGED (7 objects):
+--   client.properties        WHERE   grain = property. The Client App's property list.
+--   ops.properties           WHERE   grain = property.
+--   client.clients           x2      inside two LEFT JOIN LATERAL aggregates (derived zone, grease
+--                                    capacity) so a retired property stops voting. Client row kept.
+--   customer.clients         ON      so the Field Portal shows no address rather than a dead one.
+--                                    A WHERE here would remove the CLIENT. It is an ON clause.
+--   public.zones_with_usage  count   a retired property no longer inflates a zone's usage count.
+--   derm.v_stamp_clients     subq    its address is ORDER BY p.id LIMIT 1, so a retired property
+--                                    sorting first would supply a dead address.
+--   client.global_search     WHERE   a search result is a worklist; a retired property is not
+--                                    findable. authenticated-EXECUTE, so this is a live app path.
+--
+-- DELIBERATELY NOT CHANGED, with the reason, so nobody "finishes the job" later:
+--   customer.work_orders, customer.permits, customer.client_access_photos, all 5 derm.* views,
+--   ops.v_calendar_visit, ops.v_route_today, ops.v_service_due, ops.v_gdo_expiry, ops.v_ar_aging,
+--   ops.v_revenue_summary, ops.v_derm_compliance, public.client_services_flat,
+--   public.clients_due_service, public.manifest_detail, public.manifest_pickable_visits,
+--   public.v_derm_portal_fields, public.v_visit_city_email, public.visits_recent,
+--   public.visits_with_status  -> records, or property is a LEFT JOIN lookup on another grain.
+--   ops.v_depot, ops.v_dump_sites -> each pins ONE property by config/constant. If that property
+--     were ever retired the right outcome is a loud configuration error, not a silently empty view.
+--   customer.permits -> a GDO is issued to a LOCATION and outlives the property row; its
+--     properties joins drive address-matching inside the compliance maths, so filtering them would
+--     change over_gdo_max and compliant rather than hide anything.
+--
+-- ⚠ STILL OPEN AFTER THIS, and it is NOT covered here: `authenticated` holds SELECT on
+--   public.properties itself, and pg_stat_statements shows live PostgREST reads against the base
+--   table. Any app query written against public.properties rather than client.properties still
+--   sees retired rows. That is an app-side change, not a DB one.
+--
+-- AUDIT (rule 8): views and one function only, no table or column touched, so no audit change.
+--   public.properties keeps its audit_properties trigger from 2026-08-21_0530.
+--
+-- GRANTS: CREATE OR REPLACE preserves them. DROP VIEW would NOT (see
+--   reference_drop_view_discards_grants), which is why nothing here drops anything. The VERIFY
+--   re-asserts the authenticated grant on all seven objects anyway.
