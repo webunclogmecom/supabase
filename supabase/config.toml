@@ -671,7 +671,8 @@ verify_jwt = true
 
 # archive-client: the Clients App "Archive client" / "Reactivate" button. Archives the client in
 # JOBBER FIRST, verifies by re-reading isArchived, and only then flips public.clients.status through
-# the 3-arg client.update_client_status (which pins status_source='manual'). That order exists
+# the 3-arg client.update_client_status (p_reason is mandatory; the 2-arg overload is a hard
+# refusal, and the 3-arg is the one that pins status_source='manual'). That order exists
 # because the old app-only deactivate left 5 of 12 INACTIVE clients still live in Jobber.
 # There is no clientDelete in the Jobber API and rule 6 forbids hard-deleting business data, so this
 # is archive + INACTIVE and it is reversible via action:'unarchive'.

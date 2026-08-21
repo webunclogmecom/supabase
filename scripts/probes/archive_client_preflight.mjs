@@ -50,8 +50,13 @@ const check = (name, ok, detail) => {
   check('BOTH update_client_status overloads visible (positive control)', !!three && !!two,
         `3-arg=${!!three} 2-arg=${!!two}`);
   check('the 3-arg overload pins status_source', !!three?.pins_source);
-  check('the 2-arg overload does NOT pin it (this is why we must call the 3-arg)', two?.pins_source === false,
-        `2-arg pins_source=${two?.pins_source}`);
+  // ⚠ READ THIS RESULT THE RIGHT WAY ROUND. The 2-arg overload is not a stale-but-working copy that
+  //   forgets the pin; its ENTIRE BODY is `raise exception 'a reason is now required'` (22023). So it
+  //   fails LOUDLY and cannot half-write. Asserting on its literal body, not on the absence of a
+  //   string, because "does not contain status_source" is also true of a function that does nothing.
+  check('the 2-arg overload is a hard refusal, not a silent unpinned write',
+        /raise exception/i.test(two?.body ?? '') && !/update .*public\.clients/i.test(two?.body ?? ''),
+        (two?.body ?? '').includes('a reason is now required') ? "raises 'a reason is now required'" : 'UNEXPECTED BODY');
   check('preview_client_status_change exists', fns.some(f => f.proname === 'preview_client_status_change'));
 
   // the accepted status vocabulary, read out of the body rather than assumed

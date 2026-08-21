@@ -32,12 +32,16 @@
 //      visit did not happen; COMPLETE_PAST would mark the past ones COMPLETED, which asserts work
 //      was performed that was not. Destroying them is honest, marking them done is not.
 //
-// ⚠ THE STATUS WRITE GOES THROUGH THE 3-ARG RPC, AND THAT IS LOAD-BEARING.
-//    client.update_client_status has TWO overloads. The 2-arg (p_client_id, p_status) is stale and
-//    does NOT set status_source='manual'; only the 3-arg (..., p_reason) does. Calling the wrong one
-//    leaves the deactivation unpinned and webhook-jobber will undo it. Same overload hazard that bit
-//    client.create_property. It is called with the CALLER'S JWT so auth.uid() resolves and audit.logs
-//    attributes the change to the human rather than to service_role.
+// ⚠ THE STATUS WRITE GOES THROUGH THE 3-ARG RPC, AND p_reason IS MANDATORY.
+//    client.update_client_status has TWO overloads, and the 2-arg (p_client_id, p_status) is NOT a
+//    stale-but-working copy: its entire body is `raise exception 'a reason is now required'`
+//    (errcode 22023). So a 2-arg call fails LOUDLY, by design, and cannot half-write anything.
+//    Only the 3-arg (..., p_reason) does the work, and it is the one that sets
+//    status_source='manual' — the pin that stops webhook-jobber reactivating the client.
+//    ⇒ The hazard here is a FAILED call, not silent drift. Read that the right way round: it is
+//      why the deployed dialog broke outright in July rather than quietly corrupting rows.
+//    It is called with the CALLER'S JWT so auth.uid() resolves and audit.logs attributes the change
+//    to the human rather than to service_role.
 //
 // ⚠ THE HELPER BLOCK BELOW IS SPLICED BYTE-IDENTICALLY FROM save-client-property BY
 //    scripts/probes/build_archive_client.mjs. Do not hand-edit it here; edit the source and re-run,
