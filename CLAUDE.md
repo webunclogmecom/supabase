@@ -1375,6 +1375,64 @@ same class of misalignment and wants the same snap.
 > snapshots carrying bands whose source no longer exists (7 such rows fleet-wide). Improving the
 > data does not republish them.
 
+### ✅ A BAND EDGE CAN NOW BE CHECKED MECHANICALLY: `derm.v_band_edges_off_rule` (2026-08-21)
+
+Fred: *"prioritise building the fleet-wide printed-rule detection pass."* Done, `2026-08-21_0736`
++ `_0741`. **Check `derm.v_band_edges_off_rule` after any stamping session and after any band edit.
+Empty is healthy.** It is the band-geometry sibling of `derm.v_blackout_blocked_sheets`.
+
+**The property it tests, and it is the only sound automated one anyone has found:** a band edge
+sitting on a printed rule cannot be inside a line of text, because a printed rule is not text. That
+is the defect that put Wynd 28's street address into 226-JER's live Field Portal document
+(`2026-08-21_0651`), where the edge landed mid-line and the client below received the half below
+the cut.
+
+Live at ship: **580 of 626 served bands ON_RULE, 46 OFF across 13 pages, 0 UNSCANNED.**
+
+🛑 **`ON_RULE` IS NECESSARY, NOT SUFFICIENT. Do not read it as "this band is safe."** It proves no
+line of text is bisected. It does NOT prove the edge is on the *right* rule: a band two rules too
+tall swallows a whole neighbour and still reads ON_RULE. That is the `ticket-831047` shape (032-LG,
+12pp tall, containing all of Marie Blachere). Band height, the stamp position, and eyes are the
+checks for that.
+
+🛑 **FOUR VERDICTS, BECAUSE SILENCE IS NOT A PASS.** `ON_RULE` / `OFF_RULE` / `UNSCANNED` (the
+detector has never run on that page) / `STALE` (the page image changed since the scan). Before this
+pass, rules existed for 30 of 160 pages, so **515 of 626 served bands sat on pages with zero
+detected rules** and the check's silence meant "unread", not "clean". `derm.page_rule_scans` holds
+one row per page the detector RAN on, whatever the outcome, which is what makes those two states
+distinguishable. A page graded `FAILED` there is known-undetectable; a page absent from it has
+never been looked at.
+
+**How detection works, in one line:** score each scanline by the LONGEST CONTIGUOUS HORIZONTAL RUN
+of dark pixels across the full form width. A printed rule is one unbroken run; a line of text inks
+as much but in many short pieces. Ink fraction, which the 2026-08-03 detector used, cannot tell
+them apart, which is why it failed on a light scan.
+
+✅ **This also settles the mid-slot-divider ambiguity that blocked snapping** (the 2026-08-20 note
+below). Run ~1.00 = a slot boundary spanning the whole form; run ~0.41 = a mid-slot divider
+stopping at the first vertical column line. `page_row_rules.kind` records which, from the strict
+ALTERNATION of the two down the roster rather than from a threshold, because a fixed threshold gets
+four measured page shapes wrong.
+
+⚠ **The tooling is `scripts/probes/derm_band_review/`, and its README lists the four automated
+scorers that were measured against known truth and REJECTED before this one. Read that before
+building a fifth.**
+
+⚠ **A confirmed practical limit: my own eyes were 0.66pp out.** `2026-08-21_0651` set a repaired
+edge to 33.500 from a ruler render, describing the printed rule as being at 33.30. The detector puts
+it at 34.156. The repair was safe (whitespace, nothing bisected) but off the rule by more than half a
+text line. **Use the detector for the value; use eyes to decide which edges are wrong.**
+
+⚠ **A trap that cost a whole worklist, and it generalises.** Detection is trimmed to the roster
+because the form's header and footer bars are full-width and are not slot boundaries. The margin was
+1.0pp, and on `window3-sheet5` p2 the first real boundary sits 1.08pp above the measured extent top,
+so the trim cut it and that band led the worklist with a 5.5pp gap that was **an artifact of the
+instrument**. Seven of twenty flagged pages were this. Removing the bars by shape from the rule list
+made it worse (fixed 7 edges, manufactured 23). **The fix was two lists: the edge check uses every
+rule found, because a header bar is a real printed rule; the classification uses the roster's
+alternating chain with the bars removed, because they break the alternation.** Same detections,
+different consumers, and a filter belongs to only one of them.
+
 ### 🛑 JOBBER NOTES ARE SCOPED TO THE **JOB**, NOT THE VISIT (Fred, 2026-08-18)
 
 `Visit.notes` reads like a per-visit field and is not one. **JobNote is JOB-scoped** (every visit
