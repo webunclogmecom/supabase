@@ -257,6 +257,57 @@ const crossable = await sql(`
     and l.source_id like 'Z2lkOi8vSm9iYmVyL1Byb3BlcnR5%'`);
 check('PROPERTY_DESTROY can never resolve to a billing row', crossable[0].n === 0, `billing rows reachable by a Property gid=${crossable[0].n}`);
 
+// ============================================================================================
+console.log(String.fromCharCode(10) + '=== 8. Who reads the BASE TABLE as `authenticated`, and in what SHAPE ===');
+// ============================================================================================
+// 🛑 WHY THIS IS A SHAPE CHECK AND NOT A GRANT CHECK.
+//    `authenticated` holds SELECT on public.properties, and the base table is deliberately NOT
+//    filtered on deleted_at so history and audit keep working. The instinct is to revoke the grant
+//    or add an RLS policy. BOTH ARE WRONG, and measured 2026-08-21:
+//      - REVOKE breaks Admin Review outright (48 calls/day) and breaks public.fn_gdo_number_one_address,
+//        which is SECURITY INVOKER and authenticated-EXECUTE, so it reads properties as the caller.
+//      - AN RLS POLICY IS WORSE BECAUSE IT FAILS SILENTLY. RLS is row-level, so it cannot tell a
+//        LIST of properties (should hide retired) from a KEYED LOOKUP of the property belonging to
+//        a visit that already happened (must NOT hide it). Every authenticated read today is the
+//        second kind, so a policy would render completed visits with a blank address and a blank
+//        manhole count. That is the same wrong-grain mistake the view migration avoided, moved one
+//        layer down to where it cannot be scoped.
+//    ⇒ The real risk is not the grant. It is a FUTURE query of the LIST shape, which no view filter
+//      can reach anyway: PostgREST resource embedding (.select('*, properties(...)')) always joins
+//      the BASE TABLE through the FK, whatever the app's own schema exposes.
+const shapes = await sql(`
+  select s.calls::int calls,
+         case when s.query ~ '"properties_1"\."id" ='        then 'keyed'
+              when s.query ~ 'UPDATE "public"\."properties"' then 'update'
+              else 'LIST_OR_UNKNOWN' end shape,
+         left(regexp_replace(s.query,'\s+',' ','g'),110) sample
+    from pg_stat_statements s join pg_roles r on r.oid = s.userid
+   where r.rolname='authenticated' and s.query ~ '"public"\."properties"'
+     -- Exclude OUR OWN probes. CLAUDE.md tells permission probes to SET LOCAL ROLE authenticated,
+     -- and those land here as authenticated traffic. Without this, the first such probe that lists
+     -- a client's properties poisons this detector permanently with a false positive it can never
+     -- clear, because pg_stat_statements keeps the entry until it is reset.
+     and s.query !~ 'source: POST /v1/projects'`);
+const listy = shapes.filter(r => r.shape === 'LIST_OR_UNKNOWN');
+report.findings.base_table_authenticated_reads = shapes;
+for (const r of shapes) console.log(`     ${String(r.calls).padStart(5)}  ${r.shape}`);
+check('no LIST-shaped authenticated read of public.properties',
+      listy.length === 0,
+      listy.length ? listy.map(r => r.sample).join(' | ').slice(0, 70) : `${shapes.length} query shapes, all keyed/update`);
+
+// CONTROL: the classifier must be ABLE to see a list shape, or a clean result means nothing.
+// service_role runs exactly that query (the edge functions check a client's existing properties).
+const ctl = await sql(`
+  select count(*)::int n from pg_stat_statements s join pg_roles r on r.oid = s.userid
+   where r.rolname='service_role' and s.query ~ '"public"\."properties"\."client_id" ='`);
+check('CONTROL: the shape classifier CAN see a list read', ctl[0].n > 0, `service_role list reads=${ctl[0].n}`);
+
+// ⚠ AND STATE THE WINDOW. pg_stat_statements is a rolling buffer and can be reset, so a clean
+//    result is a statement about the observed window, never about the apps in general.
+const win = await sql(`select (now()-stats_reset)::text age from pg_stat_statements_info`);
+console.log(`     (observed window: ${win[0]?.age ?? 'unknown'} - a clean result covers only this)`);
+report.findings.pgss_window = win[0]?.age ?? null;
+
 // ---- write + summarise ----------------------------------------------------------------------
 writeFileSync(join(ROOT, 'scripts', 'probes', 'property_estate_audit.out.json'), JSON.stringify(report, null, 2));
 const failed = report.checks.filter(c => !c.pass);
