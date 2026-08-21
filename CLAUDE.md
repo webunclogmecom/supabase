@@ -639,6 +639,81 @@ broken rows (e.g. completed-then-rescheduled visits ops cannot operate on)
 require explicit Fred sign-off and run via a manual script (see
 2026-05-29 visit 5146 009-CN repair for the audited pattern).
 
+### Soft-delete on PROPERTIES (added 2026-08-21) + the two traps that come with it
+
+`public.properties.deleted_at TIMESTAMPTZ` is set by `webhook-jobber`'s `handlePropertyDestroy` when
+Jobber reports the property removed. `2026-08-21_0530` added the column, `2026-08-21_1200` taught the
+readers about it.
+
+**🛑 THE HARD DELETE IT REPLACED COULD NEVER HAVE SUCCEEDED, AND THAT WENT UNNOTICED FOR THE WHOLE
+LIFETIME OF THE INTEGRATION.** Nine FKs point at `public.properties` and five are `NO ACTION`
+(`jobs`, `visits`, `quotes`, `notes`, `ops.visit_requests`), so any property that had ever had a job
+was unreachable. It was invisible because **real Jobber webhooks had never been accepted at all**:
+the handler read a flat payload while Jobber sends `{data:{webHookEvent:{...}}}`, so every genuine
+delivery was rejected with an unlogged 400 and the `*/5` poll masked the gap. Both fixed the same day
+(`b5b23c0`, `a3dcea3`).
+
+**🛑 TRAP 1: A BILLING PROPERTY'S `entity_source_links.source_id` IS A *CLIENT* GID WITH A
+`_billing` SUFFIX. A naive "which of our properties still exist in Jobber" diff retires all 432.**
+`public.properties` holds two kinds of row and they point at two different Jobber objects:
+
+| kind | live | `source_id` looks like |
+|---|---|---|
+| service | 464 | `Z2lk...UHJvcGVydHkvMTIz` = `gid://Jobber/Property/123` |
+| billing | 432 | `Z2lk...Q2xpZW50LzQ1Ng==_billing` = the CLIENT gid **plus `_billing`** |
+
+Jobber models a billing address as part of the Client, not as a Property, so there is no Property gid
+to store; the suffix keeps the row from colliding with the client's own link. `webhook-jobber` writes
+it at `index.ts` (`source_id: ${gid}_billing`).
+⚠ **AND THE OBVIOUS DIAGNOSTIC HIDES IT.** Base64-decoding the value prints
+`gid://Jobber/Client/91592770` perfectly cleanly, because the decoder stops at the `==` padding and
+silently discards the `_billing` bytes that are the entire point. Comparing the DECODED values makes
+the two look identical while the stored strings differ. **Compare raw stored bytes; decode only to
+read, never to compare.** Measured 2026-08-21: an audit that got this wrong reported
+**432 of 432 billing rows as "client gone from Jobber"**. A 100% failure rate is the signature of a
+broken comparison, not of broken data. After stripping the suffix: **2**.
+✅ Safe by construction: `handlePropertyDestroy` resolves by `source_id`, and a `PROPERTY_DESTROY`
+payload carries a Property gid, so it can never match a billing row. Asserted in
+`scripts/probes/property_estate_audit.mjs`, which is the re-runnable version of all of this.
+
+**🛑 TRAP 2: DO NOT ADD `deleted_at IS NULL` TO THE VIEWS THAT READ `properties`. Most of them would
+DELETE A VISIT, not hide a property.** 30 views read `public.properties`; **7** filter it and **23**
+deliberately do not. Two rules decide which:
+
+1. **WORKLIST vs RECORD.** A worklist (things to act on) hides a retired property. A record (things
+   that happened) never does. The tempting tier is "app-facing vs internal" and it is **wrong**:
+   `customer.work_orders` is customer-facing AND it is the client's DERM compliance history, so
+   filtering it would remove completed work orders from a regulator-facing surface because the site
+   was later removed in Jobber.
+2. **GRAIN.** Most of the 30 reach properties through a `LEFT JOIN` whose grain is a VISIT or a
+   MANIFEST, with properties only supplying an address. A `WHERE p.deleted_at IS NULL` there deletes
+   the visit. The filter is only safe where properties is the driving table, inside an aggregate or
+   subquery that yields a single field, or in a `LEFT JOIN`'s **ON** clause (which nulls the columns
+   and keeps the row, which is what `customer.clients` does).
+
+Filtered: `client.properties`, `ops.properties`, `client.clients` (both LATERAL aggregates),
+`customer.clients` (ON clause), `public.zones_with_usage` (the count), `derm.v_stamp_clients` (its
+`ORDER BY p.id LIMIT 1` address), `client.global_search` (its properties branch).
+Not filtered, on purpose: everything else, and `ops.v_depot` / `ops.v_dump_sites` additionally
+because each pins ONE property by config or constant, where the right outcome is a loud
+configuration error rather than a silently empty view.
+
+⚠ **`authenticated` still holds SELECT on `public.properties` itself**, and `pg_stat_statements`
+shows live PostgREST reads against the base table. The base table is deliberately unfiltered so
+history and audit keep working, so **any app query written against `public.properties` rather than
+`client.properties` still sees retired rows.** That is an app-side change and it is not done.
+
+✅ **THE ESTATE WAS AUDITED BEFORE ANY RECONCILER WAS BUILT (2026-08-21, Fred's instruction).**
+Measured against live Jobber: **0 orphans** among 465 live service properties, 1 unlinked legacy
+property (304, an INACTIVE client with no Jobber link either), 18 Jobber properties we do not hold
+(**all 18 on archived clients**), 2 billing rows whose client is gone, 0 duplicate or dangling links.
+**There is no backlog, so a reconciler is not a backfill.** Nothing detects a `PROPERTY_DESTROY` that
+is never delivered, so re-run `scripts/probes/property_estate_audit.mjs` rather than assuming.
+⚠ Jobber's property delete **cascades to the jobs**, which arrives here as `job_status='archived'`.
+That is what keeps a dead site out of the Visit Calendar's New Visit picker (which selects a JOB, not
+a property). It is a two-instance observation, not a proven invariant: if a live job is ever found on
+a retired property the picker WILL offer it.
+
 ### Jobber PROPERTY sync — enabled 2026-08-04, hourly, and it was dead before that
 
 **Until 2026-08-04, a Jobber-side edit to a SERVICE property address never reached us.** Not slowly —
