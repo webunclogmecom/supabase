@@ -70,7 +70,26 @@ for (const rec of det) {
   // this. The margin is now 2.0pp and the header and footer bars are removed by SHAPE instead.
   const lo = rec.top != null ? rec.top - 2.0 : -1e9;
   const hi = rec.bot != null ? rec.bot + 2.0 : 1e9;
-  const all = rec.rules.slice().sort((a, b) => a.pct - b.pct);
+  // 🛑 MERGE NEAR-DUPLICATES FIRST, OR THE ALTERNATION IS CORRUPTED.
+  // The detector suppresses peaks closer than 0.70pp, but it then refines each surviving peak to
+  // the centroid of its plateau, and that refinement can move a peak by up to half the suppression
+  // distance. Two peaks 4px apart can therefore END UP 2px apart. Measured: on ticket-311780 p2
+  // five printed rules were each emitted twice, 0.324pp apart, and on ticket-832487 p2 two were.
+  // A duplicated rule inserts one extra element into a strictly alternating sequence, which flips
+  // the boundary/divider assignment for everything below it. Both of those pages then reported
+  // bands that "span multiple slots" while being verifiably clean when looked at.
+  // The suppression has to be re-applied AFTER refinement, keeping the longer run.
+  const allRaw = rec.rules.slice().sort((a, b) => a.pct - b.pct);
+  const all = [];
+  for (const r of allRaw) {
+    const prev = all[all.length - 1];
+    if (prev && r.pct - prev.pct < 0.70) {
+      if (r.run > prev.run) all[all.length - 1] = r;   // same printed line, keep the stronger read
+      continue;
+    }
+    all.push(r);
+  }
+  r.n_merged = allRaw.length - all.length;
   let rules = all.filter(x => x.pct >= lo && x.pct <= hi);
 
   // 🛑 REMOVE THE FORM'S HEADER AND FOOTER BARS BY SHAPE, NOT BY POSITION. Both are full-width
@@ -126,8 +145,22 @@ for (const rec of det) {
   };
   const s0 = scoreOf(0), s1 = scoreOf(1);
   const best = s0 >= s1 ? 0 : 1;
-  r.phase = best;
   r.phase_edge = +Math.max(s0, s1).toFixed(3);
+
+  // 🛑 A STAMP TEST WAS TRIED HERE AND REMOVED. DO NOT RE-ADD IT WITHOUT READING THIS.
+  // The idea looked sound: a person placed each stamp on that client's own printed row, so the
+  // correct boundary set holds exactly one stamp per slot. That is T1 from 2026-08-20_1610 and it
+  // is independent of every image measurement. Implemented as "which phase gives intervals holding
+  // exactly one stamp", it scored 128 of 133 pages in agreement with the run length, which looked
+  // like strong corroboration.
+  // IT DOES NOT DISCRIMINATE. A stamp sits inside a slot, and the interval between two consecutive
+  // MID-SLOT DIVIDERS also contains exactly one stamp, just offset by half a pitch. Both phases
+  // score the same by construction; the differences that showed up were end-of-list artifacts.
+  // Adopting it flipped ticket-832194 p1 from five ONE_SLOT bands to four SPANS_MULTIPLE and one
+  // PART_SLOT, and dropped the page from OK to SPARSE.
+  // T1 discriminates only when each stamp is tested against ITS OWN assigned slot, which needs the
+  // assignment the classification is trying to establish. Here it is circular.
+  r.phase = best;
 
   if (r.phase_edge < MIN_PHASE_EDGE) {
     r.grade = 'FAILED';
