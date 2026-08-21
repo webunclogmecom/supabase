@@ -1526,7 +1526,24 @@ async function handlePropertyDestroy(numericId: string): Promise<{ entity_id: nu
   const gid = btoa(`gid://Jobber/Property/${numericId}`)
   const existingId = await findEntityBySourceId('property', 'jobber', gid)
   if (!existingId) { console.log(`[PROPERTY_DESTROY] unknown ${gid}`); return { entity_id: 0 } }
-  const { error } = await supabase.from('properties').delete().eq('id', existingId)
+  // 🛑 SOFT-DELETE, NOT DELETE. The hard delete this used to do CANNOT SUCCEED and never did:
+  //    proven in production on 2026-08-21, on the first real PROPERTY_DESTROY this integration ever
+  //    received, with
+  //      "violates foreign key constraint jobs_property_id_fkey on table jobs"
+  //    because handleJobDestroy soft-deletes and its surviving `destroyed` job still holds
+  //    property_id. Nine FKs reference public.properties and five are NO ACTION (jobs, visits,
+  //    quotes, notes, ops.visit_requests), so visits and quotes would block it just as surely.
+  //    Retaining the row is also what the never-hard-delete rule requires: jobs and visits keep
+  //    their history, and the property is simply marked retired.
+  //
+  // ⚠ `.is('deleted_at', null)` is deliberate. Jobber guarantees only AT-LEAST-ONCE delivery, so
+  //    this webhook can arrive twice; without the guard a redelivery would overwrite the original
+  //    retirement timestamp with a later one and quietly lose when it actually happened.
+  const { error } = await supabase
+    .from('properties')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', existingId)
+    .is('deleted_at', null)
   if (error) throw new Error(`PROPERTY_DESTROY failed: ${error.message}`)
   return { entity_id: existingId }
 }
