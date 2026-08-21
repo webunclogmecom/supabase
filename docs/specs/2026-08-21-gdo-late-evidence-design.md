@@ -2,6 +2,8 @@
 
 **Status: PROPOSED. Nothing has been built. No code or migration has been applied.**
 Author: @Building Apps session, 2026-08-21. Awaiting Fred, and blocked on five questions for John.
+**Update 2026-08-21: defect D1 in section 6 is RESOLVED and its original diagnosis was refuted. The
+late-evidence design itself is still PROPOSED and unbuilt.**
 
 **Ask, verbatim (Fred, 2026-08-21):** the GDO Report Bot has hit the case where it *"has the report
 data but not the evidence image"*, and John wants *"to be able to put the data first, and the evidence
@@ -181,7 +183,7 @@ path for any bot bug or older build, and it gives us no way to ever obtain the i
 | 2 | Ask Fred the three questions in section 7. | Us to Fred | Answers | n/a |
 | 3 | Fix `fn_set_gdo_evidence_ext`: clear the reason, and add the storage-object existence check (defect D2). One migration. | Us | Call against a dry-run row and confirm it raises; call against a live row with a real object and confirm both columns move; confirm the two prior real calls still resolve | **Yes**, CREATE OR REPLACE back |
 | 4 | Re-key `fn_correct_gdo_report` to `(visit_id, run_id)` and guard against nulling a confirmation on a non-SUCCESS row (defect D3). | Us | Call with visit 6617 and each run_id, confirm each targets its own row; confirm the SUCCESS row still rejects an emptied confirmation with 23514 | **Yes**, but it is a signature change: ship with its Tracker caller in the same cycle |
-| 5 | Prove `record-manual-gdo-report` works end to end (defect D1). | Us | A real submit against a **dry-run** visit, then confirm the row and the storage object | n/a, read-then-test |
+| 5 | ~~Prove `record-manual-gdo-report` works end to end (defect D1).~~ **DONE 2026-08-21** (`e30f28f`): it was broken for every visit, one line, now fixed and proven through the app. | Us | Submitted for real on visits 7276 and 7270, verified row + storage object + signed URL, then removed both and confirmed the live-row count back at its baseline of 11 | done |
 | 6 | Change `rpa-derm-result` to default `EVIDENCE_PENDING` instead of 400. Deploy. | Us | POST a **dry-run** body with neither field: expect a row with `screenshot_path IS NULL` and the reason set. Confirm the previously-400ing shape now succeeds | **Yes**, redeploy prior version |
 | 7 | Change the dedupe branch to fall through to upload plus the two-column UPDATE. Deploy. | Us | On the row from #6, re-POST with an image: confirm the path is set and the reason cleared. Re-POST a **third** time with a *different* image and confirm the path does not change. Confirm `audit.logs.changed_keys` is exactly `['screenshot_path','screenshot_missing_reason']` | **Yes** |
 | 8 | Widen `v_rpa_derm_health` with an `evidence_pending_over_24h` counter. | Us | Insert a dry-run fixture with an old `created_at`, confirm it counts, delete it | **Yes** |
@@ -189,9 +191,20 @@ path for any bot bug or older build, and it gives us no way to ever obtain the i
 | 10 | Document in `Building Apps/DERM Tracker/docs/08-changelog.md` and its `CLAUDE.md`: the new row shape, `EVIDENCE_PENDING`, attach-once, and that status must stay SUCCESS. Migration headers for #3, #4, #8. | Us | The doc names the exact columns and the traps | Yes |
 | 11 | Verify no re-queue **correctly**. | Us | Gates 2 and 4 are both 20-hour windows, so a same-hour check is a guaranteed false all-clear. Either wait 20+ hours, or evaluate gates 1 and 3 directly on that manifest with the windows removed, read-only | n/a |
 
-**The single irreversible hazard on this list is a test POST against a LIVE visit** at steps 5, 6, 7
-or 9. Every functional test must use a visit whose `visit_date < rpa_launch_cutoff()`, which forces
-`dry_run=true` server-side, derived from the visit and not trusted from the caller.
+**The single irreversible hazard on this list is a test POST against a LIVE visit** at steps 6, 7
+or 9. For those three, use a visit whose `visit_date < rpa_launch_cutoff()`, which forces
+`dry_run=true` server-side in `rpa-derm-result`, derived from the visit and not trusted from the caller.
+
+🛑 **THAT PROTECTION DOES NOT EXIST ON THE MANUAL PATH, AND ASSUMING IT DOES IS THE TRAP.**
+`fn_record_manual_gdo_report` writes **`dry_run = false` hardcoded**. There is no dry-run mode, so a
+"test on a pre-cutoff visit" still commits a **live** `SUCCESS` row. Pre-cutoff only buys you that
+`suppresses_bot` is false, i.e. the bot was never going to file that visit anyway.
+⇒ To test it safely, pick a visit where **`fn_visit_is_gdo_reporting` is false**. That is the filter
+on `customer.gdo_reports`, so such a visit can never reach a client's Field Portal whatever you write.
+Then delete the row and the object afterwards. Both test visits used on 2026-08-21 (7276, 7270) were
+chosen on exactly that basis and measured at 0 client-visible rows throughout.
+⚠ And the object must be removed through the **Storage API**: `storage.protect_delete()` refuses a
+direct `DELETE` on `storage.objects` and aborts the whole transaction.
 
 ---
 
@@ -200,14 +213,41 @@ or 9. Every functional test must use a visit whose `visit_date < rpa_launch_cuto
 These are **not** caused by the proposed design and do not depend on it. They are recorded here
 because the audit found them and they are live now.
 
-**D1. `record-manual-gdo-report` may be broken in production.** The manual-filing feature shipped
-2026-08-19/20 has written **zero rows** (`is_manual` count 0, `filed_by_email` count 0, `run_id LIKE
-'manual-%'` count 0), and the audit observed **4 gateway 401s** on that function in the retained log
-window. `verify_jwt = true`, so the platform rejects before the function runs, which points at the
-token the DERM Tracker sends rather than at the function's own checks. The UI was verified with real
-clicks but **deliberately never submitted**, so the write path was never proven end to end. That gap
-is the author's error. Zero rows is also consistent with "nobody has used it yet", so this needs a
-real test before any conclusion.
+**D1. `record-manual-gdo-report` was broken for every visit. RESOLVED 2026-08-21, and the
+hypothesis first recorded here was WRONG.** This entry originally said the cause "points at the token
+the DERM Tracker sends" because the logs showed 4 gateway 401s. **Tested end to end through the app as
+a signed-in user and that is refuted:** `verify_jwt` accepted the token and the function ran. Those
+401s were not the app.
+
+The real cause was one line. The eligibility read called
+`.from('visit_gdo_manual_eligibility')` on a service client built with **no `db.schema` option**, so
+it resolved against `public` while the view lives in **`derm`**. PostgREST errored, the guard returned
+its own 500 (*"Could not check whether this stops the bot, so nothing was recorded."*), and **the
+feature failed for every visit**. That is why 535 submissions carried 0 manual rows and 0 filers.
+
+Fixed with a per-query `.schema('derm')` (`e30f28f`). Pinning the whole client would break the other
+two calls, `.from('visits')` and `.rpc('fn_record_manual_gdo_report')`, which are both `public`.
+
+A **composition defect**: the client and the view name were each correct in isolation and nothing had
+ever run the composed statement. The UI was verified with real clicks but never submitted, so the
+write path was never exercised. That gap is the author's error.
+
+Proven on visit 7276 (`137-BB`, `gdo_reporting = false`, so no client could see it): 500 before, 200
+after, row `1921` with `status SUCCESS`, `is_manual true`, `filed_by_email fred@ayache.com`, the
+evidence object stored at the derived path and signed back at 200. Repeated cleanly on 7270. Both
+test rows and objects removed; live-row count back to its baseline of 11; backup at
+`backups/2026-08-21_manual_gdo_e2e_test_rows.json`; the two DELETEs are in `audit.logs`.
+
+**D1b. The modal does not close on success (open, minor).** Confirmed on a clean single-click submit
+on visit 7270: the toast reads *"Manual GDO filing recorded."*, the card behind refetches correctly
+and shows the filing, and the form stays open. A person could press **Record filing** again, which the
+duplicate guard then refuses. App-side fix, not shipped.
+
+**D1c. A visit outside `derm.visits` renders "Loading..." forever (open, minor).** Visit 7280 is one
+of 32 completed visits excluded from that view (`derm_required = false`), and `/visits/7280` hangs on
+the placeholder rather than saying not found. Worth knowing when picking a test target:
+`derm.visit_gdo_manual_eligibility` covers **1,089** completed visits while the app renders **1,057**,
+so eligibility can report `can_record_manual = true` for a visit the app cannot show at all.
 
 **D2. `fn_set_gdo_evidence_ext` is a live hole.** EXECUTE is held by `authenticated`, and the body
 **never references `storage.objects`** (verified). Any signed-in staff user can repoint a live
