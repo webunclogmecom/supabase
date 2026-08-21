@@ -1599,10 +1599,38 @@ Deno.serve(async (req) => {
     return unauthorized('Invalid HMAC signature')
   }
 
-  const topic = payload.topic
-  const itemId = payload.webHookEvent?.itemId
+  // ---- ACCEPT BOTH PAYLOAD SHAPES ---------------------------------------------------------------
+  // 🛑 THIS IS WHY NO REAL JOBBER WEBHOOK HAS EVER BEEN PROCESSED (found 2026-08-20).
+  //    Jobber documents its payload as NESTED:
+  //        { data: { webHookEvent: { topic, appId, accountId, itemId, occurredAt } } }
+  //    This function only ever read `payload.topic`, which exists solely in the FLAT shape our own
+  //    replays send. So every genuine Jobber delivery fell into the refusal below, and the refusal
+  //    RETURNED WITHOUT LOGGING — invisible, for the entire life of the integration.
+  //
+  //    The evidence, all three strands agreeing:
+  //      * The app "Unclogme Supabase Sync" subscribes 22 topics, every one pointing here.
+  //      * Only 7 topics have EVER appeared in webhook_events_log, and 6 of them are exactly what
+  //        sync-jobber-poll replays; the 7th (PROPERTY_CREATE) comes from our own create-client /
+  //        save-client-property replays. The other 16 subscribed topics have zero events, ever.
+  //      * A signed NESTED payload returned 400 "Missing topic or itemId"; the FLAT one returned 200.
+  //    ⇒ The poll has been silently carrying the whole integration and masking this.
+  //
+  // ⚠ occuredAt (missing an 'r') is the field name for apps created before 2023-12-08. Both are read
+  //   so neither vintage silently loses its timestamp.
+  const ev = payload?.data?.webHookEvent ?? payload?.webHookEvent ?? {}
+  const topic = payload?.topic ?? ev?.topic
+  const itemId = ev?.itemId
+  const occurredAt = ev?.occurredAt ?? ev?.occuredAt ?? null
 
   if (!topic || !itemId) {
+    // 🛑 LOG THE REFUSAL. Returning 400 silently is exactly what hid the bug above for so long: a
+    //    rejected webhook left no trace anywhere, so the integration looked healthy while every real
+    //    delivery was being dropped.
+    await logWebhookEvent(supabase, 'jobber', topic ?? 'unparseable', payload, {
+      status: 'failed',
+      error_message: `Missing topic or itemId. Payload keys: ${Object.keys(payload ?? {}).join(',') || 'none'}`,
+      processing_ms: Date.now() - startMs,
+    })
     return badRequest('Missing topic or itemId')
   }
 
