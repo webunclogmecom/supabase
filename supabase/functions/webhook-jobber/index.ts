@@ -1627,31 +1627,66 @@ Deno.serve(async (req) => {
     return ok({ skipped: true, topic })
   }
 
-  try {
-    const result = await handler(decoded.numericId, topic)
-    const elapsedMs = Date.now() - startMs
+  // ---- the work, unchanged. Only WHEN it runs relative to the response has changed. -------------
+  const process = async () => {
+    try {
+      const result = await handler(decoded.numericId, topic)
+      const elapsedMs = Date.now() - startMs
 
-    await logWebhookEvent(supabase, 'jobber', topic, payload, {
-      event_id: itemId,
-      entity_type: decoded.type.toLowerCase(),
-      entity_id: result.entity_id,
-      status: 'processed',
-      processing_ms: elapsedMs,
-    })
+      await logWebhookEvent(supabase, 'jobber', topic, payload, {
+        event_id: itemId,
+        entity_type: decoded.type.toLowerCase(),
+        entity_id: result.entity_id,
+        status: 'processed',
+        processing_ms: elapsedMs,
+      })
+      return { processed: true, topic, entity_id: result.entity_id, ms: elapsedMs }
+    } catch (err) {
+      const elapsedMs = Date.now() - startMs
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[webhook-jobber] ${topic} failed:`, message)
 
-    return ok({ processed: true, topic, entity_id: result.entity_id, ms: elapsedMs })
-  } catch (err) {
-    const elapsedMs = Date.now() - startMs
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`[webhook-jobber] ${topic} failed:`, message)
-
-    await logWebhookEvent(supabase, 'jobber', topic, payload, {
-      event_id: itemId,
-      status: 'failed',
-      error_message: message.slice(0, 1000),
-      processing_ms: elapsedMs,
-    })
-
-    return serverError(message.slice(0, 200))
+      await logWebhookEvent(supabase, 'jobber', topic, payload, {
+        event_id: itemId,
+        status: 'failed',
+        error_message: message.slice(0, 1000),
+        processing_ms: elapsedMs,
+      })
+      return { processed: false, topic, error: message.slice(0, 200) }
+    }
   }
+
+  // ---- SYNCHRONOUS ESCAPE HATCH, for tests and manual replays ------------------------------------
+  // Same idiom as sync-jobber-poll's x-sync-wait. Callers that need the RESULT (our own synthetic
+  // PROPERTY_CREATE replay in create-client / save-client-property reads entity_id back) must send
+  // this header, or they get an acknowledgement with no entity_id and will report import_failed.
+  if (req.headers.get('x-sync-wait') === '1') {
+    const res = await process()
+    return res.processed ? ok(res) : serverError(String(res.error))
+  }
+
+  // ---- ACKNOWLEDGE FIRST, THEN WORK -------------------------------------------------------------
+  // 🛑 JOBBER REQUIRES A RESPONSE WITHIN 1 SECOND: "If response times consistently exceed the
+  //    1-second limit ... Jobber may disable the app's webhooks to protect other apps and systems."
+  //    Measured 2026-08-20 over 7 days: 696 of 17,984 deliveries (3.9%) breached it, worst cases
+  //    33.7s, and PROPERTY_CREATE AVERAGED 1,048ms - already over. The cause was structural: the
+  //    Jobber GraphQL round-trip and the DB writes all happened before the response.
+  //    Their prescribed fix, verbatim: "acknowledge receipt immediately and handle the event in a
+  //    background job or queue."
+  //
+  // ⚠ WHAT THIS TRADES AWAY, STATED PLAINLY: a handler failure used to return 500, and Jobber
+  //    retries on non-2xx. Now we have already answered 200, so THERE IS NO RETRY. The compensating
+  //    control is that the catch branch above still writes a `failed` row to webhook_events_log, so
+  //    a lost event is VISIBLE and replayable rather than silent. Measured failure rate when this
+  //    shipped: 0 failed of 17,989 in 7 days, so this is a theoretical exposure today, not an active
+  //    one - but it is a real change in semantics and must not be discovered by surprise later.
+  //
+  // ⚠ HMAC IS STILL VERIFIED BEFORE THIS POINT, and always must be. Acknowledging an unsigned
+  //    request would make us an open endpoint.
+  //
+  // ⚠ processing_ms NOW MEASURES THE BACKGROUND WORK, NOT WHAT JOBBER WAITED FOR. Do not read this
+  //    column as the SLA metric any more; time the endpoint directly to measure the acknowledgement.
+  // @ts-ignore — EdgeRuntime is provided by the Supabase Edge runtime.
+  EdgeRuntime.waitUntil(process())
+  return ok({ accepted: true, topic })
 })

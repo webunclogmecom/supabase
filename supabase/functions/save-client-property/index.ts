@@ -217,7 +217,11 @@ Deno.serve(async (req) => {
   const sig = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
   const rp = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/webhook-jobber`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-jobber-hmac-sha256": sig },
+    // 🛑 x-sync-wait IS REQUIRED HERE. Since 2026-08-20 webhook-jobber acknowledges real Jobber
+    //    traffic immediately and processes in the background (Jobber's 1-second SLA). Without this
+    //    header the reply is {accepted:true} with NO entity_id, and the check below would report
+    //    import_failed for a property that imported perfectly.
+    headers: { "Content-Type": "application/json", "x-jobber-hmac-sha256": sig, "x-sync-wait": "1" },
     body: payload,
   });
   const rj = await rp.json().catch(() => ({}));

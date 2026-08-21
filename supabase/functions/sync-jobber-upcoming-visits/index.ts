@@ -102,7 +102,11 @@ const MISSING_CAP = 50, REFRESH_PER_RUN = 25, CONCURRENCY = 4, TIME_BUDGET_MS = 
 async function replayOne(clientSecret: string, gid: string): Promise<boolean> {
   const payload = JSON.stringify({ topic: 'VISIT_UPDATE', webHookEvent: { itemId: gid, occurredAt: new Date().toISOString() } })
   const sig = await hmacB64(clientSecret, payload)
-  const wr = await fetch(`${SUPABASE_URL}/functions/v1/webhook-jobber`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-jobber-hmac-sha256': sig }, body: payload })
+  // 🛑 x-sync-wait IS REQUIRED. Since 2026-08-20 webhook-jobber acknowledges real Jobber traffic
+  //    immediately and processes in the background. This function RETURNS wr.ok as "did it sync",
+  //    so without the header it would report success for work that had not happened yet and could
+  //    still fail.
+  const wr = await fetch(`${SUPABASE_URL}/functions/v1/webhook-jobber`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-jobber-hmac-sha256': sig, 'x-sync-wait': '1' }, body: payload })
   return wr.ok
 }
 

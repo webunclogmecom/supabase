@@ -245,7 +245,14 @@ async function replayFlagged(exec: Exec, clientSecret: string) {
     for (const { gid } of rows) {
       const payload = JSON.stringify({ topic: e.topic, webHookEvent: { itemId: gid, occurredAt: new Date().toISOString() } })
       const sig = await hmacB64(clientSecret, payload)
-      const wr = await fetch(`${SUPABASE_URL}/functions/v1/webhook-jobber`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-jobber-hmac-sha256': sig }, body: payload })
+      // 🛑 x-sync-wait IS LOAD-BEARING HERE, MORE THAN ANYWHERE ELSE. Since 2026-08-20
+      //    webhook-jobber acknowledges real Jobber traffic immediately and processes in the
+      //    background. Without this header wr.ok would be TRUE for every call, including ones whose
+      //    processing later failed - and the very next line clears needs_populate on wr.ok. The
+      //    queue would empty itself on acknowledgements and silently drop rows it never populated,
+      //    which is exactly the "needs_populate=0 hiding rows it had given up on" failure this
+      //    estate has already paid for once.
+      const wr = await fetch(`${SUPABASE_URL}/functions/v1/webhook-jobber`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-jobber-hmac-sha256': sig, 'x-sync-wait': '1' }, body: payload })
       if (wr.ok) { ok++; await exec(`UPDATE raw.${e.rawTable} SET needs_populate=FALSE WHERE data->>'id'=${sqlEsc(gid)}`) } else fail++
     }
     summary.push({ table: e.rawTable, ok, fail })

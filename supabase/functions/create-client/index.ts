@@ -848,8 +848,12 @@ Deno.serve(async (req) => {
       { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
     const sigBuf = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(payload));
     const sig = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
+    // 🛑 x-sync-wait IS REQUIRED. Since 2026-08-20 webhook-jobber acknowledges real Jobber traffic
+    //    immediately and works in the background (Jobber's 1-second SLA). This replay READS
+    //    entity_id back from the reply, so it needs the synchronous path; without the header it
+    //    would get {accepted:true} and the caller would see the client as never materialised.
     const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/webhook-jobber`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-jobber-hmac-sha256": sig }, body: payload });
+      method: "POST", headers: { "Content-Type": "application/json", "x-jobber-hmac-sha256": sig, "x-sync-wait": "1" }, body: payload });
     try { return await r.json(); } catch { return {}; }
   };
 
