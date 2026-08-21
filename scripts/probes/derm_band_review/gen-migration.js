@@ -4,6 +4,7 @@ const fs = require('fs');
 const C = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const STAMP = process.argv[3];
 const OUT = process.argv[4];
+const REPLACE = process.argv.includes('--replace');
 const SOURCE = 'runlen-v2-' + STAMP.slice(0, 10);
 
 const q = s => "'" + String(s).replace(/'/g, "''") + "'";
@@ -28,9 +29,9 @@ for (const p of C) {
     seen.set(r.pct, r);
   }
   for (const r of seen.values()) {
-    const kind = p.grade === 'FAILED' ? 'unclassified' : (r.b ? 'boundary' : 'divider');
-    const confirmed = p.grade === 'FAILED' ? 'null'
-      : (p.split_cut == null ? 'null' : ((r.run >= p.split_cut) === !!r.b));
+    const kind = r.kind || 'unclassified';
+    const confirmed = (p.grade === 'FAILED' || kind === 'header-footer' || p.split_cut == null)
+      ? 'null' : ((r.run >= p.split_cut) === !!r.b);
     ruleRows.push('  (' + [
       q(p.dump_folder), p.pg, r.pct, r.ink, r.run, q(kind), confirmed, q(SOURCE),
     ].join(', ') + ')');
@@ -220,7 +221,15 @@ COMMENT ON COLUMN derm.page_rule_scans.skew IS
 -- PART 2  the scan record and the detected rules
 -- ---------------------------------------------------------------------------------------------
 
-INSERT INTO derm.page_rule_scans
+${REPLACE ? `-- 🛑 REPLACE, NOT APPEND. This re-runs the same source label, so the previous generation is
+-- removed first. That is a DELETE from two tables that carry no audit trigger, which by the
+-- 2026-08-14 rule needs a restore path named before the fact: every deleted row exists as literal
+-- SQL in docs/migrations/2026-08-21_0736_fleet_printed_rule_detection.sql, committed and pushed,
+-- and the whole set is reproducible from scripts/probes/derm_band_review/ against the same images.
+DELETE FROM derm.page_row_rules  WHERE source = ${q(SOURCE)};
+DELETE FROM derm.page_rule_scans WHERE source = ${q(SOURCE)};
+
+` : ''}INSERT INTO derm.page_rule_scans
   (dump_folder, effective_page, source_url, image_w, image_h, skew,
    n_rules, n_boundaries, pitch_pct, grade, detail, source)
 VALUES
@@ -246,6 +255,7 @@ ON CONFLICT (dump_folder, effective_page, rule_pct) DO UPDATE
 -- 33.500 is safe (whitespace, nothing bisected) but off the rule, so the page would report an
 -- OFF_RULE edge against an invariant introduced in the same breath.
 
+${REPLACE ? '-- Already applied by the first run of this pass; both rows are at 34.156 and idempotent.' : ''}
 UPDATE derm.address_row_map SET band_y1_pct = 34.156, band_source = 'runlen-snap-${STAMP.slice(0, 10)}', band_set_at = now() WHERE id = 76;  -- 242-WYN
 UPDATE derm.address_row_map SET band_y0_pct = 34.156, band_source = 'runlen-snap-${STAMP.slice(0, 10)}', band_set_at = now() WHERE id = 77;  -- 226-JER
 

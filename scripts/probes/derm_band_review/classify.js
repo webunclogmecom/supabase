@@ -63,23 +63,63 @@ for (const rec of det) {
   };
   if (rec.error) { r.grade = 'FAILED'; r.why = 'image: ' + rec.error; out.push(r); continue; }
 
-  const lo = rec.top != null ? rec.top - 1.0 : -1e9;
-  const hi = rec.bot != null ? rec.bot + 1.0 : 1e9;
+  // ⚠ THE TRIM MARGIN WAS 1.0pp AND THAT WAS TOO TIGHT. On window3-sheet5 p2 the roster's first
+  // boundary sits at 27.718 while the measured extent top is 28.800, so a 1.0pp margin cut a REAL
+  // boundary by 0.08pp and the first band then reported a 5.5pp gap to the nearest rule: the worst
+  // entry on the whole worklist, and an artifact of this line. Seven of twenty off-rule pages were
+  // this. The margin is now 2.0pp and the header and footer bars are removed by SHAPE instead.
+  const lo = rec.top != null ? rec.top - 2.0 : -1e9;
+  const hi = rec.bot != null ? rec.bot + 2.0 : 1e9;
   const all = rec.rules.slice().sort((a, b) => a.pct - b.pct);
-  const rules = all.filter(x => x.pct >= lo && x.pct <= hi);
+  let rules = all.filter(x => x.pct >= lo && x.pct <= hi);
+
+  // 🛑 REMOVE THE FORM'S HEADER AND FOOTER BARS BY SHAPE, NOT BY POSITION. Both are full-width
+  // dark bars that detect as perfect rules, and left in they put a ~2.0pp and a ~2.4pp gap into a
+  // 5.4pp pitch and graded 81 of 160 pages IRREGULAR. What distinguishes them from a real rule is
+  // that they sit much closer to the outermost boundary than one slot, and unlike a mid-slot
+  // divider they are LONG. So: at either end of the list, drop a long rule that is closer than
+  // 0.6 of a slot to its long neighbour. A divider is spared because it is short.
+  // 🛑 TWO LISTS, ON PURPOSE, BECAUSE THE TWO QUESTIONS ARE DIFFERENT.
+  //   `rules` - every printed rule found inside a generous window. This is what the band-edge
+  //             check uses, because a header bar IS a printed rule and an edge on it is genuinely
+  //             not inside a line of text. Removing it would only invent false positives.
+  //   `chain` - the roster's own alternating boundary/divider sequence, used to CLASSIFY and to
+  //             grade. Here the header and footer bars have to go, because they break the
+  //             alternation.
+  // Measured: trimming the end bars out of BOTH lists moved the fleet from 92.4% of edges on a
+  // rule to 90.6%, i.e. it manufactured 23 new off-rule edges while fixing 7. Keeping them in
+  // `rules` and out of `chain` is what each question actually needs.
+  let chain = rules.slice();
+  {
+    const spacings = [];
+    for (let i = 1; i < rules.length; i++) spacings.push(rules[i].pct - rules[i - 1].pct);
+    spacings.sort((a, b) => a - b);
+    const halfPitch = spacings.length ? spacings[(spacings.length / 2) | 0] : 0;
+    const maxRun = rules.length ? Math.max(...rules.map(x => x.run)) : 0;
+    const isLong = x => x.run >= 0.70 * maxRun;
+    const close = (a, b) => Math.abs(b.pct - a.pct) < 0.6 * 2 * halfPitch;
+    let guard = 0;
+    while (chain.length > 4 && guard++ < 4
+           && isLong(chain[0]) && isLong(chain[1]) && close(chain[0], chain[1])) chain = chain.slice(1);
+    guard = 0;
+    while (chain.length > 4 && guard++ < 4
+           && isLong(chain[chain.length - 1]) && isLong(chain[chain.length - 2])
+           && close(chain[chain.length - 2], chain[chain.length - 1])) chain = chain.slice(0, -1);
+  }
   r.n_trimmed = all.length - rules.length;
+  r.n_endbars = rules.length - chain.length;
   r.no_extent = rec.top == null || rec.bot == null;
   r.n_rules = rules.length;
 
-  if (rules.length < MIN_RULES) {
-    r.grade = 'FAILED'; r.why = 'only ' + rules.length + ' rules inside the roster';
-    r.rules = rules.map(x => ({ pct: x.pct, run: x.run, ink: x.ink, b: false }));
+  if (chain.length < MIN_RULES) {
+    r.grade = 'FAILED'; r.why = 'only ' + chain.length + ' rules inside the roster';
+    r.rules = rules.map(x => ({ pct: x.pct, run: x.run, ink: x.ink, b: false, kind: 'unclassified' }));
     out.push(r); continue;
   }
 
   // ---- phase choice ------------------------------------------------------------------------
   const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
-  const phase = (p) => rules.filter((_, i) => i % 2 === p);
+  const phase = (p) => chain.filter((_, i) => i % 2 === p);
   const scoreOf = (p) => {
     const A = phase(p).map(x => x.run), B = phase(1 - p).map(x => x.run);
     return (A.length && B.length) ? mean(A) - mean(B) : -1;
@@ -93,19 +133,24 @@ for (const rec of det) {
     r.grade = 'FAILED';
     r.why = 'the two phases are indistinguishable (edge ' + r.phase_edge + '): cannot tell a slot '
       + 'boundary from a mid-slot divider';
-    r.rules = rules.map(x => ({ pct: x.pct, run: x.run, ink: x.ink, b: false }));
+    r.rules = rules.map(x => ({ pct: x.pct, run: x.run, ink: x.ink, b: false, kind: 'unclassified' }));
     out.push(r); continue;
   }
 
   const bounds = phase(best);
   r.bounds = bounds.map(x => x.pct);
   r.n_bounds = bounds.length;
-  r.rules = rules.map((x, i) => ({ pct: x.pct, run: x.run, ink: x.ink, b: i % 2 === best }));
+  const bset = new Set(bounds);
+  r.rules = rules.map(x => ({
+    pct: x.pct, run: x.run, ink: x.ink,
+    b: bset.has(x),
+    kind: bset.has(x) ? 'boundary' : (chain.includes(x) ? 'divider' : 'header-footer'),
+  }));
 
   // cross-check: does a plain run-length split agree with the phase choice? Recorded rather than
   // enforced. Disagreement is a signal that this page is unusual, not that either is wrong.
   {
-    const runs = rules.map(x => x.run).slice().sort((a, b) => a - b);
+    const runs = chain.map(x => x.run).slice().sort((a, b) => a - b);
     let cutAt = null, cutGap = 0;
     for (let i = 1; i < runs.length; i++) {
       const g = runs[i] - runs[i - 1];
@@ -113,7 +158,7 @@ for (const rec of det) {
     }
     r.split_cut = cutAt == null ? null : +cutAt.toFixed(3);
     r.split_agrees = cutAt == null ? null
-      : rules.every((x, i) => (x.run >= cutAt) === (i % 2 === best));
+      : chain.every((x, i) => (x.run >= cutAt) === (i % 2 === best));
   }
 
   const gaps = [];
@@ -122,7 +167,10 @@ for (const rec of det) {
   const sortedGaps = [...gaps].sort((a, b) => a - b);
   r.pitch = sortedGaps.length ? +sortedGaps[(sortedGaps.length / 2) | 0].toFixed(3) : null;
 
-  if (bounds.length < 3) { r.grade = 'FAILED'; r.why = 'only ' + bounds.length + ' slot boundaries'; }
+  if (bounds.length < 3) {
+    r.grade = 'FAILED'; r.why = 'only ' + bounds.length + ' slot boundaries';
+    r.rules.forEach(x => { x.kind = 'unclassified'; x.b = false; });
+  }
   else {
     const big = gaps.filter(g => g > r.pitch * (1 + GAP_TOL));
     const off = gaps.filter(g => Math.abs(g - r.pitch) > GAP_TOL * r.pitch);
