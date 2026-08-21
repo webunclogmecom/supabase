@@ -260,9 +260,11 @@ file is touched.
 reach for. **Before reporting any UI state as broken under automation, check `document.visibilityState`
 first.** If it is `hidden`, anything animated or transitioned is not evidence of anything.
 
-**D1c. A visit outside `derm.visits` renders "Loading..." forever (open, minor).** Visit 7280 is one
-of 32 completed visits excluded from that view (`derm_required = false`), and `/visits/7280` hangs on
-the placeholder rather than saying not found. Worth knowing when picking a test target:
+**D1c. A visit outside `derm.visits` renders "Loading..." forever. FIXED 2026-08-21.** Visit 7280 is
+one of **34** completed visits excluded from that view. 🛑 **NOT because `derm_required = false`,
+which this entry first claimed and which is WRONG** (386 not-required visits are in the view): the
+predicate excludes the two DUMP-SITE clients `000-DH` and `000-DP`. The view is correct and must not
+be widened. Worth knowing when picking a test target:
 `derm.visit_gdo_manual_eligibility` covers **1,089** completed visits while the app renders **1,057**,
 so eligibility can report `can_record_manual = true` for a visit the app cannot show at all.
 
