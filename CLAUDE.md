@@ -1375,63 +1375,88 @@ same class of misalignment and wants the same snap.
 > snapshots carrying bands whose source no longer exists (7 such rows fleet-wide). Improving the
 > data does not republish them.
 
-### ✅ A BAND EDGE CAN NOW BE CHECKED MECHANICALLY: `derm.v_band_edges_off_rule` (2026-08-21)
+### ✅ BAND GEOMETRY CAN NOW BE CHECKED MECHANICALLY: `derm.v_band_edges_off_rule` (2026-08-21)
 
 Fred: *"prioritise building the fleet-wide printed-rule detection pass."* Done, `2026-08-21_0736`
-+ `_0741`. **Check `derm.v_band_edges_off_rule` after any stamping session and after any band edit.
-Empty is healthy.** It is the band-geometry sibling of `derm.v_blackout_blocked_sheets`.
+`_0741` `_0811` `_0819`. **Check `derm.v_band_edges_off_rule` after any stamping session and after
+any band edit. Empty is healthy.** It is the band-geometry sibling of
+`derm.v_blackout_blocked_sheets`.
 
-**The property it tests, and it is the only sound automated one anyone has found:** a band edge
-sitting on a printed rule cannot be inside a line of text, because a printed rule is not text. That
-is the defect that put Wynd 28's street address into 226-JER's live Field Portal document
-(`2026-08-21_0651`), where the edge landed mid-line and the client below received the half below
-the cut.
+**Live: 542 of 626 served bands are provably one whole slot with no line of text bisected. 84 sit
+on the worklist across 31 pages, ordered by `severity`.**
 
-Live at ship: **580 of 626 served bands ON_RULE, 46 OFF across 13 pages, 0 UNSCANNED.**
+🛑 **TWO VERDICTS, AND SAFE IS THE CONJUNCTION. Reading either one alone is the mistake that
+shipped at 07:36 and was fixed at 08:11.**
 
-🛑 **`ON_RULE` IS NECESSARY, NOT SUFFICIENT. Do not read it as "this band is safe."** It proves no
-line of text is bisected. It does NOT prove the edge is on the *right* rule: a band two rules too
-tall swallows a whole neighbour and still reads ON_RULE. That is the `ticket-831047` shape (032-LG,
-12pp tall, containing all of Marie Blachere). Band height, the stamp position, and eyes are the
-checks for that.
+| | question | values |
+|---|---|---|
+| `edge_verdict` | is a line of TEXT bisected? | `ON_RULE` / `OFF_RULE` / `UNSCANNED` / `STALE` |
+| `slot_verdict` | does the band cover exactly ONE client's slot? | `ONE_SLOT` / `PART_SLOT` / `SPANS_MULTIPLE` / `ODD_SLOT` / `UNKNOWN` |
 
-🛑 **FOUR VERDICTS, BECAUSE SILENCE IS NOT A PASS.** `ON_RULE` / `OFF_RULE` / `UNSCANNED` (the
-detector has never run on that page) / `STALE` (the page image changed since the scan). Before this
-pass, rules existed for 30 of 160 pages, so **515 of 626 served bands sat on pages with zero
-detected rules** and the check's silence meant "unread", not "clean". `derm.page_rule_scans` holds
-one row per page the detector RAN on, whatever the outcome, which is what makes those two states
-distinguishable. A page graded `FAILED` there is known-undetectable; a page absent from it has
-never been looked at.
+The pass shipped with `edge_verdict` alone and its own comment saying "ON_RULE is necessary, not
+sufficient". **A caveat in a comment is not a control: 39 structurally wrong bands were passing it**,
+29 with an edge on a mid-slot divider or header bar and 10 containing a whole slot boundary. An edge
+on ANY printed rule is safe from bisecting text, and says nothing about which slot the band covers.
 
-**How detection works, in one line:** score each scanline by the LONGEST CONTIGUOUS HORIZONTAL RUN
-of dark pixels across the full form width. A printed rule is one unbroken run; a line of text inks
-as much but in many short pieces. Ink fraction, which the 2026-08-03 detector used, cannot tell
-them apart, which is why it failed on a light scan.
+⚠ `slot_verdict` uses the kind of the NEAREST rule whatever the distance, so a band can be
+`ONE_SLOT` + `OFF_RULE`: the right two boundaries, edges a few tenths off them. That combination is
+the lowest-risk group on the worklist.
 
-✅ **This also settles the mid-slot-divider ambiguity that blocked snapping** (the 2026-08-20 note
-below). Run ~1.00 = a slot boundary spanning the whole form; run ~0.41 = a mid-slot divider
-stopping at the first vertical column line. `page_row_rules.kind` records which, from the strict
-ALTERNATION of the two down the roster rather than from a threshold, because a fixed threshold gets
-four measured page shapes wrong.
+🛑 **`UNSCANNED` IS A DISTINCT STATE FROM CLEAN**, and `derm.page_rule_scans` is what makes them
+distinguishable: one row per page the detector RAN on, whatever the outcome. Before this pass, rules
+existed for 30 of 160 pages, so **515 of 626 served bands sat on pages with zero detected rules** and
+the check's silence meant "unread". A page graded `FAILED` there is known-undetectable; a page absent
+from it has never been looked at.
 
-⚠ **The tooling is `scripts/probes/derm_band_review/`, and its README lists the four automated
-scorers that were measured against known truth and REJECTED before this one. Read that before
-building a fifth.**
+**How detection works, in one line:** score each scanline by the LONGEST CONTIGUOUS HORIZONTAL RUN of
+dark pixels across the full form width. A printed rule is one unbroken run; a line of text inks as
+much but in many short pieces. Ink fraction, which the 2026-08-03 detector used, cannot separate
+them, which is why it failed on a light scan. Run ~1.00 = a slot boundary spanning the whole form;
+run ~0.41 = a mid-slot divider stopping at the first vertical column line. `page_row_rules.kind`
+records which, from the strict ALTERNATION of the two down the roster rather than from a threshold.
 
-⚠ **A confirmed practical limit: my own eyes were 0.66pp out.** `2026-08-21_0651` set a repaired
-edge to 33.500 from a ruler render, describing the printed rule as being at 33.30. The detector puts
-it at 34.156. The repair was safe (whitespace, nothing bisected) but off the rule by more than half a
-text line. **Use the detector for the value; use eyes to decide which edges are wrong.**
+⚠ **`SPANS_MULTIPLE` HAS ONE KNOWN FALSE POSITIVE, 4 of the current 14.** The bottom edge of the
+form's "B: Origination of Waste" header bar is a full-width printed line and is **indistinguishable
+from a slot boundary by any local measurement** — checked on `ticket-831047` p1 against the paper:
+run 0.990 and 2px thick, versus 0.991 and 3px for the real boundary below it. Its tell is positional:
+the interior boundary is both the first on the page and above the band's own stamp.
 
-⚠ **A trap that cost a whole worklist, and it generalises.** Detection is trimmed to the roster
-because the form's header and footer bars are full-width and are not slot boundaries. The margin was
-1.0pp, and on `window3-sheet5` p2 the first real boundary sits 1.08pp above the measured extent top,
-so the trim cut it and that band led the worklist with a 5.5pp gap that was **an artifact of the
-instrument**. Seven of twenty flagged pages were this. Removing the bars by shape from the rule list
-made it worse (fixed 7 edges, manufactured 23). **The fix was two lists: the edge check uses every
-rule found, because a header bar is a real printed rule; the classification uses the roster's
-alternating chain with the bars removed, because they break the alternation.** Same detections,
-different consumers, and a filter belongs to only one of them.
+**⚠ THE TOOLING IS `scripts/probes/derm_band_review/`, AND ITS README LISTS THE SCORERS THAT WERE
+MEASURED AGAINST KNOWN TRUTH AND REJECTED. Read it before building another one.** Four were rejected
+before the run-length one worked; a fifth (the stamp test, below) was built, measured and thrown away.
+
+🛑 **THE STAMP TEST DOES NOT DISCRIMINATE PHASE. DO NOT RE-ADD IT.** It looks like the obvious
+independent control: a person placed each stamp on that client's own row, so the correct boundary set
+holds exactly one stamp per slot (T1 from `2026-08-20_1610`). It agreed with the run-length phase on
+128 of 133 pages, which reads as corroboration. **It cannot work**: the interval between two
+consecutive mid-slot DIVIDERS also contains exactly one stamp, offset by half a pitch, so both phases
+score identically by construction and the differences were end-of-list artifacts. Adopting it flipped
+`ticket-832194` p1 from five clean bands to four `SPANS_MULTIPLE`. T1 discriminates only when each
+stamp is tested against ITS OWN assigned slot, and that assignment is what the classification is
+trying to establish.
+
+⚠ **`page_row_rules`' primary key includes `source` since `2026-08-21_0811`, and that is load-bearing.**
+Without it an upsert from a new generation overwrites the provenance of any hand-recorded rule at the
+same position, and a later `DELETE ... WHERE source = ...` removes it outright from a table with no
+audit trigger. That happened to 61 of the 198 hand-recorded rules on 2026-08-21. Nothing was lost
+only because the detector had re-found every position, which is why they collided in the first place.
+**The regression corpus would have quietly become the detector's own output, and recall would have
+kept improving for the wrong reason.**
+
+⚠ **A confirmed practical limit: my own eyes were 0.66pp out.** `2026-08-21_0651` set a repaired edge
+to 33.500 from a ruler render, describing the printed rule as being at 33.30. The detector puts it at
+34.156. The repair was safe (whitespace, nothing bisected) but off the rule by more than half a text
+line. **Use the detector for the value; use eyes to decide which edges are wrong.**
+
+⚠ **Two traps in the pipeline itself, both of which manufactured findings.** (1) The roster trim
+margin was 1.0pp and on `window3-sheet5` p2 the first real boundary sits 1.08pp above the measured
+extent top, so the trim cut it and that band led the worklist with a 5.5pp gap that was pure artifact.
+The fix was TWO LISTS: the edge check uses every rule found, because a header bar is a real printed
+rule; the classification uses the roster's alternating chain with the bars removed, because they
+break the alternation. (2) Peak refinement can move a detection by half the suppression distance, so
+one printed line was detected twice 0.32pp apart on 9 pages, and **in an alternating sequence a single
+duplicate flips every label below it** — two pages verified clean by eye were reporting bands that
+span multiple slots.
 
 ### 🛑 JOBBER NOTES ARE SCOPED TO THE **JOB**, NOT THE VISIT (Fred, 2026-08-18)
 
