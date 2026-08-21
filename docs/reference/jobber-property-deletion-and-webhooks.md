@@ -120,6 +120,30 @@ the Jobber GraphQL round-trip and the DB write inline, before responding. That i
 
 ---
 
+## 4b. ⚠ Subscribing needs FRED — the Developer Center is a SEPARATE login
+
+Attempted 2026-08-20 and stopped deliberately. `developer.getjobber.com` is **not** the same session as
+`secure.getjobber.com`: the work Chrome is signed into the Jobber app but NOT the Developer Center,
+and its login is a plain **email + password form** with no SSO and no "continue as the signed-in
+user". Typing credentials is out of bounds, so this step cannot be automated.
+
+**What Fred needs to do (about 30 seconds):**
+1. Log in at `developer.getjobber.com`, open the UnclogMe app, go to its webhooks.
+2. Add a webhook: topic **`PROPERTY_DESTROY`**, URL
+   `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-jobber`
+3. Optionally add `JOB_DESTROY`, `CLIENT_DESTROY`, `VISIT_DESTROY` at the same time — all are equally
+   blind today, and the handler dispatch already ignores unknown topics safely.
+
+**No new scope and no re-authorization**: the docs require only the matching read scope, and we
+already receive `PROPERTY_CREATE`/`PROPERTY_UPDATE`, so the property scope is already granted.
+
+**How to prove it worked afterwards** (do not trust the settings screen):
+delete a spare 112-YA property in the Jobber UI, then check that our row disappears and that a
+`PROPERTY_DESTROY` row appears in `webhook_events_log`. Orphan 1092 is still sitting in
+`public.properties` as a ready-made before/after case.
+
+---
+
 ## 5. Recommended plan, in order
 
 1. **Fix the 1-second breach first.** Acknowledge immediately, do the work in the background. Nothing
