@@ -1139,6 +1139,20 @@ it next must keep the same write-to-all-rows behaviour.
 - **`trg_aa_link_same_client`** — REJECTS a link whose visit belongs to a different client than the manifest (the root cause of the 25 cross-client mis-links remediated 07-06/07). The sanctioned co-loaded-ticket path is **`public.file_manifest_on_shared_ticket(white#, client_id, visit_id)`** (files the client's own sibling manifest inheriting the shared sheet docs + links, idempotent).
 - **`trg_ab_link_one_white`** — one white manifest # per visit (same-white sibling/consolidated-dump re-links allowed).
 - **`trg_ac_link_visit_not_after_dump`** — REJECTS a link whose `visit_date > dump_ticket_date + 1 day` (grease is pumped BEFORE the dump; +1-day grace for entry noise / overnight operating-date timing). Blocks the fuzzy-linker "over-attach the client's NEXT visit" class. NULL dump passes.
+  - 🛑 **IT GUARDS THE LINK, NOT THE INVARIANT. A LEGAL LINK CAN BECOME ILLEGAL LATER, AND NOTHING
+    RE-CHECKS IT (found 2026-08-24 while validating the LWT monthly endpoint).** The trigger is on
+    `manifest_visits` and fires when the LINK is written. `visits.visit_date` can move afterwards and
+    no path re-evaluates the pair. Worked example, straight from `audit.logs`: visit **6756** was
+    linked to ticket **830673** on 2026-07-22 when its date was 2026-07-19 against a 07-22 dump, so
+    the link was legal; on **2026-07-29 21:34 `contact@unclogme.com` rescheduled the visit to 07-29**
+    in the Visit Calendar, leaving the pickup **7 days AFTER** its own offload.
+  - **4 such rows exist in 2026** (visits 1265, 1496, 3942, 6756). Three are +1 day and sit inside the
+    grace; only 6756 is a real violation, and it is the only one the guard could never have caught.
+  - ⚠ **It surfaces on a REGULATOR-FACING document.** `derm.v_lwt_monthly_rows` serves these to the
+    LWT monthly filing, where they read as waste offloaded before it was collected. The endpoint does
+    NOT clamp or hide them: silently correcting a compliance date is worse than printing an odd one.
+    Whether to clamp is John's call, and it is question 3 in
+    `docs/specs/2026-08-24-lwt-monthly-endpoint-design.md`.
 - **`trg_zz_card_from_link`** (AFTER) — materializes the Stamp Studio card for the (ticket, client) on link.
 - `public.derm_manifests` has **`CHECK service_date <= dump_ticket_date`** (grease dumps after service, never before).
 - **`derm_manifests_dump_fields_present_chk` (NEW 2026-07-21): `dump_ticket_date` and `disposal_facility_id` may NOT be NULL.** Business rule (Fred): the DERM address manifest is only uploaded *after* it comes back from the city, by Diego, reading the finished paper sheet, so both values are printed on it at creation time. A manifest is born complete; linking visits is a separate later step. The three filing RPCs (`file_manifest`, `file_manifest_on_shared_ticket`, `derm.file_manifest_and_link`) now raise a readable **`22023`** first; a raw write gets **`23514`**. The constraint is deliberately **`NOT VALID`** (7 soft-deleted legacy rows carry a NULL facility) so `VALIDATE CONSTRAINT` fails **by design**, do not delete those rows to make it pass. ⚠ **Two traps when testing this:** (1) "0 NULLs today" proves nothing, that state was manufactured by a backfill of 387 rows on 2026-07-15 plus a *browser-side-only* form check; (2) `fn_derm_inherit_ticket_fields` silently heals a NULL from unanimous ticket siblings, so a random row always looks fine. **Test against a singleton ticket or a fresh number** (15 live rows are singletons) or you get a false pass. Migration: `docs/migrations/2026-07-21_derm_manifest_required_dump_fields.sql`.
@@ -1789,6 +1803,56 @@ When all 3 align with a DB visit, link it through `public.file_manifest_on_share
 Historical note: a one-off backfill, `scripts/sync/backfill_manifest_visits_via_at_visits_field.js`, walked every Airtable DERM record's `Visits` field, resolved the Airtable visit GID's date and matched the DB visit by client + date (±1 day). It caught 11 missed links on its first run (2026-05-22). **It is dead code: Airtable was retired 2026-07-24, so do not run it.**
 
 Historical note on why those links were missed: `webhook-airtable`'s link logic keyed on `GT Last Visit` ±2 days, and that field drifted by weeks on jobs invoiced after the fact (Chima 010-CS visit 1511 on 3/18 had a DERM dumped 4/24, Airtable's `GT Last Visit` showed 4/20, 33 days off). That feed is gone: the handler was severed 2026-07-21 and Airtable was fully retired 2026-07-24. Manifests are filed in the DERM Tracker app and linked explicitly, so there is no weekly backfill to run and no webhook left to patch.
+
+### 🛑 THE LWT MONTHLY ENDPOINT SCOPES PER **ACTIVITY**, NOT PER TICKET (2026-08-24)
+
+`GET /functions/v1/rpa-derm-monthly?month=YYYY-MM` (read-only, `x-rpa-key`, ETag) feeds Jonathan's
+Miami-Dade **Liquid Waste Transporter** monthly filing from `derm.v_lwt_monthly_rows`.
+
+The form covers *"all transportation activities where liquid waste was picked up **OR** offloaded in
+Miami-Dade County"*, and an ACTIVITY is a pickup. **Both obvious builds are wrong, in opposite
+directions**, and both were measured over 2026 before anything was written:
+
+| build | effect |
+|---|---|
+| filter on "offloaded in Dade" alone | **DROPS 11 tickets / 53 activities** (Broward offloads carrying Dade pickups) |
+| apply the OR at TICKET grain | **OVER-reports**, because **20 tickets mix counties** |
+
+Measured on August: ticket `311045` has **0 in-scope rows of 2**, `312024` **3 of 9**, `310590`
+**6 of 8**. So the predicate is `pickup county = 'Dade' OR the ticket offloaded in Miami-Dade`,
+evaluated per row. The asymmetry that makes it cheap: if the ticket offloaded in Dade then every
+pickup on it qualifies, so only Broward-offload tickets get trimmed.
+
+**The predicate lives in the VIEW (`in_scope`), never in the edge function.** That keeps it testable
+without HTTP and stops a second, divergent copy appearing the next time something needs it.
+
+🛑 **`pickup_date` IS `visits.visit_date`. NEVER `derm_manifests.service_date`**, which is a misnomer
+holding the DUMP date (496 of 532 manifests have the two identical). Serving it would make every
+pickup equal its own offload. **If you ever see that, service_date has crept back in** - the
+migration's VERIFY asserts against exactly this.
+
+⚠ **`gallons` is ALWAYS null and that is the contract, not a gap.** The filed quantity is the TRUCK
+CAPACITY resolved from the decal on the caller's side; we store no measured volume per load. `truck`
+and `truck_capacity_gallons` are served so the caller has the input. The fee arithmetic
+(`total gal x $0.00419`, **truncated** to cents, never rounded) lives only in John's generator, which
+is validated against filed county pages. Do not add a second implementation here.
+
+⚠ **Ticket number is `coalesce(white_manifest_number, yellow_ticket_number)`** and that is total:
+white 502 / yellow 157 / neither 0 / colliding 0, and the 502-157 split matches the disposal-facility
+split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather than a convention.
+`wwtp_ticket_number` and `wwtp_receipt_number` are populated **0** times: never read them.
+
+⚠ **County vocabulary differs by table.** `public.properties.county` stores `'Dade'`;
+`public.disposal_facilities.county` stores `'Miami-Dade'`. Comparing them naively matches nothing.
+
+⚠ **Month selects on the OFFLOAD date**, so a ticket is never split across two reports and a pickup
+can legitimately fall in the previous month (ticket 831710 offloaded 2026-08-02 carries a 2026-07-30
+pickup).
+
+**Validated 2026-08-24:** the endpoint's grouping was cross-checked against an independent SQL
+recomputation for **all 8 months of 2026** and agreed on tickets, rows and excluded counts every time.
+Full design, the six open questions for John, and the read-vs-write reasoning:
+[docs/specs/2026-08-24-lwt-monthly-endpoint-design.md](docs/specs/2026-08-24-lwt-monthly-endpoint-design.md).
 
 ---
 

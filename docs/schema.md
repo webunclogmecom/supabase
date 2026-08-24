@@ -629,6 +629,31 @@ Lovable app (`fp.unclogme.app`) via PostgREST under the anon role.
 | `customer.recommendations` | Visit-level recommendations (per `visit_recommendations`). |
 | `customer.scheduled_visits` | Upcoming scheduled visits per client. |
 
+### derm schema views
+
+⚠ **NOT AN EXHAUSTIVE LIST.** The `derm` schema holds **31** views as of 2026-08-24 (stamp-studio,
+manifest-health, GDO-report and compatibility views). Only the ones with a rule worth stating are
+documented here; enumerate the rest from `pg_class` rather than trusting this table to be complete.
+
+| View | Purpose |
+|---|---|
+| `derm.v_lwt_monthly_rows` | **One row per PICKUP ACTIVITY**, for Jonathan's Miami-Dade Liquid Waste Transporter monthly filing, served by `rpa-derm-monthly`. Added `2026-08-24_1730`. |
+
+**`v_lwt_monthly_rows`, the three things that will bite you:**
+
+1. **Its grain is the ACTIVITY, not the ticket.** `in_scope` = *this pickup was in Dade OR this
+   ticket offloaded in Dade*, and mixed-county tickets are real: 20 of them in 2026. Aggregating to
+   the ticket before filtering over-reports; filtering on the offload county alone under-reports by
+   11 tickets / 53 activities.
+2. **`pickup_date` is `visits.visit_date`.** `derm_manifests.service_date` is a misnomer holding the
+   DUMP date (496 of 532 manifests have the two identical), so reading it would make every pickup
+   equal its own offload. The migration's VERIFY asserts against exactly that.
+3. **`gallons` is deliberately absent** (always null). The filed quantity is the truck capacity from
+   the decal, resolved on the caller's side; we store no measured volume per load.
+
+Not granted to `anon` or `authenticated`: `service_role` only, because it is read through an edge
+function that authenticates with `x-rpa-key`.
+
 ### ops schema views (8 operational reporting views)
 
 Defined in [`../scripts/ops_views/`](../scripts/ops_views/). Read by the operations team for daily reporting.
