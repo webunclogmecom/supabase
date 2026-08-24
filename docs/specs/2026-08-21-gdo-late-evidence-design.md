@@ -1,6 +1,18 @@
 # Design spec: file the GDO report data first, attach the evidence image later
 
-**Status: PROPOSED. Nothing has been built. No code or migration has been applied.**
+**Status: SUPERSEDED 2026-08-24. The capability shipped, but NOT by this design.**
+Read [`2026-08-24-gdo-evidence-endpoint-plan.md`](2026-08-24-gdo-evidence-endpoint-plan.md) instead.
+
+🛑 **The approach changed, so do not build from section 3 of this file.** It proposed filling the gap
+through the **dedupe branch of `rpa-derm-result`** (re-POST the identical body with the image). What
+actually shipped is a **dedicated endpoint, `rpa-derm-evidence`**, because John asked for one and
+because a small body he does not have to reconstruct hours later is a better contract. The fill-once
+guarantee (`.is('screenshot_path', null)`) carried over unchanged and is the one idea from here that
+survived intact.
+⚠ Section 3(a) "stop the 400" is **still unbuilt**. Section 3(c), the staff-path fix, was **not needed**
+in the end: staff REPLACE evidence deliberately and that path stays as it is.
+⚠ Its section 7 questions are **obsolete**: John's own Slack messages answered three of the five before
+anything was built.
 Author: @Building Apps session, 2026-08-21. Awaiting Fred, and blocked on five questions for John.
 **Update 2026-08-21: defect D1 in section 6 is RESOLVED and its original diagnosis was refuted. The
 late-evidence design itself is still PROPOSED and unbuilt.**

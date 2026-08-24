@@ -1,7 +1,15 @@
 # GDO evidence endpoint: what to build, what the docs need, and what to ask John
 
 *Written 2026-08-24 by @Building Apps, at Fred's request, after reading John's two messages.*
-**Status: PROPOSAL. Nothing built.**
+**Status: SHIPPED 2026-08-24, same day.** `rpa-derm-evidence` is deployed and the format sniffing is
+live on `rpa-derm-result`. Commits `4e09259` / `c208a94`; Postman cloud re-imported `b7e141b`.
+
+🛑 **ONE OF THE THREE PROPOSED CHANGES WAS NOT BUILT: section 5b's "stop the 400" is still OPEN.**
+`rpa-derm-result` still returns `400 screenshot_or_screenshot_missing_reason_required` when a POST
+carries neither a screenshot nor a reason (index.ts line 152). **That does not block the feature** and
+was never the blocker: John sends an explicit `screenshot_missing_reason`, which has always been
+accepted, and the 400 only fires when BOTH are absent. It remains a safety net for a bot bug, and it
+is deliberately still on the table rather than quietly dropped.
 
 > **This supersedes [`2026-08-21-gdo-late-evidence-questions-for-john.md`](2026-08-21-gdo-late-evidence-questions-for-john.md).**
 > That draft asked five questions. **John's messages already answer three of them**, and its premise

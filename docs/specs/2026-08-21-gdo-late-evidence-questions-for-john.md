@@ -1,7 +1,12 @@
 # Draft message to John: GDO Report Bot, data first and evidence image later
 
-**Status: DRAFT, NOT SENT.** Written 2026-08-24 by @Building Apps at Fred's request. Nothing has been
-sent to John through any channel. Fred picks the channel and sends it.
+🛑 **Status: SUPERSEDED AND NEVER SENT. DO NOT SEND THIS.** Use
+[`2026-08-24-gdo-evidence-endpoint-message-to-john.md`](2026-08-24-gdo-evidence-endpoint-message-to-john.md).
+
+Its premise was wrong: it treats John as undecided and asks five questions, but his own Slack messages
+had already answered three of them, and he was blocked on us rather than on any answer. The endpoint
+he was waiting for shipped on 2026-08-24. Kept only as the record of what was asked before those
+messages were read.
 
 **Why it exists:** [`2026-08-21-gdo-late-evidence-design.md`](2026-08-21-gdo-late-evidence-design.md)
 is PROPOSED and unbuilt, and it is blocked on exactly these five answers. Question 4 is the urgent one:

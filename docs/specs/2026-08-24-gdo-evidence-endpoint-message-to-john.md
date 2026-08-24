@@ -72,12 +72,13 @@ https://raw.githubusercontent.com/webunclogmecom/supabase/main/postman/gdo-repor
 - **Question 4 is the one I would watch.** No successful filing since 2026-08-17 plus four login
   failures on one visit is consistent with the bot being blocked at the portal, which matters more
   right now than the endpoint does.
-- 🛑 **LINK GITHUB, NOT THE POSTMAN CLOUD WORKSPACE.** The collection was updated in the REPO. Nothing
-  was pushed to `fred-532d2ca4-3599912.postman.co`, so the cloud workspace still serves the OLD
-  three-folder collection with no evidence folder. Sending John the workspace link would show him a
-  collection that contradicts the message. Both GitHub URLs above were verified 200 and confirmed to
-  contain the new content before being put in front of him.
-  ⚠ **Open item for Fred: re-import the JSON into the Postman workspace** so the two stop drifting.
+- ✅ **The Postman cloud workspace is now IN SYNC** (re-imported 2026-08-24, 4 folders verified in the
+  tree). The message still links GitHub rather than the workspace, and that is deliberate: the
+  workspace is on the Free plan with 1 seat and other members are read-only, so John may not be able
+  to open it. The raw GitHub URL works for him regardless. Both links were verified 200 and confirmed
+  to contain the new content before being put in front of him.
+  ⚠ **`rpaBotKey`'s Current value must be re-pasted by Fred** after the fresh import; it lives in
+  Postman, never in the JSON, so every request 401s until he does.
 - **Reply in his thread** rather than posting fresh, so it sits with his question about the date.
 - Deployed today: `rpa-derm-evidence` (new), `rpa-derm-result` (format sniffing), `config.toml`, the
   Postman README and collection, plus corrections to `integration.md` and the roadmap. Commits
