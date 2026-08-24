@@ -638,6 +638,7 @@ documented here; enumerate the rest from `pg_class` rather than trusting this ta
 | View | Purpose |
 |---|---|
 | `derm.v_lwt_monthly_rows` | **One row per PICKUP ACTIVITY**, for Jonathan's Miami-Dade Liquid Waste Transporter monthly filing, served by `rpa-derm-monthly`. Added `2026-08-24_1730`. |
+| `derm.v_manifest_link_date_conflicts` | Manifest links that assert something physically impossible: the pickup is dated after its own offload, or the visit backing it is not marked completed. `conflict_kind` distinguishes them. Added `2026-08-24_1510`. |
 
 **`v_lwt_monthly_rows`, the three things that will bite you:**
 
@@ -653,6 +654,14 @@ documented here; enumerate the rest from `pg_class` rather than trusting this ta
 
 Not granted to `anon` or `authenticated`: `service_role` only, because it is read through an edge
 function that authenticates with `x-rpa-key`.
+
+**`v_manifest_link_date_conflicts`** is the detector for the class of bug where a link is legal when
+written and becomes impossible later. `trg_ac_link_visit_not_after_dump` fires only on writes to
+`manifest_visits` but reads `visits.visit_date` and `derm_manifests.dump_ticket_date`, so either
+source moving afterwards breaks the invariant silently. Its `visit_not_completed` kind is the only
+thing that catches an automated reconciler reversing a completion on a linked visit, which is how
+ticket 830673 / visit 6756 broke on 2026-07-29. `rpa-derm-monthly` surfaces it as
+`data_quality.conflicts`; the rows are never filtered out of the report. Same grant: `service_role` only.
 
 ### ops schema views (8 operational reporting views)
 

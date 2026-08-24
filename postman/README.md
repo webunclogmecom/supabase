@@ -352,6 +352,38 @@ data. `truck` and `truck_capacity_gallons` are served so you have the input. The
 (`total gal × $0.00419`, **truncated** to cents, not rounded) stays in your generator, which is
 validated against filed pages.
 
+### 🛑 `data_quality` — read this before you file
+
+**Added 2026-08-24.** Every response carries a `data_quality` block:
+
+```jsonc
+"data_quality": {
+  "checked": true,          // did the check actually run? see the warning below
+  "conflict_count": 1,
+  "conflicts": [{
+    "visit_id": 6756, "ticket_number": "830673",
+    "conflict_kind": "pickup_after_offload",   // or "visit_not_completed", or "both"
+    "days_after_offload": 7, "violates_guard": true,
+    "client_code": "175-PV",
+    "offload_date": "2026-07-22", "pickup_date": "2026-07-29",
+    "visit_status": "completed"
+  }]
+}
+```
+
+and the affected row also carries an inline `anomaly` object (it is `null` on every healthy row).
+
+A conflict means the activity **contradicts itself**: the pickup is dated after its own offload, or
+the visit backing it is not marked completed. Grease is pumped before it is dumped, so one of the two
+records is wrong. **Check it against the paper manifest before filing.**
+
+**These rows are still returned, never filtered or corrected.** Silently clamping a compliance date is
+worse than printing an odd one, and it is your call, not ours. As of 2026-08-24 there are 4 such rows
+in all of 2026 — one each in January, March, May and July.
+
+⚠ **`checked: false` means the check itself failed**, so an empty `conflicts` list proves nothing.
+`conflict_count` is `null` in that case. Do not read zero as an all-clear without `checked: true`.
+
 **Caching:** every response carries a weak `ETag`. Send it back as `If-None-Match` and a repeated poll
 for the same month costs a `304`.
 

@@ -14,7 +14,7 @@ Per-source integration details: webhook endpoints, signatures, payloads, registr
 | `rpa-derm-queue` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-queue` | GDO Online Reporting bot (GET; `x-rpa-key`) | reads `v_derm_portal_queue` / `v_derm_portal_dryrun` (code-27 VISITS to report) | Live 2026-07-21; contract in `docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md` |
 | `rpa-derm-result` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result` | GDO Online Reporting bot (POST; `x-rpa-key`) | derm_portal_submissions (visit-keyed) + `rpa-evidence` bucket (private) | Live 2026-07-21; idempotent on (visit_id, run_id) |
 | `rpa-derm-evidence` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-evidence` | GDO Online Reporting bot (POST; `x-rpa-key`) | fills `derm_portal_submissions.screenshot_path` + `rpa-evidence` bucket | Live 2026-08-24; **fill-once** (`.is(screenshot_path, null)`), never replaces evidence |
-| `rpa-derm-monthly` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-monthly` | LWT monthly report (GET; `x-rpa-key`) | reads `derm.v_lwt_monthly_rows` | Live 2026-08-24; **read-only**, no lease, ETag; scope evaluated per ACTIVITY |
+| `rpa-derm-monthly` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-monthly` | LWT monthly report (GET; `x-rpa-key`) | reads `derm.v_lwt_monthly_rows` | Live 2026-08-24; **read-only**, no lease, ETag; scope evaluated per ACTIVITY; returns `data_quality.conflicts` from `derm.v_manifest_link_date_conflicts` (check `checked` before trusting an empty list) |
 
 Every function:
 - Accepts `POST` with JSON body

@@ -1138,21 +1138,56 @@ it next must keep the same write-to-all-rows behaviour.
 `public.manifest_visits` is guarded by BEFORE triggers that apply to **every** writer (apps, RPCs, scripts, backfills):
 - **`trg_aa_link_same_client`** — REJECTS a link whose visit belongs to a different client than the manifest (the root cause of the 25 cross-client mis-links remediated 07-06/07). The sanctioned co-loaded-ticket path is **`public.file_manifest_on_shared_ticket(white#, client_id, visit_id)`** (files the client's own sibling manifest inheriting the shared sheet docs + links, idempotent).
 - **`trg_ab_link_one_white`** — one white manifest # per visit (same-white sibling/consolidated-dump re-links allowed).
-- **`trg_ac_link_visit_not_after_dump`** — REJECTS a link whose `visit_date > dump_ticket_date + 1 day` (grease is pumped BEFORE the dump; +1-day grace for entry noise / overnight operating-date timing). Blocks the fuzzy-linker "over-attach the client's NEXT visit" class. NULL dump passes.
-  - 🛑 **IT GUARDS THE LINK, NOT THE INVARIANT. A LEGAL LINK CAN BECOME ILLEGAL LATER, AND NOTHING
-    RE-CHECKS IT (found 2026-08-24 while validating the LWT monthly endpoint).** The trigger is on
-    `manifest_visits` and fires when the LINK is written. `visits.visit_date` can move afterwards and
-    no path re-evaluates the pair. Worked example, straight from `audit.logs`: visit **6756** was
-    linked to ticket **830673** on 2026-07-22 when its date was 2026-07-19 against a 07-22 dump, so
-    the link was legal; on **2026-07-29 21:34 `contact@unclogme.com` rescheduled the visit to 07-29**
-    in the Visit Calendar, leaving the pickup **7 days AFTER** its own offload.
-  - **4 such rows exist in 2026** (visits 1265, 1496, 3942, 6756). Three are +1 day and sit inside the
-    grace; only 6756 is a real violation, and it is the only one the guard could never have caught.
+- **`trg_ac_link_visit_not_after_dump`** — REJECTS a link whose `visit_date > dump_ticket_date + 1 day` (grease is pumped BEFORE the dump; +1-day grace for dump-ticket entry noise — **NOT for overnight shifts**, which move `visit_date` EARLIER and can never make a visit lag its dump). Blocks the fuzzy-linker "over-attach the client's NEXT visit" class. NULL dump passes.
+  - 🛑 **IT GUARDS THE LINK, NOT THE INVARIANT. A LEGAL LINK BECOMES ILLEGAL WHEN EITHER
+    SOURCE TABLE MOVES, AND NOTHING RE-CHECKS IT** (found 2026-08-24 validating the LWT endpoint).
+    The trigger fires on `manifest_visits` but reads `visits.visit_date` AND
+    `derm_manifests.dump_ticket_date`. Both can move afterwards.
+  - ⚠ **THE OBVIOUS DIAGNOSIS IS WRONG, AND IT COST ME A MIGRATION DRAFT.** Comparing the link
+    timestamp to the visit's CURRENT `completed_at` says "the link was made against a pending visit".
+    It was not. `completed_at` had been rewritten twice; the value in the row today is the SECOND
+    completion. Reconstructing `visit_status` from `audit.logs` **at the link instant** shows the
+    visit WAS completed when linked. **A "state at time T" read from a mutable column is a
+    measurement of NOW. Rebuild it from the audit trail or do not claim it.**
+  - **What actually happened to visit 6756 / ticket 830673:** linked 2026-07-22 while dated 07-19 and
+    marked completed, so every guard correctly passed. On **2026-07-29 13:46
+    `jobber-daily-completion-reconcile` REVERSED the completion** (status → scheduled,
+    `completed_at` → NULL) because the job had not been done — a Jobber note on 07-20 04:41 reads
+    *"Couldn't compete the job because the PTO had broken"*. **That** is when the link became false,
+    eight hours before the date moved at all.
+  - 🛑 **SO THE VISITS SIDE IS DELIBERATELY NOT BLOCKED, AND DO NOT "FIX" THAT.** The writer is
+    an automated reconciler recording the TRUTH that the service never happened; a RAISE there would
+    force the DB to keep asserting a service that did not occur, and would stall a cron into
+    `public.sync_log`, **which nothing reads** (measured: 3 health checks sitting in `attention`
+    right now, `calendar-push-health` continuously since 2026-06-27). Also 99.35% of Calendar
+    `visit_date` writes go through **`public.ripple_reschedule_visit`**, which moves a CHAIN
+    (avg 5.67 rows, up to 29) — a table-level RAISE aborts the whole ripple. If a hard check is
+    ever wanted, it belongs **inside that RPC**, which already has a `p_dry_run` branch to pre-flight it.
+  - **Shipped 2026-08-24** (`2026-08-24_1510_manifest_link_completed_visit_guard.sql`):
+    **`trg_ad_link_visit_completed`** (no linking a visit that has not happened — defence in depth,
+    it would NOT have caught 6756, costs 0 of 690), **`trg_ae_dump_date_keeps_links_valid`** (the
+    manifest side; also closes the NULL→value hole `trg_ac` allows), and
+    **`derm.v_manifest_link_date_conflicts`** — the detector, and the only thing covering the
+    un-completion path. `rpa-derm-monthly` now returns `data_quality.conflicts` + a per-row
+    `anomaly`, so the report cannot be filed unknowingly. ⚠ Read `data_quality.checked`: `false`
+    means the overlay query failed and an empty list proves nothing.
+  - **4 conflicting rows exist** (visits 1265, 1496, 3942, 6756); only 6756 breaks the +1 grace.
+    ⚠ **The other three are probably the SAME bug, not overnight shifts.** For each, the other
+    DERM-required visits serviced that day went onto a LATER ticket and only the flagged one was
+    pulled backwards. And the grace's stated justification does not hold: it cites a 06:00-ET
+    operating-date cutoff, but `fn_reconcile_visit_operating_date` was rewritten 2026-07-02 (five days
+    BEFORE the guard) to use the plain ET clock date, per Fred's decision that the operating night
+    "must NOT move the date" — measured, 1149/1149 visits match the ET clock date and 0 of 320
+    early-AM visits are pulled back. **Shrinking the grace to 0 is the open recommendation**; it would
+    reclassify those three as violations, so it is Fred's call, not a silent change.
   - ⚠ **It surfaces on a REGULATOR-FACING document.** `derm.v_lwt_monthly_rows` serves these to the
-    LWT monthly filing, where they read as waste offloaded before it was collected. The endpoint does
-    NOT clamp or hide them: silently correcting a compliance date is worse than printing an odd one.
-    Whether to clamp is John's call, and it is question 3 in
-    `docs/specs/2026-08-24-lwt-monthly-endpoint-design.md`.
+    LWT monthly filing, where they read as waste offloaded before it was collected. NOT clamped or
+    hidden: silently correcting a compliance date is worse than printing an odd one.
+  - 🛑 **6756 IS STILL OPEN AND THE DATABASE WAS NOT CHANGED.** The paper manifest DOES list
+    175-PV, and the load was dumped 00:52 on 07-22 — two days after the PTO failure — so the route
+    may have been re-run and Pura Vida genuinely pumped. Evidence, both readings, and the exact
+    remediation SQL for each: `docs/audits/2026-08-24_manifest_link_830673_visit_6756.md`.
+    It needs Mark Noltion and Diego, not a DB edit.
 - **`trg_zz_card_from_link`** (AFTER) — materializes the Stamp Studio card for the (ticket, client) on link.
 - `public.derm_manifests` has **`CHECK service_date <= dump_ticket_date`** (grease dumps after service, never before).
 - **`derm_manifests_dump_fields_present_chk` (NEW 2026-07-21): `dump_ticket_date` and `disposal_facility_id` may NOT be NULL.** Business rule (Fred): the DERM address manifest is only uploaded *after* it comes back from the city, by Diego, reading the finished paper sheet, so both values are printed on it at creation time. A manifest is born complete; linking visits is a separate later step. The three filing RPCs (`file_manifest`, `file_manifest_on_shared_ticket`, `derm.file_manifest_and_link`) now raise a readable **`22023`** first; a raw write gets **`23514`**. The constraint is deliberately **`NOT VALID`** (7 soft-deleted legacy rows carry a NULL facility) so `VALIDATE CONSTRAINT` fails **by design**, do not delete those rows to make it pass. ⚠ **Two traps when testing this:** (1) "0 NULLs today" proves nothing, that state was manufactured by a backfill of 387 rows on 2026-07-15 plus a *browser-side-only* form check; (2) `fn_derm_inherit_ticket_fields` silently heals a NULL from unanimous ticket siblings, so a random row always looks fine. **Test against a singleton ticket or a fresh number** (15 live rows are singletons) or you get a false pass. Migration: `docs/migrations/2026-07-21_derm_manifest_required_dump_fields.sql`.

@@ -125,6 +125,33 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'month_too_large', max_rows: MAX_ROWS }, 400)
   }
 
+  // ---- data-quality overlay ----------------------------------------------------
+  // Rows that assert something physically impossible still SHIP, deliberately: this
+  // report feeds a county filing, and silently clamping or hiding a compliance date
+  // is worse than printing an odd one. But John must not file one unknowingly, so
+  // every conflict is named in the response and flagged on the row it affects.
+  //
+  // ⚠ .schema('derm') again. Same load-bearing call as the query above.
+  // ⚠ Fetched WITHOUT a date filter and matched by visit_id in TS on purpose: the
+  //   view's visit_not_completed conflicts can carry a NULL offload_date, and a
+  //   .gte('offload_date', ...) would silently drop exactly those. The table is tiny
+  //   (4 rows on 2026-08-24); the cap below is a runaway guard, not a page size.
+  const MAX_CONFLICTS = 500
+  const { data: conflictData, error: conflictError } = await sb
+    .schema('derm')
+    .from('v_manifest_link_date_conflicts')
+    .select('visit_id, ticket_number, conflict_kind, days_after_offload, violates_guard, client_code, offload_date, pickup_date, visit_status')
+    .limit(MAX_CONFLICTS)
+
+  // A failure here must NOT fail the report. Report the degradation instead of
+  // returning a clean-looking body that quietly checked nothing.
+  if (conflictError) console.error('conflict overlay failed:', conflictError.message)
+  const conflictAvailable = !conflictError
+  const conflictByVisit = new Map<number, Record<string, unknown>>()
+  for (const c of (conflictData ?? []) as Record<string, any>[]) {
+    conflictByVisit.set(Number(c.visit_id), c)
+  }
+
   // ---- group rows into tickets -------------------------------------------------
   type Row = Record<string, any>
   const byTicket = new Map<string, Row[]>()
@@ -181,9 +208,28 @@ Deno.serve(async (req: Request) => {
         // caller-side. We store no measured volume, so a value here would be a guess.
         gallons: null,
         visit_id: r.visit_id,
+        // null on a healthy row. Present = this activity is internally contradictory
+        // and should be checked against the paper manifest before it is filed.
+        anomaly: conflictByVisit.get(Number(r.visit_id))
+          ? {
+            kind: conflictByVisit.get(Number(r.visit_id))!.conflict_kind,
+            days_after_offload: conflictByVisit.get(Number(r.visit_id))!.days_after_offload,
+            note: 'pickup is dated after its own offload, or the visit is not marked completed - grease is pumped before it is dumped, so one of the two records is wrong',
+          }
+          : null,
       })),
     })
   }
+
+  // Only conflicts that actually appear in THIS month's returned rows. A conflict on
+  // some other month is not this report's problem and would just be noise.
+  const shownVisitIds = new Set<number>()
+  for (const t of tickets) {
+    for (const r of t.rows as Record<string, any>[]) shownVisitIds.add(Number(r.visit_id))
+  }
+  const monthConflicts = [...conflictByVisit.values()].filter((c) =>
+    shownVisitIds.has(Number(c.visit_id))
+  )
 
   const body = {
     month,
@@ -194,6 +240,15 @@ Deno.serve(async (req: Request) => {
     ticket_count: tickets.length,
     row_count: tickets.reduce((n, t) => n + (t.rows as unknown[]).length, 0),
     excluded_rows: excludedTotal,
+    // Nothing here is filtered out of `tickets`. This is a heads-up, not a filter:
+    // check these against the paper manifest before filing.
+    // `checked: false` means the overlay query itself failed, so an empty `conflicts`
+    // list proves nothing. Never read conflict_count === 0 as an all-clear without it.
+    data_quality: {
+      checked: conflictAvailable,
+      conflict_count: conflictAvailable ? monthConflicts.length : null,
+      conflicts: monthConflicts,
+    },
     tickets,
   }
 
