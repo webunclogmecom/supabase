@@ -41,7 +41,11 @@ Same `x-rpa-key` as the other two.
 
 *One change on our side you should know about.* We now detect the image format from the bytes. `rpa-derm-result` used to store every image as `.jpg` with `image/jpeg` regardless of what it actually was. That was harmless while you were sending portal screenshots, which really were JPEG, but *the rendered email is PNG*, so from your first post it would have been stored mislabelled. Both endpoints now store the real extension and content type. *Send the email render exactly as it is and don't re-encode it.* JPEG and PNG are both fine.
 
-Postman has a new folder, *"4. Evidence (late attach)"*, that runs top to bottom against dry-run data: post a result with no image, attach it, attach again to see the fill-once no-op, then attach to an unknown run to see the 404. Run *"1. Queue - dry-run"* first so the visit id gets captured.
+*The docs are updated.* The API reference now has a section *4b* covering this endpoint end to end, the request body, every response, the full error list, and the result-before-evidence ordering. It also has the corrected rollout-gate status and a note on the image-format change:
+https://github.com/webunclogmecom/supabase/blob/main/postman/README.md
+
+The Postman collection has a new folder, *"4. Evidence (late attach)"*, that runs top to bottom against dry-run data: post a result with no image, attach it, attach again to see the fill-once no-op, then attach to an unknown run to see the 404. Run *"1. Queue - dry-run"* first so the visit id gets captured. Import the current version from here:
+https://raw.githubusercontent.com/webunclogmecom/supabase/main/postman/gdo-reporting-bot.postman_collection.json
 
 *A few things I'd still like from you:*
 
@@ -66,6 +70,12 @@ Postman has a new folder, *"4. Evidence (late attach)"*, that runs top to bottom
 - **Question 4 is the one I would watch.** No successful filing since 2026-08-17 plus four login
   failures on one visit is consistent with the bot being blocked at the portal, which matters more
   right now than the endpoint does.
+- 🛑 **LINK GITHUB, NOT THE POSTMAN CLOUD WORKSPACE.** The collection was updated in the REPO. Nothing
+  was pushed to `fred-532d2ca4-3599912.postman.co`, so the cloud workspace still serves the OLD
+  three-folder collection with no evidence folder. Sending John the workspace link would show him a
+  collection that contradicts the message. Both GitHub URLs above were verified 200 and confirmed to
+  contain the new content before being put in front of him.
+  ⚠ **Open item for Fred: re-import the JSON into the Postman workspace** so the two stop drifting.
 - **Reply in his thread** rather than posting fresh, so it sits with his question about the date.
 - Deployed today: `rpa-derm-evidence` (new), `rpa-derm-result` (format sniffing), `config.toml`, the
   Postman README and collection, plus corrections to `integration.md` and the roadmap. Commits
