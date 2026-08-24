@@ -177,8 +177,32 @@ chip from `ops.v_calendar_push_health`. The single flagged row is visit 7318, da
 five months out, on a grid people navigate by month. It technically works and cannot be seen. Worth
 remembering before adding a second surface with the same property.
 
-**Threshold decided by Fred, 2026-08-24: post only when something changes.** Silence means nothing
-changed. Today that would have posted exactly once — the new blocked sheet that appeared and cleared.
+## DECIDED AND SHIPPED, 2026-08-24
+
+**Threshold, Fred:** post only when something changes. Silence means nothing changed. Today that
+would have posted exactly once, for the blocked sheet that appeared and cleared.
+
+**Channel, Fred:** a Slack **incoming webhook** to the **#tests** channel of the GDO Online Report
+Slack app. Note this is a *test* destination; moving it to a real channel is a change to the secret,
+not to any file.
+
+**Shipped:** `scripts/alerts/health_digest.js` + `.github/workflows/health-digest.yml`, reading
+`ops.v_health_status` and posting via `SLACK_HEALTH_WEBHOOK_URL`. Runs 17:00 UTC, after all four
+checks have written (the last is `blackout-health` at 08:00 ET).
+
+🛑 **IT WILL NOT RUN UNTIL SOMEONE ADDS THE GITHUB ACTIONS SECRET** `SLACK_HEALTH_WEBHOOK_URL`.
+The webhook is a secret and this repo is PUBLIC, so it is in `.env` locally and nowhere in the repo.
+Verified before committing that neither new file nor any tracked file contains it.
+
+**Why John's bot is not the home for this**, since it was considered: his bot already posts a daily
+8:00 AM EST digest and that is a *free liveness signal we should use* — if it does not arrive, the
+container is down. But it cannot carry the health verdict itself, because **a bot cannot report its
+own death**: `rpa-derm-health` exists partly to notice when that bot stops, and routing the verdict
+through it makes a dead bot produce silence, which is indistinguishable from health. Three of the
+four checks are also outside its domain, and it runs on an outside contractor's container.
+
+**An empty `ops.v_health_status` posts loudly rather than staying quiet.** If the view breaks or the
+crons stop writing, silence would look exactly like health, which is the failure this exists to fix.
 
 ---
 
