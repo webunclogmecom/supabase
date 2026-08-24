@@ -108,10 +108,17 @@
 --   public.sync_log. Swept every file in the workspace against a positive control;
 --   every hit is a doc, a migration, or a WRITER. Three health checks are sitting in
 --   'attention' right now and no human is being told:
---     calendar-push-health   49 attention days, continuous since 2026-06-27
---     rpa-derm-health        10 attention days since 2026-08-15
+--     calendar-push-health   49 attention days since 2026-06-27 (NOT consecutive - it has
+--                             also gone 'ok' 10 times; longest run 29 days, current run 6)
+--     rpa-derm-health        26 consecutive 'ok', then 10 consecutive 'attention' from
+--                             2026-08-15 - a datable regime change, not noise
 --     blackout-health         6 attention days since 2026-08-19, one sheet blocked
 --                             6d21h with 10 clients seeing an empty eManifest
+--   ⚠ CORRECTED 2026-08-24: an earlier version of this header said calendar-push-health had
+--     been in attention "continuously" since 2026-06-27. It has not. That came from reading
+--     min(started_at) over the attention rows as if it were the start of an unbroken run.
+--     min() of a filtered set is not a run length - measure runs with a gaps-and-islands
+--     query, not with min/max.
 --   Adding a fifth alarm to an unread queue is not a fix. This migration creates the
 --   instrument; SURFACING it belongs where a human already looks -- the
 --   rpa-derm-monthly response, so John cannot file blind. That is a separate,

@@ -1182,8 +1182,14 @@ it next must keep the same write-to-all-rows behaviour.
   - 🛑 **SO THE VISITS SIDE IS DELIBERATELY NOT BLOCKED, AND DO NOT "FIX" THAT.** The writer is
     an automated reconciler recording the TRUTH that the service never happened; a RAISE there would
     force the DB to keep asserting a service that did not occur, and would stall a cron into
-    `public.sync_log`, **which nothing reads** (measured: 3 health checks sitting in `attention`
-    right now, `calendar-push-health` continuously since 2026-06-27). Also `public.ripple_reschedule_visit` takes
+    `public.sync_log`, **which nothing reads**. Measured 2026-08-24: 3 health checks in
+    `attention` right now; `rpa-derm-health` has been so for 10 consecutive days after 26
+    consecutive clean ones. ⚠ And `attention` is structurally unusable as a signal, not merely
+    unread: it carries no severity and no dedup, so **89% of the last 7 days' attention rows are
+    one source** (`jobber_visit_drift`, 161 of 180), which re-reported the SAME unresolvable visit
+    every 30 minutes. Across its history 4,408 item-reports describe **105 distinct problems**.
+    Health verdicts are **138 of 34,849 sync_log rows (0.40%)**, buried under 21,863 Jobber poll
+    records - `sync_log` is a sync JOURNAL and verdicts were put in the wrong table. Also `public.ripple_reschedule_visit` takes
     3,826 of the 4,569 `visit_date` writes and moves a CHAIN (avg 5.67 rows, up to 29), so a
     table-level RAISE aborts the whole ripple.
   - ⚠ **DO NOT "JUST PUT THE CHECK IN `ripple_reschedule_visit`" — IT IS THE ONE PLACE THE CHECK
