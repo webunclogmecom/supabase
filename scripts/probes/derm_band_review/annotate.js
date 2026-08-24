@@ -29,7 +29,8 @@ const pages = all.slice(OFFSET, OFFSET + COUNT).map(p => ({
   })),
 }));
 
-const OUT = 'C:\\\\Users\\\\FRED\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-FRED-Desktop-Virtrify-Yannick-Claude-Supabase\\\\2982e963-15ef-4634-9336-cb0d4dcad2a2\\\\scratchpad\\\\sweep';
+const OUT = (process.env.DERM_RENDER_DIR || 'C:/Users/FRED/AppData/Local/Temp/claude/render')
+  .split(String.fromCharCode(92)).join('/');
 
 const body = `async (page) => {
   const PAGES = ${JSON.stringify(pages)};
@@ -126,7 +127,7 @@ const body = `async (page) => {
     return notes;
   }, PAGES);
 
-  await page.locator('#strip').screenshot({ path: '${OUT}' + '\\\\${TAG}.png' });
+  await page.locator('#strip').screenshot({ path: '${OUT}' + '/${TAG}.png' });
   return '${TAG}.png\\n' + log.join('\\n');
 }`;
 
