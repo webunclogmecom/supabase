@@ -1249,6 +1249,61 @@ gets **one** stamp, on the first of its printed rows (`is_first_row`), because `
 holds one card per client per ticket. If the intent is that every permitted facility on a shared
 trap is marked, the data model cannot express it today.
 
+### 🛑 `stamp_page` IS AN ORDINAL INTO A LIST THAT MOVES. THE WITNESS IS WHAT MAKES IT SAFE (2026-08-24)
+
+Fred deleted one address image of ticket-833395 in the DERM Tracker. The Stamp Studio then showed
+**"3/3 stamped" over a blank sheet**: the counter reads `stamp_placed_at`, the renderer reads
+`stamp_page`, and only the second one had broken.
+
+**The mechanism.** `derm.address_row_map.stamp_page`, `derm.address_sheet_scan_reads.page` and
+`derm.address_sheet_row_reads.page` are all **ordinals into `derm.ticket_page_images(white#)`**, a
+list recomputed from the ticket's LIVE manifest images on every call. Remove an image and every
+later ordinal slides down. `ticket_page_images`' own comment says OCR pages are appended
+*"UNCONDITIONALLY in page order (existing stamp_page indexes must never move)"* and then discloses
+the staleness gate two sentences later; the two halves of that comment contradict each other, and
+the gate wins.
+
+🛑 **THE BLANK PAGE IS THE MILD CASE.** Deleting the LAST image leaves an ordinal past the end and
+the document goes blank, which is loud. Deleting a **MIDDLE** image leaves every ordinal IN RANGE
+pointing at the WRONG page, and every bound check reads clean. `stamp_page` is `effective_page` in
+`derm.v_stamp_row_bands` and therefore the page selector in `derm.fn_blackout_targets`, so that
+produces a **customer-facing redaction built from the wrong page** rather than a blank card.
+
+✅ **THE FIX: `derm.address_row_map.stamp_image_url`**, the image the stamp was placed on, captured
+at placement time by `trg_ac_stamp_witness`, with `derm.fn_reconcile_stamp_pages(white#)` putting
+the ordinal back from it. A trigger on `public.derm_manifests` fires it on the exact edit the DERM
+Tracker makes. Deleting a page now re-points the surviving stamps automatically.
+- The witness is captured by **one BEFORE trigger on the table, not by editing the five writers**
+  (`set_stamp_position`, `auto_place_page`, `trg_autoplace_generated`, the resolver, and the next
+  one). Every writer is covered and no body was retyped -- see the `CREATE OR REPLACE` rule above.
+- 🛑 **It writes ONLY on a fresh placement** (INSERT, or `stamp_placed_at` changes). If it re-derived
+  on any `stamp_page` change, the reconcile would confirm its own answer and the witness would be
+  worthless. Renaming the trigger is also breaking: it must sort AFTER `trg_ab_autoplace_generated`.
+- 🛑 **The reconcile is ALL-OR-NOTHING per ticket.** If any placed stamp's witnessed image is gone,
+  it changes nothing and `derm.v_stamp_placement_health` reports the folder. A half-moved folder
+  reads as healthy to a per-row check.
+- 🛑 **It moves `stamp_page` ONLY.** It deliberately does NOT move `page_block_extents`,
+  `page_row_rules` or `redacted_manifest_docs`. If the geometry no longer matches, the blackout lane
+  re-blocks and the card goes BLANK until a person re-measures. Auto-moving an extent onto a page
+  nobody measured is the act that leaked client data on 2026-08-19. A blank card is a complaint; a
+  wrongly-redacted one is a regulator-facing document showing another client's line.
+
+🛑 **WHY IT IS A WITNESS AND NOT A RE-KEY, which is the tempting "proper" fix.** `stamp_page` is the
+PK of `page_block_extents` and `page_row_rules` across 626 published documents and 620 served rows
+with manual band overrides. The deciding fact: **`derm.band_review` has no page column** -- it is
+keyed on the band VALUES -- so a re-key leaves every human acceptance still matching while the band
+describes a different physical page, converting this estate's human backstop into a false all-clear.
+
+✅ **`derm.v_stamp_placement_health` is the watch list. Severity 1 must be EMPTY.**
+Severity 2 is a stale page map (inert until the image set moves); severity 3 is a placed stamp with
+no witness. ⚠ **The witness was backfilled from each stamp's own ordinal**, so `STAMP_IMAGE_MOVED`
+detects divergence FROM 2026-08-24 ON and validates nothing historically. It found one thing on its
+first run: `ticket-310607`'s scan read names `address_1.webp` while the live image is
+`address_1.jpg`.
+
+⚠ **`derm.sheet_page_images` disagrees with `ticket_page_images` on 17 of 131 folders and has no
+reader.** Do not call it by hand to "check" a folder; it will give you the opposite of the truth.
+
 ### FP Blackout — customer-safe redacted DERM sheets (added 2026-07-10, Fred-approved)
 
 The Field Portal's "DERM FOG eManifest" card serves a **server-side redacted copy** of the shared
