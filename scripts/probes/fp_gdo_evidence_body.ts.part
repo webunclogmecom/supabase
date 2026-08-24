@@ -1,0 +1,54 @@
+
+// ============================================================================
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
+  if (req.method !== "POST") return fail("method_not_allowed", "POST only.");
+
+  const body = await req.json().catch(() => null);
+  const publicId = String(body?.public_id ?? "").trim();
+  const gdoId = body?.gdo_id == null ? null : Number(body.gdo_id);
+
+  if (!publicId) return fail("bad_request", "public_id is required.");
+  if (gdoId == null || !Number.isFinite(gdoId)) return fail("bad_request", "gdo_id is required.");
+
+  // 🛑 THE SLUG IS THE CAPABILITY, AND THE PATH IS NEVER TAKEN FROM THE CALLER.
+  //    Everything below is derived server-side from (public_id, gdo_id). A caller cannot ask for an
+  //    arbitrary object: if it is not the screenshot belonging to THIS visit and THIS permit, there
+  //    is no way to name it. Accepting a path here would turn a report link into a read primitive
+  //    over the whole private bucket.
+  const { data: visit, error: vErr } = await db
+    .from("visits").select("id, public_id, deleted_at")
+    .eq("public_id", publicId).is("deleted_at", null).maybeSingle();
+  // 🛑 DESTRUCTURE THE ERROR. A discarded error yields data:null and the guard fails OPEN.
+  if (vErr) return fail("lookup_failed", "Could not load that report.");
+  if (!visit) return fail("not_found", "That report link is not valid.");
+
+  // The submission for THIS visit and THIS permit. SUCCESS only: a failed attempt's screenshot is a
+  // login-error page, which is not evidence and is not the customer's business.
+  const { data: sub, error: sErr } = await db
+    .from("derm_portal_submissions")
+    .select("screenshot_path, status, dry_run, gdo_id, visit_id")
+    .eq("visit_id", visit.id).eq("gdo_id", gdoId).eq("dry_run", false)
+    .eq("status", "SUCCESS").not("screenshot_path", "is", null)
+    .order("attempted_at", { ascending: false }).limit(1).maybeSingle();
+  if (sErr) return fail("lookup_failed", "Could not load that report.");
+  if (!sub?.screenshot_path) {
+    return fail("no_evidence", "There is no filing image for that permit on this visit.");
+  }
+
+  // ⚠ BELT AND BRACES: re-assert the row we got back really belongs to the visit and permit we
+  //    resolved. The filters above should make this impossible to violate; that is exactly why it is
+  //    cheap to check, and why a violation would mean something is badly wrong.
+  if (Number(sub.visit_id) !== Number(visit.id) || Number(sub.gdo_id) !== gdoId) {
+    return fail("mismatch", "That filing image does not belong to this report.");
+  }
+
+  // Short TTL. The image is re-signed on each view; nothing durable is handed out.
+  const { data: signed, error: signErr } = await db.storage
+    .from("rpa-evidence").createSignedUrl(sub.screenshot_path, 300);
+  if (signErr || !signed?.signedUrl) {
+    return fail("sign_failed", "Could not open that filing image. Try again.");
+  }
+
+  return done({ url: signed.signedUrl, expires_in: 300 });
+});
