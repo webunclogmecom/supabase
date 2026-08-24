@@ -1171,6 +1171,84 @@ than altering it. That is why sheet identity is verified by
 `derm.address_sheet_scan_reads` / `derm.address_sheet_row_reads` and the `ocr-address-sheet-*` edge
 functions, and it is the ONLY sanctioned route to sheet-identity verification.
 
+### 🛑 A GENERATED SHEET PRINTS ONE ROW PER **PERMIT**, NOT PER CLIENT (2026-08-24)
+
+Fred: generated manifests (top-right sheet number 1000+) must be AI-stamped, and 833395 was not.
+The cause was a grain mismatch, and it is the thing to know before touching any slot arithmetic.
+
+`pdf_service/app.py` expands a client to **one row per ACTIVE, strictly well-formed `GDO-<digits>`
+permit**, sorted by number, rendering a single row for a client with 0 or 1 permit. That is Fred's
+rule for a multi-tenant building: one shared trap, one GDO per tenant, every permitted facility on
+its own line. Confirmed on the paper for ticket-833395 / sheet 1093:
+
+| printed row | permit | facility |
+|---|---|---|
+| 1 | GDO-13814 | 242-WYN Wynd 28 - Pasta |
+| 2 | GDO-14760 | 242-WYN Wynd 28 - Nino Gordo |
+| 3 | GDO-16146 | 242-WYN Wynd 28 - Pari Pari |
+| 4 | GDO-11529 | 069-TCE |
+| 5 | GDO-11532 | 032-LG |
+
+⚠ **It is the PERMIT count, never the property count.** 242-WYN has **7 properties** and **3 permits**,
+and takes **3** rows. Reaching for `public.properties` here gives the wrong answer on the one client
+that makes the difference.
+
+**The defect:** `derm.fn_generated_sheet_slot` expanded correctly, so stamps landed right, but
+`derm.fn_sheet_rows_all_confirmed` read `address_sheet_clients.slot` (the CLIENT ordinal) straight
+into the printed-row arithmetic `((slot-1)/5)+1` / `((slot-1)%5)+1`. On any sheet carrying a
+multi-permit client every slot beneath it compared against the wrong printed row, so the gate could
+never pass and the sheet could never auto-resolve. Fixed by `2026-08-24_0450`.
+
+**⇒ `derm.v_sheet_printed_rows` is now the canonical facility-grain slot map** (one row per PRINTED
+row, with `first_row` / `printed_page` / `row_on_page` / `is_first_row`). Read it. Do not re-derive
+row arithmetic from `slot`, in any new object.
+
+🛑 **`address_sheet_clients.rows_printed` IS FROZEN AT GENERATION TIME AND MUST STAY THAT WAY.**
+The old code counted `public.gdos` live on every call. A printed sheet is a historical artefact and
+that table is mutable, so adding or deactivating one permit for 242-WYN silently re-indexed the
+**five** already-printed sheets carrying it, moving stamps onto other clients' printed rows. Through
+the FP blackout that is one client shown another's line on a regulator-facing document, and nothing
+would have raised. Same class as the Jobber custom-field shadow: the stored "what we saw then" is
+the control, not today's value.
+
+🛑 **THE ROW READS ARE NOT SHEET IDENTITY, AND THE SCAN-READ REQUIREMENT IS NOT REDUNDANT.**
+Sheets 1091 / 1092 / 1093 are **progressive regenerations**: 1091's printed order is a strict prefix
+of 1092's, which is a strict prefix of 1093's. A ticket's clients occupy the SAME printed rows on all
+of them, so `fn_sheet_rows_all_confirmed` confirms **four sheets at once** and cannot tell them
+apart. Only the sheet-number scan read separates them. My first draft of `2026-08-24_0450` asserted
+that sheet 1091 would be refused, and the migration's own VERIFY rejected it, correctly. **Never
+weaken the scan-read match on the grounds that the row reads already confirm the sheet.**
+
+⚠ `fn_generated_sheet_slot` now returns **NULL** when the printed order was never recorded, which is
+what its own comment always claimed. The old body returned **1**, i.e. a stamp on row 1 of a sheet
+whose layout is unknown. 0 of the 68 bound manifests were in that state, so no live value moved.
+
+**✅ Fleet state, measured 2026-08-24: 17 folders carry a generated sheet, 16 fully stamped.**
+The one exception is **ticket-312024 and it is a PAPER problem, not code.** Its second image is
+**handwritten pad sheet 421**, not page 2 of generated sheet 1099, so `fn_sheet_image_position
+('ticket-312024', 2)` is NULL and the closed-world rule refuses. Image 1 matches sheet 1099 slots 1-5
+exactly. Either page 2 of 1099 needs scanning, or those four clients were served on pad 421 and the
+ticket is a two-sheet job. **This is the 2026-08-04 mis-stamp shape and the refusal is the system
+working**, so do not force it.
+⚠ Three high-confidence row reads on that folder's image 2 (`026-HAZ`, `177-STK`, `226-JEK`) are
+near-miss OCR of `026-HAP` / `199-STK` / `226-JER`. They describe pad 421, not sheet 1099, and are
+inert today because image position 2 is unreachable. They would become misleading if image 2 were
+ever replaced with the real page 2.
+
+🛑 **NOTHING SCHEDULES `ocr-address-sheet-rows`.** It is deployed and works, but no cron and no DB
+function references it, so `derm.address_sheet_row_reads` only fills when somebody invokes it by
+hand (6 of 17 generated folders have any). The sheet-NUMBER OCR is scheduled
+(`sheet-number-ocr-sweep`, `*/10`, via `public.fn_request_sheet_number_ocr()`); the ROW OCR is not.
+Row reads are only needed by the superset arm of `fn_resolve_generated_sheet_for_ticket`, so most
+sheets still resolve through exact client-set equality, but a ticket that is a subset of its sheet
+(833395 was: 3 clients on a 8-client sheet) cannot resolve without them. A
+`fn_request_sheet_row_ocr()` + cron mirroring the number sweep is the missing piece.
+
+⚠ **Open question for Fred, pre-existing and not introduced by this work:** a multi-permit client
+gets **one** stamp, on the first of its printed rows (`is_first_row`), because `address_row_map`
+holds one card per client per ticket. If the intent is that every permitted facility on a shared
+trap is marked, the data model cannot express it today.
+
 ### FP Blackout — customer-safe redacted DERM sheets (added 2026-07-10, Fred-approved)
 
 The Field Portal's "DERM FOG eManifest" card serves a **server-side redacted copy** of the shared
