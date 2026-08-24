@@ -1987,8 +1987,26 @@ effect standing in for an intention: no reason, no name, no trail.
 - **Self-limiting, which is why there is deliberately NO expiry:** a fresh attempt writes a
   submission newer than the marker and the gate closes again by itself. A requeue buys exactly one
   more pass. **Do not "improve" it into a flag that stays on.**
-- A reason is required. `derm_portal_requeue` IS the audit trail (who, when, why) and is therefore
-  deliberately not audited.
+- A reason is required, and the whitespace class is stripped: `btrim()` alone strips ASCII SPACE
+  only, so a TAB / NEWLINE / NBSP reason used to defeat the guard entirely.
+- 🛑 **IT REFUSES A NULL `p_gdo_id`, AND THAT REFUSAL IS LOAD-BEARING.** The view's anchor matches
+  `rq.gdo_id IS NULL OR ...`, so a NULL requeue row re-opens gate 3 for **EVERY permit on the
+  manifest** — 14 manifests carry 2+ permits. The TABLE still supports NULL for a deliberate
+  manifest-wide re-open; it just must never be reachable by omitting an argument.
+- `requested_by` prefers the **JWT** over the caller-supplied `p_by`. It used to be the other way
+  round, which let any caller write somebody else's email onto the only attribution this table has.
+- ⚠ **`still_blocked_by` must stay at least as specific as the fallback it shadows.** A branch added
+  in front of a correct ELSE swallowed the honest answer once already: the "a sibling won the
+  DISTINCT ON" branch checked only the MANIFEST, so a nonsense or wrong-client `gdo_id` was told its
+  row would "come up on a later pass" when it never would. There is now a `pair_exists` check first.
+- `derm_portal_requeue` IS the audit trail (who, when, why) and is therefore deliberately not audited.
+
+⚠ **`v_rpa_derm_health.queue_depth` COUNTS MANIFESTS, NOT FILINGS.** The view is
+`DISTINCT ON (manifest_id)`, so it answers *"how many manifests can the bot pick up this pass"*, never
+*"how many DERM filings are outstanding"*. Measured 2026-08-24: **59 candidate pairs across 37
+manifests**, and **13 manifests carry 2+ unfiled permits** — a backlog read off `queue_depth` is
+understated by up to 37%, and any alert threshold on it saturates. **Do not build a backlog metric
+on it.**
 
 ⚠ **`public.v_rpa_derm_health` DEPENDS on this view** (it is `queue_depth`), as do
 `fn_record_manual_gdo_report` and `fn_resolve_rpa_permit`. Keep the COLUMN LIST identical and
