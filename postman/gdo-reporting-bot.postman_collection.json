@@ -44,6 +44,11 @@
       "key": "dryRunManifestId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "evidenceRunId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -432,6 +437,208 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('401 unauthorized', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Evidence (late attach) - dry-run safe",
+      "item": [
+        {
+          "name": "Evidence 1 - result with NO image (sets evidenceRunId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-result",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-result"
+              ]
+            },
+            "description": "Posts a result with NO screenshot and an explicit screenshot_missing_reason. This is the shape the bot uses when the county confirmation email has not arrived yet: the filing is recorded straight away and the evidence follows.\n\nRun \"1. Queue - dry-run\" first so dryRunVisitId is captured. This request generates evidenceRunId and the rest of the folder reuses it.\n\nExpect 201 with screenshot_stored:false.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": \"{{dryRunVisitId}}\",\n  \"run_id\": \"{{evidenceRunId}}\",\n  \"status\": \"SUCCESS\",\n  \"retryable\": false,\n  \"attempted_at\": \"{{$isoTimestamp}}\",\n  \"portal_confirmation\": \"Submitted (Postman test, no tracking number)\",\n  \"screenshot_missing_reason\": \"EMAIL_PENDING\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('evidenceRunId', 'pm-evidence-' + Date.now().toString(36));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "pm.test('recorded without evidence', () => {",
+                  "  pm.expect(j.recorded, 'recorded').to.eql(true);",
+                  "  pm.expect(j.screenshot_stored, 'screenshot_stored').to.eql(false);",
+                  "  pm.expect(j.screenshot_missing_reason, 'reason').to.eql('EMAIL_PENDING');",
+                  "});",
+                  "console.log('Result stored with evidence pending, run_id=' + pm.collectionVariables.get('evidenceRunId'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Evidence 2 - attach the image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-evidence",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-evidence"
+              ]
+            },
+            "description": "Attaches the evidence to the result posted above. The image here is a 1x1 PNG, deliberately, to show that the stored extension follows the REAL BYTES: the path comes back .png even though the older contract only ever wrote .jpg.\n\nExpect 200 with attached:true, and cleared_missing_reason echoing the EMAIL_PENDING that was on the row.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": \"{{dryRunVisitId}}\",\n  \"run_id\": \"{{evidenceRunId}}\",\n  \"screenshot\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('attached, and the reason was cleared', () => {",
+                  "  pm.expect(j.attached, 'attached').to.eql(true);",
+                  "  pm.expect(j.screenshot_stored, 'screenshot_stored').to.eql(true);",
+                  "  pm.expect(j.cleared_missing_reason, 'cleared_missing_reason').to.eql('EMAIL_PENDING');",
+                  "});",
+                  "pm.test('extension follows the bytes (.png)', () => pm.expect(j.screenshot_path).to.match(/\\.png$/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Evidence 3 - attach again (fill-once, expect attached:false)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-evidence",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-evidence"
+              ]
+            },
+            "description": "Sends the exact same attach a second time. FILL-ONCE: this endpoint can only turn \"no image\" into \"an image\", never replace one. A repeat is a harmless no-op, NOT an error, so you can retry it as often as you like.\n\nExpect 200 with attached:false and already_had_evidence:true.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": \"{{dryRunVisitId}}\",\n  \"run_id\": \"{{evidenceRunId}}\",\n  \"screenshot\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('refused as a no-op, not an error', () => {",
+                  "  pm.expect(j.attached, 'attached').to.eql(false);",
+                  "  pm.expect(j.already_had_evidence, 'already_had_evidence').to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Evidence 4 - unknown run_id -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-evidence",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-evidence"
+              ]
+            },
+            "description": "Evidence for a (visit_id, run_id) we have never seen is a 404, never a stored orphan. Post the result FIRST, then attach.\n\nExpect 404 result_not_found_for_visit_run.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visit_id\": \"{{dryRunVisitId}}\",\n  \"run_id\": \"no-such-run-id\",\n  \"screenshot\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('names the reason', () => pm.expect(pm.response.json().error).to.eql('result_not_found_for_visit_run'));"
                 ]
               }
             }

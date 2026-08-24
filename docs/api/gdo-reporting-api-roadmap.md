@@ -1,5 +1,20 @@
 # GDO Online Reporting API — proposed additions (roadmap)
 
+> **⚠ STATUS 2026-08-24: THE PREMISE OF THIS DOC IS STALE, THE MENU IS NOT.**
+> It was written 2026-07-21 judging the shape as *"0 submissions yet, rollout imminent"*. The bot has
+> since filed **7 confirmed reports** to Miami-Dade (2026-07-24 to 2026-08-17), and a third endpoint
+> now exists: **`rpa-derm-evidence`** (2026-08-24), which is not on this menu because it came from a
+> real need rather than the brainstorm. See
+> [`docs/specs/2026-08-24-gdo-evidence-endpoint-plan.md`](../specs/2026-08-24-gdo-evidence-endpoint-plan.md).
+>
+> **None of the six KEEP-NOW items below have been built.** Verified 2026-08-24, each by name:
+> `ALREADY_FILED`, `rpa_queue_paused`, `rpa_rollout_allowlist`, `needs_human`, `attempt_count` and
+> `v_rpa_derm_deadletter` are all absent from the codebase and the database.
+>
+> ⚠ **One exception worth knowing: item 3, the manual close-out, WAS effectively delivered** as the
+> edge function `record-manual-gdo-report` plus the DERM Tracker's "Record a manual filing" modal. It
+> does not carry the name proposed here, so a search for `rpa_mark_filed_manually` reports it missing.
+
 Companion to the API reference at [`postman/README.md`](../../postman/README.md) (also the Postman
 collection's own documentation). Output of a 4-lens brainstorm
 (integrator DX / ops-safety / security-privacy / observability) + an adversarial YAGNI critic,

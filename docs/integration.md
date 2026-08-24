@@ -13,6 +13,7 @@ Per-source integration details: webhook endpoints, signatures, payloads, registr
 | `webhook-samsara` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/webhook-samsara` | Samsara | properties (geofence on clients), employees (drivers), vehicle_telemetry_readings | Deployed; HMAC failing on real events (see runbook §5) |
 | `rpa-derm-queue` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-queue` | GDO Online Reporting bot (GET; `x-rpa-key`) | reads `v_derm_portal_queue` / `v_derm_portal_dryrun` (code-27 VISITS to report) | Live 2026-07-21; contract in `docs/handoffs/2026-07-21_rpa_bot_reply_to_john.md` |
 | `rpa-derm-result` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result` | GDO Online Reporting bot (POST; `x-rpa-key`) | derm_portal_submissions (visit-keyed) + `rpa-evidence` bucket (private) | Live 2026-07-21; idempotent on (visit_id, run_id) |
+| `rpa-derm-evidence` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-evidence` | GDO Online Reporting bot (POST; `x-rpa-key`) | fills `derm_portal_submissions.screenshot_path` + `rpa-evidence` bucket | Live 2026-08-24; **fill-once** (`.is(screenshot_path, null)`), never replaces evidence |
 
 Every function:
 - Accepts `POST` with JSON body
@@ -308,8 +309,19 @@ services read Prod directly. **Changing the shape of the tables they read breaks
 
 - Scope = **Line Item 27 "GDO Online Reporting"** (3 clients: 041-MB, 082-TFC, 111-YC). Work unit
   = a code-27 VISIT linked to a manifest, not yet reported (eligibility from `fn_visit_is_gdo_reporting`).
-- Event trigger `trg_zz_gdo_reporting_notify` on `manifest_visits` pings the bot's `/run` when a
-  code-27 visit is linked (DORMANT until `app_config` keys `rpa_run_url`/`rpa_run_key` are set).
+- 🛑 **WE DO NOT PUSH TO THE BOT. IT POLLS.** This line used to describe an event trigger
+  `trg_zz_gdo_reporting_notify` on `manifest_visits` pinging the bot's `/run`. **That trigger does not
+  exist**: `2026-07-21g` created it dormant and `2026-07-21l_drop_gdo_push_trigger.sql` dropped it the
+  same day, never activated. Verified 2026-08-24 against the live catalogue: no trigger on
+  `manifest_visits` matching gdo/rpa, and **zero** functions referencing railway / the bot / `/run`
+  (control: 8 functions do use `net.http_post`, so the sweep was live). `postman/README.md` §5 is the
+  accurate description and the one the integrator reads.
+- **Evidence can arrive after the result (2026-08-24).** The bot posts the county confirmation EMAIL,
+  rendered as an image, as its evidence; that email is usually instant but not always. So it may post
+  the result with a `screenshot_missing_reason` and then `POST /rpa-derm-evidence` with the same
+  `run_id` once the image exists. The fill is guarded `.is(screenshot_path, null)`, so it is monotonic
+  and a retry can never overwrite evidence. ⚠ Staff REPLACE evidence in the DERM Tracker
+  (`fn_set_gdo_evidence_ext`) and that is a separate, deliberate path. Do not unify them.
 - Status surfaces: `derm.gdo_report_status` (DERM Tracker, per visit) + `customer.gdo_reports`
   (Field Portal). Full design: migration `2026-07-21g` + the handoff doc.
 

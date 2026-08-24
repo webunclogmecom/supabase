@@ -54,6 +54,29 @@ function json(body: Record<string, unknown>, status: number): Response {
   })
 }
 
+// 🛑 SNIFF THE REAL BYTES (added 2026-08-24). This used to hardcode `.jpg` +
+// image/jpeg for every upload. That was harmless only while the bot sent portal
+// screenshots, which were genuinely JPEG. It now sends the county confirmation
+// EMAIL rendered as an image, which is typically PNG, so the old code would have
+// stored PNG bytes at a .jpg key labelled image/jpeg from the first post, silently.
+// A declared content-type is caller-supplied and proves nothing; the bytes do.
+// ⚠ An UNRECOGNISED type still stores as .jpg, exactly as before. Do not turn that
+// into a rejection: the accept-and-flag rule here exists because losing a real
+// county filing over an image problem re-queues the manifest and risks a double
+// filing. Sniffing is allowed to improve the label, never to drop the evidence.
+function sniffImage(b: Uint8Array): { ext: 'jpg' | 'png'; mime: string } | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return { ext: 'jpg', mime: 'image/jpeg' }
+  }
+  if (
+    b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+    b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a
+  ) {
+    return { ext: 'png', mime: 'image/png' }
+  }
+  return null
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
 
@@ -240,13 +263,19 @@ Deno.serve(async (req: Request) => {
     // cleanup 2026-07-24). LIVE keeps the per-run_id key so every real filing
     // attempt stays a distinct, non-overwritten evidence file — a genuine
     // re-attempt must remain visible (it is the double-file signal).
-    screenshotPath = dryRun ? `${visitId}/dryrun.jpg` : `${visitId}/${runId}.jpg`
+    // Extension and content-type come from the BYTES (see sniffImage). An
+    // unrecognised type falls back to jpg, which is exactly the pre-2026-08-24
+    // behaviour, so this can only ever improve a label and never drop a filing.
+    const kind = sniffImage(screenshotBytes)
+    const ext = kind?.ext ?? 'jpg'
+    const mime = kind?.mime ?? 'image/jpeg'
+    screenshotPath = dryRun ? `${visitId}/dryrun.${ext}` : `${visitId}/${runId}.${ext}`
     let uploaded = false
     for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 200 * attempt))
       const { error: upErr } = await sb.storage
         .from('rpa-evidence')
-        .upload(screenshotPath, screenshotBytes, { contentType: 'image/jpeg', upsert: true })
+        .upload(screenshotPath, screenshotBytes, { contentType: mime, upsert: true })
       if (!upErr) { uploaded = true; break }
       console.error(`screenshot upload attempt ${attempt + 1} failed:`, upErr.message)
     }

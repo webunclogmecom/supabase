@@ -1,8 +1,8 @@
 # GDO Online Reporting API
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
-**Status:** live on Prod, tested end-to-end. The bot polls on its own schedule (no endpoint to expose); only the rollout gates remain.
-**Last updated:** 2026-07-23.
+**Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
+**Last updated:** 2026-08-24 (added the evidence endpoint, §4b).
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -157,7 +157,7 @@ and changes nothing (first write wins).
 | `failure_reason` | string | | ≤1000 chars. |
 | `attempted_at` | string | ✅ | ISO 8601 UTC. **Log/audit only** — our queue timing uses our own server clock, so a skewed bot clock can never cause a double-file. |
 | `portal_confirmation` | string | | ≤200 chars. Whatever number/text the portal returns. **Required for a real `SUCCESS`.** |
-| `screenshot` | string | | base64 JPEG, ≤5 MB decoded. |
+| `screenshot` | string | | base64 **JPEG or PNG**, ≤5 MB decoded. We detect the real format from the bytes and store the matching extension and content-type, so send whatever you have and do not re-encode. |
 | `screenshot_missing_reason` | string | | ≤300 chars. **Provide this OR `screenshot`** — every result needs one. |
 | `dry_run` | boolean | | Ignored / derived server-side; harmless to send. |
 
@@ -201,6 +201,67 @@ do. Never treat a report as done before we acknowledge it.
 **Screenshots:** send the bytes in the POST; we store them in a **private** bucket (`rpa-evidence`,
 client data) and record only the path. You never need storage credentials. If images ever exceed the
 5 MB cap routinely we will switch you to a signed upload URL.
+
+---
+
+## 4b. `POST /functions/v1/rpa-derm-evidence`: attach the image LATER
+
+**Added 2026-08-24, for the case where the filing succeeds but its evidence is not ready yet.**
+The county confirmation email usually arrives the same minute as the submit, but not always. Rather
+than hold the run open or post a result you cannot evidence, **post the result first and attach the
+image when it arrives.**
+
+Same `x-rpa-key`. Body:
+
+```jsonc
+{
+  "visit_id": 6216,                    // required
+  "run_id": "5133d0d7-...",            // required, the SAME run_id you used on the result
+  "screenshot": "<base64 JPEG or PNG>" // required
+}
+```
+
+`manifest_id` and `dry_run` are accepted and ignored, so you can reuse your result body verbatim.
+Any other field is a `400`.
+
+**Responses**
+
+| Code | Body | Meaning |
+|---|---|---|
+| `200` | `{"attached":true,"id":<n>,"screenshot_path":"...","screenshot_stored":true,"cleared_missing_reason":"<what it said before>"}` | Stored. Any `screenshot_missing_reason` on the row was cleared in the same write. |
+| `200` | `{"attached":false,"already_had_evidence":true,"id":<n>,"screenshot_path":"..."}` | That result already has an image. **Not an error**. This is the expected answer to a retry. |
+| `404` | `{"error":"result_not_found_for_visit_run"}` | No result stored for that `(visit_id, run_id)`. |
+
+🛑 **FILL-ONCE. This endpoint can only ever turn "no image" into "an image".** It will never replace
+an image we already hold, not even with a different one. That means **you can retry it as often as
+you like, in any order, and concurrently with yourself, and it cannot do damage.** If you genuinely
+need an image corrected, that is a human decision and staff do it in the DERM Tracker.
+
+🛑 **POST THE RESULT FIRST.** Evidence for a `(visit_id, run_id)` we have never seen is a `404`, not
+a stored orphan. The intended sequence is always:
+
+1. `POST /rpa-derm-result` with your `screenshot_missing_reason` (say why it is not there yet), then
+2. `POST /rpa-derm-evidence` with the same `run_id` once you have the image.
+
+**Errors**
+
+| Status | Code | Cause |
+|---|---|---|
+| 400 | `invalid_json` | Body was not JSON. |
+| 400 | `unknown_field_<name>` | A field we do not accept. |
+| 400 | `visit_id_required_integer` | Missing/invalid `visit_id`. |
+| 400 | `run_id_must_be_alnum_dot_dash_underscore_max100` | Bad `run_id` charset/length. |
+| 400 | `screenshot_required` | No image in the body. |
+| 400 | `screenshot_too_large` | Over 5 MB decoded. |
+| 400 | `screenshot_decode_failed` | Not valid base64. |
+| 400 | `screenshot_must_be_jpeg_or_png` | The bytes are not a JPEG or a PNG. |
+| 404 | `result_not_found_for_visit_run` | Post the result first. |
+| 409 | `multiple_results_for_visit_run` | Should be impossible; tell us if you see it. |
+| 500 | `submission_lookup_failed` / `evidence_store_failed_retry` / `evidence_fill_failed_retry` | Transient; retry the same POST. |
+
+⚠ **Unlike `rpa-derm-result`, a bad image here IS a 4xx.** There we accept the result and flag the
+evidence, because rejecting would lose a real county filing. Here the filing is already safely
+recorded, so refusing a broken attach costs nothing and telling you plainly is more useful.
 
 ---
 
@@ -274,11 +335,10 @@ All errors are `{"error":"<code>"}` with the HTTP status shown.
 
 ## 8. Rollout gates
 
-Nothing hits the county for real until, in order:
+✅ **Gates 1 and 2 are PASSED.** The dry-run pass ran, and real reports have been filed and confirmed
+on the county side: **7 confirmed filings between 2026-07-24 and 2026-08-17**.
 
-1. A **dry-run pass** over the historical visits (`?mode=dryrun`) — ~29 are available now.
-2. The **first live report on a single visit** Fred picks, verified on the county side.
-3. Then it **opens for all** the eligible clients.
+3. Gate 3, **opening it for all** the eligible clients, is the remaining one and is Fred's call.
 
 ---
 
