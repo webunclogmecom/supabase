@@ -6,7 +6,8 @@
 // DERM Address sheet rosters every co-client on a shared dump ticket).
 //
 // Input (POST JSON):
-//   { manifest_id: number, client_code: string, kind: 'fog' | 'address' | 'manifest' }
+//   { manifest_id: number, client_code: string, kind: 'fog'|'address'|'manifest'|'gdo_report',
+//     gdo_id?: number }   // gdo_id: OPTIONAL, gdo_report only, narrows to ONE permit
 //     - fog      → fog_manifest_url            (per-client REDACTED FOG — Field Portal)
 //     - address  → address sheet(s), UNIONED across the manifest's client rows (DERM Tracker)
 //     - manifest → WWTP receipt / manifest page(s), UNIONED across the rows
@@ -68,11 +69,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405, cors)
 
-  let body: { manifest_id?: number; client_code?: string; kind?: string }
+  let body: { manifest_id?: number; client_code?: string; kind?: string; gdo_id?: number }
   try { body = await req.json() } catch { return json({ error: 'invalid JSON' }, 400, cors) }
   const manifest_id = Number(body.manifest_id)
   const client_code = (body.client_code ?? '').trim()
   const kind = body.kind ?? ''
+  // OPTIONAL, and only meaningful for kind='gdo_report' (2026-08-24). A visit can hold filings for
+  // SEVERAL permits; without this the query below returns whichever submission on the manifest was
+  // newest, which is the wrong permit on any multi-GDO client. Omitted = previous behaviour, so
+  // every existing caller is unaffected.
+  const gdo_id = body.gdo_id == null ? null : Number(body.gdo_id)
+  if (gdo_id !== null && !Number.isInteger(gdo_id)) {
+    return json({ error: 'gdo_id must be an integer when provided' }, 400, cors)
+  }
   if (!Number.isInteger(manifest_id) || manifest_id <= 0 || !client_code || !KINDS.has(kind)) {
     return json({ error: 'manifest_id (positive int), client_code, and kind (fog|address|manifest|gdo_report) are required' }, 400, cors)
   }
@@ -175,12 +184,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // A dry-run image served here would leak ANOTHER facility's details to a customer. Also note
     // dry-run paths are a FIXED filename per visit, so they are trivially guessable — the filter is
     // the only thing standing between a caller and one. Never relax to `status <> 'ERROR%'`.
-    const { data: sub } = await db.from('derm_portal_submissions')
+    // ⚠ PER PERMIT when gdo_id is supplied. The manifest_id filter alone returns the newest
+    //   submission on the manifest regardless of which GDO it belongs to, so a customer with two
+    //   permits saw one permit's screenshot under both. Narrowing by gdo_id is additive: it can only
+    //   ever return a SUBSET of what the un-narrowed query returned, so it cannot widen access.
+    let subQ = db.from('derm_portal_submissions')
       .select('screenshot_path')
       .eq('manifest_id', manifest_id)
       .eq('dry_run', false)
       .eq('status', 'SUCCESS')
       .not('screenshot_path', 'is', null)
+    if (gdo_id !== null) subQ = subQ.eq('gdo_id', gdo_id)
+    const { data: sub } = await subQ
       .order('created_at', { ascending: false })
       .limit(1).maybeSingle()
     // Prefix the bucket so toBucketPath resolves it; the column stores a bare object path.
