@@ -6,8 +6,11 @@
 //
 // Usage: node build-served.js <urls.json>   where urls.json = [{code,url}, ...]
 const fs = require('fs');
-const docs = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const all = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const TAG = process.argv[3] || 'served';
+const OFFSET = Number(process.argv[4] || 0);
+const COUNT = Number(process.argv[5] || all.length);
+const docs = all.slice(OFFSET, OFFSET + COUNT);
 
 const OUT = 'C:\\\\Users\\\\FRED\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-FRED-Desktop-Virtrify-Yannick-Claude-Supabase\\\\2982e963-15ef-4634-9336-cb0d4dcad2a2\\\\scratchpad\\\\sweep';
 

@@ -1408,6 +1408,18 @@ another facility's PRINTED text, and on ticket-831047 that neighbour has no row 
 so there was nothing to collide with. **The tiers are a screen, not a verdict: they turned 635
 documents into 47 that a couple of hours cleared. Keep them, and expect them to be mostly false.**
 
+✅ **THE PASSED POPULATION HAS BEEN SAMPLED TOO, WHICH IS THE CHECK NOBODY REMEMBERS TO RUN.**
+Reviewing only the bands a check FLAGS cannot tell you whether it passes something it should not.
+53 SERVED DOCUMENTS were opened on 2026-08-24: 37 spread evenly through the 555 passed bands, **all
+11 passed bands that sit on a page the detector did not grade OK** (the least trustworthy geometry
+in the passed set), and the 5 repaired leaks as controls. **Every one shows exactly one facility.**
+The five repaired documents confirm the fixes are live: 226-JER's file no longer carries Wynd 28's
+address, and 032-LG's no longer carries Marie Blachere.
+⚠ **State the limit honestly: 48 of 555 is 8.7%.** That rules out a high leak rate in the passed
+population, not a low one. What it is combined with is stronger: all 47 flagged bands were also
+inspected, and all four known leaks sat in the flagged population while broken, so the check
+demonstrably catches this defect class.
+
 🛑 **TWO PRINTED-BUT-UNROWED FACILITIES FOUND BY EYE, AND THERE IS STILL NO DETECTOR FOR THIS:**
 `window10-sheet4` p2 carries **Chima Steakhouse, 2400 East Las Olas Blvd** and `window3-sheet5` p2
 carries a **Carrot Express**, both printed on the sheet with no `address_row_map` row. Both sit in a
