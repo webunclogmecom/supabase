@@ -2,9 +2,17 @@
 
 Slack mrkdwn, ready to paste. `*single asterisks*` for bold, no `##`, no `---`, no tables.
 
-⚠ **Two parts. Part 1 is what Fred asked for and is ready to send as-is.**
-**Part 2 answers Jonathan's question 4 and is OPTIONAL** — it depends on whether Fred wants the row
-un-parked. Send it only if the answer is yes, or trim it to the diagnosis and drop the last line.
+✅ **SENT 2026-08-24 as ONE message to Fred's own DM so he could copy it with the formatting intact**
+(pasting raw mrkdwn into the composer renders as literal asterisks):
+`https://unclogme.slack.com/archives/D0AMD1LQK62/p1787610323197089`
+Both parts merged, because it is one thread reply to Jonathan rather than two.
+
+✅ **The un-park was approved and DONE** (Fred: *"go ahead, unpark it and i'll send both"*), so Part 2
+is stated in the past tense in the sent version. `update public.derm_manifests set updated_at = now()
+where id = 1692` — only `updated_at` changed (diffed before/after), and
+`v_derm_portal_queue` for visit 6617 went **0 rows -> 1**, carrying only `gdo_id 230` / GDO-11024.
+GDO-14117 correctly stays excluded by gate 1, having filed on 2026-08-07.
+Backup: `backups/2026-08-24_unpark_gdo11024_manifest_1692.json`.
 
 ⚠ Deliberately does NOT mention the email watchdog. Fred: *"no need to tell him we're using the
 health watchdog on the email now, just tell him that we will not be using his slack app so he
