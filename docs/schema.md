@@ -596,6 +596,23 @@ Per-entity incremental cursors (e.g. `"visits"` → `last_synced_at`). PK is the
 ### `webhook_events_log`
 Every webhook payload we receive, pass/fail/error. `source_system`, `event_type`, `event_id`, `payload` (JSONB), `entity_type`, `entity_id`, `status` (`received`/`processed`/`failed`), `error_message`, `processing_ms`, `processed_at`. Primary observability surface for webhook drift.
 
+### `health_alert_state`
+Watchdog bookkeeping for the health escalation email, one row per (check, item): `first_seen_at`,
+`last_seen_at`, `last_alerted_at`, `alert_count`, `resolved_at`, and a time-boxed
+`acknowledged_until` + `ack_reason` + `ack_by`. ⚠ `acknowledged_until` is deliberately a TIMESTAMP
+and never a boolean: there is no permanent mute, because a permanently silenced problem is an
+unknown problem. Deliberately NOT audited (an audit row per open item per day would bury
+`audit.logs`). Added `2026-08-24_1820`.
+
+### `derm_portal_requeue`
+Append-only record of an operator deciding to retry a DERM portal filing that gate 3 of
+`v_derm_portal_queue` is holding: `manifest_id`, `gdo_id` (NULL = every permit on the manifest),
+`requeued_at`, `reason` (required), `requested_by`. Exists because that gate re-opens only when a
+DATABASE timestamp moves, so a fix made at the county is structurally invisible to it. Written via
+`fn_requeue_derm_portal()`, never by hand. Self-limiting: a fresh failure lands newer than the marker
+and the gate closes again. The table IS the audit trail, so it is deliberately not audited.
+Added `2026-08-24_1900`.
+
 ### `webhook_tokens`
 OAuth credentials for each source system. PK is `source_system`. `access_token`, `refresh_token`, `client_id`, `client_secret`, `expires_at`. Refreshed automatically by the Edge Functions.
 

@@ -1952,6 +1952,50 @@ recomputation for **all 8 months of 2026** and agreed on tickets, rows and exclu
 Full design, the six open questions for John, and the read-vs-write reasoning:
 [docs/specs/2026-08-24-lwt-monthly-endpoint-design.md](docs/specs/2026-08-24-lwt-monthly-endpoint-design.md).
 
+### 🛑 THE DERM PORTAL QUEUE HAS FOUR GATES, AND ONE OF THEM CANNOT SEE THE OUTSIDE WORLD
+
+`public.v_derm_portal_queue` excludes a (manifest, permit) when **any** of these holds. Know which
+one you are fighting before you touch anything:
+
+| gate | excludes when | why |
+|---|---|---|
+| 1 | a non-dry-run `SUCCESS` or a `portal_confirmation` exists | never re-file a filed report |
+| 2 | any non-dry-run attempt in the last **20h** | never hammer the county portal |
+| 3 | a **non-retryable** non-SUCCESS attempt **newer than `f.updated_at`** | a data error holds until the row changes |
+| 4 | a dispense lease on the manifest in the last **20h** | never double-serve a manifest |
+
+⚠ It is also `DISTINCT ON (manifest_id)`, so **only ONE permit per manifest is served per pass**
+(ordered by `gdo_id`, then `abs(visit_date - dump_ticket_date)`, then `visit_id`). A (visit, permit)
+can be legitimately absent from the queue because a SIBLING row won the DISTINCT ON, not because a
+gate blocked it.
+
+🛑 **GATE 3'S FRESHNESS ANCHOR IS A *DATABASE* TIMESTAMP, SO A FIX MADE OUTSIDE THE DATABASE IS
+STRUCTURALLY INVISIBLE TO IT.** Cost three days on 2026-08-24: Jonathan fixed GDO-11024's portal
+credential **at the county**. Nothing in our data changed, so the gate stayed shut, his digests read
+"queue empty" on the 21st/22nd/23rd, and **no amount of hourly polling could ever have re-opened it**.
+`f.updated_at` is `GREATEST(visits.updated_at, manifest updated_at/created_at)`.
+
+✅ **The sanctioned answer is now `public.fn_requeue_derm_portal(visit_id, gdo_id, reason, by)`**
+(`2026-08-24_1900`), which records an explicit operator decision that gate 3 honours.
+**Do NOT go back to `update derm_manifests set updated_at = now()`** — it works, but it is a side
+effect standing in for an intention: no reason, no name, no trail.
+- **It relaxes gate 3 and ONLY gate 3.** Gates 1, 2 and 4 still apply, and the return value NAMES
+  whichever one is still holding the row.
+- **It returns the post-condition, not "ok".** A requeue that inserts a row and changes nothing is
+  the worst outcome, because the operator believes they acted. Read `queued_now` and
+  `still_blocked_by`.
+- **Self-limiting, which is why there is deliberately NO expiry:** a fresh attempt writes a
+  submission newer than the marker and the gate closes again by itself. A requeue buys exactly one
+  more pass. **Do not "improve" it into a flag that stays on.**
+- A reason is required. `derm_portal_requeue` IS the audit trail (who, when, why) and is therefore
+  deliberately not audited.
+
+⚠ **`public.v_rpa_derm_health` DEPENDS on this view** (it is `queue_depth`), as do
+`fn_record_manual_gdo_report` and `fn_resolve_rpa_permit`. Keep the COLUMN LIST identical and
+`CREATE OR REPLACE` works; change the columns and it becomes drop-and-recreate, which
+[discards grants](docs/migrations/). **After any edit, assert the queue did not WIDEN** — extra rows
+mean the bot files reports that should not go out.
+
 ### 🛑 THE HEALTH WATCHDOG: EMAIL ON STALENESS, AND SILENCE MEANS HEALTHY (2026-08-24)
 
 Four `log_*_health()` crons write a verdict into `public.sync_log`. **Nothing reads `sync_log`** and
