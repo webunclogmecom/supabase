@@ -112,8 +112,19 @@
 --                             also gone 'ok' 10 times; longest run 29 days, current run 6)
 --     rpa-derm-health        26 consecutive 'ok', then 10 consecutive 'attention' from
 --                             2026-08-15 - a datable regime change, not noise
---     blackout-health         6 attention days since 2026-08-19, one sheet blocked
---                             6d21h with 10 clients seeing an empty eManifest
+--     blackout-health         6 attention days since 2026-08-19, one sheet blocked ~7d
+--   ⚠ CORRECTED 2026-08-24: I first wrote that this meant "10 clients seeing an EMPTY
+--     eManifest", quoting the alarm's own what_it_means text. BOTH HALVES ARE WRONG.
+--     The card is not empty - it renders "DERM FOG eManifest / DERM 833049 / DOCUMENTED
+--     / On file, not available for online viewing", which is exactly what Field Portal
+--     rule 8 prescribes when a document NUMBER exists but no viewable file. And it is
+--     22 work orders across 22 clients, not 10: derm.v_blackout_blocked_sheets filters
+--     stamp_y_pct IS NOT NULL, so it is blind to UNSTAMPED sheets and misses tickets
+--     312024 (9) and 833530 (3). The customer-impact measure is
+--       select count(*) from customer.work_orders
+--        where derm_manifest_number is not null and derm_manifest_url is null;   -> 22
+--     The blocked-sheets view measures stamped-but-unmeasured sheets. It is not a
+--     measure of customer impact and must not be read as one.
 --   ⚠ CORRECTED 2026-08-24: an earlier version of this header said calendar-push-health had
 --     been in attention "continuously" since 2026-06-27. It has not. That came from reading
 --     min(started_at) over the attention rows as if it were the start of an unbroken run.

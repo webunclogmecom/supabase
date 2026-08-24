@@ -14,8 +14,14 @@
 --     it was re-reporting ONE visit with healable=0 every 30 minutes. Across its
 --     history 4,408 item-reports describe 105 distinct problems -- a 42x amplification.
 --   * THE SIGNAL HAS NO SEVERITY. 'attention' means "I found and could not fix drift"
---     to jobber_visit_drift and "10 clients cannot see a compliance document" to
+--     to jobber_visit_drift and "a compliance document is not viewable online" to
 --     blackout-health. Same word, same column, same table.
+--   * AND THE PAYLOAD TEXT ITSELF CAN BE WRONG. blackout-health's what_it_means claimed
+--     clients "see an EMPTY DERM FOG eManifest card". They do not: the card renders
+--     "On file, not available for online viewing", per Field Portal rule 8. Nor is it
+--     10 clients - it is 22, because derm.v_blackout_blocked_sheets filters
+--     stamp_y_pct IS NOT NULL and cannot see unstamped sheets. An alarm is a claim, and
+--     a claim nobody reads is also a claim nobody CHECKS.
 --   * IT IS IN THE WRONG TABLE. Health verdicts are 138 of 34,849 sync_log rows
 --     (0.40%), under 21,863 Jobber poll records. sync_log is a sync JOURNAL.
 --

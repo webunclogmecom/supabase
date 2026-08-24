@@ -65,7 +65,19 @@ const ANON_ALLOWED = new Set([
 // Format: <source_system>:<db_role>:<app_source>
 // ---------------------------------------------------------------------------
 const WEBHOOK_TOKENS_ALLOWED = new Set([
-  'jobber:postgres:sql',  // hourly Jobber access_token refresh via mgmt API
+  'jobber:postgres:sql',        // hourly Jobber access_token refresh via mgmt API
+  // Same benign hourly refresh, for the WRITE-OAuth token. Missing here since the
+  // write-OAuth token was introduced, so every refresh posted a "critical" security
+  // alert to #viktor-supabase. Measured 2026-08-24 over 7 days, non-service_role
+  // webhook_tokens rows, keyed exactly as the poller keys them:
+  //     jobber:postgres:sql        286 rows (36 in 24h)  ALLOWED
+  //     jobber_write:postgres:sql  249 rows (31 in 24h)  ALERTED  <- this line fixes it
+  // ~31 false criticals a day is what makes the channel unreadable, and an alert
+  // channel nobody reads is the same as no alert channel.
+  'jobber_write:postgres:sql',
+  // ⚠ NOT added: 'jobber_write:postgres:client-app' (1 row, 2026-08-21 09:33 ET).
+  //   An app-sourced token write is not a cron heartbeat and should keep alerting
+  //   until somebody explains it.
 ]);
 
 function http(opts, body) {
