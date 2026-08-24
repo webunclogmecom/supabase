@@ -180,6 +180,14 @@ const M_ASSIGN = `mutation($id: EncodedId!, $input: VisitEditAssignedUsersInput!
 // Service-Call visits carry their own line items (the services done on that call);
 // Service-Agreement visits do NOT — their priced line items live on the Jobber SA job.
 const M_LI_CREATE = `mutation($id: EncodedId!, $input: VisitCreateLineItemInput!){ visitCreateLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
+
+// "The Jobber visit behind our gid is gone." Jobber says this several ways, and it can
+// arrive EITHER as a userErrors entry OR as a TOP-LEVEL GraphQL error that gql() THROWS.
+// Module-scope since 2026-08-24 because BOTH the delete and the upsert path need it; it
+// used to be declared inside the delete branch only, which is precisely why the upsert
+// path had no guard and retried a dead gid for ever (visit 7318, 5 days, 4 attempts,
+// auto_retry_state='exhausted'). Do not re-scope this to one branch.
+const ALREADY_GONE = /not found|could not be found|does not exist/i;
 const M_LI_DELETE = `mutation($id: EncodedId!, $input: VisitDeleteLineItemsInput!){ visitDeleteLineItems(visitId:$id, input:$input){ userErrors{ message path } } }`;
 const Q_VISIT_LI  = `query($jobId: EncodedId!){ job(id:$jobId){ visits(first:50){ nodes{ id lineItems(first:50){ nodes{ id name } } } } } }`;
 // FIXED-PRICE line-item strip (2026-07-15): on a FIXED_PRICE job the invoice = the SUM of the job's
@@ -366,7 +374,8 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     // Both mean the visit is gone, which is the desired end-state — treat as SUCCESS:
     // skip the throw, still unlink, let the handler mark sync_state='confirmed'.
     // Only a GENUINE error (anything not matching ALREADY_GONE) aborts.
-    const ALREADY_GONE = /not found|could not be found|does not exist/i;
+    // ALREADY_GONE is now module-scope (see its definition) so the UPSERT path can use
+    // the same regex. It used to be declared right here, which is why upsert had no guard.
 
     // 🛑 CAPTURE THIS VISIT'S LINE IDS **BEFORE** THE DELETE, OR THEY BECOME UNFINDABLE.
     // `visitDeleteLineItems` only UNLINKS; the JobLineItem object survives at job scope and
@@ -489,6 +498,14 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
   // flip never clobbers Jobber's driver (the bug). A null `changed` (legacy caller)
   // falls back to the full push; an empty `changed` is a no-op.
   if (existingGid) {
+   // 🛑 EVERY Jobber mutation below can hit a gid whose visit no longer exists, and until
+   // 2026-08-24 none of them was guarded: the DELETE path treated "gone" as success and
+   // unlinked, the UPSERT path threw for ever. Visit 7318 sat failed for 5 days, 4 attempts,
+   // auto_retry_state='exhausted', because "Visit not found" comes back as a TOP-LEVEL
+   // GraphQL error that gql() THROWS - so it never reached any ue() userErrors check. The
+   // guard has to WRAP THE CALLS, not inspect their results. The try is deliberately opened
+   // here rather than re-indenting ~70 lines of working push logic.
+   try {
     const groups: string[] | null = Array.isArray(changed) ? changed : (changed === undefined ? null : []);
     const wants = (g: string) => groups === null || groups.includes(g);
     // crew + instructions are EMPTY-CLOBBER-prone (our value is usually empty/null): push them ONLY
@@ -559,6 +576,30 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     }
     console.log(`[push] updated Jobber visit ${existingGid} [${did.join(",") || "noop"}] (our visit ${visitId})`);
     return { ok: true, updated: existingGid, did };
+   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!ALREADY_GONE.test(msg)) throw e;   // a real failure still aborts, unchanged
+
+    // The Jobber visit is gone. UNLINK so we stop editing a ghost — this matches what the
+    // delete path already does, and its own comment states the intent: "unlink so a later
+    // un-cancel (upsert) cleanly re-creates instead of editing a dead GID".
+    await db.from("entity_source_links").delete()
+      .eq("entity_type", "visit").eq("entity_id", visitId).eq("source_system", "jobber");
+
+    // ⚠ DELIBERATELY NOT falling through to CREATE in the same run. Unlinking is enough:
+    // the next real push takes the CREATE branch on purpose. Silently re-creating a visit
+    // that somebody deleted in Jobber is not a decision a catch block should make, and the
+    // reason it vanished (Jobber lost it / the office deleted it) changes the right answer.
+    // A human decides; this just stops the bleeding and says so.
+    //
+    // flagged:true uses the handler's existing convention — sync_state='failed' and the flag
+    // SURVIVES, but nothing throws, so the permanent exception loop ends. Before this, the
+    // catch-all wrote a generic 'push_exception' and the real cause lived only in an edge log.
+    await flag(visitId, "jobber_visit_vanished",
+      `Jobber no longer has visit ${existingGid} (${msg.slice(0, 200)}). Unlinked. Decide: re-create it in Jobber by editing the visit again, or cancel it here.`);
+    console.log(`[push] visit ${visitId}: Jobber gid ${existingGid} vanished — unlinked, flagged, not re-created`);
+    return { ok: true, flagged: true, unlinked: existingGid, note: "jobber visit vanished" };
+   }
   }
 
   // ---- CREATE (not linked) ----
