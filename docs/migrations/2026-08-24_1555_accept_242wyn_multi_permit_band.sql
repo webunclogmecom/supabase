@@ -77,23 +77,29 @@ BEGIN
     RAISE EXCEPTION '069-TCE is not grading ON_RULE/ONE_SLOT, so the snap is not what was verified';
   END IF;
 
-  -- 🛑 the acceptance must NOT be a standing exemption: move the band and it comes back
-  UPDATE derm.address_row_map SET band_y0_pct = band_y0_pct + 1.0
-   WHERE white_manifest_number = '833395'
-     AND matched_client_id = (SELECT id FROM public.clients WHERE client_code = '242-WYN');
+  -- 🛑 the acceptance must NOT be a standing exemption: change the reviewed VALUES and it comes back.
+  --
+  -- ⚠ THE FIRST VERSION OF THIS CONTROL PERTURBED derm.address_row_map.band_y0_pct AND FAILED,
+  -- CORRECTLY, AND THE REASON IS WORTH KNOWING. Since 2026-08-23_2322 the band check reads the
+  -- geometry OF THE SERVED DOCUMENT (derm.redacted_manifest_docs.band_y0/band_y1), not the current
+  -- band on the card. So editing address_row_map moves nothing here until the sweep republishes
+  -- that document. That is the correct design -- the check grades what the customer is actually
+  -- being served -- but it means "I changed the band" and "the check sees a different band" are
+  -- two events, not one, and any probe that conflates them proves nothing.
+  UPDATE derm.band_review SET band_y0_pct = band_y0_pct + 1.0
+   WHERE reviewed_by = 'claude-permit-grain-2026-08-24';
   SELECT count(*) INTO v_reopen FROM derm.v_band_edges_off_rule WHERE dump_folder = 'ticket-833395';
   IF v_reopen < 1 THEN
-    RAISE EXCEPTION 'moving the reviewed band did not reopen it, so the ledger is a blanket exemption';
+    RAISE EXCEPTION 'a review whose key no longer matches the served band did not reopen it, so the ledger is a blanket exemption';
   END IF;
-  UPDATE derm.address_row_map SET band_y0_pct = band_y0_pct - 1.0
-   WHERE white_manifest_number = '833395'
-     AND matched_client_id = (SELECT id FROM public.clients WHERE client_code = '242-WYN');
+  UPDATE derm.band_review SET band_y0_pct = band_y0_pct - 1.0
+   WHERE reviewed_by = 'claude-permit-grain-2026-08-24';
 
-  -- restored exactly
+  -- restored exactly, and the card's band was never touched by any of this
   IF NOT EXISTS (SELECT 1 FROM derm.address_row_map a JOIN public.clients c ON c.id = a.matched_client_id
                   WHERE a.white_manifest_number = '833395' AND c.client_code = '242-WYN'
                     AND a.band_y0_pct = 24.309 AND a.band_y1_pct = 47.445) THEN
-    RAISE EXCEPTION 'the reopen probe did not restore 242-WYN''s band';
+    RAISE EXCEPTION '242-WYN''s band is not the value that was verified';
   END IF;
   SELECT count(*) INTO v_n FROM derm.v_band_edges_off_rule WHERE dump_folder = 'ticket-833395';
   IF v_n <> 0 THEN RAISE EXCEPTION 'the folder did not leave the worklist again'; END IF;
