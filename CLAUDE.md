@@ -1626,15 +1626,32 @@ shipped at 07:36 and was fixed at 08:11.**
 | | question | values |
 |---|---|---|
 | `edge_verdict` | is a line of TEXT bisected? | `ON_RULE` / `OFF_RULE` / `UNSCANNED` / `STALE` |
-| `slot_verdict` | does the band cover exactly ONE client's slot? | `ONE_SLOT` / `PART_SLOT` / `SPANS_MULTIPLE` / `ODD_SLOT` / `UNKNOWN` |
+| `slot_verdict` | does the band cover exactly the printed rows THIS CLIENT owns? | `ONE_CLIENT` / `PART_SLOT` / `SPANS_MULTIPLE` / `ODD_SLOT` / `UNKNOWN` |
 
 The pass shipped with `edge_verdict` alone and its own comment saying "ON_RULE is necessary, not
 sufficient". **A caveat in a comment is not a control: 39 structurally wrong bands were passing it**,
 29 with an edge on a mid-slot divider or header bar and 10 containing a whole slot boundary. An edge
 on ANY printed rule is safe from bisecting text, and says nothing about which slot the band covers.
 
+🛑 **`ONE_CLIENT`, NOT `ONE_SLOT` (renamed 2026-08-24). A CLIENT CAN LEGITIMATELY OWN SEVERAL
+PRINTED SLOTS.** A generated sheet prints one row per ACTIVE GDO permit, so 242-WYN with three
+permits owns three consecutive slots and its band must cover all three: they are its own facilities,
+and blacking two would hide the client's own compliance record from itself. The old rule
+(`inner_boundaries = 0 AND inner_dividers = 1`) is just the N=1 case of the real one
+(`= N-1` and `= N`), which is why 637 of 638 bands did not move when this shipped.
+`expected_slots` is a visible column, so a flagged row shows what the check expected.
+
+🛑 **N IS PER PAGE, NOT PER CLIENT, and the obvious implementation is wrong.** Reading
+`address_sheet_clients.rows_printed` (the permit count) breaks a correct band: on sheet 1082,
+043-MIL's two permits are printed rows 5 and 6, which STRADDLE a page boundary, so on either page it
+owns exactly one slot. N counts `derm.v_sheet_printed_rows` entries whose `printed_page` maps
+**through `derm.fn_sheet_image_position`** to the band's `effective_page` -- `effective_page` is an
+IMAGE POSITION and `printed_page` is the LOGICAL page, and those genuinely differ.
+⚠ 577 of 638 bands resolve no generated sheet (the handwritten `window<N>-sheet<M>` set) and fall
+back to N=1. The permit rule is a fact about OUR generator, not about a sheet filled in by hand.
+
 ⚠ `slot_verdict` uses the kind of the NEAREST rule whatever the distance, so a band can be
-`ONE_SLOT` + `OFF_RULE`: the right two boundaries, edges a few tenths off them. That combination is
+`ONE_CLIENT` + `OFF_RULE`: the right two boundaries, edges a few tenths off them. That combination is
 the lowest-risk group on the worklist.
 
 🛑 **`UNSCANNED` IS A DISTINCT STATE FROM CLEAN**, and `derm.page_rule_scans` is what makes them
