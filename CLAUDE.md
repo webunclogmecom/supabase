@@ -1128,6 +1128,30 @@ sit at the (client, service_type) level. Eventually these belong on `properties`
 (see [operations.md → GDO permits](docs/operations.md#gdo-permits--bound-to-location-not-client-per-fred-2026-05-25)
 for full design + migration plan).
 
+**🛑 A GDO NUMBER DOES NOT CHANGE ON RENEWAL. AN EXPIRED PERMIT KEEPS ITS ROW (Fred, 2026-08-24).**
+Verbatim: *"even if a GDO expires their numbers doesn't changes on renewal, so even if it's expired
+keep it until the next GDO updates it, but it's number will not change unless the physical address
+of the place changes."*
+⇒ `permit_expiration` in the past is **not** a reason to deactivate a permit, drop its printed row
+from a DERM address sheet, or withhold it from a filing. `status` decides inclusion;
+`permit_expiration` is a fact about the paper. Live example: 242-WYN's **GDO-14760** (Nino Gordo)
+expired 2025-12-31 and correctly keeps row 2 of every sheet it appears on. A tidy-up that expires
+stale permits would silently shorten printed sheets.
+
+**🛑 IN A MULTI-TENANT BUILDING, ATTRIBUTE A PERMIT BY THE TENANT, NEVER BY THE ADDRESS.** 241-WYN
+(Wynd 27) and 242-WYN (Wynd 28) are two units at the same street address, and **two of Wynd 28's
+permits were attributed to Wynd 27 by two separate audits** that verified the permit PDF's Facility
+Location against the client's address -- the one field that is identical for both. GDO-13814 was
+demoted 2026-06-27; **GDO-16146 survived a "skeptic-verified" full audit on 2026-07-18 and was
+demoted 2026-08-24** (`2026-08-24_1530`) on Fred's reading of the Client App. The discriminator is
+`gdos.client_location_id` (the tenant), not the address.
+⚠ **Three more ACTIVE permit numbers are still claimed by two clients each** and each needs the same
+tenant-level adjudication: `GDO-07147` (212-TRUE + 213-TRUE), `GDO-08422` (209-TRUE + 214-MYK),
+`GDO-08912` (139-LTG + 144-LTG).
+⚠ A client with **zero** permits is a legal state, not a gap: 241-WYN now has none. The form is
+built for it -- Section B reads "GDO #", "Facility Name **(if no GDO#)**", "Complete Facility
+Address **(if no GDO#)**" -- and the generator renders `greatest(1, permit_count)` = one row.
+
 Historic workaround: `webhook-airtable` used to write the GDO Number to all `service_configs` rows
 for the client (not just GT), and the 2026-05-25 backfill caught the historic gap. That feed is dead
 (Airtable retired 2026-07-24), so nothing writes the GDO Number automatically today. Whatever writes
@@ -1159,10 +1183,27 @@ it next must keep the same write-to-all-rows behaviour.
     an automated reconciler recording the TRUTH that the service never happened; a RAISE there would
     force the DB to keep asserting a service that did not occur, and would stall a cron into
     `public.sync_log`, **which nothing reads** (measured: 3 health checks sitting in `attention`
-    right now, `calendar-push-health` continuously since 2026-06-27). Also 99.35% of Calendar
-    `visit_date` writes go through **`public.ripple_reschedule_visit`**, which moves a CHAIN
-    (avg 5.67 rows, up to 29) — a table-level RAISE aborts the whole ripple. If a hard check is
-    ever wanted, it belongs **inside that RPC**, which already has a `p_dry_run` branch to pre-flight it.
+    right now, `calendar-push-health` continuously since 2026-06-27). Also `public.ripple_reschedule_visit` takes
+    3,826 of the 4,569 `visit_date` writes and moves a CHAIN (avg 5.67 rows, up to 29), so a
+    table-level RAISE aborts the whole ripple.
+  - ⚠ **DO NOT "JUST PUT THE CHECK IN `ripple_reschedule_visit`" — IT IS THE ONE PLACE THE CHECK
+    CANNOT FIRE.** I wrote that recommendation and it is wrong; the adversarial pass caught it and
+    the function body confirms it. Line 19 is
+    `IF m.deleted_at IS NOT NULL OR m.visit_status IN ('completed','cancelled','skipped') THEN RAISE`,
+    and line 35 filters those out of the chain. **All 690 manifest-linked visits are `completed`**, so
+    ripple refuses every one of them. Measured: 579 ripple moves on 157 linked visits, **0 while
+    completed.** It only reaches a linked visit AFTER something un-completes it — which is exactly the
+    6756 sequence, cron at 13:46 then ripple at 21:34.
+  - **THREE app paths actually reach a linked visit's date**, so an RPC-level check must cover all
+    three or it is theatre: `/rpc/ripple_reschedule_visit` (579 moves / 157 visits),
+    `/visits` — direct PostgREST table writes (136 / 74), and **`/rpc/edit_calendar_visit`** (8 / 7).
+    That last one is the dangerous shape: SECURITY DEFINER, `EXECUTE` granted to `authenticated` on
+    both the `public` and `ops` copies, writes `visit_date` from `p_patch`, and its ONLY status check
+    in 143 lines is `IF v_visit.visit_status = 'skipped'`. It does not refuse completed. Proof it
+    reaches completed visits: audit id **22987**, 2026-06-26 14:14 ET, `fred@ayache.com` moved visit
+    5836 from 06-24 to 06-21 while it was completed with a tap. It has not yet done so on a *linked*
+    visit (0 of 8), but nothing stops it. **The detector is path-independent and covers all three;
+    that is why it, not an RPC check, is the thing that shipped.**
   - **Shipped 2026-08-24** (`2026-08-24_1510_manifest_link_completed_visit_guard.sql`):
     **`trg_ad_link_visit_completed`** (no linking a visit that has not happened — defence in depth,
     it would NOT have caught 6756, costs 0 of 690), **`trg_ae_dump_date_keeps_links_valid`** (the
