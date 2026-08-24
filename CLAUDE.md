@@ -1382,8 +1382,46 @@ Fred: *"prioritise building the fleet-wide printed-rule detection pass."* Done, 
 any band edit. Empty is healthy.** It is the band-geometry sibling of
 `derm.v_blackout_blocked_sheets`.
 
-**Live: 555 of 635 served bands are provably one whole slot with no line of text bisected. 58 sit
-on the worklist across 23 pages, ordered by `severity`.**
+**Live: 555 of 635 served bands are provably one whole slot with no line of text bisected. 33 sit
+on the worklist across 13 pages, ordered by `severity`.**
+
+✅ **SEVERITY 1 AND 2 ARE BOTH CLEARED: 47 bands reviewed, ZERO leaks** (`2026-08-23_2333`,
+`2026-08-24_0012`). Severity 2 is "the band starts or ends INSIDE a slot", which is the 226-JER
+shape that actually leaked, so it carried the strongest prior of the four tiers and still produced
+nothing. Causes, all verified against the paper:
+1. **the form's header bar reads as a slot boundary** — full-width and indistinguishable from a real
+   boundary by any local measurement;
+2. **a missed mid-slot divider flips the phase** — on a dark or handwritten scan every
+   boundary/divider label below the miss inverts, so a band that is exactly one printed slot reads
+   as boundary-to-divider;
+3. **the extra slot is empty**;
+4. **the client's own handwriting overflows the printed slot**, so spanning it is correct;
+5. 🛑 **THE WRITER SOMETIMES FITS MORE CLIENTS ON THE FORM THAN IT HAS SLOTS, BY HALVING THE ROWS.**
+   `window7-sheet6` p1 carries EIGHT clients on a six-slot form: four normal 5.5pp slots, then four
+   squeezed one per printed ROW at 2.7pp with name and address on a single line. `window10-sheet3`
+   p1 does the same with seven. Their 2.7pp bands are CORRECT. **A band that tight cannot be judged
+   from a whole-page render — check it against the served document**, which is how those four were
+   cleared.
+
+⚠ **Nothing in the database would have caught the four real leaks either.** They were bands holding
+another facility's PRINTED text, and on ticket-831047 that neighbour has no row on the sheet at all,
+so there was nothing to collide with. **The tiers are a screen, not a verdict: they turned 635
+documents into 47 that a couple of hours cleared. Keep them, and expect them to be mostly false.**
+
+🛑 **TWO PRINTED-BUT-UNROWED FACILITIES FOUND BY EYE, AND THERE IS STILL NO DETECTOR FOR THIS:**
+`window10-sheet4` p2 carries **Chima Steakhouse, 2400 East Las Olas Blvd** and `window3-sheet5` p2
+carries a **Carrot Express**, both printed on the sheet with no `address_row_map` row. Both sit in a
+GAP between bands today, so both are blacked for every client and neither leaks. But this is exactly
+what turned `ticket-310590` p2 into a leak on 2026-08-19, and it suggests those two tickets are
+missing a manifest link. Open for Fred.
+
+✅ **`derm.band_review` is the ledger.** A band a person has looked at and accepted drops off the
+worklist, so "empty is healthy" stays true. 🛑 **It is keyed on the BAND VALUES, not just the row: edit
+the band and the review stops matching and the row returns to the worklist.** An acceptance is a
+statement about one geometry, never a standing exemption, and both migrations prove it by moving a
+reviewed band mid-transaction and asserting it comes back. Use
+`scripts/probes/derm_band_review/annotate.js` to render a page with its detected rules drawn over the
+scan, and `served.js` when the bands are too tight to judge that way.
 
 ✅ **SEVERITY 1 IS CLEARED, AND THE RESULT IS WORTH KNOWING BEFORE YOU WORK THE REST: 22 bands, 15
 pages, ZERO leaks** (`2026-08-23_2333`). Severity 1 is "the band covers more than one printed slot",
