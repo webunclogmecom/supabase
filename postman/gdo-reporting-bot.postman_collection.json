@@ -49,6 +49,11 @@
       "key": "evidenceRunId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "wrongRpaKey",
+      "value": "invalid",
+      "type": "string"
     }
   ],
   "item": [
@@ -419,7 +424,7 @@
                 },
                 {
                   "key": "value",
-                  "value": "WRONG-ON-PURPOSE",
+                  "value": "{{wrongRpaKey}}",
                   "type": "string"
                 },
                 {
