@@ -15,6 +15,7 @@ Per-source integration details: webhook endpoints, signatures, payloads, registr
 | `rpa-derm-result` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-result` | GDO Online Reporting bot (POST; `x-rpa-key`) | derm_portal_submissions (visit-keyed) + `rpa-evidence` bucket (private) | Live 2026-07-21; idempotent on (visit_id, run_id) |
 | `rpa-derm-evidence` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-evidence` | GDO Online Reporting bot (POST; `x-rpa-key`) | fills `derm_portal_submissions.screenshot_path` + `rpa-evidence` bucket | Live 2026-08-24; **fill-once** (`.is(screenshot_path, null)`), never replaces evidence |
 | `rpa-derm-monthly` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-monthly` | LWT monthly report (GET; `x-rpa-key`) | reads `derm.v_lwt_monthly_rows` | Live 2026-08-24; **read-only**, no lease, ETag; scope evaluated per ACTIVITY; returns `data_quality.conflicts` from `derm.v_manifest_link_date_conflicts` (check `checked` before trusting an empty list) |
+| `health-escalate` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/health-escalate` | pg_cron `health-escalation` 13:30 UTC (POST; service_role JWT) | reads `ops.v_health_items`, writes `public.health_alert_state`, sends via Resend | Live 2026-08-24; emails fred@ayache.com ONLY when an item is new or open 3+ days unacknowledged. **Silence is the healthy outcome.** Marks as sent only after Resend accepts, so a failed send repeats |
 
 Every function:
 - Accepts `POST` with JSON body

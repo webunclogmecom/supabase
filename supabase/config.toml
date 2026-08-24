@@ -446,6 +446,12 @@ verify_jwt = true
 [functions.redact-manifest-sheet]
 verify_jwt = true
 
+[functions.health-escalate]
+# Invoked ONLY by pg_cron via fn_request_health_escalation(), which passes
+# edge_invoke_service_key from vault. The handler additionally requires role=service_role
+# from the decoded JWT, so the gateway MUST verify the signature. Never --no-verify-jwt.
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

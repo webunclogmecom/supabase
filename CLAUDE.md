@@ -1184,7 +1184,7 @@ it next must keep the same write-to-all-rows behaviour.
     force the DB to keep asserting a service that did not occur, and would stall a cron into
     `public.sync_log`, **which nothing reads**. Measured 2026-08-24: 3 health checks in
     `attention` right now; `rpa-derm-health` has been so for 10 consecutive days after 26
-    consecutive clean ones. ⚠ And `attention` is structurally unusable as a signal, not merely
+    consecutive clean ones. ✅ **FIXED the same day, see "The health watchdog" below.** ⚠ And `attention` is structurally unusable as a signal, not merely
     unread: it carries no severity and no dedup, so **89% of the last 7 days' attention rows are
     one source** (`jobber_visit_drift`, 161 of 180), which re-reported the SAME unresolvable visit
     every 30 minutes. Across its history 4,408 item-reports describe **105 distinct problems**.
@@ -1951,6 +1951,51 @@ pickup).
 recomputation for **all 8 months of 2026** and agreed on tickets, rows and excluded counts every time.
 Full design, the six open questions for John, and the read-vs-write reasoning:
 [docs/specs/2026-08-24-lwt-monthly-endpoint-design.md](docs/specs/2026-08-24-lwt-monthly-endpoint-design.md).
+
+### 🛑 THE HEALTH WATCHDOG: EMAIL ON STALENESS, AND SILENCE MEANS HEALTHY (2026-08-24)
+
+Four `log_*_health()` crons write a verdict into `public.sync_log`. **Nothing reads `sync_log`** and
+nothing ever will: health verdicts are **138 of 34,849 rows (0.40%)** there, under 21,863 Jobber poll
+records. It is a sync JOURNAL. Three checks sat in `attention` for days with nobody told, one of them
+a Miami-Dade DERM report that never filed.
+
+**The chain now:** `log_*_health()` -> `sync_log` -> `ops.v_health_items` -> `fn_health_alert_scan()`
+-> `public.health_alert_state` -> edge fn `health-escalate` -> **Resend -> fred@ayache.com**.
+Driven by cron `health-escalation` (`30 13 * * *`, jobid 30) via `fn_request_health_escalation()`.
+
+**It emails only when an item is NEW, or has been open >= 3 DAYS unacknowledged** (then weekly, not
+daily). Resolutions ride along in a mail already going out and never trigger one.
+**SILENCE IS THE NORMAL, HEALTHY OUTCOME. Do not "fix" it into a daily summary** - that is precisely
+what made `sync_log` unreadable, and Fred chose this threshold deliberately after seeing the numbers
+(only 7 attention streaks of 3+ days in two months, about one email per eight days).
+
+⚠ **The Slack digest that shipped earlier the same day is RETIRED** (workflow + script deleted).
+It posted on *change*, which leaves the opposite hole: a problem that appears once and then sits
+produces exactly ONE message and then silence for ever. Restoring it is a `git revert`, not a rewrite.
+
+🛑 **ACKNOWLEDGEMENT IS ALWAYS TIME-BOXED. There is deliberately NO permanent mute.**
+`fn_health_ack(check, item, days, reason)` rejects `days<1`, `days>365`, and an empty reason.
+`blackout-health`'s `ticket-833049` is frozen on purpose by a CHECK constraint and will NEVER
+resolve; without an expiry it would mail for ever and become the new wallpaper. A permanently
+silenced problem is an unknown problem.
+
+🛑 **THE MARK HAPPENS ONLY AFTER RESEND ACCEPTS, AND THAT ASYMMETRY IS THE POINT.**
+`fn_health_alert_scan()` records what it SAW but not that it alerted; the edge function calls
+`fn_health_alert_mark_sent()` only on a 2xx. **A failed send REPEATS tomorrow instead of vanishing.**
+For a watchdog a duplicate is cheap and a miss is the whole failure mode. Do not merge the two calls.
+
+⚠ **`RESEND_API_KEY` is an EDGE secret and is NOT in vault**, so Postgres cannot email directly.
+That is why this is cron -> `net.http_post` -> edge fn, using `edge_invoke_service_key` like the four
+`fn_request_*` helpers. `unclogme.com` is Verified in Resend.
+
+⚠ **A new health check MUST be added to the CASE in BOTH `ops.v_health_items` and
+`ops.v_health_status`** or it contributes zero items, always looks unchanged, and can never escalate.
+Two places by accident of history; if you touch one, check the other.
+
+⚠ **Timing:** the escalation runs 13:30 UTC because `blackout-health` writes at 08:00 ET and
+`ops.v_health_items` reads only the LATEST run of each check. In WINTER that gap narrows to 30
+minutes. **If `blackout-health` moves, move `health-escalation` too**, or it reports a day-stale
+blackout verdict and says nothing changed.
 
 ---
 
