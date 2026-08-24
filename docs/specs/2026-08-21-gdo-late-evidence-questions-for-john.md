@@ -1,6 +1,6 @@
 # Draft message to John: GDO Report Bot, data first and evidence image later
 
-**Status: DRAFT, NOT SENT.** Written 2026-08-23 by @Building Apps at Fred's request. Nothing has been
+**Status: DRAFT, NOT SENT.** Written 2026-08-24 by @Building Apps at Fred's request. Nothing has been
 sent to John through any channel. Fred picks the channel and sends it.
 
 **Why it exists:** [`2026-08-21-gdo-late-evidence-design.md`](2026-08-21-gdo-late-evidence-design.md)
