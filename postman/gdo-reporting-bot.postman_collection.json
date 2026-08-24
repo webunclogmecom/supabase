@@ -419,7 +419,7 @@
                 },
                 {
                   "key": "value",
-                  "value": "deliberately-wrong-key",
+                  "value": "WRONG-ON-PURPOSE",
                   "type": "string"
                 },
                 {
