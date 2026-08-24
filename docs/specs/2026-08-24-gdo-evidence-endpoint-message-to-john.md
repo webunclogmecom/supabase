@@ -44,8 +44,12 @@ Same `x-rpa-key` as the other two.
 *The docs are updated.* The API reference now has a section *4b* covering this endpoint end to end, the request body, every response, the full error list, and the result-before-evidence ordering. It also has the corrected rollout-gate status and a note on the image-format change:
 https://github.com/webunclogmecom/supabase/blob/main/postman/README.md
 
-The Postman collection has a new folder, *"4. Evidence (late attach)"*, that runs top to bottom against dry-run data: post a result with no image, attach it, attach again to see the fill-once no-op, then attach to an unknown run to see the 404. Run *"1. Queue - dry-run"* first so the visit id gets captured. Import the current version from here:
+The Postman collection has a new folder, *"4. Evidence (late attach)"*, that runs top to bottom against dry-run data: post a result with no image, attach it, attach again to see the fill-once no-op, then attach to an unknown run to see the 404. Run *"1. Queue - dry-run"* first so the visit id gets captured.
+
+Current version here:
 https://raw.githubusercontent.com/webunclogmecom/supabase/main/postman/gdo-reporting-bot.postman_collection.json
+
+*One tip so you don't lose time on it:* open that link and paste the file's *contents* into Postman's Import box. Pasting the URL itself silently does nothing, it just reports "Import Failed" without saying why. Cost me five attempts to work that out.
 
 *A few things I'd still like from you:*
 
