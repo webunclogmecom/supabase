@@ -59,8 +59,10 @@ https://raw.githubusercontent.com/webunclogmecom/supabase/main/postman/gdo-repor
 
 ## Notes for Fred, not part of the message
 
-- **Nothing has been sent.** Say the word and I will post it, but Slack posts as you, so I want your
-  go-ahead in the moment rather than assuming.
+- **NOT sent to John.** It was posted twice into Fred's OWN self-DM (`D0AMD1LQK62`) so he can copy it
+  and post it to John himself. ⚠ **That is the point of the exercise:** every message the MCP tool
+  sends ends with `*Sent using* <@Claude>`, verified by reading one back, and Fred does not want that
+  line on it. Copy the RENDERED message, excluding that final line, and paste it into John's DM.
 - ⚠ **The JSON body is inside a nested code fence.** When you paste into Slack, paste the inner block
   as its own snippet or Slack will end the outer fence early. Safest is to paste the message, then
   paste the JSON separately.
