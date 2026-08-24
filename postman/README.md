@@ -381,8 +381,22 @@ visits and captures the first `visit_id` into a collection variable the Result r
 **2. Result** (all `dry_run:true`, so they record separately and never affect the live queue or what
 customers/apps see), and **3. Validation** (shows the endpoint rejecting bad input).
 
-**Variables:** you only ever set `rpaBotKey`. `baseUrl` is preset. `dryRunVisitId` / `dryRunManifestId`
-are auto-captured into **collection** scope by the dry-run request — leave them empty and do **not** add
+**Variables:** you only ever set `rpaBotKey`. `baseUrl` and `wrongRpaKey` are preset. `dryRunVisitId` /
+`dryRunManifestId` / `evidenceRunId` are auto-captured into **collection** scope by the requests that
+create them.
+
+🛑 **`wrongRpaKey` exists so the "Wrong key -> 401" test does NOT hold a literal in its auth field, and
+it must stay that way.** Postman's secret scanner flags **any** hardcoded value in an auth field as an
+"Auth secret", whatever the string is: it flagged `deliberately-wrong-key` and then flagged the
+harmless rename `WRONG-ON-PURPOSE` identically. That prompt **blocks the whole collection import**
+behind Vault / Secure / Remove, none of which suit a value that is deliberately invalid. A `{{variable}}`
+is never flagged, which is why the collection's own auth (`{{rpaBotKey}}`) always imported cleanly.
+⚠ Put a literal back in that field and every future import, including John's, hits the prompt again.
+
+**⚠ Importing by URL silently does nothing.** Pasting the raw GitHub URL into Import produced
+"Import Failed" (and once, "Import Complete" and "Import Failed" at the same time) while changing
+nothing. **Paste the JSON contents instead**, which works first time. Verify by looking at the folder
+tree, never at the notification — leave them empty and do **not** add
 them to a selected environment (an empty environment copy shadows the captured value and blanks the
 Result requests).
 
