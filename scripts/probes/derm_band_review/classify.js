@@ -114,14 +114,27 @@ for (const rec of det) {
     for (let i = 1; i < rules.length; i++) spacings.push(rules[i].pct - rules[i - 1].pct);
     spacings.sort((a, b) => a - b);
     const halfPitch = spacings.length ? spacings[(spacings.length / 2) | 0] : 0;
-    const maxRun = rules.length ? Math.max(...rules.map(x => x.run)) : 0;
-    const isLong = x => x.run >= 0.70 * maxRun;
+    // ⚠ "LONG" MUST COME FROM THE PAGE'S OWN CLUSTER SPLIT, NOT A FRACTION OF ITS MAXIMUM.
+    // It was `run >= 0.70 * maxRun`, and on ticket-311045 p1 the two clusters sit at 0.403 and
+    // 0.542, a ratio of 1.34. That threshold marks EVERY rule long, so the end-trim below ate
+    // eight of the twelve and the page graded FAILED with "only 4 rules inside the roster" while
+    // its rules were in fact a textbook alternation. Splitting at the largest gap in the page's own
+    // run values is what separates the two printed objects; a fixed fraction does not.
+    const runsSorted = rules.map(x => x.run).slice().sort((a, b) => a - b);
+    let cutRun = null, cutGapRun = 0;
+    for (let i = 1; i < runsSorted.length; i++) {
+      const gp = runsSorted[i] - runsSorted[i - 1];
+      if (gp > cutGapRun) { cutGapRun = gp; cutRun = (runsSorted[i] + runsSorted[i - 1]) / 2; }
+    }
+    const isLong = x => cutRun != null && x.run >= cutRun;
     const close = (a, b) => Math.abs(b.pct - a.pct) < 0.6 * 2 * halfPitch;
+    // At most TWO bars can sit outside the roster at each end, and never strip a page below six
+    // rules: a trim that removes most of a page is a bug, not a trim.
     let guard = 0;
-    while (chain.length > 4 && guard++ < 4
+    while (chain.length > 6 && guard++ < 2
            && isLong(chain[0]) && isLong(chain[1]) && close(chain[0], chain[1])) chain = chain.slice(1);
     guard = 0;
-    while (chain.length > 4 && guard++ < 4
+    while (chain.length > 6 && guard++ < 2
            && isLong(chain[chain.length - 1]) && isLong(chain[chain.length - 2])
            && close(chain[chain.length - 2], chain[chain.length - 1])) chain = chain.slice(0, -1);
   }
