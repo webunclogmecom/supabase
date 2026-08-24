@@ -1235,14 +1235,41 @@ near-miss OCR of `026-HAP` / `199-STK` / `226-JER`. They describe pad 421, not s
 inert today because image position 2 is unreachable. They would become misleading if image 2 were
 ever replaced with the real page 2.
 
-🛑 **NOTHING SCHEDULES `ocr-address-sheet-rows`.** It is deployed and works, but no cron and no DB
-function references it, so `derm.address_sheet_row_reads` only fills when somebody invokes it by
-hand (6 of 17 generated folders have any). The sheet-NUMBER OCR is scheduled
-(`sheet-number-ocr-sweep`, `*/10`, via `public.fn_request_sheet_number_ocr()`); the ROW OCR is not.
-Row reads are only needed by the superset arm of `fn_resolve_generated_sheet_for_ticket`, so most
-sheets still resolve through exact client-set equality, but a ticket that is a subset of its sheet
-(833395 was: 3 clients on a 8-client sheet) cannot resolve without them. A
-`fn_request_sheet_row_ocr()` + cron mirroring the number sweep is the missing piece.
+✅ **THE ROW OCR IS NOW SCHEDULED** (`sheet-row-ocr-sweep`, `5-55/10`, via
+`public.fn_request_sheet_row_ocr()`, added `2026-08-24_1520`). It had never been called by anything:
+deployed and working for weeks, with `derm.address_sheet_row_reads` filling only when somebody
+invoked it by hand. That is what left 833395 unresolved, because a ticket whose clients are a
+SUBSET of its sheet can only resolve through the superset arm, which reads row reads; exact
+client-set equality needs none, which is why every other sheet resolved.
+
+🛑 **ITS TARGET PREDICATE IS AN ATTEMPT LEDGER, NOT READ-PRESENCE, AND THAT IS NOT A STYLE CHOICE.**
+Copying `fn_sheet_number_ocr_targets`' "exclude pages that already have a read" would burn a vision
+call on an unparseable page **every ten minutes for ever**, silently, with the cron reporting
+`succeeded` throughout. The two handlers differ: `ocr-address-sheet-number` writes a row even at low
+confidence, `ocr-address-sheet-rows` has `if (payload.length)` at `index.ts:205` and writes **nothing**
+for a page that parses to zero rows. So `derm.row_ocr_attempts` records that we ASKED; three
+attempts and the ticket is left alone.
+⚠ The budget is keyed on a fingerprint of the ticket's image list, so replacing a bad scan re-arms
+it. Without that a page that failed on a poor photo could never be read again.
+⚠ **One TICKET per cycle, not one image.** The handler takes `{ticket}` and does every page of it,
+so a 3-page ticket is 3 vision calls in one request. The number sweep's `{limit: 2}` counts images.
+
+**✅ THE COMPLETION FLAG IS PINNED** (`2026-08-24_1545`). `derm.stamp_sheet_status` gained
+`reopened_at` / `reopened_by`, maintained by `trg_aa_reopen_pin`, and
+`fn_resolve_generated_sheet_for_ticket`'s auto-complete leg now has two extra predicates:
+- it requires every placed stamp to be **renderable** (`stamp_page` inside the ticket's image list).
+  Its only condition used to be "no card is unplaced", which never asked whether a stamp could be
+  DRAWN, and is exactly why the Studio reported **3/3 over a blank sheet**;
+- it **will not touch a row with `reopened_at` set**. Measured: a human set `completed=false` at
+  10:56:39 ET and this leg restored `true` at 11:25:41.
+
+🛑 **The human case is NOT the important one.** `derm.trg_zx_generated_sheet_return_review` writes the
+same `completed=false` as the MACHINE's request for a visual check when a returned sheet photo
+arrives, and it has fired 4 times. Row triggers fire alphabetically and `zx` sorts before `zy`, so
+the request and its erasure could land microseconds apart in one transaction. **`completed=false`
+means "a human must look at this" throughout this estate; the resolver was the outlier.**
+⚠ A row that has NEVER been completed has `reopened_at` NULL, so first-time auto-completion is
+unchanged. Distinguishing "not yet completed" from "deliberately re-opened" is the entire point.
 
 ⚠ **Open question for Fred, pre-existing and not introduced by this work:** a multi-permit client
 gets **one** stamp, on the first of its printed rows (`is_first_row`), because `address_row_map`
