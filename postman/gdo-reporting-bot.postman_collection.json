@@ -54,6 +54,16 @@
       "key": "wrongRpaKey",
       "value": "invalid",
       "type": "string"
+    },
+    {
+      "key": "reportMonth",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "monthlyEtag",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -644,6 +654,192 @@
                 "exec": [
                   "pm.test('404', () => pm.response.to.have.status(404));",
                   "pm.test('names the reason', () => pm.expect(pm.response.json().error).to.eql('result_not_found_for_visit_run'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Monthly LWT report (read-only, no side effects)",
+      "item": [
+        {
+          "name": "Monthly - filing set (START HERE)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?month={{reportMonth}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{reportMonth}}"
+                }
+              ]
+            },
+            "description": "The Miami-Dade LWT monthly report for the last completed month.\n\nREAD ONLY: no lease, no dispense, no side effects. Safe to run as often as you like, unlike the queue.\n\nReturns only IN-SCOPE activities. Scope is evaluated PER ACTIVITY, not per ticket: pickup county = Dade OR the ticket offloaded in Miami-Dade. A ticket with no in-scope activity is omitted entirely, and excluded_rows tells you how many rows that cost so nothing is dropped silently.\n\nNote gallons is ALWAYS null by design: the filed quantity is the truck capacity, resolved from the decal on your side. truck and truck_capacity_gallons are provided."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Use the last COMPLETED month, which is what a monthly filing is about.",
+                  "const d = new Date();",
+                  "d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1);",
+                  "const m = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');",
+                  "pm.collectionVariables.set('reportMonth', m);",
+                  "console.log('reportMonth = ' + m);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('shaped as expected', () => {",
+                  "  pm.expect(j.month).to.eql(pm.collectionVariables.get('reportMonth'));",
+                  "  pm.expect(j.county).to.eql('Miami-Dade');",
+                  "  pm.expect(j.tickets).to.be.an('array');",
+                  "});",
+                  "const rows = (j.tickets || []).flatMap(t => t.rows || []);",
+                  "pm.test('every returned row is in scope', () => rows.forEach(r => pm.expect(r.in_scope).to.eql(true)));",
+                  "pm.test('gallons is always null (resolve from the decal)', () => rows.forEach(r => pm.expect(r.gallons).to.eql(null)));",
+                  "pm.test('pickup_date is present and is the VISIT date', () => rows.forEach(r => pm.expect(r.pickup_date).to.be.a('string')));",
+                  "if (pm.response.headers.get('ETag')) { pm.collectionVariables.set('monthlyEtag', pm.response.headers.get('ETag')); }",
+                  "console.log(j.ticket_count + ' tickets, ' + j.row_count + ' rows, ' + j.excluded_rows + ' excluded');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Monthly - include=all (the superset you filter yourself)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?month={{reportMonth}}&include=all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{reportMonth}}"
+                },
+                {
+                  "key": "include",
+                  "value": "all"
+                }
+              ]
+            },
+            "description": "The same month with NOTHING filtered: every row of every ticket, in-scope or not, each carrying county / pickup_in_dade / in_scope.\n\nUse this if you would rather apply the scope rule yourself. row_count here equals the filing set plus excluded_rows."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('include flag echoed', () => pm.expect(j.include).to.eql('all'));",
+                  "pm.test('superset is >= the filing set', () => pm.expect(j.row_count).to.be.at.least(1));",
+                  "const rows = (j.tickets || []).flatMap(t => t.rows || []);",
+                  "pm.test('carries out-of-scope rows too', () => pm.expect(rows.some(r => r.in_scope === false) || j.excluded_rows === 0).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Monthly - ETag revalidation -> 304",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?month={{reportMonth}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{reportMonth}}"
+                }
+              ]
+            },
+            "description": "Send the ETag from the first request back as If-None-Match. A repeated poll for an unchanged month costs a 304 with no body.\n\nRun \"Monthly - filing set\" first so monthlyEtag is captured."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.add({ key: 'If-None-Match', value: pm.collectionVariables.get('monthlyEtag') || '' });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('304 Not Modified', () => pm.response.to.have.status(304));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Monthly - bad month -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?month=2026-13",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-13"
+                }
+              ]
+            },
+            "description": "Month must be YYYY-MM with a real month number. Expect 400 month_required_yyyy_mm."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('names the reason', () => pm.expect(pm.response.json().error).to.eql('month_required_yyyy_mm'));"
                 ]
               }
             }

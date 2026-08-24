@@ -519,6 +519,9 @@ verify_jwt = false
 [functions.rpa-derm-evidence]
 verify_jwt = false
 
+[functions.rpa-derm-monthly]
+verify_jwt = false
+
 [functions.get-permit-doc]
 verify_jwt = false
 

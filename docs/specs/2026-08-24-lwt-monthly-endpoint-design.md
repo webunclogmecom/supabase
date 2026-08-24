@@ -1,7 +1,13 @@
 # Design: `rpa-derm-monthly`, the LWT monthly report endpoint
 
 *Written 2026-08-24 by @Building Apps, from Jonathan's message after Diego's handover of the blank
-form plus six filed pages.* **Status: PROPOSED. Nothing built.**
+form plus six filed pages.* **Status: SHIPPED 2026-08-24.** `derm.v_lwt_monthly_rows` (`2026-08-24_1730`) and the
+`rpa-derm-monthly` endpoint are live, docs and Postman updated. 17 of 17 end-to-end assertions pass,
+including the scope controls below.
+
+⚠ **The six discrepancies in section 7 are NOT resolved.** They are questions for John, not blockers,
+and the endpoint serves the facts either way. The two that change his build: "one quantity per ticket"
+does not hold (43 of 127 tickets used more than one truck), and no truck we own is 3,800 gallons.
 
 ---
 

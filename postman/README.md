@@ -265,6 +265,109 @@ recorded, so refusing a broken attach costs nothing and telling you plainly is m
 
 ---
 
+## 4c. `GET /functions/v1/rpa-derm-monthly`: the LWT monthly report
+
+**Added 2026-08-24**, read-only, for the Miami-Dade Liquid Waste Transporter monthly filing.
+
+```
+GET /functions/v1/rpa-derm-monthly?month=YYYY-MM
+```
+
+Same `x-rpa-key`. **No lease, no dispense, no side effects.** Safely re-callable: two calls a second
+apart return the same body unless a manifest changed underneath. This is deliberately the opposite of
+the queue, whose job is to never hand the same work out twice.
+
+**Query params**
+
+| Param | Values | Meaning |
+|---|---|---|
+| `month` | `YYYY-MM` | **required.** Selected on the OFFLOAD date, so a ticket is never split across two reports. |
+| `include` | `all` | Optional. Return every row of every ticket in the month, in-scope or not. Omit for the filing set. |
+
+**Response `200`** (abridged)
+
+```jsonc
+{
+  "month": "2026-08",
+  "county": "Miami-Dade",
+  "scope": "picked up in Miami-Dade OR offloaded in Miami-Dade, evaluated per activity",
+  "include": "in_scope",
+  "ticket_count": 12, "row_count": 70, "excluded_rows": 10,
+  "tickets": [{
+    "ticket_number": "312024",
+    "ticket_kind": "yellow",              // white = Dade offload, yellow = Broward offload
+    "offload_in_dade": false,
+    "offload_date": "2026-08-21",
+    "disposal_facility": "Water and Wastewater Services",
+    "trucks": ["David", "Moises"],
+    "excluded_rows": 6,
+    "rows": [{
+      "pickup_date": "2026-08-16",        // the VISIT date. see the warning below
+      "client_code": "026-HAP", "client_name": "Happea's",
+      "address": "1250 South Miami Avenue", "city": "Miami",
+      "state": "Florida", "zip": "33130", "county": "Dade",
+      "pickup_in_dade": true, "in_scope": true,
+      "truck": "Moises", "truck_capacity_gallons": 9000,
+      "gallons": null,
+      "visit_id": 6587
+    }]
+  }]
+}
+```
+
+### 🛑 Scope is evaluated PER ACTIVITY, not per ticket
+
+The form covers *"all transportation activities where liquid waste was picked up OR offloaded in
+Miami-Dade County"*, and an activity is a pickup. Both obvious shortcuts are wrong, and both were
+measured over 2026 before this was built:
+
+- filtering on **"offloaded in Dade" alone drops 11 tickets and 53 activities**, Broward offloads that
+  carried Miami-Dade pickups;
+- applying the OR at **ticket** grain **over-reports**, because 20 tickets mix counties. Measured on
+  August: ticket `311045` has 0 in-scope rows of 2, `312024` has 3 of 9, `310590` has 6 of 8.
+
+So the rule is `pickup county = Dade OR the ticket offloaded in Miami-Dade`, applied to each row. If a
+ticket offloaded in Dade then every pickup on it qualifies, so only Broward-offload tickets get
+trimmed.
+
+**By default you receive only in-scope rows**, and a ticket with no in-scope activity is omitted
+entirely. Nothing is dropped silently: `excluded_rows` is reported per ticket and for the month, and
+`?include=all` returns the superset so you can see exactly what was filtered and apply your own rule.
+
+### 🛑 `pickup_date` is the VISIT date, never our `service_date`
+
+Our `derm_manifests.service_date` is a misnomer that holds the **dump** date: the DERM Tracker writes
+the entered dump date into both columns, so 496 of 532 manifests have them identical. This endpoint
+reads the linked visit instead. If you ever see `pickup_date` equal to `offload_date` on every row,
+that is the bug, not the data.
+
+⚠ **A pickup can fall in the previous month.** Ticket `831710` offloaded 2026-08-02 carrying a
+2026-07-30 pickup. The month selects on the offload date so a ticket is never split in two.
+
+### ⚠ `gallons` is always `null`, and that is the contract
+
+The filed quantity is the **truck capacity**, which is a property of the vehicle and its decal, not of
+the manifest. We store no measured volume per load, so any number here would be a guess dressed as
+data. `truck` and `truck_capacity_gallons` are served so you have the input. The fee arithmetic
+(`total gal × $0.00419`, **truncated** to cents, not rounded) stays in your generator, which is
+validated against filed pages.
+
+**Caching:** every response carries a weak `ETag`. Send it back as `If-None-Match` and a repeated poll
+for the same month costs a `304`.
+
+**Errors**
+
+| Status | Code | Cause |
+|---|---|---|
+| 400 | `month_required_yyyy_mm` | missing or malformed `month` |
+| 400 | `month_out_of_range` | before 2024, or more than ~2 months ahead |
+| 400 | `month_too_large` | over 1,000 rows. Raises rather than truncating: a short compliance report is the worst failure available |
+| 401 | `unauthorized` | missing/wrong `x-rpa-key` |
+| 405 | `method_not_allowed` | anything but GET |
+| 500 | `monthly_query_failed` | transient, retry |
+
+---
+
 ## 5. How you run it — you poll, on your own schedule
 
 **You own the timing. There is no push from us** — you don't expose any endpoint, and there is no

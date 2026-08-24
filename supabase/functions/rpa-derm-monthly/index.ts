@@ -1,0 +1,208 @@
+// ============================================================================
+// rpa-derm-monthly — the LWT monthly report feed (READ ONLY)
+// ----------------------------------------------------------------------------
+// GET /functions/v1/rpa-derm-monthly?month=YYYY-MM   header: x-rpa-key
+//
+// Built 2026-08-24 for Jonathan's Miami-Dade Liquid Waste Transporter generator.
+// Design + every measurement behind it:
+//   docs/specs/2026-08-24-lwt-monthly-endpoint-design.md
+//
+// 🛑 THIS ENDPOINT IS PURE. No lease, no cap, no side effects, safely re-callable.
+// That is the OPPOSITE of rpa-derm-queue, whose whole job is to never hand the same
+// work out twice. Do not copy lease/dispense logic in here, and do not "unify" the
+// two: a report that is not repeatable is broken, and a queue that is repeatable
+// double-files to the county.
+//
+// 🛑 SCOPE IS PER ACTIVITY, NOT PER TICKET, and both naive builds are wrong:
+//   * "offloaded in Dade" alone DROPS 11 tickets / 53 rows (Broward offloads that
+//     carried Miami-Dade pickups).
+//   * the OR at TICKET grain OVER-reports: measured on August 2026, ticket 311045 has
+//     0 in-scope rows of 2, 312024 has 3 of 9, 310590 has 6 of 8.
+// The predicate lives in derm.v_lwt_monthly_rows.in_scope, not here, so it can be
+// tested without HTTP and so our own apps cannot grow a second, divergent copy.
+//
+// DEFAULT = in-scope rows only, because this feeds a regulatory filing and handing
+// back rows that do not belong on the form invites printing them. Nothing is dropped
+// SILENTLY though: excluded_rows is reported at both ticket and top level, and
+// ?include=all returns the full superset for John's own filtering.
+//
+// AUTH: same x-rpa-key as the other three, verify_jwt=false in config.toml.
+// ============================================================================
+
+import { createClient } from 'jsr:@supabase/supabase-js@2'
+
+const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
+  .split(',')
+  .map((k) => k.trim())
+  .filter(Boolean)
+
+// Far above real volume (2026 peak: 109 rows in a month). Exists so an unbounded
+// query can never become an outage. 🛑 It RAISES rather than truncating: a short
+// report on a compliance filing is the worst failure available here.
+const MAX_ROWS = 1000
+
+function json(body: Record<string, unknown>, status: number, extra: HeadersInit = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...extra },
+  })
+}
+
+// Cheap stable hash for the ETag. Not cryptographic: it only has to change when the
+// result changes, so his preview UI can re-poll a month for free.
+function etagOf(s: string): string {
+  let h1 = 0x811c9dc5, h2 = 0x01000193
+  for (let i = 0; i < s.length; i++) {
+    h1 = (h1 ^ s.charCodeAt(i)) >>> 0
+    h1 = (h1 * 0x01000193) >>> 0
+    h2 = (h2 + s.charCodeAt(i) * (i + 1)) >>> 0
+  }
+  return `W/"${h1.toString(16)}${h2.toString(16)}"`
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method !== 'GET') return json({ error: 'method_not_allowed' }, 405)
+
+  if (KEYS.length === 0) {
+    console.error('RPA_BOT_KEYS secret not configured')
+    return json({ error: 'service_not_configured' }, 503)
+  }
+  if (!KEYS.includes(req.headers.get('x-rpa-key') ?? '')) {
+    return json({ error: 'unauthorized' }, 401)
+  }
+
+  const url = new URL(req.url)
+  const month = (url.searchParams.get('month') ?? '').trim()
+  const includeAll = (url.searchParams.get('include') ?? '') === 'all'
+
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return json({ error: 'month_required_yyyy_mm' }, 400)
+  }
+
+  // Range on the OFFLOAD date, so a ticket is never split across two reports.
+  // ⚠ A pickup can therefore fall in the PREVIOUS month (real: ticket 831710 offloaded
+  // 2026-08-02 carries a 2026-07-30 pickup). That is deliberate and is an open question
+  // for John, not something to silently "fix" by filtering on pickup_date too.
+  const [y, m] = month.split('-').map(Number)
+  const start = `${month}-01`
+  const endD = new Date(Date.UTC(y, m, 1)) // first of the next month
+  const end = endD.toISOString().slice(0, 10)
+
+  // Guard rails: nothing before the first manifest, nothing far in the future.
+  if (y < 2024 || endD.getTime() > Date.now() + 62 * 24 * 3600 * 1000) {
+    return json({ error: 'month_out_of_range' }, 400)
+  }
+
+  const sb = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { global: { headers: { 'x-app-source': 'gdo-report-bot' } } },
+  )
+
+  // 🛑 .schema('derm') IS LOAD-BEARING. This view lives in `derm`, and `sb` is built
+  // without a `db.schema` option, so it resolves names against `public` by default.
+  // Omitting it is exactly the defect that made record-manual-gdo-report fail for
+  // every visit in its entire history (fixed 2026-08-24, commit e30f28f). The failure
+  // is a plain "relation does not exist" that reads like the view was never created.
+  const { data, error } = await sb
+    .schema('derm')
+    .from('v_lwt_monthly_rows')
+    .select('*')
+    .gte('offload_date', start)
+    .lt('offload_date', end)
+    .order('offload_date', { ascending: true })
+    .order('ticket_number', { ascending: true })
+    .order('pickup_date', { ascending: true })
+    .limit(MAX_ROWS + 1)
+
+  if (error) {
+    console.error('monthly query failed:', error.message)
+    return json({ error: 'monthly_query_failed' }, 500)
+  }
+  const rows = data ?? []
+  if (rows.length > MAX_ROWS) {
+    // Loud, never a silent truncation.
+    return json({ error: 'month_too_large', max_rows: MAX_ROWS }, 400)
+  }
+
+  // ---- group rows into tickets -------------------------------------------------
+  type Row = Record<string, any>
+  const byTicket = new Map<string, Row[]>()
+  for (const r of rows as Row[]) {
+    const k = String(r.ticket_number)
+    if (!byTicket.has(k)) byTicket.set(k, [])
+    byTicket.get(k)!.push(r)
+  }
+
+  let excludedTotal = 0
+  const tickets: Record<string, unknown>[] = []
+
+  for (const [ticketNumber, all] of byTicket) {
+    const kept = includeAll ? all : all.filter((r) => r.in_scope === true)
+    const excluded = all.length - all.filter((r) => r.in_scope === true).length
+    // A ticket with no in-scope activity is not a Miami-Dade activity at all
+    // (measured: August ticket 311045, 2 rows, 0 in scope). Drop the whole ticket in
+    // the default view, but still count its rows as excluded so the omission is
+    // visible rather than silent.
+    // ⚠ include=all must mean ALL: it keeps these tickets, or the flag does not do
+    // what its name says and John cannot see what he is filtering out.
+    if (!includeAll && all.every((r) => r.in_scope !== true)) {
+      excludedTotal += all.length
+      continue
+    }
+    excludedTotal += excluded
+
+    const head = all[0]
+    tickets.push({
+      ticket_number: ticketNumber,
+      ticket_kind: head.ticket_kind,
+      offload_in_dade: head.offload_in_dade,
+      offload_date: head.offload_date,
+      disposal_facility: head.disposal_facility,
+      trucks: [...new Set(all.map((r) => r.truck).filter(Boolean))],
+      excluded_rows: excluded,
+      rows: kept.map((r) => ({
+        pickup_date: r.pickup_date,
+        client_code: r.client_code,
+        client_name: r.client_name,
+        address: r.address,
+        city: r.city,
+        state: r.state,
+        zip: r.zip,
+        county: r.county,
+        pickup_in_dade: r.pickup_in_dade,
+        in_scope: r.in_scope,
+        truck: r.truck,
+        // numeric() arrives as a string over PostgREST; emit a number or null.
+        truck_capacity_gallons: r.truck_capacity_gallons == null
+          ? null
+          : Number(r.truck_capacity_gallons),
+        // ALWAYS null. The filed quantity is truck capacity, resolved from the decal
+        // caller-side. We store no measured volume, so a value here would be a guess.
+        gallons: null,
+        visit_id: r.visit_id,
+      })),
+    })
+  }
+
+  const body = {
+    month,
+    generated_at: new Date().toISOString(),
+    county: 'Miami-Dade',
+    scope: 'picked up in Miami-Dade OR offloaded in Miami-Dade, evaluated per activity',
+    include: includeAll ? 'all' : 'in_scope',
+    ticket_count: tickets.length,
+    row_count: tickets.reduce((n, t) => n + (t.rows as unknown[]).length, 0),
+    excluded_rows: excludedTotal,
+    tickets,
+  }
+
+  // ETag ignores generated_at, or every call would look different.
+  const { generated_at: _ignored, ...stable } = body
+  const etag = etagOf(JSON.stringify(stable))
+  if ((req.headers.get('if-none-match') ?? '') === etag) {
+    return new Response(null, { status: 304, headers: { ETag: etag } })
+  }
+
+  return json(body, 200, { ETag: etag, 'Cache-Control': 'no-cache' })
+})
