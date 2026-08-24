@@ -1,4 +1,4 @@
--- 2026-08-21_2330_gdo_correct_report_per_run.sql
+-- 2026-08-24_1745_gdo_correct_report_per_run.sql
 --
 -- WHAT: make a GDO report correction target ONE submission instead of "whatever the visit filed
 --       most recently".
@@ -6,7 +6,7 @@
 --         - public.fn_correct_gdo_report(visit_id, confirmation, failure)          <- becomes a
 --           HARD REFUSAL naming the new signature (rule: never leave a silently-wrong overload)
 --
--- WHY (Fred, 2026-08-21, on visit 6617 / 043-MIL Mila, 1636 Meridian Avenue):
+-- WHY (Fred, 2026-08-24, on visit 6617 / 043-MIL Mila, 1636 Meridian Avenue):
 --       *"The `Our record` is not next to the image, so i don't [know] which `our record` belongs to
 --       which one. And this is also a problem with others, is that i can't edit."*
 --
