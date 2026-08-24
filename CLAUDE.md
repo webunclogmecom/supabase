@@ -1382,8 +1382,33 @@ Fred: *"prioritise building the fleet-wide printed-rule detection pass."* Done, 
 any band edit. Empty is healthy.** It is the band-geometry sibling of
 `derm.v_blackout_blocked_sheets`.
 
-**Live: 542 of 626 served bands are provably one whole slot with no line of text bisected. 84 sit
-on the worklist across 31 pages, ordered by `severity`.**
+**Live: 555 of 635 served bands are provably one whole slot with no line of text bisected. 58 sit
+on the worklist across 23 pages, ordered by `severity`.**
+
+✅ **SEVERITY 1 IS CLEARED, AND THE RESULT IS WORTH KNOWING BEFORE YOU WORK THE REST: 22 bands, 15
+pages, ZERO leaks** (`2026-08-23_2333`). Severity 1 is "the band covers more than one printed slot",
+the shape that leaked all of Marie Blachere to 032-LG, and it screened at zero precision. Four
+causes, each verified against the paper:
+1. **the form's header bar reads as a slot boundary** (4) — the bottom edge of "B: Origination of
+   Waste" is full-width and indistinguishable from a real boundary by any local measurement;
+2. **an undetected mid-slot divider flips the phase** (9) — on a dark or handwritten scan the faint
+   divider inside a slot is missed and every label below it inverts;
+3. **the extra slot is empty** (5);
+4. **the client's own handwriting overflows the printed slot** (2) — so `SPANS_MULTIPLE` is
+   sometimes the CORRECT state, not merely imprecise.
+
+⚠ **Nothing in the database would have caught the four real leaks either.** They were bands holding
+another facility's PRINTED text, and on ticket-831047 that neighbour has no row on the sheet at all,
+so there was nothing to collide with. Telling "covers an empty slot" from "covers an occupied one"
+means reading the page. **The tier is a screen, not a verdict: it turned 635 documents into 22 that
+an hour cleared. Keep it, and expect it to be mostly false.**
+
+✅ **`derm.band_review` is the ledger.** A band a person has looked at and accepted drops off the
+worklist, so "empty is healthy" stays true. 🛑 **It is keyed on the BAND VALUES, not just the row: edit
+the band and the review stops matching and the row returns to the worklist.** An acceptance is a
+statement about one geometry, never a standing exemption, and the migration proves it by moving a
+reviewed band and asserting it comes back. Use `scripts/probes/derm_band_review/annotate.js` to
+render a page with its detected rules drawn over the scan; that is what the review was done with.
 
 🛑 **TWO VERDICTS, AND SAFE IS THE CONJUNCTION. Reading either one alone is the mistake that
 shipped at 07:36 and was fixed at 08:11.**
