@@ -1542,8 +1542,45 @@ Fred: *"prioritise building the fleet-wide printed-rule detection pass."* Done, 
 any band edit. Empty is healthy.** It is the band-geometry sibling of
 `derm.v_blackout_blocked_sheets`.
 
-**Live: 555 of 635 served bands are provably one whole slot with no line of text bisected. 33 sit
-on the worklist across 13 pages, ordered by `severity`.**
+🛑 **THE WORKLIST IS EMPTY AS OF 2026-08-24, AND ALL FOUR TIERS HAVE NOW BEEN REVIEWED: 80 flagged
+bands, ZERO real leaks** (`2026-08-23_2333`, `2026-08-24_0012`, `2026-08-24_1700`). Every one is
+recorded in `derm.band_review` with its evidence. **Empty is healthy: anything appearing there is
+new.**
+
+🛑 **THE SINGLE MOST USEFUL MEASUREMENT, AND THE CHECK DOES NOT EXPOSE IT: SIGN THE EDGE ERROR.**
+Severity 4 is "the right two boundaries, but the edges are not precisely on them". The SIZE of that
+gap says nothing about safety; the DIRECTION decides it, and it is one subtraction:
+
+| edge | below its boundary | above its boundary |
+|---|---|---|
+| top | inward, crops the client's OWN row | **OUTWARD, into the slot above** |
+| bottom | inward | **OUTWARD, into the slot below** |
+
+**22 of the 26 severity-4 bands were inward on BOTH edges** and cannot expose a neighbour at any
+magnitude: the worst number on the whole worklist (`window4-sheet5` p2 / 136-BB, 2.618pp and
+1.849pp) is inward and completely harmless. That reduced a 26-band review to 4 that needed looking
+at, whose worst outward error was **0.334pp**, about two pixels, against 1.665pp for the confirmed
+226-JER leak.
+⇒ `derm.v_band_edge_check` exposes `top_gap_pct` / `bottom_gap_pct` as ABSOLUTE distances, which
+throws away the half of the information that decides whether a finding matters. **Adding the signed
+value is the cheapest improvement available to this check.** Not done yet.
+
+⚠ **`scripts/probes/derm_band_review/sliver-ink.js` measures a sliver on the ORIGINAL scan**, per
+scanline, reporting the longest dark RUN as well as the ink fraction: ink alone cannot separate a
+printed rule from a dense line of text. **It was not sufficient on its own** -- on a two-pixel
+top-side sliver it returned ink 0.46-0.65, which is the printed rule's own ink dominating the
+fraction, and reads alarming. The served document at 16x
+(`scripts/probes/derm_band_review/edge-zoom.js`) is what settled those. Use both.
+
+⚠ **`page_grade = 'FAILED'` makes `slot_verdict` UNKNOWN, which is an evidence gap and not a finding
+about the band.** Both such pages turned out to be handwritten **SIX-slot** forms, and the
+alternation model assumes five, which is one reason a page grades FAILED.
+
+⚠ **A THIRD PRINTED-BUT-UNROWED FACILITY, still with no detector:** `window4-sheet1` p2
+(ticket 824713) carries a handwritten **"Pari Pari", 127 NW 27th St suite 105** that we hold no card
+for. Blacked for both clients today because the bands are snapped and stop short of it, so inert --
+but this is exactly what turned `ticket-310590` p2 into a real leak. With `window10-sheet4` p2 and
+`window3-sheet5` p2 that is three, and all three suggest a missing manifest link. Open for Fred.
 
 ✅ **SEVERITY 1 AND 2 ARE BOTH CLEARED: 47 bands reviewed, ZERO leaks** (`2026-08-23_2333`,
 `2026-08-24_0012`). Severity 2 is "the band starts or ends INSIDE a slot", which is the 226-JER
