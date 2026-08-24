@@ -686,12 +686,3 @@ verify_jwt = true
 # @ayache.com / @unclogme.com check) is stricter than the gateway's, which the public anon key passes.
 [functions.archive-client]
 verify_jwt = false
-
-# fp-gdo-evidence: the CUSTOMER portal's only route to a GDO filing image. The Field Portal runs as
-# anon and rpa-evidence is private (its sole SELECT policy is for authenticated), so this mints a
-# 300s signed URL for ONE permit's SUCCESS screenshot, derived server-side from (public_id, gdo_id).
-# 🛑 The path is never taken from the caller; there is no parameter that can name another object.
-# verify_jwt = false because the caller is an unauthenticated customer holding a report slug, and
-# that slug is the capability - it already grants the whole service report at the same URL.
-[functions.fp-gdo-evidence]
-verify_jwt = false
