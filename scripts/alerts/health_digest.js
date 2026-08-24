@@ -85,7 +85,17 @@ async function pg(sql, _attempt = 1) {
 async function postSlack(text) {
   if (DRY_RUN) { console.log('--- DRY RUN, would post ---\n' + text); return; }
   if (!WEBHOOK) { console.log('  (no SLACK_HEALTH_WEBHOOK_URL - skipping post)'); return; }
-  const body = JSON.stringify({ text, mrkdwn: true });
+  // Identity override, requested by Jonathan 2026-08-24: the webhook belongs to the
+  // "GDO Online Report" app, which is the same identity as the RPA bot, and that bot has
+  // no health feature — so nobody could tell which system was talking when something
+  // needed chasing. ⚠ Slack answers 200 whether or not it honours these, and many newer
+  // apps ignore them. If the posts still show as the RPA bot, the real fix is a separate
+  // Slack app / webhook, not this field.
+  const body = JSON.stringify({
+    text, mrkdwn: true,
+    username: 'Health Watchdog',
+    icon_emoji: ':stethoscope:',
+  });
   const u = new URL(WEBHOOK);
   const r = await http({
     hostname: u.hostname, path: u.pathname, method: 'POST',
