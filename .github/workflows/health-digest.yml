@@ -1,0 +1,51 @@
+name: Health digest
+
+# Posts a health verdict to Slack ONLY when something changed since the previous
+# run of each check. Silence means nothing changed, and that is the contract.
+#
+# Reads ops.v_health_status, which carries new_items / resolved_items /
+# unchanged_since_last_run per check. The four log_*_health() crons write into
+# public.sync_log, which nothing reads: health verdicts are 138 of 34,849 rows
+# there (0.40%), and three checks sat in 'attention' for days with nobody told.
+#
+# Runs at 17:00 UTC = 13:00 ET (summer) / 12:00 ET (winter), AFTER all four
+# checks have written for the day. Their crons, in ET:
+#   calendar-push-health  03:30    rpa-derm-health   05:00
+#   sa-schedule-gap-check 06:15    blackout-health   08:00
+# ⚠ Do not move this earlier than blackout-health or the digest reports a
+#   verdict that is a day stale for that check.
+#
+# 🛑 SLACK_HEALTH_WEBHOOK_URL is a SECRET and this repo is PUBLIC. It must be a
+#    GitHub Actions secret, never inlined here. Currently pointed at the #tests
+#    channel of the GDO Online Report Slack app; change the secret, not this file,
+#    to move it to a real channel.
+
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Post even if nothing changed'
+        type: boolean
+        default: false
+
+concurrency:
+  group: health-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Post health digest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SLACK_HEALTH_WEBHOOK_URL: ${{ secrets.SLACK_HEALTH_WEBHOOK_URL }}
+          FORCE: ${{ inputs.force && '1' || '' }}
+        run: node scripts/alerts/health_digest.js
