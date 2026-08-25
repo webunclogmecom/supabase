@@ -148,3 +148,37 @@ NOTIFY pgrst, 'reload schema';
 --    -- expect 0: a pair can only be "shadowed by a sibling" if a sibling is ACTUALLY served
 --
 -- 5. grants: no anon
+--
+-- 6. 🛑 EVERY LABEL MUST BE PROVEN TO FIRE. A reason that has never been observed is an
+--    untested branch, and this whole view exists because an unobserved state looked
+--    identical to a healthy one. Measured 2026-08-25 inside ONE rolled-back DO block
+--    (arrange state, read the REAL view, RAISE to roll everything back, results carried
+--    out in the error message):
+--
+--      baseline                                  -> already_filed
+--      A  delete the SUCCESS                     -> leased          (gate 4)
+--      B  ... and the lease                      -> (served)        nothing holds it
+--      C  ... + a fresh retryable failure        -> cooldown_20h    (gate 2)
+--      D  ... non-retryable, anchor moved back   -> data_error      (gate 3)
+--      E  ... + a requeue marker                 -> (served)        the marker re-opens it
+--      F  clear both permits on manifest 1692    -> 156=(served), 230=sibling_won_this_pass
+--
+--    Rollback confirmed each run: 5 submissions, 1 SUCCESS, 1 lease, held_by
+--    'already_filed' — i.e. exactly the pre-probe state.
+--    Script: scratchpad labeltest.js (not committed; it writes to Prod inside a
+--    rolled-back block and should not be runnable by accident).
+--
+--    ⚠ TWO THINGS THAT TEST WROTE DOWN THE HARD WAY:
+--    (a) My first scenario D put the failure at `f.updated_at + 1 minute` and got
+--        `cooldown_20h`. That was MY test being wrong, not the view: gate 2 legitimately
+--        precedes gate 3. To reach data_error the failure must be OLDER than 20h AND
+--        NEWER than the anchor, which is unreachable while the anchor is only hours old.
+--        The anchor has to move, not the failure. **A label that refuses to fire is
+--        usually the arrangement, not the classifier — check the precedence first.**
+--    (b) Scenario E is not decoration. Without it, D only proves "some non-retryable
+--        failure produces data_error", not that the ANCHOR is what governs it.
+--
+-- 7. ⚠ NOT EXERCISED, stated so a clean run is not over-read: `held.available = false`
+--    in the edge function is code-inspected only. Inducing it means making the view
+--    unreadable to service_role, which is not worth doing on Prod to test a log line.
+--    Everything else above was actually observed.
