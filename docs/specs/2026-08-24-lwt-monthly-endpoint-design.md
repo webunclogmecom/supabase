@@ -229,8 +229,24 @@ These are all measured, and each one changes something on his side.
    by the pickup leg and will arrive with nulls. **6 carry no truck**, so no capacity.
 5. **One ticket has zero linked visits.** It offloaded but has no pickups to list. Include it as an
    empty ticket, or omit it? Omitting hides a real offload; including prints a row with no activity.
-6. **`state` reads "Florida", not "FL"**, and client names carry typographic apostrophes
-   (`Fialkoff's`). Cosmetic, but it lands on a printed county form.
+6. ~~**`state` reads "Florida", not "FL"**, and client names carry typographic apostrophes
+   (`Fialkoff's`). Cosmetic, but it lands on a printed county form.~~
+   ✅ **RESOLVED 2026-08-25 - Fred: "yes normalise both"** (`2026-08-25_0400`). The endpoint now
+   serves `state` as a USPS two-letter code and client names with ASCII punctuation. **John needs no
+   change and should be told it is done, not asked.**
+   🛑 Both obvious implementations are wrong, so if this is ever revisited:
+   - `state` is an **explicit CASE, never the constant `'FL'`**. `properties.state` holds California,
+     Quebec and New York rows today, so a constant would relabel a non-Florida property on a
+     compliance form the first time one took a Miami-Dade pickup. Unrecognised values pass through
+     **verbatim**. Proven by outcome: a rolled-back probe drove 14 values through the live view and
+     `Ontario` / `Puerto Rico` / `XYZZY` each came back unchanged.
+   - The punctuation fold is a **fixed seven-character list, not `unaccent()`**. "Fendi Chateau
+     Residences" (a-circumflex) and "409/448 Espanola Way" (n-tilde) are CORRECT spellings - a real
+     business name and a real Miami Beach street - and stripping them would misspell the county form.
+     The migration's VERIFY therefore requires those accents to **survive**; asserting "0 non-ASCII"
+     would be asserting the regression.
+   - Re-validated end to end: all 8 months still match the database (690 rows / 589 in scope / 126
+     tickets, unchanged), and the served payload carries 0 curly apostrophes with both accents intact.
 
 ## 8. Can this extend the existing API? Yes as a surface, no as a resource
 

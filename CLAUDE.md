@@ -1943,6 +1943,42 @@ split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather t
 ⚠ **County vocabulary differs by table.** `public.properties.county` stores `'Dade'`;
 `public.disposal_facilities.county` stores `'Miami-Dade'`. Comparing them naively matches nothing.
 
+⚠ **`state` IS AN EXPLICIT MAPPING, NOT `'FL'`. `client_name` IS PUNCTUATION-FOLDED, AND ACCENTS
+ARE DELIBERATELY KEPT** (`2026-08-25_0400`, after Fred's "yes normalise both"). The view used to
+serve `state` as whatever `public.properties.state` held, which was **`Florida` 663 rows and `FL` 13
+on the same form**.
+
+🛑 **THE ONE-LINE FIX WOULD FALSIFY A COMPLIANCE FORM.** `properties.state` holds SIX values:
+`Florida` 868 · `FL` 41 · **`California` 5 · `Québec` 2 · `New York` 1** · `fl` 1. Only Florida/FL/null
+reach this view *today*, so a constant `'FL'` would look perfectly correct and would relabel a Quebec
+or California property the first time one took a Miami-Dade pickup. The CASE maps known states
+explicitly and **passes anything unrecognised through VERBATIM**, so a surprise is visible instead of
+quietly wrong. Proven by outcome, not by reading the SQL: a rolled-back probe drove 14 values through
+the live view and `Ontario`/`Puerto Rico`/`XYZZY` each came back unchanged, which a constant cannot do.
+
+🛑 **THE PUNCTUATION HALF IS NARROWER THAN IT SOUNDS, AND THE OBVIOUS `unaccent()` WOULD MISSPELL A
+COUNTY FORM.** The non-ASCII in this data splits two ways and only one half is an artifact:
+
+| | | |
+|---|---|---|
+| U+2019 curly apostrophe | Fialkoff's ×2, NOEL'S | 9 rows / 3 names | **ARTIFACT, folded to `'`** |
+| U+00E2 in "Fendi Château Residences" | 2 rows | | **CORRECT SPELLING, kept** |
+| U+00F1 in "409/448 Española Way" | 10 rows | | **CORRECT SPELLING, kept** — and `address` is not touched at all |
+
+Española Way is a real Miami Beach street and Fendi Château is the registered business name.
+**Stripping them misspells a regulator-facing document, which is worse than the inconsistency being
+fixed.** So the fold is a fixed list of seven typographic characters (both quote pairs, both dashes,
+NBSP), never a character-class strip. ⇒ **A verification that asserts "0 non-ASCII" is asserting the
+regression.** The migration's VERIFY requires `name_nonascii = 2` and `addr_nonascii = 10` to SURVIVE.
+
+⚠ **PRESENTATION ONLY.** `public.properties.state` and `public.clients.name` are untouched, so every
+other app still renders exactly what it always did. Fixing it at source would touch the Field Portal,
+the Client App and every work order, and is a separate decision nobody has taken.
+
+⚠ Re-validated after the change: all **8 months of 2026** still agree with an independent SQL
+recomputation on tickets, rows and excluded counts (690/589 unchanged, 126 tickets), and the served
+payload was inspected directly — 0 curly apostrophes reach the bot, both accented strings survive.
+
 ⚠ **Month selects on the OFFLOAD date**, so a ticket is never split across two reports and a pickup
 can legitimately fall in the previous month (ticket 831710 offloaded 2026-08-02 carries a 2026-07-30
 pickup).
