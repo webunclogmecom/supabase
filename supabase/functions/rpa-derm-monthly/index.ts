@@ -7,7 +7,12 @@
 // Design + every measurement behind it:
 //   docs/specs/2026-08-24-lwt-monthly-endpoint-design.md
 //
-// 🛑 THIS ENDPOINT IS PURE. No lease, no cap, no side effects, safely re-callable.
+// 🛑 THIS ENDPOINT IS PURE. No lease, no side effects, safely re-callable.
+// ⚠ There IS a cap: MAX_ROWS = 1000 below, applied as .limit(MAX_ROWS + 1) and returned as
+//   400 month_too_large rather than truncating -- a short compliance report is the worst
+//   failure available. This banner read "no cap" while the constant sat 32 lines beneath it.
+//   All four docs already described the cap correctly; only the source dissented, and the
+//   source is what a reader treats as authoritative.
 // That is the OPPOSITE of rpa-derm-queue, whose whole job is to never hand the same
 // work out twice. Do not copy lease/dispense logic in here, and do not "unify" the
 // two: a report that is not repeatable is broken, and a queue that is repeatable

@@ -7,7 +7,7 @@ including the scope controls below.
 
 ⚠ **The six discrepancies in section 7 are NOT resolved.** They are questions for John, not blockers,
 and the endpoint serves the facts either way. The two that change his build: "one quantity per ticket"
-does not hold (43 of 127 tickets used more than one truck), and no truck we own is 3,800 gallons.
+does not hold (44 of 127 tickets used more than one truck, 2026-08-25), and no truck we own is 3,800 gallons.
 
 ---
 
@@ -65,7 +65,7 @@ neither**, so `COALESCE(white, yellow)` is a total, unambiguous key. That is the
 predates it. **Original note:** Per month over 2026: 8 to 18 tickets, 66 to
 109 manifests, 65 to 109 visits. A month fits in one response with room to spare.
 
-**✅ The client is unambiguous.** Across 690 links, `manifest.client_id` differs from
+**✅ The client is unambiguous.** Across 700 links (2026-08-25), `manifest.client_id` differs from
 `visit.client_id` **zero** times, because `trg_aa_link_same_client` rejects a cross-client link. So
 the client can be taken from either side without a tie-break.
 
@@ -276,8 +276,10 @@ Three reasons this split is not ceremony:
 
 These are all measured, and each one changes something on his side.
 
-1. 🛑 **"One quantity per ticket" does not hold in our data. 43 of 127 tickets used more than one
-   truck** (33 used two, 10 used three). If the quantity is resolved from the decal, a three-truck
+1. 🛑 **"One quantity per ticket" does not hold in our data. 44 of 127 tickets used more than one
+   truck** (34 used two, 10 used three; re-measured 2026-08-25).
+   ⚠ The numerator was 43/33 while the denominator had already been refreshed to 127 — a stale
+   numerator beside a fresh denominator in one sentence. **Re-measure a ratio's halves together.** If the quantity is resolved from the decal, a three-truck
    ticket has three capacities and one line cannot represent it. Either the form wants one row per
    truck load (which is what "per truck load" suggests), or those tickets need splitting. **This is the
    most important question of the six.**
@@ -308,8 +310,11 @@ These are all measured, and each one changes something on his side.
      business name and a real Miami Beach street - and stripping them would misspell the county form.
      The migration's VERIFY therefore requires those accents to **survive**; asserting "0 non-ASCII"
      would be asserting the regression.
-   - Re-validated end to end: all 8 months still match the database (690 rows / 589 in scope / 126
-     tickets, unchanged), and the served payload carries 0 curly apostrophes with both accents intact.
+   - Re-validated end to end: all 8 months still match the database (700 rows / 599 in scope / 127
+     tickets, measured 2026-08-25), and the served payload carries 0 curly apostrophes with both
+     accents intact. ⚠ "unchanged" was the wrong word and is removed: these counts GROW as
+     manifests are filed. What is unchanged is the AGREEMENT with the recomputation, which is
+     the thing worth asserting.
 
 ## 8. Can this extend the existing API? Yes as a surface, no as a resource
 

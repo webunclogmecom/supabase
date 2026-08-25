@@ -2118,10 +2118,13 @@ The in-view count of 10 is a different grain (rows in the view, not properties) 
 ⚠ `address` is not folded at all, and both of its codepoints are letters, so that decision is safe —
 but it is safe *because both are letters*, not because address is clean. If typographic punctuation
 ever lands in an address it will print on the county form exactly as `Fialkoff's` did.
-⚠ **The fold is FIELD-scoped, not FORM-scoped.** Only `client_name` folds. The other nine served
-string columns (`address`, `city`, `county`, `zip`, `state`, `disposal_facility`, `truck`,
-`ticket_number`, `client_code`) are unfolded and unwatched — all measured at 0 typographic
+⚠ **The fold is FIELD-scoped, not FORM-scoped.** Only `client_name` folds. The other **ten**
+served string columns (`address`, `city`, `county`, `zip`, `state`, `disposal_facility`, `truck`,
+`ticket_number`, `client_code`, `ticket_kind`) are unfolded — all measured at 0 typographic
 codepoints today, against a control of 6 on raw `clients.name`.
+⚠ They are no longer *unwatched*: the Postman suite now asserts presence and shape on
+`client_name`, `address`, `city`, `county`, `zip`, `state`, `ticket_number` and
+`truck_capacity_gallons`, and cross-checks county against state.
 
 Española Way is a real Miami Beach street and Fendi Château is the registered business name.
 **Stripping them misspells a regulator-facing document, which is worse than the inconsistency being

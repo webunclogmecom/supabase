@@ -248,9 +248,13 @@ BEGIN
   --    are now MISSPELLED on a Miami-Dade compliance form.
   --    ⚠ Asserted on the CARRIERS, not on a count. The count grows with the business; the fact
   --      that Fendi Chateau keeps its a-circumflex does not.
+  --    ⚠ This is the COARSE net. It cannot tell "the fold was widened into an unaccent()" from
+  --      "every carrier retired", so it says so and defers to the per-carrier check below, which
+  --      distinguishes them. An earlier version asserted MISSPELLED outright and would have
+  --      shouted that at a clean database the day 167-FEN's two rows went away.
   v_checks := v_checks + 1;
   IF r.name_nonascii < 1 OR r.addr_nonascii < 1 THEN
-    v_fail := v_fail || format(' [ACCENTS STRIPPED: name_nonascii=%s addr_nonascii=%s -- a real business name and a real street are now misspelled on a county form]',
+    v_fail := v_fail || format(' [NO ACCENTED CHARACTERS LEFT AT ALL: name_nonascii=%s addr_nonascii=%s -- either the fold was widened into an unaccent(), or every carrier retired. The per-carrier check reports which]',
                                r.name_nonascii, r.addr_nonascii);
   END IF;
   -- 🛑 EXACT CHARACTERS, PER CARRIER, CONJUNCTIVELY. Two holes were found here and both are
@@ -484,8 +488,10 @@ BEGIN
           SELECT length((regexp_match(pg_get_functiondef(pr.oid),
                                       '''( +)''\s*-- exactly 24 spaces'))[1])
             INTO v_to_len
-            FROM pg_proc pr JOIN pg_namespace nn ON nn.oid = pr.pronamespace
-           WHERE nn.nspname = 'derm' AND pr.proname = 'fn_normalize_state_input';
+            FROM pg_proc pr
+           -- ⚠ by SIGNATURE, not by name: a second overload would make a name-only lookup
+           --   ambiguous and could silently read the wrong body.
+           WHERE pr.oid = 'derm.fn_normalize_state_input(text)'::regprocedure;
           v_checks := v_checks + 1;
           IF v_to_len IS DISTINCT FROM 24 THEN
             v_fail := v_fail || format(' [translate to-string is %s chars, MUST be 24 -- a short to-string silently DELETES space-like characters instead of spacing them]', coalesce(v_to_len::text,'unreadable'));
@@ -565,8 +571,9 @@ BEGIN
   BEGIN
     SELECT p.provolatile, p.prosecdef, p.proparallel, p.proconfig::text
       INTO r2
-      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = 'derm' AND p.proname = 'fn_normalize_state_input';
+      FROM pg_proc p
+     -- ⚠ by SIGNATURE, not by name -- see the note above.
+     WHERE p.oid = 'derm.fn_normalize_state_input(text)'::regprocedure;
     v_checks := v_checks + 1;
     IF r2.provolatile <> 'i' OR r2.prosecdef OR r2.proparallel <> 's'
        OR r2.proconfig IS DISTINCT FROM '{search_path=pg_catalog}' THEN

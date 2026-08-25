@@ -330,32 +330,46 @@ the queue, whose job is to never hand the same work out twice.
 
 ```jsonc
 {
-  "month": "2026-08",
+  "month": "2026-06",
+  "generated_at": "2026-08-25T13:40:00.000Z",  // fresh every call, EXCLUDED from the ETag
   "county": "Miami-Dade",
   "scope": "picked up in Miami-Dade OR offloaded in Miami-Dade, evaluated per activity",
   "include": "in_scope",
-  "ticket_count": 12, "row_count": 70, "excluded_rows": 10,
+  "ticket_count": 11, "row_count": 75, "excluded_rows": 10,
+  "data_quality": {                       // 🛑 read `checked` BEFORE you file. See below.
+    "checked": true,
+    "conflict_count": 0,
+    "conflicts": []
+  },
   "tickets": [{
-    "ticket_number": "312024",
-    "ticket_kind": "yellow",              // white = Dade offload, yellow = Broward offload
-    "offload_in_dade": false,
-    "offload_date": "2026-08-21",
-    "disposal_facility": "Water and Wastewater Services",
-    "trucks": ["David", "Moises"],
-    "excluded_rows": 6,
+    "ticket_number": "826114",
+    "ticket_kind": "white",               // white = Dade offload, yellow = Broward offload
+    "offload_in_dade": true,
+    "offload_date": "2026-06-01",
+    "disposal_facility": "South District WWTP",
+    "trucks": ["Moises"],
+    "excluded_rows": 0,                   // rows on THIS ticket that fell out of scope
     "rows": [{
-      "pickup_date": "2026-08-16",        // the VISIT date. see the warning below
-      "client_code": "026-HAP", "client_name": "Happea's",
-      "address": "1250 South Miami Avenue", "city": "Miami",
-      "state": "FL", "zip": "33130", "county": "Dade",
+      "pickup_date": "2026-05-28",        // the VISIT date. see the warning below
+      "client_code": "017-FIA",
+      "client_name": "Florida Food Eats LLC Fialkoff's (Surfside)",
+      "address": "9463 Harding Avenue", "city": "Surfside",
+      "state": "FL", "zip": "33154", "county": "Dade",
       "pickup_in_dade": true, "in_scope": true,
       "truck": "Moises", "truck_capacity_gallons": 9000,
-      "gallons": null,
-      "visit_id": 6587
+      "gallons": null,                    // ALWAYS null. Resolve from the decal your side.
+      "visit_id": 4636,
+      "anomaly": null                     // non-null = this row's dates are impossible
     }]
   }]
 }
 ```
+
+⚠ **This example is a real payload from a CLOSED month**, fetched live and abridged to one row.
+It used to show the current month, so its `ticket_count` and `row_count` drifted every time a
+manifest was filed — they read 12/70 against a live 13/80 within a day. A closed month cannot
+drift. It also omitted `generated_at`, `data_quality` and `anomaly`, which the endpoint has always
+served.
 
 **`state` is a USPS two-letter code** (normalised 2026-08-25). It used to be served as whatever we
 held, which was inconsistently `"Florida"` and `"FL"`. It is now mapped from an explicit list.
