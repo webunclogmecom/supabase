@@ -158,6 +158,18 @@ Deno.serve(async (req: Request) => {
     .schema('derm')
     .from('v_manifest_link_date_conflicts')
     .select('visit_id, ticket_number, conflict_kind, days_after_offload, violates_guard, client_code, offload_date, pickup_date, visit_status')
+    // 🛑 ORDERED FOR THE SAME REASON THE MAIN QUERY IS, AND IT WAS MISSED THE FIRST TIME.
+    // These rows land in data_quality.conflicts, which is inside the object handed to etagOf(),
+    // so an unstable order here produces an unstable ETag exactly as the main query's ties did.
+    // Measured: a 2-element conflicts array forward vs reversed hashes differently. The view
+    // carries no ORDER BY of its own, so without this the order is unspecified.
+    // It is inert today only because the whole fleet holds 4 conflicts, one per month, and a
+    // 1-element array has only one order -- which is precisely the kind of "can't happen yet"
+    // that stops being true without anyone noticing.
+    // The .limit() below compounds it: unordered + limited means WHICH rows come back is
+    // unspecified too, not just their sequence.
+    .order('offload_date', { ascending: true })
+    .order('visit_id', { ascending: true })
     .limit(MAX_CONFLICTS)
 
   // A failure here must NOT fail the report. Report the degradation instead of

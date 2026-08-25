@@ -37,7 +37,7 @@ Measured against Prod, all of it, because two of his statements collide with kno
 
 **✅ He is right that pickup date is the VISIT date, and the reason is one he may not know.**
 `public.derm_manifests.service_date` is a misnomer: the DERM Tracker writes the entered dump date
-into **both** `service_date` and `dump_ticket_date`, so 496 of 532 live manifests have them
+into **both** `service_date` and `dump_ticket_date`, so 622 of 659 live manifests have them
 identical. Had we served `service_date` as the pickup date, **every pickup would have equalled its
 own offload date** and six filed pages would have disagreed with us. The real service date exists
 only on the linked visit (`public.visits.visit_date`).
@@ -113,11 +113,20 @@ Header: x-rpa-key   (same key as the other three, same auth model)
 
 ```jsonc
 {
-  "month": "2026-08",
-  "generated_at": "2026-09-01T14:00:00.000Z",
+  "month": "2026-06",
+  "generated_at": "2026-08-25T11:00:00.000Z",   // excluded from the ETag, or every call would differ
   "county": "Miami-Dade",
-  "ticket_count": 8,
-  "row_count": 80,
+  "scope": "picked up in Miami-Dade OR offloaded in Miami-Dade, evaluated per activity",
+  "include": "in_scope",                        // or "all" with ?include=all
+  "ticket_count": 11,
+  "row_count": 75,
+  "excluded_rows": 10,                          // rows on these tickets that fell OUT of scope
+  "data_quality": {
+    "checked": true,                            // ⚠ false = the overlay query FAILED and an
+                                                //   empty conflicts list proves NOTHING
+    "conflict_count": 0,
+    "conflicts": []
+  },
   "tickets": [
     {
       "ticket_number": "826114",
@@ -126,21 +135,28 @@ Header: x-rpa-key   (same key as the other three, same auth model)
       "offload_date": "2026-06-01",
       "disposal_facility": "South District WWTP",
       "trucks": ["Moises"],            // distinct trucks across the rows; see the open question
+      "excluded_rows": 0,              // per-ticket, and the reason a ticket can appear with
+                                       // fewer rows than it really has: 20 tickets mix counties
       "rows": [
         {
           "pickup_date": "2026-05-28",     // visits.visit_date, NEVER derm_manifests.service_date
           "client_code": "017-FIA",
-          "client_name": "Florida Food Eats LLC Fialkoff's (Surfside)",
+          "client_name": "Florida Food Eats LLC Fialkoff's (Surfside)",  // punctuation folded to
+                                           // ASCII; accented LETTERS deliberately preserved
           "address": "9463 Harding Avenue",
           "city": "Surfside",
-          "state": "FL",              // USPS 2-letter; unrecognised values pass through VERBATIM
+          "state": "FL",                   // USPS 2-letter. ⚠ anything NOT two letters is an
+                                           // unrecognised value passed through VERBATIM on
+                                           // purpose -- treat it as an error, do not print it
           "zip": "33154",
           "county": "Dade",
           "pickup_in_dade": true,
-          "in_scope": true,               // county='Dade' OR ticket offloaded in Dade
+          "in_scope": true,                // county='Dade' OR ticket offloaded in Dade
           "truck": "Moises",
           "truck_capacity_gallons": 9000,
-          "gallons": null                 // ALWAYS null, by design. See section 6.
+          "gallons": null,                 // ALWAYS null, by design. See section 6.
+          "visit_id": 4636,
+          "anomaly": null                  // non-null = this row's dates are impossible; see 2026-08-24_1510
         }
       ]
     }
@@ -148,19 +164,37 @@ Header: x-rpa-key   (same key as the other three, same auth model)
 }
 ```
 
+⚠ **This example is a real payload**, fetched from the live endpoint on 2026-08-25 and abridged to a
+single row. An earlier version of it was hand-written, claimed `"month": "2026-08"` while its only
+ticket is a JUNE ticket, and omitted `scope`, `include`, `excluded_rows`, `data_quality`, `visit_id`
+and `anomaly` — six fields the endpoint has always served. Rows are returned in a **total, stable
+order** (offload_date, ticket_number, pickup_date, visit_id, manifest_id), so two identical calls
+are byte-identical; that only became reliable on 2026-08-25, when the last two keys were added.
+
 **Errors**, reusing the existing vocabulary exactly:
 
 | Status | Code | Cause |
 |---|---|---|
 | 400 | `month_required_yyyy_mm` | missing or malformed `month` |
-| 400 | `month_out_of_range` | before the first manifest, or more than one month in the future |
+| 400 | `month_out_of_range` | year before **2024**, or the month END more than **62 days** ahead of now |
+| 400 | `month_too_large` | over 1,000 rows. Raises rather than truncating — a short compliance report is the worst failure available |
 | 401 | `unauthorized` | missing/wrong `x-rpa-key` |
 | 405 | `method_not_allowed` | anything but GET |
 | 500 | `monthly_query_failed` | transient, retry |
 | 503 | `service_not_configured` | key secret not set our side |
 
-**Semantics.** Pure function of the data: no lease, no cap, no side effects, safely re-callable. Two
+**Semantics.** Pure function of the data: no lease, no side effects, safely re-callable. Two
 calls a second apart return the same body unless a manifest changed underneath.
+
+⚠ Two corrections to earlier wording in this section, both measured against `index.ts` on
+2026-08-25. **"no cap" is wrong** — there is a 1,000-row cap that raises `month_too_large`
+rather than truncating (the largest real month is 109 rows, so it has ~9x headroom and has
+never fired). And the range guard is `year >= 2024` and month-end within **62 days**, not
+"one month in the future".
+
+⚠ **"the same body" only became true on 2026-08-25.** The sort had three keys and left 571 of
+690 rows in tie groups, so two identical calls could return the same rows in a different
+order and hash to different ETags. `visit_id` and `manifest_id` now make the order total.
 
 ⚠ **Add `ETag` and honour `If-None-Match`.** His preview UI is a "pick a month, review, download" loop
 that will re-poll the same month repeatedly. A hash of the result set turns every repeat into a `304`.

@@ -1925,7 +1925,7 @@ pickup on it qualifies, so only Broward-offload tickets get trimmed.
 without HTTP and stops a second, divergent copy appearing the next time something needs it.
 
 🛑 **`pickup_date` IS `visits.visit_date`. NEVER `derm_manifests.service_date`**, which is a misnomer
-holding the DUMP date (496 of 532 manifests have the two identical). Serving it would make every
+holding the DUMP date (622 of 659 LIVE manifests have the two identical; 37 differ). Serving it would make every
 pickup equal its own offload. **If you ever see that, service_date has crept back in** - the
 migration's VERIFY asserts against exactly this.
 
@@ -1944,7 +1944,10 @@ split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather t
 `public.disposal_facilities.county` stores `'Miami-Dade'`. Comparing them naively matches nothing.
 
 ⚠ **`state` IS AN EXPLICIT MAPPING, NOT `'FL'`. `client_name` IS PUNCTUATION-FOLDED, AND ACCENTS
-ARE DELIBERATELY KEPT** (`2026-08-25_0400`, after Fred's "yes normalise both"). The view used to
+ARE DELIBERATELY KEPT** (`2026-08-25_0400`, after Fred's "yes normalise both"; hardened by
+**`2026-08-25_1200`**, which moved the whitespace handling into
+**`derm.fn_normalize_state_input()`** and made the Québec arm collation-proof — read BOTH
+migrations, the 0400 one alone no longer describes the live object). The view used to
 serve `state` as whatever `public.properties.state` held, which was **`Florida` 663 rows and `FL` 13
 on the same form**.
 
@@ -1970,8 +1973,12 @@ census scoped to today's rows is the wrong instrument:
 | **U+00A0** non-breaking space | 1 client row — `280-AN` "Aryeh Nackache" | 0 rows | **ARTIFACT, folded to a space** (it IS in the replace chain) |
 | **U+00E2** "Fendi Château Residences" | 1 client row, `167-FEN` | 2 rows | **CORRECT SPELLING, kept** |
 | **U+00ED** "Aníbal Tineo" | 1 client row (no `client_code`) | 0 rows | **CORRECT SPELLING, kept** |
-| **U+00F1** "409/448 Española Way" | 6 address rows | 10 rows | **CORRECT SPELLING, kept** |
-| **U+00E8** the two Québec addresses | 2 address rows | 0 rows | **CORRECT SPELLING, kept** |
+| **U+00F1** "224/409/448 Española Way" | 6 address rows (ids 96, 111, 233, 577, 718, 862) | 10 rows | **CORRECT SPELLING, kept** |
+| **U+00E8** the two Québec addresses | 2 address rows (ids 234, 882) | 0 rows | **CORRECT SPELLING, kept** |
+
+⚠ That is **8 property rows carrying non-ASCII in `address`**, across THREE street numbers, not
+two. An earlier version of this table named only 409 and 448; **224 Española Way** is the third.
+The in-view count of 10 is a different grain (rows in the view, not properties) and is correct.
 
 ⚠ `address` is not folded at all, and both of its codepoints are letters, so that decision is safe —
 but it is safe *because both are letters*, not because address is clean. If typographic punctuation

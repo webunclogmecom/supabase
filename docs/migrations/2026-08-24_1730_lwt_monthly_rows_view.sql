@@ -22,6 +22,12 @@
 -- 🛑 pickup_date IS visits.visit_date, NEVER derm_manifests.service_date.
 -- `service_date` is a misnomer: the DERM Tracker writes the entered dump date into
 -- BOTH service_date and dump_ticket_date, so 496 of 532 live manifests have them
+-- ⚠ CORRECTION 2026-08-25: 496/532 was never a live count -- the live figures on 2026-08-25
+--   are 622 identical of 659 live (37 differ; 639/677 including soft-deleted), and the newest
+--   row predates this migration, so no passage of time reconciles them. The NUMBER above is
+--   left as written because a migration header is a dated record of what was believed at the
+--   time; the four live docs carrying the same figure were corrected. The design point is
+--   unaffected: 94.4% rather than the claimed 93.2%.
 -- identical. Serving it would make every pickup equal its own offload, and six
 -- filed county pages would disagree with us. The real service date exists only on
 -- the linked visit.

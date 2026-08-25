@@ -4,6 +4,17 @@
 -- Found by the adversarial audit Fred asked for before the change was announced.
 --
 -- 🛑 NOTHING ABOUT THE INTENDED OUTCOME CHANGES, AND THAT IS THE POINT.
+--
+-- ⚠ CORRECTION 2026-08-25, found by the iteration-2 audit: THAT SENTENCE IS FALSE AS WRITTEN,
+--   and only the audit's regression SKEPTIC caught it -- no dimension report named it.
+--   Folding chr(201)/chr(233) to 'E'/'e' BEFORE upper() applies to the WHOLE value, not just
+--   to the Quebec arm. So an accented NEW YORK now maps to 'NY' where it previously passed
+--   through verbatim. That is a WIDENING of the mapping.
+--   It is latent (0 of 921 rows) and safe in DIRECTION -- FLORIDA and CALIFORNIA contain no E,
+--   so nothing can be falsely coerced to FL or CA, and the only reachable effect is that a
+--   correctly-spelled accented state name is now recognised instead of printed raw.
+--   Kept deliberately. But "nothing changes" was the wrong claim to make, and the honest
+--   version is: no CURRENT value moves, and the recognised set is slightly wider.
 --    Every value in the table today maps to exactly what it mapped to before:
 --    690 rows / 589 in_scope / 126 tickets, state FL 676 + null 14, curly 0,
 --    name_nonascii 2, addr_nonascii 10. Measured before and after. This migration

@@ -354,6 +354,8 @@ the queue, whose job is to never hand the same work out twice.
       "visit_id": 6587
     }]
   }]
+}
+```
 
 **`state` is a USPS two-letter code** (normalised 2026-08-25). It used to be served as whatever we
 held, which was inconsistently `"Florida"` and `"FL"`. It is now mapped from an explicit list.
@@ -367,8 +369,15 @@ genuinely somewhere else. Every value we currently hold maps cleanly, so this sh
 **`client_name` has typographic punctuation folded to ASCII** (curly apostrophes become `'`). Accented
 LETTERS are deliberately preserved, because they are the correct spelling of a real name -- you will
 see `Fendi Château Residences` and addresses on `Española Way`, and those are not encoding errors.
-}
-```
+
+**Rows come back in a total, stable order** (added 2026-08-25): `offload_date`, `ticket_number`,
+`pickup_date`, `visit_id`, `manifest_id`. Two identical calls are byte-identical, so the `ETag` is
+meaningful and successive pulls can be diffed.
+
+⚠ **This is new.** Until 2026-08-25 the sort had only the first three keys, which left **571 of 690
+rows in a tie group** — the same rows could come back in a different sequence on two identical
+calls. If you built anything before that date on "the body is stable", it was true most of the time
+and not guaranteed. It is guaranteed now.
 
 ### 🛑 Scope is evaluated PER ACTIVITY, not per ticket
 
@@ -392,7 +401,7 @@ entirely. Nothing is dropped silently: `excluded_rows` is reported per ticket an
 ### 🛑 `pickup_date` is the VISIT date, never our `service_date`
 
 Our `derm_manifests.service_date` is a misnomer that holds the **dump** date: the DERM Tracker writes
-the entered dump date into both columns, so 496 of 532 manifests have them identical. This endpoint
+the entered dump date into both columns, so 622 of 659 live manifests have them identical. This endpoint
 reads the linked visit instead. If you ever see `pickup_date` equal to `offload_date` on every row,
 that is the bug, not the data.
 
