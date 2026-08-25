@@ -133,7 +133,7 @@ Header: x-rpa-key   (same key as the other three, same auth model)
           "client_name": "Florida Food Eats LLC Fialkoff's (Surfside)",
           "address": "9463 Harding Avenue",
           "city": "Surfside",
-          "state": "Florida",
+          "state": "FL",              // USPS 2-letter; unrecognised values pass through VERBATIM
           "zip": "33154",
           "county": "Dade",
           "pickup_in_dade": true,

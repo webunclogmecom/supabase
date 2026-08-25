@@ -1949,7 +1949,8 @@ serve `state` as whatever `public.properties.state` held, which was **`Florida` 
 on the same form**.
 
 🛑 **THE ONE-LINE FIX WOULD FALSIFY A COMPLIANCE FORM.** `properties.state` holds SIX values:
-`Florida` 868 · `FL` 41 · **`California` 5 · `Québec` 2 · `New York` 1** · `fl` 1. Only Florida/FL/null
+`Florida` 868 · `FL` 41 · **`California` 5 · `Québec` 2 · `New York` 1** · `fl` 1 (live rows;
+the raw table reads Florida 869 / FL 43). Only Florida/FL/null
 reach this view *today*, so a constant `'FL'` would look perfectly correct and would relabel a Quebec
 or California property the first time one took a Miami-Dade pickup. The CASE maps known states
 explicitly and **passes anything unrecognised through VERBATIM**, so a surprise is visible instead of
@@ -1959,11 +1960,26 @@ the live view and `Ontario`/`Puerto Rico`/`XYZZY` each came back unchanged, whic
 🛑 **THE PUNCTUATION HALF IS NARROWER THAN IT SOUNDS, AND THE OBVIOUS `unaccent()` WOULD MISSPELL A
 COUNTY FORM.** The non-ASCII in this data splits two ways and only one half is an artifact:
 
-| | | |
-|---|---|---|
-| U+2019 curly apostrophe | Fialkoff's ×2, NOEL'S | 9 rows / 3 names | **ARTIFACT, folded to `'`** |
-| U+00E2 in "Fendi Château Residences" | 2 rows | | **CORRECT SPELLING, kept** |
-| U+00F1 in "409/448 Española Way" | 10 rows | | **CORRECT SPELLING, kept** — and `address` is not touched at all |
+**Measured over the WHOLE of `public.clients.name` (456 rows) and `public.properties.address`
+(921 rows), not just the rows currently in the view** — any client can enter this view later, so a
+census scoped to today's rows is the wrong instrument:
+
+| codepoint | where | in the view | verdict |
+|---|---|---|---|
+| **U+2019** curly apostrophe | 5 client rows — Fialkoff's ×2, NOEL'S, +2 with no `client_code` | 9 rows / 3 names | **ARTIFACT, folded to `'`** |
+| **U+00A0** non-breaking space | 1 client row — `280-AN` "Aryeh Nackache" | 0 rows | **ARTIFACT, folded to a space** (it IS in the replace chain) |
+| **U+00E2** "Fendi Château Residences" | 1 client row, `167-FEN` | 2 rows | **CORRECT SPELLING, kept** |
+| **U+00ED** "Aníbal Tineo" | 1 client row (no `client_code`) | 0 rows | **CORRECT SPELLING, kept** |
+| **U+00F1** "409/448 Española Way" | 6 address rows | 10 rows | **CORRECT SPELLING, kept** |
+| **U+00E8** the two Québec addresses | 2 address rows | 0 rows | **CORRECT SPELLING, kept** |
+
+⚠ `address` is not folded at all, and both of its codepoints are letters, so that decision is safe —
+but it is safe *because both are letters*, not because address is clean. If typographic punctuation
+ever lands in an address it will print on the county form exactly as `Fialkoff's` did.
+⚠ **The fold is FIELD-scoped, not FORM-scoped.** Only `client_name` folds. The other nine served
+string columns (`address`, `city`, `county`, `zip`, `state`, `disposal_facility`, `truck`,
+`ticket_number`, `client_code`) are unfolded and unwatched — all measured at 0 typographic
+codepoints today, against a control of 6 on raw `clients.name`.
 
 Española Way is a real Miami Beach street and Fendi Château is the registered business name.
 **Stripping them misspells a regulator-facing document, which is worse than the inconsistency being

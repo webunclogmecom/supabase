@@ -347,13 +347,26 @@ the queue, whose job is to never hand the same work out twice.
       "pickup_date": "2026-08-16",        // the VISIT date. see the warning below
       "client_code": "026-HAP", "client_name": "Happea's",
       "address": "1250 South Miami Avenue", "city": "Miami",
-      "state": "Florida", "zip": "33130", "county": "Dade",
+      "state": "FL", "zip": "33130", "county": "Dade",
       "pickup_in_dade": true, "in_scope": true,
       "truck": "Moises", "truck_capacity_gallons": 9000,
       "gallons": null,
       "visit_id": 6587
     }]
   }]
+
+**`state` is a USPS two-letter code** (normalised 2026-08-25). It used to be served as whatever we
+held, which was inconsistently `"Florida"` and `"FL"`. It is now mapped from an explicit list.
+
+🛑 **If you ever receive a `state` that is NOT two letters, that is us handing you a value we did not
+recognise, passed through verbatim on purpose so it is visible rather than silently relabelled.
+Treat it as an error and do not print it on the form.** We deliberately do not coerce an unknown
+state to `FL`, because doing so would put a false state on a county filing for a property that is
+genuinely somewhere else. Every value we currently hold maps cleanly, so this should never fire.
+
+**`client_name` has typographic punctuation folded to ASCII** (curly apostrophes become `'`). Accented
+LETTERS are deliberately preserved, because they are the correct spelling of a real name -- you will
+see `Fendi Château Residences` and addresses on `Española Way`, and those are not encoding errors.
 }
 ```
 

@@ -16,7 +16,10 @@
 --
 -- 🛑 THE OBVIOUS IMPLEMENTATION OF THE FIRST WOULD FALSIFY A COMPLIANCE FORM.
 --    `state = 'FL'` is the one-liner, and public.properties holds SIX values:
---        Florida 868 · FL 41 · California 5 · Quebec 2 · New York 1 · fl 1
+--        Florida 868 · FL 41 · California 5 · Québec 2 · New York 1 · fl 1
+--    (LIVE rows only, deleted_at IS NULL. The raw table reads Florida 869 · FL 43.)
+--    ⚠ The stored value really is "Québec" with U+00E9, bytes 5175c3a9626563 -- that is what
+--      the chr(201) arm of the CASE exists for. Do not "tidy" it to ASCII and delete that arm.
 --    Only Florida/FL/null reach this view TODAY, so a constant would look correct and
 --    would silently relabel a Quebec or California property the first time one took a
 --    Miami-Dade pickup. This maps explicitly, and anything unrecognised passes through
@@ -30,7 +33,9 @@
 --    "Espanola Way" is a real Miami Beach street and "Fendi Chateau Residences" is the
 --    business's registered name. Stripping those MISSPELLS a regulator-facing document,
 --    which is worse than the inconsistency being fixed. So: punctuation only, and
---    `address` is deliberately NOT touched (its only non-ASCII is that n-tilde).
+--    `address` is deliberately NOT touched. Measured over all 921 property rows its non-ASCII is
+--    U+00F1 (Española Way, 6 rows) AND U+00E8 (the two Québec addresses, 2 rows) -- both are
+--    correct-spelling LETTERS, neither is foldable.
 --
 -- ⚠ PRESENTATION ONLY. `public.properties.state` and `public.clients.name` are
 --   untouched, so every other app still shows what it always showed. Fixing it at
@@ -123,37 +128,150 @@ COMMENT ON VIEW derm.v_lwt_monthly_rows IS
 
 COMMIT;
 
--- VERIFY (run after applying)
+-- ---------------------------------------------------------------------------
+-- VERIFY -- RE-RUNNABLE AND IT ACTUALLY ASSERTS.
 --
--- 1. state is uniform, and nothing was invented
---    select coalesce(state,'(null)') state, count(*) from derm.v_lwt_monthly_rows group by 1;
---    -- expect only 'FL' and '(null)'. The nulls are rows whose visit has no property.
+-- 🛑 The first version of this block was entirely `--` comments saying "expect 690".
+--    Nothing would have failed if the totals HAD moved, despite the header above insisting
+--    THE TOTALS MUST NOT MOVE. An audit caught it. A comment is not a control -- this estate
+--    has now been bitten by that exact shape three times (a caveat in a view comment while 39
+--    wrong bands passed the check; a `RAISE`-less expectation here). If you add an expectation,
+--    make it raise.
 --
--- 2. 🛑 THE TOTALS MUST NOT MOVE. This is a presentation change; if row_count or
---    in_scope shifts, a JOIN or the WHERE was altered while the body was regenerated.
---    select count(*) all_rows, count(*) filter (where in_scope) in_scope
---      from derm.v_lwt_monthly_rows;
---    -- expect exactly what it was before applying (690 / 589 on 2026-08-25)
+-- Run it any time. It is read-only and takes no arguments.
+-- ---------------------------------------------------------------------------
+DO $verify$
+DECLARE
+  r         record;
+  v_fail    text := '';
+  v_checks  int  := 0;
+BEGIN
+  SELECT count(*)                                                     AS all_rows,
+         count(*) FILTER (WHERE in_scope)                             AS in_scope,
+         count(DISTINCT ticket_number)                                AS tickets,
+         count(*) FILTER (WHERE client_name LIKE '%'||chr(8217)||'%') AS curly,
+         count(*) FILTER (WHERE client_name ~ '[^\x20-\x7E]')         AS name_nonascii,
+         count(*) FILTER (WHERE address ~ '[^\x20-\x7E]')             AS addr_nonascii,
+         count(*) FILTER (WHERE state IS NOT NULL
+                            AND state !~ '^[A-Z]{2}$')                AS state_not_2letter,
+         count(*) FILTER (WHERE state = 'FL')                         AS st_fl,
+         count(*) FILTER (WHERE state IS NULL)                        AS st_null
+    INTO r
+    FROM derm.v_lwt_monthly_rows;
+
+  -- 1. the totals must not move. A presentation change that alters these means a JOIN or the
+  --    WHERE was damaged while the body was regenerated -- the CREATE OR REPLACE failure mode.
+  v_checks := v_checks + 1;
+  IF r.all_rows <> 690 OR r.in_scope <> 589 OR r.tickets <> 126 THEN
+    v_fail := v_fail || format(' [TOTALS MOVED: %s/%s/%s, expected 690/589/126]',
+                               r.all_rows, r.in_scope, r.tickets);
+  END IF;
+
+  -- 2. the fold did its job
+  v_checks := v_checks + 1;
+  IF r.curly <> 0 THEN
+    v_fail := v_fail || format(' [%s curly apostrophes still served]', r.curly);
+  END IF;
+
+  -- 3. 🛑 THE ACCENTS MUST SURVIVE. This is the assertion that would catch someone
+  --    "improving" the fold into unaccent() or a [^\x20-\x7E] strip. A result of ZERO here is
+  --    a REGRESSION, not a cleaner one: it means "Fendi Château Residences" and "Española Way"
+  --    are now MISSPELLED on a Miami-Dade compliance form.
+  v_checks := v_checks + 1;
+  IF r.name_nonascii <> 2 OR r.addr_nonascii <> 10 THEN
+    v_fail := v_fail || format(' [ACCENTS: name=%s (want 2), addr=%s (want 10) -- if either is 0 a real business name and a real street are now misspelled on a county form]',
+                               r.name_nonascii, r.addr_nonascii);
+  END IF;
+
+  -- 4. state is uniform, and nothing was invented
+  v_checks := v_checks + 1;
+  IF r.st_fl <> 676 OR r.st_null <> 14 THEN
+    v_fail := v_fail || format(' [STATE: FL=%s (want 676), null=%s (want 14)]', r.st_fl, r.st_null);
+  END IF;
+
+  -- 5. 🛑 THE PASS-THROUGH TRIPWIRE. Verbatim pass-through is deliberate and is the reason a
+  --    non-Florida property can never be silently relabelled -- but a value reaching the form
+  --    that is not a 2-letter code is something a HUMAN must see before it is filed.
+  v_checks := v_checks + 1;
+  IF r.state_not_2letter <> 0 THEN
+    v_fail := v_fail || format(' [%s rows carry a non-2-letter state -- an unrecognised value is passing through to a county filing; look at it, do not coerce it]',
+                               r.state_not_2letter);
+  END IF;
+
+  -- 6. the mapping is a MAPPING, not a constant. Asserted by OUTCOME against the LIVE view,
+  --    because `pg_get_viewdef(...) ~ 'CALIFORNIA'` stays TRUE even with the arm deleted.
+  --
+  -- 🛑 THE PROBE WRITES, SO IT MUST ROLL BACK, AND A BARE `DO` BLOCK COMMITS ON SUCCESS.
+  --    The first version of this restored the value by hand and called itself read-only. It was
+  --    not: the updated_at trigger still fired and it left 8 UPDATE rows in audit.logs
+  --    (app_source='sql') on the carrier property. Restoring a VALUE is not the same as not
+  --    having written. A BEGIN..EXCEPTION block is an implicit SAVEPOINT, so raising a sentinel
+  --    at the end of it rolls the writes back -- while PL/pgSQL LOCAL VARIABLES keep the values
+  --    they had when the error was raised, which is what lets the results survive the rollback.
+  DECLARE
+    v_prop bigint; v_vis bigint; v_orig text; v_got text; v_qc text;
+    v_cases text[][] := ARRAY[['Florida','FL'],['fl','FL'],['California','CA'],['New York','NY'],
+                              ['tx','TX'],['Ontario','Ontario'],['XYZZY','XYZZY']];
+  BEGIN
+    SELECT x.visit_id, v.property_id INTO v_vis, v_prop
+      FROM derm.v_lwt_monthly_rows x JOIN public.visits v ON v.id = x.visit_id
+     WHERE v.property_id IS NOT NULL ORDER BY x.visit_id LIMIT 1;
+    SELECT state INTO v_orig FROM public.properties WHERE id = v_prop;
+    SELECT state INTO v_qc   FROM public.properties WHERE state ILIKE 'qu%bec%' LIMIT 1;
+
+    BEGIN
+      FOR i IN 1 .. array_length(v_cases,1) LOOP
+        UPDATE public.properties SET state = v_cases[i][1] WHERE id = v_prop;
+        SELECT state INTO v_got FROM derm.v_lwt_monthly_rows WHERE visit_id = v_vis LIMIT 1;
+        v_checks := v_checks + 1;
+        IF v_got IS DISTINCT FROM v_cases[i][2] THEN
+          v_fail := v_fail || format(' [MAP %L -> %L, wanted %L]', v_cases[i][1], v_got, v_cases[i][2]);
+        END IF;
+      END LOOP;
+
+      -- the STORED accented Québec (U+00E9), whose arm depends on upper() under the db collation.
+      -- Read from the table, never retyped: a retyped copy tests your editor, not the data.
+      IF v_qc IS NOT NULL THEN
+        UPDATE public.properties SET state = v_qc WHERE id = v_prop;
+        SELECT state INTO v_got FROM derm.v_lwt_monthly_rows WHERE visit_id = v_vis LIMIT 1;
+        v_checks := v_checks + 1;
+        IF v_got IS DISTINCT FROM 'QC' THEN
+          v_fail := v_fail || format(' [the STORED accented Quebec mapped to %L, not QC -- the chr(201) arm is dead under this collation]', v_got);
+        END IF;
+      END IF;
+
+      RAISE EXCEPTION 'LWT_PROBE_ROLLBACK';       -- undo every write above
+    EXCEPTION WHEN raise_exception THEN
+      IF SQLERRM <> 'LWT_PROBE_ROLLBACK' THEN RAISE; END IF;   -- a real error still propagates
+    END;
+
+    -- prove the rollback actually happened rather than assuming it
+    v_checks := v_checks + 1;
+    IF (SELECT state FROM public.properties WHERE id = v_prop) IS DISTINCT FROM v_orig THEN
+      v_fail := v_fail || format(' [ROLLBACK FAILED: properties.id=%s is not %L]', v_prop, v_orig);
+    END IF;
+  END;
+
+  IF v_fail <> '' THEN
+    RAISE EXCEPTION 'LWT VERIFY FAILED (% checks):%', v_checks, v_fail;
+  END IF;
+  RAISE NOTICE 'LWT VERIFY: % checks passed', v_checks;
+END $verify$;
+
+-- Mutation-tested 2026-08-25, because an assertion that has never failed is an untested
+-- instrument. Each of these was made to FAIL on purpose and did:
+--   totals 690 -> 691                      -> [TOTALS MOVED: ...]
+--   addr_nonascii 10 -> 0                  -> [ACCENTS: ...]
+--   expect 'Ontario' -> 'FL'               -> [MAP 'Ontario' -> 'Ontario', wanted 'FL']
+--   invert the Quebec comparison           -> [the STORED accented Quebec mapped to 'QC' ...]
+-- Mutation C matters most: it proves a failure recorded INSIDE the probe survives the rollback.
+-- 14 checks pass against the live view, and properties.updated_at does not move.
 --
--- 3. 🛑 PUNCTUATION GONE, ACCENTS KEPT. Both halves matter and the second is the one
---    that would be a regression rather than an improvement.
---    select count(*) filter (where client_name like '%' || chr(8217) || '%') curly,
---           count(*) filter (where client_name ~ '[^\x20-\x7E]')             name_nonascii,
---           count(*) filter (where address ~ '[^\x20-\x7E]')                 addr_nonascii
---      from derm.v_lwt_monthly_rows;
---    -- expect curly = 0
---    -- expect name_nonascii = 2   (Fendi Chateau Residences -- the a-circumflex SURVIVES)
---    -- expect addr_nonascii = 10  (Espanola Way -- the n-tilde SURVIVES)
---    ⚠ name_nonascii = 0 or addr_nonascii = 0 means the accents were stripped and a real
---      street and a real business are now misspelled on a county form. That is a
---      REGRESSION, not a tidier result.
---
--- 4. NEGATIVE CONTROL that the state mapping is a MAPPING and not a constant. It is
---    latent today, so assert the branch rather than waiting for a Quebec pickup:
---    select (select state from derm.v_lwt_monthly_rows limit 1) as sample,
---           pg_get_viewdef('derm.v_lwt_monthly_rows'::regclass, true) ~ 'CALIFORNIA' as maps_ca,
---           pg_get_viewdef('derm.v_lwt_monthly_rows'::regclass, true) ~ 'ELSE btrim' as passes_through;
---    -- expect maps_ca and passes_through both true
---
--- 5. the endpoint still agrees with the view for every month of 2026 (the standing
---    cross-validation), and data_quality.checked is still true
+-- ⚠ STILL NOT ASSERTED HERE, stated so a clean run is not over-read:
+--   - `v.deleted_at IS NULL` / `m.deleted_at IS NULL` are unexercised. 0 of 690 linked visits are
+--     soft-deleted, so a perturbation control returns 690 vs 690 and DOES NOT FIRE. Those clauses
+--     rest solely on byte-identity with the pre-change body, which does hold.
+--   - The acceptance test in the design spec ("diff a month against Diego's filed county page") has
+--     NOT been re-run. This block proves the database and the endpoint agree; it cannot say what the
+--     paper says.
+--   - The other nine served string columns are unfolded. Only client_name is watched.
