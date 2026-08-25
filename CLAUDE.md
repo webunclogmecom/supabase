@@ -739,6 +739,17 @@ at q85 and still legible at q72. **Do not "optimise" this by adding a max-dimens
 merges the logo, which Chromium embeds TWICE. 9.02 - 7.62 MP = 1.40 MP = exactly one 2048x682
 logo. That is dedup, not loss.
 
+🛑 **CORRECTION: THE REPORT DOES NOT CAP PHOTOS PER SECTION. It excludes INTERNAL ones.**
+An earlier version of this note said the report "caps photos per section", inferred from visit
+7824 rendering only 7 images while the visit held 25 photos. That inference was wrong. Proven
+against the delivered PDF for visit 6568, which Fred downloaded: Admin Review reports
+**19 before / 20 after / 5 internal / 0 extra = 44**, the PDF's own headers read
+`BEFORE SERVICE (19)` and `AFTER SERVICE (20)`, and it contains **40 images = 39 photos + 1 logo**.
+19 + 20 = 39 exactly, with the 5 internal photos absent. **Every customer-facing photo is
+included and nothing is truncated**; 7824 simply had a different before/after split.
+⇒ So report size scales with the BEFORE+AFTER count, which is the number to look at when
+estimating a report's weight, not the visit's total photo count.
+
 ⚠ **The logo is still 2048x682 rendered into a 78x26 box** on every report. After JPEG it costs
 little, so it is no longer worth chasing; the fix would be in the Field Portal Lovable bundle.
 
