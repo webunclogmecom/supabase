@@ -336,7 +336,18 @@ const CUSTOMER_PHASES = ['before', 'after', 'extra'] as const
 const customerPhotoCount = (counts: Record<string, number>): number =>
   CUSTOMER_PHASES.reduce((a, p) => a + (counts[p] ?? 0), 0)
 
-function buildHtml(v: VisitRow, counts: Record<string, number>, includePhotos = true): string {
+// 🛑 `hasDermDocs` MEANS "THE ATTACHED REPORT ALREADY CARRIES THE MANIFESTS", NOT "A MANIFEST
+// EXISTS". Fred, 2026-08-25: if the email already has the DERM Manifests on it, the "will be
+// sent in a separate email" note has to go, "because it would make no sense otherwise."
+//
+// ⚠ THE TWO CONDITIONS ARE NOT THE SAME AND THE DIFFERENCE IS 53 VISITS. Measured: 700
+// completed visits carry a `manifest_visits` link, but 53 of those have a NULL
+// `customer.work_orders.derm_manifest_url` because the FP blackout pipeline has not published
+// a redacted document for them yet (see the blackout section in CLAUDE.md). Keying this flag on
+// the LINK would drop the note from those 53 while the report still shows no manifest, leaving
+// the client with neither the documents nor the promise of them. So it is keyed on
+// `customer.work_orders`, which is the exact source the Field Portal report renders from.
+function buildHtml(v: VisitRow, counts: Record<string, number>, includePhotos = true, hasDermDocs = false): string {
   const name = escapeHtml(v.client_name)
   const addr = escapeHtml(v.address)
   const vdate = escapeHtml(fmtDate(v.visit_date))
@@ -385,12 +396,14 @@ ${testStrip}
 <p style="margin:0 0 20px 0;font-size:15px;line-height:1.65;color:#374151;">We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.</p>
 </td></tr>
 
+${hasDermDocs ? '' : `
 <tr><td style="padding:0 36px 20px 36px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eff5ff;border:1px solid #bfdbfe;border-radius:10px;"><tr>
 <td width="52" valign="top" style="width:52px;padding:16px 0 16px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="26" height="26" style="width:26px;height:26px;line-height:26px;background-color:#2563eb;border-radius:13px;font-family:${FONT_STACK};font-size:15px;font-weight:700;color:#ffffff;">i</td></tr></table></td>
 <td valign="top" style="padding:16px 18px 16px 4px;font-family:${FONT_STACK};font-size:14px;line-height:1.6;color:#1e3a8a;"><strong style="font-weight:700;">Please note:</strong> The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.</td>
 </tr></table>
 </td></tr>
+`}
 
 <tr><td style="padding:0 36px 24px 36px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff7f4;border:1px solid #ffd9c9;border-radius:10px;"><tr><td style="padding:16px 18px;">
@@ -452,7 +465,7 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 
 // Plain-text alternative. Resend sends both; a text part measurably helps deliverability
 // to municipal gateways, which is the whole audience for this message.
-function buildText(v: VisitRow, counts: Record<string, number>, includePhotos = true): string {
+function buildText(v: VisitRow, counts: Record<string, number>, includePhotos = true, hasDermDocs = false): string {
   const totalN = customerPhotoCount(counts)   // NOT Object.values(counts) — that included internal
   return [
     'Dear Environmental Compliance Team,', '',
@@ -466,7 +479,10 @@ function buildText(v: VisitRow, counts: Record<string, number>, includePhotos = 
     // The text/plain part must not describe the photo state either, or a plain-text client sees
     // wording the HTML one does not.
     'Attached: Job Completion Report (service details only)', '',
-    'Please note: The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.', '',
+    // Must drop out in lockstep with the HTML block above, or a plain-text reader is promised a
+    // second email that a HTML reader is not. See the comment on buildHtml for why this is keyed
+    // on the report's own source rather than on whether a manifest link exists.
+    ...(hasDermDocs ? [] : ['Please note: The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.', '']),
     `If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at ${CONTACT_EMAIL} or call us directly at ${CONTACT_PHONE}.`, '',
     'Thank you for your continued partnership in keeping our community compliant and clean.', '',
     'The UnclogMe Team',
@@ -674,6 +690,31 @@ Deno.serve(async (req: Request) => {
     const phaseCounts = { before: 0, after: 0, internal: 0, extra: 0 } as Record<string, number>
     for (const p of phaseBy.values()) if (p in phaseCounts) phaseCounts[p]++
 
+    // -- does the report already carry the DERM documents? --------------------
+    // Read from `customer.work_orders`, the SAME source the Field Portal report renders its
+    // "A - FOG eManifest" / "B - WWTP Disposal Receipt" blocks from, so the note in the email
+    // body can never disagree with what is actually in the attached PDF.
+    // 🛑 .schema('customer') IS LOAD-BEARING: `sb` is built without a schema, so omitting it
+    // silently queries public.work_orders, which does not exist, and the catch below would then
+    // leave hasDermDocs=false for EVERY send. That failure keeps the note on a report that has
+    // the manifests, i.e. it fails toward today's behaviour rather than toward a false promise.
+    let hasDermDocs = false
+    try {
+      const { data: wo, error: woErr } = await sb
+        .schema('customer')
+        .from('work_orders')
+        .select('derm_manifest_url, wwtp_receipt_url')
+        .eq('id', visitRow.public_id)
+        .maybeSingle()
+      if (woErr) {
+        console.error(`[send-visit-photos-email] work_orders lookup failed: ${woErr.message}`)
+      } else {
+        hasDermDocs = !!(wo?.derm_manifest_url || wo?.wwtp_receipt_url)
+      }
+    } catch (e) {
+      console.error(`[send-visit-photos-email] work_orders lookup threw: ${String((e as Error)?.message ?? e)}`)
+    }
+
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), PDF_TIMEOUT_MS)
     let pdfBytes: Uint8Array
@@ -799,8 +840,8 @@ Deno.serve(async (req: Request) => {
         to: [recipient],
         reply_to: CONTACT_EMAIL,
         subject,
-        html: buildHtml(visitRow, phaseCounts, includePhotos),
-        text: buildText(visitRow, phaseCounts, includePhotos),
+        html: buildHtml(visitRow, phaseCounts, includePhotos, hasDermDocs),
+        text: buildText(visitRow, phaseCounts, includePhotos, hasDermDocs),
         attachments: prepared.map((p) => ({ filename: p.filename, content: p.content, content_type: p.content_type })),
       }),
     })
