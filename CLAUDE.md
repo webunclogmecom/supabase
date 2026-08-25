@@ -707,13 +707,47 @@ sends it. ⚠ It must run **server-side**: the function is origin-restricted to
 `derm.unclogme.app`, so a browser call from anywhere else dies at the preflight with a bare
 `TypeError: Failed to fetch`, which looks like a broken function and is not one.
 
-⚠ **A related trap when reading PDF size: it tracks MEGAPIXELS ON THE RENDERED PAGE, not source
-photo bytes.** Chromium's `page.pdf()` embeds decoded bitmaps. Measured on the FP report: visit
-7824 renders 7 images / 2.43 MP / 0.41MB source -> a 2.13MB PDF, while 6188 renders 15 images /
-7.89 MP -> 5.44MB. **The report caps photos per section**, so a 44-photo visit and a 16-photo visit
-can land either side of the line. The three worst offenders are served at full resolution into tiny
-slots: the two DERM manifest scans (1912x1476 and 1608x1052, shown at ~348px) and **the logo, which
-is 2048x682 rendered into a 78x26 box on every single report**.
+### ✅ CHROMIUM DOES NOT PASS JPEGs THROUGH: IT SHIPS BITMAPS, AND THAT IS NOW FIXED (2026-08-25)
+
+`page.pdf()` **decodes every source JPEG and re-embeds it as a near-lossless `/FlateDecode`
+bitmap.** Measured by parsing the delivered attachment for visit 6568:
+
+| | before | after |
+|---|---|---|
+| PDF size | **12.97 MB** | **1.81 MB** (7.2x) |
+| `/DCTDecode` images | **0** | 40 |
+| `/FlateDecode` | 351 | 184 |
+| pages | 6 | 6 |
+| largest image | 2048x682 | 2048x682 (**no downscaling**) |
+
+The page those images came from transferred **1.39MB** of source JPEGs, so the PDF was an ~11x
+inflation of its own inputs. One 400x711 photo occupied 421,959-729,927 bytes; raw RGB for it is
+853,200, i.e. it was stored essentially uncompressed.
+
+**Fixed in the pdf-service** (`pdf_service/pdf_shrink.py`, commit `b325b8b`), which re-encodes each
+embedded image as JPEG q85 after `page.pdf()`.
+
+🛑 **IT DELIBERATELY DOES NOT DOWNSCALE, AND THAT IS THE COMPLIANCE-SAFE CHOICE.** The two largest
+images on a DERM-linked report are the redacted FOG eManifest and the WWTP receipt; resampling
+those is the one change that could cost a reader a GDO number. Re-encoding alone is sufficient:
+on the real redacted scan for manifest 1737 the decoded bitmap is 2,024,304 B and q85 is
+**155,986 B, SMALLER than the 163,548 B source JPEG it came from**. Verified by eye at 2x against
+the original: GDO-14760, GDO-16146, the facility names and the street address are indistinguishable
+at q85 and still legible at q72. **Do not "optimise" this by adding a max-dimension cap.**
+
+⚠ **Expect the image COUNT to drop by one and megapixels with it.** `compress_identical_objects()`
+merges the logo, which Chromium embeds TWICE. 9.02 - 7.62 MP = 1.40 MP = exactly one 2048x682
+logo. That is dedup, not loss.
+
+⚠ **The logo is still 2048x682 rendered into a 78x26 box** on every report. After JPEG it costs
+little, so it is no longer worth chasing; the fix would be in the Field Portal Lovable bundle.
+
+⚠ **`shrink_pdf_images()` is FAIL-SAFE: every failure path returns the ORIGINAL bytes**, including
+Pillow being missing. So a regression here degrades **silently** into ~10x bigger reports with one
+warning in the log, which is why `pillow` is now pinned explicitly in `requirements.txt` even
+though reportlab already drags it in. **Depend on what you import.**
+⚠ It also refuses its own output unless that output is smaller, starts with `%PDF`, re-parses and
+keeps the page count. "It ran without raising" is not evidence it helped.
 
 ## Column-name gotchas
 
