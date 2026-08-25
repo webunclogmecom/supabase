@@ -38,7 +38,53 @@
 // ⇒ The whole ImageScript resize path is GONE, and with it the memory ceiling that capped
 // attachments at 10 photos. One PDF carries every photo.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
+
+// 🛑 DO NOT PUT `encodeBase64` FROM std/encoding/base64.ts BACK HERE. It is what killed
+// this function on every report over roughly 10MB, and it failed INVISIBLY (2026-08-25).
+//
+// Measured on visit 6188 (076-TCE), reproduced 3 times, read from the edge log:
+//     Shutdown  reason=Memory  cpu=877  total=277.7MB  heap=262.1MB  external=15.6MB
+// The 15.6MB is the PDF itself, sitting off-heap in its ArrayBuffer. The 262MB is this
+// one encoding step. std@0.224.0 builds its output with `result += ...` FOUR TIMES PER
+// THREE INPUT BYTES, so a 15.6MB PDF performs ~20.8 MILLION single-character string
+// concatenations and leaves V8 holding a cons-string tree an order of magnitude larger
+// than the 20.8MB of base64 it is actually producing.
+//
+// ⚠ THE FAILURE MODE IS WHY THIS COMMENT IS LONG. An OOM is a PLATFORM kill, not an
+// exception: no catch runs, `finally` never runs, logSend never fires, so NOTHING reaches
+// visit_photo_email_sends and the whole event is absent from the database. The caller gets
+// HTTP 546 {"code":"WORKER_RESOURCE_LIMIT"} — note the key is `code`, not `error`, so
+// Admin Review's error map misses it and the dialog sits on "Sending..." for ever.
+// A silent failure on a compliance send is the worst outcome this function has.
+//
+// ⚠ `send-derm-email` still imports the std encoder and attaches manifest IMAGES. It has
+// the same latent bug. Not changed here because it is a different function with its own
+// size profile; it needs its own measurement first.
+const B64_CHUNK = 3 * 16384 // 49152 bytes. MUST stay a multiple of 3 — see below.
+const FROM_CHARCODE_MAX = 8192 // spread arg count; ~65536+ throws RangeError.
+
+/**
+ * Base64 without the cons-string explosion: encode in blocks, join once.
+ *
+ * 🛑 B64_CHUNK MUST BE A MULTIPLE OF 3. Base64 encodes 3 input bytes to 4 output chars,
+ * so slicing on a multiple of 3 lets each block encode independently and the pieces
+ * concatenate exactly. A chunk size that is NOT a multiple of 3 makes btoa emit '='
+ * padding in the MIDDLE of the stream, which produces a corrupt attachment that still
+ * looks like valid base64 and still sends — i.e. a broken PDF in a regulator's inbox with
+ * no error anywhere. The round-trip assertion at the call site is what guards this.
+ */
+function encodeBase64Chunked(bytes: Uint8Array): string {
+  const parts: string[] = []
+  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
+    const chunk = bytes.subarray(i, Math.min(i + B64_CHUNK, bytes.length))
+    let bin = ''
+    for (let j = 0; j < chunk.length; j += FROM_CHARCODE_MAX) {
+      bin += String.fromCharCode(...chunk.subarray(j, j + FROM_CHARCODE_MAX))
+    }
+    parts.push(btoa(bin))
+  }
+  return parts.join('')
+}
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Unclogme <onboarding@resend.dev>'
@@ -145,6 +191,14 @@ const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
 // + up to 10s context close + up to 10s browser close = ~50s worst case. 45s was under
 // that and would have produced misleading "pdf_service_unreachable" rows.
 const PDF_TIMEOUT_MS = 65_000
+
+// The largest raw PDF we will attempt to attach. Resend's documented limit is 40MB per
+// email AFTER base64, and base64 is 4/3 of the input, so 30MB of PDF is their real
+// ceiling. Anything above this could not be delivered even if we encoded it perfectly.
+// ⚠ This is a DELIVERABILITY limit, not the memory limit. The memory limit is what the
+// chunked encoder at the top of this file exists to respect, and the two are independent:
+// raising this without re-measuring heap is how the 2026-08-25 outage comes back.
+const MAX_PDF_BYTES = 30 * 1024 * 1024
 
 // 🛑 THE OLD 10-PHOTO CAP IS GONE, AND SO IS THE REASON FOR IT.
 // The first version attached N re-encoded JPEGs and hit the worker's MEMORY ceiling
@@ -679,10 +733,38 @@ Deno.serve(async (req: Request) => {
     }
 
     const total = pdfBytes.byteLength
+
+    // 🛑 A CEILING WE ENFORCE OURSELVES, CHECKED BEFORE WE ENCODE ANYTHING.
+    // Resend's documented limit is 40MB per email AFTER base64, which is 30MB of raw PDF,
+    // so past this the send would be refused by them regardless. Checking it here turns an
+    // oversized report into a LOGGED, readable refusal instead of a silent platform kill.
+    // ⚠ This is a real refusal, not a formality: it is the only thing standing between a
+    // pathological report and the failure mode described at the top of this file.
+    if (total > MAX_PDF_BYTES) {
+      await logSend('skipped', `pdf_too_large:${total}b`, 0, total, null, null)
+      return json({
+        error: 'pdf_too_large',
+        bytes: total,
+        limit_bytes: MAX_PDF_BYTES,
+        detail: 'The rendered report is too large to email. Send it without photos, or reduce the photos on the visit.',
+      }, 409, cors)
+    }
+
     const reportName = `Service-Report-${visitRow.client_code}-${visitRow.visit_date}.pdf`
+    const encoded = encodeBase64Chunked(pdfBytes)
+
+    // The control for the multiple-of-3 trap in encodeBase64Chunked. Base64 of n bytes is
+    // exactly 4*ceil(n/3) chars; mid-stream '=' padding makes it LONGER. This is cheap,
+    // it is O(1), and it is the difference between shipping a corrupt PDF and refusing.
+    const expectedB64Len = 4 * Math.ceil(total / 3)
+    if (encoded.length !== expectedB64Len) {
+      await logSend('error', `b64_length_mismatch:${encoded.length}!=${expectedB64Len}`, 0, total, null, null)
+      return json({ error: 'attachment_encode_failed', detail: 'Base64 length check failed; nothing was sent.' }, 500, cors)
+    }
+
     const prepared: Prepared[] = [{
       filename: reportName,
-      content: encodeBase64(pdfBytes),
+      content: encoded,
       content_type: 'application/pdf',
       phase: 'report',
       bytes: total,
