@@ -661,9 +661,23 @@ rather than a null (which makes a failing query a usable way to discover the sch
   and it refuses rather than sends. `scripts/probes/b64_chunked_test.js` extracts the encoder from
   the source file (never retyped), proves 19 sizes byte-identical to Node's base64 including every
   chunk boundary, and **mutation-tests a chunk size of 49150 to confirm the guard actually bites**.
-- `MAX_PDF_BYTES` (30MB) is Resend's documented 40MB-after-base64 ceiling in raw bytes. It is a
-  **deliverability** limit and is independent of the memory fix; raising it without re-measuring
-  heap is how this outage returns.
+- `MAX_PDF_BYTES` is **25 MiB**, and the arithmetic is the point. Base64 is `4*ceil(n/3)`, so
+  **30 MiB of PDF becomes 41,943,040 bytes = 41.9 MB decimal**, which is at or over Resend's
+  40MB cap *before* the HTML body, text part, headers, JSON and MIME overhead are counted.
+  🛑 **The constant shipped at 30 MiB and was therefore a guard that permitted exactly what it
+  existed to refuse.** Corrected the same day. 25 MiB -> 35.0 MB decimal, ~5MB of headroom, and
+  still ~2x the largest report ever produced (12.97MB). **Do the arithmetic before changing it.**
+  It is a **deliverability** limit, independent of the memory fix; raising it without
+  re-measuring heap is how this outage returns. ⚠ It is also not what a MUNICIPALITY accepts:
+  plenty of mail servers reject at 10-25MB, so passing this guard is not proof of delivery.
+
+**✅ VERIFY AGAINST THE DEPLOYED BODY, NOT THE GIT TREE — a commit is not a deploy.**
+`scripts/probes/edge_deployed_body.js <slug> "<needle>" "!<absent-needle>"` reads what Supabase is
+actually running (`GET /v1/projects/{ref}/functions/{slug}/body`) and reports its version.
+⚠ **Always pass a control needle you know is present** (`api.resend.com/emails` works for both
+mailers): a needle reported absent by a broken reader looks identical to one that is genuinely
+absent. Measured 2026-08-25: `send-visit-photos-email` v17 has `encodeBase64Chunked` and no std
+import; `send-derm-email` v25 has the std import and no chunked encoder.
 
 **Verified live:** 6188 (5.44MB) and 6568 (12.97MB) both went 546 -> 200 sent; the delivered 6568
 attachment is byte-exact (13,598,685 in the API response and in the inbox), `%PDF-1.4`, ends

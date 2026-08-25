@@ -192,13 +192,25 @@ const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
 // that and would have produced misleading "pdf_service_unreachable" rows.
 const PDF_TIMEOUT_MS = 65_000
 
-// The largest raw PDF we will attempt to attach. Resend's documented limit is 40MB per
-// email AFTER base64, and base64 is 4/3 of the input, so 30MB of PDF is their real
-// ceiling. Anything above this could not be delivered even if we encoded it perfectly.
+// The largest raw PDF we will attempt to attach.
+//
+// 🛑 DO THE ARITHMETIC BEFORE CHANGING THIS, AND DO NOT SET IT TO "30MB".
+// Resend's cap is 40MB per email AFTER base64, and base64 is 4*ceil(n/3), so:
+//     30 MiB of PDF -> 41,943,040 base64 bytes = 40.0 MiB = 41.9 MB decimal
+// which is AT or OVER the cap before the HTML body, the text part, the headers, the JSON
+// and the MIME overhead are counted at all. The first version of this constant was 30 MiB
+// and was therefore a guard that permitted precisely what it existed to refuse. Corrected
+// the same day it shipped.
+//     25 MiB of PDF -> 34,952,536 base64 bytes = 35.0 MB decimal, ~5MB of headroom.
+// It is also still about 2x the largest report ever produced (12.97MB, visit 6568), so it
+// refuses nothing real.
+//
 // ⚠ This is a DELIVERABILITY limit, not the memory limit. The memory limit is what the
 // chunked encoder at the top of this file exists to respect, and the two are independent:
 // raising this without re-measuring heap is how the 2026-08-25 outage comes back.
-const MAX_PDF_BYTES = 30 * 1024 * 1024
+// ⚠ And it is not the same as what a MUNICIPALITY will accept: plenty of mail servers
+// reject at 10-25MB, so a send that passes this guard can still bounce at the far end.
+const MAX_PDF_BYTES = 25 * 1024 * 1024
 
 // 🛑 THE OLD 10-PHOTO CAP IS GONE, AND SO IS THE REASON FOR IT.
 // The first version attached N re-encoded JPEGs and hit the worker's MEMORY ceiling
