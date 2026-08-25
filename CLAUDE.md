@@ -1997,13 +1997,21 @@ is validated against filed county pages. Do not add a second implementation here
 
 ⚠ **Ticket number is `coalesce(white_manifest_number, yellow_ticket_number)`** and that is total:
 **measured 2026-08-25 at MANIFEST grain: white 512 / yellow 157 / neither 0 / colliding 0 of 669
-live manifests**, and the white-yellow split matches the disposal-facility split EXACTLY,
-⚠ **GRAIN MATTERS HERE AND I GOT IT WRONG ONCE.** An earlier stamp read `546 / 154`, which is the
-VIEW's `ticket_kind` row census (546 + 154 = 700 = the view's row count). At that grain `neither`
-is impossible — `ticket_kind` is a two-arm CASE — and `colliding` is undefined, so the two
-qualifiers that make the sentence mean anything only exist at manifest grain. A number refreshed
-at the wrong grain is worse than a stale one: it reads as current. which is what makes `white => Miami-Dade offload` a fact rather than a convention.
+live manifests**, and the white-yellow split matches the disposal-facility split EXACTLY, which is
+what makes `white => Miami-Dade offload` a fact rather than a convention.
 `wwtp_ticket_number` and `wwtp_receipt_number` are populated **0** times: never read them.
+
+⚠ **GRAIN MATTERS ON THOSE NUMBERS AND I GOT IT WRONG ONCE.** An earlier stamp read `546 / 154`,
+which is the VIEW's `ticket_kind` row census (546 + 154 = 700 = the view's row count). At that grain
+`neither` is impossible — `ticket_kind` is a two-arm CASE — and `colliding` is undefined, so the two
+qualifiers that make the sentence mean anything only exist at manifest grain. **A number refreshed
+at the wrong grain is worse than a stale one: it reads as current.**
+🛑 **And the edit that fixed it broke the sentence it was fixing.** This paragraph was first inserted
+BETWEEN the subject above and its predicate, leaving the ticket paragraph on a dangling comma and
+welding `which is what makes white => Miami-Dade offload a fact` onto the end of a sentence about
+grain-staleness — so the file briefly asserted that stale grain is what makes the endpoint's
+load-bearing scope rule true. **When you insert a warning next to a claim, re-read the claim
+afterwards, not just the warning.**
 
 ⚠ **County vocabulary differs by table.** `public.properties.county` stores `'Dade'`;
 `public.disposal_facilities.county` stores `'Miami-Dade'`. Comparing them naively matches nothing.

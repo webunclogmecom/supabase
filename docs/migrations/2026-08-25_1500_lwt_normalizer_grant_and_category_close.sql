@@ -273,6 +273,7 @@ BEGIN
   DECLARE
     v_carrier text;
     v_missing text := '';
+    v_gone    text := '';
     -- carrier, the column to read, and the EXACT substring that must be present
     v_acc text[][] := ARRAY[
       ['167-FEN', 'name', 'Fendi Ch' || chr(226) || 'teau Residences'],
@@ -282,19 +283,28 @@ BEGIN
   BEGIN
     FOR i IN 1 .. array_length(v_acc,1) LOOP
       v_checks := v_checks + 1;
-      IF NOT EXISTS (
+      -- 🛑 TWO DIFFERENT REASONS THIS CAN GO RED, AND THE MESSAGE MUST SAY WHICH.
+      --    A carrier that has been RETIRED has no rows at all -- nothing is misspelled, the
+      --    accent path simply is not exercised any more and someone should pick a new carrier.
+      --    167-FEN carries only 2 rows, so ONE client retiring trips this, and shouting
+      --    "MISSPELLED ON A COUNTY FILING" at a clean database is exactly the thing this block's
+      --    own governing rule warns about: a check that cries wolf trains people to ignore red.
+      IF NOT EXISTS (SELECT 1 FROM derm.v_lwt_monthly_rows WHERE client_code = v_acc[i][1]) THEN
+        v_gone := v_gone || format(' %s', v_acc[i][1]);
+      ELSIF NOT EXISTS (
         SELECT 1 FROM derm.v_lwt_monthly_rows
          WHERE client_code = v_acc[i][1]
            AND CASE WHEN v_acc[i][2] = 'name' THEN client_name ELSE address END
                LIKE '%' || v_acc[i][3] || '%'
       ) THEN
-        -- ⚠ Absent-from-this-month is NOT a failure: 2026-03 carries no carrier at all. The
-        --   view is fleet-wide, so a carrier missing HERE really is a regression.
         v_missing := v_missing || format(' %s(%s)', v_acc[i][1], v_acc[i][3]);
       END IF;
     END LOOP;
     IF v_missing <> '' THEN
       v_fail := v_fail || format(' [ACCENT CARRIER(S) NO LONGER CARRY THE EXACT SPELLING:%s -- a real Miami Beach street and/or a registered business name are now MISSPELLED on a county filing]', v_missing);
+    END IF;
+    IF v_gone <> '' THEN
+      v_fail := v_fail || format(' [ACCENT CARRIER(S) HAVE NO ROWS AT ALL:%s -- nothing is misspelled; the client retired, so the accent path is no longer exercised. Pick a new carrier that still carries a non-ASCII LETTER and update this list]', v_gone);
     END IF;
   END;
 
@@ -547,6 +557,24 @@ BEGIN
     RESET ROLE;
   END;
 
+  -- 🛑 PIN THE FUNCTION'S ATTRIBUTES. Nothing else here reads them, so a CREATE OR REPLACE
+  --    could quietly drop IMMUTABLE, flip it to SECURITY DEFINER, or lose the pinned
+  --    search_path, and every other check would stay green. SECDEF in particular would change
+  --    the privilege model this migration exists to get right.
+  DECLARE r2 record;
+  BEGIN
+    SELECT p.provolatile, p.prosecdef, p.proparallel, p.proconfig::text
+      INTO r2
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'derm' AND p.proname = 'fn_normalize_state_input';
+    v_checks := v_checks + 1;
+    IF r2.provolatile <> 'i' OR r2.prosecdef OR r2.proparallel <> 's'
+       OR r2.proconfig IS DISTINCT FROM '{search_path=pg_catalog}' THEN
+      v_fail := v_fail || format(' [FUNCTION ATTRIBUTES CHANGED: volatile=%s secdef=%s parallel=%s config=%s -- expected i/false/s/{search_path=pg_catalog}]',
+                                 r2.provolatile, r2.prosecdef, r2.proparallel, r2.proconfig);
+    END IF;
+  END;
+
   IF v_fail <> '' THEN
     RAISE EXCEPTION 'LWT VERIFY FAILED (% checks):%', v_checks, v_fail;
   END IF;
@@ -554,7 +582,13 @@ BEGIN
 END $verify$;
 
 -- ---------------------------------------------------------------------------
--- 180 checks. Mutation-tested, every one fires.
+-- Mutation-tested, every assertion fires.
+-- 🛑 THE CHECK COUNT IS DELIBERATELY NOT WRITTEN DOWN, and it used to say "180" while the
+--    block ran 182. It is DATA-DEPENDENT: the Quebec arm only executes because properties 234
+--    and 882 exist today, and the accent loop scales with the carrier list. A pinned count is
+--    the same defect as the pinned row counts this block was rebuilt to remove -- it goes
+--    stale on ordinary data movement and trains whoever reads it to ignore the mismatch.
+--    The block RAISES its own count on success; read that, do not quote one here.
 --
 -- 🛑 THE ACCENT ASSERTIONS WERE REBUILT 2026-08-25 (iteration 9) BECAUSE THEY DID NOT TEST WHAT
 --    THEIR OWN PROSE PROMISED. Two holes, both the paraphrase-instead-of-mirror shape:

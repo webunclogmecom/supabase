@@ -80,8 +80,14 @@ Miami-Dade County."* An "activity" is a pickup, not a ticket.
 |---|---|---|---|
 | no | **yes** | **11** (83 visits) | **invisible to an offload-only filter** |
 | yes | no | 1 (5 visits) | qualifies through the offload leg |
-| yes | yes | 105 (531 visits) | qualifies either way |
+| yes | yes | 106 (541 visits) | qualifies either way |
 | no | no | 9 (71 visits) | correctly excluded |
+
+⚠ **Re-measured 2026-08-25; the `yes/yes` cell was one epoch behind and made the table sum to 126
+while the rest of this document said 127.** Live: 11 + 1 + 106 + 9 = **127 tickets**, 83 + 5 + 541 +
+71 = **700 rows**. **These grow — re-measure the whole table together or its total silently stops
+matching the rest of the file.** The load-bearing figures are the shape, not the counts: the `no/yes`
+row exists at all, and it is 53 in-scope activities.
 
 Those 11 tickets are Broward offloads carrying Miami-Dade pickups. A naive "offloaded in Dade" build
 would silently drop **53** real activities from a regulator-facing report.

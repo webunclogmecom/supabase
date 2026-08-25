@@ -210,7 +210,8 @@ COMMIT;
 --      It compares the view against an INDEPENDENT BASE-TABLE RECOMPUTATION at the same instant
 --      instead of against a remembered number, asserts state structurally, names the accent
 --      CARRIERS rather than counting them, and SET ROLEs to pg_read_all_data for the privilege
---      check. 180 checks, mutation-tested.
+--      check. Mutation-tested; it RAISES its own check count on success, which is why no
+--      number is quoted here -- the count is data-dependent and a pinned one goes stale.
 --
 --    The pinned assertions below are LEFT AS WRITTEN on purpose: this file is a dated record of
 --    what was asserted when it was applied, and rewriting it would falsify that. But the
