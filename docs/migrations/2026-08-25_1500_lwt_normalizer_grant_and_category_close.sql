@@ -171,6 +171,7 @@ COMMIT;
 DO $verify$
 DECLARE
   r         record;
+  b         record;
   v_fail    text := '';
   v_checks  int  := 0;
 BEGIN
@@ -187,12 +188,43 @@ BEGIN
     INTO r
     FROM derm.v_lwt_monthly_rows;
 
-  -- 1. the totals must not move. A presentation change that alters these means a JOIN or the
-  --    WHERE was damaged while the body was regenerated -- the CREATE OR REPLACE failure mode.
+  -- 1. 🛑 THE TOTALS ARE COMPARED AGAINST AN INDEPENDENT RECOMPUTATION, NOT AGAINST A
+  --    REMEMBERED NUMBER. The first version of this asserted all_rows = 690 and it FAILED the
+  --    next morning -- not because anything broke, but because Diego filed ticket 833813 and
+  --    ten legitimate rows appeared. A re-runnable check that breaks on normal business is
+  --    worse than no check: it trains whoever runs it to ignore a red result.
+  --
+  --    ⚠ THIS ESTATE ALREADY LEARNED THIS, one day earlier, in 2026-08-25_0110:
+  --      "DO NOT hard-code an expected breakdown against live data. Mine went stale between
+  --       writing the migration and running it. Assert mirror == queue instead, which compares
+  --       two live reads of the same instant rather than a live read against a remembered number."
+  --    I wrote that note and then did the opposite. So: recompute from the BASE TABLES and
+  --    compare two reads of the SAME INSTANT. That is stable under growth by construction, and
+  --    it is a STRONGER check -- it catches a damaged JOIN or WHERE, which is the actual
+  --    CREATE OR REPLACE failure mode, where a frozen count only catches a change in volume.
+  SELECT count(*) AS all_rows,
+         count(*) FILTER (WHERE COALESCE(p.county = 'Dade', false)
+                             OR m.white_manifest_number IS NOT NULL) AS in_scope,
+         count(DISTINCT COALESCE(m.white_manifest_number, m.yellow_ticket_number)) AS tickets
+    INTO b
+    FROM public.derm_manifests m
+    JOIN public.manifest_visits mv ON mv.manifest_id = m.id
+    JOIN public.visits v          ON v.id = mv.visit_id AND v.deleted_at IS NULL
+    JOIN public.clients c         ON c.id = m.client_id
+    LEFT JOIN public.properties p ON p.id = v.property_id
+   WHERE m.deleted_at IS NULL;
+
   v_checks := v_checks + 1;
-  IF r.all_rows <> 690 OR r.in_scope <> 589 OR r.tickets <> 126 THEN
-    v_fail := v_fail || format(' [TOTALS MOVED: %s/%s/%s, expected 690/589/126]',
-                               r.all_rows, r.in_scope, r.tickets);
+  IF r.all_rows <> b.all_rows OR r.in_scope <> b.in_scope OR r.tickets <> b.tickets THEN
+    v_fail := v_fail || format(' [VIEW DISAGREES WITH THE BASE TABLES: view %s/%s/%s vs recomputed %s/%s/%s -- a JOIN or the WHERE was damaged]',
+                               r.all_rows, r.in_scope, r.tickets, b.all_rows, b.in_scope, b.tickets);
+  END IF;
+
+  -- and a floor, so a catastrophic emptying is still loud. Deliberately a FLOOR, not equality:
+  -- it cannot go stale upward, and 690 was the measured size on 2026-08-25.
+  v_checks := v_checks + 1;
+  IF r.all_rows < 690 THEN
+    v_fail := v_fail || format(' [ROWS WENT DOWN: %s, was 690 on 2026-08-25 and this view only grows]', r.all_rows);
   END IF;
 
   -- 2. the fold did its job
@@ -205,16 +237,31 @@ BEGIN
   --    "improving" the fold into unaccent() or a [^\x20-\x7E] strip. A result of ZERO here is
   --    a REGRESSION, not a cleaner one: it means "Fendi Château Residences" and "Española Way"
   --    are now MISSPELLED on a Miami-Dade compliance form.
+  --    ⚠ Asserted on the CARRIERS, not on a count. The count grows with the business; the fact
+  --      that Fendi Chateau keeps its a-circumflex does not.
   v_checks := v_checks + 1;
-  IF r.name_nonascii <> 2 OR r.addr_nonascii <> 10 THEN
-    v_fail := v_fail || format(' [ACCENTS: name=%s (want 2), addr=%s (want 10) -- if either is 0 a real business name and a real street are now misspelled on a county form]',
+  IF r.name_nonascii < 1 OR r.addr_nonascii < 1 THEN
+    v_fail := v_fail || format(' [ACCENTS STRIPPED: name_nonascii=%s addr_nonascii=%s -- a real business name and a real street are now misspelled on a county form]',
                                r.name_nonascii, r.addr_nonascii);
   END IF;
-
-  -- 4. state is uniform, and nothing was invented
   v_checks := v_checks + 1;
-  IF r.st_fl <> 676 OR r.st_null <> 14 THEN
-    v_fail := v_fail || format(' [STATE: FL=%s (want 676), null=%s (want 14)]', r.st_fl, r.st_null);
+  IF NOT EXISTS (SELECT 1 FROM derm.v_lwt_monthly_rows
+                  WHERE client_code = '167-FEN' AND client_name ~ '[^ -~]') THEN
+    v_fail := v_fail || ' [167-FEN no longer carries its a-circumflex -- "Fendi Chateau Residences" is now misspelled]';
+  END IF;
+  v_checks := v_checks + 1;
+  IF NOT EXISTS (SELECT 1 FROM derm.v_lwt_monthly_rows
+                  WHERE client_code IN ('014-JOY','179-CIG') AND address ~ '[^ -~]') THEN
+    v_fail := v_fail || ' [014-JOY/179-CIG no longer carry the n-tilde -- "Espanola Way" is now misspelled]';
+  END IF;
+
+  -- 4. state is uniform, and nothing was invented. STRUCTURAL, not a pinned count: every
+  --    non-null value must be a two-letter code, and FL + NULL must account for every row.
+  --    A pinned FL=676 broke the morning after it shipped; this cannot.
+  v_checks := v_checks + 1;
+  IF r.st_fl + r.st_null <> r.all_rows THEN
+    v_fail := v_fail || format(' [STATE: FL=%s + NULL=%s does not account for all %s rows -- a third value has appeared, look at it]',
+                               r.st_fl, r.st_null, r.all_rows);
   END IF;
 
   -- 5. 🛑 THE PASS-THROUGH TRIPWIRE. Verbatim pass-through is deliberate and is the reason a
@@ -380,6 +427,13 @@ BEGIN
           v_fail := v_fail || ' [U+2800 BRAILLE BLANK was normalised -- it is NOT whitespace and the set has been widened past its boundary]';
         END IF;
 
+        UPDATE public.properties SET state = 'F' || chr(65440) || 'L' WHERE id = v_prop;
+        SELECT state INTO v_got FROM derm.v_lwt_monthly_rows WHERE visit_id = v_vis LIMIT 1;
+        v_checks := v_checks + 1;
+        IF v_got IS NOT DISTINCT FROM 'FL' THEN
+          v_fail := v_fail || ' [U+FFA0 HALFWIDTH HANGUL FILLER was normalised -- it is Lo, not whitespace, and the set has been widened past its stated boundary]';
+        END IF;
+
         -- NEGATIVE CONTROL: an ordinary character must NOT be stripped, or the normaliser is
         -- eating real data and every pass above is meaningless.
         UPDATE public.properties SET state = 'Flo' || chr(120) || 'rida' WHERE id = v_prop;
@@ -402,8 +456,69 @@ BEGIN
     END IF;
   END;
 
+  -- 🛑 THE PRIVILEGE ASSERTION, RUN AS THE AFFECTED ROLE.
+  --    2026-08-25_1400 narrowed the view's effective read privilege by routing one column
+  --    through a SECURITY INVOKER function, and 1500 -- whose entire subject was that
+  --    regression -- shipped a VERIFY with no privilege check at all. Worse, this block runs
+  --    as `postgres`, which OWNS the function, so any naive check passes with the grant
+  --    present OR absent. It has to SET ROLE, and it has to isolate the COLUMN: `select *`
+  --    fails for both roles and names nothing.
+  --    ⚠ Use pg_read_all_data, a role postgres can actually assume. A probe against
+  --      supabase_read_only_user raises 42501 "permission denied TO SET ROLE" -- same SQLSTATE
+  --      as the defect, opposite meaning, and it was misread as a failure once already.
+  DECLARE v_tick bigint; v_st bigint;
+  BEGIN
+    BEGIN
+      SET LOCAL ROLE pg_read_all_data;
+      SELECT count(ticket_number), count(state) INTO v_tick, v_st FROM derm.v_lwt_monthly_rows;
+      v_checks := v_checks + 1;
+      IF v_st <> v_tick - (SELECT count(*) FROM derm.v_lwt_monthly_rows WHERE state IS NULL) THEN
+        v_fail := v_fail || format(' [PRIV: as pg_read_all_data, count(state)=%s does not match count(ticket_number)=%s less the nulls]', v_st, v_tick);
+      END IF;
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_checks := v_checks + 1;
+      v_fail := v_fail || ' [PRIV REGRESSION: pg_read_all_data got 42501 reading the state column -- a function on the view read path is missing EXECUTE. supabase_read_only_user and supabase_etl_admin inherit this role, so read-only dashboards and ETL are broken]';
+    END;
+    RESET ROLE;
+  END;
+
   IF v_fail <> '' THEN
     RAISE EXCEPTION 'LWT VERIFY FAILED (% checks):%', v_checks, v_fail;
   END IF;
   RAISE NOTICE 'LWT VERIFY: % checks passed', v_checks;
 END $verify$;
+
+-- ---------------------------------------------------------------------------
+-- ⚠ THIS VERIFY BLOCK WAS REBUILT 2026-08-25 (iteration 5). The DDL above is untouched; only
+--   the re-runnable check changed, and it changed because the version shipped with this
+--   migration was BROKEN BY NORMAL BUSINESS the next morning.
+--
+-- 🛑 IT PINNED ABSOLUTE COUNTS AGAINST A LIVE, GROWING TABLE. It asserted all_rows = 690 and
+--    st_fl = 676. Diego filed ticket 833813 at 10:29 ET, ten legitimate rows appeared, and the
+--    check went red -- reporting a regression where there was only a business day. **A
+--    re-runnable check that fails on normal activity is worse than no check: it trains whoever
+--    runs it to ignore a red result.**
+--    ⚠ AND THIS ESTATE HAD ALREADY LEARNED IT, ONE DAY EARLIER, in 2026-08-25_0110:
+--      "DO NOT hard-code an expected breakdown against live data ... assert mirror == queue
+--       instead, which compares two live reads of the same instant rather than a live read
+--       against a remembered number."
+--    Same author, same week, opposite behaviour.
+--    ⇒ Totals now compare the view against an INDEPENDENT RECOMPUTATION from the base tables,
+--      which is stable under growth AND strictly stronger: it catches a damaged JOIN or WHERE,
+--      the actual CREATE OR REPLACE failure mode, where a frozen count only catches volume.
+--    ⇒ The state check is now structural (FL + NULL must account for every row) and the accent
+--      checks name the CARRIERS (167-FEN, 014-JOY, 179-CIG) rather than counting rows.
+--
+-- 🛑 IT ALSO SHIPPED WITH NO PRIVILEGE ASSERTION AT ALL -- in the migration whose entire subject
+--    was a privilege regression. And because this block runs as `postgres`, which OWNS the
+--    function, a naive check would have passed with the grant present or absent. It now
+--    SET ROLEs to pg_read_all_data and isolates the COLUMN, and was proven by revoking the
+--    grant inside a rolled-back block and watching it fire.
+--
+-- ⚠ The header above claimed BOTH deliberate exclusions were asserted; only U+2800 was.
+--   U+FFA0 is asserted now. Mutation-proved: adding chr(65440) to the zero-width run used to
+--   leave the whole VERIFY green.
+--
+-- 178 checks. Mutation-tested: recomputation mismatch, state accounting, accent carriers, row
+-- floor, translate to-string length (against a real 23-space rebuild), both exclusions, and the
+-- privilege revoke. Every one fires.

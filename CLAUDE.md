@@ -1944,14 +1944,22 @@ split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather t
 `public.disposal_facilities.county` stores `'Miami-Dade'`. Comparing them naively matches nothing.
 
 ⚠ **`state` IS AN EXPLICIT MAPPING, NOT `'FL'`. `client_name` IS PUNCTUATION-FOLDED, AND ACCENTS
-ARE DELIBERATELY KEPT**. THREE migrations, and the earliest one alone no longer describes the
-live object — read all three:
+ARE DELIBERATELY KEPT**. **FOUR migrations**, and the earliest alone no longer describes the
+live object — read all four:
 - **`2026-08-25_0400`** — the original mapping, after Fred's "yes normalise both".
 - **`2026-08-25_1200`** — made the Québec arm collation-proof and handled FIVE invisible
   whitespace characters INLINE in the CASE.
 - **`2026-08-25_1400`** — moved that handling into **`derm.fn_normalize_state_input()`** and
   widened it from 5 characters to 29, in two classes (space-like → space, zero-width →
   DELETED). The live view calls that function seven times and contains no `btrim` at all.
+- **`2026-08-25_1500`** — **the migration that defines the DEPLOYED body.** Widened 29 → **43**
+  characters chosen by Unicode CATEGORY (all Zs, Zl, Zp, whitespace Cc, plus plausible Cf
+  including the bidi controls), granted EXECUTE to `pg_read_all_data`, and added the real
+  translate() length assertion. **24 space-like → space, 19 zero-width → DELETED.**
+  ⚠ `U+2800` and `U+FFA0` are deliberately OUT — they render blank but are not whitespace — and
+  the VERIFY asserts they still pass through, so widening past that boundary fails loudly.
+  🛑 **The set went 5 → 29 → 43 in one day, each list hand-picked and each stale within hours.
+  A hand-picked list is not a class. Enumerate the CATEGORY.**
   🛑 It also **narrowed the effective read privilege on the view**: a SECURITY INVOKER function
   adds an invoker-side EXECUTE check, so `pg_read_all_data` (and the `supabase_read_only_user`
   / `supabase_etl_admin` roles that inherit it) got `42501` on the `state` column while every

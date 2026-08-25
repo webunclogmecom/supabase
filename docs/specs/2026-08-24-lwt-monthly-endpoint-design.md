@@ -169,7 +169,9 @@ single row. An earlier version of it was hand-written, claimed `"month": "2026-0
 ticket is a JUNE ticket, and omitted `scope`, `include`, `excluded_rows`, `data_quality`, `visit_id`
 and `anomaly` — six fields the endpoint has always served. Rows are returned in a **total, stable
 order** (offload_date, ticket_number, pickup_date, visit_id, manifest_id), so two identical calls
-are byte-identical; that only became reliable on 2026-08-25, when the last two keys were added.
+return the rows in the same sequence; that only became reliable on 2026-08-25, when the last two
+keys were added. **Not byte-identical** — see the note under Semantics below: `generated_at` is
+fresh on every response and is excluded from the ETag.
 
 **Errors**, reusing the existing vocabulary exactly:
 
