@@ -542,8 +542,14 @@ BEGIN
 
   -- 🛑 THE PRIVILEGE ASSERTION, RUN AS THE AFFECTED ROLE.
   --    2026-08-25_1400 narrowed the view's effective read privilege by routing one column
-  --    through a SECURITY INVOKER function, and 1500 -- whose entire subject was that
-  --    regression -- shipped a VERIFY with no privilege check at all. Worse, this block runs
+  --    through a SECURITY INVOKER function, and the FIRST version of 1500 -- whose entire
+  --    subject was that regression -- shipped a VERIFY with no privilege check at all. The
+  --    check below closed that, added by baac702 alongside this very sentence.
+  --    ⚠ As first written this read "1500 shipped a VERIFY with no privilege check at all",
+  --      present tense, eight lines above the check itself -- the doc denying the code beside
+  --      it. This file uses "an earlier version of" correctly twice elsewhere; this sentence
+  --      was simply never re-tensed after the thing it describes was fixed in the same commit.
+  --    Worse, this block runs
   --    as `postgres`, which OWNS the function, so any naive check passes with the grant
   --    present OR absent. It has to SET ROLE, and it has to isolate the COLUMN: `select *`
   --    fails for both roles and names nothing.

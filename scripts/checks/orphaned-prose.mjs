@@ -35,6 +35,26 @@
 //   that made an audit non-green was in exactly that file. The first version of
 //   this script walked straight past it. Any successor must keep that path.
 //
+// 🛑 KNOWN BLIND SPOTS. State them, because a screen whose limits are undocumented
+//    is the exact failure mode this screen was built to prevent, and a clean run
+//    otherwise reads as more coverage than it has:
+//
+//    1. PIPE-BEARING LINES ARE SKIPPED ENTIRELY (`pa.includes('|')`, to drop
+//       markdown tables). That also drops every SQL `||`-concatenated RAISE
+//       message — 132 such lines across the four in-scope migrations — which is
+//       the same concatenation family as defect 2. If an orphan lands in a
+//       `format(... || ...)` message, this will not see it.
+//    2. ONLY ADJACENT NON-BLANK LINES ARE COMPARED. A blank line between the two
+//       halves, a deleted middle line of a three-line sentence, or a lowercase
+//       continuation welded on with no ENDS_MID marker all pass silently.
+//    3. IT IS SYNTACTIC, NOT SEMANTIC. It cannot see a sentence that is
+//       grammatically whole and factually self-contradicting — which is what
+//       iteration 18 found by hand, a comment denying the code eight lines below
+//       it. No regex finds that; only reading does.
+//
+//    ⇒ Treat a clean run as "no severed SEAMS of the two known shapes", never as
+//      "the prose is sound".
+//
 // ✅ Self-test: run with --self-test. It plants each of the three real orphans,
 //    confirms the screen catches all three, removes them, and confirms it goes
 //    quiet. A screen that has never caught its own motivating defect is a
