@@ -40,7 +40,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // 🛑 DO NOT PUT `encodeBase64` FROM std/encoding/base64.ts BACK HERE. It is what killed
-// this function on every report over roughly 10MB, and it failed INVISIBLY (2026-08-25).
+// this function on every report over roughly 5MB, and it failed INVISIBLY (2026-08-25).
+// ⚠ "5MB" is not a rounding of the 15.6MB below: the largest attachment that EVER sent
+// successfully was 5,185,461 B and the median was 2,711,018 B, so the cliff sat just above
+// the median. This was never an exotic edge case, it was the next slightly bigger report.
 //
 // Measured on visit 6188 (076-TCE), reproduced 3 times, read from the edge log:
 //     Shutdown  reason=Memory  cpu=877  total=277.7MB  heap=262.1MB  external=15.6MB
@@ -57,9 +60,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // Admin Review's error map misses it and the dialog sits on "Sending..." for ever.
 // A silent failure on a compliance send is the worst outcome this function has.
 //
-// ⚠ `send-derm-email` still imports the std encoder and attaches manifest IMAGES. It has
-// the same latent bug. Not changed here because it is a different function with its own
-// size profile; it needs its own measurement first.
+// ✅ `send-derm-email` carries an IDENTICAL COPY of the encoder below (ported 2026-08-25,
+// v26). The two copies MUST stay byte-identical; scripts/probes/b64_chunked_test.js reads
+// both files and fails on drift. Do not edit one without the other.
 const B64_CHUNK = 3 * 16384 // 49152 bytes. MUST stay a multiple of 3 — see below.
 const FROM_CHARCODE_MAX = 8192 // spread arg count; ~65536+ throws RangeError.
 

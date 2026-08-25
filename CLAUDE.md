@@ -676,16 +676,36 @@ rather than a null (which makes a failing query a usable way to discover the sch
 actually running (`GET /v1/projects/{ref}/functions/{slug}/body`) and reports its version.
 ⚠ **Always pass a control needle you know is present** (`api.resend.com/emails` works for both
 mailers): a needle reported absent by a broken reader looks identical to one that is genuinely
-absent. Measured 2026-08-25: `send-visit-photos-email` v17 has `encodeBase64Chunked` and no std
-import; `send-derm-email` v25 has the std import and no chunked encoder.
+absent. Measured 2026-08-25: `send-visit-photos-email` v17 and `send-derm-email`
+v26 BOTH carry `encodeBase64Chunked` and neither carries the std import.
 
 **Verified live:** 6188 (5.44MB) and 6568 (12.97MB) both went 546 -> 200 sent; the delivered 6568
 attachment is byte-exact (13,598,685 in the API response and in the inbox), `%PDF-1.4`, ends
 `%%EOF`, 6 pages, **41 embedded images**. Regression control: 6537 re-sent at **1,759,261 bytes,
 identical to before the change**.
 
-⚠ **`send-derm-email` STILL IMPORTS THE STD ENCODER** and attaches manifest images. Same latent
-bug, deliberately not changed: it needs its own measurement first.
+✅ **`send-derm-email` WAS PORTED THE SAME DAY (v26) AND IT WAS THE MORE URGENT HALF.** It is the
+**regulator-facing city path and it is in real production use** (`derm_email_sends` carries
+`is_test=false` sends to actual client addresses). Measured worst payload: **~5.36MB across 2
+attachments = ~7.15M base64 chars = ~229MB** against a ceiling that killed a worker at 277.7MB,
+i.e. **single-digit percent headroom**. One extra manifest page would have tipped it, and it
+would have failed exactly as invisibly.
+
+🛑 **THE ENCODER NOW EXISTS IN TWO FILES AND THEY MUST STAY BYTE-IDENTICAL.** The port was done
+mechanically by `scripts/probes/port_b64_encoder.py` (extract, insert, then assert equal sha256),
+never retyped, and `scripts/probes/b64_chunked_test.js` now reads BOTH files and **fails on
+drift**. Two copies that diverge are worse than one, because the second is the one nobody re-tests.
+⚠ Its length check returns `null`, which is **fail-closed by construction**: all three call sites
+do `if (!att) { fetchFailed = true; break }` and then abandon the WHOLE manifest with reason
+`pdf_fetch_failed`. Verified against the call sites before the change. The logged reason will
+therefore read `pdf_fetch_failed` for a b64 mismatch, which is not what happened, so the
+`console.error` line is the only thing that separates them in the edge log.
+⚠ **Smoke-testing it needs care: it emails MUNICIPALITIES.** `test_recipient` is what makes a test
+safe, and decisively so — `toList = testRecipient ? [testRecipient] : cityEmails` and the
+`CITY_BCC` is dropped when it is set. Use `scripts/probes/derm_email_smoke.js`, which always
+sends it. ⚠ It must run **server-side**: the function is origin-restricted to
+`derm.unclogme.app`, so a browser call from anywhere else dies at the preflight with a bare
+`TypeError: Failed to fetch`, which looks like a broken function and is not one.
 
 ⚠ **A related trap when reading PDF size: it tracks MEGAPIXELS ON THE RENDERED PAGE, not source
 photo bytes.** Chromium's `page.pdf()` embeds decoded bitmaps. Measured on the FP report: visit

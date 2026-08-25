@@ -12,8 +12,24 @@
 const fs = require('fs');
 const path = require('path');
 
-const SRC = path.resolve(__dirname, '../../supabase/functions/send-visit-photos-email/index.ts');
+// BOTH functions now carry this encoder. They must stay byte-identical: two copies that
+// drift are worse than one copy, because the second one is the one nobody re-tests.
+const FILES = [
+  '../../supabase/functions/send-visit-photos-email/index.ts',
+  '../../supabase/functions/send-derm-email/index.ts',
+].map((p) => path.resolve(__dirname, p));
+const SRC = FILES[0];
 const src = fs.readFileSync(SRC, 'utf8');
+
+const BLOCK_RE = /const B64_CHUNK = [\s\S]*?function encodeBase64Chunked\(bytes: Uint8Array\): string \{[\s\S]*?\n\}\n/;
+const blocks = FILES.map((f) => {
+  const m = fs.readFileSync(f, 'utf8').match(BLOCK_RE);
+  if (!m) throw new Error(`encoder block not found in ${f}`);
+  return m[0];
+});
+const drift = blocks.some((b) => b !== blocks[0]);
+console.log(`copies found: ${blocks.length}; byte-identical across files: ${!drift}`);
+if (drift) { console.log('DRIFT between the two copies of encodeBase64Chunked'); process.exit(1); }
 
 // Pull the three declarations out of the real file by anchor.
 function extract(re, label) {

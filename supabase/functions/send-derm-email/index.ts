@@ -19,7 +19,40 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
+
+// 🛑 COPIED BYTE-FOR-BYTE FROM send-visit-photos-email/index.ts (2026-08-25). Do not edit
+//    one copy without the other, and do not retype either. Same incident, same reason:
+//    std@0.224.0's encodeBase64 appends one character at a time and burns ~32 bytes of
+//    V8 heap per output character, which OOM-kills the worker. An OOM is a PLATFORM kill,
+//    so no catch runs, no finally runs, and derm_email_sends records nothing at all.
+//    This function's worst measured payload is ~5.36MB across 2 attachments = ~7.15M
+//    base64 chars = ~229MB, against a ceiling that killed a worker at 277.7MB. It had
+//    single-digit percent headroom on the regulator-facing city path.
+const B64_CHUNK = 3 * 16384 // 49152 bytes. MUST stay a multiple of 3 — see below.
+const FROM_CHARCODE_MAX = 8192 // spread arg count; ~65536+ throws RangeError.
+
+/**
+ * Base64 without the cons-string explosion: encode in blocks, join once.
+ *
+ * 🛑 B64_CHUNK MUST BE A MULTIPLE OF 3. Base64 encodes 3 input bytes to 4 output chars,
+ * so slicing on a multiple of 3 lets each block encode independently and the pieces
+ * concatenate exactly. A chunk size that is NOT a multiple of 3 makes btoa emit '='
+ * padding in the MIDDLE of the stream, which produces a corrupt attachment that still
+ * looks like valid base64 and still sends — i.e. a broken PDF in a regulator's inbox with
+ * no error anywhere. The round-trip assertion at the call site is what guards this.
+ */
+function encodeBase64Chunked(bytes: Uint8Array): string {
+  const parts: string[] = []
+  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
+    const chunk = bytes.subarray(i, Math.min(i + B64_CHUNK, bytes.length))
+    let bin = ''
+    for (let j = 0; j < chunk.length; j += FROM_CHARCODE_MAX) {
+      bin += String.fromCharCode(...chunk.subarray(j, j + FROM_CHARCODE_MAX))
+    }
+    parts.push(btoa(bin))
+  }
+  return parts.join('')
+}
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Unclogme <onboarding@resend.dev>'
@@ -203,7 +236,19 @@ async function toSignedUrl(url: string): Promise<string> {
 async function fetchAttachment(url: string, baseName: string): Promise<{ filename: string; content: string; content_type: string } | null> {
   const resp = await fetch(await toSignedUrl(url))
   if (!resp.ok) return null
-  const b64 = encodeBase64(new Uint8Array(await resp.arrayBuffer()))
+  const bytes = new Uint8Array(await resp.arrayBuffer())
+  const b64 = encodeBase64Chunked(bytes)
+  // The multiple-of-3 control. Base64 of n bytes is exactly 4*ceil(n/3); mid-stream '='
+  // padding makes it LONGER. Returning null here is FAIL-CLOSED by construction: all three
+  // call sites do `if (!att) { fetchFailed = true; break }` and then abandon the WHOLE
+  // manifest with reason 'pdf_fetch_failed', so a corrupt attachment can never reach a
+  // municipality. Verified against the call sites before this was written.
+  // ⚠ The logged reason will read 'pdf_fetch_failed', which is not what happened, so the
+  //   console line below is the only thing that tells the two apart in the edge log.
+  if (b64.length !== 4 * Math.ceil(bytes.length / 3)) {
+    console.error(`[send-derm-email] b64_length_mismatch ${b64.length}!=${4 * Math.ceil(bytes.length / 3)} for ${baseName}; refusing the attachment`)
+    return null
+  }
   const srcCt = (resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
   const extFromUrl = url.split('?')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase()
   const attExt = extFromUrl || CT_TO_EXT[srcCt] || 'pdf'
