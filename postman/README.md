@@ -138,6 +138,48 @@ start of a run; **never log or persist the URLs**.
 - `?mode=dryrun` serves already-serviced **historical** visits and does **not** place a lease; use it
   freely for testing.
 
+### 🛑 `held` — why the queue is empty (added 2026-08-25)
+
+**Asked for by Jonathan:** *"the queue read empty on the 21st–23rd while 11024 sat excluded, so
+'empty' and 'stuck' looked identical."* He was right. `count: 0` used to mean **both** "nothing to
+file" and "a filing is stuck and nobody can see it". Every response now carries a `held` block:
+
+```jsonc
+"held": {
+  "available": true,
+  "total": 8,                       // REAL holds
+  "by_reason": { "already_filed": 8 },
+  "not_held": {                     // NOT problems, listed so they are not mistaken for holds
+    "sibling_won_this_pass": 0,
+    "before_launch_cutoff": 51
+  }
+}
+```
+
+**The reasons, and what each means for you**
+
+| reason | what it means | needs you? |
+|---|---|---|
+| `already_filed` | the county confirmed it. The healthy steady state | no |
+| `cooldown_20h` | an attempt landed in the last 20h | no, it serves after |
+| `data_error` | a **non-retryable** failure holds it until something about the row **changes** | **maybe — see below** |
+| `leased` | we handed the manifest out and are holding it 20h | no |
+
+⚠ **`data_error` is the one to watch, and it is the one that bit us.** Its freshness anchor is a
+timestamp **in our database**. If you fix the cause on the **county side** — a portal credential, a
+permit registration — that fix is structurally invisible to the gate and the row will never come
+back on its own, no matter how long you poll. **Tell us and we re-open it in one call.**
+
+⚠ **`not_held` entries are not problems.** `sibling_won_this_pass` means the queue serves one permit
+per manifest per pass and another permit won this one; it comes up next pass.
+`before_launch_cutoff` is the historical backlog we deliberately do not file.
+
+⚠ **`available: false` means the summary itself could not be computed** — the queue is still valid,
+but do not read a missing `held` as "nothing held". An absent summary and an empty one are different
+answers, which is the whole point of this block.
+
+**`count` and `reports` are unchanged.** This is purely additive.
+
 ---
 
 ## 4. `POST /functions/v1/rpa-derm-result` — record an outcome

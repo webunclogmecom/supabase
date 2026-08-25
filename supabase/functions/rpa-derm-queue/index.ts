@@ -165,8 +165,59 @@ Deno.serve(async (req: Request) => {
     if (leaseErr) console.error('lease upsert failed (serving anyway):', leaseErr.message)
   }
 
+  // ---- why is the queue empty? -------------------------------------------------
+  // Jonathan, 2026-08-25: "the queue read empty on the 21st-23rd while 11024 sat
+  // excluded, so 'empty' and 'stuck' looked identical. Even a one-line count like
+  // '1 row excluded (data-error)' would have saved the archaeology on both ends."
+  //
+  // 🛑 count:0 used to mean BOTH "nothing to file" and "a filing is stuck and nobody
+  //    can see it". GDO-11024 sat behind exactly that ambiguity for three days.
+  //
+  // ⚠ ADDITIVE ONLY. `count` and `reports` keep their exact meaning; anything already
+  //   parsing this response cannot break.
+  // ⚠ A failure here must NOT fail the queue. `held.available:false` says the summary
+  //   could not be computed, because an ABSENT `held` and an EMPTY `held` must not
+  //   look the same - that is the very confusion this block exists to remove.
+  let held: Record<string, unknown> = { available: false }
+  try {
+    const { data: heldRows, error: heldErr } = await sb
+      .from('v_derm_portal_queue_held')
+      .select('held_by')
+      .not('held_by', 'is', null)
+    if (heldErr) throw new Error(heldErr.message)
+    const by: Record<string, number> = {}
+    for (const r of (heldRows ?? []) as { held_by: string }[]) {
+      by[r.held_by] = (by[r.held_by] ?? 0) + 1
+    }
+    // sibling_won_this_pass is NOT a hold - the queue serves one permit per manifest
+    // per pass and it comes up next time. Counting it as held would send someone
+    // hunting a problem that does not exist.
+    const { sibling_won_this_pass: siblings = 0, before_launch_cutoff: preCutoff = 0, ...gates } = by
+    const gateTotal = Object.values(gates).reduce((n, v) => n + v, 0)
+    held = {
+      available: true,
+      total: gateTotal,
+      by_reason: gates,
+      not_held: {
+        sibling_won_this_pass: siblings,
+        before_launch_cutoff: preCutoff,
+      },
+      note:
+        'Rows this pass is NOT serving, and why. `total`/`by_reason` are real holds. ' +
+        '`already_filed` is the healthy steady state, not a problem. `data_error` means a ' +
+        'non-retryable failure is holding the row until something about it changes - if you ' +
+        'fixed the cause OUTSIDE our database (a county portal credential, a permit ' +
+        'registration) tell us and we will re-open it; we cannot see that from here. ' +
+        '`not_held` entries are not problems: a sibling permit simply won this pass, or the ' +
+        'visit predates the launch cutoff.',
+    }
+  } catch (e) {
+    console.error('held summary failed (serving anyway):', e instanceof Error ? e.message : String(e))
+    held = { available: false, error: 'held_summary_unavailable' }
+  }
+
   return json(
-    { generated_at: new Date().toISOString(), mode, count: reports.length, reports },
+    { generated_at: new Date().toISOString(), mode, count: reports.length, reports, held },
     200,
   )
 })
