@@ -406,7 +406,7 @@ entirely. Nothing is dropped silently: `excluded_rows` is reported per ticket an
 ### 🛑 `pickup_date` is the VISIT date, never our `service_date`
 
 Our `derm_manifests.service_date` is a misnomer that holds the **dump** date: the DERM Tracker writes
-the entered dump date into both columns, so 622 of 659 live manifests have them identical. This endpoint
+the entered dump date into both columns, so 632 of 669 live manifests have them identical (2026-08-25). This endpoint
 reads the linked visit instead. If you ever see `pickup_date` equal to `offload_date` on every row,
 that is the bug, not the data.
 

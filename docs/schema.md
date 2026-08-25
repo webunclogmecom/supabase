@@ -664,7 +664,7 @@ documented here; enumerate the rest from `pg_class` rather than trusting this ta
    the ticket before filtering over-reports; filtering on the offload county alone under-reports by
    11 tickets / 53 activities.
 2. **`pickup_date` is `visits.visit_date`.** `derm_manifests.service_date` is a misnomer holding the
-   DUMP date (622 of 659 live manifests have the two identical), so reading it would make every pickup
+   DUMP date (632 of 669 live manifests identical, measured 2026-08-25 -- this grows), so reading it would make every pickup
    equal its own offload. The migration's VERIFY asserts against exactly that.
 3. **`gallons` is deliberately absent** (always null). The filed quantity is the truck capacity from
    the decal, resolved on the caller's side; we store no measured volume per load.

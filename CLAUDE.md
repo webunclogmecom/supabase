@@ -1913,7 +1913,8 @@ directions**, and both were measured over 2026 before anything was written:
 
 | build | effect |
 |---|---|
-| filter on "offloaded in Dade" alone | **DROPS 11 tickets / 53 activities** (Broward offloads carrying Dade pickups) |
+| filter on "offloaded in Dade" alone | **DROPS 53 activities** (Broward offloads carrying Dade pickups; 20 such tickets on 2026-08-25,
+and it is the 53 that matters — the ticket count grows) |
 | apply the OR at TICKET grain | **OVER-reports**, because **20 tickets mix counties** |
 
 Measured on August: ticket `311045` has **0 in-scope rows of 2**, `312024` **3 of 9**, `310590`
@@ -1925,7 +1926,8 @@ pickup on it qualifies, so only Broward-offload tickets get trimmed.
 without HTTP and stops a second, divergent copy appearing the next time something needs it.
 
 🛑 **`pickup_date` IS `visits.visit_date`. NEVER `derm_manifests.service_date`**, which is a misnomer
-holding the DUMP date (622 of 659 LIVE manifests have the two identical; 37 differ). Serving it would make every
+holding the DUMP date (632 of 669 LIVE manifests identical, 37 differ — **measured 2026-08-25;
+these grow, re-measure rather than quoting**). Serving it would make every
 pickup equal its own offload. **If you ever see that, service_date has crept back in** - the
 migration's VERIFY asserts against exactly this.
 
@@ -1936,8 +1938,8 @@ and `truck_capacity_gallons` are served so the caller has the input. The fee ari
 is validated against filed county pages. Do not add a second implementation here.
 
 ⚠ **Ticket number is `coalesce(white_manifest_number, yellow_ticket_number)`** and that is total:
-white 502 / yellow 157 / neither 0 / colliding 0, and the 502-157 split matches the disposal-facility
-split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather than a convention.
+**measured 2026-08-25: white 546 / yellow 154 / neither 0 / colliding 0**, and the white-yellow split
+matches the disposal-facility split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather than a convention.
 `wwtp_ticket_number` and `wwtp_receipt_number` are populated **0** times: never read them.
 
 ⚠ **County vocabulary differs by table.** `public.properties.county` stores `'Dade'`;
@@ -1952,20 +1954,30 @@ live object — read all four:
 - **`2026-08-25_1400`** — moved that handling into **`derm.fn_normalize_state_input()`** and
   widened it from 5 characters to 29, in two classes (space-like → space, zero-width →
   DELETED). The live view calls that function seven times and contains no `btrim` at all.
-- **`2026-08-25_1500`** — **the migration that defines the DEPLOYED body.** Widened 29 → **43**
-  characters chosen by Unicode CATEGORY (all Zs, Zl, Zp, whitespace Cc, plus plausible Cf
-  including the bidi controls), granted EXECUTE to `pg_read_all_data`, and added the real
-  translate() length assertion. **24 space-like → space, 19 zero-width → DELETED.**
+  🛑 **THIS ONE CAUSED A PRIVILEGE REGRESSION, and it is the fourth occurrence of the
+  view/function asymmetry documented above.** A SECURITY INVOKER function adds an invoker-side
+  EXECUTE check **to the view's read path**, so `pg_read_all_data` (and `supabase_read_only_user`
+  / `supabase_etl_admin`, which inherit it) got `42501` on the **`state` column** while every
+  other column still read fine. Read-only dashboards and ETL; Prod was unaffected because the
+  edge function holds the service-role key.
+  **Purity is not the relevant axis.** This migration's header argued the function was safe
+  inside an owner-rights view because it is IMMUTABLE and touches no table. That disposes of data
+  LEAKAGE and is irrelevant to the EXECUTE check.
+  🛑 **And its own VERIFY could not have caught it**: the block runs as `postgres`, which holds
+  EXECUTE. **A privilege assertion run as a role that already holds the privilege asserts
+  nothing** — `SET ROLE` to the affected role, and isolate the COLUMN (`select *` fails for both
+  roles and names nothing).
+- **`2026-08-25_1500`** — **the migration that defines the DEPLOYED body**, and the FIX for the
+  above: it grants EXECUTE to `pg_read_all_data`. Also widened 29 → **43** characters chosen by
+  Unicode CATEGORY (all Zs, Zl, Zp, whitespace Cc, plus plausible Cf including the bidi
+  controls), and added the real translate() length assertion.
+  **24 space-like → space, 19 zero-width → DELETED.**
   ⚠ `U+2800` and `U+FFA0` are deliberately OUT — they render blank but are not whitespace — and
   the VERIFY asserts they still pass through, so widening past that boundary fails loudly.
   🛑 **The set went 5 → 29 → 43 in one day, each list hand-picked and each stale within hours.
   A hand-picked list is not a class. Enumerate the CATEGORY.**
-  🛑 It also **narrowed the effective read privilege on the view**: a SECURITY INVOKER function
-  adds an invoker-side EXECUTE check, so `pg_read_all_data` (and the `supabase_read_only_user`
-  / `supabase_etl_admin` roles that inherit it) got `42501` on the `state` column while every
-  other column still read fine. Fixed by granting EXECUTE to `pg_read_all_data`. **Purity is
-  not the relevant axis** — the function touches no table, and that is irrelevant to the
-  EXECUTE check. See the view/function asymmetry section above; this is its fourth occurrence. The view used to
+
+The view used to
 serve `state` as whatever `public.properties.state` held, which was **`Florida` 663 rows and `FL` 13
 on the same form**.
 
@@ -2010,15 +2022,25 @@ Española Way is a real Miami Beach street and Fendi Château is the registered 
 **Stripping them misspells a regulator-facing document, which is worse than the inconsistency being
 fixed.** So the fold is a fixed list of seven typographic characters (both quote pairs, both dashes,
 NBSP), never a character-class strip. ⇒ **A verification that asserts "0 non-ASCII" is asserting the
-regression.** The migration's VERIFY requires `name_nonascii = 2` and `addr_nonascii = 10` to SURVIVE.
+regression.** The migration's VERIFY therefore requires the accents to SURVIVE — `name_nonascii >= 1` and
+`addr_nonascii >= 1`, **plus a by-name check on the carriers**: `167-FEN` must still hold its
+a-circumflex, `014-JOY` and `179-CIG` their n-tilde.
+⚠ It used to pin `= 2` and `= 10`. **Pinning the counts was itself a defect** — they grow with
+the business, and the pinned version went red the next morning when ten legitimate rows
+arrived. Assert the CARRIER, not the count.
 
 ⚠ **PRESENTATION ONLY.** `public.properties.state` and `public.clients.name` are untouched, so every
 other app still renders exactly what it always did. Fixing it at source would touch the Field Portal,
 the Client App and every work order, and is a separate decision nobody has taken.
 
 ⚠ Re-validated after the change: all **8 months of 2026** still agree with an independent SQL
-recomputation on tickets, rows and excluded counts (690/589 unchanged, 126 tickets), and the served
-payload was inspected directly — 0 curly apostrophes reach the bot, both accented strings survive.
+recomputation on tickets, rows and excluded counts, and the served payload was inspected directly —
+0 curly apostrophes reach the bot, both accented strings survive.
+🛑 **DO NOT PIN THE ROW COUNTS HERE.** An earlier version of this line said "690/589 unchanged, 126
+tickets" and was false within hours — Diego files manifests daily. The VERIFY in
+`2026-08-25_1500` compares the view against an INDEPENDENT BASE-TABLE RECOMPUTATION at the same
+instant precisely so it cannot go stale. **Any count written in prose in this file is a dated
+observation, not an invariant.**
 
 ⚠ **Month selects on the OFFLOAD date**, so a ticket is never split across two reports and a pickup
 can legitimately fall in the previous month (ticket 831710 offloaded 2026-08-02 carries a 2026-07-30

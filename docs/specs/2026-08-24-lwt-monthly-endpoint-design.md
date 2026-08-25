@@ -37,7 +37,7 @@ Measured against Prod, all of it, because two of his statements collide with kno
 
 **✅ He is right that pickup date is the VISIT date, and the reason is one he may not know.**
 `public.derm_manifests.service_date` is a misnomer: the DERM Tracker writes the entered dump date
-into **both** `service_date` and `dump_ticket_date`, so 622 of 659 live manifests have them
+into **both** `service_date` and `dump_ticket_date`, so 632 of 669 live manifests (2026-08-25) have them
 identical. Had we served `service_date` as the pickup date, **every pickup would have equalled its
 own offload date** and six filed pages would have disagreed with us. The real service date exists
 only on the linked visit (`public.visits.visit_date`).
@@ -54,7 +54,9 @@ only on the linked visit (`public.visits.visit_date`).
 Broward one. Also measured: **0 collisions** between the two number spaces and **0 manifests carrying
 neither**, so `COALESCE(white, yellow)` is a total, unambiguous key. That is the field the form wants.
 
-**✅ Volume is tiny, so his "no lease, no cap" is right.** Per month over 2026: 8 to 18 tickets, 66 to
+**✅ Volume is tiny, so his "no lease" is right.** ⚠ **"no cap" is NOT** -- see §4: a
+1,000-row cap ships and raises `month_too_large` rather than truncating. This sentence
+predates it. **Original note:** Per month over 2026: 8 to 18 tickets, 66 to
 109 manifests, 65 to 109 visits. A month fits in one response with room to spare.
 
 **✅ The client is unambiguous.** Across 690 links, `manifest.client_id` differs from
@@ -76,7 +78,16 @@ Miami-Dade County."* An "activity" is a pickup, not a ticket.
 | no | no | 9 (71 visits) | correctly excluded |
 
 Those 11 tickets are Broward offloads carrying Miami-Dade pickups. A naive "offloaded in Dade" build
-would silently drop 83 real activities from a regulator-facing report.
+would silently drop **53** real activities from a regulator-facing report.
+
+⚠ **53, not 83.** 83 was the number of rows sitting on those tickets, not the number that
+belong on the Miami-Dade form -- the rest are Broward pickups that correctly do not, which is
+what the next paragraph says. The table row above is right; the prose reused the ticket-SIZE
+figure as the LOSS figure. CLAUDE.md, postman/README.md and docs/schema.md all say 53.
+⚠ Re-measured 2026-08-25 as the fleet grew: **20 Broward-offload tickets, 154 rows on them,
+53 in scope** -- the loss figure is stable at 53 while the ticket count is not. This is the
+number quoted to the integrator for the main design decision, so re-measure it rather than
+carrying it forward.
 
 **Second, and this is the subtle half: a ticket can mix counties. 20 tickets do** (Broward+Dade,
 Broward+Palm Beach). So applying the rule at ticket grain **over-reports**: a Broward pickup that was
@@ -306,7 +317,7 @@ have to learn a second set of conventions.
 | state | **stateful**: 20h dispense lease, one-per-permit, exits on SUCCESS | **stateless**, pure read |
 | repeat call | deliberately gives you something different | must give you the same thing |
 | cache | never | should be cached, ETag |
-| cap | 25, deliberate | none, by nature |
+| cap | 25, deliberate | **1,000, with a loud `month_too_large`** (largest real month: 109) |
 
 Putting a lease on a report, or removing the lease from the queue, would break the property that makes
 each one correct. **The queue's whole job is to not hand the same work out twice; the report's whole
@@ -332,7 +343,9 @@ scheme. Add versioning the day a second consumer appears, not before.
 - **`ETag` on the read endpoints.** Both the queue and the monthly report are re-polled by a bot.
 - **Explicit null semantics, documented.** `gallons: null` is a contract here ("we do not know, resolve
   it yourself"), not an accident. An undocumented null is the thing every integrator guesses wrong.
-- **A documented ceiling with a loud error instead of a silent truncation**, on any endpoint that
+- ~~**A documented ceiling with a loud error instead of a silent truncation**~~ — ✅ **ALREADY
+  SHIPPED** on this endpoint (`MAX_ROWS = 1000`, `400 month_too_large`). Still worth doing on
+  any endpoint that
   returns a list.
 - **Keep the two-error-channel discipline.** The existing functions already separate transport failure
   from business refusal; the new one should not invent a third shape.

@@ -3,8 +3,14 @@
 -- Zero-runs iteration 4. Fixes the LIVE PRIVILEGE REGRESSION that 2026-08-25_1400 introduced,
 -- and closes the invisible-character set by CATEGORY instead of by enumeration.
 --
--- Outcome unchanged for the fourth time, and asserted: 690 / 589 / 126, state FL 676 + null 14,
--- curly 0, name_nonascii 2, addr_nonascii 10.
+-- Outcome unchanged for the fourth time. ⚠ **The VERIFY does NOT pin those numbers, and an
+-- earlier version of this line said it did.** It asserts, in this order: the view's counts
+-- EQUAL an independent base-table recomputation at the same instant; a `< 690` floor so a
+-- catastrophic emptying is still loud; `curly = 0`; the accent CARRIERS by name (167-FEN,
+-- 014-JOY, 179-CIG) rather than a count; state accounted for structurally (FL + NULL = every
+-- row) AND FL actually present AND a null state only ever beside a null address.
+-- Pinning live counts is what broke the previous block the morning after it shipped, and
+-- naming a pin this block does not make is the very defect §(2) below indicts 1400 for.
 --
 -- ---------------------------------------------------------------------------
 -- 🛑 (1) THE PRIVILEGE REGRESSION. THIS IS THE IMPORTANT HALF.
@@ -264,6 +270,28 @@ BEGIN
                                r.st_fl, r.st_null, r.all_rows);
   END IF;
 
+  -- 🛑 AND FL MUST ACTUALLY BE PRESENT. The accounting check above is SATISFIED by
+  --    st_fl = 0, st_null = all_rows -- i.e. by the State column going blank on every row of a
+  --    county filing. That is the shape a broken property join produces, and nothing else here
+  --    would see it: check 6 drives values through the view and catches a VIEW-LOGIC collapse,
+  --    but this is the DATA side.
+  --    Measured every month of 2026: FL is 54..90 per month, minimum 74 of 87 in-scope. It has
+  --    never been 0 and cannot legitimately be.
+  v_checks := v_checks + 1;
+  IF r.st_fl = 0 THEN
+    v_fail := v_fail || ' [STATE IS NULL ON EVERY ROW -- the State column would print blank on the whole filing. This is what a broken property join looks like, not a normalisation problem]';
+  END IF;
+
+  -- 🛑 AND A NULL STATE MUST MEAN "NO PROPERTY AT ALL", NOT "STATE WENT MISSING".
+  --    Measured: the null crosstab is an EXACT DIAGONAL -- 686 rows with none of
+  --    state/address/city/zip/county null, 14 with ALL FIVE null, and no third combination.
+  --    So a row with a null state but a present address is a new and different defect.
+  v_checks := v_checks + 1;
+  IF EXISTS (SELECT 1 FROM derm.v_lwt_monthly_rows
+              WHERE state IS NULL AND (address IS NOT NULL OR city IS NOT NULL)) THEN
+    v_fail := v_fail || ' [a row has a NULL state but a present address/city -- state is going missing on its own, which has never happened; the 14 known nulls are rows whose visit has no property at all]';
+  END IF;
+
   -- 5. 🛑 THE PASS-THROUGH TRIPWIRE. Verbatim pass-through is deliberate and is the reason a
   --    non-Florida property can never be silently relabelled -- but a value reaching the form
   --    that is not a 2-letter code is something a HUMAN must see before it is filed.
@@ -489,36 +517,18 @@ BEGIN
 END $verify$;
 
 -- ---------------------------------------------------------------------------
--- ⚠ THIS VERIFY BLOCK WAS REBUILT 2026-08-25 (iteration 5). The DDL above is untouched; only
---   the re-runnable check changed, and it changed because the version shipped with this
---   migration was BROKEN BY NORMAL BUSINESS the next morning.
+-- 180 checks. Mutation-tested, every one fires: recomputation mismatch (proved with a real
+-- rolled-back CREATE OR REPLACE VIEW that inverted the visits JOIN), state accounting, FL
+-- absent, a null state beside a present address, accent carriers, row floor, translate
+-- to-string length (against a real 23-space rebuild), both deliberate exclusions, and the
+-- privilege revoke.
 --
--- 🛑 IT PINNED ABSOLUTE COUNTS AGAINST A LIVE, GROWING TABLE. It asserted all_rows = 690 and
---    st_fl = 676. Diego filed ticket 833813 at 10:29 ET, ten legitimate rows appeared, and the
---    check went red -- reporting a regression where there was only a business day. **A
---    re-runnable check that fails on normal activity is worse than no check: it trains whoever
---    runs it to ignore a red result.**
---    ⚠ AND THIS ESTATE HAD ALREADY LEARNED IT, ONE DAY EARLIER, in 2026-08-25_0110:
---      "DO NOT hard-code an expected breakdown against live data ... assert mirror == queue
---       instead, which compares two live reads of the same instant rather than a live read
---       against a remembered number."
---    Same author, same week, opposite behaviour.
---    ⇒ Totals now compare the view against an INDEPENDENT RECOMPUTATION from the base tables,
---      which is stable under growth AND strictly stronger: it catches a damaged JOIN or WHERE,
---      the actual CREATE OR REPLACE failure mode, where a frozen count only catches volume.
---    ⇒ The state check is now structural (FL + NULL must account for every row) and the accent
---      checks name the CARRIERS (167-FEN, 014-JOY, 179-CIG) rather than counting rows.
---
--- 🛑 IT ALSO SHIPPED WITH NO PRIVILEGE ASSERTION AT ALL -- in the migration whose entire subject
---    was a privilege regression. And because this block runs as `postgres`, which OWNS the
---    function, a naive check would have passed with the grant present or absent. It now
---    SET ROLEs to pg_read_all_data and isolates the COLUMN, and was proven by revoking the
---    grant inside a rolled-back block and watching it fire.
---
--- ⚠ The header above claimed BOTH deliberate exclusions were asserted; only U+2800 was.
---   U+FFA0 is asserted now. Mutation-proved: adding chr(65440) to the zero-width run used to
---   leave the whole VERIFY green.
---
--- 178 checks. Mutation-tested: recomputation mismatch, state accounting, accent carriers, row
--- floor, translate to-string length (against a real 23-space rebuild), both exclusions, and the
--- privilege revoke. Every one fires.
+-- 🛑 THE TWO NEWEST ASSERTIONS EXIST BECAUSE THE SUITE WAS BLIND TO THE WORST CASE.
+--    `FL + NULL = every row` is SATISFIED by FL = 0, NULL = every row -- the State column
+--    printing blank on an entire county filing. The Postman suite had the same hole from the
+--    other direction (its shape filter skipped nulls BEFORE testing them), so `state := null`
+--    on all 80 rows of a live month passed all ten tests. Both are closed now.
+--    The second assertion leans on a measured fact: the null crosstab is an EXACT DIAGONAL --
+--    686 rows with none of state/address/city/zip/county null, 14 with ALL FIVE null, no third
+--    combination -- so a null state beside a present address is a NEW defect, not the known
+--    no-property case.

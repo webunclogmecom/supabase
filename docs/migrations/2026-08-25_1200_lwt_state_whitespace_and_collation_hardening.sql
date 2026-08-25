@@ -131,6 +131,32 @@ CREATE OR REPLACE VIEW derm.v_lwt_monthly_rows AS
 COMMIT;
 
 -- ---------------------------------------------------------------------------
+-- 🛑 SUPERSEDED. DO NOT RUN THIS BLOCK. IT GOES RED ON A HEALTHY DATABASE.
+--
+--    It pins `all_rows <> 690 OR in_scope <> 589 OR tickets <> 126` and `st_fl <> 676`, which
+--    were the true values on 2026-08-25 and stopped being true the same morning, when Diego
+--    filed ticket 833813 and ten legitimate rows appeared. Running it now reports
+--    "[TOTALS MOVED: 700/599/127, expected 690/589/126]" -- a green database described as broken.
+--
+--    ⇒ **THE CANONICAL, GROWTH-PROOF BLOCK IS IN
+--      `docs/migrations/2026-08-25_1500_lwt_normalizer_grant_and_category_close.sql`.**
+--      It compares the view against an INDEPENDENT BASE-TABLE RECOMPUTATION at the same instant
+--      instead of against a remembered number, asserts state structurally, names the accent
+--      CARRIERS rather than counting them, and SET ROLEs to pg_read_all_data for the privilege
+--      check. 180 checks, mutation-tested.
+--
+--    The pinned assertions below are LEFT AS WRITTEN on purpose: this file is a dated record of
+--    what was asserted when it was applied, and rewriting it would falsify that. But the
+--    "run it any time" promise underneath was wrong within hours, so it is withdrawn here.
+--
+--    🛑 THE LESSON, which this estate had already written down one day earlier in
+--       2026-08-25_0110 and which I then did the opposite of:
+--       **do not hard-code an expected breakdown against live data.** Compare two live reads of
+--       the same instant. A re-runnable check that fails on normal business activity is worse
+--       than no check -- it trains whoever runs it to ignore a red result.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
 -- VERIFY -- RE-RUNNABLE AND IT ACTUALLY ASSERTS.
 --
 -- 🛑 The first version of this block was entirely `--` comments saying "expect 690".
