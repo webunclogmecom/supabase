@@ -371,8 +371,13 @@ LETTERS are deliberately preserved, because they are the correct spelling of a r
 see `Fendi Château Residences` and addresses on `Española Way`, and those are not encoding errors.
 
 **Rows come back in a total, stable order** (added 2026-08-25): `offload_date`, `ticket_number`,
-`pickup_date`, `visit_id`, `manifest_id`. Two identical calls are byte-identical, so the `ETag` is
-meaningful and successive pulls can be diffed.
+`pickup_date`, `visit_id`, `manifest_id`. Two identical calls now return the rows in the same
+sequence, so the `ETag` is meaningful and successive pulls can be diffed.
+
+⚠ **Not byte-identical, and do not compare raw bytes.** Every response carries a fresh
+`generated_at`, so two back-to-back GETs always differ by that one field. It is deliberately
+**excluded from the ETag** — otherwise every call would look like a change. Compare the `ETag`,
+or mask `generated_at` before diffing.
 
 ⚠ **This is new.** Until 2026-08-25 the sort had only the first three keys, which left **571 of 690
 rows in a tie group** — the same rows could come back in a different sequence on two identical

@@ -1944,10 +1944,20 @@ split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather t
 `public.disposal_facilities.county` stores `'Miami-Dade'`. Comparing them naively matches nothing.
 
 ⚠ **`state` IS AN EXPLICIT MAPPING, NOT `'FL'`. `client_name` IS PUNCTUATION-FOLDED, AND ACCENTS
-ARE DELIBERATELY KEPT** (`2026-08-25_0400`, after Fred's "yes normalise both"; hardened by
-**`2026-08-25_1200`**, which moved the whitespace handling into
-**`derm.fn_normalize_state_input()`** and made the Québec arm collation-proof — read BOTH
-migrations, the 0400 one alone no longer describes the live object). The view used to
+ARE DELIBERATELY KEPT**. THREE migrations, and the earliest one alone no longer describes the
+live object — read all three:
+- **`2026-08-25_0400`** — the original mapping, after Fred's "yes normalise both".
+- **`2026-08-25_1200`** — made the Québec arm collation-proof and handled FIVE invisible
+  whitespace characters INLINE in the CASE.
+- **`2026-08-25_1400`** — moved that handling into **`derm.fn_normalize_state_input()`** and
+  widened it from 5 characters to 29, in two classes (space-like → space, zero-width →
+  DELETED). The live view calls that function seven times and contains no `btrim` at all.
+  🛑 It also **narrowed the effective read privilege on the view**: a SECURITY INVOKER function
+  adds an invoker-side EXECUTE check, so `pg_read_all_data` (and the `supabase_read_only_user`
+  / `supabase_etl_admin` roles that inherit it) got `42501` on the `state` column while every
+  other column still read fine. Fixed by granting EXECUTE to `pg_read_all_data`. **Purity is
+  not the relevant axis** — the function touches no table, and that is irrelevant to the
+  EXECUTE check. See the view/function asymmetry section above; this is its fourth occurrence. The view used to
 serve `state` as whatever `public.properties.state` held, which was **`Florida` 663 rows and `FL` 13
 on the same form**.
 

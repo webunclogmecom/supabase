@@ -192,9 +192,13 @@ rather than truncating (the largest real month is 109 rows, so it has ~9x headro
 never fired). And the range guard is `year >= 2024` and month-end within **62 days**, not
 "one month in the future".
 
-⚠ **"the same body" only became true on 2026-08-25.** The sort had three keys and left 571 of
-690 rows in tie groups, so two identical calls could return the same rows in a different
-order and hash to different ETags. `visit_id` and `manifest_id` now make the order total.
+⚠ **"the same body" is precise about ORDER, not about BYTES.** Every response carries a fresh
+`generated_at`, so two back-to-back GETs are never byte-identical; that field is excluded from
+the ETag so it does not read as a change. Compare the ETag, or mask `generated_at`.
+
+⚠ And stable ORDER only became true on 2026-08-25. The sort had three keys and left 571 of 690
+rows in tie groups, so identical calls could return the same rows in a different sequence and
+hash to different ETags. `visit_id` and `manifest_id` now make the order total.
 
 ⚠ **Add `ETag` and honour `If-None-Match`.** His preview UI is a "pick a month, review, download" loop
 that will re-poll the same month repeatedly. A hash of the result set turns every repeat into a `304`.

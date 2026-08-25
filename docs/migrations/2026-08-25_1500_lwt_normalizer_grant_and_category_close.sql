@@ -1,112 +1,85 @@
--- 2026-08-25_1400_lwt_state_normalizer_function.sql
+-- 2026-08-25_1500_lwt_normalizer_grant_and_category_close.sql
 -- ---------------------------------------------------------------------------
--- Finish the job 2026-08-25_1200 started: move the invisible-whitespace handling out of the
--- view and into derm.fn_normalize_state_input(), and cover the 24 characters 1200 missed.
+-- Zero-runs iteration 4. Fixes the LIVE PRIVILEGE REGRESSION that 2026-08-25_1400 introduced,
+-- and closes the invisible-character set by CATEGORY instead of by enumeration.
 --
--- Zero-runs iteration 3. Outcome unchanged again, and asserted:
---   690 rows / 589 in_scope / 126 tickets, state FL 676 + null 14, curly 0,
---   name_nonascii 2, addr_nonascii 10. Identical before and after.
---
--- ---------------------------------------------------------------------------
--- 🛑 WHY: 1200 CLOSED FIVE CHARACTERS AND THE HOLE HAS TWENTY-NINE.
---
--- 1200 handled TAB, LF, CR, NBSP and ZWSP. The iteration-2 audit drove hex-encoded inputs
--- through the LIVE view, 72 probes across three positions, and found **24 more invisible
--- characters that still defeated every arm and printed the full state NAME on a county
--- filing** -- the exact outcome the mapping exists to prevent. Two of them (VERTICAL TAB and
--- FORM FEED) are ASCII controls every bit as plausible as the TAB and CR that WERE handled;
--- U+FEFF arrives from an Excel/CSV paste and U+202F from Word.
---
--- ⇒ The lesson is not "we missed some". It is that **1200 fixed the characters somebody
---   happened to think of, and called the class closed.** A hand-picked list is not a class.
+-- Outcome unchanged for the fourth time, and asserted: 690 / 589 / 126, state FL 676 + null 14,
+-- curly 0, name_nonascii 2, addr_nonascii 10.
 --
 -- ---------------------------------------------------------------------------
--- 🛑 TWO CLASSES, AND THEY MUST BEHAVE DIFFERENTLY. Mapping both to a space is wrong.
+-- 🛑 (1) THE PRIVILEGE REGRESSION. THIS IS THE IMPORTANT HALF.
 --
---   SPACE-LIKE (23)  -> become a real space, so an NBSP inside 'NEW YORK' still matches.
---   ZERO-WIDTH (6)   -> are DELETED, so 'F<ZWSP>L' recovers to 'FL'.
+-- 1400 moved inlined built-ins into derm.fn_normalize_state_input(), a SECURITY INVOKER
+-- function. **That adds an invoker-side EXECUTE check to the view's read path.** A role holding
+-- SELECT on the view but not EXECUTE on the function can read every column EXCEPT the one that
+-- routes through it.
 --
--- Mapping a zero-width character to a space turns invisible corruption into visible
--- wrongness: 'F<ZWSP>L' would become 'F L', which matches nothing and prints garbage. A
--- zero-width character has no width by definition, so deletion is the only reading that can
--- recover the intended value. Conversely, DELETING a real NBSP would weld 'NEW YORK' into
--- 'NEWYORK' and lose a genuine word boundary.
+-- Measured, column-isolated:
+--   set local role pg_read_all_data;
+--   select count(ticket_number) from derm.v_lwt_monthly_rows;  -> 690
+--   select count(state)         from derm.v_lwt_monthly_rows;  -> 42501 permission denied
+--                                                                 for function fn_normalize_state_input
+-- Affected: pg_read_all_data, plus supabase_read_only_user and supabase_etl_admin which inherit
+-- it -- read-only dashboard sessions and ETL. Production was unaffected: the edge function holds
+-- the service-role key, which had EXECUTE from the start.
 --
--- ⚠ The consequence, asserted rather than hidden: 'New<ZWSP>York' emits **'NewYork'**, which
---   is not a state name and not two letters, so it falls to ELSE and passes through VERBATIM.
---   That is correct by design -- somebody typed 'NewYork' with junk in it, and this estate's
---   rule is to show an unrecognised value rather than guess at it.
+-- 🛑 THE 1400 HEADER ARGUED THIS COULD NOT HAPPEN, AND THE ARGUMENT WAS AIMED AT THE WRONG AXIS.
+--    It said the function is safe inside an owner-rights view because it is IMMUTABLE and
+--    "touches NO table", and that CLAUDE.md's warning "applies to functions that READ TABLES;
+--    this one is pure." **Purity disposes of data LEAKAGE. It is irrelevant to the EXECUTE
+--    check.** CLAUDE.md's own table lists this asymmetry as having bitten three times; this is
+--    the fourth, committed by someone who had just re-read that section to justify the design.
 --
--- 🛑 THE MECHANISM IS translate()'s LENGTH ASYMMETRY, WHICH IS EASY TO GET SILENTLY WRONG.
---    translate(src, from, to) DELETES any character of `from` with no counterpart in `to`.
---    So `to` must be EXACTLY as long as the space-like run (23). One space short and the
---    23rd space-like character is silently DELETED instead of spaced -- a whitespace bug
---    hidden inside a whitespace fix, invisible to any diff that normalises whitespace.
---    The VERIFY block asserts length('...') = 23 by COUNT, never by eye.
+-- 🛑 AND 1400's VERIFY WAS STRUCTURALLY INCAPABLE OF CATCHING IT. It runs over the Management
+--    API as `postgres`, which holds EXECUTE. A privilege assertion executed as a role that
+--    already has the privilege asserts nothing.
+--    ⇒ **A privilege check must SET ROLE to the affected role**, and must isolate the affected
+--      COLUMN -- `select *` would have failed for both roles and told you nothing about which
+--      column, while `count(ticket_number)` vs `count(state)` names the mechanism exactly.
+--
+-- ⚠ The catalogue is not sufficient on its own either: after the grant,
+--   has_function_privilege() returned true for all three roles while a `SET LOCAL ROLE
+--   supabase_read_only_user` probe still raised 42501 -- because `postgres` is not a member of
+--   that role and could not assume it. That 42501 was the HARNESS failing, not the fix. Probe
+--   with a role you can actually assume (pg_read_all_data), and read the error text rather than
+--   the SQLSTATE alone: "permission denied to set role" is not "permission denied for function".
 --
 -- ---------------------------------------------------------------------------
--- WHY A FUNCTION RATHER THAN MORE INLINE SQL:
---   - 1200 repeated its expression SEVEN times in the CASE. At 29 characters that is
---     unreadable and unmaintainable, and seven copies is seven chances to edit six of them.
---   - It is independently testable. The VERIFY exercises all 29 characters x 3 positions.
---   - ⚠ But testing the FUNCTION is not testing the VIEW -- the view could stop calling it
---     and every function-level test would still pass. So the VERIFY drives every character
---     through the LIVE VIEW on a real row, and reads the real output column.
+-- 🛑 (2) THE CHARACTER SET, CLOSED BY CATEGORY THIS TIME.
 --
--- ⚠ SAFE TO CALL FROM AN OWNER-RIGHTS VIEW: it is IMMUTABLE, PARALLEL SAFE, touches NO table,
---   and has a pinned search_path. The CLAUDE.md warning about SECURITY INVOKER functions
---   inside owner-rights views applies to functions that READ TABLES; this one is pure.
---   Grants are explicit because Supabase's ALTER DEFAULT PRIVILEGES hands out EXECUTE on new
---   public functions unasked -- this one lives in `derm`, and is granted deliberately.
+-- Three versions in one day, each hand-picked, each stale within hours:
+--   1200:  5 characters. An audit found 24 more.
+--   1400: 29 characters. An audit found 9 more, including U+1680 OGHAM SPACE MARK and the
+--         bidi controls U+202A-U+202E / U+2066-U+2069.
+--   1500: 43 characters, chosen by UNICODE CATEGORY -- all Zs, Zl, Zp, the whitespace Cc, and
+--         the Cf that plausibly reaches a state field from a Western editor or web form.
 --
--- ⚠ The view body is pg_get_viewdef output with ONE block substituted (scratchpad genlwt3.js),
---   diffed line by line against the live body with a positive control: only the six state-CASE
---   arms differ. Never retyped.
+-- ⇒ The lesson is not "we missed some again". It is that **a hand-picked list is not a class**,
+--   and each version was declared complete on the strength of the characters its author
+--   happened to imagine. Enumerate the category.
 --
--- Audit (Rule 8): one new pure function + one view body. No table, column or grant on any
--- audited table changes. View column list and types unchanged, so grants are preserved.
+-- ⚠ BIDI CONTROLS ARE THE ONE THAT MATTERS MOST HERE, and they are new in this migration. They
+--   can make a string RENDER differently from its bytes -- on a compliance form that is worse
+--   than a stray space, because the printed page and the stored value disagree while both look
+--   correct in isolation.
+--
+-- ⚠ DELIBERATELY EXCLUDED, and this is a boundary rather than an oversight: U+2800 BRAILLE
+--   PATTERN BLANK (So) and U+FFA0 HALFWIDTH HANGUL FILLER (Lo) render blank but are NOT
+--   whitespace. Treating every glyph that looks empty as whitespace has no principled stopping
+--   point. They pass through to ELSE and print verbatim -- the designed behaviour for anything
+--   unrecognised. The VERIFY ASSERTS that they still pass through, so a future widening past
+--   this boundary fails loudly.
+--
+-- ⚠ 24 space-like -> a real space; 19 zero-width/format -> DELETED. translate() drops any source
+--   character with no counterpart in `to`, which is the mechanism. The `to` string must be
+--   EXACTLY 24 characters, and the VERIFY now asserts that by COUNT **against
+--   pg_get_functiondef**, so it cannot drift from the deployed object. 1400's header claimed
+--   this assertion existed; it did not.
+--
+-- Audit (Rule 8): one function body + one grant. No table, column or grant on any audited table
+-- changes. The view itself is NOT touched by this migration.
 --
 -- @Building Apps.
---
--- ---------------------------------------------------------------------------
--- ⚠ CORRECTIONS 2026-08-25, from the iteration-3 audit. THREE claims in this header were
---   wrong, and one of them describes a LIVE REGRESSION this migration caused. Superseded
---   forward by 2026-08-25_1500; nothing below is rewritten, per the dated-record rule.
---
--- 🛑 (1) IT NARROWED THE EFFECTIVE READ PRIVILEGE ON THE VIEW, AND THE SAFETY ARGUMENT ABOVE
---        IS AIMED AT THE WRONG AXIS. The header argues the function is safe to call from an
---        owner-rights view because it is IMMUTABLE and "touches NO table", and that the
---        CLAUDE.md warning "applies to functions that READ TABLES; this one is pure."
---        **Purity disposes of data leakage. It does nothing about the invoker-side EXECUTE
---        check**, which is the actual mechanism -- and that check is what broke.
---        Measured: `set local role pg_read_all_data; select count(ticket_number) from
---        derm.v_lwt_monthly_rows` returned 690, while `count(state)` raised
---        42501 permission denied for function fn_normalize_state_input. Every other column
---        read fine, because only `state` routes through the function.
---        Affected: pg_read_all_data, and supabase_read_only_user / supabase_etl_admin which
---        inherit it -- i.e. read-only dashboard and ETL sessions. Production was unaffected
---        (the edge function holds the service-role key).
---        🛑 AND THIS MIGRATION'S OWN VERIFY COULD NOT HAVE CAUGHT IT: the VERIFY runs as
---        `postgres`, which holds EXECUTE, so the check is structurally blind to the defect.
---        A privilege assertion must run AS THE AFFECTED ROLE or it asserts nothing.
---        Fixed by granting EXECUTE to pg_read_all_data (2026-08-25_1500).
---        This is the FOURTH occurrence of the view/function asymmetry in CLAUDE.md.
---
--- ⚠ (2) "The VERIFY block asserts length('...') = 23 by COUNT, never by eye" -- IT DID NOT.
---        `length(` appeared exactly twice in this file: in that sentence, and in an unrelated
---        array_length() loop bound. There was no length assertion. The property happened to be
---        protected by the internal-position checks, but the advertised control did not exist:
---        a comment presented as a control, in the header of the migration that names
---        translate()'s length asymmetry as "the dangerous part". Now really asserted in 1500,
---        read from pg_get_functiondef so it cannot drift from the deployed object.
---
--- ⚠ (3) "Claimed in WORKING-NOW.md" was FALSE when written. No iteration-3 entry existed, and
---        the file still listed three already-shipped fixes as open. Corrected there.
---
--- ⚠ (4) The 29-character set was still incomplete -- 9 more codepoints passed straight through,
---        including U+1680 OGHAM SPACE MARK and the bidi controls. Widened to 43 by CATEGORY in
---        1500. The lesson: 5 characters, then 29, then 43, each list hand-picked and each stale
---        within hours. Enumerate the Unicode CATEGORY, not the characters you thought of.
 
 BEGIN;
 
@@ -119,81 +92,67 @@ SET search_path = pg_catalog
 AS $fn$
   -- Strip the whitespace btrim() cannot see, then trim.
   --
-  -- 🛑 TWO CLASSES, HANDLED DIFFERENTLY ON PURPOSE.
-  --   SPACE-LIKE characters are mapped to a real space, so an NBSP *inside* a name still
-  --     leaves 'NEW YORK' matchable.
-  --   ZERO-WIDTH / FORMAT characters are DELETED, not spaced. translate() drops any source
-  --     character with no counterpart in the `to` string, which is what the length asymmetry
-  --     below is doing. Mapping them to a space would turn an invisibly-corrupt 'F<ZWSP>L'
-  --     into a visibly-wrong 'F L' -- neither is usable, but a zero-width character carries
-  --     no width by definition, so deleting it is the only reading that can recover 'FL'.
+  -- 🛑 THE SET IS CHOSEN BY UNICODE CATEGORY, NOT BY WHAT ANYONE THOUGHT OF.
+  --    The first version handled 5 characters, the second 29, and an audit found more each
+  --    time -- because both were hand-picked lists. This one closes the CATEGORIES:
+  --      Zs (space separator)      -- ALL of them
+  --      Zl / Zp (line/para sep)   -- both
+  --      Cc that are whitespace    -- TAB LF VT FF CR NEL
+  --      Cf (format) that plausibly reaches a state field from Western text editors and web
+  --                                   forms -- see the exclusion note below
   --
-  -- ⚠ THE `to` STRING MUST BE EXACTLY AS LONG AS THE SPACE-LIKE RUN (23). If it is shorter,
-  --   translate SILENTLY DELETES the overhang instead of spacing it, and a whitespace bug
-  --   hides inside a whitespace fix. Asserted in the VERIFY block by character count, not by eye.
+  -- 🛑 TWO CLASSES, DIFFERENT TREATMENT, AND THE DIFFERENCE IS LOAD-BEARING.
+  --    SPACE-LIKE (24) -> mapped to a real space, so an NBSP inside 'NEW YORK' still matches.
+  --    ZERO-WIDTH (19) -> DELETED, so 'F<ZWSP>L' recovers to 'FL'. Mapping these to a space
+  --      would turn invisible corruption into visible garbage that matches nothing.
+  --    translate() deletes any source character with no counterpart in `to`, which is what the
+  --    length asymmetry below does.
+  --
+  -- ⚠ THE `to` STRING MUST BE EXACTLY 24 CHARACTERS. One short and the 24th space-like
+  --   character is silently DELETED instead of spaced -- a whitespace bug hiding inside a
+  --   whitespace fix, invisible to any diff that normalises whitespace. The VERIFY block
+  --   asserts this by COUNT against the live function body.
+  --
+  -- ⚠ DELIBERATELY NOT HANDLED, and this is a boundary not an oversight:
+  --   U+2800 BRAILLE PATTERN BLANK and U+FFA0 HALFWIDTH HANGUL FILLER render blank but are
+  --   NOT whitespace -- they are So and Lo. Treating every glyph that happens to look empty
+  --   as whitespace has no principled stopping point. They pass through to ELSE and print
+  --   verbatim, which is the designed behaviour for anything unrecognised: visible, not guessed.
+  --   The Arabic/Syriac Cf range (U+0600-0605, U+06DD, U+070F, U+08E2) is likewise out: it
+  --   cannot reach a Florida property address through Jobber, and an unbounded list is how the
+  --   previous two versions of this function went stale.
   SELECT btrim(translate(
     p_state,
-    -- 23 SPACE-LIKE -> space
-       chr(9)    || chr(10)   || chr(11)   || chr(12)   || chr(13)      -- TAB LF VT FF CR
-    || chr(133)  || chr(160)                                           -- NEL, NBSP
-    || chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196)    -- U+2000..2004
-    || chr(8197) || chr(8198) || chr(8199) || chr(8200) || chr(8201)    -- U+2005..2009
-    || chr(8202)                                                       -- U+200A hair space
-    || chr(8232) || chr(8233)                                          -- LINE SEP, PARA SEP
-    || chr(8239) || chr(8287) || chr(12288)                            -- narrow NBSP, medium math, ideographic
-    -- 6 ZERO-WIDTH / FORMAT -> deleted (no counterpart)
-    || chr(173)  || chr(8203) || chr(8204) || chr(8205)                 -- soft hyphen, ZWSP, ZWNJ, ZWJ
-    || chr(8288) || chr(65279),                                         -- word joiner, BOM
-    '                       '   -- exactly 23 spaces
+    -- ---- 24 SPACE-LIKE -> space -------------------------------------------------
+    -- Cc whitespace (6)
+       chr(9)     || chr(10)    || chr(11)    || chr(12)    || chr(13)    || chr(133)
+    -- Zs (16): NBSP, OGHAM SPACE MARK, U+2000..U+200A, NARROW NBSP, MEDIUM MATH, IDEOGRAPHIC
+    || chr(160)   || chr(5760)
+    || chr(8192)  || chr(8193)  || chr(8194)  || chr(8195)  || chr(8196)  || chr(8197)
+    || chr(8198)  || chr(8199)  || chr(8200)  || chr(8201)  || chr(8202)
+    || chr(8239)  || chr(8287)  || chr(12288)
+    -- Zl, Zp (2)
+    || chr(8232)  || chr(8233)
+    -- ---- 19 ZERO-WIDTH / FORMAT -> DELETED (no counterpart) ----------------------
+    -- soft hyphen, ARABIC LETTER MARK, MONGOLIAN VOWEL SEPARATOR
+    || chr(173)   || chr(1564)  || chr(6158)
+    -- ZWSP, ZWNJ, ZWJ, LRM, RLM
+    || chr(8203)  || chr(8204)  || chr(8205)  || chr(8206)  || chr(8207)
+    -- bidi embedding / override: LRE RLE PDF LRO RLO
+    || chr(8234)  || chr(8235)  || chr(8236)  || chr(8237)  || chr(8238)
+    -- word joiner, and the bidi isolates LRI RLI FSI PDI
+    || chr(8288)  || chr(8294)  || chr(8295)  || chr(8296)  || chr(8297)
+    -- BOM / zero-width no-break space
+    || chr(65279),
+    '                        '   -- exactly 24 spaces
   ))
 $fn$;
 
 COMMENT ON FUNCTION derm.fn_normalize_state_input(text) IS
-  'Normalise invisible whitespace in a state value before matching. Space-like characters become a space; zero-width and format characters are DELETED via translate() length asymmetry. Exists because btrim() strips ASCII SPACE ONLY, so a TAB/NBSP/ZWSP/BOM defeated every arm of the derm.v_lwt_monthly_rows state CASE and printed the full state NAME on a Miami-Dade filing. Pure, IMMUTABLE, touches no table.';
+  'Normalise invisible whitespace in a state value before matching. 24 space-like characters (all Zs, Zl, Zp and whitespace Cc) become a space; 19 zero-width/format characters (Cf) are DELETED via translate() length asymmetry. Exists because btrim() strips ASCII SPACE ONLY, so a TAB/NBSP/ZWSP/BOM defeated every arm of the derm.v_lwt_monthly_rows state CASE and printed the full state NAME on a Miami-Dade filing. Chosen by Unicode CATEGORY rather than by enumeration, because the two previous hand-picked versions (5 chars, then 29) both went stale. U+2800 and U+FFA0 are deliberately excluded: they render blank but are not whitespace. Pure, IMMUTABLE, touches no table. ⚠ It is SECURITY INVOKER, so every role that can SELECT the view must also hold EXECUTE here -- that includes pg_read_all_data, which supabase_read_only_user and supabase_etl_admin inherit.';
 
 REVOKE ALL ON FUNCTION derm.fn_normalize_state_input(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION derm.fn_normalize_state_input(text) TO authenticated, service_role;
-
-CREATE OR REPLACE VIEW derm.v_lwt_monthly_rows AS
- SELECT COALESCE(m.white_manifest_number, m.yellow_ticket_number) AS ticket_number,
-        CASE
-            WHEN m.white_manifest_number IS NOT NULL THEN 'white'::text
-            ELSE 'yellow'::text
-        END AS ticket_kind,
-    m.white_manifest_number IS NOT NULL AS offload_in_dade,
-    m.dump_ticket_date AS offload_date,
-    df.name AS disposal_facility,
-    v.visit_date AS pickup_date,
-    c.client_code,
-    replace(replace(replace(replace(replace(replace(replace(c.name, chr(8217), ''''::text), chr(8216), ''''::text), chr(8220), '"'::text), chr(8221), '"'::text), chr(8211), '-'::text), chr(8212), '-'::text), chr(160), ' '::text) AS client_name,
-    p.address,
-    p.city,
-        CASE
-            WHEN p.state IS NULL THEN NULL::text
-            WHEN upper(translate(derm.fn_normalize_state_input(p.state), chr(201)||chr(233), 'Ee')) = ANY (ARRAY['FL'::text, 'FLORIDA'::text]) THEN 'FL'::text
-            WHEN upper(translate(derm.fn_normalize_state_input(p.state), chr(201)||chr(233), 'Ee')) = ANY (ARRAY['CA'::text, 'CALIFORNIA'::text]) THEN 'CA'::text
-            WHEN upper(translate(derm.fn_normalize_state_input(p.state), chr(201)||chr(233), 'Ee')) = ANY (ARRAY['NY'::text, 'NEW YORK'::text]) THEN 'NY'::text
-            WHEN upper(translate(derm.fn_normalize_state_input(p.state), chr(201)||chr(233), 'Ee')) = ANY (ARRAY['QC'::text, 'QUEBEC'::text]) THEN 'QC'::text
-            WHEN derm.fn_normalize_state_input(p.state) ~ '^[A-Za-z]{2}$'::text THEN upper(derm.fn_normalize_state_input(p.state))
-            ELSE derm.fn_normalize_state_input(p.state)
-        END AS state,
-    p.zip,
-    p.county,
-    COALESCE(p.county = 'Dade'::text, false) AS pickup_in_dade,
-    COALESCE(p.county = 'Dade'::text, false) OR m.white_manifest_number IS NOT NULL AS in_scope,
-    ve.name AS truck,
-    ve.grease_tank_capacity_gallons AS truck_capacity_gallons,
-    NULL::integer AS gallons,
-    m.id AS manifest_id,
-    v.id AS visit_id
-   FROM derm_manifests m
-     JOIN manifest_visits mv ON mv.manifest_id = m.id
-     JOIN visits v ON v.id = mv.visit_id AND v.deleted_at IS NULL
-     JOIN clients c ON c.id = m.client_id
-     LEFT JOIN properties p ON p.id = v.property_id
-     LEFT JOIN vehicles ve ON ve.id = v.vehicle_id
-     LEFT JOIN disposal_facilities df ON df.id = m.disposal_facility_id
-  WHERE m.deleted_at IS NULL;
+GRANT EXECUTE ON FUNCTION derm.fn_normalize_state_input(text) TO authenticated, service_role, pg_read_all_data;
 
 COMMIT;
 
@@ -333,10 +292,15 @@ BEGIN
         v_cp   int;
         v_kind text;
         v_want text;
-        v_cps  int[]  := ARRAY[9,10,11,12,13,133,160,8192,8193,8194,8195,8196,8197,8198,8199,
-                               8200,8201,8202,8232,8233,8239,8287,12288,
-                               173,8203,8204,8205,8288,65279];
-        v_zero int[]  := ARRAY[173,8203,8204,8205,8288,65279];
+        -- 43 characters: 24 space-like (all Zs + Zl + Zp + whitespace Cc) and 19 zero-width Cf.
+        -- Chosen by CATEGORY. The two earlier hand-picked versions (5 chars, then 29) both went
+        -- stale within hours of shipping, each time to an audit that simply tried more characters.
+        v_cps  int[]  := ARRAY[9,10,11,12,13,133,160,5760,8192,8193,8194,8195,8196,8197,8198,
+                               8199,8200,8201,8202,8239,8287,12288,8232,8233,
+                               173,1564,6158,8203,8204,8205,8206,8207,8234,8235,8236,8237,8238,
+                               8288,8294,8295,8296,8297,65279];
+        v_zero int[]  := ARRAY[173,1564,6158,8203,8204,8205,8206,8207,8234,8235,8236,8237,8238,
+                               8288,8294,8295,8296,8297,65279];
       BEGIN
         FOREACH v_cp IN ARRAY v_cps LOOP
           v_kind := CASE WHEN v_cp = ANY (v_zero) THEN 'zero' ELSE 'space' END;
@@ -386,6 +350,35 @@ BEGIN
             v_fail := v_fail || format(' [ZW mid-token U+%s -> %L, wanted FL -- a zero-width char must be DELETED, not spaced]', upper(to_hex(v_cp)), v_got);
           END IF;
         END LOOP;
+
+        -- 🛑 THE LENGTH ASSERTION, READ FROM THE LIVE FUNCTION BODY.
+        --    translate() DELETES any source character with no counterpart in `to`, so a `to`
+        --    string one short silently deletes the last space-like character instead of spacing
+        --    it. The 1400 header claimed this was "asserted by COUNT, never by eye" -- it was
+        --    not, it was only a comment. This is the assertion. It reads pg_get_functiondef so
+        --    it cannot drift from the deployed object the way a source-file check would.
+        DECLARE v_to_len int;
+        BEGIN
+          SELECT length((regexp_match(pg_get_functiondef(pr.oid),
+                                      '''( +)''\s*-- exactly 24 spaces'))[1])
+            INTO v_to_len
+            FROM pg_proc pr JOIN pg_namespace nn ON nn.oid = pr.pronamespace
+           WHERE nn.nspname = 'derm' AND pr.proname = 'fn_normalize_state_input';
+          v_checks := v_checks + 1;
+          IF v_to_len IS DISTINCT FROM 24 THEN
+            v_fail := v_fail || format(' [translate to-string is %s chars, MUST be 24 -- a short to-string silently DELETES space-like characters instead of spacing them]', coalesce(v_to_len::text,'unreadable'));
+          END IF;
+        END;
+
+        -- the two DELIBERATE exclusions must still pass through: they render blank but are not
+        -- whitespace (U+2800 BRAILLE BLANK is So, U+FFA0 HANGUL FILLER is Lo). If these ever
+        -- start normalising, somebody has widened the set past its stated boundary.
+        UPDATE public.properties SET state = 'F' || chr(10240) || 'L' WHERE id = v_prop;
+        SELECT state INTO v_got FROM derm.v_lwt_monthly_rows WHERE visit_id = v_vis LIMIT 1;
+        v_checks := v_checks + 1;
+        IF v_got IS NOT DISTINCT FROM 'FL' THEN
+          v_fail := v_fail || ' [U+2800 BRAILLE BLANK was normalised -- it is NOT whitespace and the set has been widened past its boundary]';
+        END IF;
 
         -- NEGATIVE CONTROL: an ordinary character must NOT be stripped, or the normaliser is
         -- eating real data and every pass above is meaningless.
