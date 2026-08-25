@@ -114,8 +114,13 @@ Deno.serve(async (req: Request) => {
     .order('ticket_number', { ascending: true })
     .order('pickup_date', { ascending: true })
     // 🛑 THE LAST TWO KEYS MAKE THE SORT TOTAL, AND THAT IS NOT COSMETIC.
-    // The first three leave ties: 175 of 690 rows sit in a tie group, so Postgres was free to
-    // return them in a different order on two identical calls. Measured 2026-08-25 -- the same
+    // The first three leave ties: 175 tie GROUPS covering 571 of 690 rows (largest group 8), so
+    // Postgres was free to return them in a different order on two identical calls.
+    // ⚠ A first draft of this comment said "175 of 690 rows", which was wrong and understated it
+    // by more than half: 175 is the count of GROUPS. The query had a `lateral (select c)` that
+    // yields ONE row per group, so it was counting groups while its own column was named
+    // rows_in_tie_groups. Summing the group sizes is what gives the row count. The honest figure
+    // is 83% of rows, not 25%. Measured 2026-08-25 -- the same
     // month with unchanged data served two different ETags (2026-06 gave 5e7d3878b24945c0 and
     // e0c5cae0b244faeb) because etagOf() hashes the serialised payload, and 50 rows had swapped
     // positions. Two consequences: a conditional GET could miss a 304 it deserved, and the
