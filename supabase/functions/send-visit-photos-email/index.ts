@@ -300,7 +300,12 @@ function buildHtml(v: VisitRow, counts: Record<string, number>, includePhotos = 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Grease Trap Service Completed</title></head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Grease trap service completed for ${name} at ${addr} on ${vdate}. Job Completion Report${includePhotos ? ' with before &amp; after photos' : ''} attached.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Grease trap service completed for ${name} at ${addr} on ${vdate}. Job Completion Report attached.</div>
+<!-- ⚠ The photo-state clause was removed here on 2026-08-24 TOO, and not because Fred asked about
+     the preheader -- he asked about the card. This is the hidden inbox-PREVIEW line, and leaving it
+     conditional would have made the same email say "with before &amp; after photos" in the inbox
+     and "Service details only" on the card. That contradiction would have been introduced BY the
+     card change, so removing it is part of that change, not scope added to it. -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
 ${testStrip}
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;">
@@ -335,8 +340,26 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
 <td valign="middle" width="40" style="width:40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" height="40" style="width:40px;height:40px;background-color:#f14714;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">PDF</td></tr></table></td>
 <td valign="middle" style="padding-left:14px;font-family:${FONT_STACK};">
-<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Job Completion Report${!includePhotos ? '' : (beforeN > 0 && afterN > 0 ? ' (with before &amp; after photos)' : ' (service photos)')}</div>
-<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${!includePhotos ? 'Service details only &middot; photos not included' : `${totalN} photo${totalN === 1 ? '' : 's'}${breakdown ? ' &middot; ' + breakdown : ''}`}</div>
+<!-- 🛑 2026-08-24, Fred: this card is FIXED COPY. It used to describe the photo state -- the
+     title gained "(with before &amp; after photos)" / "(service photos)" and the subtitle read
+     either "Service details only &middot; photos not included" or a live count and phase
+     breakdown. He asked for plain "Job Completion Report" / "Service details only" in BOTH
+     branches, chosen explicitly over changing the no-photos branch alone: "that's it, even if it
+     have pictures or it doesn't."
+     WARNING: do NOT re-derive this from includePhotos/beforeN/afterN/totalN/breakdown. Those
+     consts are now UNUSED BY THIS CARD and are deliberately left in place rather than swept up in
+     a copy change to a compliance email: each carries a lesson that would be lost with it --
+     breakdown the note that "internal" must never be named to a city, and totalN that
+     customerPhotoCount() exists because Object.values(counts) once leaked the internal tally into
+     a municipal email. Removing them is a separate, safe follow-up.
+     WARNING 2: this comment sits INSIDE a JS template literal. A backtick here terminates the
+     string and the deploy fails to parse -- which is exactly how the first attempt at this change
+     died. Never use backticks in an HTML comment inside these builders.
+     ⚠ Behaviour is UNCHANGED: includePhotos still gates the send (refuses when photos were asked
+     for but none exist, or any are unclassified) and is still written to
+     public.visit_photo_email_sends.include_photos. Only the words moved. -->
+<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Job Completion Report</div>
+<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">Service details only</div>
 </td></tr></table>
 </td></tr></table>
 </td></tr>
@@ -370,9 +393,10 @@ function buildText(v: VisitRow, counts: Record<string, number>, includePhotos = 
     `  - Location: ${v.address}.`,
     `  - Service Date: ${fmtDate(v.visit_date)}.`,
     `  - Service Type: ${SERVICE_TYPE_LABEL}.`, '',
-    includePhotos
-      ? `Attached: Job Completion Report (${totalN} photo${totalN === 1 ? '' : 's'})`
-      : 'Attached: Job Completion Report (service details only, photos not included)', '',
+    // Mirrors the HTML card above, which is fixed copy as of 2026-08-24 (see the comment there).
+    // The text/plain part must not describe the photo state either, or a plain-text client sees
+    // wording the HTML one does not.
+    'Attached: Job Completion Report (service details only)', '',
     'Please note: The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.', '',
     `If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at ${CONTACT_EMAIL} or call us directly at ${CONTACT_PHONE}.`, '',
     'Thank you for your continued partnership in keeping our community compliant and clean.', '',
