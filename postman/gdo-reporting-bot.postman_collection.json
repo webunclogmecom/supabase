@@ -761,7 +761,7 @@
                   "    //    accepts NY, GL and FK alike -- being two capitals is not being RIGHT.",
                   "    //    County and state are independent fields from the same property, so they must agree:",
                   "    //    every county we serve is a Florida county (live: Dade 559, Broward 120, Palm Beach 7,",
-                  "    //    plus 14 no-property rows). A non-Florida property would carry a non-Florida county,",
+                  "    //    plus 14 no-property rows).",
                   "    //    ⚠ The obvious justification -- \"a non-Florida property carries a non-Florida county\"",
                   "    //    -- is NOT true of our data, and the real reason is stronger. Measured: properties",
                   "    //    154, 396 and 567 are Beverly Hills addresses carrying state=California AND",

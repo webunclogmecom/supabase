@@ -13,8 +13,9 @@
 //   failure available. This banner read "no cap" while the constant sat 32 lines beneath it.
 //   All four docs already described the cap correctly; only the source dissented, and the
 //   source is what a reader treats as authoritative.
-// That is the OPPOSITE of rpa-derm-queue, whose whole job is to never hand the same
-// work out twice. Do not copy lease/dispense logic in here, and do not "unify" the
+//
+// 🛑 PURITY is what makes this the OPPOSITE of rpa-derm-queue, whose whole job is to never hand
+// the same work out twice. Do not copy lease/dispense logic in here, and do not "unify" the
 // two: a report that is not repeatable is broken, and a queue that is repeatable
 // double-files to the county.
 //
