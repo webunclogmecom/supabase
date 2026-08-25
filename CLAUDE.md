@@ -1913,8 +1913,11 @@ directions**, and both were measured over 2026 before anything was written:
 
 | build | effect |
 |---|---|
-| filter on "offloaded in Dade" alone | **DROPS 53 activities** (Broward offloads carrying Dade pickups; 20 such tickets on 2026-08-25,
-and it is the 53 that matters — the ticket count grows) |
+| filter on "offloaded in Dade" alone | **DROPS 11 tickets / 53 activities** (Broward offloads carrying Dade pickups)
+  ⚠ Re-measured 2026-08-25: **20 Broward-offload tickets exist, but only 11 carry a Dade pickup**,
+  and those 11 hold the 53. An earlier edit wrote "20 such tickets", which silently changed the
+  noun — `such` is *Broward-offload carrying Dade pickups*, not *Broward-offload*. The other three
+  docs say 11, so that edit made this file the odd one out, and it is the file read first. |
 | apply the OR at TICKET grain | **OVER-reports**, because **20 tickets mix counties** |
 
 Measured on August: ticket `311045` has **0 in-scope rows of 2**, `312024` **3 of 9**, `310590`
@@ -1938,8 +1941,13 @@ and `truck_capacity_gallons` are served so the caller has the input. The fee ari
 is validated against filed county pages. Do not add a second implementation here.
 
 ⚠ **Ticket number is `coalesce(white_manifest_number, yellow_ticket_number)`** and that is total:
-**measured 2026-08-25: white 546 / yellow 154 / neither 0 / colliding 0**, and the white-yellow split
-matches the disposal-facility split EXACTLY, which is what makes `white => Miami-Dade offload` a fact rather than a convention.
+**measured 2026-08-25 at MANIFEST grain: white 512 / yellow 157 / neither 0 / colliding 0 of 669
+live manifests**, and the white-yellow split matches the disposal-facility split EXACTLY,
+⚠ **GRAIN MATTERS HERE AND I GOT IT WRONG ONCE.** An earlier stamp read `546 / 154`, which is the
+VIEW's `ticket_kind` row census (546 + 154 = 700 = the view's row count). At that grain `neither`
+is impossible — `ticket_kind` is a two-arm CASE — and `colliding` is undefined, so the two
+qualifiers that make the sentence mean anything only exist at manifest grain. A number refreshed
+at the wrong grain is worse than a stale one: it reads as current. which is what makes `white => Miami-Dade offload` a fact rather than a convention.
 `wwtp_ticket_number` and `wwtp_receipt_number` are populated **0** times: never read them.
 
 ⚠ **County vocabulary differs by table.** `public.properties.county` stores `'Dade'`;

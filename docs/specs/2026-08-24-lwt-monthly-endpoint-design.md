@@ -46,11 +46,17 @@ only on the linked visit (`public.visits.visit_date`).
 
 | field | populated | disposal facility | county |
 |---|---|---|---|
-| `white_manifest_number` | **502** | South District WWTP | Miami-Dade |
+| `white_manifest_number` | **512** | South District WWTP | Miami-Dade |
 | `yellow_ticket_number` | **157** | Water and Wastewater Services | Broward |
 | `wwtp_ticket_number`, `wwtp_receipt_number` | **0** | never populated | |
 
-502 and 157 match the facility split **exactly**, so white implies a Miami-Dade offload and yellow a
+⚠ **Measured 2026-08-25, at MANIFEST grain, and it must SUM TO THE TOTAL STATED ABOVE.** 512 + 157 =
+669, which is the live-manifest count in the paragraph above this table. An earlier edit refreshed
+that total from 659 to 669 and left this table at 502 + 157 = 659, so the section asserted "0
+carrying neither" while its own arithmetic implied 10. **When you re-measure one of these, re-measure
+both, or the pair silently starts disagreeing.**
+
+512 and 157 match the facility split **exactly**, so white implies a Miami-Dade offload and yellow a
 Broward one. Also measured: **0 collisions** between the two number spaces and **0 manifests carrying
 neither**, so `COALESCE(white, yellow)` is a total, unambiguous key. That is the field the form wants.
 

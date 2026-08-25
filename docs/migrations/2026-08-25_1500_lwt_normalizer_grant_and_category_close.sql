@@ -3,8 +3,11 @@
 -- Zero-runs iteration 4. Fixes the LIVE PRIVILEGE REGRESSION that 2026-08-25_1400 introduced,
 -- and closes the invisible-character set by CATEGORY instead of by enumeration.
 --
--- Outcome unchanged for the fourth time. ⚠ **The VERIFY does NOT pin those numbers, and an
--- earlier version of this line said it did.** It asserts, in this order: the view's counts
+-- Outcome unchanged for the fourth time.
+-- ⚠ **THE VERIFY PINS NO ROW COUNTS.** An earlier version of this line listed 690 / 589 / 126,
+-- FL 676 + null 14, name_nonascii 2, addr_nonascii 10 and said they were asserted. They were,
+-- until iteration 5 removed them; the sentence outlived the assertions, and then a later edit
+-- deleted the list and left "those numbers" pointing at nothing. It asserts, in this order: the view's counts
 -- EQUAL an independent base-table recomputation at the same instant; a `< 690` floor so a
 -- catastrophic emptying is still loud; `curly = 0`; the accent CARRIERS by name (167-FEN,
 -- 014-JOY, 179-CIG) rather than a count; state accounted for structurally (FL + NULL = every
@@ -250,16 +253,50 @@ BEGIN
     v_fail := v_fail || format(' [ACCENTS STRIPPED: name_nonascii=%s addr_nonascii=%s -- a real business name and a real street are now misspelled on a county form]',
                                r.name_nonascii, r.addr_nonascii);
   END IF;
-  v_checks := v_checks + 1;
-  IF NOT EXISTS (SELECT 1 FROM derm.v_lwt_monthly_rows
-                  WHERE client_code = '167-FEN' AND client_name ~ '[^ -~]') THEN
-    v_fail := v_fail || ' [167-FEN no longer carries its a-circumflex -- "Fendi Chateau Residences" is now misspelled]';
-  END IF;
-  v_checks := v_checks + 1;
-  IF NOT EXISTS (SELECT 1 FROM derm.v_lwt_monthly_rows
-                  WHERE client_code IN ('014-JOY','179-CIG') AND address ~ '[^ -~]') THEN
-    v_fail := v_fail || ' [014-JOY/179-CIG no longer carry the n-tilde -- "Espanola Way" is now misspelled]';
-  END IF;
+  -- 🛑 EXACT CHARACTERS, PER CARRIER, CONJUNCTIVELY. Two holes were found here and both are
+  --    the same shape: the assertion PARAPHRASED the rule instead of MIRRORING it.
+  --
+  --    (1) `~ '[^ -~]'` asks "is SOME non-ASCII byte still present", not "is the RIGHT
+  --        character still present". Measured: mapping the n-tilde to an o-grave leaves this
+  --        green while the view serves **'448 Espaoola Way'** to a county filing. Likewise
+  --        a-circumflex -> a-diaeresis leaves 'Fendi Chateau Residences' misspelled and green.
+  --        So the whole point of the check -- do not misspell a real street on a regulatory
+  --        document -- was not being tested at all.
+  --
+  --    (2) `client_code IN ('014-JOY','179-CIG') AND ...` inside one EXISTS is an OR: EITHER
+  --        carrier satisfies it. Measured: stripping the n-tilde from 014-JOY ALONE left the
+  --        block fully green. Each carrier is exactly one property, so the single-carrier
+  --        regression is the REALISTIC shape and it was the invisible one.
+  --
+  --    The Postman suite already did this correctly (exact strings, iterated per carrier), so
+  --    the DB-side check was strictly WEAKER than the HTTP-side one on the same claim.
+  DECLARE
+    v_carrier text;
+    v_missing text := '';
+    -- carrier, the column to read, and the EXACT substring that must be present
+    v_acc text[][] := ARRAY[
+      ['167-FEN', 'name', 'Fendi Ch' || chr(226) || 'teau Residences'],
+      ['014-JOY', 'addr', 'Espa'     || chr(241) || 'ola Way'],
+      ['179-CIG', 'addr', 'Espa'     || chr(241) || 'ola Way']
+    ];
+  BEGIN
+    FOR i IN 1 .. array_length(v_acc,1) LOOP
+      v_checks := v_checks + 1;
+      IF NOT EXISTS (
+        SELECT 1 FROM derm.v_lwt_monthly_rows
+         WHERE client_code = v_acc[i][1]
+           AND CASE WHEN v_acc[i][2] = 'name' THEN client_name ELSE address END
+               LIKE '%' || v_acc[i][3] || '%'
+      ) THEN
+        -- ⚠ Absent-from-this-month is NOT a failure: 2026-03 carries no carrier at all. The
+        --   view is fleet-wide, so a carrier missing HERE really is a regression.
+        v_missing := v_missing || format(' %s(%s)', v_acc[i][1], v_acc[i][3]);
+      END IF;
+    END LOOP;
+    IF v_missing <> '' THEN
+      v_fail := v_fail || format(' [ACCENT CARRIER(S) NO LONGER CARRY THE EXACT SPELLING:%s -- a real Miami Beach street and/or a registered business name are now MISSPELLED on a county filing]', v_missing);
+    END IF;
+  END;
 
   -- 4. state is uniform, and nothing was invented. STRUCTURAL, not a pinned count: every
   --    non-null value must be a two-letter code, and FL + NULL must account for every row.
@@ -517,18 +554,27 @@ BEGIN
 END $verify$;
 
 -- ---------------------------------------------------------------------------
--- 180 checks. Mutation-tested, every one fires: recomputation mismatch (proved with a real
--- rolled-back CREATE OR REPLACE VIEW that inverted the visits JOIN), state accounting, FL
--- absent, a null state beside a present address, accent carriers, row floor, translate
--- to-string length (against a real 23-space rebuild), both deliberate exclusions, and the
--- privilege revoke.
+-- 180 checks. Mutation-tested, every one fires.
 --
--- 🛑 THE TWO NEWEST ASSERTIONS EXIST BECAUSE THE SUITE WAS BLIND TO THE WORST CASE.
---    `FL + NULL = every row` is SATISFIED by FL = 0, NULL = every row -- the State column
---    printing blank on an entire county filing. The Postman suite had the same hole from the
---    other direction (its shape filter skipped nulls BEFORE testing them), so `state := null`
---    on all 80 rows of a live month passed all ten tests. Both are closed now.
---    The second assertion leans on a measured fact: the null crosstab is an EXACT DIAGONAL --
---    686 rows with none of state/address/city/zip/county null, 14 with ALL FIVE null, no third
---    combination -- so a null state beside a present address is a NEW defect, not the known
---    no-property case.
+-- 🛑 THE ACCENT ASSERTIONS WERE REBUILT 2026-08-25 (iteration 9) BECAUSE THEY DID NOT TEST WHAT
+--    THEIR OWN PROSE PROMISED. Two holes, both the paraphrase-instead-of-mirror shape:
+--
+--    (1) They asked `~ '[^ -~]'` -- "is SOME non-ASCII byte still present" -- not "is the
+--        RIGHT character still present". Measured through the live view, rolled back: mapping the
+--        n-tilde to an o-grave left the block GREEN while the view served **'448 Espaoola Way'**,
+--        and a-circumflex -> a-diaeresis left 'Fendi Chateau Residences' misspelled and green.
+--        A misspelled Miami Beach street and a misspelled registered business name could reach a
+--        county filing at 180/180 checks passed.
+--
+--    (2) `client_code IN ('014-JOY','179-CIG') AND ...` inside ONE `EXISTS` is an OR: either
+--        carrier satisfied it. Stripping the n-tilde from 014-JOY ALONE left the block green.
+--        Each carrier is ONE property row, so the single-carrier regression is the realistic
+--        shape -- and it was the invisible one.
+--
+--    Both now assert the EXACT substring, per carrier, conjunctively. Proven by driving all three
+--    real regressions through the live view in rolled-back savepoints: each is CAUGHT, and the old
+--    form is shown to have PASSED two of them. Rollback verified (10 n-tilde rows, 2 a-circumflex).
+--
+--    ⚠ The Postman suite had ALREADY done this correctly (exact strings, iterated per carrier), so
+--      for a while the DB-side check was strictly WEAKER than the HTTP-side one on the same claim.
+--      When two layers assert "the same thing", diff the assertions, not the intentions.
