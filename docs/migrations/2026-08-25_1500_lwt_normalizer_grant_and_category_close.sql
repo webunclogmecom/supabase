@@ -58,8 +58,11 @@
 --
 -- Three versions in one day, each hand-picked, each stale within hours:
 --   1200:  5 characters. An audit found 24 more.
---   1400: 29 characters. An audit found 9 more, including U+1680 OGHAM SPACE MARK and the
+--   1400: 29 characters. An audit found **14** more, including U+1680 OGHAM SPACE MARK and the
 --         bidi controls U+202A-U+202E / U+2066-U+2069.
+--        (29 + 14 = 43. An earlier version of this line said "9 more", which does not reach 43 --
+--         and its own 'including' list already named 10. Verified from the two bodies: 1400 is
+--         23 space-like + 6 zero-width with a 23-space to-string; 1500 is 24 + 19 with 24.)
 --   1500: 43 characters, chosen by UNICODE CATEGORY -- all Zs, Zl, Zp, the whitespace Cc, and
 --         the Cf that plausibly reaches a state field from a Western editor or web form.
 --
