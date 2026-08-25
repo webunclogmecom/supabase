@@ -626,6 +626,61 @@ then converged to `archived` 20 minutes later). **No second `handlePropertyDestr
 ⚠ That last detail matters on its own: `job_status='destroyed'` is TRANSIENT, so a query looking for
 it finds nothing even though the handler worked.
 
+### 🛑 `std/encoding/base64.ts` OOM-KILLS AN EDGE FUNCTION AT ~5MB, AND LEAVES NO TRACE (2026-08-25)
+
+`send-visit-photos-email` could not email any Service Report over roughly **5MB**. Fred asked for
+a test send on visit 6568 and it failed every time. **The cliff sat just above the median**: of the
+46 successful sends ever logged, the median attachment was 2.71MB and the largest **5.19MB**, so
+this was not an exotic edge case, it was the next slightly-bigger report.
+
+**The cause is the encoder, not the PDF.** `encodeBase64` from `deno.land/std@0.224.0` builds its
+output with `result += ...` **four times per three input bytes**. Each `+=` allocates a V8
+ConsString rope node. Measured: **32.0 bytes of heap per base64 character**, linear across four
+input sizes. A 15.6MB input therefore *demands* ~708MB.
+
+```
+Shutdown  reason=Memory  cpu=877  total=277.7MB  heap=262.1MB  external=15.6MB
+```
+
+⚠ **`heap=262.1MB` is the CEILING AT THE MOMENT OF THE KILL, NOT THE DEMAND.** The worker dies
+partway through the encode loop. Reading that number as "it needed 262MB" understates it by 2.7x.
+
+🛑 **THE FAILURE IS STRUCTURALLY INVISIBLE, WHICH IS WHY IT LOOKED RARE.** An OOM is a **platform
+kill, not an exception**: no `catch` runs, no `finally` runs, and `logSend()` never fires. So
+`visit_photo_email_sends` holds **zero** rows with a memory-related reason and never will. The
+send log cannot record this class of failure at all, so a clean log is not evidence of health.
+⇒ The only place it is visible is the **edge log**, via the Management API analytics endpoint.
+`scripts/probes/edge_logs.js` is the reader; `function_logs` is the source, `metadata` is a
+REPEATED field so you must `cross join unnest(metadata)`, and a non-existent field is a hard error
+rather than a null (which makes a failing query a usable way to discover the schema).
+
+**Fixed** in `5320e4a` by encoding in 48KB blocks with `btoa` and joining once.
+- 🛑 **THE CHUNK SIZE MUST STAY A MULTIPLE OF 3.** Base64 encodes 3 bytes to 4 chars; slice
+  anywhere else and `btoa` emits `=` padding **mid-stream**, producing a corrupt PDF that is still
+  valid base64 and still sends. A `4*ceil(n/3)` length assertion at the call site is the control,
+  and it refuses rather than sends. `scripts/probes/b64_chunked_test.js` extracts the encoder from
+  the source file (never retyped), proves 19 sizes byte-identical to Node's base64 including every
+  chunk boundary, and **mutation-tests a chunk size of 49150 to confirm the guard actually bites**.
+- `MAX_PDF_BYTES` (30MB) is Resend's documented 40MB-after-base64 ceiling in raw bytes. It is a
+  **deliverability** limit and is independent of the memory fix; raising it without re-measuring
+  heap is how this outage returns.
+
+**Verified live:** 6188 (5.44MB) and 6568 (12.97MB) both went 546 -> 200 sent; the delivered 6568
+attachment is byte-exact (13,598,685 in the API response and in the inbox), `%PDF-1.4`, ends
+`%%EOF`, 6 pages, **41 embedded images**. Regression control: 6537 re-sent at **1,759,261 bytes,
+identical to before the change**.
+
+⚠ **`send-derm-email` STILL IMPORTS THE STD ENCODER** and attaches manifest images. Same latent
+bug, deliberately not changed: it needs its own measurement first.
+
+⚠ **A related trap when reading PDF size: it tracks MEGAPIXELS ON THE RENDERED PAGE, not source
+photo bytes.** Chromium's `page.pdf()` embeds decoded bitmaps. Measured on the FP report: visit
+7824 renders 7 images / 2.43 MP / 0.41MB source -> a 2.13MB PDF, while 6188 renders 15 images /
+7.89 MP -> 5.44MB. **The report caps photos per section**, so a 44-photo visit and a 16-photo visit
+can land either side of the line. The three worst offenders are served at full resolution into tiny
+slots: the two DERM manifest scans (1912x1476 and 1608x1052, shown at ~348px) and **the logo, which
+is 2048x682 rendered into a 78x26 box on every single report**.
+
 ## Column-name gotchas
 
 Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Most-repeated mistakes:
