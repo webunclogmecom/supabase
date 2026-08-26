@@ -356,6 +356,47 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" && git pus
 
 The single writer. Persists the task, its assignees and the link row in one transaction.
 
+#### 🛑 Four requirements added after the Task 2 review. Do not skip them.
+
+**3.a — THE FUNCTION MUST CARRY THE ACTOR'S IDENTITY, or the audit opt-in is decorative.**
+Task 2 opted both tables into `audit.logs` on the stated grounds that "a task assigned to someone
+else is cross-user state." **The planned writer cannot deliver that.** It runs as `service_role`
+with no user JWT, so `audit.log_change` records `changed_by` NULL (always has, estate-wide) and no
+`jwt_claims`. Measured: `app_source='sql'` carries an email on **12 of 20,037** rows in 30 days,
+while `ops.visit_requests` gets identity on 59 of 62 precisely because the Calendar writes it
+through PostgREST as the signed-in user. Every row would read *"(task 42, employee 7) was linked,
+by nobody identifiable."*
+
+⇒ Add `p_actor_email text` to the function and, before any write:
+```sql
+PERFORM set_config('request.jwt.claims', json_build_object('email', p_actor_email)::text, true);
+PERFORM set_config('request.headers',
+        json_build_object('x-app-source','visit-calendar')::text, true);
+```
+`true` makes it transaction-local. `audit.log_change` reads `jwt_claims`, so the trail then names a
+person. The edge function already calls `auth.getUser()` to gate access, so it HAS a verified email;
+it must pass that one, never a caller-supplied string. Precedent: `send-derm-email` carries
+`sent_by_email` / `sent_by_user_id` from the app-forwarded JWT for exactly this reason.
+⚠ Verify the setting name against the live `audit.log_change` body before relying on it. CLAUDE.md
+records that `changed_by` reads the SINGULAR `request.jwt.claim.sub`, which PostgREST never sets,
+which is why that column has always been NULL. Use whatever key the function actually reads.
+
+**3.b — DIFF THE ASSIGNEES; do not blanket DELETE and re-INSERT.**
+The draft body does an unconditional `DELETE ... WHERE task_id = v_id` then re-inserts whenever
+`assignee_ids` is present. That emits a DELETE+INSERT audit pair per assignee on **every save even
+when the set is unchanged**, burying the one signal the trigger exists to capture. Delete only
+`employee_id NOT IN (<new set>)` and insert only what is new.
+
+**3.c — GUARD THE UPDATE BRANCH WITH `IF NOT FOUND`.**
+`entity_source_links` is polymorphic with no FK, so it does not cascade. If a link row ever survives
+its task, the UPDATE branch updates **zero rows and returns a dead id as success**. Raise instead.
+
+**3.d — DECIDE `duration_minutes` FOR AN ALL-DAY TASK, and state it.**
+Today an all-day row comes out `all_day=true, minutes=NULL, duration_minutes=30`: it asserts a
+30-minute duration while claiming to be all day. `minutes=1430, duration_minutes=1440` is also
+accepted, ending at minute 2870. Neither is constrained and neither is documented. Pick a rule,
+write it in the header, and if it is enforceable add the CHECK.
+
 **Files:**
 - Create: `Supabase/docs/migrations/2026-08-26_1820_fn_record_calendar_task.sql`
 - Create: `Supabase/scripts/probes/calendar_task_recorder.mjs`
