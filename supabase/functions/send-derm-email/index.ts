@@ -58,6 +58,47 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Unclogme <onboarding@resend.dev>'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+
+// ── OPTION B: the city gets the Service Report when it demonstrably carries BOTH
+//    manifest documents, otherwise exactly today's two images. Fred, 2026-08-25.
+// Both secrets already exist project-wide (generate-fog-manifest, send-visit-photos-email
+// and others read them), so nothing new needs creating; the preflight below covers unset.
+const PDF_SERVICE_URL = Deno.env.get('PDF_SERVICE_URL')
+const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
+// ⚠ COPIED, NOT RE-TUNED. send-visit-photos-email measured 45s as too low and producing
+// misleading 'pdf_service_unreachable' rows for renders that were about to succeed.
+const PDF_TIMEOUT_MS = 65_000
+// 🛑 THIS LOOP IS NOT THE SIBLING'S SINGLE SEND. `recipients` is caller-supplied and
+// UNCAPPED, and the largest observed real burst is 7 city sends in one minute. Seven
+// serial 65s renders is 455s in one invocation, and a platform wall-clock or OOM kill runs
+// NO catch and NO finally, so derm_email_sends would record nothing at all and the operator
+// would see a network error instead of results[]. This bounds the whole invocation.
+const RENDER_DEADLINE_MS = 120_000
+// 8 MiB, deliberately NOT the sibling's 25 MiB: that function sends one email per
+// invocation, this one loops. Worst measured city payload is ~5.36MB across 2 attachments
+// (~229MB of heap against a ceiling that killed a worker at 277.7MB). Over this we fall
+// back to exactly what we send today, so the cost of the limit is zero.
+const MAX_REPORT_BYTES = 8 * 1024 * 1024
+
+// 🛑 ONE SOURCE OF TRUTH FOR THE BRANCH COPY. The HTML and text variants sit adjacent so a
+// change cannot land in one and not the other: send-visit-photos-email shipped exactly that
+// bug, where a plain-text reader saw wording the HTML reader did not.
+const CITY_ATTACH_COPY = {
+  images: {
+    preheader: (name: string) =>
+      `DERM Manifest submission for ${name} &mdash; Manifest Form + Transporter Manifest attached for your compliance records.`,
+    html: `Attached, you'll find the <strong style="color:#111827;">Manifest Form</strong> and the corresponding <strong style="color:#111827;">Transporter Manifest</strong>.`,
+    text: "Attached, you'll find the Manifest Form and the corresponding Transporter Manifest.",
+  },
+  report: {
+    preheader: (name: string) =>
+      `DERM Manifest submission for ${name} &mdash; Service Report attached, including the Manifest Form and the Transporter Manifest, for your compliance records.`,
+    html: `Attached, you'll find our <strong style="color:#111827;">Service Report</strong> for this service, which includes the <strong style="color:#111827;">Manifest Form</strong> and the corresponding <strong style="color:#111827;">Transporter Manifest</strong>.`,
+    text: "Attached, you'll find our Service Report for this service, which includes the Manifest Form and the corresponding Transporter Manifest.",
+  },
+} as const
+
+type CityAttachMode = keyof typeof CITY_ATTACH_COPY
 const CITY_BCC = 'derm@ayache.com'
 
 const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
@@ -148,21 +189,24 @@ function buildText(clientName: string, number: string, ext: string): string {
 }
 
 // ---- CITY email (formal, to the municipal FOG office, two attachments) -----
-function buildCityHtml(clientName: string, address: string, visitDate: string): string {
+// `mode` selects which attachment sentence the letter carries. It MUST agree with what is
+// actually attached: under option B the city receives either one Service Report (which
+// embeds both manifest documents) or the two manifest images, never both.
+function buildCityHtml(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'images'): string {
   const name = escapeHtml(clientName)
   const addr = escapeHtml(address || '')
   const vdate = escapeHtml(visitDate || '')
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>DERM Manifest for ${name}</title></head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">DERM Manifest submission for ${name} &mdash; Manifest Form + Transporter Manifest attached for your compliance records.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">${CITY_ATTACH_COPY[mode].preheader(name)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;border-top:4px solid #f14714;">
 <tr><td style="padding:28px 36px 20px 36px;border-bottom:1px solid #eef0f2;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
 <tr><td style="padding:32px 36px 8px 36px;font-family:${FONT_STACK};">
 <p style="margin:0 0 18px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">Dear Environmental Compliance Team,</p>
 <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">The service for our client <strong style="color:#111827;">${name}</strong> located at <strong style="color:#111827;">${addr}</strong> was performed on <strong style="color:#111827;">${vdate}</strong>.</p>
-<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">Attached, you'll find the <strong style="color:#111827;">Manifest Form</strong> and the corresponding <strong style="color:#111827;">Transporter Manifest</strong>.</p>
+<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">${CITY_ATTACH_COPY[mode].html}</p>
 <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">If you have any questions or need assistance regarding this document, please feel free to reach us at <a href="mailto:contact@unclogme.com" style="color:#d63d12;text-decoration:underline;font-weight:600;">contact@unclogme.com</a> or call us directly.</p>
 <p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">Thanks again for your hard work &mdash; and feel free to recommend us to the restaurants in your city ;-)</p>
 <p style="margin:0 0 4px 0;font-size:15px;line-height:1.65;font-weight:700;color:#111827;">The Unclogme Team</p>
@@ -178,11 +222,11 @@ function buildCityHtml(clientName: string, address: string, visitDate: string): 
 </body></html>`
 }
 
-function buildCityText(clientName: string, address: string, visitDate: string): string {
+function buildCityText(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'images'): string {
   return [
     'Dear Environmental Compliance Team,', '',
     `The service for our client ${clientName} located at ${address} was performed on ${visitDate}.`, '',
-    "Attached, you'll find the Manifest Form and the corresponding Transporter Manifest.", '',
+    CITY_ATTACH_COPY[mode].text, '',
     'If you have any questions or need assistance regarding this document, please feel free to reach us at contact@unclogme.com or call us directly.', '',
     'Thanks again for your hard work — and feel free to recommend us to the restaurants in your city ;-)', '',
     'The Unclogme Team', '',
@@ -254,6 +298,79 @@ async function fetchAttachment(url: string, baseName: string): Promise<{ filenam
   const attExt = extFromUrl || CT_TO_EXT[srcCt] || 'pdf'
   const attType = srcCt || (attExt === 'pdf' ? 'application/pdf' : `image/${attExt === 'jpg' ? 'jpeg' : attExt}`)
   return { filename: `${baseName}.${attExt}`, content: b64, content_type: attType }
+}
+
+type RenderResult =
+  | { ok: true; b64: string }
+  | { ok: false; terminal: boolean; trip: boolean; reason: string }
+
+/**
+ * Render the Field Portal Service Report for one visit.
+ *
+ * 🛑 DO NOT ROUTE THIS THROUGH fetchAttachment(). That helper has no %PDF check, no
+ * content-type validation and no size ceiling, and its extension logic would happily name
+ * an HTML error page `.pdf` and mail it to a municipality.
+ *
+ * 🛑 client_code and public_id are derived SERVER-SIDE from our own rows keyed on
+ * manifest_id. Never accept a visit id, public_id or report URL from the request body.
+ *
+ * Two failure classes, and the split is deliberate:
+ *   TERMINAL (skip the manifest, send nothing) - the renderer is telling us our own
+ *     resolution is wrong. The letter is built from that same resolution, so falling back
+ *     would still name the wrong client, or assert a service our own system has retracted.
+ *   FALLBACK (send today's two images) - availability or document-shape problems. Refusing
+ *     would mean a municipal submission simply does not go out, which is worse.
+ */
+async function renderVisitReport(clientCode: string, publicId: string): Promise<RenderResult> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), PDF_TIMEOUT_MS)
+  try {
+    const up = await fetch(`${String(PDF_SERVICE_URL).replace(/\/$/, '')}/generate/visit-report`, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { Authorization: `Bearer ${PDF_SERVICE_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_code: clientCode, public_id: publicId, include_photos: true }),
+    })
+
+    if (up.status === 409) {
+      let code = 'report_not_available'
+      try { code = (await up.clone().json())?.error ?? code } catch { /* keep default */ }
+      return { ok: false, terminal: true, trip: false, reason: code }
+    }
+    if (up.status === 422) return { ok: false, terminal: true, trip: false, reason: 'invalid_input' }
+    if (!up.ok) {
+      // 🛑 READ THE BODY CODE ON 503. send-visit-photos-email branches on the status alone
+      // and reports a permanent deploy fault (Chromium missing => renderer_unavailable) to
+      // the operator as "the renderer is busy". Do not copy that.
+      let reason = `pdf_service_${up.status}`
+      if (up.status === 503) {
+        try { reason = (await up.clone().json())?.error ?? reason } catch { /* keep default */ }
+      }
+      return { ok: false, terminal: false, trip: true, reason }
+    }
+    const ctype = up.headers.get('content-type') ?? ''
+    if (!ctype.includes('pdf')) {
+      return { ok: false, terminal: false, trip: true, reason: `pdf_service_bad_ctype:${ctype.slice(0, 40)}` }
+    }
+    const bytes = new Uint8Array(await up.arrayBuffer())
+    // Per-document problems: do NOT trip the breaker, the next manifest may be fine.
+    if (bytes.byteLength < 1000 || String.fromCharCode(...bytes.slice(0, 4)) !== '%PDF') {
+      return { ok: false, terminal: false, trip: false, reason: `pdf_invalid:${bytes.byteLength}b` }
+    }
+    if (bytes.byteLength > MAX_REPORT_BYTES) {
+      return { ok: false, terminal: false, trip: false, reason: `pdf_too_large:${bytes.byteLength}b` }
+    }
+    const b64 = encodeBase64Chunked(bytes)
+    if (b64.length !== 4 * Math.ceil(bytes.byteLength / 3)) {
+      return { ok: false, terminal: false, trip: false, reason: `b64_length_mismatch:${b64.length}` }
+    }
+    return { ok: true, b64 }
+  } catch (e) {
+    const msg = ctrl.signal.aborted ? `timeout after ${PDF_TIMEOUT_MS}ms` : String((e as Error)?.message ?? e)
+    return { ok: false, terminal: false, trip: true, reason: `pdf_service:${msg}`.slice(0, 200) }
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -348,6 +465,14 @@ Deno.serve(async (req: Request) => {
     //    total failure that looks exactly like "no city has been configured yet".
     //    Recipients come from public.properties.city_emails, per property.
 
+    // 🛑 CIRCUIT BREAKER, INVOCATION-SCOPED. Once the renderer has refused or broken once,
+    // every remaining manifest in this batch falls back without attempting a render. The
+    // renderer runs VISIT_REPORT_MAX_CONCURRENCY = 2 and SHEDS rather than queues, so a
+    // refusal thirty seconds ago is strong evidence about the next one. This bounds the worst
+    // case at ONE render failure per invocation regardless of how many recipients were passed.
+    let renderDisabled: string | null = null
+    const invocationStart = Date.now()
+
     for (const rec of recipients) {
       const id = rec.manifest_id
       let logClientId: number | null = rec.client_id ?? null
@@ -361,8 +486,13 @@ Deno.serve(async (req: Request) => {
         logClientId = rec.client_id ?? (m.client_id as number)
         const clientId = rec.client_id ?? (m.client_id as number)
         const number = m.white_manifest_number || m.yellow_ticket_number || String(id)
-        const { data: c } = await sb.from('clients').select('name').eq('id', clientId).maybeSingle()
+        // 🛑 client_code is read HERE, from clientId, and NEVER off the resolved visit's own
+        // client join. The renderer's client_mismatch guard compares the code we send against
+        // the code printed on the rendered page: sourced from the RECIPIENT side it catches a
+        // wrong-visit resolution, sourced from the visit it would merely confirm itself.
+        const { data: c } = await sb.from('clients').select('name, client_code').eq('id', clientId).maybeSingle()
         const clientName = c?.name || 'Customer'
+        const clientCode = (c as { client_code?: string | null } | null)?.client_code ?? null
 
         // Guard: BOTH PDFs required (Manifest Form + Transporter Manifest)
         if (!m.derm_manifest_url || !m.derm_address_url) { results.push({ manifest_id: id, status: 'skipped', reason: 'missing_attachments', client: clientName }); await logSend(id, logClientId, null, null, 'skipped', 'missing_attachments', 'city'); continue }
@@ -376,15 +506,23 @@ Deno.serve(async (req: Request) => {
         // ⚠ deleted_at IS NULL is new here and deliberate: a soft-deleted property must not drag
         //   its stale inbox into a live send. client.properties already filters the same way.
         const { data: props } = await sb.from('properties')
-          .select('address, city, city_emails').eq('client_id', clientId).is('deleted_at', null)
+          .select('id, address, city, city_emails').eq('client_id', clientId).is('deleted_at', null)
         const cityEmailSet = new Set<string>()
         const muniSet = new Set<string>()
+        // Which properties actually carry a city inbox. G10 below requires the resolved
+        // visit's property to be one of them, because the letter prints servedAddress (the
+        // FIRST inbox-carrying property) while the report renders the VISIT's property. On a
+        // regulator-facing document those two addresses must not disagree.
+        const inboxPropIds = new Set<number>()
+        const propAddrById = new Map<number, string>()
         let servedAddress = ''
-        for (const p of (props || []) as { address: string | null; city: string | null; city_emails: string[] | null }[]) {
+        for (const p of (props || []) as { id: number; address: string | null; city: string | null; city_emails: string[] | null }[]) {
           const emails = (p.city_emails || [])
             .map((e) => String(e ?? '').trim().toLowerCase())
             .filter((e) => e.includes('@'))
           if (!emails.length) continue
+          inboxPropIds.add(p.id)
+          propAddrById.set(p.id, String(p.address ?? ''))
           for (const e of emails) cityEmailSet.add(e)
           const muni = String(p.city ?? '').trim()
           if (muni) muniSet.add(muni)
@@ -465,12 +603,150 @@ Deno.serve(async (req: Request) => {
           await logSend(id, logClientId, null, null, 'skipped', 'no_redacted_sheet', 'city')
           continue
         }
+        // ══ OPTION B GATE ═══════════════════════════════════════════════════════════════
+        // Fred, 2026-08-25: "Service Report when photos are classified (it already carries the
+        // manifests), falling back to the manifest images when they are not."
+        //
+        // 🛑 THE LOAD-BEARING CONDITION IS G7 (the transporter manifest), NOT the FOG sheet.
+        // Fred's original safety condition was "work_orders.derm_manifest_url is not null".
+        // That is INERT here: it IS derm.redacted_manifest_docs.url, the row the
+        // `no_redacted_sheet` guard above already requires, so it rejects 0 of 126 eligible
+        // pairs. The city receives TWO documents today, and the second one comes from a
+        // DIFFERENT column behind a DIFFERENT gate: wwtp_receipt_url is populated only by a
+        // MANUAL vision pass (derm.receipt_doc_class, written on four days ever, median 13.5
+        // days after the manifest, while real city sends land at a median of 1.06 days).
+        // Without G7 the city gets a report whose transporter-manifest section simply VANISHES,
+        // invisible at both ends. Every condition below is here because dropping it puts a
+        // wrong or incomplete document in a regulator's inbox.
+        //
+        // ⚠ EVERY failure path in this block falls back to today's two images. It must never
+        // reach the outer catch, which abandons the manifest entirely.
+        let reportAtt: { filename: string; content: string; content_type: string } | null = null
+        let attachMode: CityAttachMode = 'images'
+        let attachReason = ''
+        let letterDate = visitDate
+        try {
+          if (renderDisabled) {
+            attachReason = renderDisabled
+          } else if (Date.now() - invocationStart > RENDER_DEADLINE_MS) {
+            renderDisabled = 'render_deadline'
+            attachReason = renderDisabled
+          } else if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
+            // Do NOT 503 the request: the images still work.
+            renderDisabled = 'pdf_service_not_configured'
+            attachReason = renderDisabled
+          } else if (!visitIds.length) {
+            attachReason = 'no_resolved_visit'
+          } else {
+            // ── G1: exactly ONE completed, DERM-required visit for THIS client on THIS manifest.
+            // A manifest legitimately documents several pickups (manifest_visits is uncapped),
+            // and picking one would assert to Miami-Dade that this manifest covers that single
+            // service while silently dropping the others. No tie-break is defensible:
+            // service_date is the dump-date misnomer and visit_date has ties.
+            // ⚠ Deliberately NOT the existing visitDate block above: its second arm drops
+            // visit_status='completed' and can resolve a scheduled or cancelled visit.
+            const { data: cands, error: candErr } = await sb.from('visits')
+              .select('id, public_id, visit_date, derm_required, property_id')
+              .in('id', visitIds)
+              .eq('client_id', clientId)
+              .eq('visit_status', 'completed')
+              .is('deleted_at', null)
+            if (candErr) throw new Error(`visit resolve: ${candErr.message}`)
+            // `!== false`, never `=== true`: derm_required NULL means REQUIRED and HAS a report.
+            const V = (cands ?? []).filter((v) => (v as { derm_required: boolean | null }).derm_required !== false)
+            if (V.length === 0) attachReason = 'no_resolved_visit'
+            else if (V.length > 1) attachReason = 'ambiguous_visit'
+            else {
+              const rv = V[0] as { id: number; public_id: string | null; visit_date: string | null; property_id: number | null }
+              // ── G2: Fred's selector. Definition copied from send-visit-photos-email so the
+              // gate cannot key on a different set than the renderer renders.
+              const { data: links, error: lErr } = await sb.from('photo_links')
+                .select('id, photos!inner(content_type)')
+                .eq('entity_type', 'visit').eq('entity_id', rv.id).is('deleted_at', null)
+              if (lErr) throw new Error(`photo links: ${lErr.message}`)
+              const imgs = (links ?? []).filter((l: Record<string, unknown>) =>
+                String((l.photos as { content_type?: string } | null)?.content_type ?? '').startsWith('image/'))
+              let classified = 0
+              if (imgs.length) {
+                const { data: cls, error: cErr } = await sb.from('photo_classifications')
+                  .select('photo_link_id').in('photo_link_id', imgs.map((l: Record<string, unknown>) => l.id as number))
+                if (cErr) throw new Error(`classifications: ${cErr.message}`)
+                classified = new Set((cls ?? []).map((r: Record<string, unknown>) => r.photo_link_id as number)).size
+              }
+              if (!imgs.length || classified !== imgs.length) attachReason = 'not_all_classified'
+              // ── G3: the renderer 422s on a malformed value; failing our own check is a clean
+              // fallback instead of a logged 422.
+              else if (!clientCode || !/^[0-9]{3}-[A-Za-z0-9]+$/.test(clientCode)) attachReason = 'bad_client_code'
+              else if (!rv.public_id || !/^[A-Za-z0-9_-]{6,32}$/.test(rv.public_id)) attachReason = 'bad_public_id'
+              // ── G10: the letter prints servedAddress, the report renders the VISIT's
+              // property. Under B both land in one envelope to a regulator.
+              else if (!rv.property_id || !inboxPropIds.has(rv.property_id) ||
+                       propAddrById.get(rv.property_id) !== servedAddress) attachReason = 'address_mismatch'
+              else {
+                // ── G4 / G6 / G7 / G8 in one read.
+                // 🛑 .schema('customer') is load-bearing: sb is built with no schema, so omitting
+                // it silently queries a nonexistent public.work_orders. Join on `id` (the view's
+                // first column is v.public_id AS id), NOT visit_id.
+                const { data: wo, error: woErr } = await sb.schema('customer').from('work_orders')
+                  .select('derm_manifest_url, wwtp_receipt_url, manifest_id')
+                  .eq('id', rv.public_id).maybeSingle()
+                if (woErr) throw new Error(`work_orders: ${woErr.message}`)
+                const w = wo as { derm_manifest_url: string | null; wwtp_receipt_url: string | null; manifest_id: number | null } | null
+                if (!w) attachReason = 'no_work_order'                       // G4
+                else if (!w.derm_manifest_url) attachReason = 'no_redacted_in_report'  // G6
+                else if (!w.wwtp_receipt_url) attachReason = 'no_wwtp_receipt'         // G7 ← the real one
+                else if (w.manifest_id !== id) attachReason = 'report_other_manifest'  // G8
+                // ── G9: the city loop attaches the primary transporter page PLUS every extra
+                // and fails closed if one will not fetch. The report exposes a single receipt
+                // and has no extras column, so pages 2+ would vanish with no error.
+                else if ((((m.derm_manifest_extra_urls as string[] | null) || []).length) > 0) attachReason = 'transporter_has_extra_pages'
+                else {
+                  const rendered = await renderVisitReport(clientCode, rv.public_id)
+                  if (rendered.ok) {
+                    reportAtt = {
+                      filename: `DERM-Service-Report-${number}.pdf`,
+                      content: rendered.b64,
+                      content_type: 'application/pdf',
+                    }
+                    attachMode = 'report'
+                    // RAW date; fmtDate is applied once at the call site, as for the fallback.
+                    // In the report branch the letter must name the visit whose report is
+                    // attached, not the arbitrary ORDER BY visit_date DESC pick above.
+                    letterDate = rv.visit_date ?? visitDate
+                  } else if (rendered.terminal) {
+                    // CLASS B: the letter is derived from the SAME resolution the renderer just
+                    // refused, so falling back would still assert a service our own system has
+                    // retracted, or name the wrong client. Skip the manifest entirely.
+                    console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${rendered.reason}`)
+                    results.push({ manifest_id: id, status: 'skipped', reason: rendered.reason, client: clientName })
+                    await logSend(id, logClientId, null, null, 'skipped', rendered.reason, 'city')
+                    continue
+                  } else {
+                    attachReason = rendered.reason
+                    if (rendered.trip) renderDisabled = rendered.reason
+                    console.error(`[send-derm-email] render_fallback manifest=${id} client=${clientId} reason=${rendered.reason}`)
+                  }
+                }
+              }
+            }
+          }
+        } catch (ge) {
+          attachReason = 'gate_read_failed'
+          console.error(`[send-derm-email] gate_read_failed manifest=${id} client=${clientId}: ${String((ge as Error)?.message ?? ge).slice(0, 200)}`)
+        }
+
         // ONE image by design: the redaction targets the page carrying this client's row
         // (`effective_page`), so the other pages are exactly the ones we are declining to disclose.
         const addressUrls = [redactedUrl]
         const transUrls = [m.derm_manifest_url, ...(((m.derm_manifest_extra_urls as string[] | null) || []))].filter(Boolean)
         const attachments: { filename: string; content: string; content_type: string }[] = []
         let fetchFailed = false
+        // ⚠ MEMORY ORDERING: the render was attempted FIRST and the images are fetched ONLY on
+        // the fallback branch, so the two are never held at once. The report is the sole
+        // attachment in its branch, because it already embeds both manifest documents.
+        // The `else {` / `}` are the only two lines added here; nothing below is re-indented,
+        // because re-indenting a working body is retyping it.
+        if (reportAtt) { attachments.push(reportAtt) } else {
         for (let i = 0; i < addressUrls.length; i++) {
           const suffix = addressUrls.length > 1 ? `-${i + 1}` : ''
           const att = await fetchAttachment(addressUrls[i], `DERM-Manifest-Form-${number}${suffix}`)
@@ -484,13 +760,14 @@ Deno.serve(async (req: Request) => {
           attachments.push(att)
         }
         if (fetchFailed) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', client: clientName }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed', 'city'); continue }
+        }
 
         const payload: Record<string, unknown> = {
           from: RESEND_FROM,
           to: toList,
           subject: `DERM Manifest for ${clientName}`,
-          html: buildCityHtml(clientName, servedAddress, fmtDate(visitDate)),
-          text: buildCityText(clientName, servedAddress, fmtDate(visitDate)),
+          html: buildCityHtml(clientName, servedAddress, fmtDate(letterDate), attachMode),
+          text: buildCityText(clientName, servedAddress, fmtDate(letterDate), attachMode),
           attachments,
         }
         // BCC = compliance copy on real sends (CITY_BCC) + the test_cc "send-to-both" copy.
@@ -506,8 +783,17 @@ Deno.serve(async (req: Request) => {
         if (!emailRes.ok) { results.push({ manifest_id: id, status: 'error', reason: 'resend_failed', detail: er, client: clientName }); await logSend(id, logClientId, logEmail, null, 'error', 'resend_failed', 'city'); continue }
 
         const sentEmailId = (er as { id?: string })?.id ?? null
-        results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toList.join(', ')} (TEST)` : toList.join(', '), municipality, number, email_id: sentEmailId })
-        await logSend(id, logClientId, logEmail, sentEmailId, 'sent', null, 'city')
+        results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toList.join(', ')} (TEST)` : toList.join(', '), municipality, number, email_id: sentEmailId, attachment: attachMode, attachment_reason: attachReason || null })
+        // 🛑 THE BRANCH IS WRITTEN ON EVERY SUCCESS ROW, AND THAT IS MANDATORY, NOT POLISH.
+        // The fallback is fail-OPEN: 85-90% of pairs already take it, so the report path could
+        // stop firing entirely and look identical to normal operation. That is the
+        // redact-manifest-sweep shape, which reported `succeeded` every five minutes for 34
+        // blocked clients because an empty work queue is a successful run.
+        // ⚠ `reason` has meant "why this did NOT happen" until now. The `attachment:` prefix
+        // disambiguates, and `status='sent' AND reason IS NOT NULL` is unambiguous, but a
+        // reader needs telling. Query with `reason LIKE 'attachment:%'`.
+        await logSend(id, logClientId, logEmail, sentEmailId, 'sent',
+          attachMode === 'report' ? 'attachment:report' : `attachment:manifest_images:${attachReason || 'unknown'}`, 'city')
       } catch (e) {
         const msg = String((e as Error)?.message ?? e)
         results.push({ manifest_id: id, status: 'error', reason: msg })
