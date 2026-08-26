@@ -26,7 +26,10 @@
 --       stated for assignees in the plan (`p ? 'assignee_ids'`) and is applied to every column for
 --       consistency, so the poll can mirror a Jobber-side completion with
 --       {jobber_gid, is_complete, completed_at, completed_source} without restating title and date.
---       An explicit JSON null CLEARS (p->>'k' is SQL NULL), which is how a task is made all-day.
+--       An explicit JSON null CLEARS a NULLABLE column (p->>'k' is SQL NULL), which is how a task
+--       is made all-day. On a NOT NULL column an explicit null is REFUSED with a readable 22023
+--       instead of the raw 23502 the INSERT would otherwise throw two hundred lines later, and
+--       `all_day` refuses an explicit null outright because it is derived, not accepted.
 --
 -- ============================================================================================
 -- 3.a -- CARRYING THE ACTOR, AND WHAT audit.log_change ACTUALLY READS
@@ -125,10 +128,19 @@
 -- row comes out `all_day=true, minutes=NULL, duration_minutes=30` -- asserting half an hour on a
 -- row that claims to be all day. Two readers of the same row get two different answers.
 --
--- THE RULE: an all-day task has duration_minutes = 1440. All-day means "occupies the day", and
--- 1440 is the only value that says so. The 30 is a UI default leaking, not an intent, so
--- fn_record_calendar_task NORMALISES it rather than raising: an edge function sending its form
--- default alongside all_day should not fail a perfectly ordinary create.
+-- THE RULE, AND IT IS SYMMETRIC: an all-day task has duration_minutes = 1440. All-day means
+-- "occupies the day", and 1440 is the only value that says so. The 30 is a UI default leaking, not
+-- an intent, so fn_record_calendar_task NORMALISES it rather than raising: an edge function sending
+-- its form default alongside all_day should not fail a perfectly ordinary create.
+-- AND THE SAME REASONING RUNNING BACKWARDS, which the first version of this file missed: 1440 on an
+-- all-day row is DERIVED, so it must not outlive the all-day state. A task that LEAVES all-day
+-- without the caller stating a duration is reset to the column default, exactly what a brand-new
+-- timed task gets. Without that, {minutes: 540} on an all-day task produced false/1440/540 -- a
+-- 9:00 AM task claiming twenty-four hours, legal under every CHECK, and reachable from the natural
+-- drag-to-reschedule payload. Cost of the rule, stated so it is not a surprise: entering all-day
+-- DISCARDS a timed duration, so 45 -> all-day -> timed returns 30, not 45. Remembering the 45 would
+-- take a column holding what we overwrote (rule 1); a permanent wrong 1440 is worse than a
+-- forgotten 45.
 -- `all_day` itself is DERIVED from `minutes` (NULL <=> all-day, which is what
 -- calendar_tasks_allday_chk already requires) and is never accepted as an independent field -- but
 -- an explicit `all_day` in the payload that CONTRADICTS the minutes RAISES, because that is a real
@@ -165,7 +177,9 @@ BEGIN;
 -- PART 1 -- 3.d: an all-day task lasts all day.
 -- =============================================================================================
 -- Guarded so the whole file stays re-runnable (rule 5): the header carries the reasoning, and a
--- reasoning correction should not require hand-picking which statements to replay.
+-- reasoning correction should not require hand-picking which statements to replay. The VERIFY block
+-- at the bottom is sentinel-scoped for the same reason -- re-runnable means re-runnable against a
+-- table with real rows in it, not only against an empty one.
 DO $addchk$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint
@@ -239,8 +253,9 @@ COMMENT ON FUNCTION ops.fn_calendar_task_set_actor(text) IS
   'audit.logs.changed_by reads the SINGULAR request.jwt.claim.sub, which PostgREST never sets and '
   'which is a uuid column anyway -- jwt_claims->>''email'' is the readable identity. '
   'The setting is TRANSACTION-local (measured): it survives this function AND its caller and ends '
-  'with the request, so two calls in one transaction both take the first non-null actor. A NULL '
-  'actor changes nothing rather than clearing the key. Every real function it calls is '
+  'with the request. Within one transaction the LAST non-null actor wins, and a NULL actor changes '
+  'nothing rather than clearing the key -- so a NULL call after a named one inherits that name. '
+  'Every real function it calls is '
   'pg_catalog-qualified because it has no pinned search_path. '
   'Granted to nobody; callable only by its owner via the two SECDEF calendar-task functions.';
 
@@ -272,6 +287,13 @@ DECLARE
   v_completed_source text;
   v_arr              jsonb;
   v_new_ids          bigint[];
+  -- ops.calendar_tasks.duration_minutes DEFAULT, in ONE place. It is needed twice (a fresh insert,
+  -- and a row LEAVING all-day) and VERIFY asserts it still equals the column default read out of
+  -- pg_attrdef, so this cannot drift from 2026-08-26_1810 in silence.
+  c_default_duration constant smallint := 30;
+  -- space, TAB, LF, CR, NBSP. Escape-free (see PART 2) so nothing between here and the server can
+  -- mangle it.
+  c_ws               constant text := concat(' ', chr(9), chr(10), chr(13), chr(160));
 BEGIN
   IF p IS NULL OR jsonb_typeof(p) <> 'object' THEN
     RAISE EXCEPTION 'p must be a JSON object, got %', coalesce(jsonb_typeof(p), 'null')
@@ -280,7 +302,13 @@ BEGIN
 
   PERFORM ops.fn_calendar_task_set_actor(p_actor_email);
 
-  v_gid := nullif(btrim(coalesce(p->>'jobber_gid', '')), '');
+  -- The SAME whitespace class the actor label uses (PART 2), and for a stronger reason: this is
+  -- the IDEMPOTENCY KEY. A bare btrim() strips ASCII SPACE only, so a jobber_gid of a single TAB
+  -- would sail through the "required" guard below and mint a task keyed on a tab -- a key nothing
+  -- upstream can ever match again, which is a duplicate task on the crew's schedule the next time
+  -- the edge function retries. The two copies of this class are kept honest by an equivalence
+  -- assertion in VERIFY, not by hoping the next editor updates both.
+  v_gid := nullif(btrim(coalesce(p->>'jobber_gid', ''), c_ws), '');
   IF v_gid IS NULL THEN
     RAISE EXCEPTION 'jobber_gid is required: this function records what Jobber has ALREADY '
                     'confirmed, so a task with no Jobber id is a task that does not exist yet'
@@ -311,18 +339,30 @@ BEGIN
     v_found := true;
   END IF;
 
+  -- ---- explicit nulls on the NOT NULL columns ----------------------------------------------
+  -- Patch semantics say an explicit null CLEARS, but these three columns cannot be cleared, and
+  -- letting the payload through produces a raw 23502 from the INSERT with no hint about which key
+  -- caused it. `title` and `task_date` already raise 22023 below; these did not.
+  IF (p ? 'is_complete') AND (p->>'is_complete') IS NULL THEN
+    RAISE EXCEPTION 'is_complete may not be null (the column is NOT NULL). Send true or false, or '
+                    'omit the key to leave it as it is.' USING ERRCODE = '22023';
+  END IF;
+  IF (p ? 'duration_minutes') AND (p->>'duration_minutes') IS NULL THEN
+    RAISE EXCEPTION 'duration_minutes may not be null (the column is NOT NULL). Send a number, or '
+                    'omit the key -- on an all-day task it is derived anyway.'
+      USING ERRCODE = '22023';
+  END IF;
+
   -- ---- resolve every column: key present = set, key absent = leave alone -------------------
   -- On the INSERT path v_cur is all-NULL, so coalesce supplies the table defaults for the two
   -- NOT NULL columns that have one.
-  v_title        := CASE WHEN p ? 'title'            THEN btrim(coalesce(p->>'title', ''))  ELSE v_cur.title        END;
+  v_title        := CASE WHEN p ? 'title'            THEN btrim(coalesce(p->>'title',''),c_ws) ELSE v_cur.title     END;
   v_instructions := CASE WHEN p ? 'instructions'     THEN p->>'instructions'                ELSE v_cur.instructions END;
   v_task_date    := CASE WHEN p ? 'task_date'        THEN (p->>'task_date')::date           ELSE v_cur.task_date    END;
   v_minutes      := CASE WHEN p ? 'minutes'          THEN (p->>'minutes')::smallint         ELSE v_cur.minutes      END;
   v_client_id    := CASE WHEN p ? 'client_id'        THEN (p->>'client_id')::bigint         ELSE v_cur.client_id    END;
   v_property_id  := CASE WHEN p ? 'property_id'      THEN (p->>'property_id')::bigint       ELSE v_cur.property_id  END;
   v_visit_id     := CASE WHEN p ? 'visit_id'         THEN (p->>'visit_id')::bigint          ELSE v_cur.visit_id     END;
-  v_duration     := CASE WHEN p ? 'duration_minutes' THEN (p->>'duration_minutes')::smallint
-                                                     ELSE coalesce(v_cur.duration_minutes, 30) END;
   v_is_complete  := CASE WHEN p ? 'is_complete'      THEN (p->>'is_complete')::boolean
                                                      ELSE coalesce(v_cur.is_complete, false) END;
 
@@ -334,17 +374,46 @@ BEGIN
     RAISE EXCEPTION 'task_date is required' USING ERRCODE = '22023';
   END IF;
 
-  -- ---- 3.d ---------------------------------------------------------------------------------
+  -- ---- 3.d, BOTH DIRECTIONS ----------------------------------------------------------------
   v_all_day := (v_minutes IS NULL);
-  IF (p ? 'all_day') AND (p->>'all_day') IS NOT NULL
-     AND (p->>'all_day')::boolean IS DISTINCT FROM v_all_day THEN
-    RAISE EXCEPTION 'all_day=% contradicts minutes=%: all_day is DERIVED (all-day means no start '
-                    'time), so send one or the other, not two that disagree',
-                    p->>'all_day', coalesce(v_minutes::text, 'null')
-      USING ERRCODE = '22023';
+  IF (p ? 'all_day') THEN
+    IF (p->>'all_day') IS NULL THEN
+      RAISE EXCEPTION 'all_day may not be null: it is DERIVED from minutes. Omit it, or send the '
+                      'value that matches.' USING ERRCODE = '22023';
+    END IF;
+    IF (p->>'all_day')::boolean IS DISTINCT FROM v_all_day THEN
+      RAISE EXCEPTION 'all_day=% contradicts minutes=%: all_day is DERIVED (all-day means no start '
+                      'time), so send one or the other, not two that disagree',
+                      p->>'all_day', coalesce(v_minutes::text, 'null')
+        USING ERRCODE = '22023';
+    END IF;
+  END IF;
+
+  -- duration_minutes is resolved HERE, after all_day is known, because on an all-day row it is a
+  -- DERIVED value and not a stored intent -- and a derived value must not survive the state it was
+  -- derived from. The first version of this file forced 1440 on the way IN and left it on the way
+  -- OUT, so an all-day task rescheduled to 9:00 AM by a payload of {minutes: 540} came out
+  -- false/1440/540: a nine-o'clock task asserting a twenty-four hour duration, passing every CHECK
+  -- (calendar_tasks_allday_duration_chk only constrains all-day rows, and 1440 is inside
+  -- BETWEEN 1 AND 1440). That is the same "a UI default leaking, not an intent" this section was
+  -- written against, with 1440 substituted for the 30. Measured before and after; the probe asserts
+  -- the transition in both directions so it cannot come back.
+  IF p ? 'duration_minutes' THEN
+    v_duration := (p->>'duration_minutes')::smallint;         -- an explicit value always wins
+  ELSIF v_all_day THEN
+    v_duration := 1440;                                       -- entering or staying all-day
+  ELSIF coalesce(v_cur.all_day, false) THEN
+    -- LEAVING all-day with no duration stated. The 1440 sitting in the column was written by this
+    -- function, not chosen by anyone, so there is no intent to carry forward: fall back to exactly
+    -- what a brand-new timed task gets. Note this means entering all-day DISCARDS a timed duration
+    -- (45 minutes -> all-day -> timed comes back as 30, not 45). Remembering it would need a column
+    -- to hold what we overwrote, which is rule 1, and 1440-forever is the worse of the two.
+    v_duration := c_default_duration;
+  ELSE
+    v_duration := coalesce(v_cur.duration_minutes, c_default_duration);   -- timed -> timed
   END IF;
   IF v_all_day THEN
-    v_duration := 1440;
+    v_duration := 1440;   -- last word: a duration sent alongside all_day is still a leaking default
   END IF;
 
   -- ---- completion triple -------------------------------------------------------------------
@@ -355,7 +424,7 @@ BEGIN
                                                    ELSE v_cur.completed_at END;
     v_completed_at := coalesce(v_completed_at, now());
     v_completed_source := CASE WHEN p ? 'completed_source'
-                               THEN nullif(btrim(coalesce(p->>'completed_source', '')), '')
+                               THEN nullif(btrim(coalesce(p->>'completed_source',''), c_ws), '')
                                ELSE v_cur.completed_source END;
     IF v_completed_source IS NULL THEN
       RAISE EXCEPTION 'is_complete=true needs completed_source (calendar|jobber): completion works '
@@ -505,6 +574,7 @@ DECLARE
   v_txt     text;
   v_dur     smallint;
   v_bit     boolean;
+  v_hwm     bigint;    -- ops.calendar_tasks.id high-water mark, taken BEFORE the exercise
 BEGIN
   -- ---- grants, by oid so no signature string can go stale ---------------------------------
   SELECT p.oid INTO v_rec_oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -554,7 +624,27 @@ BEGIN
     RAISE EXCEPTION 'ops.fn_record_calendar_task is not SECDEF / postgres-owned / search_path-pinned';
   END IF;
 
+  -- c_default_duration inside the recorder is a copy of the table's DEFAULT. Read the real one
+  -- out of pg_attrdef and compare, so the two cannot drift apart in silence: if 2026-08-26_1810's
+  -- default ever changes, a task leaving all-day would quietly reset to the wrong number.
+  SELECT substring(pg_get_expr(d.adbin, d.adrelid) FROM '[0-9]+') INTO v_txt
+    FROM pg_attrdef d
+    JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+   WHERE d.adrelid = 'ops.calendar_tasks'::regclass AND a.attname = 'duration_minutes';
+  IF v_txt IS DISTINCT FROM '30' THEN
+    RAISE EXCEPTION 'ops.calendar_tasks.duration_minutes DEFAULT is now %, but the recorder still '
+                    'resets a task LEAVING all-day to 30. Update c_default_duration.',
+                    coalesce(v_txt, '<none>');
+  END IF;
+
   -- ---- exercise, inside a subtransaction we then throw away --------------------------------
+  -- SENTINEL-SCOPED THROUGHOUT. An earlier version asserted whole-table counts, which was fine
+  -- while the tables held zero rows and became a booby trap the moment Task 4 wrote one: replaying
+  -- this file against a single ordinary task fails with "second call created a second task
+  -- (2 rows)" -- an idempotency failure that did not happen. A migration that misdiagnoses its own
+  -- first failure is worse than one that does not check. Everything below keys off v_hwm and the
+  -- PROBE-VERIFY-1820 sentinel, never off a total.
+  SELECT coalesce(max(t.id), 0) INTO v_hwm FROM ops.calendar_tasks t;
   SELECT e.id INTO v_emp FROM public.employees e WHERE e.status = 'ACTIVE' ORDER BY e.id LIMIT 1;
   IF v_emp IS NULL THEN
     RAISE EXCEPTION 'CONTROL FAILED: no ACTIVE employee, cannot exercise the assignee diff';
@@ -574,8 +664,10 @@ BEGIN
     IF v_id2 IS DISTINCT FROM v_id THEN
       RAISE EXCEPTION 'idempotency broken: second call on the same GID returned % not %', v_id2, v_id;
     END IF;
-    SELECT count(*) INTO v_n FROM ops.calendar_tasks;
-    IF v_n <> 1 THEN RAISE EXCEPTION 'second call created a second task (% rows)', v_n; END IF;
+    SELECT count(*) INTO v_n FROM ops.calendar_tasks t WHERE t.id > v_hwm;
+    IF v_n <> 1 THEN
+      RAISE EXCEPTION 'second call created a second task (% new rows above id %)', v_n, v_hwm;
+    END IF;
     SELECT count(*) INTO v_n FROM public.entity_source_links
      WHERE entity_type = 'calendar_task' AND source_id = 'PROBE-VERIFY-1820';
     IF v_n <> 1 THEN RAISE EXCEPTION 'second call created a second link row (% rows)', v_n; END IF;
@@ -597,13 +689,44 @@ BEGIN
                       coalesce(v_txt, '<null>');
     END IF;
 
-    -- 3.d: making it all-day forces 1440
+    -- 3.d ENTERING all-day forces 1440
     PERFORM ops.fn_record_calendar_task(jsonb_build_object(
               'jobber_gid', 'PROBE-VERIFY-1820', 'minutes', NULL), 'verify@probe.invalid');
     SELECT t.duration_minutes, t.all_day INTO v_dur, v_bit FROM ops.calendar_tasks t WHERE t.id = v_id;
     IF NOT v_bit OR v_dur <> 1440 THEN
-      RAISE EXCEPTION '3.d FAILED: all_day=% duration=%', v_bit, v_dur;
+      RAISE EXCEPTION '3.d FAILED entering all-day: all_day=% duration=%', v_bit, v_dur;
     END IF;
+
+    -- 3.d LEAVING all-day with only a time must NOT keep the 1440. This is the transition that
+    -- shipped wrong the first time and produced false/1440/540.
+    PERFORM ops.fn_record_calendar_task(jsonb_build_object(
+              'jobber_gid', 'PROBE-VERIFY-1820', 'minutes', 540), 'verify@probe.invalid');
+    SELECT t.duration_minutes, t.all_day INTO v_dur, v_bit FROM ops.calendar_tasks t WHERE t.id = v_id;
+    IF v_bit OR v_dur <> 30 THEN
+      RAISE EXCEPTION '3.d FAILED leaving all-day: all_day=% duration=% (want false/30)', v_bit, v_dur;
+    END IF;
+    -- and an explicit duration on the way out still wins
+    PERFORM ops.fn_record_calendar_task(jsonb_build_object(
+              'jobber_gid', 'PROBE-VERIFY-1820', 'minutes', 600, 'duration_minutes', 90),
+            'verify@probe.invalid');
+    SELECT t.duration_minutes INTO v_dur FROM ops.calendar_tasks t WHERE t.id = v_id;
+    IF v_dur <> 90 THEN
+      RAISE EXCEPTION '3.d FAILED: an explicit duration_minutes was overridden (%)', v_dur;
+    END IF;
+    -- put it back to all-day so the CHECK probe below has an all-day row to violate
+    PERFORM ops.fn_record_calendar_task(jsonb_build_object(
+              'jobber_gid', 'PROBE-VERIFY-1820', 'minutes', NULL), 'verify@probe.invalid');
+
+    -- the whitespace class must behave the SAME on the actor label and on the idempotency key.
+    -- Two copies of one character class; this is what keeps them honest.
+    BEGIN
+      PERFORM ops.fn_record_calendar_task(jsonb_build_object(
+                'jobber_gid', chr(9), 'title', 'tab gid', 'task_date', current_date),
+              'verify@probe.invalid');
+      RAISE EXCEPTION 'a TAB-only jobber_gid was accepted: the idempotency key is not trimmed with '
+                      'the same whitespace class as the actor label';
+    EXCEPTION WHEN sqlstate '22023' THEN NULL;
+    END;
 
     -- the CHECK must BITE on the bypass path (postgres writing the table directly)
     BEGIN
@@ -627,11 +750,16 @@ BEGIN
     NULL;   -- everything the exercise wrote is rolled back with this subtransaction
   END;
 
-  -- prove the undo actually undid it
-  SELECT count(*) INTO v_n FROM ops.calendar_tasks;
-  IF v_n <> 0 THEN RAISE EXCEPTION 'VERIFY LEAKED: ops.calendar_tasks holds % rows', v_n; END IF;
-  SELECT count(*) INTO v_n FROM public.entity_source_links WHERE entity_type = 'calendar_task';
-  IF v_n <> 0 THEN RAISE EXCEPTION 'VERIFY LEAKED: % calendar_task link rows', v_n; END IF;
+  -- Prove the undo actually undid it -- again scoped to what THIS exercise could have created,
+  -- never to a total. Anything at or below v_hwm was here before and is none of our business.
+  SELECT count(*) INTO v_n FROM ops.calendar_tasks t WHERE t.id > v_hwm;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'VERIFY LEAKED: % calendar_tasks row(s) above id % survived the rollback',
+                    v_n, v_hwm;
+  END IF;
+  SELECT count(*) INTO v_n FROM public.entity_source_links l
+   WHERE l.entity_type = 'calendar_task' AND l.source_id = 'PROBE-VERIFY-1820';
+  IF v_n <> 0 THEN RAISE EXCEPTION 'VERIFY LEAKED: % sentinel link row(s)', v_n; END IF;
 
   -- the TABLE grants must not have widened. A SECDEF function is not a reason for anyone to gain
   -- direct write access, and this is the assertion that proves this migration did not do it.
@@ -643,7 +771,8 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'VERIFY OK: recorder + deleter exercised and rolled back, actor lands in audit.logs, '
-               'all-day forces 1440, grants are service_role-only, table grants unchanged';
+               'all-day forces 1440 and gives it back on the way out, the idempotency key is '
+               'whitespace-trimmed, grants are service_role-only, table grants unchanged';
 END
 $verify$;
 

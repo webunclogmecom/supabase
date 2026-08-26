@@ -14,7 +14,9 @@
 // EVERYTHING RUNS INSIDE begin; ... rollback;  Nothing is committed. Sentinels are scoped by a
 //    probe-only jobber_gid, never by a frozen row count: public.entity_source_links takes live
 //    Jobber sync writes (27,868 -> 27,871 within an hour on 2026-08-26), so any assertion pinned to
-//    a total would go red for reasons that have nothing to do with this code.
+//    a total would go red for reasons that have nothing to do with this code. The SAME applies to
+//    ops.calendar_tasks the day Task 4 writes the first real row, which is why section 6 asserts
+//    sentinels and merely PRINTS the totals.
 //
 // POSITIVE CONTROLS -- a negative assertion needs a twin that MUST fire, or the instrument is
 //    untested (feedback_confident_zero_is_a_broken_instrument):
@@ -29,6 +31,15 @@
 //                         call against the healthy link succeeded moments earlier.
 //      * delete        -- "0 rows afterwards" only means something because the rows are counted and
 //                         asserted present immediately before.
+//      * service_role  -- "service_role can drive the whole cycle" only means something because
+//                         the same section shows `authenticated` refused 42501 by the same call.
+//      * all-day       -- "leaving all-day resets the duration" is paired with two controls that
+//                         must NOT reset: an explicit duration on the way out, and a plain
+//                         timed-to-timed edit.
+//
+// SECTION 5 RUNS AS service_role, not as postgres. Everything else here goes through the
+//    Management API as the table owner, which holds rolbypassrls and can do things the real caller
+//    cannot -- so a behavioural claim measured only as postgres is a claim about the wrong role.
 //
 // A MANAGEMENT API QUERY RUNS AS postgres, the table OWNER, which bypasses grants AND holds
 //    rolbypassrls. So "it inserted fine" measures NOTHING about permissions. Every grant assertion
@@ -274,6 +285,43 @@ begin
   exception when check_violation then
     insert into _r values ('f_check_bites', 'yes');
   end;
+  -- 3.d IN THE OTHER DIRECTION. This is the transition that shipped wrong: the first version
+  -- forced 1440 on the way in and never took it back, so an all-day task rescheduled with a
+  -- minutes-only payload -- the natural drag handler shape -- came out false/1440/540, a 9 AM task
+  -- claiming twenty-four hours, legal under every CHECK.
+  perform ops.fn_record_calendar_task(jsonb_build_object(
+            'jobber_gid', '${GID}', 'minutes', 540), '${ACTOR}');
+  select all_day, duration_minutes into v_bit, v_dur from ops.calendar_tasks where id = v_id1;
+  insert into _r values ('f_leaving_shape', v_bit::text || '/' || v_dur::text);
+  -- an explicit duration on the way out still wins over the reset
+  perform ops.fn_record_calendar_task(jsonb_build_object(
+            'jobber_gid', '${GID}', 'minutes', null), '${ACTOR}');
+  perform ops.fn_record_calendar_task(jsonb_build_object(
+            'jobber_gid', '${GID}', 'minutes', 600, 'duration_minutes', 90), '${ACTOR}');
+  select all_day, duration_minutes into v_bit, v_dur from ops.calendar_tasks where id = v_id1;
+  insert into _r values ('f_leaving_explicit', v_bit::text || '/' || v_dur::text);
+  -- a timed task that is merely EDITED keeps its own duration (the reset must not fire here)
+  perform ops.fn_record_calendar_task(jsonb_build_object(
+            'jobber_gid', '${GID}', 'minutes', 630), '${ACTOR}');
+  select duration_minutes into v_dur from ops.calendar_tasks where id = v_id1;
+  insert into _r values ('f_timed_to_timed', v_dur::text);
+  -- finding 6: an explicit null on a NOT NULL column must be a readable 22023, not a raw 23502
+  begin
+    perform ops.fn_record_calendar_task(jsonb_build_object(
+              'jobber_gid', '${GID}', 'is_complete', null), '${ACTOR}');
+    insert into _r values ('f_null_notnull', 'ACCEPTED');
+  exception when others then
+    insert into _r values ('f_null_notnull', 'refused ' || sqlstate);
+  end;
+  -- finding 5: the idempotency key gets the same whitespace class as the actor label
+  begin
+    perform ops.fn_record_calendar_task(jsonb_build_object(
+              'jobber_gid', chr(9), 'title', 'tab gid', 'task_date', current_date), '${ACTOR}');
+    insert into _r values ('f_tab_gid', 'ACCEPTED -- a task keyed on a TAB');
+  exception when others then
+    insert into _r values ('f_tab_gid', 'refused ' || sqlstate);
+  end;
+
   -- and a contradicting all_day is refused rather than silently overridden
   begin
     perform ops.fn_record_calendar_task(jsonb_build_object(
@@ -339,8 +387,19 @@ rollback;`))
     L.f_allday_shape === 'true/1440', `all_day/duration = ${L.f_allday_shape}`)
   check('2f  CONTROL: calendar_tasks_allday_duration_chk bites a direct write',
     L.f_check_bites === 'yes', L.f_check_bites)
-  check('2f  an all_day that contradicts minutes is refused, not silently overridden',
-    (L.f_contradiction || '').startsWith('refused'), L.f_contradiction)
+  check('2f  3.d LEAVING all-day with only a time drops the derived 1440 back to the default',
+    L.f_leaving_shape === 'false/30', `all_day/duration = ${L.f_leaving_shape} (want false/30)`)
+  check('2f  CONTROL for the line above: an explicit duration on the way out still wins',
+    L.f_leaving_explicit === 'false/90', `= ${L.f_leaving_explicit}`)
+  check('2f  CONTROL: a timed->timed edit keeps its own duration (the reset does not overfire)',
+    L.f_timed_to_timed === '90', `= ${L.f_timed_to_timed}`)
+  check('2f  an explicit null on a NOT NULL column is a readable 22023, not a raw 23502',
+    L.f_null_notnull === 'refused 22023', `= ${L.f_null_notnull}`)
+  check('2f  a TAB-only jobber_gid is refused: the idempotency key uses the same whitespace class '
+      + 'as the actor label',
+    L.f_tab_gid === 'refused 22023', `= ${L.f_tab_gid}`)
+  check('2f  an all_day that contradicts minutes is refused with 22023 specifically',
+    L.f_contradiction === 'refused 22023', L.f_contradiction)
 
   check('2g  CONTROL: task, link and assignees all present before the delete',
     L.g_before === '1/1/2', `task/link/assignees = ${L.g_before}`)
@@ -431,6 +490,15 @@ begin
      and l.record_pk = jsonb_build_object('id', v_id) order by l.id desc limit 1;
   insert into _r values ('b_named_actor', coalesce(v_txt, '<null>'));
 
+  -- 4e. a SECOND non-null actor REPLACES the first. The COMMENT on the helper used to say both
+  -- calls take the FIRST actor, which is only true when the second is NULL.
+  perform ops.fn_record_calendar_task(jsonb_build_object(
+            'jobber_gid', '${GID}-actor', 'title', 'second actor'), 'second.${ACTOR}');
+  select l.jwt_claims->>'email' into v_txt from audit.logs l
+   where l.table_schema='ops' and l.table_name='calendar_tasks'
+     and l.record_pk = jsonb_build_object('id', v_id) order by l.id desc limit 1;
+  insert into _r values ('e_second_named_actor', coalesce(v_txt, '<null>'));
+
   -- 4c. NULL actor again, SAME transaction: documented to inherit, because set_config(..., true)
   -- is transaction-local and survives the function's return.
   perform ops.fn_record_calendar_task(jsonb_build_object(
@@ -474,32 +542,135 @@ rollback;`))
     A.a_null_actor === '<null>', `= ${A.a_null_actor}`)
   check('4b  with an actor, that exact email is on the audit row', A.b_named_actor === ACTOR,
     `= ${A.b_named_actor}`)
+  check('4e  a second NON-NULL actor REPLACES the first (the helper COMMENT says last-wins)',
+    A.e_second_named_actor === 'second.' + ACTOR, `= ${A.e_second_named_actor}`)
   check('4c  the label is TRANSACTION-local, so a later NULL-actor call in the same transaction '
-      + 'inherits it (measured, matches the migration header)',
-    A.c_null_after_named === ACTOR, `= ${A.c_null_after_named}`)
+      + 'inherits the last named one (measured, matches the migration header)',
+    A.c_null_after_named === 'second.' + ACTOR, `= ${A.c_null_after_named}`)
   check('4d  a whitespace-only actor (TAB + NBSP + space) is treated as no actor, in a FRESH '
       + 'transaction so 4c cannot make it pass for the wrong reason',
     W.d_whitespace_actor === '<null>', `= ${W.d_whitespace_actor}`)
 
   // ===========================================================================================
-  // 5. NOTHING LEAKED. Scoped to our own sentinels plus the two tables, which the plan says must
-  //    still be empty. entity_source_links as a WHOLE is never counted -- live Jobber sync writes
-  //    to it constantly and a frozen total would be a false alarm generator.
+  // 5. RUN IT AS service_role -- THE ROLE THAT WILL ACTUALLY CALL IT.
+  //    Everything above goes through the Management API, i.e. as postgres: table OWNER, holder of
+  //    rolbypassrls. has_function_privilege is role-independent so the grant assertions stand, but
+  //    every BEHAVIOURAL claim above was measured as the owner, and the owner can do things
+  //    service_role cannot. The shape that would fail silently: a SECDEF function calling a
+  //    SECURITY INVOKER helper granted to NOBODY. That works because the nested EXECUTE check
+  //    resolves against the definer -- but nothing in this repo proved it, so a regression there
+  //    would 42501 in production with every suite green.
+  //    NEGATIVE CONTROL FIRST: as `authenticated` the same call must be refused 42501. Without it,
+  //    a SET LOCAL ROLE that silently did nothing would leave this whole section running as
+  //    postgres and passing for the wrong reason.
+  // ===========================================================================================
+  let R
+  try {
+    R = kv(await sql(`
+begin;
+create temp table _r(k text, v text);
+do $probe$
+declare v_id bigint; v_e1 bigint; v_who text; v_neg text; v_txt text; v_shape text; v_del boolean;
+  v_asg text;
+begin
+  select e.id into v_e1 from public.employees e where e.status='ACTIVE' order by e.id limit 1;
+
+  begin
+    set local role authenticated;
+    perform ops.fn_record_calendar_task(jsonb_build_object('jobber_gid','${GID}-role-neg',
+              'title','must not get in','task_date',current_date), '${ACTOR}');
+    v_neg := 'ACCEPTED';
+  exception
+    when insufficient_privilege then v_neg := 'refused 42501';
+    when others                 then v_neg := 'other ' || sqlstate;
+  end;
+  reset role;
+  insert into _r values ('neg_authenticated', v_neg);
+
+  set local role service_role;
+  select current_user into v_who;
+  v_id := ops.fn_record_calendar_task(jsonb_build_object(
+            'jobber_gid','${GID}-role','title','as service_role','task_date',current_date,
+            'minutes',480,'duration_minutes',60,'assignee_ids',jsonb_build_array(v_e1)), '${ACTOR}');
+  perform ops.fn_record_calendar_task(jsonb_build_object(
+            'jobber_gid','${GID}-role','title','as service_role, edited'), '${ACTOR}');
+  -- service_role holds SELECT, so it can read its own work back
+  select t.all_day::text || '/' || t.duration_minutes::text || '/' || t.title
+    into v_shape from ops.calendar_tasks t where t.id = v_id;
+  select count(*)::text into v_asg from ops.calendar_task_assignees where task_id = v_id;
+  v_del := ops.fn_delete_calendar_task(v_id, '${ACTOR}');
+  reset role;
+  -- Nothing above writes to _r, because service_role CANNOT: the temp table is owned by postgres
+  -- and the first draft of this section died on "permission denied for table _r". Keep the
+  -- recording on this side of the reset. That error is also incidental proof the switch is real --
+  -- a SET LOCAL ROLE that did nothing would have written the row happily.
+
+  insert into _r values ('current_user', v_who);
+  insert into _r values ('assignees', coalesce(v_asg, '<null>'));
+  insert into _r values ('id', coalesce(v_id::text, '<null>'));
+  insert into _r values ('shape', coalesce(v_shape, '<null>'));
+  insert into _r values ('deleted', v_del::text);
+  insert into _r values ('gone',
+    ((select count(*) from ops.calendar_tasks where id = v_id) = 0
+     and (select count(*) from public.entity_source_links
+           where entity_type='calendar_task' and source_id='${GID}-role') = 0)::text);
+  -- audit is read back as postgres: service_role has no grant in the audit schema
+  select l.jwt_claims->>'email' into v_txt from audit.logs l
+   where l.table_schema='ops' and l.table_name='calendar_tasks'
+     and l.record_pk = jsonb_build_object('id', v_id) order by l.id desc limit 1;
+  insert into _r values ('actor_email', coalesce(v_txt, '<null>'));
+  insert into _r values ('db_role_informational', (select l.db_role from audit.logs l
+     where l.table_schema='ops' and l.table_name='calendar_tasks'
+       and l.record_pk = jsonb_build_object('id', v_id) order by l.id limit 1));
+end
+$probe$;
+select k, v from _r order by k;
+rollback;`))
+  } catch (e) { instrumentError('service_role', e) }
+
+  check('5   NEGATIVE CONTROL: as `authenticated` the recorder is refused 42501',
+    R.neg_authenticated === 'refused 42501', `= ${R.neg_authenticated}`)
+  check('5   the role switch really took effect (current_user inside the section)',
+    R.current_user === 'service_role', `current_user = ${R.current_user}`)
+  check('5   as service_role: record, edit and read back all work through the SECDEF door',
+    /^[0-9]+$/.test(R.id || '') && R.shape === 'false/60/as service_role, edited' && R.assignees === '1',
+    `id=${R.id} shape=${R.shape} assignees=${R.assignees}`)
+  check('5   as service_role: the nested call to the granted-to-nobody actor helper still labels '
+      + 'the audit row (this is the silent-42501 shape)',
+    R.actor_email === ACTOR, `= ${R.actor_email}`)
+  check('5   as service_role: the delete removes the task and its link row',
+    R.deleted === 'true' && R.gone === 'true', `deleted=${R.deleted} gone=${R.gone}`)
+  console.log(`      (informational: audit.logs.db_role = ${R.db_role_informational} -- audit.log_change is `
+    + 'itself SECDEF, so this reports ITS owner and cannot discriminate the caller)')
+
+  // ===========================================================================================
+  // 6. NOTHING LEAKED.
+  //    SENTINEL-SCOPED, NOT WHOLE-TABLE. Today both tables are empty, so a total of 0 happens to
+  //    be true -- and would become a permanent false alarm the day Task 4 writes the first real
+  //    task. What this probe can actually claim is that IT committed nothing, and the only honest
+  //    measure of that is its own sentinels. The totals are printed, never asserted, for the same
+  //    reason entity_source_links has always been printed here: it takes live Jobber sync writes.
   // ===========================================================================================
   let C
   try {
     C = kv(await sql(`
-      select 'tasks' as k, count(*)::text as v from ops.calendar_tasks
-      union all select 'assignees', count(*)::text from ops.calendar_task_assignees
-      union all select 'esl_calendar_task', count(*)::text from public.entity_source_links
-                 where entity_type = 'calendar_task'
-      union all select 'esl_probe_sentinels', count(*)::text from public.entity_source_links
-                 where source_id like '${GID}%'`))
+      select 'sentinel_links' as k, count(*)::text as v from public.entity_source_links
+             where source_id like '${GID}%'
+      union all select 'sentinel_tasks', count(*)::text from ops.calendar_tasks
+             where title in ('probe task','probe task EDITED','orphan probe','orphan probe 2',
+                             'no actor','named actor','second actor','null actor again','ws',
+                             'as service_role','as service_role, edited','tab gid')
+      union all select 'total_tasks', count(*)::text from ops.calendar_tasks
+      union all select 'total_assignees', count(*)::text from ops.calendar_task_assignees
+      union all select 'total_calendar_task_links', count(*)::text from public.entity_source_links
+             where entity_type = 'calendar_task'`))
   } catch (e) { instrumentError('cleanliness', e) }
 
-  check('5   nothing was committed: 0 tasks, 0 assignees, 0 calendar_task link rows, 0 sentinels',
-    C.tasks === '0' && C.assignees === '0' && C.esl_calendar_task === '0' && C.esl_probe_sentinels === '0',
-    `tasks=${C.tasks} assignees=${C.assignees} links=${C.esl_calendar_task} sentinels=${C.esl_probe_sentinels}`)
+  check('6   this probe committed NOTHING: 0 sentinel link rows, 0 sentinel tasks',
+    C.sentinel_links === '0' && C.sentinel_tasks === '0',
+    `sentinel links=${C.sentinel_links} sentinel tasks=${C.sentinel_tasks}`)
+  console.log(`      (informational, NEVER asserted: total tasks=${C.total_tasks} assignees=`
+    + `${C.total_assignees} calendar_task links=${C.total_calendar_task_links})`)
 
-  done({ control_ok: true, tasks: C.tasks, links: C.esl_calendar_task })
+  done({ control_ok: true, sentinel_links: C.sentinel_links, total_tasks: C.total_tasks })
 }
