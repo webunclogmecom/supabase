@@ -193,6 +193,7 @@ declare
   v_e1 bigint; v_e2 bigint; v_e3 bigint;
   v_id1 bigint; v_id2 bigint;
   v_mark bigint; v_n integer; v_txt text; v_dur smallint; v_bit boolean;
+  v_hwm bigint; v_code integer; v_acc text;
 begin
   select e.id into v_e1 from public.employees e where e.status = 'ACTIVE' order by e.id offset 0 limit 1;
   select e.id into v_e2 from public.employees e where e.status = 'ACTIVE' order by e.id offset 1 limit 1;
@@ -201,6 +202,10 @@ begin
     raise exception 'CONTROL FAILED: need 3 ACTIVE employees to exercise the assignee diff';
   end if;
   insert into _r values ('employees', v_e1 || ',' || v_e2 || ',' || v_e3);
+  -- High-water mark, so the idempotency assertions below count rows THIS run created rather than
+  -- rows in the table. Same reasoning as the migration's VERIFY: a whole-table count is true only
+  -- while the table is empty and becomes a false alarm the day Task 4 writes the first task.
+  select coalesce(max(id), 0) into v_hwm from ops.calendar_tasks;
 
   -- ---- 2a. first call INSERTs ------------------------------------------------------------
   v_id1 := ops.fn_record_calendar_task(jsonb_build_object(
@@ -222,9 +227,11 @@ begin
              'jobber_gid', '${GID}', 'title', 'probe task EDITED'), '${ACTOR}');
   insert into _r values ('b_id', coalesce(v_id2::text, '<null>'));
   insert into _r values ('b_same_id', (v_id2 is not distinct from v_id1)::text);
-  insert into _r values ('b_task_count', (select count(*) from ops.calendar_tasks)::text);
+  insert into _r values ('b_task_count', (select count(*) from ops.calendar_tasks
+                                           where id > v_hwm)::text);
   insert into _r values ('b_link_count', (select count(*) from public.entity_source_links
-                                           where entity_type = 'calendar_task')::text);
+                                           where entity_type = 'calendar_task'
+                                             and source_id = '${GID}')::text);
   insert into _r values ('b_title', (select title from ops.calendar_tasks where id = v_id1));
   -- patch semantics: keys not sent must not be wiped
   insert into _r values ('b_untouched', (select coalesce(minutes::text,'null') || '/' || duration_minutes::text
@@ -313,13 +320,28 @@ begin
   exception when others then
     insert into _r values ('f_null_notnull', 'refused ' || sqlstate);
   end;
-  -- finding 5: the idempotency key gets the same whitespace class as the actor label
+  -- finding 5: EVERY character of the whitespace class on the idempotency key, not just TAB.
+  -- SP and TAB were covered before; LF, CR and NBSP were not, and NBSP is the one a copy-paste
+  -- out of a browser actually produces.
+  v_acc := '';
+  foreach v_code in array array[32, 9, 10, 13, 160] loop
+    begin
+      perform ops.fn_record_calendar_task(jsonb_build_object(
+                'jobber_gid', chr(v_code), 'title', 'ws gid', 'task_date', current_date), '${ACTOR}');
+      v_acc := v_acc || v_code::text || ':ACCEPTED ';
+    exception when others then
+      v_acc := v_acc || v_code::text || ':' || sqlstate || ' ';
+    end;
+  end loop;
+  insert into _r values ('f_ws_gid', btrim(v_acc));
+  -- CONTROL: an ordinary jobber_gid must still be accepted, or "everything refused" would pass
+  -- for a function that simply refuses everything.
   begin
     perform ops.fn_record_calendar_task(jsonb_build_object(
-              'jobber_gid', chr(9), 'title', 'tab gid', 'task_date', current_date), '${ACTOR}');
-    insert into _r values ('f_tab_gid', 'ACCEPTED -- a task keyed on a TAB');
+              'jobber_gid', '${GID}-wsctl', 'title', 'ws control', 'task_date', current_date), '${ACTOR}');
+    insert into _r values ('f_ws_control', 'accepted');
   exception when others then
-    insert into _r values ('f_tab_gid', 'refused ' || sqlstate);
+    insert into _r values ('f_ws_control', 'REFUSED ' || sqlstate);
   end;
 
   -- and a contradicting all_day is refused rather than silently overridden
@@ -361,7 +383,7 @@ rollback;`))
     `first=${L.a_id} second=${L.b_id}`)
   check('2b  and creates no second task and no second link row',
     L.b_task_count === '1' && L.b_link_count === '1',
-    `tasks=${L.b_task_count} links=${L.b_link_count}`)
+    `new tasks above the high-water mark=${L.b_task_count} sentinel links=${L.b_link_count}`)
   check('2b  the UPDATE branch really changed a field', L.b_title === 'probe task EDITED',
     `title=${L.b_title}`)
   check('2b  patch semantics: keys the caller omitted were left alone',
@@ -395,9 +417,11 @@ rollback;`))
     L.f_timed_to_timed === '90', `= ${L.f_timed_to_timed}`)
   check('2f  an explicit null on a NOT NULL column is a readable 22023, not a raw 23502',
     L.f_null_notnull === 'refused 22023', `= ${L.f_null_notnull}`)
-  check('2f  a TAB-only jobber_gid is refused: the idempotency key uses the same whitespace class '
-      + 'as the actor label',
-    L.f_tab_gid === 'refused 22023', `= ${L.f_tab_gid}`)
+  check('2f  EVERY character of the whitespace class is refused as a jobber_gid '
+      + '(space/TAB/LF/CR/NBSP), not just TAB',
+    L.f_ws_gid === '32:22023 9:22023 10:22023 13:22023 160:22023', `= ${L.f_ws_gid}`)
+  check('2f  CONTROL for the line above: an ordinary jobber_gid is still accepted',
+    L.f_ws_control === 'accepted', `= ${L.f_ws_control}`)
   check('2f  an all_day that contradicts minutes is refused with 22023 specifically',
     L.f_contradiction === 'refused 22023', L.f_contradiction)
 
@@ -659,7 +683,7 @@ rollback;`))
       union all select 'sentinel_tasks', count(*)::text from ops.calendar_tasks
              where title in ('probe task','probe task EDITED','orphan probe','orphan probe 2',
                              'no actor','named actor','second actor','null actor again','ws',
-                             'as service_role','as service_role, edited','tab gid')
+                             'as service_role','as service_role, edited','ws gid','ws control')
       union all select 'total_tasks', count(*)::text from ops.calendar_tasks
       union all select 'total_assignees', count(*)::text from ops.calendar_task_assignees
       union all select 'total_calendar_task_links', count(*)::text from public.entity_source_links

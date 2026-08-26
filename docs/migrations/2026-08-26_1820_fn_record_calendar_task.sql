@@ -306,8 +306,11 @@ BEGIN
   -- the IDEMPOTENCY KEY. A bare btrim() strips ASCII SPACE only, so a jobber_gid of a single TAB
   -- would sail through the "required" guard below and mint a task keyed on a tab -- a key nothing
   -- upstream can ever match again, which is a duplicate task on the crew's schedule the next time
-  -- the edge function retries. The two copies of this class are kept honest by an equivalence
-  -- assertion in VERIFY, not by hoping the next editor updates both.
+  -- the edge function retries. The two copies of this class are kept honest by the equivalence
+  -- LOOP in VERIFY, which drives every character of the class through BOTH copies -- the actor
+  -- label and this idempotency key -- and fails on any character either one stops stripping. It
+  -- carries its own control, a character that must NOT be stripped, so it also catches both copies
+  -- regressing together, which a source-text comparison of the two would miss.
   v_gid := nullif(btrim(coalesce(p->>'jobber_gid', ''), c_ws), '');
   IF v_gid IS NULL THEN
     RAISE EXCEPTION 'jobber_gid is required: this function records what Jobber has ALREADY '
@@ -575,6 +578,7 @@ DECLARE
   v_dur     smallint;
   v_bit     boolean;
   v_hwm     bigint;    -- ops.calendar_tasks.id high-water mark, taken BEFORE the exercise
+  v_code    integer;   -- whitespace-class equivalence loop
 BEGIN
   -- ---- grants, by oid so no signature string can go stale ---------------------------------
   SELECT p.oid INTO v_rec_oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -717,16 +721,55 @@ BEGIN
     PERFORM ops.fn_record_calendar_task(jsonb_build_object(
               'jobber_gid', 'PROBE-VERIFY-1820', 'minutes', NULL), 'verify@probe.invalid');
 
-    -- the whitespace class must behave the SAME on the actor label and on the idempotency key.
-    -- Two copies of one character class; this is what keeps them honest.
+    -- ---- the whitespace class, as an EQUIVALENCE over BOTH copies -------------------------
+    -- The class is written out twice: inline in ops.fn_calendar_task_set_actor, and as c_ws in
+    -- ops.fn_record_calendar_task. An earlier version of this file CLAIMED an equivalence
+    -- assertion here and shipped a ONE-CHARACTER spot check against ONE of the copies instead --
+    -- a claim overstating its own instrument, which is the same shape as an audit line asserting
+    -- triggers on a table that has none. This is the assertion the comment promises. Every
+    -- character goes through BOTH copies; drop chr(160) from either one and this fails.
+    FOREACH v_code IN ARRAY ARRAY[32, 9, 10, 13, 160] LOOP
+      -- COPY 1, the actor label. A character IN the class makes the helper return early and leave
+      -- the GUC alone; a character it no longer strips comes back stamped on the audit trail.
+      PERFORM set_config('request.jwt.claims', '', true);
+      PERFORM ops.fn_calendar_task_set_actor(chr(v_code));
+      IF nullif(current_setting('request.jwt.claims', true), '') IS NOT NULL THEN
+        RAISE EXCEPTION 'whitespace class DRIFT: the ACTOR copy no longer strips chr(%), it stamped '
+                        '% onto the audit trail', v_code,
+                        current_setting('request.jwt.claims', true);
+      END IF;
+
+      -- COPY 2, c_ws, on the idempotency key. A character it no longer strips mints a task whose
+      -- entity_source_links.source_id is that character alone, which nothing upstream can match
+      -- again -- so the next retry creates a SECOND Jobber task on the crew's schedule.
+      BEGIN
+        PERFORM ops.fn_record_calendar_task(jsonb_build_object(
+                  'jobber_gid', chr(v_code), 'title', 'ws probe', 'task_date', current_date),
+                'verify@probe.invalid');
+        RAISE EXCEPTION 'whitespace class DRIFT: the RECORDER copy (c_ws) no longer strips chr(%) '
+                        '-- a jobber_gid of that character alone was accepted as an idempotency key',
+                        v_code;
+      EXCEPTION WHEN sqlstate '22023' THEN NULL;
+      END;
+    END LOOP;
+
+    -- CONTROL. An ordinary character must survive BOTH copies. Without this the loop above would
+    -- pass just as happily if either function had started rejecting everything.
+    PERFORM set_config('request.jwt.claims', '', true);
+    PERFORM ops.fn_calendar_task_set_actor('X');
+    IF nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'email' IS DISTINCT FROM 'X' THEN
+      RAISE EXCEPTION 'CONTROL FAILED: the ACTOR copy strips an ordinary character, so the loop '
+                      'above proves nothing about the class';
+    END IF;
     BEGIN
       PERFORM ops.fn_record_calendar_task(jsonb_build_object(
-                'jobber_gid', chr(9), 'title', 'tab gid', 'task_date', current_date),
+                'jobber_gid', 'X', 'title', 'ws control', 'task_date', current_date),
               'verify@probe.invalid');
-      RAISE EXCEPTION 'a TAB-only jobber_gid was accepted: the idempotency key is not trimmed with '
-                      'the same whitespace class as the actor label';
-    EXCEPTION WHEN sqlstate '22023' THEN NULL;
+    EXCEPTION WHEN sqlstate '22023' THEN
+      RAISE EXCEPTION 'CONTROL FAILED: the RECORDER copy rejects an ordinary jobber_gid, so the '
+                      'loop above proves nothing about c_ws';
     END;
+    PERFORM set_config('request.jwt.claims', '', true);
 
     -- the CHECK must BITE on the bypass path (postgres writing the table directly)
     BEGIN
@@ -771,8 +814,9 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'VERIFY OK: recorder + deleter exercised and rolled back, actor lands in audit.logs, '
-               'all-day forces 1440 and gives it back on the way out, the idempotency key is '
-               'whitespace-trimmed, grants are service_role-only, table grants unchanged';
+               'all-day forces 1440 and gives it back on the way out, both copies of the '
+               'whitespace class agree character by character, grants are service_role-only, '
+               'table grants unchanged';
 END
 $verify$;
 
