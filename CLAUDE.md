@@ -2078,11 +2078,30 @@ these grow, re-measure rather than quoting**). Serving it would make every
 pickup equal its own offload. **If you ever see that, service_date has crept back in** - the
 migration's VERIFY asserts against exactly this.
 
-⚠ **`gallons` is ALWAYS null and that is the contract, not a gap.** The filed quantity is the TRUCK
-CAPACITY resolved from the decal on the caller's side; we store no measured volume per load. `truck`
-and `truck_capacity_gallons` are served so the caller has the input. The fee arithmetic
-(`total gal x $0.00419`, **truncated** to cents, never rounded) lives only in John's generator, which
-is validated against filed county pages. Do not add a second implementation here.
+⚠ **`gallons` is ALWAYS null and that is the contract, not a gap.** We store no measured volume per
+load. The fee arithmetic (`total gal x $0.00419`, **truncated** to cents, never rounded) lives only
+in John's generator, which is validated against filed county pages. Do not add a second
+implementation here.
+
+🛑 **THE FILED QUANTITY IS *NOT* THE TRUCK CAPACITY, AND IT IS NOT RESOLVED FROM THE DECAL. THIS
+PARAGRAPH SAID OTHERWISE UNTIL 2026-08-26 AND IT WAS WRONG.** That was my inference, never a fact
+from the county, and Jonathan's invoice disproves it: ticket **828837** is Moises, decal **C1184**,
+capacity **9,000** on our side, and Miami-Dade billed **3,800**. **The county bills MEASURED gallons
+per manifest, off the invoice.** `truck_capacity_gallons` is an internal fleet fact, served only for
+sanity-checking a load, and `truck_decal` is a permit number identifying which vehicle carried the
+manifest. Nothing on the form is computed from either.
+⚠ **Worth knowing HOW this survived:** the retraction was applied the same morning to the Postman
+README, two comment blocks in `rpa-derm-monthly` and the assertion messages, and still missed FIVE
+places, including this file, `docs/schema.md`, the view's own `COMMENT`, and a test written HOURS
+AFTER the correction. A retraction updates the artefacts you enumerate, not the belief you are
+writing from. **Grep the claim as a phrase across the whole repo, and grep it again after writing
+anything new on the subject.**
+
+⚠ **`truck_decals` (the per-ticket array on the served payload) is MANIFEST-grained while `rows` is
+FILING-grained.** `rows` is filtered to in-scope rows unless `include=all`, but `trucks` and
+`truck_decals` are built from every row on the manifest, so the array can name a decal appearing on
+**no row the caller was served** (live: ticket 312024, 1 of 118). File from the row's own
+`truck_decal`.
 
 ⚠ **Ticket number is `coalesce(white_manifest_number, yellow_ticket_number)`** and that is total:
 **measured 2026-08-25 at MANIFEST grain: white 512 / yellow 157 / neither 0 / colliding 0 of 669

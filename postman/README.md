@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
-**Last updated:** 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, in §4c).
+**Last updated:** 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -384,6 +384,20 @@ Treat it as an error and do not print it on the form.** We deliberately do not c
 state to `FL`, because doing so would put a false state on a county filing for a property that is
 genuinely somewhere else. Every value we currently hold maps cleanly, so this should never fire.
 
+🛑 **`state` can also be `null`, and null is neither a two-letter code nor a passthrough.** It is
+the **no-property case**: `address`, `city`, `state`, `zip` and `county` come back **null
+together**, never half-populated (measured: 0 rows are half-populated in either direction, an exact
+diagonal). **14 of 700 rows** as of 2026-08-26, 13 of them in scope, across 10 clients. This was
+asserted in our tests but stated in no document until now, which is our omission and not a change
+in behaviour.
+
+⇒ **What to do with one.** The existing `truck_decal` rule already forces most of these tickets to
+be refused, which covers 11 of the 13. It does not cover all of them: on the live data exactly
+**one** ticket, `825560`, has rows a fully compliant bot would otherwise file **with a blank pickup
+address, city and ZIP**. Nothing in `data_quality`, `anomaly` or `excluded_rows` flags the
+condition, so test `state === null` yourself and refuse the ticket. A county filing with a blank
+service address is worse than a late one.
+
 **`client_name` has typographic punctuation folded to ASCII** (curly apostrophes become `'`). Accented
 LETTERS are deliberately preserved, because they are the correct spelling of a real name -- you will
 see `Fendi Château Residences` and addresses on `Española Way`, and those are not encoding errors.
@@ -594,9 +608,17 @@ Same `x-rpa-key`. Call it **after** the form is actually submitted.
   "invoice_id": "SP00013840",               // optional
   "confirmation_ref": null,                 // optional, free text, nullable
   "filed_by_email": "jon.v@ayache.com",     // required iff run_id starts with "manual-"
-  "dry_run": false                          // optional
+  "dry_run": true                           // optional, DEFAULTS TO false = a REAL filing
 }
 ```
+
+🛑 **`dry_run` is optional and defaults to `false`, which means a real filing.** The check is
+`body.dry_run === true`, so omitting the field, sending `null`, or misspelling it as `dryRun`
+(which is rejected as `unknown_fields`, but only because the allow-list catches it) all record a
+**permanent, real** filing. This example is shown with `true` on purpose: the tickets in it are
+real ticket numbers, and a copied-and-sent body would mark them filed with a `filed_at` you did
+not choose. Those tickets then drop out of `?unreported=1` for good and are never filed with the
+county. **Set it to `false` only at the moment the form has actually been submitted.**
 
 **Responses**
 
@@ -615,6 +637,15 @@ Same `x-rpa-key`. Call it **after** the form is actually submitted.
 2. 🛑 **Append-only.** There is no update and no delete, and the endpoint's role holds only
    `SELECT` + `INSERT`, so the inability is a **grant**, not a branch. A record of "we told the
    county this" must not be machine-rewritable.
+   *This sentence was written on 2026-08-26 and was not true when written.* The creating migration
+   issued `REVOKE ALL ... FROM PUBLIC`, which does not touch a grant held by a named role, while
+   `CREATE TABLE` had already handed out full privileges through Supabase's default privileges. So
+   both tables carried `UPDATE`, `DELETE` and `TRUNCATE` for `service_role` **and** for
+   `authenticated`, with RLS off. Corrected the same day in
+   `2026-08-26_1815_lwt_filings_lock_down.sql`, which revokes those, gives `authenticated` nothing,
+   enables RLS, and adds the audit triggers the tables should have had. Now measured live as
+   `service_role: SELECT+ INSERT+ UPDATE- DELETE- TRUNCATE-`, and probed as the role itself inside
+   a transaction that cannot commit.
 3. ⚠ **An unknown ticket is RECORDED, not rejected, and echoed back in `unknown_tickets`.** Your
    words: *"any difference against the invoice becomes a finding in either direction, including the
    reverse case we can't detect today."* Refusing it would destroy exactly that finding. A
@@ -802,7 +833,17 @@ exclusion is structural rather than a branch someone can forget. Verified after 
 ⚠ The table is **append-only** and the endpoint's role holds only `SELECT` + `INSERT`, so unlike
 the `derm_portal_submissions` note above **there is no cleanup statement to offer you**. The two
 rows are meant to stay. That is the cost of testing a write endpoint honestly, and it is bounded at
-two rows because the `run_id` never rotates.
+two rows because the `run_id` never rotates. (Both properties became true on 2026-08-26 in
+`2026-08-26_1815_lwt_filings_lock_down.sql`; see rule 2 above for what they were before. The
+two-row bound also depended on the wrong-key test, which was silently sending the **valid** key and
+would have written a third row on its first real run: fixed the same day.)
+
+⚠ **You will in fact see THREE rows today, and the extra one is ours, not yours.** `bot-postman-badkey`
+was written on 2026-08-26 by our own verification harness, which modelled Postman's apikey signer
+incorrectly and so sent the valid key to the wrong-key request. It is `dry_run = true`, it marks no
+ticket reported, and the collection as shipped cannot produce it. Kept rather than deleted because
+the table is append-only by design and quietly removing an inconvenient row is the habit that
+append-only exists to prevent.
 
 ⚠ **Run "5. Monthly - filing set" first.** It captures `{{lwtTicket}}`, which folder 6 files
 against. Running folder 6 cold files against the literal string `{{lwtTicket}}`, which the endpoint

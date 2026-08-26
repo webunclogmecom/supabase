@@ -5,6 +5,17 @@ form plus six filed pages.* **Status: SHIPPED 2026-08-24.** `derm.v_lwt_monthly_
 `rpa-derm-monthly` endpoint are live, docs and Postman updated. 17 of 17 end-to-end assertions pass,
 including the scope controls below.
 
+🛑 **CORRECTION 2026-08-26, AND IT CHANGES HOW SECTION 7 READS.** This spec was written assuming
+**the filed quantity is the truck capacity resolved from the decal**. That was my inference and it
+is FALSE. Jonathan's invoice settled it: ticket **828837** is Moises / decal **C1184** / capacity
+**9,000** on our side, and Miami-Dade billed **3,800**. **The county bills MEASURED gallons per
+manifest, off the invoice**, and nothing on the form is computed from capacity or from the decal.
+⇒ Section 7 item 1 ("if the quantity is resolved from the decal, a three-truck ticket has three
+capacities") rests on that false premise, and **Jonathan has since answered it**: one row per
+manifest carrying the manifest's total, however many trucks ran it, no split. Item 2 ("no truck we
+own has a 3,800 gallon capacity") was a real observation whose *conclusion* was wrong: 3,800 is a
+measured volume and was never supposed to match a capacity. **Read section 7 as history.**
+
 ⚠ **The six discrepancies in section 7 are NOT resolved.** They are questions for John, not blockers,
 and the endpoint serves the facts either way. The two that change his build: "one quantity per ticket"
 does not hold (44 of 127 tickets used more than one truck, 2026-08-25), and no truck we own is 3,800 gallons.

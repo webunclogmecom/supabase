@@ -689,7 +689,7 @@
                 }
               ]
             },
-            "description": "The Miami-Dade LWT monthly report for the last completed month.\n\nREAD ONLY: no lease, no dispense, no side effects. Safe to run as often as you like, unlike the queue.\n\nReturns only IN-SCOPE activities. Scope is evaluated PER ACTIVITY, not per ticket: pickup county = Dade OR the ticket offloaded in Miami-Dade. A ticket with no in-scope activity is omitted entirely, and excluded_rows tells you how many rows that cost so nothing is dropped silently.\n\nNote gallons is ALWAYS null by design: the filed quantity is the truck capacity, resolved from the decal on your side. truck and truck_capacity_gallons are provided."
+            "description": "The Miami-Dade LWT monthly report for the last completed month.\n\nREAD ONLY: no lease, no dispense, no side effects. Safe to run as often as you like, unlike the queue.\n\nReturns only IN-SCOPE activities. Scope is evaluated PER ACTIVITY, not per ticket: pickup county = Dade OR the ticket offloaded in Miami-Dade. A ticket with no in-scope activity is omitted entirely, and excluded_rows tells you how many rows that cost so nothing is dropped silently.\n\nNote gallons is ALWAYS null by design: the county bills MEASURED gallons per manifest, off the invoice. It is NOT resolved from the decal or from truck capacity, and nothing on the form is computed from either. truck and truck_capacity_gallons are provided."
           },
           "event": [
             {
@@ -1326,9 +1326,59 @@
                   "    const rows = pm.response.json().tickets.flatMap(t => t.rows);",
                   "    if (!rows.length) { pm.expect(true).to.eql(true); return; }   // \"everything is filed\" is legal",
                   "    [\"pickup_date\",\"client_code\",\"client_name\",\"address\",\"city\",\"state\",\"zip\",\"county\",",
-                  "     \"truck\",\"truck_decal\",\"truck_capacity_gallons\",\"gallons\",\"visit_id\"]",
+                  "     \"truck\",\"truck_decal\",\"truck_capacity_gallons\",\"gallons\",\"visit_id\",",
+                  "     \"in_scope\",\"anomaly\",\"pickup_in_dade\"]",
                   "      .forEach(k => pm.expect(rows.every(r => k in r),",
                   "          \"unreported mode is missing \" + k + \" from its rows\").to.eql(true));",
+                  "});",
+                  "",
+                  "pm.test(\"content holds across EVERY month, not just the last one\", () => {",
+                  "    // 🛑 Why this is not redundant with the month= request. Selection is the ONLY branch",
+                  "    // between the two modes; ordering, grouping, row mapping and accounting are shared",
+                  "    // unbranched code. What differs is DATA REACH: month= exercises ~90 rows of one month,",
+                  "    // this serves ~599 rows across 8 months and contains shapes the month test never sees",
+                  "    // (null-state rows, extra anomaly rows, far more null decals, more accent carriers).",
+                  "    // A data defect confined to any month but the last completed one passed the whole suite.",
+                  "    const j = pm.response.json();",
+                  "    const rows = j.tickets.flatMap(t => t.rows);",
+                  "    if (!rows.length) { pm.expect(true).to.eql(true); return; }",
+                  "",
+                  "    const DECAL = { \"Moises\": \"C1184\", \"David\": \"C0976\" };",
+                  "    const CAP   = { \"Moises\": 9000, \"David\": 1800, \"Cloggy\": 126, \"Goliath\": 4800 };",
+                  "",
+                  "    pm.expect(rows.filter(r => r.gallons !== null).length,",
+                  "        \"gallons must be null on every row; the county bills MEASURED gallons off the invoice\").to.eql(0);",
+                  "",
+                  "    pm.expect(rows.filter(r => DECAL[r.truck] !== undefined && r.truck_decal !== DECAL[r.truck])",
+                  "              .map(r => r.truck + \"=\" + JSON.stringify(r.truck_decal)),",
+                  "        \"a truck reports the WRONG decal in unreported mode; this is the permit number that reaches the county\").to.eql([]);",
+                  "    pm.expect(rows.filter(r => DECAL[r.truck] === undefined && r.truck_decal !== null)",
+                  "              .map(r => JSON.stringify(r.truck) + \"=\" + JSON.stringify(r.truck_decal)),",
+                  "        \"a row with no known decal carries one anyway; a guessed permit number\").to.eql([]);",
+                  "",
+                  "    pm.expect(rows.filter(r => CAP[r.truck] !== undefined && r.truck_capacity_gallons !== CAP[r.truck])",
+                  "              .map(r => r.truck + \"=\" + r.truck_capacity_gallons),",
+                  "        \"a truck reports the wrong capacity for itself, an internal consistency error\").to.eql([]);",
+                  "",
+                  "    // ⚠ state is a USPS two-letter code OR null. Null is REAL and is not a passthrough: it",
+                  "    // arrives together with address, city, zip and county on the no-property case. Asserting",
+                  "    // \"always two letters\" here would be a false failure, and asserting nothing would hide a",
+                  "    // regression, so assert the true rule.",
+                  "    pm.expect(rows.filter(r => r.state !== null && !/^[A-Z]{2}$/.test(String(r.state)))",
+                  "              .map(r => r.client_code + \"=\" + JSON.stringify(r.state)),",
+                  "        \"state is neither a two-letter USPS code nor null\").to.eql([]);",
+                  "    const noAddr = rows.filter(r => r.state === null);",
+                  "    pm.expect(noAddr.filter(r => !(r.address === null && r.city === null && r.zip === null && r.county === null))",
+                  "              .map(r => r.client_code),",
+                  "        \"state is null but the rest of the address is not; the no-property case must be all-or-nothing\").to.eql([]);",
+                  "    if (noAddr.length) console.log(\"NOTE: \" + noAddr.length + \" row(s) carry no service address at all. \" +",
+                  "        \"The null-decal rule already forces most of those tickets to be refused, but check any that survives it.\");",
+                  "",
+                  "    const nums = j.tickets.map(t => String(t.ticket_number));",
+                  "    pm.expect(nums.length - new Set(nums).size,",
+                  "        \"the same ticket appears twice; it would be filed twice\").to.eql(0);",
+                  "    pm.expect(j.ticket_count, \"ticket_count disagrees with the tickets served\").to.eql(j.tickets.length);",
+                  "    pm.expect(j.row_count, \"row_count disagrees with the rows served\").to.eql(rows.length);",
                   "});"
                 ]
               }
@@ -1418,19 +1468,27 @@
                   "        \"neither recorded nor already_recorded -- the write did not happen\").to.eql(true);",
                   "    pm.expect(typeof j.filing_id, \"no filing_id returned\").to.eql(\"number\");",
                   "});",
-                  "pm.test(\"a dry run does NOT mark the ticket reported\", () => {",
+                  "pm.test(\"a dry run does NOT mark the ticket reported\", function (done) {",
                   "    // 🛑 The safety property of the whole folder. A rehearsal must never make a real ticket",
                   "    // look filed to staff, or to the next unreported pull.",
+                  "    // 🛑 THE `done` PARAMETER IS LOAD-BEARING. Without it postman-sandbox takes the synchronous",
+                  "    // path: it calls this function, which only FIRES the request, and reports the test as",
+                  "    // PASSED. The expects below would then run after the result was recorded and attach to",
+                  "    // nothing. Under newman that failure is swallowed with no output and exit code 0, so the",
+                  "    // one assertion protecting real tickets from a rehearsal would be permanently green.",
                   "    const t = pm.collectionVariables.get(\"lwtTicket\");",
                   "    pm.sendRequest({",
                   "        url: pm.collectionVariables.get(\"baseUrl\") + \"/rpa-derm-monthly?unreported=1\",",
                   "        method: \"GET\",",
                   "        header: { \"x-rpa-key\": pm.collectionVariables.get(\"rpaBotKey\") },",
-                  "    }, (err, res) => {",
-                  "        pm.expect(err, \"could not re-read the unreported list\").to.eql(null);",
-                  "        const still = res.json().tickets.some(x => String(x.ticket_number) === String(t));",
-                  "        pm.expect(still,",
-                  "            \"a DRY RUN marked ticket \" + t + \" as reported -- it would be dropped from a real filing\").to.eql(true);",
+                  "    }, function (err, res) {",
+                  "        try {",
+                  "            pm.expect(err, \"could not re-read the unreported list\").to.eql(null);",
+                  "            const still = res.json().tickets.some(x => String(x.ticket_number) === String(t));",
+                  "            pm.expect(still,",
+                  "                \"a DRY RUN marked ticket \" + t + \" as reported -- it would be dropped from a real filing\").to.eql(true);",
+                  "            done();",
+                  "        } catch (e) { done(e); }",
                   "    });",
                   "});"
                 ]
@@ -1695,12 +1753,7 @@
           "name": "Filed - wrong key -> 401",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "x-rpa-key",
-                "value": "{{wrongRpaKey}}"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
               "host": [
@@ -1718,6 +1771,26 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "x-rpa-key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "{{wrongRpaKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "in",
+                  "value": "header",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [

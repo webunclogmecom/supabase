@@ -666,8 +666,14 @@ documented here; enumerate the rest from `pg_class` rather than trusting this ta
 2. **`pickup_date` is `visits.visit_date`.** `derm_manifests.service_date` is a misnomer holding the
    DUMP date (632 of 669 live manifests identical, measured 2026-08-25 -- this grows), so reading it would make every pickup
    equal its own offload. The migration's VERIFY asserts against exactly that.
-3. **`gallons` is deliberately absent** (always null). The filed quantity is the truck capacity from
-   the decal, resolved on the caller's side; we store no measured volume per load.
+3. **`gallons` is deliberately absent** (always null). We store no measured volume per load.
+   🛑 **The filed quantity is NOT the truck capacity and is NOT resolved from the decal.** That
+   claim was an inference, it was in this file, the API reference, two code comments and the view's
+   own comment, and it was retracted on 2026-08-26 against Jonathan's invoice: ticket 828837 is
+   Moises, decal C1184, capacity 9,000 on our side, and the county billed **3,800**. The county
+   bills **measured gallons per manifest**, off the invoice. `truck_capacity_gallons` is an
+   internal fleet fact served for sanity-checking a load, and nothing on the form is computed from
+   it or from `truck_decal`, which is a permit number.
 
 Not granted to `anon` or `authenticated`: `service_role` only, because it is read through an edge
 function that authenticates with `x-rpa-key`.

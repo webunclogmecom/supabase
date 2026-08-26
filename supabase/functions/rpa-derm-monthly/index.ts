@@ -8,11 +8,17 @@
 //   docs/specs/2026-08-24-lwt-monthly-endpoint-design.md
 //
 // 🛑 THIS ENDPOINT IS PURE. No lease, no side effects, safely re-callable.
-// ⚠ There IS a cap: MAX_ROWS = 1000 below, applied as .limit(MAX_ROWS + 1) and returned as
-//   400 month_too_large rather than truncating -- a short compliance report is the worst
-//   failure available. This banner read "no cap" while the constant sat 32 lines beneath it.
-//   All four docs already described the cap correctly; only the source dissented, and the
+// ⚠ There IS a cap, and there are TWO of them: MAX_ROWS = 1000 below, and PostgREST's own
+//   max_rows: 1000, which is enforced regardless of a larger explicit .limit(). Truncation is
+//   returned as 400 month_too_large rather than served -- a short compliance report is the
+//   worst failure available. This banner read "no cap" while the constant sat 32 lines beneath
+//   it. All four docs already described the cap correctly; only the source dissented, and the
 //   source is what a reader treats as authoritative.
+// 🛑 The guard was ALSO unreachable until 2026-08-26: it compared rows.length against our own
+//   MAX_ROWS, but PostgREST had already clamped the page to 1000, so the comparison was
+//   structurally false. Measured on a 2524-row table: limit=1001 and limit=5000 both return
+//   exactly 1000. It now compares against count:'exact', which reports the true total through
+//   the cap. A guard set exactly at the cap can never trip.
 //
 // 🛑 PURITY is what makes this the OPPOSITE of rpa-derm-queue, whose whole job is to never hand
 // the same work out twice. Do not copy lease/dispense logic in here, and do not "unify" the
@@ -128,13 +134,27 @@ Deno.serve(async (req: Request) => {
   // Filing state, keyed by ticket. Read for BOTH modes: in unreported mode it selects the rows,
   // and in month mode it decorates them, so a caller pulling a month can see what is already
   // filed without a second call.
-  const { data: repRows, error: repErr } = await sb
+  // 🛑 This read had no limit and no overflow check, and it is the read that SELECTS the filing
+  // set in unreported mode. PostgREST's max_rows: 1000 applies here too, so past 1000 distinct
+  // tickets it would silently serve the first 1000 and the bot would file a short month with an
+  // HTTP 200. 127 tickets today. Counting is the only way to see the cap bite.
+  const { data: repRows, error: repErr, count: repCount } = await sb
     .schema('derm')
     .from('v_lwt_ticket_reported')
-    .select('ticket_number, reported, invoice_id, period_start, period_end, filed_at, confirmation_ref, filed_by_email')
+    .select('ticket_number, reported, invoice_id, period_start, period_end, filed_at, confirmation_ref, filed_by_email',
+      { count: 'exact' })
   if (repErr) {
     console.error('reported lookup failed:', repErr.message)
     return json({ error: 'reported_lookup_failed' }, 500)
+  }
+  if (typeof repCount === 'number' && repCount > (repRows ?? []).length) {
+    console.error('reported lookup truncated:', repCount, 'exist,', (repRows ?? []).length, 'returned')
+    return json({
+      error: 'reported_lookup_truncated',
+      total_tickets: repCount,
+      returned: (repRows ?? []).length,
+      note: 'filing state was truncated by a server row cap; the unreported set would be short',
+    }, 500)
   }
   const reportedByTicket = new Map(
     (repRows ?? []).map((r) => [String(r.ticket_number), r]),
@@ -161,12 +181,17 @@ Deno.serve(async (req: Request) => {
   let qy = sb
     .schema('derm')
     .from('v_lwt_monthly_rows')
-    .select('*')
+    // 🛑 count:'exact' is what makes the overflow guard below REACHABLE. PostgREST is configured
+    // max_rows: 1000 and enforces it regardless of a larger explicit .limit(), so comparing
+    // rows.length against our own MAX_ROWS could never fire: measured on a 2524-row table,
+    // limit=1001 and limit=5000 both return exactly 1000. The count header keeps reporting the
+    // TRUE total through the cap (content-range 0-999/2524), so it is the only honest signal.
+    .select('*', { count: 'exact' })
   qy = unreportedOnly
     ? qy.in('ticket_number', unreportedTickets)
     : qy.gte('offload_date', start!).lt('offload_date', end!)
 
-  const { data, error } = await qy
+  const { data, error, count } = await qy
     .order('offload_date', { ascending: true })
     .order('ticket_number', { ascending: true })
     .order('pickup_date', { ascending: true })
@@ -194,9 +219,17 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'monthly_query_failed' }, 500)
   }
   const rows = data ?? []
-  if (rows.length > MAX_ROWS) {
-    // Loud, never a silent truncation.
-    return json({ error: 'month_too_large', max_rows: MAX_ROWS }, 400)
+  // Loud, never a silent truncation. Compare against the TRUE count rather than our own cap:
+  // this fires whenever the server returned fewer rows than exist, whichever limit bit first
+  // (ours at MAX_ROWS + 1, or PostgREST's max_rows, which is currently the lower of the two).
+  // The previous form, rows.length > MAX_ROWS, was structurally unreachable.
+  if (typeof count === 'number' && count > rows.length) {
+    return json({
+      error: 'month_too_large',
+      max_rows: rows.length,
+      total_rows: count,
+      note: 'the result was truncated by a server row cap; nothing here is safe to file',
+    }, 400)
   }
 
   // ---- data-quality overlay ----------------------------------------------------
