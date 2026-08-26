@@ -838,12 +838,15 @@ two rows because the `run_id` never rotates. (Both properties became true on 202
 two-row bound also depended on the wrong-key test, which was silently sending the **valid** key and
 would have written a third row on its first real run: fixed the same day.)
 
-⚠ **You will in fact see THREE rows today, and the extra one is ours, not yours.** `bot-postman-badkey`
-was written on 2026-08-26 by our own verification harness, which modelled Postman's apikey signer
-incorrectly and so sent the valid key to the wrong-key request. It is `dry_run = true`, it marks no
-ticket reported, and the collection as shipped cannot produce it. Kept rather than deleted because
-the table is append-only by design and quietly removing an inconvenient row is the habit that
-append-only exists to prevent.
+⚠ **A third row briefly existed on 2026-08-26 and was removed the same day, by decision rather than
+by habit.** `bot-postman-badkey` was written by our own verification harness, which modelled
+Postman's apikey signer backwards and so sent the valid key to the wrong-key request. It was
+`dry_run = true` and marked no ticket reported, and the collection as shipped cannot produce it.
+Deleted with Fred's explicit approval, pinned to the primary key while re-asserting the predicate
+that made it deletable, and recoverable two ways: a JSON backup, and `audit.logs.old_row` for both
+the filing and its cascaded ticket row. **`service_role` could not have done it** (the endpoint's
+role holds no DELETE); it took the table owner over the Management API, which is what append-only
+is supposed to mean.
 
 ⚠ **Run "5. Monthly - filing set" first.** It captures `{{lwtTicket}}`, which folder 6 files
 against. Running folder 6 cold files against the literal string `{{lwtTicket}}`, which the endpoint
