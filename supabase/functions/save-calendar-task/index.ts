@@ -39,7 +39,11 @@
 // ============================================================================================
 // THE HELPERS BELOW ARE COPIED BYTE-FOR-BYTE FROM jobber-push-task. DO NOT RETYPE THEM.
 // ============================================================================================
-// getJobberToken / gql / etToUtcISO / errsOf are lifted verbatim (sha256-checked at build time).
+// getJobberToken / gql / errsOf are lifted verbatim (sha256-checked at build time).
+// ⚠ etToUtcISO is the ONE DELIBERATE EXCEPTION — it is NOT identical, because the shared original
+//   has a DST spring-forward bug that a timed task's read-back structurally cannot see. The long
+//   explanation sits directly above the function; jobber-push-task and jobber-push-visit still
+//   carry the bug and fixing them was out of scope here.
 // Retyping is how 2026-08-06_1316 silently dropped six clauses from a live function. The two that
 // carry the hardest-won logic:
 //   * gql()'s HTML WAITING-ROOM CHECK. Jobber sheds load with text/html at HTTP 200; a naive helper
@@ -187,20 +191,82 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
   return j;
 }
 
-// marker_date + minutes (minute-of-day, ET) -> a UTC instant.
-// ⚠ Built by asking the ZONE for its offset on that date rather than hardcoding -04:00/-05:00.
-// A fixed offset is correct for half the year and silently an hour out for the other half, and
-// these markers bracket overnight routes where an hour matters.
-function etToUtcISO(dateISO: string, minutes: number): string {
-  const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
-  const mm = String(minutes % 60).padStart(2, "0");
-  // Probe the offset at midday on that date to avoid DST-transition edges.
-  const probe = new Date(`${dateISO}T12:00:00Z`);
-  const tzName = new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ, timeZoneName: "longOffset",
-  }).formatToParts(probe).find((p) => p.type === "timeZoneName")?.value ?? "GMT-05:00";
-  const off = tzName.replace("GMT", "") || "-05:00";
-  return new Date(`${dateISO}T${hh}:${mm}:00${off}`).toISOString();
+// ============================================================================================
+// 🛑 THIS COPY OF etToUtcISO IS **DELIBERATELY NOT IDENTICAL** TO jobber-push-task's.
+//    DO NOT "RESTORE" IT ON THE GROUNDS THAT THE COPIES SHOULD MATCH.
+// ============================================================================================
+// Everything else in this file's helper block IS byte-for-byte from jobber-push-task, and the
+// build-time check still asserts that. This one is the single, deliberate exception, because the
+// shared original has a DST SPRING-FORWARD BUG:
+//
+//   It probes the zone offset at 12:00 UTC — which is 07:00/08:00 ET, i.e. AFTER the 02:00
+//   transition — and then applies that post-transition offset to minute 0, which is BEFORE it.
+//   Measured on the original bytes:
+//       2026-03-08 min 0   -> 2026-03-08T04:00:00Z -> ET 2026-03-07 23:00   *** wrong day ***
+//       2027-03-14 min 0   -> 2027-03-14T04:00:00Z -> ET 2027-03-13 23:00   *** wrong day ***
+//       2028-03-12 min 0   -> 2028-03-12T04:00:00Z -> ET 2028-03-11 23:00   *** wrong day ***
+//       fall-back and ordinary dates: correct. minutes >= 120: correct.
+//   So it is wrong for minutes 0-119 on exactly one date a year, in the direction that moves the
+//   task to the PREVIOUS DAY.
+//
+// WHY IT HAD TO BE FIXED HERE AND NOT SHARED: for a TIMED task the read-back CANNOT SEE IT. We
+//   send the wrong instant, Jobber stores and echoes exactly that instant, near() compares
+//   instants, and verification PASSES. A task scheduled 00:30 ET on 2026-03-08 lands 23:30 ET on
+//   2026-03-07 in Jobber while our copy says Mar 8 with verified:true — a written, verified-clean
+//   discrepancy, which is the one thing this whole function exists to prevent.
+//
+// 🛑 jobber-push-task AND jobber-push-visit STILL CARRY THE BUG. Both are LIVE. Fixing the shared
+//   source touches production functions that own the day markers and every Calendar visit push,
+//   which was out of scope for the task that wrote this file. It is a real open item, not an
+//   oversight: whoever picks it up should port the version below and re-verify both callers.
+//
+// HOW THIS ONE WORKS: it asks the zone for its offset AT THE CANDIDATE INSTANT rather than at an
+//   arbitrary probe time, twice — the first pass guesses, the second settles the DST edge — and
+//   then ROUND-TRIPS: it formats the answer back to ET and requires the wall clock it gets is the
+//   wall clock that was asked for. That last step is what makes it honest rather than merely
+//   better, and it is why the return type is nullable: 02:00-02:59 ET does not exist at all on a
+//   spring-forward date, so there IS no correct instant and the caller is told so instead of being
+//   handed a plausible wrong one.
+
+// The ET wall-clock parts of an instant. One source of ET parts for the whole file.
+function etWall(utcMs: number): { date: string; minutes: number; seconds: number } {
+  const p = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(new Date(utcMs))
+    .reduce((a, x) => (a[x.type] = x.value, a), {} as Record<string, string>);
+  const hh = p.hour === "24" ? 0 : Number(p.hour);          // Intl can emit hour 24 for midnight
+  return {
+    date: `${p.year}-${p.month}-${p.day}`,
+    minutes: hh * 60 + Number(p.minute),
+    seconds: Number(p.second),
+  };
+}
+
+// The zone's UTC offset in effect AT a given instant. Derived by asking the zone, never from a
+// table: format the instant in ET, read those wall-clock parts back as if they were UTC, subtract.
+function tzOffsetMsAt(utcMs: number): number {
+  const w = etWall(utcMs);
+  const [y, m, d] = w.date.split("-").map(Number);
+  const asIfUTC = Date.UTC(y, m - 1, d, Math.floor(w.minutes / 60), w.minutes % 60, w.seconds);
+  return asIfUTC - utcMs;
+}
+
+// task_date + minutes (minute-of-day, ET) -> a UTC instant, or NULL if that ET wall time does not
+// exist on that date (the spring-forward gap).
+function etToUtcISO(dateISO: string, minutes: number): string | null {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  // The requested wall time, read as if it were UTC. This is not an instant yet, it is a label.
+  const wall = Date.UTC(y, m - 1, d, Math.floor(minutes / 60), minutes % 60, 0);
+  // Pass 1 guesses with the offset at the label; pass 2 re-probes AT THE CANDIDATE. One pass alone
+  // is wrong on both DST edges — that is precisely the original's failure.
+  let utcMs = wall - tzOffsetMsAt(wall);
+  utcMs = wall - tzOffsetMsAt(utcMs);
+  // ROUND-TRIP OR REFUSE.
+  const back = etWall(utcMs);
+  if (back.date !== dateISO || back.minutes !== minutes) return null;
+  return new Date(utcMs).toISOString();
 }
 
 // 🛑 READ BOTH ERROR CHANNELS. A GraphQL response carries TWO kinds of failure and they live in
@@ -288,15 +354,14 @@ function etDateOf(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(d);
+  return etWall(d.getTime()).date;      // one source of ET parts, shared with etToUtcISO
 }
 
 type TaskWant = {
   title: string; instructions: string | null; taskDate: string;
   allDay: boolean; startAt: string; endAt: string;
-  clientGid: string | null; propertyGid: string | null;
+  // null = "make it none" (assert it IS none). undefined = "not stated" (assert nothing).
+  clientGid: string | null | undefined; propertyGid: string | null | undefined;
   // null = we did NOT send assignedTo, so Jobber's set is none of our business on this save.
   assignedGids: string[] | null;
 };
@@ -312,7 +377,10 @@ function verifyTask(t: any, want: TaskWant): string[] {
   const wantInstr = (want.instructions ?? "").trim();
   const gotInstr = (t.instructions ?? "").trim();
   if (wantInstr !== gotInstr) {
-    bad.push(`instructions (sent ${wantInstr.length} chars, Jobber has ${gotInstr.length})`);
+    // ⚠ Show the CONTENT, not just the lengths. "abc" vs "xyz" used to render as
+    // `(sent 3 chars, Jobber has 3)`, which reads like agreement on a line reporting a refusal.
+    const snip = (x: string) => x === "" ? "(empty)" : JSON.stringify(x.length > 40 ? x.slice(0, 40) + "…" : x);
+    bad.push(`instructions (sent ${snip(wantInstr)}, Jobber has ${snip(gotInstr)})`);
   }
 
   // 🛑 THE DATE, ON BOTH KINDS OF TASK. An all-day task DOES carry a date (13 of 16 live all-day
@@ -345,13 +413,19 @@ function verifyTask(t: any, want: TaskWant): string[] {
   // we were DETACHING (clientGid null), so "our copy says no client, Jobber still says client X"
   // passed verification. The RPC clears the column on an explicit null, so that divergence was
   // real and reachable.
-  const gotClient = t.client?.id ?? null;
-  if (gotClient !== want.clientGid) {
-    bad.push(`client (sent ${want.clientGid ?? "none"}, Jobber has ${gotClient ?? "none"})`);
+  // undefined = the caller never mentioned it, so this save did not touch it and has no business
+  // asserting on it. null = an explicit detach, which IS asserted — that is finding 2.
+  if (want.clientGid !== undefined) {
+    const gotClient = t.client?.id ?? null;
+    if (gotClient !== want.clientGid) {
+      bad.push(`client (sent ${want.clientGid ?? "none"}, Jobber has ${gotClient ?? "none"})`);
+    }
   }
-  const gotProperty = t.property?.id ?? null;
-  if (gotProperty !== want.propertyGid) {
-    bad.push(`property (sent ${want.propertyGid ?? "none"}, Jobber has ${gotProperty ?? "none"})`);
+  if (want.propertyGid !== undefined) {
+    const gotProperty = t.property?.id ?? null;
+    if (gotProperty !== want.propertyGid) {
+      bad.push(`property (sent ${want.propertyGid ?? "none"}, Jobber has ${gotProperty ?? "none"})`);
+    }
   }
 
   // 🛑 SET EQUALITY, NOT A SUBSET TEST. The old check only asked whether everything we sent was
@@ -379,8 +453,13 @@ function verifyTask(t: any, want: TaskWant): string[] {
 //   gone:false + reason  -> either still there, or Jobber never answered. NEVER treat as gone.
 // `alreadyGone` distinguishes "the mutation errored but the task is absent anyway" (an idempotent
 // re-delete) from "the mutation errored and the task is still there".
+// `kind` is STRUCTURED so the caller never has to sniff the prose. An earlier caller did
+// `del.reason?.includes("rejected")` to choose an error code — correct at the time and coupled to
+// wording, which is a defect waiting for someone to improve a sentence.
+//   "rejected"    Jobber actively refused and the task is still there.
+//   "unanswered"  we cannot tell — including a refusal we could not follow up. Not the same thing.
 async function deleteAndVerify(token: string, gid: string): Promise<
-  { gone: boolean; alreadyGone: boolean; reason: string | null }
+  { gone: boolean; alreadyGone: boolean; kind: "gone" | "rejected" | "unanswered"; reason: string | null }
 > {
   const res = await gql(token, M_TASK_DELETE, { ids: [gid] });
   const errs = errsOf(res, "taskDelete");
@@ -390,18 +469,21 @@ async function deleteAndVerify(token: string, gid: string): Promise<
   // erroring forever and the link could never be removed.
   const check = await gql(token, Q_TASK, { id: gid });
   if (!answered(check)) {
-    return { gone: false, alreadyGone: false, reason: errs.length
-      ? `Jobber rejected the delete (${errs.join("; ")}) and then did not answer the read-back`
-      : "Jobber did not answer the read-back, so the task may still exist" };
+    // UNANSWERED even when the mutation errored: the salient fact is that we cannot tell whether
+    // the task is gone, not that a call was refused. Reporting this as "rejected" would tell an
+    // operator something more definite than we actually know.
+    return { gone: false, alreadyGone: false, kind: "unanswered", reason: errs.length
+      ? `Jobber rejected the delete (${errs.join("; ")}) and then did not answer the read-back, so we cannot tell whether the task is gone`
+      : "Jobber did not answer the read-back, so we cannot tell whether the task is gone" };
   }
   if (check.data.task?.id) {
-    return { gone: false, alreadyGone: false, reason: errs.length
+    return { gone: false, alreadyGone: false, kind: "rejected", reason: errs.length
       ? `Jobber rejected the delete: ${errs.join("; ")}`
       : "Jobber reported no error but the task is still there" };
   }
   // Absent. If the mutation errored, the task was already gone — a retry of a delete that had in
   // fact succeeded. That is the outcome the caller asked for, so it is a success.
-  return { gone: true, alreadyGone: errs.length > 0, reason: null };
+  return { gone: true, alreadyGone: errs.length > 0, kind: "gone", reason: null };
 }
 
 // ============================================================================================
@@ -488,7 +570,7 @@ Deno.serve(async (req) => {
       // treated as the success it is.
       const del = await deleteAndVerify(token, link!.source_id);
       if (!del.gone) {
-        return fail(502, del.reason?.includes("rejected") ? "jobber_rejected" : "jobber_unverified",
+        return fail(502, del.kind === "rejected" ? "jobber_rejected" : "jobber_unverified",
           `${del.reason}. Nothing was deleted on our side — the link is KEPT so the task can still be reached. Retry once Jobber is responding.`,
           { jobber_task: link!.source_id });
       }
@@ -626,20 +708,32 @@ Deno.serve(async (req) => {
     // An unknown client/property/visit id would come back from the RPC as a 23503 foreign-key
     // violation AFTER the Jobber write had already landed, and 23503 is also the orphan-link code,
     // so it would be reported as the wrong thing entirely. Check first; fail before pushing.
-    const pickId = (k: string, curVal: unknown): number | null => {
-      if (!has(body, k)) return curVal === null || curVal === undefined ? null : Number(curVal);
-      return body[k] === null || body[k] === undefined ? null : Number(body[k]);
+    //
+    // 🛑 TRI-STATE, LIKE ASSIGNEES: `undefined` = the caller did not mention it, so leave BOTH
+    // sides alone. This is the THIRD appearance of one shape — an operation refusing because of a
+    // field it does not touch. It blocked completion on a stale client link, it blocked an edit on
+    // a stale assignee link, and it would have blocked a TITLE-ONLY edit with client_unlinked when
+    // a pre-existing client's link row had since vanished. Deciding it deliberately rather than by
+    // omission: an unstated field is not a decision, so it must not be resolved, sent, or asserted.
+    // A DETACH is still a stated `client_id: null`, so finding 2 stays fixed — the difference
+    // between "make it none" and "do not touch it" is exactly key presence.
+    // On a CREATE there is no previous value, so an absent key genuinely means "none".
+    const stated = (k: string) => op === "create" || has(body, k);
+    const pickId = (k: string): number | null | undefined => {
+      if (!stated(k)) return undefined;
+      const raw = has(body, k) ? body[k] : null;
+      return raw === null || raw === undefined ? null : Number(raw);
     };
-    const clientId = pickId("client_id", cur?.client_id);
-    const propertyId = pickId("property_id", cur?.property_id);
-    const visitId = pickId("visit_id", cur?.visit_id);
+    const clientId = pickId("client_id");
+    const propertyId = pickId("property_id");
+    const visitId = pickId("visit_id");
     for (const [k, v] of [["client_id", clientId], ["property_id", propertyId], ["visit_id", visitId]] as const) {
-      if (v !== null && (!Number.isInteger(v) || v <= 0)) {
+      if (v !== undefined && v !== null && (!Number.isInteger(v) || v <= 0)) {
         return fail(400, "invalid_input", `${k} must be a positive integer or null.`);
       }
     }
     for (const [k, v, table] of [["client_id", clientId, "clients"], ["property_id", propertyId, "properties"], ["visit_id", visitId, "visits"]] as const) {
-      if (v === null) continue;
+      if (v === undefined || v === null) continue;
       const { data: found, error: fErr } = await db.from(table).select("id").eq("id", v).maybeSingle();
       if (fErr) return fail(500, "db_error", `${table} lookup failed: ${fErr.message}`);
       if (!found) return fail(400, "invalid_input", `${k} ${v} does not exist.`);
@@ -678,9 +772,10 @@ Deno.serve(async (req) => {
       assignedGids = assigneeIds.map((id) => map.get(id)!);
     }
 
-    let clientGid: string | null = null;
-    let propertyGid: string | null = null;
-    if (clientId !== null) {
+    // undefined = not stated: do not resolve it, do not send it, do not assert on it.
+    let clientGid: string | null | undefined = clientId === undefined ? undefined : null;
+    let propertyGid: string | null | undefined = propertyId === undefined ? undefined : null;
+    if (clientId !== undefined && clientId !== null) {
       const map = await gidsFor("client", [clientId]);
       clientGid = map.get(clientId) ?? null;
       if (!clientGid) {
@@ -688,7 +783,7 @@ Deno.serve(async (req) => {
           `Client ${clientId} has no linked Jobber client, so the task cannot be attached to it in Jobber. Nothing was saved.`);
       }
     }
-    if (propertyId !== null) {
+    if (propertyId !== undefined && propertyId !== null) {
       const map = await gidsFor("property", [propertyId]);
       propertyGid = map.get(propertyId) ?? null;
       if (!propertyGid) {
@@ -699,12 +794,24 @@ Deno.serve(async (req) => {
 
     // ---- the Jobber time window -------------------------------------------------------------
     // ET midnight for an all-day task, matching exactly how Jobber stores its own: all 13 dated
-    // all-day tasks in this account read ET 00:00:00 -> ET 23:59:59 with duration 1440. The end is
-    // therefore start + 1440 minutes MINUS ONE SECOND, not start + 1439 minutes: three different
-    // numbers for one span is how a comparison quietly stops meaning anything.
+    // all-day tasks in this account read ET 00:00:00 -> ET 23:59:59 with duration 1440.
+    //
+    // 🛑 THE END IS DERIVED FROM THE ET WALL CLOCK, NOT start + 24h. On a spring-forward date the
+    //    ET day is only 23 HOURS long, so `startAt + 1440min - 1s` lands at 00:59:59 the NEXT day
+    //    and verifyTask's end-date check would refuse every all-day save on that date. Asking for
+    //    ET 23:59 on the same date is correct on all three kinds of day.
     const startAt = etToUtcISO(taskDate, allDay ? 0 : (minutes as number));
+    if (startAt === null) {
+      // Only reachable in the spring-forward gap: 02:00-02:59 ET does not exist on that date.
+      return fail(400, "invalid_input",
+        `There is no ${String(Math.floor((minutes ?? 0) / 60)).padStart(2, "0")}:${String((minutes ?? 0) % 60).padStart(2, "0")} on ${taskDate} in Eastern Time — the clocks jump from 02:00 to 03:00 that morning. Pick another time.`);
+    }
+    const endBase = allDay ? etToUtcISO(taskDate, 1439) : null;
+    if (allDay && endBase === null) {
+      return fail(500, "unexpected", `Could not derive the end of ${taskDate} in Eastern Time.`);
+    }
     const endAt = allDay
-      ? new Date(new Date(startAt).getTime() + 1440 * 60_000 - 1_000).toISOString()
+      ? new Date(new Date(endBase as string).getTime() + 59_000).toISOString()   // ET 23:59:00 -> 23:59:59
       : new Date(new Date(startAt).getTime() + duration * 60_000).toISOString();
 
     // ========================================================================================
@@ -726,8 +833,8 @@ Deno.serve(async (req) => {
       // explicit null. Our copy said "no client", Jobber said "client X", and the old verifyTask
       // guarded with `if (want.clientGid && ...)` so nothing caught it. Both are fixed: the key is
       // always sent, and verifyTask now compares for EQUALITY including null.
-      input.clientId = clientGid;
-      input.propertyId = propertyGid;
+      if (clientGid !== undefined) input.clientId = clientGid;        // null = an explicit DETACH
+      if (propertyGid !== undefined) input.propertyId = propertyGid;
     }
 
     let gid = link?.source_id ?? "";
@@ -823,8 +930,13 @@ Deno.serve(async (req) => {
       jobber_gid: gid,
       title, instructions, task_date: taskDate,
       minutes: allDay ? null : minutes,
-      client_id: clientId, property_id: propertyId, visit_id: visitId,
     };
+    // Key presence is the RPC's contract too: an absent key leaves the column alone, an explicit
+    // null clears it. Sending an inherited value would be a no-op at best and, on a row someone
+    // else just changed, a silent revert.
+    if (clientId !== undefined) p.client_id = clientId;
+    if (propertyId !== undefined) p.property_id = propertyId;
+    if (visitId !== undefined) p.visit_id = visitId;
     if (!allDay) p.duration_minutes = duration;
     // Omitted when empty, matching the omitted assignedTo above so the two sides agree.
     if (assigneeIds?.length) p.assignee_ids = assigneeIds;
