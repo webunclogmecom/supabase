@@ -23,6 +23,11 @@
 
 **4. Claim the work first.** Append to `WORKING-NOW.md` at the workspace root and commit in the same breath. Include: `ops.calendar_tasks`, `entity_source_links`, edge fns `save-calendar-task` / `poll-calendar-tasks`, and the Visit Calendar Lovable project.
 
+**5b. 🛑 NEVER ASSERT A FROZEN ROW COUNT ON A CONTINUOUSLY-WRITTEN TABLE.** Measured during Task 1: `public.entity_source_links` went **27,868 → 27,870 → 27,871** within the hour from live Jobber sync writes (5 invoice, 4 job, 1 note, 1 photo in three hours), with **zero** rows attributable to the probe. A "count must be identical" check there manufactures a false alarm for whoever runs it next. This is the `CLAUDE.md` §5.2b case: a live object changed between your two reads, and with a machine writing it that is the likely explanation, not your change.
+- To prove **no existing row was invalidated** by a new CHECK: rely on `ADD CONSTRAINT` *without* `NOT VALID`, which validates every row at apply time and fails loudly. That success IS the proof.
+- To prove **a rolled-back probe leaked nothing**: query for the probe's own sentinels (`source_id like 'PROBE%'`, `entity_id = -999`, the new `entity_type`) and require 0. That is the check that discriminates.
+- ⚠ This does NOT apply to `ops.calendar_tasks` in Tasks 4 and 8: nothing else writes it, so "unchanged" IS a valid assertion there.
+
 **5. Get today's date from the DB, never from memory.** `select to_char(now() at time zone 'America/New_York','YYYY-MM-DD HH24:MI');` Migration filenames are the apply ORDER. The newest applied is `2026-08-26_1710` (the other session), so this plan uses `2026-08-26_1800` onward. The numeric part is an ORDERING LABEL in this repo, not a wall clock: what matters is that it sorts after everything already applied.
 
 ---
@@ -63,7 +68,10 @@ export async function sql(query) {
 // skipped, and the script exits 0 printing NOTHING. A probe that prints nothing is not a
 // passing probe, it is a broken instrument. This plan shipped with the broken form and the
 // Task 1 implementer caught it on the first run. Verified on this machine 2026-08-26.
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// ⚠ AND `process.argv[1] &&` IS REQUIRED, NOT DEFENSIVE. pathToFileURL(undefined) THROWS, and
+// argv[1] is undefined under `node -e`. Without it the throw kills the IMPORT for every later
+// probe that reuses this module -- the same failure class, arriving by a different route.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   // POSITIVE CONTROL: an already-allowed value must insert cleanly.
   const control = await sql(`
     begin;
