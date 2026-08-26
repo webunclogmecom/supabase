@@ -67,9 +67,17 @@
 //          office completes it in the Calendar (Jobber->true, our stays true); poll's
 //          expected_is_complete=true still matches, and without (b) it would write false against a
 //          Jobber that says true.
-//    Together these reduce a window spanning the whole batch to two round trips. That is a genuine
-//    narrowing and NOT a proof. A real fix needs a version token both sides can compare, and Jobber
-//    exposes none. Documented rather than implied.
+//    (b) is called TWICE: once early as a cheap bail-out, and once IMMEDIATELY BEFORE the RPC.
+//    The second placement is the one that matters and it was wrong in the first version of this
+//    file, which did the re-read before findCompletedAt. Measured on a real production task:
+//        findCompletedAt   32 probes  4851 ms
+//        single re-read               155 ms
+//    so a re-read placed before the search left a ~4.85 SECOND residual on the COMPLETION path --
+//    about 31x the call meant to shrink it, and completions are the case this function exists to
+//    catch. (SEARCH_BUDGET_MS gates whether a search STARTS, not how long it runs.) With the
+//    confirm moved after the search, the residual is ONE RPC ROUND TRIP.
+//    ⚠ Even so: a genuine narrowing, NOT a proof. A real fix needs a version token both sides can
+//    compare, and Jobber's Task exposes none. Documented rather than implied.
 //
 // ============================================================================================
 // AUTH: verify_jwt = true. Invoked by pg_cron via net.http_post with a service_role bearer, and the
@@ -199,6 +207,21 @@ async function countAfter(token: string, gid: string, whenISO: string): Promise<
   if (!answered(res) || errsOf(res, "tasks").length) return null;
   const n = res.data?.tasks?.totalCount;
   return typeof n === "number" ? n : null;
+}
+
+// Re-read ONE task and say whether Jobber still reports the value we are about to act on.
+//   "ok"          it still matches; safe to proceed
+//   "changed"     it moved under us, or vanished. This cycle's conclusion is stale.
+//   "unreadable"  Jobber did not answer. NOT the same as "changed": we know nothing, so we must not
+//                 adopt AND must not report a conflict, because both would be claims we cannot make.
+async function confirmStillIs(
+  token: string, gid: string, expected: boolean,
+): Promise<"ok" | "changed" | "unreadable"> {
+  const res: any = await gql(token, Q_PAGE, { ids: [gid], first: 1, after: null });
+  if (!answered(res) || errsOf(res, "tasks").length) return "unreadable";
+  const node = (res.data?.tasks?.nodes ?? [])[0];
+  if (!node || node.id !== gid) return "changed";
+  return (node.isComplete === true) === expected ? "ok" : "changed";
 }
 
 async function findCompletedAt(token: string, gid: string): Promise<{ iso: string | null; probes: number }> {
@@ -381,18 +404,13 @@ Deno.serve(async (req) => {
       const oursComplete = ours.get(taskId);
       if (oursComplete === undefined || oursComplete === jobberComplete) continue;
 
-      // (b) RE-READ THIS ONE TASK immediately before writing. The batch read may be many seconds
-      // old by now, and expected_is_complete cannot see a Jobber-side change (header, point 3).
-      const confirm: any = await gql(token, Q_PAGE, { ids: [gid], first: 1, after: null });
-      if (!answered(confirm) || errsOf(confirm, "tasks").length) {
-        errors.push(`${gid}: could not re-read before adopting; skipped`);
-        unadopted++;
-        continue;
-      }
-      const node = (confirm.data?.tasks?.nodes ?? [])[0];
-      if (!node || node.id !== gid || (node.isComplete === true) !== jobberComplete) {
-        // It changed under us, or vanished. Either way this cycle's conclusion is stale.
-        conflicts.push(gid);
+      // (b) EARLY BAIL-OUT. Cheap (~155ms) and it avoids paying for a timestamp search on a task
+      // that has already moved under us. This is NOT the one that bounds the race window -- see the
+      // second call, immediately before the RPC.
+      const early = await confirmStillIs(token, gid, jobberComplete);
+      if (early !== "ok") {
+        if (early === "unreadable") errors.push(`${gid}: could not re-read before adopting; skipped`);
+        else conflicts.push(gid);
         unadopted++;
         continue;
       }
@@ -420,6 +438,21 @@ Deno.serve(async (req) => {
         }
         p.completed_source = "jobber";          // must be exactly this; a CHECK enforces the pair
         details[`probes_${gid.slice(-8)}`] = probes;
+      }
+
+      // 🛑 THE RE-READ THAT ACTUALLY BOUNDS THE WINDOW, and it has to be HERE, after the timestamp
+      // search rather than before it. findCompletedAt measured 32 probes / 4851 ms on a real
+      // production task against 155 ms for this call, so a re-read placed before the search leaves
+      // a ~4.85 SECOND hole -- roughly 31x the thing it was meant to shrink -- on the completion
+      // path, which is the case this whole function exists to catch. SEARCH_BUDGET_MS gates whether
+      // a search STARTS, not how long it runs, so a search begun just inside the budget still runs
+      // its full length. From here the residual is one RPC round trip.
+      const late = await confirmStillIs(token, gid, jobberComplete);
+      if (late !== "ok") {
+        if (late === "unreadable") errors.push(`${gid}: could not confirm before writing; skipped`);
+        else conflicts.push(gid);
+        unadopted++;
+        continue;
       }
 
       const { error: rpcErr } = await db.schema("ops")

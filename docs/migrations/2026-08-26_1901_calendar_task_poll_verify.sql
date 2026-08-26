@@ -13,17 +13,26 @@
 -- A DO block is a single statement and therefore atomic, so wrapping the post and the read together
 -- guarantees a null.
 --
--- Measured three times before this file was written, rather than reasoned:
+-- Measured, rather than reasoned:
 --   * request 6146 -- post + read inside the migration's transaction, which then rolled back:
 --     NO ROW in net._http_response at all, i.e. never sent.
---   * request 6147 -- same block moved AFTER a `COMMIT;` in the same submitted body: still no
---     response after 20 polls / 40 seconds. **The Supabase Management API wraps an entire submitted
---     body in ONE transaction, so that COMMIT released nothing.** Proof: when the block raised, the
---     function and the cron job created earlier in the same body were BOTH absent afterwards.
---   * request 6150 -- the same block as its own separate submission: still null, because the DO
---     block is itself atomic.
+--   * request 6147 -- the same block moved after a `COMMIT;` in the same submitted body: still no
+--     response after 20 polls / 40 seconds.
+--   * request 6150 -- the same block as its OWN separate submission: still null.
+--     ⇒ All three fail for ONE reason, and it is not the transaction boundary: a DO block is a
+--       single statement, so the post can never be dispatched while the same block is still polling
+--       for its result. Position in the file is irrelevant; the atomicity of the block is the wall.
 --   * request 6152 -- posted by STEP 1 below, read by STEP 2 below: **HTTP 200**, body
 --     `{"ok":true,"status":"ok","checked":0,...}`, and 2 fresh sync_log rows. This shape works.
+--
+-- ⚠⚠ A CORRECTION TO WHAT THIS FILE FIRST CLAIMED, kept because the wrong version is the more
+--    dangerous one to act on. It said "the Management API wraps an entire submitted body in ONE
+--    transaction, so that COMMIT released nothing". **FALSE.** A controlled probe -- BEGIN; CREATE
+--    TABLE; COMMIT; then a deliberate RAISE after it -- shows the table SURVIVES when queried from
+--    a second submission. A mid-body COMMIT; genuinely commits and starts a new transaction.
+--    ⇒ The real consequence runs the other way and is sharper: **a migration containing `COMMIT;`
+--      IS NOT ATOMIC, and a failure after that COMMIT leaves the first half applied.** Assume a
+--      partial apply is possible and make the pre-COMMIT half independently safe.
 --
 -- ⚠ RUN STEP 1 AND STEP 2 AS TWO SEPARATE SUBMISSIONS, and run them PROMPTLY: net._http_response
 --   has NO url column and roughly six hours of retention, after which there is no evidence that a
