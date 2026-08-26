@@ -352,6 +352,12 @@ function mapRpcError(e: { code?: string; message?: string; details?: string; hin
     case "23503": return { status: 409, code: "orphan_link", message: msg };
     // Should be unreachable: the RPC takes an xact advisory lock on the GID before it looks.
     case "23505": return { status: 409, code: "conflict", message: msg };
+    // 🛑 ZZ002 = the optimistic-concurrency guard (2026-08-26_1850). Somebody else changed this
+    // task's is_complete between the read and the write — the poll adopting a Jobber-side
+    // completion, or another operator. It is a BENIGN RACE, not user error and not a bug, so it
+    // must not surface as a 500: the app should say "someone changed this while you were saving"
+    // and re-read. A distinct SQLSTATE is what makes that tellable from 22023 (bad input).
+    case "ZZ002": return { status: 409, code: "changed_elsewhere", message: msg };
     case "PGRST202": return { status: 500, code: "rpc_missing", message: `RPC not found — ${msg}` };
     default: return { status: 500, code: "db_error", message: msg };
   }

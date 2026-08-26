@@ -714,3 +714,16 @@ verify_jwt = false
 #   If this is ever flipped to true, every real staff user gets a 401 and the feature is dead.
 [functions.save-calendar-task]
 verify_jwt = false
+
+# poll-calendar-tasks: the Calendar Tasks safety net (2026-08-26). Every 5 minutes (cron
+# 'calendar-task-poll' at 2-57/5) it asks Jobber about OUR OWN task GIDs, reads isComplete, and
+# mirrors changes back through ops.fn_record_calendar_task. It closes the one direction
+# save-calendar-task cannot: a tech completing a task in the Jobber mobile app.
+# verify_jwt = true is the OUTER gate only. It is invoked by pg_cron via net.http_post with a
+# service_role bearer, and the handler ALSO asserts role=service_role, because the public anon key
+# is itself a validly signed JWT and would pass the gateway on its own -- and this function holds
+# the Jobber token. Same shape as jobber-push-task. Never deploy this one --no-verify-jwt.
+# It writes its own public.sync_log row (sync_source='calendar-task-poll'): the cron wrapper only
+# ENQUEUES via net.http_post, so cron.job_run_details reports succeeded whatever happens next.
+[functions.poll-calendar-tasks]
+verify_jwt = true
