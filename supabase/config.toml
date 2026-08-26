@@ -695,3 +695,22 @@ verify_jwt = true
 # @ayache.com / @unclogme.com check) is stricter than the gateway's, which the public anon key passes.
 [functions.archive-client]
 verify_jwt = false
+
+# save-calendar-task: the Visit Calendar's SYNCHRONOUS Calendar Tasks saga (2026-08-26). The office
+# creates/edits/completes/deletes a task; it is pushed to Jobber as a Jobber TASK, READ BACK to
+# verify, and only then recorded through ops.fn_record_calendar_task. On any Jobber failure it
+# writes NOTHING locally and returns a typed error the app shows. Fred: "like a transaction ... I
+# don't want discrepancies."
+# 🛑 verify_jwt = false IS DELIBERATE AND IS NOT THE FAIL-OPEN IDIOM. DO NOT "HARMONISE" IT TO TRUE.
+#   This project signs session tokens with ES256, and the gateway's verify_jwt rejects them with
+#   401 UNAUTHORIZED_ASYMMETRIC_JWT on some functions, VARYING BY DEPLOYMENT VINTAGE:
+#   save-client-job hit exactly that and is deliberately false, while save-calendar-visit (deployed
+#   earlier) accepts the same token at true. A function deployed today follows the newer precedent,
+#   which is why this one is modelled on adopt-visit-from-jobber — same app, browser-called, false.
+#   The real control is IN-HANDLER: auth.getUser() round-trips to GoTrue and validates the
+#   signature AND expiry against the real keys, then an @ayache.com / @unclogme.com domain gate
+#   runs. That is STRICTLY STRONGER than verify_jwt, which the public anon key also passes. A
+#   service-role key is refused 403 by the same gate because it carries no email (verified).
+#   If this is ever flipped to true, every real staff user gets a 401 and the feature is dead.
+[functions.save-calendar-task]
+verify_jwt = false
