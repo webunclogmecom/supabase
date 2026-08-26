@@ -984,3 +984,25 @@ cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Building Apps" && git add "Vis
 | 8 any staff user, delete mirrors, assignee optional | Tasks 3, 4, 7 |
 
 **Not covered, and deliberately:** drag (spec 4a), recurrence, `emailAssignments` (spec 5). The Jobber mobile visibility **permission** (spec 8) is an account setting for Fred, not a task.
+
+---
+
+## ⚠ Found during execution, deliberately out of scope, do not lose
+
+**`sync.source_field_shadow_entity_type_chk` now DIVERGES from `entity_source_links_entity_type_chk`.**
+Found by the Task 1 spec reviewer, 2026-08-26.
+
+`docs/migrations/2026-08-17_1636_jobber_custom_field_shadow.sql:215-219` carries a **deliberately
+parallel copy** of the same vocabulary, with a comment saying so: *"Same vocabulary as
+public.entity_source_links_entity_type_chk"*. Task 1 widened one and not the other, so the two lists
+no longer match.
+
+**Inert today**, and that is measured rather than assumed: `sync.source_field_shadow` exists for the
+Jobber custom-field shadow (grease trap size), calendar tasks never write shadow rows, and widening
+it would have needed a second migration that Task 1's spec explicitly excluded. Leaving it was the
+correct call.
+
+🛑 **But it is now a trap of exactly the shape this repo keeps paying for**: two copies of one
+vocabulary, one updated, and a comment still asserting they are the same. Whoever next adds an
+`entity_type` anywhere should widen both or delete the comment. Do not "tidy" it as part of this
+plan.
