@@ -2,11 +2,13 @@
 // send-derm-email/index.ts — Edge Function
 // ============================================================================
 // Sends DERM manifests via Resend. TWO targets (body `target`, default 'client'):
-//   target:'client' — the existing "Send DERM to client": the WWTP receipt
-//     (derm_manifest_url) to the client's own email, friendly branded copy.
-//   target:'city'   — "Send DERM to City": BOTH PDFs (Manifest Form = derm_address_url,
-//     Transporter Manifest = derm_manifest_url) to the municipal FOG-program email(s)
-//     of the served location, formal copy, BCC derm@ayache.com (real sends only).
+//   target:'client' — "Send DERM to client": the FP Service Report to the client's own
+//     email, friendly branded copy.
+//   target:'city'   — "Send DERM to City": the FP Service Report to the municipal
+//     FOG-program email(s) of the served location, formal copy, BCC derm@ayache.com.
+// 🛑 NEITHER SENDS THE RAW MANIFEST IMAGES OR THE RECEIPT ANY MORE (Fred, 2026-08-26).
+//   The Service Report embeds the redacted FOG eManifest and the WWTP receipt, so attaching
+//   them alongside it would deliver the same two documents twice.
 //
 // Input (POST JSON):
 //   { recipients: [{ manifest_id, client_id }],   // or manifest_ids: number[]
@@ -59,8 +61,9 @@ const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Unclogme <onboarding@resend.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-// ── OPTION B: the city gets the Service Report when it demonstrably carries BOTH
-//    manifest documents, otherwise exactly today's two images. Fred, 2026-08-25.
+// ── THE CITY AND THE CLIENT BOTH GET THE FP SERVICE REPORT (Fred, 2026-08-26):
+//    "we don't send the DERM Manifests, or the receipts anymore, we send the Report PDF
+//    Files from the FP App." The report embeds both compliance documents.
 // Both secrets already exist project-wide (generate-fog-manifest, send-visit-photos-email
 // and others read them), so nothing new needs creating; the preflight below covers unset.
 const PDF_SERVICE_URL = Deno.env.get('PDF_SERVICE_URL')
@@ -76,25 +79,29 @@ const PDF_TIMEOUT_MS = 65_000
 const RENDER_DEADLINE_MS = 120_000
 // 8 MiB, deliberately NOT the sibling's 25 MiB: that function sends one email per
 // invocation, this one loops. Worst measured city payload is ~5.36MB across 2 attachments
-// (~229MB of heap against a ceiling that killed a worker at 277.7MB). Over this we fall
-// back to exactly what we send today, so the cost of the limit is zero.
+// (~229MB of heap against a ceiling that killed a worker at 277.7MB). Over this the letter
+// goes out with no attachment, which is a visible outcome rather than a dead worker.
 const MAX_REPORT_BYTES = 8 * 1024 * 1024
 
 // 🛑 ONE SOURCE OF TRUTH FOR THE BRANCH COPY. The HTML and text variants sit adjacent so a
 // change cannot land in one and not the other: send-visit-photos-email shipped exactly that
 // bug, where a plain-text reader saw wording the HTML reader did not.
+// 🛑 `none` MUST NOT CLAIM AN ATTACHMENT. Fred chose that a visit with no Service Report
+// still gets the letter, so this branch is reachable and the copy has to be honest: the
+// attachment sentence is omitted entirely rather than promising a document that is not there
+// and may never exist (a non-DERM visit has no report at all, ever).
 const CITY_ATTACH_COPY = {
-  images: {
-    preheader: (name: string) =>
-      `DERM Manifest submission for ${name} &mdash; Manifest Form + Transporter Manifest attached for your compliance records.`,
-    html: `Attached, you'll find the <strong style="color:#111827;">Manifest Form</strong> and the corresponding <strong style="color:#111827;">Transporter Manifest</strong>.`,
-    text: "Attached, you'll find the Manifest Form and the corresponding Transporter Manifest.",
-  },
   report: {
     preheader: (name: string) =>
       `DERM Manifest submission for ${name} &mdash; Service Report attached, including the Manifest Form and the Transporter Manifest, for your compliance records.`,
-    html: `Attached, you'll find our <strong style="color:#111827;">Service Report</strong> for this service, which includes the <strong style="color:#111827;">Manifest Form</strong> and the corresponding <strong style="color:#111827;">Transporter Manifest</strong>.`,
-    text: "Attached, you'll find our Service Report for this service, which includes the Manifest Form and the corresponding Transporter Manifest.",
+    html: `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">Attached, you'll find our <strong style="color:#111827;">Service Report</strong> for this service, which includes the <strong style="color:#111827;">Manifest Form</strong> and the corresponding <strong style="color:#111827;">Transporter Manifest</strong>.</p>`,
+    text: ["Attached, you'll find our Service Report for this service, which includes the Manifest Form and the corresponding Transporter Manifest.", ''],
+  },
+  none: {
+    preheader: (name: string) =>
+      `DERM Manifest submission for ${name} &mdash; service completion notice for your compliance records.`,
+    html: '',
+    text: [] as string[],
   },
 } as const
 
@@ -118,7 +125,10 @@ function jsonResponse(body: Record<string, unknown>, status: number, cors: Recor
   return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
 }
 
-const SUBJECT = 'Your Manifest Form from Unclogme'
+// The attachment is the FP Service Report since 2026-08-26, so the subject names that.
+// A subject promising a "Manifest Form" over a Service Report is a small lie the client
+// reads before opening anything.
+const SUBJECT = 'Your Service Report from Unclogme'
 
 // Brand assets / tokens (UnclogMe). Logo hosted in our own Storage (stable URL).
 const LOGO_URL = 'https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/_brand/unclogme-logo.jpg'
@@ -145,21 +155,21 @@ function buildHtml(clientName: string, number: string, ext: string): string {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>${SUBJECT}</title></head>
 <body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Your DERM Manifest Form is attached &mdash; required by the Water &amp; Sewer Department. Please keep it for your records.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Your Service Report is attached &mdash; it includes your DERM Manifest Form and disposal receipt. Please keep it for your records.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;border-top:4px solid #f14714;">
 <tr><td style="padding:28px 36px 20px 36px;border-bottom:1px solid #eef0f2;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
 <tr><td style="padding:32px 36px 4px 36px;font-family:${FONT_STACK};">
 <p style="margin:0 0 18px 0;font-size:18px;line-height:1.5;font-weight:700;color:#111827;">Hi ${name},</p>
 <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">Thank you for choosing Unclogme!</p>
-<p style="margin:0 0 24px 0;font-size:15px;line-height:1.65;color:#374151;">Attached, you'll find your <strong style="color:#111827;">Manifest Form</strong> required by the Water &amp; Sewer Department. Please review it carefully and keep it for your records.</p>
+<p style="margin:0 0 24px 0;font-size:15px;line-height:1.65;color:#374151;">Attached, you'll find your <strong style="color:#111827;">Service Report</strong>, which includes your <strong style="color:#111827;">Manifest Form</strong> required by the Water &amp; Sewer Department and the corresponding disposal receipt. Please review it carefully and keep it for your records.</p>
 </td></tr>
 <tr><td style="padding:0 36px 28px 36px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff7f4;border:1px solid #ffd9c9;border-radius:10px;"><tr><td style="padding:16px 18px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
 <td valign="middle" width="40" style="width:40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" height="40" style="width:40px;height:40px;background-color:#f14714;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">${badge}</td></tr></table></td>
 <td valign="middle" style="padding-left:14px;font-family:${FONT_STACK};">
-<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Manifest Form attached</div>
+<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Service Report attached</div>
 <div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${fileLabel}</div>
 </td></tr></table>
 </td></tr></table>
@@ -182,7 +192,7 @@ function buildText(clientName: string, number: string, ext: string): string {
   return [
     `Hi ${clientName},`, '',
     'Thank you for choosing Unclogme!', '',
-    `Attached, you'll find your Manifest Form (DERM-Manifest-${number}.${ext}) required by the Water and Sewer Department. Please review it carefully and keep it for your records.`, '',
+    `Attached, you'll find your Service Report (DERM-Service-Report-${number}.${ext}), which includes your Manifest Form required by the Water and Sewer Department and the corresponding disposal receipt. Please review it carefully and keep it for your records.`, '',
     'If you have any questions or need assistance regarding this document, please reach us at contact@unclogme.com or call us directly.', '',
     '--', 'Unclogme LLC', '333 West 41st Street, Suite 606, Miami Beach, FL 33140', 'contact@unclogme.com',
   ].join('\n')
@@ -192,7 +202,7 @@ function buildText(clientName: string, number: string, ext: string): string {
 // `mode` selects which attachment sentence the letter carries. It MUST agree with what is
 // actually attached: under option B the city receives either one Service Report (which
 // embeds both manifest documents) or the two manifest images, never both.
-function buildCityHtml(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'images'): string {
+function buildCityHtml(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'none'): string {
   const name = escapeHtml(clientName)
   const addr = escapeHtml(address || '')
   const vdate = escapeHtml(visitDate || '')
@@ -206,7 +216,7 @@ function buildCityHtml(clientName: string, address: string, visitDate: string, m
 <tr><td style="padding:32px 36px 8px 36px;font-family:${FONT_STACK};">
 <p style="margin:0 0 18px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">Dear Environmental Compliance Team,</p>
 <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">The service for our client <strong style="color:#111827;">${name}</strong> located at <strong style="color:#111827;">${addr}</strong> was performed on <strong style="color:#111827;">${vdate}</strong>.</p>
-<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">${CITY_ATTACH_COPY[mode].html}</p>
+${CITY_ATTACH_COPY[mode].html}
 <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">If you have any questions or need assistance regarding this document, please feel free to reach us at <a href="mailto:contact@unclogme.com" style="color:#d63d12;text-decoration:underline;font-weight:600;">contact@unclogme.com</a> or call us directly.</p>
 <p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">Thanks again for your hard work &mdash; and feel free to recommend us to the restaurants in your city ;-)</p>
 <p style="margin:0 0 4px 0;font-size:15px;line-height:1.65;font-weight:700;color:#111827;">The Unclogme Team</p>
@@ -222,11 +232,11 @@ function buildCityHtml(clientName: string, address: string, visitDate: string, m
 </body></html>`
 }
 
-function buildCityText(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'images'): string {
+function buildCityText(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'none'): string {
   return [
     'Dear Environmental Compliance Team,', '',
     `The service for our client ${clientName} located at ${address} was performed on ${visitDate}.`, '',
-    CITY_ATTACH_COPY[mode].text, '',
+    ...CITY_ATTACH_COPY[mode].text,
     'If you have any questions or need assistance regarding this document, please feel free to reach us at contact@unclogme.com or call us directly.', '',
     'Thanks again for your hard work — and feel free to recommend us to the restaurants in your city ;-)', '',
     'The Unclogme Team', '',
@@ -373,6 +383,126 @@ async function renderVisitReport(clientCode: string, publicId: string): Promise<
   }
 }
 
+/**
+ * Build the FP Service Report attachment for one (manifest, client) pair.
+ *
+ * 🛑 ONE COPY, CALLED BY BOTH TARGETS. Fred, 2026-08-26: "we don't send the DERM Manifests,
+ * or the receipts anymore, we send the Report PDF Files from the FP App." The city path and
+ * the client path now attach the SAME document, so the resolution and validation live here
+ * rather than being written twice. Two copies of a rule is how the base64 encoder nearly
+ * drifted, and that one at least had a test asserting the copies matched.
+ *
+ * ⚠ PHOTO CLASSIFICATION IS NOT A CONDITION. Fred, 2026-08-25: "have it or not the photos
+ * classified it will send it, if it have the photos classified it will attach it, and if not,
+ * it doesn't matter." Verified on visit 6974 (20 images, 0 classified): the report renders
+ * correctly with no photo sections at all.
+ *
+ * Returns `att: null` with a `reason` when no correct report can be produced. The caller
+ * sends the letter anyway with nothing attached (Fred's explicit choice), EXCEPT when
+ * `terminal` is set, which means the renderer says our own resolution is wrong and the letter
+ * itself would be false.
+ */
+interface ReportAttachResult {
+  att: { filename: string; content: string; content_type: string } | null
+  reason: string
+  visitDate: string | null
+  address: string | null
+  terminal: string | null
+  trip: string | null
+  incomplete: string
+}
+
+async function buildReportAttachment(
+  sb: ReturnType<typeof createClient>,
+  opts: { manifestId: number; clientId: number; clientCode: string | null; visitIds: number[]; number: string },
+): Promise<ReportAttachResult> {
+  const out: ReportAttachResult = { att: null, reason: '', visitDate: null, address: null, terminal: null, trip: null, incomplete: '' }
+  const { manifestId, clientId, clientCode, visitIds } = opts
+  try {
+    if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) { out.reason = 'pdf_service_not_configured'; out.trip = out.reason; return out }
+    if (!visitIds.length) { out.reason = 'no_resolved_visit'; return out }
+
+    // ── Exactly ONE completed, DERM-required visit for THIS client on THIS manifest.
+    // manifest_visits is uncapped and a report is per VISIT: picking one of several would
+    // assert to Miami-Dade that this manifest documents that single service. No tie-break is
+    // defensible (service_date is the dump-date misnomer, visit_date has ties).
+    // ⚠ Deliberately NOT the caller's existing visitDate resolver: its second arm drops
+    // visit_status='completed' and can resolve a scheduled or cancelled visit.
+    const { data: cands, error: candErr } = await sb.from('visits')
+      .select('id, public_id, visit_date, derm_required, property_id, properties(address)')
+      .in('id', visitIds)
+      .eq('client_id', clientId)
+      .eq('visit_status', 'completed')
+      .is('deleted_at', null)
+    if (candErr) throw new Error(`visit resolve: ${candErr.message}`)
+    // `!== false`, never `=== true`: derm_required NULL means REQUIRED and HAS a report.
+    const V = (cands ?? []).filter((v) => (v as { derm_required: boolean | null }).derm_required !== false)
+    if (V.length === 0) { out.reason = 'no_resolved_visit'; return out }
+    if (V.length > 1) { out.reason = 'ambiguous_visit'; return out }
+
+    const rv = V[0] as {
+      id: number; public_id: string | null; visit_date: string | null
+      property_id: number | null; properties?: { address: string | null } | null
+    }
+    // The renderer 422s on a malformed value; failing our own check first is a clean
+    // no-attachment outcome instead of a logged 422.
+    if (!clientCode || !/^[0-9]{3}-[A-Za-z0-9]+$/.test(clientCode)) { out.reason = 'bad_client_code'; return out }
+    if (!rv.public_id || !/^[A-Za-z0-9_-]{6,32}$/.test(rv.public_id)) { out.reason = 'bad_public_id'; return out }
+
+    // 🛑 .schema('customer') is load-bearing: sb is built with no schema, so omitting it
+    // silently queries a nonexistent public.work_orders. Join on `id` (the view's first
+    // column is v.public_id AS id), NOT visit_id.
+    const { data: wo, error: woErr } = await sb.schema('customer').from('work_orders')
+      .select('derm_manifest_url, wwtp_receipt_url, manifest_id')
+      .eq('id', rv.public_id).maybeSingle()
+    if (woErr) throw new Error(`work_orders: ${woErr.message}`)
+    const w = wo as { derm_manifest_url: string | null; wwtp_receipt_url: string | null; manifest_id: number | null } | null
+    if (!w) { out.reason = 'report_not_available'; return out }
+    // The report prints ITS OWN manifest number, chosen by a LATERAL ORDER BY service_date
+    // DESC with no tiebreaker. Attaching one that names a different manifest than the letter
+    // would misstate the document itself.
+    if (w.manifest_id !== manifestId) { out.reason = 'report_other_manifest'; return out }
+
+    // ⚠ NOT A CONDITION, BY DESIGN, BUT IT MUST BE VISIBLE. There is no fallback attachment
+    // any more, so a report missing one of the two compliance documents still goes out.
+    // Measured 2026-08-26: 123 of 123 city-sendable pairs carry both, because the
+    // `no_redacted_sheet` guard on the city path already blocks the slow half. If that ever
+    // stops being true, this line is what says so.
+    out.incomplete = [w.derm_manifest_url ? null : 'fog', w.wwtp_receipt_url ? null : 'wwtp'].filter(Boolean).join('+')
+    if (out.incomplete) {
+      console.error(`[send-derm-email] report_incomplete manifest=${manifestId} client=${clientId} missing=${out.incomplete}`)
+    }
+
+    const rendered = await renderVisitReport(clientCode, rv.public_id)
+    if (rendered.ok) {
+      out.att = {
+        filename: `DERM-Service-Report-${opts.number}.pdf`,
+        content: rendered.b64,
+        content_type: 'application/pdf',
+      }
+      out.reason = out.incomplete ? `incomplete:${out.incomplete}` : ''
+      // The letter must describe the visit the attached report covers, not an arbitrary
+      // ORDER BY visit_date DESC pick and not the first inbox-carrying property. Returning
+      // both makes the letter and the document agree by construction.
+      out.visitDate = rv.visit_date
+      out.address = rv.properties?.address ?? null
+      return out
+    }
+    // client_mismatch / 422: the renderer is telling us our own resolution is wrong, and the
+    // LETTER is built from that same resolution, so sending it would name the wrong client.
+    // report_not_available is NOT terminal: it is exactly "no report", which Fred chose to
+    // send the letter for.
+    if (rendered.terminal && rendered.reason !== 'report_not_available') { out.terminal = rendered.reason; return out }
+    out.reason = rendered.reason
+    if (rendered.trip) out.trip = rendered.reason
+    return out
+  } catch (ge) {
+    out.reason = 'gate_read_failed'
+    console.error(`[send-derm-email] gate_read_failed manifest=${manifestId} client=${clientId}: ${String((ge as Error)?.message ?? ge).slice(0, 200)}`)
+    return out
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const cors = corsHeadersFor(req.headers.get('origin'))
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
@@ -455,6 +585,17 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // 🛑 INVOCATION-SCOPED, AND IT MUST COVER BOTH TARGETS. Declared above the target split
+  // because the city and client paths are two separate loops: scoping it inside one of them
+  // left the other referencing an undefined binding, which failed every client send with
+  // "renderDisabled is not defined". Caught by the first client test, not by the deploy.
+  // Once the renderer has refused or broken once, every remaining manifest in this batch
+  // sends with no attachment instead of attempting another render. The renderer runs
+  // VISIT_REPORT_MAX_CONCURRENCY = 2 and SHEDS rather than queues, so a refusal thirty
+  // seconds ago is strong evidence about the next one.
+  let renderDisabled: string | null = null
+  const invocationStart = Date.now()
+
   if (target === 'city') {
     // ===== CITY: both PDFs to the municipal FOG office, formal letter, BCC compliance =====
     // 🛑 THE CITY INBOX MOVED FROM THE CITY TO THE PROPERTY (2026-08-21,
@@ -470,9 +611,6 @@ Deno.serve(async (req: Request) => {
     // renderer runs VISIT_REPORT_MAX_CONCURRENCY = 2 and SHEDS rather than queues, so a
     // refusal thirty seconds ago is strong evidence about the next one. This bounds the worst
     // case at ONE render failure per invocation regardless of how many recipients were passed.
-    let renderDisabled: string | null = null
-    const invocationStart = Date.now()
-
     for (const rec of recipients) {
       const id = rec.manifest_id
       let logClientId: number | null = rec.client_id ?? null
@@ -603,171 +741,63 @@ Deno.serve(async (req: Request) => {
           await logSend(id, logClientId, null, null, 'skipped', 'no_redacted_sheet', 'city')
           continue
         }
-        // ══ OPTION B GATE ═══════════════════════════════════════════════════════════════
-        // Fred, 2026-08-25: "Service Report when photos are classified (it already carries the
-        // manifests), falling back to the manifest images when they are not."
-        //
-        // 🛑 THE LOAD-BEARING CONDITION IS G7 (the transporter manifest), NOT the FOG sheet.
-        // Fred's original safety condition was "work_orders.derm_manifest_url is not null".
-        // That is INERT here: it IS derm.redacted_manifest_docs.url, the row the
-        // `no_redacted_sheet` guard above already requires, so it rejects 0 of 126 eligible
-        // pairs. The city receives TWO documents today, and the second one comes from a
-        // DIFFERENT column behind a DIFFERENT gate: wwtp_receipt_url is populated only by a
-        // MANUAL vision pass (derm.receipt_doc_class, written on four days ever, median 13.5
-        // days after the manifest, while real city sends land at a median of 1.06 days).
-        // Without G7 the city gets a report whose transporter-manifest section simply VANISHES,
-        // invisible at both ends. Every condition below is here because dropping it puts a
-        // wrong or incomplete document in a regulator's inbox.
-        //
-        // ⚠ EVERY failure path in this block falls back to today's two images. It must never
-        // reach the outer catch, which abandons the manifest entirely.
+        // ══ THE CITY GETS THE FP SERVICE REPORT, AND NOTHING ELSE ══════════════════════
+        // Fred, 2026-08-26: "we don't send the DERM Manifests, or the receipts anymore, we
+        // send the Report PDF Files from the FP App." The report already embeds the redacted
+        // FOG eManifest and the WWTP receipt, so it REPLACES both attachments.
+        // 🛑 When no correct report can be produced the letter still goes out with NOTHING
+        // attached (Fred's explicit choice, 2026-08-26) rather than being skipped.
         let reportAtt: { filename: string; content: string; content_type: string } | null = null
-        let attachMode: CityAttachMode = 'images'
+        let attachMode: CityAttachMode = 'none'
         let attachReason = ''
         let letterDate = visitDate
-        try {
-          if (renderDisabled) {
-            attachReason = renderDisabled
-          } else if (Date.now() - invocationStart > RENDER_DEADLINE_MS) {
-            renderDisabled = 'render_deadline'
-            attachReason = renderDisabled
-          } else if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
-            // Do NOT 503 the request: the images still work.
-            renderDisabled = 'pdf_service_not_configured'
-            attachReason = renderDisabled
-          } else if (!visitIds.length) {
-            attachReason = 'no_resolved_visit'
-          } else {
-            // ── G1: exactly ONE completed, DERM-required visit for THIS client on THIS manifest.
-            // A manifest legitimately documents several pickups (manifest_visits is uncapped),
-            // and picking one would assert to Miami-Dade that this manifest covers that single
-            // service while silently dropping the others. No tie-break is defensible:
-            // service_date is the dump-date misnomer and visit_date has ties.
-            // ⚠ Deliberately NOT the existing visitDate block above: its second arm drops
-            // visit_status='completed' and can resolve a scheduled or cancelled visit.
-            const { data: cands, error: candErr } = await sb.from('visits')
-              .select('id, public_id, visit_date, derm_required, property_id')
-              .in('id', visitIds)
-              .eq('client_id', clientId)
-              .eq('visit_status', 'completed')
-              .is('deleted_at', null)
-            if (candErr) throw new Error(`visit resolve: ${candErr.message}`)
-            // `!== false`, never `=== true`: derm_required NULL means REQUIRED and HAS a report.
-            const V = (cands ?? []).filter((v) => (v as { derm_required: boolean | null }).derm_required !== false)
-            if (V.length === 0) attachReason = 'no_resolved_visit'
-            else if (V.length > 1) attachReason = 'ambiguous_visit'
-            else {
-              const rv = V[0] as { id: number; public_id: string | null; visit_date: string | null; property_id: number | null }
-              // ── G2: Fred's selector. Definition copied from send-visit-photos-email so the
-              // gate cannot key on a different set than the renderer renders.
-              const { data: links, error: lErr } = await sb.from('photo_links')
-                .select('id, photos!inner(content_type)')
-                .eq('entity_type', 'visit').eq('entity_id', rv.id).is('deleted_at', null)
-              if (lErr) throw new Error(`photo links: ${lErr.message}`)
-              const imgs = (links ?? []).filter((l: Record<string, unknown>) =>
-                String((l.photos as { content_type?: string } | null)?.content_type ?? '').startsWith('image/'))
-              let classified = 0
-              if (imgs.length) {
-                const { data: cls, error: cErr } = await sb.from('photo_classifications')
-                  .select('photo_link_id').in('photo_link_id', imgs.map((l: Record<string, unknown>) => l.id as number))
-                if (cErr) throw new Error(`classifications: ${cErr.message}`)
-                classified = new Set((cls ?? []).map((r: Record<string, unknown>) => r.photo_link_id as number)).size
-              }
-              if (!imgs.length || classified !== imgs.length) attachReason = 'not_all_classified'
-              // ── G3: the renderer 422s on a malformed value; failing our own check is a clean
-              // fallback instead of a logged 422.
-              else if (!clientCode || !/^[0-9]{3}-[A-Za-z0-9]+$/.test(clientCode)) attachReason = 'bad_client_code'
-              else if (!rv.public_id || !/^[A-Za-z0-9_-]{6,32}$/.test(rv.public_id)) attachReason = 'bad_public_id'
-              // ── G10: the letter prints servedAddress, the report renders the VISIT's
-              // property. Under B both land in one envelope to a regulator.
-              else if (!rv.property_id || !inboxPropIds.has(rv.property_id) ||
-                       propAddrById.get(rv.property_id) !== servedAddress) attachReason = 'address_mismatch'
-              else {
-                // ── G4 / G6 / G7 / G8 in one read.
-                // 🛑 .schema('customer') is load-bearing: sb is built with no schema, so omitting
-                // it silently queries a nonexistent public.work_orders. Join on `id` (the view's
-                // first column is v.public_id AS id), NOT visit_id.
-                const { data: wo, error: woErr } = await sb.schema('customer').from('work_orders')
-                  .select('derm_manifest_url, wwtp_receipt_url, manifest_id')
-                  .eq('id', rv.public_id).maybeSingle()
-                if (woErr) throw new Error(`work_orders: ${woErr.message}`)
-                const w = wo as { derm_manifest_url: string | null; wwtp_receipt_url: string | null; manifest_id: number | null } | null
-                if (!w) attachReason = 'no_work_order'                       // G4
-                else if (!w.derm_manifest_url) attachReason = 'no_redacted_in_report'  // G6
-                else if (!w.wwtp_receipt_url) attachReason = 'no_wwtp_receipt'         // G7 ← the real one
-                else if (w.manifest_id !== id) attachReason = 'report_other_manifest'  // G8
-                // ── G9: the city loop attaches the primary transporter page PLUS every extra
-                // and fails closed if one will not fetch. The report exposes a single receipt
-                // and has no extras column, so pages 2+ would vanish with no error.
-                else if ((((m.derm_manifest_extra_urls as string[] | null) || []).length) > 0) attachReason = 'transporter_has_extra_pages'
-                else {
-                  const rendered = await renderVisitReport(clientCode, rv.public_id)
-                  if (rendered.ok) {
-                    reportAtt = {
-                      filename: `DERM-Service-Report-${number}.pdf`,
-                      content: rendered.b64,
-                      content_type: 'application/pdf',
-                    }
-                    attachMode = 'report'
-                    // RAW date; fmtDate is applied once at the call site, as for the fallback.
-                    // In the report branch the letter must name the visit whose report is
-                    // attached, not the arbitrary ORDER BY visit_date DESC pick above.
-                    letterDate = rv.visit_date ?? visitDate
-                  } else if (rendered.terminal) {
-                    // CLASS B: the letter is derived from the SAME resolution the renderer just
-                    // refused, so falling back would still assert a service our own system has
-                    // retracted, or name the wrong client. Skip the manifest entirely.
-                    console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${rendered.reason}`)
-                    results.push({ manifest_id: id, status: 'skipped', reason: rendered.reason, client: clientName })
-                    await logSend(id, logClientId, null, null, 'skipped', rendered.reason, 'city')
-                    continue
-                  } else {
-                    attachReason = rendered.reason
-                    if (rendered.trip) renderDisabled = rendered.reason
-                    console.error(`[send-derm-email] render_fallback manifest=${id} client=${clientId} reason=${rendered.reason}`)
-                  }
-                }
-              }
-            }
+        let letterAddress = servedAddress
+        if (renderDisabled) {
+          attachReason = renderDisabled
+        } else if (Date.now() - invocationStart > RENDER_DEADLINE_MS) {
+          renderDisabled = 'render_deadline'
+          attachReason = renderDisabled
+        } else {
+          const r = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds, number })
+          if (r.terminal) {
+            console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${r.terminal}`)
+            results.push({ manifest_id: id, status: 'skipped', reason: r.terminal, client: clientName })
+            await logSend(id, logClientId, null, null, 'skipped', r.terminal, 'city')
+            continue
           }
-        } catch (ge) {
-          attachReason = 'gate_read_failed'
-          console.error(`[send-derm-email] gate_read_failed manifest=${id} client=${clientId}: ${String((ge as Error)?.message ?? ge).slice(0, 200)}`)
+          if (r.trip) renderDisabled = r.trip
+          attachReason = r.reason
+          if (r.att) {
+            reportAtt = r.att
+            attachMode = 'report'
+            letterDate = r.visitDate ?? visitDate
+            letterAddress = r.address || servedAddress
+          } else {
+            console.error(`[send-derm-email] no_attachment manifest=${id} client=${clientId} reason=${r.reason}`)
+          }
         }
 
-        // ONE image by design: the redaction targets the page carrying this client's row
-        // (`effective_page`), so the other pages are exactly the ones we are declining to disclose.
-        const addressUrls = [redactedUrl]
-        const transUrls = [m.derm_manifest_url, ...(((m.derm_manifest_extra_urls as string[] | null) || []))].filter(Boolean)
+        // 🛑 THE CITY NO LONGER RECEIVES THE MANIFEST IMAGES (Fred, 2026-08-26): "we don't send
+        // the DERM Manifests, or the receipts anymore, we send the Report PDF Files from the FP
+        // App." The redacted FOG sheet and the transporter manifest are both EMBEDDED in that
+        // report, so attaching them as well would send the same two documents twice.
+        //
+        // ⚠ The `no_redacted_sheet` guard ABOVE is deliberately kept even though the redacted
+        // sheet is no longer an attachment. It is what makes the report CONTAIN the FOG
+        // manifest (customer.work_orders.derm_manifest_url IS derm.redacted_manifest_docs.url),
+        // so removing it would start mailing regulators reports with that document missing.
+        //
+        // ⚠ NO ATTACHMENT IS A VALID OUTCOME, BY FRED'S EXPLICIT CHOICE. When no report can be
+        // produced the letter still goes out with nothing attached, rather than being skipped.
         const attachments: { filename: string; content: string; content_type: string }[] = []
-        let fetchFailed = false
-        // ⚠ MEMORY ORDERING: the render was attempted FIRST and the images are fetched ONLY on
-        // the fallback branch, so the two are never held at once. The report is the sole
-        // attachment in its branch, because it already embeds both manifest documents.
-        // The `else {` / `}` are the only two lines added here; nothing below is re-indented,
-        // because re-indenting a working body is retyping it.
-        if (reportAtt) { attachments.push(reportAtt) } else {
-        for (let i = 0; i < addressUrls.length; i++) {
-          const suffix = addressUrls.length > 1 ? `-${i + 1}` : ''
-          const att = await fetchAttachment(addressUrls[i], `DERM-Manifest-Form-${number}${suffix}`)
-          if (!att) { fetchFailed = true; break }
-          attachments.push(att)
-        }
-        if (!fetchFailed) for (let i = 0; i < transUrls.length; i++) {
-          const suffix = transUrls.length > 1 ? `-${i + 1}` : ''
-          const att = await fetchAttachment(transUrls[i], `DERM-Transporter-Manifest-${number}${suffix}`)
-          if (!att) { fetchFailed = true; break }
-          attachments.push(att)
-        }
-        if (fetchFailed) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed', client: clientName }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed', 'city'); continue }
-        }
+        if (reportAtt) attachments.push(reportAtt)
 
         const payload: Record<string, unknown> = {
           from: RESEND_FROM,
           to: toList,
           subject: `DERM Manifest for ${clientName}`,
-          html: buildCityHtml(clientName, servedAddress, fmtDate(letterDate), attachMode),
-          text: buildCityText(clientName, servedAddress, fmtDate(letterDate), attachMode),
+          html: buildCityHtml(clientName, letterAddress, fmtDate(letterDate), attachMode),
+          text: buildCityText(clientName, letterAddress, fmtDate(letterDate), attachMode),
           attachments,
         }
         // BCC = compliance copy on real sends (CITY_BCC) + the test_cc "send-to-both" copy.
@@ -862,21 +892,37 @@ Deno.serve(async (req: Request) => {
         if (!toEmail) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_email', client: clientCode }); await logSend(id, logClientId, null, null, 'skipped', 'no_email'); continue }
         logEmail = toEmail
 
-        // The WWTP receipt can be multi-page (derm_manifest_extra_urls). Send the primary
-        // + every extra so a multi-page receipt reaches the client complete. (This is the
-        // client's OWN WWTP receipt only — NEVER the shared DERM Address sheet, which lists
-        // co-clients; that stays City-only to avoid a co-client PII leak.)
-        const manUrls = [m.derm_manifest_url, ...(((m.derm_manifest_extra_urls as string[] | null) || []))].filter(Boolean)
+        // 🛑 THE CLIENT NO LONGER RECEIVES THE RAW WWTP RECEIPT (Fred, 2026-08-26): "we don't
+        // send the DERM Manifests, or the receipts anymore, we send the Report PDF Files from
+        // the FP App." The Service Report embeds that receipt along with the FOG eManifest and
+        // the before/after photos, so it replaces the bare image the client used to get.
+        // ⚠ The old co-client rule is now enforced upstream rather than here: the report is
+        // per VISIT and renders only this client's own documents, so the shared DERM Address
+        // sheet can never reach a client through it.
+        // 🛑 No report => the letter still goes out with NOTHING attached (Fred's choice).
+        const { data: mvsC } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
+        const visitIdsC = ((mvsC || []) as { visit_id: number }[]).map((x) => x.visit_id)
         const attachments: { filename: string; content: string; content_type: string }[] = []
-        let fetchFailed = false
-        for (let i = 0; i < manUrls.length; i++) {
-          const suffix = manUrls.length > 1 ? `-${i + 1}` : ''
-          const att = await fetchAttachment(manUrls[i], `DERM-Manifest-${number}${suffix}`)
-          if (!att) { fetchFailed = true; break }
-          attachments.push(att)
+        let attachReasonC = ''
+        if (renderDisabled) {
+          attachReasonC = renderDisabled
+        } else if (Date.now() - invocationStart > RENDER_DEADLINE_MS) {
+          renderDisabled = 'render_deadline'
+          attachReasonC = renderDisabled
+        } else {
+          const rC = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds: visitIdsC, number })
+          if (rC.terminal) {
+            console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${rC.terminal}`)
+            results.push({ manifest_id: id, status: 'skipped', reason: rC.terminal, client: clientCode })
+            await logSend(id, logClientId, null, null, 'skipped', rC.terminal)
+            continue
+          }
+          if (rC.trip) renderDisabled = rC.trip
+          attachReasonC = rC.reason
+          if (rC.att) attachments.push(rC.att)
+          else console.error(`[send-derm-email] no_attachment manifest=${id} client=${clientId} reason=${rC.reason}`)
         }
-        if (fetchFailed) { results.push({ manifest_id: id, status: 'error', reason: 'pdf_fetch_failed' }); await logSend(id, logClientId, logEmail, null, 'error', 'pdf_fetch_failed'); continue }
-        const attExt = attachments[0].filename.split('.').pop() || 'pdf'
+        const attExt = 'pdf'
 
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
