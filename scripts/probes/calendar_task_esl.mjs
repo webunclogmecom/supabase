@@ -77,7 +77,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log('\n🛑 CONTROL FAILED -- the instrument is untrustworthy, so the target result below')
     console.log('   would be meaningless. Not reporting one. Fix access/connectivity and re-run.')
     console.log('--- audit complete --- ' + JSON.stringify(
-      { probe: 'calendar_task_esl', control_ok: false, target_ok: null, failures: ++fails }))
+      { probe: 'calendar_task_esl', control_ok: false, target_ok: null, failures: fails }))
     process.exit(1)
   }
 
