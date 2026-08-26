@@ -203,8 +203,20 @@ for (const r of rows.filter(r => r.relname !== 'visit_requests')) {
     !r.authn_insert && !r.authn_update && !r.authn_delete && !r.svc_insert
   console.log(`  ops.${r.relname}: rls=${r.rls_on} authn(s/i/u/d)=${r.authn_select}/${r.authn_insert}/${r.authn_update}/${r.authn_delete} svc_insert=${r.svc_insert}  => ${good ? 'OK' : 'WRONG'}`)
 }
-if (rows.length < 3) console.log('  (tables not created yet)')
-console.log('--- audit complete --- ' + JSON.stringify({ probe: 'calendar_task_grants', found: rows.length }))
+// 🛑 DO NOT WRITE `if (rows.length < 3) console.log('(tables not created yet)')` AND FALL THROUGH
+// TO exit(0). That is what this plan originally said and it is a CONFIDENT ZERO: with both target
+// tables absent the loop iterates an empty array, `fails` stays 0, and the probe reports success.
+// Mutation-tested against two non-existent relation names: {"found":1,"failures":0}, exit 0. It
+// would greenlight a dropped or renamed table.
+//
+// Absence must FAIL by default, but it is the CORRECT state on the pre-migration run, so make it
+// a mode matching `--expect-blocked` in calendar_task_esl.mjs:
+//   default          -> both tables MUST be found, else fail naming which is missing
+//   --expect-absent  -> both MUST be missing, else fail   (this is the Step 2 run)
+// Assert on the specific table NAMES, never on rows.length, so a future third row cannot mask a
+// missing one. The visit_requests control must pass in BOTH modes.
+console.log('--- audit complete --- ' + JSON.stringify({ probe: 'calendar_task_grants', found: rows.length, failures: fails }))
+process.exit(fails ? 1 : 0)
 ```
 
 - [ ] **Step 2: Run it and confirm the tables are missing**
