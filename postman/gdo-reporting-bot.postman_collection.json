@@ -64,6 +64,11 @@
       "key": "monthlyEtag",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "lwtTicket",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -715,7 +720,7 @@
                   "});",
                   "const rows = (j.tickets || []).flatMap(t => t.rows || []);",
                   "pm.test('every returned row is in scope', () => rows.forEach(r => pm.expect(r.in_scope).to.eql(true)));",
-                  "pm.test('gallons is always null (resolve from the decal)', () => rows.forEach(r => pm.expect(r.gallons).to.eql(null)));",
+                  "pm.test('gallons is always null (the county bills MEASURED gallons, off the invoice)', () => rows.forEach(r => pm.expect(r.gallons).to.eql(null)));",
                   "pm.test(\"pickup_date is the VISIT date, not the dump date\", () => {",
                   "    // 🛑 THE REGRESSION EVERY DOC NAMES AS THE ONE TO WATCH. Until now this asserted only",
                   "    // typeof pickup_date === \"string\", so setting pickup_date := offload_date on every row",
@@ -1034,6 +1039,95 @@
                   "    pm.expect(empty.map(t => t.ticket_number),",
                   "        \"a ticket carries zero rows -- README 4c says a ticket with no in-scope activity is \" +",
                   "        \"omitted entirely, so an empty one should not appear\").to.eql([]);",
+                  "});",
+                  "",
+                  "pm.test(\"truck_decal is present, and is the RIGHT decal for the truck\", () => {",
+                  "    // 🛑 This is the permit number that reaches the county. A wrong decal files under",
+                  "    // a different vehicle; an invented one puts a permit number we do not hold on a filing.",
+                  "    // Live mapping is strictly 1:1 and Miami-Dade only: Moises C1184 (425 rows),",
+                  "    // David C0976 (224). Cloggy holds NO decal in any jurisdiction and 6 rows carry no truck,",
+                  "    // so 51 of 700 rows are legitimately null and the caller must REFUSE those tickets.",
+                  "    const DECAL = { \"Moises\": \"C1184\", \"David\": \"C0976\" };",
+                  "    const rows = _rows;",
+                  "    pm.expect(rows.every(r => \"truck_decal\" in r),",
+                  "        \"truck_decal is missing from the row shape entirely -- the caller has no permit number\").to.eql(true);",
+                  "    const wrong = rows.filter(r => DECAL[r.truck] !== undefined && r.truck_decal !== DECAL[r.truck]);",
+                  "    pm.expect(wrong.map(r => r.truck + \" reported \" + JSON.stringify(r.truck_decal) +",
+                  "                             \" but holds \" + DECAL[r.truck]),",
+                  "        \"a truck is reporting the WRONG decal -- this is the permit number that reaches the county\").to.eql([]);",
+                  "    // a truck we hold no decal for must be null, never guessed at",
+                  "    const invented = rows.filter(r => DECAL[r.truck] === undefined && r.truck_decal !== null);",
+                  "    pm.expect(invented.map(r => JSON.stringify(r.truck) + \"=\" + JSON.stringify(r.truck_decal)),",
+                  "        \"a row with no known decal carries one anyway -- a guessed permit number\").to.eql([]);",
+                  "    // and a row with no truck cannot carry a decal",
+                  "    const ghost = rows.filter(r => (r.truck === null || r.truck === undefined) && r.truck_decal !== null);",
+                  "    pm.expect(ghost.length, \"a row with no truck carries a decal\").to.eql(0);",
+                  "});",
+                  "",
+                  "pm.test(\"truck_decals reconciles with TRUCKS, and is NOT index-aligned with it\", () => {",
+                  "    // 🛑 GRAIN. `trucks` and `truck_decals` are built from EVERY row on the manifest, but",
+                  "    // `rows` is filtered to in-scope rows unless you pass include=all. So truck_decals can",
+                  "    // legitimately name a decal that appears on NO row you were served, and asserting",
+                  "    // set-EQUALITY against the served rows is comparing a manifest-grained field to a",
+                  "    // filing-grained one. The first version of this test did exactly that and failed on",
+                  "    // ticket 312024 (Aug): David ran two Broward pickups on that manifest, both out of",
+                  "    // scope, so every served row is Moises/C1184 while truck_decals is [\"C0976\",\"C1184\"].",
+                  "    // 1 of 118 live tickets shows it, which is precisely the density that survives a",
+                  "    // spot-check and breaks a filing.",
+                  "    // ⚠ AND the two arrays de-duplicate INDEPENDENTLY: a truck holding no decal (Cloggy)",
+                  "    // contributes to `trucks` and not to `truck_decals`, so they differ in length. A caller",
+                  "    // zipping them by index would attribute Cloggy loads to David.",
+                  "    // ⇒ FILE FROM THE ROW'S OWN truck_decal. truck_decals is a manifest summary, not the",
+                  "    // set of decals belonging on your filing.",
+                  "    const DECAL_T = { \"Moises\": \"C1184\", \"David\": \"C0976\" };",
+                  "    const t = pm.response.json().tickets;",
+                  "    t.forEach(tk => {",
+                  "        pm.expect(Array.isArray(tk.truck_decals),",
+                  "            \"ticket \" + tk.ticket_number + \" has no truck_decals array\").to.eql(true);",
+                  "        // (1) SAME GRAIN: truck_decals is exactly the decals of the trucks on the manifest.",
+                  "        const fromTrucks = [...new Set((tk.trucks || []).map(x => DECAL_T[x]).filter(Boolean))].sort();",
+                  "        pm.expect([...tk.truck_decals].sort(),",
+                  "            \"ticket \" + tk.ticket_number + \": truck_decals does not reconcile with trucks\").to.eql(fromTrucks);",
+                  "        // (2) Subset, never equality: a decal on a row we DID serve must appear in the set.",
+                  "        const rowDecals = [...new Set(tk.rows.map(r => r.truck_decal).filter(Boolean))];",
+                  "        pm.expect(rowDecals.filter(d => !tk.truck_decals.includes(d)),",
+                  "        // No length check here on purpose: (1) pins truck_decals to the deduped decals of",
+                  "        // trucks, so it can never be the longer array. An assertion that cannot fail is not one.",
+                  "            \"ticket \" + tk.ticket_number + \": a served row carries a decal missing from truck_decals\").to.eql([]);",
+                  "    });",
+                  "    // Not a failure, but the caller needs to SEE it rather than discover it on a filed form.",
+                  "    const trap = t.filter(tk => tk.truck_decals.some(d => !tk.rows.some(r => r.truck_decal === d)));",
+                  "    if (trap.length) console.log(\"NOTE: \" + trap.length + \" ticket(s) carry a decal used by no \" +",
+                  "        \"served row, because the truck's work on that manifest was out of scope: \" +",
+                  "        trap.map(x => x.ticket_number).join(\", \") + \" -- file from the row's own truck_decal.\");",
+                  "});",
+                  "",
+                  "pm.test(\"every ticket carries filing state, and filing agrees with reported\", () => {",
+                  "    // 🛑 The two fields must never disagree: reported=true with filing=null would tell staff a",
+                  "    // month was filed while showing nothing to point at, and the reverse would hide a real filing.",
+                  "    // ⚠ confirmation_ref is routinely NULL and that is NOT a failure -- the county returns no",
+                  "    // confirmation number for the monthly form. Never infer a problem from its absence.",
+                  "    const t = pm.response.json().tickets;",
+                  "    const noFlag = t.filter(x => typeof x.reported !== \"boolean\");",
+                  "    pm.expect(noFlag.map(x => x.ticket_number),",
+                  "        \"a ticket has no boolean `reported`\").to.eql([]);",
+                  "    const disagree = t.filter(x => x.reported === (x.filing === null));",
+                  "    pm.expect(disagree.map(x => x.ticket_number + \" reported=\" + x.reported + \" filing=\" + JSON.stringify(x.filing)),",
+                  "        \"reported and filing disagree -- one of the two is lying about whether it was filed\").to.eql([]);",
+                  "    t.filter(x => x.reported).forEach(x => {",
+                  "        [\"invoice_id\",\"period_start\",\"period_end\",\"filed_at\",\"confirmation_ref\",\"filed_by_email\"]",
+                  "          .forEach(k => pm.expect(k in x.filing,",
+                  "            \"ticket \" + x.ticket_number + \" filing block is missing \" + k).to.eql(true));",
+                  "        pm.expect(x.filing.period_end >= x.filing.period_start,",
+                  "            \"ticket \" + x.ticket_number + \" filing period ends before it starts\").to.eql(true);",
+                  "    });",
+                  "    // capture a real ticket for folder 6",
+                  "    if (t.length) pm.collectionVariables.set(\"lwtTicket\", String(t[0].ticket_number));",
+                  "});",
+                  "",
+                  "pm.test(\"mode is reported, and says month\", () => {",
+                  "    pm.expect(pm.response.json().mode,",
+                  "        \"mode is missing or wrong -- a caller cannot tell a month pull from an unreported pull\").to.eql(\"month\");",
                   "});"
                 ]
               }
@@ -1178,6 +1272,466 @@
                 "exec": [
                   "pm.test('400', () => pm.response.to.have.status(400));",
                   "pm.test('names the reason', () => pm.expect(pm.response.json().error).to.eql('month_required_yyyy_mm'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Monthly - unreported=1 (selects by FILING STATE, not by month)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-rpa-key",
+                "value": "{{rpaBotKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?unreported=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Jonathan, 2026-08-25: \"your month= selects on offload date, but our filing window is the",
+                  "// invoice package, and packages don't align to months -- SP00013840 runs 06/28-07/25.",
+                  "// 'All tickets not yet marked reported' replaces that guesswork.\"",
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"mode says unreported and month is null\", () => {",
+                  "    const j = pm.response.json();",
+                  "    // 🛑 month MUST be null here. Emitting a month would invite a caller to believe the package",
+                  "    // window equals a calendar month, which is the exact assumption this mode exists to remove.",
+                  "    pm.expect(j.mode, \"mode is not unreported\").to.eql(\"unreported\");",
+                  "    pm.expect(j.month, \"month is not null in unreported mode\").to.eql(null);",
+                  "});",
+                  "pm.test(\"every ticket returned is genuinely unreported\", () => {",
+                  "    // The whole contract of this mode. A reported ticket appearing here would be filed twice.",
+                  "    const t = pm.response.json().tickets;",
+                  "    const leaked = t.filter(x => x.reported !== false);",
+                  "    pm.expect(leaked.map(x => x.ticket_number),",
+                  "        \"an ALREADY REPORTED ticket came back in the unreported list -- it would be filed twice\").to.eql([]);",
+                  "});",
+                  "pm.test(\"rows still carry the full shape\", () => {",
+                  "    // A second selection path is a second chance to serve a different shape. It must not.",
+                  "    const rows = pm.response.json().tickets.flatMap(t => t.rows);",
+                  "    if (!rows.length) { pm.expect(true).to.eql(true); return; }   // \"everything is filed\" is legal",
+                  "    [\"pickup_date\",\"client_code\",\"client_name\",\"address\",\"city\",\"state\",\"zip\",\"county\",",
+                  "     \"truck\",\"truck_decal\",\"truck_capacity_gallons\",\"gallons\",\"visit_id\"]",
+                  "      .forEach(k => pm.expect(rows.every(r => k in r),",
+                  "          \"unreported mode is missing \" + k + \" from its rows\").to.eql(true));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Monthly - month + unreported together -> 400 (never a silent preference)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-rpa-key",
+                "value": "{{rpaBotKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?month={{reportMonth}}&unreported=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400, not a silent preference for one of them\", () => {",
+                  "    // ⚠ A parameter the caller supplied being quietly ignored is how someone ends up believing",
+                  "    // they filtered when they did not. Refusing is the safe answer.",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql(\"month_and_unreported_are_exclusive\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Mark as reported (write) - dry-run safe, idempotent",
+      "item": [
+        {
+          "name": "Filed - record a dry-run filing",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-dryrun\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"invoice_id\": \"SP00013840\",\n  \"confirmation_ref\": null,\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// ⚠ Run \"5. Monthly - filing set\" FIRST so {{lwtTicket}} is captured.",
+                  "// 🛑 STABLE run_id on purpose: re-running this folder for ever creates exactly ONE row.",
+                  "// dry_run:true means the filing is recorded but NEVER marks a ticket reported.",
+                  "pm.test(\"200, and it is recorded (or already was)\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const j = pm.response.json();",
+                  "    // Either answer is correct: first run records it, every later run replays it.",
+                  "    pm.expect(j.recorded === true || j.already_recorded === true,",
+                  "        \"neither recorded nor already_recorded -- the write did not happen\").to.eql(true);",
+                  "    pm.expect(typeof j.filing_id, \"no filing_id returned\").to.eql(\"number\");",
+                  "});",
+                  "pm.test(\"a dry run does NOT mark the ticket reported\", () => {",
+                  "    // 🛑 The safety property of the whole folder. A rehearsal must never make a real ticket",
+                  "    // look filed to staff, or to the next unreported pull.",
+                  "    const t = pm.collectionVariables.get(\"lwtTicket\");",
+                  "    pm.sendRequest({",
+                  "        url: pm.collectionVariables.get(\"baseUrl\") + \"/rpa-derm-monthly?unreported=1\",",
+                  "        method: \"GET\",",
+                  "        header: { \"x-rpa-key\": pm.collectionVariables.get(\"rpaBotKey\") },",
+                  "    }, (err, res) => {",
+                  "        pm.expect(err, \"could not re-read the unreported list\").to.eql(null);",
+                  "        const still = res.json().tickets.some(x => String(x.ticket_number) === String(t));",
+                  "        pm.expect(still,",
+                  "            \"a DRY RUN marked ticket \" + t + \" as reported -- it would be dropped from a real filing\").to.eql(true);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filed - replay the same run_id -> idempotent, changes nothing",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-dryrun\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"invoice_id\": \"SP00013840\",\n  \"confirmation_ref\": null,\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 already_recorded, and recorded is false\", () => {",
+                  "    // 🛑 Idempotency is enforced by a UNIQUE index, not a look-then-write, so two concurrent",
+                  "    // replays cannot both insert. This is the normal answer to a retry, never an error.",
+                  "    pm.response.to.have.status(200);",
+                  "    const j = pm.response.json();",
+                  "    pm.expect(j.already_recorded, \"a replay was not recognised -- a duplicate filing may exist\").to.eql(true);",
+                  "    pm.expect(j.recorded, \"a replay reported itself as a fresh write\").to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filed - an UNKNOWN ticket is recorded and echoed, never rejected",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-unknown\",\n  \"tickets\": [\n    \"ZZZ-NOT-A-TICKET\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"invoice_id\": \"SP00013840\",\n  \"confirmation_ref\": null,\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Jonathan: \"any difference against the invoice becomes a finding in either direction --",
+                  "// including the reverse case we can't detect today.\" Refusing an unknown ticket would",
+                  "// DESTROY that finding, so it is stored and reported back instead.",
+                  "pm.test(\"200, recorded, and the unknown ticket is echoed back\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const j = pm.response.json();",
+                  "    pm.expect(j.recorded === true || j.already_recorded === true,",
+                  "        \"an unknown ticket was REJECTED -- the discrepancy Jonathan asked for is destroyed\").to.eql(true);",
+                  "    if (j.recorded === true) {",
+                  "        pm.expect(j.unknown_tickets,",
+                  "            \"an unresolvable ticket was NOT reported back -- the discrepancy is lost\").to.include(\"ZZZ-NOT-A-TICKET\");",
+                  "    } else {",
+                  "        // 🛑 THE ECHO CHECK IS INERT ON EVERY RUN AFTER THE FIRST. run_id is stable, so the",
+                  "        // row is recorded once and for ever and the replay path returns no unknown_tickets",
+                  "        // to inspect. The half above still runs and is the one that matters: an unknown",
+                  "        // ticket is ACCEPTED, never rejected. Bump the run_id suffix below once to re-arm",
+                  "        // the echo check. Do not make this silent -- a skipped assertion reads as a passing",
+                  "        // one in the run report.",
+                  "        console.log(\"NOTE: unknown_tickets echo NOT re-verified, this run replayed an \" +",
+                  "            \"existing run_id. Bump the run_id suffix in this body to test the echo again.\");",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filed - actor markers must agree -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-actor\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"invoice_id\": \"SP00013840\",\n  \"confirmation_ref\": null,\n  \"dry_run\": true,\n  \"filed_by_email\": \"someone@unclogme.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 actor_markers_disagree\", () => {",
+                  "    // filed_by_email must be present exactly when run_id starts with \"manual-\". The DB carries",
+                  "    // the same CHECK, so the two markers can never disagree about whether a person did this.",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql(\"actor_markers_disagree\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filed - period reversed -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-period\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-07-25\",\n  \"period_end\": \"2026-06-28\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"invoice_id\": \"SP00013840\",\n  \"confirmation_ref\": null,\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 period_end_before_period_start\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql(\"period_end_before_period_start\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filed - unknown field -> 400 (a typo is never ignored)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-typo\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"invoice_id\": \"SP00013840\",\n  \"confirmation_ref\": null,\n  \"dry_run\": true,\n  \"confirmaton_ref\": \"typo on purpose\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 unknown_fields\", () => {",
+                  "    // ⚠ A misspelled field name silently ignored is how a caller believes something was",
+                  "    // recorded that was not. Same accept-and-reject discipline as rpa-derm-result.",
+                  "    pm.response.to.have.status(400);",
+                  "    const j = pm.response.json();",
+                  "    pm.expect(j.error).to.eql(\"unknown_fields\");",
+                  "    pm.expect(j.fields, \"the offending field is not named\").to.include(\"confirmaton_ref\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filed - GET -> 405",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"405 method_not_allowed\", () => {",
+                  "    pm.response.to.have.status(405);",
+                  "    pm.expect(pm.response.json().error).to.eql(\"method_not_allowed\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filed - wrong key -> 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-rpa-key",
+                "value": "{{wrongRpaKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-badkey\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"invoice_id\": \"SP00013840\",\n  \"confirmation_ref\": null,\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 unauthorized\", () => {",
+                  "    // 🛑 And it must be 401 BEFORE any write. A bad key that still recorded a filing would be",
+                  "    // an unauthenticated write to compliance data.",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql(\"unauthorized\");",
+                  "});"
                 ]
               }
             }

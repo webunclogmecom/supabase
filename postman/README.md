@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
-**Last updated:** 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c).
+**Last updated:** 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, in §4c).
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -360,7 +360,7 @@ the queue, whose job is to never hand the same work out twice.
       "state": "FL", "zip": "33154", "county": "Dade",
       "pickup_in_dade": true, "in_scope": true,
       "truck": "Moises", "truck_capacity_gallons": 9000,   // INTERNAL fleet fact, do NOT file
-      "truck_decal": "C1184",             // key your gallons table on THIS. null => refuse the ticket.
+      "truck_decal": "C1184",             // the vehicle's PERMIT NUMBER. null => refuse the ticket.
       "gallons": null,                    // ALWAYS null. County bills MEASURED gallons.
       "visit_id": 4636,
       "anomaly": null                     // non-null = this row's dates are impossible
@@ -448,19 +448,34 @@ Verified against our own data: ticket **828837** is Moises, decal **C1184**, and
 ⇒ **`truck_capacity_gallons` is an INTERNAL FLEET FACT.** Nothing on the county form is computed
 from it. It is still served because it is useful for sanity-checking a load, but do not file it.
 
-### `truck_decal` — added 2026-08-26, and it is the field that unblocks quantity
+### `truck_decal`, added 2026-08-26: the vehicle's permit number
 
 Every row now carries **`truck_decal`**, the vehicle's **ACTIVE Miami-Dade** decal, so you can key
-into your own decal-to-gallons table instead of matching on truck names.
+on a stable permit number instead of matching on truck names.
 
 ```
 Moises → C1184        David → C0976        Cloggy → null        (no truck) → null
 ```
 
+⚠ **It does not resolve a quantity.** The county bills **measured gallons off the invoice** (see the
+correction above), so nothing on the form is computed from the decal or from capacity. The decal
+answers *which permitted vehicle carried this manifest*, and nothing else.
+
 Each ticket also carries **`truck_decals`**, the de-duplicated set for that ticket.
-⚠ **`truck_decals` is NOT positionally aligned with `trucks`.** Both are de-duplicated
+
+🛑 **`truck_decals` is a MANIFEST summary, not the set of decals belonging on your filing.** It is
+built from **every row on the ticket**, while `rows` is filtered to in-scope rows unless you pass
+`include=all`. So `truck_decals` can name a decal that appears on **no row you were served**.
+Live example, ticket **312024** (August): David ran two Broward pickups on that manifest, both out
+of scope, so every served row is Moises / C1184 while `truck_decals` is `["C0976","C1184"]`.
+**1 of 118 live tickets shows this**, which is exactly the density that survives a spot-check and
+then breaks a filing.
+⇒ **File from the row's own `truck_decal`.** Use `truck_decals` to answer "how many trucks touched
+this manifest", never "which permit numbers go on this form".
+
+⚠ **`truck_decals` is NOT positionally aligned with `trucks`** either. Both are de-duplicated
 independently, and a truck with no decal appears in one and not the other, so the arrays can differ
-in length. Join on the row's own `truck_decal`, never by index.
+in length. A caller zipping them by index would attribute Cloggy loads to David.
 
 🛑 **`truck_decal` is `null` on 51 of 700 rows and you must REFUSE those tickets, not guess.**
 Cloggy (43 rows / 27 in-scope tickets, offloads 2026-01-15 to 2026-08-20) holds no decal in **any**
@@ -770,3 +785,31 @@ and overriding it). Dry-run result writes create harmless `dry_run` rows in our 
 with `DELETE FROM public.derm_portal_submissions WHERE dry_run;`. There is deliberately no
 "SUCCESS needs confirmation" test here: that rule (and the double-file guards) apply only to LIVE
 reports, so a dry-run `SUCCESS` is exempt and cannot be exercised against dry-run data.
+
+### Folder 6 writes to Prod, on purpose, and here is exactly what it leaves
+
+Folder 6 exercises `rpa-derm-monthly-filed`, which is a **write** endpoint. Every request in it
+sends `dry_run: true` and uses a **stable `run_id`**, so re-running the folder for ever creates
+exactly **two** rows in `public.lwt_filings` (`bot-postman-dryrun`, `bot-postman-unknown`) rather
+than one per run. Both are `dry_run = true`.
+
+🛑 **A dry-run filing can never mark a ticket reported.** `derm.v_lwt_ticket_reported` resolves a
+ticket's filing through a `LEFT JOIN LATERAL` whose `WHERE` carries `lf.dry_run = false`, so the
+exclusion is structural rather than a branch someone can forget. Verified after a full folder run:
+`?unreported=1` returned **118 tickets before and 118 after**, and all 127 tickets in the view read
+`reported = false`. Folder 6 asserts this itself, by re-reading the unreported list after the write.
+
+⚠ The table is **append-only** and the endpoint's role holds only `SELECT` + `INSERT`, so unlike
+the `derm_portal_submissions` note above **there is no cleanup statement to offer you**. The two
+rows are meant to stay. That is the cost of testing a write endpoint honestly, and it is bounded at
+two rows because the `run_id` never rotates.
+
+⚠ **Run "5. Monthly - filing set" first.** It captures `{{lwtTicket}}`, which folder 6 files
+against. Running folder 6 cold files against the literal string `{{lwtTicket}}`, which the endpoint
+correctly rejects as an invalid ticket number.
+
+⚠ **One assertion in folder 6 goes inert after the first run ever.** The `unknown_tickets` echo can
+only be checked on the run that actually records the row; every later run takes the replay path,
+which returns no `unknown_tickets` to inspect. The request logs a `NOTE` when it skips, and the
+half that matters (an unknown ticket is **accepted**, never rejected) runs every time. To re-arm
+the echo check, bump the `run_id` suffix in that request's body once.
