@@ -23,7 +23,7 @@
 
 **4. Claim the work first.** Append to `WORKING-NOW.md` at the workspace root and commit in the same breath. Include: `ops.calendar_tasks`, `entity_source_links`, edge fns `save-calendar-task` / `poll-calendar-tasks`, and the Visit Calendar Lovable project.
 
-**5. Get today's date from the DB, never from memory.** `select to_char(now() at time zone 'America/New_York','YYYY-MM-DD HH24:MI');` Migration filenames are the apply ORDER. `2026-08-25_1525` is already taken, so start at `1600`.
+**5. Get today's date from the DB, never from memory.** `select to_char(now() at time zone 'America/New_York','YYYY-MM-DD HH24:MI');` Migration filenames are the apply ORDER. The newest applied is `2026-08-26_1710` (the other session), so this plan uses `2026-08-26_1800` onward. The numeric part is an ORDERING LABEL in this repo, not a wall clock: what matters is that it sorts after everything already applied.
 
 ---
 
@@ -34,7 +34,7 @@
 **Why first:** on 2026-08-06 the missing value made `jobber-push-task` return `ok:true` having created a real Jobber Task with no link row, and the next push would have minted a second one on the crew's schedule. Nothing can push until this exists.
 
 **Files:**
-- Create: `Supabase/docs/migrations/2026-08-25_1600_esl_allow_calendar_task.sql`
+- Create: `Supabase/docs/migrations/2026-08-26_1800_esl_allow_calendar_task.sql`
 - Create: `Supabase/scripts/probes/calendar_task_esl.mjs`
 
 - [ ] **Step 1: Write the failing probe**
@@ -90,10 +90,10 @@ Expected: control passes, `target calendar_task allowed: false` with a `23514` c
 
 - [ ] **Step 3: Write the migration**
 
-Create `Supabase/docs/migrations/2026-08-25_1600_esl_allow_calendar_task.sql`:
+Create `Supabase/docs/migrations/2026-08-26_1800_esl_allow_calendar_task.sql`:
 
 ```sql
--- 2026-08-25_1600_esl_allow_calendar_task.sql
+-- 2026-08-26_1800_esl_allow_calendar_task.sql
 --
 -- WHAT: allow entity_type = 'calendar_task' on public.entity_source_links.
 --
@@ -140,7 +140,7 @@ Expected: control passes, `target calendar_task allowed: true`.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add docs/migrations/2026-08-25_1600_esl_allow_calendar_task.sql scripts/probes/calendar_task_esl.mjs && git commit -- docs/migrations/2026-08-25_1600_esl_allow_calendar_task.sql scripts/probes/calendar_task_esl.mjs -m "Allow calendar_task on entity_source_links
+cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add docs/migrations/2026-08-26_1800_esl_allow_calendar_task.sql scripts/probes/calendar_task_esl.mjs && git commit -- docs/migrations/2026-08-26_1800_esl_allow_calendar_task.sql scripts/probes/calendar_task_esl.mjs -m "Allow calendar_task on entity_source_links
 
 Calendar Tasks link an ops.calendar_tasks row to its Jobber Task GID. Without
 this the push creates a real Task and cannot record the link, which is how a
@@ -154,7 +154,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" && git pus
 ### Task 2: The tables
 
 **Files:**
-- Create: `Supabase/docs/migrations/2026-08-25_1610_calendar_tasks_tables.sql`
+- Create: `Supabase/docs/migrations/2026-08-26_1810_calendar_tasks_tables.sql`
 - Create: `Supabase/scripts/probes/calendar_task_grants.mjs`
 
 - [ ] **Step 1: Write the failing grant probe**
@@ -202,10 +202,10 @@ Expected: `CONTROL ... true`, then `(tables not created yet)`.
 
 - [ ] **Step 3: Write the migration**
 
-Create `Supabase/docs/migrations/2026-08-25_1610_calendar_tasks_tables.sql`:
+Create `Supabase/docs/migrations/2026-08-26_1810_calendar_tasks_tables.sql`:
 
 ```sql
--- 2026-08-25_1610_calendar_tasks_tables.sql
+-- 2026-08-26_1810_calendar_tasks_tables.sql
 --
 -- WHAT: ops.calendar_tasks + ops.calendar_task_assignees.
 --
@@ -315,7 +315,7 @@ Expected: control true, and both new tables report `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add docs/migrations/2026-08-25_1610_calendar_tasks_tables.sql scripts/probes/calendar_task_grants.mjs && git commit -- docs/migrations/2026-08-25_1610_calendar_tasks_tables.sql scripts/probes/calendar_task_grants.mjs -m "Add ops.calendar_tasks with no write grant for any role
+cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add docs/migrations/2026-08-26_1810_calendar_tasks_tables.sql scripts/probes/calendar_task_grants.mjs && git commit -- docs/migrations/2026-08-26_1810_calendar_tasks_tables.sql scripts/probes/calendar_task_grants.mjs -m "Add ops.calendar_tasks with no write grant for any role
 
 Writes go through a SECDEF recorder called only after Jobber confirms, so the
 no-discrepancy guarantee is structural rather than a convention.
@@ -330,7 +330,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" && git pus
 The single writer. Persists the task, its assignees and the link row in one transaction.
 
 **Files:**
-- Create: `Supabase/docs/migrations/2026-08-25_1620_fn_record_calendar_task.sql`
+- Create: `Supabase/docs/migrations/2026-08-26_1820_fn_record_calendar_task.sql`
 - Create: `Supabase/scripts/probes/calendar_task_recorder.mjs`
 
 - [ ] **Step 1: Write the failing probe**
@@ -381,10 +381,10 @@ Expected: throws with `function ops.fn_record_calendar_task(jsonb) does not exis
 
 - [ ] **Step 3: Write the migration**
 
-Create `Supabase/docs/migrations/2026-08-25_1620_fn_record_calendar_task.sql`:
+Create `Supabase/docs/migrations/2026-08-26_1820_fn_record_calendar_task.sql`:
 
 ```sql
--- 2026-08-25_1620_fn_record_calendar_task.sql
+-- 2026-08-26_1820_fn_record_calendar_task.sql
 --
 -- WHAT: the ONLY writer for ops.calendar_tasks. SECDEF, EXECUTE to service_role only.
 --
@@ -513,7 +513,7 @@ Expected: unchanged, both tables `OK`. Adding a SECDEF function must not have wi
 - [ ] **Step 6: Commit**
 
 ```bash
-cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add docs/migrations/2026-08-25_1620_fn_record_calendar_task.sql scripts/probes/calendar_task_recorder.mjs && git commit -- docs/migrations/2026-08-25_1620_fn_record_calendar_task.sql scripts/probes/calendar_task_recorder.mjs -m "Add the single SECDEF writer for calendar tasks
+cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add docs/migrations/2026-08-26_1820_fn_record_calendar_task.sql scripts/probes/calendar_task_recorder.mjs && git commit -- docs/migrations/2026-08-26_1820_fn_record_calendar_task.sql scripts/probes/calendar_task_recorder.mjs -m "Add the single SECDEF writer for calendar tasks
 
 Idempotent on the Jobber GID so a retry after a network failure that actually
 succeeded upstream updates rather than duplicating.
@@ -762,7 +762,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" && git pus
 
 **Files:**
 - Create: `Supabase/supabase/functions/poll-calendar-tasks/index.ts`
-- Create: `Supabase/docs/migrations/2026-08-25_1640_calendar_task_poll_cron.sql`
+- Create: `Supabase/docs/migrations/2026-08-26_1840_calendar_task_poll_cron.sql`
 - Modify: `Supabase/supabase/config.toml`
 
 - [ ] **Step 1: Write the function**
@@ -821,10 +821,10 @@ Expected on an empty table: `{"ok":true,"checked":0,"adopted":0}`.
 
 - [ ] **Step 3: Write the cron migration**
 
-Create `Supabase/docs/migrations/2026-08-25_1640_calendar_task_poll_cron.sql`, following the existing `fn_request_jobber_sync` wrapper pattern (read it first: `select prosrc from pg_proc where proname='fn_request_jobber_sync';`) so the cron command calls a SQL wrapper rather than embedding the URL:
+Create `Supabase/docs/migrations/2026-08-26_1840_calendar_task_poll_cron.sql`, following the existing `fn_request_jobber_sync` wrapper pattern (read it first: `select prosrc from pg_proc where proname='fn_request_jobber_sync';`) so the cron command calls a SQL wrapper rather than embedding the URL:
 
 ```sql
--- 2026-08-25_1640_calendar_task_poll_cron.sql
+-- 2026-08-26_1840_calendar_task_poll_cron.sql
 --
 -- WHAT: */5 cron that polls Jobber for completion on our open calendar tasks.
 --
@@ -869,7 +869,7 @@ select jobname, status, return_message, start_time
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add supabase/functions/poll-calendar-tasks/index.ts supabase/config.toml docs/migrations/2026-08-25_1640_calendar_task_poll_cron.sql && git commit -- supabase/functions/poll-calendar-tasks/index.ts supabase/config.toml docs/migrations/2026-08-25_1640_calendar_task_poll_cron.sql -m "Poll Jobber for calendar-task completion on its own cron
+cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && git add supabase/functions/poll-calendar-tasks/index.ts supabase/config.toml docs/migrations/2026-08-26_1840_calendar_task_poll_cron.sql && git commit -- supabase/functions/poll-calendar-tasks/index.ts supabase/config.toml docs/migrations/2026-08-26_1840_calendar_task_poll_cron.sql -m "Poll Jobber for calendar-task completion on its own cron
 
 Queries by Task GID via TaskFilterAttributes.ids, so it needs no date window and
 no updatedAt. Kept out of sync-jobber-poll so the safety net cannot take down the
