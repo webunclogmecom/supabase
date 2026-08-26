@@ -43,6 +43,7 @@ Create `Supabase/scripts/probes/calendar_task_esl.mjs`:
 
 ```js
 import { readFileSync } from 'fs'
+import { pathToFileURL } from 'url'
 const env = Object.fromEntries(readFileSync('.env','utf8').split(/\r?\n/)
   .filter(l => l.includes('=')).map(l => { const i = l.indexOf('='); return [l.slice(0,i).trim(), l.slice(i+1).trim()] }))
 
@@ -56,7 +57,13 @@ export async function sql(query) {
   return j
 }
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g,'/')}`) {
+// 🛑 THE MAIN-MODULE GUARD MUST USE pathToFileURL. On Windows import.meta.url is
+// `file:///C:/...` (three slashes) while `file://` + a backslash-replaced argv[1] gives
+// `file://C:/...` (two), so a hand-built comparison NEVER matches, the whole block is
+// skipped, and the script exits 0 printing NOTHING. A probe that prints nothing is not a
+// passing probe, it is a broken instrument. This plan shipped with the broken form and the
+// Task 1 implementer caught it on the first run. Verified on this machine 2026-08-26.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   // POSITIVE CONTROL: an already-allowed value must insert cleanly.
   const control = await sql(`
     begin;
