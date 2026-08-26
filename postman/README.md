@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
-**Last updated:** 2026-08-24 (added the evidence endpoint, §4b).
+**Last updated:** 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c).
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -348,6 +348,9 @@ the queue, whose job is to never hand the same work out twice.
     "offload_date": "2026-06-01",
     "disposal_facility": "South District WWTP",
     "trucks": ["Moises"],
+    "truck_decals": ["C1184"],       // NOT index-aligned with trucks
+    "reported": false,                // has this ticket been recorded as filed?
+    "filing": null,                   // the filing block when reported=true
     "excluded_rows": 0,                   // rows on THIS ticket that fell out of scope
     "rows": [{
       "pickup_date": "2026-05-28",        // the VISIT date. see the warning below
@@ -356,8 +359,9 @@ the queue, whose job is to never hand the same work out twice.
       "address": "9463 Harding Avenue", "city": "Surfside",
       "state": "FL", "zip": "33154", "county": "Dade",
       "pickup_in_dade": true, "in_scope": true,
-      "truck": "Moises", "truck_capacity_gallons": 9000,
-      "gallons": null,                    // ALWAYS null. Resolve from the decal your side.
+      "truck": "Moises", "truck_capacity_gallons": 9000,   // INTERNAL fleet fact, do NOT file
+      "truck_decal": "C1184",             // key your gallons table on THIS. null => refuse the ticket.
+      "gallons": null,                    // ALWAYS null. County bills MEASURED gallons.
       "visit_id": 4636,
       "anomaly": null                     // non-null = this row's dates are impossible
     }]
@@ -429,11 +433,47 @@ that is the bug, not the data.
 
 ### ⚠ `gallons` is always `null`, and that is the contract
 
-The filed quantity is the **truck capacity**, which is a property of the vehicle and its decal, not of
-the manifest. We store no measured volume per load, so any number here would be a guess dressed as
-data. `truck` and `truck_capacity_gallons` are served so you have the input. The fee arithmetic
-(`total gal × $0.00419`, **truncated** to cents, not rounded) stays in your generator, which is
-validated against filed pages.
+We store **no measured volume per load** (0 non-null of 700 rows), so any number here would be a
+guess dressed as data.
+
+🛑 **CORRECTED 2026-08-26. An earlier version of this section said "the filed quantity is the truck
+capacity". That was wrong, and if you built against it, re-check.** Jonathan, 2026-08-25:
+
+> *"The county invoice bills actual gallons per manifest — 828837 is 3,800 on the invoice, which as
+> you noted matches no truck — and the form's fee is computed from those gallons. So decal capacity
+> can't fill Quantity."*
+
+Verified against our own data: ticket **828837** is Moises, decal **C1184**, and
+`truck_capacity_gallons` **9000** here, against **3,800** billed by the county.
+⇒ **`truck_capacity_gallons` is an INTERNAL FLEET FACT.** Nothing on the county form is computed
+from it. It is still served because it is useful for sanity-checking a load, but do not file it.
+
+### `truck_decal` — added 2026-08-26, and it is the field that unblocks quantity
+
+Every row now carries **`truck_decal`**, the vehicle's **ACTIVE Miami-Dade** decal, so you can key
+into your own decal-to-gallons table instead of matching on truck names.
+
+```
+Moises → C1184        David → C0976        Cloggy → null        (no truck) → null
+```
+
+Each ticket also carries **`truck_decals`**, the de-duplicated set for that ticket.
+⚠ **`truck_decals` is NOT positionally aligned with `trucks`.** Both are de-duplicated
+independently, and a truck with no decal appears in one and not the other, so the arrays can differ
+in length. Join on the row's own `truck_decal`, never by index.
+
+🛑 **`truck_decal` is `null` on 51 of 700 rows and you must REFUSE those tickets, not guess.**
+Cloggy (43 rows / 27 in-scope tickets, offloads 2026-01-15 to 2026-08-20) holds no decal in **any**
+jurisdiction, and 6 rows carry no truck at all. Whether Cloggy is a permitted LWT vehicle at all is
+an open question with Diego. Never substitute a capacity, a truck name, or a Broward decal: that
+would put a wrong permit number on a county filing.
+
+⚠ **Miami-Dade only, on purpose.** The Broward decal exists in our data and is deliberately not
+served, because which decal a Broward-offload row should carry is entangled with the scope question
+that is still with Yan.
+
+⚠ **No temporal validity.** If a decal is ever replaced, historical months will report the *current*
+one. True today for all four decals, and a real trap the first time a truck is re-permitted.
 
 ### 🛑 `data_quality` — read this before you file
 
@@ -480,6 +520,113 @@ for the same month costs a `304`.
 | 401 | `unauthorized` | missing/wrong `x-rpa-key` |
 | 405 | `method_not_allowed` | anything but GET |
 | 500 | `monthly_query_failed` | transient, retry |
+
+---
+
+## 4d. `?unreported=1` and `POST /functions/v1/rpa-derm-monthly-filed`: mark as reported
+
+Built 2026-08-26, to your spec. Two pieces: a way to ask **"what have we not filed yet?"** without
+guessing at months, and a way to record that a package **was** filed.
+
+### Why it is ticket-grained and not month-grained
+
+Your words, and they are the whole design:
+
+> *"the flag has to live on the ticket, not on the month ... your `month=` selects on offload date,
+> but our filing window is the invoice package, and packages don't align to months. SP00013840 runs
+> 06/28-07/25. 'All tickets not yet marked reported' replaces that guesswork."*
+
+So `period_start` / `period_end` record the **package's real window**. They are not derived from,
+and must never be reconciled against, the `month=` parameter of the GET.
+
+### `GET /functions/v1/rpa-derm-monthly?unreported=1`
+
+Returns **every in-scope ticket with no real filing recorded**, across all months, ignoring
+`month=` entirely. Same payload shape as the month call, with `"mode": "unreported"` and
+`"month": null`.
+
+⚠ **Sending `month=` and `unreported=1` together is a `400 month_and_unreported_are_exclusive`**,
+not a silent preference for one. A parameter you supplied being quietly ignored is how you end up
+believing you filtered when you did not.
+
+Every ticket in **both** modes now carries filing state:
+
+```jsonc
+"reported": true,
+"filing": {
+  "invoice_id": "SP00013840",
+  "period_start": "2026-06-28",
+  "period_end":   "2026-07-25",
+  "filed_at": "2026-08-26T19:40:00.000Z",
+  "confirmation_ref": null,          // routinely null, see below
+  "filed_by_email": "fred@ayache.com"
+}
+```
+
+`"reported": false` gives `"filing": null`.
+
+### `POST /functions/v1/rpa-derm-monthly-filed`
+
+Same `x-rpa-key`. Call it **after** the form is actually submitted.
+
+```jsonc
+{
+  "run_id": "manual-2026-08-26-sp13840",   // idempotency key
+  "tickets": ["828837", "829216"],          // ticket_number as served by the GET
+  "period_start": "2026-06-28",
+  "period_end":   "2026-07-25",
+  "filed_at": "2026-08-26T19:40:00.000Z",  // when YOU filed, not when you call us
+  "invoice_id": "SP00013840",               // optional
+  "confirmation_ref": null,                 // optional, free text, nullable
+  "filed_by_email": "jon.v@ayache.com",     // required iff run_id starts with "manual-"
+  "dry_run": false                          // optional
+}
+```
+
+**Responses**
+
+| | |
+|---|---|
+| `200 {"recorded":true, "filing_id":…, "tickets_recorded":N, "unknown_tickets":[…]}` | stored |
+| `200 {"recorded":false, "already_recorded":true, "filing_id":…}` | **replay of a `run_id` we hold. Normal, not an error.** Nothing was changed. |
+| `400` | see the error list below |
+| `401` / `405` | bad key / wrong method |
+
+### The five rules worth knowing
+
+1. 🛑 **Idempotent on `run_id`, enforced by a unique index rather than a look-then-write.** Two
+   concurrent replays cannot both insert: one wins, the other takes the replay path. Retry as often
+   as you like.
+2. 🛑 **Append-only.** There is no update and no delete, and the endpoint's role holds only
+   `SELECT` + `INSERT`, so the inability is a **grant**, not a branch. A record of "we told the
+   county this" must not be machine-rewritable.
+3. ⚠ **An unknown ticket is RECORDED, not rejected, and echoed back in `unknown_tickets`.** Your
+   words: *"any difference against the invoice becomes a finding in either direction, including the
+   reverse case we can't detect today."* Refusing it would destroy exactly that finding. A
+   non-empty `unknown_tickets` means you filed something we have no manifest for: worth a look, not
+   an error.
+4. ⚠ **`confirmation_ref` is free text and nullable, and null is the normal case.** Your words:
+   *"the county gives no confirmation number for the monthly form. None of the six filed months has
+   one."* There is no format check and nothing infers a failure from its absence.
+5. ⚠ **`dry_run: true` records the filing but never marks a ticket reported.** A rehearsal must not
+   make a real ticket look filed.
+
+⚠ **`filed_by_email` must be present exactly when `run_id` starts with `manual-`**, and absent
+otherwise. Same rule `derm_portal_submissions` uses, so the two markers can never disagree about
+whether a person did this. Violating it is a `400 actor_markers_disagree`, and the database carries
+the same CHECK, so it cannot be bypassed.
+
+**Errors:** `unknown_fields`, `invalid_run_id`, `tickets_required`, `too_many_tickets`,
+`invalid_ticket_numbers`, `invalid_period_start`, `invalid_period_end`,
+`period_end_before_period_start`, `invalid_filed_at`, `actor_markers_disagree`, `invalid_json`,
+`invalid_body`.
+
+### What this deliberately is NOT
+
+Option 2, not option 3. **No per-ticket status enum, no partial-filing model, no correction
+workflow, no resubmission state.** A ticket is either recorded on a real filing or it is not. A
+refile is simply a second filing that includes it, and `reported` stays an existence question.
+If you need option 3, say so and it is a new migration, not a column bolted onto this.
 
 ---
 

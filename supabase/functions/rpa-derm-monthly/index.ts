@@ -81,7 +81,20 @@ Deno.serve(async (req: Request) => {
   const month = (url.searchParams.get('month') ?? '').trim()
   const includeAll = (url.searchParams.get('include') ?? '') === 'all'
 
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+  // 🛑 ?unreported=1 SELECTS BY FILING STATE, NOT BY MONTH, AND IGNORES month= ENTIRELY.
+  // Jonathan, 2026-08-25: "your month= selects on offload date, but our filing window is the
+  // invoice package, and packages don't align to months -- SP00013840 runs 06/28-07/25.
+  // 'All tickets not yet marked reported' replaces that guesswork."
+  // A month-windowed fetch cannot express a package that straddles a boundary, so this mode
+  // exists to avoid making the caller guess which months to pull.
+  // ⚠ month= is REJECTED alongside it rather than ignored: silently disregarding a parameter the
+  // caller supplied is how someone ends up believing they filtered when they did not.
+  const unreportedOnly = (url.searchParams.get('unreported') ?? '') === '1'
+  if (unreportedOnly && month) {
+    return json({ error: 'month_and_unreported_are_exclusive' }, 400)
+  }
+
+  if (!unreportedOnly && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     return json({ error: 'month_required_yyyy_mm' }, 400)
   }
 
@@ -89,13 +102,15 @@ Deno.serve(async (req: Request) => {
   // ⚠ A pickup can therefore fall in the PREVIOUS month (real: ticket 831710 offloaded
   // 2026-08-02 carries a 2026-07-30 pickup). That is deliberate and is an open question
   // for John, not something to silently "fix" by filtering on pickup_date too.
-  const [y, m] = month.split('-').map(Number)
-  const start = `${month}-01`
-  const endD = new Date(Date.UTC(y, m, 1)) // first of the next month
-  const end = endD.toISOString().slice(0, 10)
+  // In unreported mode there is no month window; these are unused and set to safe sentinels
+  // so the month guard rails below cannot fire on a request that has no month.
+  const [y, m] = unreportedOnly ? [0, 0] : month.split('-').map(Number)
+  const start = unreportedOnly ? null : `${month}-01`
+  const endD = unreportedOnly ? null : new Date(Date.UTC(y, m, 1)) // first of the next month
+  const end = endD ? endD.toISOString().slice(0, 10) : null
 
   // Guard rails: nothing before the first manifest, nothing far in the future.
-  if (y < 2024 || endD.getTime() > Date.now() + 62 * 24 * 3600 * 1000) {
+  if (!unreportedOnly && (y < 2024 || endD!.getTime() > Date.now() + 62 * 24 * 3600 * 1000)) {
     return json({ error: 'month_out_of_range' }, 400)
   }
 
@@ -110,12 +125,48 @@ Deno.serve(async (req: Request) => {
   // Omitting it is exactly the defect that made record-manual-gdo-report fail for
   // every visit in its entire history (fixed 2026-08-24, commit e30f28f). The failure
   // is a plain "relation does not exist" that reads like the view was never created.
-  const { data, error } = await sb
+  // Filing state, keyed by ticket. Read for BOTH modes: in unreported mode it selects the rows,
+  // and in month mode it decorates them, so a caller pulling a month can see what is already
+  // filed without a second call.
+  const { data: repRows, error: repErr } = await sb
+    .schema('derm')
+    .from('v_lwt_ticket_reported')
+    .select('ticket_number, reported, invoice_id, period_start, period_end, filed_at, confirmation_ref, filed_by_email')
+  if (repErr) {
+    console.error('reported lookup failed:', repErr.message)
+    return json({ error: 'reported_lookup_failed' }, 500)
+  }
+  const reportedByTicket = new Map(
+    (repRows ?? []).map((r) => [String(r.ticket_number), r]),
+  )
+  const unreportedTickets = (repRows ?? [])
+    .filter((r) => r.reported !== true)
+    .map((r) => String(r.ticket_number))
+
+  // ⚠ An empty result here is a legitimate answer ("everything is filed"), NOT an error, and it
+  // must not fall through to an unfiltered .in() -- PostgREST treats `in.()` as matching nothing
+  // in some versions and everything in others, and guessing which would be a silent full dump of
+  // the estate. Return the empty shape explicitly instead.
+  if (unreportedOnly && unreportedTickets.length === 0) {
+    return json({
+      month: null,
+      mode: 'unreported',
+      ticket_count: 0,
+      tickets: [],
+      generated_at: new Date().toISOString(),
+      note: 'every in-scope ticket has been recorded as filed',
+    }, 200)
+  }
+
+  let qy = sb
     .schema('derm')
     .from('v_lwt_monthly_rows')
     .select('*')
-    .gte('offload_date', start)
-    .lt('offload_date', end)
+  qy = unreportedOnly
+    ? qy.in('ticket_number', unreportedTickets)
+    : qy.gte('offload_date', start!).lt('offload_date', end!)
+
+  const { data, error } = await qy
     .order('offload_date', { ascending: true })
     .order('ticket_number', { ascending: true })
     .order('pickup_date', { ascending: true })
@@ -222,7 +273,29 @@ Deno.serve(async (req: Request) => {
       offload_date: head.offload_date,
       disposal_facility: head.disposal_facility,
       trucks: [...new Set(all.map((r) => r.truck).filter(Boolean))],
+      // Parallel to `trucks`, for a caller that resolves per ticket rather than per row.
+      // ⚠ NOT positionally aligned with `trucks`: both are de-duplicated independently, and a
+      // truck with no decal contributes to `trucks` and not here, so the arrays can differ in
+      // length. Join on the row's own truck_decal, never by index.
+      truck_decals: [...new Set(all.map((r) => r.truck_decal).filter(Boolean))],
       excluded_rows: excluded,
+      // Filing state for this ticket. `reported` is an EXISTENCE question, not a state machine:
+      // true means some non-dry-run filing recorded this ticket. A refiled ticket reports the
+      // most recent real filing. dry_run filings never set it.
+      // ⚠ confirmation_ref is routinely null and that is NOT a failure: Jonathan, 2026-08-25,
+      // "the county gives no confirmation number for the monthly form -- none of the six filed
+      // months has one." Do not infer anything from its absence.
+      reported: reportedByTicket.get(ticketNumber)?.reported === true,
+      filing: reportedByTicket.get(ticketNumber)?.reported === true
+        ? {
+          invoice_id: reportedByTicket.get(ticketNumber)!.invoice_id,
+          period_start: reportedByTicket.get(ticketNumber)!.period_start,
+          period_end: reportedByTicket.get(ticketNumber)!.period_end,
+          filed_at: reportedByTicket.get(ticketNumber)!.filed_at,
+          confirmation_ref: reportedByTicket.get(ticketNumber)!.confirmation_ref,
+          filed_by_email: reportedByTicket.get(ticketNumber)!.filed_by_email,
+        }
+        : null,
       rows: kept.map((r) => ({
         pickup_date: r.pickup_date,
         client_code: r.client_code,
@@ -236,11 +309,24 @@ Deno.serve(async (req: Request) => {
         in_scope: r.in_scope,
         truck: r.truck,
         // numeric() arrives as a string over PostgREST; emit a number or null.
+        // ⚠ INTERNAL FLEET FACT, NOT THE FILED QUANTITY. Corrected 2026-08-26 after Jonathan:
+        // "The county invoice bills actual gallons per manifest -- 828837 is 3,800 on the
+        // invoice, which as you noted matches no truck -- and the form's fee is computed from
+        // those gallons. So decal capacity can't fill Quantity." Ticket 828837 is Moises /
+        // decal C1184 / 9000 here, against 3,800 billed. Nothing on the county form is computed
+        // from this number. An earlier comment here claimed the opposite; do not restore it.
         truck_capacity_gallons: r.truck_capacity_gallons == null
           ? null
           : Number(r.truck_capacity_gallons),
-        // ALWAYS null. The filed quantity is truck capacity, resolved from the decal
-        // caller-side. We store no measured volume, so a value here would be a guess.
+        // The vehicle's ACTIVE Miami-Dade decal, added 2026-08-26 because the caller resolves
+        // quantity from a decal-keyed table and the payload previously carried only truck names.
+        // null on 51 of 700 rows: Cloggy (43 rows / 27 in-scope tickets) holds no decal in any
+        // jurisdiction, and 6 rows carry no truck at all. A null must make the caller REFUSE the
+        // ticket. Never substitute a capacity, a truck name, or another jurisdiction's decal:
+        // that would put a wrong permit number on a county filing.
+        truck_decal: r.truck_decal ?? null,
+        // ALWAYS null. We store no measured volume (0 non-null of 700), and the county bills
+        // measured gallons, so any value here would be a guess presented as a fact.
         gallons: null,
         visit_id: r.visit_id,
         // null on a healthy row. Present = this activity is internally contradictory
@@ -267,7 +353,11 @@ Deno.serve(async (req: Request) => {
   )
 
   const body = {
-    month,
+    // null in unreported mode: the selection was not a month, and emitting a month here would
+    // invite a caller to believe the package window equals a calendar month, which is the exact
+    // assumption this mode exists to remove.
+    month: unreportedOnly ? null : month,
+    mode: unreportedOnly ? 'unreported' : 'month',
     generated_at: new Date().toISOString(),
     county: 'Miami-Dade',
     scope: 'picked up in Miami-Dade OR offloaded in Miami-Dade, evaluated per activity',
