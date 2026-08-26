@@ -39,7 +39,19 @@
 // ============================================================================================
 // THE HELPERS BELOW ARE COPIED BYTE-FOR-BYTE FROM jobber-push-task. DO NOT RETYPE THEM.
 // ============================================================================================
-// getJobberToken / gql / errsOf are lifted verbatim (sha256-checked at build time).
+// getJobberToken / gql / errsOf are lifted verbatim.
+// 🛑 THERE IS NO BUILD STEP. An earlier version of this line said these were "sha256-checked at
+//   build time" and that was FALSE: `supabase functions deploy` bundles and uploads and nothing
+//   else runs, `npm test` is a stub, there are no active git hooks, and no CI workflow touches edge
+//   functions. The check it named had never been committed. That is worse than having no check,
+//   because a reader trusts the comment and skips verifying — the same false-all-clear shape this
+//   file guards against everywhere else, aimed at itself.
+//   ⇒ The check is REAL now and it is a probe someone RUNS, not a build step:
+//        node scripts/probes/calendar_task_helpers_verbatim.mjs
+//     It asserts the three helpers are byte-identical to jobber-push-task's, that etToUtcISO
+//     DIFFERS, and that the buggy 12:00-UTC probe is absent here and present there — with a control
+//     that fails if that probe string ever stops existing in the original. Run it after touching
+//     this file or jobber-push-task. Nothing runs it for you.
 // ⚠ etToUtcISO is the ONE DELIBERATE EXCEPTION — it is NOT identical, because the shared original
 //   has a DST spring-forward bug that a timed task's read-back structurally cannot see. The long
 //   explanation sits directly above the function; jobber-push-task and jobber-push-visit still
@@ -252,8 +264,28 @@ function tzOffsetMsAt(utcMs: number): number {
   return asIfUTC - utcMs;
 }
 
+// 🛑 IS THIS A REAL DAY ON THE CALENDAR? `^\d{4}-\d{2}-\d{2}$` is a SHAPE check, not a date check:
+// it happily admits 2026-02-30, 2026-04-31, 2026-13-05 and 2026-00-10. Those all make etToUtcISO
+// return null too, and null is otherwise the spring-forward-gap signal — so without this the caller
+// told someone that 2026-02-30 was fine except for daylight saving. Same fail-closed 400 either
+// way; the difference is whether the explanation is true.
+// Round-trip rather than range-check the parts: Date.UTC ROLLS OVER (2026-02-30 -> Mar 2), and
+// setUTCFullYear is used because Date.UTC remaps years 0-99 into 1900+.
+function isRealCalendarDate(dateISO: string): boolean {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const t = new Date(0);
+  t.setUTCFullYear(y, m - 1, d);
+  t.setUTCHours(0, 0, 0, 0);
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+}
+
 // task_date + minutes (minute-of-day, ET) -> a UTC instant, or NULL if that ET wall time does not
 // exist on that date (the spring-forward gap).
+// ⚠ It also returns null for an impossible DATE, which is why the handler validates the date with
+// isRealCalendarDate FIRST — see the DST-gap message at the call site. Two causes, one signal, so
+// the ordering is what keeps the two explanations apart.
 function etToUtcISO(dateISO: string, minutes: number): string | null {
   const [y, m, d] = dateISO.split("-").map(Number);
   if (!y || !m || !d) return null;
@@ -668,6 +700,14 @@ Deno.serve(async (req) => {
     const taskDate = has(body, "task_date") ? String(body.task_date ?? "") : String(cur?.task_date ?? "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(taskDate)) {
       return fail(400, "invalid_input", "task_date is required and must be YYYY-MM-DD.");
+    }
+    // 🛑 THE SHAPE CHECK ABOVE IS NOT A DATE CHECK. It admits 2026-02-30 / 2026-04-31 / 2026-13-05
+    // / 2026-00-10, all of which then make etToUtcISO return null — the SAME signal the
+    // spring-forward gap uses — so an impossible date used to be explained as a daylight-saving
+    // problem. Both refuse and write nothing; only one of them was telling the truth.
+    if (!isRealCalendarDate(taskDate)) {
+      return fail(400, "invalid_input",
+        `${taskDate} is not a real date on the calendar. Check the day and month.`);
     }
 
     // ---- all-day vs timed -------------------------------------------------------------------
