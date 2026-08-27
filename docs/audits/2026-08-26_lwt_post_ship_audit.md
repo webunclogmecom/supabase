@@ -1,9 +1,14 @@
 # LWT monthly filing: the ship, and the audit that followed it, 2026-08-26
 
 *Fred: "do an audit to see if we're missing something, and if not, send me the dm to copy."*
-Time taken from the DB (`now() at time zone 'America/New_York'`), not the session clock, per
-`feedback_get_todays_date_from_the_db_not_memory`. The workspace runs on ET; the machine clock had
-already rolled past midnight CEST, which is why today's dated artefacts read 2026-08-26.
+
+**The work described here happened on 2026-08-26 ET; this file was written at 2026-08-27 04:12 ET.**
+Every timestamp came from the DB (`now() at time zone 'America/New_York'`), never the session clock,
+per `feedback_get_todays_date_from_the_db_not_memory`, and that rule earned itself again here. An
+earlier draft of this paragraph said the ET day had *not* yet rolled and that the machine clock
+running CEST was the only reason today's artefacts read 08-26. True when written at 18:50 ET, stale
+by the time the file was committed. The migrations (`_1815`, `_1842`) are stamped with the ET time
+they were actually applied, so the filename date is right for the ship.
 
 **Audience:** whoever next touches `rpa-derm-monthly`, `rpa-derm-monthly-filed`, or the tables
 behind them. **This is not a summary of what shipped** (the API reference in `postman/README.md`
