@@ -94,6 +94,10 @@ Deno.serve(async (req: Request) => {
   const photoId = Number(body.photo_id)
   const rotation = Number(body.rotation_deg)
   const expected = typeof body.expected_storage_path === 'string' ? body.expected_storage_path : ''
+  // What this batch of clicks asked for, clockwise. Optional, and purely for the audit trail: the
+  // angle that is ACTUALLY applied is rotation_deg above. Without it photo_rotations.requested_delta_cw
+  // is fed the absolute angle, so a column named "delta" holds something that is not one.
+  const deltaCw = body.delta_cw === undefined || body.delta_cw === null ? null : Number(body.delta_cw)
 
   if (!Number.isInteger(photoId) || photoId <= 0) return json({ error: 'photo_id_required_integer' }, 400, h)
   // ⚠ The angle is ABSOLUTE, not a delta. The client coalesces rapid clicks and sends
@@ -101,6 +105,9 @@ Deno.serve(async (req: Request) => {
   // at an angle nobody chose. Validate it here too rather than trusting the caller.
   if (![0, 90, 180, 270].includes(rotation)) return json({ error: 'rotation_deg_must_be_0_90_180_270' }, 400, h)
   if (!expected) return json({ error: 'expected_storage_path_required' }, 400, h)
+  if (deltaCw !== null && ![-270, -180, -90, 0, 90, 180, 270].includes(deltaCw)) {
+    return json({ error: 'delta_cw_must_be_a_multiple_of_90' }, 400, h)
+  }
 
   let upstream: Response
   try {
@@ -111,6 +118,7 @@ Deno.serve(async (req: Request) => {
         photo_id: photoId,
         rotation_deg: rotation,
         expected_storage_path: expected,
+        ...(deltaCw === null ? {} : { delta_cw: deltaCw }),
         // The human, resolved here from their own token. The service never sees it,
         // so a caller cannot claim to be someone else.
         rotated_by: userData.user.id,
