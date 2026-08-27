@@ -1892,6 +1892,51 @@ nothing to compare. Its sheet numbers are sequential and sane, and these are two
 sheets rather than two pages of one, so page order is not a concept for it. Verifying it would
 need facility-NAME matching.
 
+### ✅ `ticket-833813` IS MEASURED AND SERVING (2026-08-27) — AND THE VERIFY THAT PASSED WAS VACUOUS
+
+Ten clients unblocked, bands snapped to detected printed rules then the extent added **in one
+migration** (`2026-08-27_1050`), and all ten served documents opened and confirmed to show exactly
+one facility each. `derm.v_band_edge_check` grades all ten `ON_RULE` / `ONE_CLIENT`.
+
+🛑 **THREE THINGS WENT WRONG IN VERIFICATION, NOT IN THE GEOMETRY. All three are reusable.**
+
+**1. A CHECK KEYED ON THE PUBLISHED DOCUMENT CANNOT VALIDATE A BAND BEFORE IT IS SERVED.**
+`2026-08-27_1050` asserted `derm.v_band_edges_off_rule = 0` and **passed vacuously**: that view
+INNER JOINs `derm.redacted_manifest_docs`, and at COMMIT the folder had published nothing, so its
+ten bands were not in the check's universe. Minutes later the sweep published them and the same
+check read 10. **Asserting that view inside the migration that creates the bands asserts nothing.**
+Re-run it AFTER the sweep drains. (The 2026-08-26 adversarial review predicted this exactly.)
+
+**2. `derm.v_band_edge_check` PINNED ONE DATED DETECTOR RUN, IN FIVE PLACES**
+(`source = 'runlen-v2-2026-08-21'`). Every later run was invisible to it and graded `UNSCANNED`,
+which is indistinguishable from a page nobody ever looked at. Fixed in `2026-08-27_1057`: the
+`scan` CTE now takes `DISTINCT ON (dump_folder, effective_page) ... WHERE source LIKE 'runlen-v2-%'
+ORDER BY ..., scanned_at DESC`, and the four rule LATERALs read `pr.source = sc.source` so rules
+and grade can never come from different runs.
+⚠ The prefix is deliberately `runlen-v2-`, not a wildcard: `page_row_rules` also holds five
+HAND-RECORDED `claude-*` repair sources, and letting a band snap to one of those would mean grading
+against a position no detector ever found. ⚠ It also pins the ALGORITHM — a future `runlen-v3` is
+deliberately NOT picked up.
+
+**3. AN OMITTED `source_etag` MAKES EVERY BAND READ `STALE`.** `edge_verdict` tests
+`source_etag IS DISTINCT FROM derm._img_etag(doc_source_url)` **before** it looks at any edge gap,
+and NULL is DISTINCT FROM everything. A `page_rule_scans` row written without an etag therefore
+reports "the image changed under this scan" when nothing changed. Always populate it.
+
+⚠ **`slot_verdict = 'ONE_CLIENT'` NEEDS A MID-SLOT DIVIDER INSIDE EVERY BAND**
+(`inner_dividers = expected_slots`), not just correct boundaries. On 833813 p2 three dividers
+scored 0.293-0.326 against `MIN_RUN = 0.33` and were missed, so three correct bands graded
+`ODD_SLOT`. **The safe way to recover them is to PREDICT the positions from a sibling page's slot
+proportions and then measure**, never to lower the threshold until something appears: all five
+landed within 0.55pp of prediction in one continuous run band. A divider can only ever change a
+`slot_verdict`; band edges snap to `boundary`, so being wrong there cannot reach a document.
+
+⚠ **DO NOT TEMPLATE A GENERATED SHEET'S GEOMETRY.** Its two pages are separate PHOTOGRAPHS: page 1
+measured 25.880-63.996 and page 2 23.848-62.855, ~2pp apart on the same printed form. What IS
+stable is the *proportions* — normalised slot heights agreed to within 0.7% across the two photos,
+which is strong corroboration and also shows the slots are genuinely UNEVEN (the template's first
+row is taller). A uniformity test would have wrongly rejected this page.
+
 ### 🛑 THE BAND WRITE PATH WAS UNGUARDED UNTIL 2026-08-27, AND `band_set_by` NEVER HELD A HUMAN
 
 Hardened by `2026-08-27_0347` ahead of the Stamp Studio's chip becoming a **rectangle** (Fred,
