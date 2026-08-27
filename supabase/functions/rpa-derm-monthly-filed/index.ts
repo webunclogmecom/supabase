@@ -147,82 +147,41 @@ Deno.serve(async (req) => {
     { auth: { persistSession: false } },
   )
 
-  // ---- idempotent insert of the header --------------------------------------------
-  const { data: filing, error: insErr } = await db
-    .from('lwt_filings')
-    .insert({
-      run_id: runId,
-      invoice_id: body.invoice_id ?? null,
-      period_start: body.period_start,
-      period_end: body.period_end,
-      filed_at: body.filed_at,
-      confirmation_ref: body.confirmation_ref ?? null,
-      filed_by_email: filedBy,
-      dry_run: dryRun,
-    })
-    .select('id')
-    .single()
+  // ---- record the filing ATOMICALLY -----------------------------------------------
+  // 🛑 ONE RPC, NOT TWO WRITES. This used to insert the header and then the ticket rows as two
+  // separate PostgREST calls, which is two transactions. The header insert is also what CLAIMS
+  // the run_id, so a failure on the second call left the run_id burned and the filing
+  // permanently EMPTY: a retry hit 23505, took the replay path, and returned already_recorded
+  // with tickets_recorded 0 without inserting anything. On a record of what we told Miami-Dade.
+  // fn_record_lwt_filing does both inserts in one transaction, so a ticket failure now rolls the
+  // header back with it and a retry is genuinely clean. Proven with a forced-failure probe and a
+  // deliberately non-atomic control (2026-08-27_1024).
+  // ⚠ Do NOT reintroduce a second write here, however small. Atomicity is the whole point.
+  const { data: result, error: rpcErr } = await db.rpc('fn_record_lwt_filing', {
+    p_run_id: runId,
+    p_tickets: uniqueTickets,
+    p_period_start: body.period_start,
+    p_period_end: body.period_end,
+    p_filed_at: body.filed_at,
+    p_invoice_id: body.invoice_id ?? null,
+    p_confirmation_ref: body.confirmation_ref ?? null,
+    p_filed_by_email: filedBy,
+    p_dry_run: dryRun,
+  })
 
-  if (insErr) {
-    // 23505 = unique_violation on run_id. This is the REPLAY path and is a normal
-    // answer, not an error: return what we already hold, changed nothing.
-    if (insErr.code === '23505') {
-      const { data: existing } = await db
-        .from('lwt_filings')
-        .select('id, invoice_id, period_start, period_end, filed_at, confirmation_ref, dry_run')
-        .eq('run_id', runId)
-        .single()
-      const { count } = await db
-        .from('lwt_filing_tickets')
-        .select('id', { count: 'exact', head: true })
-        .eq('filing_id', existing?.id ?? -1)
-      return json({
-        recorded: false,
-        already_recorded: true,
-        filing_id: existing?.id ?? null,
-        tickets_recorded: count ?? 0,
-        filing: existing ?? null,
-      }, 200)
-    }
-    return json({ error: 'insert_failed', detail: insErr.message }, 500)
+  if (rpcErr) {
+    // 23505 on run_id is handled INSIDE the function as the replay path, so reaching here means
+    // a genuine failure and, because the write is atomic, nothing was recorded. A retry with the
+    // same run_id is safe and is the right response.
+    console.error('record filing failed:', rpcErr.code, rpcErr.message)
+    return json({
+      error: 'record_failed',
+      detail: rpcErr.message,
+      note: 'nothing was recorded; the write is atomic, so retrying with the same run_id is safe',
+    }, 500)
   }
 
-  // ---- resolve manifest_id per ticket, then insert the ticket rows ------------------
-  // Resolution is best-effort by design. A ticket we cannot resolve is still recorded,
-  // with manifest_id NULL, and reported back so the mismatch is visible rather than lost.
-  const { data: known } = await db
-    .from('derm_manifests')
-    .select('id, white_manifest_number, yellow_ticket_number')
-    .or(
-      `white_manifest_number.in.(${uniqueTickets.join(',')}),` +
-        `yellow_ticket_number.in.(${uniqueTickets.join(',')})`,
-    )
-    .is('deleted_at', null)
-
-  const byTicket = new Map<string, number>()
-  for (const m of known ?? []) {
-    if (m.white_manifest_number) byTicket.set(String(m.white_manifest_number), m.id)
-    if (m.yellow_ticket_number) byTicket.set(String(m.yellow_ticket_number), m.id)
-  }
-
-  const rows = uniqueTickets.map((t) => ({
-    filing_id: filing.id,
-    ticket_number: t,
-    manifest_id: byTicket.get(t) ?? null,
-  }))
-  const unknownTickets = uniqueTickets.filter((t) => !byTicket.has(t))
-
-  const { error: tErr } = await db.from('lwt_filing_tickets').insert(rows)
-  if (tErr) return json({ error: 'ticket_insert_failed', detail: tErr.message }, 500)
-
-  return json({
-    recorded: true,
-    already_recorded: false,
-    filing_id: filing.id,
-    tickets_recorded: rows.length,
-    // Present and non-empty = we have no manifest matching these. Not an error: it is
-    // the discrepancy Jonathan asked to be able to see in either direction.
-    unknown_tickets: unknownTickets,
-    dry_run: dryRun,
-  }, 200)
+  // The function returns the response body already shaped, so there is exactly one place that
+  // decides what a filing looks like. Adding a field means changing the function, not both.
+  return json(result as Record<string, unknown>, 200)
 })

@@ -330,6 +330,7 @@ append-only: the application cannot rewrite the record, not that nobody can.
 | monthly suite | **35/35**, including 26 mutations that each turn the intended assertion red |
 | folder 6 against live | **24/24** after the error-code requests were added (was 9/9) |
 | error-code mutations | **7/7**, including "a different gate fired" |
+| atomic RPC | migration verify passed with its non-atomic control firing; re-proven independently; fresh-insert path **27/27** over HTTP |
 | `api-doc-drift.js` | clean: 25 error codes, 3 params, 19 row fields all documented |
 | `?unreported=1` | 118 before and after a full folder-6 run |
 | `derm.v_lwt_ticket_reported` | 127 tickets, **all `reported = false`** |
@@ -391,8 +392,36 @@ sentence.
 empty. He is told to report it rather than paper over it with a fresh `run_id`, which would leave an
 orphan filing behind.
 
-**It has never fired.** The honest fix is a transaction or an RPC that does both inserts atomically,
-which is a real change and was not taken. **Open.**
+**It never fired.** ✅ **FIXED 2026-08-27** in `2026-08-27_1024_lwt_record_filing_atomic.sql`.
+
+Both inserts moved into `public.fn_record_lwt_filing`. PostgREST runs a function call in one
+transaction, so a ticket failure now rolls the header back with it, the `run_id` is never claimed,
+and a retry is a clean first attempt rather than a replay of an empty filing. The edge function
+lost 41 lines and holds **zero** direct writes to either table.
+
+🛑 **SECURITY INVOKER, deliberately.** A `SECURITY DEFINER` wrapper owned by `postgres` would
+bypass the very grant that makes the append-only claim true, which is the widening CLAUDE.md warns
+about. Measured first: `service_role` already holds SELECT on `derm_manifests` and SELECT + INSERT
+on both targets and **no DELETE**, so invoker rights are sufficient and the grant stays the control.
+Verified after: `prosecdef = false`, `anon` and `authenticated` cannot execute, `service_role` can,
+and the table lock-down is untouched.
+
+**How atomicity was proven**, rather than argued from "a function is one transaction": a temporary
+trigger forces the ticket insert to fail, the function is called, and the filing row must NOT exist
+afterwards. 🛑 **With a control that fires** - the same probe is run against a deliberately
+non-atomic implementation (one that swallows the ticket failure in an inner block), and that one
+must leave a header behind. Without it, step 4 passing could just mean the probe is blind. Re-run
+independently outside the migration: `returned_anyway=f header_survived=f control_detected=t`.
+
+⚠ **Folder 6 could not have caught a regression here**, and that is worth knowing. Both of its
+`run_id`s already exist, so every write request it makes takes the **replay** path: the fresh-insert
+path, and with it all parameter marshalling (JS array to `text[]`, date strings, nulls), was
+untested over HTTP after the rewrite. Covered by a separate 27-assertion run that also proved
+de-duplication (3 tickets in, 2 rows out) and manifest resolution. It left one `dry_run` row,
+`atomic-verify-20260827`.
+
+**Contract change:** `insert_failed` and `ticket_insert_failed` no longer exist. One
+`record_failed` replaces both, and it always means nothing was recorded.
 
 ---
 
@@ -455,11 +484,10 @@ check enforces that every code is either exercised or on that list. **There is n
 - **Yan**: the scope rule (`pickup_in_dade OR offload_in_dade`). Untouched; nothing here pre-empts it.
 - **Jonathan**: the July diff against Diego's filed county pages. Everything verified so far only
   proves the endpoint agrees with **our own database**.
-- 🛑 **`ticket_insert_failed` leaves an unrecoverable empty filing** (§14). The header and its
-  tickets are separate statements with no transaction, so the `run_id` is burned before the failure
-  and a retry cannot repair it. Never fired. The fix is an atomic RPC, not taken.
-- **Four error paths have no test and are the four that matter most** (§15): the truncation and
-  write-failure paths. They need fault injection.
+- ✅ **`ticket_insert_failed` is FIXED** (§14), 2026-08-27. The write is atomic, the error no
+  longer exists, and `record_failed` replaces it meaning nothing was recorded.
+- **Three error paths have no test and are the three that matter most** (§15): the truncation and
+  write-failure paths. They need fault injection. The worst of them is gone rather than untested.
 - **Optional**: `unknown_tickets` could be returned on the replay path too, which would make that
   assertion live on every run instead of only the first. Small endpoint change, not taken.
 - **`vehicle_decals` has no temporal validity.** If a decal is ever replaced, historical months will

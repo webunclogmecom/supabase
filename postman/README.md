@@ -681,27 +681,27 @@ the same CHECK, so it cannot be bypassed.
 `period_end_before_period_start`, `invalid_filed_at`, `actor_markers_disagree`, `invalid_json`,
 `invalid_body`.
 
-**`500` errors**, all of which mean **nothing was recorded**, so retry:
+**`500` errors**, both of which mean **nothing was recorded**, so retrying is always safe:
 
 | | |
 |---|---|
 | `server_misconfigured` | no API key is configured on our side. Not something you can fix; tell us |
-| `insert_failed` | the filing row could not be written. Carries `detail` |
-| `ticket_insert_failed` | the filing row was written but its tickets were **not**. Carries `detail`. 🛑 **Retrying does NOT fix this, see below** |
+| `record_failed` | the write failed. Carries `detail`. **Retry with the SAME `run_id`** |
 
-⚠ **`insert_failed` is clean: no row exists and a retry is safe.** The header insert is what claims
-the `run_id`, so if it failed, nothing was claimed.
+✅ **The write is ATOMIC, so a `500` can never leave a half-recorded filing** (changed
+2026-08-27). The filing and its tickets are written by one database function in one transaction:
+either both land or neither does. So a failure never claims your `run_id`, and a retry with the
+same `run_id` is a clean first attempt rather than a replay of something broken.
 
-🛑 **`ticket_insert_failed` is NOT self-repairing, and this is the one failure mode worth
-understanding.** The header and the ticket rows are two separate statements with no transaction
-around them, so by the time this fires the `run_id` is already claimed. Retrying with the same
-`run_id` therefore takes the **replay** path and returns `already_recorded: true` with
-`tickets_recorded: 0`, without inserting anything. The filing stays permanently empty and the
-tickets stay unreported.
+⚠ **This was not true before 2026-08-27 and the difference matters if you saw the old docs.** The
+two writes used to be two separate calls, which is two transactions, and the first one is what
+claims the `run_id`. A failure on the second therefore left the `run_id` burned and the filing
+**permanently empty**: retrying returned `already_recorded: true` with `tickets_recorded: 0` and
+inserted nothing. It never fired in practice, and it can no longer happen, but if you built a
+workaround for it you can drop it.
 
-⇒ **The tell is `tickets_recorded: 0` on a replay.** If you ever see a replay come back with zero
-tickets, that filing is empty. Do not paper over it with a fresh `run_id`, because that leaves an
-orphan filing behind. **Tell us and we will repair it.** We have never seen this fire.
+⇒ **`tickets_recorded: 0` on a replay should now be impossible.** If you ever see it, something is
+wrong that we do not understand: tell us rather than working around it.
 
 ### What this deliberately is NOT
 
@@ -893,9 +893,9 @@ third category**, so a code missing from both is drift and
 | endpoint | exercised | not exercised |
 |---|---|---|
 | `rpa-derm-monthly` | 6 of 10 | 4 |
-| `rpa-derm-monthly-filed` | 12 of 15 | 3 |
+| `rpa-derm-monthly-filed` | 12 of 14 | 2 |
 
-**The 7 that are deliberately not exercised, and why none of them can be:**
+**The 6 that are deliberately not exercised, and why none of them can be:**
 
 | code | why no request can produce it |
 |---|---|
@@ -903,14 +903,20 @@ third category**, so a code missing from both is drift and
 | `reported_lookup_truncated` | needs over 1,000 distinct tickets. There are 127 |
 | `monthly_query_failed` | a database failure |
 | `reported_lookup_failed` | a database failure |
-| `insert_failed` | a database failure |
-| `ticket_insert_failed` | a database failure |
+| `record_failed` | a database failure |
 | `server_misconfigured` | needs the API key secret to be unset on our side |
 
-⚠ **Four of those are the ones you would most want tested**, since they are exactly the
-truncation and write-failure paths that decide whether a short or empty filing reaches the county.
-They are listed here rather than quietly absent so the gap stays visible. Testing them properly
-means fault injection, which is a bigger change than this collection.
+⚠ **Three of those are the ones you would most want tested**, since they are the truncation and
+write-failure paths that decide whether a short filing reaches the county. They are listed here
+rather than quietly absent so the gap stays visible. Testing them properly means fault injection,
+which is a bigger change than this collection.
+
+✅ **The worst of them is gone rather than untested.** `ticket_insert_failed` used to sit in this
+list and was the only one that could leave a permanently broken record. It no longer exists: the
+write is atomic as of 2026-08-27, so the failure it named cannot occur. **The atomicity itself IS
+tested**, in `2026-08-27_1024_lwt_record_filing_atomic.sql`, by forcing the ticket insert to fail
+and asserting the filing row does not survive, with a deliberately non-atomic control proving the
+probe can detect one that does.
 
 ⚠ **Every negative test asserts the error CODE, never just the status.** A request that fails at an
 earlier validation gate still returns `400`, so a status-only assertion passes while testing
