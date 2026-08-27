@@ -328,7 +328,9 @@ append-only: the application cannot rewrite the record, not that nobody can.
 | | |
 |---|---|
 | monthly suite | **35/35**, including 26 mutations that each turn the intended assertion red |
-| folder 6 against live | **9/9** |
+| folder 6 against live | **24/24** after the error-code requests were added (was 9/9) |
+| error-code mutations | **7/7**, including "a different gate fired" |
+| `api-doc-drift.js` | clean: 25 error codes, 3 params, 19 row fields all documented |
 | `?unreported=1` | 118 before and after a full folder-6 run |
 | `derm.v_lwt_ticket_reported` | 127 tickets, **all `reported = false`** |
 | `public.lwt_filings` | 2 rows, both `dry_run = true` |
@@ -336,13 +338,128 @@ append-only: the application cannot rewrite the record, not that nobody can.
 
 ---
 
-## 13. Still open
+## 13. The message that actually went, and why it was rewritten
+
+*Added 2026-08-27 10:19 ET.*
+
+The first draft was **8,451 characters over two Slack messages**. Fred: *"make it look like a person
+answered them ... natural, short, and simple, not too technical, but using the important keys."*
+The version sent is **2,630 characters in one message**, about a third of the length.
+
+What was cut: the append-only grant reasoning, the `unknown_tickets` echo, `confirmation_ref`
+nullability, option 2 versus option 3, the scope question with Yan, the Broward decal reasoning, the
+index-alignment trap, ticket 825560 by name, and my own account of the five missed copies of the
+retracted claim. All of it is in the API reference, which the message points at.
+
+What was kept even though it is technical, because each one bites:
+
+| kept | if he does not know it |
+|---|---|
+| `dry_run` defaults to false | he files a real county report by accident |
+| `filed_by_email` required when `run_id` starts `manual-` | a `400` he has to debug |
+| nulls mean refuse the ticket | a guessed permit number on a filing |
+| `truck_decals` is not his filing set | a wrong permit number on a filing |
+| don't copy the example ticket list | 2 of 19 tickets filed as if they were the package |
+
+⚠ **Before sending, every number in it was re-measured rather than trusted, and one was wrong.**
+See §8: the Cloggy sentence mixed two grains. That check is the only reason it did not go out.
+
+---
+
+## 14. 🛑 `ticket_insert_failed` cannot be recovered by the caller
+
+*Found 2026-08-27 while documenting the error codes. Not a finding from the six-auditor pass.*
+
+Writing a filing is **two statements with no transaction around them**: the header into
+`lwt_filings`, then the rows into `lwt_filing_tickets`. The header insert is what claims the
+`run_id` (that is the idempotency mechanism, a unique index plus a `23505` branch).
+
+So if the *second* statement fails:
+
+- the header exists and the `run_id` is **already claimed**;
+- retrying with the same `run_id` hits `23505`, takes the **replay** path, and returns
+  `already_recorded: true` with `tickets_recorded: 0` **without inserting anything**;
+- the filing stays permanently empty and those tickets stay unreported.
+
+⚠ **I first documented the opposite from a guess** ("retry with the same `run_id`, the replay path
+will not re-insert the header"), which is true about the header and wrong about the outcome. Reading
+the insert path showed it. **The doc-drift check would have passed either way** because it compares
+documented against emitted, never documented against true. Read the code before writing the
+sentence.
+
+**Documented for the caller with the tell**: `tickets_recorded: 0` on a replay means that filing is
+empty. He is told to report it rather than paper over it with a fresh `run_id`, which would leave an
+orphan filing behind.
+
+**It has never fired.** The honest fix is a transaction or an RPC that does both inserts atomically,
+which is a real change and was not taken. **Open.**
+
+---
+
+## 15. Documentation drift, and making it mechanical
+
+Fred: *"remember that you must have the postman documentation of this api rest up to date."*
+It was not. Diffing what the endpoints **emit** against what the reference **documents** found
+**five error codes documented nowhere**, including `reported_lookup_truncated`, which I had added
+hours earlier, and the changed `month_too_large` payload.
+
+`scripts/checks/api-doc-drift.js` now makes this re-runnable: it compares emitted error codes, query
+params and row fields against `postman/README.md`. Mutation-tested, and it exits **2** rather than 0
+when its own extraction looks implausible.
+
+🛑 **That exit-2 rule exists because the first version was wrong in the most dangerous way.** It
+located the row object with a pattern that matched a **comment**, extracted **zero** fields, and
+printed *"all documented"*. Two of its other three findings were also its own pattern bugs
+(`unreported` reported missing because the check demanded backticks the README does not use;
+`invalid_` reported as a code when it is a dynamic prefix). **Two thirds of its first run was the
+instrument, not the target.**
+
+### Error-code test coverage
+
+| endpoint | before | after |
+|---|---|---|
+| `rpa-derm-monthly` | 5 of 10 | **6 of 10** |
+| `rpa-derm-monthly-filed` | 6 of 15 | **12 of 15** |
+
+Seven requests added. **Every one asserts the error CODE, never just the status**, because
+validation runs in a fixed order and a request tripping an earlier gate still returns `400`. A
+status-only assertion would pass while testing something else entirely, so each body is built valid
+right up to the gate it targets, and each also asserts nothing was recorded.
+
+Mutation-tested seven ways, including the case that matters: feeding a test the response from a
+**different** gate must turn it red. Also covered a silently raised ticket cap and a valid ticket
+being wrongly rejected.
+
+⚠ The 2,001-ticket body is generated in a pre-request script, and is **one over** the cap on
+purpose, so the test fails if the cap is ever RAISED rather than passing on a wider one.
+
+### 🛑 The seven that stay untested, named rather than quietly absent
+
+| why | codes |
+|---|---|
+| database failure | `monthly_query_failed`, `reported_lookup_failed`, `insert_failed`, `ticket_insert_failed` |
+| needs volume an order of magnitude past real data | `month_too_large` (largest real month 109 rows against a 1,000 cap), `reported_lookup_truncated` (127 tickets) |
+| needs the key secret unset | `server_misconfigured` |
+
+**Four of those are the truncation and write-failure paths**, which are precisely the ones deciding
+whether a short or empty filing reaches the county. Testing them means fault injection, a bigger
+change than a Postman collection. They are listed in the README so the gap is visible, and the drift
+check enforces that every code is either exercised or on that list. **There is no third category.**
+
+---
+
+## 16. Still open
 
 - **Diego**: is Cloggy a permitted LWT vehicle? 45 rows / 43 in scope / 27 in-scope tickets carry
   `truck_decal: null`, offloads 2026-01-15 to 2026-08-20.
 - **Yan**: the scope rule (`pickup_in_dade OR offload_in_dade`). Untouched; nothing here pre-empts it.
 - **Jonathan**: the July diff against Diego's filed county pages. Everything verified so far only
   proves the endpoint agrees with **our own database**.
+- 🛑 **`ticket_insert_failed` leaves an unrecoverable empty filing** (§14). The header and its
+  tickets are separate statements with no transaction, so the `run_id` is burned before the failure
+  and a retry cannot repair it. Never fired. The fix is an atomic RPC, not taken.
+- **Four error paths have no test and are the four that matter most** (§15): the truncation and
+  write-failure paths. They need fault injection.
 - **Optional**: `unknown_tickets` could be returned on the replay path too, which would make that
   assertion live on every run instead of only the first. Small endpoint change, not taken.
 - **`vehicle_decals` has no temporal validity.** If a decal is ever replaced, historical months will
