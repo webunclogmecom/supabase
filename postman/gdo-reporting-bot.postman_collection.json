@@ -1421,6 +1421,44 @@
               }
             }
           ]
+        },
+        {
+          "name": "Monthly - month out of range -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guards against a caller pulling a year we hold no data for and reading an empty month as",
+                  "// \"nothing to file\". Refusing is the honest answer.",
+                  "pm.test(\"400 month_out_of_range\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql(\"month_out_of_range\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?month=2019-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2019-01"
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -1748,6 +1786,313 @@
               }
             }
           ]
+        },
+        {
+          "name": "Filed - body is an array -> 400 invalid_body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// req.json() succeeds on an array, so this gets past invalid_json and is caught by the",
+                  "// explicit Array.isArray guard. Worth its own test because the two failure modes look",
+                  "// identical from outside and only one of them means \"your serialiser is wrong\".",
+                  "pm.test(\"400 invalid_body\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error,",
+                  "        \"wrong error code: the request failed at a DIFFERENT gate than this test targets\").to.eql(\"invalid_body\");",
+                  "});",
+                  "pm.test(\"nothing was recorded\", () => {",
+                  "    // Every validation gate sits BEFORE the insert, so a 400 must never leave a row.",
+                  "    pm.expect(pm.response.json().recorded, \"a rejected request reported a write\").to.eql(undefined);",
+                  "    pm.expect(pm.response.json().filing_id, \"a rejected request returned a filing_id\").to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  \"not\",\n  \"an object\"\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filed - malformed run_id -> 400 invalid_run_id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// run_id must match ^[A-Za-z0-9_.-]{1,100}$. It is the idempotency key, so a run_id that",
+                  "// varies by whitespace would defeat replay detection and let a package be filed twice.",
+                  "pm.test(\"400 invalid_run_id\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error,",
+                  "        \"wrong error code: the request failed at a DIFFERENT gate than this test targets\").to.eql(\"invalid_run_id\");",
+                  "});",
+                  "pm.test(\"the expected pattern is returned\", () => {",
+                  "    pm.expect(pm.response.json().expected, \"no `expected` pattern to build against\").to.be.a(\"string\");",
+                  "});",
+                  "pm.test(\"nothing was recorded\", () => {",
+                  "    // Every validation gate sits BEFORE the insert, so a 400 must never leave a row.",
+                  "    pm.expect(pm.response.json().recorded, \"a rejected request reported a write\").to.eql(undefined);",
+                  "    pm.expect(pm.response.json().filing_id, \"a rejected request returned a filing_id\").to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"has spaces and !\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filed - unparseable filed_at -> 400 invalid_filed_at",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// filed_at is when YOU filed, and it lands on a compliance record, so it is parsed rather",
+                  "// than trusted. Everything before this gate is deliberately valid.",
+                  "pm.test(\"400 invalid_filed_at\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error,",
+                  "        \"wrong error code: the request failed at a DIFFERENT gate than this test targets\").to.eql(\"invalid_filed_at\");",
+                  "});",
+                  "pm.test(\"nothing was recorded\", () => {",
+                  "    // Every validation gate sits BEFORE the insert, so a 400 must never leave a row.",
+                  "    pm.expect(pm.response.json().recorded, \"a rejected request reported a write\").to.eql(undefined);",
+                  "    pm.expect(pm.response.json().filing_id, \"a rejected request returned a filing_id\").to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-errtest\",\n  \"tickets\": [\n    \"{{lwtTicket}}\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"last Tuesday\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filed - empty tickets -> 400 tickets_required",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A filing with no tickets is the shape that would otherwise sit in the table for ever",
+                  "// marking nothing as reported. Refused at the door.",
+                  "pm.test(\"400 tickets_required\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error,",
+                  "        \"wrong error code: the request failed at a DIFFERENT gate than this test targets\").to.eql(\"tickets_required\");",
+                  "});",
+                  "pm.test(\"nothing was recorded\", () => {",
+                  "    // Every validation gate sits BEFORE the insert, so a 400 must never leave a row.",
+                  "    pm.expect(pm.response.json().recorded, \"a rejected request reported a write\").to.eql(undefined);",
+                  "    pm.expect(pm.response.json().filing_id, \"a rejected request returned a filing_id\").to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-errtest\",\n  \"tickets\": [],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filed - over the ticket cap -> 400 too_many_tickets",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Built here rather than pasted, so the collection file does not carry a 2001-element array.",
+                  "const n = 2001;",
+                  "pm.collectionVariables.set(\"bulkTickets\",",
+                  "    JSON.stringify(Array.from({ length: n }, (_, i) => \"T\" + i)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The cap is 2000. Deliberately one over, so this test still fails if the cap is RAISED,",
+                  "// rather than silently passing on a wider limit.",
+                  "pm.test(\"400 too_many_tickets\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error,",
+                  "        \"wrong error code: the request failed at a DIFFERENT gate than this test targets\").to.eql(\"too_many_tickets\");",
+                  "});",
+                  "pm.test(\"the cap is reported back\", () => {",
+                  "    pm.expect(pm.response.json().max, \"no `max` returned, so a caller cannot batch to fit\").to.eql(2000);",
+                  "});",
+                  "pm.test(\"nothing was recorded\", () => {",
+                  "    // Every validation gate sits BEFORE the insert, so a 400 must never leave a row.",
+                  "    pm.expect(pm.response.json().recorded, \"a rejected request reported a write\").to.eql(undefined);",
+                  "    pm.expect(pm.response.json().filing_id, \"a rejected request returned a filing_id\").to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-errtest\",\n  \"tickets\": {{bulkTickets}},\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filed - illegal ticket characters -> 400 invalid_ticket_numbers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 🛑 THIS ONE IS A SECURITY BOUNDARY, not just hygiene. Ticket numbers are interpolated",
+                  "// into a PostgREST .or() filter, so comma, parenthesis, quote and dot-notation must never",
+                  "// reach it. The pattern ^[A-Za-z0-9_.-]{1,64}$ excludes all of them.",
+                  "pm.test(\"400 invalid_ticket_numbers\", () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error,",
+                  "        \"wrong error code: the request failed at a DIFFERENT gate than this test targets\").to.eql(\"invalid_ticket_numbers\");",
+                  "});",
+                  "pm.test(\"the offending tickets are named\", () => {",
+                  "    const bad = pm.response.json().tickets;",
+                  "    pm.expect(Array.isArray(bad), \"no list of rejected tickets\").to.eql(true);",
+                  "    pm.expect(bad, \"the valid ticket was rejected too\").to.not.include(pm.collectionVariables.get(\"lwtTicket\"));",
+                  "});",
+                  "pm.test(\"nothing was recorded\", () => {",
+                  "    // Every validation gate sits BEFORE the insert, so a 400 must never leave a row.",
+                  "    pm.expect(pm.response.json().recorded, \"a rejected request reported a write\").to.eql(undefined);",
+                  "    pm.expect(pm.response.json().filing_id, \"a rejected request returned a filing_id\").to.eql(undefined);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"run_id\": \"bot-postman-errtest\",\n  \"tickets\": [\n    \"{{lwtTicket}}\",\n    \"has space\",\n    \"quote\\\"inside\"\n  ],\n  \"period_start\": \"2026-06-28\",\n  \"period_end\": \"2026-07-25\",\n  \"filed_at\": \"2026-08-26T19:40:00.000Z\",\n  \"dry_run\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly-filed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly-filed"
+              ]
+            }
+          }
         },
         {
           "name": "Filed - wrong key -> 401",

@@ -884,6 +884,40 @@ the filing and its cascaded ticket row. **`service_role` could not have done it*
 role holds no DELETE); it took the table owner over the Management API, which is what append-only
 is supposed to mean.
 
+### What the collection does and does not exercise
+
+Every error code either has a request that produces it, or appears in the table below. **There is no
+third category**, so a code missing from both is drift and
+`node scripts/checks/api-doc-drift.js` will say so.
+
+| endpoint | exercised | not exercised |
+|---|---|---|
+| `rpa-derm-monthly` | 6 of 10 | 4 |
+| `rpa-derm-monthly-filed` | 12 of 15 | 3 |
+
+**The 7 that are deliberately not exercised, and why none of them can be:**
+
+| code | why no request can produce it |
+|---|---|
+| `month_too_large` | needs a month over the 1,000-row server cap. Largest real month is 109 rows |
+| `reported_lookup_truncated` | needs over 1,000 distinct tickets. There are 127 |
+| `monthly_query_failed` | a database failure |
+| `reported_lookup_failed` | a database failure |
+| `insert_failed` | a database failure |
+| `ticket_insert_failed` | a database failure |
+| `server_misconfigured` | needs the API key secret to be unset on our side |
+
+⚠ **Four of those are the ones you would most want tested**, since they are exactly the
+truncation and write-failure paths that decide whether a short or empty filing reaches the county.
+They are listed here rather than quietly absent so the gap stays visible. Testing them properly
+means fault injection, which is a bigger change than this collection.
+
+⚠ **Every negative test asserts the error CODE, never just the status.** A request that fails at an
+earlier validation gate still returns `400`, so a status-only assertion passes while testing
+something entirely different. Validation runs in a fixed order (json, body shape, unknown fields,
+`run_id`, actor markers, periods, period order, `filed_at`, tickets present, ticket count, ticket
+format), and each request is built valid up to the gate it targets.
+
 ⚠ **Run "5. Monthly - filing set" first.** It captures `{{lwtTicket}}`, which folder 6 files
 against. Running folder 6 cold files against the literal string `{{lwtTicket}}`, which the endpoint
 correctly rejects as an invalid ticket number.
