@@ -1993,6 +1993,55 @@ that migration was rejected by its own VERIFY for exactly this.
 half-heuristic band that reports as manual. `set_row_band` writes both together, which is the only
 reason this is safe today.
 
+### 🛑 BAND + EXTENT WRITES NOW GO THROUGH ONE ATOMIC PAGE RPC: `derm.save_page_geometry` (2026-08-27)
+
+Shipped with the Stamp Studio's editable rectangle (`2026-08-27_1430`). **Do not write
+`address_row_map.band_*` or `page_block_extents` from a new caller.** Both the app and any future
+tooling go through this, and its guards live once in `derm._page_geometry_violations`
+(`derm.check_page_geometry` is the dry run the UI calls while dragging).
+
+**THE UNIT OF SAVE IS THE PAGE, NOT THE ROW**, because the republish fan-out is page-scoped:
+`fn_blackout_targets` builds its fingerprint from `btop`/`bbot`, which are `LEAST/GREATEST` over the
+PAGE. Moving one client's topmost band republishes every page-mate's regulator-facing document, so a
+per-row RPC cannot even name the blast radius. `derm.set_row_band` still exists but is single-row,
+non-atomic and has **no overlap guard**; the live bundle calls it **0** times and it should stay that way.
+
+🛑 **EVERY GEOMETRY GUARD IS NO-WORSE, NOT ABSOLUTE, AND THAT IS THE LOAD-BEARING DESIGN DECISION.**
+A submitted value passes if it satisfies the guard **OR is byte-identical to the stored MANUAL value**.
+Absolute guards were written first and measured against live Prod they refuse **126 of 171 pages at
+their CURRENT, CURRENTLY-SERVING geometry**: 55 pages whose extent does not contain its own bands, 3
+bands not containing their own stamp, and 80 off-rule bands on 29 pages carrying 103 published
+documents. **All 80 are already ACCEPTED in `derm.band_review`**, several because the client's own
+handwriting overflows the printed slot. Since the save is page-atomic, an absolute guard would force
+an operator fixing ONE client to snap those too, **cropping a client's own row out of their own
+compliance document**. A guard that forces a wrong-on-the-paper write is not a safety guard.
+⇒ Same shape as a `NOT VALID` constraint: binds every new write, does not re-litigate the past.
+
+⚠ **"Unchanged" deliberately excludes DERIVED bands.** Replaying a stamp-midpoint heuristic verbatim
+is a NEW assertion that it is correct, and publishing one as measured is the 2026-08-19 leak. So the
+8 fully-derived pages are REFUSED on verbatim replay, by design, and VERIFY 6b asserts it.
+
+🛑 **THE EXTENT IS OPTIONAL (`p_top_pct`/`p_bottom_pct` DEFAULT NULL) AND THAT IS A SAFETY FEATURE.**
+The extent is what OPENS the publish gate, so bands can be snapped first while the page publishes
+nothing, and the boundary added as a separate deliberate act. It also lets geometry be banked on a
+FROZEN folder, which is inert by construction; forbidding that would force an operator to unfreeze
+first and let derived bands publish.
+
+**Scan selection is now defined ONCE, in `derm.v_page_printed_rules`** (newest `runlen-v2-%` scan per
+page, rules joined on that scan's own source). The guards read it and the app snaps to it, so the UI
+and the server cannot grade against different geometry. It previously existed as five hardcoded
+literals inside `v_band_edge_check` and was wrong for six days. **Do not re-implement the DISTINCT ON.**
+
+⚠ `authenticated` holds **no** grant on `derm.page_block_extents`; the app reads the current boundary
+through `v_stamp_rows.page_top_pct` / `page_bottom_pct` (`2026-08-27_1505`). NULL means the page has
+no boundary yet, which is exactly the state that keeps it unpublished.
+
+⚠ **Two VERIFY blocks failed honestly while building this, and both times the TEST was wrong, not the
+guard.** The fleet replay refused 8 pages (they were the 8 fully-derived ones, correctly refused), and
+the off-rule control shifted an edge by 0.17pp, which is INSIDE the 0.35pp tolerance. It now computes
+a provably off-rule value and asserts it is off-rule before using it. **A control that fails is not
+automatically evidence the code is broken.**
+
 ### ✅ BAND GEOMETRY CAN NOW BE CHECKED MECHANICALLY: `derm.v_band_edges_off_rule` (2026-08-21)
 
 Fred: *"prioritise building the fleet-wide printed-rule detection pass."* Done, `2026-08-21_0736`
