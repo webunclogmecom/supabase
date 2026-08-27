@@ -1791,6 +1791,87 @@ same class of misalignment and wants the same snap.
 > snapshots carrying bands whose source no longer exists (7 such rows fleet-wide). Improving the
 > data does not republish them.
 
+### 🛑 A BLACKOUT FOLDER CAN BE FROZEN AND SERVING, AND UNTIL 2026-08-27 NOTHING COULD SEE IT
+
+`derm.fn_blackout_targets` carries a **whole-folder closed-world gate**:
+
+```sql
+AND NOT EXISTS (SELECT 1 FROM derm.address_row_map r2
+                LEFT JOIN derm.v_stamp_row_bands b2 ON b2.id = r2.id
+                WHERE r2.dump_folder = r.dump_folder AND b2.id IS NULL)
+```
+
+and `derm.v_stamp_row_bands` is `... WHERE stamp_y_pct IS NOT NULL`. **So ONE card anywhere in a
+folder with no stamp POINT excludes EVERY card in that folder from regenerating, permanently.**
+
+🛑 **And `derm.v_blackout_blocked_sheets` -- the view this file tells you to watch -- could not
+report it.** Its own `WHERE` is `stamp_y_pct IS NOT NULL`, so a folder whose cards are ALL
+unstamped produces no GROUP and vanishes. That is not a bug in the view (it was built to answer
+"which stamped folders still need an extent"), but it means **"the worklist is empty" has never
+been the all-clear it reads as.** Measured 2026-08-26: 6 folders failed the gate, all 6 invisible.
+
+✅ **Fixed by `2026-08-27_0356`**, which adds a second arm reporting `blocker =
+'frozen_closed_world'`, so `blackout-health` and the daily escalation mail pick it up with no new
+wiring. Arm A was spliced in verbatim from `pg_get_viewdef` and VERIFY 1 is the control for it.
+
+⚠ **Two folders are frozen AND SERVING right now: `ticket-828604` (4 clients) and `ticket-830714`
+(3 clients), 7 customer documents that can never regenerate.** Improving their bands, their extent
+or the redactor changes nothing about what those clients see. **Unfreezing needs a person to place
+the missing stamps in the Studio. Clearing the bands does NOT do it -- the gate is on the stamp
+POINT.** ⚠ Four further folders (`ticket-312024`, `window10-sheet6`, `window12-sheet1`,
+`window13-sheet8`) also fail the gate but publish nothing, so they are deliberately NOT reported:
+they are un-worked, and four permanent rows would bury the real two on a worklist whose whole value
+is that empty means healthy.
+
+### 🛑 THE BAND WRITE PATH WAS UNGUARDED UNTIL 2026-08-27, AND `band_set_by` NEVER HELD A HUMAN
+
+Hardened by `2026-08-27_0347` ahead of the Stamp Studio's chip becoming a **rectangle** (Fred,
+2026-08-26), which makes `derm.set_row_band` a human-facing write path for the first time.
+Measured: the Studio had **never** called it -- all 1,183 historical band writes carry
+`app_source='sql'` and **no row carries `band_source='manual'`**, the only value that RPC writes.
+Every defect below was therefore latent, and the UI change is what makes it reachable.
+
+- **It accepted NULLs.** The guard was `IF p_y0 < 0 OR p_y1 > 100 OR p_y0 >= p_y1`, which is NULL
+  on NULL input, so `IF` never fired and the call silently reverted the band to the derived
+  heuristic **while stamping `band_source='manual'`**. Its sibling `set_stamp_position` had always
+  rejected NULLs; this one never did.
+- **It accepted a band on a row with no stamp point**, which is exactly how a folder enters the
+  frozen state above. `derm.clear_stamp_position` is what created it: it nulled the five `stamp_*`
+  columns and deliberately left the band behind. Both now refuse / clear together.
+- 🛑 **`band_set_by` and `stamp_placed_by` read `request.jwt.claim.email` -- SINGULAR `claim`.**
+  PostgREST sets `request.jwt.claims` (PLURAL). **This is the identical defect this file already
+  documents for `audit.logs.changed_by`.** Of 641 banded rows, `band_set_by` holds 111 NULLs and 9
+  machine labels and **not one email**. Fixed once in **`derm._actor(text)`**, not copied into
+  three functions; it is fail-safe by construction (a parse problem returns the default rather
+  than raising, because the callers are save paths).
+
+**The invariants are now on the TABLES, because the RPC is not the only way in** -- all 1,183
+historical writes came through bulk migrations:
+
+| constraint | state | why |
+|---|---|---|
+| `address_row_map_band_range_chk` | VALIDATED | 0 of 641 violated it |
+| `address_row_map_band_needs_stamp_chk` | **NOT VALID** | 7 legacy rows already violate it |
+| `page_block_extents_range_chk` | VALIDATED | 0 of 162 violated it |
+
+🛑 **`address_row_map_band_needs_stamp_chk` must STAY `NOT VALID`.** `ticket-828604` and
+`ticket-830714` are the 7 violators and they hold published documents, so `VALIDATE CONSTRAINT`
+fails **by design** -- same pattern as `derm_manifests_dump_fields_present_chk`. Do not blank or
+delete those rows to make it pass. `NOT VALID` still binds every INSERT and UPDATE, which is the
+point: no NEW instance.
+
+✅ **`derm.page_block_extents` is now audited** (rule 8 opt-in, `audit_page_block_extents`). It had
+**zero** triggers, no range check, and `redact-manifest-sheet` silently CLAMPS out-of-range values,
+so a bad value blacked the page with no error and no restore path. ⚠ **Testing that trigger needs a
+REAL change:** `audit.log_change` opens with `IF TG_OP='UPDATE' AND v_old_clean IS NOT DISTINCT
+FROM v_new_clean THEN RETURN NEW`, so `SET x = x` correctly writes nothing. An earlier draft of
+that migration was rejected by its own VERIFY for exactly this.
+
+⚠ **`derm.v_stamp_row_bands` COALESCEs PER EDGE** (`band_y0 = COALESCE(manual, derived)`, likewise
+`band_y1`) and `band_is_manual` is an **OR**, not an AND. So writing one edge leaves a half-manual,
+half-heuristic band that reports as manual. `set_row_band` writes both together, which is the only
+reason this is safe today.
+
 ### ✅ BAND GEOMETRY CAN NOW BE CHECKED MECHANICALLY: `derm.v_band_edges_off_rule` (2026-08-21)
 
 Fred: *"prioritise building the fleet-wide printed-rule detection pass."* Done, `2026-08-21_0736`
