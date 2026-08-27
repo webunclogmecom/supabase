@@ -182,7 +182,11 @@ Deno.serve(async (req) => {
       if (y1 < bBot) img.drawBox(1, y1 + 2, W, bBot - y1, BLACK);
 
       const out = await img.encodeJPEG(80);
-      const name = `redacted/m${t.manifest_id}-${String(t.fingerprint).slice(0, 10)}.jpg`;
+      // 🛑 The page is in the NAME. Two pages of one manifest are now two documents, and the storage
+      // POST carries x-upsert:true, so a name collision would silently overwrite one page with the
+      // other. Their fingerprints already differ (each folds its own image etag), but the name is
+      // where an overwrite would actually happen, so make it structurally impossible.
+      const name = `redacted/m${t.manifest_id}p${t.effective_page}-${String(t.fingerprint).slice(0, 10)}.jpg`;
       const up = await fetch(`${SUPABASE_URL}/storage/v1/object/manifests/${name}`, {
         method: "POST",
         headers: {
@@ -197,7 +201,7 @@ Deno.serve(async (req) => {
 
       const url = `${SUPABASE_URL}/storage/v1/object/public/manifests/${name}`;
       const ins = await fetch(
-        `${SUPABASE_URL}/rest/v1/redacted_manifest_docs?on_conflict=manifest_id`,
+        `${SUPABASE_URL}/rest/v1/redacted_manifest_docs?on_conflict=manifest_id,effective_page`,
         {
           method: "POST",
           headers: { ...dermHeaders, Prefer: "resolution=merge-duplicates" },
