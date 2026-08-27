@@ -550,7 +550,16 @@ for the same month costs a `304`.
 |---|---|---|
 | 400 | `month_required_yyyy_mm` | missing or malformed `month` |
 | 400 | `month_out_of_range` | before 2024, or more than ~2 months ahead |
-| 400 | `month_too_large` | over 1,000 rows. Raises rather than truncating: a short compliance report is the worst failure available |
+| 400 | `month_too_large` | the result was truncated by a server row cap. Raises rather than truncating: a short compliance report is the worst failure available. Carries `max_rows` (what you were served) and `total_rows` (what exists), so you can see the size of the gap |
+| 400 | `month_and_unreported_are_exclusive` | you sent both `month=` and `unreported=1`. We refuse rather than silently preferring one |
+| 500 | `monthly_query_failed` | our query for the rows failed. Retry |
+| 500 | `reported_lookup_failed` | our query for filing state failed. Retry. **Nothing is served without it**, because a payload with no `reported` flags would look like "nothing has been filed" |
+| 500 | `reported_lookup_truncated` | filing state hit a server row cap, so the unreported set would have been short. Carries `total_tickets` and `returned`. Should not happen below ~1,000 tickets; tell us if you see it |
+
+⚠ **The two `_truncated` / `_too_large` errors exist because a silently short month is the worst
+outcome this endpoint has.** We would rather fail your run than hand you a filing that is missing
+real transportation activities. Both compare against a true row count rather than against our own
+limit, because a guard set at the same value as the server's cap can never fire.
 | 401 | `unauthorized` | missing/wrong `x-rpa-key` |
 | 405 | `method_not_allowed` | anything but GET |
 | 500 | `monthly_query_failed` | transient, retry |
@@ -667,10 +676,32 @@ otherwise. Same rule `derm_portal_submissions` uses, so the two markers can neve
 whether a person did this. Violating it is a `400 actor_markers_disagree`, and the database carries
 the same CHECK, so it cannot be bypassed.
 
-**Errors:** `unknown_fields`, `invalid_run_id`, `tickets_required`, `too_many_tickets`,
+**`400` errors:** `unknown_fields`, `invalid_run_id`, `tickets_required`, `too_many_tickets`,
 `invalid_ticket_numbers`, `invalid_period_start`, `invalid_period_end`,
 `period_end_before_period_start`, `invalid_filed_at`, `actor_markers_disagree`, `invalid_json`,
 `invalid_body`.
+
+**`500` errors**, all of which mean **nothing was recorded**, so retry:
+
+| | |
+|---|---|
+| `server_misconfigured` | no API key is configured on our side. Not something you can fix; tell us |
+| `insert_failed` | the filing row could not be written. Carries `detail` |
+| `ticket_insert_failed` | the filing row was written but its tickets were **not**. Carries `detail`. 🛑 **Retrying does NOT fix this, see below** |
+
+⚠ **`insert_failed` is clean: no row exists and a retry is safe.** The header insert is what claims
+the `run_id`, so if it failed, nothing was claimed.
+
+🛑 **`ticket_insert_failed` is NOT self-repairing, and this is the one failure mode worth
+understanding.** The header and the ticket rows are two separate statements with no transaction
+around them, so by the time this fires the `run_id` is already claimed. Retrying with the same
+`run_id` therefore takes the **replay** path and returns `already_recorded: true` with
+`tickets_recorded: 0`, without inserting anything. The filing stays permanently empty and the
+tickets stay unreported.
+
+⇒ **The tell is `tickets_recorded: 0` on a replay.** If you ever see a replay come back with zero
+tickets, that filing is empty. Do not paper over it with a fresh `run_id`, because that leaves an
+orphan filing behind. **Tell us and we will repair it.** We have never seen this fire.
 
 ### What this deliberately is NOT
 
