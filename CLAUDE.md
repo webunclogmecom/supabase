@@ -1823,6 +1823,49 @@ POINT.** ⚠ Four further folders (`ticket-312024`, `window10-sheet6`, `window12
 they are un-worked, and four permanent rows would bury the real two on a worklist whose whole value
 is that empty means healthy.
 
+### 🛑 A FULLY-STAMPED SHEET IS WHERE A PAGE TRANSPOSITION HIDES: THE OCR SWEEP SKIPS IT BY DESIGN
+
+Fred, 2026-08-27, looking at `ticket-833813` in the Studio: *"i see it all wrong."* He was right.
+All ten stamps were on the wrong scan. The two images are stored in REVERSE order
+(`address_1.jpg` = sheet **1100-2**, `address_2.jpg` = sheet **1100-1**) while the cards assigned
+`effective_page` 1 to the printed-page-1 clients.
+
+**The cross-check that settles this class of question**, joining each card to what the row OCR says
+its image actually prints, by row order: **0 of 10 matched before, 10 of 10 after the swap.** Zero
+and ten, not eight or nine, is the signature of a whole-page transposition rather than a placement
+error, and it is why the fix is a swap (`stamp_page = 3 - stamp_page`, `2026-08-27_1035`) and never
+a re-stamp.
+
+🛑 **WHY IT HAD NEVER BEEN READ, AND THIS IS THE REUSABLE LESSON.**
+`derm.fn_sheet_number_ocr_targets` offers only folders with an **unplaced** card
+(`... and r.stamp_placed_at is null`), reasoning that "a fully-placed sheet can never be
+auto-placed again: reading it changes no decision." **That premise is true for AUTO-PLACEMENT and
+false for everything else** — the sheet number is also the ONLY thing establishing which physical
+page each scan is, and that governs the blackout. So a fully-stamped sheet is exactly where a
+transposition survives, because nothing is left to trip over it.
+⇒ Use the handler's **EXPLICIT mode**, which exists for this and bypasses the placement filter:
+`{"tickets":["833813"]}` to `ocr-address-sheet-number`, and `{"ticket":"833813"}` to
+`ocr-address-sheet-rows`.
+
+⚠ **RUNNING THE OCR FIXES ONE CONSUMER OUT OF THREE. Do not stop there.**
+`derm.fn_sheet_image_position` reads `address_sheet_scan_reads`, so it self-corrects the moment the
+reads land. **`derm.ticket_page_images` does NOT read them**, and both `derm.v_stamp_sheets` (what
+the Studio renders) and `derm.fn_blackout_targets` (`imgs[effective_page]`, what redacts) go
+through *that*. So after the OCR the mapping function was right while the app and the redactor were
+still wrong.
+
+⚠ **NEITHER EXISTING DETECTOR SEES THIS.** `derm.v_stamp_placement_health` was EMPTY for the folder
+throughout: it detects an image list that MOVES, not one that was wrong from the start. And all ten
+`stamp_image_url` witnesses AGREED with the wrong answer, because the witness was backfilled from
+each stamp's own ordinal on 2026-08-24 — the circularity that section already warns
+"validates nothing historically". **A witness that agrees is not evidence when it was derived from
+the thing it is checking.**
+
+✅ Safe to correct because the folder publishes nothing: 0 extents, 0 documents, 0 manual bands.
+🛑 **Which is also why 833813 must not be measured before a transposition check.** An extent added
+while the pages were swapped would build every client's redaction from the wrong page — the
+`ticket-833049` shape that is frozen by a CHECK constraint for exactly this reason.
+
 ### 🛑 THE BAND WRITE PATH WAS UNGUARDED UNTIL 2026-08-27, AND `band_set_by` NEVER HELD A HUMAN
 
 Hardened by `2026-08-27_0347` ahead of the Stamp Studio's chip becoming a **rectangle** (Fred,
