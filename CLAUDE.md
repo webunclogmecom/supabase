@@ -1866,6 +1866,32 @@ the thing it is checking.**
 while the pages were swapped would build every client's redaction from the wrong page — the
 `ticket-833049` shape that is frozen by a CHECK constraint for exactly this reason.
 
+**✅ THE REST OF THE FLEET WAS SWEPT THE SAME DAY. 833813 WAS THE ONLY TRANSPOSITION.**
+16 multi-page `ticket-*` folders exist; **5 had never been scanned, all 5 because they were fully
+placed**, and 4 of those were already serving 35 documents. All five were read explicitly:
+
+| folder | sheet numbers read | verdict |
+|---|---|---|
+| `ticket-311780` | 1090-1, 1090-2 | 10 of 10 cards on the right image |
+| `ticket-832487` | 1085-1, 1085-2 | 10 of 10 |
+| `ticket-832194` | 1082-1, 1082-2 | correct — see the slot trap below |
+| `ticket-826114` | 354, 355 | unverifiable by code, see below |
+| `ticket-833049` | **338, 338, 387** | independently confirms the duplicate-image defect; stays frozen |
+
+⚠ **THE CROSS-CHECK HAS A SLOT TRAP, AND `ticket-832194` TRIPS IT.** Numbering cards by
+`stamp_y_pct` within a page and comparing to the row OCR's `row_index` assumes one printed row per
+card. **A multi-permit client breaks that**: on sheet 1082, `043-MIL` has `rows_printed = 2` at
+printed rows 5 and 6, and row 6 is **page 2's first printed row** while its single card sits on
+page 1 (`is_first_row`). So page 2's cards appear shifted by one and the check reports 5 of 7. It
+is not a defect. **Read `derm.v_sheet_printed_rows` before believing a partial mismatch** — a real
+transposition scores ZERO and matches everything when swapped, which is the shape to look for.
+
+⚠ **`ticket-826114` cannot be checked this way at all**: sheets 354/355 are handwritten pads whose
+rows carry no client code, so `client_code_read` is NULL on all 12 reads and code-matching has
+nothing to compare. Its sheet numbers are sequential and sane, and these are two SEPARATE pad
+sheets rather than two pages of one, so page order is not a concept for it. Verifying it would
+need facility-NAME matching.
+
 ### 🛑 THE BAND WRITE PATH WAS UNGUARDED UNTIL 2026-08-27, AND `band_set_by` NEVER HELD A HUMAN
 
 Hardened by `2026-08-27_0347` ahead of the Stamp Studio's chip becoming a **rectangle** (Fred,
