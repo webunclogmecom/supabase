@@ -1794,6 +1794,43 @@ same class of misalignment and wants the same snap.
 > the reusable part: a card with a band but no `stamp_placed_at` is unpublishable, and no amount of
 > better geometry changes that. Only a stamp does.
 
+### ✅ A MANIFEST CAN NOW SERVE ONE REDACTED DOCUMENT PER PAGE (2026-08-27)
+
+`derm.redacted_manifest_docs` is keyed **(manifest_id, effective_page)**, not manifest_id alone.
+`derm.fn_blackout_targets` elects ONE **folder** per manifest and keeps **every page** of it.
+`customer.get_work_order` returns **`work_order.fog_documents`**, one `{effective_page, url}` per page.
+
+**Why:** a client whose printed rows span two pages of one sheet could only be served one of them.
+Two were: **043-MIL** (permits on rows 5|6 of sheet 1082, different images) and **022-GRO** (one
+client written on both pages of a handwritten pad, not a permit case at all). Both now serve both
+pages, verified by opening the files.
+
+🛑 **THE FOLDER ELECTION IS STILL LOAD-BEARING. Do NOT key on (manifest_id, effective_page) alone** —
+5 manifests carry placed cards in two folders and **4 of them collide on that pair** (1246/1247/1248/
+1249 are the same paper carded in both `derm/1246` and `ticket-828604`, at the SAME page 1). Without
+an election each folder emits a target that upserts the same row and fights every sweep.
+
+🛑 **`address_row_map.page` IS THE OCR PAGE AND IS NOT THE PAGE THE STAMP IS ON. Setting it to 2
+CORRUPTS THE IMAGE LIST.** `derm.ticket_page_images` builds its array from `page`, so a row claiming
+page 2 while carrying `address_1.JPG` APPENDS a duplicate entry and every later ordinal re-points at
+a different scan. Measured on ticket-832194: `[address_1, address_2]` became
+`[address_1, address_1, address_2]`, which would have made two neighbours redact the WRONG PAGE —
+the `ticket-833049` defect. **Every card on a folder shares one `page`; only `stamp_page` varies.**
+Assert `ticket_page_images` is byte-identical before and after any card insert.
+
+⚠ **A new card must be inserted ALREADY STAMPED.** An unstamped card freezes the whole folder
+(closed-world gate), and `trg_ab_autoplace_generated` only fires when `stamp_placed_at IS NULL` — its
+slot resolves the client's FIRST printed row, so letting it run puts the second permit's card on the
+first permit's row.
+
+⚠ **`customer.work_orders` joins the ledger through a LATERAL pinning the first page.** A plain join
+fans the view to one row per page, silently, for every consumer. `derm_manifest_url` is now page 1 of
+N and is kept only for compatibility; read `fog_documents`.
+
+⚠ **`v_blackout_blocked_sheets` needed NO change and this was checked**: both its ledger joins are
+inside `EXISTS` (semi-joins) and every aggregate is over `address_row_map`, so extra rows cannot
+inflate its counts.
+
 ### 🛑 A BLACKOUT FOLDER CAN BE FROZEN AND SERVING, AND UNTIL 2026-08-27 NOTHING COULD SEE IT
 
 `derm.fn_blackout_targets` carries a **whole-folder closed-world gate**:
