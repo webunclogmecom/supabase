@@ -1786,10 +1786,13 @@ same class of misalignment and wants the same snap.
 > and looks like an empty backlog. I read that as "only 3 of 63 will regenerate" and nearly reported
 > the migration as inert. Pass a real limit.
 >
-> ⚠ **4 rows on `ticket-828604` were snapped but will NEVER regenerate**: `fn_blackout_targets`
-> gates on `stamp_placed_at IS NOT NULL` and those rows have none. Their documents are frozen
-> snapshots carrying bands whose source no longer exists (7 such rows fleet-wide). Improving the
-> data does not republish them.
+> ⚠ **4 rows on `ticket-828604` were snapped but could not regenerate**: `fn_blackout_targets`
+> gates on `stamp_placed_at IS NOT NULL` and those rows had none, so their documents were frozen
+> snapshots carrying bands whose source no longer existed. Improving the data did not republish them.
+> **✅ RESOLVED 2026-08-27**: Fred re-placed all four stamps in the Studio at 11:06 ET, and
+> `2026-08-27_1337` then measured the page; all four documents regenerated. The RULE stands and is
+> the reusable part: a card with a band but no `stamp_placed_at` is unpublishable, and no amount of
+> better geometry changes that. Only a stamp does.
 
 ### 🛑 A BLACKOUT FOLDER CAN BE FROZEN AND SERVING, AND UNTIL 2026-08-27 NOTHING COULD SEE IT
 
@@ -1814,9 +1817,10 @@ been the all-clear it reads as.** Measured 2026-08-26: 6 folders failed the gate
 'frozen_closed_world'`, so `blackout-health` and the daily escalation mail pick it up with no new
 wiring. Arm A was spliced in verbatim from `pg_get_viewdef` and VERIFY 1 is the control for it.
 
-⚠ **Two folders are frozen AND SERVING right now: `ticket-828604` (4 clients) and `ticket-830714`
-(3 clients), 7 customer documents that can never regenerate.** Improving their bands, their extent
-or the redactor changes nothing about what those clients see. **Unfreezing needs a person to place
+⚠ **ONE folder is frozen AND SERVING: `ticket-830714` (3 clients).** Improving its bands, its
+extent or the redactor changes nothing about what those clients see.
+🛑 **`ticket-828604` WAS the second one and is now CLEAR (2026-08-27)** -- Fred re-stamped it and
+`2026-08-27_1337` measured it, so its 4 documents regenerated. Do not carry the old pairing forward. **Unfreezing needs a person to place
 the missing stamps in the Studio. Clearing the bands does NOT do it -- the gate is on the stamp
 POINT.** ⚠ Four further folders (`ticket-312024`, `window10-sheet6`, `window12-sheet1`,
 `window13-sheet8`) also fail the gate but publish nothing, so they are deliberately NOT reported:
@@ -1968,10 +1972,13 @@ historical writes came through bulk migrations:
 | `address_row_map_band_needs_stamp_chk` | **NOT VALID** | 7 legacy rows already violate it |
 | `page_block_extents_range_chk` | VALIDATED | 0 of 162 violated it |
 
-🛑 **`address_row_map_band_needs_stamp_chk` must STAY `NOT VALID`.** `ticket-828604` and
-`ticket-830714` are the 7 violators and they hold published documents, so `VALIDATE CONSTRAINT`
-fails **by design** -- same pattern as `derm_manifests_dump_fields_present_chk`. Do not blank or
-delete those rows to make it pass. `NOT VALID` still binds every INSERT and UPDATE, which is the
+🛑 **`address_row_map_band_needs_stamp_chk` must STAY `NOT VALID`.** It held 7 violators across
+`ticket-828604` and `ticket-830714` when it shipped; **measured 2026-08-27 it is down to ONE row, on
+`ticket-830714`**, because 828604 was re-stamped and because `clear_stamp_position` now clears the
+band alongside the stamp (so Fred clearing two cards that afternoon retired two violators rather than
+creating them). That row holds a published document, so `VALIDATE CONSTRAINT` still fails **by
+design** -- same pattern as `derm_manifests_dump_fields_present_chk`. Do not blank or delete it to
+make it pass, and do not re-derive the violator count from this paragraph: query it. `NOT VALID` still binds every INSERT and UPDATE, which is the
 point: no NEW instance.
 
 ✅ **`derm.page_block_extents` is now audited** (rule 8 opt-in, `audit_page_block_extents`). It had
