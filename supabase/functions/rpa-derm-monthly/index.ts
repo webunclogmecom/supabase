@@ -351,12 +351,22 @@ Deno.serve(async (req: Request) => {
         truck_capacity_gallons: r.truck_capacity_gallons == null
           ? null
           : Number(r.truck_capacity_gallons),
-        // The vehicle's ACTIVE Miami-Dade decal, added 2026-08-26 because the caller resolves
-        // quantity from a decal-keyed table and the payload previously carried only truck names.
-        // null on 51 of 700 rows: Cloggy (43 rows / 27 in-scope tickets) holds no decal in any
-        // jurisdiction, and 6 rows carry no truck at all. A null must make the caller REFUSE the
-        // ticket. Never substitute a capacity, a truck name, or another jurisdiction's decal:
-        // that would put a wrong permit number on a county filing.
+        // The vehicle's ACTIVE Miami-Dade decal, added 2026-08-26. It is the PERMIT NUMBER
+        // identifying which vehicle carried the manifest; the payload previously carried only
+        // truck names, which are not stable identifiers to a regulator.
+        // 🛑 It does NOT resolve a quantity. The county bills MEASURED gallons per manifest off
+        // the invoice, and nothing on the form is computed from the decal or from capacity. This
+        // comment said "the caller resolves quantity from a decal-keyed table" until 2026-08-26,
+        // which was the sixth surviving copy of a claim retracted that morning, and it survived a
+        // phrase sweep because it words the same claim differently. Grep the MEANING, not one
+        // phrasing.
+        // null on 51 of 700 rows: Cloggy (45 rows, 43 of them in scope, across 27 in-scope
+        // tickets) holds no decal in any jurisdiction, and 6 rows carry no truck at all, so
+        // 45 + 6 is the 51. ⚠ Quote both figures: 51 counts every row and 43 counts only in-scope
+        // ones, so "43 rows" beside "51 of 700" reads as arithmetic that does not close.
+        // A null must make the caller REFUSE the ticket. Never substitute a capacity, a truck
+        // name, or another jurisdiction's decal: that would put a wrong permit number on a
+        // county filing.
         truck_decal: r.truck_decal ?? null,
         // ALWAYS null. We store no measured volume (0 non-null of 700), and the county bills
         // measured gallons, so any value here would be a guess presented as a fact.

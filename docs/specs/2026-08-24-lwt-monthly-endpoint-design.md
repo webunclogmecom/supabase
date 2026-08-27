@@ -271,11 +271,18 @@ Three reasons this split is not ceremony:
 
 ## 6. What we deliberately do NOT compute, and why that is the right call
 
-- **`gallons` stays `null`.** He resolves quantity from the decal client-side. Correct: the quantity
-  on the filed form is the **truck capacity**, which is a property of the vehicle and the decal, not of
-  the manifest. We do not store a measured volume per load, so anything we put here would be a guess
-  dressed as data. Serving `truck` and `truck_capacity_gallons` gives him the input without us
-  asserting the answer.
+- **`gallons` stays `null`.** We do not store a measured volume per load, so anything we put here
+  would be a guess dressed as data.
+  🛑 **The RATIONALE below was wrong, though the decision was right.** This bullet originally read
+  *"He resolves quantity from the decal client-side. Correct: the quantity on the filed form is the
+  truck capacity, which is a property of the vehicle and the decal, not of the manifest."* **The
+  county bills MEASURED gallons per manifest, off the invoice** (ticket 828837: Moises / C1184 /
+  9,000 capacity on our side against 3,800 billed). So the quantity is a property of *the manifest*,
+  which is the opposite of what this said, and `truck_capacity_gallons` is an internal fleet fact
+  served only for sanity-checking a load. Retracted 2026-08-26.
+  ⚠ Worth keeping because the decision and its reasoning came apart: `gallons` staying null is
+  *more* obviously right under the true rationale, not less, so a correct call sat on a false
+  premise for two days and nothing about the outcome flagged it.
 - **The fee and its truncation.** `total_gal × $0.00419`, **truncated** to cents. That belongs in his
   generator, which is validated against six filed pages, and it must live in exactly one place. If we
   also computed it, the two would drift and the filed artifact would depend on which one was believed.

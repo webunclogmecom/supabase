@@ -492,10 +492,15 @@ independently, and a truck with no decal appears in one and not the other, so th
 in length. A caller zipping them by index would attribute Cloggy loads to David.
 
 🛑 **`truck_decal` is `null` on 51 of 700 rows and you must REFUSE those tickets, not guess.**
-Cloggy (43 rows / 27 in-scope tickets, offloads 2026-01-15 to 2026-08-20) holds no decal in **any**
-jurisdiction, and 6 rows carry no truck at all. Whether Cloggy is a permitted LWT vehicle at all is
-an open question with Diego. Never substitute a capacity, a truck name, or a Broward decal: that
-would put a wrong permit number on a county filing.
+Cloggy (**45 rows, of which 43 are in scope**, across 27 in-scope tickets, offloads 2026-01-15 to
+2026-08-20) holds no decal in **any** jurisdiction, and 6 rows carry no truck at all, so 45 + 6 is
+the 51. Whether Cloggy is a permitted LWT vehicle at all is an open question with Diego. Never
+substitute a capacity, a truck name, or a Broward decal: that would put a wrong permit number on a
+county filing.
+
+⚠ *Both figures are given because this sentence previously read "43 rows" beside "51 of 700", which
+mixes two grains: 51 counts every row, 43 counts only the in-scope ones. `43 + 6 = 49`, so the
+arithmetic did not close and a careful reader would have gone looking for two missing rows.*
 
 ⚠ **Miami-Dade only, on purpose.** The Broward decal exists in our data and is deliberately not
 served, because which decal a Broward-offload row should carry is entangled with the scope question
