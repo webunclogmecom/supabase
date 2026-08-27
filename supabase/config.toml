@@ -727,3 +727,13 @@ verify_jwt = false
 # ENQUEUES via net.http_post, so cron.job_run_details reports succeeded whatever happens next.
 [functions.poll-calendar-tasks]
 verify_jwt = true
+
+# rotate-photo: Admin Review's photo rotate button. Proxies to unclogme-pdf-service,
+# which does the pixel rotation (NOT Deno: ImageScript scrambles non-square images on
+# rotate(90)/rotate(270), and a 12MP decode alone is ~190MB against a 256MB cap).
+# verify_jwt = true is the OUTER gate only. The handler ALSO resolves the caller with
+# getUser() and requires an @unclogme.com / @ayache.com address, because the public anon
+# key is itself a validly signed JWT and passes the gateway on its own, and this function
+# edits compliance evidence. Never deploy this one --no-verify-jwt.
+[functions.rotate-photo]
+verify_jwt = true
