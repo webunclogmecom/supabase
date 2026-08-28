@@ -160,9 +160,8 @@ still be present, and at zero tolerance the query must still return rows.
 
 Fred measured p2, then p1, through the Studio's own re-measure button after
 `2026-08-28_2010` recorded the labels the classifier could not derive. The folder left
-`derm.v_blackout_blocked_sheets` and the sweep started publishing: **7 of its 9 card-pages
-have a redacted document, 2 still queued** at roughly one per five minutes, and nothing else
-in the fleet is queued.
+`derm.v_blackout_blocked_sheets` and the sweep drained it: **all 9 card-pages are now served**
+and the fleet-wide blackout queue is empty.
 
 🛑 **A defect I shipped the same afternoon, worth keeping because it failed in the direction
 that looks like a finding.** `derm.record_page_rules` did not write `source_etag`, and
@@ -200,24 +199,24 @@ still reach the worklist, or every clean row above it means nothing.
 `2026-08-28_2150`. Body spliced out of `pg_get_viewdef` by script against a single asserted
 anchor, so nothing else in the view moved.
 
-**Worklist 6 to 3, and neither survivor is an exposure:**
+**Worklist 6 to 4, and no survivor is an exposure:**
 
 | folder | why |
 |---|---|
 | `ticket-830714` p1, 009-CN and 034-LG | pre-existing. Frozen on the closed-world gate, bands still derived, needs a person to place the missing stamps. Better geometry cannot clear it. |
-| `ticket-312024` p1, 067-TCE | **false positive.** Its band (24.312 to 32.796) is right; the newest scan of that page is missing the roster's first boundary at 24.420, so the nearest rule to the top edge is the divider at 28.608 and the gap reads 4.296pp. That is the `classify.js` end-trim limitation from section 3: the trim strips only LONG bars, and here the outermost rule at each end is short. The top edge sits 0.108pp **above** the true boundary, outward into the header region and not into another client. |
+| `ticket-312024` p1, 067-TCE and 215-G7 | **false positives, and symmetric**, which is the tell. Both bands are right. The newest scan of that page is missing the roster's FIRST boundary at 24.420 and its LAST at 62.564, so the top client's top edge and the bottom client's bottom edge fall back to the nearest surviving divider (28.608, 58.505) and read 4.296 and 4.059pp. That is the `classify.js` end-trim limitation from section 3: the trim strips only LONG bars, and here the outermost rule at EACH end is short, so the chain loses a real boundary at both ends. 067-TCE's top sits 0.108pp above the true boundary (outward, into the header region); 215-G7's bottom sits exactly on 62.564. Neither reaches another client. |
 
 ⚠ So the end-trim limitation is no longer only a blocker for measuring a page. Now that
-`ticket-312024` is serving, it also **manufactures a worklist row on a correct band**. Changing
-the trim still has to be validated against all 168 already-measured pages, so it is still its
-own piece of work, but it now has a second cost.
+`ticket-312024` is serving, it also **manufactures worklist rows on correct bands**, one at each
+end of the roster. Changing the trim still has to be validated against all 168 already-measured
+pages, so it is still its own piece of work, but it now has a second cost.
 
 ## Open, not done
 
 | item | state |
 |---|---|
 | **30 orphaned redacted JPEGs**, publicly fetchable with no ledger row | backed up to `backups/2026-08-27_orphaned_redacted_docs/`, **awaiting Fred's approval to delete** |
-| `ticket-312024` | **CLOSED.** Fred measured both pages through the Studio; the folder left `v_blackout_blocked_sheets` and 7 of 9 card-pages are published, 2 still draining. One residual worklist row (p1 067-TCE) is a false positive from the end-trim limitation below, not an exposure |
+| `ticket-312024` | **CLOSED.** Fred measured both pages through the Studio; the folder left `v_blackout_blocked_sheets` and all 9 card-pages are served. Two residual worklist rows (p1 067-TCE and 215-G7) are symmetric false positives from the end-trim limitation below, not an exposure |
 | `ticket-833049` p1/p2 | frozen by a CHECK constraint, out of scope |
 | `ticket-312433` | **CLOSED.** All 8 card-pages published, both page boundaries set |
 | `classify.js` end-trim | strips only LONG bars, so a page whose outermost rule at each end is SHORT keeps its header or footer bar in the roster chain and every label below inverts. It now costs twice: it blocks measurement, and on a serving folder it manufactures a worklist row on a correct band. Fixing it means changing the trim and re-validating all 168 measured pages |
