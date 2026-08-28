@@ -685,20 +685,33 @@ Deno.serve(async (req: Request) => {
   // 🛑 IT FAILS CLOSED. Any error reading the config forces the internal address rather than
   // falling through to the municipal list, because "we could not check" and "it is safe to send
   // to a regulator" must never be the same branch.
+  // 🛑 THE GATE NOW COVERS BOTH TARGETS. It used to cover target='city' only, and that left the
+  // BIGGER live surface wide open: the DERM Tracker's "Send to N clients" button reaches real
+  // customers, and has - 37 real sends to 23 distinct client addresses, most recently 2026-08-19.
+  // With an empty "Send a test to" field one click mails all of them. Fred, 2026-08-28:
+  // *"REMEMBER TO NOT SEND TO THE CLIENTS YET ... we're testing so you can't send emails to the
+  // clients yet."*
+  //
+  // Each target has its OWN flag, so client sending can be restored without also opening the city,
+  // and vice versa. Both ship false during the testing phase.
+  // ⚠ client_email_live_sends=false DISABLES A WORKING PRODUCTION FEATURE. That is deliberate and
+  // temporary; one config update restores it.
   let cityGate: string | null = null
-  if (target === 'city') {
+  {
+    const liveKey = target === 'city' ? 'city_email_live_sends' : 'client_email_live_sends'
     let live = false
     let fallback = ''
     try {
       const { data: cfg, error: cfgErr } = await sb.from('app_config')
-        .select('key, value').in('key', ['city_email_live_sends', 'city_email_test_recipient'])
+        .select('key, value').in('key', [liveKey, 'city_email_test_recipient'])
       if (cfgErr) throw cfgErr
       const m = new Map(((cfg ?? []) as { key: string; value: string | null }[])
         .map((r) => [r.key, String(r.value ?? '').trim()]))
-      live = (m.get('city_email_live_sends') ?? '').toLowerCase() === 'true'
+      live = (m.get(liveKey) ?? '').toLowerCase() === 'true'
+      // One internal inbox serves both targets. The key name is historical.
       fallback = m.get('city_email_test_recipient') ?? ''
     } catch (e) {
-      console.error(`[send-derm-email] CITY GATE config read failed, failing closed: ${String((e as Error)?.message ?? e)}`)
+      console.error(`[send-derm-email] SEND GATE config read failed, failing closed: ${String((e as Error)?.message ?? e)}`)
       live = false
     }
     if (!live) {
@@ -707,7 +720,7 @@ Deno.serve(async (req: Request) => {
       if (!TEST_RECIPIENT_RE.test(fallback)) {
         return jsonResponse({
           error: 'city_gate_misconfigured',
-          detail: 'City sending is disabled and app_config.city_email_test_recipient is not a valid '
+          detail: `${target === 'city' ? 'City' : 'Client'} sending is disabled and app_config.city_email_test_recipient is not a valid `
             + ALLOWED_TEST_DOMAINS.map((d) => '@' + d).join(' / ') + ' address. Refusing to send.',
         }, 503, cors)
       }
