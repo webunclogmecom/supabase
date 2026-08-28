@@ -1,4 +1,4 @@
-# Session record, 2026-08-28 (ET) — DERM Stamp Studio
+# Session record, 2026-08-28 (ET): DERM Stamp Studio
 
 *Written because Fred asked for a record of the day's work. Scope note: `Supabase/` and
 `Building Apps/` are shared with the parallel session. **Only my commits are listed here.** The
@@ -12,7 +12,7 @@ The thread began 2026-08-27 ET and ran into 2026-08-28. Git stamps in this repo 
 ## 1. Multi-GDO permit cards
 
 A generated DERM sheet prints **one row per ACTIVE permit**, but `address_row_map` held one card per
-client, so a multi-permit client left printed rows **unowned** — the shape that leaked across clients
+client, so a multi-permit client left printed rows **unowned**, which is the shape that leaked across clients
 on 2026-08-19.
 
 - `7352127` a served document now covers **all** of a client's own printed rows, not one.
@@ -25,7 +25,7 @@ on 2026-08-19.
 - `e5bfcd1` **spec**, not built: forward-only, keyed on the FROZEN `rows_printed`.
 
 **Measured, and it changed the design twice.** 77 of 216 sheet-client rows already disagree with
-today's permit count and every one is `frozen=1, now=0` — a client with no active permit whom the
+today's permit count and every one is `frozen=1, now=0`, a client with no active permit whom the
 generator still prints once. Re-deriving would emit **zero** rows and drop a printed row. And a
 generated sheet is **shared**: sheet 1093 carries 8 clients but only 3 have a manifest in
 `ticket-833395`, so an unscoped check reported 7 gaps where there is 1.
@@ -40,10 +40,10 @@ merged it into **one pill** reading `009-CN · Kitchen`.
 margin, 0 clipped; 75% −15.2px, 2 of 3; 50% −40.3px, 3 of 3.** The pre-nickname chip was −2.7px at
 50%. Fine at the default, degrades zoomed out. Do not "fix" it by re-splitting the badge.
 
-⚠ **419 of 446 labelled chips read `Main`** — only 7 distinct non-`Main` labels exist. Suppressing it
+⚠ **419 of 446 labelled chips read `Main`**, and only 7 distinct non-`Main` labels exist. Suppressing it
 for single-permit clients is a one-line change if the noise ever bothers you.
 
-## 3. 🛑 The Studio now measures its own printed rules — the day's main piece
+## 3. 🛑 The Studio now measures its own printed rules, the day's main piece
 
 Fred, blocked by ten `G9_OFF_RULE` lines: *"I don't want to be needing you to do that, it's supposed
 to be something done by the app, what about an office member like diego."*
@@ -77,7 +77,7 @@ values.
    boundary is *missing*, not that a detected line is fake. Rules now write on any grade except
    FAILED.
 2. **The first end-to-end run FAILED.** The detector assumes a roster of 18..72 with no extent while
-   the classifier trimmed to ±1e9 — harmless for the 166 pages that have an extent, fatal for the
+   the classifier trimmed to ±1e9. That is harmless for the 166 pages that have an extent, fatal for the
    ones that do not: footer bars stayed in the chain and the server correctly refused a phase flip.
    Fixed to 16.0..74.0.
 
@@ -90,7 +90,7 @@ page. Guarded before writing a line of the RPC.
 
 ## 4. G8: name the client, stop blocking on sub-pixel noise
 
-`3bd625d`. The message read `extent 25.401..62.634 does not contain the bands 25.399..62.634` —
+`3bd625d`. The message read `extent 25.401..62.634 does not contain the bands 25.399..62.634`,
 naming no edge, no client, no action. It now emits **one row per offending client**:
 
 > The TOP page boundary (25.945) sits below **091-SB - Main**, whose row starts at 24.945. Move the
@@ -114,7 +114,7 @@ rectangles (`736e34d`).
 ## 6. `ticket-833813` and the OCR sweep that skipped it
 
 `ba9195a`. `fn_sheet_number_ocr_targets` excluded **fully-placed** folders, reasoning that a placed
-sheet can never be auto-placed again. True for placement, false for verification — which is why a
+sheet can never be auto-placed again. True for placement, false for verification, which is why a
 whole-page transposition survived there. Arm B now offers multi-image `ticket-*` folders that have
 never been scanned.
 
@@ -125,7 +125,7 @@ never been scanned.
 **21 of 133 folders** have that shape, so every tab after the first read `0/0` while still drawing
 its chips. Now `row.stamp_page ?? row.page`.
 
-⚠ `ticket-829216`'s `Page 1 — 0/0` is **correct** and must not be "fixed": that folder genuinely has
+⚠ `ticket-829216`'s `Page 1 - 0/0` is **correct** and must not be "fixed": that folder genuinely has
 no cards on its first image.
 
 ---
@@ -138,7 +138,7 @@ of them by 10px or more, worst 43.4px, all serving. **It was wrong. The real num
 `fn_blackout_targets` clamps before the redactor sees the extent. Across all **654** served
 documents, `header_y` equals `min(band_y0_pct)` on every page where the stored extent is tighter
 than the bands. Proven by outcome: the 44 pages with an identifiable victim document had their
-supposedly-exposed strip measured on the served JPEG in a canvas — **blackFrac 1.000 on all 44**.
+supposedly-exposed strip measured on the served JPEG in a canvas: **blackFrac 1.000 on all 44**.
 
 The one residual, `derm/1246` p1 at 0.074pp, is **half a pixel** on a 724px document and at 6x is the
 printed rule itself.
