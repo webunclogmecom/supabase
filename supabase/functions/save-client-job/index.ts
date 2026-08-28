@@ -1320,22 +1320,50 @@ Deno.serve(async (req) => {
       // anything. I had briefly made an http(s) URL mandatory, which blocked every cadence change
       // whose approval lived somewhere unlinkable — the exact case the image half exists to cover.
       //
-      // ⚠ 10 rather than the original 3: Fred asked for "a real reason, not 3 characters of
-      // anything", so "ok" / "n/a" / "yes" are still refused. Tunable; it is a lint, not a policy.
+      // ⚠ HISTORICAL, and kept because it explains the number a reader will find in old rows:
+      // the bar was raised 3 -> 10 on 2026-08-07 when Fred asked for "a real reason, not 3
+      // characters of anything". It was ALWAYS labelled a lint, not a policy, and tunable.
+      // 🛑 IT WAS TUNED BACK OUT ON 2026-08-28 (see the block at the check itself). "ok" / "n/a" /
+      // "yes" are ACCEPTED again. Do not restore the 10 from this paragraph - it is a record of
+      // what the rule used to be, not an instruction.
       // ⚠ RELAXING inverts the deploy order that TIGHTENING needed. This server change ships FIRST,
       // because a server that accepts more than the UI sends is always safe, whereas relaxing the UI
       // first would send text the server still refused. The tightening note above is the mirror case.
       // ⚠ When image upload lands, this becomes (text OK) || (>=1 image linked) — and the image arm
       // MUST be checked server-side too, or the requirement is only a UI suggestion.
-      // 🛑 THE RULE IS (TEXT >= 10) || (>= 1 IMAGE), AND THE IMAGE ARM IS ENFORCED HERE.
+      // 🛑 THE RULE IS (TEXT CONTAINS A LETTER OR DIGIT) || (>= 1 IMAGE), AND THE IMAGE ARM IS
+      // ENFORCED HERE. (It read "TEXT >= 10" until 2026-08-28.)
       // Fred: "something must be required, either they put a photo, or a text (message or link or
       // anything)". If only the browser checked the image arm, the requirement would be a UI
       // suggestion — the same class of gap as every client-side-only validation in this repo.
       // ⚠ Read from body, NOT from the patch: the patch is diffed against Jobber field-groups, and a
       // base64 blob in there would be treated as a job attribute to push.
-      if (r.length < 10 && proofIn.length === 0) {
+      // 🛑 2026-08-28: THE 10-CHARACTER MINIMUM IS GONE. Fred, on being blocked by it while
+      // testing 112-YA: "The reason for a freq change is either a text or a file, but when i try
+      // just text it doesn't let me to save it. This makes no sense. Fix it."
+      // That reverses his own 2026-08-07 "a real reason, not 3 characters of anything", which is
+      // why the note above still explains where 10 came from. It was always documented as "a lint,
+      // not a policy; tune it freely" - this is that tune, not a regression.
+      //
+      // 🛑 THE NEW BAR IS THE DATABASE'S OWN BAR, DELIBERATELY. public.job_frequency_changes has
+      //   CHECK (reason ~ '[[:alnum:]]')          -- job_frequency_changes_reason_not_blank
+      // so "at least one letter or digit" is the rule the system of record already enforces. The
+      // app and this function had each invented a STRICTER rule than the table they write to, and
+      // that disagreement is the actual defect: a save could be refused by two layers for a value
+      // the storage layer would have accepted happily.
+      // \p{L}/\p{N} rather than [a-z0-9] because Postgres POSIX [[:alnum:]] is Unicode-aware under
+      // this collation, and a reason written with an accent must not be judged differently by the
+      // two ends. Mirror the rule, do not paraphrase it.
+      //
+      // ⚠ THE IMAGE ARM IS STILL ENFORCED HERE, and must stay that way: if only the browser
+      // checked it, "proof required" would be a UI suggestion. Unchanged.
+      // ⚠ Whitespace-only, emoji-only and punctuation-only still FAIL - they carry no alnum - so
+      // this is "any real characters", not "anything at all". "ok" and "n/a" now pass, which is
+      // exactly the behaviour Fred asked for and knowingly accepted.
+      const reasonHasAlnum = /[\p{L}\p{N}]/u.test(r);
+      if (!reasonHasAlnum && proofIn.length === 0) {
         return fail("reason_required",
-          "Give a real reason for the cadence change, or attach proof. A couple of characters is not a record.",
+          "Add a reason for the cadence change, or attach proof.",
           { field: "frequency_reason" });
       }
       // 🛑 AN IMAGE-ONLY SAVE STILL NEEDS REASON TEXT, BECAUSE THE COLUMN DEMANDS IT.
