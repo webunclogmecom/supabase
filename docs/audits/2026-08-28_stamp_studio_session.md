@@ -156,14 +156,71 @@ still be present, and at zero tolerance the query must still return rows.
 
 ---
 
+## 9. `ticket-312024` measured and published, and the etag defect that inflated the worklist
+
+Fred measured p2, then p1, through the Studio's own re-measure button after
+`2026-08-28_2010` recorded the labels the classifier could not derive. The folder left
+`derm.v_blackout_blocked_sheets` and the sweep started publishing: **7 of its 9 card-pages
+have a redacted document, 2 still queued** at roughly one per five minutes, and nothing else
+in the fleet is queued.
+
+🛑 **A defect I shipped the same afternoon, worth keeping because it failed in the direction
+that looks like a finding.** `derm.record_page_rules` did not write `source_etag`, and
+`edge_verdict` tests `source_etag IS DISTINCT FROM derm._img_etag(...)` **before** it looks at
+any edge gap. NULL is DISTINCT FROM everything, so every page measured through the app graded
+`STALE` and the worklist went **2 to 15**. Thirteen of those were not geometry at all.
+Fixed by defaulting the etag inside the RPC (`2026-08-28_2110`), with a backfill.
+
+⚠ **A new detector that writes its own provenance must write ALL of it.** The etag is not
+metadata about the scan, it is an operand in the grade.
+
+## 10. `expected_slots` counted slots per CLIENT, so every multi-permit card failed
+
+The last three rows on the worklist were Casa Neos on `ticket-312433`, graded `ODD_SLOT`, and
+all three bands were correct: `ON_RULE` at both edges, gaps of 0.102 to 0.228pp against a
+0.35pp tolerance, tiling 33.104 to 40.108 to 47.251 to 54.778 with no gap and no overlap.
+
+`derm.v_band_edge_check.expected_slots` counted every printed row a **client** owns on a page
+and applied that total to **each** of its cards. Right when a client held one card; wrong since
+the multi-GDO split gave a client one card per permit, each covering a single printed row.
+
+**This is the third thing the split has quietly invalidated**, after the card ordering in
+`add_extra_client_card` and the per-page keying of served documents. Anything still assuming
+one card per client is a candidate for the same review, and that is the reusable part.
+
+The fix divides by the cards the client holds on that page, and it is right in both directions:
+3 rows / 3 cards = 1 for Casa Neos, and **3 rows / 1 card = 3 for 242-WYN on `ticket-833395`**,
+which is still un-split and whose band really must span all three of its printed rows.
+
+⚠ **VERIFY 2 is the assertion that matters, not VERIFY 1.** A divisor that flattened a genuinely
+multi-row band to 1 would satisfy the Casa Neos check just as well and be wrong, so the control
+pins 242-WYN at 3. VERIFY 5 covers the other direction: a band dragged 1.5pp off its rule must
+still reach the worklist, or every clean row above it means nothing.
+
+`2026-08-28_2150`. Body spliced out of `pg_get_viewdef` by script against a single asserted
+anchor, so nothing else in the view moved.
+
+**Worklist 6 to 3, and neither survivor is an exposure:**
+
+| folder | why |
+|---|---|
+| `ticket-830714` p1, 009-CN and 034-LG | pre-existing. Frozen on the closed-world gate, bands still derived, needs a person to place the missing stamps. Better geometry cannot clear it. |
+| `ticket-312024` p1, 067-TCE | **false positive.** Its band (24.312 to 32.796) is right; the newest scan of that page is missing the roster's first boundary at 24.420, so the nearest rule to the top edge is the divider at 28.608 and the gap reads 4.296pp. That is the `classify.js` end-trim limitation from section 3: the trim strips only LONG bars, and here the outermost rule at each end is short. The top edge sits 0.108pp **above** the true boundary, outward into the header region and not into another client. |
+
+⚠ So the end-trim limitation is no longer only a blocker for measuring a page. Now that
+`ticket-312024` is serving, it also **manufactures a worklist row on a correct band**. Changing
+the trim still has to be validated against all 168 already-measured pages, so it is still its
+own piece of work, but it now has a second cost.
+
 ## Open, not done
 
 | item | state |
 |---|---|
 | **30 orphaned redacted JPEGs**, publicly fetchable with no ledger row | backed up to `backups/2026-08-27_orphaned_redacted_docs/`, **awaiting Fred's approval to delete** |
-| `ticket-312024` p1 | refuses measurement: a full-width bar in a divider slot. **Not forced through**; needs a person to look at the scan |
+| `ticket-312024` | **CLOSED.** Fred measured both pages through the Studio; the folder left `v_blackout_blocked_sheets` and 7 of 9 card-pages are published, 2 still draining. One residual worklist row (p1 067-TCE) is a false positive from the end-trim limitation below, not an exposure |
 | `ticket-833049` p1/p2 | frozen by a CHECK constraint, out of scope |
-| `ticket-312433` | measured, but still needs bands snapped + page boundary set before its 8 clients get documents |
+| `ticket-312433` | **CLOSED.** All 8 card-pages published, both page boundaries set |
+| `classify.js` end-trim | strips only LONG bars, so a page whose outermost rule at each end is SHORT keeps its header or footer bar in the roster chain and every label below inverts. It now costs twice: it blocks measurement, and on a serving folder it manufactures a worklist row on a correct band. Fixing it means changing the trim and re-validating all 168 measured pages |
 | multi-GDO permit cards | spec'd (`e5bfcd1`), **not built** |
 | `ticket-830714` | frozen and serving; needs stamps placed by a person |
 
