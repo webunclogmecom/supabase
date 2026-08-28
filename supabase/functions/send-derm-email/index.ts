@@ -61,6 +61,23 @@ const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Unclogme <onboarding@resend.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
+// 🛑 test_recipient REPLACES the real municipal recipients, so it is a redirect primitive, not a
+// convenience. It used to accept any string containing '@'. Combined with the missing auth gate
+// below, that let anyone holding the PUBLIC anon key have any manifest's compliance documents
+// mailed to an address of their choosing. Same allowlist shape as send-visit-photos-email.
+const ALLOWED_TEST_DOMAINS = ['ayache.com', 'unclogme.com']
+const TEST_RECIPIENT_RE = /^[^@\s]+@(ayache\.com|unclogme\.com)$/i
+// The list and the literal are two statements of one rule; assert they agree at module load
+// rather than discovering the drift when a send is refused (or worse, allowed).
+for (const d of ALLOWED_TEST_DOMAINS) {
+  if (!TEST_RECIPIENT_RE.test(`probe@${d}`)) {
+    throw new Error(`test-recipient allowlist drift: ${d} is listed but rejected by TEST_RECIPIENT_RE`)
+  }
+}
+if (TEST_RECIPIENT_RE.test('probe@evil.com') || TEST_RECIPIENT_RE.test('probeXayache!com')) {
+  throw new Error('test-recipient allowlist is too permissive; check the escaping in TEST_RECIPIENT_RE')
+}
+
 // ── THE CITY AND THE CLIENT BOTH GET THE FP SERVICE REPORT (Fred, 2026-08-26):
 //    "we don't send the DERM Manifests, or the receipts anymore, we send the Report PDF
 //    Files from the FP App." The report embeds both compliance documents.
@@ -510,6 +527,44 @@ Deno.serve(async (req: Request) => {
   if (!RESEND_API_KEY) return jsonResponse({ error: 'email_not_configured', detail: 'RESEND_API_KEY not set' }, 503, cors)
   if (!SUPABASE_URL || !SERVICE_KEY) return jsonResponse({ error: 'service_not_configured' }, 503, cors)
 
+  // -- AUTH GATE. A real caller, not merely a valid-looking JWT. ----------------------------
+  // 🛑 THE ANON KEY IS PUBLIC BY DESIGN. It ships inside every app's JavaScript, so "presented a
+  // valid JWT" is not authentication. Until 2026-08-28 this function had no gate at all and no
+  // config.toml block, so ONE request carrying the public anon key plus a test_recipient could
+  // have any manifest's compliance documents mailed to any address: the key got past the door,
+  // nothing asked who was calling, and test_recipient replaces the real city recipients.
+  //
+  // Exactly two callers are legitimate:
+  //   service_role - the hourly city-email sweep. No human, so the actor below stays null.
+  //   a real user  - the DERM Tracker button, forwarding the signed-in staff JWT.
+  // The anon key is NEITHER: it is a validly signed JWT with NO user attached, which is precisely
+  // the branch getUser() rejects. That is why the check is getUser and not a claims read.
+  //
+  // ⚠ This sits AFTER the OPTIONS reply on purpose. A browser preflight carries no Authorization
+  // header, so gating before it would break every in-app call with an opaque CORS failure.
+  const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  if (!bearer) return jsonResponse({ error: 'unauthorized', detail: 'no bearer token' }, 401, cors)
+  let bearerRole: string | null = null
+  try {
+    const part = bearer.split('.')[1]
+    if (part) {
+      let b64 = part.replace(/-/g, '+').replace(/_/g, '/')
+      while (b64.length % 4) b64 += '='
+      bearerRole = (JSON.parse(atob(b64)) as { role?: string }).role ?? null
+    }
+  } catch { bearerRole = null }
+  // Exact-match first so the sweep does not depend on claim parsing; the claim check is the
+  // fallback for a rotated key. The gateway validates the signature before we ever run, so a
+  // forged role claim cannot reach this line.
+  const isMachineCaller = bearer === SERVICE_KEY || bearerRole === 'service_role'
+  if (!isMachineCaller) {
+    const authClient = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+    const { data: gu, error: guErr } = await authClient.auth.getUser(bearer)
+    if (guErr || !gu?.user?.id) {
+      return jsonResponse({ error: 'unauthorized', detail: 'a signed-in staff user is required' }, 401, cors)
+    }
+  }
+
   let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown }
   try { body = await req.json() } catch { return jsonResponse({ error: 'bad_json' }, 400, cors) }
 
@@ -545,8 +600,17 @@ Deno.serve(async (req: Request) => {
     seenRec.add(k)
     return true
   })
-  const testRecipient =
-    typeof body?.test_recipient === 'string' && body.test_recipient.includes('@') ? body.test_recipient.trim() : null
+  const rawTestRecipient = typeof body?.test_recipient === 'string' ? body.test_recipient.trim() : ''
+  // 🛑 REFUSE an unrecognised address, NEVER silently ignore it. Ignoring it would fall through to
+  // the REAL municipal recipients, i.e. the exact opposite of what the caller asked for, and a
+  // typo in a test would become a live regulator send.
+  if (rawTestRecipient !== '' && !TEST_RECIPIENT_RE.test(rawTestRecipient)) {
+    return jsonResponse({
+      error: 'bad_test_recipient',
+      detail: `Test emails may only go to ${ALLOWED_TEST_DOMAINS.map((d) => '@' + d).join(' or ')}.`,
+    }, 400, cors)
+  }
+  const testRecipient = rawTestRecipient !== '' ? rawTestRecipient : null
   // test_cc = the "send to BOTH" copy (Fred 2026-07-09): a REAL send to the clients/city
   // PLUS a BCC copy to this address so the sender can verify what went out. Distinct from
   // test_recipient (which SUPPRESSES the real send). Ignored when test_recipient is set
