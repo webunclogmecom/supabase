@@ -610,7 +610,8 @@ Deno.serve(async (req: Request) => {
       detail: `Test emails may only go to ${ALLOWED_TEST_DOMAINS.map((d) => '@' + d).join(' or ')}.`,
     }, 400, cors)
   }
-  const testRecipient = rawTestRecipient !== '' ? rawTestRecipient : null
+  // `let`, not `const`: the city testing-phase gate below can FORCE this (see CITY GATE).
+  let testRecipient = rawTestRecipient !== '' ? rawTestRecipient : null
   // test_cc = the "send to BOTH" copy (Fred 2026-07-09): a REAL send to the clients/city
   // PLUS a BCC copy to this address so the sender can verify what went out. Distinct from
   // test_recipient (which SUPPRESSES the real send). Ignored when test_recipient is set
@@ -622,6 +623,58 @@ Deno.serve(async (req: Request) => {
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'send-derm-email' } } })
   const results: Record<string, unknown>[] = []
+
+  // ══ CITY GATE — THE TESTING-PHASE CONTROL ════════════════════════════════════════════════
+  // Fred, 2026-08-10 and re-stated 2026-08-28: *"do not send anything to the city, only @ayache
+  // or @unclogme domains for the emails to test."*
+  //
+  // 🛑 THAT INSTRUCTION WAS ONLY ENFORCED ON THE OTHER MAILER. `send-visit-photos-email` has a
+  // hardcoded IS_TEST=true, but THIS function is the one that actually reaches municipal inboxes
+  // (its 17 real sends prove it), and it had no equivalent. A human clicking the DERM Tracker's
+  // "send to city" button reached real regulators with no gate in front of them. The queue's
+  // start_from switch does not help: it only holds the CRON back, never a person.
+  //
+  // While city_email_live_sends is not 'true', every target='city' send is FORCED to the internal
+  // address and the real recipients are never used. This overrides the caller, so it does not
+  // matter who calls or from where.
+  //
+  // 🛑 IT FAILS CLOSED. Any error reading the config forces the internal address rather than
+  // falling through to the municipal list, because "we could not check" and "it is safe to send
+  // to a regulator" must never be the same branch.
+  let cityGate: string | null = null
+  if (target === 'city') {
+    let live = false
+    let fallback = ''
+    try {
+      const { data: cfg, error: cfgErr } = await sb.from('app_config')
+        .select('key, value').in('key', ['city_email_live_sends', 'city_email_test_recipient'])
+      if (cfgErr) throw cfgErr
+      const m = new Map(((cfg ?? []) as { key: string; value: string | null }[])
+        .map((r) => [r.key, String(r.value ?? '').trim()]))
+      live = (m.get('city_email_live_sends') ?? '').toLowerCase() === 'true'
+      fallback = m.get('city_email_test_recipient') ?? ''
+    } catch (e) {
+      console.error(`[send-derm-email] CITY GATE config read failed, failing closed: ${String((e as Error)?.message ?? e)}`)
+      live = false
+    }
+    if (!live) {
+      // 🛑 REFUSE rather than send. If the gate is on but its address is unusable, the only
+      // alternative would be mailing the real city, which is the thing being prevented.
+      if (!TEST_RECIPIENT_RE.test(fallback)) {
+        return jsonResponse({
+          error: 'city_gate_misconfigured',
+          detail: 'City sending is disabled and app_config.city_email_test_recipient is not a valid '
+            + ALLOWED_TEST_DOMAINS.map((d) => '@' + d).join(' / ') + ' address. Refusing to send.',
+        }, 503, cors)
+      }
+      cityGate = fallback
+      if (testRecipient && testRecipient !== fallback) {
+        console.warn(`[send-derm-email] CITY GATE overrode test_recipient ${testRecipient} -> ${fallback}`)
+      }
+      testRecipient = fallback
+    }
+  }
+
   const isTest = !!testRecipient
 
   // Activity-trail attribution (2026-07-21h): this fn runs as service_role, so
@@ -1036,5 +1089,8 @@ Deno.serve(async (req: Request) => {
   }
 
   const sent = results.filter((r) => r.status === 'sent').length
-  return jsonResponse({ ok: true, target, sent, total: recipients.length, test_mode: !!testRecipient, cc_test: !!testCc, results }, 200, cors)
+  // `city_gate` names the address every city send was FORCED to, or null when live sending is
+  // enabled. Surfaced rather than left as an internal flag so a tester can see the gate fired
+  // instead of inferring it from where the mail landed.
+  return jsonResponse({ ok: true, target, sent, total: recipients.length, test_mode: !!testRecipient, city_gate: cityGate, cc_test: !!testCc, results }, 200, cors)
 })
