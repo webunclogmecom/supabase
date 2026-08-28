@@ -555,6 +555,14 @@ Deno.serve(async (req: Request) => {
     global: { headers: { 'x-app-source': 'send-visit-photos-email' } },
   })
 
+  // 🛑 DECLARED HERE, NOT AT ITS ASSIGNMENT, AND THAT IS LOAD-BEARING. `logSend` closes over
+  // this and runs on skip paths (visit_not_found, not_derm_required, no_photos ...) that fire
+  // hundreds of lines before the work_orders lookup below. A `let` read from its temporal dead
+  // zone throws ReferenceError, and logSend swallows exceptions - so every early skip would
+  // silently stop being logged. false is also the correct value on every one of those paths:
+  // nothing was attached, so nothing may suppress the automatic city email.
+  let hasDermDocs = false
+
   const logSend = async (
     status: string, reason: string | null, photoCount: number, bytes: number,
     resendId: string | null, subject: string | null,
@@ -564,6 +572,14 @@ Deno.serve(async (req: Request) => {
         visit_id: visitId, recipient_email: recipient, status, reason,
         is_test: IS_TEST, photo_count: photoCount, bytes_sent: bytes,
         resend_email_id: resendId, subject, include_photos: includePhotos,
+        // 🛑 THE INTERLOCK. TRUE cancels the automatic 24h city email for every manifest on
+        // this visit (derm.v_city_email_candidates -> status 'suppressed_manual'). It is
+        // deliberately `hasDermDocs`, i.e. "the attached report ALREADY CARRIES the manifests",
+        // never "a manifest_visits link exists": 53 completed visits have the link while the
+        // blackout pipeline has not published a document, so keying on the link would suppress
+        // an email the city never received. Fails toward FALSE, which duplicates at worst and
+        // matches the "a separate email will follow" note the same flag drives.
+        include_manifest: hasDermDocs,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-visit-photos-email] log insert failed: ${error.message}`)
@@ -707,7 +723,7 @@ Deno.serve(async (req: Request) => {
     // silently queries public.work_orders, which does not exist, and the catch below would then
     // leave hasDermDocs=false for EVERY send. That failure keeps the note on a report that has
     // the manifests, i.e. it fails toward today's behaviour rather than toward a false promise.
-    let hasDermDocs = false
+    // hasDermDocs is declared next to logSend (see the note there). Only assigned here.
     try {
       const { data: wo, error: woErr } = await sb
         .schema('customer')
