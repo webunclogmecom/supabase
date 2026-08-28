@@ -270,7 +270,16 @@ const SERVICE_TYPE_LABEL = 'Grease Trap Cleaning'
 const CONTACT_EMAIL = 'contact@unclogme.com'
 const CONTACT_PHONE = '(305) 339-5638'
 const CONTACT_TEL = '+13053395638'
-const DERM_PERMIT = 'DERM Permit #1404-25'
+// Fred, 2026-08-27: footer is exactly two lines - "Licensed Grease Trap Hauler" then this.
+// 🛑 It renders TWICE, once in the HTML footer and once in the plain-text alternative. Change both
+// or the text part of the email silently keeps the old wording.
+//
+// These are the company DECAL numbers, one per county. They are NOT the hauler licence number
+// (#1404-25), which this line used to carry and which Fred replaced on 2026-08-27.
+// 🛑 Do NOT put `LC-0607` here or anywhere else. Fred, 2026-08-27: *"that number LC-0607 is not
+//    really from us"*. It was printed on customer-facing surfaces for months and is being purged.
+const DERM_DECALS = 'Miami-DADE: LW 1133 &middot; Broward: WT-26-0104'
+const DERM_DECALS_TEXT = 'Miami-DADE: LW 1133 - Broward: WT-26-0104'
 
 function escapeHtml(s: string | null): string {
   return (s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c))
@@ -453,8 +462,8 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 </td></tr>
 
 <tr><td style="padding:18px 36px 26px 36px;background-color:#fafbfc;border-top:1px solid #eef0f2;font-family:${FONT_STACK};">
-<p style="margin:0 0 4px 0;font-size:13px;font-weight:700;color:#374151;">Licensed Grease Trap Hauler &middot; Miami-Dade &amp; Broward</p>
-<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#6b7280;">${DERM_PERMIT}</p>
+<p style="margin:0 0 4px 0;font-size:13px;font-weight:700;color:#374151;">Licensed Grease Trap Hauler</p>
+<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#6b7280;">${DERM_DECALS}</p>
 <p style="margin:0;font-size:12px;line-height:1.5;color:#9ca3af;"><a href="mailto:${CONTACT_EMAIL}" style="color:#9ca3af;text-decoration:underline;">${CONTACT_EMAIL}</a> &middot; ${CONTACT_PHONE} &middot; <a href="https://unclogme.com" style="color:#9ca3af;text-decoration:underline;">unclogme.com</a></p>
 </td></tr>
 </table>
@@ -486,8 +495,8 @@ function buildText(v: VisitRow, counts: Record<string, number>, includePhotos = 
     `If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at ${CONTACT_EMAIL} or call us directly at ${CONTACT_PHONE}.`, '',
     'Thank you for your continued partnership in keeping our community compliant and clean.', '',
     'The UnclogMe Team',
-    'Licensed Grease Trap Hauler - Miami-Dade & Broward',
-    DERM_PERMIT,
+    'Licensed Grease Trap Hauler',
+    DERM_DECALS_TEXT,
     `${CONTACT_EMAIL} - ${CONTACT_PHONE} - unclogme.com`,
   ].join('\n')
 }
