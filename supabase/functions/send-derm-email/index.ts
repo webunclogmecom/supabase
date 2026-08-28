@@ -78,6 +78,32 @@ if (TEST_RECIPIENT_RE.test('probe@evil.com') || TEST_RECIPIENT_RE.test('probeXay
   throw new Error('test-recipient allowlist is too permissive; check the escaping in TEST_RECIPIENT_RE')
 }
 
+// Cc / Bcc are CALLER-SUPPLIED RECIPIENTS on a regulator- and client-facing email, held to exactly
+// the same allowlist as the To address. Nothing about a copy makes it safer than the original.
+const MAX_COPY_RECIPIENTS = 10
+/**
+ * 🛑 REFUSES, NEVER SILENTLY DROPS. Dropping a bad address sends the mail while the sender believes
+ * someone was copied - they would never find out. The offending address is named back so the UI can
+ * point at the right chip.
+ */
+function parseCopyList(raw: unknown, field: string, exclude: string[]): { list: string[] } | { error: string } {
+  if (raw == null) return { list: [] }
+  const arr = Array.isArray(raw) ? raw : [raw]
+  const seen = new Set(exclude.filter(Boolean).map((e) => e.toLowerCase()))
+  const out: string[] = []
+  for (const v of arr) {
+    const a = String(v ?? '').trim()
+    if (!a) continue
+    if (!TEST_RECIPIENT_RE.test(a)) return { error: `${field} address not allowed: ${a}` }
+    const k = a.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(a)
+  }
+  if (out.length > MAX_COPY_RECIPIENTS) return { error: `${field} accepts at most ${MAX_COPY_RECIPIENTS} addresses` }
+  return { list: out }
+}
+
 // ── THE CITY AND THE CLIENT BOTH GET THE FP SERVICE REPORT (Fred, 2026-08-26):
 //    "we don't send the DERM Manifests, or the receipts anymore, we send the Report PDF
 //    Files from the FP App." The report embeds both compliance documents.
@@ -565,7 +591,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown }
+  let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown; cc?: unknown; bcc?: unknown }
   try { body = await req.json() } catch { return jsonResponse({ error: 'bad_json' }, 400, cors) }
 
   // `property_id` is OPTIONAL and NARROWS the city recipient to that one property.
@@ -616,8 +642,26 @@ Deno.serve(async (req: Request) => {
   // PLUS a BCC copy to this address so the sender can verify what went out. Distinct from
   // test_recipient (which SUPPRESSES the real send). Ignored when test_recipient is set
   // (that path already sends only to the test address, so there is no real send to copy).
-  const testCc =
-    !testRecipient && typeof body?.test_cc === 'string' && body.test_cc.includes('@') ? body.test_cc.trim() : null
+  // 🛑 test_cc WAS VALIDATED ONLY BY `.includes('@')` - the identical hole closed on test_recipient
+  // earlier today, left open on the CC path. The city gate happens to neutralise it for
+  // target='city' (the gate forces testRecipient, and this is gated on !testRecipient), but the
+  // target='client' path has NO gate, so a caller could BCC a real client-facing DERM email to any
+  // address. Now held to the same allowlist, and REFUSED rather than ignored.
+  const rawTestCc = !testRecipient && typeof body?.test_cc === 'string' ? body.test_cc.trim() : ''
+  if (rawTestCc !== '' && !TEST_RECIPIENT_RE.test(rawTestCc)) {
+    return jsonResponse({
+      error: 'bad_test_cc',
+      detail: `test_cc may only be ${ALLOWED_TEST_DOMAINS.map((d) => '@' + d).join(' or ')}.`,
+    }, 400, cors)
+  }
+  const testCc = rawTestCc !== '' ? rawTestCc : null
+
+  const ccParsed = parseCopyList(body?.cc, 'Cc', [])
+  if ('error' in ccParsed) return jsonResponse({ error: 'recipient_not_allowed', detail: ccParsed.error }, 422, cors)
+  const bccParsed = parseCopyList(body?.bcc, 'Bcc', ccParsed.list)
+  if ('error' in bccParsed) return jsonResponse({ error: 'recipient_not_allowed', detail: bccParsed.error }, 422, cors)
+  const ccList = ccParsed.list
+  const bccList = bccParsed.list
   const target = body?.target === 'city' ? 'city' : 'client'
   if (recipients.length === 0) return jsonResponse({ error: 'no_recipients' }, 400, cors)
 
@@ -707,6 +751,8 @@ Deno.serve(async (req: Request) => {
       const { error } = await sb.from('derm_email_sends').insert({
         manifest_id: manifestId, client_id: clientId, recipient_email: recipientEmail,
         resend_email_id: resendEmailId, status, reason, is_test: isTest, recipient_type: recipientType,
+        // 🛑 The ONLY record a Bcc ever leaves. Nobody on the thread can see it.
+        cc_emails: ccList, bcc_emails: bccList,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-derm-email] log insert failed: ${error.message}`)
@@ -936,9 +982,16 @@ Deno.serve(async (req: Request) => {
           text: buildCityText(clientName, letterAddress, fmtDate(letterDate), attachMode),
           attachments,
         }
-        // BCC = compliance copy on real sends (CITY_BCC) + the test_cc "send-to-both" copy.
-        const cityBcc = [...(!testRecipient ? [CITY_BCC] : []), ...(testCc ? [testCc] : [])]
+        // BCC = compliance copy on real sends (CITY_BCC) + the test_cc "send-to-both" copy
+        // + whatever the sender blind-copied. Deduped: CITY_BCC must not appear twice if a sender
+        // types it by hand.
+        const cityBcc = [...new Set([
+          ...(!testRecipient ? [CITY_BCC] : []),
+          ...(testCc ? [testCc] : []),
+          ...bccList,
+        ].map((e) => e.trim()).filter(Boolean))]
         if (cityBcc.length) payload.bcc = cityBcc
+        if (ccList.length) payload.cc = ccList
 
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -1070,8 +1123,13 @@ Deno.serve(async (req: Request) => {
             html: buildHtml(clientName, number, attExt),
             text: buildText(clientName, number, attExt),
             attachments,
-            // "send to both": real client send + a BCC copy to the test address.
-            ...(testCc ? { bcc: [testCc] } : {}),
+            ...(ccList.length ? { cc: ccList } : {}),
+            // "send to both": real client send + a BCC copy to the test address, plus any the
+            // sender blind-copied. Deduped so one address cannot be listed twice.
+            ...((() => {
+              const b = [...new Set([...(testCc ? [testCc] : []), ...bccList])]
+              return b.length ? { bcc: b } : {}
+            })()),
           }),
         })
         const er = await emailRes.json().catch(() => ({}))

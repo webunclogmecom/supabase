@@ -151,6 +151,32 @@ const ALLOWED_RECIPIENT_DOMAINS = ['ayache.com', 'unclogme.com']
 // A literal has no such layer.
 const RECIPIENT_RE = /^[^@\s]+@(ayache\.com|unclogme\.com)$/i
 
+// Cc / Bcc are CALLER-SUPPLIED RECIPIENTS on a compliance email, so they are held to exactly the
+// same allowlist as the To address. Nothing about a copy makes it safer than the original.
+const MAX_COPY_RECIPIENTS = 10
+/**
+ * 🛑 REFUSES, NEVER SILENTLY DROPS. Dropping a bad address would send the mail while the sender
+ * believes someone was copied, which is worse than not sending: they would never find out. The
+ * offending address is named back so the UI can point at the right chip.
+ */
+function parseCopyList(raw: unknown, field: string, exclude: string[]): { list: string[] } | { error: string } {
+  if (raw == null) return { list: [] }
+  const arr = Array.isArray(raw) ? raw : [raw]
+  const seen = new Set(exclude.map((e) => e.toLowerCase()))
+  const out: string[] = []
+  for (const v of arr) {
+    const a = String(v ?? '').trim()
+    if (!a) continue
+    if (!RECIPIENT_RE.test(a)) return { error: `${field} address not allowed: ${a}` }
+    const k = a.toLowerCase()
+    if (seen.has(k)) continue // already the To address, or a duplicate within the list
+    seen.add(k)
+    out.push(a)
+  }
+  if (out.length > MAX_COPY_RECIPIENTS) return { error: `${field} accepts at most ${MAX_COPY_RECIPIENTS} addresses` }
+  return { list: out }
+}
+
 // The literal above and the list are two statements of one rule, so assert they agree at
 // module load rather than discovering a drift when a send is refused.
 for (const d of ALLOWED_RECIPIENT_DOMAINS) {
@@ -551,6 +577,14 @@ Deno.serve(async (req: Request) => {
   }
   const recipient = resolved.email
 
+  // Parsed AFTER the To address so a copy that duplicates it is dropped rather than double-sent.
+  const ccParsed = parseCopyList((body as Record<string, unknown>)?.cc, 'Cc', [recipient])
+  if ('error' in ccParsed) return json({ error: 'recipient_not_allowed', detail: ccParsed.error }, 422, cors)
+  const bccParsed = parseCopyList((body as Record<string, unknown>)?.bcc, 'Bcc', [recipient, ...ccParsed.list])
+  if ('error' in bccParsed) return json({ error: 'recipient_not_allowed', detail: bccParsed.error }, 422, cors)
+  const ccList = ccParsed.list
+  const bccList = bccParsed.list
+
   const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
     global: { headers: { 'x-app-source': 'send-visit-photos-email' } },
   })
@@ -580,6 +614,8 @@ Deno.serve(async (req: Request) => {
         // an email the city never received. Fails toward FALSE, which duplicates at worst and
         // matches the "a separate email will follow" note the same flag drives.
         include_manifest: hasDermDocs,
+        // 🛑 The ONLY record a Bcc ever leaves. Nobody on the thread can see it.
+        cc_emails: ccList, bcc_emails: bccList,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-visit-photos-email] log insert failed: ${error.message}`)
@@ -863,6 +899,8 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         from: RESEND_FROM,
         to: [recipient],
+        ...(ccList.length ? { cc: ccList } : {}),
+        ...(bccList.length ? { bcc: bccList } : {}),
         reply_to: CONTACT_EMAIL,
         subject,
         html: buildHtml(visitRow, phaseCounts, includePhotos, hasDermDocs),
