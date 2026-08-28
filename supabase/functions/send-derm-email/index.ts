@@ -11,7 +11,7 @@
 //   them alongside it would deliver the same two documents twice.
 //
 // Input (POST JSON):
-//   { recipients: [{ manifest_id, client_id }],   // or manifest_ids: number[]
+//   { recipients: [{ manifest_id, client_id, property_id? }],   // or manifest_ids: number[]
 //     target?: 'client' | 'city',                 // default 'client'
 //     test_recipient?: string,                    // if set, send ONLY there (is_test) — real clients/city NOT emailed
 //     test_cc?: string }                           // "send to both": REAL send to clients/city + BCC a copy here
@@ -513,21 +513,34 @@ Deno.serve(async (req: Request) => {
   let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown }
   try { body = await req.json() } catch { return jsonResponse({ error: 'bad_json' }, 400, cors) }
 
-  type Rec = { manifest_id: number; client_id: number | null }
+  // `property_id` is OPTIONAL and NARROWS the city recipient to that one property.
+  // 🛑 Why it exists: without it this function unions city_emails across EVERY property the
+  // client owns. Measured 2026-08-28 over the 107 manifests the automatic sweep can send:
+  // 38 of them would reach a STRICT SUPERSET of the right inbox, i.e. a municipality where
+  // the service did not happen. It never misses one, so this is over-sending, not under-.
+  // Fred, 2026-08-27: *"It's sent via the City Email property we have saved in our db for
+  // that client property"* - singular. The automatic sweep therefore passes the property it
+  // resolved through the visit, and derm.v_city_email_queue.property_id is that value.
+  // Omitting it preserves the existing manual behaviour EXACTLY; this is additive.
+  type Rec = { manifest_id: number; client_id: number | null; property_id: number | null }
   let recipients: Rec[] = []
   if (Array.isArray(body?.recipients)) {
     recipients = (body.recipients as unknown[])
       .map((r) => {
-        const o = (r ?? {}) as { manifest_id?: unknown; client_id?: unknown }
-        return { manifest_id: Number(o.manifest_id), client_id: o.client_id == null ? null : Number(o.client_id) }
+        const o = (r ?? {}) as { manifest_id?: unknown; client_id?: unknown; property_id?: unknown }
+        return {
+          manifest_id: Number(o.manifest_id),
+          client_id: o.client_id == null ? null : Number(o.client_id),
+          property_id: o.property_id == null || !Number.isFinite(Number(o.property_id)) ? null : Number(o.property_id),
+        }
       })
       .filter((r) => Number.isFinite(r.manifest_id))
   } else if (Array.isArray(body?.manifest_ids)) {
-    recipients = (body.manifest_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n)).map((id) => ({ manifest_id: id, client_id: null }))
+    recipients = (body.manifest_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n)).map((id) => ({ manifest_id: id, client_id: null, property_id: null }))
   }
   const seenRec = new Set<string>()
   recipients = recipients.filter((r) => {
-    const k = `${r.manifest_id}:${r.client_id ?? 'own'}`
+    const k = `${r.manifest_id}:${r.client_id ?? 'own'}:${r.property_id ?? 'all'}`
     if (seenRec.has(k)) return false
     seenRec.add(k)
     return true
@@ -643,8 +656,14 @@ Deno.serve(async (req: Request) => {
         //   would silently drop the second one and mail only the first property's contact.
         // ⚠ deleted_at IS NULL is new here and deliberate: a soft-deleted property must not drag
         //   its stale inbox into a live send. client.properties already filters the same way.
-        const { data: props } = await sb.from('properties')
+        // 🛑 `client_id` STAYS on this query even when a property_id is supplied. The narrowing
+        // is an INTERSECTION, never a redirect: a property_id belonging to another client
+        // matches zero rows and the send is skipped 'no_city_email' rather than mailing a
+        // stranger's municipal inbox. The caller must not be able to choose the recipient.
+        let propQ = sb.from('properties')
           .select('id, address, city, city_emails').eq('client_id', clientId).is('deleted_at', null)
+        if (rec.property_id != null) propQ = propQ.eq('id', rec.property_id)
+        const { data: props } = await propQ
         const cityEmailSet = new Set<string>()
         const muniSet = new Set<string>()
         // Which properties actually carry a city inbox. G10 below requires the resolved
