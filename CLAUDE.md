@@ -1527,10 +1527,42 @@ means "a human must look at this" throughout this estate; the resolver was the o
 ⚠ A row that has NEVER been completed has `reopened_at` NULL, so first-time auto-completion is
 unchanged. Distinguishing "not yet completed" from "deliberately re-opened" is the entire point.
 
-⚠ **Open question for Fred, pre-existing and not introduced by this work:** a multi-permit client
-gets **one** stamp, on the first of its printed rows (`is_first_row`), because `address_row_map`
-holds one card per client per ticket. If the intent is that every permitted facility on a shared
-trap is marked, the data model cannot express it today.
+🛑 **THAT OPEN QUESTION IS ANSWERED AND THIS PARAGRAPH USED TO SAY THE OPPOSITE (corrected
+2026-08-28).** It read: *a multi-permit client gets one stamp, on the first of its printed rows
+(`is_first_row`), because `address_row_map` holds one card per client per ticket; if the intent is
+that every permitted facility on a shared trap is marked, the data model CANNOT EXPRESS IT TODAY.*
+**It can.** `derm.address_row_map.gdo_id` binds a card to a specific permit, so a client can hold
+one card per printed row. Measured 2026-08-29: **449 of 709 cards carry a `gdo_id`**, and 4
+(folder, client) pairs hold more than one card:
+
+| folder | client | cards | permits, in printed order |
+|---|---|---|---|
+| `ticket-312433` | 009-CN Casa Neos | 3 | GDO-10877 Kitchen, GDO-15062 Bar, GDO-16389 Lounge |
+| `ticket-820714` | 009-CN Casa Neos | 3 | the same three |
+| `ticket-832194` | 043-MIL | 2 | GDO-14117 Bar & Lounge, GDO-11024 Restaurant |
+| `window4-sheet3` | 022-GRO | 2 | none, and correctly so: a handwritten pad, one client written on both pages, not a permit case |
+
+**It is FORWARD-ONLY and deliberately not backfilled** (Fred, 2026-08-27: *"from now on, let us work
+like that, and it is because former manifests did not show the multiple GDO per client, but from now
+on they do"*, paraphrased only to drop an apostrophe). Older sheets printed one row for a
+multi-permit client, so a second card there would have no printed row to sit on. Design:
+`docs/superpowers/specs/2026-08-27-multi-gdo-permit-cards-design.md`.
+
+🛑 **THE THREE TRAPS, all of which bit while the cards were being added by hand.** Read these
+before creating a card:
+- **`page` STAYS THE SAME ON EVERY CARD IN A FOLDER. ONLY `stamp_page` VARIES.**
+  `derm.ticket_page_images` builds its array from `page`, so a card claiming page 2 APPENDS a
+  duplicate entry and re-points every later ordinal at a different scan: the `ticket-833049` defect.
+  Assert `ticket_page_images` is byte-identical before and after the insert.
+- **INSERT THE CARD ALREADY STAMPED.** `trg_ab_autoplace_generated` fires only when
+  `stamp_placed_at IS NULL` and its slot resolves the client's FIRST printed row, so letting it run
+  stacks the second and third permits on top of the first one's row.
+- **An unstamped card FREEZES THE WHOLE FOLDER** through the closed-world gate in
+  `fn_blackout_targets`, so a half-added card stops every client on that sheet being served.
+
+⚠ **A client under-carded on a generated sheet is a LEAK SHAPE, not a cosmetic gap.** Casa Neos held
+one card against three printed rows on sheet 1102, so rows 8 and 9 were printed-but-unrowed: exactly
+what turned `ticket-310590` p2 into a real exposure on 2026-08-19.
 
 ### 🛑 `stamp_page` IS AN ORDINAL INTO A LIST THAT MOVES. THE WITNESS IS WHAT MAKES IT SAFE (2026-08-24)
 
@@ -1631,6 +1663,31 @@ satisfy nothing while the migration looks applied.
 `page_block_extents` write in this repo's history has been a hand-authored migration. So a
 measurement pass is a manual task, and nothing prevents the backlog rebuilding. It has now rebuilt
 twice.
+
+✅ **THAT IS NO LONGER TRUE: THE STAMP STUDIO MEASURES ITS OWN PAGES (2026-08-28).** An operator
+opens a page, presses re-measure, and the detector runs **in the browser** against the same scan the
+Studio is already displaying; `derm.record_page_rules` (`2026-08-28_1520`) writes the result.
+`derm.fn_validate_page_rules` refuses a bad set before it lands, checking shape, range, ascent,
+`MIN_SEP 0.70`, alternation and a run-length phase split, and a supersession guard stops a FAILED
+scan replacing an OK one. Rules are written on any grade **except** FAILED, deliberately: every
+currently-blocked page grades SPARSE, so writing only on OK would have made the feature useless.
+Spec: `docs/superpowers/specs/2026-08-28-in-app-printed-rule-detection-design.md`; the canonical
+reference copy of the detector lives at
+`Building Apps/DERM Stamp Studio/docs/printed-rule-detector.reference.js`.
+
+🛑 **IT DOES NOT REPLACE JUDGEMENT, AND ONE KNOWN LIMITATION SURVIVES: THE END-BAR TRIM STRIPS ONLY
+LONG BARS.** `classify.js` drops the form's header and footer bars from the alternating chain by
+shape, dropping a LONG rule at each end that sits closer than 0.6 of a slot to its long neighbour.
+On a page whose outermost rule at EACH end is SHORT the trim never fires, the real footer bar stays
+in the chain, and every label below it inverts. `ticket-312024` p1 is that page: detection was
+perfect (16 rules, boundaries 0.996 to 0.998, dividers 0.407 to 0.409) and the CLASSIFIER was wrong,
+so `fn_validate_page_rules` correctly refused and wrote nothing. It was recorded by hand in
+`2026-08-28_2010` with **only three `kind` labels changed**; every position, run and ink value is
+the detector's own output.
+⚠ **The limitation now costs twice.** Once that folder was serving, a scan that lost the roster's
+FIRST and LAST boundary put two of its bands on `v_band_edges_off_rule` as false positives, one at
+each end. Symmetry is the tell. Changing the trim means re-validating all 168 already-measured
+pages, so it is its own piece of work and is NOT done.
 
 ✅ **GENERATED sheets (#1000+) can be templated at `25.8 / 64.4`**, the value measured for
 ticket-310429, 831325 and 831938 and unchanged since. Their geometry comes from our own pdf-service,
@@ -1907,7 +1964,32 @@ the thing it is checking.**
 while the pages were swapped would build every client's redaction from the wrong page — the
 `ticket-833049` shape that is frozen by a CHECK constraint for exactly this reason.
 
-**✅ THE REST OF THE FLEET WAS SWEPT THE SAME DAY. 833813 WAS THE ONLY TRANSPOSITION.**
+🛑 **THE HEADING BELOW USED TO READ "833813 WAS THE ONLY TRANSPOSITION". IT WAS TRUE WHEN THE
+SWEEP RAN AND WRONG WITHIN A DAY (corrected 2026-08-28).** `ticket-312433` was a second one, found
+by Fred the next morning: *"was showing as completed by AI but ALL the stamps were incorrect."* Its
+two scans are stored in reverse (image1 = sheet "1102-2", image2 = "1102-1"), the sheet number had
+never been read, `derm.fn_sheet_image_position` fell back to the identity mapping, and **all 8
+stamps landed on the opposite scan while the folder reported itself auto-completed.** Corrected by
+`2026-08-27_2300` after Fred cleared the bad stamps by hand.
+
+🛑 **AND THE SWEEP COULD NOT HAVE FOUND IT, WHICH IS THE PART THAT MATTERS.** The sweep enumerated
+folders that were *fully placed and never scanned* at that instant. On a generated sheet
+`trg_ab_autoplace_generated` places every card at INSERT, so such a folder is born fully placed and
+never scanned, and a new one can appear at any time. **Fixing the instance twice without fixing the
+predicate is why it recurred.** `derm.fn_sheet_number_ocr_targets` now has a second arm
+(`2026-08-28_0510`): any MULTI-IMAGE `ticket-*` folder that has NEVER been scanned, whatever its
+placement state. Single-image folders are excluded because there is no ordering to get wrong.
+⚠ **Arm B is SELF-DRAINING and therefore does NOT cover a folder that was scanned once and read
+wrong.** It stops offering a folder the moment any scan read exists. For that case the handler's
+EXPLICIT mode is still the only route.
+✅ Measured 2026-08-29: **19 multi-page `ticket-*` folders, all 19 fully read** (every page has a
+scan read), 0 partly read, 0 unread, and the number-OCR queue is empty. The identity-mapping
+fallback is no longer reachable on any of them.
+⚠ That says the page mapping is now *established* everywhere. It does not re-assert that every
+card sits on the right image: the card-versus-row-OCR cross-check below was last run fleet-wide on
+2026-08-27, before 312433 was corrected.
+
+**✅ THE REST OF THE FLEET WAS SWEPT ON 2026-08-27, AND FOUND NO OTHER TRANSPOSITION THAT DAY.**
 16 multi-page `ticket-*` folders exist; **5 had never been scanned, all 5 because they were fully
 placed**, and 4 of those were already serving 35 documents. All five were read explicitly:
 
@@ -1963,6 +2045,13 @@ deliberately NOT picked up.
 `source_etag IS DISTINCT FROM derm._img_etag(doc_source_url)` **before** it looks at any edge gap,
 and NULL is DISTINCT FROM everything. A `page_rule_scans` row written without an etag therefore
 reports "the image changed under this scan" when nothing changed. Always populate it.
+
+✅ **`derm.record_page_rules` NOW COMPUTES IT ITSELF** when the caller omits it
+(`coalesce(p_meta->>'source_etag', derm._img_etag(p_source_url))`, `2026-08-28_2110`), and the
+existing NULLs were backfilled. That defect was mine and it shipped the same afternoon as the RPC:
+every page measured through the app graded `STALE` and **the worklist went 2 to 15**, thirteen of
+which were not geometry at all. ⚠ **A new writer that records its own provenance must record ALL of
+it.** The etag is not metadata about the scan, it is an operand in the grade.
 
 ⚠ **`slot_verdict = 'ONE_CLIENT'` NEEDS A MID-SLOT DIVIDER INSIDE EVERY BAND**
 (`inner_dividers = expected_slots`), not just correct boundaries. On 833813 p2 three dividers
@@ -2221,6 +2310,25 @@ and blacking two would hide the client's own compliance record from itself. The 
 (`inner_boundaries = 0 AND inner_dividers = 1`) is just the N=1 case of the real one
 (`= N-1` and `= N`), which is why 637 of 638 bands did not move when this shipped.
 `expected_slots` is a visible column, so a flagged row shows what the check expected.
+
+🛑 **N IS NOW PER CARD, NOT PER CLIENT (`2026-08-28_2150`), AND THE 242-WYN EXAMPLE ABOVE IS THE
+REASON IT IS A DIVISION AND NOT A CARVE-OUT.** Once a client can hold one card per permit (see the
+multi-GDO note above), the client's printed-row total applied to each of its cards is wrong: Casa
+Neos on `ticket-312433` had all three of its CORRECT bands graded `ODD_SLOT`, every one `ON_RULE`
+with edge gaps of 0.102 to 0.228pp against a 0.35pp tolerance. `expected_slots` now divides the
+client's printed rows on that page by the number of cards the client holds on that page:
+
+| | printed rows | cards | expected |
+|---|---|---|---|
+| `ticket-312433` Casa Neos, split per permit | 3 | 3 | **1** |
+| `ticket-833395` 242-WYN, still un-split | 3 | 1 | **3** |
+| every single-permit client | 1 | 1 | **1** |
+
+⚠ **The 242-WYN row is the assertion that matters, not the Casa Neos one.** A divisor that flattened
+a genuinely multi-row band to 1 would satisfy the Casa Neos check just as well and be wrong, so the
+migration's VERIFY 2 pins 242-WYN at 3. Integer division truncates, which is the lenient direction
+and still FLAGS rather than hides: a band covering more slots than expected reports
+`SPANS_MULTIPLE`.
 
 🛑 **N IS PER PAGE, NOT PER CLIENT, and the obvious implementation is wrong.** Reading
 `address_sheet_clients.rows_printed` (the permit count) breaks a correct band: on sheet 1082,
