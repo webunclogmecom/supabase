@@ -1294,6 +1294,20 @@ Deno.serve(async (req) => {
       // so an empty reason means NEITHER key is sent and this branch is never reached from
       // the app at all. That check is what makes turning the refusal on safe rather than a
       // repeat of 0g; "the UI was asked to send it" would not have been.
+      //
+      // 🛑 THAT PARAGRAPH IS NO LONGER TRUE, AND BELIEVING IT WILL SEND YOU THE WRONG WAY
+      // (corrected 2026-08-28). It was true of the bundle read on 2026-08-07. The dialog was
+      // reworked on 2026-08-19, and the live chunk now assigns BOTH keys from a useMemo whose
+      // dependency array omits the reason variable:
+      //   Ft = useMemo(() => { ... d.frequency_days = he, d.frequency_reason = De.trim() ... },
+      //                [re,f,U,N,E,Oe,he,$,A,G,Ue,ze,ot,O,wt,ye,gt,ue,pe,v,qe,it,Fe])  // De absent
+      // So typing in the reason box never recomputes the patch, and the app sends
+      // `frequency_days: <new>` together with `frequency_reason: ""`. This branch is therefore
+      // not unreachable - it is the branch that FIRES on every text-only save, which is exactly
+      // what Fred hit ("when i try just text it doesn't let me to save it").
+      // ⇒ The refusal here has been doing its job correctly the whole time. The defect is in the
+      // browser, and the server cannot fix it: no rule change here makes a reason arrive that was
+      // never sent. Tracked as the Client App fix shipped alongside this change.
       // 🛑 PROOF, NOT PROSE (Yannick, 2026-08-17): "in red its not about putting a few words
       // its about proof that it was approved, so we need the slack link OR a screenshot of
       // whatsapp". A 3-character floor accepted "ok" — a record that something was TYPED, not a
@@ -1377,7 +1391,20 @@ Deno.serve(async (req) => {
       // the stored sentence points at the image instead of pretending to be a justification.
       // ⚠ Do NOT "simplify" this by relaxing the CHECK: a blank reason column would make every
       //   historical row's meaning ambiguous, and the CHECK is what keeps that table readable.
-      freqReason = r.length > 0 ? r : "Approval proof attached as an image; see the attached file.";
+      // 🛑 THIS TEST MUST BE THE SAME TEST AS THE GATE ABOVE, NOT A LOOSER ONE. It read
+      // `r.length > 0` until 2026-08-28, which did NOT mirror the CHECK and left a live hole the
+      // moment the gate stopped being the thing that hid it:
+      //   reason "----------" (no alnum) + at least one image
+      //     -> passes the gate via the IMAGE arm
+      //     -> `r.length > 0` is true, so the raw "----------" is stored
+      //     -> INSERT violates CHECK (reason ~ '[[:alnum:]]')
+      //   and that insert runs AFTER Jobber is already committed, so it cannot be rolled back:
+      //   the cadence changes in Jobber, is recorded NOWHERE, and because freqChangeId stays null
+      //   the `if (proofIn.length && freqChangeId)` block never runs, so the proof images are
+      //   dropped as well. Worst outcome this function can produce.
+      // Reusing reasonHasAlnum makes the stored value satisfy the constraint BY CONSTRUCTION -
+      // there is now one predicate, checked once, used for both the refusal and the fallback.
+      freqReason = reasonHasAlnum ? r : "Approval proof attached as an image; see the attached file.";
     }
     edit.customFields = [{ customFieldConfigurationId: FREQ_CF_GID, valueNumeric: newFreq }];
   }
