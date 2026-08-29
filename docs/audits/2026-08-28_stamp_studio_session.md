@@ -2,8 +2,9 @@
 
 *Written because Fred asked for a record of the day's work. Scope note: `Supabase/` and
 `Building Apps/` are shared with the parallel session. **Only my commits are listed here.** The
-city-email work, the person-colour standard, the Calendar past-due badge and the filter-bar restyle
-landed the same day and are NOT mine.*
+city-email work, the person-colour standard, the Calendar past-due badge, the filter-bar restyle,
+the overlapping-visit design and the frequency-change-reason fix landed the same day and are NOT
+mine; that session documented them itself.*
 
 The thread began 2026-08-27 ET and ran into 2026-08-28. Git stamps in this repo are **ET + 6h**.
 
@@ -118,6 +119,26 @@ sheet can never be auto-placed again. True for placement, false for verification
 whole-page transposition survived there. Arm B now offers multi-image `ticket-*` folders that have
 never been scanned.
 
+🛑 **THE REASON THIS IS A PREDICATE FIX AND NOT A SECOND ONE-OFF: IT HAD ALREADY RECURRED.**
+`ticket-833813` was corrected by hand on 2026-08-27 and the fleet was swept the same day, which
+produced the sentence *"833813 was the only transposition."* The next morning Fred opened
+`ticket-312433`: *"was showing as completed by AI but ALL the stamps were incorrect."* Same defect,
+same mechanism, all 8 stamps on the opposite scan, and the folder had auto-completed itself.
+
+The sweep could not have caught it. It enumerated folders that were fully placed **and never
+scanned at that instant**, and on a generated sheet `trg_ab_autoplace_generated` places every card
+at INSERT, so a folder is *born* in exactly that state and a new one can appear at any time.
+**Fixing the instance twice without fixing the predicate is why it recurred**, which is the whole
+argument for Arm B.
+
+⚠ **Arm B is self-draining, so state its limit rather than reading it as coverage.** It stops
+offering a folder the moment any scan read exists, so it does not cover a folder scanned once and
+read wrong. For that, the handler's EXPLICIT mode is still the only route.
+
+✅ Measured 2026-08-29: **19 multi-page `ticket-*` folders, all 19 fully read**, 0 partly read,
+0 unread, number-OCR queue empty. `a2c28f7` re-placed sheet 1102 on the corrected mapping
+(printed page 1 to image 2, page 2 to image 1) and took the folder from 8 cards to 10.
+
 ## 7. The page tab counter
 
 `31d22f0`. The app carried two notions of page: chips render by `stamp_page`, the export filters by
@@ -210,6 +231,32 @@ anchor, so nothing else in the view moved.
 `ticket-312024` is serving, it also **manufactures worklist rows on correct bands**, one at each
 end of the roster. Changing the trim still has to be validated against all 168 already-measured
 pages, so it is still its own piece of work, but it now has a second cost.
+
+## 11. The operating manual was carrying three claims this work made false
+
+`Supabase/CLAUDE.md` is the file every session reads first, so drift there is not a tidiness
+problem: a reader acting on any of these would have done the wrong thing. Corrected in place in
+`60a1ced`, with the old wording quoted in each case rather than deleted, because the trail is the
+point.
+
+| the manual said | why it was false |
+|---|---|
+| *"a multi-permit client gets one stamp ... the data model cannot express it today"* | `derm.address_row_map.gdo_id` expresses it. **449 of 709 cards carry a permit**, and 4 folder-client pairs hold more than one card. |
+| *"833813 WAS THE ONLY TRANSPOSITION"* | `ticket-312433` was a second one the next morning, and the sweep behind that sentence was structurally incapable of finding it. |
+| the `expected_slots` rule, stated per CLIENT | it is per CARD since `2026-08-28_2150`. The manual's own 242-WYN example is what makes the division right rather than a carve-out, so it is kept and pointed at. |
+
+Two more places said something was impossible that is now routine: **"THE DOCUMENTED RERUN PATH DOES
+NOT EXIST"** (the Studio now measures its own printed rules) and **"Always populate it"** about
+`source_etag` (`record_page_rules` now computes it). Both were left standing with the correction
+appended, because the reasoning under them is still the reason the thing matters.
+
+⚠ **Every number in that update was re-measured against live Prod on 2026-08-29**, not copied out
+of the migration headers that introduced it. The headers were right; a manual is read months later
+and a stale count there reads as current.
+
+⚠ The parallel session pushed two commits touching the same file while I was editing it. Their 85
+lines are intact and my commit removed exactly the 5 anchor lines it was meant to replace, verified
+with `git diff 6b0005f HEAD -- CLAUDE.md`.
 
 ## Open, not done
 
