@@ -2628,6 +2628,91 @@ Two places by accident of history; if you touch one, check the other.
 minutes. **If `blackout-health` moves, move `health-escalation` too**, or it reports a day-stale
 blackout verdict and says nothing changed.
 
+
+### 🛑 THE AUTOMATIC CITY EMAIL: A LIVE HOURLY CRON THAT IS DOING NOTHING ON PURPOSE (2026-08-28)
+
+**`city-email-sweep` (`7 * * * *`, active) runs every hour and sends nothing.** That is the intended
+state, not a broken job. Do not "repair" it, do not unschedule it, and do not read its empty runs as
+a failure. A cron that has been running harmlessly for days is a far better thing to switch on than
+one whose first ever execution is also its first real send.
+
+**What it is for:** 24 hours after a DERM manifest is blacked out, the municipality gets it
+automatically. It skips any client a human already emailed by hand, and any client with no city
+inbox on file.
+
+**Everything is `public.app_config`, which is audited.** Values read 2026-08-29:
+
+| key | value | what it does |
+|---|---|---|
+| `city_email_start_from` | **`infinity`** | **the on/off switch AND the backlog cutoff in one value**, so they cannot disagree. A missing key reads as `infinity`, so deleting the row fails closed. |
+| `city_email_delay` | `24 hours` | data, not a literal, so a test can shorten it. Falls back to 24h when missing or unparseable, **never to zero** |
+| `city_email_retry_after` | `20 hours` | stops a re-send loop. Falls back to 20h, never to zero |
+| `city_email_batch_limit` | `5` | cap per run; the sender renders a PDF per manifest |
+| `city_email_live_sends` | **`false`** | forces every city send to the test recipient, `is_test=true` |
+| `client_email_live_sends` | **`false`** | the same gate on the CLIENT-facing send |
+| `city_email_test_recipient` | `fred@ayache.com` | where gated sends land |
+
+**Go-live is one statement:** `update public.app_config set value = now()::text where key =
+'city_email_start_from';`
+
+🛑 **BOTH `*_live_sends` GATES ARE OFF FOR TESTING AND MUST BE RESTORED.** Nothing expires them and
+nothing alerts on them. While `client_email_live_sends` is `false` the DERM Tracker's client send
+reports success, writes a `derm_email_sends` row, and **no customer receives anything**. Measured
+2026-08-29: that path has 37 real sends to 23 distinct customer addresses historically, so it is a
+live mailing path. The city dialog shows an amber "temporarily disabled" banner; **the client dialog
+shows nothing**, so `app_config` is the only way to know.
+
+🛑 **READ `derm.v_city_email_candidates.status`, NOT THE QUEUE.** `derm.v_city_email_queue` only ever
+shows `ready`; the candidates view names why every other row is not, and **never filters a row away**.
+Dated census 2026-08-29 (an observation, not an invariant): `no_city_email` 513, `before_go_live` 108,
+`already_sent` 16, `no_property` 12, `recently_attempted` 5, `waiting` 3. **`no_city_email` dominating
+is the normal shape of this system**, not a gap to go fix.
+
+🛑 **`recently_attempted` EXISTS BECAUSE "already sent" IS BLIND DURING TESTING, AND THE DEFECT WAS
+FOUND BY RUNNING THE THING, NOT BY READING IT.** The `sent` CTE filters `coalesce(is_test,false) =
+false`, and the gate forces every gated send to `is_test=true`, so a gated send never satisfies the
+only guard that would have stopped it. With the delay shortened for a test, one sweep sent 4 and the
+queue still read `ready: 4`; it would have re-sent them every minute. The `is_test` filter is CORRECT
+and stays (a test send must never suppress a real regulator submission), so the guard is a separate
+question: `recently_attempted` asks *"did we just try?"*, not *"has the city got it?"*, and is
+therefore deliberately unfiltered on status and `is_test`. In production the same guard closes the
+window where two sweeps overlap, and the cost of losing that race is a duplicate filing to a
+regulator.
+
+⚠ **The sweep makes no HTTP call when nothing is due.** That early return is what makes hourly cheap
+(about 1.2 seconds of DB time per day) and is why it reads the queue itself rather than letting the
+edge function do it.
+
+⚠ **It does not dequeue.** `derm_email_sends` is the record, and the `already_sent` gate excludes a
+row on the next pass, so a crash mid-batch loses nothing.
+
+**Objects, all shipped 2026-08-28:** `derm.v_city_email_candidates`, `derm.v_city_email_queue`,
+`public.v_visit_city_email_status`, `public.v_visit_report_manifest`, `public.fn_city_email_delay()`,
+`public.fn_city_email_retry_after()`, `public.fn_request_city_email_sweep()`, and the columns
+`visit_photo_email_sends.include_manifest` plus `cc_emails` / `bcc_emails` on **both** send-log
+tables. Migrations `c725010` `aef1995` `8d6112a` `281125e` `79f24c7` `8536984` `b04a55d` `61ed947`
+`214da62` `425f32a`.
+
+🛑 **`send-derm-email` HAD NO AUTH GATE AT ALL UNTIL `79f24c7`.** Three individually unremarkable
+conditions: the anon key is public by design and got past the door, nothing then asked who was
+calling, and `test_recipient` accepted any string containing `@` **and replaces the real city
+recipients**. One request could have had any manifest's compliance documents mailed anywhere. It now
+accepts exactly `service_role` and a real signed-in user, and `test_recipient` is pinned to the staff
+domains with a module-load self-test. **An unrecognised `test_recipient` is REFUSED (400), never
+ignored** - ignoring it falls through to the real municipal recipients.
+⚠ **The gate sits AFTER the OPTIONS reply.** A browser preflight carries no Authorization header, so
+gating before it breaks every in-app call with an opaque CORS failure.
+
+⚠ **Resolve the city inbox by PROPERTY.** `recipients[].property_id` narrows it; omitting the field
+preserves the old client-wide behaviour, which over-sends (it unions `city_emails` across every
+property the client owns). The narrowing is an **intersection, never a redirect**: `client_id` stays
+on the query, so a property belonging to another client matches zero rows and the send is skipped
+rather than mailing a stranger's inbox.
+
+App-facing rules, the test recipe and the go-live checklist live in
+[`Building Apps/Admin Review/docs/11-city-email.md`](../Building%20Apps/Admin%20Review/docs/11-city-email.md);
+a step-by-step demo script is in `16-city-email-video-guide.md` beside it.
+
 ---
 
 ## Documentation map
