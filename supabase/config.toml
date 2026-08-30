@@ -662,8 +662,11 @@ verify_jwt = false
 # is itself a valid JWT, so the gateway alone would let any browser bundle call this.
 # The real control is in the handler, which calls auth.getUser() on the bearer token
 # and refuses anything without a signed-in user. Both halves are deliberate.
-# ⚠ send-derm-email has NO block in this file at all and asserts no role in its
-# handler, which is why it is reachable with the anon key. Do not copy that shape.
+# ⚠ send-derm-email still has NO block in this file (first clause true), but the
+# second clause is FALSE as of 79f24c7 (2026-08-28): its handler now calls
+# auth.getUser() and refuses anon with a 401, verified live. It is NOT reachable
+# with the anon key any more. Left blockless deliberately, because the gate must sit
+# AFTER the OPTIONS reply or a browser preflight dies with an opaque CORS error.
 [functions.send-visit-photos-email]
 verify_jwt = true
 

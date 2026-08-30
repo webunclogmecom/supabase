@@ -696,7 +696,12 @@ identical to before the change**.
 
 ✅ **`send-derm-email` WAS PORTED THE SAME DAY (v26) AND IT WAS THE MORE URGENT HALF.** It is the
 **regulator-facing city path and it is in real production use** (`derm_email_sends` carries
-`is_test=false` sends to actual client addresses). Measured worst payload: **~5.36MB across 2
+`is_test=false` sends to actual client addresses).
+⚠ **AS OF 2026-08-28 THAT SENTENCE IS TRUE OF THE PATH BUT NOT OF TODAY'S TRAFFIC:** both
+`city_email_live_sends` and `client_email_live_sends` are `false` for testing, so every send is
+currently routed to an internal address and logged `is_test=true`. The payload sizes and the
+urgency above are unchanged - the gates are temporary and the path resumes real sends the moment
+they are restored. See the automatic-city-email section near the end of this file. Measured worst payload: **~5.36MB across 2
 attachments = ~7.15M base64 chars = ~229MB** against a ceiling that killed a worker at 277.7MB,
 i.e. **single-digit percent headroom**. One extra manifest page would have tipped it, and it
 would have failed exactly as invisibly.
@@ -2753,12 +2758,20 @@ inbox on file.
 | key | value | what it does |
 |---|---|---|
 | `city_email_start_from` | **`infinity`** | **the on/off switch AND the backlog cutoff in one value**, so they cannot disagree. A missing key reads as `infinity`, so deleting the row fails closed. |
-| `city_email_delay` | `24 hours` | data, not a literal, so a test can shorten it. Falls back to 24h when missing or unparseable, **never to zero** |
-| `city_email_retry_after` | `20 hours` | stops a re-send loop. Falls back to 20h, never to zero |
+| `city_email_delay` | `24 hours` | data, not a literal, so a test can shorten it. Falls back to 24h when the key is missing or empty, **never to zero**. ⚠ An **unparseable** value does NOT fall back, it RAISES (see below) |
+| `city_email_retry_after` | `20 hours` | stops a re-send loop. Falls back to 20h when missing or empty, never to zero. Same raise-on-unparseable behaviour |
 | `city_email_batch_limit` | `5` | cap per run; the sender renders a PDF per manifest |
 | `city_email_live_sends` | **`false`** | forces every city send to the test recipient, `is_test=true` |
 | `client_email_live_sends` | **`false`** | the same gate on the CLIENT-facing send |
 | `city_email_test_recipient` | `fred@ayache.com` | where gated sends land |
+
+🛑 **AN UNPARSEABLE INTERVAL RAISES, IT DOES NOT FALL BACK.** The `::interval` cast sits
+INSIDE the `coalesce` argument in both `fn_city_email_delay()` and `fn_city_email_retry_after()`,
+so `coalesce((select 'banana'::interval), interval '24 hours')` raises `22007` rather than
+returning 24 hours. Probed with a positive control (`'3 minutes'` returns `00:03:00`). The blast
+radius is the whole sweep: `derm.v_city_email_candidates` reads both functions, so a typo in
+either key takes the view and every consumer down. Still fail-closed (nothing sends), but it
+fails LOUDLY, and "falls back" would tell a reader a typo is harmless.
 
 **Go-live is one statement:** `update public.app_config set value = now()::text where key =
 'city_email_start_from';`
@@ -2766,8 +2779,8 @@ inbox on file.
 🛑 **BOTH `*_live_sends` GATES ARE OFF FOR TESTING AND MUST BE RESTORED.** Nothing expires them and
 nothing alerts on them. While `client_email_live_sends` is `false` the DERM Tracker's client send
 reports success, writes a `derm_email_sends` row, and **no customer receives anything**. Measured
-2026-08-29: that path has 37 real sends to 23 distinct customer addresses historically, so it is a
-live mailing path. The city dialog shows an amber "temporarily disabled" banner; **the client dialog
+2026-08-29: that path has 37 real sends to 23 distinct customer addresses historically (23 stored
+strings, 22 actual mailboxes: one differs only in casing), so it is a live mailing path. The city dialog shows an amber "temporarily disabled" banner; **the client dialog
 shows nothing**, so `app_config` is the only way to know.
 
 🛑 **READ `derm.v_city_email_candidates.status`, NOT THE QUEUE.** `derm.v_city_email_queue` only ever
@@ -2788,7 +2801,7 @@ window where two sweeps overlap, and the cost of losing that race is a duplicate
 regulator.
 
 ⚠ **The sweep makes no HTTP call when nothing is due.** That early return is what makes hourly cheap
-(about 1.2 seconds of DB time per day) and is why it reads the queue itself rather than letting the
+(measured **1.5 seconds** of DB time per day over 29 runs: avg 63 ms, 0 failures) and is why it reads the queue itself rather than letting the
 edge function do it.
 
 ⚠ **It does not dequeue.** `derm_email_sends` is the record, and the `already_sent` gate excludes a
@@ -2798,8 +2811,10 @@ row on the next pass, so a crash mid-batch loses nothing.
 `public.v_visit_city_email_status`, `public.v_visit_report_manifest`, `public.fn_city_email_delay()`,
 `public.fn_city_email_retry_after()`, `public.fn_request_city_email_sweep()`, and the columns
 `visit_photo_email_sends.include_manifest` plus `cc_emails` / `bcc_emails` on **both** send-log
-tables. Migrations `c725010` `aef1995` `8d6112a` `281125e` `79f24c7` `8536984` `b04a55d` `61ed947`
-`214da62` `425f32a`.
+tables. Migrations AND edge-function commits (⚠ four of these ship no SQL at all - `aef1995`, `8d6112a`,
+`79f24c7`, `425f32a` are function changes, so do not go looking for a `docs/migrations/*` file for
+them): `c725010` `aef1995` `8d6112a` `281125e` `79f24c7` `8536984` `b04a55d` `61ed947` `214da62`
+`425f32a`.
 
 🛑 **`send-derm-email` HAD NO AUTH GATE AT ALL UNTIL `79f24c7`.** Three individually unremarkable
 conditions: the anon key is public by design and got past the door, nothing then asked who was

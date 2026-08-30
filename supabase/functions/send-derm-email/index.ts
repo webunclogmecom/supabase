@@ -17,7 +17,10 @@
 //     test_cc?: string }                           // "send to both": REAL send to clients/city + BCC a copy here
 //
 // Logs every attempt to public.derm_email_sends with recipient_type = target.
-// Auth: anon-callable for MVP, origin-restricted to derm.unclogme.app.
+// Auth: 🛑 CORRECTED 2026-08-28 - this said "anon-callable for MVP" and that is no longer
+//       true. 79f24c7 added a real gate ~570 lines below: service_role OR a signed-in staff
+//       user via auth.getUser(bearer); anon is refused 401. Still origin-restricted to
+//       derm.unclogme.app, and the gate deliberately sits AFTER the OPTIONS reply.
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
