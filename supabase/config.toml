@@ -740,3 +740,12 @@ verify_jwt = true
 # edits compliance evidence. Never deploy this one --no-verify-jwt.
 [functions.rotate-photo]
 verify_jwt = true
+
+# emergency-session: mints a short-lived `authenticated` JWT for the sentinel `Default` identity
+# so staff can work while GoTrue is unreachable (2026-08-31 outage).
+# ⚠ verify_jwt = false is REQUIRED and is the whole point: this function exists precisely because
+# no caller can obtain a session. The passphrase is the gate, and every token it mints expires in
+# <= 4 hours. Spec: docs/specs/2026-08-31-emergency-default-user-access.md
+# 🛑 DELETE THIS FUNCTION when the outage is over. It is a temporary door, not a feature.
+[functions.emergency-session]
+verify_jwt = false

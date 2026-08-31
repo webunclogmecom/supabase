@@ -4,8 +4,23 @@
 working, and no app with an Auth is working, so we gotta do a temporary fix ... make it so we work
 with a user called `Default` ... and just make all the apps skip the auth."*
 
-**Status: SPEC ONLY. Nothing here is built. It needs Fred's go-ahead on scope (which apps) and one
-secret only he can retrieve.**
+**Status: BUILT AND DEPLOYED, DELIBERATELY INERT. The DB half and the edge function are live; the
+mode CANNOT be used until Fred sets two secrets in the dashboard (section 6).** Verified 2026-08-31
+against the deployed function: with no secrets set it answers
+`503 {"error":"not_configured","missing":["EMERGENCY_PASSPHRASE","EMERGENCY_JWT_SECRET"]}` and the
+issuance ledger holds 0 rows. The app half (section 3c) is NOT built.
+
+| piece | state |
+|---|---|
+| `public.emergency_session_grants` ledger | applied + verified (`anon_select:false, authd_select:false, svc_insert:true, rls_on:true, audit_trg:1`) |
+| `emergency-session` edge fn | **deployed**, `verify_jwt = false`, fails closed |
+| `EMERGENCY_PASSPHRASE` / `EMERGENCY_JWT_SECRET` | **NOT SET — this is what keeps it inert** |
+| app passphrase screen (`VITE_EMERGENCY_AUTH`) | not built |
+
+🛑 **A deployed-but-unconfigured door is the correct resting state and it is not a half-finished
+job.** The failure it prevents is the one this estate keeps paying for: a credential path that
+"exists for testing" and is still there weeks later. Nothing here can mint a token until a human
+deliberately sets a secret, and every token it then mints dies in <= 4 hours.
 
 ---
 
@@ -136,7 +151,30 @@ the user supplies. This spec chooses the second.
 
 ## 6. What Fred must supply
 
-1. **Which apps.** (Recommendation: the one or two that are actually blocking work.)
-2. **The JWT secret** - Supabase Dashboard, Settings -> API -> JWT Settings. Paste it into the edge
-   function's secrets in the dashboard yourself; it must never enter a repo, a bundle, or a chat.
-3. **The passphrase**, set the same way.
+**Both secrets go in the Supabase Dashboard -> Edge Functions -> Secrets. Fred sets them himself.**
+Neither may pass through a chat message, a repo, a bundle, or a tool call - both repos are PUBLIC,
+and the JWT secret is the key that signs every session on this project.
+
+1. **`EMERGENCY_JWT_SECRET`** = the project's JWT secret, from Settings -> API -> JWT Settings.
+   ⚠ **It cannot be fetched for you.** Measured 2026-08-31: the Management API's project endpoint
+   returns `id, ref, organization_id, organization_slug, name, region, status, database, created_at`
+   and **no `jwt_secret` field**. This is not a permissions problem to work around; there is no
+   remote read of that value.
+   🛑 **It must be the PROJECT's secret, not a fresh random string.** PostgREST validates the token
+   against the project secret, so a token signed with anything else is rejected with a 401 that looks
+   exactly like the outage being worked around.
+2. **`EMERGENCY_PASSPHRASE`** = a phrase Fred chooses, set the same way, and shared with staff out of
+   band. Deliberately not generated here: a value that passes through this transcript is a value that
+   has been written down somewhere neither of us controls.
+3. **Which apps** get the passphrase screen. (Recommendation: the one or two actually blocking work -
+   see 3d. All six is 2 to 2.5 hours and may outlast the outage.)
+
+**To verify it went live**, re-run the fail-closed probe; a configured function answers `401
+unauthorized` to a wrong passphrase instead of `503 not_configured`:
+
+```bash
+curl -s -X POST -H "apikey: $ANON" -H "Authorization: Bearer $ANON"   -H "Content-Type: application/json" -d '{"passphrase":"wrong","app":"probe"}'   https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/emergency-session
+```
+
+⚠ That probe writes a `refused` row to the ledger, which is intended - it proves the audit path works
+before anything is granted.
