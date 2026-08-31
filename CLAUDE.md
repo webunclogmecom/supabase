@@ -2793,8 +2793,55 @@ radius is the whole sweep: `derm.v_city_email_candidates` reads both functions, 
 either key takes the view and every consumer down. Still fail-closed (nothing sends), but it
 fails LOUDLY, and "falls back" would tell a reader a typo is harmless.
 
-**Go-live is one statement:** `update public.app_config set value = now()::text where key =
-'city_email_start_from';`
+🛑 **GO-LIVE IS FOUR STEPS IN THIS ORDER, NOT ONE STATEMENT. The "one statement" wording below
+was true when it was written and is now WRONG (corrected 2026-08-31).** It predates both the send
+gate (`425f32a`) and `city_email_test_recipient` being populated, and running it alone produces a
+silent failure that looks like success.
+
+**Why the single statement is not enough.** `fn_request_city_email_sweep` copies
+`city_email_test_recipient` into the request body **unconditionally**, and `send-derm-email` only
+FORCES that value when the gate is off - it never CLEARS it when the gate is on. So with the
+recipient still set to `fred@ayache.com`:
+
+| | what happens |
+|---|---|
+| `toList` | `[fred@ayache.com]`, **not the municipality** |
+| `isTest` | `true` (`isTest = !!testRecipient`) |
+| `CITY_BCC` | dropped, because the compliance archive copy is `...(!testRecipient ? [CITY_BCC] : [])` |
+| `already_sent` | never satisfied - it filters `is_test = false` |
+
+⇒ Every automatic email goes to Fred, is logged as a test, the city receives nothing, and the
+manifests sit in `recently_attempted` for 20h and are retried. **A daily loop that never drains and
+never files.**
+
+```sql
+-- 0. FIRST, data: no test address may be sitting in properties.city_emails, or the sweep
+--    mails it as a real municipality. Known: 009-CN property 42 holds fred@ayache.com.
+select c.client_code, p.id, p.city_emails
+  from public.properties p join public.clients c on c.id = p.client_id
+ where p.deleted_at is null and p.city_emails && array['fred@ayache.com','test@example.com'];
+
+-- 1. open the gate BEFORE clearing the recipient
+update public.app_config set value = 'true' where key = 'city_email_live_sends';
+
+-- 2. now clear it. Doing this FIRST returns 503 city_gate_misconfigured on every DERM email,
+--    city and client, because TEST_RECIPIENT_RE.test('') is false while the gate is closed.
+update public.app_config set value = ''     where key = 'city_email_test_recipient';
+
+-- 3. LAST. This is the switch that actually admits manifests, so nothing moves until it lands.
+update public.app_config set value = now()::text where key = 'city_email_start_from';
+```
+
+**Verify on the first sweep** (it runs at :07): a real send writes `is_test = false` with a
+municipal address. If the new rows say `is_test = true`, step 2 did not take.
+
+```sql
+select recipient_type, is_test, recipient_email, sent_at at time zone 'America/New_York'
+  from public.derm_email_sends where sent_at > now() - interval '2 hours' order by id desc;
+```
+
+⚠ `client_email_live_sends` is a SEPARATE switch on the manual "Send DERM to clients" button and
+has nothing to do with this go-live. Restore it whenever client testing ends.
 
 🛑 **BOTH `*_live_sends` GATES ARE OFF FOR TESTING AND MUST BE RESTORED.** Nothing expires them and
 nothing alerts on them. While `client_email_live_sends` is `false` the DERM Tracker's client send
