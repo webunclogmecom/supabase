@@ -1537,15 +1537,19 @@ unchanged. Distinguishing "not yet completed" from "deliberately re-opened" is t
 (`is_first_row`), because `address_row_map` holds one card per client per ticket; if the intent is
 that every permitted facility on a shared trap is marked, the data model CANNOT EXPRESS IT TODAY.*
 **It can.** `derm.address_row_map.gdo_id` binds a card to a specific permit, so a client can hold
-one card per printed row. Measured 2026-08-29: **449 of 709 cards carry a `gdo_id`**, and 4
+one card per printed row. Measured 2026-08-31: **452 of 711 cards carry a `gdo_id`**, and 5
 (folder, client) pairs hold more than one card:
 
 | folder | client | cards | permits, in printed order |
 |---|---|---|---|
 | `ticket-312433` | 009-CN Casa Neos | 3 | GDO-10877 Kitchen, GDO-15062 Bar, GDO-16389 Lounge |
-| `ticket-820714` | 009-CN Casa Neos | 3 | the same three |
+| `ticket-820714` | 009-CN Casa Neos | 3 | the same three. **This folder is a TYPO** (see the G14 note below) |
+| `ticket-830714` | 009-CN Casa Neos | 3 | the same three, added `2026-08-31_1130`. The correctly-named folder for that paper |
 | `ticket-832194` | 043-MIL | 2 | GDO-14117 Bar & Lounge, GDO-11024 Restaurant |
 | `window4-sheet3` | 022-GRO | 2 | none, and correctly so: a handwritten pad, one client written on both pages, not a permit case |
+
+⚠ **These counts are a dated observation and they move whenever a sheet is carded. Re-measure
+rather than quoting them.**
 
 **It is FORWARD-ONLY and deliberately not backfilled** (Fred, 2026-08-27: *"from now on, let us work
 like that, and it is because former manifests did not show the multiple GDO per client, but from now
@@ -2179,10 +2183,39 @@ the three Casa Neos rows correctly here, but G14 guards the **leak direction**: 
 then authorise a too-wide band on a regulator-facing document. It needs its own migration with the
 fleet re-validated, not a patch.
 
-⚠ **And the page it blocks has a REAL latent leak**, so this is not merely inconvenient. That
-folder's derived 034-LG band starts 2.371pp above the true slot-4 boundary and contains Casa Neos
-Lounge's address line. It is inert only because the folder holds no extent. Full review, with the
-served documents opened and the strip cropped: `docs/migrations/2026-08-31_1045`.
+✅ **BOTH HALVES OF THAT EXAMPLE ARE NOW RESOLVED, AND THE RESOLUTION NARROWS THE GAP (2026-08-31,
+same day, hours later).** `2026-08-31_1130` gave Casa Neos its three permit cards on that folder.
+With one card per printed row every band spans exactly one slot, so **G14 no longer objects and
+`derm.check_page_geometry` returns clean** on the page that refused every earlier attempt.
+
+🛑 **So G14 only bites a client that is UNDER-CARDED. Card the client properly and the guard is
+satisfied.** Relaxing it would have been the wrong fix, and the refusal was pointing at the real
+defect rather than at itself. Keep the paragraphs above as the record of what the guard does and
+why, but do not go looking for a G14 workaround: the answer is a card per permit.
+
+⚠ The latent leak in that folder is gone with it. The 034-LG band was 41.762 and is now 44.133,
+the canonical printed boundary, so it no longer reaches into Casa Neos Lounge's address line. The
+folder's blocker moved from `needs_snap_then_extent` to `needs_extent`. Full review, with the served
+documents opened and the strip cropped: `docs/migrations/2026-08-31_1045`; the repair is
+`2026-08-31_1130`.
+
+🛑 **THE BLOCKER BEHIND IT IS THE REUSABLE PART: `derm.add_extra_client_card` REFUSES WHILE THE
+CLIENT'S EXISTING CARD HAS A NULL `gdo_id`**, because it cannot then tell which permit is taken and
+its "next unclaimed permit" would hand out the first one twice. Fail-closed and correct. The
+2026-08-27 backfill bound only *unambiguous* cards (clients with exactly ONE active permit), so
+every genuinely multi-permit client was left unbound and therefore un-splittable. **Bind first, then
+add** and the binding is a question for a person, because the answer is on the paper.
+⚠ Measured 2026-08-31, exactly one folder is still in that state: **`ticket-833395`, 242-WYN, 3
+active permits, 1 unbound card.** It holds an extent and serves 3 documents, so splitting it changes
+what a client is shown; 830714 was safe to work only because it published nothing.
+
+🛑 **AND THE SAME PAPER IS CARDED TWICE. `ticket-820714` IS A TYPO FOLDER.** No row in
+`derm_manifests` carries white_manifest_number `820714`; all three manifests on that paper (1622,
+1623, 1624) are white `830714`. It is a transposed digit from the 2026-07-28/30 session, and it held
+the finished layout that `2026-08-31_1130` ported across. It is inert (830714 wins the folder
+election on `stamp_placed_at`, and neither can publish without an extent) but it has NOT been
+retired, pending Fred. Copy first, verify, then retire: doing both at once destroys the reference in
+the same breath as the copy.
 
 **Scan selection is now defined ONCE, in `derm.v_page_printed_rules`** (newest `runlen-v2-%` scan per
 page, rules joined on that scan's own source). The guards read it and the app snaps to it, so the UI
