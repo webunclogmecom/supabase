@@ -1,5 +1,29 @@
 # Emergency access mode: the `Default` user
 
+> 🛑 **SUPERSEDED IN TWO WAYS ON 2026-08-31, LATER THE SAME DAY. READ THIS FIRST OR YOU WILL BUILD
+> THE WRONG THING.** The design below is kept because its *reasoning* is still the record of why
+> `anon` was not widened - but two of its mechanisms are dead:
+>
+> 1. **It does NOT mint a JWT any more.** That needs the project JWT secret, which is NOT reachable
+>    from here. Measured three ways, each with a positive control: the Management API project
+>    endpoint, `config/auth` + `secrets` + `pgsodium`, and `current_setting('app.settings.jwt_secret')`
+>    (control: `server_version` = `17.4`). What shipped instead is a **secret API key carrying a
+>    `secret_jwt_template`**, created through the Management API - Supabase signs it, so we never
+>    hold the signing secret at all. Key id `01a288d9-6ea9-4b97-b37e-9c8250e70d3f`.
+> 2. **There is NO passphrase screen.** Fred, same day: *"no auth it enters at once on the app, and
+>    everyone is the same user Default"*. A passphrase is still auth. The function is **origin-gated**
+>    and the app asks for nothing.
+>
+> ⚠ **And the safety property inverted, which is the thing to carry forward.** Section 2 below argues
+> the design is defensible because *"every minted token dies in <= 4 hours on its own"*. **An API key
+> does not expire.** That argument no longer holds and must not be quoted. What replaced it is
+> `app_config.emergency_access_until` (which only stops NEW hand-outs) plus a real kill switch
+> (deleting the key, which revokes every existing copy instantly - something a JWT can never do).
+>
+> **The live contract, the paste-ready Lovable prompt, the risk statement and the rollback levers
+> are in [`Building Apps/docs/2026-08-31-temporary-no-auth-mode.md`](../../../Building%20Apps/docs/2026-08-31-temporary-no-auth-mode.md).**
+
+
 *Spec written 2026-08-31 during a live Supabase Auth outage, at Fred's direction: "We need to keep
 working, and no app with an Auth is working, so we gotta do a temporary fix ... make it so we work
 with a user called `Default` ... and just make all the apps skip the auth."*
