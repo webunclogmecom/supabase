@@ -2158,6 +2158,32 @@ nothing, and the boundary added as a separate deliberate act. It also lets geome
 FROZEN folder, which is inert by construction; forbidding that would force an operator to unfreeze
 first and let derived bands publish.
 
+🛑 **G14 CANNOT EXPRESS A MULTI-ROW CLIENT ON A HANDWRITTEN PAD, SO IT REFUSES THE CORRECT
+GEOMETRY THERE (2026-08-31).** `G14_SPANS_EXTRA_SLOTS` counts the client's printed rows through
+`derm.v_sheet_printed_rows`, which resolves **only for a GENERATED sheet**. On a
+`window<N>-sheet<M>` or an un-linked `ticket-*` pad it finds nothing and falls back to **1**, so a
+client that genuinely occupies several printed rows cannot be given the band it is entitled to.
+**Same root cause as the `expected_slots` defect fixed by `2026-08-28_2150`, in a second consumer.**
+
+Worked example, `ticket-830714` p1 (pad sheet 416, six slots). 009-CN owns slots 1-3
+(Kitchens / Bari / Lounge) and holds ONE card. All three routes are refused:
+
+| attempt | refusal |
+|---|---|
+| submit only the rows that need fixing | `G6_MISSING_ROW` (the save is page-atomic) |
+| shrink 009-CN to one slot | `G13_STAMP_OUTSIDE_BAND` (its stamp is at 36.244, in the Bari slot) |
+| give 009-CN its real three slots | `G14_SPANS_EXTRA_SLOTS`, "the client owns 1 printed row(s)" |
+
+⚠ **Do NOT relax G14 casually.** `derm.address_sheet_row_reads` is the obvious fallback and reads
+the three Casa Neos rows correctly here, but G14 guards the **leak direction**: a bad OCR read would
+then authorise a too-wide band on a regulator-facing document. It needs its own migration with the
+fleet re-validated, not a patch.
+
+⚠ **And the page it blocks has a REAL latent leak**, so this is not merely inconvenient. That
+folder's derived 034-LG band starts 2.371pp above the true slot-4 boundary and contains Casa Neos
+Lounge's address line. It is inert only because the folder holds no extent. Full review, with the
+served documents opened and the strip cropped: `docs/migrations/2026-08-31_1045`.
+
 **Scan selection is now defined ONCE, in `derm.v_page_printed_rules`** (newest `runlen-v2-%` scan per
 page, rules joined on that scan's own source). The guards read it and the app snaps to it, so the UI
 and the server cannot grade against different geometry. It previously existed as five hardcoded
