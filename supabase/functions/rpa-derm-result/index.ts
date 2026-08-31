@@ -34,12 +34,15 @@ const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
   .map((k) => k.trim())
   .filter(Boolean)
 
-// gdo_id / gdo_number are ACCEPTED AND IGNORED (2026-08-11). We resolve the permit
-// server-side, so the bot never needs to send them. They are listed here purely so
-// that a bot built against the earlier draft contract cannot break a real filing:
-// an unknown field is a 400, and a rejected result is a county filing we have no
-// record of, which then gets served and filed AGAIN. Accept-and-ignore is the only
-// safe way to retire a field someone may already be sending.
+// 🛑 gdo_id IS NOW USED (2026-08-31). It was accepted-and-ignored from 2026-08-11,
+// because the queue served one permit per ticket at a time and the server could
+// infer which permit a result was for. It now serves every permit on a ticket at
+// once, so the inference is only right in the happy path and the bot's own value
+// is the authority (validated against the visit's real permit set before it is
+// trusted). gdo_number is still accepted and ignored.
+// Both stay listed here for the original reason, which has not changed: an unknown
+// field is a 400, and a rejected result is a county filing we have no record of,
+// which then gets served and filed AGAIN.
 const ALLOWED_FIELDS = new Set([
   'visit_id', 'manifest_id', 'run_id', 'status', 'retryable', 'failure_reason',
   'attempted_at', 'portal_confirmation', 'screenshot',
@@ -233,23 +236,62 @@ Deno.serve(async (req: Request) => {
     }, 200)
   }
 
-  // Which GDO permit this filing covered (2026-08-11). The queue serves ONE
-  // (ticket, permit) pair per ticket at a time -- the 20h manifest-grained lease is
-  // what guarantees that -- so there is exactly one permit this result can be for.
-  // The rule lives in the DB (fn_resolve_rpa_permit) and is the same predicate as
-  // gate 1 of v_derm_portal_queue, so the endpoint and the queue cannot drift apart.
-  // Resolved BEFORE the insert, because our own row would otherwise change the answer.
-  // A failure here is LOGGED AND SWALLOWED on purpose: a real county filing must never
-  // be rejected over the permit field. NULL is the safe value, since the queue reads a
-  // null-permit submission as retiring the whole manifest (under-serve, never re-file).
+  // Which GDO permit this filing covered.
+  //
+  // 🛑 REWRITTEN 2026-08-31, AND THE OLD REASONING NO LONGER HOLDS. This used to
+  // say: "the queue serves ONE (ticket, permit) pair per ticket at a time -- the
+  // 20h manifest-grained lease is what guarantees that -- so there is exactly one
+  // permit this result can be for." That guarantee is GONE ON PURPOSE. The lease
+  // is now per (visit, permit) and the queue is keyed on (manifest_id, gdo_id), so
+  // a manifest with three permits is served as three items in ONE run. Inferring
+  // the permit from the visit would then attribute results by ARRIVAL ORDER, which
+  // is correct only in the happy path: if the bot files permits A and C and A
+  // fails, the inference records C's SUCCESS against A.
+  //
+  // So the BOT'S OWN gdo_id wins when it sends one, and it is VALIDATED against
+  // this visit's real permit set first -- a wrong id must never be trusted into a
+  // county filing record. The DB inference stays as the fallback for a bot that
+  // does not send it, which keeps this endpoint backward compatible.
+  //
+  // Unchanged and still load-bearing: resolved BEFORE the insert, because our own
+  // row would otherwise change the answer; and a failure here is LOGGED AND
+  // SWALLOWED, because a real county filing must never be rejected over the permit
+  // field. NULL stays the safe value, since the queue reads a null-permit
+  // submission as retiring the whole ticket (under-serve, never re-file).
   let gdoId: number | null = null
   {
-    const { data: resolved, error: gErr } = await sb
-      .rpc('fn_resolve_rpa_permit', { p_visit_id: visitId })
-    if (gErr) {
-      console.error('permit resolve failed (recording without a permit):', gErr.message)
-    } else if (typeof resolved === 'number') {
-      gdoId = resolved
+    const claimed = typeof body.gdo_id === 'number' && Number.isInteger(body.gdo_id)
+      ? body.gdo_id
+      : null
+    if (claimed !== null) {
+      const { data: ok, error: vErr } = await sb
+        .from('v_derm_portal_fields')
+        .select('gdo_id')
+        .eq('visit_id', visitId)
+        .eq('gdo_id', claimed)
+        .limit(1)
+      if (vErr) {
+        console.error('permit validation failed, falling back to inference:', vErr.message)
+      } else if (ok && ok.length > 0) {
+        gdoId = claimed
+      } else {
+        console.error(
+          `bot reported gdo_id ${claimed} which is not a permit of visit ${visitId}; ` +
+          'falling back to inference',
+        )
+      }
+    }
+    if (gdoId === null) {
+      const { data: resolved, error: gErr } = await sb
+        .rpc('fn_resolve_rpa_permit', { p_visit_id: visitId })
+      if (gErr) {
+        console.error('permit resolve failed (recording without a permit):', gErr.message)
+      } else if (typeof resolved === 'number') {
+        gdoId = resolved
+        if (claimed === null) {
+          console.info(`permit inferred for visit ${visitId}: bot sent no gdo_id`)
+        }
+      }
     }
   }
 

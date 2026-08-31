@@ -128,6 +128,14 @@ Deno.serve(async (req: Request) => {
     reports.push({
       visit_id: r.visit_id,
       manifest_id: r.manifest_id,
+      // 🛑 gdo_id is the PERMIT this item is for, and since 2026-08-31 a single
+      // visit can legitimately be served SEVERAL items at once (Casa Neos has
+      // three ACTIVE permits on one manifest, and DERM wants a report per
+      // permit). Echo it back on the result POST: without it, rpa-derm-result
+      // has to INFER the permit from the visit, which is only sound while one
+      // permit is in flight at a time. Additive field; a bot that ignores it
+      // still works, it just attributes by arrival order.
+      gdo_id: r.gdo_id,
       dry_run: mode === 'dryrun',
       client_code: r.client_code,
       client_name: r.client_name,
@@ -158,9 +166,18 @@ Deno.serve(async (req: Request) => {
   if (mode === 'live' && reports.length > 0) {
     const { error: leaseErr } = await sb
       .from('derm_portal_leases')
+      // 🛑 The lease is per (VISIT, PERMIT) since 2026-08-31. It used to be keyed
+      // on the visit alone, which meant dispensing one permit of a multi-permit
+      // manifest hid its siblings for the full 20h, which is what made Casa Neos
+      // take three days to file three permits. A NULL gdo_id still blocks the
+      // whole ticket (legacy rows, and the conservative direction).
       .upsert(
-        reports.map((r) => ({ visit_id: r.visit_id, leased_at: new Date().toISOString() })),
-        { onConflict: 'visit_id' },
+        reports.map((r) => ({
+          visit_id: r.visit_id,
+          gdo_id: r.gdo_id ?? null,
+          leased_at: new Date().toISOString(),
+        })),
+        { onConflict: 'visit_id,gdo_id' },
       )
     if (leaseErr) console.error('lease upsert failed (serving anyway):', leaseErr.message)
   }
