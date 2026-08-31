@@ -268,6 +268,8 @@ with `git diff 6b0005f HEAD -- CLAUDE.md`.
 | `ticket-312433` | **CLOSED.** All 8 card-pages published, both page boundaries set |
 | `classify.js` end-trim | strips only LONG bars, so a page whose outermost rule at each end is SHORT keeps its header or footer bar in the roster chain and every label below inverts. It now costs twice: it blocks measurement, and on a serving folder it manufactures a worklist row on a correct band. Fixing it means changing the trim and re-validating all 168 measured pages |
 | multi-GDO permit cards | spec'd (`e5bfcd1`), **not built** |
-| `ticket-830714` | frozen and serving; needs stamps placed by a person |
+| `ticket-830714` | **that line was stale, corrected 2026-08-31.** The stamps WERE placed (2026-08-27 20:56), so it is no longer frozen on the closed-world gate; its blocker is now `needs_snap_then_extent`. It serves 3 documents built from DERIVED bands with **0 extents**, so it cannot regenerate and improving its geometry changes nothing about what those 3 clients see until a measurement pass runs |
+| `ticket-312500` | **new since 2026-08-29**, same state as 830714: 2 cards stamped, bands derived, 0 extents, **0 documents**, so its 2 clients see no FOG sheet. Blocked 2 days |
+| ✅ 830714's two severity-1 band flags look like FALSE POSITIVES | its own row OCR reads page 1 as `009-CN` Kitchen / Bar / Lounge, then `034-LG`, then `187-4A`. So 009-CN owns **three** printed rows and its band spanning them is correct. `expected_slots` reads 1 because the folder resolves no generated sheet and falls back to N=1. **Not recorded in `derm.band_review`**: that is an assertion about a customer-facing document and wants the served images opened, not just the OCR |
 
 ⚠ A Lovable **"Upgrade"** button appeared mid-session; the account may be near a plan limit.
