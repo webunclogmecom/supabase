@@ -62,7 +62,7 @@ Log the outcome (same `x-rpa-key`). This feeds our apps (per-client, per-visit "
 | `dry_run` | no | boolean. **Derived server-side from the manifest's cutoff classification, never trusted from the bot.** Send your best guess; the server recomputes it. | |
 
 **Idempotency + lifecycle guarantees (why the bot is safe to run freely):**
-- The POST is **idempotent on `(visit_id, run_id)`** — a retried POST returns 200. So: generate `run_id` **once per attempt, before hitting the portal**, reuse it verbatim on every retry, and keep retrying the POST until you get a 2xx. Never treat a report as done before we acknowledge it.
+- The POST is **idempotent on `(visit_id, gdo_id, run_id)`** (widened 2026-08-31; it was `(visit_id, run_id)`), so a retried POST returns 200. So: generate `run_id` **once per attempt, before hitting the portal**, reuse it verbatim on every retry, and keep retrying the POST until you get a 2xx. Never treat a report as done before we acknowledge it.
 - The **queue only returns visits still needing a filing.** A `SUCCESS` (or any status carrying `portal_confirmation`) removes the dump permanently.
 - Each dispensed dump is **leased for 20 hours** (`derm_portal_leases`) the moment it is handed out, so a crash mid-run can't get it re-handed to a second run.
 - **No optimistic success ever:** a visit counts as reported only when the portal actually confirmed it (enforced by DB constraints, not just the function).

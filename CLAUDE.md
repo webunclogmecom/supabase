@@ -2644,12 +2644,31 @@ one you are fighting before you touch anything:
 | 1 | a non-dry-run `SUCCESS` or a `portal_confirmation` exists | never re-file a filed report |
 | 2 | any non-dry-run attempt in the last **20h** | never hammer the county portal |
 | 3 | a **non-retryable** non-SUCCESS attempt **newer than `f.updated_at`** | a data error holds until the row changes |
-| 4 | a dispense lease on the manifest in the last **20h** | never double-serve a manifest |
+| 4 | a dispense lease on that **(visit, permit)** in the last **20h** | never double-serve a permit |
 
-⚠ It is also `DISTINCT ON (manifest_id)`, so **only ONE permit per manifest is served per pass**
-(ordered by `gdo_id`, then `abs(visit_date - dump_ticket_date)`, then `visit_id`). A (visit, permit)
-can be legitimately absent from the queue because a SIBLING row won the DISTINCT ON, not because a
-gate blocked it.
+🛑 **CHANGED 2026-08-31: IT IS NOW `DISTINCT ON (manifest_id, gdo_id)`, SO EVERY PERMIT ON A
+TICKET IS SERVED IN ONE PASS.** This paragraph used to read *"only ONE permit per manifest is served
+per pass ... a (visit, permit) can be legitimately absent because a SIBLING row won the DISTINCT ON"*.
+**That is no longer a reason for an absence**, and looking for one will send you hunting a gate that
+is not there.
+
+The one-at-a-time design was deliberate (`2026-08-11_1240`): it made the ticket-wide lease a free
+"only one in flight" guarantee, and the DERM deadline is the 15th of the following month, so a
+three-permit client filing over two days cost nothing. It stopped being acceptable when Casa Neos
+took three days over three permits and read as a MISSED filing rather than a slow one.
+
+🛑 **THE ORDER OF THE THREE CHANGES WAS A SAFETY PROPERTY.** `derm_portal_submissions` was
+`UNIQUE (visit_id, run_id)`, so serving three permits before widening that index would have REJECTED
+the 2nd and 3rd results of a run, and a rejected result is a county filing we have no record of which
+then gets re-served and filed AGAIN. The index widened first, in its own statement, before the queue.
+⚠ `2026-08-11_1240` called re-keying the lease "the single most dangerous item in the original plan",
+because `rpa-derm-queue` said `onConflict:'visit_id'` and a mismatch there raises `42P10`, **which
+that function logs and SWALLOWS, then serves every batch unleased**. The `onConflict` was changed in
+the same commit and the real PostgREST upsert was exercised (201 insert, 200 merge) rather than
+reasoned about. **If you ever touch that key again, exercise it: a dry-run queue fetch does NOT
+lease, so the obvious smoke test cannot see this.**
+
+Full record: [docs/reference/gdo-multi-permit-filing.md](docs/reference/gdo-multi-permit-filing.md).
 
 🛑 **GATE 3'S FRESHNESS ANCHOR IS A *DATABASE* TIMESTAMP, SO A FIX MADE OUTSIDE THE DATABASE IS
 STRUCTURALLY INVISIBLE TO IT.** Cost three days on 2026-08-24: Jonathan fixed GDO-11024's portal
@@ -2683,12 +2702,13 @@ effect standing in for an intention: no reason, no name, no trail.
   row would "come up on a later pass" when it never would. There is now a `pair_exists` check first.
 - `derm_portal_requeue` IS the audit trail (who, when, why) and is therefore deliberately not audited.
 
-⚠ **`v_rpa_derm_health.queue_depth` COUNTS MANIFESTS, NOT FILINGS.** The view is
-`DISTINCT ON (manifest_id)`, so it answers *"how many manifests can the bot pick up this pass"*, never
-*"how many DERM filings are outstanding"*. Measured 2026-08-24: **59 candidate pairs across 37
-manifests**, and **13 manifests carry 2+ unfiled permits** — a backlog read off `queue_depth` is
-understated by up to 37%, and any alert threshold on it saturates. **Do not build a backlog metric
-on it.**
+✅ **`v_rpa_derm_health.queue_depth` NOW COUNTS FILINGS, because the view it reads is keyed on
+the pair.** It used to be `DISTINCT ON (manifest_id)` and therefore answered *"how many manifests can
+the bot pick up this pass"* rather than *"how many DERM filings are outstanding"*: measured
+2026-08-24, **59 candidate pairs across 37 manifests** with **13 manifests carrying 2+ unfiled
+permits**, so a backlog read off it was understated by up to 37%. That understatement is gone as of
+`2026-08-31_0914`. ⚠ The metric's MEANING changed without its name changing, so any threshold or
+dashboard calibrated against the old numbers now reads high for a good reason.
 
 ⚠ **`public.v_rpa_derm_health` DEPENDS on this view** (it is `queue_depth`), as do
 `fn_record_manual_gdo_report` and `fn_resolve_rpa_permit`. Keep the COLUMN LIST identical and

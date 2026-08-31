@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
-**Last updated:** 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
+**Last updated:** 2026-08-31 (🛑 **the queue now serves EVERY permit on a ticket in one batch, so `visit_id` is no longer unique within a batch and the work key is the pair `(visit_id, gdo_id)`; the result POST is idempotent on `(visit_id, gdo_id, run_id)` and `gdo_id` is now USED rather than ignored**, see §3 and §4). Previously 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -64,14 +64,40 @@ under-reporting.
 | `gdo_number` | now means **the permit this row is for**, not "the client's permit" |
 | `gdo_id` | **new column**, our stable integer id for that permit |
 
-**You still receive at most one permit per ticket at a time.** The 20-hour dispense lease is held
-against the whole ticket, so the remaining permits stay back until the served one is filed. A
-multi-permit ticket therefore reappears on a later poll carrying its next permit, and a three-permit
-client (009-CN Casa Neos) files over roughly two days. The DERM deadline is the 15th of the following
-month, so that is immaterial.
+🛑 **SUPERSEDED 2026-08-31. THE TWO PARAGRAPHS BELOW WERE TRUE UNTIL THEN AND ARE NOW WRONG.** They
+are kept because you built against them, so you need to see exactly what changed:
 
-**Nothing about your contract changes.** Batch cap is still 25 rows, `visit_id` is still unique within
-a batch, and you do **not** send the permit back: we resolve it ourselves from the pair we served.
+> ~~**You still receive at most one permit per ticket at a time.** The 20-hour dispense lease is held
+> against the whole ticket, so the remaining permits stay back until the served one is filed. A
+> multi-permit ticket therefore reappears on a later poll carrying its next permit, and a three-permit
+> client (009-CN Casa Neos) files over roughly two days.~~
+>
+> ~~**Nothing about your contract changes.** Batch cap is still 25 rows, `visit_id` is still unique
+> within a batch, and you do **not** send the permit back: we resolve it ourselves from the pair we
+> served.~~
+
+### 🛑 You now receive EVERY permit on a ticket, in the SAME batch (changed 2026-08-31)
+
+The 20-hour lease is now held per **(visit, permit)** instead of per ticket, and the queue is keyed on
+`(manifest_id, gdo_id)`. A three-permit ticket comes back as **three rows in one pull**, and you may
+file all three in a single run.
+
+**Two things this changes for you:**
+
+1. 🛑 **`visit_id` is NO LONGER UNIQUE WITHIN A BATCH.** Casa Neos returns three rows that all carry
+   `visit_id: 6568` and differ only by `gdo_id`. **If your bot de-duplicates work by `visit_id`, it
+   will silently drop two of the three filings.** The work key is now the **pair**
+   `(visit_id, gdo_id)`.
+2. **Please echo `gdo_id` back on the result POST** (section 4). It is optional and nothing breaks
+   without it, but see the note there: without it we have to infer which permit a result was for, and
+   the inference is only reliable when every filing in the run succeeds.
+
+Everything else is unchanged: batch cap is still 25 rows, the same `x-rpa-key`, the same fields.
+
+⚠ **Why it was one-at-a-time before, so you know we did not simply forget:** serving one permit per
+ticket made the existing ticket-wide lease into a free "only one in flight" guarantee, and the DERM
+deadline is the 15th of the following month, so a three-permit client filing over two days cost
+nothing. It stopped being acceptable when it read as a *missed* filing rather than a slow one.
 
 ⚠ Permit numbers render three different ways. The county email prints the bare integer (`12517`), our
 `gdo_number` is a zero-padded string (`GDO-09853`), and the permit PDF prints `GDO-012517-2026/2026`.
@@ -100,7 +126,8 @@ integer matching can never merge one client's own permits.
 
 | Field | Type | Notes |
 |---|---|---|
-| `visit_id` | integer | **The work key.** Echo it back on your result POST. |
+| `visit_id` | integer | Echo it back on your result POST. ⚠ **No longer unique within a batch** since 2026-08-31: see section 3's permit note. |
+| `gdo_id` | integer | **Added 2026-08-31. Together with `visit_id` this is the work key.** Our stable id for the permit this row is for. **Echo it back on your result POST.** |
 | `manifest_id` | integer | The linked DERM manifest (context; optional to echo). |
 | `dry_run` | boolean | `true` when this came from `?mode=dryrun`. |
 | `client_code` | string | e.g. `041-MB`. |
@@ -120,10 +147,12 @@ start of a run; **never log or persist the URLs**.
 
 ### Queue lifecycle (why a visit does or does not appear)
 
-- **One row per dump (DERM manifest).** A county report is filed per **dump ticket / manifest**, so the
-  queue returns **one report per manifest** even when more than one visit fed that dump (represented by
-  the visit whose service date is closest to the dump). `visit_id` is still your work key — you just
-  never see the same dump twice in a batch.
+- **One row per (dump, PERMIT).** 🛑 **Changed 2026-08-31; this used to say one row per dump.** A
+  county report is owed per **permit** on a dump ticket, so a dump with three active permits returns
+  **three rows**, identical except for `gdo_id` / `gdo_number`. Where more than one visit fed the dump
+  it is still represented by a single visit (the one whose service date is closest to the dump), so you
+  never see the same **(dump, permit)** pair twice in a batch. **The work key is the pair
+  `(visit_id, gdo_id)`, not `visit_id` alone.**
 - A dump stays in the live queue **until it is successfully reported** — so nothing is dropped if the
   bot is down for a while.
 - It leaves the queue **permanently** once the county confirms it (a `SUCCESS` result with a
@@ -184,8 +213,12 @@ answers, which is the whole point of this block.
 
 ## 4. `POST /functions/v1/rpa-derm-result` — record an outcome
 
-Same `x-rpa-key`. **Idempotent on `(visit_id, run_id)`**: a retried POST returns `200 {deduped:true}`
-and changes nothing (first write wins).
+Same `x-rpa-key`. **Idempotent on `(visit_id, gdo_id, run_id)`**: a retried POST returns
+`200 {deduped:true}` and changes nothing (first write wins).
+🛑 **Changed 2026-08-31; the key used to be `(visit_id, run_id)`.** It had to widen, because a
+ticket's permits can now all be filed in one run and the old key would have **rejected your 2nd and
+3rd results** as duplicates of the first. Nothing you do changes: a fresh `run_id` per attempt still
+works exactly as before, and a genuine retry still dedupes.
 
 **Request body**
 
@@ -233,9 +266,23 @@ by reading the response. Now you can.
 - On a **deduped 200** both fields describe the **stored row**, not what you just posted, because a
   dedupe uploads nothing. That is the number that tells you whether the stored filing has evidence.
 
-**`gdo_id` and `gdo_number` are accepted and ignored.** You do not need to send them. We resolve which
-permit a filing covered server-side, from the pair the queue served. They are accepted only so a bot
-built against the earlier draft contract cannot get a `400` on a filing that already happened.
+🛑 **`gdo_id` IS NOW USED (changed 2026-08-31). Please send it.** `gdo_number` is still accepted
+and ignored.
+
+Send back the `gdo_id` from the queue row you just filed. We validate it against that visit's real
+permit set before trusting it, so a wrong value is refused rather than mis-recorded, and a filing is
+never rejected over this field.
+
+**It is optional and nothing breaks without it**, but here is the honest reason to send it. When you
+do not, we infer the permit server-side as *the lowest still-unfiled permit for that visit*. That was
+exact while the queue served one permit at a time. Now that a run can carry all of a ticket's permits,
+the inference attributes **by arrival order**: if you file permits A and C and A fails, the failure is
+recorded against A and C's success is then also recorded against A. Sending `gdo_id` makes the
+attribution certain instead of inferred.
+
+⚠ This is why both fields were accepted-and-ignored from 2026-08-11: unknown fields are a `400`, and a
+rejected result is a county filing we have no record of. That reasoning is unchanged; only the
+usefulness of `gdo_id` is.
 
 **If you do not get a 2xx, keep the result locally and retry the same POST** (same `run_id`) until you
 do. Never treat a report as done before we acknowledge it.
@@ -721,7 +768,7 @@ second "run" key. Just poll the queue and file whatever it returns:
   and POST the result. That's the whole loop.
 - Reporting is safe to run as often as you like: the queue only hands you visits that still need
   filing (a `SUCCESS` permanently removes one), each dispensed visit is **leased for 20h** so a crash
-  can't get it re-handed-out, and `rpa-derm-result` is **idempotent on `(visit_id, run_id)`** — so a
+  can't get it re-handed-out, and `rpa-derm-result` is **idempotent on `(visit_id, gdo_id, run_id)`**, so a
   duplicate or retried run never double-files.
 - Nothing on our side calls you, so you never need an inbound endpoint or a public URL.
 

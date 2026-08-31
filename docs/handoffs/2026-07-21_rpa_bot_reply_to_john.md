@@ -134,3 +134,37 @@ now includes two fields on every report:
 
 `white_manifest_number` is kept for back-compat but is **null for Broward** — switch to
 `ticket_number`. All other fields unchanged.
+
+---
+
+## Addendum 2026-08-31: every permit on a ticket is served at once, and `gdo_id` is now used
+
+🛑 **Two statements in the original reply above are now WRONG. They are left in place because they
+are the record of what was sent, but do not build against them:**
+
+- *"the result POST is idempotent on (visit_id, run_id)"* (§2 and §Triggers). **It is now
+  `(visit_id, gdo_id, run_id)`.** The old key would have rejected the 2nd and 3rd results of a run
+  that filed several permits off one ticket, and a rejected result is a county filing we have no
+  record of.
+- The report-object field list in §1 omits **`gdo_id`**, which is now returned on every report and
+  should be echoed back on the result POST.
+
+**What changed.** An address can hold several FOG facilities behind one grease trap, each with its
+own DERM permit, and DERM wants a report per permit. The queue is now keyed on
+`(manifest_id, gdo_id)` and the 20-hour dispense lease is per `(visit, permit)`, so a three-permit
+ticket comes back as **three rows in one pull**.
+
+🛑 **The consequence for the bot: `visit_id` is NO LONGER UNIQUE WITHIN A BATCH.** Three rows can
+carry the same `visit_id` and differ only by `gdo_id`. **A bot that de-duplicates work by `visit_id`
+silently drops two of the three filings.**
+
+**`gdo_id` is optional but wanted.** Without it we infer the permit from the visit, which attributes
+by arrival order and misattributes when one filing in a run fails and another succeeds. With it,
+attribution is certain; we validate it against that visit's real permit set before trusting it.
+
+🛑 **Never send permits as a comma-separated string on a visit.** It fails our
+`^GDO-[0-9]+$` filter so it files nothing, and it recreates a combined `gdos` row retired in July
+because it can print verbatim on an official county sheet.
+
+**Canonical reference is `postman/README.md` §3 and §4**, which is kept current. Our own reasoning,
+the verification and the traps: `docs/reference/gdo-multi-permit-filing.md`.
