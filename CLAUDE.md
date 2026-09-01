@@ -2804,6 +2804,52 @@ cannot remove that. The fourth occurrence of the trap this file already document
 [discards grants](docs/migrations/). **After any edit, assert the queue did not WIDEN** — extra rows
 mean the bot files reports that should not go out.
 
+### 🛑 `customer.permits.our_frequency_days` IS A DISPLAY VALUE AND IS NOT ALWAYS OURS (2026-09-01)
+
+Fred, on 117-BH's Field Portal Service Report: the `GDO Permits & Frequency` card read
+**"Every 0 days"**, and for a client with no cadence of ours it should show the GDO permit's printed
+interval. Fixed in `2026-09-01_1600`, view only, **no app change** (the grid already renders
+`our_frequency_days`; a NULL is handled and a ZERO is not, which is why the 0 printed).
+
+**Three defects, and the middle one reached a customer as a compliance claim:**
+1. `sc` filtered `frequency_days IS NOT NULL` while `jf` filtered `> 0`, so a stored **0** beat a
+   real job frequency.
+2. `compliant` was `0 <= max` = **TRUE**, so 3 clients were told they met the county's maximum
+   interval on a number meaning "we do not know".
+3. `jf` accepted ANY job with `frequency_days > 0`. **Exposed only by fixing #1**: 117-BH then
+   resolved to 30 from a **Main Line Cleaning** job. 15 permits were job-sourced and **5 of those
+   jobs do no pumping** - four are **Warranty of Drainage**, whose `frequency_days` is a BILLING
+   cadence on a job that by the rule above carries no visits at all, and two of those were showing an
+   amber NON-compliance warning derived from it.
+
+**Now:** `sc` requires `> 0`; `jf` requires the job to carry a pumping line item via
+**`public.fn_line_item_requires_derm(li.name)`** (the same helper `fn_visit_requires_derm` uses - do
+NOT inline a title regex, `line_items` has no FK to the catalogue and matches by NAME); and
+`g.max_frequency_days` is the last-resort DISPLAY fallback.
+
+🛑 **THE FALLBACK MUST NEVER FEED `compliant`.** Adding it to the COALESCE naively recreates
+defect 2: every fallback row computes `max <= max` = TRUE and claims compliance from the county's own
+limit. `compliant` is therefore computed ONLY from `COALESCE(sc, jf)` and is NULL when we hold none.
+Live census: `service_config` 95, `job` 10, `gdo_permit` 26, **0 of the 26 carrying a verdict**, and
+**0 of 131 permits** now display 0 or NULL.
+
+⚠ **The displayed number means two different things**, which is Fred's explicit call over a
+qualifier: ours is a SCHEDULE, the permit's is a county-mandated MAXIMUM INTERVAL
+(`reference_gdo_frequency_vs_job_frequency`). **`frequency_source` is the only way to tell them
+apart - do not drop it to tidy the view.**
+
+⚠ The view now calls a SECURITY INVOKER function, adding an invoker-side EXECUTE check to the FP's
+read path. `authenticated` was verified to hold EXECUTE on it plus SELECT on `service_line_items`,
+`line_items` and `jobs`, and the VERIFY reads the view `SET LOCAL ROLE authenticated` rather than
+trusting that reasoning. **Fifth occurrence of the asymmetry this file documents.**
+
+⚠ **Two of my drafts were rejected by that migration's own VERIFY, and both were TEST errors.**
+First the expectation that 117-BH would land on 90 (it landed on 30, which is how defect 3 was
+found). Then a regression check asserting no permit with a non-zero value may change - it forbade the
+Warranty of Drainage rows from moving when moving them was the point. **A regression check that
+forbids the intended change is a broken instrument**, so it now asserts the real invariant: a row may
+only move by falling back to the permit.
+
 ### 🛑 THE HEALTH WATCHDOG: EMAIL ON STALENESS, AND SILENCE MEANS HEALTHY (2026-08-24)
 
 Four `log_*_health()` crons write a verdict into `public.sync_log`. **Nothing reads `sync_log`** and
