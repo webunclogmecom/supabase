@@ -516,22 +516,8 @@ emergency window was closed at **10:11 ET** (`app_config.emergency_access_until`
 ⇒ **The blocker is lifted.** Invites, recovery links and Aaron's account can all be built and
 tested, and the `admin`/`office` gate is enforceable again.
 
-🛑 **BUT THE WATCHDOG NEVER FIRED, AND STILL CANNOT.** `auth-recovery-watch` was deployed on
-2026-08-31 to email Fred the moment Auth returned. It never did, and the reason is not a bug in the
-function: **it has no cron job.** Checked against all 24 rows of `cron.job`, none is auth-related,
-while `public.fn_request_auth_recovery_watch` exists and the edge function is deployed. It ran once
-by hand at 09:17 ET, recorded `down`, and was never invoked again, so `auth_recovery_state` sat
-stale at `down` for the hour and three quarters AFTER Auth had recovered.
-
-⇒ This is the `never-executed` class exactly: a surface that is deployed, correct, and has never
-run. `scripts/checks/never-executed.mjs` exists to make that state visible. **Arming it is a
-one-line cron and it is the whole point of having built it**, because the next outage gets the same
-silence otherwise.
-
-⚠ Also left behind by the emergency mode: `public.emergency_whoami()` still exists. It is
-SECURITY **INVOKER**, `anon` cannot execute it, and it only reflects the caller's own JWT claims
-back at them, so it is leftover scaffolding rather than exposure. The documented revert order says
-to drop it.
+⚠ The emergency response itself, including the watcher and the leftover
+`public.emergency_whoami()`, belongs to the Supabase 1 session. Not an HR item.
 
 #### Sources
 
@@ -564,10 +550,6 @@ to drop it.
    which needs GoTrue back up.
 4. ✅ **Supabase Auth is BACK** as of 2026-09-01, verified live (§8.3). The emergency window is
    closed and the apps are on normal login, so the gate is enforceable and auth work is unblocked.
-5. ⏳ **Arm `auth-recovery-watch` with a cron job.** It is deployed but unscheduled, so it never
-   sent the recovery mail it exists to send, and the next outage would be equally silent.
-6. ⏳ **Drop `public.emergency_whoami()`**, the last step of the documented emergency revert.
-
 ---
 
 ## 10. Open
