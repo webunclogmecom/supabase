@@ -399,6 +399,137 @@ rather than silently creating a token nobody receives. Seven of the nine active 
 reached.
 ⚠ Test sends go to `fred@ayache.com` only, never a real employee address, per the standing rule.
 
+### 8.3 Admin-initiated password reset
+
+Fred, 2026-09-01: *"in this HR app we should be able to 'RESET' a password of a user ... obviously
+that only for the admins, and the admins shouldn't need to ask for a password."*
+
+That instinct matches current practice exactly. What follows is what the research says, then the
+local facts that change the answer.
+
+#### The principle: the admin never sets, sees, or transmits a password
+
+Guidance is consistent across Okta, OneLogin and the SSPR vendors: send a **reset link**, do not
+issue a temporary password. A temporary password means at least two people know a working
+credential, and it has to be conveyed somehow, which is the opening.
+
+**NIST SP 800-63B Rev. 4** (finalised 2025, operationally normative through 2026) permits temporary
+passwords only under constraints we cannot meet:
+
+| requirement | our position |
+|---|---|
+| single use, invalidated server-side on first consumption | fine |
+| delivered through a channel **distinct from the primary authentication path**, and *"email to the same address used for primary authentication is explicitly disallowed"* | 🛑 **we cannot satisfy this.** Email is our only channel to staff: no enrolled push app, no verified SMS |
+| expiry in *"minutes to a few hours, not days"* | fine |
+| never reused across users or time windows | fine |
+| forced rotation before any other action proceeds | fine |
+| full audit logging of issuance, delivery, consumption, expiry | fine |
+
+⇒ **Temporary passwords are off the table for us**, on the out-of-band rule alone. The recovery link
+is the mechanism, which is what Fred asked for anyway.
+
+#### 🛑 The local fact that changes everything: nobody here has a password
+
+Measured 2026-09-01. Every staff account in `auth.users` is **Google OAuth**:
+
+| person | access_level | auth account | provider |
+|---|---|---|---|
+| Fred | admin | yes | google |
+| Yannick | admin | yes | google |
+| Aaron | office | **none yet** | to be google |
+| Diego | office | yes | google |
+| Serena | office | yes | google |
+
+The only two non-Google accounts are `test.agent@ayache.com` and `unclogme@unclogme.com`, neither of
+which is a person.
+
+**So a "reset password" button would do the wrong thing for 100% of current users.** An OAuth-only
+account has no password to reset. Triggering a recovery link for one does not restore access; it
+**sets a password for the first time**, converting a federated account into one with a second,
+weaker way in. That is a widening, not a repair, and it should be a deliberate choice rather than
+the accidental result of clicking a button labelled "reset".
+
+⚠ And for a Google-federated account the identity does not live in Supabase at all. Real recovery
+for Fred, Yannick, Aaron, Diego or Serena is a **Google Workspace** operation at `admin.google.com`,
+not something this app can or should do.
+
+#### What the button should actually do
+
+Make the action **context-aware on the account it is looking at**, and label it honestly:
+
+| account state | action | mechanism |
+|---|---|---|
+| no auth account | **Send invite** | `auth.admin.inviteUserByEmail` |
+| Google OAuth only | **no password reset offered.** Show "signs in with Google" and point at Workspace | none |
+| has a password | **Send reset link** | `auth.admin.generateLink({type:'recovery'})`, emailed via Resend |
+
+🛑 **`auth.admin.updateUserById({ password })` IS FORBIDDEN.** That is the one call that sets a
+password on a user's behalf, and it is precisely what Fred ruled out. It must appear nowhere in this
+app. Generating a link the *user* consumes is the whole point: the admin's power is to start
+recovery, never to hold a credential.
+
+Everything runs **server-side in an edge function with the service key**. `generateLink` creates
+users for some link types and must never be reachable from the browser.
+
+#### The real threat here is the admin, not the mechanism
+
+The dominant 2024 to 2026 attack on this exact feature is social-engineering the person who can
+press the button. Scattered Spider's documented playbook (CISA advisory AA23-320A) is to phone the
+service desk posing as a locked-out employee, claim a lost phone, and have credentials or MFA reset.
+A perfect mechanism does not help if the admin is talked into using it.
+
+**Our position is unusually strong, and the spec says so rather than importing enterprise help-desk
+theatre:** there are **two admins**, Fred and Yannick, **nine active staff**, and everyone knows
+everyone personally. So:
+
+- **Verify out-of-band on a channel you already hold for that person**, their known phone number,
+  never a number supplied in the request.
+- **Never act on an inbound email alone.** An emailed request to reset an account is the attack.
+- ⚠ The risk grows with the team. This is a human habit today; if headcount passes the point where
+  an admin recognises everyone, it has to become a written procedure.
+
+#### Logging and notification
+
+`hr.auth_action_log`, audited under rule 8: who requested, for whom, action type, issued at,
+consumed at, expiry. NIST asks for issuance, delivery, consumption and expiry, and this is the trail
+that answers "who reset Serena's account, and when".
+
+**Notify the target user by email on every action against their account**, including when an admin
+starts a reset. A user receiving an unexpected "an admin requested a password reset on your account"
+mail is the last line of defence against a socially-engineered admin.
+
+⇒ Rate-limit per employee, and keep the recovery link lifetime short. Supabase's default is
+generous; NIST's "minutes to a few hours" is the target.
+
+#### 🛑 None of this is buildable today: Auth is DOWN
+
+`public.auth_recovery_state` reads **`status = 'down'`** as of **2026-09-01 13:17 UTC**, with jwks,
+health, login and settings all returning 503 and only the data plane healthy. The outage began
+2026-08-31 and `auth-recovery-watch` has not yet sent its recovery mail.
+
+Two consequences, and the second is the more serious:
+
+1. **Every admin auth API goes through GoTrue**, so invites, recovery links and account creation
+   cannot be built or tested until it is back. Aaron's account cannot be created either.
+2. 🛑 **The staff apps are in the temporary no-auth "Default" mode**, so the HR app's `admin` /
+   `office` gate is **not enforceable right now**. The HR app must not be pointed at real data until
+   Auth is back and the gate is verified working, because that gate is the only thing between a
+   signed-in technician and everybody's pay.
+
+#### Sources
+
+- [NIST SP 800-63B Rev. 4 temporary password requirements](https://credentialgovernance.avatier.com/en/blog/temporary-password-best-practices-2026)
+- [Specops, self-service password reset best practices](https://specopssoft.com/blog/password-reset-best-practices/)
+- [OneLogin, help desk password reset best practices](https://www.onelogin.com/learn/help-desk-password-reset-best-practices)
+- [Okta, reset a user password](https://help.okta.com/en-us/content/topics/users-groups-profiles/usgp-reset-individual.htm)
+- [CISA advisory AA23-320A, Scattered Spider](https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-320a)
+- [Specops, Scattered Spider service desk defence](https://specopssoft.com/blog/scattered-spider-service-desk-defense-tips/)
+- [Supabase, generateLink admin API](https://supabase.com/docs/reference/javascript/auth-admin-generatelink)
+- [Supabase, inviteUserByEmail](https://supabase.com/docs/reference/javascript/auth-admin-inviteuserbyemail)
+- [Supabase, password-based auth](https://supabase.com/docs/guides/auth/passwords)
+
+---
+
 ---
 
 ## 9. Prerequisites outside the migrations
@@ -411,8 +542,11 @@ reached.
    `employees_access_level_chk` added VALIDATED (`2026-08-31_1330`). `scripts/populate/populate.js`
    changed in the same commit, because it was the writer that produced `dev` and would have
    re-introduced it.
-3. ⏳ **Still open: give Aaron a company email and an auth account**, or he is in the office
-   group and still cannot open the app.
+3. ✅ **Aaron's email is set to `aaron@unclogme.com`** (`2026-09-01_0930`), so all five admin and
+   office employees now resolve by JWT email. ⏳ **His auth account still has to be created**,
+   which needs GoTrue back up.
+4. 🛑 **Supabase Auth is DOWN** (§8.3). Nothing auth-shaped can be built or tested, and the
+   app's admin gate is unenforceable until it returns.
 
 ---
 
