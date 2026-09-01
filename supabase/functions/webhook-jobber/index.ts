@@ -1261,14 +1261,17 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   // in sync-jobber-job-drift.
   const isSA = (j.title ?? '').toLowerCase().startsWith('service agreement')
   const jobLineNodes: any[] = isSA ? (j.lineItems?.nodes ?? []) : []
-  await supabase.from('line_items').delete().eq('job_id', entityId)
-  if (jobLineNodes.length > 0) {
-    await supabase.from('line_items').insert(jobLineNodes.map((n: any) => ({
-      job_id: entityId, name: n.name, description: n.description ?? '',
+  // Atomic, per-job-serialized rewrite via public.rewrite_job_line_items — ends the concurrent
+  // delete-then-insert duplication race (line_items has no unique key by design). Same rows this
+  // used to insert; an empty array deletes the job-scope lines and inserts nothing (SC/legacy).
+  await supabase.rpc('rewrite_job_line_items', {
+    p_job_id: entityId,
+    p_lines: jobLineNodes.map((n: any) => ({
+      name: n.name, description: n.description ?? '',
       quantity: n.quantity ?? 1, unit_price: n.unitPrice ?? 0,
       total_price: n.totalPrice ?? 0, taxable: !!n.taxable,
-    })))
-  }
+    })),
+  })
 
   return { entity_id: entityId }
 }

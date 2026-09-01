@@ -233,10 +233,10 @@ Deno.serve(async (req) => {
           const hb = bag(have ?? []), wb = bag(want);
           const differs = hb.size !== wb.size || [...wb].some(([k, n]) => hb.get(k) !== n);
           if (differs) {
-            await db.from("line_items").delete().eq("job_id", row.id).is("visit_id", null).is("invoice_id", null);
-            if (want.length) {
-              await db.from("line_items").insert(want.map((w: any) => ({ job_id: row.id, ...w })));
-            }
+            // Atomic, per-job-serialized rewrite via public.rewrite_job_line_items — ends the
+            // concurrent delete-then-insert duplication race (a reopen makes this and the */5 poll
+            // overlap on the same job). `want` is the desired set; [] deletes and inserts nothing.
+            await db.rpc("rewrite_job_line_items", { p_job_id: row.id, p_lines: want });
             stats.line_syncs++;
           }
         } catch (e) {
