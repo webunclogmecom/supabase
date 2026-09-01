@@ -575,3 +575,123 @@ tested, and the `admin`/`office` gate is enforceable again.
 | `access_level` silently drifting once it gates access | §4, CHECK constraint so a bad value fails loudly |
 | Pay history needed sooner than expected | §5.3, table shaped so the migration is additive |
 | Two days is optimistic once the access_level correction and bucket setup are counted | Those are §9 prerequisites and can be done ahead of the UI work |
+
+---
+
+## 12. 🛑 What this means for the rest of the estate
+
+Fred, 2026-09-01: *"take in mind how this will affect the others apps once it's on prod. Because
+this is the place where we are gonna set the privileges on the accounts, what they can do, what they
+can access."*
+
+That changes what this app **is**. It is no longer an HR directory that happens to have a gate: it
+is the place where estate-wide authorization is administered. So the question is what the other apps
+enforce today. Measured 2026-09-01.
+
+### 12.1 There is no authorization layer. At all.
+
+| measurement | value |
+|---|---|
+| RLS policies in the database | **136** |
+| of those, `USING (true)`, i.e. no restriction beyond the role | **113** |
+| referencing `auth.uid()` | 13 |
+| referencing JWT claims | **0** |
+| referencing `employees` | **0** |
+| referencing `access_level` | **0** |
+
+And the 13 `auth.uid()` policies do less than they look:
+
+```
+client.saved_views   owner_user_id = auth.uid()          <- a REAL per-user restriction
+public.photo_links   auth.uid() IS NOT NULL AND ...      <- "is anyone signed in"
+public.photos        (insert, no qual)
+public.properties    auth.uid() IS NOT NULL
+public.vehicles      auth.uid() IS NOT NULL
+public.visits        auth.uid() IS NOT NULL
+storage.objects x3   bucket_id = ... AND auth.uid() IS NOT NULL
+```
+
+🛑 **`auth.uid() IS NOT NULL` is authentication wearing authorization's clothes.** For the
+`authenticated` role it is exactly equivalent to `USING (true)`, because that role is only reachable
+by a signed-in user in the first place. It reads like a per-user check in a policy listing and
+restricts nothing.
+
+⇒ **Exactly ONE table in the whole estate restricts by who you are: `client.saved_views`**, and what
+it protects is saved UI preferences.
+
+### 12.2 What a signed-in person can do today
+
+| surface | reach of any `authenticated` session |
+|---|---|
+| tables and views readable | **195** |
+| tables writable (INSERT / UPDATE / DELETE) | **49** |
+| functions executable | **180** |
+
+That is the same for every staff member, in every app. Visit Calendar, Admin Review, DERM Tracker,
+Stamp Studio, Client App, Field Portal: one signed-in identity, one undifferentiated surface.
+
+**So what is actually protecting anything today is WHO HAS AN ACCOUNT.** Sign-in is restricted to
+`@ayache.com` / `@unclogme.com`, and the four field technicians hold personal gmail and yahoo
+addresses with no auth account at all. The domain restriction is doing the authorization work by
+accident.
+
+### 12.3 🛑 The consequence: the invite button is the risk, not the pay screen
+
+The obvious worry about an HR app is that it shows compensation. That is the smaller problem, because
+the admin gate handles it.
+
+**The real exposure is account creation.** §8.3 proposes an invite action for an employee with no
+auth account. Today, "no account" is the only thing keeping a technician out of every app in the
+estate. The moment HR mints one on a company address, that person gets the full 195 / 49 / 180
+surface, in one click, with nothing else to stop them.
+
+⇒ **That is not an HR defect. It is the estate's model, and HR is simply the first thing that would
+exercise it.** But it means the invite flow must not ship before someone decides what an invited
+technician is allowed to see.
+
+### 12.4 🛑 And the mirror risk: a privileges UI that does not restrict
+
+If HR writes `access_level` while no app reads it, then setting somebody to `field` **changes
+nothing anywhere**. The screen would report a restriction that does not exist.
+
+That is worse than having no privileges UI at all, because it manufactures confidence. It is the same
+failure shape this estate keeps paying for: a control that looks alive and is inert, like
+`access_level` itself was until 2026-08-31, or the audit trail that could not record an OOM.
+
+⇒ Whatever ships must be honest about which of the two states it is in: **advisory** (HR records the
+intent, nothing enforces it) or **enforced** (apps read it). Never ambiguous.
+
+### 12.5 The shape of the work, and why it is not two days
+
+| piece | size |
+|---|---|
+| the **primitive**: one SECDEF helper resolving caller to `access_level`, pinned `search_path` | small, and **already required for HR's own gate**, so it costs nothing extra |
+| the **policy convention**: what `admin` / `office` / `field` may each do | a decision, not code |
+| **adoption** across the estate | 195 read surfaces, 49 write surfaces, 180 functions |
+
+The primitive is cheap. Adoption is far larger than the HR app and cannot be smuggled into it.
+
+⚠ Two traps waiting in adoption, both already documented in `CLAUDE.md` and both live here:
+
+- **A SECDEF function bypasses RLS.** Wrapping a write in one to "add a permission check" removes
+  every policy that was constraining it. The check has to be additive, not a replacement.
+- **NULL `access_level` means no access**, and NULL is reachable: `webhook-samsara` auto-creates
+  employees without one. Fail-safe, but it means a newly synced driver is invisible to any
+  access-gated surface until a person classifies them.
+
+### 12.6 Recommended sequencing
+
+1. **Build the primitive with the HR gate**, since HR needs it anyway. One helper, one definition of
+   who is `admin` / `office` / `field`.
+2. **Ship HR read-only against it first.** Prove the gate works with real sessions before anything
+   depends on it.
+3. **Do NOT ship the invite flow** until §12.3 is answered. If invites are wanted sooner, restrict
+   the new account rather than granting the default surface.
+4. **Adopt enforcement per app, deliberately**, starting with the surfaces that matter: pay,
+   documents, client data. Each adoption is its own change with its own verification.
+5. Until an app enforces, **say so in the HR UI**. An unenforced privilege is a note, not a control.
+
+⚠ **None of this is a reason to slow the two screens down.** The directory and the detail are
+read-mostly and gated to five people. It is the invite button and the word "privileges" that carry
+the estate-wide consequences.
+
