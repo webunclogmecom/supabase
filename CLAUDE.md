@@ -1263,6 +1263,22 @@ archive branch is what held it), and `needs_populate` must go `TRUE → FALSE` (
 
 **⚠ `clients.status` itself is NOT authoritative for "recurring."** It flip-flopped via competing sync writers: an Airtable-`Recurring` mirror versus an ACTIVE-reset (True Barista's status ping-ponged ACTIVE↔RECURRING ~7× in May 2026, landing RECURRING by chance). The Airtable writer is gone since the 2026-07-24 retirement, so the value no longer moves on its own, but the values it left behind are still untrustworthy. **Authoritative rule (Fred 2026-07-15): a client is recurring ONLY if it's on Yannick's SA-build list OR Fred set it explicitly.** `clients.status = 'RECURRING'` but absent from that list ⇒ a *discrepancy*, not a recurring client (e.g. True Barista 209/212/213-TRUE, no SA job, one-off visits only). Many of those RECURRING values were mirrored from Airtable before it was retired; do not go looking for Airtable to confirm one, it is gone.
 
+**✅ BUT A CLIENT-APP JOB ACTION IS NOW AN AUTHORITATIVE, DURABLE DRIVER OF `clients.status` (2026-09-01).**
+The Client App's confirmed job-action dialogs (create/reopen SA → RECURRING, close last SA → ACTIVE,
+close SC → INACTIVE via `archive-client`, reactivate → ACTIVE via `unarchive-client`) all write through
+`client.update_client_status`, which pins **`status_source='manual'`** — so the `*/5` poll does not
+re-decide them. This does **not** contradict the 2026-07-15 rule: an explicit app SA action IS "Fred/staff
+set it explicitly", and it is the sanctioned *new* way to make a client RECURRING (alongside Yannick's
+SA-build list). The caveat above is about **legacy** values the retired Airtable sync left behind; a
+NEW app-driven change is trustworthy and durable. The transition each action produces is computed once by
+the read-only `client.preview_job_action(client_id, job_id, action)` RPC (`2026-09-01_1630`), so the app
+dialog and the write cannot disagree. App-side contract: `Building Apps/Client App/CLAUDE.md` rule 2n +
+`docs/08-changelog.md`. Spec/plan: `docs/superpowers/specs/2026-09-01-client-job-status-lifecycle-design.md`.
+⚠ **`archive-client` can be refused by Jobber** — a client with open quotes / work requests / unpaid
+invoices cannot be archived (quotes have no archive mutation; invoices are off-limits), so the close-SC
+deactivation fails for such clients. It now returns a structured `archive_blocked_preconditions` error
+listing what to clear. See [[reference_jobber_client_archive_needs_quotes_invoices_cleared]] in memory.
+
 ### GDO permits — location-bound (added 2026-05-25, per Fred)
 
 A GDO (Grease Disposal Operator permit) is issued by Miami-Dade DERM to a **physical
