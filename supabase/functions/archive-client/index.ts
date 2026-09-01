@@ -284,7 +284,34 @@ Deno.serve(async (req) => {
       `Jobber did not complete the archive, so nothing was changed here. (${arch.detail})`, { jobs_closed: closed });
   }
   const aerr = ue(arch.data?.clientArchive);
-  if (aerr) return fail("archive_failed", `Jobber refused: ${aerr}`, { jobs_closed: closed });
+  if (aerr) {
+    // 🛑 STRUCTURED PRE-CONDITION REFUSAL (2026-09-01). Jobber will not archive a client that still
+    // has open work requests, unresolved quotes, or unresolved invoices, and it says so in one
+    // opaque userError string: "Archive, convert, or delete all work requests; Archive, convert, or
+    // delete all quotes; Delete, void, or mark all invoices as paid or as bad debt" (measured on
+    // 112-YA after every job was closed). NONE of those can be cleared from here: the jobber_write
+    // OAuth app cannot read/touch quotes/requests/invoices, and billing is Jobber-mastered (rule 4).
+    // So turn the opaque string into named categories the operator can act on, enriched where OUR DB
+    // can count them, and still write NOTHING — the fail-safe is unchanged.
+    const blockers = parseArchiveBlockers(aerr);
+    if (blockers.length) {
+      const counts = await countArchiveBlockers(clientId); // best-effort; omits a count on any read error
+      const detail = blockers.map((cat) => ({
+        category: cat,
+        source: cat === "work_requests" ? "jobber" : "db",
+        // Requests are not in our DB, so there is never a count for them. quotes/invoices come from
+        // OUR records and may be null if the read failed; null means "not counted", never "zero".
+        count: cat === "quotes" ? (counts.open_quotes ?? null)
+          : cat === "invoices" ? (counts.unresolved_invoices ?? null)
+          : null,
+      }));
+      const human = blockers.map((c) => BLOCKER_LABEL[c]).join(", ");
+      return fail("archive_blocked_preconditions",
+        `${label} cannot be archived yet: Jobber still has open ${human}. These cannot be cleared from here — open the client in Jobber and archive/convert/delete the quotes and work requests and mark the invoices paid, void or bad debt, then retry. Nothing was changed here.`,
+        { blockers: detail, jobber_error: aerr, jobs_closed: closed });
+    }
+    return fail("archive_failed", `Jobber refused: ${aerr}`, { jobs_closed: closed });
+  }
 
   // `&&` (not `||`) so TypeScript narrows the GqlResult union before .data is read.
   const after = await gql(token, READ, { id: link.source_id });
@@ -314,4 +341,52 @@ async function setStatus(jwt: string, clientId: number, status: string, reason: 
   // 🛑 DESTRUCTURE THE ERROR. A discarded error returns data:null and the guard fails OPEN.
   if (error) return { ok: false, message: error.message };
   return { ok: true, result: data };
+}
+
+// ---- structured archive-refusal helpers (2026-09-01) ------------------------
+// Jobber refuses clientArchive until the client has no open work requests, no open quotes and all
+// invoices resolved, reporting ALL of it in ONE opaque userError. parseArchiveBlockers turns that
+// string into stable category keys. It is deliberately substring-based and count-free so it stays
+// correct even when Jobber changes counts or wording, and so the categories our OAuth scope cannot
+// read (requests) or must not touch (invoices) are still surfaced.
+const BLOCKER_LABEL: Record<string, string> = {
+  work_requests: "work requests",
+  quotes: "quotes",
+  invoices: "invoices",
+};
+
+function parseArchiveBlockers(msg: string): string[] {
+  const m = (msg ?? "").toLowerCase();
+  const cats: string[] = [];
+  if (m.includes("work request")) cats.push("work_requests");
+  if (m.includes("quote")) cats.push("quotes");
+  if (m.includes("invoice")) cats.push("invoices");
+  return cats;
+}
+
+// Best-effort enrichment from OUR DB (service_role). A count is OMITTED, never zeroed, on any error.
+// A quote still blocks unless it is archived or converted ("archive, convert, or delete all quotes");
+// an invoice still blocks unless paid, void or bad debt ("delete, void, or mark ... paid ... bad debt").
+// Verified against 112-YA (client 381) 2026-09-01: 7 open quotes, 1 unresolved invoice. NOT IN also
+// excludes NULL-status rows, the conservative direction for a convenience count. Jobber Requests are
+// NOT in our DB, so they are never counted — they come only from the parsed userError text.
+async function countArchiveBlockers(
+  clientId: number,
+): Promise<{ open_quotes?: number; unresolved_invoices?: number }> {
+  const out: { open_quotes?: number; unresolved_invoices?: number } = {};
+  try {
+    const { count, error } = await db.from("quotes")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", clientId)
+      .not("quote_status", "in", "(archived,converted)");
+    if (!error && typeof count === "number") out.open_quotes = count;
+  } catch { /* omit the count, never fail the response */ }
+  try {
+    const { count, error } = await db.from("invoices")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", clientId)
+      .not("invoice_status", "in", "(paid,void,bad_debt)");
+    if (!error && typeof count === "number") out.unresolved_invoices = count;
+  } catch { /* omit the count, never fail the response */ }
+  return out;
 }
