@@ -1,3 +1,15 @@
+-- 🛑 SUPERSEDED FOR ONE VALUE, AND RE-RUNNING THIS FILE WOULD SILENTLY REVERT IT (added 2026-09-01).
+-- The seed below sets ('PALM', 'Palmetto Bay'). That label was WRONG from the moment it was written:
+-- the PALM zone's properties are Boca Raton, Delray Beach, Coconut Creek and Jupiter, it holds ZERO
+-- Palmetto Bay properties, and docs/research/unclogme-design-system.md maps PALM to "Palm Beach
+-- County" while placing Palmetto Bay in the SOUTH zone. Corrected to 'Palm Beach' by
+-- docs/migrations/2026-09-01_2130_zone_palm_label_is_palm_beach.sql.
+--
+-- ⚠ The INSERT is ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label and this file calls itself
+-- "idempotent", which invites a re-run. A re-run restores 'Palmetto Bay' with no error and only an
+-- audit row to show for it. The SQL below is deliberately NOT edited: it is the record of what was
+-- applied on 2026-05-27. If you ever need to re-seed, take the labels from public.zones, not from here.
+
 -- 2026-05-27_zones_reference_table.sql
 --
 -- New canonical reference table `public.zones` to hold UnclogMe operational
