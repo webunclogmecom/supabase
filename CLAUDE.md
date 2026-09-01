@@ -2833,6 +2833,24 @@ limit. `compliant` is therefore computed ONLY from `COALESCE(sc, jf)` and is NUL
 Live census: `service_config` 95, `job` 10, `gdo_permit` 26, **0 of the 26 carrying a verdict**, and
 **0 of 131 permits** now display 0 or NULL.
 
+🛑 **`frequency_days = 0` IS A SENTINEL MEANING "NOT RECURRING", NOT A QUANTITY, AND FRED
+CONFIRMED IT IS TREATED LIKE NULL HERE (2026-09-01).** He raised the opposite reading - *"the values
+can only be null or a numeric value (0 is ok), that means that if we have 0 show 0"* - and it was put
+to him against the measurement, which is decisive:
+
+| | `0` | `null` | positive |
+|---|---|---|---|
+| `jobs.frequency_days` | **522** | 1,114 | 196 |
+| `service_configs.frequency_days` | **4** | 81 | 179 |
+| `gdos.max_frequency_days` | **0** | 5 | 130 |
+
+A zero is how a non-recurring job is stored, 522 times over. All four `service_configs` zeros are
+`Pumping` rows on ACTIVE/PAUSED clients with 0-3 completed visits a year, i.e. on-demand work. **And
+no GDO permit is ever 0**, so "0 is ok" cannot be about the permit value either. Rendering it as a
+quantity prints a sentinel as a number: "Every 0 days".
+⇒ **Fred's decision: 0 falls back to the permit exactly as NULL does** (117-BH shows 90). Do not
+"restore" a literal zero to that column, and do not add a third display state for it.
+
 ⚠ **The displayed number means two different things**, which is Fred's explicit call over a
 qualifier: ours is a SCHEDULE, the permit's is a county-mandated MAXIMUM INTERVAL
 (`reference_gdo_frequency_vs_job_frequency`). **`frequency_source` is the only way to tell them
