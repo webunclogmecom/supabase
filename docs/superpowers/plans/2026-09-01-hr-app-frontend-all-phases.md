@@ -1,6 +1,6 @@
 # HR App Front End, All Phases, Read-Only Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build the complete HR app front end across all three phases, reading real data where it exists, with every Create, Update and Delete control visible but disabled.
 
@@ -54,25 +54,25 @@ Measured 2026-09-01. Getting this wrong is the only way this plan can mislead.
 
 🛑 This is the seventh app joining one shared login. Rule 0b in `Building Apps/CLAUDE.md` lists four ways to break it, and **every one fails silently: green build, no console error, nothing in `audit.logs`.**
 
-- [ ] **Step 1: Wire the Supabase client, then check all four breakers**
+- [x] **Step 1: Wire the Supabase client, then check all four breakers**
 
 1. **No explicit `storageKey`, anywhere.** All apps leave it unset so supabase-js derives the same default, which is what makes the cookie shared. Set one and this app quietly gets a private session and just asks the user to log in again.
 2. **`VITE_PROD_SUPABASE_URL` stays the default `<ref>.supabase.co` form.** The cookie name derives from the URL's *first hostname label*, not the project ref. A custom auth domain silently renames the cookie to `sb-auth-auth-token`.
 3. **Set `auth.userStorage`** so the user object lives in per-origin localStorage. A full session is 4,080 bytes against a ~4,062 byte ceiling: without the split the cookie silently never exists, and every *other* app then serves a stale token.
 4. **The staff gate uses `await supabase.auth.getUser()`, never `session.user`.** On a first cross-origin arrival auth-js substitutes a proxy and any read of `session.user` throws, including through optional chaining. Treat a `getUser()` error as UNKNOWN with a retry state and **never call `signOut()` there**: sign-out is global, so a gate misfire evicts the user from every app on `unclogme.app`.
 
-- [ ] **Step 2: Match the staff allow-list exactly**
+- [x] **Step 2: Match the staff allow-list exactly**
 
 `@unclogme.com` + `@ayache.com`, identical to the other six.
 ⚠ The effective allow-list is the **intersection** of every app's list. A narrower list here narrows the whole estate for everyone.
 
-- [ ] **Step 3: Verify token identity, not "still signed in"**
+- [x] **Step 3: Verify token identity, not "still signed in"**
 
 Open the Apps Hub and the HR app in the same browser and compare the access token each reports.
 Expected: **identical strings**.
 🛑 "Still signed in" is not evidence. An app's own localStorage produces a byte-identical screen while the shared cookie is broken.
 
-- [ ] **Step 4: Create the docs folder and commit**
+- [x] **Step 4: Create the docs folder and commit**
 
 ```bash
 cd "/c/Users/FRED/Desktop/Virtrify/Yannick/Claude/Building Apps"
@@ -92,7 +92,7 @@ git commit -m "Add the HR app and join it to the shared staff session"
 
 One module is the single place that touches Supabase, so the read-only promise is enforceable by inspection rather than by discipline.
 
-- [ ] **Step 1: Build `src/lib/hr-data.ts` with exactly one query**
+- [x] **Step 1: Build `src/lib/hr-data.ts` with exactly one query**
 
 ```ts
 // The ONLY Supabase read in this app. Everything else is derived from it or is an empty state.
@@ -124,7 +124,7 @@ export async function listEmployees(): Promise<Employee[]> {
 }
 ```
 
-- [ ] **Step 2: Add the empty-state registry**
+- [x] **Step 2: Add the empty-state registry**
 
 ```ts
 // Each area with no table behind it names what is missing, so the screen doubles as the
@@ -139,13 +139,13 @@ export const NOT_BUILT = {
 } as const;
 ```
 
-- [ ] **Step 3: Verify no write path exists**
+- [x] **Step 3: Verify no write path exists**
 
 Search the published bundle for `.insert(`, `.update(`, `.upsert(`, `.delete(`, `.rpc(`.
 Expected: **zero matches**.
 🛑 A backtick-quoted or minified call still matches these substrings; if the search returns zero for all five, the read-only promise holds structurally rather than by intention.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add "HR App/docs/08-changelog.md"
@@ -156,7 +156,7 @@ git commit -m "Add the read-only data layer and the empty-state registry"
 
 ## Task 3: Phase 1, the directory screen
 
-- [ ] **Step 1: Build the list**
+- [x] **Step 1: Build the list**
 
 Columns: **Name** (with email beneath), **Role**, **Level**, **Shift**, **Hired**, **Pay**, **Status**.
 - **Level** is `access_level`, real data, rendered as a chip: `admin` / `office` / `field`.
@@ -168,11 +168,11 @@ Filters: free-text search over name, role and email; a role dropdown; a status d
 
 Header counts read `21 total`, `9 active` from the data, not from constants.
 
-- [ ] **Step 2: Verify against reality**
+- [x] **Step 2: Verify against reality**
 
 Open the app and confirm: 21 rows with the status filter set to All, 9 with Active, and that the four technicians show `field`, Fred and Yannick `admin`, Aaron, Diego and Serena `office`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add "HR App/docs/08-changelog.md"
@@ -183,7 +183,7 @@ git commit -m "Add the employee directory, reading real employees"
 
 ## Task 4: Phase 1, the detail screen
 
-- [ ] **Step 1: Build the cards**
+- [x] **Step 1: Build the cards**
 
 - **Hero:** name, role pill, email, phone, shift. 🛑 The pill is the role alone; the `W2 ·` prefix went with the type concept.
 - **Canonical record:** id, full_name, role, status, shift, email, phone, hire_date, access_level. **All real.** Its `Edit` button is present and **disabled**.
@@ -191,7 +191,7 @@ git commit -m "Add the employee directory, reading real employees"
 - **Pay rates:** empty state naming `hr.pay_rate`. `Edit pay` present and disabled.
 - **Documents:** empty state naming `hr.employee_document`. `Upload` present and disabled.
 
-- [ ] **Step 2: Build the Quick actions panel, all disabled**
+- [x] **Step 2: Build the Quick actions panel, all disabled**
 
 Four buttons, each rendered with a tooltip saying why it is disabled:
 
@@ -205,7 +205,7 @@ Four buttons, each rendered with a tooltip saying why it is disabled:
 🛑 **Reassign equipment is not rendered at all.** It is cut from the design, not merely unbuilt, because no equipment data exists and none is planned.
 ⚠ "Update pay" reads **hourly + per-job + per-shift**. The prototype's "per-location" appears nowhere in its own data model.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add "HR App/docs/08-changelog.md"
@@ -218,13 +218,13 @@ git commit -m "Add the employee detail screen with disabled write controls"
 
 ⚠ This screen has **no mockup**. Yannick's HTML does not cover Phase 2, so this is new design work.
 
-- [ ] **Step 1: Build the account panel on the detail screen**
+- [x] **Step 1: Build the account panel on the detail screen**
 
 Fields, all empty states for now: account exists, provider, last sign-in. Each names `auth.users` as the missing source.
 
 ⚠ **There is no username field, and there should not be one.** Supabase Auth identifies people by **email** plus either a provider or a password. If a display name is wanted, that is `employees.full_name`, which the canonical card already shows.
 
-- [ ] **Step 2: Render the three actions, disabled**
+- [x] **Step 2: Render the three actions, disabled**
 
 | action | tooltip |
 |---|---|
@@ -234,7 +234,7 @@ Fields, all empty states for now: account exists, provider, last sign-in. Each n
 
 🛑 **The invite tooltip is not decoration.** Having no account is currently the only thing keeping the four technicians out of every app in the estate. That is worth saying on the button itself so nobody enables it casually.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add "HR App/docs/08-changelog.md"
@@ -247,7 +247,7 @@ git commit -m "Add the Phase 2 credentials panel, actions disabled"
 
 ⚠ No mockup exists for this either. It is the largest piece of new design in the plan.
 
-- [ ] **Step 1: Build the per-person privileges panel**
+- [x] **Step 1: Build the per-person privileges panel**
 
 Two parts, and the distinction between them is the point:
 
@@ -257,7 +257,7 @@ Two parts, and the distinction between them is the point:
 
 Proposed default, to be reviewed rather than assumed correct: `admin` sees all seven, `office` sees all but the Field Portal, `field` sees none today because no technician has an account.
 
-- [ ] **Step 2: Add the banner that keeps this screen honest**
+- [x] **Step 2: Add the banner that keeps this screen honest**
 
 🛑 A privileges screen that does not restrict anything is the most dangerous artefact in this plan. Put a persistent, unmissable banner at the top:
 
@@ -265,7 +265,7 @@ Proposed default, to be reviewed rather than assumed correct: `admin` sees all s
 
 ⚠ Do not soften this into a subtitle. The failure it prevents is somebody believing they have restricted a colleague when they have not.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add "HR App/docs/08-changelog.md"
@@ -276,7 +276,7 @@ git commit -m "Add the Phase 3 privileges screen, clearly marked unenforced"
 
 ## Task 7: The honesty pass
 
-- [ ] **Step 1: Sweep every screen**
+- [x] **Step 1: Sweep every screen**
 
 Confirm, screen by screen:
 - No number, name, rate or date appears that did not come from `public.employees`.
@@ -284,17 +284,17 @@ Confirm, screen by screen:
 - Every disabled control has a tooltip explaining why.
 - No control performs a write.
 
-- [ ] **Step 2: Re-run the write-path search on the published bundle**
+- [x] **Step 2: Re-run the write-path search on the published bundle**
 
 Search for `.insert(`, `.update(`, `.upsert(`, `.delete(`, `.rpc(`.
 Expected: **zero matches**.
 🛑 If any appears, find it and remove it before showing the app to anyone. The read-only promise is the basis on which this plan touches Prod at all.
 
-- [ ] **Step 3: Publish and verify the live bundle**
+- [x] **Step 3: Publish and verify the live bundle**
 
 Verify against the **published bundle**, not the editor preview. The editor can show a build that was never published.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add "HR App/docs/08-changelog.md"
@@ -305,18 +305,18 @@ git commit -m "Verify the app is read-only and every empty state names its sourc
 
 ## Task 8: Documentation
 
-- [ ] **Step 1: Write the app docs**
+- [x] **Step 1: Write the app docs**
 
 In `Building Apps/HR App/docs/`:
 - `02-architecture.md`: one Supabase read, the empty-state registry, why the app is read-only, and the four SSO checks with observed results.
 - `08-changelog.md`: dated entries, newest first.
 - `09-known-issues.md`: seed with the real ones. That pay, documents, emergency contact, auth state and audit history have no backend. That the privileges screen is unenforced and why. That the invite action is blocked deliberately.
 
-- [ ] **Step 2: Note the deferral on the database plan**
+- [x] **Step 2: Note the deferral on the database plan**
 
 Add a line at the top of `docs/superpowers/plans/2026-09-01-hr-app-phase-1.md` recording that it is deferred in favour of this front-end-first plan, and that the empty states here are its acceptance criteria.
 
-- [ ] **Step 3: Commit both repos**
+- [x] **Step 3: Commit both repos**
 
 ```bash
 cd "/c/Users/FRED/Desktop/Virtrify/Yannick/Claude/Building Apps"
@@ -332,10 +332,10 @@ git commit -m "$(printf 'Note that the database plan is deferred behind the fron
 
 ## Done when
 
-- [ ] The directory lists all 21 real people, defaulting to the 9 active.
-- [ ] Levels render correctly: Fred and Yannick `admin`, Aaron, Diego and Serena `office`, the four technicians `field`.
-- [ ] Every screen across all three phases is reachable and reviewable.
-- [ ] Every write control is visible, disabled, and explains itself.
-- [ ] Searching the published bundle for the five write methods returns **zero** matches.
-- [ ] The HR app and the Apps Hub report the **same access token**.
-- [ ] The privileges screen carries its unenforced banner.
+- [x] The directory lists all 21 real people, defaulting to the 9 active.
+- [x] Levels render correctly: Fred and Yannick `admin`, Aaron, Diego and Serena `office`, the four technicians `field`.
+- [x] Every screen across all three phases is reachable and reviewable.
+- [x] Every write control is visible, disabled, and explains itself.
+- [x] Searching the published bundle for the five write methods returns **zero** matches.
+- [x] The HR app and the Apps Hub report the **same access token**.
+- [x] The privileges screen carries its unenforced banner.

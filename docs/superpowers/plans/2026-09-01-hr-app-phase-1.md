@@ -1,5 +1,15 @@
 # HR App Phase 1 Implementation Plan
 
+> **DEFERRED, not cancelled (2026-09-01).** Fred asked for the front end of all three phases
+> first, read-only: *"For now let's work without the Database. I just want the Front End. on All
+> phases."* That work shipped as
+> [`2026-09-01-hr-app-frontend-all-phases.md`](2026-09-01-hr-app-frontend-all-phases.md).
+>
+> This plan stays the correct plan for when the backend is built, and it now has acceptance
+> criteria it did not have before: the live app names `hr.pay_rate`, `hr.employee_document`,
+> `hr.employee_profile`, `auth.users` and `audit.logs` in its empty states. **Those screens are
+> the specification.** Build to what they promise, and each one stops being an empty state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the HR employee directory and detail screens for office/admin staff, backed by a new `hr.*` data layer on Prod.
