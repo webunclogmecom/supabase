@@ -24,6 +24,9 @@ HR
       daily report from admin review with score and bonus
 ```
 
+🛑 **This document is PHASE 1 of a three-phase programme** (people, then credentials, then
+privileges). Read §13 first for the phasing and the one ordering constraint that matters.
+
 **In scope, in order:**
 
 1. **Employee detail**: the record for one person, canonical fields, W2/1099, emergency contact,
@@ -694,4 +697,96 @@ The primitive is cheap. Adoption is far larger than the HR app and cannot be smu
 ⚠ **None of this is a reason to slow the two screens down.** The directory and the detail are
 read-mostly and gated to five people. It is the invite button and the word "privileges" that carry
 the estate-wide consequences.
+
+---
+
+## 13. The programme: three phases
+
+Fred, 2026-09-01:
+
+> *"First, we need a place to put the data of the members of the company, 'Admin, Office, Field',
+> pay rate, roles, types, etc, what you see on the HTML i gave you. Second their Auth credentials,
+> Username, password, email, etc. Third, their privileges, what they can access (which apps), what
+> they can see or not see."*
+
+**Everything above in this document is Phase 1.** The rest of this section is what Phases 2 and 3
+contain, what they depend on, and the one place the stated order has to bend.
+
+### Phase 1: the people
+
+The record of who works here. `public.employees` for the canonical facts, `hr.*` for pay, emergency
+contact and documents. The directory and the detail screens. The `admin` / `office` / `field`
+grouping as **data**.
+
+✅ **Ready to build.** Its prerequisites are done: the `hr` schema exists and is exposed,
+`access_level` is corrected and pinned, Aaron has an address. It depends on nothing in Phases 2
+or 3, and it is gated to five people who already have accounts.
+
+⚠ **`types` is already settled and should not come back by accident.** W2/1099 was dropped as a
+duplicate of role (§5.1, Fred's own call). If "types" in the quote above means something *other*
+than W2/1099, say so, because right now the design has no second type concept.
+
+### Phase 2: the credentials
+
+Who can sign in, how, and the ability to do something about it.
+
+⚠ **"Username" does not exist in our stack.** Supabase Auth identifies people by **email** (or
+phone), plus either a password or a federated provider. There is no separate username to store or
+change. If a display name is wanted that is `employees.full_name`, which Phase 1 already holds.
+
+And the measured reality (§8.3): **every staff account is Google OAuth. Nobody has a password.** So
+Phase 2 is mostly not about passwords at all. It is:
+
+| 2a. **Show** the auth state | read-only: has an account, which provider, last sign-in. **Safe, ship with Phase 1** |
+| 2b. **Act** on it: invite, send recovery, disable | **must wait, see below** |
+
+### Phase 3: the privileges
+
+What each person may reach: which apps, and what within them. This is the largest of the three by a
+wide margin. §12 measures the starting point: **136 policies, 113 of them `USING (true)`, and
+exactly one table in the estate that restricts by who you are.**
+
+It needs two decisions before any code:
+
+1. **Granularity.** Fred named both *"which apps"* and *"what they can see or not see"*. Per-app is
+   coarse and cheap: one gate per app plus a schema-level check. Per-field (can this person see pay?)
+   is much harder and touches every view that serves the field. **These are different projects and
+   should not be conflated.**
+2. **Derived or explicit.** Does the app set follow from `admin` / `office` / `field`, or is it a
+   per-person matrix with overrides? **Recommendation: derive from the three levels**, because a
+   nine-person company does not need a permission matrix, and add explicit overrides only when a real
+   case appears that the levels cannot express.
+
+### 🛑 The one ordering constraint: 2b comes AFTER 3
+
+Fred's order is right except here, and the reason is measured, not theoretical.
+
+**Today, "has no account" is the only thing keeping the four field technicians out of every app in
+the estate.** They are on personal gmail and yahoo addresses, sign-in is domain-restricted, and no
+policy anywhere distinguishes one signed-in person from another. Any account reads 195 objects,
+writes 49 tables and executes 180 functions.
+
+⇒ **An invite button shipped before Phase 3 hands a technician the entire estate in one click.** Not
+because the button is wrong, but because there is nothing downstream to catch it.
+
+So: **2a with Phase 1** (showing auth state is inert and useful), **2b after Phase 3**, or 2b
+earlier only if an invited account is restricted at creation rather than inheriting the default
+surface.
+
+⚠ The same logic applies in reverse to Phase 3 on its own: writing `access_level` while no app reads
+it is a control that does not control (§12.4). Whatever ships must be explicit about whether a
+privilege is **advisory** or **enforced**.
+
+### Dependency summary
+
+```
+Phase 1  people          ready now, depends on nothing
+Phase 2a auth visibility ships with Phase 1, read-only, inert
+Phase 3  privileges      needs the granularity + derived-or-explicit decisions
+Phase 2b invite/recover  needs Phase 3, or a restricted-by-default new account
+```
+
+⚠ The primitive Phase 3 needs, one SECDEF helper resolving caller to `access_level`, is **already
+required by Phase 1's own admin gate**. Build it once, in the open, so Phase 3 adopts it rather than
+inventing a second answer to the same question.
 
