@@ -319,23 +319,85 @@ The button sends *"a templated email asking for upload"*. Two measured facts col
 - **Aaron and Grecia have no email address at all**, so the action cannot even reach them. Seven of
   the nine active employees have one.
 
-So the person being asked for a driver licence has nowhere to put it. Sending the email is the easy
-half; receiving the file is unbuilt. The options, none of which is free:
+So the person being asked for a driver licence has nowhere to put it. **Fred chose the signed
+upload link** (2026-08-31), which is the widest new surface in this design, so it is specified in
+full below rather than left as a bullet.
 
-1. A **signed upload link** in the email, good for one document for a limited time, needing an edge
-   function to mint it and a public endpoint to receive it.
-2. **Reply with the attachment**, and an admin uploads it by hand. No new surface, but the "request"
-   is then just a mailto and the upload stays manual.
-3. **Drop the button** for the first build and have admins upload documents they already hold.
+### 8.2 Signed document upload
 
-⚠ Option 1 is a customer-facing-shaped surface for people who cannot log in, which is the widest
-thing in this whole design. It should not be chosen by default just because the mockup has a button.
+**One sentence:** an admin requests a document, the employee gets an email with a one-time link, and
+they upload a single file without ever logging in.
 
-⇒ **Recommendation: option 3 for the two days**, with option 1 specified separately if the request
-flow is genuinely wanted. Sending email at all needs an edge function regardless: `RESEND_API_KEY`
-is an edge secret and is not in vault, so Postgres cannot send directly. Four functions already do
-this (`send-derm-email`, `send-visit-photos-email`, `health-escalate`, `auth-recovery-watch`) and
-are the pattern to copy.
+#### 🛑 The page CANNOT be served by the edge function
+
+`*.supabase.co` force-rewrites any `text/html` response to `text/plain` + `nosniff`, on both edge
+functions and storage. It is a domain-wide anti-abuse rule and it was proven on both surfaces on
+2026-07-17, when a plan to serve the DUMP Schedule app from an edge function was abandoned for
+exactly this reason. A browser would show the page source instead of rendering it.
+
+⇒ **Two halves, and they live in different places:**
+
+| half | where | why |
+|---|---|---|
+| the upload **page** | a public route in the HR Lovable app, Cloudflare-fronted (`*.unclogme.app`) | only a real host renders HTML |
+| the upload **API** | edge function `hr-document-upload`, `verify_jwt = false` | JSON and multipart are unaffected by the rewrite |
+
+#### The token is the gate, and origin is not a substitute
+
+21 edge functions already run `verify_jwt = false`, gated by a shared secret (`x-rpa-key`), an
+origin allowlist (`get-derm-doc`, `get-permit-doc`), or a manually verified user token. **This one
+cannot use any of them.** The caller is a member of the public with no account, and an `Origin`
+header is trivially forged outside a browser, so origin checking here is CSRF defence in depth and
+**not authentication**. The token is the only thing standing between the internet and the bucket.
+
+- **32 random bytes, base64url.** Guessing is the only attack, so entropy is the control.
+- **Stored as a SHA-256 hash, never in plaintext.** `hr.document_request` holds `token_sha256`, and
+  lookup is BY that hash. If the table is ever read by the wrong person, the tokens in it are not
+  usable. Same reasoning as never storing a password.
+- **Single use** (`used_at`), **time limited** (`expires_at`, default 7 days), **revocable**
+  (`revoked_at`) so an admin can kill a link that went to the wrong address.
+- 🛑 **An absent token is an explicit reject, never a fall-through.** This estate has already
+  shipped a fail-open `KEY && ...` gate once; `verify_jwt = false` means nothing else is checking.
+
+#### What the public endpoint must never do
+
+- **Never return employee data.** `GET` returns `{doc_type, expires_at}` and nothing else. Not the
+  name, not the email, not the role. A token proves someone holds a link, not who they are.
+- **Never accept a storage path, a filename, or a doc_type from the client.** All three are derived
+  server-side from the token row. The uploader choosing the path is how you get traversal and
+  overwrite of somebody else's document.
+- **Never list, read or download.** Upload only. There is no `GET` for file contents.
+- **Never reuse.** One token, one document, one write.
+
+#### Storage and validation
+
+Files land in the **private** HR bucket (§6) at a server-derived path keyed on the request id.
+Content type is checked against an allowlist (PDF, JPEG, PNG) and a size cap, both enforced in the
+function rather than trusted from the client. On success the function writes the
+`hr.employee_document` row and stamps `used_at` in the same operation, so a half-finished upload
+cannot leave a consumed token with no document or a document with a still-live token.
+
+⚠ **CORS: reflect the request headers, do not hand-write the allowlist.** A hand-written
+`Access-Control-Allow-Headers` once blocked every app call at the preflight while manual probes
+returned 200, because the failure is invisible to curl.
+
+#### The table
+
+`hr.document_request`: `id, employee_id, doc_type, token_sha256, expires_at, used_at, revoked_at,
+created_by, created_at`. **Opts IN to audit** under rule 8: it is the record of who asked whom for
+what, and when a link was used, which is exactly the trail worth keeping. RLS admin-only for reads;
+the edge function reaches it as `service_role`.
+
+#### Sending the email
+
+`RESEND_API_KEY` is an edge secret and is **not in vault**, so Postgres cannot send. Four functions
+already do this (`send-derm-email`, `send-visit-photos-email`, `health-escalate`,
+`auth-recovery-watch`) and are the pattern to copy.
+
+⚠ **Aaron and Grecia have no email address**, so the request action must refuse loudly for them
+rather than silently creating a token nobody receives. Seven of the nine active employees can be
+reached.
+⚠ Test sends go to `fred@ayache.com` only, never a real employee address, per the standing rule.
 
 ---
 
@@ -356,7 +418,7 @@ are the pattern to copy.
 
 ## 10. Open
 
-- 🛑 **Needs Fred: what "Request document" actually does** (§8.1). The employee it emails cannot log in and has nowhere to upload. Recommendation is to cut the button for now; the alternative is a signed upload link, which is the widest new surface in this design.
+- ✅ **"Request document" is DECIDED**: signed upload link, specified in §8.2 (Fred, 2026-08-31). It is the widest new surface here, so build it last and review the token handling before it is exposed.
 - **Driver / Helper / Plumber** is deferred by decision 3. When it returns, the sweep is small and
   already measured: no CHECK constraint on `role`, no function reads it, and all four dependent
   views (`client.employees`, `ops.v_calendar_driver`, `ops.v_calendar_visit`, `ops.v_driver_kpi`)
