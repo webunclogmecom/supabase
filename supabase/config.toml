@@ -699,6 +699,15 @@ verify_jwt = true
 [functions.archive-client]
 verify_jwt = false
 
+# unarchive-client: the Clients App "Reactivate" entry — pressed as Reopen on the Service Call of an
+# INACTIVE client. Un-archives the client in JOBBER FIRST, verifies by re-reading isArchived, reopens
+# ONLY the passed Service Call (SA/legacy jobs stay closed by design), records it, and only then flips
+# public.clients.status to ACTIVE through the 3-arg client.update_client_status (pins
+# status_source='manual'). The mirror of archive-client. verify_jwt = false matches its siblings: the
+# staff gate is IN the function (auth.getUser + @ayache.com / @unclogme.com), stricter than the gateway's.
+[functions.unarchive-client]
+verify_jwt = false
+
 # save-calendar-task: the Visit Calendar's SYNCHRONOUS Calendar Tasks saga (2026-08-26). The office
 # creates/edits/completes/deletes a task; it is pushed to Jobber as a Jobber TASK, READ BACK to
 # verify, and only then recorded through ops.fn_record_calendar_task. On any Jobber failure it
