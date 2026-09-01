@@ -5,7 +5,7 @@ Severity: high / production down. Project is on the Pro plan.*
 
 ---
 
-**Subject:** Auth (GoTrue) returning 503 on all /auth/v1/* for hours — data plane healthy, restart did not fix
+**Subject:** Auth (GoTrue) down ~24h — 503 on all /auth/v1/* while the data plane is healthy; restart did not fix
 
 **Project ref:** `wbasvhvvismukaqdnouk`
 **Region:** us-east-1
@@ -13,11 +13,12 @@ Severity: high / production down. Project is on the Pro plan.*
 
 **Summary**
 
-Every endpoint under `/auth/v1/*` on our project has been returning **HTTP 503** for several hours
-(first seen the morning of 2026-08-31 ET, still down as I write this). No user can sign in, and our
-apps that verify sessions via `getClaims()` (which fetches `/auth/v1/.well-known/jwks.json`) are all
-broken. **Postgres and PostgREST are completely healthy the entire time** — `/rest/v1/*` responds
-normally — so this is isolated to the Auth service.
+Every endpoint under `/auth/v1/*` on our project has been returning **HTTP 503 continuously for
+about 23 hours** — first seen the morning of **2026-08-31 ET** and still down now (**2026-09-01,
+~09:00 ET**), so this has run into a second business day. No user can sign in, and our apps that
+verify sessions via `getClaims()` (which fetches `/auth/v1/.well-known/jwks.json`) are all broken.
+**Postgres and PostgREST are completely healthy the entire time** — `/rest/v1/*` responds normally —
+so this is isolated to the Auth service.
 
 **Exact response from the gateway** (GET `/auth/v1/health` with a valid apikey):
 
@@ -48,8 +49,9 @@ the database and PostgREST are fine).
   continued to 503 immediately afterward and still does.
 
 **Impact**
-- Production. Every staff member is locked out of every app that uses Supabase Auth. We have had to
-  stand up a temporary workaround to keep operating, and we need normal auth back.
+- Production, now spanning a second business day. Every staff member is locked out of every app that
+  uses Supabase Auth. We have had to stand up a temporary workaround to keep operating, and we need
+  normal auth back. Please treat this as an active production outage.
 
 **Request**
 - Please investigate and restart / recover the GoTrue (Auth) service for
@@ -60,7 +62,7 @@ the database and PostgREST are fine).
 **Reference request IDs** (from earlier probes, in case they help you trace it):
 - `01a05872-089d-71e2-b9b4-9ff5a4a54a52`
 - `01a05863-9c84-7af1-8f99-1f761e970915`
-- A current failing request also carries `CF-Ray: a33fe701debe028a-MAD` (2026-08-31 23:44 UTC).
+- A current failing request carries `CF-Ray: a3447e8c7cd7cc68-MAD` (2026-09-01 13:06 UTC).
 
 Thank you — happy to provide anything else that helps.
 
