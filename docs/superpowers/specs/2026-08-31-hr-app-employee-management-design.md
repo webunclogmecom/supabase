@@ -162,20 +162,31 @@ data fix rather than a schema change.
 That is a genuine simplification. It removes the one migration that would have touched a shared
 table every app reads.
 
-🛑 **BUT IT LEAVES A HOLE THAT NEEDS YANNICK, BECAUSE HIS RECAP ASKED FOR W2/1099.** His
-Slack message lists, verbatim, *"All the docs and info: w2 / 1099 / Emergency contact / docs"*, and
-his mockup renders the W2 or 1099 badge on every row of the directory AND uses it to choose which
-document checklist to show. With no `employment_type` anywhere, three things follow:
+✅ **AND THE W2/1099 CONCEPT GOES WITH IT. RESOLVED, not left open.**
 
-- the **Type** column in the directory has nothing to render;
-- the detail hero pill (`W2 · DRIVER` in his design) loses half its content;
-- `hr.document_requirement` (§6) cannot key on employment type, so the W2 and 1099 checklists
-  collapse into one list for everybody.
+Yannick's recap asks for it in writing (*"All the docs and info: w2 / 1099 / ..."*) and his mockup
+renders it twice: a **Type** column on every directory row, and a `W2 · DRIVER` pill on the detail
+hero. Fred, 2026-08-31:
 
-⇒ **Do not silently build around this.** Either W2/1099 is genuinely not needed, in which case the
-Type column and the split checklists come out of the design too, or it is needed and wants a home.
-If it returns, `hr.employee_profile` is the cheaper option now that no canonical change is in
-scope. Flagged for Fred and Yannick to settle; it does not block the prerequisites.
+> *"Drop it, we don't need it, remove it where it's shown, including it's column on the table, a
+> employee type is it's role actually, yannick just created it twice."*
+
+⇒ **Employee type and role are the same concept.** The prototype models a plumber as a 1099
+subcontractor and a driver as W2, so the tax status was never independent information: it is
+implied by what the person is. Carrying both would be storing the same fact twice, which rule 3
+forbids anyway.
+
+**So the following come OUT of Yannick's design, deliberately:**
+
+| removed | was |
+|---|---|
+| the **Type** column in the directory table | a W2 / 1099 badge per row |
+| the `W2 · DRIVER` prefix on the detail hero pill | becomes just the role |
+| the W2-vs-1099 **split document checklists** | see §6 |
+| `hr.document_requirement` | dropped from the schema entirely |
+
+⚠ **This is a change to Yannick's design, made by Fred, not an omission.** Anyone comparing the
+built screens against `unclogme-hr_19 (1).html` will find the Type column missing; this is why.
 
 ### 5.2 `hr` schema
 
@@ -184,9 +195,8 @@ scope. Flagged for Fred and Yannick to settle; it does not block the prerequisit
 | `hr.employee_profile` | 1:1 with `employees` | emergency contact name, relationship, phone; HR-only notes |
 | `hr.pay_rate` | 1:1 with `employees` | `hourly_rate`, `per_job_rate`, `per_shift_rate`, `salary_amount`, `salary_period`, `task_based` |
 | `hr.employee_document` | many per employee | `doc_type`, `storage_path`, `uploaded_at`, `uploaded_by`, `deleted_at` |
-| `hr.document_requirement` | reference | `employment_type` → required `doc_type`, so the W2 and 1099 checklists are data, not hardcoded arrays |
 
-**All four opt IN to audit** under rule 8. Pay and personal documents are exactly what that rule
+**All three opt IN to audit** under rule 8. Pay and personal documents are exactly what that rule
 exists for, and none of them is a sync-only append table.
 
 Money is `NUMERIC(12,2)` (rule 7). Nothing hard-deletes (rule 6): documents get `deleted_at`.
@@ -220,19 +230,17 @@ served through signed URLs; `hr.employee_document` holds only metadata and the s
 🛑 **This must be stated rather than inherited.** Three of the six existing buckets are public, so
 the ambient default in this project is the wrong one for driver licences, I-9s and W-4s.
 
-Document sets, from the prototype and **pending Yannick's confirmation**:
+**There is no required-document checklist.** The W2 and 1099 sets in the prototype were keyed on
+employee type, which was dropped as a duplicate of role (§5.1), so `hr.employee_document` is simply
+the list of documents held for a person, each with a type label, uploaded and viewed by hand.
 
-| W2 | 1099 |
-|---|---|
-| Driver license, I-9, W-4, Direct deposit, Handbook acknowledgement | Driver license, W-9, Liability insurance, Vehicle insurance, Contract |
+⚠ **If a required set is wanted later it keys on `role`**, per Fred's reasoning that type and role
+are the same thing. It is deliberately not built now: today every active technician is `Technician`
+and the Driver / Helper / Plumber split is deferred (decision 3), so a role-keyed requirement table
+would have exactly one meaningful row and would encode a guess about which roles are contractors.
 
-These live in `hr.document_requirement` so changing them is a data edit, not a deploy.
-
-🛑 **THIS TABLE CURRENTLY HAS NOTHING TO KEY ON.** It was designed as `employment_type` →
-required `doc_type`, and `employment_type` was dropped (§5.1). Until that is settled the options
-are one flat list for everybody, or keying on something else such as `employees.role`. **Left
-open deliberately rather than guessed at**, because picking wrong here means asking a contractor
-for an I-9.
+🛑 **Getting that wrong means asking a contractor for an I-9**, which is why it waits for the
+role vocabulary rather than being approximated now.
 
 ---
 
@@ -281,6 +289,54 @@ inside an `hr.*` view adds an invoker-side EXECUTE check to the read path, which
 started returning `42501` to read-only roles. Any helper reached from a view is SECDEF with a
 pinned `search_path`.
 
+### 8.1 The five Quick actions
+
+Yannick's detail screen carries a Quick actions card. Each was checked against what the database and
+the estate can actually support:
+
+| button | verdict |
+|---|---|
+| **Edit canonical fields** | Buildable. `authenticated` holds SELECT only on `employees`, so it is a SECDEF RPC, not a PostgREST write. `updated_at` is trigger-managed and must not be set by hand (rule 7). |
+| **Update pay** | Buildable, but **its subtitle is wrong**. See below. |
+| **Reassign equipment** | 🛑 **Nothing behind it.** Equipment is a separate module Yannick deferred; no catalogue, no assignment and no handoff data exists. Cut it from the first build rather than shipping a dead button. |
+| **Request document** | 🛑 **Has no upload path.** See below. This is the one that needs a decision. |
+| **View audit log** | Buildable, with a wrinkle: the `audit` schema is **not exposed to PostgREST**, so the app cannot read `audit.logs` directly even though `authenticated` holds SELECT on it. It needs an `hr` view or RPC. 90 audit rows already exist for `employees`. ⚠ Read the actor from `jwt_claims->>'email'`, never `changed_by`, which has been NULL for all 54,756 rows since the trigger was written. |
+
+**"Update pay" says `Hourly + per-location + per-shift`, and per-location does not exist.** The
+string appears in exactly three places in the prototype (a schema comment, a component comment and
+this subtitle) and **nowhere in the data model or the edit modal**, both of which use
+`per_job_rate`. Yannick's own Slack recap says *"pay / job bonus"*. So it is a stale label and the
+three rates are **hourly, per-job, per-shift**, as §5.2 has them. Fix the label; do not build a
+per-location rate.
+
+#### 🛑 "Request document" assumes the employee can upload, and they cannot
+
+The button sends *"a templated email asking for upload"*. Two measured facts collide:
+
+- **The app is office/admin only** (decision 2), and **no field technician has an auth account**.
+  Emails are domain-restricted to `@ayache.com` / `@unclogme.com`; the technicians hold personal
+  gmail and yahoo addresses.
+- **Aaron and Grecia have no email address at all**, so the action cannot even reach them. Seven of
+  the nine active employees have one.
+
+So the person being asked for a driver licence has nowhere to put it. Sending the email is the easy
+half; receiving the file is unbuilt. The options, none of which is free:
+
+1. A **signed upload link** in the email, good for one document for a limited time, needing an edge
+   function to mint it and a public endpoint to receive it.
+2. **Reply with the attachment**, and an admin uploads it by hand. No new surface, but the "request"
+   is then just a mailto and the upload stays manual.
+3. **Drop the button** for the first build and have admins upload documents they already hold.
+
+⚠ Option 1 is a customer-facing-shaped surface for people who cannot log in, which is the widest
+thing in this whole design. It should not be chosen by default just because the mockup has a button.
+
+⇒ **Recommendation: option 3 for the two days**, with option 1 specified separately if the request
+flow is genuinely wanted. Sending email at all needs an edge function regardless: `RESEND_API_KEY`
+is an edge secret and is not in vault, so Postgres cannot send directly. Four functions already do
+this (`send-derm-email`, `send-visit-photos-email`, `health-escalate`, `auth-recovery-watch`) and
+are the pattern to copy.
+
 ---
 
 ## 9. Prerequisites outside the migrations
@@ -298,9 +354,9 @@ pinned `search_path`.
 
 ---
 
-## 10. Open, needs Yannick
+## 10. Open
 
-- **The document sets** in §6: confirm or amend.
+- 🛑 **Needs Fred: what "Request document" actually does** (§8.1). The employee it emails cannot log in and has nowhere to upload. Recommendation is to cut the button for now; the alternative is a signed upload link, which is the widest new surface in this design.
 - **Driver / Helper / Plumber** is deferred by decision 3. When it returns, the sweep is small and
   already measured: no CHECK constraint on `role`, no function reads it, and all four dependent
   views (`client.employees`, `ops.v_calendar_driver`, `ops.v_calendar_visit`, `ops.v_driver_kpi`)
