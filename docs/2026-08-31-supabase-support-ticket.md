@@ -70,3 +70,11 @@ Thank you — happy to provide anything else that helps.
 
 *Note for us: attach a fresh failing `CF-Ray` / timestamp when you actually submit, since the ones
 above will be old by then. The `auth_recovery_check.js` probe prints the current status any time.*
+
+---
+
+## ✅ RESOLVED 2026-09-01
+
+**Root cause (Supabase support, Richard Kasprzak):** an invalid duration in the User Sessions config crashed GoTrue on startup - `GOTRUE_SESSIONS_TIMEBOX` could not be parsed (`time: invalid duration`). The Auth > Sessions fields are in **HOURS** (max 8760); they had been set to `sessions_timebox=2592000` and `sessions_inactivity_timeout=1209600`, i.e. **30 days and 2 weeks expressed in SECONDS** dropped into the HOURS fields. As hours, `2592000h` (~296 years) **overflows Go`s `time.Duration`** (int64 ns, ~292y max), so GoTrue failed config load and every `/auth/v1/*` returned 503. It stayed dormant until a restart re-parsed the config on the morning of 2026-08-31.
+
+**Fix:** set Time-box user sessions = **720** h (30 days) and Inactivity timeout = **168** h (1 week) in Auth > Sessions, and Save. GoTrue restarted with valid `720h`/`168h` durations. Verified: `config/auth` shows `sessions_timebox=720`, `sessions_inactivity_timeout=168`; the recovery probe returned `RECOVERED` (jwks/health/settings 200, login processing); a real staff login succeeded. Emergency no-auth mode was then fully reverted.
