@@ -501,20 +501,37 @@ mail is the last line of defence against a socially-engineered admin.
 ⇒ Rate-limit per employee, and keep the recovery link lifetime short. Supabase's default is
 generous; NIST's "minutes to a few hours" is the target.
 
-#### 🛑 None of this is buildable today: Auth is DOWN
+#### ✅ Auth was down, and came back on 2026-09-01
 
-`public.auth_recovery_state` reads **`status = 'down'`** as of **2026-09-01 13:17 UTC**, with jwks,
-health, login and settings all returning 503 and only the data plane healthy. The outage began
-2026-08-31 and `auth-recovery-watch` has not yet sent its recovery mail.
+**Superseded, and kept because the reasoning still applies next time.** This section previously read
+*"None of this is buildable today: Auth is DOWN"*, with `public.auth_recovery_state` at
+`status='down'` and the staff apps in the temporary no-auth "Default" mode.
 
-Two consequences, and the second is the more serious:
+**Verified live 2026-09-01 10:58 ET** with `scripts/probes/auth_recovery_check.js`: jwks.json 200
+with a real key, `/auth/v1/health` 200, `/auth/v1/settings` 200, and the login probe returning 400
+on bogus credentials, which is GoTrue actually processing again rather than merely answering. The
+emergency window was closed at **10:11 ET** (`app_config.emergency_access_until` set to the
+`2000-01-01` sentinel), so the apps are back on normal login.
 
-1. **Every admin auth API goes through GoTrue**, so invites, recovery links and account creation
-   cannot be built or tested until it is back. Aaron's account cannot be created either.
-2. 🛑 **The staff apps are in the temporary no-auth "Default" mode**, so the HR app's `admin` /
-   `office` gate is **not enforceable right now**. The HR app must not be pointed at real data until
-   Auth is back and the gate is verified working, because that gate is the only thing between a
-   signed-in technician and everybody's pay.
+⇒ **The blocker is lifted.** Invites, recovery links and Aaron's account can all be built and
+tested, and the `admin`/`office` gate is enforceable again.
+
+🛑 **BUT THE WATCHDOG NEVER FIRED, AND STILL CANNOT.** `auth-recovery-watch` was deployed on
+2026-08-31 to email Fred the moment Auth returned. It never did, and the reason is not a bug in the
+function: **it has no cron job.** Checked against all 24 rows of `cron.job`, none is auth-related,
+while `public.fn_request_auth_recovery_watch` exists and the edge function is deployed. It ran once
+by hand at 09:17 ET, recorded `down`, and was never invoked again, so `auth_recovery_state` sat
+stale at `down` for the hour and three quarters AFTER Auth had recovered.
+
+⇒ This is the `never-executed` class exactly: a surface that is deployed, correct, and has never
+run. `scripts/checks/never-executed.mjs` exists to make that state visible. **Arming it is a
+one-line cron and it is the whole point of having built it**, because the next outage gets the same
+silence otherwise.
+
+⚠ Also left behind by the emergency mode: `public.emergency_whoami()` still exists. It is
+SECURITY **INVOKER**, `anon` cannot execute it, and it only reflects the caller's own JWT claims
+back at them, so it is leftover scaffolding rather than exposure. The documented revert order says
+to drop it.
 
 #### Sources
 
@@ -545,8 +562,11 @@ Two consequences, and the second is the more serious:
 3. ✅ **Aaron's email is set to `aaron@unclogme.com`** (`2026-09-01_0930`), so all five admin and
    office employees now resolve by JWT email. ⏳ **His auth account still has to be created**,
    which needs GoTrue back up.
-4. 🛑 **Supabase Auth is DOWN** (§8.3). Nothing auth-shaped can be built or tested, and the
-   app's admin gate is unenforceable until it returns.
+4. ✅ **Supabase Auth is BACK** as of 2026-09-01, verified live (§8.3). The emergency window is
+   closed and the apps are on normal login, so the gate is enforceable and auth work is unblocked.
+5. ⏳ **Arm `auth-recovery-watch` with a cron job.** It is deployed but unscheduled, so it never
+   sent the recovery mail it exists to send, and the next outage would be equally silent.
+6. ⏳ **Drop `public.emergency_whoami()`**, the last step of the documented emergency revert.
 
 ---
 
