@@ -102,7 +102,7 @@ WITH last_completed AS (
             WHEN c.client_code ~~ '000-%'::text THEN NULLIF(jb.frequency_days, 0)
             ELSE COALESCE(NULLIF(jb.frequency_days, 0), sc.frequency_days, oc.median_gap_days)
         END AS frequency_days,
-    sc.equipment_size_gallons,
+    COALESCE(prop.grease_trap_size_gallons, primary_prop.grease_trap_size_gallons, sc.equipment_size_gallons) AS equipment_size_gallons,
     sc.first_visit AS sc_first_visit,
     sc.last_visit AS sc_last_visit,
     sc.stop_date AS sc_stop_date,

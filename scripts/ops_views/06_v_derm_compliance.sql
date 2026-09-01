@@ -42,7 +42,7 @@ WITH last_manifest AS (
           WHERE g.client_id = c.id AND g.status = 'ACTIVE'::text
           ORDER BY g.id
          LIMIT 1) AS permit_expiration,
-    sc.equipment_size_gallons,
+    COALESCE(p.grease_trap_size_gallons, ( SELECT ps.grease_trap_size_gallons FROM properties ps WHERE ps.client_id = c.id AND ps.grease_trap_size_gallons IS NOT NULL ORDER BY ps.is_primary DESC, ps.id LIMIT 1), sc.equipment_size_gallons) AS equipment_size_gallons,
     sc.frequency_days,
     lm.last_manifest_date,
     lm.total_manifests,

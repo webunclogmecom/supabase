@@ -28,7 +28,7 @@ WITH actual_last_visit AS (
     cc.phone,
     sc.service_type,
     sc.frequency_days,
-    sc.equipment_size_gallons,
+    COALESCE(p.grease_trap_size_gallons, ( SELECT ps.grease_trap_size_gallons FROM properties ps WHERE ps.client_id = c.id AND ps.grease_trap_size_gallons IS NOT NULL ORDER BY ps.is_primary DESC, ps.id LIMIT 1), sc.equipment_size_gallons) AS equipment_size_gallons,
     ( SELECT g.gdo_number
            FROM gdos g
           WHERE g.client_id = c.id AND g.status = 'ACTIVE'::text

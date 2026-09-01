@@ -20,7 +20,7 @@ SELECT c.id,
     'Pumping'::text AS service_type,
     g.gdo_number AS permit_number,
     g.permit_expiration,
-    sc.equipment_size_gallons,
+    COALESCE(p.grease_trap_size_gallons, ( SELECT ps.grease_trap_size_gallons FROM properties ps WHERE ps.client_id = c.id AND ps.grease_trap_size_gallons IS NOT NULL ORDER BY ps.is_primary DESC, ps.id LIMIT 1), sc.equipment_size_gallons) AS equipment_size_gallons,
     sc.frequency_days,
     g.permit_expiration - CURRENT_DATE AS days_until_expiry,
         CASE
