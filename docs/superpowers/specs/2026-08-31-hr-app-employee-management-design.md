@@ -46,7 +46,7 @@ from Admin Review is a later phase and is only referenced here where it constrai
 | 2 | **Only office/admin staff use the app.** The directory nonetheless lists **every hired person**, technicians included | Fred |
 | 3 | **Leave `employees.role` alone.** Driver / Helper / Plumber is deferred; roles stay `Technician`, `Admin`, `Owner`, `Office` | Fred |
 | 4 | **Pay is current-value only** for now. Effective dating comes with the bonus report | Fred |
-| 5 | `employment_type` (W2/1099) goes on **canonical `public.employees`** | Fred, after the option was put to him |
+| 5 | **`employment_type` is DROPPED.** *"skip it we don't need it"* (Fred, 2026-08-31). No canonical change at all | Fred |
 | 6 | Reads through `hr.*` views, writes through SECDEF RPCs | proposed, unchallenged |
 
 **Decision 2 is the one to keep straight: the gate is on the CALLER, not on the rows.** Office and
@@ -152,20 +152,30 @@ six corrections above.
 
 ## 5. Data model
 
-### 5.1 Canonical change, one column
+### 5.1 No canonical change
 
-```sql
-ALTER TABLE public.employees ADD COLUMN employment_type text;   -- 'W2' | '1099'
-```
+Fred, 2026-08-31: *"about the employment_type, skip it we don't need it."* So **`public.employees`
+is not altered by this work at all.** Combined with decision 3 (leave `role` alone), the canonical
+table is untouched: the only change it received is the `access_level` correction in §4, which is a
+data fix rather than a schema change.
 
-Rule 2 (3NF): `employment_type` depends on the whole key and nothing else. It is a fact about the
-person in the same way `hire_date` is, not state belonging to the HR app, and payroll or finance
-should not have to join into HR to ask whether somebody is a contractor. Rule 8 needs no action:
-the table is already audited, so the new column is captured in the full-row JSONB automatically.
+That is a genuine simplification. It removes the one migration that would have touched a shared
+table every app reads.
 
-⚠ It is nullable at first. The 21 existing rows have no value, and guessing W2 for everyone would
-be inventing compliance data. The detail screen shows "not set" until somebody sets it, and the
-document checklist (§6) shows nothing until it is known.
+🛑 **BUT IT LEAVES A HOLE THAT NEEDS YANNICK, BECAUSE HIS RECAP ASKED FOR W2/1099.** His
+Slack message lists, verbatim, *"All the docs and info: w2 / 1099 / Emergency contact / docs"*, and
+his mockup renders the W2 or 1099 badge on every row of the directory AND uses it to choose which
+document checklist to show. With no `employment_type` anywhere, three things follow:
+
+- the **Type** column in the directory has nothing to render;
+- the detail hero pill (`W2 · DRIVER` in his design) loses half its content;
+- `hr.document_requirement` (§6) cannot key on employment type, so the W2 and 1099 checklists
+  collapse into one list for everybody.
+
+⇒ **Do not silently build around this.** Either W2/1099 is genuinely not needed, in which case the
+Type column and the split checklists come out of the design too, or it is needed and wants a home.
+If it returns, `hr.employee_profile` is the cheaper option now that no canonical change is in
+scope. Flagged for Fred and Yannick to settle; it does not block the prerequisites.
 
 ### 5.2 `hr` schema
 
@@ -218,6 +228,12 @@ Document sets, from the prototype and **pending Yannick's confirmation**:
 
 These live in `hr.document_requirement` so changing them is a data edit, not a deploy.
 
+🛑 **THIS TABLE CURRENTLY HAS NOTHING TO KEY ON.** It was designed as `employment_type` →
+required `doc_type`, and `employment_type` was dropped (§5.1). Until that is settled the options
+are one flat list for everybody, or keying on something else such as `employees.role`. **Left
+open deliberately rather than guessed at**, because picking wrong here means asking a contractor
+for an I-9.
+
 ---
 
 ## 7. Access model
@@ -269,11 +285,16 @@ pinned `search_path`.
 
 ## 9. Prerequisites outside the migrations
 
-1. **Expose the `hr` schema to PostgREST.** This is a Supabase project API setting, not a
-   migration, and nothing works until it is done.
-2. **Correct the six `access_level` rows** (§4) and validate the CHECK constraint.
-3. **Give Aaron a company email and an auth account**, or he is in the office group and still
-   cannot open the app.
+1. ✅ **DONE 2026-08-31.** `hr` schema created and exposed to PostgREST. `db_schema` went
+   `public,graphql_public,customer,derm,ops,client` → the same list plus `hr`, appended by
+   read-modify-write so no existing entry could be dropped. All six exposed schemas verified still
+   serving afterwards with `scripts/probes/rest_smoke.mjs`.
+2. ✅ **DONE 2026-08-31.** All six `access_level` rows corrected and
+   `employees_access_level_chk` added VALIDATED (`2026-08-31_1330`). `scripts/populate/populate.js`
+   changed in the same commit, because it was the writer that produced `dev` and would have
+   re-introduced it.
+3. ⏳ **Still open: give Aaron a company email and an auth account**, or he is in the office
+   group and still cannot open the app.
 
 ---
 

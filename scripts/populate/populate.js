@@ -442,7 +442,13 @@ async function step2_employees() {
       phone: null,
       email: ju.email?.address || null,
       hire_date: null,
-      access_level: ju.isAccountOwner || ju.isAccountAdmin ? 'dev' : 'office',
+      // 🛑 'dev' was retired 2026-08-31: employees.access_level is pinned by
+      // employees_access_level_chk to admin | office | field, and writing 'dev' now raises 23514.
+      // ⚠ This mapping is a JOBBER-PERMISSION heuristic and is NOT the business grouping. It puts
+      // every Jobber account admin in `admin`, which is wrong for Aaron, Diego and Serena (office).
+      // access_level gates the HR app, so it is a deliberate human assignment: treat whatever this
+      // bulk load produces as a starting point that a person must then correct.
+      access_level: ju.isAccountOwner || ju.isAccountAdmin ? 'admin' : 'office',
       notes: null,
       _airtable_id: null,
       _samsara_id: null,
