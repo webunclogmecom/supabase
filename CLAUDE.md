@@ -2769,6 +2769,35 @@ permits**, so a backlog read off it was understated by up to 37%. That understat
 `2026-08-31_0914`. ⚠ The metric's MEANING changed without its name changing, so any threshold or
 dashboard calibrated against the old numbers now reads high for a good reason.
 
+✅ **THE OTHER HALF OF "EMPTY OR STUCK": `public.v_rpa_derm_stale_leases` (2026-09-01).**
+Gate 4 hides a dispensed (visit, permit) for 20 hours, so a bot that TAKES the work and never posts
+a result makes the queue read SMALLER, which is exactly what a healthy drain looks like. The
+detector is the leases with no live submission after 3 hours. It is folded into
+`v_rpa_derm_health.stale_leases` and raises the reason kind **`rpa_lease_no_result`**, so the
+existing escalation chain mails it: `ops.v_health_items` and `ops.v_health_status` needed NO change
+because both already read this check's `reasons` array and key each item on `kind`. **Empty is
+healthy.** Migration `2026-09-01_1400`.
+
+🛑 **THE JOIN THAT LOOKS RIGHT AND IS NOT, and it would have alerted on every filing we have.**
+Matching a lease to its result on `(visit_id, gdo_id)` with `IS NOT DISTINCT FROM` reports **11 of
+11 leases unresolved**. Every lease row predates the 2026-08-31 multi-permit change and carries
+`gdo_id IS NULL`, while its submission carries the permit id `rpa-derm-result` resolved, and NULL
+never matches 60. **A 100% failure rate is the signature of a broken comparison, not of broken
+data.** A NULL lease is a WHOLE-TICKET lease, which is how gate 4 already reads it, so any live
+submission for that visit clears it; a permit-scoped lease needs its own.
+⚠ **Match on `created_at`, never `attempted_at`** - the latter is the BOT's clock and diverges from
+ours by up to 123 seconds on real rows.
+⚠ **The 3-hour threshold is measured, not chosen:** lease-to-result latency is **14s to 48s** across
+all 11 leases, against a 60-minute poll interval, so a flagged row has missed at least two chances
+to report.
+⚠ **One legitimate way to set it off, and it is a FINDING not a false positive:** `SHADOW_MODE=true`
+makes every bot run a dry run while the 60-minute poll still reads the PRODUCTION queue, which
+leases. A shadow-mode poll that finds work therefore drains the queue for 20h and files nothing.
+Never seen (0 orphan leases in the estate's history). If it starts, do not "fix" the detector.
+⚠ **The first apply was REFUSED by its own grant assertion**: `authenticated` held `arwdDxtm` on a
+view seconds old, because Supabase's default privileges grant BY NAME and `REVOKE ... FROM public`
+cannot remove that. The fourth occurrence of the trap this file already documents.
+
 ⚠ **`public.v_rpa_derm_health` DEPENDS on this view** (it is `queue_depth`), as do
 `fn_record_manual_gdo_report` and `fn_resolve_rpa_permit`. Keep the COLUMN LIST identical and
 `CREATE OR REPLACE` works; change the columns and it becomes drop-and-recreate, which
