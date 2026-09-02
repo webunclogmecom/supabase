@@ -332,7 +332,10 @@ type RenderResult =
  *   FALLBACK (send today's two images) - availability or document-shape problems. Refusing
  *     would mean a municipal submission simply does not go out, which is worse.
  */
-async function renderVisitReport(clientCode: string, publicId: string): Promise<RenderResult> {
+// 2026-09-02: include_photos is a PARAMETER now, not a hardcoded true. Fred asked for the same
+// "send with photos" choice the Admin Review dialog already offers. Default stays true, so an
+// old caller that does not send the field behaves exactly as before.
+async function renderVisitReport(clientCode: string, publicId: string, includePhotos: boolean): Promise<RenderResult> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), PDF_TIMEOUT_MS)
   try {
@@ -340,7 +343,7 @@ async function renderVisitReport(clientCode: string, publicId: string): Promise<
       method: 'POST',
       signal: ctrl.signal,
       headers: { Authorization: `Bearer ${PDF_SERVICE_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_code: clientCode, public_id: publicId, include_photos: true }),
+      body: JSON.stringify({ client_code: clientCode, public_id: publicId, include_photos: includePhotos }),
     })
 
     if (up.status === 409) {
@@ -415,10 +418,10 @@ interface ReportAttachResult {
 
 async function buildReportAttachment(
   sb: ReturnType<typeof createClient>,
-  opts: { manifestId: number; clientId: number; clientCode: string | null; visitIds: number[]; number: string },
+  opts: { manifestId: number; clientId: number; clientCode: string | null; visitIds: number[]; number: string; includePhotos: boolean },
 ): Promise<ReportAttachResult> {
   const out: ReportAttachResult = { att: null, reason: '', visitDate: null, address: null, terminal: null, trip: null, incomplete: '' }
-  const { manifestId, clientId, clientCode, visitIds } = opts
+  const { manifestId, clientId, clientCode, visitIds, includePhotos } = opts
   try {
     if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) { out.reason = 'pdf_service_not_configured'; out.trip = out.reason; return out }
     if (!visitIds.length) { out.reason = 'no_resolved_visit'; return out }
@@ -474,7 +477,7 @@ async function buildReportAttachment(
       console.error(`[send-derm-email] report_incomplete manifest=${manifestId} client=${clientId} missing=${out.incomplete}`)
     }
 
-    const rendered = await renderVisitReport(clientCode, rv.public_id)
+    const rendered = await renderVisitReport(clientCode, rv.public_id, includePhotos)
     if (rendered.ok) {
       out.att = {
         filename: `DERM-Service-Report-${opts.number}.pdf`,
@@ -596,6 +599,11 @@ Deno.serve(async (req: Request) => {
   }
   // `let`, not `const`: the city testing-phase gate below can FORCE this (see CITY GATE).
   let testRecipient = rawTestRecipient !== '' ? rawTestRecipient : null
+
+  // 🛑 DEFAULT TRUE, and that is the safe default rather than a lazy one: every send before
+  // today rendered the report WITH photos, so an omitted field must keep doing that. Only an
+  // explicit false turns them off.
+  const includePhotos = body?.include_photos === false ? false : true
   // test_cc = the "send to BOTH" copy (Fred 2026-07-09): a REAL send to the clients/city
   // PLUS a BCC copy to this address so the sender can verify what went out. Distinct from
   // test_recipient (which SUPPRESSES the real send). Ignored when test_recipient is set
@@ -724,6 +732,9 @@ Deno.serve(async (req: Request) => {
         resend_email_id: resendEmailId, status, reason, is_test: isTest, recipient_type: recipientType,
         // 🛑 The ONLY record a Bcc ever leaves. Nobody on the thread can see it.
         cc_emails: ccList, bcc_emails: bccList,
+        // What the regulator actually received. The rendered PDF is not stored, so without this
+        // the send log cannot say whether the report carried the photographs.
+        include_photos: includePhotos,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-derm-email] log insert failed: ${error.message}`)
@@ -911,7 +922,7 @@ Deno.serve(async (req: Request) => {
           renderDisabled = 'render_deadline'
           attachReason = renderDisabled
         } else {
-          const r = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds, number })
+          const r = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds, number, includePhotos })
           if (r.terminal) {
             console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${r.terminal}`)
             results.push({ manifest_id: id, status: 'skipped', reason: r.terminal, client: clientName })
@@ -1090,7 +1101,7 @@ Deno.serve(async (req: Request) => {
           renderDisabled = 'render_deadline'
           attachReasonC = renderDisabled
         } else {
-          const rC = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds: visitIdsC, number })
+          const rC = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds: visitIdsC, number, includePhotos })
           if (rC.terminal) {
             console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${rC.terminal}`)
             results.push({ manifest_id: id, status: 'skipped', reason: rC.terminal, client: clientCode })

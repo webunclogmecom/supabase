@@ -26,11 +26,17 @@ const clientId = Number(process.argv[3]);
 const target = process.argv[4] || 'city';
 if (!manifestId || !clientId) { console.error('usage: node derm_email_smoke.js <manifest_id> <client_id> [city|client]'); process.exit(2); }
 
+// 2026-09-03: optional 5th arg `nophotos` exercises the include_photos flag Fred asked for.
+// Omitted means the field is not sent at all, which is the path every existing caller takes and
+// must still render WITH photos.
+const noPhotos = process.argv[5] === 'nophotos';
 const payload = JSON.stringify({
   target,
   recipients: [{ manifest_id: manifestId, client_id: clientId }],
   test_recipient: TEST_TO,
+  ...(noPhotos ? { include_photos: false } : {}),
 });
+if (noPhotos) console.log('include_photos: false (report rendered WITHOUT service photos)');
 
 const host = new URL(process.env.SUPABASE_URL).host;
 const t0 = Date.now();
