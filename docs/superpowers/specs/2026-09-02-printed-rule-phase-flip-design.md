@@ -114,8 +114,21 @@ The three `FAILED` pages are **two different faults**, and only one is blocking:
 - `derm/1236` p1 and `window4-sheet1` p2: *"the two phases are indistinguishable (edge 0)"*. The
   detector honestly could not tell, graded FAILED, and **14 rules were still written** for each from
   an earlier or hand-recorded source. Not blocked.
-- **`ticket-834433` p1: the phase flip. 14 rules found, 7 boundaries, `0` written.** This is the only
-  page in the fleet currently rule-less because of the classifier.
+- **`ticket-834433` p1: the phase flip. 14 rules found, 7 boundaries, `0` written.** This was the
+  only page in the fleet rule-less because of the classifier **when this spec was written**.
+
+> 🛑 **SUPERSEDED WITHIN HOURS, and this is the line a reader would act on and be wrong.**
+> `ticket-834433` **now has its 14 rules**: `2026-09-02_0245` recorded them, changing only the two
+> trailing `kind` labels and keeping every position, run and ink value the detector produced. It is
+> no longer blocked and no longer rule-less.
+>
+> **The rule-less page is now `ticket-834489` p1**, and it is a DIFFERENT fault. Its scan is graded
+> FAILED with *"only 1 slot boundaries"*: the detector found seven lines all running 0.345 to
+> 0.367, so there is no long/short split and `fn_validate_page_rules` V5 can never be satisfied by
+> any labelling of them. The full-width boundaries were never detected, because the scan is too
+> faint. That is not the phase flip this spec describes, and section 5 cannot fix it.
+> ⇒ It is addressed instead by operator-marked lines: `2026-09-02_0330` admits a `human-v1-`
+> source, and the app half is built but **not yet published**.
 
 ⇒ **Blast radius today is one page.** The reason to fix it is not the backlog, it is that the
 mechanism recurs and each occurrence costs an operator an afternoon of unreadable errors.
@@ -143,10 +156,12 @@ once A and B mean nobody is blocked while it is planned. Requires: recompute lab
 `runlen-v2` page, diff against stored, and review every page whose labels move before writing
 anything.
 
-**D. Hand-record the rules for `ticket-834433`.** *(tactical, unblocks today)*
-Precedent exists: `2026-08-28_2010` recorded `ticket-312024` p1 by hand, changing **only three
-`kind` labels** and keeping every position, run and ink value the detector produced. One page, one
-migration, no code change.
+**D. Hand-record the rules for `ticket-834433`.** ✅ **DONE, 2026-09-02_0245.**
+Two `kind` labels changed, every position, run and ink value the detector's own. Precedent was
+`2026-08-28_2010`, which did the same for `ticket-312024` p1 with three labels. A mutant carrying
+the original labels reproduces the exact validator rejection, so the relabel is provably what
+fixed it.
+⚠ Doing this a third time is the signal that C is overdue, not a strategy.
 
 ## 6. What must not happen
 
@@ -162,7 +177,10 @@ migration, no code change.
 ## 7. Acceptance criteria
 
 1. A page the server would refuse is never presented to an operator as measured.
-2. `ticket-834433` p1 has rules, or a recorded reason why it cannot.
+2. ~~`ticket-834433` p1 has rules, or a recorded reason why it cannot.~~ ✅ met by `2026-09-02_0245`.
+   Replaced by: **`ticket-834489` p1 has rules, or a recorded reason why it cannot.** Its reason is
+   recorded: the scan is too faint for the detector to find the full-width boundaries, so it needs
+   either operator-marked lines or a re-scan.
 3. No page that is currently `OK` changes its stored labels without a person seeing the diff.
 4. `derm.v_band_edges_off_rule` is no larger after the change than before it.
 5. The Studio never shows a raw guard code (already true as of `2026-09-02_0200`).
