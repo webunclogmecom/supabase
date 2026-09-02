@@ -66,6 +66,11 @@ human-editable tables applies.
 than a reviewer looking at a real visit, and re-adding a `removed_at` column later is cheap. Cutting
 it now is YAGNI, not an oversight.
 
+> 🛑 **SUPERSEDED same-day (2026-09-01):** the undo WAS built within the hour — Fred asked for it
+> ("what if we made a mistake at the included visit?"). Shipped as `remove_visits_from_review`
+> (`2026-09-01_1900`, soft-removal via `removed_at`), with re-include reviving a removed row
+> (`_2000`) and honest refusals (`_2100`). See `docs/reference/admin-review-scope-inclusions.md`.
+
 ## View
 
 `public.visits_with_review` gains two appended columns. Appending keeps this a `CREATE OR REPLACE`
@@ -158,7 +163,9 @@ blends silently into current work is the most likely thing to confuse whoever pi
 
 No Jobber writes. No change to the SA/SC rule itself. No automatic admission of DERM-required
 photographed visits (Fred chose deliberate over automatic). No bulk "include everything for this
-client" button beyond ticking the boxes. No undo.
+client" button beyond ticking the boxes. ~~No undo.~~ 🛑 **"No undo" is SUPERSEDED (2026-09-01):** undo
+shipped same-day (`remove_visits_from_review`, `_1900`/`_2000`/`_2100`). See
+`docs/reference/admin-review-scope-inclusions.md`.
 
 ## Open question for later
 
