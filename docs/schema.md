@@ -235,7 +235,7 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 | shift | TEXT | `Day`, `Night`, `Both` |
 | email / phone | TEXT | |
 | hire_date | DATE | |
-| access_level | TEXT | `dev`, `office`, `field` |
+| access_level | TEXT | `admin`, `office`, `field`, or NULL (CHECK `employees_access_level_chk`; `dev` RETIRED 2026-08-31_1330, now rejected 23514; gates the HR app: admin+office). Live: office 11 / field 8 / admin 2. |
 | notes | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
 

@@ -2252,10 +2252,14 @@ election on `stamp_placed_at`, and neither can publish without an extent) but it
 retired, pending Fred. Copy first, verify, then retire: doing both at once destroys the reference in
 the same breath as the copy.
 
-**Scan selection is now defined ONCE, in `derm.v_page_printed_rules`** (newest `runlen-v2-%` scan per
-page, rules joined on that scan's own source). The guards read it and the app snaps to it, so the UI
-and the server cannot grade against different geometry. It previously existed as five hardcoded
-literals inside `v_band_edge_check` and was wrong for six days. **Do not re-implement the DISTINCT ON.**
+**Scan selection is now defined ONCE, in `derm.v_page_printed_rules`** (newest scan per page, rules
+joined on that scan's own source). ⚠ **Since `2026-09-02_0330` the source predicate is
+`source ~~ 'runlen-v2-%' OR source ~~ 'human-v1-%'`** (verified live) — an operator-marked `human-v1-`
+scan is admitted alongside the detector's `runlen-v2-` output, so a faint scan the detector cannot
+grade can be measured by hand and still drive the guards. The guards read this view and the app snaps
+to it, so the UI and the server cannot grade against different geometry. It previously existed as five
+hardcoded literals inside `v_band_edge_check` and was wrong for six days. **Do not re-implement the
+DISTINCT ON.**
 
 ⚠ `authenticated` holds **no** grant on `derm.page_block_extents`; the app reads the current boundary
 through `v_stamp_rows.page_top_pct` / `page_bottom_pct` (`2026-08-27_1505`). NULL means the page has
@@ -3034,8 +3038,11 @@ has nothing to do with this go-live. Restore it whenever client testing ends.
 nothing alerts on them. While `client_email_live_sends` is `false` the DERM Tracker's client send
 reports success, writes a `derm_email_sends` row, and **no customer receives anything**. Measured
 2026-08-29: that path has 37 real sends to 23 distinct customer addresses historically (23 stored
-strings, 22 actual mailboxes: one differs only in casing), so it is a live mailing path. The city dialog shows an amber "temporarily disabled" banner; **the client dialog
-shows nothing**, so `app_config` is the only way to know.
+strings, 22 actual mailboxes: one differs only in casing), so it is a live mailing path. ⚠ Since the
+DERM Tracker demo-mode change (`7c859bb`, 2026-09-01) the city dialog no longer shows a "temporarily
+disabled" banner — its buttons are ENABLED and it shows a **"Test mode. This goes only to the address
+below, never to the city."** banner (the server still forces the test recipient). **The client dialog
+shows nothing**, so `app_config` remains the only way to know the true gate state.
 
 🛑 **READ `derm.v_city_email_candidates.status`, NOT THE QUEUE.** `derm.v_city_email_queue` only ever
 shows `ready`; the candidates view names why every other row is not, and **never filters a row away**.
