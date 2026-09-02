@@ -3117,6 +3117,8 @@ a step-by-step demo script is in `16-city-email-video-guide.md` beside it.
 | [docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md](docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md) | Jobs↔visits↔calendar workflow + 2026-06-23 restructure + the Calendar Create Visit DB layer |
 | [docs/reference/service-type-vocabulary.md](docs/reference/service-type-vocabulary.md) | **Before touching `service_type` or `service_kind`** — the vocabulary, the two-meanings collision, and how to tell whether an app really reads a column |
 | [docs/reference/line-item-lifecycle-and-jobber-edit-ripple.md](docs/reference/line-item-lifecycle-and-jobber-edit-ripple.md) | Line-item scopes; how scheduled vs completed visits reflect services; Jobber job-edit ripple + propagation |
+| [docs/reference/client-job-status-lifecycle.md](docs/reference/client-job-status-lifecycle.md) | Client-App job actions drive `clients.status`: `preview_job_action`, `archive-client`/`unarchive-client`, `rewrite_job_line_items`, the four transitions, the archive precondition, the `status_source` pin, and the SA `requires_invoicing` restore finding (2026-09-01) |
+| [docs/reference/admin-review-scope-inclusions.md](docs/reference/admin-review-scope-inclusions.md) | Admin Review queue scope (`job_is_sa_sc` fact vs `in_review_scope` policy) + the `review_scope_inclusions` manual escape hatch (include/remove RPCs, soft-removal, refusals) (2026-09-01) |
 | [docs/reports/sa-status-report.md](docs/reports/sa-status-report.md) | Regenerating the SA status report (coverage gaps + old open jobs PDF) |
 | [docs/company.md](docs/company.md) | Business context: fleet, clients, compliance |
 | [docs/onboarding.md](docs/onboarding.md) | New to project |
