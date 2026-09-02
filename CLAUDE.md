@@ -1792,6 +1792,21 @@ it. That is why it took a client noticing a blank card.
 ✅ **`derm.v_blackout_blocked_sheets` now names the state directly** (`2026-08-19_2320`). Empty is
 healthy. Non-empty means those clients are seeing nothing. **Watch it after any stamping session.**
 
+> ✅ **2026-09-02: unblocked the three SQL/vision-fixable folders (6 clients).** Fred reported 834287's
+> FOG eManifest missing. Fixed `ticket-834287` (214-MYK, snap+extent, migration `2026-09-02_1240`),
+> `ticket-830714` (009-CN×3/034-LG/187-HAI, extent only, `_1245`) and `ticket-312500` (023-GRO/051-PV,
+> fresh detector run + snap+extent, `_1300`). Each pre-validated with `derm.check_page_geometry` (0
+> violations) and **every served redacted doc opened by eye** = one client per document, all neighbours
+> blacked; all 6 grade `ON_RULE`+`ONE_CLIENT`, `v_band_edges_off_rule` unaffected. **Blocked list is now
+> 3 and all need a PERSON, not a migration:** `ticket-833049` (frozen by a CHECK constraint, by design),
+> `window4-sheet1` (`cards_withheld`) and `window5-sheet3` (`no_stamp_timestamp`) — the last two need a
+> stamp re-placed in the Stamp Studio (Yannick), not a measurement.
+> ⚠ **The systemic gap that produced this backlog:** a `derm`-link sheet that arrives stamped never
+> enters the automatic measure path — `derm.fn_sheet_row_ocr_targets` only offers sheets with an
+> UN-placed card (`stamp_placed_at IS NULL`) — so its geometry is only ever set by hand or in the
+> Studio. Until that path covers pre-placed sheets, expect this backlog to recur; watch
+> `v_blackout_blocked_sheets`.
+
 🛑 **KEY ON (dump_folder, effective_page), NEVER ON THE FOLDER.** My own first sweep asked whether a
 FOLDER had any extent and found 4 blocked folders. The gate is per PAGE, and the detector found
 **5 folders / 8 pages** — `window5-sheet3` has an extent for page 2 and none for page 1, which a
