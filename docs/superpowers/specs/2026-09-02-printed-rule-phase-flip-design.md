@@ -91,6 +91,17 @@ often, never to accept a labelling the server would reject.
 
 Measured 2026-09-02 over `derm.page_rule_scans`: **174 scanned pages, 161 OK, 13 not.**
 
+⚠ **Every count in this spec is a DATED OBSERVATION, not an invariant.** They move whenever a
+page is measured. Within hours of writing this, `ticket-834433` was recorded and the totals went
+to 176 scanned and 174 `runlen-v2` pages. Re-measure before acting on any number here rather
+than quoting it:
+
+```sql
+select grade, count(*) from derm.page_rule_scans group by 1 order by 2 desc;
+select count(*) from (select distinct dump_folder, effective_page
+                        from derm.page_row_rules where source like 'runlen-v2-%') p;
+```
+
 | grade | pages | rules written | meaning |
 |---|---|---|---|
 | `OK` | 161 | yes | healthy |
