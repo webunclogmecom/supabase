@@ -1084,8 +1084,10 @@ defects were reachable only from the baseline nobody exercised (flag absent; cap
 **✅ A SECOND FIELD IS NOW WIRED: `Lock Box/Key` (2026-09-02).** ALL_PROPERTIES **text**, config
 **3061112**, into `public.properties.lock_box_key`. Fred asked for it as an editable field in the
 Client App property modal, chose mirror-Jobber-but-editable, and it carries the same accepted cost as
-the capacity: **outbound is still not built**, so an edit made in our app does not reach Jobber and a
-later Jobber edit wins.
+the capacity: **no AUTOMATIC outbound**, so an edit made in our app does not reach Jobber on its own
+and a later Jobber edit wins. ⚠ The manual `push_custom_field_to_jobber.js --field=lockbox` can push
+one, but **it has never been run for this field** - only the grease trap has been pushed. So for the
+lock box the sentence above is still true in practice.
 
 🛑 **THE POLL WAS THE HALF THAT WOULD HAVE MADE IT SILENTLY INERT, and this is the concrete proof of
 the "TWO PLACES" rule above.** The poll's property `fields` string selected **only**
