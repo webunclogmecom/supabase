@@ -5,39 +5,50 @@
  * correctly, and it needs the full crud, like removing it (leaving it blank), update
  * (editing it), creating it (putting something), reading it".
  *
- *   node scripts/probes/lock_box_crud_smoke.js                  # default subject
- *   node scripts/probes/lock_box_crud_smoke.js --property=2
+ *   node scripts/probes/lock_box_crud_smoke.js                 # empty-baseline subject
+ *   node scripts/probes/lock_box_crud_smoke.js --property=32   # a subject that already has one
  *
  * ============================================================================
- * WHAT IT EXERCISES, AND WHY IT IS THESE TWO OBJECTS
+ * ONE STATEMENT PER STEP, AND THAT IS THE WHOLE POINT
  * ============================================================================
- * WRITE -> client.update_property_operational(property_id, patch). The modal sends ONE patch
- *          of changed keys; lock_box_key is just another key in it. There is no separate RPC.
- * READ  -> client.properties. The app does NOT read public.properties. Forgetting that view
- *          is what made the field render as an empty box over a stored 5713 on the day it
- *          shipped, so a smoke test that asserted only the base table would have passed while
- *          the app showed nothing. Every step below therefore asserts BOTH.
+ * 🛑 The first version of this file ran every step inside a single DO block that ended with
+ * `RAISE EXCEPTION 'SMOKE PASSED'`. A RAISE ABORTS THE TRANSACTION, so every write it had just
+ * asserted was rolled back. It passed loudly while proving nothing about persistence, and its
+ * own header claimed the opposite. It was caught by a check that had nothing to do with the
+ * assertions: `audit.logs` held ZERO rows for the subject after a run that made six writes,
+ * against three rows from the UI writes minutes earlier. **A test that cannot leave a trace did
+ * not do anything.**
  *
- * The RPC gates on auth.uid() and a staff email domain, so the probe sets request.jwt.claims
- * the same way PostgREST would. That is deliberate: it exercises the statement the app emits
- * rather than a hand-rolled UPDATE that would prove nothing about the RPC's allow-list.
+ * So each step is now its own HTTP call and therefore its own transaction, which is also what
+ * the modal does: every Save is a separate round trip. The assertions live in JS, between the
+ * statements, reading the state back rather than trusting the call that just returned.
+ *
+ * WRITE -> client.update_property_operational(property_id, patch). The modal sends ONE patch of
+ *          changed keys; lock_box_key is just another key in it. There is no separate RPC.
+ * READ  -> client.properties. The app does NOT read public.properties. Forgetting that view is
+ *          what made the field render an empty box over a stored 5713 on the day it shipped, so
+ *          a smoke test asserting only the base table would have passed while the app showed
+ *          nothing. Every step asserts BOTH.
+ *
+ * The RPC gates on auth.uid() and a staff email domain, so each step sets request.jwt.claims the
+ * way PostgREST would, in the same statement as the call (a transaction-local setting does not
+ * survive to the next round trip).
  *
  * ============================================================================
  * THE CASE THAT MATTERS MOST IS "REMOVE"
  * ============================================================================
- * Clearing is the untested half of every field in this estate: every test that sets a real
- * value passes while the empty path is the one that silently writes '' or nothing at all.
- * So the DELETE step asserts the column is SQL NULL and NOT the empty string, and there is a
- * whitespace-only case besides, because "   " is what a real operator leaves behind.
+ * Clearing is the untested half of every field in this estate: every test that sets a real value
+ * passes while the empty path silently writes '' or nothing at all. DELETE therefore asserts SQL
+ * NULL and NOT the empty string, and a whitespace-only case follows it, because "   " is what an
+ * operator actually leaves behind.
  *
- * IT COMMITS, ON PURPOSE. A rolled-back probe cannot prove the app path persists. The subject
- * is restored to the value it started with, and the run fails loudly if it is not - including
- * when an assertion throws, which is what the EXCEPTION block is for.
- * ⚠ public.properties is audited, so a run leaves audit rows attributed to this probe. That is
- * the intended trail, not noise.
+ * IT COMMITS, and the subject is restored in a `finally` so a failed run cannot leave it dirty.
+ * ⚠ public.properties is audited, so a run leaves a trail attributed to this probe. That trail is
+ * the evidence the run happened, not noise: an empty one means the test did nothing.
  */
 const fs = require('fs'), path = require('path');
 const PROPERTY = Number(process.argv.find(a => /^--property=/.test(a))?.split('=')[1] || 2);
+const CLAIMS = `{"sub":"00000000-0000-0000-0000-000000000009","email":"smoke@ayache.com"}`;
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const env = Object.fromEntries(
@@ -53,118 +64,100 @@ async function sql(q) {
   if (j && j.message) throw new Error(j.message);
   return j;
 }
+const lit = (v) => v === null ? 'null' : `'${String(v).replace(/'/g, "''")}'`;
 
-const BODY = `
-DO $smoke$
-DECLARE
-  p_id     bigint := ${PROPERTY};
-  started  text;
-  fails    text := '';
-  steps    text := '';
-  col      text;
-  vw       text;
-  ret      jsonb;
-  n        integer;
-BEGIN
-  SELECT lock_box_key INTO started FROM public.properties WHERE id = p_id;
+// One patch through the RPC, in its own transaction. No RAISE on the happy path, so it COMMITS.
+const save = (patchJson) => sql(
+  `DO $s$ BEGIN
+     PERFORM set_config('request.jwt.claims', '${CLAIMS}', true);
+     PERFORM client.update_property_operational(${PROPERTY}, '${patchJson}'::jsonb);
+   END $s$;`);
 
-  -- the app's identity. Without this the RPC raises 28000 and nothing below runs.
-  PERFORM set_config('request.jwt.claims',
-    '{"sub":"00000000-0000-0000-0000-000000000009","email":"smoke@ayache.com"}', true);
+const readBoth = async () => (await sql(
+  `select (select lock_box_key from public.properties where id=${PROPERTY}) as col,
+          (select lock_box_key from client.properties  where id=${PROPERTY}) as vw,
+          (select lock_box_key is null from public.properties where id=${PROPERTY}) as col_is_null`))[0];
 
-  BEGIN
-    ----------------------------------------------------------------- CREATE
-    ret := client.update_property_operational(p_id, '{"lock_box_key":"A-14"}'::jsonb);
-    SELECT lock_box_key INTO col FROM public.properties WHERE id = p_id;
-    SELECT lock_box_key INTO vw  FROM client.properties  WHERE id = p_id;
-    IF col IS DISTINCT FROM 'A-14' THEN fails := fails || 'CREATE: base table did not take the value; '; END IF;
-    IF vw  IS DISTINCT FROM 'A-14' THEN fails := fails || 'CREATE: client.properties does not show it (the app would render an empty box); '; END IF;
-    IF ret->>'lock_box_key' IS DISTINCT FROM 'A-14' THEN fails := fails || 'CREATE: the RPC return row omits it; '; END IF;
-    steps := steps || 'CREATE ok; ';
+// A save that MUST be refused. Returns the SQLSTATE so the caller can tell a refusal from a pass.
+const saveExpectingRefusal = async (patchJson) => {
+  try { await save(patchJson); return null; } catch (e) { return String(e.message); }
+};
 
-    ----------------------------------------------------------------- READ
-    -- Re-read on its own, because the app re-fetches after saving rather than trusting
-    -- what it sent. If the view lagged, the modal would show a stale value.
-    SELECT lock_box_key INTO vw FROM client.properties WHERE id = p_id;
-    IF vw IS DISTINCT FROM 'A-14' THEN fails := fails || 'READ: view disagrees on re-read; '; END IF;
-    steps := steps || 'READ ok; ';
-
-    ----------------------------------------------------------------- UPDATE
-    ret := client.update_property_operational(p_id, '{"lock_box_key":"C1709x"}'::jsonb);
-    SELECT lock_box_key INTO col FROM public.properties WHERE id = p_id;
-    SELECT lock_box_key INTO vw  FROM client.properties  WHERE id = p_id;
-    IF col IS DISTINCT FROM 'C1709x' THEN fails := fails || 'UPDATE: base table kept the old value; '; END IF;
-    IF vw  IS DISTINCT FROM 'C1709x' THEN fails := fails || 'UPDATE: view kept the old value; '; END IF;
-    steps := steps || 'UPDATE ok; ';
-
-    ----------------------------------------------------------------- DELETE (blank it)
-    ret := client.update_property_operational(p_id, '{"lock_box_key":""}'::jsonb);
-    SELECT lock_box_key INTO col FROM public.properties WHERE id = p_id;
-    SELECT lock_box_key INTO vw  FROM client.properties  WHERE id = p_id;
-    IF col IS NOT NULL THEN
-      fails := fails || format('DELETE: expected NULL, got %L - an empty string here is a second representation of "no lock box"; ', col);
-    END IF;
-    IF vw IS NOT NULL THEN fails := fails || 'DELETE: the view still shows a value; '; END IF;
-    steps := steps || 'DELETE ok; ';
-
-    ----------------------------------------------------------------- whitespace-only
-    PERFORM client.update_property_operational(p_id, '{"lock_box_key":"A-14"}'::jsonb);
-    PERFORM client.update_property_operational(p_id, '{"lock_box_key":"   "}'::jsonb);
-    SELECT lock_box_key INTO col FROM public.properties WHERE id = p_id;
-    IF col IS NOT NULL THEN fails := fails || format('WHITESPACE: stored %L instead of NULL; ', col); END IF;
-    steps := steps || 'WHITESPACE ok; ';
-
-    ----------------------------------------------------------------- the guards refuse
-    BEGIN
-      PERFORM client.update_property_operational(p_id, jsonb_build_object('lock_box_key', repeat('x', 101)));
-      fails := fails || 'GUARD: a 101-character value was accepted; ';
-    EXCEPTION WHEN check_violation THEN NULL;
-    END;
-    BEGIN
-      PERFORM client.update_property_operational(p_id,
-        jsonb_build_object('lock_box_key', 'A' || chr(10) || 'B'));
-      fails := fails || 'GUARD: a control character was accepted; ';
-    EXCEPTION WHEN check_violation THEN NULL;
-    END;
-    steps := steps || 'GUARDS ok; ';
-
-    ----------------------------------------------------------------- untouched neighbours
-    -- The patch carries one key. If the RPC ever rebuilt the whole row, the fields the modal
-    -- did not send would be cleared, which is the failure this asserts against.
-    SELECT count(*) INTO n FROM public.properties
-     WHERE id = p_id AND (access_notes IS NOT NULL OR notes IS NOT NULL OR grease_trap_manhole_count IS NOT NULL);
-    steps := steps || format('neighbours intact (%s populated); ', n);
-
-  EXCEPTION WHEN others THEN
-    -- restore before re-raising, so a failed run does not leave the subject dirty
-    UPDATE public.properties SET lock_box_key = started WHERE id = p_id;
-    RAISE EXCEPTION 'SMOKE ABORTED after [%]: % (subject restored to %)', steps, SQLERRM, coalesce(started,'NULL');
-  END;
-
-  ----------------------------------------------------------------- restore
-  UPDATE public.properties SET lock_box_key = started WHERE id = p_id;
-  SELECT lock_box_key INTO col FROM public.properties WHERE id = p_id;
-  IF col IS DISTINCT FROM started THEN
-    fails := fails || format('RESTORE: subject left at %L, started at %L; ', col, started);
-  END IF;
-
-  IF fails <> '' THEN RAISE EXCEPTION 'SMOKE FAILED >>> % [ran: %]', fails, steps; END IF;
-  RAISE EXCEPTION 'SMOKE PASSED >>> % (subject % restored to %)', steps, p_id, coalesce(started,'NULL');
-END $smoke$;
-`;
+const fails = [];
+const steps = [];
+const check = (ok, msg) => { if (!ok) fails.push(msg); };
 
 (async () => {
-  // The DO block signals its verdict by RAISING, so both outcomes arrive here as an error
-  // string. A silent success would be indistinguishable from a block that never ran.
+  const start = await readBoth();
+  if (start.col === undefined) throw new Error(`property ${PROPERTY} not found`);
+  const started = start.col;
+  console.log(`subject ${PROPERTY}, starting value ${started === null ? 'NULL' : JSON.stringify(started)}`);
+
+  const auditBefore = (await sql(
+    `select count(*)::int as n from audit.logs where table_name='properties'
+      and record_pk = '{"id":${PROPERTY}}'::jsonb`))[0].n;
+
   try {
-    await sql(BODY);
-    console.error('UNEXPECTED: the smoke block returned without raising a verdict.');
-    process.exit(2);
-  } catch (e) {
-    const m = String(e.message);
-    const trim = (x) => x.split(/\r?\nCONTEXT/)[0].trim();
-    if (m.includes('SMOKE PASSED')) { console.log('PASS  ' + trim(m.split('SMOKE PASSED >>>')[1])); return; }
-    console.error('FAIL  ' + trim(m));
+    // ---- CREATE (on a populated subject this is an overwrite, which is the same write) ----
+    await save('{"lock_box_key":"A-14"}');
+    let s = await readBoth();
+    check(s.col === 'A-14', `CREATE: base table holds ${JSON.stringify(s.col)}`);
+    check(s.vw === 'A-14', `CREATE: client.properties holds ${JSON.stringify(s.vw)} (the app would render that)`);
+    steps.push('CREATE');
+
+    // ---- READ: a separate round trip, because the modal re-fetches rather than trusting ----
+    s = await readBoth();
+    check(s.vw === 'A-14', `READ: view disagrees on re-read (${JSON.stringify(s.vw)})`);
+    steps.push('READ');
+
+    // ---- UPDATE ----
+    await save('{"lock_box_key":"C1709x"}');
+    s = await readBoth();
+    check(s.col === 'C1709x', `UPDATE: base table kept ${JSON.stringify(s.col)}`);
+    check(s.vw === 'C1709x', `UPDATE: view kept ${JSON.stringify(s.vw)}`);
+    steps.push('UPDATE');
+
+    // ---- DELETE, the half that normally goes untested ----
+    await save('{"lock_box_key":""}');
+    s = await readBoth();
+    check(s.col_is_null === true,
+      `DELETE: expected SQL NULL, got ${JSON.stringify(s.col)} - an empty string is a second representation of "no lock box"`);
+    check(s.vw === null, `DELETE: view still shows ${JSON.stringify(s.vw)}`);
+    steps.push('DELETE');
+
+    // ---- whitespace-only clears too ----
+    await save('{"lock_box_key":"A-14"}');
+    await save('{"lock_box_key":"   "}');
+    s = await readBoth();
+    check(s.col_is_null === true, `WHITESPACE: stored ${JSON.stringify(s.col)} instead of NULL`);
+    steps.push('WHITESPACE');
+
+    // ---- the guards must refuse, and refusal must be visible ----
+    const tooLong = await saveExpectingRefusal(`{"lock_box_key":"${'x'.repeat(101)}"}`);
+    check(tooLong !== null, 'GUARD: a 101-character value was accepted');
+    const ctrl = await saveExpectingRefusal('{"lock_box_key":"A\\nB"}');
+    check(ctrl !== null, 'GUARD: a control character was accepted');
+    steps.push('GUARDS');
+  } finally {
+    // Restore whatever the subject started with, pass or fail. Direct write: this is bookkeeping,
+    // not a step under test, and it must run even when the RPC is the thing that is broken.
+    await sql(`update public.properties set lock_box_key = ${lit(started)} where id = ${PROPERTY}`);
+    const back = await readBoth();
+    check(back.col === started, `RESTORE: left at ${JSON.stringify(back.col)}, started at ${JSON.stringify(started)}`);
+  }
+
+  // ---- the run must have left a trace. An audited table plus zero new rows means the writes
+  //      were rolled back, which is exactly how the first version of this file passed while
+  //      doing nothing at all.
+  const auditAfter = (await sql(
+    `select count(*)::int as n from audit.logs where table_name='properties'
+      and record_pk = '{"id":${PROPERTY}}'::jsonb`))[0].n;
+  const wrote = auditAfter - auditBefore;
+  check(wrote > 0, `PERSISTENCE: ${wrote} new audit rows - the writes did not commit`);
+
+  if (fails.length) {
+    console.error('FAIL  ' + fails.join(' | ') + `   [ran: ${steps.join(', ')}]`);
     process.exit(1);
   }
-})();
+  console.log(`PASS  ${steps.join(', ')}; committed (${wrote} audit rows); subject restored to ${started === null ? 'NULL' : JSON.stringify(started)}`);
+})().catch(e => { console.error('ERROR ' + e.message); process.exit(2); });
