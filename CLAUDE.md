@@ -1048,6 +1048,41 @@ the one that adopted?"
 defects were reachable only from the baseline nobody exercised (flag absent; capacity NULL). The
 `2026-08-18_0210` VERIFY shipped ten assertions and every one used a sentinel created WITH a value.
 
+**✅ A SECOND FIELD IS NOW WIRED: `Lock Box/Key` (2026-09-02).** ALL_PROPERTIES **text**, config
+**3061112**, into `public.properties.lock_box_key`. Fred asked for it as an editable field in the
+Client App property modal, chose mirror-Jobber-but-editable, and it carries the same accepted cost as
+the capacity: **outbound is still not built**, so an edit made in our app does not reach Jobber and a
+later Jobber edit wins.
+
+🛑 **THE POLL WAS THE HALF THAT WOULD HAVE MADE IT SILENTLY INERT, and this is the concrete proof of
+the "TWO PLACES" rule above.** The poll's property `fields` string selected **only**
+`... on CustomFieldNumeric`, so a Text field serialised into the staged payload as a bare
+`{"__typename":"CustomFieldText"}` with **no value and no configuration id**. Read off the live staged
+row for property 32 before the fix, which held exactly that, twice. A Lock Box edit therefore left the
+staged bytes IDENTICAL, the row was never restaged, and `handleProperty` was never replayed. Wiring
+only the handler would have produced a field that looked connected and never moved.
+
+- `handleProperty` now selects `... on CustomFieldText { valueText customFieldConfiguration { id } }`
+  in its own query and iterates ONE `SYNCED_CUSTOM_FIELDS` list, so a third field cannot inherit a
+  subtly different set of guards. Still bound by GID, never by label.
+- `fn_sync_property_custom_field` gained a TEXT branch (`2026-09-02_1000`). It **refuses `N/A`**:
+  18 of the 46 populated Jobber values were literally that, and it is the text sentinel for "no lock
+  box" exactly as `0` is the numeric one.
+- 🛑 **The 28 existing values could NOT arrive through this sync, and that is by design.** With no
+  shadow row the first call SEEDs and writes nothing; the second sees an unchanged source and
+  correctly calls it "not an edit". **No sequence of sync calls imports an existing value.** They were
+  brought in by `scripts/sync/import_jobber_lock_box_key.js`, which is idempotent, pinned to
+  `lock_box_key IS NULL` so it can never overwrite an app edit, and records a shadow row shaped like a
+  real adoption so the next poll does not re-SEED.
+- ⚠ **Adding a column for the Client App is TWO objects.** `2026-09-02_1000` added the column and the
+  write path; the app reads the `client.properties` VIEW, which still lacked it, so the published
+  modal rendered an empty box over a stored `5713`. Fixed by `2026-09-02_1100`.
+
+**Proven end to end without writing to Jobber** (2026-09-02): property 32 and its shadow were set to
+a stale value, its staged row flagged `needs_populate`, and the poll invoked. It replayed the handler,
+the sync returned ADOPT, and the column came back to Jobber's `5713` with `adopted_from = STALE-1`,
+`adopted_to = 5713`, and an `audit.logs` row attributed to `jobber-custom-field-sync`.
+
 ⚠ **Bind by configuration GID, never by label.** Four numeric grease-trap fields exist; two differ
 only by a capital S and one of those is archived, and "GT size" appears twice.
 ⚠ **When `customFields` is finally added to the poll's `fields` string, the payload bytes of all 476
