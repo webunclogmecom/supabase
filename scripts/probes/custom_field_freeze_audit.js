@@ -1,12 +1,53 @@
-// Read-only audit of every lock-box shadow row.
+// Read-only FREEZE AUDIT for a Jobber custom field mirrored through sync.source_field_shadow.
+//
+//   node scripts/probes/lock_box_freeze_audit.js                 # Lock Box/Key   (text)
+//   node scripts/probes/lock_box_freeze_audit.js --field=gt      # Grease Trap size (numeric)
+//
 // Answers TWO questions, because "not frozen today" is the weaker one:
 //   1. is conflict_at set right now?
-//   2. would the NEXT Jobber-side edit freeze it? That is the defect the repair fixed, and it
-//      is invisible in question 1 - property 100 read "not frozen" right up until Jobber moved.
-// Both are answered by CALLING sync.fn_shadow_decision, which is a pure decision function, not
-// by re-reading the columns I just wrote. Jobber is swept live so source_value is checked against
-// what Jobber actually holds rather than against what we last recorded.
+//   2. would the NEXT Jobber-side edit freeze it? That is the shape that bit on 2026-09-02, and
+//      it is invisible in question 1 - property 100 read "not frozen" right up until Jobber moved.
+// Both are answered by CALLING sync.fn_shadow_decision, which is pure, rather than by re-reading
+// the columns. Jobber is swept live so the recorded last-seen is checked against what Jobber
+// actually holds rather than against itself.
+//
+// 🛑 TYPE IS LOAD-BEARING HERE. fn_shadow_decision compares jsonb by identity, so feeding a
+// numeric field's value as a jsonb STRING makes "190" differ from 190 and every row reports a
+// change that did not happen. The registry below carries the GraphQL fragment, the reader and the
+// jsonb literal per field, so a second field cannot inherit the first one's type by accident.
+//
+// ⚠ AN "ARMED" ROW IS NOT AUTOMATICALLY A DEFECT, and the two fields differ. CONFLICT means both
+// sides moved, which for the grease trap size can be a REAL and correct pending divergence: that
+// column is edited in our apps (120 changes, 3 app_sources), and between an app edit and the next
+// poll our value legitimately differs from the last-seen. For the lock box the same signal was a
+// bookkeeping error - the shadow said we held nothing while the column held a code. Read
+// our_seen vs our_column before calling anything a defect.
 const fs = require('fs'), path = require('path');
+const FIELDS = {
+  lockbox: {
+    label: 'Lock Box/Key',
+    gid: 'gid://Jobber/CustomFieldConfigurationText/3061112',
+    column: 'lock_box_key',
+    fragment: '... on CustomFieldText{ label valueText }',
+    read: (n) => (n.valueText != null ? String(n.valueText) : null),
+    lit: (v) => (v === null || v === undefined ? "'null'::jsonb" : `to_jsonb('${String(v).replace(/'/g, "''")}'::text)`),
+    hypothetical: "to_jsonb('ZZ-NEW'::text)",
+  },
+  gt: {
+    label: 'Grease Trap size',
+    gid: 'gid://Jobber/CustomFieldConfigurationNumeric/3061111',
+    column: 'grease_trap_size_gallons',
+    fragment: '... on CustomFieldNumeric{ label valueNumeric }',
+    // a numeric custom field is materialised on every property and defaults to 0, so "no value"
+    // and "somebody typed zero" arrive identically. That is why the shadow exists at all.
+    read: (n) => (n.valueNumeric != null ? Number(n.valueNumeric) : null),
+    lit: (v) => (v === null || v === undefined ? "'null'::jsonb" : `to_jsonb(${Number(v)})`),
+    hypothetical: 'to_jsonb(9999)',
+  },
+};
+const FIELD = FIELDS[(process.argv.find(a => /^--field=/.test(a))?.split('=')[1]) || 'lockbox'];
+if (!FIELD) throw new Error('unknown --field, use lockbox or gt');
+
 const repoRoot = 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase';
 const env = Object.fromEntries(
   fs.readFileSync(path.join(repoRoot, '.env'), 'utf8').split(/\r?\n/).filter(l => l.includes('='))
@@ -24,7 +65,7 @@ async function sql(q) {
 (async () => {
   const token = require('child_process').execSync('bash ./jobber-token.sh',
     { cwd: path.resolve(repoRoot, '..', 'Slack') }).toString().trim();
-  const Q = `query($after:String){ properties(first:100, after:$after){ pageInfo{hasNextPage endCursor} nodes{ id customFields{ __typename ... on CustomFieldText{ label valueText } } } } }`;
+  const Q = `query($after:String){ properties(first:100, after:$after){ pageInfo{hasNextPage endCursor} nodes{ id customFields{ __typename ${FIELD.fragment} } } } }`;
   const live = new Map();
   let after = null;
   for (let i = 0; i < 20; i++) {
@@ -36,8 +77,8 @@ async function sql(q) {
     const j = await r.json();
     if (!j.data) throw new Error('Jobber replied with no data key');
     for (const n of j.data.properties.nodes) {
-      const f = (n.customFields||[]).find(c => c.label === 'Lock Box/Key');
-      live.set(n.id, f && f.valueText != null ? String(f.valueText) : null);
+      const f = (n.customFields||[]).find(c => c.label === FIELD.label);
+      live.set(n.id, f ? FIELD.read(f) : undefined);
     }
     if (!j.data.properties.pageInfo.hasNextPage) break;
     after = j.data.properties.pageInfo.endCursor;
@@ -45,7 +86,7 @@ async function sql(q) {
 
   const rows = await sql(`
     select s.entity_id as property_id, c.client_code,
-           p.lock_box_key                as our_column,
+           p.__COLUMN__                  as our_column,
            s.our_value    #>> '{}'       as shadow_our,
            s.source_value #>> '{}'       as shadow_source,
            (s.conflict_at is not null)   as frozen_now,
@@ -56,8 +97,9 @@ async function sql(q) {
       join public.clients c on c.id = p.client_id
       left join public.entity_source_links l
         on l.entity_type='property' and l.source_system='jobber' and l.entity_id = s.entity_id
-     where s.field_key = 'gid://Jobber/CustomFieldConfigurationText/3061112'
-     order by s.entity_id`);
+     where s.field_key = '__GID__'
+     order by s.entity_id`
+      .replace('__COLUMN__', FIELD.column).replace('__GID__', FIELD.gid));
 
   // Ask the real decision function what happens next, for each row, in ONE round trip.
   // p_exists is true for all of these (they all have a shadow row).
@@ -66,13 +108,13 @@ async function sql(q) {
     return { ...r, jobber_now: jobberNow };
   });
   const vals = cases.map(r => {
-    const j = r.jobber_now === undefined || r.jobber_now === null ? 'null' : `to_jsonb('${String(r.jobber_now).replace(/'/g,"''")}'::text)`;
-    const ss = r.shadow_source === null ? 'null' : `to_jsonb('${r.shadow_source.replace(/'/g,"''")}'::text)`;
-    const ol = r.our_column === null ? `'null'::jsonb` : `to_jsonb('${r.our_column.replace(/'/g,"''")}'::text)`;
-    const os = r.shadow_our === null ? `'null'::jsonb` : `to_jsonb('${r.shadow_our.replace(/'/g,"''")}'::text)`;
-    // EDIT scenario: pretend somebody types a new code in Jobber tomorrow.
+    const j  = FIELD.lit(r.jobber_now);
+    const ss = FIELD.lit(r.shadow_source);
+    const ol = FIELD.lit(r.our_column);
+    const os = FIELD.lit(r.shadow_our);
+    // EDIT scenario: pretend somebody types a new value in Jobber tomorrow.
     return `(${r.property_id}, sync.fn_shadow_decision(true, ${j}, ${ss}, ${ol}, ${os}),
-              sync.fn_shadow_decision(true, to_jsonb('ZZ-NEW'::text), ${ss}, ${ol}, ${os}))`;
+              sync.fn_shadow_decision(true, ${FIELD.hypothetical}, ${ss}, ${ol}, ${os}))`;
   }).join(',');
   const decisions = await sql(
     `select * from (values ${vals}) as t(property_id, decision_unchanged, decision_if_jobber_edits)`);
@@ -82,12 +124,14 @@ async function sql(q) {
   for (const r of cases) {
     const d = byId.get(r.property_id) || {};
     const armed = d.decision_if_jobber_edits === 'CONFLICT';
-    const drift = r.shadow_source !== (r.jobber_now ?? null);
+    const norm = (v) => (v === undefined || v === null ? null : String(v));
+    const drift = norm(r.shadow_source) !== norm(r.jobber_now);
     if (r.frozen_now || armed) bad.push({ ...r, ...d });
     r._d = d; r._drift = drift;
   }
 
   console.log(JSON.stringify({
+    field: FIELD.label,
     shadow_rows: cases.length,
     frozen_now: cases.filter(r => r.frozen_now).length,
     armed_to_freeze_on_next_jobber_edit: cases.filter(r => byId.get(r.property_id)?.decision_if_jobber_edits === 'CONFLICT').length,
