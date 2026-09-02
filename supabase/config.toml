@@ -439,6 +439,14 @@ verify_jwt = true
 [functions.jobber-push-visit]
 verify_jwt = true
 
+# jobber-push-custom-field: EXACTLY the same rule as jobber-push-visit above, and for exactly the
+# same reason. It is invoked by pg_cron with a service_role bearer to drain sync.outbound_queue
+# into Jobber, and its handler only DECODES the bearer to check role=service_role. The gateway MUST
+# verify the signature, or a forged role=service_role token would let anyone write custom fields on
+# any property in the account. Never deploy this one --no-verify-jwt.
+[functions.jobber-push-custom-field]
+verify_jwt = true
+
 # redact-manifest-sheet: same pattern as jobber-push-visit — invoked by pg_cron
 # (fn_request_blackout_sweep) + the backlog driver with a service_role bearer; the handler decodes
 # the JWT and requires role=service_role, so the gateway MUST verify the signature.
