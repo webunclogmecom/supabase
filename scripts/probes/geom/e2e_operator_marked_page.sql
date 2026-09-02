@@ -9,8 +9,10 @@
 --   2. place the stamps                            -> derm.address_row_map
 --   3. save the strips and the Section B boundary  -> derm.save_page_geometry
 --
--- ticket-834489 is used because it holds 0 extents, 0 published documents and 0 rules, so nothing
--- it does could reach a customer even for the instant the subtransaction exists.
+-- ticket-834489 is used because it publishes 0 documents, so nothing this probe does could reach a
+-- customer even for the instant the subtransaction exists. (It no longer holds 0 rules and 0
+-- extents: an operator has since measured it, which is exactly why the closing checks compare
+-- against a snapshot taken at the top rather than against zero.)
 -- EVERYTHING IS ROLLED BACK, including the stamp placements: this probe must never leave a stamp
 -- behind, because a stamp is a person's assertion about a compliance document.
 
@@ -20,9 +22,19 @@ DECLARE
   v_n     int;
   v_done  text := '';
   v_flag  text := '';
+  v_pre_scans int; v_pre_ext int; v_pre_placed int; v_pre_bands int;
   v_top   numeric := 27.960;
   v_bot   numeric := 60.240;
 BEGIN
+  -- Snapshot FIRST. An earlier version asserted absolute zeros, which were true the day it was
+  -- written and became false the moment an operator did real work on this folder: it then
+  -- reported "LEAKED: 1 extent(s) survived" about the operator's own extent. A probe must assert
+  -- that it changed NOTHING, never that the world is empty.
+  SELECT count(*) INTO v_pre_scans  FROM derm.page_rule_scans   WHERE dump_folder='ticket-834489';
+  SELECT count(*) INTO v_pre_ext    FROM derm.page_block_extents WHERE dump_folder='ticket-834489';
+  SELECT count(*) INTO v_pre_placed FROM derm.address_row_map WHERE dump_folder='ticket-834489' AND stamp_placed_at IS NOT NULL;
+  SELECT count(*) INTO v_pre_bands  FROM derm.address_row_map WHERE dump_folder='ticket-834489' AND band_y0_pct IS NOT NULL;
+
   BEGIN
     ------------------------------------------------------------------ 1. the lines
     v_res := derm.record_page_rules(
@@ -100,15 +112,20 @@ BEGIN
     RAISE EXCEPTION 'PROBE DID NOT COMPLETE';
   END IF;
 
-  -- nothing survived: no rules, no extent, and above all no stamp
+  -- nothing the probe did survived, measured against the snapshot rather than against zero
   SELECT count(*) INTO v_n FROM derm.page_rule_scans
    WHERE dump_folder='ticket-834489' AND source='human-v1-e2e';
   IF v_n <> 0 THEN RAISE EXCEPTION 'LEAKED: % probe scan(s) survived', v_n; END IF;
+  SELECT count(*) INTO v_n FROM derm.page_rule_scans WHERE dump_folder='ticket-834489';
+  IF v_n <> v_pre_scans THEN RAISE EXCEPTION 'LEAKED: scans % -> %', v_pre_scans, v_n; END IF;
   SELECT count(*) INTO v_n FROM derm.page_block_extents WHERE dump_folder='ticket-834489';
-  IF v_n <> 0 THEN RAISE EXCEPTION 'LEAKED: % extent(s) survived', v_n; END IF;
+  IF v_n <> v_pre_ext THEN RAISE EXCEPTION 'LEAKED: extents % -> %', v_pre_ext, v_n; END IF;
   SELECT count(*) INTO v_n FROM derm.address_row_map
-   WHERE dump_folder='ticket-834489' AND (stamp_placed_at IS NOT NULL OR band_y0_pct IS NOT NULL);
-  IF v_n <> 0 THEN RAISE EXCEPTION 'LEAKED: % stamp/band survived on a real card', v_n; END IF;
+   WHERE dump_folder='ticket-834489' AND stamp_placed_at IS NOT NULL;
+  IF v_n <> v_pre_placed THEN RAISE EXCEPTION 'LEAKED: placed stamps % -> %', v_pre_placed, v_n; END IF;
+  SELECT count(*) INTO v_n FROM derm.address_row_map
+   WHERE dump_folder='ticket-834489' AND band_y0_pct IS NOT NULL;
+  IF v_n <> v_pre_bands THEN RAISE EXCEPTION 'LEAKED: bands % -> %', v_pre_bands, v_n; END IF;
 
   RAISE NOTICE 'E2E PASS: mark lines -> place stamps -> save strips and Section B, all clean, nothing left behind.';
 END $$;
