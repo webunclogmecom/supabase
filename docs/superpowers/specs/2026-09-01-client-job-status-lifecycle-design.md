@@ -2,9 +2,23 @@
 
 **Date:** 2026-09-01
 **Author:** Fred (via Claude)
-**Status:** approved design → ready for implementation plan
+**Status:** ✅ **IMPLEMENTED + VERIFIED 2026-09-01.** Shipped as migrations `2026-09-01_1620`
+(rewrite_job_line_items), `2026-09-01_1625` (fn_record_client_job rewire), `2026-09-01_1630`
+(preview_job_action), plus the `archive-client` / `unarchive-client` edge functions. Verified E2E on
+synthetic client 561 and the real recurring client 112-YA. **As-built reference (read this for what
+actually shipped, incl. two design-vs-as-built corrections noted inline below):**
+`docs/reference/client-job-status-lifecycle.md`.
 **Apps/repos touched:** Client App (Lovable "Client View Pro" `dbf2133c-539c-48ff-864a-68eb284a569d`) · Supabase Prod `wbasvhvvismukaqdnouk`
 **Test client:** 112-YA (the Jobber sandbox test client)
+
+> ⚠ **As-built corrections to this design-time spec** (see the reference doc for detail):
+> (1) the line-item rewrite RPC shipped as **`public.rewrite_job_line_items`**, not `ops.*` (§4);
+> (2) `archive-client` does **not** rely on `clientArchive` auto-closing jobs — it closes every open
+> job **explicitly** via `jobClose(DESTROY_ALL)` first, gated behind `close_jobs:true` (§3/§5.3/§9),
+> and a Jobber-side partial-close state IS therefore possible (§5.3);
+> (3) the spec omits the **archive precondition**: Jobber refuses `clientArchive` while a client has
+> open quotes / work requests / unpaid invoices, none clearable from the Client App —
+> `archive-client` returns a structured `archive_blocked_preconditions` error (see §5.5-bis below).
 
 ---
 
@@ -74,7 +88,7 @@ Rules:
 - **Active** = has an open SC job, no open SA.
 - **Recurring** = has ≥1 open SA job (on top of the SC).
 - **Inactive** = SC job closed → the whole client is shut down (all jobs closed + archived in Jobber).
-- Creating/reopening an SA (on an **Active** client) moves Active → Recurring. Closing the **last** open SA moves Recurring → Active (if another SA stays open, no status change). Closing the SC moves either state → Inactive (**archiving the client in Jobber auto-closes every job**).
+- Creating/reopening an SA (on an **Active** client) moves Active → Recurring. Closing the **last** open SA moves Recurring → Active (if another SA stays open, no status change). Closing the SC moves either state → Inactive (**as-built: `archive-client` closes every open job explicitly via `jobClose(DESTROY_ALL)`, then archives the client in Jobber — it does NOT rely on archive cascading the closes**).
 - **Reactivation (Inactive → Active):** reopening the **SC** un-archives the client in Jobber and reopens the SC. Old SA jobs are **not** reopened. To become Recurring again you **create a new SA** (never reopen an archived one) — see §5.5.
 - Only **transitions that actually change status** show a status dialog; a no-op reopen/close shows the plain variant.
 
@@ -87,7 +101,7 @@ This is the real data-integrity bug and is decoupled from the UX; it can and sho
 **Root cause:** non-atomic DELETE-then-INSERT of job-scoped line items by ≥2 concurrent inbound writers, on a table with no unique key.
 
 **Approach (chosen):** make each job's job-scoped line-item rewrite **atomic and serialized per job**.
-- New SECURITY DEFINER RPC, e.g. `ops.rewrite_job_line_items(p_job_id bigint, p_lines jsonb)`:
+- New SECURITY DEFINER RPC `public.rewrite_job_line_items(p_job_id bigint, p_lines jsonb)` *(as-built: shipped in `public`, not `ops` — both edge-fn clients use the default PostgREST schema)*:
   - `PERFORM pg_advisory_xact_lock(hashtextextended('job_line_items', p_job_id))` (or `SELECT id FROM public.jobs WHERE id=p_job_id FOR UPDATE`) to serialize concurrent rewrites of the same job.
   - `DELETE FROM public.line_items WHERE job_id=p_job_id AND visit_id IS NULL AND invoice_id IS NULL AND quote_id IS NULL;`
   - Insert the provided lines — **in one transaction**, so no other writer can observe the deleted-but-not-yet-reinserted window.
@@ -142,14 +156,14 @@ Every dialog renders its rows/counts straight from this payload — nothing is h
 | Create SA (client = ACTIVE) | 🟢 "Make {client} a recurrent client?" — lists the new SA, status Active→Recurring | success | `save-client-job create` → `update_client_status(RECURRING, reason)` → `generate_visits_for_client` |
 | Reopen SA (client = ACTIVE) | 🟢 same, wording "Opening this agreement…" | success | `save-client-job reopen` → `update_client_status(RECURRING, reason)` → `generate_visits_for_client` |
 | Close last SA (`other_open_sa_count=0`) | ⚪ "Close this service agreement?" — lists the SA + N upcoming visits, status Recurring→Active | neutral | `save-client-job close` → `update_client_status(ACTIVE, reason)` |
-| Close SC | 🔴 "Close service call and deactivate {client}?" — lists **all** open jobs that will close with per-job upcoming counts, status →Inactive, "archived in Jobber" | danger | `archive-client` — archives the client in Jobber, which **auto-closes every job**, then sets INACTIVE |
+| Close SC | 🔴 "Close service call and deactivate {client}?" — lists **all** open jobs that will close with per-job upcoming counts, status →Inactive, "archived in Jobber" | danger | `archive-client` (`close_jobs:true`) — closes every open job **explicitly** via `jobClose(DESTROY_ALL)`, then archives the client in Jobber (verify `isArchived`), then sets INACTIVE |
 | Reopen SC on an **Inactive** client (reactivation, §5.5) | 🔵 "Reactivate {client}?" — notes it un-archives in Jobber and reopens the Service Call; old agreements stay closed; status Inactive→Active | info | `unarchive-client` — un-archives in Jobber, reopens the SC, sets ACTIVE |
 | Reopen with no status change (SC on a non-Inactive client, or SA on a RECURRING/PAUSED client) | plain "Reopen this job?" — lists the one job | neutral | `save-client-job reopen` |
 | Create/reopen SA on a **non-ACTIVE** client (RECURRING already, or PAUSED) | *(no status dialog)* | — | the job action only |
 
 **Reason strings** (auto-filled, satisfy the mandatory-reason RPC and land in `client_status_changes`): e.g. `"Client App: reopened SA job #99900756"`, `"Client App: closed last SA job #99900756"`, `"Client App: closed SC job #99900755 → deactivated"`, `"Client App: reactivated (reopened SC job #99900755)"`. The confirmation click is the human proof.
 
-**Sequencing & failure handling.** For the create/reopen-SA and close-last-SA cases, the status RPC runs **after** the job action succeeds (branch on `data.ok`); if the job action succeeds but the status RPC fails, surface the error and leave status unchanged (the job state is already correct) — the user can retry from Edit-client. For **close SC → Inactive** and **reactivation**, the whole thing is a **single edge-function call** (`archive-client` / `unarchive-client`) that mutates Jobber, verifies the re-read, and sets the status — so it either fully succeeds or leaves the client unchanged; no partial-close state to reconcile app-side.
+**Sequencing & failure handling.** For the create/reopen-SA and close-last-SA cases, the status RPC runs **after** the job action succeeds (branch on `data.ok`); if the job action succeeds but the status RPC fails, surface the error and leave status unchanged (the job state is already correct) — the user can retry from Edit-client. For **close SC → Inactive** and **reactivation**, the whole thing is a **single edge-function call** (`archive-client` / `unarchive-client`) that mutates Jobber, verifies the re-read, and sets the status. **Our DB status is fail-safe — nothing is written unless the Jobber archive/unarchive re-read verifies.** ⚠ **As-built correction:** "no partial-close state" is not accurate. `archive-client` closes the open jobs one at a time (explicit `jobClose(DESTROY_ALL)`) BEFORE `clientArchive`, so a failure on a later `jobClose` or on the archive can leave **some jobs closed in Jobber with the client NOT archived** — the response returns `{jobs_closed}`, our status stays unchanged (fail-safe), but a Jobber-side partial teardown exists to reconcile.
 
 ### 5.4 Edge cases (explicit)
 - **Already RECURRING + create/reopen another SA:** no status dialog; just do the job action (`fn_is_current_sa_job` already satisfied).
@@ -172,6 +186,29 @@ Reactivating a client is the mirror of the close-SC deactivation, and it only br
 - **Inactive → Recurring** is a **two-step** path, by design: reactivate (SC → Active), then **create a new SA** (the 🟢 create-SA → Recurring flow, §5.3). The app never reopens an old archived SA to reach Recurring. If reactivation is initiated from the Edit-client "set Recurring" dropdown on an Inactive client, it must likewise route to **create a new SA** (SA tab, reopen-old hidden), consistent with this rule.
 - ⚠ Depends on Jobber supporting client un-archive + reopening a job on a just-un-archived client — verify in the implementation plan (a `jobReopen` on the SC must succeed only after the client is un-archived).
 
+### 5.5-bis The archive precondition (added as-built 2026-09-01 — omitted from the original design)
+
+The original design assumed close-SC always succeeds. As-built, **Jobber refuses `clientArchive`
+while the client has open quotes / work requests / unpaid invoices** (not just open jobs), and **none
+of these are clearable from the Client App** — the `jobber_write` OAuth scope cannot touch
+quotes/requests/invoices and billing is Jobber-mastered — so such a client needs a human in Jobber.
+
+`archive-client` therefore returns a **structured** refusal instead of an opaque error (still
+fail-safe: writes nothing):
+
+```
+{ code: "archive_blocked_preconditions",
+  blockers: [{ category, source, count }],   // category ∈ work_requests | quotes | invoices
+  jobber_error: "<raw Jobber userError>",
+  message: "<what to clear in Jobber, then retry>" }
+```
+
+The red close-SC dialog surfaces `message`. Counts for quotes/invoices are enriched from OUR DB and
+are **omitted, never zeroed**, on a read error. This was exercised on 112-YA (Fred cleared 7 quotes +
+2 work requests + the $1 test invoice #2894 by hand before the archive would run). See
+`docs/reference/client-job-status-lifecycle.md` §4 and memory
+`reference_jobber_client_archive_needs_quotes_invoices_cleared`.
+
 ---
 
 ## 6. Testing — multi-visual-check on 112-YA
@@ -184,7 +221,7 @@ Run end-to-end on **112-YA** (Jobber sandbox client). At each step: (a) screensh
 3. **Create SA → Recurrent** — with 112-YA Active, create an SA job: 🟢 dialog naming the new SA + Active→Recurring; confirm; `clients.status=RECURRING`, `status_source=manual`, a `client_status_changes` row, visits generated. *(screenshot + DB)*
 4. **Reopen SA → Recurrent** — close then reopen that SA (client back to Active first via step 5, or on a second SA): 🟢 dialog; confirm; status → Recurring. *(screenshot + DB)*
 5. **Close last SA → Active** — close the only open SA: ⚪ dialog listing the SA + its upcoming visit count; confirm; status → Active; SA visits soft-deleted. *(screenshot + DB)*
-6. **Close SC → Inactive** — close the SC: 🔴 dialog listing **every** open job that will close + "archived in Jobber"; confirm. Verify `archive-client` archived the client in Jobber (`isArchived=true`), which **auto-closed all jobs** (`job_status='archived'`), `clients.status=INACTIVE`/`status_source=manual`, a `client_status_changes` row, and upcoming visits removed. *(screenshot + DB + Jobber)*
+6. **Close SC → Inactive** — close the SC: 🔴 dialog listing **every** open job that will close + "archived in Jobber"; confirm. Verify `archive-client` closed every open job **explicitly** (`job_status='archived'`) and then archived the client in Jobber (`isArchived=true`), `clients.status=INACTIVE`/`status_source=manual`, a `client_status_changes` row, and upcoming visits removed. *(screenshot + DB + Jobber)*
 7. **Reactivate (Inactive → Active)** — on the archived **SC** row, click Reopen: 🔵 "Reactivate 112-YA?" dialog; confirm; `unarchive-client` un-archives in Jobber (`isArchived=false`), reopens the SC (open `job_status`), `clients.status=ACTIVE`; the old **SA stays `archived`** (not reopened). Confirm archived **SA** rows show **no** Reopen while Inactive. *(screenshot + DB + Jobber)*
 8. **Inactive → Recurring uses a NEW SA** — from the reactivated (or Inactive) client, going Recurring prompts **create a new SA** and never offers to reopen the archived SA. *(screenshot)*
 9. **Duplication regression** — after the reopens in steps 2/4/7, confirm each affected job has exactly one set of line items (no `2×$450`). *(DB)*
@@ -207,7 +244,7 @@ Run end-to-end on **112-YA** (Jobber sandbox client). At each step: (a) screensh
 - **`Supabase/docs/`** — migration headers for the dup fix + `preview_job_action`; cross-reference this spec.
 
 ## 9. Risks / open items
-- **Jobber close-on-archive** (resolved per Fred, 2026-09-01): archiving the client in Jobber auto-closes its jobs, so close-SC is a single `archive-client` call. The plan should still confirm on a Jobber sandbox job that archiving handles incomplete visits the way we expect, so the upcoming-visit cleanup matches the dialog's count.
+- **Jobber close-on-archive** (resolved per Fred, 2026-09-01): close-SC is a single `archive-client` call *from the app's side*. ⚠ **As-built correction:** the edge fn does NOT rely on `clientArchive` auto-closing jobs — it closes every open job **explicitly** via `jobClose(DESTROY_ALL)` first (gated behind `close_jobs:true`; without the flag it returns `open_jobs` and writes nothing), THEN archives + verifies. A Jobber-side partial-close state is therefore possible if a later `jobClose`/archive fails (our DB status stays fail-safe unchanged). Confirmed on the 112-YA sandbox that `DESTROY_ALL` removed 0 visits (0 incomplete) and the upcoming-visit cleanup matched the dialog's count.
 - **Reactivation depends on Jobber** supporting client un-archive and then `jobReopen` on the just-un-archived SC — verify on a sandbox job before building `unarchive-client` (§5.5).
 - **Emergency-only clients** (`feedback_emergency_only_clients.md`) keep jobs but rarely visit — closing an SC to deactivate them is a deliberate human action here, so it's fine, but the UX copy should not imply "inactive = abandoned".
 - **`generate_visits_for_client` horizon** — the recurring dialog could optionally show "~N visits will be generated"; left out of v1 to avoid coupling to the generator's horizon math.

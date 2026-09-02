@@ -703,6 +703,19 @@ Defined in [`../scripts/ops_views/`](../scripts/ops_views/). Read by the operati
 
 ---
 
+## Client-App job-status lifecycle RPCs (2026-09-01)
+
+This reference is table/view-focused; RPCs are documented in their migration headers. These are indexed
+here so a schema grep finds them. Full as-built contract: [`reference/client-job-status-lifecycle.md`](reference/client-job-status-lifecycle.md).
+
+| Object | Signature | What |
+|---|---|---|
+| `client.preview_job_action` | `(p_client_id bigint, p_job_id bigint, p_action text) → jsonb` | READ-ONLY describer that builds each Client-App job-action confirmation dialog (the job, the status transition, jobs-to-close, upcoming visits, archive/unarchive flags). Migration `2026-09-01_1630`. SECDEF; EXECUTE to authenticated + service_role. |
+| `public.rewrite_job_line_items` | `(p_job_id bigint, p_lines jsonb) → void` | Atomic, advisory-locked per-job rewrite of a job's job-scope line items (kills the concurrent delete-then-insert duplication race). All three inbound writers route through it. Migration `2026-09-01_1620`. Empty array clears. |
+| `client.update_client_status` | `(p_client_id bigint, p_status text, p_reason text)` (3-arg) | Pre-existing. The 3-arg overload writes `clients.status` + pins `status_source='manual'` (the pin the `*/5` poll honours). The 2-arg overload only raises "a reason is now required". Called by `archive-client` / `unarchive-client` via the caller's JWT. |
+
+---
+
 ## Unique & primary key constraints
 
 | Table | Constraint | Type |

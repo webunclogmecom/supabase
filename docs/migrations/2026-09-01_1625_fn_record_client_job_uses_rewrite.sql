@@ -6,8 +6,10 @@
 --   duplication race (webhook-jobber and sync-jobber-job-drift are done in the same cycle, edge-fn side).
 -- HOW: CREATE OR REPLACE with the EXACT live pg_get_functiondef body; ONLY the line-item block changed
 --   (copy, don't retype). The v_li guard is kept, so behavior is identical: v_li null/not-array -> no
---   delete (unchanged); an array (incl. empty) -> the RPC deletes then inserts. CREATE OR REPLACE
---   preserves the existing service_role-only grants.
+--   delete (unchanged); an array -> the RPC deletes, then inserts only if the array is NON-EMPTY
+--   (rewrite_job_line_items guards the INSERT with jsonb_array_length(p_lines) > 0, so an EMPTY array
+--   deletes then inserts nothing, i.e. clears the job's job-scope lines). CREATE OR REPLACE preserves
+--   the existing service_role-only grants.
 
 BEGIN;
 

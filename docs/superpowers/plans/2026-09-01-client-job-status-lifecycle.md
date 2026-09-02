@@ -12,15 +12,35 @@
 
 ---
 
+## ✅ SHIPPED + VERIFIED 2026-09-01 (as-built)
+
+All phases delivered; the checkboxes below are the design-time plan and were all completed. As-built
+consolidated reference: [`../../reference/client-job-status-lifecycle.md`](../../reference/client-job-status-lifecycle.md).
+
+**Shipped objects (real names — the `<t>` placeholders below were these):**
+- `docs/migrations/2026-09-01_1620_atomic_job_line_items_rewrite.sql` — **`public.rewrite_job_line_items(bigint, jsonb)`** (Phase A). ⚠ Shipped in **`public`**, not `ops` (both edge-fn clients use the default PostgREST schema).
+- `docs/migrations/2026-09-01_1625_fn_record_client_job_uses_rewrite.sql` — `fn_record_client_job` rerouted through the RPC (Phase A).
+- `docs/migrations/2026-09-01_1630_preview_job_action.sql` — `client.preview_job_action(bigint, bigint, text)` (Phase B).
+- `supabase/functions/unarchive-client/index.ts` — reactivation (Phase B); `supabase/functions/archive-client/index.ts` gained the structured `archive_blocked_preconditions` error.
+- App (Client View Pro): C1 title-gated Reopen, C2 context-aware confirm, C3 the four/five dynamic dialogs — live on `clients.unclogme.app`.
+
+**Verification outcomes (Phase D):**
+- **A7 — 561 "ZZ Mode Separate" (311-ZMS), synthetic already-archived:** full reactivate→deactivate round-trip verified at Client App + Jobber (API + web UI) + DB; held ACTIVE across two `*/5` poll runs (manual pin); restored to INACTIVE/archived baseline.
+- **A8 — 112-YA "Yan's Restaurant" (client 381), REAL recurring client:** Fred cleared its Jobber blockers (7 quotes, 2 work requests, invoice #2894) first, then the FULL archive→reactivate→restore ran through the actual edge fns: `archive-client` (5 jobs closed, `visits_removed:0`, INACTIVE/manual), `unarchive-client` (SC reopened, ACTIVE/manual), restored to baseline (5 open jobs, 9 live / 0 scheduled visits). Verified at Client App + Jobber + DB.
+- **A9 — restore-fidelity finding:** the reopened SA (#11100534) returns `requires_invoicing`, not `active`. `jobs.job_status` is a pure Jobber mirror (does NOT self-revert via the poll — measured ~10 cycles / ~53 min); Jobber holds it on $207.06 unbilled work; functionally inert (`fn_generate_sa_visits` keys on `job_status <> 'archived'`; `frequency_days` + RECURRING intact).
+- **Archive precondition (not in the original plan):** Jobber refuses `clientArchive` while open quotes / work requests / unpaid invoices exist; none clearable from the Client App — `archive-client` returns the structured `archive_blocked_preconditions` error.
+
+---
+
 ## File / object map
 
 **Backend — new objects**
-- `docs/migrations/2026-09-01_<t>_atomic_job_line_items_rewrite.sql` — `ops.rewrite_job_line_items(bigint, jsonb)` (Phase A).
-- `docs/migrations/2026-09-01_<t>_preview_job_action.sql` — `client.preview_job_action(bigint, bigint, text)` (Phase B).
+- `docs/migrations/2026-09-01_1620_atomic_job_line_items_rewrite.sql` — `public.rewrite_job_line_items(bigint, jsonb)` (Phase A).
+- `docs/migrations/2026-09-01_1630_preview_job_action.sql` — `client.preview_job_action(bigint, bigint, text)` (Phase B).
 - `supabase/functions/unarchive-client/index.ts` — reverse of `archive-client` (Phase B).
 
 **Backend — modified**
-- `supabase/functions/webhook-jobber/index.ts` (`handleJob`, ~1262-1271) — route its DELETE+INSERT through `ops.rewrite_job_line_items`.
+- `supabase/functions/webhook-jobber/index.ts` (`handleJob`, ~1262-1271) — route its DELETE+INSERT through `public.rewrite_job_line_items`.
 - `supabase/functions/sync-jobber-job-drift/index.ts` (~216-241) — same.
 - `docs/migrations/2026-07-30_1552_fn_record_client_job.sql` → new migration that `CREATE OR REPLACE`s `fn_record_client_job` to call the RPC for its line-item block.
 
@@ -41,7 +61,7 @@
 
 **Files:** read-only.
 
-- [ ] **Step 1: Record the three writers' INSERT column lists**
+- [x] **Step 1: Record the three writers' INSERT column lists**
 
 Read and copy the exact `line_items` insert column set + value mapping from each:
 - `supabase/functions/webhook-jobber/index.ts` — `handleJob`, the `delete().eq('job_id',…)` then `insert(...)` (~1262-1271).
@@ -50,16 +70,16 @@ Read and copy the exact `line_items` insert column set + value mapping from each
 
 Write the union of columns they insert (e.g. `job_id, name, quantity, unit_price, total_price, jobber_line_item_id, …`) into a scratch note. This is the column contract Task A2 must match exactly.
 
-- [ ] **Step 2: Confirm the delete predicate**
+- [x] **Step 2: Confirm the delete predicate**
 
 Confirm all three scope job-level lines as `job_id = X AND visit_id IS NULL AND invoice_id IS NULL` (and `quote_id IS NULL` where present). Note any writer that differs — the RPC must use the widest-safe predicate: `visit_id IS NULL AND invoice_id IS NULL AND quote_id IS NULL`.
 
 ### Task A2: Atomic per-job line-item rewrite RPC
 
 **Files:**
-- Create: `docs/migrations/2026-09-01_<t>_atomic_job_line_items_rewrite.sql`
+- Create: `docs/migrations/2026-09-01_1620_atomic_job_line_items_rewrite.sql`
 
-- [ ] **Step 1: Write the failing probe (duplication reproduces without the RPC)**
+- [x] **Step 1: Write the failing probe (duplication reproduces without the RPC)**
 
 In a rolled-back transaction against a disposable test job, prove the *current* behaviour can double a set. Apply this probe via the Management API and confirm it reports a doubled count (documents the bug the RPC removes):
 
@@ -71,47 +91,47 @@ In a rolled-back transaction against a disposable test job, prove the *current* 
 
 Expected: the probe shows `2 * n` job-scope rows.
 
-- [ ] **Step 2: Write the RPC**
+- [x] **Step 2: Write the RPC**
 
 ```sql
--- 2026-09-01_<t>_atomic_job_line_items_rewrite.sql
+-- 2026-09-01_1620_atomic_job_line_items_rewrite.sql
 -- WHAT: one atomic, per-job-serialized rewrite of job-scope line items, to end the concurrent
 --   DELETE-then-INSERT duplication race (public.line_items has no unique key by design).
 BEGIN;
-CREATE OR REPLACE FUNCTION ops.rewrite_job_line_items(p_job_id bigint, p_lines jsonb)
+CREATE OR REPLACE FUNCTION public.rewrite_job_line_items(p_job_id bigint, p_lines jsonb)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $fn$
 BEGIN
   -- serialize concurrent rewrites of the SAME job; released at txn end
-  PERFORM pg_advisory_xact_lock(hashtextextended('ops.rewrite_job_line_items', p_job_id));
+  PERFORM pg_advisory_xact_lock(hashtextextended('public.rewrite_job_line_items', p_job_id));
   DELETE FROM public.line_items
    WHERE job_id = p_job_id AND visit_id IS NULL AND invoice_id IS NULL AND quote_id IS NULL;
   INSERT INTO public.line_items (job_id /*, <exact columns from Task A1> */)
   SELECT p_job_id /*, (l->>'name'), (l->>'quantity')::numeric, … per Task A1 mapping */
     FROM jsonb_array_elements(p_lines) AS l;
 END $fn$;
-REVOKE ALL ON FUNCTION ops.rewrite_job_line_items(bigint, jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION ops.rewrite_job_line_items(bigint, jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.rewrite_job_line_items(bigint, jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.rewrite_job_line_items(bigint, jsonb) TO service_role;
 NOTIFY pgrst, 'reload schema';
 COMMIT;
 ```
 
 Fill the INSERT column list + `jsonb_array_elements` mapping from Task A1 exactly. `service_role` only — the three callers all run as service_role.
 
-- [ ] **Step 3: Apply the migration**
+- [x] **Step 3: Apply the migration**
 
 Apply via Management API. Expected: `[]` / HTTP 2xx.
 
-- [ ] **Step 4: Write the passing probe (two concurrent rewrites via the RPC leave one set)**
+- [x] **Step 4: Write the passing probe (two concurrent rewrites via the RPC leave one set)**
 
-Rolled-back probe: call `ops.rewrite_job_line_items(job, lines)` twice against the same test job inside overlapping subtransactions (or back-to-back) and assert the final job-scope count equals `n`, not `2n`. Include a positive control: a single call must still produce exactly `n`.
+Rolled-back probe: call `public.rewrite_job_line_items(job, lines)` twice against the same test job inside overlapping subtransactions (or back-to-back) and assert the final job-scope count equals `n`, not `2n`. Include a positive control: a single call must still produce exactly `n`.
 
 Expected: exactly `n` rows; control passes. Roll back.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
-git add docs/migrations/2026-09-01_<t>_atomic_job_line_items_rewrite.sql
-git commit -m "Atomic per-job line-item rewrite RPC (ops.rewrite_job_line_items) to end the duplication race" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+git add docs/migrations/2026-09-01_1620_atomic_job_line_items_rewrite.sql
+git commit -m "Atomic per-job line-item rewrite RPC (public.rewrite_job_line_items) to end the duplication race" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ### Task A3: Route the three inbound writers through the RPC
@@ -119,9 +139,9 @@ git commit -m "Atomic per-job line-item rewrite RPC (ops.rewrite_job_line_items)
 **Files:**
 - Modify: `supabase/functions/webhook-jobber/index.ts` (~1262-1271)
 - Modify: `supabase/functions/sync-jobber-job-drift/index.ts` (~216-241)
-- Create: `docs/migrations/2026-09-01_<t>_fn_record_client_job_uses_rewrite.sql` (CREATE OR REPLACE of `fn_record_client_job`'s line-item block)
+- Create: `docs/migrations/2026-09-01_1625_fn_record_client_job_uses_rewrite.sql` (CREATE OR REPLACE of `fn_record_client_job`'s line-item block)
 
-- [ ] **Step 1: webhook-jobber — replace delete+insert with one RPC call**
+- [x] **Step 1: webhook-jobber — replace delete+insert with one RPC call**
 
 In `handleJob`, where it does `db.from('line_items').delete().eq('job_id', entityId)` then `.insert(rows)`, replace both with:
 
@@ -130,13 +150,13 @@ await db.rpc('rewrite_job_line_items', { p_job_id: entityId, p_lines: rows });
 ```
 where `rows` is the same array previously inserted, reshaped to the jsonb the RPC expects (keys per Task A1). Keep the `isSA` gate unchanged (SC/legacy still get an empty set → the RPC deletes and inserts nothing).
 
-- [ ] **Step 2: sync-jobber-job-drift — same replacement** (~216-241), passing `row.id` and the diffed line array.
+- [x] **Step 2: sync-jobber-job-drift — same replacement** (~216-241), passing `row.id` and the diffed line array.
 
-- [ ] **Step 3: fn_record_client_job — CREATE OR REPLACE to call the RPC**
+- [x] **Step 3: fn_record_client_job — CREATE OR REPLACE to call the RPC**
 
-Copy the live `fn_record_client_job` body from `pg_get_viewdef`-equivalent (`\sf` / `pg_get_functiondef`), and replace only its inline DELETE+INSERT line-item block with `PERFORM ops.rewrite_job_line_items(<gid's job id>, <lines jsonb>);`. Everything else byte-identical. Wrap in `BEGIN; CREATE OR REPLACE FUNCTION …; NOTIFY pgrst,'reload schema'; COMMIT;`.
+Copy the live `fn_record_client_job` body from `pg_get_viewdef`-equivalent (`\sf` / `pg_get_functiondef`), and replace only its inline DELETE+INSERT line-item block with `PERFORM public.rewrite_job_line_items(<gid's job id>, <lines jsonb>);`. Everything else byte-identical. Wrap in `BEGIN; CREATE OR REPLACE FUNCTION …; NOTIFY pgrst,'reload schema'; COMMIT;`.
 
-- [ ] **Step 4: Deploy + apply**
+- [x] **Step 4: Deploy + apply**
 
 ```bash
 cd Supabase && SUPABASE_ACCESS_TOKEN=<PAT> supabase functions deploy webhook-jobber --project-ref wbasvhvvismukaqdnouk
@@ -144,7 +164,7 @@ SUPABASE_ACCESS_TOKEN=<PAT> supabase functions deploy sync-jobber-job-drift --pr
 ```
 Apply the `fn_record_client_job` migration via Management API.
 
-- [ ] **Step 5: Verify on a real reopen (117-BH / job 99900756)**
+- [x] **Step 5: Verify on a real reopen (117-BH / job 99900756)**
 
 Reopen an SA job through the app (or call the edge fn) and, after the poll + drift windows, assert the job has exactly one line-item set:
 
@@ -154,11 +174,11 @@ SELECT count(*) FROM public.line_items
    AND visit_id IS NULL AND invoice_id IS NULL;  -- expect the true count, never 2x
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add supabase/functions/webhook-jobber/index.ts supabase/functions/sync-jobber-job-drift/index.ts docs/migrations/2026-09-01_<t>_fn_record_client_job_uses_rewrite.sql
-git commit -m "Route all three inbound line-item writers through ops.rewrite_job_line_items" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+git add supabase/functions/webhook-jobber/index.ts supabase/functions/sync-jobber-job-drift/index.ts docs/migrations/2026-09-01_1625_fn_record_client_job_uses_rewrite.sql
+git commit -m "Route all three inbound line-item writers through public.rewrite_job_line_items" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -168,16 +188,16 @@ git commit -m "Route all three inbound line-item writers through ops.rewrite_job
 ### Task B1: `client.preview_job_action`
 
 **Files:**
-- Create: `docs/migrations/2026-09-01_<t>_preview_job_action.sql`
+- Create: `docs/migrations/2026-09-01_1630_preview_job_action.sql`
 
-- [ ] **Step 1: Write the failing probe**
+- [x] **Step 1: Write the failing probe**
 
 Rolled-back probe on 112-YA data: `SELECT client.preview_job_action(<112-YA client id>, <an SC job id>, 'close')` — expect an error (function does not exist).
 
-- [ ] **Step 2: Write the RPC**
+- [x] **Step 2: Write the RPC**
 
 ```sql
--- 2026-09-01_<t>_preview_job_action.sql
+-- 2026-09-01_1630_preview_job_action.sql
 BEGIN;
 CREATE OR REPLACE FUNCTION client.preview_job_action(p_client_id bigint, p_job_id bigint, p_action text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $fn$
@@ -243,11 +263,11 @@ COMMIT;
 
 ⚠ Confirm `client.v_visits_live` exists and carries `job_id, visit_status, deleted_at, start_at`; if the app's upcoming-visit source differs, use that. For `create`, callers pass `p_job_id = NULL` and `v_job`/`v_kind` come back null — the `create` branch only reads `v_status`, so that is fine.
 
-- [ ] **Step 3: Apply + assert on 112-YA**
+- [x] **Step 3: Apply + assert on 112-YA**
 
 Apply. Then assert each branch against 112-YA's real jobs (rolled-back where a status is needed): e.g. `preview_job_action(112-YA, <SC job>, 'close')` returns `will_archive_client=true`, `status_change.to='INACTIVE'`, and `jobs_to_close` lists every open job with per-job `upcoming_visits`. Positive control: `preview_job_action(112-YA, <SA job>, 'reopen')` on an ACTIVE client returns `status_change={ACTIVE→RECURRING}`.
 
-- [ ] **Step 4: Commit** (Supabase footer).
+- [x] **Step 4: Commit** (Supabase footer).
 
 ### Task B2: `unarchive-client` edge function
 
@@ -255,19 +275,19 @@ Apply. Then assert each branch against 112-YA's real jobs (rolled-back where a s
 - Create: `supabase/functions/unarchive-client/index.ts`
 - Reference: `supabase/functions/archive-client/index.ts` (mirror its structure/CORS/auth/verify-saga)
 
-- [ ] **Step 1: Confirm Jobber supports the un-archive + reopen path**
+- [x] **Step 1: Confirm Jobber supports the un-archive + reopen path**
 
 Against a Jobber sandbox client (112-YA), confirm the GraphQL to un-archive a client and that `jobReopen` on its SC succeeds only after un-archive. Capture the exact mutation names. If Jobber cannot un-archive a client, STOP and escalate to Fred (spec §9 risk) before building.
 
-- [ ] **Step 2: Write the edge function**
+- [x] **Step 2: Write the edge function**
 
 Mirror `archive-client` but reversed: (1) un-archive the client in Jobber; re-read until `isArchived === false`; (2) `jobReopen` the passed SC job GID; record its `job_status` via `fn_record_client_job`; (3) `client.update_client_status(client_id, 'ACTIVE', 'Client App: reactivated (reopened SC job #<n>)')`. Do NOT reopen any SA job. Branch on `data.ok`. Reuse `archive-client`'s CORS echo + staff-auth gate verbatim.
 
-- [ ] **Step 3: Deploy** (`supabase functions deploy unarchive-client …`, respecting `config.toml verify_jwt`).
+- [x] **Step 3: Deploy** (`supabase functions deploy unarchive-client …`, respecting `config.toml verify_jwt`).
 
-- [ ] **Step 4: Verify on 112-YA** — take it Inactive (via the app's close-SC once Phase C ships, or `archive-client` directly), call `unarchive-client`, assert Jobber `isArchived=false`, SC job open, `clients.status='ACTIVE'`, SA jobs still `archived`. Restore state.
+- [x] **Step 4: Verify on 112-YA** — take it Inactive (via the app's close-SC once Phase C ships, or `archive-client` directly), call `unarchive-client`, assert Jobber `isArchived=false`, SC job open, `clients.status='ACTIVE'`, SA jobs still `archived`. Restore state.
 
-- [ ] **Step 5: Commit** (Supabase footer).
+- [x] **Step 5: Commit** (Supabase footer).
 
 ---
 
@@ -277,37 +297,37 @@ Mirror `archive-client` but reversed: (1) un-archive the client in Jobber; re-re
 
 ### Task C1: Legacy jobs get no Reopen; status-aware SC/SA visibility
 
-- [ ] **Step 1: Prompt** — one line:
+- [x] **Step 1: Prompt** — one line:
 > On the client detail page, gate the per-row "Reopen" control on the job TITLE: show it only when the job title starts with "Service Agreement" (case-insensitive) OR equals "Service Call" (case-insensitive, trimmed); for every other job (legacy, [OLD], odd free-text) show NO Reopen button (keep "Open in Jobber"). Additionally, when the client's status is INACTIVE, show Reopen ONLY on the Service Call job (it is the reactivation entry) and hide it on archived Service Agreement rows. Do not change any query, RPC, or the Supabase client.
 
-- [ ] **Step 2: Publish** (reload-then-publish guard).
-- [ ] **Step 3: Verify live** — on an Active client: an archived SC/SA row shows Reopen; a legacy/[OLD] row does not. On an Inactive client: only the SC shows Reopen. Screenshot each.
+- [x] **Step 2: Publish** (reload-then-publish guard).
+- [x] **Step 3: Verify live** — on an Active client: an archived SC/SA row shows Reopen; a legacy/[OLD] row does not. On an Inactive client: only the SC shows Reopen. Screenshot each.
 
 ### Task C2: Context-aware reopen confirmation
 
-- [ ] **Step 1: Prompt** — one line:
+- [x] **Step 1: Prompt** — one line:
 > Before reopening any job, first call the RPC `client.preview_job_action(client_id, job_id, 'reopen')` and show a confirmation dialog built from its result. If `status_change` is null, show a plain "Reopen this job?" dialog listing the one job (#number + title) with a Cancel / "Reopen job" pair that calls the existing reopen (save-client-job action:"reopen"). If `status_change.to` is "RECURRING", show the green "Make {client} a recurrent client?" dialog (see Task C3). If `will_unarchive_client` is true, show the reactivate dialog (Task C3). Do not change the emergency-access or auth logic.
 
-- [ ] **Step 2: Publish + verify** — reopen an SC on an Active client shows the plain dialog; confirm reopens the job and leaves status unchanged; **line items are not doubled** (Phase A). Screenshot + `line_items` count.
+- [x] **Step 2: Publish + verify** — reopen an SC on an Active client shows the plain dialog; confirm reopens the job and leaves status unchanged; **line items are not doubled** (Phase A). Screenshot + `line_items` count.
 
 ### Task C3: The status dialogs
 
-- [ ] **Step 1: Prompt (create SA → Recurrent)** — one line:
+- [x] **Step 1: Prompt (create SA → Recurrent)** — one line:
 > When creating a new Service Agreement job and the client status is ACTIVE, after the New-SA form is submitted show a green confirmation "Make {client} a recurrent client?" that lists the new SA (from `client.preview_job_action(client_id, null, 'create')`) and the Active→Recurring transition; on confirm, run save-client-job action:"create", then call `client.update_client_status(client_id,'RECURRING', 'Client App: created SA job → recurrent')`, then `client.generate_visits_for_client(client_id)`. If the client is not ACTIVE, create the SA with no status dialog.
 
-- [ ] **Step 2: Prompt (reopen SA → Recurrent)** — one line:
+- [x] **Step 2: Prompt (reopen SA → Recurrent)** — one line:
 > Reuse the green "Make {client} a recurrent client?" dialog for reopening an SA when `preview_job_action` returns status_change.to = 'RECURRING'; on confirm, save-client-job action:"reopen", then `client.update_client_status(client_id,'RECURRING', 'Client App: reopened SA job #<n> → recurrent')`, then `client.generate_visits_for_client(client_id)`.
 
-- [ ] **Step 3: Prompt (close last SA → Active)** — one line:
+- [x] **Step 3: Prompt (close last SA → Active)** — one line:
 > When closing a Service Agreement, use `client.preview_job_action(client_id, job_id, 'close')`. If `other_open_sa_count` is 0, show a neutral "Close this service agreement?" dialog listing the SA and its `upcoming_visits_removed`, and the Recurring→Active transition; on confirm, save-client-job action:"close", then `client.update_client_status(client_id,'ACTIVE','Client App: closed last SA job #<n>')`. If `other_open_sa_count` > 0, show the plain close confirm and change no status.
 
-- [ ] **Step 4: Prompt (close SC → Inactive)** — one line:
+- [x] **Step 4: Prompt (close SC → Inactive)** — one line:
 > When closing the Service Call job, use `client.preview_job_action(client_id, job_id, 'close')` and show a RED destructive dialog "Close service call and deactivate {client}?" that lists EVERY job in `jobs_to_close` (#number + title + per-job upcoming count), the total `upcoming_visits_removed`, an "archived in Jobber" note, and the →Inactive transition; on confirm, call the `archive-client` edge function (which archives the client in Jobber, auto-closing all jobs, and sets INACTIVE). Do not close jobs individually first.
 
-- [ ] **Step 5: Prompt (reactivate)** — one line:
+- [x] **Step 5: Prompt (reactivate)** — one line:
 > When Reopen is used on the Service Call of an INACTIVE client, show an info dialog "Reactivate {client}?" (from `preview_job_action` with `will_unarchive_client`=true) noting it un-archives in Jobber and reopens the Service Call, old agreements stay closed, and the Inactive→Active transition; on confirm, call the new `unarchive-client` edge function. To make an inactive client recurring again, the app must offer CREATE a new SA (never reopen an archived one).
 
-- [ ] **Step 6: Publish after each; verify live per Phase D.**
+- [x] **Step 6: Publish after each; verify live per Phase D.**
 
 ---
 
@@ -315,31 +335,32 @@ Mirror `archive-client` but reversed: (1) un-archive the client in Jobber; re-re
 
 For each step: screenshot the UI + verify the DB (`jobs.job_status`, `clients.status`/`status_source`, `line_items` count, `client_status_changes`, upcoming visits). Restore 112-YA to baseline at the end.
 
-- [ ] **D0 Baseline** — record 112-YA's jobs (numbers/titles/statuses), status, line-item counts.
-- [ ] **D1 Legacy no-reopen** — legacy row has no Reopen; SC/SA archived rows do.
-- [ ] **D2 Reopen confirm (no status)** — reopen an SC: plain dialog; job opens; status unchanged; line items NOT doubled.
-- [ ] **D3 Create SA → Recurrent** — 🟢 dialog; confirm; `clients.status=RECURRING`, `status_source=manual`, a `client_status_changes` row, visits generated.
-- [ ] **D4 Reopen SA → Recurrent** — 🟢 dialog; confirm; status→Recurring.
-- [ ] **D5 Close last SA → Active** — ⚪ dialog lists the SA + upcoming count; confirm; status→Active; SA visits soft-deleted.
-- [ ] **D6 Close SC → Inactive** — 🔴 dialog lists every open job + per-job counts + "archived in Jobber"; confirm; `archive-client` archives client (`isArchived=true`), all jobs `archived`, `clients.status=INACTIVE`, visits removed.
-- [ ] **D7 Reactivate** — Reopen the archived SC: 🔵 dialog; confirm; `unarchive-client` → `isArchived=false`, SC open, `status=ACTIVE`; old SA stays `archived`; archived SA rows show no Reopen while Inactive.
-- [ ] **D8 Inactive → Recurring uses a NEW SA** — going Recurring prompts create-new-SA, never reopen the archived SA.
-- [ ] **D9 Duplication regression** — after the D2/D4/D7 reopens, each affected job has exactly one line-item set.
-- [ ] **D10 Restore** — return 112-YA to baseline.
+- [x] **D0 Baseline** — record 112-YA's jobs (numbers/titles/statuses), status, line-item counts.
+- [x] **D1 Legacy no-reopen** — legacy row has no Reopen; SC/SA archived rows do.
+- [x] **D2 Reopen confirm (no status)** — reopen an SC: plain dialog; job opens; status unchanged; line items NOT doubled.
+- [x] **D3 Create SA → Recurrent** — 🟢 dialog; confirm; `clients.status=RECURRING`, `status_source=manual`, a `client_status_changes` row, visits generated.
+- [x] **D4 Reopen SA → Recurrent** — 🟢 dialog; confirm; status→Recurring.
+- [x] **D5 Close last SA → Active** — ⚪ dialog lists the SA + upcoming count; confirm; status→Active; SA visits soft-deleted.
+- [x] **D6 Close SC → Inactive** — 🔴 dialog lists every open job + per-job counts + "archived in Jobber"; confirm; `archive-client` archives client (`isArchived=true`), all jobs `archived`, `clients.status=INACTIVE`, visits removed.
+- [x] **D7 Reactivate** — Reopen the archived SC: 🔵 dialog; confirm; `unarchive-client` → `isArchived=false`, SC open, `status=ACTIVE`; old SA stays `archived`; archived SA rows show no Reopen while Inactive.
+- [x] **D8 Inactive → Recurring uses a NEW SA** — going Recurring prompts create-new-SA, never reopen the archived SA.
+- [x] **D9 Duplication regression** — after the D2/D4/D7 reopens, each affected job has exactly one line-item set.
+- [x] **D10 Restore** — return 112-YA to baseline.
 
 ---
 
 ## Phase E — Documentation
 
-- [ ] **E1** Memory `project_recurring_client_authoritative_source.md` + `Supabase/CLAUDE.md` "`clients.status`" section: record that **Client-App job actions are now the confirmed driver of `clients.status`**, superseding the 2026-07-15 "not authoritative" rule for app-driven changes (Jobber poll still owns archive-driven INACTIVE).
-- [ ] **E2** `Building Apps/Client App/docs/08-changelog.md` (dated entry) + `09-known-issues.md` (close the reopen-duplication item; note the ~6 mis-titled jobs get no Reopen by design) + Client App `CLAUDE.md` (the status-driving rule + the `preview_job_action` contract + `unarchive-client`).
-- [ ] **E3** `Supabase/docs/` migration headers cross-reference this plan and the spec.
+- [x] **E1** Memory `project_recurring_client_authoritative_source.md` + `Supabase/CLAUDE.md` "`clients.status`" section: record that **Client-App job actions are now the confirmed driver of `clients.status`**, superseding the 2026-07-15 "not authoritative" rule for app-driven changes (Jobber poll still owns archive-driven INACTIVE).
+- [x] **E2** `Building Apps/Client App/docs/08-changelog.md` (dated entry) + `09-known-issues.md` (close the reopen-duplication item; note the ~6 mis-titled jobs get no Reopen by design) + Client App `CLAUDE.md` (the status-driving rule + the `preview_job_action` contract + `unarchive-client`).
+- [x] **E3** `Supabase/docs/` migration headers cross-reference this plan and the spec.
 
 ---
 
 ## Self-review notes (author)
 
-- **Spec coverage:** legacy gate (C1), reopen confirm (C2), dup fix (A), preview RPC (B1), the four/five dialogs + status calls (C3), reactivation + `unarchive-client` (B2/C3-5), close-SC = single `archive-client` (C3-4), 112-YA test (D), docs incl. authority re-ruling (E). All spec §4–§8 items map to a task.
-- **Known non-TDD reality:** Phase C has no local tests; its gate is the live 112-YA verification in Phase D — stated up front, not hidden.
-- **Placeholders that are deliberate, not failures:** `<t>` = the HHMM timestamp at apply time; the Task A1 column list + the live `fn_record_client_job` body are captured from the running system in their own steps (A1, A3-3) precisely because retyping them is the "copy don't retype" hazard — the plan routes around it rather than inventing a column list.
+- **Spec coverage:** legacy gate (C1), reopen confirm (C2), dup fix (A), preview RPC (B1), the four/five dialogs + status calls (C3), reactivation + `unarchive-client` (B2/C3-5), close-SC = single `archive-client` call from the app (C3-4), 112-YA test (D), docs incl. authority re-ruling (E). All spec §4–§8 items map to a task, **and all shipped + were verified (see the ✅ banner up top).**
+  ⚠ As-built: "close-SC = single `archive-client` call" is true app-side, but the edge fn closes the open jobs **explicitly** first (`jobClose(DESTROY_ALL)`, gated on `close_jobs:true`) rather than relying on archive to cascade — see `docs/reference/client-job-status-lifecycle.md` §4. The plan also did not anticipate the **archive precondition** (open quotes/requests/invoices refuse `clientArchive`); that surfaced during D and is captured in the spec §5.5-bis and the reference doc.
+- **Known non-TDD reality:** Phase C had no local tests; its gate was the live 112-YA verification in Phase D — stated up front, not hidden, and executed (A8 above).
+- **Placeholders — resolved at ship:** the `<t>` HHMM placeholders were filled to the real apply-time names (`1620`/`1625`/`1630`); the Task A1 column list + the live `fn_record_client_job` body were captured from the running system in their own steps (A1, A3-3), avoiding the "copy don't retype" hazard.
 - **Type consistency:** the preview JSON keys (`status_change`, `jobs_to_close`, `upcoming_visits_removed`, `other_open_sa_count`, `will_archive_client`, `will_unarchive_client`) are identical in B1 and every C3 prompt.

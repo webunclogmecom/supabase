@@ -1275,9 +1275,28 @@ the read-only `client.preview_job_action(client_id, job_id, action)` RPC (`2026-
 dialog and the write cannot disagree. App-side contract: `Building Apps/Client App/CLAUDE.md` rule 2n +
 `docs/08-changelog.md`. Spec/plan: `docs/superpowers/specs/2026-09-01-client-job-status-lifecycle-design.md`.
 ⚠ **`archive-client` can be refused by Jobber** — a client with open quotes / work requests / unpaid
-invoices cannot be archived (quotes have no archive mutation; invoices are off-limits), so the close-SC
-deactivation fails for such clients. It now returns a structured `archive_blocked_preconditions` error
-listing what to clear. See [[reference_jobber_client_archive_needs_quotes_invoices_cleared]] in memory.
+invoices cannot be archived (not just open jobs). **The point is that NONE of these can be cleared FROM
+THE CLIENT APP** — the `jobber_write` OAuth scope cannot touch quotes/requests/invoices and billing is
+Jobber-mastered — so such a client needs a human in Jobber. (Quotes ARE resolvable *there*, by
+archive/convert/delete; `countArchiveBlockers` treats `quote_status IN (archived,converted)` as
+resolved. "Quotes have no archive path" was an earlier imprecision — the correct statement is "our app
+can't clear them".) It returns a structured `archive_blocked_preconditions` error
+`{code, blockers:[{category, source, count}], jobber_error, message}` — categories are `work_requests`
+/ `quotes` / `invoices`, and a count is **omitted, never zeroed**, on a read error. See
+[[reference_jobber_client_archive_needs_quotes_invoices_cleared]] in memory and the consolidated
+as-built reference `docs/reference/client-job-status-lifecycle.md`.
+
+🛑 **`jobs.job_status` IS A PURE MIRROR OF JOBBER — it does NOT self-correct via the `*/5` poll
+(measured 2026-09-01).** The poll copies Jobber's `jobStatus`; it never derives one. Surfaced by the
+112-YA archive→reactivate round-trip: a closed-then-reopened Service Agreement comes back
+**`requires_invoicing`**, not its prior `active` — Jobber holds it there because the job carries
+completed, unbilled work ($207.06 on that SA), and it clears to `active` only when that work is invoiced
+in Jobber, **not on a timer** (confirmed over ~10 poll cycles / ~53 min: Jobber stayed put and the DB
+row's `updated_at` never moved because the poll never had a changed value to sync). It is **functionally
+inert**: `fn_generate_sa_visits` keys on `job_status <> 'archived'` (not `= 'active'`), and
+`frequency_days` + `jobType=RECURRING` survive the round-trip, so the SA still generates visits. Do not
+expect a poll to fix it, and do not invoice to tidy it (billing = Jobber-mastered). Full E2E + finding:
+`docs/reference/client-job-status-lifecycle.md`.
 
 ### GDO permits — location-bound (added 2026-05-25, per Fred)
 

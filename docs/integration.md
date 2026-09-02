@@ -16,6 +16,15 @@ Per-source integration details: webhook endpoints, signatures, payloads, registr
 | `rpa-derm-evidence` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-evidence` | GDO Online Reporting bot (POST; `x-rpa-key`) | fills `derm_portal_submissions.screenshot_path` + `rpa-evidence` bucket | Live 2026-08-24; **fill-once** (`.is(screenshot_path, null)`), never replaces evidence |
 | `rpa-derm-monthly` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/rpa-derm-monthly` | LWT monthly report (GET; `x-rpa-key`) | reads `derm.v_lwt_monthly_rows` | Live 2026-08-24; **read-only**, no lease, ETag; scope evaluated per ACTIVITY; returns `data_quality.conflicts` from `derm.v_manifest_link_date_conflicts` (check `checked` before trusting an empty list) |
 | `health-escalate` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/health-escalate` | pg_cron `health-escalation` 13:30 UTC (POST; service_role JWT) | reads `ops.v_health_items`, writes `public.health_alert_state`, sends via Resend | Live 2026-08-24; emails fred@ayache.com ONLY when an item is new or open 3+ days unacknowledged. **Silence is the healthy outcome.** Marks as sent only after Resend accepts, so a failed send repeats |
+| `archive-client` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/archive-client` | Client App (POST; staff JWT, `verify_jwt=false` + in-fn `@ayache.com`/`@unclogme.com` gate) | Jobber-first: closes every open job `jobClose(DESTROY_ALL)` (gated on `close_jobs:true`) + `clientArchive`, verifies `isArchived`, then `clients.status=INACTIVE` via `client.update_client_status` (manual pin) | Live 2026-08-21; structured `archive_blocked_preconditions` error since 2026-09-01. Reply is always HTTP 200 — read `body.ok`, not the status. See `docs/reference/client-job-status-lifecycle.md` §4 |
+| `unarchive-client` | `https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/unarchive-client` | Client App (POST; staff JWT, `verify_jwt=false` + in-fn gate) | Jobber-first: `clientUnarchive` + `jobReopen` the **SC only** (refuses SA/legacy), verifies `isArchived=false`, then `clients.status=ACTIVE` (manual pin) | Live 2026-09-01; the reactivation mirror of archive-client. Reply always HTTP 200 — read `body.ok`. See `docs/reference/client-job-status-lifecycle.md` §5 |
+
+⚠ **The Client-App write-saga edge fns are not webhooks.** `archive-client`, `unarchive-client`,
+`save-client-job`, `save-client-fields`, `save-client-contact`, `save-client-property` and
+`create-client` are staff-JWT-gated (`verify_jwt=false` at the gateway + an in-function
+`auth.getUser` + `@ayache.com`/`@unclogme.com` check), do a **verified Jobber saga** (push → re-read
+→ verify → write our DB), and **always reply HTTP 200 with `{ok}`** — so the "validates signature /
+401 on failure" note below does NOT apply to them; branch on `body.ok`, never the status code.
 
 Every function:
 - Accepts `POST` with JSON body
