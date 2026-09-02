@@ -1351,6 +1351,10 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
             valueNumeric
             customFieldConfiguration { id }
           }
+          ... on CustomFieldText {
+            valueText
+            customFieldConfiguration { id }
+          }
         }
       }
     }`,
@@ -1445,24 +1449,37 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
   // retry the same property every cycle forever. The shadow means nothing is lost by
   // skipping: the next pass re-reads and re-decides.
   try {
-    const cfConfigGid = 'gid://Jobber/CustomFieldConfigurationNumeric/3061111'
-    const cfNode = (p.customFields ?? []).find((c: any) =>
-      c?.__typename === 'CustomFieldNumeric' &&
-      c?.customFieldConfiguration?.id === btoa(cfConfigGid))
-    const { data: cfDecision, error: cfError } = await supabase.rpc('fn_sync_property_custom_field', {
-      p_property_id: entityId,
-      p_field_key: cfConfigGid,
-      p_field_label: 'Grease Trap size',
-      p_source_now: cfNode ? cfNode.valueNumeric : null,
-      p_source_present: !!cfNode,
-    })
-    if (cfError) {
-      console.error(`[handleProperty] custom-field sync failed for property ${entityId}: ${cfError.message}`)
-    } else if (cfDecision && cfDecision !== 'IGNORE' && cfDecision !== 'IN_SYNC') {
-      // SEED is normal on a new property. ADOPT / CONFLICT / FROZEN / REFUSED / RACE /
-      // NO_ANSWER all mean something a person may want to know about, so they are logged
-      // rather than swallowed.
-      console.log(`[handleProperty] grease trap size ${cfDecision} for property ${entityId}`)
+    // ONE list, so a second field cannot get a subtly different set of guards. Bound by
+    // configuration GID, never by label: four numeric grease-trap fields exist in the
+    // account, two differ only by a capital S, and "GT size" appears twice.
+    const SYNCED_CUSTOM_FIELDS: Array<{
+      gid: string; label: string; typename: string; read: (n: any) => unknown
+    }> = [
+      { gid: 'gid://Jobber/CustomFieldConfigurationNumeric/3061111', label: 'Grease Trap size',
+        typename: 'CustomFieldNumeric', read: (n) => n.valueNumeric },
+      { gid: 'gid://Jobber/CustomFieldConfigurationText/3061112', label: 'Lock Box/Key',
+        typename: 'CustomFieldText', read: (n) => n.valueText },
+    ]
+
+    for (const cf of SYNCED_CUSTOM_FIELDS) {
+      const cfNode = (p.customFields ?? []).find((c: any) =>
+        c?.__typename === cf.typename &&
+        c?.customFieldConfiguration?.id === btoa(cf.gid))
+      const { data: cfDecision, error: cfError } = await supabase.rpc('fn_sync_property_custom_field', {
+        p_property_id: entityId,
+        p_field_key: cf.gid,
+        p_field_label: cf.label,
+        p_source_now: cfNode ? cf.read(cfNode) : null,
+        p_source_present: !!cfNode,
+      })
+      if (cfError) {
+        console.error(`[handleProperty] custom-field sync failed for property ${entityId} (${cf.label}): ${cfError.message}`)
+      } else if (cfDecision && cfDecision !== 'IGNORE' && cfDecision !== 'IN_SYNC') {
+        // SEED is normal on a new property. ADOPT / CONFLICT / FROZEN / REFUSED / RACE /
+        // NO_ANSWER all mean something a person may want to know about, so they are logged
+        // rather than swallowed.
+        console.log(`[handleProperty] ${cf.label} ${cfDecision} for property ${entityId}`)
+      }
     }
   } catch (e) {
     console.error(`[handleProperty] custom-field sync threw for property ${entityId}: ${(e as Error).message}`)

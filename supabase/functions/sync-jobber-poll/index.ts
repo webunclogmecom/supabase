@@ -90,7 +90,7 @@ const ENTITIES = [
   { name: 'jobs',     rawTable: 'jobber_pull_jobs',     topic: 'JOB_UPDATE',     fields: 'id jobNumber title client { id } property { id } jobStatus startAt endAt total updatedAt' },
   { name: 'visits',   rawTable: 'jobber_pull_visits',   topic: 'VISIT_UPDATE',   fields: 'id title startAt endAt completedAt completedBy visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
   { name: 'invoices', rawTable: 'jobber_pull_invoices', topic: 'INVOICE_UPDATE', fields: 'id invoiceNumber invoiceStatus issuedDate dueDate subject amounts { subtotal total invoiceBalance depositAmount } client { id } updatedAt' },
-  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE', fields: 'id name address { street city province postalCode coordinates { latitude longitude } } customFields { __typename ... on CustomFieldNumeric { valueNumeric customFieldConfiguration { id } } }', replayLimit: 10 },
+  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE', fields: 'id name address { street city province postalCode coordinates { latitude longitude } } customFields { __typename ... on CustomFieldNumeric { valueNumeric customFieldConfiguration { id } } ... on CustomFieldText { valueText customFieldConfiguration { id } } }', replayLimit: 10 },
   { name: 'quotes',   rawTable: 'jobber_pull_quotes',   topic: 'QUOTE_UPDATE',   fields: 'id quoteNumber quoteStatus amounts { subtotal total depositAmount } client { id } updatedAt' },
 ] as const
 
