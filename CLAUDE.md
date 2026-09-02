@@ -984,7 +984,8 @@ Jobber's current value differs from what we last saw there; unchanged means "not
 the value, so `0 -> 0` can never be copied while `0 -> 190` is. First run seeds silently and adopts
 nothing. Both-sides-changed is recorded as CONFLICT and frozen: it is a human question.
 
-**STATUS: LIVE INBOUND SINCE 2026-08-18. Outbound is still NOT built.** Fred: *"wire it to the
+**STATUS: LIVE INBOUND SINCE 2026-08-18. Outbound exists since 2026-09-02 but is MANUAL ONLY - no
+cron, no app hook, no automatic push (see the UPDATED block below).** Fred: *"wire it to the
 poll."* A Jobber-side edit to the Grease Trap size now reaches `public.properties` on its own,
 proven unattended: Jobber was edited by hand, nothing was flagged, and the scheduled `*/5` cron
 swept at 01:00 ET, restaged the property, replayed it and adopted 1800 -> 2500 with
