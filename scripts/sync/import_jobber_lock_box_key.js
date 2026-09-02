@@ -174,10 +174,18 @@ async function jobber() {
          where id = rec.id and lock_box_key is null;
         if found then
           n := n + 1;
-          -- shaped exactly like a real adoption: our_value is the PRE-import NULL.
+          -- our_value is "what we last saw on OUR side", and after this statement that is
+          -- the value we just wrote. An earlier version passed 'null'::jsonb here, copying
+          -- the sync function's shape where that argument is the PRE-adopt value and the
+          -- substitution happens inside fn_record_shadow. It did NOT substitute for this
+          -- call, so 27 of 28 rows recorded "we hold nothing" against a column holding a
+          -- real code. That is a latent FREEZE, not a cosmetic wrong value: on the next
+          -- Jobber-side change fn_shadow_decision sees our side move as well and returns
+          -- CONFLICT, which sets conflict_at and freezes the row for ever. It fired for real
+          -- on property 100 within the hour. Repaired by 2026-09-02_1200.
           perform sync.fn_record_shadow('property', rec.id, 'jobber',
                     '${FIELD_KEY}', '${FIELD_LABEL}',
-                    to_jsonb(rec.value), 'null'::jsonb, to_jsonb(rec.value));
+                    to_jsonb(rec.value), to_jsonb(rec.value), to_jsonb(rec.value));
         end if;
       end loop;
       raise notice 'imported %', n;
