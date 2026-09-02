@@ -984,21 +984,42 @@ Jobber's current value differs from what we last saw there; unchanged means "not
 the value, so `0 -> 0` can never be copied while `0 -> 190` is. First run seeds silently and adopts
 nothing. Both-sides-changed is recorded as CONFLICT and frozen: it is a human question.
 
-**STATUS: LIVE INBOUND SINCE 2026-08-18. Outbound exists since 2026-09-02 but is MANUAL ONLY - no
-cron, no app hook, no automatic push (see the UPDATED block below).** Fred: *"wire it to the
+**STATUS: LIVE INBOUND SINCE 2026-08-18. LIVE AUTOMATIC OUTBOUND SINCE 2026-09-02 - the sync is now
+TWO-WAY (see the block below).** Fred: *"wire it to the
 poll."* A Jobber-side edit to the Grease Trap size now reaches `public.properties` on its own,
 proven unattended: Jobber was edited by hand, nothing was flagged, and the scheduled `*/5` cron
 swept at 01:00 ET, restaged the property, replayed it and adopted 1800 -> 2500 with
 `adopted_from`/`adopted_to` intact and its own audit label.
 
-**⚠ UPDATED 2026-09-02 - OUTBOUND NOW EXISTS, BUT ONLY AS A MANUAL TOOL. Do not read the sentence
-above as "one-way" any more, and do not read this as "the sync is two-way" either.** Fred: *"push
-those 5 capacities to jobber. We need to have a two way with jobber remember, so if jobber have a
-custom field which we also manage, we need that to be two way."*
-`scripts/sync/push_custom_field_to_jobber.js` (`c3cf104`) writes a value we hold into the Jobber
-custom field. Dry-run by default, `--field=gt|lockbox`, `--properties=` or `--all-jobber-zero`.
-**Nothing calls it on a schedule.** Used once so far, for six grease trap capacities (properties 10,
-115, 970, 975, 1001, 1082), each verified by a separate read-back.
+**⚠ UPDATED 2026-09-02 (later the same day) - OUTBOUND IS NOW AUTOMATIC. The sync IS two-way.**
+Fred: *"we need a two way with jobber remember, so if jobber have a custom field which we also
+manage, we need that to be two way."* An edit made in the Client App reaches Jobber on its own,
+**proven unattended in 60 seconds**. Three pieces:
+- `sync.outbound_queue` + `trg_properties_enqueue_outbound` (`2026-09-02_1400`) - a trigger records
+  INTENT inside the staff member's own transaction.
+- edge fn **`jobber-push-custom-field`** (`verify_jwt=true`, pinned in `config.toml`) drains it, via
+  four `public.fn_outbound_*` wrappers (`2026-09-02_1500`).
+- cron **`outbound-custom-field-push`**, `*/2` (`2026-09-02_1600`).
+The manual `scripts/sync/push_custom_field_to_jobber.js` (`c3cf104`) still exists for backfills and
+one-offs; it is no longer the only path.
+
+🛑 **THE SUPPRESSION MARKER IS POSITIVE, AND IT IS THE CRUX. Do not "improve" it into a denylist.**
+Without suppression the trigger pushes every just-ADOPTED Jobber value straight back, 477 rows wide,
+every 5 minutes. The obvious guard - skip when `app_source` is the sync's label - is **incomplete by
+construction**: `public.properties` is also written by `jobber-lock-box-import`, `sql` (2161 rows,
+117 of which changed the capacity), `probe-smoke-test`, `admin-review`, `visit-calendar` and
+`force-adopt-jobber`. A denylist of writers is a list somebody has to keep completing, and the day
+it is incomplete a backfill sprays Jobber.
+⇒ The condition is **`auth.uid() is not null`**: the write is inside a request carrying a real
+person's JWT. Everything else in this estate writes as service_role/postgres with no JWT - the
+inbound sync, every Management-API script, every cron - and is excluded **without being enumerated**.
+A third app entry point added later is covered automatically instead of silently missed, and no
+existing function had to change to make this work.
+
+✅ **Proven in BOTH directions, which is the only reason either number means anything:** an
+authenticated write enqueued **2** rows (one per changed field); a service_role write enqueued **0**
+with the trigger provably attached and enabled. A negative assertion with no positive control beside
+it would have passed just as well against a trigger that does nothing at all.
 
 🛑 **THE ORDER IS THE WHOLE SAFETY ARGUMENT: PUSH -> READ BACK -> THEN RECORD THE SHADOW.**
 - Push **without** re-baselining the shadow and the row **freezes on the very next poll**:
@@ -1084,10 +1105,16 @@ defects were reachable only from the baseline nobody exercised (flag absent; cap
 **✅ A SECOND FIELD IS NOW WIRED: `Lock Box/Key` (2026-09-02).** ALL_PROPERTIES **text**, config
 **3061112**, into `public.properties.lock_box_key`. Fred asked for it as an editable field in the
 Client App property modal, chose mirror-Jobber-but-editable, and it carries the same accepted cost as
-the capacity: **no AUTOMATIC outbound**, so an edit made in our app does not reach Jobber on its own
-and a later Jobber edit wins. ⚠ The manual `push_custom_field_to_jobber.js --field=lockbox` can push
-one, but **it has never been run for this field** - only the grease trap has been pushed. So for the
-lock box the sentence above is still true in practice.
+the capacity. ⚠ **UPDATED later the same day: that cost is GONE for both fields.** Automatic
+outbound went live 2026-09-02 (`_1400`/`_1500`/`_1600` + the `jobber-push-custom-field` edge fn), and
+an edit in the Client App now reaches Jobber within about two minutes. Verified end to end on the
+lock box specifically: an app-style write of `CRON-OK` on property 10 was carried to Jobber **by the
+cron alone**, and the shadow recorded it as a jsonb **string**.
+⚠ The one asymmetry, deliberate: **a CLEAR is not pushed.** Emptying the field here saves fine on our
+side but does not blank Jobber, because blanking a field from an unattended process is the most
+destructive write the path can make and the inbound half refuses the mirror case. Such rows land as
+`skipped` in `sync.outbound_queue` with the reason visible in `sync.v_outbound_queue_health`, never
+silently dropped. The app's helper text says so.
 
 🛑 **THE POLL WAS THE HALF THAT WOULD HAVE MADE IT SILENTLY INERT, and this is the concrete proof of
 the "TWO PLACES" rule above.** The poll's property `fields` string selected **only**
