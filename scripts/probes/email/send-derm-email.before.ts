@@ -122,8 +122,6 @@ const PDF_TIMEOUT_MS = 65_000
 // serial 65s renders is 455s in one invocation, and a platform wall-clock or OOM kill runs
 // NO catch and NO finally, so derm_email_sends would record nothing at all and the operator
 // would see a network error instead of results[]. This bounds the whole invocation.
-import { buildCityLetterHtml, buildCityLetterText } from '../_shared/city-letter.ts'
-
 const RENDER_DEADLINE_MS = 120_000
 // 8 MiB, deliberately NOT the sibling's 25 MiB: that function sends one email per
 // invocation, this one loops. Worst measured city payload is ~5.36MB across 2 attachments
@@ -138,10 +136,22 @@ const MAX_REPORT_BYTES = 8 * 1024 * 1024
 // still gets the letter, so this branch is reachable and the copy has to be honest: the
 // attachment sentence is omitted entirely rather than promising a document that is not there
 // and may never exist (a non-DERM visit has no report at all, ever).
-// 'report' = the FP Service Report is attached; 'none' = the letter goes out with nothing
-// attached, which is a real branch Fred chose on 2026-08-26. Recorded in the API result and
-// in derm_email_sends, and it selects the attachment card in the shared letter.
-type CityAttachMode = 'report' | 'none'
+const CITY_ATTACH_COPY = {
+  report: {
+    preheader: (name: string) =>
+      `DERM Manifest submission for ${name} &mdash; Service Report attached, including the Manifest Form and the Transporter Manifest, for your compliance records.`,
+    html: `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">Attached, you'll find our <strong style="color:#111827;">Service Report</strong> for this service, which includes the <strong style="color:#111827;">Manifest Form</strong> and the corresponding <strong style="color:#111827;">Transporter Manifest</strong>.</p>`,
+    text: ["Attached, you'll find our Service Report for this service, which includes the Manifest Form and the corresponding Transporter Manifest.", ''],
+  },
+  none: {
+    preheader: (name: string) =>
+      `DERM Manifest submission for ${name} &mdash; service completion notice for your compliance records.`,
+    html: '',
+    text: [] as string[],
+  },
+} as const
+
+type CityAttachMode = keyof typeof CITY_ATTACH_COPY
 const CITY_BCC = 'derm@ayache.com'
 
 const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
@@ -234,16 +244,51 @@ function buildText(clientName: string, number: string, ext: string): string {
   ].join('\n')
 }
 
-// ---- CITY email ------------------------------------------------------------
-// 🛑 THE CITY LETTER NOW LIVES IN ../_shared/city-letter.ts AND IS SHARED WITH
-// send-visit-photos-email. It used to be built here, and the two senders therefore mailed a
-// municipality two visibly different letters for the same job: this one was plain prose with no
-// service-details panel, no attachment card, no phone number and no licensed-hauler footer, and
-// it signed off "Thanks again for your hard work - and feel free to recommend us to the
-// restaurants in your city ;-)". Fred, 2026-09-02: "make it so all the emails to the city follow
-// how it looks at the Admin Review App."
-// ⚠ Do NOT reintroduce a local builder. Two copies of a regulator-facing letter is the same trap
-// this repo already paid for with the base64 encoder: the second copy is the one nobody re-tests.
+// ---- CITY email (formal, to the municipal FOG office, two attachments) -----
+// `mode` selects which attachment sentence the letter carries. It MUST agree with what is
+// actually attached: under option B the city receives either one Service Report (which
+// embeds both manifest documents) or the two manifest images, never both.
+function buildCityHtml(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'none'): string {
+  const name = escapeHtml(clientName)
+  const addr = escapeHtml(address || '')
+  const vdate = escapeHtml(visitDate || '')
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>DERM Manifest for ${name}</title></head>
+<body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">${CITY_ATTACH_COPY[mode].preheader(name)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;border-top:4px solid #f14714;">
+<tr><td style="padding:28px 36px 20px 36px;border-bottom:1px solid #eef0f2;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
+<tr><td style="padding:32px 36px 8px 36px;font-family:${FONT_STACK};">
+<p style="margin:0 0 18px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">Dear Environmental Compliance Team,</p>
+<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">The service for our client <strong style="color:#111827;">${name}</strong> located at <strong style="color:#111827;">${addr}</strong> was performed on <strong style="color:#111827;">${vdate}</strong>.</p>
+${CITY_ATTACH_COPY[mode].html}
+<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">If you have any questions or need assistance regarding this document, please feel free to reach us at <a href="mailto:contact@unclogme.com" style="color:#d63d12;text-decoration:underline;font-weight:600;">contact@unclogme.com</a> or call us directly.</p>
+<p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">Thanks again for your hard work &mdash; and feel free to recommend us to the restaurants in your city ;-)</p>
+<p style="margin:0 0 4px 0;font-size:15px;line-height:1.65;font-weight:700;color:#111827;">The Unclogme Team</p>
+</td></tr>
+<tr><td style="padding:18px 36px 26px 36px;background-color:#fafbfc;border-top:1px solid #eef0f2;font-family:${FONT_STACK};">
+<p style="margin:0 0 4px 0;font-size:13px;font-weight:700;color:#374151;">Unclogme LLC</p>
+<p style="margin:0 0 2px 0;font-size:12px;line-height:1.5;color:#9ca3af;">333 West 41st Street, Suite 606, Miami Beach, FL 33140</p>
+<p style="margin:0;font-size:12px;line-height:1.5;color:#9ca3af;"><a href="mailto:contact@unclogme.com" style="color:#9ca3af;text-decoration:underline;">contact@unclogme.com</a></p>
+</td></tr>
+</table>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:16px 36px;text-align:center;font-family:${FONT_STACK};font-size:11px;color:#b6bcc4;line-height:1.5;">Sent by Unclogme LLC for FOG / grease-trap compliance submission.</td></tr></table>
+</td></tr></table>
+</body></html>`
+}
+
+function buildCityText(clientName: string, address: string, visitDate: string, mode: CityAttachMode = 'none'): string {
+  return [
+    'Dear Environmental Compliance Team,', '',
+    `The service for our client ${clientName} located at ${address} was performed on ${visitDate}.`, '',
+    ...CITY_ATTACH_COPY[mode].text,
+    'If you have any questions or need assistance regarding this document, please feel free to reach us at contact@unclogme.com or call us directly.', '',
+    'Thanks again for your hard work — and feel free to recommend us to the restaurants in your city ;-)', '',
+    'The Unclogme Team', '',
+    '--', 'Unclogme LLC', '333 West 41st Street, Suite 606, Miami Beach, FL 33140', 'contact@unclogme.com',
+  ].join('\n')
+}
 
 // Service_role client used ONLY to sign storage objects for attachments. Kept at
 // module scope so fetchAttachment can reach it without threading it through every
@@ -945,32 +990,12 @@ Deno.serve(async (req: Request) => {
         const attachments: { filename: string; content: string; content_type: string }[] = []
         if (reportAtt) attachments.push(reportAtt)
 
-        // The card names what is actually attached. 'report' is the FP Service Report, which
-        // EMBEDS the FOG eManifest and the WWTP receipt, so the subtitle names both. 'none' is
-        // a real branch (Fred, 2026-08-26: the letter still goes out with nothing attached) and
-        // must show no card at all rather than promise a document that does not exist.
-        const cityLetter = {
-          clientName,
-          address: letterAddress,
-          visitDate: fmtDate(letterDate),
-          card: attachMode === 'report'
-            ? { title: 'Service Report', subtitle: 'Manifest Form & Transporter Manifest' }
-            : null,
-          manifestsToFollow: false,
-          isTest: !!testRecipient,
-          preheader: `DERM Manifest submission for ${clientName}.`,
-        }
-
         const payload: Record<string, unknown> = {
           from: RESEND_FROM,
           to: toList,
           subject: `DERM Manifest for ${clientName}`,
-          // 2026-09-02: ONE city letter for both senders, from _shared/city-letter.ts.
-          // Fred: "make it so all the emails to the city follow how it looks at the Admin
-          // Review App". manifestsToFollow is FALSE here on purpose: this IS the manifest
-          // submission, so promising a second email would be wrong.
-          html: buildCityLetterHtml(cityLetter),
-          text: buildCityLetterText(cityLetter),
+          html: buildCityHtml(clientName, letterAddress, fmtDate(letterDate), attachMode),
+          text: buildCityText(clientName, letterAddress, fmtDate(letterDate), attachMode),
           attachments,
         }
         // BCC = compliance copy on real sends (CITY_BCC) + the test_cc "send-to-both" copy
