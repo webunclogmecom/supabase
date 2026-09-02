@@ -4,7 +4,8 @@
  *
  *   node scripts/sync/push_custom_field_to_jobber.js --field=gt --properties=10,115
  *   node scripts/sync/push_custom_field_to_jobber.js --field=gt --properties=10,115 --apply
- *   node scripts/sync/push_custom_field_to_jobber.js --field=gt --all-jobber-zero
+ *   node scripts/sync/push_custom_field_to_jobber.js --field=gt --only-if-jobber-empty
+ *   (--all-jobber-zero is kept as an alias: 0 is only how a NUMERIC field spells empty)
  *
  * Fred, 2026-09-02: "push those 5 capacities to jobber. We need to have a two way with jobber
  * remember, so if jobber have a custom field which we also manage, we need that to be two way."
@@ -48,15 +49,27 @@
  *
  * A Jobber NUMERIC custom field reports an empty value as 0, not null. So "Jobber has 0" and
  * "nobody ever filled it in" are the SAME state, exactly as an absent day means both Closed and
- * never-recorded in the access schedule. That is why --all-jobber-zero is a deliberately
- * narrower selector than "everything that differs": overwriting a 0 destroys no information,
- * while overwriting Jobber's 2500 with our 1500 could destroy a number somebody typed on purpose.
+ * never-recorded in the access schedule. That is why --only-if-jobber-empty is a deliberately
+ * narrower selector than "everything that differs": overwriting an empty field destroys no
+ * information, while overwriting Jobber's 2500 with our 1500 could destroy a number somebody
+ * typed on purpose.
+ *
+ * EMPTY IS SPELLED DIFFERENTLY PER TYPE, and getting that wrong is silent. A TEXT field spells
+ * empty as null or '', never 0. The first version of this flag tested the numeric spelling only,
+ * so pointed at the lock box it marked EVERY row "Jobber holds a real value" and skipped the whole
+ * estate - which prints as "nothing to push", indistinguishable from a genuinely clean estate.
  */
 const fs = require('fs'), path = require('path');
 
 const APPLY = process.argv.includes('--apply');
 const ALLOW_CLEAR = process.argv.includes('--allow-clear');
-const ALL_ZERO = process.argv.includes('--all-jobber-zero');
+// "Jobber is empty here" is the safe-to-push selector: overwriting an empty field destroys no
+// information. Its SPELLING differs by type, and that is not cosmetic - a Jobber NUMERIC field
+// reports empty as 0, a TEXT field as null or ''. The original flag name only described the
+// numeric spelling, and used on the text field it skipped EVERY row (null !== 0), which reads as
+// "nothing to push" rather than as a broken selector. --only-if-jobber-empty is the type-neutral
+// name; the old one is kept as an alias so existing notes and commands still work.
+const ONLY_EMPTY = process.argv.includes('--all-jobber-zero') || process.argv.includes('--only-if-jobber-empty');
 const arg = (n) => (process.argv.find(a => a.startsWith('--' + n + '=')) || '').split('=').slice(1).join('=');
 
 // Type is not a detail here. fn_shadow_decision compares jsonb by IDENTITY, so a numeric field
@@ -144,7 +157,7 @@ const readField = (prop) => F.read((prop.customFields || []).find(c => c.label =
 
 (async () => {
   const ids = (arg('properties') || '').split(',').map(s => s.trim()).filter(Boolean).map(Number);
-  if (!ids.length && !ALL_ZERO) throw new Error('pass --properties=1,2,3 or --all-jobber-zero');
+  if (!ids.length && !ONLY_EMPTY) throw new Error('pass --properties=1,2,3 or --only-if-jobber-empty');
 
   // When no explicit list is given, consider only rows where we hold something Jobber does not
   // already match. The per-row guards below still apply to every one of them.
@@ -180,6 +193,11 @@ const readField = (prop) => F.read((prop.customFields || []).find(c => c.label =
   // Jobber's numeric empty is 0 while our absent is null. Treat them as one state, or every
   // never-filled field reads as "the source moved" and nothing is ever pushable.
   const norm = (v) => (F.emptyIsZero && (v === 0 || v === null)) ? 0 : v;
+  // Type-aware "Jobber has nothing here". A NUMERIC field spells empty as 0; a TEXT field spells
+  // it as null or ''. Testing the numeric spelling against a text field marks every empty row as
+  // "Jobber holds a real value" and skips the whole estate.
+  const jobberEmpty = (v) => F.emptyIsZero ? (v === 0 || v === null || v === undefined)
+                                           : (v === null || v === undefined || v === '');
 
   const plan = [];
   for (const r of rows) {
@@ -202,9 +220,9 @@ const readField = (prop) => F.read((prop.customFields || []).find(c => c.label =
     const ours = r.ours == null ? null : (F.emptyIsZero ? Number(r.ours) : String(r.ours));
     const row = { id: r.id, client_code: r.client_code, source_id: r.source_id, live, ours };
     if (norm(ours) === norm(live)) { plan.push({ ...row, action: 'SKIP', why: 'already equal in Jobber' }); continue; }
-    if (ALL_ZERO && norm(live) !== 0) {
+    if (ONLY_EMPTY && !jobberEmpty(live)) {
       plan.push({ ...row, action: 'SKIP',
-        why: 'Jobber holds a real value (' + JSON.stringify(live) + '), not 0 - needs a human' });
+        why: 'Jobber holds a real value (' + JSON.stringify(live) + ') - needs a human, not an overwrite' });
       continue;
     }
     plan.push({ ...row, action: 'PUSH' });
