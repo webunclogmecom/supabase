@@ -988,9 +988,41 @@ nothing. Both-sides-changed is recorded as CONFLICT and frozen: it is a human qu
 poll."* A Jobber-side edit to the Grease Trap size now reaches `public.properties` on its own,
 proven unattended: Jobber was edited by hand, nothing was flagged, and the scheduled `*/5` cron
 swept at 01:00 ET, restaged the property, replayed it and adopted 1800 -> 2500 with
-`adopted_from`/`adopted_to` intact and its own audit label. **Outbound is still not built**: nothing
-we change is pushed to Jobber (`propertyEdit` accepts a customFields-only edit and config `3061111`
-is `readOnly:false`, so it is possible, just not written).
+`adopted_from`/`adopted_to` intact and its own audit label.
+
+**⚠ UPDATED 2026-09-02 - OUTBOUND NOW EXISTS, BUT ONLY AS A MANUAL TOOL. Do not read the sentence
+above as "one-way" any more, and do not read this as "the sync is two-way" either.** Fred: *"push
+those 5 capacities to jobber. We need to have a two way with jobber remember, so if jobber have a
+custom field which we also manage, we need that to be two way."*
+`scripts/sync/push_custom_field_to_jobber.js` (`c3cf104`) writes a value we hold into the Jobber
+custom field. Dry-run by default, `--field=gt|lockbox`, `--properties=` or `--all-jobber-zero`.
+**Nothing calls it on a schedule.** Used once so far, for six grease trap capacities (properties 10,
+115, 970, 975, 1001, 1082), each verified by a separate read-back.
+
+🛑 **THE ORDER IS THE WHOLE SAFETY ARGUMENT: PUSH -> READ BACK -> THEN RECORD THE SHADOW.**
+- Push **without** re-baselining the shadow and the row **freezes on the very next poll**:
+  `fn_shadow_decision` sees the source move (`0 -> 403`) and our side move in the same comparison,
+  and both-moved is CONFLICT by definition. The push looks successful and silently arms a freeze.
+- Record the shadow **first**, then fail the write, and it is **worse than a freeze**: the shadow
+  claims Jobber holds 403 while Jobber still holds 0, so the next poll reads the true 0 as a fresh
+  Jobber edit and **ADOPTS it over a real capacity.** Silent data loss.
+- The mutation's own echo is **not** evidence; the read-back is a separate request, and on a mismatch
+  the shadow is not touched.
+
+✅ Verified by re-running the freeze audit rather than trusting the push output: `armed 8 -> 2`,
+`IN_SYNC 28 -> 34`, `frozen 0 -> 0`. **The +6 and the -6 are the same six counted two ways.**
+
+⚠ **`0` IS JOBBER'S EMPTY FOR A NUMERIC FIELD, so "Jobber has 0" and "nobody ever filled it in" are
+the same state.** That is why `--all-jobber-zero` is narrower than "anything that differs":
+overwriting a 0 destroys no information, overwriting Jobber's 2500 with our 1500 can destroy a number
+somebody typed on purpose. Standing at 2026-09-02: **67 push-safe, 12 needing a human** (139 ours 294
+vs 250, 217 ours 1500 vs 2500, +10), **11 billing rows refused** (they carry a Client gid, not a
+Property gid).
+⚠ **An "armed" row is not automatically a defect.** All 8 armed before this push carried real
+`client-app` edits by real people; CONFLICT would have been the *correct* verdict. Re-baselining
+`our_value` to make them look clean would let a Jobber edit silently overwrite a staff entry. Read the
+audit history before calling an armed row a bug - the lock box's armed rows were a bad baseline my own
+import wrote, these were the world genuinely diverging, and only the history separates them.
 
 **TWO PLACES, AND MISSING EITHER MAKES IT SILENTLY INERT.** The poll does not hand its staged
 payload to the handler; it POSTs an id and `handleProperty` re-queries Jobber itself.
