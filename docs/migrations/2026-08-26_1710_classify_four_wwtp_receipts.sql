@@ -1,5 +1,13 @@
 -- 2026-08-26_1710_classify_four_wwtp_receipts.sql
 --
+-- 🛑 SUPERSEDED 2026-09-02: the "manual classification pass, done by hand because the backlog is
+--    only a handful of images" trade this file rests on was retired. Fred chose to TRUST the receipt
+--    at upload (Option A1). 2026-09-02_1120_autoclassify_wwtp_receipt_on_upload.sql adds a trigger
+--    that auto-classifies every uploaded receipt 'receipt', keeping receipt_doc_class as a manual
+--    override lever (flip/delete a row to hide a bad doc). Hand-authored classification migrations
+--    like this one are no longer the mechanism. This file stays as the historical record of the
+--    backlog it cleared; do not run it again.
+--
 -- WHY
 -- ---
 -- Fred, 2026-08-26: "fix the lag now." One of the things making the FP Service Report
