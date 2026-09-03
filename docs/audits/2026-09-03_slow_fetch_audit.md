@@ -382,3 +382,123 @@ starvation (impossible), not `fn_blackout_targets` (~0.7% of one core). Connecti
 memory remain the live hypotheses, and **the dashboard CPU and Disk IO charts for 08-31 10:05-10:37
 ET remain the single most useful unexamined evidence** — as this document has said from the start,
 and is now the only recommendation in it that has never been wrong.
+
+---
+
+## 2026-09-03 ~16:5x ET — COMPUTE UPGRADED `ci_micro` -> `ci_medium` (Fred: "Go with Medium")
+
+**This is the only change in this audit that addresses the ACTUAL remaining hypothesis.** Everything
+above ruled a cause out; this one acts on what was left. Fred chose Medium over the Small I
+recommended.
+
+### What changed
+
+| | before (`ci_micro`) | after (`ci_medium`) |
+|---|---|---|
+| RAM | 1 GB | **4 GB** |
+| CPU | 2 cores, **burstable** | 2 cores, burstable (unchanged) |
+| baseline disk IO | 87 MB/s | **347 MB/s** (burst 2,085) |
+| direct connections | 60 | **120** |
+| `shared_buffers` | 256 MB | **1024 MB** |
+| `effective_cache_size` | 768 MB | **3072 MB** |
+| `work_mem` | 3.4 MB | **7 MB** |
+| `maintenance_work_mem` | 64 MB | **256 MB** |
+| cost | ~$10/mo | ~$60/mo |
+
+**The number that matters: the database is 752 MB and `effective_cache_size` is now 3072 MB.** The
+whole working set fits in cache with room for the co-tenant services, which it did not before.
+
+`max_parallel_workers` (2) and `autovacuum_max_workers` (3) did NOT scale with the tier.
+
+### 🛑 THE ENDPOINT IS `PATCH`, NOT `POST`. A POST RETURNS 404.
+
+`POST /v1/projects/{ref}/billing/addons` -> **HTTP 404**, which reads like "this project cannot be
+resized" rather than "wrong verb". Found by fetching the OpenAPI spec (`https://api.supabase.com/api/v1-json`,
+338 KB) and reading the path:
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $PAT" -H "Content-Type: application/json" \
+  -d '{"addon_type":"compute_instance","addon_variant":"ci_medium"}' \
+  "https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/billing/addons"
+```
+
+Returns **HTTP 200 with an empty body**. `DELETE /v1/projects/{ref}/billing/addons/{addon_variant}`
+reverts. **Downtime measured: 138 seconds**, `RESIZING` -> `ACTIVE_HEALTHY`.
+
+### ✅ `max_worker_processes` SURVIVED THE RESIZE
+
+Explicitly checked, because it is now an override against a tier default and a compute change is
+exactly the kind of event that silently resets one. It reads **12**. Had it reverted to 6, the three
+permanent bgworkers plus the Realtime walsender would have been competing again with no signal.
+
+### ⚠ REALTIME REPORTS `UNHEALTHY` FOR THE FIRST FEW MINUTES, AND IT IS NOT A FAULT
+
+Three minutes after the resize: `realtime healthy=false`, **zero walsenders, and
+`pg_replication_slots` completely EMPTY**. That is alarming to read and it is transient. At six
+minutes: slot `supabase_realtime_messages_replication_slot_...` back and `active=true`, 1 walsender,
+6 realtime backends. **Poll it before concluding anything** — the cache-invalidation broadcasts the
+Visit Calendar depends on ride that slot, so a person checking once at T+3min would reasonably file
+a Realtime outage that does not exist.
+
+### Verified after the resize
+
+| check | result |
+|---|---|
+| cron runs / failures | 13 / **0** |
+| slowest cron run | **0.09 s** (during the stall windows these reached 10-20 s) |
+| active cron jobs | 25 |
+| `sync.outbound_queue` pending | 0 — nothing lost across the restart |
+| permanent bgworkers | 3 |
+| Realtime slot + walsender | back, active |
+| Jobber write token | valid |
+| `derm.fn_blackout_targets` still materialised | yes |
+| cache hit ratio | 99.70% |
+| `ops.pgss_snapshot_20260903_medium` | 1,993 rows, taken BEFORE the resize |
+
+**Query latency, measured server-side (5/3/3 runs):**
+
+| query | cold | warm |
+|---|---|---|
+| `ops.v_calendar_visit`, 30-day window (163 rows) | 24.6 ms | **0.9-1.1 ms** |
+| `client.properties` (937 rows) | 1.3 ms | 0.3 ms |
+| `customer.work_orders` (718 rows) | 10.5 ms | 6.4 ms |
+| `derm.fn_blackout_targets(3)` | 533 ms | **507-513 ms** |
+
+**Live app, `calendar.unclogme.app` signed in:** 142 visits, 8 to schedule, 4 trucks, 139 chips
+rendered. **13 REST calls on one page load**, median **223 ms**, slowest **530 ms**
+(`v_calendar_visit`). Against a 0.9 ms server-side query that is network + PostgREST, not the DB.
+
+### 🛑 WHAT THIS DOES **NOT** PROVE, AND THE HONEST FRAMING FOR FRED
+
+**The stalls were episodic and the last one was 2026-09-03 12:50-12:56. An hour of healthy readings
+after an upgrade is not evidence they are gone**, and every number in the table above would have
+looked just as good at 12:45. The case for compute rests on ruling everything else out plus the
+instance spec, not on a post-fix measurement.
+
+Specifically still true:
+- **The queries were never slow in Postgres.** During a stall they were CANCELLED at the 8 s
+  `statement_timeout` (266 of them in two windows, measured by @Supabase 2), which is a symptom of
+  the whole host stalling, not of a slow plan. A faster plan cannot fix that; more headroom might.
+- **`fn_blackout_targets` did not get faster** (507 ms vs the ~514 ms measured pre-upgrade). It is
+  CPU-bound on a query plan, and the CPU allocation did not change — only RAM and disk did. That is
+  the expected result, and it confirms the upgrade is not a general speed-up.
+- **The dashboard Memory and Disk IO charts for `2026-08-31 10:05-10:45 ET` have still never been
+  looked at.** That is the one recommendation in this audit that has never been wrong, and it is the
+  only thing that would say WHICH of memory or disk was binding. If a stall recurs on Medium, that
+  is the first place to go, not another spec change.
+
+**The test is time.** If no stall occurs over the next week or two of normal use, the diagnosis was
+right. If one does, the remaining suspects are CPU (which Medium did not change — the next tier that
+does is `ci_large` with dedicated cores) and something outside Postgres entirely.
+
+### Still worth doing regardless of whether the stalls return
+
+1. `statement_timeout` for `authenticated` is **8 s**. During a stall that turns a slow page into a
+   hard error. Raising it does not fix the stall; it makes the failure mode a slow load rather than
+   an error toast.
+2. `cron.max_running_jobs = 32` against the old `max_connections = 60` was genuinely dangerous
+   (worst case measured 59/60). At 120 it is comfortable, but 32 is still far more than the 5
+   concurrent the staggered schedule now produces.
+3. PostgREST holds ~21 idle connections. Cheap at 120, but it is 17% of the pool doing nothing.
+4. The Calendar makes **13 REST round-trips per refresh**. That is an app-side change and it is the
+   single biggest lever left on perceived load time, since each one costs ~220 ms of network.
