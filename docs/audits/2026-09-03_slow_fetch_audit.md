@@ -166,3 +166,67 @@ select to_char(start_time at time zone 'America/New_York','MM-DD HH24:MI') et, c
 ⚠ `pg_stat_statements` was last reset **2026-09-01 12:00 UTC**, so it covers 53 hours - it cannot
 speak to "last week". The cron history goes back further and is what section 2 relies on.
 ⚠ `round(double precision, int)` does not exist in this Postgres; cast to `numeric` first.
+
+---
+
+# Post-fix re-audit, 2026-09-03 13:42 ET
+
+The re-phase (`2026-09-03_1800_stagger_cron_schedules.sql`, `ce0500f`) took effect at **13:34 ET**.
+
+## What is PROVEN, and needs no waiting
+
+Structural, recomputed from the live `cron.job` table rather than from the planning script:
+
+| | before | after |
+|---|---|---|
+| peak jobs in one minute | **14** | **5** |
+| minutes/hour at or above the 6-worker pool | **9** | **0** |
+| minutes/hour with 4+ jobs | 12 | 4 |
+| active jobs | 25 | 25 |
+| per-job frequency | - | **unchanged**, asserted per job in the migration |
+
+The condition that produced `job startup timeout` - more jobs demanding a background worker than the
+pool of 6 can supply - **no longer occurs at any minute of the hour.** That is deterministic, not
+statistical.
+
+## What is NOT yet proven, and I am not going to claim it
+
+```
+runs in the 15 minutes since   38
+failures                        0
+runs over 3s                    0
+max duration                    0.19 s   (during a stall window: 10-20 s)
+```
+
+🛑 **This is consistent with the fix working and it does not demonstrate it.** The baseline failure
+rate is **0.22 failures/hour**, so a clean 15-minute window would be expected to contain
+**about 0.06 failures** even with the bug fully present. Zero is what you would see either way.
+
+Worse, the symptom was **episodic**: 36 failures in 7 days arriving in three clusters, not spread
+evenly. A quiet quarter of an hour is exactly what the previous seven days looked like most of the
+time. **Absence of the symptom over 15 minutes is not evidence.**
+
+⇒ **The honest verdict: the mechanism is provably removed, the outcome needs a few days.** The check
+that will actually settle it, run in a week:
+
+```sql
+-- must stay at zero. Any row here means the worker pool is still being exhausted.
+select to_char(start_time at time zone 'America/New_York','MM-DD HH24:MI') et,
+       (select jobname from cron.job c where c.jobid=d.jobid) job, return_message
+  from cron.job_run_details d
+ where status <> 'succeeded' and start_time > timestamptz '2026-09-03 17:34:00+00'
+ order by start_time desc;
+```
+
+## Still open after this fix
+
+1. **`derm.fn_blackout_targets` is 32-37% of all DB execution time and returns zero rows.** Owned by
+   the Supabase 2 session, deliberately untouched here. Fixing it is the single largest remaining
+   win and is independent of the scheduling problem.
+2. **`max_worker_processes = 6` with `cron.max_running_jobs = 32`** is still an inconsistent pair.
+   Staggering means we no longer *demand* more than 5 at once, but the ceiling is unchanged and a
+   future job added carelessly at `:00` walks straight back into it. Raising it needs a restart and
+   is Fred's call. **Anyone adding a cron should check the collision map first**, not just pick `*/5`.
+3. **The instance profile** (shared_buffers 256 MB, effective_cache_size 768 MB against a 752 MB
+   database) is unchanged and remains an inference, not a measurement - the dashboard CPU / Disk IO
+   charts for 08-31 10:05-10:37 ET are still the check that would confirm or kill it.
