@@ -22,7 +22,7 @@ have since been fixed; the root cause of the stalls turned out to be neither. Se
 
 ---
 
-## 1. 🛑 The single biggest finding: a third of the DB's work finds nothing
+## 1. The largest single query, and it found nothing (fixed; and see the correction below)
 
 ```
 derm.fn_blackout_targets(p_limit)
