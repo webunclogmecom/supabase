@@ -712,6 +712,68 @@ Deno.serve(async (req: Request) => {
   let renderDisabled: string | null = null
   const invocationStart = Date.now()
 
+  // ══ PREVIEW MODE ═════════════════════════════════════════════════════════════════════════
+  // 2026-09-03. Fred: the DERM Tracker's EMAIL PREVIEW showed one letter while the recipient got
+  // another. It was a SECOND, hand-written copy of the body inside the app, and it went stale the
+  // moment the real letter moved to _shared/city-letter.ts.
+  //
+  // 🛑 THE POINT IS THAT THE PREVIEW IS RENDERED BY THE SENDER, NOT RE-TYPED BESIDE IT. Updating
+  // the app's copy would have fixed today's drift and guaranteed tomorrow's: this repo has already
+  // paid for a duplicated regulator-facing artifact twice (the base64 encoder, and the city letter
+  // itself). The app now asks this function what it would send.
+  //
+  // 🛑 IT RETURNS BEFORE ANYTHING IS SENT OR LOGGED. No Resend call, no derm_email_sends row, no
+  // PDF render. The early return is the whole safety property, so it sits here, above both loops,
+  // where nothing downstream can be reached by accident.
+  //
+  // ⚠ It renders the letter as a SUCCESSFUL send would look, i.e. with the attachment card the
+  // normal outcome produces. It cannot know in advance whether the renderer will fail, and doing a
+  // real render just to draw a preview would put a 60s PDF job behind opening a dialog.
+  if (body?.preview === true) {
+    const rec0 = recipients[0]
+    const { data: m0 } = await sb
+      .from('derm_manifests')
+      .select('id, white_manifest_number, yellow_ticket_number, service_date')
+      .eq('id', rec0.manifest_id)
+      .maybeSingle()
+    const { data: c0 } = await sb
+      .from('clients').select('name, client_code').eq('id', rec0.client_id).maybeSingle()
+
+    const num0 = String((m0 as Record<string, unknown> | null)?.white_manifest_number
+      ?? (m0 as Record<string, unknown> | null)?.yellow_ticket_number ?? '')
+    const name0 = String((c0 as Record<string, unknown> | null)?.name ?? '')
+
+    // The address and date the real letter uses come from the rendered report. Preview falls back
+    // to the manifest's own service date and the client's property address, and says so rather
+    // than inventing precision it does not have.
+    const { data: p0 } = await sb
+      .from('properties').select('address').eq('client_id', rec0.client_id).limit(1).maybeSingle()
+
+    const opts = {
+      clientName: name0,
+      address: String((p0 as Record<string, unknown> | null)?.address ?? ''),
+      visitDate: fmtDate(String((m0 as Record<string, unknown> | null)?.service_date ?? '') || null),
+      card: target === 'city'
+        ? { title: 'Service Report', subtitle: 'Manifest Form & Transporter Manifest' }
+        : { title: 'Service Report', subtitle: `DERM-Service-Report-${num0}.pdf` },
+      manifestsToFollow: false,
+      isTest,
+      preheader: target === 'city'
+        ? `DERM Manifest submission for ${name0}.`
+        : 'Your Service Report from Unclogme, including your Manifest Form and disposal receipt.',
+    }
+
+    return jsonResponse({
+      ok: true,
+      preview: true,
+      target,
+      subject: target === 'city' ? `DERM Manifest for ${name0}` : SUBJECT,
+      html: target === 'city' ? buildCityLetterHtml(opts) : buildClientLetterHtml(opts),
+      text: target === 'city' ? buildCityLetterText(opts) : buildClientLetterText(opts),
+      is_test: isTest,
+    }, 200, cors)
+  }
+
   if (target === 'city') {
     // ===== CITY: both PDFs to the municipal FOG office, formal letter, BCC compliance =====
     // 🛑 THE CITY INBOX MOVED FROM THE CITY TO THE PROPERTY (2026-08-21,
