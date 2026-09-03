@@ -122,7 +122,7 @@ const PDF_TIMEOUT_MS = 65_000
 // serial 65s renders is 455s in one invocation, and a platform wall-clock or OOM kill runs
 // NO catch and NO finally, so derm_email_sends would record nothing at all and the operator
 // would see a network error instead of results[]. This bounds the whole invocation.
-import { buildCityLetterHtml, buildCityLetterText } from '../_shared/city-letter.ts'
+import { buildCityLetterHtml, buildCityLetterText, buildClientLetterHtml, buildClientLetterText } from '../_shared/city-letter.ts'
 
 const RENDER_DEADLINE_MS = 120_000
 // 8 MiB, deliberately NOT the sibling's 25 MiB: that function sends one email per
@@ -183,56 +183,14 @@ function fmtDate(d: string | null): string {
   try { return new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) } catch { return d }
 }
 
-// ---- CLIENT email (friendly, single WWTP receipt) — unchanged --------------
-function buildHtml(clientName: string, number: string, ext: string): string {
-  const name = escapeHtml(clientName)
-  const fileLabel = `DERM-Manifest-${escapeHtml(number)}.${escapeHtml(ext)}`
-  const badge = escapeHtml(ext.toUpperCase()).slice(0, 4)
-  return `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>${SUBJECT}</title></head>
-<body style="margin:0;padding:0;background-color:#f4f5f7;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#f4f5f7;">Your Service Report is attached &mdash; it includes your DERM Manifest Form and disposal receipt. Please keep it for your records.</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;border-top:4px solid #f14714;">
-<tr><td style="padding:28px 36px 20px 36px;border-bottom:1px solid #eef0f2;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
-<tr><td style="padding:32px 36px 4px 36px;font-family:${FONT_STACK};">
-<p style="margin:0 0 18px 0;font-size:18px;line-height:1.5;font-weight:700;color:#111827;">Hi ${name},</p>
-<p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">Thank you for choosing Unclogme!</p>
-<p style="margin:0 0 24px 0;font-size:15px;line-height:1.65;color:#374151;">Attached, you'll find your <strong style="color:#111827;">Service Report</strong>, which includes your <strong style="color:#111827;">Manifest Form</strong> required by the Water &amp; Sewer Department and the corresponding disposal receipt. Please review it carefully and keep it for your records.</p>
-</td></tr>
-<tr><td style="padding:0 36px 28px 36px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff7f4;border:1px solid #ffd9c9;border-radius:10px;"><tr><td style="padding:16px 18px;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="middle" width="40" style="width:40px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" height="40" style="width:40px;height:40px;background-color:#f14714;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">${badge}</td></tr></table></td>
-<td valign="middle" style="padding-left:14px;font-family:${FONT_STACK};">
-<div style="font-size:14px;font-weight:600;color:#111827;line-height:1.3;">Service Report attached</div>
-<div style="font-size:13px;color:#6b7280;line-height:1.3;padding-top:2px;">${fileLabel}</div>
-</td></tr></table>
-</td></tr></table>
-</td></tr>
-<tr><td style="padding:0 36px 32px 36px;font-family:${FONT_STACK};">
-<p style="margin:0;font-size:15px;line-height:1.65;color:#374151;">If you have any questions or need assistance regarding this document, please reach us at <a href="mailto:contact@unclogme.com" style="color:#d63d12;text-decoration:underline;font-weight:600;">contact@unclogme.com</a> or call us directly.</p>
-</td></tr>
-<tr><td style="padding:22px 36px 26px 36px;background-color:#fafbfc;border-top:1px solid #eef0f2;font-family:${FONT_STACK};">
-<p style="margin:0 0 4px 0;font-size:13px;font-weight:700;color:#374151;">Unclogme LLC</p>
-<p style="margin:0 0 2px 0;font-size:12px;line-height:1.5;color:#9ca3af;">333 West 41st Street, Suite 606, Miami Beach, FL 33140</p>
-<p style="margin:0;font-size:12px;line-height:1.5;color:#9ca3af;"><a href="mailto:contact@unclogme.com" style="color:#9ca3af;text-decoration:underline;">contact@unclogme.com</a></p>
-</td></tr>
-</table>
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:16px 36px;text-align:center;font-family:${FONT_STACK};font-size:11px;color:#b6bcc4;line-height:1.5;">Sent by Unclogme LLC regarding your grease trap service. Please retain this manifest for your compliance records.</td></tr></table>
-</td></tr></table>
-</body></html>`
-}
-
-function buildText(clientName: string, number: string, ext: string): string {
-  return [
-    `Hi ${clientName},`, '',
-    'Thank you for choosing Unclogme!', '',
-    `Attached, you'll find your Service Report (DERM-Service-Report-${number}.${ext}), which includes your Manifest Form required by the Water and Sewer Department and the corresponding disposal receipt. Please review it carefully and keep it for your records.`, '',
-    'If you have any questions or need assistance regarding this document, please reach us at contact@unclogme.com or call us directly.', '',
-    '--', 'Unclogme LLC', '333 West 41st Street, Suite 606, Miami Beach, FL 33140', 'contact@unclogme.com',
-  ].join('\n')
-}
+// ---- CLIENT email --------------------------------------------------------
+// 🛑 THE CUSTOMER LETTER NOW LIVES IN ../_shared/city-letter.ts TOO, beside the city one.
+// It used to be built here and had no service-details panel, no phone number and no
+// licensed-hauler footer, and its attachment card named DERM-Manifest-<n>.pdf while the file
+// attached has always been DERM-Service-Report-<n>.pdf. Fred, 2026-09-03: "fix the client dialog
+// template too."
+// ⚠ Only the greeting, intro and closing differ from the city letter, and they are fixed inside
+// that module rather than passed in, for the same reason the city copy is.
 
 // ---- CITY email ------------------------------------------------------------
 // 🛑 THE CITY LETTER NOW LIVES IN ../_shared/city-letter.ts AND IS SHARED WITH
@@ -1095,6 +1053,8 @@ Deno.serve(async (req: Request) => {
         const visitIdsC = ((mvsC || []) as { visit_id: number }[]).map((x) => x.visit_id)
         const attachments: { filename: string; content: string; content_type: string }[] = []
         let attachReasonC = ''
+        let letterDateC: string | null = null
+        let letterAddressC = ''
         if (renderDisabled) {
           attachReasonC = renderDisabled
         } else if (Date.now() - invocationStart > RENDER_DEADLINE_MS) {
@@ -1110,10 +1070,36 @@ Deno.serve(async (req: Request) => {
           }
           if (rC.trip) renderDisabled = rC.trip
           attachReasonC = rC.reason
-          if (rC.att) attachments.push(rC.att)
+          if (rC.att) {
+            attachments.push(rC.att)
+            letterDateC = rC.visitDate ?? null
+            letterAddressC = rC.address || ''
+          }
           else console.error(`[send-derm-email] no_attachment manifest=${id} client=${clientId} reason=${rC.reason}`)
         }
         const attExt = 'pdf'
+
+        // 2026-09-03: the CLIENT letter now shares the shell with the city one, so a customer
+        // gets the same service-details panel, phone number and licensed-hauler footer a
+        // municipality does. Only the greeting, intro and closing differ, and those live in
+        // _shared/city-letter.ts rather than being passed in from here.
+        //
+        // 🛑 THE CARD NAMES THE FILE THAT IS ACTUALLY ATTACHED. The old builder's card read
+        // `DERM-Manifest-<n>.pdf` while the attachment has always been
+        // `DERM-Service-Report-<n>.pdf`, and its own plain-text half said Service Report. So
+        // the HTML pointed a paying customer at a filename that was not in the email, and the
+        // two halves of the same message disagreed with each other.
+        const clientLetter = {
+          clientName,
+          address: letterAddressC,
+          visitDate: fmtDate(letterDateC),
+          card: attachments.length
+            ? { title: 'Service Report', subtitle: `DERM-Service-Report-${number}.${attExt}` }
+            : null,
+          manifestsToFollow: false,
+          isTest: !!testRecipient,
+          preheader: `Your Service Report from Unclogme, including your Manifest Form and disposal receipt.`,
+        }
 
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -1122,8 +1108,8 @@ Deno.serve(async (req: Request) => {
             from: RESEND_FROM,
             to: [toEmail],
             subject: SUBJECT,
-            html: buildHtml(clientName, number, attExt),
-            text: buildText(clientName, number, attExt),
+            html: buildClientLetterHtml(clientLetter),
+            text: buildClientLetterText(clientLetter),
             attachments,
             ...(ccList.length ? { cc: ccList } : {}),
             // "send to both": real client send + a BCC copy to the test address, plus any the

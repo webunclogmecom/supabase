@@ -57,7 +57,7 @@ function detailRow(label: string, value: string): string {
 }
 
 
-export interface CityLetterOpts {
+export interface LetterOpts {
   clientName: string
   address: string
   visitDate: string
@@ -68,7 +68,11 @@ export interface CityLetterOpts {
   preheader?: string
 }
 
-export function buildCityLetterHtml(o: CityLetterOpts): string {
+// The copy that separates a regulator letter from a customer letter. NOT reachable from a caller:
+// only the two wrappers at the bottom of this file supply it.
+interface LetterCopy { greeting: string; intro: string; closing: string; testNote: string }
+
+function buildLetterHtml(o: LetterOpts, copy: LetterCopy): string {
   const name = escapeHtml(o.clientName)
   const addr = escapeHtml(o.address || '')
   const vdate = escapeHtml(o.visitDate || '')
@@ -77,13 +81,17 @@ export function buildCityLetterHtml(o: CityLetterOpts): string {
   const cardTitle = escapeHtml(o.card?.title || '')
   const cardSub = escapeHtml(o.card?.subtitle || '')
   const manifestsToFollow = o.manifestsToFollow
+  const greeting = escapeHtml(copy.greeting)
+  const intro = escapeHtml(copy.intro)
+  const closing = escapeHtml(copy.closing)
+  const testNote = escapeHtml(copy.testNote)
   const preheader = escapeHtml(
     o.preheader || `Grease trap service completed for ${o.clientName} at ${o.address} on ${o.visitDate}.`)
 
   // The test strip sits ABOVE the letter card, never inside it, so what Fred reviews below the
   // line is byte-for-byte what a municipality would receive.
   const testStrip = o.isTest
-    ? `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:12px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;"><strong>INTERNAL TEST.</strong> City sending is disabled; this went only to the internal test address. Everything below the line is exactly what the municipality would receive.</td></tr></table>`
+    ? `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:12px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;"><strong>INTERNAL TEST.</strong> ${testNote}</td></tr></table>`
     : ''
 
   return `<!DOCTYPE html>
@@ -101,8 +109,8 @@ ${testStrip}
 <tr><td style="padding:26px 36px 18px 36px;border-bottom:2px solid #f14714;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
 
 <tr><td style="padding:30px 36px 0 36px;font-family:${FONT_STACK};">
-<p style="margin:0 0 16px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">Dear Environmental Compliance Team,</p>
-<p style="margin:0 0 20px 0;font-size:15px;line-height:1.65;color:#374151;">We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.</p>
+<p style="margin:0 0 16px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">${greeting}</p>
+<p style="margin:0 0 20px 0;font-size:15px;line-height:1.65;color:#374151;">${intro}</p>
 </td></tr>
 
 ${manifestsToFollow ? `
@@ -147,7 +155,7 @@ ${card ? `
 
 <tr><td style="padding:0 36px 8px 36px;font-family:${FONT_STACK};">
 <p style="margin:0 0 16px 0;font-size:15px;line-height:1.65;color:#374151;">If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at <a href="mailto:${CONTACT_EMAIL}" style="color:#d63d12;text-decoration:underline;font-weight:600;">${CONTACT_EMAIL}</a> or call us directly at <a href="tel:${CONTACT_TEL}" style="color:#d63d12;text-decoration:underline;font-weight:600;">${CONTACT_PHONE}</a>.</p>
-<p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">Thank you for your continued partnership in keeping our community compliant and clean.</p>
+<p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">${closing}</p>
 <p style="margin:0 0 4px 0;font-size:15px;line-height:1.65;font-weight:700;color:#111827;">The UnclogMe Team</p>
 </td></tr>
 
@@ -162,10 +170,10 @@ ${card ? `
 </body></html>`
 }
 
-export function buildCityLetterText(o: CityLetterOpts): string {
+function buildLetterText(o: LetterOpts, copy: LetterCopy): string {
   return [
-    'Dear Environmental Compliance Team,', '',
-    'We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.', '',
+    copy.greeting, '',
+    copy.intro, '',
     'Service Details:',
     `  - Client: ${o.clientName}.`,
     `  - Location: ${o.address}.`,
@@ -178,10 +186,42 @@ export function buildCityLetterText(o: CityLetterOpts): string {
       ? ['Please note: The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.', '']
       : []),
     `If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at ${CONTACT_EMAIL} or call us directly at ${CONTACT_PHONE}.`, '',
-    'Thank you for your continued partnership in keeping our community compliant and clean.', '',
+    copy.closing, '',
     'The UnclogMe Team',
     'Licensed Grease Trap Hauler',
     DERM_DECALS_TEXT,
     `${CONTACT_EMAIL} - ${CONTACT_PHONE} - unclogme.com`,
   ].join('\n')
 }
+
+
+// ---------------------------------------------------------------------------
+// THE TWO LETTERS. Their copy is fixed here and is NOT a caller parameter: a caller who could pass
+// body text would be choosing what a regulator, or a paying customer, reads.
+// ---------------------------------------------------------------------------
+
+const CITY_COPY: LetterCopy = {
+  greeting: 'Dear Environmental Compliance Team,',
+  intro: 'We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.',
+  closing: 'Thank you for your continued partnership in keeping our community compliant and clean.',
+  testNote: 'City sending is disabled; this went only to the internal test address. Everything below the line is exactly what the municipality would receive.',
+}
+
+// The customer letter keeps the wording Unclogme has always used with clients. Only the SHELL is
+// shared: the same service-details panel, attachment card, phone number and licensed-hauler footer
+// the city letter has. Before 2026-09-03 the client letter had none of those.
+function clientCopy(clientName: string): LetterCopy {
+  return {
+    greeting: `Hi ${clientName},`,
+    intro: 'Thank you for choosing Unclogme! Your Service Report for this service is attached, including your Manifest Form and the corresponding disposal receipt.',
+    closing: 'Please review it carefully and keep it for your compliance records.',
+    // NOT the city wording. Sharing the shell nearly told a paying customer that this is
+    // "exactly what the municipality would receive", which is both wrong and confusing.
+    testNote: 'This went only to the internal test address, not to the client. Everything below the line is exactly what the customer would receive.',
+  }
+}
+
+export function buildCityLetterHtml(o: LetterOpts): string { return buildLetterHtml(o, CITY_COPY) }
+export function buildCityLetterText(o: LetterOpts): string { return buildLetterText(o, CITY_COPY) }
+export function buildClientLetterHtml(o: LetterOpts): string { return buildLetterHtml(o, clientCopy(o.clientName)) }
+export function buildClientLetterText(o: LetterOpts): string { return buildLetterText(o, clientCopy(o.clientName)) }

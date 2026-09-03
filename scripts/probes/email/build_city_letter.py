@@ -44,6 +44,19 @@ rep(BT + '}' + NL + NL + '<tr><td style="padding:0 36px 24px 36px;">' + NL +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fff7f4;',
     'note close')
 
+# 2026-09-03: the greeting / intro / closing / signoff become parameters so the CLIENT letter can
+# share this exact shell. The city wrapper below still hard-codes its own regulator copy, so a
+# caller cannot choose what a municipality reads; only the two wrappers in this file can.
+rep('<p style="margin:0 0 16px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">Dear Environmental Compliance Team,</p>',
+    '<p style="margin:0 0 16px 0;font-size:16px;line-height:1.5;font-weight:700;color:#111827;">${greeting}</p>',
+    'greeting')
+rep('<p style="margin:0 0 20px 0;font-size:15px;line-height:1.65;color:#374151;">We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.</p>',
+    '<p style="margin:0 0 20px 0;font-size:15px;line-height:1.65;color:#374151;">${intro}</p>',
+    'intro')
+rep('<p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">Thank you for your continued partnership in keeping our community compliant and clean.</p>',
+    '<p style="margin:0 0 22px 0;font-size:15px;line-height:1.65;color:#374151;">${closing}</p>',
+    'closing')
+
 # the attachment card must be OMISSIBLE: send-derm-email has a branch where the letter goes out
 # with no attachment at all (Fred chose that a visit with no Service Report still gets the letter),
 # and a card promising a document that is not there is exactly the dishonesty CITY_ATTACH_COPY's
@@ -119,7 +132,7 @@ HEADER = '''// _shared/city-letter.ts
 '''
 
 BODY = '''
-export interface CityLetterOpts {
+export interface LetterOpts {
   clientName: string
   address: string
   visitDate: string
@@ -130,7 +143,11 @@ export interface CityLetterOpts {
   preheader?: string
 }
 
-export function buildCityLetterHtml(o: CityLetterOpts): string {
+// The copy that separates a regulator letter from a customer letter. NOT reachable from a caller:
+// only the two wrappers at the bottom of this file supply it.
+interface LetterCopy { greeting: string; intro: string; closing: string; testNote: string }
+
+function buildLetterHtml(o: LetterOpts, copy: LetterCopy): string {
   const name = escapeHtml(o.clientName)
   const addr = escapeHtml(o.address || '')
   const vdate = escapeHtml(o.visitDate || '')
@@ -139,22 +156,26 @@ export function buildCityLetterHtml(o: CityLetterOpts): string {
   const cardTitle = escapeHtml(o.card?.title || '')
   const cardSub = escapeHtml(o.card?.subtitle || '')
   const manifestsToFollow = o.manifestsToFollow
+  const greeting = escapeHtml(copy.greeting)
+  const intro = escapeHtml(copy.intro)
+  const closing = escapeHtml(copy.closing)
+  const testNote = escapeHtml(copy.testNote)
   const preheader = escapeHtml(
     o.preheader || `Grease trap service completed for ${o.clientName} at ${o.address} on ${o.visitDate}.`)
 
   // The test strip sits ABOVE the letter card, never inside it, so what Fred reviews below the
   // line is byte-for-byte what a municipality would receive.
   const testStrip = o.isTest
-    ? `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:12px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;"><strong>INTERNAL TEST.</strong> City sending is disabled; this went only to the internal test address. Everything below the line is exactly what the municipality would receive.</td></tr></table>`
+    ? `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:12px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;"><strong>INTERNAL TEST.</strong> ${testNote}</td></tr></table>`
     : ''
 
   return `HTML_LITERAL`
 }
 
-export function buildCityLetterText(o: CityLetterOpts): string {
+function buildLetterText(o: LetterOpts, copy: LetterCopy): string {
   return [
-    'Dear Environmental Compliance Team,', '',
-    'We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.', '',
+    copy.greeting, '',
+    copy.intro, '',
     'Service Details:',
     `  - Client: ${o.clientName}.`,
     `  - Location: ${o.address}.`,
@@ -167,7 +188,7 @@ export function buildCityLetterText(o: CityLetterOpts): string {
       ? ['Please note: The DERM Manifest and Transporter Manifest will be sent in a separate email once the collected material has been delivered to the approved disposal facility. You will receive that confirmation shortly.', '']
       : []),
     `If you have any questions or need additional information regarding this service, please don't hesitate to reach out to us at ${CONTACT_EMAIL} or call us directly at ${CONTACT_PHONE}.`, '',
-    'Thank you for your continued partnership in keeping our community compliant and clean.', '',
+    copy.closing, '',
     'The UnclogMe Team',
     'Licensed Grease Trap Hauler',
     DERM_DECALS_TEXT,
@@ -176,10 +197,18 @@ export function buildCityLetterText(o: CityLetterOpts): string {
 }
 '''
 
+BODY = BODY + '\n\n// ---------------------------------------------------------------------------\n// THE TWO LETTERS. Their copy is fixed here and is NOT a caller parameter: a caller who could pass\n// body text would be choosing what a regulator, or a paying customer, reads.\n// ---------------------------------------------------------------------------\n\nconst CITY_COPY: LetterCopy = {\n  greeting: \'Dear Environmental Compliance Team,\',\n  intro: \'We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.\',\n  closing: \'Thank you for your continued partnership in keeping our community compliant and clean.\',\n  testNote: \'City sending is disabled; this went only to the internal test address. Everything below the line is exactly what the municipality would receive.\',\n}\n\n// The customer letter keeps the wording Unclogme has always used with clients. Only the SHELL is\n// shared: the same service-details panel, attachment card, phone number and licensed-hauler footer\n// the city letter has. Before 2026-09-03 the client letter had none of those.\nfunction clientCopy(clientName: string): LetterCopy {\n  return {\n    greeting: `Hi ${clientName},`,\n    intro: \'Thank you for choosing Unclogme! Your Service Report for this service is attached, including your Manifest Form and the corresponding disposal receipt.\',\n    closing: \'Please review it carefully and keep it for your compliance records.\',\n    // NOT the city wording. Sharing the shell nearly told a paying customer that this is\n    // "exactly what the municipality would receive", which is both wrong and confusing.\n    testNote: \'This went only to the internal test address, not to the client. Everything below the line is exactly what the customer would receive.\',\n  }\n}\n\nexport function buildCityLetterHtml(o: LetterOpts): string { return buildLetterHtml(o, CITY_COPY) }\nexport function buildCityLetterText(o: LetterOpts): string { return buildLetterText(o, CITY_COPY) }\nexport function buildClientLetterHtml(o: LetterOpts): string { return buildLetterHtml(o, clientCopy(o.clientName)) }\nexport function buildClientLetterText(o: LetterOpts): string { return buildLetterText(o, clientCopy(o.clientName)) }\n'
 BODY = BODY.replace('HTML_LITERAL', html)
 out = HEADER + consts + NL + esc + NL + detail + NL + BODY
 
 assert chr(8212) not in out, 'em-dash in module'
+assert 'testNote:' in out, 'testNote missing from the copy objects'
+# count the VALUES, not the interface declaration: `testNote: string` also matches a bare
+# `testNote:` and made the first version of this guard fail on a correct file.
+assert out.count("testNote: '") == 2, 'expected exactly two testNote VALUES, got %d' % out.count("testNote: '")
+for fld in ('greeting:', 'intro:', 'closing:'):
+    assert out.count(fld) >= 2, 'copy field %s is not defined for both letters' % fld
+
 # a backtick inside an HTML comment would terminate the literal at deploy time
 for m2 in re.finditer(r'<!--.*?-->', out, re.S):
     assert BT not in m2.group(0), 'backtick inside an HTML comment: ' + m2.group(0)[:80]
