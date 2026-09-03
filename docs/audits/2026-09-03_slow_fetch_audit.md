@@ -253,3 +253,73 @@ select to_char(start_time at time zone 'America/New_York','MM-DD HH24:MI') et,
 3. **The instance profile** (shared_buffers 256 MB, effective_cache_size 768 MB against a 752 MB
    database) is unchanged and remains an inference, not a measurement - the dashboard CPU / Disk IO
    charts for 08-31 10:05-10:37 ET are still the check that would confirm or kill it.
+
+---
+
+# max_worker_processes raised 6 -> 12, 2026-09-03 15:05 ET
+
+## 🛑 The pool is three smaller than it looks
+
+Three background workers are **permanently resident**, measured in `pg_stat_activity`:
+
+| backend_type | slots |
+|---|---|
+| logical replication launcher | 1 |
+| pg_cron launcher | 1 |
+| pg_net 0.20.0 worker | 1 |
+
+So a stated pool of **6 gave 3 usable slots** for pg_cron job workers and parallel query workers -
+and `max_parallel_workers = 2` drew from those same 3. That is why fourteen jobs at minute `:00`
+failed so completely. At 12 the usable figure is **9**.
+
+⇒ **When sizing this, subtract the three permanent residents first.** The headline number lies.
+
+Not from this pool, despite appearing in `pg_stat_activity`: checkpointer, background writer,
+walwriter, archiver, the autovacuum launcher, and the walsender feeding Realtime.
+
+## ✅ Do autovacuum workers draw from it? No - proven, not assumed
+
+The documentation is silent on this and it is commonly stated wrongly, so it was settled by
+contradiction on real data. **If** autovacuum drew from the pool, then 3 permanent +
+`autovacuum_max_workers` 3 = 6 = the entire old pool, leaving **zero** for pg_cron - so cron would
+have failed *always*, not occasionally.
+
+```
+autovacuum runs, last 24h ................................... 11
+successful cron runs, last 24h ........................... 3,173
+cron successes within 60 SECONDS of an autovacuum finishing . 62
+```
+
+Those 62 are impossible if the pools are shared. They are separate.
+
+## The change
+
+`PUT /v1/projects/<ref>/config/database/postgres` with `{"max_worker_processes": 12}` -> HTTP 200.
+
+⚠ **It restarts immediately, not in a maintenance window.** The next SQL call returned
+`FATAL 57P03: the database system is shutting down`. **Unavailability: 40 seconds.**
+⚠ `GET` on that endpoint previously returned `{}` - **no parameter had ever been overridden**, so 6
+was purely the compute-tier default. It is now an explicit override.
+
+Value derived from demand, not rounded: 3 permanent + 5 peak cron in one minute + 2 parallel = 10,
+set to 12 for headroom.
+
+## Verified after
+
+```
+max_worker_processes 12 · pending_restart: none · max_parallel_workers 2 (<= 12)
+3 permanent bgworkers back · realtime walsender back · 25 cron jobs active
+sync.outbound_queue pending 0 (nothing lost) · Jobber write token intact
+6 min later: 14 cron runs / 10 distinct jobs / 0 failures / 0 over 3s / max 0.55s
+derm.fn_blackout_targets still 540 ms
+Calendar in the browser: signed in, visits rendering, 13 REST calls, slowest 585 ms, no errors
+```
+
+## ⚠ Two things to carry forward
+
+1. **This was headroom, not a fix.** The re-phase had already taken failures to zero *before* the
+   restart. Raising the ceiling protects against the next carelessly-added cron; it did not resolve
+   an active failure. Do not let a later reader infer the restart is what fixed the stalls.
+2. **A compute-size change may silently reset it**, because it is now an override against a tier
+   default. The check is one line:
+   `select setting from pg_settings where name='max_worker_processes';` -- must read 12.
