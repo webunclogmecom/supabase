@@ -82,6 +82,9 @@ const FIELDS = {
     column: 'grease_trap_size_gallons',
     fragment: '... on CustomFieldNumeric { label valueNumeric }',
     read: (n) => (n && n.valueNumeric != null ? Number(n.valueNumeric) : null),
+    // RAW, for RECORDING. read() normalises for COMPARISON; the shadow must store what the source
+    // literally reports. See the note at the shadow write below.
+    rawRead: (n) => (n && n.valueNumeric != null ? Number(n.valueNumeric) : null),
     input: (v) => ({ valueNumeric: Number(v) }),
     clearInput: () => ({ valueNumeric: 0 }),
     lit: (v) => (v == null ? "'null'::jsonb" : 'to_jsonb(' + Number(v) + ')'),
@@ -93,6 +96,10 @@ const FIELDS = {
     column: 'lock_box_key',
     fragment: '... on CustomFieldText { label valueText }',
     read: (n) => (n && n.valueText != null && n.valueText !== '' ? String(n.valueText) : null),
+    // RAW. A CLEARED Jobber text field reports '' , NOT null, and webhook-jobber's handler passes
+    // that '' through verbatim. read() collapses it to null, which is right for comparing and
+    // WRONG for recording. This cost a repair migration (2026-09-02_1700).
+    rawRead: (n) => (n ? (n.valueText != null ? String(n.valueText) : null) : null),
     input: (v) => ({ valueText: String(v) }),
     clearInput: () => ({ valueText: '' }),
     lit: (v) => (v == null ? "'null'::jsonb" : "to_jsonb('" + String(v).replace(/'/g, "''") + "'::text)"),
@@ -153,7 +160,9 @@ const editM = 'mutation($id:EncodedId!, $input:PropertyEditInput!){ propertyEdit
   ' property { id customFields { __typename ' + F.fragment + ' } } userErrors { message path } } }';
 
 const cfgId = Buffer.from(F.gid).toString('base64');
-const readField = (prop) => F.read((prop.customFields || []).find(c => c.label === F.label));
+const cfNode = (prop) => (prop.customFields || []).find(c => c.label === F.label);
+const readField = (prop) => F.read(cfNode(prop));          // normalised: for COMPARISON
+const readFieldRaw = (prop) => F.rawRead(cfNode(prop));    // verbatim:   for RECORDING
 
 (async () => {
   const ids = (arg('properties') || '').split(',').map(s => s.trim()).filter(Boolean).map(Number);
@@ -253,18 +262,28 @@ const readField = (prop) => F.read((prop.customFields || []).find(c => c.label =
       const ue = res.propertyEdit && res.propertyEdit.userErrors;
       if (ue && ue.length) throw new Error('userErrors ' + JSON.stringify(ue));
 
-      // SEPARATE request. The mutation's own echo is not evidence.
-      const back = readField((await gql(token, readQ, { id: p.source_id })).property);
+      // SEPARATE request. The mutation's own echo is not evidence. Read it BOTH ways: normalised
+      // to decide whether the write landed, RAW to record what Jobber actually now reports.
+      const backProp = (await gql(token, readQ, { id: p.source_id })).property;
+      const back = readField(backProp);
+      const backRaw = readFieldRaw(backProp);
       const want = p.ours == null ? (F.emptyIsZero ? 0 : null) : p.ours;
       const ok = F.emptyIsZero ? Number(back) === Number(want) : String(back) === String(want);
       if (!ok) throw new Error('READ-BACK MISMATCH: Jobber holds ' + JSON.stringify(back)
         + ', expected ' + JSON.stringify(want));
 
-      // Only now. Re-baseline BOTH sides to the value that is now true in both systems, so the
-      // next poll sees an unchanged source and returns IN_SYNC instead of freezing the row.
+      // Only now, and with the RAW value.
+      // RECORD WHAT THE SOURCE REPORTS, NOT WHAT WE NORMALISED IT TO. The shadow's whole job is an
+      // identity comparison against the NEXT reading, so it must hold the same bytes the inbound
+      // path will pass. A cleared Jobber text field reports '' and webhook-jobber passes that ''
+      // verbatim; recording null instead makes fn_shadow_decision see the source move '' <- null
+      // on every poll, for ever. That is exactly what happened to the 18 N/A rows cleared on
+      // 2026-09-02 and it needed migration 2026-09-02_1700 to repair. It writes no bad data - the
+      // clear guard refuses - but the rows can never settle, and 18 rows of standing noise in the
+      // drift report is how a real signal gets ignored later.
       await sql("select sync.fn_record_shadow('property', " + p.id + ", 'jobber', '" + F.gid + "', '"
-        + F.label.replace(/'/g, "''") + "', " + F.lit(back) + ', ' + F.lit(back) + ', ' + F.lit(back) + ')');
-      done.push({ property: p.id, client: p.client_code, wrote: want, read_back: back });
+        + F.label.replace(/'/g, "''") + "', " + F.lit(backRaw) + ', ' + F.lit(backRaw) + ', ' + F.lit(backRaw) + ')');
+      done.push({ property: p.id, client: p.client_code, wrote: want, read_back: back, recorded: backRaw });
     } catch (e) {
       failed.push({ property: p.id, client: p.client_code, error: e.message });
     }
