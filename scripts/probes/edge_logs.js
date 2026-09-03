@@ -26,7 +26,15 @@ const sql = process.argv[2];
 const out = process.argv[3] || 'edge_logs.out.json';
 if (!sql) { console.error('usage: node edge_logs.js "<sql>" <outfile>'); process.exit(2); }
 
-const qs = new URLSearchParams({ sql }).toString();
+// ⚠ THE TIME WINDOW IS A QUERY PARAM, NOT A WHERE CLAUSE. A `where timestamp >= ...` predicate is
+// accepted and silently returns 0 rows, which reads exactly like "nothing happened". The endpoint
+// defaults to roughly the last hour, so a clean zero from this reader means nothing until you have
+// passed a range and confirmed a positive control inside it.
+//   node edge_logs.js "<sql>" <outfile> [isoStart] [isoEnd]
+const params = { sql };
+if (process.argv[4]) params.iso_timestamp_start = process.argv[4];
+if (process.argv[5]) params.iso_timestamp_end = process.argv[5];
+const qs = new URLSearchParams(params).toString();
 const req = https.request({
   hostname: 'api.supabase.com',
   path: `/v1/projects/${process.env.SUPABASE_PROJECT_ID}/analytics/endpoints/logs.all?${qs}`,
