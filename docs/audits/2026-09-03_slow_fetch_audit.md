@@ -323,3 +323,62 @@ Calendar in the browser: signed in, visits rendering, 13 REST calls, slowest 585
 2. **A compute-size change may silently reset it**, because it is now an override against a tier
    default. The check is one line:
    `select setting from pg_settings where name='max_worker_processes';` -- must read 12.
+
+---
+
+# 🛑 CORRECTION, 2026-09-03 15:20 ET — the worker-starvation root cause was WRONG
+
+Everything above about background-worker starvation, minute `:00`, and the 6-slot pool is **false**.
+An adversarial workflow refused the premise and every one of its claims verifies:
+
+```
+cron.use_background_workers = off     context postmaster, source DEFAULT — never set
+failures at minute :00 ......... 0    job starts at minute :00 ... 12,042 (perfect record)
+failure minutes ................ 9,10,15,27,33,35,36,37,50,51,55,56
+failure durations .............. 10.02 s to 19.79 s
+```
+
+**With `use_background_workers = off`, pg_cron runs every job as a libpq CLIENT CONNECTION** against
+`cron.host = localhost`. Jobs consume `max_connections` and never touch `max_worker_processes`; the
+only pool slot pg_cron holds is its single launcher. **The mechanism I described cannot occur.**
+
+⚠ **Two things should have stopped me and did not:**
+1. **The minute I blamed has a perfect record.** `:00` — where I counted 14 colliding jobs — has
+   12,042 starts and **zero** failures across 119,693 runs. I built the fix around a collision map
+   without ever checking whether failures actually landed on the colliding minutes. One `group by`
+   would have killed it.
+2. **The duration refutes it on its own.** An exhausted slot pool refuses *instantly*. Ten to twenty
+   seconds is a connection-establishment deadline expiring. I read `job startup timeout` and matched
+   it to the theory I already had.
+
+## What is actually tight
+
+**Connections and memory, not workers.** `cron.max_running_jobs = 32` against `max_connections = 60`
+(3 superuser-reserved) with PostgREST holding ~21 idle is a genuine and dangerous pair — measured
+worst case **59 of 60**. My instinct that `32` was inconsistent with the ceiling was right; I named
+the wrong ceiling.
+
+## What survives, and what it cost
+
+| action | verdict |
+|---|---|
+| **Cron re-phase** (`ce0500f`) | **KEEP.** Right for the wrong reason: spreading jobs reduces concurrent CONNECTIONS, the resource that is actually scarce. Peak 14 -> 5 still holds. |
+| **`max_worker_processes` 6 -> 12** | **Bought essentially nothing for cron.** Harmless (260 KB of shared memory) and not worth a second restart to revert, but it did not address the failures. |
+| **`fn_blackout_targets` 2,056 -> 529 ms** | Unaffected by any of this. Still a real fix. |
+
+🛑 **AND IT COST SOMETHING I DID NOT ANTICIPATE: the restart reset `pg_stat_statements`.**
+`stats_reset` is now `2026-09-03 14:18:36 ET`. With `track_functions = 'none'`, that view is this
+estate's **only usage oracle** — the one root `CLAUDE.md` §5.5(b) requires before revoking any grant
+or RPC. **Any "is this still used?" audit run in the next few days returns a confident false zero.**
+⇒ Snapshot it before any future restart:
+```sql
+create table ops.pgss_snapshot_<date> as select now() as captured_at, * from pg_stat_statements;
+```
+
+## Where that leaves the original question
+
+The episodic stalls are **still not explained**. Not the crons (0.33% of wall clock), not worker
+starvation (impossible), not `fn_blackout_targets` (~0.7% of one core). Connection pressure and
+memory remain the live hypotheses, and **the dashboard CPU and Disk IO charts for 08-31 10:05-10:37
+ET remain the single most useful unexamined evidence** — as this document has said from the start,
+and is now the only recommendation in it that has never been wrong.
