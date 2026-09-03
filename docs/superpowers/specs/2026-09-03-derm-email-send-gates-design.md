@@ -72,6 +72,17 @@ check and this estate's rule is that a browser check is half a gate.
    the request honestly sends `include_photos: false`. Helper text says why:
    *"No photos have been classified for this visit yet, so the report has none to include."*
    Default stays **checked** whenever photos do exist.
+
+   🛑 **THE RULE IS "ANY SELECTED CLIENT", NOT "ALL". My first version of this line said "for the
+   selected manifest(s)" and that ambiguity shipped a wrong build.** A ticket covers several
+   clients: 312433 has eight, of which 009-CN has 44 classified photos, 309-KEB 25 and 087-BB 11,
+   while the other five have none. The app read that as "not all have photos" and disabled the
+   checkbox, removing the choice from the three clients who had something to include.
+   `include_photos` is applied per client at render time, and a client with nothing classified
+   renders an identical report either way, so their presence costs nothing. Enable on ANY; disable
+   only when NONE has photos; re-evaluate when the selection changes. When enabled with a mixed
+   set, say so: *"3 of 8 selected clients have classified photos. The others will receive the
+   report without them."*
 3. **Alignment**: the checkbox and its label are not on a shared baseline.
 
 ## Step by step, each verified before the next
