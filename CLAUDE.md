@@ -2121,6 +2121,98 @@ read, so `fn_sheet_image_position('ticket-834742', 2)` correctly returns NULL, a
 cards are still on DERIVED bands with no extent. Snap-then-extent is a separate reviewed migration
 and must come AFTER somebody opens `address_2.jpg` and confirms the five clients printed on it.
 
+🛑 **CORRECTIONS TO THE BLOCK ABOVE, FROM A 163-AGENT ADVERSARIAL AUDIT OF IT (2026-09-03).**
+52 findings raised, 48 refuted, 4 survived. Verdict: safe, do not revert. Two of the four were mine:
+
+1. **`19 of 138 folders / 98 of 726 rows` IS A PRE-REPAIR OBSERVATION, NOT THE CURRENT STATE.**
+   Measured after `2026-09-03_1500` the live numbers are **18 folders and 97 rows** - `ticket-834742`
+   left the multi-page population when it was repaired. The 19/98 figures are the ones the guard was
+   *designed against* and are kept for that reason; do not quote them as today's census. And the
+   parenthetical reads as "98 rows live in those folders", which it is not: it is the count of rows
+   whose `page` is above 1.
+2. 🛑 **THE FIRST GUARD WAS NOT NO-WORSE, DESPITE THIS FILE SAYING IT WAS. FIXED BY
+   `2026-09-03_1600`.** The skip was gated on `IF TG_OP = 'UPDATE'`, so it never applied to an
+   INSERT, and the predicate asked *"is this white manifest violating?"* rather than *"did this row
+   put its page into that image's page-set?"*. So **any** insert into an already-violating folder was
+   refused, including a correct one - and since the trigger is DEFERRED, the `23514` lands at COMMIT,
+   **outside `derm._materialize_card`'s `EXCEPTION WHEN unique_violation` handler**, aborting the
+   whole filing. Re-linking a card on `ticket-833049` - the estate's own documented recovery action -
+   was broken by a guard whose stated purpose was to leave that folder workable.
+   The predicate is now scoped to `NEW.image_url` and refuses only when no OLDER row (`id <`) already
+   carries that image on that page. `id <` rather than `id <>` is load-bearing: with `<>`, two
+   siblings inserted in one statement would each see the other and both pass.
+   ⚠ **Why the original VERIFY missed it: all four of its live controls tested a clean INSERT on a
+   CLEAN folder, a duplicate INSERT on a CLEAN folder, a no-op UPDATE on the violator and a page-move
+   UPDATE on the violator. None tested a LEGITIMATE INSERT INTO THE VIOLATING FOLDER**, which is the
+   one cell where both defects live. Enumerate the COMBINATIONS (operation x folder-state x
+   row-legitimacy), not one cell per variable - the same lesson `fn_lock_manual_derm_required`
+   already taught this estate on 2026-08-05, re-learned.
+   ⚠ **And `SET CONSTRAINTS ALL IMMEDIATE` is mandatory when probing a DEFERRED constraint trigger
+   inside a rolled-back transaction.** Without it the check never runs and the probe returns a
+   confident ACCEPTED. My first reproduction attempt did exactly that and briefly "refuted" a real
+   finding.
+
+🛑 **THE GUARD DEFENDS `page`. THE COLUMN THAT DECIDES WHICH SCAN A CLIENT'S DOCUMENT IS CUT FROM IS
+`stamp_page`, AND IT IS STILL UNGUARDED. THIS IS THE LIVE FOOT-GUN (pre-existing, NOT introduced by
+the 2026-09-03 work).** `effective_page = COALESCE(stamp_page, page)` is what `fn_blackout_targets`
+indexes `imgs[effective_page]` with, and **`derm.auto_place_page(folder, page)` filters its roster on
+`g.page`, not on `COALESCE(g.stamp_page, g.page)`** (read off the live body). After the repair all ten
+`ticket-834742` cards carry `page = 1` while five carry `stamp_page = 2`, so those five appear only in
+the **page-1** roster. The audit demonstrated the consequence end to end in a rolled-back probe
+through the real RPCs:
+
+```
+clear_stamp_position(1105); auto_place_page('ticket-834742', 1)   -> placed 1
+   card 1105: stamp_page 2 -> 1, witness address_2 -> address_1, effective_page 2 -> 1
+   trg_zz_page_image_injective: SILENT (page and image_url unchanged)
+auto_place_page('ticket-834742', 2)                                -> placed 0  (roster keys on page)
+then add the page-2 extent + complete:  fn_blackout_targets 10 -> 8
+   client 279 and client 500: NO DOCUMENT AT ALL
+   client 341: revealed window widened 2.8pp;  client 375: widened at both ends
+```
+
+⇒ **The estate's own instruction "re-place that stamp in the Studio" silently mis-files a page-2
+client.** 106 cards across 24 folders already have `page <> stamp_page`, so this is estate-wide, not a
+834742 quirk. Fixing it means keying `auto_place_page`'s roster on `COALESCE(stamp_page, page)` and
+extending the guard to refuse a `stamp_page` move that lands on an image differing from the row's own
+`stamp_image_url` witness. **Not done - it changes placement behaviour on 24 folders and needs its own
+reviewed migration.**
+✅ Reassurance the audit did produce, and nothing else had: left alone, the pipeline is CORRECT. With
+the page-2 extent added, `fn_blackout_targets` emits **10 targets correctly split** - clients
+371/374/491/500/558 on `address_1.jpg` at effective_page 1, clients 57/279/341/375/477 on
+`address_2.jpg` at effective_page 2, each with its own band. The row-level `image_url = address_1` on
+all ten cards is harmless because the redactor indexes `imgs[effective_page]`, never the row's URL.
+
+🛑 **`derm.fn_sheet_number_ocr_targets()` RETURNS 0 ROWS ESTATE-WIDE, SO CRON 24
+`sheet-number-ocr-sweep` (jobid 24, `2-59/10`, ACTIVE) IS A STRUCTURAL NO-OP.** Measured with a
+positive control - `fn_sheet_number_ocr_targets_for(ARRAY['834742'])` returns 1 row, so the machinery
+works and the zero is not a broken instrument. Both arms are drained:
+- **Arm A** needs a card with `stamp_placed_at IS NULL`. Population across every `ticket-%` folder:
+  **0 cards, 0 folders.**
+- **Arm B** is documented SELF-DRAINING - it stops offering a folder once any scan read exists.
+  Population: **20 multi-image `ticket-%` folders, all 20 already have one.**
+⇒ **The sweep whose whole job is catching a reversed scan pair can never fire again**, and a reversed
+pair is precisely what put every stamp on the wrong scan on `ticket-833813` and `ticket-312433`. The
+fix is to make Arm B drain per PAGE rather than per FOLDER; until then the only route is the manual
+`_for(...)` variant. **Not done** - it changes what gets vision-OCR'd across 20 folders.
+⚠ This is also why `ticket-834742`'s open question cannot resolve itself: `address_2.jpg` has never
+had its sheet number read, `fn_sheet_image_position('ticket-834742', 2)` is NULL, and no automatic
+path will ever ask again.
+
+⚠ **"ticket-834742 served 0 documents, so no client saw anything" is TRUE but was true by ORDERING
+LUCK, not by design, and the margin was ~9 minutes.** `audit.logs` on `derm.stamp_sheet_status`: the
+sheet auto-completed at **12:20:39 ET in the very transaction that inserted the corrupt card**, and
+was reopened at **12:31:22** - **10m42s completed AND corrupt**, spanning two runs of the 5-minute
+redaction sweep. Nothing published for one reason: `fn_blackout_targets`' `geo` CTE hard-JOINs
+`derm.page_block_extents`, and this folder's only extent row was written at 13:06:35, 35 minutes
+later. **"0 rows in `redacted_manifest_docs`" is the outcome, not the mechanism** - do not cite it as
+evidence a corrupt sheet is safe.
+
+⚠ **`ticket-833049` is not a footnote, it is a CUSTOMER BACKLOG.** It is the estate's single
+unpublished completed sheet: **10 client documents undelivered since 2026-08-17**, blocked by the
+deliberate `page_block_extents_no_ticket_833049` CHECK. Four audit lenses read its "0 redacted
+documents" as reassurance. Nobody is tracking it.
+
 ⚠ **A new card must be inserted ALREADY STAMPED.** An unstamped card freezes the whole folder
 (closed-world gate), and `trg_ab_autoplace_generated` only fires when `stamp_placed_at IS NULL` — its
 slot resolves the client's FIRST printed row, so letting it run puts the second permit's card on the
