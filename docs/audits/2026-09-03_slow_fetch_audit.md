@@ -13,8 +13,12 @@ against 14 jobs firing at minute `:00`.
 
 ## Verdict in one line
 
-**The database is not generally slow. It stalls in short episodes, and separately it is spending
-31.8% of all its execution time on one query that returns zero rows.**
+**The database is not generally slow. It stalls in short episodes, and separately it was spending
+31.8% of its execution time on one query that returned zero rows.**
+
+⚠ Read that second clause carefully: 31.8% of *execution time*, where total query load is only ~2.2%
+of one core - so it was ~0.7% of a core, not a third of the machine. Both the stalls and that query
+have since been fixed; the root cause of the stalls turned out to be neither. See the end of this file.
 
 ---
 
@@ -36,9 +40,23 @@ This is the cheapest thing on the list to fix and the only finding that is pure 
 2 seconds every single time, busy or idle.
 
 ⚠ **It is not broken** - returning 0 is the correct answer, there is no blackout work pending. The
-defect is that establishing that costs 2 seconds. Worth pointing at whoever owns
-`derm.fn_blackout_targets`: an early-exit or an index that lets it answer "nothing pending" cheaply
-would return roughly a third of the database's capacity.
+defect is that establishing that costs 2 seconds.
+
+🛑 **CORRECTION (2026-09-03, credit to the Supabase 2 session). An earlier version of this line said
+fixing it "would return roughly a third of the database's capacity". THAT WAS WRONG and the error is
+worth understanding, because the number itself is right.** 31.8% is a share of *database execution
+time*, and total query load on this instance is only about **2.2% of one core**. 37% of 2.2% is
+**~0.7% of one core**. The percentage is real; the denominator makes it small.
+⇒ Fix it because it is free waste, **not** because it will fix the reported slowness. It will not.
+⇒ It also weakens section 3: a box averaging 2.2% of one core is *accruing* burst credits, not
+depleting them. ⚠ But `pg_stat_statements` counts STATEMENTS only - it cannot see autovacuum,
+checkpointer, bgwriter, the WAL sender feeding Realtime, or platform work like backups. So 2.2%
+bounds the QUERY load and says nothing about total instance load.
+✅ **FIXED 2026-09-03** (`2026-09-03_1900_blackout_targets_materialise_bands.sql`): **2,056 ms ->
+529 ms**, same rows. The cost was `derm.v_stamp_row_bands`, a 713-row VIEW costing 3 ms, referenced
+five times and re-derived ~640 times inside correlated subqueries. Materialised once into a CTE.
+No predicate changed and deliberately NO short-circuit was added - this function decides which client
+documents get redacted, and a wrong early exit fails open on PII.
 
 ---
 
@@ -138,8 +156,9 @@ that does not exist. **The browser is not a passive observer; automating it chan
 
 ## Recommended order
 
-1. **Fix `derm.fn_blackout_targets`.** It is 31.8% of all database time for zero work, it costs
-   nothing to fix relative to the return, and it needs no infrastructure decision.
+1. ~~**Fix `derm.fn_blackout_targets`.**~~ ✅ **DONE** - 2,056 ms -> 529 ms. ⚠ But see the correction
+   in section 1: this returns ~0.7% of one core, not "a third of capacity", so do **not** expect it
+   to resolve the reported slowness. It was free waste and is now gone; that is all.
 2. **Look at the Supabase dashboard CPU / Disk IO charts for 08-31 10:05-10:37 ET.** That single
    check confirms or eliminates the burstable-CPU theory in section 3, which nothing inside the
    database can answer.
