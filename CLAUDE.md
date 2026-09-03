@@ -1073,6 +1073,54 @@ destructive write this sync can make.
 `needs_populate` and drained at 10 per 5-minute cycle, about 4 hours. That is the shape change, not
 drift.
 
+🛑 **AND THE SECOND CONSEQUENCE IS WORSE AND TOOK TWO DAYS TO NOTICE: WIDENING THE `fields`
+STRING CHANGES THE QUERY'S JOBBER COST, AND A FULL PROPERTY SWEEP NO LONGER FITS IN THE BUDGET.**
+Jobber bills GraphQL against a leaky bucket: **10,000 max, restoring 500/s**, reported live on every
+response at `extensions.cost.throttleStatus`. Measured 2026-09-03:
+
+| property page | cost |
+|---|---|
+| `first:100` WITHOUT `customFields` | **1,005** |
+| `first:100` WITH `customFields` | **2,305** |
+| `first:25` WITH `customFields` | **580** |
+
+That is **~23 per node**, so page size does NOT change the total: a ~470-property sweep needs
+**~10,800, which exceeds the entire bucket.** Smaller pages help only because they take longer in
+wall-clock and therefore earn more refill.
+
+**What it cost:** `ca16cf9` added `customFields` at 2026-09-02 09:55 ET and the sweep broke that
+hour. Properties went from 23-24 successful hourly sweeps a day to 5-10, and **quotes broke with
+it** because `quotes` runs immediately after `properties` out of the same bucket.
+
+```
+ET day    prop_ok  prop_ERR  quote_ERR
+08-26..09-01  23-24     0        1-6
+09-02          10      14         13     <- 10 sweeps before the deploy, 14 failures after
+09-03           5      12         13
+```
+
+🛑 **AND IT WAS INVISIBLE, BY THE ESTATE'S MOST-REPEATED MECHANISM.** The pull loop read
+`try { ... } catch { pulls[entity.name] = -1; continue }`. No message, no status change. **pg_cron
+reported `succeeded` and `sync_log` reported `status='success'` throughout**, so Jobber-side service
+address edits and BOTH synced custom fields stopped arriving reliably for two days with every
+dashboard green. Compare the `pg_cron "succeeded" is structurally blind` rule: this is the same
+shape one layer down, produced by the very change that was meant to close a sync gap.
+
+✅ **Fixed 2026-09-03 (v26).** `gql()` now READS `extensions.cost.throttleStatus` from every
+response and sleeps for the refill when the balance falls below `THROTTLE_FLOOR = 3500`, retries a
+`THROTTLED` error up to 3 times, and properties carries `pageSize: 25`. The pull error is recorded in
+`sync_log.details.pull_errors` and any failed pull now forces `status='partial'`.
+**Proven against live Jobber before deploying: 494 properties in 20 pages, 10.4s, 4 pacing waits
+totalling 3.8s, lowest balance 2,726 of 10,000, zero throttle errors.**
+
+⚠ **So before adding ANY field to a poll entity, price the query.** Send it once and read
+`extensions.cost` (`requestedQueryCost`, `actualQueryCost`, `throttleStatus`). `actualQueryCost`
+exceeded `requestedQueryCost` by 53% here (1,505 requested vs 2,305 actual), so the estimate Jobber
+gives you up front is NOT the number that gets billed.
+⚠ **The same `gql()` gained the missing content-type guard** while it was open, so the HTML
+"Waiting Room" at HTTP 200 now throws instead of being read as "this entity has no rows". That
+removes `sync-jobber-poll` from the list of 10 functions documented above as lacking it.
+
 🛑 **THE SMOKE TEST FOUND THAT THE ADOPT PATH HAD NEVER WORKED, AND AN ADVERSARIAL SWEEP OF THE
 RESULT FOUND FIVE MORE. Every one was a COMPOSITION defect: the pieces were individually correct and
 individually tested, and nothing had ever run the statement the script actually emits.** Worth

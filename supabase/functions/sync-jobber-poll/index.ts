@@ -90,18 +90,64 @@ const ENTITIES = [
   { name: 'jobs',     rawTable: 'jobber_pull_jobs',     topic: 'JOB_UPDATE',     fields: 'id jobNumber title client { id } property { id } jobStatus startAt endAt total updatedAt' },
   { name: 'visits',   rawTable: 'jobber_pull_visits',   topic: 'VISIT_UPDATE',   fields: 'id title startAt endAt completedAt completedBy visitStatus client { id } job { id } invoice { id } assignedUsers { nodes { id } } createdAt', pageSize: 25 },
   { name: 'invoices', rawTable: 'jobber_pull_invoices', topic: 'INVOICE_UPDATE', fields: 'id invoiceNumber invoiceStatus issuedDate dueDate subject amounts { subtotal total invoiceBalance depositAmount } client { id } updatedAt' },
-  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE', fields: 'id name address { street city province postalCode coordinates { latitude longitude } } customFields { __typename ... on CustomFieldNumeric { valueNumeric customFieldConfiguration { id } } ... on CustomFieldText { valueText customFieldConfiguration { id } } }', replayLimit: 10 },
+  { name: 'properties', rawTable: 'jobber_pull_properties', topic: 'PROPERTY_UPDATE', fields: 'id name address { street city province postalCode coordinates { latitude longitude } } customFields { __typename ... on CustomFieldNumeric { valueNumeric customFieldConfiguration { id } } ... on CustomFieldText { valueText customFieldConfiguration { id } } }', replayLimit: 10, pageSize: 25 },
   { name: 'quotes',   rawTable: 'jobber_pull_quotes',   topic: 'QUOTE_UPDATE',   fields: 'id quoteNumber quoteStatus amounts { subtotal total depositAmount } client { id } updatedAt' },
 ] as const
 
-async function gql(token: string, query: string, variables: Record<string, unknown> = {}) {
+// ⚠ JOBBER BILLS EVERY QUERY AGAINST A LEAKY-BUCKET COST BUDGET, AND A FULL PROPERTY SWEEP NO
+// LONGER FITS IN IT. Measured 2026-09-03: bucket 10,000, restore 500/s, and a property page costs
+// ~23 PER NODE once `customFields` is selected (first:100 = 2,305, first:25 = 580; without custom
+// fields the same page is 1,005). A ~468-property sweep therefore needs ~10,764, which EXCEEDS the
+// whole bucket. `ca16cf9` added customFields on 2026-09-02 and from that hour the sweep failed most
+// runs: properties went 23-24 successes/day to 5-10, with quotes failing alongside it because it
+// runs next out of the same bucket. Nothing reported it (see the pull loop's catch).
+//
+// The fix is to READ the balance Jobber returns on every response and wait for the refill, rather
+// than discovering the ceiling as an error. Pacing costs nothing when the budget is healthy.
+const THROTTLE_FLOOR = 3500      // keep this much headroom for the entities that pull after us
+const THROTTLE_RESTORE_PER_S = 500
+let throttleAvailable = Number.POSITIVE_INFINITY   // unknown until Jobber first tells us
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+async function gql(token: string, query: string, variables: Record<string, unknown> = {}, attempt = 0): Promise<any> {
   const r = await fetch('https://api.getjobber.com/api/graphql', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-JOBBER-GRAPHQL-VERSION': GRAPHQL_VERSION },
     body: JSON.stringify({ query, variables }),
   })
+
+  // 🛑 Jobber sheds load with an HTML "Waiting Room" page at HTTP 200. Without this guard
+  // `r.json()` throws and the caller reads the failure as "this entity has no rows". CLAUDE.md lists
+  // this function among the 10 that lacked the check.
+  const ctype = r.headers.get('content-type') ?? ''
+  if (!ctype.includes('json')) throw new Error(`Jobber returned ${ctype || 'no content-type'} at HTTP ${r.status} (busy/waiting room)`)
+
   const j = await r.json()
-  if (j.errors?.length) throw new Error(`GraphQL: ${JSON.stringify(j.errors[0]).slice(0, 200)}`)
+
+  // Record the live balance BEFORE any throw, so a throttled failure still teaches us the state.
+  const th = j?.extensions?.cost?.throttleStatus
+  if (th && typeof th.currentlyAvailable === 'number') throttleAvailable = th.currentlyAvailable
+
+  if (j.errors?.length) {
+    const throttled = j.errors.some((e: any) =>
+      e?.extensions?.code === 'THROTTLED' || /throttl|rate limit/i.test(String(e?.message ?? '')))
+    if (throttled && attempt < 3) {
+      await sleep(2000 * (attempt + 1))
+      throttleAvailable = Number.POSITIVE_INFINITY   // force a fresh read from the retry's response
+      return gql(token, query, variables, attempt + 1)
+    }
+    throw new Error(`GraphQL: ${JSON.stringify(j.errors[0]).slice(0, 200)}`)
+  }
+
+  // Below the floor, wait for the bucket to refill. The NEXT response corrects this estimate, so a
+  // wrong guess here self-heals rather than compounding.
+  if (throttleAvailable < THROTTLE_FLOOR) {
+    const waitMs = Math.min(20000, Math.ceil(((THROTTLE_FLOOR - throttleAvailable) / THROTTLE_RESTORE_PER_S) * 1000))
+    await sleep(waitMs)
+    throttleAvailable += (waitMs / 1000) * THROTTLE_RESTORE_PER_S
+  }
+
   return j.data
 }
 
@@ -269,6 +315,7 @@ async function runSync(): Promise<Record<string, unknown>> {
     const { token, clientSecret } = await getCreds()
     let totalPulled = 0
     const pulls: Record<string, number> = {}
+    const pullErrors: Record<string, string> = {}
     const sweepProperties = new Date().getUTCMinutes() < PROPERTY_SWEEP_MINUTE
     for (const entity of ENTITIES) {
       // Full sweep, so only once an hour. Skipping the PULL still leaves replayFlagged free to
@@ -276,7 +323,11 @@ async function runSync(): Promise<Record<string, unknown>> {
       if (entity.name === 'properties' && !sweepProperties) { pulls[entity.name] = -2; continue }
       const cursor = await getCursor(entity.name)
       let nodes: any[]
-      try { nodes = await pullDelta(token, entity, cursor) } catch { pulls[entity.name] = -1; continue }
+      // 🛑 This used to be a bare `catch { ... = -1; continue }`. A two-day property-sync outage
+      // was invisible because of it: pg_cron said succeeded and sync_log said status='success'.
+      // Record WHAT failed; -1 alone cannot tell a throttle from a bad token from a schema change.
+      try { nodes = await pullDelta(token, entity, cursor) }
+      catch (e) { pulls[entity.name] = -1; pullErrors[entity.name] = String(e).slice(0, 300); continue }
       if (nodes.length) {
         await upsertRaw(exec, entity.rawTable, nodes)
         const newCursor = entity.name === 'properties'
@@ -291,8 +342,12 @@ async function runSync(): Promise<Record<string, unknown>> {
     const dur = Math.round((Date.now() - startMs) / 1000)
     await supabase.from('sync_log').insert({
       sync_source: 'jobber_poll_pgcron', started_at: startedAt, finished_at: new Date().toISOString(),
-      rows_inserted: totalPulled, rows_updated: 0, rows_errored: fails, duration_seconds: dur,
-      status: fails === 0 ? 'success' : 'partial', details: { pulls, replay },
+      rows_inserted: totalPulled, rows_updated: 0,
+      rows_errored: fails + Object.keys(pullErrors).length, duration_seconds: dur,
+      // A failed PULL is now a partial run. Previously only replay failures moved this off 'success',
+      // so an entity that never pulled at all still reported a clean sync.
+      status: (fails === 0 && Object.keys(pullErrors).length === 0) ? 'success' : 'partial',
+      details: { pulls, replay, ...(Object.keys(pullErrors).length ? { pull_errors: pullErrors } : {}) },
     })
     return { pulled: totalPulled, pulls, replay, duration_s: dur }
   } catch (e) {
