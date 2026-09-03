@@ -1048,6 +1048,33 @@ Deno.serve(async (req: Request) => {
         // ⚠ The old co-client rule is now enforced upstream rather than here: the report is
         // per VISIT and renders only this client's own documents, so the shared DERM Address
         // sheet can never reach a client through it.
+        // 🛑 2026-09-03: THE CLIENT PATH NOW REFUSES AN UN-BLACKED-OUT MANIFEST TOO.
+        // The city loop has guarded on this since the redaction work; this one never did, so a
+        // customer could be mailed a Service Report whose FOG manifest section was missing. That
+        // section IS the redacted document: customer.work_orders.derm_manifest_url is
+        // derm.redacted_manifest_docs.url. Fred, 2026-09-03: "we shouldn't be able to send an email
+        // from the DERM App if the manifest isn't blackedout."
+        // ⚠ The two failure branches keep DIFFERENT labels for the same reason the city path does:
+        // a broken lookup indexed as "no redacted sheet" sends someone to regenerate an artifact
+        // that already exists.
+        const rdResC = await fetch(
+          `${SUPABASE_URL}/rest/v1/redacted_manifest_docs?manifest_id=eq.${id}&client_id=eq.${clientId}&select=url`,
+          { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Accept-Profile': 'derm' } },
+        )
+        if (!rdResC.ok) {
+          const e = await rdResC.text().catch(() => '')
+          console.error(`[send-derm-email] redaction lookup failed (client) manifest=${id} client=${clientId} status=${rdResC.status} ${e.slice(0, 200)}`)
+          results.push({ manifest_id: id, status: 'skipped', reason: 'redaction_lookup_failed', client: clientCode })
+          await logSend(id, logClientId, null, null, 'skipped', 'redaction_lookup_failed')
+          continue
+        }
+        const rdRowsC = await rdResC.json()
+        if (!(Array.isArray(rdRowsC) && rdRowsC[0]?.url)) {
+          results.push({ manifest_id: id, status: 'skipped', reason: 'no_redacted_sheet', client: clientCode })
+          await logSend(id, logClientId, null, null, 'skipped', 'no_redacted_sheet')
+          continue
+        }
+
         // 🛑 No report => the letter still goes out with NOTHING attached (Fred's choice).
         const { data: mvsC } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
         const visitIdsC = ((mvsC || []) as { visit_id: number }[]).map((x) => x.visit_id)
