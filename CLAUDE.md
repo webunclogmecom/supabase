@@ -699,9 +699,14 @@ identical to before the change**.
 ✅ **`send-derm-email` WAS PORTED THE SAME DAY (v26) AND IT WAS THE MORE URGENT HALF.** It is the
 **regulator-facing city path and it is in real production use** (`derm_email_sends` carries
 `is_test=false` sends to actual client addresses).
-⚠ **AS OF 2026-08-28 THAT SENTENCE IS TRUE OF THE PATH BUT NOT OF TODAY'S TRAFFIC:** both
-`city_email_live_sends` and `client_email_live_sends` are `false` for testing, so every send is
-currently routed to an internal address and logged `is_test=true`. The payload sizes and the
+⚠ **AS OF 2026-08-28 THAT SENTENCE WAS TRUE OF THE PATH BUT NOT OF THAT DAY'S TRAFFIC:** both
+`city_email_live_sends` and `client_email_live_sends` were `false` for testing, so every send was
+routed to an internal address and logged `is_test=true`.
+🛑 **CORRECTED 2026-09-03: ONLY THE CITY GATE IS STILL SHUT. `client_email_live_sends` READS
+`true`, SO CLIENT SENDS REACH REAL CUSTOMERS.** Measured directly against `public.app_config`. This
+file said `false` in four places and that is wrong in the DANGEROUS direction: a person reading it
+would believe a client test send is caught by `city_email_test_recipient`, and it is not. Type a
+`test_recipient` into the dialog, or you are mailing the customer. The payload sizes and the
 urgency above are unchanged - the gates are temporary and the path resumes real sends the moment
 they are restored. See the automatic-city-email section near the end of this file. Measured worst payload: **~5.36MB across 2
 attachments = ~7.15M base64 chars = ~229MB** against a ceiling that killed a worker at 277.7MB,
@@ -3115,7 +3120,7 @@ inbox on file.
 | `city_email_retry_after` | `20 hours` | stops a re-send loop. Falls back to 20h when missing or empty, never to zero. Same raise-on-unparseable behaviour |
 | `city_email_batch_limit` | `5` | cap per run; the sender renders a PDF per manifest |
 | `city_email_live_sends` | **`false`** | forces every city send to the test recipient, `is_test=true` |
-| `client_email_live_sends` | **`false`** | the same gate on the CLIENT-facing send |
+| `client_email_live_sends` | **`true`** (measured 2026-09-03) | the same gate on the CLIENT-facing send. 🛑 **OPEN**, so a client send reaches the real customer unless a `test_recipient` is supplied |
 | `city_email_test_recipient` | `fred@ayache.com` | where gated sends land |
 
 🛑 **AN UNPARSEABLE INTERVAL RAISES, IT DOES NOT FALL BACK.** The `::interval` cast sits
@@ -3174,11 +3179,15 @@ select recipient_type, is_test, recipient_email, sent_at at time zone 'America/N
 ```
 
 ⚠ `client_email_live_sends` is a SEPARATE switch on the manual "Send DERM to clients" button and
-has nothing to do with this go-live. Restore it whenever client testing ends.
+has nothing to do with this go-live. It was restored to `true` at some point before 2026-09-03, so
+it needs no action; the city gate is the only one still shut.
 
-🛑 **BOTH `*_live_sends` GATES ARE OFF FOR TESTING AND MUST BE RESTORED.** Nothing expires them and
-nothing alerts on them. While `client_email_live_sends` is `false` the DERM Tracker's client send
-reports success, writes a `derm_email_sends` row, and **no customer receives anything**. Measured
+🛑 **THE CITY GATE IS OFF FOR TESTING AND MUST BE RESTORED. THE CLIENT GATE IS ALREADY OPEN.**
+Nothing expires either and nothing alerts on them, which is why this paragraph went stale: it said
+BOTH were off until 2026-09-03, when `client_email_live_sends` was measured at `true`.
+⚠ The description that follows is what a SHUT client gate does, and it is kept because the gate can
+be shut again: while `client_email_live_sends` is `false` the DERM Tracker's client send reports
+success, writes a `derm_email_sends` row, and **no customer receives anything**. Measured
 2026-08-29: that path has 37 real sends to 23 distinct customer addresses historically (23 stored
 strings, 22 actual mailboxes: one differs only in casing), so it is a live mailing path. ⚠ Since the
 DERM Tracker demo-mode change (`7c859bb`, 2026-09-01) the city dialog no longer shows a "temporarily
