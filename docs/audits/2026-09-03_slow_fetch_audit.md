@@ -3,7 +3,11 @@
 **Fred:** *"this and past week it have been working slowly... the apps loads up fast enough, but the
 data to display takes too long to be displayed, like the fetch takes too long from time to time."*
 
-Read-only audit. Nothing was changed.
+Sections 1-6 are the READ-ONLY audit, written before anything was changed - read them as the
+"before" picture. A fix was then applied (`2026-09-03_1800_stagger_cron_schedules.sql`, `ce0500f`)
+and the **post-fix re-audit is appended at the end of this file**, including the root cause that
+sections 1-6 had not yet identified: **background-worker starvation**, `max_worker_processes = 6`
+against 14 jobs firing at minute `:00`.
 
 ---
 
