@@ -1807,6 +1807,34 @@ healthy. Non-empty means those clients are seeing nothing. **Watch it after any 
 > Studio. Until that path covers pre-placed sheets, expect this backlog to recur; watch
 > `v_blackout_blocked_sheets`.
 
+> ✅ **2026-09-03: "COMPLETE" NOW MEANS THE SHEET WILL BE BLACKED OUT. That recurrence is closed at
+> the source.** Fred: *"if it's marked as complete then after 5 min it needs a blackout. period, if
+> not then it can't be marked as complete."* Steps 2+3 of
+> `Building Apps/DERM Stamp Studio/docs/11-completion-gated-publish-spec.md`, shipped in
+> `2026-09-03_1230` / `_1300` / `_1320`:
+> - **`derm.fn_sheet_publishable(dump_folder)`** is now the ONE answer to "can this be blacked out?"
+>   (NULL = yes). It wraps `v_blackout_blocked_sheets` + a per-stamped-page extent check. `authenticated`
+>   holds EXECUTE so the Studio can show the reason.
+> - Completion is gated on it: **the human path RAISES** (`set_sheet_completed`), **the automatic path
+>   is a NO-OP** (`trg_a0_completion_requires_geometry`). 🛑 The automatic path must never RAISE - the
+>   resolver and `trg_zy_generated_sheet_complete` do other work in the same transaction.
+> - **Dirty tracking** (`trg_zz_dirty_on_card_change` on `address_row_map`) clears `completed` on any
+>   card/stamp/band change; the existing reopen pin does the rest. It sorts AFTER `trg_zy_` deliberately.
+> - 🛑 **`trg_generated_sheet_complete` had NO `reopened_at` check** and would have silently
+>   re-completed a reopened sheet, erasing dirty state. Fixed in `_1230` PART 4.
+> - **`fn_blackout_targets` now requires `completed`** (`_1300`). Measured no-op at install (all folders
+>   complete, 0 targets), so **its exclusion arm is UNEXERCISED on real data** - do not read the clean
+>   install as proof it behaves.
+> - **`derm.v_blackout_completed_unpublished`** is the watchdog for the rule stated literally. EMPTY IS
+>   HEALTHY. ⚠ It is NOT redundant with `v_blackout_blocked_sheets`: it caught two folders that pass
+>   the cheap predicate yet are still refused by `fn_blackout_targets`' deeper fail-closed gates
+>   (`derm/1194`, `window12-sheet11`, one client each). **The completion gate is therefore not
+>   airtight, and the watchdog is why that is acceptable.** Do not widen the gate to call
+>   `fn_blackout_targets` - its own comment forbids that in an interactive path.
+> ⚠ **The blackout escalation email WAS working all along** (`health_alert_state` shows `blackout-health`
+> alerted on 830714 / 312500 / 833049 and auto-resolved the first two once fixed). The gap was never the
+> watchdog; it was that "complete" asserted nothing about the geometry.
+
 🛑 **KEY ON (dump_folder, effective_page), NEVER ON THE FOLDER.** My own first sweep asked whether a
 FOLDER had any extent and found 4 blocked folders. The gate is per PAGE, and the detector found
 **5 folders / 8 pages** — `window5-sheet3` has an extent for page 2 and none for page 1, which a
