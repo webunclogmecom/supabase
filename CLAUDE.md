@@ -2066,6 +2066,61 @@ a different scan. Measured on ticket-832194: `[address_1, address_2]` became
 the `ticket-833049` defect. **Every card on a folder shares one `page`; only `stamp_page` varies.**
 Assert `ticket_page_images` is byte-identical before and after any card insert.
 
+🛑 **THAT SENTENCE IS A GOOD HABIT AND A FALSE CONSTRAINT, AND THE DIFFERENCE MATTERS BECAUSE THERE
+IS NOW A GUARD (2026-09-03).** Measured: **19 of 138 folders carry more than one `page`** (98 of 726
+rows) and **17 of them are LEGITIMATE** multi-page OCR sheets. A trigger enforcing "every card on a
+folder shares one `page`" literally would refuse 96 good rows. What separates the 17 good folders
+from the 2 bad ones is a BIJECTION — `n_pages == n_distinct_images` — so the shippable invariant is
+its injective half, scoped to `white_manifest_number` because that, not `dump_folder`, is what
+`ticket_page_images` GROUPs on:
+
+> within one `white_manifest_number`, no two distinct `page` values may carry the same
+> non-`'pending'` `image_url`
+
+That is **`trg_zz_page_image_injective`** (`2026-09-03_1510`), a DEFERRABLE constraint trigger, and
+it refuses the shape at COMMIT with `23514` and an operator hint. Measured before installing: 18 rows
+across exactly 2 manifests (833049, 834742), **zero legitimate rows**; replayed over the whole
+`audit.logs` history it fires on 5 folder/image pairs ever, 4 real defects and 1 deleted smoke-test
+fixture.
+⚠ **The tempting STRONGER check is blind to this defect**: "`ticket_page_images[page]` must equal
+the row's own `image_url`" passes on `ticket-833049`, because both its pages hold `address_1` and the
+array holds `address_1` twice, so both rows match. Injectivity is the predicate that separates them.
+⚠ **The guard is NO-WORSE, not absolute** (same decision as `derm.save_page_geometry`): it skips an
+UPDATE that moves none of `(white_manifest_number, page, image_url)`, so `ticket-833049` — the one
+remaining violator, frozen by design — stays editable for band edits, stamp clears and its eventual
+repair, while a write that MOVES a card into the violating shape is still refused. Both halves are
+proven by controls in the migration and by two post-commit probes on live Prod.
+
+🛑 **AND THE GENERATOR WAS A TRIGGER, NOT A PERSON. THREE ROUTES WERE CLOSED IN THE SAME MIGRATION;
+A GUARD ALONE WOULD HAVE BEEN A REGRESSION.**
+1. **`derm.trg_autoplace_generated` ran `NEW.page := v_img`** — the image position — **without ever
+   setting a matching `image_url`.** A catalogue sweep shows it is the ONLY object in the database
+   that assigns `NEW.page`. It has produced a `page > 1` row exactly **twice** in production history
+   and corrupted it **both times**: `ticket-833049` card 972 (2026-08-17) and `ticket-834742` card
+   1106 (2026-09-03). **0 of 2 correct.** The assignment is removed; `NEW.stamp_page := v_img` was
+   always the right half and stays.
+2. **`derm.add_sheet_client`** fell back to the folder-wide `min(image_url)` — page 1's image —
+   when the caller named a page with no card yet, and inserted it at the caller's page. It is
+   EXECUTE-granted to `authenticated` and is the operator's "Add client" path, so this was reachable
+   by clicking page 2 of a folder whose cards are all on page 1.
+3. **`derm.add_extra_client_card`** wrote the client's existing card's `image_url` at
+   `coalesce(p_page,1)` — the same shape whenever those two differ.
+
+Both `add_*` now resolve through **`derm.fn_page_image_url(dump_folder, page)`** (arm 1: a card
+already on that page; arm 2: `ticket_page_images[page]`, valid because all 138 folders have
+contiguous pages 1..N) and **RAISE rather than borrow** when it returns NULL.
+⇒ Without those three fixes the guard would have turned a silent corruption into a hard failure of a
+legitimate filing: route 1 fires on any generated sheet whose client sits on printed page 2.
+
+⚠ **`ticket-834742` was repaired by `2026-09-03_1500`** (card 1106 `page` 2 -> 1, then
+`fn_reconcile_stamp_pages` moved 5 ordinals FROM THE WITNESS, then the 14 `page_row_rules` + 1
+`page_rule_scans` rows followed 3 -> 2, and the one `address_sheet_scan_reads` row taken THROUGH the
+duplicate was deleted). It serves 0 documents, so nothing had to be withdrawn.
+🛑 **It still needs a person before it can publish**: `address_2.jpg` has never had its sheet number
+read, so `fn_sheet_image_position('ticket-834742', 2)` correctly returns NULL, and the five page-2
+cards are still on DERIVED bands with no extent. Snap-then-extent is a separate reviewed migration
+and must come AFTER somebody opens `address_2.jpg` and confirms the five clients printed on it.
+
 ⚠ **A new card must be inserted ALREADY STAMPED.** An unstamped card freezes the whole folder
 (closed-world gate), and `trg_ab_autoplace_generated` only fires when `stamp_placed_at IS NULL` — its
 slot resolves the client's FIRST printed row, so letting it run puts the second permit's card on the
