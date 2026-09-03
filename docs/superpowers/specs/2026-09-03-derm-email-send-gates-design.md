@@ -109,5 +109,9 @@ them stable test fixtures: they are not about to become blacked out under the te
 ## Out of scope
 
 - The `pdf_service_504` on photo-heavy renders. Pre-existing, unrelated, still outstanding.
-- The client dialog's stale **preview** text in the app. The server letter is fixed; the preview
-  block in the DERM Tracker still shows the old wording.
+- ~~The client dialog's stale **preview** text in the app.~~ **DONE 2026-09-03**, and not by
+  retyping the copy: `send-derm-email` gained a `preview: true` mode that returns the letter it
+  would actually send, and the dialog renders that. The early return sits above both send loops, so
+  a preview cannot send or log anything; measured, `derm_email_sends` stayed at 122 rows across two
+  preview calls. See the preview section in
+  `docs/reference/city-and-client-email-logic.md`.
