@@ -1,5 +1,38 @@
 -- 2026-09-03_1800_stagger_cron_schedules.sql
 --
+-- ============================================================================
+-- 🛑 CORRECTION, 2026-09-03 15:20 ET. THE ROOT CAUSE STATED BELOW IS WRONG.
+-- KEEP THE CHANGE. DO NOT KEEP THE REASONING.
+-- ============================================================================
+-- Everything below blames background-worker starvation and minute :00. Both are false, and the
+-- measurements that refute them are one query each:
+--
+--   cron.use_background_workers = off   (context postmaster, source DEFAULT - never set)
+--     => pg_cron runs every job as a libpq CLIENT CONNECTION against cron.host = localhost.
+--        Jobs consume max_connections. They do NOT draw on max_worker_processes at all; the only
+--        pool slot pg_cron holds is its single launcher. The entire premise below is void.
+--
+--   failures at minute :00 ....... 0        job starts at minute :00 .... 12,042
+--     => the minute this migration blames has a PERFECT record over 119,693 runs. The 38 failures
+--        fall at minutes 9,10,15,27,33,35,36,37,50,51,55,56.
+--
+--   failure durations ............ 10.02 s to 19.79 s
+--     => that is a connection-establishment deadline expiring. An exhausted slot pool refuses
+--        INSTANTLY. The duration alone rules out the diagnosis below.
+--
+-- WHAT IS ACTUALLY TIGHT: connections and memory. cron.max_running_jobs = 32 against
+-- max_connections = 60 (3 superuser-reserved) with PostgREST holding ~21 idle is a real and
+-- dangerous pair - worst case measured at 59 against 60 - but it is a CONNECTION ceiling, not a
+-- worker one.
+--
+-- ✅ THE STAGGER IS STILL CORRECT AND SHOULD STAY, for a reason this file did not state: spreading
+-- the jobs reduces CONCURRENT CONNECTIONS, which is the resource that is genuinely scarce. It was
+-- right for the wrong reason. Peak 14 -> 5 per minute still holds and is still worth having.
+--
+-- Credit: the adversarial workflow that refused the premise, and the Supabase 2 session which had
+-- already corrected a separate overstatement in the same audit.
+-- ============================================================================
+--
 -- Re-phase the 11 periodic cron jobs so they stop starving the background-worker pool.
 -- EVERY JOB KEEPS ITS FREQUENCY. Only the offset changes.
 --
