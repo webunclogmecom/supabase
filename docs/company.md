@@ -14,6 +14,12 @@ Business context for engineers working on this database. If you're building a qu
 - **Phone:** +1 (305) 339-5638
 - **Primary inbox:** contact@unclogme.com (Diego)
 - **DERM License:** Permit #1404-25 (active 2025–2026) — required for commercial grease hauling
+  - ⚠ **How this relates to `LW-1133` is OPEN (2026-09-04).** Fred gave the canonical table that day:
+    Dade hauler license **`LW-1133`**, Broward **`WT-26-0104`**, with the per-truck decals in
+    `public.vehicle_decals`. The company licenses are now stored in `public.company_hauler_licenses`.
+    **No row was written for #1404-25** because it is unclear whether it is a second Dade credential
+    or whether one of these two records is wrong. Do not reconcile them by guessing.
+    See [`docs/reference/company-credentials.md`](reference/company-credentials.md).
 - **Insurance:** GL + Worker's Comp + Commercial Vehicle (Geico, updated Feb 2026)
 
 **Operations:** 24/7, 365 days/year. No emergency surcharge — same rate around the clock. Bilingual (English/Spanish).

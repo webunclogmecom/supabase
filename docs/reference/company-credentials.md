@@ -26,30 +26,41 @@ Fred's table byte for byte. Only the company-level license was missing, and it h
 the database. It existed solely as a hard-coded TypeScript literal, which is how it came to be marked
 "From Database" on Yannick's Broward manifest config while being readable from no table at all.
 
-## 🛑 Shipped code calls these the wrong thing, and it has not been corrected yet
+## ✅ The shipped code was corrected on 2026-09-04
 
-`supabase/functions/_shared/city-letter.ts:40` reads:
+It used to disagree. `_shared/city-letter.ts` and `send-visit-photos-email/index.ts` each carried a
+comment reading *"These are the company DECAL numbers, one per county. They are NOT the hauler licence
+number (#1404-25)"* above a constant named `DERM_DECALS` holding both numbers.
 
-> *"These are the company DECAL numbers, one per county. They are NOT the hauler licence number
-> (#1404-25)"*
+Fred: *"yes fix city-letter.ts and the other copy."* Both were changed together:
 
-directly above `const DERM_DECALS = 'Miami-DADE: LW 1133 &middot; Broward: WT-26-0104'`. **Per Fred
-those two numbers ARE the hauler licenses**, and the per-truck numbers are the decals. The same
-constant is duplicated at `supabase/functions/send-visit-photos-email/index.ts:307`.
+| | before | after |
+|---|---|---|
+| constant | `DERM_DECALS` / `DERM_DECALS_TEXT` | `HAULER_LICENSES` / `HAULER_LICENSES_TEXT` |
+| Dade value | `LW 1133` (space) | **`LW-1133`** (hyphen) |
+| comment | "these are DECALS, NOT the hauler licence" | Fred's canonical table |
 
-**Both are deliberately left unchanged.** Correcting a live edge function is its own change with its
-own verification, and rewriting the comment inside the migration that contradicts it would have buried
-the disagreement instead of recording it. Whoever fixes it must fix both copies.
+Deployed and **verified against the LIVE bodies, not the git tree**: `send-derm-email` **v51**,
+`send-visit-photos-email` **v31**, each asserted for the new constant, the corrected date and the
+absence of the old identifier, with `api.resend.com/emails` as the positive control.
 
-## 🟡 Two things still open
+⚠ **The rendered footer changed and it is regulator-facing.** Both emails now print
+`Licensed Grease Trap Hauler` / `Miami-DADE: LW-1133 · Broward: WT-26-0104`, in the HTML and the
+plain-text part. Only the hyphen moved. **The heading was always "Licensed Grease Trap Hauler", which
+is the strongest evidence these were hauler licenses all along and the comment was the thing that was
+wrong.**
+
+⚠ **The hyphen is deliberate.** Fred, 2026-09-04: *"Keep the Hyphen over a white-space."* Do not
+normalise it back.
+
+## 🟡 One thing still open
 
 1. **`#1404-25`.** `docs/company.md:16` calls it *"DERM License: Permit #1404-25 (active 2025-2026)"*
    and memory calls it the Miami-Dade Licensed Grease Trap Hauler number. If `LW-1133` is the Dade
    hauler license, these are either two different credentials or one of the two records is wrong.
    **No row is written for it.** Do not guess and backfill one.
-2. **Spelling.** Fred wrote `LW-1133` with a hyphen; the shipped constant is `LW 1133` with a space.
-   Stored as Fred wrote it. On a regulatory form the exact string matters, so it is flagged rather
-   than normalised. A one-row UPDATE if the hyphen is wrong.
+2. ~~**Spelling.**~~ **RESOLVED 2026-09-04.** Fred kept the hyphen and the shipped code was brought
+   into line. `LW-1133` everywhere.
 
 ## Where they are used
 

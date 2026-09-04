@@ -300,12 +300,30 @@ const CONTACT_TEL = '+13053395638'
 // 🛑 It renders TWICE, once in the HTML footer and once in the plain-text alternative. Change both
 // or the text part of the email silently keeps the old wording.
 //
-// These are the company DECAL numbers, one per county. They are NOT the hauler licence number
-// (#1404-25), which this line used to carry and which Fred replaced on 2026-08-27.
+// 🛑 CORRECTED 2026-09-04. This block used to say these were company DECAL numbers and
+// explicitly "NOT the hauler licence number". That was WRONG, and it is worth knowing why the wrong
+// version was believable: the label was written in one editing pass on 2026-08-27 and then copied,
+// so it read as an established fact while resting on nothing upstream.
+//
+// Fred, 2026-09-04, giving the canonical table for the first time:
+//     Dade    - Hauler license LW-1133     · Decals: Moises C1184, David C0976
+//     Broward - Hauler license WT-26-0104  · Decals: Moises 07675, David 07058
+//
+// ⇒ These two ARE the company HAULER LICENSES, one per county, which is exactly what the
+//   "Licensed Grease Trap Hauler" heading above them claims. The DECALS are the per-truck numbers,
+//   they live in public.vehicle_decals, and they are NOT printed here.
+//
+// ⚠ The canonical copy is now public.company_hauler_licenses (migration 2026-09-04_1738). These
+// stay hard-coded because an edge function rendering a footer should not take a DB dependency on a
+// value that only changes on a legal filing. If they ever diverge, the table wins.
+// Reference: docs/reference/company-credentials.md
+//
 // 🛑 Do NOT put `LC-0607` here or anywhere else. Fred, 2026-08-27: *"that number LC-0607 is not
 //    really from us"*. It was printed on customer-facing surfaces for months and is being purged.
-const DERM_DECALS = 'Miami-DADE: LW 1133 &middot; Broward: WT-26-0104'
-const DERM_DECALS_TEXT = 'Miami-DADE: LW 1133 - Broward: WT-26-0104'
+// 🛑 The Dade number carries a HYPHEN. Fred, 2026-09-04: *"Keep the Hyphen over a white-space."*
+//    It shipped with a space until then. Do not "normalise" it back.
+const HAULER_LICENSES = 'Miami-DADE: LW-1133 &middot; Broward: WT-26-0104'
+const HAULER_LICENSES_TEXT = 'Miami-DADE: LW-1133 - Broward: WT-26-0104'
 
 function escapeHtml(s: string | null): string {
   return (s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c))
@@ -489,7 +507,7 @@ ${detailRow('Service Type', SERVICE_TYPE_LABEL)}
 
 <tr><td style="padding:18px 36px 26px 36px;background-color:#fafbfc;border-top:1px solid #eef0f2;font-family:${FONT_STACK};">
 <p style="margin:0 0 4px 0;font-size:13px;font-weight:700;color:#374151;">Licensed Grease Trap Hauler</p>
-<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#6b7280;">${DERM_DECALS}</p>
+<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#6b7280;">${HAULER_LICENSES}</p>
 <p style="margin:0;font-size:12px;line-height:1.5;color:#9ca3af;"><a href="mailto:${CONTACT_EMAIL}" style="color:#9ca3af;text-decoration:underline;">${CONTACT_EMAIL}</a> &middot; ${CONTACT_PHONE} &middot; <a href="https://unclogme.com" style="color:#9ca3af;text-decoration:underline;">unclogme.com</a></p>
 </td></tr>
 </table>
@@ -522,7 +540,7 @@ function buildText(v: VisitRow, counts: Record<string, number>, includePhotos = 
     'Thank you for your continued partnership in keeping our community compliant and clean.', '',
     'The UnclogMe Team',
     'Licensed Grease Trap Hauler',
-    DERM_DECALS_TEXT,
+    HAULER_LICENSES_TEXT,
     `${CONTACT_EMAIL} - ${CONTACT_PHONE} - unclogme.com`,
   ].join('\n')
 }
