@@ -136,11 +136,62 @@ Nothing ever approached the 9,000 the database held. Corrected in
 retroactively changed 446 `derm.v_lwt_monthly_rows` rows because that view reads the column live
 rather than snapshotting it. See the migration header.
 
-🛑 **THE WATER TANK IS NOT INSTRUMENTED.** There is one LM11 on the account and a top-down radar
-reads one surface in one vessel. `inspections.water_gallons` has no sensor equivalent and will not
-get one without a second unit. Do not let a dashboard imply otherwise.
+🛑 **THE WATER TANK IS NOT INSTRUMENTED YET.** A top-down radar reads one surface in one vessel,
+so this unit can only ever report grease. **A second unit for water is EXPECTED and simply has not
+been fitted yet** (Fred, 2026-09-04: *"they haven't installed the one for water yet."*). Until it is,
+`inspections.water_gallons` has no live source at all, manual or automatic. **Do not let any
+dashboard, report or total imply the truck is fully instrumented.** See §7 for what to do when the
+water unit lands.
 
-## 7. "Per location, how much we pumped"
+## 7. The water tank: expected, not yet fitted
+
+**Status 2026-09-04: one sensor installed (grease). A second for water is expected. Not fitted.**
+
+Written now so the day it appears nobody re-derives this. Run this first, which discovers level
+sensors rather than hardcoding the known one, so a new unit shows up with no code change:
+
+```bash
+cd Supabase && node scripts/probes/samsara_level_sensors.mjs
+```
+
+Today it prints exactly one sensor and passes its own control. When it prints two, the following
+need doing, and none of them are automatic.
+
+**1. Identify it by ASSET ID, never by name.** The current one is named "Moises Sludge Sensor", which
+is free text a person typed and a person can edit. A second unit arrives as its own **new unpowered
+asset with its own id and its own LM11 gateway serial**. Key everything on the id.
+
+**2. `vehicles` has no water capacity column.** There is `grease_tank_capacity_gallons` and
+`fuel_tank_capacity_gallons`, and nothing for water. One is needed, and it must be populated from the
+new sensor's `totalCapacityVolume` (litres, convert), not guessed. Note the precedent from the grease
+side: the stored figure was wrong by a factor of 2.3 and nobody noticed for months, because nothing
+ever checked it against reality.
+
+**3. Do NOT reuse the grease sensor's numbers as a template.** The two vessels have different
+capacities, so `totalCapacityVolume` will differ, and that is one weak way to tell them apart. It is
+not a reliable discriminator on its own; use the asset id.
+
+**4. One asset id maps to a vehicle AND a compartment.** Today that mapping is implicit, holding only
+because there is exactly one sensor and it happens to be grease. With two it becomes ambiguous and
+must be made explicit. `entity_source_links` already carries `entity_type='vehicle'` rows for the
+three trucks keyed on the Samsara vehicle id; a sensor is a different entity and a different grain,
+so decide deliberately whether it is a new `entity_type`, a column, or a small table. **Do not
+silently overload the vehicle link.**
+
+**5. `inspections.water_gallons` is the field the water sensor supersedes**, exactly as `fillVolume`
+supersedes `sludge_gallons`. Both halves of that manual form died with Airtable on 2026-07-11.
+
+**6. Anything that sums or displays "tank level" must state WHICH tank.** Once two sensors exist, a
+single unlabelled number is wrong rather than merely incomplete. And while only one exists, a total
+labelled "tank" is already misleading.
+
+⚠ One open data question, noted while measuring: `inspections.water_gallons` has a max of 3,800,
+exactly equal to the `sludge_gallons` max, across 69 readings. That looks like occasional
+double-entry of the same figure rather than a real water capacity. **Do not use the historical
+`water_gallons` values to size the water tank or to sanity-check the new sensor.** Take the capacity
+from the sensor's own vessel profile and have someone confirm it against the truck.
+
+## 8. "Per location, how much we pumped"
 
 Fred, quoting a discussion with Andrew: *"We need to be able to see, per location, how much we
 pumped so he is going to his engineer to try to find a way to get it hopefully through the API."*
@@ -169,7 +220,7 @@ Attribution is a real engineering task, and **every blocker is on our side**:
 `fillVolumeIngress` and `fillVolumeEgress` are Samsara's own throughput primitives and are the
 natural starting point rather than differencing `fillVolume` by hand.
 
-## 8. None of it reaches our database
+## 9. None of it reaches our database
 
 - The LM11 has **zero rows in `entity_source_links`**. Only the three vehicles are linked, last
   synced 2026-04-29.
@@ -177,7 +228,7 @@ natural starting point rather than differencing `fillVolume` by hand.
   only the **vehicle** endpoints. Nothing calls `/assets/*` or `/readings/*`.
 - So every number in this document currently lives only inside Samsara.
 
-## 9. Related: we used to capture this by hand, and it stopped
+## 10. Related: we used to capture this by hand, and it stopped
 
 `public.inspections` is keyed on `vehicle_id` + `shift_date` and carries `sludge_gallons`,
 `water_gallons`, `gas_level`, `is_valve_closed`. Moises has **112** PRE/POST shift forms.
@@ -188,7 +239,7 @@ when Airtable was retired. Admin Review already logs the app symptom as known-is
 (inspections) feed NOT up to date". The LM11 replaces the sludge half of that form automatically.
 The water half remains unsourced.
 
-## 10. Traps for whoever works on this next
+## 11. Traps for whoever works on this next
 
 - **`GET /v1/sensors/list` returns `200 {"sensors":[]}` while POST on the same path returns 401.**
   That empty list is not evidence of anything. It is a POST route.
@@ -208,10 +259,11 @@ The water half remains unsourced.
   grep is what is installed here; passing it with `2>/dev/null` produces a silent, confident zero.
   This bit both a research agent and me in the same session.
 
-## 11. Open
+## 12. Open
 
 1. Should we ingest `fillVolume` into the warehouse, and at what grain?
-2. Does Yannick want the water tank instrumented too? That needs a second LM11.
+2. When is the water unit being fitted, and by whom? It is expected but not installed as of
+   2026-09-04. §7 is the checklist for the day it lands.
 3. Does any already-filed Miami-Dade LWT monthly report need amending, given 446 rows now render
    3,840 rather than 9,000?
 4. `inspections.water_gallons` max is 3,800, exactly equal to the `sludge_gallons` max, which looks
