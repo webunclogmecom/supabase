@@ -502,3 +502,134 @@ does is `ci_large` with dedicated cores) and something outside Postgres entirely
 3. PostgREST holds ~21 idle connections. Cheap at 120, but it is 17% of the pool doing nothing.
 4. The Calendar makes **13 REST round-trips per refresh**. That is an app-side change and it is the
    single biggest lever left on perceived load time, since each one costs ~220 ms of network.
+
+---
+
+## 2026-09-03 evening: "should we slow the crons down, or make the blackout a trigger?"
+
+**Fred:** *"should be change the frequency of the jobs? maybe every 5 minutes is too fast or so? or
+what about the blackout to be by trigger instead? like when clicking complete for it to happen."*
+
+**Answers: no schedule change, and the trigger already existed.** Both were investigated with six
+parallel analyses, each attacked by an independent adversarial reviewer briefed to assume the numbers
+were right and attack the inference instead. Recorded here so nobody re-litigates it from the same
+intuition.
+
+### Why NOT to slow any cron down
+
+**1. The failure signature says connection, not cadence.** All 38 cron failures in 14 days carry
+`job startup timeout` at **10.02s to 19.79s**. `cron.use_background_workers = off`, so pg_cron opens a
+libpq CLIENT connection per job; Postgres was never asked to run the statement. **Running a job less
+often cannot make a connection establish faster.**
+
+**2. The effect is episodic, so a constant-rate cause cannot explain it.** All 49 slow-or-failed runs
+fall inside four narrow windows (08-28 17:27 and 19:40, 08-31 14:05 to 14:37, 09-03 16:50 to 16:56).
+On 11 of 14 days, at the same 2,000 to 2,600 runs per day, **zero runs exceeded 3 seconds.**
+
+**3. The cost is not there.** All 25 jobs together are **2,008 seconds over 7 days = 0.332% of wall
+clock**. Peak simultaneous pg_cron connections over 7 days was **9**, against `max_connections` now
+120. The 59-of-60 worst case that justified the morning's stagger migration was quadrupled out of
+existence by the ci_medium resize at 15:08 ET.
+
+**4. Most jobs cost nothing to run because they do not do the work.** Nearly every entry is
+`SELECT public.fn_request_*()`, a pg_net fire-and-forget POST. The DB cost is queueing a request; the
+real work happens in an edge function that `cron.job_run_details` cannot see. So DB time is the wrong
+instrument for asking whether polling is expensive.
+
+⚠ **`max_s` of 10-19s on the */5 jobs is the STALL SIGNATURE, not the job's cost.** Read
+`avg_s` (0.03 to 0.25s). Anyone tuning from the max column is tuning against the symptom of a host
+stall.
+
+### Hit rates, measured, because "it runs 2,000 times" invites the wrong fix
+
+| job | runs / 7d | what it produced |
+|---|---|---|
+| `redact-manifest-sweep` | 2,011 | 30 published documents (1.5%) |
+| `outbound-custom-field-push` | 763 | 17 queue rows EVER |
+| `sheet-row-ocr-sweep` / `sheet-number-ocr-sweep` | 1,007 / 1,006 | 0 targets pending at audit time |
+| `dump-driver-truck-refresh` | 2,013 | maintains a **SIX ROW** table; most expensive cron at 456.7s |
+
+🛑 **A low hit rate is NOT by itself an argument to slow a job down.** Three of these are backstops
+whose value is bounded latency when work DOES arrive, and `redact-manifest-sweep` is the drain for a
+regulator-facing document (see the latency measurement below). The one genuine candidate is
+`dump-driver-truck-refresh`, and even there the saving is about 365s/week = **0.06% of wall clock**
+against up to 15 minutes of wrong-truck attribution, on about 27 multi-truck driver-days in 60 days.
+It was left alone.
+
+### Jobs that must NOT be slowed, for reasons beyond freshness
+
+- **`jobber-poll-sync` (1-59/5)** carries TWO couplings. `PROPERTY_SWEEP_MINUTE` gates the hourly
+  property sweep on `getUTCMinutes() < 5`, so re-phasing it to a bare `*/N` silently kills that sweep
+  forever with pg_cron and `sync_log` both reporting success. And `replayLimit: 10` makes the drain
+  rate `10 x fires-per-hour`. Jobber has no delta webhooks, so this cron's period IS the Visit
+  Calendar's staleness.
+- **`resolve-stale-visit-sync-pending` (1-59/3)** carries `LIMIT 50`, so halving the rate halves the
+  backstop drain in exactly the crash scenario it exists for.
+- **`jobber-visit-drift-reconcile`** performs automatic heal and adopt writes capped at 50 per run.
+  Halving its cadence halves an automatic repair rate, it does not merely delay a human.
+- **`redact-manifest-sweep` (3-59/5)** is the publication rate for pages 2..N of every sheet while
+  `fn_request_blackout_sweep()` posts `limit: 1`. See below.
+
+### 🛑 the confounding argument, which is the real reason to change nothing this week
+
+Four changes landed within about four hours on 2026-09-03: the completion gate (12:25 ET), the cron
+stagger (13:33), the `fn_blackout_targets` rewrite (15:00) and the ci_micro to ci_medium resize
+(15:08). **A quiet week can answer "did the stalls stop". Nothing can now answer "which of the four
+did it".** A fifth change buys nothing and costs the only clean signal left.
+
+⚠ `pg_stat_statements` was reset by the 15:08 restart, so every "since restart" number is a
+31-minute sample against a phenomenon that arrives roughly every three days. **Set any alert threshold
+from the real 7-day distribution (49 runs over 3s in three clusters), never from that sample.**
+
+### The blackout trigger: it already existed, and it is now proven on real traffic
+
+`derm.stamp_sheet_status` has carried **`trg_zz_publish_on_complete`** (AFTER INSERT OR UPDATE,
+running `derm.fn_publish_on_complete`) since `2026-09-03_1230` PART 6. It fires on the `completed`
+false to true transition and calls the same zero-argument `public.fn_request_blackout_sweep()` the
+cron calls, so **the two paths are byte-identical after the kick**.
+
+✅ **proven end to end at 20:27 ET the same evening, by a real Studio sign-off, not a manufactured
+test:**
+
+```
+20:27:20.603  completed false->true, completed_by='stamp-studio'   (a person)
+20:27:22.445  blackout_sweep_log proc=1 gen=1   OFF-CRON  <- the trigger, 1.8s later
+20:28:01.663  blackout_sweep_log proc=1 gen=1   cron tick
+```
+
+The 20:27:22 run is provably not the cron: `redact-manifest-sweep` is `3-59/5` (minute = 3 mod 5) and
+27 is not.
+
+🛑 **THE SAME EVENT MEASURES THE REAL DEFECT, AND IT IS `limit: 1`, NOT THE SCHEDULE.**
+`fn_request_blackout_sweep()` posts `jsonb_build_object('limit', 1)` while the edge function's own
+default is 3 and its hard cap is 5. So one kick publishes ONE page. That sheet had **10 pages**: the
+trigger published 1 instantly and the other 9 drained at exactly one per cron tick
+(`20:27:22 trigger, then :28, :33, :38, :43, :48, :53, :58, 21:03`), with one still pending **36
+minutes after sign-off**. Twenty folders carry 10 or more pages.
+
+So Fred's rule "if it's marked complete it needs a blackout, period" is satisfied today for the first
+client on a sheet and for nobody else. That is a batch-size defect, and neither slowing nor speeding
+the cron can fix it.
+
+### 🛑 raising `limit` needs a lease FIRST. Do not do it as a one-literal change.
+
+`derm.fn_blackout_targets` is a plain SELECT with **no claim column**, `trg_zz_publish_on_complete` is
+FOR EACH ROW so one transaction can issue several kicks, and `redact-manifest-sheet`'s last act is to
+DELETE the superseded storage object it read at the start. **If two invocations elect the same page,
+the loser can delete the winner's newer redaction on a regulator-facing document**, and the only trace
+would be a missing heartbeat row that nothing reads. Order: heartbeat-on-start, then a
+compare-and-swap claim, THEN raise the batch.
+
+### Answered while confirming the semantics
+
+- **Re-completing an UNCHANGED sheet regenerates nothing.** Election is
+  `t.fingerprint IS DISTINCT FROM f.fprint`, and the fingerprint is
+  `md5(_img_etag(src) || band_str || btop || bbot)`. **`completed` is not part of it.** A redo needs a
+  band, stamp, extent or scan-image change.
+- **Stamping does not publish, it UN-publishes.** A card change fires
+  `trg_zz_dirty_on_card_change`, which sets `completed = false`.
+- **`fn_blackout_targets` requires `s.completed`**, so an incomplete sheet cannot publish even via the
+  cron, and `derm.fn_publish_on_complete` is the only caller of `fn_request_blackout_sweep` besides
+  the cron.
+- Completion authorship across 136 sheets: `stamp-studio` 122 (human), `stamp-studio-ai` 11 (auto),
+  migration 2, with **zero AI completions since the gate shipped at 12:25 ET**.
