@@ -2294,7 +2294,67 @@ works and the zero is not a broken instrument. Both arms are drained:
 ⇒ **The sweep whose whole job is catching a reversed scan pair can never fire again**, and a reversed
 pair is precisely what put every stamp on the wrong scan on `ticket-833813` and `ticket-312433`. The
 fix is to make Arm B drain per PAGE rather than per FOLDER; until then the only route is the manual
-`_for(...)` variant. **Not done** - it changes what gets vision-OCR'd across 20 folders.
+`_for(...)` variant.
+
+✅ **FIXED 2026-09-03 (`2026-09-03_2210`), AND FRED RESHAPED IT FROM A SCHEDULE INTO AN EVENT.**
+His rule: *"it should only be done once per manifest (in all it's pages), unless there is an update
+of the manifest (like adding, deleting pages, etc)... so instead of a cron, maybe a trigger."*
+
+🛑 **THE ROOT CAUSE WAS THE PREDICATE, NOT THE SCHEDULE.** Both arms asked "has this page EVER been
+read?" with **`image_url` never compared**, so a page was never re-offered even when the image at
+that position CHANGED. Delete a page and every later position holds a different scan while the stale
+reads keep asserting the old mapping. The predicate is now derived and needs no state:
+
+> an image position needs reading IFF no scan read names the image that is at that position NOW
+
+which is Fred's rule exactly: read once per page; re-read only on an added, deleted or replaced page;
+otherwise never again. It is also SELF-HEALING, where a trigger-fed queue would miss the SQL
+backfills this estate does constantly.
+
+- `derm.v_sheet_number_ocr_backlog` is the derived predicate, **scope-free on purpose** so the gap
+  below stays countable. `derm.fn_sheet_number_ocr_targets` reads it and is now VOLATILE.
+- **Trigger `zzz_request_sheet_number_ocr`** on `public.derm_manifests` (per STATEMENT, only when
+  backlog exists) supplies immediacy; the cron stays as the safety net and now makes **no HTTP call
+  when there is nothing to do**, the same shape as `city-email-sweep`.
+- `derm.sheet_number_ocr_attempts` bounds ONLY the handler's EXCEPTION path. Measured from the
+  source: `ocr-address-sheet-number` upserts on `(dump_folder, page)` **including `image_url`** and
+  writes even when the number is unreadable, so the backlog self-drains after any attempt it
+  actually reaches; but a failed image fetch or vision error does `continue` WITHOUT writing, and
+  that alone would retry for ever. `image_url` is IN the ledger key, so replacing a scan re-arms it
+  with no expiry logic. The attempt is recorded when the target is HANDED OUT, so a worker that dies
+  mid-call still consumes its budget, which is the fail-safe direction.
+
+🛑 **SCOPE IS UNCHANGED AND THE GAP IS REPORTED, NOT CLOSED.** The `ticket-%` filter is justified on
+"a read can never be used" for `window*` folders, which is **the same premise Arm B exists to
+refute** - true for auto-placement, false for page identity. Measured:
+
+| folder shape | multi-image positions | unread | folders |
+|---|---|---|---|
+| `ticket-%` | 42 | **0** | 20 |
+| `derm/*` | 11 | **0** | 4 |
+| `window*` | 35 | **35** | 17 |
+
+**Those 17 `window*` folders serve 157 client documents**, and `window*` accounts for **371 of the
+677** served overall; their page mapping has never been machine-checked. Reading them costs 35 vision
+calls on handwritten pads whose reads may be garbage (one run read `window12-sheet9` as `224`), so it
+is a client-facing decision for Fred, not a repair. Widening the filter is one line.
+⚠ Mitigating, so the risk is not overstated: `fn_sheet_image_position` only honours a
+high-confidence read carrying a `-N` SUFFIX, so unsuffixed noise like `224` is inert.
+
+🛑 **UNATTENDED RE-PLACEMENT IS DELIBERATELY NOT SHIPPED.** The timing half stands: `ticket-834742`
+was filed at 12:20:39 and its OCR ran **9m24s later**, and even a trigger cannot guarantee the read
+beats the filing. Since `2026-09-03_1510` a missing map no longer corrupts anything, so the failure
+mode is a silently UNPLACED card rather than a wrongly-placed one. Auto-placement is what put every
+stamp on the wrong scan on three folders; a second unattended placement path firing on freshly-changed
+page maps is how that class returns. What ships is the detector **`derm.v_cards_awaiting_page_map`**.
+EMPTY IS HEALTHY, and it is empty.
+
+⚠ **The in-scope backlog is 0 today, so the install proves nothing on live data.** The migration
+therefore drives the whole state machine on a synthetic two-page folder inside a rolled-back
+savepoint (read once -> a wrong-image read does NOT drain it -> the correct read drains it -> a
+replaced image re-arms it -> 3 attempts stop it being offered while it stays VISIBLE in the backlog
+-> replacing the image re-arms the budget), with **two MUTATION CONTROLS proving the OLD
+read-presence predicate is blind to both cases that matter**.
 ⚠ This is also why `ticket-834742`'s open question cannot resolve itself: `address_2.jpg` has never
 had its sheet number read, `fn_sheet_image_position('ticket-834742', 2)` is NULL, and no automatic
 path will ever ask again.
