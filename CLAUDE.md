@@ -2247,8 +2247,29 @@ then add the page-2 extent + complete:  fn_blackout_targets 10 -> 8
 client.** 106 cards across 24 folders already have `page <> stamp_page`, so this is estate-wide, not a
 834742 quirk. Fixing it means keying `auto_place_page`'s roster on `COALESCE(stamp_page, page)` and
 extending the guard to refuse a `stamp_page` move that lands on an image differing from the row's own
-`stamp_image_url` witness. **Not done - it changes placement behaviour on 24 folders and needs its own
-reviewed migration.**
+`stamp_image_url` witness.
+
+🛑 **SHIPPED 2026-09-03 (`2026-09-03_2100`), AND THE FIX ABOVE IS NOT THE ONE THAT WORKS. Do not
+re-derive it.** Changing only the roster to `COALESCE(stamp_page, page)` is a **no-op**: measured, 0
+of 23 unplaced cards differ under the two predicates (control: 23 unplaced cards exist). It also
+would not have prevented the harm, because **`derm.clear_stamp_position` sets `stamp_page = NULL`
+first**, so after a clear the COALESCE collapses back to `page` - the field carrying no information.
+**The locator is destroyed by the CLEAR, not lost by the predicate.** What shipped is BOTH halves in
+one migration: `clear_stamp_position` keeps `stamp_page` (it still clears the point, the placement,
+the witness and the bands), and `auto_place_page` rosters on `COALESCE(g.stamp_page, g.page)` in both
+its skipped-count SELECT and its UPDATE.
+🛑 **The risk this note used to imply - "a card with a `stamp_page` and no `stamp_placed_at` freezes
+a folder" - was measured and is FALSE.** Every arm of `derm.v_blackout_blocked_sheets`
+(`no_stamp_timestamp`, `cards_withheld`, `frozen_closed_world`, `needs_snap_then_extent`) keys on
+**`stamp_y_pct IS NOT NULL`**, never on `stamp_page`; so does `derm.v_stamp_row_bands` and therefore
+the closed-world gate in `fn_blackout_targets`. `stamp_y_pct` is still nulled by the clear. The
+migration's VERIFY asserts the blocked worklist is byte-identical across the change.
+⚠ **THE CLIENT SIDE IS NOT SHIPPED, and the divergence is deliberate and safe.** The Studio bundle
+still gates its Auto-place button on `se = l.filter(e => e.page === d)`. Until that ships: tab N>1
+says "Nothing to auto-place on this page" though the server would offer the card (conservative,
+writes nothing), and tab 1 offers it while the server places **0** ("Auto-placed 0") - it no longer
+MIS-FILES, which was the point. The folder-wide Unplaced drag tray is already page-agnostic, so
+dragging onto the right tab still works. **App follow-up, tracked in the Stamp Studio changelog.**
 ✅ Reassurance the audit did produce, and nothing else had: left alone, the pipeline is CORRECT. With
 the page-2 extent added, `fn_blackout_targets` emits **10 targets correctly split** - clients
 371/374/491/500/558 on `address_1.jpg` at effective_page 1, clients 57/279/341/375/477 on
