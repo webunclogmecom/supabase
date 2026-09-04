@@ -2033,6 +2033,30 @@ from 5 clients to 10 and erases the only machine-visible tell** - and that row i
 one that agrees with the paper. It is also a handwritten **6-slot** form carrying 5-slot template
 bands. Read PART 5 of `docs/migrations/2026-08-19_2355` before dropping that constraint.
 
+🛑 **CORRECTED 2026-09-03 BY READING THE PAPER. "That row is in fact the only one that agrees with
+the paper" IS TRUE OF THAT ONE CARD AND FALSE AS A DESCRIPTION OF THE FOLDER, AND THE DIFFERENCE
+DECIDES THE REPAIR.** I fetched both scans from the bucket and read the Section B rosters:
+
+| image | printed sheet no. | printed roster, in printed order | currently at |
+|---|---|---|---|
+| `derm/1710/address_1.jpg` | **338** | 179-CIG Espanola Cigars · 83-SHUL The Shul · The Carrot Express Coral Gables (092-TCE) · 029-JOS Josh's Deli · 082 The Fresh Carrot of Surfside | **effective_page 2** |
+| `derm/1710/address_2.jpg` | **387** | Ceviche Inka (114-CI) · AVA (168-AVA) · Yaya (221-YAS) · La Spaziotto (222-SPE) · MYK Brickell (214-MYK) | **effective_page 1** |
+
+Each group's stamps run 29.800 -> 60.040 in exact printed order. **So it is a straight two-page
+TRANSPOSITION: 0 of 10 correct today, 10 of 10 after a swap** - the same signature that settled
+`ticket-833813` and `ticket-312433`. The WHOLE effective_page-2 group is right and the WHOLE
+effective_page-1 group is wrong; card 972 is simply one member of the correct group, not a lone
+witness. Reading it as the tell led to the conclusion that the folder could not be adjudicated.
+🛑 **The "doubles the exposure" warning STANDS, and for a better reason than the one recorded:**
+normalising `page` WITHOUT also swapping `stamp_page` would move the correct group onto the wrong
+scan as well. The two must ship together, and the CHECK stays on until the swap is verified.
+🛑 Also read off the paper: **both are SEPARATE handwritten pads (338 and 387), not two pages of one
+sheet**, both 6-slot with the 6th slot empty, and neither number carries a `-N` suffix - so
+`fn_sheet_image_position` correctly falls through to identity for this folder.
+🛑 **10 clients have had no document since 2026-08-17.** The ordered repair is section 6 of
+[`docs/superpowers/specs/2026-09-03-derm-page-integrity-plan.md`](docs/superpowers/specs/2026-09-03-derm-page-integrity-plan.md);
+serving them is Fred's call, not a repair to be done unattended.
+
 **⚠ STILL OPEN, needs Fred: 31 already-serving pages carrying 109 documents are still on DERIVED
 bands.** Tonight's sheets were simply the ones that got extents. Every one of those pages has the
 same class of misalignment and wants the same snap.
