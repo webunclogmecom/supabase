@@ -2269,7 +2269,14 @@ still gates its Auto-place button on `se = l.filter(e => e.page === d)`. Until t
 says "Nothing to auto-place on this page" though the server would offer the card (conservative,
 writes nothing), and tab 1 offers it while the server places **0** ("Auto-placed 0") - it no longer
 MIS-FILES, which was the point. The folder-wide Unplaced drag tray is already page-agnostic, so
-dragging onto the right tab still works. **App follow-up, tracked in the Stamp Studio changelog.**
+dragging onto the right tab still works.
+
+✅ **RESOLVED THE SAME EVENING: the app half shipped at 21:15 ET and the divergence is closed.**
+The Studio's per-page card list now reads `(e.stamp_page ?? e.page) === <tab>`. Verified in the LIVE
+published bundle rather than from the chat: walked to closure, 24 chunks / 939,075 bytes, with
+`fn_sheet_publishable` and `auto_place_page` as positive controls; the new predicate appears **2**
+times (eager + lazy route chunk) and the old raw-`page` filter **0**. Client and server now agree.
+⚠ Nothing looks different on a fully-placed folder - the fix only bites after a stamp is CLEARED.
 ✅ Reassurance the audit did produce, and nothing else had: left alone, the pipeline is CORRECT. With
 the page-2 extent added, `fn_blackout_targets` emits **10 targets correctly split** - clients
 371/374/491/500/558 on `address_1.jpg` at effective_page 1, clients 57/279/341/375/477 on
