@@ -185,11 +185,41 @@ supersedes `sludge_gallons`. Both halves of that manual form died with Airtable 
 single unlabelled number is wrong rather than merely incomplete. And while only one exists, a total
 labelled "tank" is already misleading.
 
-⚠ One open data question, noted while measuring: `inspections.water_gallons` has a max of 3,800,
-exactly equal to the `sludge_gallons` max, across 69 readings. That looks like occasional
-double-entry of the same figure rather than a real water capacity. **Do not use the historical
-`water_gallons` values to size the water tank or to sanity-check the new sensor.** Take the capacity
-from the sensor's own vessel profile and have someone confirm it against the truck.
+### 7a. 🛑 The water side is not measured correctly TODAY, and Fred has confirmed it
+
+**Fred, 2026-09-04: *"right now we're not measuring it correctly."*** So the historical
+`inspections.water_gallons` values are NOT a baseline, NOT a capacity source, and NOT a way to
+sanity-check the new sensor when it lands. Measured shape, so nobody has to re-derive it:
+
+| | |
+|---|---|
+| rows with a water value | **74 of 319** (23%) |
+| capture window | **2026-03-25 to 2026-07-11 only** (0 rows before March; died with the Airtable feed) |
+| rows where water **duplicates** sludge exactly | **6**, all clustered 2026-06-08 to 06-18 |
+| range excluding those 6 | **60 to 3,200 gal**, median **500**, p90 **1,000**, mean 584 (n=68) |
+| by truck | Moises 64, David 4 |
+| distinct values | 28 |
+| readers | **`public.inspections_with_review`** only. Zero functions. |
+
+🛑 **THE FINDING THAT MATTERS FOR THE SECOND SENSOR: `sludge + water` EXCEEDS THE GREASE TANK
+CAPACITY IN 23 OF 66 ROWS, PEAKING AT 6,200 GAL AGAINST A 3,840 GAL VESSEL.** If the two were
+compartments of one 3,840 gal tank their sum could never exceed it. So one of these is true, and the
+data cannot say which:
+
+1. the water tank is a **SEPARATE vessel outside the 3,840**, with its own unknown capacity, or
+2. the water readings are unreliable, which is what Fred's sentence says, or
+3. both.
+
+⇒ **Do NOT assume the water capacity is "3,840 minus the grease".** Take it from the second
+sensor's own `totalCapacityVolume` when it is fitted, and have someone confirm it against the truck.
+Whether Moises has one vessel or two is a question for Fred or Yannick, not something to infer from
+these rows.
+
+⚠ **CORRECTION to an earlier note of mine.** I wrote that `water_gallons` "has a max of 3,800,
+exactly equal to the `sludge_gallons` max ... occasional double-entry". The max IS a duplicate row
+(2026-06-11 POST, Moises, 3,800/3,800), but duplication is **6 of 74 rows, not the general shape**,
+and the honest working range is 60 to 3,200 with a median of 500. The original phrasing implied the
+whole column was double-entered. It is not; it is sparse, short-lived, and now dead.
 
 ## 8. "Per location, how much we pumped"
 
@@ -266,5 +296,7 @@ The water half remains unsourced.
    2026-09-04. §7 is the checklist for the day it lands.
 3. Does any already-filed Miami-Dade LWT monthly report need amending, given 446 rows now render
    3,840 rather than 9,000?
-4. `inspections.water_gallons` max is 3,800, exactly equal to the `sludge_gallons` max, which looks
-   like occasional double-entry rather than a real water capacity. Not investigated.
+4. **Does Moises have ONE vessel or TWO?** `sludge + water` exceeds the 3,840 gal grease capacity in
+   23 of 66 rows (max 6,200), so either the water tank is a separate vessel with its own capacity or
+   the readings are wrong. Fred has confirmed water is not measured correctly today; the structural
+   half is still open and decides how the second sensor is modelled. See §7a.
