@@ -3437,6 +3437,35 @@ That is why this is cron -> `net.http_post` -> edge fn, using `edge_invoke_servi
 `ops.v_health_status`** or it contributes zero items, always looks unchanged, and can never escalate.
 Two places by accident of history; if you touch one, check the other.
 
+✅ **THE JOBBER SYNC SURFACES ARE NOW WATCHED (`2026-09-07_0330`), AND THEY WERE NOT BEFORE.**
+The chain covered five sources and **no Jobber sync surface was one of them**, so
+`sync-jobber-job-drift` dying on **30 of its last 671 runs over 14 days** could never have emailed
+anyone; it was found by hand three weeks late. `log_jobber_sync_health()` now also reports four
+sync-surface kinds over seven watched sources: `sync_failed`, `sync_stalled`, `sync_stuck` and
+`sync_crash_regression` (a targeted regression detector for the 2026-09-06 undefined-dereference
+defect). **Neither shared view was touched** - `jobber-sync-health` was already registered in both,
+and both explode `details->'items'` keyed on `kind`, so the new checks ride the existing wiring.
+That is the safest way to obey the rule above: do not need it.
+
+🛑 **`attention` IS NOT A FAILURE, AND CONFLATING IT WITH ONE INVERTS THE PICTURE.** It means the
+check ran and FOUND something. `jobber_visit_drift` reads `attention` on **70%** of its runs because
+it is finding drift, which is it working. Only **`partial` and `error`** are failures. Testing
+`status <> 'success'` reports the healthiest reconciler in the estate as the sickest, and an earlier
+draft of this work did exactly that.
+
+⚠ **Thresholds are measured, not chosen** (14 days to 2026-09-06, worst single day of partial/error):
+job_drift 8 of 48 (17%), upcoming_visits 13 of 96 (13.5%), poll 2 of 288 (0.7%), note_photo 1. A bare
+`fails >= 2` fires on the poll's 0.7%, which is noise, so the rate arm (`>= 2%`) is what excludes it
+while still catching job_drift. `jobber_note_photo_sync` and `jobber_token_keepalive` carry a **NULL**
+staleness window on purpose: their max observed gaps are 731 and 724 minutes, so any window would be
+a guess. They are watched for failures, never for lateness.
+
+⚠ **It fired on install, which is correct rather than a regression**: `calendar-task-poll` has been
+continuously `attention` for **3,008 runs across 251 hours**, all reporting the SAME missing Jobber
+task (`calendar_task` 214, `gid://Jobber/Task/2304786340`). That is a real unresolved item that was
+invisible for eleven days because `sync_log` has no dedup. **Resolving the item is a separate,
+pending decision for Fred** - the detector only makes it visible.
+
 ⚠ **Timing:** the escalation runs 13:30 UTC because `blackout-health` writes at 08:00 ET and
 `ops.v_health_items` reads only the LATEST run of each check. In WINTER that gap narrows to 30
 minutes. **If `blackout-health` moves, move `health-escalation` too**, or it reports a day-stale
