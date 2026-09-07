@@ -52,6 +52,8 @@ const GQL_VERSION = "2026-04-16";
 const BATCH = 25;
 const LINE_PAGE = 25;
 const BATCH_PAUSE_MS = 400;
+// Stop a sweep that cannot reach Jobber at all, rather than walking the whole fleet retrying.
+const MAX_CONSECUTIVE_BATCH_FAILURES = 3;
 
 // x-app-source 'jobber': these DB writes ADOPT Jobber's state (inbound direction),
 // same attribution the visit drift adopt path uses (ADR 016).
@@ -80,6 +82,22 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-JOBBER-GRAPHQL-VERSION": GQL_VERSION },
     body: JSON.stringify({ query, variables }),
   });
+
+  // 🛑 Jobber sheds load with an HTML "Waiting Room" page at HTTP 200. The status code lies; the
+  // content-type is what tells you. Without this, r.json() yields {} and this function returns
+  // `undefined`, which the caller then dereferenced as `data.jobs` and killed the WHOLE sweep:
+  // 30 dead runs in the 14 days to 2026-09-06, every one still logging checked=480 with
+  // updated=0, sample "run failed: Cannot read properties of undefined (reading 'jobs')".
+  // It is a transient load-shed, so retry it on the same ladder as a throttle, then give up loudly.
+  const ctype = r.headers.get("content-type") ?? "";
+  if (!ctype.includes("json")) {
+    if (_retry < 5) {
+      await new Promise((s) => setTimeout(s, Math.min(30_000, 1_000 * Math.pow(2, _retry))));
+      return gql(token, query, variables, _retry + 1);
+    }
+    throw new Error(`Jobber returned ${ctype || "no content-type"} at HTTP ${r.status} (busy/waiting room)`);
+  }
+
   const j = await r.json().catch(() => ({}));
   const throttled = r.status === 429 ||
     (Array.isArray(j.errors) && j.errors.some((e: any) => e?.extensions?.code === "THROTTLED" || /throttl/i.test(e?.message || "")));
@@ -88,6 +106,13 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
     return gql(token, query, variables, _retry + 1);
   }
   if (j.errors) throw new Error(`GraphQL: ${JSON.stringify(j.errors).slice(0, 250)}`);
+
+  // 🛑 A well-formed JSON reply carrying NO `data` key is a MISSING ANSWER, not an empty one.
+  // Returning it lets the caller coerce it into "Jobber holds no such job", and the caller's
+  // absence branch ARCHIVES the job. Never hand a missing answer to a comparison.
+  if (j == null || typeof j !== "object" || !("data" in j) || j.data == null) {
+    throw new Error(`Jobber returned no data key at HTTP ${r.status}`);
+  }
   return j.data;
 }
 
@@ -112,7 +137,7 @@ Deno.serve(async (req) => {
   }
 
   const started = new Date().toISOString();
-  const stats = { checked: 0, updated: 0, gone_archived: 0, line_syncs: 0, errors: 0, db_only_drift: [] as string[], error_samples: [] as string[] };
+  const stats = { candidates: 0, checked: 0, updated: 0, gone_archived: 0, line_syncs: 0, errors: 0, aborted_after_consecutive_failures: 0, db_only_drift: [] as string[], error_samples: [] as string[] };
 
   try {
     const token = await getReadToken();
@@ -136,28 +161,57 @@ Deno.serve(async (req) => {
       .in("entity_id", ids.length ? ids : [-1]);
     const gidByJob = new Map((links ?? []).map((l: any) => [l.entity_id, l.source_id]));
     const linked = rows.filter((r) => gidByJob.has(r.id));
-    stats.checked = linked.length;
+    // ⚠ `candidates` is how many rows we INTENDED to check. `checked` counts the ones actually
+    //   compared against a real Jobber answer, and is incremented per row below. These used to be
+    //   the same assignment made BEFORE the loop, so a run that compared nothing still reported
+    //   checked=480 in sync_log, which is how 30 dead runs looked healthy to every reader.
+    stats.candidates = linked.length;
+
+    let consecutiveBatchFailures = 0;
 
     for (let i = 0; i < linked.length; i += BATCH) {
       const slice = linked.slice(i, i + BATCH);
       const gids = slice.map((r) => gidByJob.get(r.id)!);
       if (i > 0) await new Promise((s) => setTimeout(s, BATCH_PAUSE_MS));
-      let data: any;
+      let byGid: Map<string, any>;
       try {
-        data = await gql(token, Q_JOBS, { ids: gids });
+        const data = await gql(token, Q_JOBS, { ids: gids });
+        // 🛑 REQUIRE THE READ TO HAVE HAPPENED before anything is compared against it.
+        //    This deref used to sit OUTSIDE this catch and read `data.jobs?.nodes ?? []`, which
+        //    is two defects in one line. (a) An undefined `data` threw here and killed the whole
+        //    sweep rather than one batch. (b) Worse and still latent: a reply shaped `{}` would
+        //    have coerced to an empty array, every job in the slice would have missed the lookup
+        //    below, and the "gone on Jobber's side" branch would have ARCHIVED all 25. Measured
+        //    2026-09-06: gone_archived has only ever been 1, twice, so (b) never fired, and the
+        //    crash in (a) is the only reason. Fixing (a) alone would have armed (b).
+        const nodes = data?.jobs?.nodes;
+        if (!Array.isArray(nodes)) throw new Error("malformed jobs payload (no nodes array)");
+        byGid = new Map(nodes.map((n: any) => [n.id, n]));
+        consecutiveBatchFailures = 0;
       } catch (e) {
         // A failed batch skips ITS jobs only — never the rest of the sweep.
         stats.errors++;
         const msg = `batch @${i}: ${e instanceof Error ? e.message : e}`;
         if (stats.error_samples.length < 3) stats.error_samples.push(msg);
         console.error(`[jobs-drift] ${msg}`);
+        // ⚠ CIRCUIT BREAKER. Each gql() call now retries a busy Jobber up to 5 times with backoff
+        //   to 30s, so a real outage would otherwise spend ~60s per batch across ~20 batches and
+        //   push a 26s job toward the wall-clock ceiling, where the invocation dies before writing
+        //   its sync_log row. Stop early and report instead.
+        if (++consecutiveBatchFailures >= MAX_CONSECUTIVE_BATCH_FAILURES) {
+          stats.aborted_after_consecutive_failures = consecutiveBatchFailures;
+          console.error(`[jobs-drift] aborting sweep after ${consecutiveBatchFailures} consecutive batch failures`);
+          break;
+        }
         continue;
       }
-      const byGid = new Map((data.jobs?.nodes ?? []).map((n: any) => [n.id, n]));
 
       for (const row of slice) {
         try {
           const j: any = byGid.get(gidByJob.get(row.id)!);
+          // Counted here and not before the loop: reaching this line means a real Jobber answer
+          // for this batch was received and validated, so this row was genuinely compared.
+          stats.checked++;
           if (!j) {
             // Not returned for an explicit id filter = gone on Jobber's side
             // (destroyed from their UI; the API itself cannot delete jobs).

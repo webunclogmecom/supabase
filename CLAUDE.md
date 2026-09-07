@@ -529,8 +529,44 @@ the naive grep also matches the *request* header and reports everything as fine)
 
 | inspects response content-type | functions |
 |---|---|
-| **yes (3)** | `save-client-contact`, `save-calendar-visit`, `jobber-push-task` |
-| **no (10)** | `adopt-visit-from-jobber`, `create-client`, `jobber-push-visit`, `save-client-fields`, `save-client-job`, `sync-jobber-job-drift`, `sync-jobber-poll`, `sync-jobber-upcoming-visits`, `sync-jobber-visit-drift`, `webhook-jobber` |
+| **yes (5)** | `save-client-contact`, `save-calendar-visit`, `jobber-push-task`, `sync-jobber-poll` (v26, 2026-09-03), `sync-jobber-job-drift` (v16, 2026-09-06) |
+| **no (8)** | `adopt-visit-from-jobber`, `create-client`, `jobber-push-visit`, `save-client-fields`, `save-client-job`, `sync-jobber-upcoming-visits`, `sync-jobber-visit-drift`, `webhook-jobber` |
+
+⚠ **THE 2026-08-13 CENSUS IS A DATED OBSERVATION AND WENT STALE TWICE WITHOUT THE TABLE MOVING.**
+The poll was fixed on 2026-09-03 and the correction was written into the prose below while this
+table kept listing it under "no" for three days. Re-measure rather than quoting the row, and note
+the grep is quote-sensitive: `sync-jobber-poll` uses `'content-type'` in single quotes, so a
+double-quoted pattern reports it as UNGUARDED. That false negative was produced live on
+2026-09-06 and briefly "refuted" a correct finding.
+
+🛑 **`sync-jobber-job-drift` WAS THE ONE STILL FAILING IN PRODUCTION, AND IT WAS NOT A COSMETIC
+ERROR MESSAGE (fixed 2026-09-06, v16).** Measured over the 14 days to 2026-09-06: **30 non-success
+runs of 671**, every one carrying the sample `run failed: Cannot read properties of undefined
+(reading 'jobs')`, and every one still reporting **`checked: 480` with `updated: 0`**. Three
+distinct defects, and the third is the one to remember:
+1. `gql()` did `await r.json().catch(() => ({}))` with no content-type and no `data`-key guard, so
+   an HTML waiting room returned **`undefined`**.
+2. The caller's `const byGid = new Map((data.jobs?.nodes ?? []).map(...))` sat **OUTSIDE** the
+   per-batch `try`, so that `undefined` killed the **whole sweep** rather than one batch, despite
+   a comment three lines above promising "a failed batch skips ITS jobs only".
+3. 🛑 **`?? []` coerced a MISSING answer into an EMPTY one, and the branch it fed ARCHIVES JOBS.**
+   Had `gql` returned `{}` instead of `undefined`, every job in the slice would have missed the
+   lookup and fallen into the "gone on Jobber's side" arm, archiving up to 25 live jobs per batch
+   with no error. **This never fired only because defect 2 threw first**: `gone_archived` has been
+   1, twice, ever. ⇒ **Fixing the crash alone would have ARMED the mass archive.** Same shape as
+   the `JSON.parse`-was-accidentally-protective note in the reconciler section above.
+
+`stats.checked` is now incremented per row actually compared (`stats.candidates` holds the old
+"rows we intended to check" meaning), and a **3-consecutive-batch-failure circuit breaker** stops a
+sweep that cannot reach Jobber, because each `gql` now retries a busy Jobber 5 times with backoff
+to 30s and ~20 batches of that would push a 26s job past the wall clock, where the invocation dies
+before writing its `sync_log` row.
+
+✅ **Re-runnable proof: `node scripts/probes/job_drift_gql_guard_test.mjs [pre-fix-ref]`.** It
+extracts `gql()` from the working tree **and** from a git ref, runs identical assertions against
+both, and **requires the pre-fix body to FAIL** the two guard cases (it returns `undefined` and
+`null`) while still passing a valid payload. A suite that only exercises the fixed body cannot
+tell a real guard from a no-op.
 
 **Every path that WROTE on an unanswered Jobber has been closed (2026-08-14).** The remaining 10
 produce a misleading error message and nothing worse — each was traced to a named stopper (an
