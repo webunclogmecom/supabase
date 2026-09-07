@@ -1386,6 +1386,56 @@ a phantom job reports as a successful backfill. **Do not run that script**: it a
    BILLING column and pushes it to Jobber. For 576, `visitSchedule.recurrenceSchedule` is null and
    the value comes from the invoice side; `save-client-job` already reads the invoice path.
 
+### 🛑 "NOT A REAL CUSTOMER" HAS ONE DEFINITION NOW: `public.non_customer_clients` (2026-09-07)
+
+Fred asked for "a really good systematic way to set an exclude list ... for both 000 clients, which
+are dumps", then chose the framing **"not a real customer"** over "dump site". That choice is the
+design, because the two are different sets.
+
+**What was there before: FIVE divergent predicates, none agreeing.**
+
+| object | predicate |
+|---|---|
+| `fn_generate_sa_visits` | `client_code not in ('112-YA','777-YA','000-DH','000-HS')` |
+| `v_sa_schedule_gaps` | `('112-YA','777-YA','000-DH')` |
+| `dump_route_today` | `client_code NOT LIKE '000%'` |
+| `derm.visits`, `manifest_pickable_visits` | `('000-DH','000-DP')` |
+| `sync-jobber-billing-observe` | two hardcoded job ids (removed, `08b7ac4`) |
+
+Plus 2 CHECK constraints pinning display strings and a `dump_key`. **13 DB objects touch this.**
+
+**The population is 7 clients in 3 kinds**: `dump_site` 365/76, `test` 381/47/2, `fixture` 561/562.
+⚠ The dumps have **0 invoices ever**; the TEST clients hold **20 between them**. So "is a dump" and
+"exclude from revenue" point at DIFFERENT ROWS, which is why the table is kinded and not a boolean.
+
+🛑 **THE `000-` PREFIX MODELS DUMPS WELL AND CANNOT MODEL THIS.** It is a genuine reserved namespace
+(`clients_active_client_number_uniq` excludes it; `webhook-jobber` calls it "the 000 dump band
+(which shares a number by design)"). But 112-YA and 777-YA are test accounts with ordinary codes,
+and **"Doug Test" (id 2) has `client_code` NULL**, which no prefix rule can reach.
+
+🛑 **`000-HS` IS NOT A PHANTOM. DO NOT "CLEAN IT UP".** It matches no client row and four of five
+reviewers called it a stale ghost. It was staged deliberately: commit `bb3ce7d` (2026-08-03), Fred
+verbatim, *"Also add 000-HS to that guard of exclusion list"*, so the guard predates the account.
+⇒ That is why `non_customer_clients` accepts a **code without a client_id**, and why
+`v_non_customer_clients` resolves membership by `client_id` **OR** `client_code`. A table keyed only
+on `client_id` could not hold it, and repointing a consumer at such a table would have SILENTLY
+DELETED a guard Fred asked for.
+
+⚠ **`NULL NOT LIKE '000%'` IS NULL, WHICH DROPS THE ROW.** 175 of 475 clients carry a NULL
+`client_code`, so every prefix-based predicate silently discards them. Measured: 4 live completed
+visits on real ACTIVE clients vanish from `dump_route_today` and `derm.visits` today; **0 are
+DERM-required**, which is why nobody has noticed. NOT fixed, recorded so it is not re-discovered.
+⚠ Do NOT confuse that with `fn_generate_sa_visits`' own `and c.client_code is not null`, which is
+DELIBERATE there and explained in its skip-reason CASE.
+
+**Only ONE consumer was repointed** (`fn_generate_sa_visits`, `2026-09-07_1540`), because Fred named
+it. It was a **provable no-op**: only 112-YA and 777-YA have a live SA-shaped job and both were
+already excluded, so extending the guard to 000-DP changed no candidate. The VERIFY evaluates the
+old and new predicates over the same population and requires equality rather than asserting it.
+🛑 **The other four predicates and both CHECKs are deliberately UNTOUCHED.** Two of them SELECT
+dumps rather than excluding them, so each is its own decision, and a partial migration means two
+sources of truth. Repoint one at a time, with the same equality proof.
+
 ### 🛑 The line-item drift reconciler IGNORES ARCHIVED JOBS ON PURPOSE. Do not "fix" it (Fred, 2026-08-03)
 
 **Fred, 2026-08-03: *"leave it, don't extend the reconciler to archived jobs."*** Settled, not deferred.
