@@ -1318,6 +1318,74 @@ if it is forgotten is not an error but a quietly empty crew.
 Worked example, including the 443-visit Jobber sweep used to find every visit he was on:
 `docs/migrations/2026-08-17_1210_add_michael_escobar_driver.sql` and `..._1230_backfill_michael_visit_team.sql`.
 
+### 🛑 JOB BILLING COLUMNS: TWO JOBS ARE DELIBERATELY LEFT ALONE, AND THE APP DECIDES BY TITLE (2026-09-07)
+
+`public.jobs.billing_type` / `invoice_frequency` / `invoice_rrule` are **"last confirmed by us", NOT
+a live mirror**. The column comment says it: written ONLY by `fn_record_client_job` from a verified
+Jobber read, nothing syncs them inbound, and a change made in Jobber's own UI does not flow back.
+
+**2026-09-07: 7 of the 8 live NULL rows were filled** (`2026-09-07_0430`, ids 349/1074/1816/1836/
+1838/1839/1840 -> `visit_based`/`per_visit`, a faithful read of Jobber). Two were deliberately NOT,
+and **both are Fred's explicit decisions, not oversights**:
+
+- 🛑 **Job 1720 (000-DH Homestead Dump, `99900969`) STAYS `fixed`/`once_closed`. Fred: "leave 1720
+  alone."** It looks like a defect (a non-SA-titled job holding `fixed`, the only one of 26) and it
+  is inert: **000-DH is OUR OWN DUMP SITE, not a customer**, with **0 invoices ever** against 30 live
+  visits. Do not "tidy" it.
+- 🛑 **Job 576 (110-CLA, "Quaterly Hydrojet cleaning") is being CLOSED IN JOBBER by Fred.** Do not
+  fill its billing and **do not retitle it** (I proposed retitling; that was wrong and is withdrawn).
+  It is a stale May job superseded by **1523 / `99900747` "Service Agreement - Auxiliary Line
+  Cleaning"**, which is correctly configured (`frequency_days=90`, SA-titled, `visit_based`).
+  ⚠ Closing it is not housekeeping: its Jobber `PERIODIC` every-90-days schedule had already issued
+  **invoice 2990, $2,475, due 2026-09-13, awaiting_payment**, and would issue the next around
+  2026-12-12, five days after the replacement job's own 2026-12-07 visit.
+  ⇒ Once archived in Jobber the poll marks it archived and it leaves the live NULL population on its
+  own. **No migration is needed to reach zero stranded jobs.**
+
+🛑 **THE CLIENT APP DECIDES BILLING FROM THE JOB *TITLE*, AND OVERRIDES WHAT WE STORE.** Read off the
+live bundle (`r_clients._id-C16KdM-s.js`):
+
+```
+E  = (title ?? "").trim().toLowerCase().startsWith("service agreement") ? "SA" : "SC"
+ot = E === "SC" ? "visit_based" : S        <- the WIRE value, not the stored one
+<Radio value:"fixed" disabled:E === "SC">  "Service Calls carry no job line items, so fixed price cannot apply."
+```
+
+Billing keys are emitted only when `ot !== stored.billingType || G !== stored.invoiceFrequency`. So
+**filling a non-SA job with `fixed` ENABLES Save and makes the patch push `visit_based`: a
+zero-click wrong write.** That is why 576 was refused, and why the 7 are safe (after filling,
+`ot === stored`, so no billing key is ever emitted for them again).
+
+🛑 **THE APP'S STATED RATIONALE IS CIRCULAR, AND THIS IS THE REUSABLE PART.** "Service Calls carry no
+job line items" is FALSE for both problem jobs: Jobber holds a job line item on each (576
+"Quarterly Hydrojet Cleaning" at `total` 2475; 1720 "28 - Service Call - Dump" at 0). **Our mirror
+shows 0 only because our own reconciler applies `isSA ? nodes : []` and strips non-SA job lines.**
+The rule deletes the evidence, then cites its absence as justification. A check run purely against
+our own tables therefore CONFIRMS the rule no matter what Jobber holds.
+⚠ Neither line is at risk from a save: the line-item delete predicate is scoped to catalogue codes
+`01-08` (`/^\s*0[1-8]\s*-/`) and neither name matches.
+⚠ **Open question for Fred, not settled:** should that rule key on the TITLE, or on whether the job
+carries priced work? Titles are freeform and Jobber-mastered, so it fails silently on a mis-titled
+job, which is exactly what 576 was.
+
+🛑 **`public.fn_record_client_job` IS FAIL-OPEN ON IDENTITY. Prefer a direct UPDATE for a backfill.**
+A gid resolving to no `entity_source_links` row does not raise: it takes the INSERT branch and
+creates a job with `client_id`, `property_id`, `job_number`, `title` and `job_status` **all NULL**,
+creates a link for the bogus gid, and returns `created:true`. Proven in a rolled-back probe (jobs
+1841 -> 1842, phantom id 1875). **`scripts/backfill_job_billing.js` discards that return value**, so
+a phantom job reports as a successful backfill. **Do not run that script**: it also clears
+`invoice_rrule` unconditionally and interpolates SQL as strings.
+
+⚠ **TWO GRAPHQL TRAPS when reading billing from Jobber.**
+1. The rrule is at **`job.invoiceSchedule.recurrenceSchedule.calendarRule`**. `job.recurrenceSchedule`
+   does NOT exist (`undefinedField`), and an errors-only reply has **no `data` key**, so a caller
+   reading `res.data.job` sees `undefined` and reports "not in Jobber": a silent no-op that looks
+   like a clean run. `scripts/backfill_job_billing.js`'s header claims Jobber "never" exposes the
+   underlying RRULE, which is **false**, and that premise is why 576 sat unfilled for four months.
+2. **`calendarRule` also exists on `visitSchedule`.** Taking that one writes a VISIT cadence into a
+   BILLING column and pushes it to Jobber. For 576, `visitSchedule.recurrenceSchedule` is null and
+   the value comes from the invoice side; `save-client-job` already reads the invoice path.
+
 ### 🛑 The line-item drift reconciler IGNORES ARCHIVED JOBS ON PURPOSE. Do not "fix" it (Fred, 2026-08-03)
 
 **Fred, 2026-08-03: *"leave it, don't extend the reconciler to archived jobs."*** Settled, not deferred.
