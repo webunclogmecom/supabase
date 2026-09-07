@@ -47,11 +47,17 @@ const PAGE = 100
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// 🛑 Fred-settled exclusions. Without these they are permanent findings on every run.
-//    1720 (000-DH Homestead Dump): our own dump site, 0 invoices ever, deliberately left as
-//         fixed/once_closed. Fred 2026-09-07: "leave 1720 alone."
-//    576  (110-CLA): a stale May job Fred is closing in Jobber; superseded by 99900747.
-const EXCLUDED_JOB_IDS = [1720, 576]
+// ⚠ THERE IS DELIBERATELY NO EXCLUSION LIST HERE. An earlier version of this file carried a
+//    hardcoded EXCLUDED_JOB_IDS = [1720, 576] "so they are not permanent findings". Measured
+//    2026-09-07, BOTH exclusions were unnecessary and the list was pure stale-list hazard:
+//      1720 (000-DH Homestead Dump)  ours fixed/once_closed      <-> Jobber FIXED_PRICE/ON_COMPLETION
+//      1662 (000-DP DUMP Pompano)    ours visit_based/as_needed  <-> Jobber VISIT_BASED/NEVER
+//    Both AGREE with Jobber so neither produces a finding, and 576 has since been archived in
+//    Jobber and leaves the candidate set on its own.
+//    It was also ASYMMETRIC: it excluded Homestead's job and not Pompano's, for no reason beyond
+//    which one came up in conversation. A hand-maintained list of ids is exactly what this estate
+//    keeps paying for; this detector reports what it observes and lets the comparison decide.
+//    🛑 If a dump-site job ever DOES drift, that is a real finding and must not be hidden here.
 
 const db = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -158,8 +164,7 @@ Deno.serve(async (req) => {
     if (archErr) throw new Error(`candidate read failed (archived): ${archErr.message}`);
 
     const candidateIds = [...(live ?? []), ...(arch ?? [])]
-      .map((r: any) => r.id as number)
-      .filter((id) => !EXCLUDED_JOB_IDS.includes(id));
+      .map((r: any) => r.id as number);
 
     // Only jobs we hold a Jobber link for can be read at all.
     const { data: links, error: linkErr } = await db.from("entity_source_links")
