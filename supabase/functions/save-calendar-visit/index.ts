@@ -309,6 +309,47 @@ Deno.serve(async (req) => {
   // =========================================================================
   // 2. PRE-FLIGHT — every group validated BEFORE the first mutation
   // =========================================================================
+
+  // ---- TRUCK CLASH: refuse here, because step 5 is far too late -----------
+  // 🛑 The truck rule is enforced inside `edit_calendar_visit`, which this function calls at COMMIT
+  // (step 5) — i.e. AFTER Jobber has been pushed AND verified. A refusal arriving there is not a
+  // refusal, it is a divergence, and it lands in the `db_write_failed` branch below that tells the
+  // dispatcher the two systems are out of step.
+  // ⚠ NOT HYPOTHETICAL. Measured on the live app 2026-09-06 by moving visit 8001 (106-ALC) onto the
+  //   occupied 08:00 Moises slot:  Jobber 2026-09-07T12:00:00Z  vs  our DB 12:30:00Z. Jobber was
+  //   restored by hand. The guard shipped that morning; this is the same day.
+  // ⚠ Ask the SAME function the guard asks (`fn_visit_edit_clash`), never a copy of its rules. The
+  //   no-op exemption — pinning a truck the visit ALREADY displays must be ALLOWED, because
+  //   ops.v_calendar_visit resolves an EFFECTIVE truck that may be defaulted from line items — is
+  //   the subtlest rule in this feature and it has already broken truck selection once by being
+  //   got wrong. A second implementation here would drift from the guard silently.
+  // ⚠ Only start_at / vehicle_id can create a clash, and the duration-preserving synthesis below
+  //   touches neither, so this verdict is the same one the guard will reach at commit.
+  if ("start_at" in patch || "vehicle_id" in patch) {
+    const { data: verdict, error: cerr } = await db
+      .rpc("fn_visit_edit_clash", { p_visit_id: visitId, p_patch: patch });
+    // ⚠ FAIL CLOSED. `error` must be destructured and checked: if we cannot tell whether this
+    // clashes, pushing to Jobber is precisely the thing we must not do. A guard that fails open is
+    // how the divergence above happened in the first place.
+    if (cerr) {
+      return fail("clash_check_failed",
+        "Couldn't check the truck's schedule, so nothing was saved and Jobber was not touched. Try again.",
+        { applied: [] });
+    }
+    if (verdict?.refuse) {
+      // The DB message is prefixed for machine matching (`visit_truck_clash: truck X already
+      // has Y at Z`). Strip the prefix for the dispatcher and keep the hint.
+      const raw = String(verdict.message ?? "");
+      const body = raw.startsWith("visit_truck_clash:")
+        ? raw.slice("visit_truck_clash:".length).trim()
+        : raw;
+      const sentence = body ? body.charAt(0).toUpperCase() + body.slice(1) : "That truck is already busy then";
+      return fail("visit_truck_clash",
+        `${sentence}. ${verdict.hint ?? ""} Nothing was saved and Jobber was not touched.`.replace(/\s+/g, " ").trim(),
+        { applied: [], clash: verdict.truck ?? [] });
+    }
+  }
+
   let teamGids: string[] | null = null;
   if (pushable.includes("team_ids")) {
     const ids: number[] = Array.isArray(patch.team_ids) ? patch.team_ids.map(Number) : [];
