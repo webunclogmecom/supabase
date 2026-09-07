@@ -1,3 +1,36 @@
+// ============================================================================================
+// 🛑 DO NOT RUN THIS SCRIPT. It is retained only as a historical record. (2026-09-07)
+//
+// Three measured defects, any one of which is disqualifying:
+//
+// 1. FAIL-OPEN ON IDENTITY. It calls public.fn_record_client_job and DISCARDS the return value.
+//    A gid resolving to no entity_source_links row does not raise: that function takes the INSERT
+//    branch and creates a job with client_id, property_id, job_number, title and job_status all
+//    NULL, then returns created:true. Proven in a rolled-back probe (jobs 1841 -> 1842, phantom
+//    row id 1875). A phantom job would be reported here as a successful backfill.
+//
+// 2. THE HEADER PREMISE BELOW IS FALSE. It states Jobber "never" exposes the underlying RRULE and
+//    therefore resolves PERIODIC by regexing the English scheduleSummary, skipping anything
+//    ambiguous. Jobber DOES expose it, at job.invoiceSchedule.recurrenceSchedule.calendarRule.
+//    That single wrong sentence is why job 576 sat unfilled for four months.
+//    (Note the path: job.recurrenceSchedule does NOT exist and returns undefinedField, and an
+//    errors-only reply has no `data` key, so a caller reading res.data.job sees undefined and
+//    reports "not in Jobber" -- a silent no-op that looks like a clean run.)
+//
+// 3. It clears invoice_rrule unconditionally and interpolates SQL as strings.
+//
+// WHAT TO USE INSTEAD: nothing writes these columns in bulk any more, by design.
+//   - To SEE what Jobber holds:  sync.jobber_billing_observed, refreshed daily by the cron
+//     `jobber-billing-observe` (edge fn sync-jobber-billing-observe). Read-only.
+//   - Is that evidence current?  sync.v_billing_observation_freshness. NO_EVIDENCE is not clean.
+//   - The Jobber -> ours mapping: sync.fn_normalize_jobber_billing(). One implementation.
+//   - To WRITE a value: a reviewed migration with a direct UPDATE pinned to id AND job_number,
+//     re-asserting the eligibility predicate. See docs/migrations/2026-09-07_0430.
+//
+// ⚠ Deleting this file was recommended by the 2026-09-07 design review and is NOT done, because
+//   removing it was never approved. That is Fred's call.
+// ============================================================================================
+
 // backfill_job_billing.js — record each live job's ACTUAL billing from Jobber.
 //
 // WHY: public.jobs gained billing_type / invoice_frequency / invoice_rrule on
