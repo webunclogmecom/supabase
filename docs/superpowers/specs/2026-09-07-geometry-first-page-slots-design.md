@@ -219,13 +219,44 @@ Each phase is independently shippable and phase 1 alone answers Fred's complaint
 
 ## 8. Open questions for Fred
 
-1. **What does "approved" mean operationally?** Human lines already beat the detector in
-   `v_page_printed_rules`. The proposal is that saving them records who and when, stamps the slots
-   `human-v1-`, and a later detector run can never silently replace them. Is that the approval you
-   meant, or do you want a separate explicit approve step with a second person?
+1. ~~What does "approved" mean operationally?~~ **SETTLED by Fred, 2026-09-07:** *"no separate
+   approve step, human lines are authoritative."* See section 8a.
 2. **Should an unclaimed slot raise a flag?** It is safe either way (the extent blacks it), but a
    slot with no card is exactly the shape that leaked twice. Recommend: a detector view, empty is
    healthy, not a hard refusal.
 3. **Order of work.** Phase 1 is a contained DB change. Phase 2 touches the Stamp Studio Lovable
    project. Do you want them shipped together, or phase 1 first so the DB can be proven before the
    UI moves?
+
+---
+
+## 8a. SETTLED: human lines are authoritative, with no approve step
+
+**Fred, 2026-09-07:** *"no separate approve step, human lines are authoritative."*
+
+So a person drawing lines on the scan IS the approval. There is no second signature, no pending
+state, and no queue. What that buys, and what it obliges:
+
+- **A saved human line set takes effect immediately.** `derm.v_page_printed_rules` already behaves
+  this way (newest scan per page, `human-v1-%` admitted alongside `runlen-v2-%`), so no change is
+  needed to make it true.
+- **🛑 The obligation this creates: a later detector run MUST NOT silently displace a human line
+  set.** `v_page_printed_rules` picks the newest scan by `scanned_at`, so today a `runlen-v2-` run
+  landing after a `human-v1-` set would quietly win and move a serving page's geometry. With no
+  approve step there is no human in the loop to notice. **Precedence must become explicit: human
+  outranks detector regardless of recency.** This is now a REQUIREMENT of phase 1, not a nicety.
+  Measured today: 5 pages carry human lines, so the exposure is small and the fix is cheap now.
+- **Slots inherit the provenance.** `page_slots.source` carries the `human-v1-` stamp, and
+  `set_by` / `set_at` record who and when, which is the durable form of the approval.
+- **Authoritative does not mean unchecked.** Every guard in `derm._page_geometry_violations` still
+  runs on a human save. Fred's own `ticket-833049` lines pass all of them cleanly, which is the
+  point: the guards are not there to second-guess the person, they are there to catch a payload
+  that does not describe the page.
+- **`derm.band_review` stays.** It is keyed on band VALUES, so a human-drawn band that later moves
+  re-enters the worklist. That is a record of what was accepted, not an approval gate, and it does
+  not block anything.
+
+⚠ **The one thing to watch.** Removing the approve step removes the only place a second person would
+have seen the geometry before it reached a regulator-facing document. The compensating control is
+`derm.v_band_edges_off_rule` plus `v_blackout_blocked_sheets`, both of which are "empty is healthy"
+worklists. Those become more load-bearing under this decision, not less.
