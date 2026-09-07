@@ -611,6 +611,13 @@ verify_jwt = false
 [functions.sync-jobber-job-drift]
 verify_jwt = true
 
+# sync-jobber-billing-observe: phase A of billing two-way, READ ONLY. Records each job's Jobber
+# invoicing settings in sync.jobber_billing_observed so a Jobber-side edit stops being invisible.
+# It never writes public.jobs, never pushes to Jobber and never adopts. Handler requires
+# role=service_role: verify_jwt alone also admits the public anon key.
+[functions.sync-jobber-billing-observe]
+verify_jwt = true
+
 # parse-gdo-permit: reads an uploaded Miami-Dade DERM operating-permit PDF and returns
 # the fields (GDO number, validity window, the SPECIFIC-CONDITIONS cleaning frequency) so
 # the Client App can pre-fill Add/Edit Permit instead of making staff retype the document.
