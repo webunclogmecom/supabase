@@ -116,8 +116,29 @@ Proven by racing it: 8 concurrent requests against the old three-step shape prod
 rows from one GID; the same 8 against the RPC produced **1**. Then 6 concurrent signed
 `CLIENT_UPDATE`s at the deployed function: all 200, all `entity_id 573`, no new rows.
 
-⚠ **`handleInvoice`, `handleQuote`, `handleJob`, `handleProperty` and `handleVisit` still have the
-old shape.** Orphans created since 2026-08-21: **invoices 57, quotes 9**, jobs 0, properties 0.
+✅ **Invoices and quotes were fixed the same day** (`public.fn_jobber_resolve_invoice(text)` and
+`fn_jobber_resolve_quote(text)`, migration `2026-09-08_1300`; the 57 ghost invoices and 10 ghost
+quotes removed by `2026-09-08_1330`). Their shells are emptier than the client one because on
+`public.invoices` and `public.quotes` the only NOT NULL column is `id`, and it is
+`GENERATED ALWAYS AS IDENTITY`, so the function needs nothing but the GID.
+
+🛑 **THE INVOICE GHOSTS WERE THE EXPENSIVE ONES, AND NOT WHERE THE FIRST LOOK SUGGESTED.**
+`client.v_client_billing` was overstating 10 clients by $7,939.91, which is what got reported first.
+**`ops.v_ar_aging` was overstating receivables by $35,801.90 of $157,643.63 across 48 rows and 38
+clients** (worst: 021-GRA Granada Condo, +$6,187.00), because it sums invoices with no link filter
+and reads `balance_due`, a column the billing view never touches. `ops.v_revenue_summary` sums
+invoices unfiltered too. **Enumerate the consumers before quantifying the damage.**
+
+⚠ **`handleJob`, `handleProperty` and `handleVisit` still have the old three-request shape.** They
+show 0 orphans today, which is luck rather than safety: jobs and properties simply have not been
+created concurrently since 2026-08-21. The same one-call treatment applies.
+
+⚠ **`line_items.invoice_id` is `ON DELETE SET NULL`.** Deleting an invoice that has line items
+neither blocks nor cascades: it silently orphans them, and nothing reports it. Always count
+`line_items where invoice_id is null` before and after any invoice delete.
+
+⚠ **Neither `public.invoices` nor `public.quotes` has an audit trigger**, unlike `public.clients`.
+A delete there leaves no trail at all, so a backup file is the only record.
 
 ⚠ **Only clients created DIRECTLY IN JOBBER ever raced.** Every client made through the Client App
 (`client_create_attempts`, codes 311-323) has exactly one row: that path holds a ledger `INSERT` as
