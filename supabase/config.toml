@@ -393,6 +393,31 @@ verify_jwt = false
 [functions.get-derm-doc]
 verify_jwt = false
 
+# DERM Address / FDEP sheet preview. This is the door the DERM Tracker's blue
+# Generate button actually uses, and it is the ONLY live generation door: the
+# /manifests "Generate address sheet" button is hidden for all 712 live
+# manifests, because its gate reads derm_address_url and that column is non-NULL
+# on every one of them.
+#
+# 🛑 PINNED TO PRESERVE THE DEPLOYED STATE, NOT AS AN ENDORSEMENT OF IT.
+# Measured 2026-09-07 via the Management API: this function is live at
+# verify_jwt=false, version 22. It has no [functions.*] block, and the comment
+# above records that Supabase defaults a redeploy to verify_jwt=true. So the
+# 2026-09-07 Broward change would have flipped it and silently 401'd every
+# generate click at the gateway - the exact 2026-05-16 incident, on a different
+# function. Pinning the CURRENT value keeps a feature deploy from carrying a
+# behaviour change nobody asked for.
+#
+# ⚠ AND THE DOOR IS GENUINELY OPEN, WHICH IS A SEPARATE DECISION FOR FRED.
+# There is no handler-side auth, and every successful call is a WRITE: it
+# consumes a sheet number and records provenance. The Broward branch gives it a
+# second sequence to draw from. That is bounded rather than fixed by
+# record_generated_visit_sheet being idempotent on visit_id - repeated calls for
+# the same visits burn nothing after the first - but bounded is not closed.
+# Closing it is its own change and must not ride along on a feature deploy.
+[functions.generate-derm-address-preview]
+verify_jwt = false
+
 [functions.webhook-airtable]
 verify_jwt = false
 

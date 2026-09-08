@@ -30,7 +30,7 @@ function corsHeadersFor(origin: string | null): Record<string, string> {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey, x-app-source',
-    'Access-Control-Expose-Headers': 'content-disposition',
+    'Access-Control-Expose-Headers': 'content-disposition, x-form-kind',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   }
@@ -63,7 +63,7 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: 'service_not_configured' }, 503, cors)
   }
 
-  let body: { visit_ids?: unknown }
+  let body: { visit_ids?: unknown; disposal_facility_id?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -80,6 +80,28 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: 'visit_ids_must_be_positive_integers' }, 400, cors)
   }
 
+  // WHERE THE TRUCK WILL DUMP. This chooses the FORM: a Broward facility gets the
+  // FDEP 62-705.300(3) sheet (one page per visit), a Miami-Dade one gets the
+  // DERM_V4.00 sheet. It is NOT the client's county.
+  //
+  // 🛑 THE BODY BELOW IS REBUILT, NOT PASSED THROUGH, AND THAT IS WHY THIS BLOCK
+  // HAS TO EXIST. `JSON.stringify({ visit_ids })` silently drops every other key
+  // under an HTTP 200, so an app that starts sending a facility gets a cheerful
+  // success and the Miami-Dade form every single time. Rebuilding is the right
+  // shape (it is what stops an arbitrary caller-controlled payload reaching the
+  // PDF service), so each new field must be admitted deliberately, here.
+  // ⚠ There is a SECOND place it can vanish: pydantic v2 defaults to
+  // extra='ignore', so the field is declared on GenerateDermAddressPreviewRequest
+  // too. Both halves are needed.
+  let disposal_facility_id: number | undefined
+  if (body.disposal_facility_id !== undefined && body.disposal_facility_id !== null) {
+    const v = body.disposal_facility_id
+    if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
+      return jsonResponse({ error: 'disposal_facility_id_must_be_a_positive_integer' }, 400, cors)
+    }
+    disposal_facility_id = v
+  }
+
   const target = `${PDF_SERVICE_URL.replace(/\/$/, '')}/generate/derm-address/preview`
 
   let upstream: Response
@@ -90,7 +112,11 @@ Deno.serve(async (req: Request) => {
         Authorization: `Bearer ${PDF_SERVICE_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ visit_ids }),
+      body: JSON.stringify(
+        disposal_facility_id === undefined
+          ? { visit_ids }
+          : { visit_ids, disposal_facility_id },
+      ),
     })
   } catch (e) {
     console.error('Forward to PDF service failed:', e)
@@ -115,6 +141,11 @@ Deno.serve(async (req: Request) => {
   }
   const disp = upstream.headers.get('Content-Disposition')
   if (disp) headers['Content-Disposition'] = disp
+  // Which form actually came back. Without this the caller cannot tell a
+  // correctly-rendered Miami-Dade sheet from a Broward request whose facility
+  // was dropped somewhere in the chain: both are a valid PDF at HTTP 200.
+  const formKind = upstream.headers.get('X-Form-Kind')
+  if (formKind) headers['X-Form-Kind'] = formKind
 
   return new Response(upstream.body, { status: 200, headers })
 })
