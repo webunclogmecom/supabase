@@ -116,6 +116,11 @@ async function getReadToken(force) {
     ORDER BY v.id`);
   console.log(`${target.length} visit(s) to check`);
   let added = 0, removed = 0, errors = 0, changedVisits = 0, windowSkipped = 0;
+  // 2026-09-08. These two used to not exist, and that WAS the bug: an attachment we could
+  // not ingest incremented neither `added` nor `errors` and reached no counter in
+  // sync_log.details, so a permanent failure was byte-identical to a quiet day. Measured
+  // before the fix: 6 field videos, 915 MB, 5 clients, silently dropped over 8 days.
+  let oversizedSkipped = 0, noUrlSkipped = 0, oversizedBytes = 0;
 
   for (const t of target) {
     // our jobber-sourced photos for THIS visit: att_gid + the Jobber note it came
@@ -293,7 +298,45 @@ async function getReadToken(force) {
         // then repoints the stale esl to the freshly downloaded photo.
         let photoId = (await pg(`SELECT esl.entity_id AS id FROM entity_source_links esl JOIN photos ph ON ph.id=esl.entity_id WHERE esl.entity_type='photo' AND esl.source_system='jobber' AND esl.source_id=${sqlEsc(g)} LIMIT 1`))[0]?.id;
         if (!photoId) {
-          if (!att.url || (att.fileSize && att.fileSize > STORAGE_SIZE_LIMIT)) { console.log(`    skip ${att.fileName} (no url / oversized)`); continue; }
+          // 2026-09-08. Was ONE branch with ONE conflated message and NO counter:
+          //   if (!att.url || (att.fileSize && att.fileSize > STORAGE_SIZE_LIMIT)) {
+          //     console.log(`    skip ${att.fileName} (no url / oversized)`); continue; }
+          // Two unrelated causes, so the logs could never say which happened, and neither
+          // was countable anywhere. Now split, counted, and recorded in the catch-basin.
+          // Note `!= null` rather than the old truthy test: a fileSize of 0 or null used to
+          // fall THROUGH this guard into a download attempt instead of being caught.
+          const size   = att.fileSize == null ? null : Number(att.fileSize);
+          const tooBig = size != null && size > STORAGE_SIZE_LIMIT;
+          if (!att.url || tooBig) {
+            const reason = tooBig ? 'OVERSIZED' : 'NO_URL';
+            if (tooBig) { oversizedSkipped++; oversizedBytes += size; }
+            else noUrlSkipped++;
+            console.log(`    skip ${att.fileName} ${reason}` +
+              (tooBig ? ` ${size} bytes > ${STORAGE_SIZE_LIMIT} limit` : ' (Jobber returned no download url)'));
+            // Record it so the file is RECOVERABLE and the skip is COUNTABLE from the DB.
+            // 🛑 DO UPDATE, not DO NOTHING. jobber_url_signed is a presigned S3 url and it
+            // EXPIRES: the 58 rows written by the migrate script were never refreshed and
+            // every one of their urls is long dead, which is why this basin has never
+            // recovered a single file. We re-encounter the same attachment ~10x/day, so
+            // refreshing on conflict is what makes the row actually usable. `logged_at` is
+            // deliberately NOT refreshed so it keeps meaning FIRST SEEN.
+            await pg(`INSERT INTO public.jobber_oversized_attachments
+                        (client_id, visit_id, note_jobber_id, attachment_jobber_id,
+                         file_name, content_type, size_bytes, jobber_url_signed, skip_reason)
+                      VALUES (${t.client_id}, ${t.visit_id}, ${sqlEsc(att.noteGid)}, ${sqlEsc(g)},
+                              ${sqlEsc(att.fileName || null)}, ${sqlEsc(att.contentType || null)},
+                              ${size == null ? 'NULL' : size}, ${sqlEsc(att.url || null)}, ${sqlEsc(reason)})
+                      ON CONFLICT (attachment_jobber_id) DO UPDATE SET
+                        jobber_url_signed = EXCLUDED.jobber_url_signed,
+                        size_bytes        = COALESCE(EXCLUDED.size_bytes, public.jobber_oversized_attachments.size_bytes),
+                        content_type      = COALESCE(EXCLUDED.content_type, public.jobber_oversized_attachments.content_type),
+                        file_name         = COALESCE(EXCLUDED.file_name, public.jobber_oversized_attachments.file_name),
+                        visit_id          = EXCLUDED.visit_id,
+                        skip_reason       = EXCLUDED.skip_reason`)
+              // Never let bookkeeping fail the import of the OTHER attachments on this note.
+              .catch(e => { errors++; console.log(`    basin ${g} ERR: ${e.message.slice(0, 70)}`); });
+            continue;
+          }
           const dl = await downloadFromUrl(att.url); const ext = extOf(dl.contentType || att.contentType, att.fileName);
           const path = `notes/${t.client_id}/${att.noteGid}/${g}.${ext}`;
           await storageUpload(path, dl.body, dl.contentType);
@@ -327,6 +370,6 @@ async function getReadToken(force) {
     }
     await sleep(80);
   }
-  console.log(`\n=== ${EXECUTE ? 'DONE' : 'DRY-RUN'} === visits changed: ${changedVisits} | photos added: ${added} | removed: ${removed} | skipped by note-window: ${windowSkipped} | errors: ${errors}`);
-  if (EXECUTE) await pg(`INSERT INTO public.sync_log (sync_source, started_at, finished_at, rows_updated, rows_errored, status, details) VALUES ('jobber_note_photo_sync', now(), now(), ${added + removed}, ${errors}, ${errors ? "'partial'" : "'success'"}, ${sqlEsc(JSON.stringify({ added, removed, changedVisits, days: DAYS }))})`).catch(() => {});
+  console.log(`\n=== ${EXECUTE ? 'DONE' : 'DRY-RUN'} === visits changed: ${changedVisits} | photos added: ${added} | removed: ${removed} | skipped by note-window: ${windowSkipped} | oversized: ${oversizedSkipped}${oversizedSkipped ? ` (${Math.round(oversizedBytes / 1048576)} MB)` : ''} | no url: ${noUrlSkipped} | errors: ${errors}`);
+  if (EXECUTE) await pg(`INSERT INTO public.sync_log (sync_source, started_at, finished_at, rows_updated, rows_errored, status, details) VALUES ('jobber_note_photo_sync', now(), now(), ${added + removed}, ${errors}, ${errors ? "'partial'" : "'success'"}, ${sqlEsc(JSON.stringify({ added, removed, changedVisits, days: DAYS, oversizedSkipped, noUrlSkipped, oversizedBytes }))})`).catch(() => {});
 })().catch(e => { console.error('FATAL', e.message); process.exit(1); });
