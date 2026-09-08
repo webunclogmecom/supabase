@@ -1128,7 +1128,24 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
 
   const clientId = inv.client?.id ? await findEntityBySourceId('client', 'jobber', inv.client.id) : null
   const jobId = jobGid ? await findEntityBySourceId('job', 'jobber', jobGid) : null
-  const existingId = await findEntityBySourceId('invoice', 'jobber', gid)
+  // 🛑 ATOMIC RESOLVE. DO NOT SPLIT THIS BACK INTO findEntityBySourceId + .insert().
+  // Until 2026-09-08 this was a SELECT here and an .insert() below, with upsertEntityLink after --
+  // three PostgREST requests, so three transactions, with nothing spanning them. Once real Jobber
+  // webhooks started working (2026-08-21) the live webhook and the */5 poll replay both drove this
+  // handler for the same invoice, both read "not found", and both inserted. The loser's link then
+  // hit idx_esl_source_id -- NOT the column set upsertEntityLink names in its onConflict -- and
+  // threw AFTER its invoice row had already committed.
+  // Result: 57 ghost invoices, every one a duplicate of a linked twin, overstating 10 clients'
+  // billing totals by $7,939.91 because client.v_client_billing sums invoices with no link filter.
+  // Measured with an 8-way concurrent probe: the old shape produced 4 rows from one GID; this
+  // produced 1. See docs/migrations/2026-09-08_1300_jobber_invoice_quote_resolve_atomic.sql.
+  const { data: resolvedInv, error: resolveInvErr } = await supabase
+    .rpc('fn_jobber_resolve_invoice', { p_gid: gid })
+    .single()
+  if (resolveInvErr || !resolvedInv) {
+    throw new Error(`Invoice resolve failed: ${resolveInvErr?.message ?? 'no row returned'}`)
+  }
+  const existingId: number = (resolvedInv as { entity_id: number }).entity_id
 
   const invoiceRow: Record<string, unknown> = {
     invoice_number: inv.invoiceNumber ?? null,
@@ -1143,21 +1160,11 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   if (clientId) invoiceRow.client_id = clientId
   if (jobId) invoiceRow.job_id = jobId
 
-  let entityId: number
-
-  if (existingId) {
-    const { error } = await supabase.from('invoices').update(invoiceRow).eq('id', existingId)
-    if (error) throw new Error(`Invoice update failed: ${error.message}`)
-    entityId = existingId
-  } else {
-    const { data: inserted, error } = await supabase
-      .from('invoices')
-      .insert(invoiceRow)
-      .select('id')
-      .single()
-    if (error || !inserted) throw new Error(`Invoice insert failed: ${error?.message}`)
-    entityId = inserted.id
-  }
+  // One path, not two. The row is guaranteed to exist by the resolve above, and the old create
+  // and update branches wrote the identical invoiceRow anyway, so the branch had no purpose left.
+  const entityId: number = existingId
+  const { error } = await supabase.from('invoices').update(invoiceRow).eq('id', entityId)
+  if (error) throw new Error(`Invoice update failed: ${error.message}`)
 
   await upsertEntityLink({
     entity_type: 'invoice',
@@ -1327,7 +1334,16 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
 
   const clientId = q.client?.id ? await findEntityBySourceId('client', 'jobber', q.client.id) : null
   const propertyId = q.property?.id ? await findEntityBySourceId('property', 'jobber', q.property.id) : null
-  const existingId = await findEntityBySourceId('quote', 'jobber', gid)
+  // 🛑 ATOMIC RESOLVE -- same defect, same fix as handleInvoice above. The quote race produced
+  // 10 ghost quotes, the newest at 2026-09-08 11:21 ET, twenty minutes after the client half was
+  // fixed. Do not split this back into a lookup plus an insert.
+  const { data: resolvedQt, error: resolveQtErr } = await supabase
+    .rpc('fn_jobber_resolve_quote', { p_gid: gid })
+    .single()
+  if (resolveQtErr || !resolvedQt) {
+    throw new Error(`Quote resolve failed: ${resolveQtErr?.message ?? 'no row returned'}`)
+  }
+  const existingId: number = (resolvedQt as { entity_id: number }).entity_id
 
   const quoteRow: Record<string, unknown> = {
     quote_number: q.quoteNumber ?? null,
@@ -1339,21 +1355,9 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
   if (clientId) quoteRow.client_id = clientId
   if (propertyId) quoteRow.property_id = propertyId
 
-  let entityId: number
-
-  if (existingId) {
-    const { error } = await supabase.from('quotes').update(quoteRow).eq('id', existingId)
-    if (error) throw new Error(`Quote update failed: ${error.message}`)
-    entityId = existingId
-  } else {
-    const { data: inserted, error } = await supabase
-      .from('quotes')
-      .insert(quoteRow)
-      .select('id')
-      .single()
-    if (error || !inserted) throw new Error(`Quote insert failed: ${error?.message}`)
-    entityId = inserted.id
-  }
+  const entityId: number = existingId
+  const { error } = await supabase.from('quotes').update(quoteRow).eq('id', entityId)
+  if (error) throw new Error(`Quote update failed: ${error.message}`)
 
   await upsertEntityLink({
     entity_type: 'quote',
