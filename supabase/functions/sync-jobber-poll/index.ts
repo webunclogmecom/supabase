@@ -54,6 +54,25 @@ type Exec = (q: string) => Promise<any[]>
 // dry run). The old comment here said properties "ride webhooks / a daily --full". BOTH halves were
 // false and together they meant a Jobber-side edit to a SERVICE property address NEVER reached us:
 //   * Jobber sends us no webhooks at all — this poll IS the webhook replacement (ADR 009).
+//     🛑 THAT SECOND BULLET WAS TRUE WHEN IT WAS WRITTEN AND IS NOW FALSE. It is kept because it
+//     explains the 2026-08-04 change, but DO NOT reason from it. Real Jobber webhooks began
+//     arriving 2026-08-21, after webhook-jobber was taught Jobber's NESTED payload shape
+//     ({data:{webHookEvent:{...}}}); before that every genuine delivery was refused, silently.
+//     Measured: the webhook-only topics (CLIENT_CREATE, CLIENT_DESTROY, JOB_CLOSED, QUOTE_SENT,
+//     QUOTE_APPROVED, VISIT_COMPLETE, PROPERTY_DESTROY) appear in webhook_events_log first on
+//     2026-08-21 and in NONE of the 42,449 rows before it. This poll never synthesises them.
+//
+//     ⚠ WHY IT MATTERS HERE, and it is not documentation hygiene. There are now TWO independent
+//     drivers of the same webhook-jobber handlers: this poll's replay AND the live webhook. The
+//     replay loop below is sequential, so on its own it can never race itself — which is exactly
+//     why the estate was safe for months and why nobody was looking for a race. Add a second
+//     driver and every handler that did SELECT-then-INSERT across separate PostgREST calls
+//     became racy on the same day. That produced 8 orphan client rows ("Bibi's burgers" as FOUR
+//     rows from one Jobber client), 57 orphan invoices and 9 orphan quotes.
+//     handleClient was made atomic on 2026-09-08 (public.fn_jobber_resolve_client, migration
+//     2026-09-08_1100). THE OTHER HANDLERS STILL HAVE THE OLD SHAPE. Anyone widening this poll,
+//     or reasoning about concurrency anywhere in webhook-jobber, needs that fact and not the
+//     sentence above it.
 //   * `--full` lives in scripts/sync/cron_jobber.js, whose schedule was retired 2026-06-09; no
 //     workflow passes the flag, so it had not run since 2026-05-27.
 // Measured before the change: PROPERTY_UPDATE had produced ZERO events ever, the `properties`
