@@ -110,11 +110,41 @@ sample, 0 wrong-visit links, 0 stale links. The ±2 day window is correct and it
 is **3 photos on 1 note**. The remove path has never fired because no attachment has ever been
 deleted from a note, not because it is broken (proven with synthetic pairs).
 
-🛑 **The hole is oversized video.** Line 296 skips any attachment over the 50MB bucket limit while
-incrementing **neither `added` nor `errors`**, so a permanent failure looks exactly like a quiet day.
-Six field videos, 915MB, over 8 days. Worse, the sync writes the note's `entity_source_links` row
-*before* the skip, which makes the one script that does log to `jobber_oversized_attachments` skip
-that note forever. **The catch-basin has never recovered a single file (0 of 58 rows).** Not fixed.
+**The hole was oversized video. FIXED 2026-09-08** (`2026-09-08_0300`, commit `46ed1fd`).
+
+It used to be one branch that skipped any attachment over the 50MB bucket limit while incrementing
+**neither `added` nor `errors`**, reaching no counter in `sync_log.details`. **A permanent failure was
+byte-identical to a quiet day**: six field videos, 915MB, five clients, over 8 days. The one message
+conflated two unrelated causes, and `att.fileSize && ...` was silently permissive, so a null or zero
+size fell *through* the guard into a download attempt.
+
+Now:
+
+| before | after |
+|---|---|
+| `skip <file> (no url / oversized)` | `skip <file> OVERSIZED 410159322 bytes > 52428800 limit` **or** `NO_URL` |
+| no counters | `oversizedSkipped` / `noUrlSkipped` in the DONE line **and** in `sync_log.details` |
+| nothing recorded | a row in `public.jobber_oversized_attachments` with the new `skip_reason` |
+| invisible | the health check reports `oversized_attachments` in `ops.v_health_items` |
+
+🛑 **The basin write uses `ON CONFLICT DO UPDATE`, not `DO NOTHING`, and that is the point.**
+`jobber_url_signed` is a presigned S3 url and it **expires**. The 58 rows the migrate script wrote
+were never refreshed, every url is dead, and **the basin had never recovered a single file**. The sync
+re-encounters the same attachment ~10x/day, so refreshing on conflict is what makes the row able to
+hand someone the file. `logged_at` is deliberately not refreshed, so it still means **first seen** and
+the health check's 7-day window flags NEW losses rather than the permanent backlog.
+
+Verified against visit 6105 (062-TCE), whose 410,159,322-byte video had been skipped silently for
+weeks: basin 58 -> 59 rows, `skip_reason='OVERSIZED'`, size and visit recorded, a live url stored,
+`oversizedSkipped: 1` in `sync_log`, health check moved to **warning**.
+
+⚠ **The 50MB limit itself is unchanged and correct** (largest successfully stored photo: 49.4MB).
+This makes the loss visible and the file recoverable; it does not ingest the video. Whether large
+video should be stored at all is a product decision.
+
+⚠ **Still true:** the note's `entity_source_links` row is created *before* the skip, so the migrate
+script's idempotency check still skips that note. That no longer matters, because the sync now writes
+the basin itself rather than depending on the migrate script to do it.
 
 ---
 
@@ -129,6 +159,7 @@ reading `public.v_jobber_note_photo_health` and writing a `sync_log` row that su
 | `full_sweep_stale` -> **attention** | no `days=14` run in **24h** | measured gap: avg 6.9h, p90 11.2h, **max 17.5h** over 103 intervals. 24h means four cycles missed. |
 | `all_runs_stale` -> **attention** | nothing at all in **12h** | both triggers together deliver ~10/day |
 | `hot_window_collapsed` -> **warning** | fewer than **2** hourly runs in 24h | ~6 of 24 is NORMAL here (section 3), so only a collapse is worth flagging |
+| `oversized_backlog` -> **warning** | any attachment skipped for size in the last **7 days** | added 2026-09-08. Keyed on `logged_at` (first seen), so it flags NEW losses and clears on its own rather than warning forever about the standing backlog |
 
 ⚠ **It measures DELIVERED RUNS, not attempts** — see section 4. It can tell you photos stopped
 flowing; it cannot tell you why.
