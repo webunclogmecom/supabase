@@ -352,10 +352,41 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     if (bare) nameNormalized = name.replace(bare[0], '').trim()
   }
 
-  // Check if client already exists via entity_source_links.
+  // Resolve the Jobber GID to our clients.id, CREATING the row if it is new.
   // Lookup uses the full base64 GID (consistent with populate.js step 1
   // which stores `jc.id` directly — also a base64 GID).
-  const existingId = await findEntityBySourceId('client', 'jobber', gid)
+  //
+  // 🛑 THIS IS ONE CALL ON PURPOSE. DO NOT SPLIT IT BACK INTO findEntityBySourceId + .insert().
+  // Until 2026-09-08 this was a plain SELECT here, an .insert() ~180 lines below, and an
+  // upsertEntityLink() after that — THREE PostgREST requests, so THREE transactions, with nothing
+  // holding the gap. Once real Jobber webhooks were switched on (2026-08-21) the live webhook and
+  // the */5 poll replay both drove this function for the same client, both read "not found", and
+  // both inserted. The loser's link then hit idx_esl_source_id (entity_type, source_system,
+  // source_id) — which is NOT the column set upsertEntityLink names in its onConflict, so ON
+  // CONFLICT could not absorb it — and threw AFTER its client row had already committed.
+  // Result: 8 orphan clients, "Bibi's burgers" as FOUR rows from one Jobber client.
+  // Measured with an 8-way concurrent probe: the old three-step shape produced 5 rows from one
+  // GID; this RPC produced 1. See docs/migrations/2026-09-08_1100_jobber_client_resolve_atomic.sql.
+  //
+  // ⚠ It MUST go through supabaseJobber: PostgREST forwards that client's `x-app-source: jobber`
+  // header to the audit trigger, so the created row still audits as "Changed in Jobber" and not 'sql'.
+  const { data: resolved, error: resolveErr } = await supabaseJobber
+    .rpc('fn_jobber_resolve_client', {
+      p_gid: gid,
+      p_name: nameNormalized,
+      p_class: typeof c.isCompany === 'boolean' ? (c.isCompany ? 'commercial' : 'residential') : null,
+      p_balance: c.balance ?? null,
+      p_status: c.isArchived ? 'INACTIVE' : 'ACTIVE',
+    })
+    .single()
+  if (resolveErr || !resolved) {
+    throw new Error(`Client resolve failed: ${resolveErr?.message ?? 'no row returned'}`)
+  }
+  const existingId: number = (resolved as { entity_id: number }).entity_id
+  // wasCreated replaces the old "did the SELECT find anything" test. The row now ALWAYS exists by
+  // this point, so branching on existingId would send every client down the update path and the
+  // client_code parsing below would never run for a new client.
+  const wasCreated: boolean = (resolved as { was_created: boolean }).was_created
 
   // v2 clients table: id, client_code, name, status, balance, notes, client_class
   // NB: `status` is set per-branch below, NOT here. Airtable is canonical for the
@@ -377,7 +408,7 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   }
   let entityId: number
 
-  if (existingId) {
+  if (!wasCreated) {
     // Read current status + code. Airtable owns the ACTIVE/RECURRING/PAUSED/
     // INACTIVE distinction, so DON'T clobber a richer AT status with 'ACTIVE':
     //   - Jobber archived       → INACTIVE (deactivation is authoritative)
@@ -537,13 +568,15 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
         }
       }
     }
-    const { data: inserted, error } = await supabaseJobber
+    // The row and its entity_source_links row already exist — fn_jobber_resolve_client created
+    // them together, in one transaction, above. This fills in the rest of the Jobber payload on
+    // top of that shell. It is an UPDATE and not an INSERT for exactly that reason.
+    const { error } = await supabaseJobber
       .from('clients')
-      .insert(clientRow)
-      .select('id')
-      .single()
-    if (error || !inserted) throw new Error(`Client insert failed: ${error?.message}`)
-    entityId = inserted.id
+      .update(clientRow)
+      .eq('id', existingId)
+    if (error) throw new Error(`Client seed update failed: ${error.message}`)
+    entityId = existingId
   }
 
   // Upsert entity_source_links — store full base64 GID for consistency with
