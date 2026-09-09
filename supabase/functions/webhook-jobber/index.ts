@@ -83,21 +83,9 @@ async function verifySignature(body: string, signature: string | null): Promise<
   return computed === signature
 }
 
-// ---- Date helpers for the visit-merge logic (Supabase-cron promotion) ----
-// Used by handleVisit to find a matching supabase_cron-scheduled placeholder
-// within ±7 days of the incoming Jobber visit and PROMOTE it in place.
-function addDaysISO(isoDate: string, days: number): string {
-  const [y, m, d] = isoDate.split('-').map(Number)
-  const date = new Date(Date.UTC(y, m - 1, d))
-  date.setUTCDate(date.getUTCDate() + days)
-  return date.toISOString().slice(0, 10)
-}
-function dateDiff(isoA: string, isoB: string): number {
-  // Returns isoA - isoB in days
-  const [ya, ma, da] = isoA.split('-').map(Number)
-  const [yb, mb, db] = isoB.split('-').map(Number)
-  return Math.round((Date.UTC(ya, ma - 1, da) - Date.UTC(yb, mb - 1, db)) / (1000 * 60 * 60 * 24))
-}
+// (The +/-7-day date helpers addDaysISO/dateDiff lived here. They were the promotion query's only
+//  consumers, and that query moved into public.fn_jobber_resolve_visit on 2026-09-09, where the
+//  same window is expressed as `v.visit_date between p_visit_date - 7 and p_visit_date + 7`.)
 // ET ('America/New_York') wall-clock { date, time } of a UTC timestamp.
 function etParts(d: Date): { date: string; time: string } {
   const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
@@ -651,39 +639,41 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
       // UPDATE — do NOT touch county; AT enrichment may have set it.
       await supabase.from('properties').update(propRow).eq('id', existingProps[0].id)
     } else {
-      // INSERT — fallback county from city so Jobber-only clients aren't NULL.
-      // Check if client already has ANY primary property (from a prior
-      // PROPERTY_CREATE or CLIENT_UPDATE) — if yes, this new billing-address
-      // row is NOT primary, to honor uq_properties_one_primary_per_client
-      // (partial unique on (client_id) WHERE is_primary=true). Race-safe
-      // against concurrent full-sync replays + live webhooks.
-      const { data: existingPrimary } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('client_id', entityId)
-        .eq('is_primary', true)
-        .limit(1)
-      const insertRow = {
-        ...propRow,
-        is_primary: !(existingPrimary && existingPrimary.length > 0),
-        county: inferCountyFromCity(addr.city),
-      }
-      const { data: newProp } = await supabase
-        .from('properties')
-        .insert(insertRow)
-        .select('id')
+      // 🛑 ATOMIC find-or-create (2026-09-09), sharing fn_jobber_resolve_property with
+      // handleProperty. THIS BRANCH IS THE DOMINANT PROPERTY CREATOR — 452 of the property links
+      // in production end in `_billing` — so leaving it on the old four-request shape would have
+      // meant "fixing" the property race while the biggest writer stayed outside the lock.
+      //
+      // ⚠ Its source_id is `<CLIENT_gid>_billing`, a synthetic id, because Jobber models a billing
+      //   address as part of the Client and there is no Property gid to store. That is exactly why
+      //   the lock is keyed on the CLIENT: this branch and handleProperty could never share a
+      //   gid-derived key, and both compete for the same uq_properties_one_primary_per_client slot.
+      //
+      // ⚠ The old `is_primary: !(existingPrimary && existingPrimary.length > 0)` failed OPEN — on a
+      //   read error `!undefined` is true, i.e. it claimed the primary slot, which is the direction
+      //   that collides. The decision now happens inside the function where it cannot half-fail.
+      const { data: resolvedBillingProp, error: resolveBillingErr } = await supabase
+        .rpc('fn_jobber_resolve_property', { p_gid: `${gid}_billing`, p_client_id: entityId })
         .single()
-
-      if (newProp) {
-        await upsertEntityLink({
-          entity_type: 'property',
-          entity_id: newProp.id,
-          source_system: 'jobber',
-          source_id: `${gid}_billing`,
-          source_name: `${name} (billing)`,
-          match_method: 'webhook',
-        })
+      if (resolveBillingErr || !resolvedBillingProp) {
+        throw new Error(`Billing property resolve failed: ${resolveBillingErr?.message ?? 'no row returned'}`)
       }
+      const billingPropId: number = (resolvedBillingProp as { entity_id: number }).entity_id
+      const billingWasCreated: boolean = (resolvedBillingProp as { was_created: boolean }).was_created
+
+      const { error: billingUpdErr } = await supabase
+        .from('properties')
+        .update(billingWasCreated
+          ? { ...propRow, county: inferCountyFromCity(addr.city) }
+          : propRow)
+        .eq('id', billingPropId)
+      if (billingUpdErr) throw new Error(`Billing property update failed: ${billingUpdErr.message}`)
+
+      // source_name is the one field the resolve function does not set, and it is cosmetic.
+      await supabase
+        .from('entity_source_links')
+        .update({ source_name: `${name} (billing)` })
+        .eq('entity_type', 'property').eq('entity_id', billingPropId).eq('source_system', 'jobber')
     }
   }
 
@@ -847,9 +837,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // query below matches on service_type, so a mismatch silently INSERTED A
   // DUPLICATE VISIT instead of promoting the placeholder, with no error anywhere.
   // That window is closed: the CHECK constraints now admit only the real service
-  // names, so a legacy value cannot exist to be matched. Reintroduce this shape
-  // for any future vocabulary change -- the duplicate-visit failure is silent.
-  const svcMatchSet = (s: unknown): string[] => (typeof s === 'string' ? [s] : [])
+  // names, so a legacy value cannot exist to be matched.
+  //
+  // 🛑 THE MATCH ITSELF MOVED TO SQL ON 2026-09-09 AND SO MUST THIS WARNING. The promotion
+  //    predicate now lives in public.fn_jobber_resolve_visit as `v.service_type = p_service_type`,
+  //    and `serviceType` below is what this handler passes into it. **Any future vocabulary change
+  //    must widen THAT predicate, not this file** -- and it must be widened BEFORE the change,
+  //    because the failure is silent: a mismatch does not error, it finds nothing and inserts a
+  //    duplicate visit instead of promoting the placeholder.
 
   // Track whether the derive is CONCRETE (line item or explicit title match) vs the bare default,
   // so the inbound UPDATE path can avoid clobbering a stored value with the default when a Jobber
@@ -884,10 +879,44 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   if (propertyId) visitRow.property_id = propertyId
   if (invoiceId) visitRow.invoice_id = invoiceId
 
-  let entityId: number
-  let promotedFromCron = false
+  // 🛑 ATOMIC find-or-promote-or-create (2026-09-09). Until today this was a SELECT at the top of
+  // the handler, an .insert() or a promote UPDATE below, and upsertEntityLink after that — THREE
+  // PostgREST requests, so THREE transactions, with nothing spanning them. Jobber double-delivers
+  // VISIT_CREATE (160 event_ids delivered 2+ times, 155 of them UNDER ONE SECOND apart) against a
+  // handler that runs 500-900ms, so the two deliveries overlap essentially always: both read "not
+  // linked", both insert, and the loser's link write hits idx_esl_source_id — which is NOT the
+  // column set upsertEntityLink names in its onConflict — and raises 23505 one statement too late,
+  // after its visit row has already committed. That produced visits 7884 and 8050.
+  //
+  // ⚠ The promotion decision moved INTO the function with it, and had to: a gid-only resolve would
+  //   not know a supabase_cron placeholder was claimable and would insert a fresh row every time,
+  //   manufacturing a duplicate for every recurring visit. See 2026-09-09_1200.
+  // ⚠ jobberVisitClient, NOT the shared `supabase` singleton. The INSERT now happens inside the
+  //   RPC, and PostgREST forwards this client's `x-app-source: jobber` and `x-actor-name` headers
+  //   to the audit trigger. On the plain client every Jobber-created visit would audit as
+  //   app_source='sql' with no actor, which is the same regression the 2026-09-08 client work
+  //   called out explicitly. The old create path used jobberVisitClient for exactly this reason.
+  const { data: resolvedVisit, error: resolveVisitErr } = await jobberVisitClient(v.createdBy?.name?.full)
+    .rpc('fn_jobber_resolve_visit', {
+      p_gid:          gid,
+      p_visit_date:   visitRow.visit_date,
+      p_client_id:    clientId,
+      p_service_type: serviceType,
+    })
+    .single()
+  if (resolveVisitErr || !resolvedVisit) {
+    throw new Error(`Visit resolve failed: ${resolveVisitErr?.message ?? 'no row returned'}`)
+  }
+  const entityId: number = (resolvedVisit as { entity_id: number }).entity_id
+  const promotedFromCron: boolean = (resolvedVisit as { was_promoted: boolean }).was_promoted
+  const wasCreated: boolean = (resolvedVisit as { was_created: boolean }).was_created
+  if (promotedFromCron || wasCreated) {
+    // Promotion used to be invisible in the logs; it is now the one branch worth naming, because a
+    // promotion that picks the WRONG placeholder is silent by construction.
+    console.log(`[handleVisit] visit ${numericId} -> ${entityId} (${promotedFromCron ? 'PROMOTED a supabase_cron placeholder' : 'created'})`)
+  }
 
-  if (existingId) {
+  {
     // Loop-guard (2026-06-01; widened 2026-06-24, audit follow-up #3): visits MASTERED by our
     // side — source='visit-calendar' (Calendar) OR 'supabase_cron' (SA generator) — own their
     // SCHEDULE + title; the Calendar/cron -> Jobber push (jobber-push-visit) is the writer. The
@@ -899,14 +928,14 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     // visits by setting their hour in Jobber's weekly view; fill-if-empty captures that hour without
     // clobbering a Calendar-set time. Loop-safe: a visit_status change re-fires trg_push_visit_update,
     // but jobber-push-visit only re-asserts the SAME schedule -> Jobber unchanged -> no echo.
-    const { data: existing } = await supabase.from('visits').select('source, start_at, visit_status').eq('id', existingId).maybeSingle()
+    const { data: existing } = await supabase.from('visits').select('source, start_at, visit_status').eq('id', entityId).maybeSingle()
     // A 'skipped' visit is intentionally REMOVED from Jobber. An in-flight Jobber replay
     // (VISIT_UPDATE/COMPLETE arriving before the removal propagates, or on a stale link if the
     // visitDelete failed) must NOT resurrect it — ignore the inbound change. The skip-removal retry
     // (resolve-stale cron) will unlink it; unskip_visit is the only sanctioned way back to Jobber.
     if (existing?.visit_status === 'skipped') {
       console.log(`[handleVisit] visit ${numericId} is skipped in DB — ignoring inbound Jobber change (not resurrecting)`)
-      return { entity_id: existingId }
+      return { entity_id: entityId }
     }
     if (existing?.source === 'visit-calendar' || existing?.source === 'supabase_cron') {
       const compRow: Record<string, unknown> = {}
@@ -925,91 +954,38 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
         compRow.end_at = v.endAt ?? null
       }
       if (Object.keys(compRow).length > 0) {
-        const { error } = await supabaseJobber.from('visits').update(compRow).eq('id', existingId)
+        const { error } = await supabaseJobber.from('visits').update(compRow).eq('id', entityId)
         if (error) throw new Error(`Visit completion/hour-sync failed: ${error.message}`)
       }
       // Stage 2 (2026-06-27): mirror Jobber's crew into visit_team so the Calendar drawer
       // shows the real driver (these DB-mastered supabase_cron/calendar visits are exactly
       // what the Calendar displays). Diff-only, no team_rev bump -> no echo back to Jobber.
-      await syncVisitTeamFromJobber(existingId, v.assignedUsers?.nodes)
-      console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${existingId}; completion + fill-hour-if-empty sync`)
-      return { entity_id: existingId }
+      await syncVisitTeamFromJobber(entityId, v.assignedUsers?.nodes)
+      console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${entityId}; completion + fill-hour-if-empty sync`)
+      return { entity_id: entityId }
     }
     // Standard update path — Jobber-mastered visit. Do NOT clobber a stored service_type with
     // the bare default: when the derive is non-concrete, omit service_type so the stored value sticks.
     // This also protects a legacy-vocabulary row from being rewritten piecemeal during the
     // migration window; the SQL migration owns that conversion, not this handler.
     const updateRow = serviceTypeConcrete ? visitRow : (() => { const { service_type: _drop, ...rest } = visitRow; return rest })()
-    const { error } = await supabaseJobber.from('visits').update(updateRow).eq('id', existingId)
+    const { error } = await supabaseJobber.from('visits').update(updateRow).eq('id', entityId)
     if (error) throw new Error(`Visit update failed: ${error.message}`)
-    entityId = existingId
-  } else {
-    // Try to find a matching supabase_cron-generated scheduled placeholder
-    // before inserting a new row. This keeps the Supabase cron's planned
-    // schedule and Jobber's actual execution as a SINGLE row through the
-    // visit lifecycle. Match criteria (kept tight to avoid false promotions):
-    //   - client_id and service_type both match.
-    //     ⚠ THIS MATCH IS THE SILENT FAILURE POINT OF ANY VOCABULARY CHANGE.
-    //     If this handler and the stored placeholder ever disagree on the value,
-    //     the match does not error — it finds nothing and INSERTS A DUPLICATE
-    //     VISIT instead of promoting the placeholder. During the 2026-08-03
-    //     rename this accepted both vocabularies for exactly that reason; that
-    //     shim was removed with Phase C1 once legacy values became impossible.
-    //     Reintroduce it before any future vocabulary change, not after.
-    //   - visit_status='scheduled'
-    //   - source='supabase_cron' (i.e., it's a placeholder, not a real Jobber row)
-    //   - visit_date within ±7 days of the incoming Jobber visit
-    // If multiple match, pick the closest in date.
-    let promoteId: number | null = null
-    if (clientId && visitRow.service_type && visitRow.visit_date) {
-      const targetDate = visitRow.visit_date as string
-      const { data: candidates } = await supabase
-        .from('visits')
-        .select('id, visit_date')
-        .eq('client_id', clientId)
-        .in('service_type', svcMatchSet(visitRow.service_type))
-        .eq('visit_status', 'scheduled')
-        .eq('source', 'supabase_cron')
-        .gte('visit_date', addDaysISO(targetDate, -7))
-        .lte('visit_date', addDaysISO(targetDate, 7))
-      if (candidates && candidates.length > 0) {
-        // Pick the one with smallest |date diff|
-        candidates.sort((a: any, b: any) =>
-          Math.abs(dateDiff(a.visit_date, targetDate)) -
-          Math.abs(dateDiff(b.visit_date, targetDate)))
-        promoteId = candidates[0].id
-      }
-    }
-
-    if (promoteId) {
-      // PROMOTE the cron-scheduled placeholder: claim it as the canonical row
-      // for this Jobber visit. source becomes 'jobber'; visit_date adopts the
-      // Jobber-reported date (which may differ slightly from the planned one).
-      const promotionRow = { ...visitRow, source: 'jobber' }
-      const { error } = await supabaseJobber.from('visits').update(promotionRow).eq('id', promoteId)
-      if (error) throw new Error(`Visit promotion failed: ${error.message}`)
-      entityId = promoteId
-      promotedFromCron = true
-      console.log(`[handleVisit] promoted supabase_cron row ${promoteId} → jobber GID ${gid.slice(0, 30)}…`)
-    } else {
-      // No matching placeholder; insert fresh.
-      const { data: inserted, error } = await jobberVisitClient(v.createdBy?.name?.full)
-        .from('visits')
-        .insert(visitRow)
-        .select('id')
-        .single()
-      if (error || !inserted) throw new Error(`Visit insert failed: ${error?.message}`)
-      entityId = inserted.id
-    }
   }
 
-  await upsertEntityLink({
-    entity_type: 'visit',
-    entity_id: entityId,
-    source_system: 'jobber',
-    source_id: gid,
-    match_method: promotedFromCron ? 'webhook_promoted_from_cron' : 'webhook',
-  })
+  // 🛑 THE TRAILING upsertEntityLink IS GONE ON PURPOSE. fn_jobber_resolve_visit writes the link in
+  // the SAME transaction as the row, so on create/promote it already exists, and on the fast path it
+  // existed before we were called. Re-asserting it here bought nothing and cost the race: its
+  // onConflict names (entity_type, entity_id, source_system) while the index that fires on a
+  // contested gid is idx_esl_source_id.
+  //
+  // ⚠ MY FIRST VERSION OF THIS COMMENT SAID "nothing reads entity_source_links.synced_at (checked:
+  //   every reference in this repo is a writer)". That check was REPO-SCOPED and missed the
+  //   database: `client.entity_source_links` is a SELECT * pass-through that exposes synced_at and
+  //   match_method to `authenticated`. So there IS a reader surface. It has taken 0 PostgREST calls
+  //   in the pg_stat_statements window, and no app bundle names the column, which is why removing
+  //   the refresh is still the right call -- but the honest statement is "no live consumer", not
+  //   "no reader". A repo grep is not a census of readers.
 
   // Sync visit-scoped line items (idempotent: wipe + replace by visit_id). Mirrors the
   // invoice line-item sync — captures each scheduled visit's services verbatim (incl. the
@@ -1233,7 +1209,7 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   const clientId = j.client?.id ? await findEntityBySourceId('client', 'jobber', j.client.id) : null
   const propertyId = j.property?.id ? await findEntityBySourceId('property', 'jobber', j.property.id) : null
   const quoteId = j.quote?.id ? await findEntityBySourceId('quote', 'jobber', j.quote.id) : null
-  const existingId = await findEntityBySourceId('job', 'jobber', gid)
+  // (the existence read moved into fn_jobber_resolve_job, which does it again under the lock)
 
   const jobRow: Record<string, unknown> = {
     job_number: j.jobNumber ?? null,
@@ -1249,29 +1225,32 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   const freqCF = (j.customFields ?? []).find((cf: any) => (cf?.label ?? '').toLowerCase() === 'frequency')
   if (freqCF && typeof freqCF.valueNumeric === 'number') jobRow.frequency_days = freqCF.valueNumeric
 
-  let entityId: number
-
-  if (existingId) {
-    const { error } = await supabase.from('jobs').update(jobRow).eq('id', existingId)
-    if (error) throw new Error(`Job update failed: ${error.message}`)
-    entityId = existingId
-  } else {
-    const { data: inserted, error } = await supabase
-      .from('jobs')
-      .insert(jobRow)
-      .select('id')
-      .single()
-    if (error || !inserted) throw new Error(`Job insert failed: ${error?.message}`)
-    entityId = inserted.id
+  // 🛑 ATOMIC find-or-create (2026-09-09). Until today this was a SELECT, an .insert() and an
+  // upsertEntityLink across THREE PostgREST requests, i.e. three transactions.
+  //
+  // ⚠ I FIRST REPORTED JOBS AS SAFE AND LEFT THEM ALONE. That was wrong. The reasoning was that
+  //   jobs_active_job_number_uniq refuses the loser's INSERT before anything commits — but it is
+  //   UNIQUE (job_number) WHERE job_number IS NOT NULL AND job_status <> 'archived', which covers
+  //   only 477 of 1,845 rows. Outside it both INSERTs commit and the 23505 moves to the link write
+  //   one transaction later, leaving exactly the orphan the claim said was impossible. Worse,
+  //   Jobber RECYCLES job_number (99901013 and 99901068 each map to two different GIDs), so that
+  //   index can also refuse a GENUINE new job — and with the 200-then-work ACK there is no retry.
+  //
+  // ⚠ public.fn_record_client_job (the Client App's writer) takes the SAME lock key. Locking one
+  //   of a pair serialises nothing. See 2026-09-09_1230.
+  // ⚠ p_job_number is passed so that a jobs_active_job_number_uniq refusal (Jobber recycles job
+  //   numbers) fires INSIDE the function, rolling the shell row and its link back together, rather
+  //   than in the payload UPDATE one transaction later where it would strand a linked NULL job.
+  const { data: resolvedJob, error: resolveJobErr } = await supabase
+    .rpc('fn_jobber_resolve_job', { p_gid: gid, p_job_number: j.jobNumber ?? null })
+    .single()
+  if (resolveJobErr || !resolvedJob) {
+    throw new Error(`Job resolve failed: ${resolveJobErr?.message ?? 'no row returned'}`)
   }
+  const entityId: number = (resolvedJob as { entity_id: number }).entity_id
 
-  await upsertEntityLink({
-    entity_type: 'job',
-    entity_id: entityId,
-    source_system: 'jobber',
-    source_id: gid,
-    match_method: 'webhook',
-  })
+  const { error: jobUpdErr } = await supabase.from('jobs').update(jobRow).eq('id', entityId)
+  if (jobUpdErr) throw new Error(`Job update failed: ${jobUpdErr.message}`)
 
   // Sync job-scoped line items. Idempotent: wipe job-scoped rows + re-insert what Jobber holds.
   //
@@ -1434,38 +1413,41 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
   if (p.address?.coordinates?.latitude != null)  row.latitude  = p.address.coordinates.latitude
   if (p.address?.coordinates?.longitude != null) row.longitude = p.address.coordinates.longitude
 
-  let entityId: number
-  if (existingId) {
-    // UPDATE — preserve county (AT may have set it).
-    const { error } = await supabase.from('properties').update(row).eq('id', existingId)
-    if (error) throw new Error(`Property update failed: ${error.message}`)
-    entityId = existingId
-  } else {
-    // INSERT — fallback county from city so new Jobber properties aren't NULL.
-    // properties.is_primary column DEFAULT is `true`. If this client already
-    // has a primary property (from PRIOR PROPERTY_CREATE or CLIENT_UPDATE's
-    // billing-property path), default would violate uq_properties_one_primary_per_client.
-    // Check first; force is_primary=false when a primary already exists. Only
-    // the first property for a client gets primary=true via the default.
-    let isPrimary: boolean | undefined = undefined  // let DB default kick in (true)
-    if (clientId) {
-      const { data: existingPrimary } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('client_id', clientId)
-        .eq('is_primary', true)
-        .limit(1)
-      if (existingPrimary && existingPrimary.length > 0) isPrimary = false
-    }
-    const insertRow = {
-      ...row,
-      county: inferCountyFromCity(p.address?.city),
-      ...(isPrimary === false ? { is_primary: false } : {}),
-    }
-    const { data: inserted, error } = await supabase.from('properties').insert(insertRow).select('id').single()
-    if (error || !inserted) throw new Error(`Property insert failed: ${error?.message}`)
-    entityId = inserted.id
+  // 🛑 ATOMIC find-or-create (2026-09-09), AND THE is_primary DECISION MOVED INTO SQL WITH IT.
+  //
+  // The old shape was a SELECT, a second SELECT deciding is_primary, an .insert() and an
+  // upsertEntityLink: four PostgREST requests, four transactions. Two failure modes, opposite in
+  // character:
+  //   FIRST property for a client  -> both writers see no primary, both insert is_primary=true,
+  //     the loser raises 23505 on uq_properties_one_primary_per_client. webhook-jobber ACKs 200
+  //     before working and nothing re-processes webhook_events_log, so THE EVENT IS LOST FOREVER.
+  //     This fired on 2026-09-02 21:07:32 and was rescued only by an unrelated PROPERTY_UPDATE.
+  //   SECOND-or-later property     -> both compute false, the index does not apply, both COMMIT,
+  //     and the loser's link write hits idx_esl_source_id. 481 properties sit in that region.
+  //
+  // ⚠ The is_primary read had to move too, not just be locked. Both TypeScript copies FAIL OPEN
+  //   toward claiming the slot on a transport error (this one left isPrimary undefined so the
+  //   column DEFAULT of true applied; handleClient computed `!undefined` = true). Claiming is the
+  //   direction that collides, so a lock alone would have left the failure path intact.
+  //
+  // ⚠ The lock is keyed on the CLIENT, not the property gid, because handleClient's billing branch
+  //   links as `<client_gid>_billing` and has no property gid at all. See 2026-09-09_1300.
+  const { data: resolvedProp, error: resolvePropErr } = await supabase
+    .rpc('fn_jobber_resolve_property', { p_gid: gid, p_client_id: clientId })
+    .single()
+  if (resolvePropErr || !resolvedProp) {
+    throw new Error(`Property resolve failed: ${resolvePropErr?.message ?? 'no row returned'}`)
   }
+  const entityId: number = (resolvedProp as { entity_id: number }).entity_id
+  const propWasCreated: boolean = (resolvedProp as { was_created: boolean }).was_created
+
+  // county is set only on creation: an existing row may carry an enrichment we must not clobber.
+  const propUpdateRow = propWasCreated
+    ? { ...row, county: inferCountyFromCity(p.address?.city) }
+    : row
+  const { error: propUpdErr } = await supabase.from('properties').update(propUpdateRow).eq('id', entityId)
+  if (propUpdErr) throw new Error(`Property update failed: ${propUpdErr.message}`)
+
 
   // --------------------------------------------------------------- custom fields
   // Jobber's numeric custom field has defaultValue 0, no null state and no updatedAt, so a
@@ -1522,10 +1504,8 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
     console.error(`[handleProperty] custom-field sync threw for property ${entityId}: ${(e as Error).message}`)
   }
 
-  await upsertEntityLink({
-    entity_type: 'property', entity_id: entityId, source_system: 'jobber',
-    source_id: gid, match_method: 'webhook',
-  })
+  // The link is written inside fn_jobber_resolve_property, in the same transaction as the row.
+  // Re-asserting it here named the wrong conflict target and was one half of the race.
   return { entity_id: entityId }
 }
 
