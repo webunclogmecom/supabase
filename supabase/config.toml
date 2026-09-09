@@ -636,6 +636,13 @@ verify_jwt = false
 [functions.sync-jobber-job-drift]
 verify_jwt = true
 
+# sync-jobber-invoice-drift: the invoice reconcile (pg_cron 25 */6 * * * via
+# fn_request_jobber_sync('invoice-drift'), vault bearer). Handler requires
+# role=service_role - verify_jwt alone also admits the public anon key.
+# Reads Jobber and writes public.invoices; contains no Jobber mutations.
+[functions.sync-jobber-invoice-drift]
+verify_jwt = true
+
 # sync-jobber-billing-observe: phase A of billing two-way, READ ONLY. Records each job's Jobber
 # invoicing settings in sync.jobber_billing_observed so a Jobber-side edit stops being invisible.
 # It never writes public.jobs, never pushes to Jobber and never adopts. Handler requires
