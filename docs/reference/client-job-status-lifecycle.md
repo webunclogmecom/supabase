@@ -20,9 +20,27 @@ disagree.
 ### The state machine (title-only job kinds)
 
 Job kind is **title-only**, matching the whole estate: SA = `title ILIKE 'Service Agreement%'`,
-SC = `lower(btrim(title)) = 'service call'`, else legacy. "Open" job = `job_status <> 'archived'`
-(our sync maps Jobber closed/destroyed to `archived`; there is no `closed`/`destroyed` value in
-`public.jobs.job_status`).
+SC = `lower(btrim(title)) = 'service call'`, else legacy. "Open" job here = `job_status <> 'archived'`.
+
+> 🛑 **CORRECTED 2026-09-09. This sentence used to end "(our sync maps Jobber closed/destroyed to
+> `archived`; there is no `closed`/`destroyed` value in `public.jobs.job_status`)". THAT PARENTHESIS
+> WAS FALSE, and it was copied into a new object before anyone checked it.**
+> `webhook-jobber` writes both values verbatim (`handleJobClosed` -> `'closed'`, `handleJobDestroy`
+> -> `'destroyed'`; there is no mapping to `archived`), the live CHECK admits **twelve** values
+> (`requires_invoicing, archived, late, today, upcoming, action_required, on_hold, unscheduled,
+> active, expiring_within_30_days, closed, destroyed`), and `audit.logs` records **`closed` 40 times,
+> most recently 2026-09-07**, plus `destroyed` twice.
+> ⚠ **They are TRANSIENT, which is why a census reads like a complete vocabulary**: a paired
+> `JOB_UPDATE` overwrites them within a second or so (the one unpaired `JOB_DESTROY` took ~20 min for
+> the next poll). So "no rows hold either value" is true right now and is a measurement of this
+> minute, **not the domain**. The CHECK is the domain.
+> ⇒ `<> 'archived'` therefore reads a closed or destroyed job as OPEN for that window. It is left as
+> written **for this document's own state machine**, where the exposure is sub-second and fail-open
+> and eight existing DB objects share the predicate. **But do not copy the parenthesis, and for any
+> NEW object prefer the estate's terminal set** `NOT IN ('archived','closed','destroyed')` - what
+> `sync-jobber-job-drift` already uses, and what
+> [`admin-review-scope-inclusions.md`](admin-review-scope-inclusions.md) now uses after this exact
+> premise produced a wrong predicate there.
 
 | Action | Client was | Becomes | How the write happens |
 |---|---|---|---|
