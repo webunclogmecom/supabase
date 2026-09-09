@@ -722,6 +722,11 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   )
   const v = data.visit
   if (!v) throw new Error(`Visit ${numericId} not found in Jobber`)
+  // The instant WE witnessed this Jobber value. Stamped here, at the response, because only a read
+  // is an attestation: the webhook's own `occurredAt` says when JOBBER THINKS something happened,
+  // is second-precision, and 55.0% of genuine VISIT_UPDATE deliveries repeat the same
+  // (itemId, occurredAt) pair. The observation ledger orders on THIS, never on occurredAt.
+  const jobberReadAt = new Date().toISOString()
 
   // Pre-2026 cutoff (Fred 2026-05-01): we don't track visits before 2026-01-01.
   // Skip the upsert entirely; if it already exists in our DB, the cleanup
@@ -961,6 +966,36 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
       // shows the real driver (these DB-mastered supabase_cron/calendar visits are exactly
       // what the Calendar displays). Diff-only, no team_rev bump -> no echo back to Jobber.
       await syncVisitTeamFromJobber(entityId, v.assignedUsers?.nodes)
+
+      // ---------------------------------------------------------------------------------------
+      // OBSERVATION LEDGER (2026-09-09, migration 2026-09-09_1420) — the accelerator.
+      // ---------------------------------------------------------------------------------------
+      // This branch deliberately does NOT adopt a re-time (see the loop-guard comment above), and
+      // that stays true. What changes is that we no longer THROW AWAY the fact that we just looked
+      // at Jobber. Recording it here collapses the last-writer-wins interval (lo, hi] from the
+      // */30 poll's 30 minutes down to seconds, which is the difference between deciding Fred's
+      // 9:30-vs-9:31 case and defaulting it to the Calendar.
+      // 🛑 It records an OBSERVATION, it does not decide anything. The reconciler still owns the
+      //    decision, so this cannot reintroduce the clobber the loop-guard prevents.
+      // 🛑 `read_at`, never `occurredAt`: see the jobberReadAt comment at the fetch.
+      // 🛑 Via the PUBLIC wrapper. `sync` is not a PostgREST-exposed schema; .from() there returns
+      //    a silent 200 without writing.
+      // Best effort: a webhook must never fail because the ledger did.
+      if (v.startAt) {
+        try {
+          const { error: ledgerErr } = await supabase.rpc('fn_record_visit_schedule_observations', {
+            p_rows: [{
+              visit_id: entityId, jobber_gid: gid,
+              start_at: v.startAt, end_at: v.endAt ?? null, all_day: v.allDay ?? null,
+              source: 'webhook', outcome: 'hit', observed_at: jobberReadAt,
+            }],
+          })
+          if (ledgerErr) console.error(`[handleVisit] ledger write failed for ${entityId}: ${ledgerErr.message}`)
+        } catch (e) {
+          console.error(`[handleVisit] ledger write threw for ${entityId}:`, e instanceof Error ? e.message : String(e))
+        }
+      }
+
       console.log(`[handleVisit] visit ${numericId} -> ${existing.source}-mastered ${entityId}; completion + fill-hour-if-empty sync`)
       return { entity_id: entityId }
     }

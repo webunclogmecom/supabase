@@ -207,6 +207,54 @@ const M_COMPLETE   = `mutation($id: EncodedId!, $input: VisitCompleteInput){ vis
 const M_UNCOMPLETE = `mutation($id: EncodedId!){ visitUncomplete(visitId:$id){ userErrors{ message path } visit{ id completedAt } } }`;
 function ue(payload: any): string | null { const e = payload?.userErrors; return e && e.length ? JSON.stringify(e) : null; }
 
+// -------------------------------------------------------------------------------------------
+// OBSERVATION LEDGER (2026-09-09, migration 2026-09-09_1420) — the sharpest `lo` we can get.
+// -------------------------------------------------------------------------------------------
+// A clean visitEditSchedule return is an ATTESTED statement that JOBBER HELD OUR VALUE at this
+// instant, at millisecond resolution, and it costs nothing: no extra Jobber call, no round trip.
+// It is the second clock the Calendar<->Jobber last-writer-wins rule needs and cannot get from
+// Jobber directly (the GraphQL Visit type has NO updatedAt: 31 fields, includeDeprecated:true,
+// verified live 2026-09-09).
+//
+// Why it is load-bearing, measured over the 30 visits behind all 1,078 `jobber_time_differs`
+// banner appearances in 45 days: a push ACK sits strictly between the office edit and the first
+// drift surfacing in 29 of 30 (median lag 0.779s, max 5.17s; the 30th confirms in the same
+// transaction via the edit_calendar_visit_verified saga). With the ACK as `lo`, T <= lo holds and
+// those episodes decide ADOPT — which the historical oracle says was right: the value that
+// actually stuck was Jobber's in 19 and ours in 0. WITHOUT the ACK the identical rule decides
+// PUSH on all 30 and is wrong on all 30. Do not remove this call to "simplify" the push.
+//
+// 🛑 TIMED PUSHES ONLY. For an all-day push Jobber stores ET midnight of the date, and deriving
+//    that instant here would mean inverting a wall-clock date back through the EDT/EST boundary,
+//    a second implementation of a conversion that already lives in the BEFORE trigger. The */30
+//    poll observes the all-day value correctly, and the all-day arm is never auto-decided anyway.
+// 🛑 BEST EFFORT, NEVER FATAL. Jobber has already accepted the write by the time we get here; a
+//    ledger failure must not turn a successful push into sync_state='failed'.
+// 🛑 VIA THE PUBLIC WRAPPER. `sync` is not a PostgREST-exposed schema, so db.from('sync...')
+//    returns a SILENT 200 WITHOUT WRITING (sync-jobber-billing-observe hit exactly that on its
+//    first live run). Do not "simplify" this to .from().
+async function recordJobberScheduleAck(visitId: number, gid: string, visit: any, sched: any): Promise<void> {
+  try {
+    if (!sched?.startAt || typeof sched.startAt.time !== "string") return;  // all-day: see above
+    if (!visit?.start_at) return;
+    const { error } = await db.rpc("fn_record_visit_schedule_observations", {
+      p_rows: [{
+        visit_id: visitId,
+        jobber_gid: gid,
+        start_at: new Date(visit.start_at).toISOString(),
+        end_at: visit.end_at ? new Date(visit.end_at).toISOString() : null,
+        all_day: false,
+        source: "push_ack",
+        outcome: "hit",
+        observed_at: new Date().toISOString(),
+      }],
+    });
+    if (error) console.error(`[push] ledger ack failed for visit ${visitId}: ${error.message}`);
+  } catch (e) {
+    console.error(`[push] ledger ack threw for visit ${visitId}:`, e instanceof Error ? e.message : String(e));
+  }
+}
+
 // Push a visit's line items (with prices) onto its Jobber visit. For Service-Agreement
 // visits this pushes the office's PER-VISIT overrides (set via the drawer) onto the Jobber
 // visit, replacing the inherited job lines (SA billing is per-visit / VISIT_BASED, so the
@@ -517,6 +565,11 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
       const s = await gql(token, M_EDIT_SCHED, { id: existingGid, input: sched });
       const se = ue(s.visitEditSchedule); if (se) throw new Error(`visitEditSchedule: ${se}`);
       did.push("schedule");
+      // ATTESTED: Jobber accepted our schedule, so it holds our value as of now. This is the only
+      // place in the estate that knows that at millisecond resolution — record it before anything
+      // else can fail. Deliberately AFTER the userErrors check and INSIDE the `wants("schedule")`
+      // branch: a push that mutates nothing must never claim a Jobber observation.
+      await recordJobberScheduleAck(visitId, existingGid, visit, sched);
     }
     {
       // title and instructions are INDEPENDENT: push title ONLY when title changed, instructions
@@ -645,6 +698,10 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
     }
   }
   await linkVisit(visitId, newGid);
+  // Same attestation as the update path: visitCreate accepted our schedule, so Jobber holds our
+  // value now. Placed AFTER the create-race check so a duplicate we are about to delete can never
+  // seed the ledger with a gid that is on its way out.
+  await recordJobberScheduleAck(visitId, newGid, visit, sched);
   await clearFlag(visitId);
   await syncVisitLineItems(token, visit, newGid, false);
   await stripInheritedLineItemsFixedPrice(token, job.gid, newGid);

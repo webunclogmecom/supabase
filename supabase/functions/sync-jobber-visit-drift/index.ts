@@ -75,7 +75,11 @@ function bearerRole(req: Request): string | null {
 }
 
 type Cand = { id: number; visit_date: string; start_at: string | null; end_at: string | null; jobber_gid: string }
-type JV = { startAt: string; endAt: string | null }
+// `at` is the instant WE witnessed this value, stamped per PAGE as that page's response lands.
+// It becomes `hi` in the observation ledger, so it must be the read time and not the run's start:
+// the paging loop sleeps 700ms between pages and can span tens of seconds, and a single run-level
+// timestamp would smear every page's witness onto one instant.
+type JV = { startAt: string; endAt: string | null; at: string }
 
 async function gql(token: string, query: string) {
   const r = await fetch('https://api.getjobber.com/api/graphql', {
@@ -170,11 +174,44 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
     while (page++ < MAX_PAGES) {
       const after = cursor ? `, after: "${cursor}"` : ''
       const data = await gql(token, `{ visits(first: 50, filter: { startAt: { after: "${afterIso}" } }${after}) { pageInfo { hasNextPage endCursor } nodes { id startAt endAt } } }`)
-      for (const n of data.visits.nodes) if (byGid.has(n.id)) jobberStart.set(n.id, { startAt: n.startAt, endAt: n.endAt ?? null })
+      const pageAt = new Date().toISOString()
+      for (const n of data.visits.nodes) if (byGid.has(n.id)) jobberStart.set(n.id, { startAt: n.startAt, endAt: n.endAt ?? null, at: pageAt })
       if (jobberStart.size >= byGid.size) break
       if (!data.visits.pageInfo.hasNextPage) break
       cursor = data.visits.pageInfo.endCursor
       await new Promise((s) => setTimeout(s, 700))
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // OBSERVATION LEDGER (2026-09-09, migration 2026-09-09_1420). Record EVERY candidate, every
+    // run, including the ones that are NOT drifting.
+    // 🛑 THE NON-DRIFTING ONES ARE THE POINT. `lo` is "the last instant we witnessed the value
+    //    Jobber has now replaced", so it can only exist if we were watching a visit BEFORE it
+    //    drifted. Recording only the drifting ones would leave `lo` unbounded exactly when the
+    //    decision needs it, which is the shape of the surfaced_visits history that migration
+    //    2026-08-03_1900 already warned is not a general ledger of Jobber values.
+    // 🛑 AN ABSENT NODE IS NO OBSERVATION, NOT AN EMPTY ONE. A gid Jobber did not return is
+    //    recorded as `gid_absent`, which advances the attempt clock and touches neither the value
+    //    nor `last_seen_at`. Silence here would read as "unchanged" and silently widen every
+    //    interval: read failures are not rare (730 across 566 of 2,154 runs in 45 days).
+    // 🛑 VIA THE PUBLIC WRAPPER: `sync` is not a PostgREST-exposed schema and .from() there
+    //    returns a silent 200 without writing.
+    // Best effort: the ledger must never be able to fail a reconciler run.
+    try {
+      const obs = cands.map((c) => {
+        const jv = jobberStart.get(c.jobber_gid)
+        return jv
+          ? { visit_id: c.id, jobber_gid: c.jobber_gid, start_at: jv.startAt, end_at: jv.endAt,
+              source: 'poll', outcome: 'hit', observed_at: jv.at }
+          : { visit_id: c.id, jobber_gid: c.jobber_gid, source: 'poll', outcome: 'gid_absent',
+              observed_at: new Date().toISOString() }
+      })
+      for (let i = 0; i < obs.length; i += 200) {
+        const { error } = await supabase.rpc('fn_record_visit_schedule_observations', { p_rows: obs.slice(i, i + 200) })
+        if (error) { console.error(`[drift] ledger write failed: ${error.message}`); break }
+      }
+    } catch (e) {
+      console.error('[drift] ledger write threw:', e instanceof Error ? e.message : String(e))
     }
 
     // compare (overnight-aware)
