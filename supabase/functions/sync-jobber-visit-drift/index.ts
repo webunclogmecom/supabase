@@ -24,6 +24,15 @@
 //     so adopting one would silently flip visit_date +1), and the last office edit moved
 //     the DATE (a pure time-only office edit with a third Jobber value keeps surfacing).
 //   * SURFACE (review): anything else ambiguous -> log only, never auto-resolve.
+//
+// 🛑 SHADOW MODE SINCE 2026-09-09: every SURFACE decision now also gets a last-writer-wins verdict
+// computed against the observation ledger (migration 2026-09-09_1420) and logged to
+// sync_log.details.lww_shadow + .lww_shadow_tally. IT ACTS ON NOTHING. Fred's policy is two-way
+// LWW with the Calendar winning a tie; the reason it is not live yet is that the promotion gate
+// requires a witnessed Jobber TRANSITION per visit, and the ledger only began recording on
+// 2026-09-09. Until then every verdict reads `no_clock`, which is correct: one observation is not
+// an interval. See lwwVerdict() below for the decision table and for why the push ACK is what makes
+// the rule correct rather than inverted.
 // Adopts pass the candidate snapshot as expected values (p_enforce_expected): if the office
 // dragged the visit between our snapshot and the write, the RPC refuses (adoptFail, fresh
 // retry next run) instead of clobbering the newer office edit.
@@ -147,6 +156,102 @@ function isDrift(c: Cand, jobberStartAt: string): boolean {
 // (t.visit_date === c.visit_date) could never match an early-AM (<06:00 ET) re-time and the
 // reconciler SURFACED it forever instead of adopting — the 6708 case found in the 3-month
 // DB↔Jobber audit. Clock date makes early-AM re-times adopt like any other.
+// ================================================================================================
+// LAST-WRITER-WINS, SHADOW MODE (2026-09-09). Computes a verdict and ACTS ON NOTHING.
+// ================================================================================================
+// Fred's policy, verbatim: "Jobber is not authoritative, the Calendar App + Jobber, is a two-way
+// partnership, where who ever gets the latest change wins... if i changed a visit at Jobber at
+// 9:30AM but at the calendar i made a change at 9:31AM then Jobber adopts Calendar, same thing vice
+// versa", and on a tie: "the Calendar Wins, so you need to push the Calendar on Jobber."
+//
+// 🛑 JOBBER GIVES AN INTERVAL, NOT AN INSTANT. Its GraphQL Visit type has NO updatedAt (31 fields,
+//    includeDeprecated:true, verified live 2026-09-09), so Jobber's change time is OBSERVED, and an
+//    observation only proves Jobber changed somewhere in (lo, hi]. Our edit T is a known instant:
+//        T <= lo       -> Jobber strictly newer  -> adopt
+//        T >  hi       -> we strictly newer      -> push  (our push almost certainly never landed)
+//        lo < T <= hi  -> undecidable            -> push  (Fred's tie-break)
+//    Comparing T against `hi` alone would hand Fred's OWN example to Jobber: the */30 poll would not
+//    witness the 09:30 Jobber edit until 10:00, and 10:00 looks newer than a 09:31 Calendar edit.
+//
+// 🛑 THE PUSH ACK IS WHAT MAKES `lo` SHARP, AND WITHOUT IT THIS RULE IS NOT WEAKER, IT IS INVERTED.
+//    Backtested against the 30 visits behind all 1,078 jobber_time_differs appearances in 45 days:
+//      poll-only ledger  -> PUSH 30 of 30, wrong on all 27 that were ever resolved
+//      with the push ACK -> ADOPT 30 of 30, right on 27 of 27
+//    (oracle: the value that actually stuck was Jobber's in 19 and ours in 0.)
+//    So if the ACK writer in jobber-push-visit is ever removed or bypassed, this rule must be
+//    switched off, not left running on a poll-only ledger.
+//
+// 🛑 T COMES FROM visit_last_office_schedule_edit, NOT visit_last_schedule_edit. The latter excludes
+//    only app_source='jobber' and therefore reads four Jobber-ADOPTION writers as office edits,
+//    including the manual "Sync from Jobber" button (which audits as 'sql'). Visit 6729 re-surfaced
+//    33 times because a human resolving the conflict is what made it unresolvable.
+type LwwShadow = {
+  id: number; reason: string; verdict: string; why: string
+  our_edit_at: string | null; our_edit_source: string | null
+  lo_at: string | null; hi_at: string | null
+  jobber_start_at: string; our_start_at: string | null
+  decidable: boolean; vetoes: string[]
+}
+
+async function lwwVerdict(c: Cand, jv: JV, _jDate: string, jobberAllDay: boolean, reason: string): Promise<LwwShadow> {
+  const out: LwwShadow = {
+    id: c.id, reason, verdict: 'unknown', why: '',
+    our_edit_at: null, our_edit_source: null, lo_at: null, hi_at: null,
+    jobber_start_at: jv.startAt, our_start_at: c.start_at ?? null,
+    decidable: false, vetoes: [],
+  }
+  try {
+    const { data: le } = await supabase.rpc('visit_last_office_schedule_edit', { p_visit_id: c.id })
+    const office = (Array.isArray(le) ? le[0] : le) as { changed_at: string; app_source: string | null } | undefined
+    const { data: iv } = await supabase.rpc('fn_jobber_visit_schedule_interval', { p_visit_id: c.id })
+    const win = (Array.isArray(iv) ? iv[0] : iv) as { lo_at: string | null; hi_at: string | null; decidable: boolean } | undefined
+
+    out.our_edit_at = office?.changed_at ?? null
+    out.our_edit_source = office?.app_source ?? null
+    out.lo_at = win?.lo_at ?? null
+    out.hi_at = win?.hi_at ?? null
+    out.decidable = !!win?.decidable
+
+    // VETOES apply to the ADOPT side only, and are recorded even when the verdict is push so the
+    // shadow log shows how often they would bite.
+    //  * all-day: adoptTarget() returns start_at=null for an all-day Jobber value, so adopting one
+    //    WIPES the office's time. This is exactly what the existing `t.start_at !== null` conjunct
+    //    was written to prevent and it stays.
+    //  * early-AM: the BEFORE trigger derives visit_date from the ET CLOCK date (Fred 2026-07-02),
+    //    so adopting a Jobber start before 06:00 ET silently moves the visit a day.
+    if (jobberAllDay) out.vetoes.push('all_day_would_wipe_our_time')
+    if (etParts(new Date(jv.startAt)).time.slice(0, 5) < OVERNIGHT_CUTOFF) out.vetoes.push('early_am_would_shift_visit_date')
+
+    if (!win || !win.decidable) {
+      out.verdict = 'no_clock'
+      out.why = 'no witnessed Jobber transition yet (the ledger began 2026-09-09; a single observation is not an interval)'
+      return out
+    }
+    if (!office) {
+      out.verdict = 'adopt_never_edited'
+      out.why = 'we have never decided this schedule, so Jobber is the only writer'
+    } else if (new Date(office.changed_at) <= new Date(win.lo_at!)) {
+      out.verdict = 'adopt'
+      out.why = 'our edit precedes the whole interval in which Jobber changed'
+    } else if (new Date(office.changed_at) > new Date(win.hi_at!)) {
+      out.verdict = 'push'
+      out.why = 'our edit is later than the whole interval, so our push did not land'
+    } else {
+      out.verdict = 'push_undecidable'
+      out.why = 'our edit falls inside the interval; the Calendar wins the tie (Fred rule 1)'
+    }
+
+    if (out.verdict.startsWith('adopt') && out.vetoes.length) {
+      out.why = `would ${out.verdict}, vetoed by ${out.vetoes.join(',')}`
+      out.verdict = 'surface_vetoed'
+    }
+  } catch (e) {
+    out.verdict = 'error'
+    out.why = e instanceof Error ? e.message : String(e)
+  }
+  return out
+}
+
 function adoptTarget(jv: JV): { visit_date: string; start_at: string | null; end_at: string | null } {
   const e = etParts(new Date(jv.startAt))
   if (e.time === '00:00:00') return { visit_date: e.date, start_at: null, end_at: null }
@@ -237,6 +342,9 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
       id: number; jobber_date: string; reason: string; app_source: string | null
       jobber_start_at?: string | null; jobber_all_day?: boolean; our_start_at?: string | null
     }> = []
+    // SHADOW MODE: what the last-writer-wins rule WOULD have decided on each surfaced visit.
+    // Written to sync_log.details only. Nothing reads it to act.
+    const lwwShadow: LwwShadow[] = []
     // null-safe instant compare (audit JSONB text vs PostgREST ISO text — formats differ, compare epochs)
     const sameInstant = (a: string | null | undefined, b: string | null | undefined): boolean =>
       (a == null && b == null) || (a != null && b != null && new Date(a).getTime() === new Date(b).getTime())
@@ -300,6 +408,12 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
             id: c.id, jobber_date: jDate, reason, app_source: last.app_source ?? null,
             jobber_start_at: jv.startAt, jobber_all_day: jobberAllDay, our_start_at: c.start_at ?? null,
           })
+          // SHADOW MODE (2026-09-09): compute the last-writer-wins verdict and LOG it. Acts on
+          // nothing. Promotion criteria are in the migration header for 2026-09-09_1420 and in
+          // Building Apps/Visit Calendar/docs/. Deliberately placed here, on the branch that
+          // currently gives up, so the shadow log measures exactly the population the rule is
+          // meant to take over.
+          lwwShadow.push(await lwwVerdict(c, jv, jDate, jobberAllDay, reason))
         }
       }
     }
@@ -340,12 +454,14 @@ async function runSync(reconcile: boolean): Promise<Record<string, unknown>> {
         reconcile_enabled: reconcile, checked: cands.length, drift_found: drifted.length,
         healable: healable.length, healed, adoptable: adoptable.length, adopted,
         jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50),
+        lww_shadow: lwwShadow.slice(0, 50),
+        lww_shadow_tally: lwwShadow.reduce((m: Record<string, number>, s) => (m[s.verdict] = (m[s.verdict] ?? 0) + 1, m), {}),
         residual, read_fail: readFail,
         healable_visit_ids: healable.map((d) => d.id).slice(0, 100), adoptable_visit_ids: adoptable.map((d) => d.id).slice(0, 100),
         time_refined_visit_ids: refinedIds.slice(0, 100),
       },
     })
-    return { reconcile_enabled: reconcile, checked: cands.length, drift_found: drifted.length, healable: healable.length, healed, adoptable: adoptable.length, adopted, time_refined: refinedIds.length, jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50), residual, read_fail: readFail }
+    return { reconcile_enabled: reconcile, checked: cands.length, drift_found: drifted.length, healable: healable.length, healed, adoptable: adoptable.length, adopted, time_refined: refinedIds.length, jobber_origin_surfaced: surfaced.length, surfaced_visits: surfaced.slice(0, 50), lww_shadow: lwwShadow.slice(0, 50), residual, read_fail: readFail }
   } catch (e) {
     const dur = Math.round((Date.now() - startMs) / 1000)
     await supabase.from('sync_log').insert({ sync_source: 'jobber_visit_drift', started_at: startedAt, finished_at: new Date().toISOString(), rows_updated: 0, rows_errored: 0, duration_seconds: dur, status: 'error', details: { error: String(e).slice(0, 300) } }).catch(() => {})
