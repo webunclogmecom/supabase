@@ -3687,6 +3687,33 @@ per `city_email_retry_after` without bound, because only `status=error` rows cou
 restarts the clock (already_sent still blocks a second send); the client loop of `send-derm-email`
 has not executed since `a3ea6a1` (its only change is a no-op for existing callers).
 
+Two more from the 2026-09-12 06:45 refutation pass on the 5-minute test mode (3 agents, 2 claims
+refuted), both real, neither fixed yet:
+- 🛑 **Never schedule the sweep more often than every 3 minutes.** `fn_request_city_email_sweep`
+  writes no lease before `net.http_post`, and `send-derm-email` inserts the `derm_email_sends` row
+  only AFTER Resend accepts (`index.ts:1050`), after a render that may take 65 s
+  (`PDF_TIMEOUT_MS`) inside a 120 s `RENDER_DEADLINE_MS`. A pair whose row is not committed by the
+  next tick reads `ready` again and is posted, rendered and sent a second time. Measured fast path
+  5.5 to 8.8 s per single-recipient batch (rows 138, 139, 165, 166), so a per-minute cron worked
+  by luck; a batch of 2+ with one slow render, or one 504 render (rows 125 to 128 on 2026-09-02
+  had exactly that shape), duplicates the whole batch. The hourly production cadence cannot hit
+  it. Same defect, other face: a worker kill after Resend accepts but before the insert leaves the
+  pair `ready`, so it is re-sent once per tick until an invocation completes. Cheap closure, not
+  built: insert a `requested` row inside the sweep before the POST so `recently_attempted` fires.
+- ⚠ **A regeneration re-admits old pairs, and can flip a `suppressed_manual` pair to `ready`.**
+  `redact-manifest-sheet` upserts on `(manifest_id, effective_page)` and UPDATES `generated_at`
+  on the existing row, so `blacked_at` (the MAX) moves forward on any band edit, re-stamp or
+  image replacement. Two consequences, both shown with rolled-back probes: (a) a pair whose
+  unlocking send is BEFORE `start_from` becomes ready 5 minutes after a regeneration AFTER it,
+  because the cutoff tests `greatest(blacked_at, manual_sent_at)`; (b) the NULL
+  `include_manifest` reconstruction compares `sent_at` with the CURRENT `blacked_at`, so a
+  regeneration re-classifies an August NULL row from "carried the manifest" to "did not", and the
+  pair unlocks with that row's photo choice. Today: `fn_blackout_targets` returns 0 rows, and the
+  two pairs that would fire on a regeneration of their folders are 1726/143 and 1728/525. Neither
+  `derm.redacted_manifest_docs` nor the regeneration is audited, so the only trace would be the
+  send row. Fix direction when it is taken up: pin the reconstruction and the cutoff to the FIRST
+  blackout, which needs a timestamp the ledger does not keep today.
+
 🛑 **Three properties hold an internal test address as their ONLY city email: 42 (009-CN), 973
 (249-LOU) and 363 (client 42).** Nothing rejects an @ayache.com address in `properties.city_emails`,
 so at go-live the sweep would mail Fred as if he were a municipality for those clients. Clear them
@@ -3708,7 +3735,8 @@ suppress; it does unlock.
 🟡 **TEST MODE SINCE 2026-09-12 06:39:44 ET, on Fred's request ("for testing can you make the
 automatic email to be send every 5 min").** The table below shows the STANDARD values; right now
 `city_email_delay` = `5 minutes`, `city_email_start_from` = `2026-09-12 10:39:44.333224+00`, and
-the `city-email-sweep` cron runs `* * * * *`. `city_email_live_sends` is still `false`, so every
+the `city-email-sweep` cron runs `*/3 * * * *` (every minute for 12 minutes first, moved to 3 for
+the double-send reason below). `city_email_live_sends` is still `false`, so every
 automatic send lands at fred@ayache.com. Queue was 0 and the census unchanged when this was
 applied: only a manual Admin Review send or a blackout AFTER that instant produces an automatic
 email, about 5 minutes later. Do not "fix" these values; the restore checklist further down puts
