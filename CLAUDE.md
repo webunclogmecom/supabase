@@ -3613,7 +3613,18 @@ Concretely, per (manifest, client) in `derm.v_city_email_candidates`
 |---|---|
 | `suppressed_manual` | a `status=sent` `visit_photo_email_sends` row with `include_manifest = true` on a live visit of that client on that manifest: the manual report already carried the manifest, the city needs nothing more |
 | `awaiting_manual_send` | no `status=sent` row with `include_manifest = false` yet. **NULL never counts** (rows before 2026-08-2x carry no answer). The blackout may be done; nothing moves until Admin Review sends |
-| `waiting` / `before_go_live` / `ready` | unlocked by such a row; `manual_include_photos`, `manual_sent_at`, `manual_visit_id` (appended columns) say which one. `due_at` is still `blacked_at + city_email_delay` |
+| `waiting` / `before_go_live` / `ready` | unlocked by such a row; `manual_include_photos`, `manual_sent_at`, `manual_visit_id`, `manual_inferred` (appended columns) say which one. `due_at = greatest(blacked_at, manual_sent_at) + city_email_delay` since `2026-09-11_2310` |
+| `already_sent` | a city row in `derm_email_sends`: a previous sweep, OR a person pressing **Send to city** in the DERM Tracker. Fred, 2026-09-11: *"the derm app already will send the derm manifest yes or yes so having an automatic email that will send it makes no senses."* |
+
+⚠ Rows from before `include_manifest` existed (NULL) are reconstructed from timing
+(`2026-09-11_2310`): `customer.work_orders.derm_manifest_url` is written only by the blackout
+pipeline, so a send BEFORE `blacked_at` cannot have carried the manifest (unlocks, `manual_inferred`
+= true) and one AT OR AFTER it did (suppresses).
+
+**All three gates (already_sent, suppressed_manual, the manual unlock) count TEST rows while
+`city_email_live_sends <> 'true'`** and only real rows once it is live; that is what makes the whole
+thing rehearsable, and it is also why 40 August test pairs read `already_sent` today and will not
+at go-live.
 
 `derm.v_city_email_queue` carries `manual_include_photos` and `fn_request_city_email_sweep` passes it
 as `include_photos` per recipient; `send-derm-email` reads it per recipient (`Rec.include_photos`,
@@ -3624,6 +3635,20 @@ falling back to the body-level flag) and logs it on the row. **Test rows count f
 Smoke-tested the same night: the sweep sent 1764 WITH photos (row 136, `include_photos=true`) and a
 direct call with `include_photos:false` sent it WITHOUT (row 137), both to fred@ayache.com; the
 two PDFs were 1.3 MB and 1009 KB.
+
+**Rehearsed end to end 2026-09-11 23:00 ET** (cron at `* * * * *`, `city_email_delay` first 4d04h so
+one pair was due in 15 minutes, then `3 minutes`; `city_email_start_from` 2026-08-01; everything
+restored after, see below): the sweep sent 1683/34 automatically WITH photos one minute after the
+queue opened (row 138); a **Send to city** from the DERM Tracker on 1715/366 (row 139, actor Fred)
+flipped that pair to `already_sent` 13 minutes before its due time and the sweep never sent it,
+across 16 one-minute runs; an Admin Review send on V-6736 whose report carried the manifest (row 103)
+made 1365/336 `suppressed_manual` and it never fired either. The WITHOUT-photos copy was proven on
+row 137 (same code path, `include_photos:false` per recipient). ⚠ A fresh "send now, automatic in
+3 minutes" could not be produced on live data: every blacked-out visit that Admin Review will send
+already carries the manifest (it is published at blackout), so a fresh send suppresses rather than
+unlocks; the only unlock-after-blackout cases are the three visits with no work order, which the
+app refuses as not DERM-required. The `greatest()` timer branch is covered by a rolled-back probe
+in the migration instead.
 
 🛑 **COUPLING AT GO-LIVE:** `send-visit-photos-email` still hardcodes `IS_TEST = true`, so every
 Admin Review send is a test row. The moment `city_email_live_sends` becomes `true`, test rows stop
@@ -3696,6 +3721,16 @@ update public.app_config set value = ''     where key = 'city_email_test_recipie
 
 -- 3. LAST. This is the switch that actually admits manifests, so nothing moves until it lands.
 update public.app_config set value = now()::text where key = 'city_email_start_from';
+```
+
+**Restore checklist after ANY rehearsal** (each of these was changed on 2026-09-11 and put back):
+
+```sql
+update public.app_config set value = 'infinity' where key = 'city_email_start_from';
+update public.app_config set value = '24 hours' where key = 'city_email_delay';
+select cron.alter_job((select jobid from cron.job where jobname = 'city-email-sweep'), schedule := '7 * * * *');
+select key, value from public.app_config where key like 'city_email%';   -- read it back
+select schedule from cron.job where jobname = 'city-email-sweep';         -- must be 7 * * * *
 ```
 
 **Verify on the first sweep** (it runs at :07): a real send writes `is_test = false` with a

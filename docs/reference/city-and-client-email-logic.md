@@ -139,9 +139,12 @@ Per (manifest, client) in `derm.v_city_email_candidates`, evaluated from `visit_
 |---|---|---|
 | any row with `include_manifest = true` | `suppressed_manual` | never (the report already carried the manifest) |
 | no row with `include_manifest = false` | `awaiting_manual_send` | not yet, whatever the blackout state |
-| a row with `include_manifest = false` | `waiting` / `before_go_live` / `ready` | at `blacked_at + city_email_delay`, with `include_photos` = that row's `include_photos` |
+| a row with `include_manifest = false` | `waiting` / `before_go_live` / `ready` | at `greatest(blacked_at, manual_sent_at) + city_email_delay`, with `include_photos` = that row's `include_photos` |
+| (any) a city row in `derm_email_sends`, e.g. **Send to city** pressed in the DERM Tracker | `already_sent` | never: the DERM app sends the manifest itself (Fred, 2026-09-11) |
 
-`include_manifest` NULL (rows before the column existed) counts for neither. Test rows
+`include_manifest` NULL (rows before the column existed) is reconstructed from timing since
+`2026-09-11_2310`: sent before `blacked_at` = without the manifest (unlocks, `manual_inferred = true`),
+sent at or after it = with (suppresses), because `derm_manifest_url` is only written at blackout. Test rows
 (`is_test = true`) count for both while `city_email_live_sends` is not `true`; once live, only real
 sends do. `include_manifest` is `customer.work_orders.derm_manifest_url IS NOT NULL` at send time,
 the DERM manifest only, never the WWTP receipt (narrowed 2026-09-11 in the sender and in
