@@ -613,7 +613,13 @@ Deno.serve(async (req: Request) => {
   // zone throws ReferenceError, and logSend swallows exceptions - so every early skip would
   // silently stop being logged. false is also the correct value on every one of those paths:
   // nothing was attached, so nothing may suppress the automatic city email.
-  let hasDermDocs = false
+  // 2026-09-12: boolean | null. NULL = the work_orders lookup did not answer (error, throw, or a
+  // skip path before the lookup). Since 2026-09-11 a logged FALSE on a status='sent' row UNLOCKS
+  // the automatic city email, so "unknown" must never be written as false: a lookup error on a
+  // report that did carry the manifest would otherwise send the city the sheet twice.
+  // derm.v_city_email_candidates reads NULL from timing (before blacked_at = without, after = with).
+  // The letter note below treats NULL like false (keep the "will be sent separately" note).
+  let hasDermDocs: boolean | null = null
 
   const logSend = async (
     status: string, reason: string | null, photoCount: number, bytes: number,
@@ -778,8 +784,9 @@ Deno.serve(async (req: Request) => {
     // body can never disagree with what is actually in the attached PDF.
     // 🛑 .schema('customer') IS LOAD-BEARING: `sb` is built without a schema, so omitting it
     // silently queries public.work_orders, which does not exist, and the catch below would then
-    // leave hasDermDocs=false for EVERY send. That failure keeps the note on a report that has
-    // the manifests, i.e. it fails toward today's behaviour rather than toward a false promise.
+    // leave hasDermDocs=NULL for EVERY send (it was false until 2026-09-12). That failure keeps the
+    // note on a report that has the manifests and logs include_manifest NULL, which neither unlocks
+    // nor cancels the automatic city email by itself.
     // hasDermDocs is declared next to logSend (see the note there). Only assigned here.
     try {
       const { data: wo, error: woErr } = await sb
@@ -929,8 +936,8 @@ Deno.serve(async (req: Request) => {
         ...(bccList.length ? { bcc: bccList } : {}),
         reply_to: CONTACT_EMAIL,
         subject,
-        html: buildHtml(visitRow, phaseCounts, includePhotos, hasDermDocs),
-        text: buildText(visitRow, phaseCounts, includePhotos, hasDermDocs),
+        html: buildHtml(visitRow, phaseCounts, includePhotos, hasDermDocs === true),
+        text: buildText(visitRow, phaseCounts, includePhotos, hasDermDocs === true),
         attachments: prepared.map((p) => ({ filename: p.filename, content: p.content, content_type: p.content_type })),
       }),
     })

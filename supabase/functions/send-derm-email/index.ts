@@ -510,7 +510,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown; cc?: unknown; bcc?: unknown }
+  let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown; cc?: unknown; bcc?: unknown; include_photos?: unknown; preview?: unknown }
   try { body = await req.json() } catch { return jsonResponse({ error: 'bad_json' }, 400, cors) }
 
   // `property_id` is OPTIONAL and NARROWS the city recipient to that one property.
@@ -701,8 +701,11 @@ Deno.serve(async (req: Request) => {
         // 🛑 The ONLY record a Bcc ever leaves. Nobody on the thread can see it.
         cc_emails: ccList, bcc_emails: bccList,
         // What the regulator actually received. The rendered PDF is not stored, so without this
-        // the send log cannot say whether the report carried the photographs.
-        include_photos: recIncludePhotos,
+        // the send log cannot say whether the report carried the photographs. 2026-09-12: NULL on
+        // every row that did not deliver the rendered report (skipped, error, and the city
+        // manifest_images fallback, whose reason starts with 'attachment:manifest_images'), so a
+        // true/false here always describes a report the recipient actually got.
+        include_photos: status === 'sent' && !(reason ?? '').startsWith('attachment:manifest_images') ? recIncludePhotos : null,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-derm-email] log insert failed: ${error.message}`)
