@@ -3597,9 +3597,43 @@ state, not a broken job. Do not "repair" it, do not unschedule it, and do not re
 a failure. A cron that has been running harmlessly for days is a far better thing to switch on than
 one whose first ever execution is also its first real send.
 
-**What it is for:** 24 hours after a DERM manifest is blacked out, the municipality gets it
-automatically. It skips any client a human already emailed by hand, and any client with no city
-inbox on file.
+**What it is for (rule REVERSED 2026-09-11, read this version):** the municipality gets the
+blacked-out DERM manifest automatically, but ONLY after a human has sent the Job Completion Report
+from Admin Review (`send-visit-photos-email`) WITHOUT the manifest on it, and the automatic email
+then copies that send's with/without-photos choice. Fred, 2026-09-11: *"the automatic email
+shouldn't be send without first a manual sent ... if it has the DERM Manifest when we manually send
+it, then skip the automatic email to the city for that visit ... the automatic email should follow
+the same selection."* Until 2026-09-11 the rule was the opposite ("it always fires, a missing
+manual email never blocks it"); anything still saying that is stale.
+
+Concretely, per (manifest, client) in `derm.v_city_email_candidates`
+(`2026-09-11_2230_city_email_manual_send_gate.sql`):
+
+| status | meaning |
+|---|---|
+| `suppressed_manual` | a `status=sent` `visit_photo_email_sends` row with `include_manifest = true` on a live visit of that client on that manifest: the manual report already carried the manifest, the city needs nothing more |
+| `awaiting_manual_send` | no `status=sent` row with `include_manifest = false` yet. **NULL never counts** (rows before 2026-08-2x carry no answer). The blackout may be done; nothing moves until Admin Review sends |
+| `waiting` / `before_go_live` / `ready` | unlocked by such a row; `manual_include_photos`, `manual_sent_at`, `manual_visit_id` (appended columns) say which one. `due_at` is still `blacked_at + city_email_delay` |
+
+`derm.v_city_email_queue` carries `manual_include_photos` and `fn_request_city_email_sweep` passes it
+as `include_photos` per recipient; `send-derm-email` reads it per recipient (`Rec.include_photos`,
+falling back to the body-level flag) and logs it on the row. **Test rows count for both gates while
+`city_email_live_sends <> 'true'`**, so the pipeline is testable end to end; once live, only
+`is_test = false` manual sends count. Measured at apply: 118 of the 121 backlog pairs read
+`awaiting_manual_send`, 3 `suppressed_manual`, 1 unlocked (manifest 1764 / client 34, V-6236).
+Smoke-tested the same night: the sweep sent 1764 WITH photos (row 136, `include_photos=true`) and a
+direct call with `include_photos:false` sent it WITHOUT (row 137), both to fred@ayache.com; the
+two PDFs were 1.3 MB and 1009 KB.
+
+🛑 **COUPLING AT GO-LIVE:** `send-visit-photos-email` still hardcodes `IS_TEST = true`, so every
+Admin Review send is a test row. The moment `city_email_live_sends` becomes `true`, test rows stop
+unlocking, and NO automatic email would ever fire until `IS_TEST` is flipped in the same change.
+Step 2b below.
+
+⚠ `include_manifest` (and `public.v_visit_report_manifest.report_has_manifest`) means the DERM
+manifest ONLY since 2026-09-11: `customer.work_orders.derm_manifest_url`, never `wwtp_receipt_url`.
+A receipt-only report (12 live visits) shows the "will be sent separately" note and does not
+suppress; it does unlock.
 
 **Everything is `public.app_config`, which is audited.** Values read 2026-08-29:
 
@@ -3656,6 +3690,10 @@ update public.app_config set value = 'true' where key = 'city_email_live_sends';
 --    city and client, because TEST_RECIPIENT_RE.test('') is false while the gate is closed.
 update public.app_config set value = ''     where key = 'city_email_test_recipient';
 
+-- 2b. (2026-09-11) flip IS_TEST in send-visit-photos-email and deploy it, or no manual send will
+--     ever count as the unlocking send once the gate is live (test rows stop counting). Same
+--     change, same hour. Its own cutover checklist is in Admin Review docs/11-city-email.md.
+
 -- 3. LAST. This is the switch that actually admits manifests, so nothing moves until it lands.
 update public.app_config set value = now()::text where key = 'city_email_start_from';
 ```
@@ -3688,7 +3726,8 @@ shows nothing**, so `app_config` remains the only way to know the true gate stat
 🛑 **READ `derm.v_city_email_candidates.status`, NOT THE QUEUE.** `derm.v_city_email_queue` only ever
 shows `ready`; the candidates view names why every other row is not, and **never filters a row away**.
 Dated census 2026-08-29 (an observation, not an invariant): `no_city_email` 513, `before_go_live` 108,
-`already_sent` 16, `no_property` 12, `recently_attempted` 5, `waiting` 3. **`no_city_email` dominating
+`already_sent` 16, `no_property` 12, `recently_attempted` 5, `waiting` 3. Re-measured 2026-09-11 after the manual-send gate: `no_city_email` 560,
+`awaiting_manual_send` 118, `already_sent` 16, `no_property` 12, `suppressed_manual` 3, `before_go_live` 1. **`no_city_email` dominating
 is the normal shape of this system**, not a gap to go fix.
 
 🛑 **`recently_attempted` EXISTS BECAUSE "already sent" IS BLIND DURING TESTING, AND THE DEFECT WAS

@@ -110,6 +110,11 @@ Added 2026-09-03 because `send-derm-email` called the renderer with `include_pho
   without that column there is no way to tell later whether a regulator submission carried the
   photographs. NULL on the 110 rows that predate the flag, deliberately not backfilled.
 - The Admin Review side already had this as `visit_photo_email_sends.include_photos`.
+- **Per recipient since 2026-09-11.** Each entry of `recipients[]` may carry its own
+  `include_photos: true|false`; anything else means "not stated" and the body-level flag applies.
+  The automatic sweep uses this to give each manifest the photo choice of the Admin Review send
+  that unlocked it (`derm.v_city_email_queue.manual_include_photos`). The rendered PDF and the
+  `derm_email_sends.include_photos` row for that recipient both use the per-recipient value.
 
 ⚠ **A visit whose photos are all unclassified renders the SAME pdf either way.** Photo roles in
 `public.photo_links` are only `other` and `attachment`; the before/after split lives in
@@ -118,6 +123,32 @@ renders came back byte-identical at 271 KB. **That is a test that cannot discrim
 test** - pick a visit with classified photos (6568 has 39, 6617 has 18) when verifying this flag.
 
 ---
+
+## The manual-send gate (2026-09-11)
+
+The automatic city email is no longer "24 hours after blackout, unconditionally". Fred, 2026-09-11:
+*"An automatic email to the city, can only be send when: We've send an email to the client first
+without the DERM Manifests, if it has the DERM Manifest when we manually send it, then skip the
+automatic email to the city for that visit ... the automatic email should follow the same selection
+[with or without the classified photos]."*
+
+Per (manifest, client) in `derm.v_city_email_candidates`, evaluated from `visit_photo_email_sends`
+(the Admin Review send log) over the live visits of that client on that manifest:
+
+| newest relevant `status = sent` row | status | automatic email |
+|---|---|---|
+| any row with `include_manifest = true` | `suppressed_manual` | never (the report already carried the manifest) |
+| no row with `include_manifest = false` | `awaiting_manual_send` | not yet, whatever the blackout state |
+| a row with `include_manifest = false` | `waiting` / `before_go_live` / `ready` | at `blacked_at + city_email_delay`, with `include_photos` = that row's `include_photos` |
+
+`include_manifest` NULL (rows before the column existed) counts for neither. Test rows
+(`is_test = true`) count for both while `city_email_live_sends` is not `true`; once live, only real
+sends do. `include_manifest` is `customer.work_orders.derm_manifest_url IS NOT NULL` at send time,
+the DERM manifest only, never the WWTP receipt (narrowed 2026-09-11 in the sender and in
+`public.v_visit_report_manifest` together).
+
+🛑 **Go-live coupling:** `send-visit-photos-email` hardcodes `IS_TEST = true`. Flip it in the same
+change as `city_email_live_sends`, or no Admin Review send will count once the city gate is live.
 
 ## The gates, and what "test mode" means
 
@@ -129,7 +160,7 @@ Everything lives in `public.app_config`, which is audited.
 | `city_email_test_recipient` | `fred@ayache.com` | where gated sends land |
 | `client_email_live_sends` | **`true`** | the CUSTOMER-facing send is LIVE and reaching real addresses |
 | `city_email_start_from` | **`infinity`** | the automatic sweep's on/off switch AND backlog cutoff in one value |
-| `city_email_delay` | `24 hours` | how long after the blackout the automatic email goes |
+| `city_email_delay` | `24 hours` | how long after the blackout the automatic email may go, once a manual send has unlocked it (see below) |
 | `city_email_retry_after` | `20 hours` | stops a re-send loop |
 | `city_email_batch_limit` | `5` | per sweep run |
 
