@@ -3612,7 +3612,7 @@ Concretely, per (manifest, client) in `derm.v_city_email_candidates`
 | status | meaning |
 |---|---|
 | `suppressed_manual` | a `status=sent` `visit_photo_email_sends` row with `include_manifest = true` on a live visit of that client on that manifest: the manual report already carried the manifest, the city needs nothing more |
-| `awaiting_manual_send` | no `status=sent` row with `include_manifest = false` yet. **NULL never counts** (rows before 2026-08-2x carry no answer). The blackout may be done; nothing moves until Admin Review sends |
+| `awaiting_manual_send` | no `status=sent` row without the manifest yet (`include_manifest = false`, or NULL sent before `blacked_at`, see the reconstruction note below). The blackout may be done; nothing moves until Admin Review sends |
 | `waiting` / `before_go_live` / `ready` | unlocked by such a row; `manual_include_photos`, `manual_sent_at`, `manual_visit_id`, `manual_inferred` (appended columns) say which one. `due_at = greatest(blacked_at, manual_sent_at) + city_email_delay` since `2026-09-11_2310` |
 | `already_sent` | a city row in `derm_email_sends`: a previous sweep, OR a person pressing **Send to city** in the DERM Tracker. Fred, 2026-09-11: *"the derm app already will send the derm manifest yes or yes so having an automatic email that will send it makes no senses."* |
 
@@ -3630,18 +3630,25 @@ at go-live.
 as `include_photos` per recipient; `send-derm-email` reads it per recipient (`Rec.include_photos`,
 falling back to the body-level flag) and logs it on the row. **Test rows count for both gates while
 `city_email_live_sends <> 'true'`**, so the pipeline is testable end to end; once live, only
-`is_test = false` manual sends count. Measured at apply: 118 of the 121 backlog pairs read
-`awaiting_manual_send`, 3 `suppressed_manual`, 1 unlocked (manifest 1764 / client 34, V-6236).
+`is_test = false` manual sends count. Measured at apply of `_2230`: 118 of the 121 backlog pairs read
+`awaiting_manual_send`, 3 `suppressed_manual`, 1 unlocked (manifest 1764 / client 34, V-6236). After
+`_2310` the TEST-MODE reading is 81 awaiting / 58 already_sent / 6 suppressed, because August test
+sends now count; the LIVE reading (only real rows) is still the 118.
 Smoke-tested the same night: the sweep sent 1764 WITH photos (row 136, `include_photos=true`) and a
 direct call with `include_photos:false` sent it WITHOUT (row 137), both to fred@ayache.com; the
 two PDFs were 1.3 MB and 1009 KB.
+
+⚠ Fred's timing rule, verbatim: *"have the automatic email to be send 15 min after the admin review
+app email button"*. That is why `due_at` counts from the manual send when the blackout is older
+(`_2310`); the 24 hours is the production value of `city_email_delay`, the 15 minutes was the test.
+⚠ The sweep runs at :07, so "N after the send" is really "the first :07 after N after the send".
 
 **Rehearsed end to end 2026-09-11 23:00 ET** (cron at `* * * * *`, `city_email_delay` first 4d04h so
 one pair was due in 15 minutes, then `3 minutes`; `city_email_start_from` 2026-08-01; everything
 restored after, see below): the sweep sent 1683/34 automatically WITH photos one minute after the
 queue opened (row 138); a **Send to city** from the DERM Tracker on 1715/366 (row 139, actor Fred)
 flipped that pair to `already_sent` 13 minutes before its due time and the sweep never sent it,
-across 16 one-minute runs; an Admin Review send on V-6736 whose report carried the manifest (row 103)
+across 17 one-minute runs (22:57 to 23:13); an Admin Review send on V-6736 whose report carried the manifest (row 103)
 made 1365/336 `suppressed_manual` and it never fired either. The WITHOUT-photos copy was proven on
 row 137 (same code path, `include_photos:false` per recipient). ⚠ A fresh "send now, automatic in
 3 minutes" could not be produced on live data: every blacked-out visit that Admin Review will send
@@ -3654,6 +3661,44 @@ in the migration instead.
 Admin Review send is a test row. The moment `city_email_live_sends` becomes `true`, test rows stop
 unlocking, and NO automatic email would ever fire until `IS_TEST` is flipped in the same change.
 Step 2b below.
+
+**Reviewed 2026-09-12 00:45 to 01:30 ET** (100-agent adversarial pass: 6 readers, 3 refuters per
+finding, two independent 18-case rolled-back smoke suites, both green, config and cron intact).
+Fixed the same night (`2026-09-12_0040_city_email_live_switch_case_and_go_live_cutoff.sql`,
+`481c64e`):
+- the view read `city_email_live_sends` case-sensitively while the mailer lower-cases it; now
+  `lower(btrim(value)) = 'true'` in both (a hand-typed `True` would have made the mailer live while
+  the view still counted test rows).
+- `before_go_live` tested `blacked_at <= start_from` while `due_at` counts from
+  `greatest(blacked_at, manual_sent_at)`; a pre-go-live blackout unlocked by a post-go-live send went
+  waiting for 24h and then before_go_live forever. Now both use the same `greatest()`: the backlog
+  is admitted only by a deliberate manual send after go-live plus the delay, never by the flip alone.
+- `send-derm-email` logs `derm_email_sends.include_photos` NULL on skipped, error and
+  `attachment:manifest_images` rows (nothing with photos was delivered), true/false only on a
+  delivered report; and its `body` type now declares `include_photos` and `preview`.
+- `send-visit-photos-email` logs `include_manifest` NULL (not false) when the `customer.work_orders`
+  lookup errors, because since 2026-09-11 a logged FALSE is the value that UNLOCKS the automatic email.
+
+Known and left as is (all low, all recorded in `Building Apps/Admin Review/docs/11-city-email.md`):
+a recipient listed twice with different `include_photos` keeps the first (the sweep never does this);
+a pair skipped for a deterministic reason (`missing_attachments`, `no_redacted_sheet`) is retried once
+per `city_email_retry_after` without bound, because only `status=error` rows count toward
+`too_many_errors`; `blacked_at` is the LATEST regeneration of the redacted doc, so a regeneration
+restarts the clock (already_sent still blocks a second send); the client loop of `send-derm-email`
+has not executed since `a3ea6a1` (its only change is a no-op for existing callers).
+
+🛑 **Three properties hold an internal test address as their ONLY city email: 42 (009-CN), 973
+(249-LOU) and 363 (client 42).** Nothing rejects an @ayache.com address in `properties.city_emails`,
+so at go-live the sweep would mail Fred as if he were a municipality for those clients. Clear them
+(cutover step 0) before flipping the gate.
+
+⚠ What the rehearsal could NOT prove (the critic's list, kept honest): the live branch of the gates
+has only run against rolled-back synthetic rows, because `IS_TEST` is still hardcoded and there are
+0 real Admin Review rows; the sweep has never delivered to a resolved `properties.city_emails`
+address; and the queue has never forwarded `manual_include_photos = false` (row 137 was a direct
+call). The first natural case after go-live (a report sent before its blackout, then the blackout)
+is the first real proof, and the view makes it visible: watch that pair go waiting -> ready ->
+already_sent on the :07 sweep.
 
 ⚠ `include_manifest` (and `public.v_visit_report_manifest.report_has_manifest`) means the DERM
 manifest ONLY since 2026-09-11: `customer.work_orders.derm_manifest_url`, never `wwtp_receipt_url`.
@@ -3729,7 +3774,7 @@ update public.app_config set value = now()::text where key = 'city_email_start_f
 update public.app_config set value = 'infinity' where key = 'city_email_start_from';
 update public.app_config set value = '24 hours' where key = 'city_email_delay';
 select cron.alter_job((select jobid from cron.job where jobname = 'city-email-sweep'), schedule := '7 * * * *');
-select key, value from public.app_config where key like 'city_email%';   -- read it back
+select key, value from public.app_config where key like 'city_email%';   -- read it back (updated_at is NOT bumped by these updates, do not use it as proof)
 select schedule from cron.job where jobname = 'city-email-sweep';         -- must be 7 * * * *
 ```
 
