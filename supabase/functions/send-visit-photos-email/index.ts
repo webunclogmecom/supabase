@@ -624,8 +624,11 @@ Deno.serve(async (req: Request) => {
         visit_id: visitId, recipient_email: recipient, status, reason,
         is_test: IS_TEST, photo_count: photoCount, bytes_sent: bytes,
         resend_email_id: resendId, subject, include_photos: includePhotos,
-        // 🛑 THE INTERLOCK. TRUE cancels the automatic 24h city email for every manifest on
-        // this visit (derm.v_city_email_candidates -> status 'suppressed_manual'). It is
+        // 🛑 THE INTERLOCK, BOTH WAYS SINCE 2026-09-11. TRUE cancels the automatic city email for
+        // every manifest on this visit (derm.v_city_email_candidates -> 'suppressed_manual').
+        // FALSE on a status='sent' row is what UNLOCKS it ('awaiting_manual_send' -> waiting /
+        // ready), and include_photos on that same row is the photo choice the automatic email
+        // copies. No manual send, no automatic email (Fred, 2026-09-11). It is
         // deliberately `hasDermDocs`, i.e. "the attached report ALREADY CARRIES the manifests",
         // never "a manifest_visits link exists": 53 completed visits have the link while the
         // blackout pipeline has not published a document, so keying on the link would suppress
@@ -782,13 +785,18 @@ Deno.serve(async (req: Request) => {
       const { data: wo, error: woErr } = await sb
         .schema('customer')
         .from('work_orders')
-        .select('derm_manifest_url, wwtp_receipt_url')
+        .select('derm_manifest_url')
         .eq('id', visitRow.public_id)
         .maybeSingle()
       if (woErr) {
         console.error(`[send-visit-photos-email] work_orders lookup failed: ${woErr.message}`)
       } else {
-        hasDermDocs = !!(wo?.derm_manifest_url || wo?.wwtp_receipt_url)
+        // 2026-09-11: derm_manifest_url ONLY. A WWTP receipt is not the DERM manifest: counting it
+        // (12 live receipt-only visits at the time) dropped the "will be sent separately" note
+        // from a report that carries no manifest AND, through include_manifest below, cancelled
+        // an automatic city email the city never received. public.v_visit_report_manifest was
+        // narrowed in the same change (2026-09-11_2230_city_email_manual_send_gate.sql).
+        hasDermDocs = !!wo?.derm_manifest_url
       }
     } catch (e) {
       console.error(`[send-visit-photos-email] work_orders lookup threw: ${String((e as Error)?.message ?? e)}`)

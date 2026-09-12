@@ -522,21 +522,26 @@ Deno.serve(async (req: Request) => {
   // that client property"* - singular. The automatic sweep therefore passes the property it
   // resolved through the visit, and derm.v_city_email_queue.property_id is that value.
   // Omitting it preserves the existing manual behaviour EXACTLY; this is additive.
-  type Rec = { manifest_id: number; client_id: number | null; property_id: number | null }
+  // include_photos per recipient (2026-09-11): the automatic sweep copies, for each manifest, the
+  // photo choice of the Admin Review send that unlocked it (derm.v_city_email_queue.
+  // manual_include_photos). null = not stated, fall back to the body-level include_photos.
+  type Rec = { manifest_id: number; client_id: number | null; property_id: number | null; include_photos: boolean | null }
   let recipients: Rec[] = []
   if (Array.isArray(body?.recipients)) {
     recipients = (body.recipients as unknown[])
       .map((r) => {
-        const o = (r ?? {}) as { manifest_id?: unknown; client_id?: unknown; property_id?: unknown }
+        const o = (r ?? {}) as { manifest_id?: unknown; client_id?: unknown; property_id?: unknown; include_photos?: unknown }
         return {
           manifest_id: Number(o.manifest_id),
           client_id: o.client_id == null ? null : Number(o.client_id),
           property_id: o.property_id == null || !Number.isFinite(Number(o.property_id)) ? null : Number(o.property_id),
+          // Only the two booleans count. A string, a number or an absent key is "not stated".
+          include_photos: o.include_photos === true ? true : o.include_photos === false ? false : null,
         }
       })
       .filter((r) => Number.isFinite(r.manifest_id))
   } else if (Array.isArray(body?.manifest_ids)) {
-    recipients = (body.manifest_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n)).map((id) => ({ manifest_id: id, client_id: null, property_id: null }))
+    recipients = (body.manifest_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n)).map((id) => ({ manifest_id: id, client_id: null, property_id: null, include_photos: null }))
   }
   const seenRec = new Set<string>()
   recipients = recipients.filter((r) => {
@@ -562,6 +567,11 @@ Deno.serve(async (req: Request) => {
   // today rendered the report WITH photos, so an omitted field must keep doing that. Only an
   // explicit false turns them off.
   const includePhotos = body?.include_photos === false ? false : true
+  // The value in force for the recipient being processed: its own include_photos when the caller
+  // stated one, else the body-level default above. Set at the top of every loop iteration and
+  // read by renderVisitReport (via buildReportAttachment) AND by logSend, so the derm_email_sends
+  // row can never claim a different photo choice from the one the PDF was rendered with.
+  let recIncludePhotos: boolean = includePhotos
   // test_cc = the "send to BOTH" copy (Fred 2026-07-09): a REAL send to the clients/city
   // PLUS a BCC copy to this address so the sender can verify what went out. Distinct from
   // test_recipient (which SUPPRESSES the real send). Ignored when test_recipient is set
@@ -692,7 +702,7 @@ Deno.serve(async (req: Request) => {
         cc_emails: ccList, bcc_emails: bccList,
         // What the regulator actually received. The rendered PDF is not stored, so without this
         // the send log cannot say whether the report carried the photographs.
-        include_photos: includePhotos,
+        include_photos: recIncludePhotos,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
       })
       if (error) console.error(`[send-derm-email] log insert failed: ${error.message}`)
@@ -791,6 +801,7 @@ Deno.serve(async (req: Request) => {
     // case at ONE render failure per invocation regardless of how many recipients were passed.
     for (const rec of recipients) {
       const id = rec.manifest_id
+      recIncludePhotos = rec.include_photos ?? includePhotos
       let logClientId: number | null = rec.client_id ?? null
       let logEmail: string | null = null
       try {
@@ -942,7 +953,7 @@ Deno.serve(async (req: Request) => {
           renderDisabled = 'render_deadline'
           attachReason = renderDisabled
         } else {
-          const r = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds, number, includePhotos })
+          const r = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds, number, includePhotos: recIncludePhotos })
           if (r.terminal) {
             console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${r.terminal}`)
             results.push({ manifest_id: id, status: 'skipped', reason: r.terminal, client: clientName })
@@ -1045,6 +1056,7 @@ Deno.serve(async (req: Request) => {
     // ===== CLIENT: single WWTP receipt to the client's email (existing behavior) =====
     for (const rec of recipients) {
       const id = rec.manifest_id
+      recIncludePhotos = rec.include_photos ?? includePhotos
       let logClientId: number | null = rec.client_id ?? null
       let logEmail: string | null = null
       try {
@@ -1150,7 +1162,7 @@ Deno.serve(async (req: Request) => {
           renderDisabled = 'render_deadline'
           attachReasonC = renderDisabled
         } else {
-          const rC = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds: visitIdsC, number, includePhotos })
+          const rC = await buildReportAttachment(sb, { manifestId: id, clientId, clientCode, visitIds: visitIdsC, number, includePhotos: recIncludePhotos })
           if (rC.terminal) {
             console.error(`[send-derm-email] render_terminal manifest=${id} client=${clientId} reason=${rC.terminal}`)
             results.push({ manifest_id: id, status: 'skipped', reason: rC.terminal, client: clientCode })
