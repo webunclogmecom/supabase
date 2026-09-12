@@ -3705,6 +3705,14 @@ manifest ONLY since 2026-09-11: `customer.work_orders.derm_manifest_url`, never 
 A receipt-only report (12 live visits) shows the "will be sent separately" note and does not
 suppress; it does unlock.
 
+🟡 **TEST MODE SINCE 2026-09-12 06:39:44 ET, on Fred's request ("for testing can you make the
+automatic email to be send every 5 min").** The table below shows the STANDARD values; right now
+`city_email_delay` = `5 minutes`, `city_email_start_from` = `2026-09-12 10:39:44.333224+00`, and
+the `city-email-sweep` cron runs `* * * * *`. `city_email_live_sends` is still `false`, so every
+automatic send lands at fred@ayache.com. Queue was 0 and the census unchanged when this was
+applied: only a manual Admin Review send or a blackout AFTER that instant produces an automatic
+email, about 5 minutes later. Do not "fix" these values; the restore checklist further down puts
+them back, and this paragraph is removed in the same commit. Owner: @Building Apps session.
 **Everything is `public.app_config`, which is audited.** Values read 2026-08-29:
 
 | key | value | what it does |
