@@ -219,6 +219,13 @@ going out. `no_city_email` dominating is the normal shape of this system, not a 
 
 ## Safety properties worth not breaking
 
+- **The city inbox is resolved through THE VISIT'S PROPERTY, never the client's property list**
+  (2026-09-12). With `recipients[].property_id` the sender narrows to that property; without it,
+  it resolves `manifest_visits -> visits (this client, not deleted) -> property_id` and narrows to
+  those, skipping `no_property` when there are none. `client_id` stays on the query either way. The
+  preview letter takes its address the same way. The three DERM-app flags (`derm.manifests.
+  city_total_count`, `derm.manifest_recipients.has_city_email`, `derm.visits.has_city_email`) use the
+  same rule (`2026-09-12_2015_derm_app_city_inbox_from_visit_property.sql`), so what the app offers and what the sender does agree.
 - **`test_recipient` is what makes a smoke test safe**, decisively: `toList = testRecipient ? [testRecipient] : cityEmails`,
   and `CITY_BCC` is dropped when it is set. `scripts/probes/derm_email_smoke.js` always sends it.
 - It must run **server-side**: `send-derm-email` is origin-restricted to `derm.unclogme.app`, so a

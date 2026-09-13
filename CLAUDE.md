@@ -3883,11 +3883,30 @@ ignored** - ignoring it falls through to the real municipal recipients.
 ⚠ **The gate sits AFTER the OPTIONS reply.** A browser preflight carries no Authorization header, so
 gating before it breaks every in-app call with an opaque CORS failure.
 
-⚠ **Resolve the city inbox by PROPERTY.** `recipients[].property_id` narrows it; omitting the field
-preserves the old client-wide behaviour, which over-sends (it unions `city_emails` across every
-property the client owns). The narrowing is an **intersection, never a redirect**: `client_id` stays
-on the query, so a property belonging to another client matches zero rows and the send is skipped
-rather than mailing a stranger's inbox.
+🛑 **The city inbox is the one on THE PROPERTY THE VISIT WAS SET AT** (Fred, 2026-09-12: *"checked
+which property the visit was set so it selects the correct email"*). Every path now resolves
+client -> the manifest's visit(s) for that client -> `visits.property_id` -> `properties.city_emails`:
+the automatic sweep (`derm.v_city_email_candidates`, which passes `recipients[].property_id`), Admin
+Review (`public.v_visit_city_email`), and since `2026-09-12_2015` the DERM app too. Before that
+date `send-derm-email` WITHOUT a `property_id` unioned `city_emails` across every property of the
+client, and `derm.manifests.city_total_count`, `derm.manifest_recipients.has_city_email` and
+`derm.visits.has_city_email` tested ANY property of the client, so the DERM app's manual button
+could mail one location's manifest to two FOG programs while the sweep mailed the right one. Measured
+before the fix: 0 clients hold two different inboxes yet, 2 of 733 pairs differed (1650/499, 1633/499:
+a visit on the billing duplicate, a visit with no property), and 52 visits read `has_city_email =
+false` only because no manifest was linked (visit 6563, 001-VIN, was the report). Now: a caller may
+still pass `property_id` (the sweep does); without it the function resolves the visits' properties
+and skips `no_property` when none of this client's visits on the manifest names one, the same word
+the sweep view uses. The narrowing is an **intersection, never a redirect**: `client_id` stays on the
+query, so a property belonging to another client matches zero rows and the send is skipped rather
+than mailing a stranger's inbox. ⚠ Still client-wide and display-only: `derm.visits.address` is the
+client's PRIMARY property, not the visit's (left as is, noted in DERM Tracker docs/06). ⚠ In test mode
+(`city_email_live_sends = false`) the function mails the test recipient even when the resolved
+property carries no inbox (`toList = testRecipient ? [testRecipient] : cityEmails`), so a test send
+cannot prove `no_city_email`; the DERM app never offers the button in that case and the sweep never
+queues it. The comment in `index.ts` that says "G10 below requires the resolved visit's property"
+describes a guard that no longer exists in the code (measured 2026-09-12: `inboxPropIds` is built and
+never read).
 
 App-facing rules, the test recipe and the go-live checklist live in
 [`Building Apps/Admin Review/docs/11-city-email.md`](../Building%20Apps/Admin%20Review/docs/11-city-email.md);
