@@ -170,9 +170,10 @@ every stamp inside the image list, `reopened_at` null) plus one: **every client'
 its printed row count on the sheet** (`v_sheet_printed_rows`), so an under-carded multi-permit
 client can never complete and publish a neighbour's row. `trg_a0_completion_requires_geometry`
 still gates it on `fn_sheet_publishable`, so if anything above left a page unmeasured this is a
-no-op with a WARNING, exactly as today. `completed_by = 'stamp-studio-auto'`, distinct from
-`'stamp-studio-ai'` (the insert-time placement) and from a person's email, so a completion this
-path made is always identifiable.
+no-op with a WARNING, exactly as today. `completed_by = 'stamp-studio-ai'`: Fred's decision
+(2026-09-14) is that everything machine-made carries the one label. A finisher completion stays
+traceable through the `template-v1-` scan rows it wrote and its `generated_measure_attempts`
+entries, not through a second label.
 
 ## 5. What this fixes, concretely
 
@@ -217,28 +218,25 @@ different tiling on an accepted page does not ship. This is the positive control
 and the calibration of the 2.5 / 0.75 / 0.5pp tolerances above, which are measured on two pages so
 far and are not yet a spec.
 
-**Phase 1, measure only.** Ship B (edge function, matcher, backlog view, attempts ledger, the
-`template-v1-` source) and the plain-language reasons. Completion stays the operator's click. This
-runs on every new generated sheet for at least ten sheets while Fred compares what the finisher
-wrote with what he would have drawn.
+**Phase 1, measure AND complete, from day one** (Fred, 2026-09-14: "auto-complete from day one").
+Ship B and C together: the edge function, the matcher, the backlog view, the attempts ledger, the
+`template-v1-` source, the plain-language reasons, and the completion write. A config key
+(`public.app_config` `generated_sheet_auto_complete`) exists as an OFF switch, default `true`; a
+missing key reads as `true`. It is there so the path can be stopped in one statement without a
+deploy, not to gate the launch.
 
-**Phase 2, complete.** Ship C behind a config key (`public.app_config` `generated_sheet_auto_complete`,
-default `false`, the same on/off shape as `city_email_start_from`). Flip it when Phase 1 has
-produced no geometry Fred would have drawn differently.
+**Phase 2, re-place awaiting cards.** Ship A, with the row-read requirement, once Phase 1 has run
+clean on a few sheets, because it is the one step that reverses a recorded decision and Fred has
+not yet said yes to it (open question 2).
 
-**Phase 3, re-place awaiting cards.** Ship A, with the row-read requirement, after Phase 2 has run
-clean, because it is the one step that reverses a recorded decision.
+## 8. Fred's answers (2026-09-14)
 
-## 8. Open questions for Fred
-
-1. **Auto-complete from day one, or Phase 1 first?** My recommendation is Phase 1 first: the cost
-   is one click per generated sheet for a couple of weeks, the benefit is that the first ten
-   automatic measurements are seen by a person before any of them publishes unattended.
-2. **Step A (re-placing cards after a late read) reverses the 2026-09-03 decision.** With the
-   row-read requirement I think it is safe; say if you want it left out.
-3. **Tolerances.** 2.5pp search window, 0.75pp match window, 0.75pp gap tolerance, 0.5pp stamp
-   clearance are from two pages. Phase 0 will either confirm them or move them; you will see the
-   numbers before they are pinned.
-4. **`completed_by = 'stamp-studio-auto'`** so a finisher completion is distinguishable from the
-   insert-time AI placement and from a person. Fine, or keep everything machine-made under
-   `'stamp-studio-ai'`?
+1. **Auto-complete from day one.** Recorded in section 7: B and C ship together; the config key is
+   an off switch with a `true` default, not a launch gate.
+2. **Step A: pending.** The question as first written was not understandable. Restated: when a
+   sheet's page-2 read arrives a moment too late, its page-2 cards are left unstamped (the 835076
+   case). Should the finisher stamp them automatically once the read and the row reads exist, or
+   should those cards wait for a person to press Auto-place? Recommendation: automatic, because
+   every gate the button applies is applied here too, plus the row-read confirmation.
+3. **Tolerances: good.** Phase 0 calibrates them on the 31-page corpus before they are pinned.
+4. **Keep everything machine-made under `stamp-studio-ai`.** Recorded in section 4.C.
