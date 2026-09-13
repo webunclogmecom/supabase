@@ -219,6 +219,12 @@ going out. `no_city_email` dominating is the normal shape of this system, not a 
 
 ## Safety properties worth not breaking
 
+- **The FOG-document guard is `derm.fn_fog_documents()`, in both loops** (2026-09-13): a redacted
+  Miami-Dade sheet OR a Broward per-visit FDEP sheet satisfies it; nothing else does. Skip reasons
+  `no_fog_document` (no document for any of this client's visits on the manifest) and
+  `fog_lookup_failed` (the RPC did not answer). Do not re-implement the rule by reading the two
+  tables: that is how the consumers diverged before `2026-09-09_0100`. The city loop no longer
+  requires `derm_manifests.derm_address_url`; an FDEP-only manifest has none.
 - **The city inbox is resolved through THE VISIT'S PROPERTY, never the client's property list**
   (2026-09-12). With `recipients[].property_id` the sender narrows to that property; without it,
   it resolves `manifest_visits -> visits (this client, not deleted) -> property_id` and narrows to

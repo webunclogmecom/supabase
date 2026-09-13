@@ -64,6 +64,36 @@ const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'Unclogme <onboarding@resend.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
+// ══ THE FOG DOCUMENT ═══════════════════════════════════════════════════════════════════
+// derm.fn_fog_documents(manifest, client, visit) is the ONE definition of "which FOG document
+// does this pair have": the redacted pages of the shared Miami-Dade address sheet or, when there
+// are none, the Broward FDEP 62-705.300(3) per-visit sheet, which carries a single originator and
+// needs no blackout (2026-09-09_0100; Fred: "the Broward doesn't needs blackout"). The Service
+// Report embeds exactly what this function returns (customer.work_orders.derm_manifest_url IS its
+// url), proven 2026-09-13 on fp.unclogme.app/028-hum/visit/qEe9jhkgIj/report. Do NOT re-implement
+// the rule here by reading the two tables: a third copy is how the consumers diverged in the
+// first place. Both loops call this before rendering; without a document the send is SKIPPED,
+// never sent with the FOG page missing.
+// One call per visit of the client on the manifest (almost always one). A non-2xx answer is a
+// broken lookup, reported as such so nobody is sent to regenerate a document that exists.
+async function hasFogDocument(manifestId: number, clientId: number, visitIds: number[]): Promise<{ ok: boolean; found: boolean; status: number }> {
+  for (const v of visitIds) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_fog_documents`, {
+      method: 'POST',
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json', 'Content-Profile': 'derm', 'Accept-Profile': 'derm' },
+      body: JSON.stringify({ p_manifest_id: manifestId, p_client_id: clientId, p_visit_id: v }),
+    })
+    if (!r.ok) {
+      const e = await r.text().catch(() => '')
+      console.error(`[send-derm-email] fog lookup failed manifest=${manifestId} client=${clientId} visit=${v} status=${r.status} ${e.slice(0, 200)}`)
+      return { ok: false, found: false, status: r.status }
+    }
+    const rows = await r.json().catch(() => null)
+    if (Array.isArray(rows) && rows.some((x) => x && typeof x.url === 'string' && x.url)) return { ok: true, found: true, status: r.status }
+  }
+  return { ok: true, found: false, status: 200 }
+}
+
 // 🛑 test_recipient REPLACES the real municipal recipients, so it is a redirect primitive, not a
 // convenience. It used to accept any string containing '@'. Combined with the missing auth gate
 // below, that let anyone holding the PUBLIC anon key have any manifest's compliance documents
@@ -428,7 +458,7 @@ async function buildReportAttachment(
     // ⚠ NOT A CONDITION, BY DESIGN, BUT IT MUST BE VISIBLE. There is no fallback attachment
     // any more, so a report missing one of the two compliance documents still goes out.
     // Measured 2026-08-26: 123 of 123 city-sendable pairs carry both, because the
-    // `no_redacted_sheet` guard on the city path already blocks the slow half. If that ever
+    // `no_fog_document` guard on the city path already blocks the slow half. If that ever
     // stops being true, this line is what says so.
     out.incomplete = [w.derm_manifest_url ? null : 'fog', w.wwtp_receipt_url ? null : 'wwtp'].filter(Boolean).join('+')
     if (out.incomplete) {
@@ -841,8 +871,10 @@ Deno.serve(async (req: Request) => {
         const clientName = c?.name || 'Customer'
         const clientCode = (c as { client_code?: string | null } | null)?.client_code ?? null
 
-        // Guard: BOTH PDFs required (Manifest Form + Transporter Manifest)
-        if (!m.derm_manifest_url || !m.derm_address_url) { results.push({ manifest_id: id, status: 'skipped', reason: 'missing_attachments', client: clientName }); await logSend(id, logClientId, null, null, 'skipped', 'missing_attachments', 'city'); continue }
+        // (2026-09-13) The "both images" guard (derm_manifest_url AND derm_address_url) is gone: the
+        // city receives the Service Report, not those images, and a Broward manifest documented by a
+        // per-visit FDEP sheet has no shared address sheet by construction. What the report must
+        // contain is the FOG document, and hasFogDocument() below is that guard.
 
         // Resolve the client's city inboxes off ITS OWN PROPERTIES + a served address.
         // ⚠ DEDUPE BY EMAIL, NOT BY MUNICIPALITY. The old code kept the FIRST regulator row per
@@ -869,9 +901,11 @@ Deno.serve(async (req: Request) => {
         const { data: mvs } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
         const visitIds = ((mvs || []) as { visit_id: number }[]).map((x) => x.visit_id)
         let visitPropIds: number[] = []
+        let clientVisitIds: number[] = []
         if (visitIds.length) {
-          const { data: vps } = await sb.from('visits').select('property_id').in('id', visitIds).eq('client_id', clientId).is('deleted_at', null)
+          const { data: vps } = await sb.from('visits').select('id, property_id').in('id', visitIds).eq('client_id', clientId).is('deleted_at', null)
           visitPropIds = [...new Set(((vps || []) as { property_id: number | null }[]).map((v) => v.property_id).filter((p): p is number => p != null))]
+          clientVisitIds = ((vps || []) as { id: number }[]).map((v) => v.id)
         }
         if (rec.property_id == null && visitPropIds.length === 0) {
           // No visit of this client on this manifest names a property, so there is no municipality
@@ -957,28 +991,18 @@ Deno.serve(async (req: Request) => {
         // 🛑 NEVER FALL BACK TO THE FULL SHEET. A missing redaction SKIPS the send. Falling back
         // would silently restore the exact disclosure this exists to prevent, on the one path where
         // nobody would be looking.
-        const rdRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/redacted_manifest_docs?manifest_id=eq.${id}&client_id=eq.${clientId}&select=url`,
-          { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Accept-Profile': 'derm' } },
-        )
-        // Both branches SKIP, but they are different problems and must not share a label. A failed
-        // lookup ("Accept-Profile dropped", schema cache cold, 500) would otherwise be indexed under
-        // "no redacted sheet" and send someone to regenerate artifacts that already exist.
-        // Verified 2026-08-10 with three controls: a known pair returns the row; an impossible pair
-        // returns 200 `[]`; the same call without `Accept-Profile: derm` returns 404 (PGRST205).
-        // So `[]` genuinely means absent, and a non-ok response genuinely means the lookup broke.
-        if (!rdRes.ok) {
-          const rdErr = await rdRes.text().catch(() => '')
-          console.error(`[send-derm-email] redaction lookup failed manifest=${id} client=${clientId} status=${rdRes.status} ${rdErr.slice(0, 200)}`)
-          results.push({ manifest_id: id, status: 'skipped', reason: 'redaction_lookup_failed', client: clientName })
-          await logSend(id, logClientId, null, null, 'skipped', 'redaction_lookup_failed', 'city')
+        // 2026-09-13: the lookup is derm.fn_fog_documents(), so a Broward per-visit FDEP sheet
+        // satisfies it without a blackout. Two labels for two problems, as before: a broken lookup
+        // (fog_lookup_failed) is not "no document" (no_fog_document).
+        const fog = await hasFogDocument(id, clientId, clientVisitIds)
+        if (!fog.ok) {
+          results.push({ manifest_id: id, status: 'skipped', reason: 'fog_lookup_failed', client: clientName })
+          await logSend(id, logClientId, null, null, 'skipped', 'fog_lookup_failed', 'city')
           continue
         }
-        const rdRows = await rdRes.json()
-        const redactedUrl: string | null = Array.isArray(rdRows) && rdRows[0]?.url ? String(rdRows[0].url) : null
-        if (!redactedUrl) {
-          results.push({ manifest_id: id, status: 'skipped', reason: 'no_redacted_sheet', client: clientName })
-          await logSend(id, logClientId, null, null, 'skipped', 'no_redacted_sheet', 'city')
+        if (!fog.found) {
+          results.push({ manifest_id: id, status: 'skipped', reason: 'no_fog_document', client: clientName })
+          await logSend(id, logClientId, null, null, 'skipped', 'no_fog_document', 'city')
           continue
         }
         // ══ THE CITY GETS THE FP SERVICE REPORT, AND NOTHING ELSE ══════════════════════
@@ -1022,9 +1046,9 @@ Deno.serve(async (req: Request) => {
         // App." The redacted FOG sheet and the transporter manifest are both EMBEDDED in that
         // report, so attaching them as well would send the same two documents twice.
         //
-        // ⚠ The `no_redacted_sheet` guard ABOVE is deliberately kept even though the redacted
-        // sheet is no longer an attachment. It is what makes the report CONTAIN the FOG
-        // manifest (customer.work_orders.derm_manifest_url IS derm.redacted_manifest_docs.url),
+        // ⚠ The FOG-document guard ABOVE (no_fog_document, formerly no_redacted_sheet) is kept
+        // even though the sheet is no longer an attachment. It is what makes the report CONTAIN
+        // the FOG manifest (customer.work_orders.derm_manifest_url IS derm.fn_fog_documents().url),
         // so removing it would start mailing regulators reports with that document missing.
         //
         // ⚠ NO ATTACHMENT IS A VALID OUTCOME, BY FRED'S EXPLICIT CHOICE. When no report can be
@@ -1167,7 +1191,8 @@ Deno.serve(async (req: Request) => {
         // ⚠ The old co-client rule is now enforced upstream rather than here: the report is
         // per VISIT and renders only this client's own documents, so the shared DERM Address
         // sheet can never reach a client through it.
-        // 🛑 2026-09-03: THE CLIENT PATH NOW REFUSES AN UN-BLACKED-OUT MANIFEST TOO.
+        // 🛑 2026-09-03: THE CLIENT PATH NOW REFUSES A MANIFEST WITHOUT A FOG DOCUMENT TOO
+        // (un-blacked-out shared Miami-Dade sheet, or no Broward per-visit sheet; 2026-09-13).
         // The city loop has guarded on this since the redaction work; this one never did, so a
         // customer could be mailed a Service Report whose FOG manifest section was missing. That
         // section IS the redacted document: customer.work_orders.derm_manifest_url is
@@ -1176,27 +1201,28 @@ Deno.serve(async (req: Request) => {
         // ⚠ The two failure branches keep DIFFERENT labels for the same reason the city path does:
         // a broken lookup indexed as "no redacted sheet" sends someone to regenerate an artifact
         // that already exists.
-        const rdResC = await fetch(
-          `${SUPABASE_URL}/rest/v1/redacted_manifest_docs?manifest_id=eq.${id}&client_id=eq.${clientId}&select=url`,
-          { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Accept-Profile': 'derm' } },
-        )
-        if (!rdResC.ok) {
-          const e = await rdResC.text().catch(() => '')
-          console.error(`[send-derm-email] redaction lookup failed (client) manifest=${id} client=${clientId} status=${rdResC.status} ${e.slice(0, 200)}`)
-          results.push({ manifest_id: id, status: 'skipped', reason: 'redaction_lookup_failed', client: clientCode })
-          await logSend(id, logClientId, null, null, 'skipped', 'redaction_lookup_failed')
+        // 2026-09-13: derm.fn_fog_documents() here too, so a Broward per-visit FDEP sheet satisfies
+        // the guard without a blackout. The Service Report the client receives embeds that sheet.
+        const { data: mvsC } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
+        const visitIdsC = ((mvsC || []) as { visit_id: number }[]).map((x) => x.visit_id)
+        let clientVisitIdsC: number[] = []
+        if (visitIdsC.length) {
+          const { data: cvs } = await sb.from('visits').select('id').in('id', visitIdsC).eq('client_id', clientId).is('deleted_at', null)
+          clientVisitIdsC = ((cvs || []) as { id: number }[]).map((v) => v.id)
+        }
+        const fogC = await hasFogDocument(id, clientId, clientVisitIdsC)
+        if (!fogC.ok) {
+          results.push({ manifest_id: id, status: 'skipped', reason: 'fog_lookup_failed', client: clientCode })
+          await logSend(id, logClientId, null, null, 'skipped', 'fog_lookup_failed')
           continue
         }
-        const rdRowsC = await rdResC.json()
-        if (!(Array.isArray(rdRowsC) && rdRowsC[0]?.url)) {
-          results.push({ manifest_id: id, status: 'skipped', reason: 'no_redacted_sheet', client: clientCode })
-          await logSend(id, logClientId, null, null, 'skipped', 'no_redacted_sheet')
+        if (!fogC.found) {
+          results.push({ manifest_id: id, status: 'skipped', reason: 'no_fog_document', client: clientCode })
+          await logSend(id, logClientId, null, null, 'skipped', 'no_fog_document')
           continue
         }
 
-        // 🛑 No report => the letter still goes out with NOTHING attached (Fred's choice).
-        const { data: mvsC } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
-        const visitIdsC = ((mvsC || []) as { visit_id: number }[]).map((x) => x.visit_id)
+        // 🛑 No report => the letter still goes out with NOTHING attached (Fred's choice). visitIdsC resolved above.
         const attachments: { filename: string; content: string; content_type: string }[] = []
         let attachReasonC = ''
         let letterDateC: string | null = null

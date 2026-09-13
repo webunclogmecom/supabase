@@ -3621,6 +3621,26 @@ Concretely, per (manifest, client) in `derm.v_city_email_candidates`
 pipeline, so a send BEFORE `blacked_at` cannot have carried the manifest (unlocks, `manual_inferred`
 = true) and one AT OR AFTER it did (suppresses).
 
+🛑 **A Broward per-visit FDEP sheet IS the document, no blackout (`2026-09-13_0100`, Fred: "the
+Broward doesn't needs blackout so they can be send anyways").** `derm.fn_fog_documents()` returns the
+redacted pages of the shared Miami-Dade sheet or, when there are none, the FDEP 62-705.300(3)
+per-visit sheet (one originator per page, nothing to redact). Proven before the guards were touched:
+the Service Report for visit 5973 / manifest 1911 renders that sheet as "A - FOG eManifest" beside
+the receipt (fp.unclogme.app/028-hum/visit/qEe9jhkgIj/report, 772x1024, loaded), and the pdf-service
+prints that page. So: `derm.v_city_email_candidates` `docs` = redacted pages per (manifest, client)
+OR, when the pair has none, its per-visit sheets with `blacked_at = uploaded_at` (12 pairs entered the
+view: 4 `awaiting_manual_send`, 8 `no_city_email`; column name kept, read it as "the FOG document was
+ready at"); `public.v_derm_manifest_email_readiness.send_blocker` is `no_fog_document` (was
+`not_blacked_out`; `has_fog_document` appended, `is_blacked_out` unchanged); `send-derm-email` calls
+`fn_fog_documents` per visit of the client in BOTH loops (reasons `no_fog_document` /
+`fog_lookup_failed`, formerly `no_redacted_sheet` / `redaction_lookup_failed`) and the city loop no
+longer demands `derm_address_url` (`missing_attachments` is gone: the city gets the report, and an
+FDEP-only manifest has no shared address sheet by construction). Verified live: FDEP pair 1909/301
+sends on both paths, 1938/340 (no document) is refused `no_fog_document`, redacted 1683/34 still
+sends. A regeneration of a per-visit sheet is an UPDATE of `uploaded_at` too, so the regeneration
+caveat below applies to it as well. The Admin Review path needed nothing: `report_has_manifest`
+already read the same function.
+
 **All three gates (already_sent, suppressed_manual, the manual unlock) count TEST rows while
 `city_email_live_sends <> 'true'`** and only real rows once it is live; that is what makes the whole
 thing rehearsable, and it is also why 40 August test pairs read `already_sent` today and will not
@@ -3681,7 +3701,7 @@ Fixed the same night (`2026-09-12_0040_city_email_live_switch_case_and_go_live_c
 
 Known and left as is (all low, all recorded in `Building Apps/Admin Review/docs/11-city-email.md`):
 a recipient listed twice with different `include_photos` keeps the first (the sweep never does this);
-a pair skipped for a deterministic reason (`missing_attachments`, `no_redacted_sheet`) is retried once
+a pair skipped for a deterministic reason (`no_fog_document`, formerly `missing_attachments` / `no_redacted_sheet`) is retried once
 per `city_email_retry_after` without bound, because only `status=error` rows count toward
 `too_many_errors`; `blacked_at` is the LATEST regeneration of the redacted doc, so a regeneration
 restarts the clock (already_sent still blocks a second send); the client loop of `send-derm-email`
