@@ -521,7 +521,10 @@ Deno.serve(async (req: Request) => {
   // Fred, 2026-08-27: *"It's sent via the City Email property we have saved in our db for
   // that client property"* - singular. The automatic sweep therefore passes the property it
   // resolved through the visit, and derm.v_city_email_queue.property_id is that value.
-  // Omitting it preserves the existing manual behaviour EXACTLY; this is additive.
+  // 2026-09-12 (Fred: "checked which property the visit was set so it selects the correct
+  // email"): omitting it no longer means "every property of the client". The city path resolves
+  // the property through this manifest's visits for the client, the same rule as the sweep view,
+  // so the DERM app's manual send and the automatic send agree by construction.
   // include_photos per recipient (2026-09-11): the automatic sweep copies, for each manifest, the
   // photo choice of the Admin Review send that unlocked it (derm.v_city_email_queue.
   // manual_include_photos). null = not stated, fall back to the body-level include_photos.
@@ -757,10 +760,24 @@ Deno.serve(async (req: Request) => {
     const name0 = String((c0 as Record<string, unknown> | null)?.name ?? '')
 
     // The address and date the real letter uses come from the rendered report. Preview falls back
-    // to the manifest's own service date and the client's property address, and says so rather
-    // than inventing precision it does not have.
-    const { data: p0 } = await sb
-      .from('properties').select('address').eq('client_id', rec0.client_id).limit(1).maybeSingle()
+    // to the manifest's own service date and the property THE VISIT WAS SET AT (2026-09-12; it used
+    // to take an arbitrary property of the client), then to any property of the client, and says
+    // so rather than inventing precision it does not have.
+    const { data: mv0 } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', rec0.manifest_id)
+    const vids0 = ((mv0 || []) as { visit_id: number }[]).map((x) => x.visit_id)
+    let p0: { address: string | null } | null = null
+    if (vids0.length && rec0.client_id != null) {
+      const { data: v0 } = await sb.from('visits').select('property_id').in('id', vids0).eq('client_id', rec0.client_id).is('deleted_at', null).not('property_id', 'is', null).limit(1).maybeSingle()
+      const pid0 = (v0 as { property_id: number | null } | null)?.property_id ?? null
+      if (pid0 != null) {
+        const { data: pp } = await sb.from('properties').select('address').eq('id', pid0).eq('client_id', rec0.client_id).maybeSingle()
+        p0 = (pp as { address: string | null } | null) ?? null
+      }
+    }
+    if (!p0) {
+      const { data: pa } = await sb.from('properties').select('address').eq('client_id', rec0.client_id).is('deleted_at', null).limit(1).maybeSingle()
+      p0 = (pa as { address: string | null } | null) ?? null
+    }
 
     const opts = {
       clientName: name0,
@@ -839,9 +856,36 @@ Deno.serve(async (req: Request) => {
         // is an INTERSECTION, never a redirect: a property_id belonging to another client
         // matches zero rows and the send is skipped 'no_city_email' rather than mailing a
         // stranger's municipal inbox. The caller must not be able to choose the recipient.
+        //
+        // 🛑 2026-09-12 (Fred): THE INBOX IS THE ONE ON THE PROPERTY THE VISIT WAS SET AT, never the
+        // union of the client's properties. When the caller supplies no property_id (the DERM app
+        // dialogs never do), resolve it the way derm.v_city_email_candidates does: this manifest's
+        // non-deleted visits for THIS client, their property_id. Before this change a client with
+        // locations in two municipalities would have had one location's manifest mailed to both
+        // FOG programs from the manual button, while the automatic sweep mailed only the right one.
+        // Measured 2026-09-12 over 733 manifest/client pairs: 0 clients hold two different inboxes
+        // yet, and the union differed from the visit's property on 2 pairs (a visit on the billing
+        // duplicate, a visit with no property), so this is a rule fix, not a data fix.
+        const { data: mvs } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
+        const visitIds = ((mvs || []) as { visit_id: number }[]).map((x) => x.visit_id)
+        let visitPropIds: number[] = []
+        if (visitIds.length) {
+          const { data: vps } = await sb.from('visits').select('property_id').in('id', visitIds).eq('client_id', clientId).is('deleted_at', null)
+          visitPropIds = [...new Set(((vps || []) as { property_id: number | null }[]).map((v) => v.property_id).filter((p): p is number => p != null))]
+        }
+        if (rec.property_id == null && visitPropIds.length === 0) {
+          // No visit of this client on this manifest names a property, so there is no municipality
+          // to resolve. Kept distinct from no_city_email (a property that carries no inbox) because
+          // the remedy differs: set the property on the visit, not add an address to it. Same word
+          // as the sweep view's status for the same condition.
+          results.push({ manifest_id: id, status: 'skipped', reason: 'no_property', client: clientName })
+          await logSend(id, logClientId, null, null, 'skipped', 'no_property', 'city')
+          continue
+        }
         let propQ = sb.from('properties')
           .select('id, address, city, city_emails').eq('client_id', clientId).is('deleted_at', null)
         if (rec.property_id != null) propQ = propQ.eq('id', rec.property_id)
+        else propQ = propQ.in('id', visitPropIds)
         const { data: props } = await propQ
         const cityEmailSet = new Set<string>()
         const muniSet = new Set<string>()
@@ -870,9 +914,7 @@ Deno.serve(async (req: Request) => {
         if (toList.length === 0) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_city_email', client: clientName }); await logSend(id, logClientId, null, null, 'skipped', 'no_city_email', 'city'); continue }
         logEmail = testRecipient ? testRecipient : cityEmails.join(', ')
 
-        // Most recent completed linked visit's date (fallback: any non-deleted)
-        const { data: mvs } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
-        const visitIds = ((mvs || []) as { visit_id: number }[]).map((x) => x.visit_id)
+        // Most recent completed linked visit's date (fallback: any non-deleted); visitIds resolved above
         let visitDate = ''
         if (visitIds.length) {
           const { data: vc } = await sb.from('visits').select('visit_date').in('id', visitIds).eq('client_id', clientId).eq('visit_status', 'completed').is('deleted_at', null).order('visit_date', { ascending: false }).limit(1).maybeSingle()
