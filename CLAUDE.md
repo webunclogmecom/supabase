@@ -1748,6 +1748,25 @@ it next must keep the same write-to-all-rows behaviour.
 
 ⚠ **Restore/backfill gotcha:** replaying a backup that contains an OLD cross-client pair now RAISES (BEFORE triggers fire before `ON CONFLICT`) and aborts the transaction — filter those pairs out first. Only 1 sanctioned legacy cross-client row exists (815064, pending Diego). Also: `trg_ae_ticket_key_unambiguous` RAISES when a white# collides with an existing yellow-only ticket key (or vice versa) — same filter-first rule for restores.
 
+### 🛑 A MESSAGE AN OPERATOR APP SURFACES IS PLAIN LANGUAGE, WITH NO TECHNICAL WORD (Fred, 2026-09-14)
+
+Fred, on the Stamp Studio banner `cannot mark ticket-835076 complete: needs_snap_then_extent`:
+*"they're not semantic, we need to save in the docs that any error message should be semantic with
+no tech words."*
+
+When a RAISE, a `hint` column, or a `message` field can reach a person through an app, the
+**MESSAGE is a plain sentence saying what is wrong and what to do next, in the operator's words,
+describing the interface as it exists today**. The code, the folder, the row id and any column or
+function name go to **DETAIL** (`USING DETAIL = 'blocker=' || v_code || ...`), which the apps never
+display but the logs keep. Shipped for the Stamp Studio's publish/complete path in
+`2026-09-14_0100`: `derm.fn_publishable_hint` (the one place the seven blocker sentences live) and
+`derm.set_sheet_completed`, whose refusal now carries the same page-aware sentence as the app's
+banner so the two cannot disagree.
+⚠ **A sentence is also stale the moment the control it names is removed.** The hints described
+"drag every row edge" and "shift-click" for a day after the drag editor was deleted on 2026-09-13.
+Removing or renaming a control means grepping every operator sentence that mentions it, in the
+same change. The app-side half of the rule is in `Building Apps/DERM Stamp Studio/CLAUDE.md`.
+
 ### 🛑 A DERM SHEET IS A REGULATOR-FACING COMPLIANCE FORM: FILL IT, NEVER MARK IT (Fred, 2026-08-04)
 
 **Fred, verbatim:** *"The sheets cannot have a QR Code, so don't do it, the sheets should only be
