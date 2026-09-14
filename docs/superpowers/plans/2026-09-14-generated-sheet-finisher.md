@@ -2137,7 +2137,7 @@ RPC. It classifies nothing and writes nothing itself.
 // AUTH: verify_jwt=true (config.toml) PLUS the in-handler role gate. The anon key is a validly
 // signed JWT, so the gateway check alone is half a gate.
 
-import { decode } from "npm:jpeg-js@0.4.4";
+import jpeg from "npm:jpeg-js@0.4.4";
 import { detectRules } from "../_shared/printed_rule_detector.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -2195,7 +2195,7 @@ Deno.serve(async (req) => {
     const bytes = new Uint8Array(await img.arrayBuffer());
     if (bytes.length > MAX_IMAGE_BYTES) throw new Error(`image is ${bytes.length} bytes, over the ${MAX_IMAGE_BYTES} limit`);
     if (!(bytes[0] === 0xff && bytes[1] === 0xd8)) throw new Error(`not a JPEG (content-type ${ct || "?"}); only JPEG scans are measured automatically`);
-    raw = decode(bytes, { useTArray: true });
+    raw = jpeg.decode(bytes, { useTArray: true });
   } catch (e) {
     const handoff = await report({ ...base, p_lines: null, p_meta: { error: String(e).slice(0, 300), ms: Date.now() - t0 } });
     return json({ ok: false, stage: "fetch", error: String(e).slice(0, 300), handoff });
