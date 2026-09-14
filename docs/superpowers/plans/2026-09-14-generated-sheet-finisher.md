@@ -2350,6 +2350,9 @@ SELECT cron.schedule('generated-sheet-finisher', '6-59/10 * * * *',
 -- --------------------------------------------------------------------------------------------
 DO $verify$
 DECLARE v_n int; v_q0 bigint; v_q1 bigint; v_att int;
+  -- only OUR requests: completing a sheet inside this VERIFY also queues the blackout kick
+  -- (trg_zz_publish_on_complete -> fn_request_blackout_sweep), which is not a measure request
+  v_mine constant text := '%/functions/v1/measure-generated-page';
 BEGIN
   IF (SELECT count(*) FROM cron.job WHERE jobname = 'generated-sheet-finisher') <> 1 THEN RAISE EXCEPTION 'VERIFY 1 FAILED: job'; END IF;
   IF (SELECT schedule FROM cron.job WHERE jobname = 'generated-sheet-finisher') <> '6-59/10 * * * *' THEN RAISE EXCEPTION 'VERIFY 1a FAILED: schedule'; END IF;
@@ -2361,10 +2364,10 @@ BEGIN
     RAISE EXCEPTION 'VERIFY 2 SETUP: the measure backlog is not empty right now; re-run when it is, or read it first';
   END IF;
   BEGIN
-    SELECT count(*) INTO v_q0 FROM net.http_request_queue;
+    SELECT count(*) INTO v_q0 FROM net.http_request_queue WHERE url LIKE v_mine;
     PERFORM public.fn_request_generated_measure();
-    SELECT count(*) INTO v_q1 FROM net.http_request_queue;
-    IF v_q1 <> v_q0 THEN RAISE EXCEPTION 'VERIFY 2 FAILED: % request(s) queued with nothing to do', v_q1 - v_q0; END IF;
+    SELECT count(*) INTO v_q1 FROM net.http_request_queue WHERE url LIKE v_mine;
+    IF v_q1 <> v_q0 THEN RAISE EXCEPTION 'VERIFY 2 FAILED: % measure request(s) queued with nothing to do', v_q1 - v_q0; END IF;
     RAISE EXCEPTION 'RB';
   EXCEPTION WHEN OTHERS THEN IF SQLERRM <> 'RB' THEN RAISE; END IF; END;
 
@@ -2375,9 +2378,9 @@ BEGIN
     UPDATE derm.stamp_sheet_status SET reopened_at = NULL, reopened_by = NULL WHERE dump_folder = 'ticket-834742';
     DELETE FROM derm.page_block_extents WHERE dump_folder = 'ticket-834742' AND effective_page = 2;
     DELETE FROM derm.page_rule_scans WHERE dump_folder = 'ticket-834742' AND effective_page = 2 AND source LIKE 'human-v1-%';
-    SELECT count(*) INTO v_q0 FROM net.http_request_queue;
+    SELECT count(*) INTO v_q0 FROM net.http_request_queue WHERE url LIKE v_mine;
     PERFORM public.fn_request_generated_measure();
-    SELECT count(*) INTO v_q1 FROM net.http_request_queue;
+    SELECT count(*) INTO v_q1 FROM net.http_request_queue WHERE url LIKE v_mine;
     IF v_q1 - v_q0 <> 1 THEN RAISE EXCEPTION 'VERIFY 3 FAILED: % request(s) queued for one page', v_q1 - v_q0; END IF;
     SELECT attempts INTO v_att FROM derm.generated_measure_attempts WHERE dump_folder = 'ticket-834742' AND page = 2 AND last_outcome = 'requested';
     IF v_att IS DISTINCT FROM 1 THEN RAISE EXCEPTION 'VERIFY 3a FAILED: attempts %', v_att; END IF;
