@@ -126,4 +126,4 @@ never nearer than 2pp to a boundary target, so 0.85 cannot reach one.
 
 **Fred's decision:**
 
-- [ ] Go: pin the calibrated prior and the tolerances above, and ship the finisher (Tasks 4 to 8 of the plan).
+- [x] Go: pin the calibrated prior and the tolerances above, and ship the finisher (Tasks 4 to 8 of the plan). Fred, 2026-09-14: "go, pin those numbers and ship it".
