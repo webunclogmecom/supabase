@@ -692,7 +692,7 @@ verify_jwt = true
 [functions.ocr-address-sheet-rows]
 verify_jwt = true
 
-# measure-generated-page: the generated-sheet finisher's detector (2026-09-15). Invoked by pg_cron
+# measure-generated-page: the generated-sheet finisher's detector (2026-09-14). Invoked by pg_cron
 # (public.fn_request_generated_measure) with a service_role bearer; the handler decodes the JWT and
 # requires role=service_role, so the gateway MUST verify the signature. Never deploy --no-verify-jwt.
 [functions.measure-generated-page]

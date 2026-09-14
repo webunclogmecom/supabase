@@ -1,5 +1,5 @@
 // Phase 0 of docs/superpowers/plans/2026-09-14-generated-sheet-finisher.md.
-// Replays the layout-guided matcher (derm.fn_match_generated_page, migration 2026-09-15_1000) over
+// Replays the layout-guided matcher (derm.fn_match_generated_page, migration 2026-09-14_0605) over
 // every stamped page of every generated folder, WITHOUT WRITING ANYTHING, and compares its six
 // boundaries with the geometry a person accepted (bands, extent, admitted printed rules). Pass 1
 // uses the stamp-midpoint template as the prior; the pages it accepts calibrate the prior (the mean

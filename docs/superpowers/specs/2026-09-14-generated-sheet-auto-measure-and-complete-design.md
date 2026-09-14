@@ -1,6 +1,6 @@
 # Generated sheets finish themselves: measure from the scan, guided by the layout we printed
 
-*Design, 2026-09-14. Not built. Fred: "go, write the design first."*
+*Design, 2026-09-14. Built the same day (plan: docs/superpowers/plans/2026-09-14-generated-sheet-finisher.md; migrations `2026-09-14_0605` to `_0620`, edge fn `measure-generated-page`, cron `generated-sheet-finisher`). Step A (section 4.A) is NOT built, pending Fred.*
 
 ## 1. The problem, stated as it actually is
 
@@ -128,7 +128,10 @@ is tried three times and then left for a person, and re-armed if the image is re
 pure, returns the six boundaries or a refusal reason):
 
 1. `expected[1..N+1]` = the template boundaries for this page's N printed rows (derived band
-   edges of the page's cards, which come from `fn_generated_row_geometry`).
+   edges of the page's cards, which come from `fn_generated_row_geometry`). Phase 0 replaced that
+   stamp-midpoint template with the mean printed layout measured over the accepted corpus
+   (`derm.fn_generated_page_prior`); the template remains the first-pass prior the calibration
+   starts from.
 2. `shift` = the median of `(nearest line within 2.5pp of expected[i]) - expected[i]` over the
    expected boundaries that have such a line; refuse unless at least N of the N+1 have one
    ("could not find the printed rows on this scan"). The shift absorbs the photograph's offset

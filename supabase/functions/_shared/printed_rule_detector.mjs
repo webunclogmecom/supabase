@@ -1,7 +1,7 @@
 // printed_rule_detector.mjs: the run-length printed-rule detector as ONE module, imported by the
 // Node probe (scripts/probes/rev/detect_node.mjs) and by the edge function measure-generated-page.
 //
-// Transcribed 2026-09-15 from scripts/probes/rev/detect_node.js (itself a port of
+// Transcribed 2026-09-14 from scripts/probes/rev/detect_node.js (itself a port of
 // scripts/probes/derm_band_review/detect-run.js, the detector this estate validated against known
 // truth; four earlier scorers were tried and rejected, see that folder's README). The extraction was
 // done by a script, not by retyping: the function body is the old file's `detect` body with ONLY its

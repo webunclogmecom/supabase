@@ -1,5 +1,5 @@
 -- ============================================================================================
--- 2026-09-15_1300_generated_sheet_finisher_cron.sql
+-- 2026-09-14_0620_generated_sheet_finisher_cron.sql
 --
 -- Schedules the generated-sheet finisher: every ten minutes, complete what can be completed (no
 -- HTTP, and it is what a HAND-measured generated sheet needs too), then request at most two page

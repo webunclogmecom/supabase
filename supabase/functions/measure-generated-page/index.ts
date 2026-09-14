@@ -5,7 +5,7 @@
 // WHY IT IS THIS THIN. The decision (which lines are the six printed boundaries, whether the
 // stamps sit inside them, whether anything may be written) lives in SQL, where it was replayed
 // over the whole accepted corpus before it shipped (scripts/probes/generated_finisher/phase0_report.md)
-// and is exercised by migration 2026-09-15_1200's VERIFY. The only work that needs a runtime with a
+// and is exercised by migration 2026-09-14_0615's VERIFY. The only work that needs a runtime with a
 // JPEG decoder is fetching the scan and running the detector, and the detector is the SAME module
 // the Node probe runs: supabase/functions/_shared/printed_rule_detector.mjs.
 //

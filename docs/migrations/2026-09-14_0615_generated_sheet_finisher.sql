@@ -1,5 +1,5 @@
 -- ============================================================================================
--- 2026-09-15_1200_generated_sheet_finisher.sql
+-- 2026-09-14_0615_generated_sheet_finisher.sql
 --
 -- THE GENERATED-SHEET FINISHER. A DERM address sheet we printed (number 1000+) now measures its
 -- own pages from the scan, guided by the layout we printed, and marks itself complete when every
@@ -20,7 +20,7 @@
 -- meta) is called by the edge function measure-generated-page with the detector's raw lines. It
 --   1. checks the image at that position is still the one measured (derm.ticket_page_images),
 --   2. takes the page's cards with their PRINTED row (derm.fn_generated_page_cards, migration
---      2026-09-15_1000) and refuses the shapes a machine must not decide,
+--      2026-09-14_0605) and refuses the shapes a machine must not decide,
 --   3. runs the pure matcher (derm.fn_match_generated_page) with the calibrated prior,
 --   4. inside ONE subtransaction: derm.record_page_rules(source 'template-v1-<date>', the six
 --      boundaries as kind boundary, no dividers) then derm.save_page_geometry(bands = consecutive
@@ -37,7 +37,7 @@
 -- WHAT NEVER HAPPENS.
 --   * No template value is written. Every band edge and both extents are detected lines on THIS scan;
 --     the prior only chooses which lines are the boundaries. VERIFY 4d asserts it on a real page.
---   * A person's lines always win (human-v1 outranks template-v1, migration 2026-09-15_1100), and a
+--   * A person's lines always win (human-v1 outranks template-v1, migration 2026-09-14_0610), and a
 --     page that already has a human scan is not in the backlog at all.
 --   * A completed sheet, a reopened sheet (reopened_at, the resolver's own pin), a handwritten sheet
 --     (no generated-sheet link) are never touched.
@@ -82,9 +82,9 @@ BEGIN
     RAISE EXCEPTION 'PRE 0.4: derm.fn_sheet_publishable_detail is not the body this file was patched from';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'derm' AND p.proname = 'fn_match_generated_page') THEN
-    RAISE EXCEPTION 'PRE 0.5: apply 2026-09-15_1000 first';
+    RAISE EXCEPTION 'PRE 0.5: apply 2026-09-14_0605 first';
   END IF;
-  IF NOT derm._is_rule_source('template-v1-2026-09-15') THEN RAISE EXCEPTION 'PRE 0.6: apply 2026-09-15_1100 first'; END IF;
+  IF NOT derm._is_rule_source('template-v1-2026-09-15') THEN RAISE EXCEPTION 'PRE 0.6: apply 2026-09-14_0610 first'; END IF;
 END
 $pre$;
 
@@ -205,7 +205,7 @@ BEGIN
     v_email := NULL;
     v_role  := NULL;
   END;
-  -- 2026-09-15: a service_role caller with no email is a machine (the generated-sheet finisher
+  -- 2026-09-14: a service_role caller with no email is a machine (the generated-sheet finisher
   -- writes bands and extents through save_page_geometry as service_role). Fred, 2026-09-14:
   -- everything machine-made carries the one label. A person's JWT still wins below, and direct
   -- SQL (no JWT at all) still gets p_default.
@@ -230,7 +230,7 @@ BEGIN
   IF v_headers IS NULL OR v_headers = '' THEN
     RETURN;  -- direct SQL (not PostgREST): admin scripts stay allowed
   END IF;
-  -- 2026-09-15: a service_role request (the generated-sheet finisher: edge fn -> PostgREST) is
+  -- 2026-09-14: a service_role request (the generated-sheet finisher: edge fn -> PostgREST) is
   -- let through. That key already writes every table directly; the Studio's header key was
   -- never a barrier to it, only to a browser holding the anon or a user key.
   BEGIN
@@ -597,7 +597,7 @@ AS $function$
      WHERE NOT EXISTS (SELECT 1 FROM derm.page_block_extents e
                         WHERE e.dump_folder = p_dump_folder AND e.effective_page = s.pg)
   ), fin AS (
-    -- 2026-09-15: the generated-sheet finisher's latest reason for a page still needing geometry,
+    -- 2026-09-14: the generated-sheet finisher's latest reason for a page still needing geometry,
     -- so the banner says WHY the sheet was not measured automatically (plain words, from the
     -- ledger derm.generated_measure_attempts).
     SELECT string_agg('Page ' || a.page || ' could not be measured automatically: ' || a.last_reason,

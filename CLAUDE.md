@@ -1767,6 +1767,60 @@ banner so the two cannot disagree.
 Removing or renaming a control means grepping every operator sentence that mentions it, in the
 same change. The app-side half of the rule is in `Building Apps/DERM Stamp Studio/CLAUDE.md`.
 
+### ✅ GENERATED SHEETS FINISH THEMSELVES: measured from the scan, guided by the layout we printed (2026-09-14)
+
+Fred, 2026-09-14, on 835076: *"if it's a generated manifest ... it should be auto-stamped and auto
+marked as complete unless it can be certain of the stamps."* Two of his rules could not both hold,
+"generated sheets are automatic" and "complete means it will be blacked out" (2026-09-03), because
+nothing MEASURED a generated sheet automatically. Now something does, and only for sheets we printed.
+
+**The finisher** (`generated-sheet-finisher`, `6-59/10`, `public.fn_request_generated_measure()`):
+1. completes every open generated folder that passes every gate (no HTTP; a hand-measured
+   generated sheet completes here too), through `derm.fn_complete_generated_sheet`, the resolver's
+   own write plus one gate the human path lacks: **one card per printed row, per client**;
+2. hands at most two stamped, unmeasured pages to the edge function `measure-generated-page`,
+   which runs the run-length detector (ONE shared module, `supabase/functions/_shared/printed_rule_detector.mjs`,
+   the same code the Node probe runs) and posts the raw lines to `derm.fn_generated_page_measured`.
+3. That RPC matches the lines to the printed layout (`derm.fn_match_generated_page`, pure: the
+   layout is a PRIOR, the scan is the MEASUREMENT; a half-width boundary is still the boundary)
+   and writes ONLY through `derm.record_page_rules` (source `template-v1-<date>`) and
+   `derm.save_page_geometry`, both in one subtransaction: both or neither, every guard G1..G14
+   runs, and no template value is ever written (every band edge and both extents are detected
+   lines on THIS scan).
+
+**Precedence of rule sources is now `human-v1 > template-v1 > runlen-v2`** (`derm._rule_source_rank`,
+read by BOTH `v_page_printed_rules` and `v_band_edge_check`). A person's lines always win; a page
+with a human-marked scan is not in the backlog at all.
+
+**What it refuses, in words, for a person** (the Studio banner reads "Page N could not be measured
+automatically: <reason>. Page N: ..." through `fn_sheet_publishable_detail`): a handwritten sheet
+(no generated-sheet link, e.g. the pads linked to 833049 and 834986), a client printed on several
+rows (833395's 242-WYN), a card not on the printed list, a card printed on another page, a stamp on
+a line, a missing or wrongly spaced printed line, a scan that is not a JPEG. Three attempts per
+image (`derm.generated_measure_attempts`, re-armed by a replaced scan or a card edit), then it is
+left alone.
+
+**Watch:** `derm.v_generated_measure_backlog` (pages waiting; `attempts_on_this_image` 3 means a
+person is needed) and `derm.v_generated_complete_backlog` (open generated folders; `blocker` says
+why one is not completing). **Off switch:** `public.app_config` `generated_sheet_auto_complete`
+= `false` stops completion only; measuring continues so the geometry is banked and Mark completed
+still works. Missing key = on.
+
+**Calibration:** the prior and the tolerances (`derm.fn_generated_page_prior`,
+`derm.fn_generated_match_tolerances`) were measured over the 33-page accepted corpus, not chosen:
+`scripts/probes/generated_finisher/phase0_report.md`. Re-run `phase0_corpus.mjs` before touching
+either; a tolerance is calibrated on pages that are RIGHT, never widened to admit a page that is
+wrong.
+
+🛑 **"service_role is a machine" is now encoded in two helpers**: `derm._actor` returns
+`stamp-studio-ai` for a service_role caller with no email (Fred: one label for everything
+machine-made), and `derm._require_stamp_key` lets service_role through. Do not add a second
+machine label.
+
+⚠ **Not shipped: re-placing cards left unplaced by a late sheet-number read** (the 835076 race;
+Step A of the design). Those cards still wait for Auto-place, and `derm.v_cards_awaiting_page_map`
+still lists them. Fred's call, pending.
+
 ### 🛑 A DERM SHEET IS A REGULATOR-FACING COMPLIANCE FORM: FILL IT, NEVER MARK IT (Fred, 2026-08-04)
 
 **Fred, verbatim:** *"The sheets cannot have a QR Code, so don't do it, the sheets should only be
@@ -2031,7 +2085,8 @@ healthy. Non-empty means those clients are seeing nothing. **Watch it after any 
 > enters the automatic measure path — `derm.fn_sheet_row_ocr_targets` only offers sheets with an
 > UN-placed card (`stamp_placed_at IS NULL`) — so its geometry is only ever set by hand or in the
 > Studio. Until that path covers pre-placed sheets, expect this backlog to recur; watch
-> `v_blackout_blocked_sheets`.
+> `v_blackout_blocked_sheets`. **Closed for GENERATED sheets on 2026-09-14 by the finisher (see "GENERATED
+> SHEETS FINISH THEMSELVES" below); a handwritten sheet still needs Draw the bands.**
 
 > ✅ **2026-09-03: "COMPLETE" NOW MEANS THE SHEET WILL BE BLACKED OUT. That recurrence is closed at
 > the source.** Fred: *"if it's marked as complete then after 5 min it needs a blackout. period, if

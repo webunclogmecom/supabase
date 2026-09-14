@@ -1,5 +1,5 @@
 -- ============================================================================================
--- 2026-09-15_1000_generated_page_matcher.sql
+-- 2026-09-14_0605_generated_page_matcher.sql
 --
 -- The layout-guided matcher for GENERATED DERM address sheets, as read-only functions, so it can be
 -- replayed over every accepted page (Phase 0 of the finisher plan) before anything writes.

@@ -1,4 +1,4 @@
-# Assembles docs/migrations/2026-09-15_1200_generated_sheet_finisher.sql: replaces its three body
+# Assembles docs/migrations/2026-09-14_0615_generated_sheet_finisher.sql: replaces its three body
 # markers with the LIVE pg_get_functiondef output patched by anchored replacement (each anchor
 # asserted to occur exactly once), and its fixture marker with the Phase 0 detector lines.
 # USE: python scripts/probes/generated_finisher/assemble_finisher_migration.py [fixture-key]
@@ -6,7 +6,7 @@
 import json, os, sys
 here = os.path.dirname(os.path.abspath(__file__))
 root = os.path.abspath(os.path.join(here, '..', '..', '..'))
-mig = os.path.join(root, 'docs', 'migrations', '2026-09-15_1200_generated_sheet_finisher.sql')
+mig = os.path.join(root, 'docs', 'migrations', '2026-09-14_0615_generated_sheet_finisher.sql')
 fixture = sys.argv[1] if len(sys.argv) > 1 else 'ticket-834742_p2'
 
 defs = {r['k']: r['def'] for r in json.load(open(os.path.join(here, 'finisher_defs.out.json'), encoding='utf-8'))}
@@ -23,7 +23,7 @@ def patch(body, pairs, name):
 actor = patch(defs['_actor'], [
     ("DECLARE\n  v_email text;\nBEGIN\n  BEGIN\n    v_email := nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email';\n  EXCEPTION WHEN others THEN\n    v_email := NULL;\n  END;\n",
      "DECLARE\n  v_email text;\n  v_role  text;\nBEGIN\n  BEGIN\n    v_email := nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email';\n    v_role  := nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role';\n  EXCEPTION WHEN others THEN\n    v_email := NULL;\n    v_role  := NULL;\n  END;\n"
-     "  -- 2026-09-15: a service_role caller with no email is a machine (the generated-sheet finisher\n"
+     "  -- 2026-09-14: a service_role caller with no email is a machine (the generated-sheet finisher\n"
      "  -- writes bands and extents through save_page_geometry as service_role). Fred, 2026-09-14:\n"
      "  -- everything machine-made carries the one label. A person's JWT still wins below, and direct\n"
      "  -- SQL (no JWT at all) still gets p_default.\n"
@@ -33,7 +33,7 @@ actor = patch(defs['_actor'], [
 key = patch(defs['_require_stamp_key'], [
     ("DECLARE v_headers text; v_key text;", "DECLARE v_headers text; v_key text; v_role text;"),
     ("  v_key := v_headers::jsonb->>'x-stamp-key';",
-     "  -- 2026-09-15: a service_role request (the generated-sheet finisher: edge fn -> PostgREST) is\n"
+     "  -- 2026-09-14: a service_role request (the generated-sheet finisher: edge fn -> PostgREST) is\n"
      "  -- let through. That key already writes every table directly; the Studio's header key was\n"
      "  -- never a barrier to it, only to a browser holding the anon or a user key.\n"
      "  BEGIN\n    v_role := nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role';\n"
@@ -45,7 +45,7 @@ key = patch(defs['_require_stamp_key'], [
 detail = patch(defs['fn_sheet_publishable_detail'], [
     ("  ), agg AS (\n    SELECT (SELECT blocker FROM code) AS blocker,\n",
      "  ), fin AS (\n"
-     "    -- 2026-09-15: the generated-sheet finisher's latest reason for a page still needing geometry,\n"
+     "    -- 2026-09-14: the generated-sheet finisher's latest reason for a page still needing geometry,\n"
      "    -- so the banner says WHY the sheet was not measured automatically (plain words, from the\n"
      "    -- ledger derm.generated_measure_attempts).\n"
      "    SELECT string_agg('Page ' || a.page || ' could not be measured automatically: ' || a.last_reason,\n"
