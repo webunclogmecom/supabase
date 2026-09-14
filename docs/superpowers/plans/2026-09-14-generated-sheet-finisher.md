@@ -1797,7 +1797,7 @@ BEGIN
     SELECT top_pct, bottom_pct INTO v_fx_top, v_fx_bot FROM derm.page_block_extents WHERE dump_folder = v_fx_folder AND effective_page = v_fx_page;
     IF v_fx_top IS NULL OR (SELECT count(*) FROM jsonb_object_keys(v_fx_bands)) < 3 THEN RAISE EXCEPTION 'SETUP: fixture has no accepted geometry'; END IF;
     -- un-complete without leaving the reopen pin (the pin trigger sets reopened_at on the flip)
-    UPDATE derm.stamp_sheet_status SET completed = false WHERE dump_folder = v_fx_folder;
+    UPDATE derm.stamp_sheet_status SET completed = false, completed_at = NULL, completed_by = NULL WHERE dump_folder = v_fx_folder;
     UPDATE derm.stamp_sheet_status SET reopened_at = NULL, reopened_by = NULL WHERE dump_folder = v_fx_folder;
     -- strip the page's geometry and the person's lines
     UPDATE derm.address_row_map SET band_y0_pct = NULL, band_y1_pct = NULL, band_source = NULL, band_set_at = NULL, band_set_by = NULL
@@ -1879,7 +1879,7 @@ BEGIN
 
   -- =========================== fixture B: the off switch measures but does not complete ===========================
   BEGIN
-    UPDATE derm.stamp_sheet_status SET completed = false WHERE dump_folder = v_fx_folder;
+    UPDATE derm.stamp_sheet_status SET completed = false, completed_at = NULL, completed_by = NULL WHERE dump_folder = v_fx_folder;
     UPDATE derm.stamp_sheet_status SET reopened_at = NULL, reopened_by = NULL WHERE dump_folder = v_fx_folder;
     UPDATE derm.address_row_map SET band_y0_pct = NULL, band_y1_pct = NULL, band_source = NULL, band_set_at = NULL, band_set_by = NULL
      WHERE dump_folder = v_fx_folder AND coalesce(stamp_page, page) = v_fx_page;
@@ -1908,7 +1908,7 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN IF SQLERRM <> 'RB' THEN RAISE; END IF; END;
   BEGIN
     -- ticket-833395: 242-WYN printed on 3 rows, 1 card (the known un-split folder)
-    UPDATE derm.stamp_sheet_status SET completed = false WHERE dump_folder = 'ticket-833395';
+    UPDATE derm.stamp_sheet_status SET completed = false, completed_at = NULL, completed_by = NULL WHERE dump_folder = 'ticket-833395';
     UPDATE derm.stamp_sheet_status SET reopened_at = NULL, reopened_by = NULL WHERE dump_folder = 'ticket-833395';
     v_j := derm.fn_complete_generated_sheet('ticket-833395');
     IF (v_j->>'completed')::boolean OR v_j->>'reason' NOT LIKE 'A client on this sheet%' OR v_j->>'reason' ~ v_tech THEN RAISE EXCEPTION 'VERIFY 8 FAILED: %', v_j; END IF;
@@ -1918,7 +1918,7 @@ BEGIN
 
   -- =========================== fixture D: the budget and its re-arming ===========================
   BEGIN
-    UPDATE derm.stamp_sheet_status SET completed = false WHERE dump_folder = v_fx_folder;
+    UPDATE derm.stamp_sheet_status SET completed = false, completed_at = NULL, completed_by = NULL WHERE dump_folder = v_fx_folder;
     UPDATE derm.stamp_sheet_status SET reopened_at = NULL, reopened_by = NULL WHERE dump_folder = v_fx_folder;
     DELETE FROM derm.page_block_extents WHERE dump_folder = v_fx_folder AND effective_page = v_fx_page;
     DELETE FROM derm.page_rule_scans WHERE dump_folder = v_fx_folder AND effective_page = v_fx_page AND source LIKE 'human-v1-%';
@@ -2082,7 +2082,7 @@ Expected: `assembled ... fixture ticket-834742_p2 lines <N>` and the grep count 
 Replace the two `-- REPLACE` lines in PART 1 with `calibrated_prior` and `tolerances` from `phase0_results.json` (six numbers with three decimals; match/gap/clear to two decimals), then:
 
 ```bash
-cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && grep -n "REPLACE" docs/migrations/2026-09-15_1200_generated_sheet_finisher.sql; node scripts/probes/apply_sql_file.mjs docs/migrations/2026-09-15_1200_generated_sheet_finisher.sql rehearse
+cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase" && grep -n -- "-- REPLACE" docs/migrations/2026-09-15_1200_generated_sheet_finisher.sql; node scripts/probes/apply_sql_file.mjs docs/migrations/2026-09-15_1200_generated_sheet_finisher.sql rehearse
 ```
 
 Expected: the grep prints nothing (both markers gone); the rehearsal returns `HTTP 201 []`. A `VERIFY 4b FAILED: bands sit Xpp from the accepted ones` means the fixture page's person-marked lines differ from the detector's: pick a Phase 0 MATCH page as the fixture (step 2) rather than widening anything. Then:
@@ -2371,7 +2371,7 @@ BEGIN
   -- 3. with one page in the backlog (ticket-834742 p2, stripped inside a savepoint) it queues exactly
   --    one request and records the attempt first; a second run counts the second attempt
   BEGIN
-    UPDATE derm.stamp_sheet_status SET completed = false WHERE dump_folder = 'ticket-834742';
+    UPDATE derm.stamp_sheet_status SET completed = false, completed_at = NULL, completed_by = NULL WHERE dump_folder = 'ticket-834742';
     UPDATE derm.stamp_sheet_status SET reopened_at = NULL, reopened_by = NULL WHERE dump_folder = 'ticket-834742';
     DELETE FROM derm.page_block_extents WHERE dump_folder = 'ticket-834742' AND effective_page = 2;
     DELETE FROM derm.page_rule_scans WHERE dump_folder = 'ticket-834742' AND effective_page = 2 AND source LIKE 'human-v1-%';

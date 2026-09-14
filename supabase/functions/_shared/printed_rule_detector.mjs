@@ -1,22 +1,26 @@
-// Node port of scripts/probes/derm_band_review/detect-run.js (the run-length detector that this
-// estate validated against known truth; four earlier scorers were tried and rejected, see that
-// folder's README). Ported so it can run without a browser. NOT retyped from memory: the
-// constants, the per-column paper level, the shear search, the NMS and the capped-plateau
-// refinement are all transcribed from that file.
+// printed_rule_detector.mjs: the run-length printed-rule detector as ONE module, imported by the
+// Node probe (scripts/probes/rev/detect_node.mjs) and by the edge function measure-generated-page.
 //
-// USE: node detect_node.js <jpeg-path> [topPct] [botPct]
-// It prints the detected rules. ALWAYS run it against a page whose truth you already know before
-// believing it on a page you do not: a detector with no positive control is an untested instrument.
-const fs = require('fs');
-const jpeg = require('jpeg-js');
+// Transcribed 2026-09-15 from scripts/probes/rev/detect_node.js (itself a port of
+// scripts/probes/derm_band_review/detect-run.js, the detector this estate validated against known
+// truth; four earlier scorers were tried and rejected, see that folder's README). The extraction was
+// done by a script, not by retyping: the function body is the old file's `detect` body with ONLY its
+// first line changed, so the decoded image comes in as a parameter and the same bytes run in Deno
+// and in Node. scripts/probes/generated_finisher/detect_core_test.mjs asserts the output is
+// identical to the pre-extraction script's frozen output on a known scan.
+//
+// Input:  raw = {width, height, data: Uint8Array RGBA}, what jpeg-js decode(bytes, {useTArray:true})
+//         returns. topPct / botPct (optional) bound the roster search, default 18 / 72.
+// Output: {W, H, skew, rules: [{pct, run, kind}]} sorted by pct. `kind` is the detector's own
+//         long/short label (run >= 0.80 = boundary) and is NOT a classification: the generated-sheet
+//         matcher ignores it, and the Studio's classifier re-derives it from alternation.
 
 const FULL_RUN = 0.80;
 const MIN_RUN = 0.33;
 const MIN_SEP_PP = 0.70;
 const SLOPES = [-8, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 8].map((v) => v / 1000);
 
-function detect(path, topPct, botPct) {
-  const raw = jpeg.decode(fs.readFileSync(path), { useTArray: true });
+export function detectRules(raw, topPct = null, botPct = null) {
   const W = raw.width, H = raw.height, d = raw.data;
   const L = new Uint8Array(W * H);
   for (let i = 0, p = 0; p < W * H; p++, i += 4) {
@@ -89,8 +93,3 @@ function detect(path, topPct, botPct) {
 
   return { W, H, skew: bestSlope, rules };
 }
-
-const [, , path, top, bot] = process.argv;
-const r = detect(path, top ? +top : null, bot ? +bot : null);
-console.log(`${path}  ${r.W}x${r.H}  skew ${r.skew}`);
-for (const x of r.rules) console.log(`  ${String(x.pct).padStart(7)}  run ${x.run.toFixed(3)}  ${x.kind}`);

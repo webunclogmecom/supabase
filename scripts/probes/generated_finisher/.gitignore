@@ -1,0 +1,4 @@
+img/
+*.out.json
+*.out.sql
+*.out.md

@@ -1,0 +1,83 @@
+{
+  "image": "img/835076_1.jpg",
+  "W": 1492,
+  "H": 1156,
+  "skew": 0,
+  "rules": [
+    {
+      "pct": 14.317,
+      "run": 0.99,
+      "kind": "boundary"
+    },
+    {
+      "pct": 23.789,
+      "run": 0.404,
+      "kind": "divider"
+    },
+    {
+      "pct": 26.125,
+      "run": 0.99,
+      "kind": "boundary"
+    },
+    {
+      "pct": 30.19,
+      "run": 0.404,
+      "kind": "divider"
+    },
+    {
+      "pct": 34.343,
+      "run": 0.989,
+      "kind": "boundary"
+    },
+    {
+      "pct": 37.716,
+      "run": 0.404,
+      "kind": "divider"
+    },
+    {
+      "pct": 41.047,
+      "run": 0.987,
+      "kind": "boundary"
+    },
+    {
+      "pct": 44.291,
+      "run": 0.403,
+      "kind": "divider"
+    },
+    {
+      "pct": 48.227,
+      "run": 0.987,
+      "kind": "boundary"
+    },
+    {
+      "pct": 51.903,
+      "run": 0.403,
+      "kind": "divider"
+    },
+    {
+      "pct": 56.012,
+      "run": 0.988,
+      "kind": "boundary"
+    },
+    {
+      "pct": 59.689,
+      "run": 0.404,
+      "kind": "divider"
+    },
+    {
+      "pct": 63.754,
+      "run": 0.989,
+      "kind": "boundary"
+    },
+    {
+      "pct": 66.912,
+      "run": 0.987,
+      "kind": "boundary"
+    },
+    {
+      "pct": 69.247,
+      "run": 0.698,
+      "kind": "divider"
+    }
+  ]
+}
