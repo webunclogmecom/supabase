@@ -1,0 +1,6123 @@
+{
+ "generated_at": "2026-09-14T04:05:12.445Z",
+ "pages": 33,
+ "usable": 33,
+ "template_prior": [
+  25.84,
+  33.76,
+  41.1,
+  48.145,
+  55.925,
+  64.155
+ ],
+ "calibrated_prior": [
+  25.062,
+  33.431,
+  40.218,
+  47.481,
+  55.38,
+  63.247
+ ],
+ "tolerances": {
+  "match": 0.85,
+  "gap": 0.85,
+  "clear": 0.5,
+  "search": 2.5,
+  "measured": {
+   "max_abs_residual": 0.59,
+   "max_gap_deviation": 0.56,
+   "min_stamp_clearance": 1.464
+  }
+ },
+ "pass1": [
+  {
+   "dump_folder": "ticket-310429",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.373,
+   "residuals": [
+    0.06,
+    0.451,
+    -0.186,
+    -0.06,
+    0.069,
+    -0.386
+   ],
+   "boundaries": [
+    26.273,
+    34.584,
+    41.287,
+    48.458,
+    56.367,
+    64.142
+   ],
+   "max_band": 0.067,
+   "max_extent": 0.473,
+   "max_admitted": 0.067,
+   "deltas": {
+    "bands": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0.067,
+     0.067,
+     0.067,
+     0.067,
+     0.067
+    ],
+    "extent": [
+     0.473,
+     0.258
+    ],
+    "admitted": [
+     0.067,
+     0.067,
+     0.067,
+     0.067,
+     0.067,
+     0.067
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 3.136,
+   "gap_dev": 0.637
+  },
+  {
+   "dump_folder": "ticket-310429",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 2 expected near 33.657 (shift -0.104), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "REFUSED"
+  },
+  {
+   "dump_folder": "ticket-310590",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.584,
+   "residuals": [
+    0.017,
+    0.415,
+    -0.199,
+    -0.017,
+    0.023,
+    -0.436
+   ],
+   "boundaries": [
+    25.273,
+    33.591,
+    40.318,
+    47.545,
+    55.364,
+    63.136
+   ],
+   "max_band": 0.091,
+   "max_extent": 0.137,
+   "max_admitted": 0.091,
+   "deltas": {
+    "bands": [
+     0.045,
+     0.045,
+     0.045,
+     0.046,
+     0.046,
+     0.046,
+     0.046,
+     0.091
+    ],
+    "extent": [
+     0.045,
+     0.137
+    ],
+    "admitted": [
+     0.045,
+     0.091,
+     0.045,
+     0.091,
+     0.045,
+     0.046
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.598,
+   "gap_dev": 0.613
+  },
+  {
+   "dump_folder": "ticket-310590",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.46,
+   "residuals": [
+    0.137,
+    0.533,
+    -0.197,
+    -0.01,
+    0.01,
+    -0.525
+   ],
+   "boundaries": [
+    25.517,
+    33.833,
+    40.444,
+    47.676,
+    55.475,
+    63.171
+   ],
+   "max_band": 0.155,
+   "max_extent": 0.155,
+   "max_admitted": 0.052,
+   "deltas": {
+    "bands": [
+     0,
+     0.052,
+     0.052,
+     0.052,
+     0.051,
+     0,
+     0,
+     0.155
+    ],
+    "extent": [
+     0,
+     0.155
+    ],
+    "admitted": [
+     0,
+     0.051,
+     0.052,
+     0,
+     0.052,
+     0.052
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.724,
+   "gap_dev": 0.729
+  },
+  {
+   "dump_folder": "ticket-310607",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 1 expected near 24.611 (shift -1.230), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "REFUSED"
+  },
+  {
+   "dump_folder": "ticket-311045",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.848,
+   "residuals": [
+    0.284,
+    0.549,
+    -0.177,
+    -0.012,
+    0.012,
+    -0.458
+   ],
+   "boundaries": [
+    25.276,
+    33.461,
+    40.076,
+    47.286,
+    55.089,
+    62.85
+   ],
+   "max_band": null,
+   "max_extent": 0.59,
+   "max_admitted": 0.043,
+   "deltas": {
+    "bands": [],
+    "extent": [
+     0.426,
+     0.59
+    ],
+    "admitted": [
+     0.042,
+     0.042,
+     0.043,
+     0.042,
+     0,
+     0.042
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 2.356,
+   "gap_dev": 0.725
+  },
+  {
+   "dump_folder": "ticket-311780",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.164,
+   "residuals": [
+    -0.032,
+    0.436,
+    0.032,
+    -0.079,
+    -0.117,
+    -0.282
+   ],
+   "boundaries": [
+    25.645,
+    34.032,
+    40.968,
+    47.903,
+    55.645,
+    63.71
+   ],
+   "max_band": 0.242,
+   "max_extent": 0.242,
+   "max_admitted": 0.484,
+   "deltas": {
+    "bands": [
+     0.242,
+     0.081,
+     0.081,
+     0.242,
+     0.242,
+     0,
+     0,
+     0.081,
+     0.081,
+     0.242
+    ],
+    "extent": [
+     0.242,
+     0.242
+    ],
+    "admitted": [
+     0.484,
+     0.242,
+     0.162,
+     0.081,
+     0.081,
+     0.323
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.248,
+   "gap_dev": 0.467
+  },
+  {
+   "dump_folder": "ticket-311780",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.217,
+   "residuals": [
+    0.026,
+    0.386,
+    0.026,
+    -0.038,
+    -0.026,
+    -0.464
+   ],
+   "boundaries": [
+    25.649,
+    33.929,
+    40.909,
+    47.89,
+    55.682,
+    63.474
+   ],
+   "max_band": 0.162,
+   "max_extent": 0.081,
+   "max_admitted": 0.243,
+   "deltas": {
+    "bands": [
+     0,
+     0.162,
+     0.162,
+     0.162,
+     0.162,
+     0.081,
+     0.081,
+     0.081,
+     0.081,
+     0.081
+    ],
+    "extent": [
+     0,
+     0.081
+    ],
+    "admitted": [
+     0.082,
+     0.081,
+     0.243,
+     0.081,
+     0.081,
+     0.081
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.123,
+   "gap_dev": 0.438
+  },
+  {
+   "dump_folder": "ticket-312433",
+   "page": 1,
+   "pass": "template",
+   "ineligible": "A client on this page is printed on several rows. Give it one card per permit and place each stamp on its own row, then measure the page with Draw the bands.",
+   "ok": false,
+   "reason": "A stamp sits on the line between two rows. Place it again.",
+   "detail": "row 2 stamp at 43.801, slot 33.178 to 39.852, clearance 0.5",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-312433",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 2 expected near 32.714 (shift -1.047), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "REFUSED"
+  },
+  {
+   "dump_folder": "ticket-312500",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -1.443,
+   "residuals": [
+    -0.417,
+    0.081,
+    -0.371,
+    -0.146,
+    -0.081,
+    -0.403
+   ],
+   "boundaries": [
+    23.98,
+    32.398,
+    39.286,
+    46.556,
+    54.401,
+    62.309
+   ],
+   "max_band": 0.064,
+   "max_extent": 0.063,
+   "max_admitted": 0.064,
+   "deltas": {
+    "bands": [
+     0.063,
+     0.064,
+     0.064,
+     0.063
+    ],
+    "extent": [
+     0.063,
+     0.063
+    ],
+    "admitted": [
+     0.063,
+     0.064,
+     0.063,
+     0.064,
+     0.063,
+     0.063
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 1.566,
+   "gap_dev": 0.498
+  },
+  {
+   "dump_folder": "ticket-831325",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": false,
+   "reason": "The printed rows could not be found on this scan.",
+   "detail": "only 4 of 6 boundaries have a line within 2.5pp of the layout",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "REFUSED"
+  },
+  {
+   "dump_folder": "ticket-831938",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.688,
+   "residuals": [
+    -0.016,
+    0.466,
+    -0.112,
+    0.016,
+    0.159,
+    -0.285
+   ],
+   "boundaries": [
+    25.137,
+    33.538,
+    40.301,
+    47.473,
+    55.396,
+    63.183
+   ],
+   "max_band": 0.137,
+   "max_extent": 1.217,
+   "max_admitted": 0.069,
+   "deltas": {
+    "bands": [
+     0.068,
+     0,
+     0,
+     0.069,
+     0.069,
+     0.136,
+     0.136,
+     0,
+     0,
+     0.137
+    ],
+    "extent": [
+     0.068,
+     1.217
+    ],
+    "admitted": [
+     0.068,
+     0.069,
+     0.068,
+     0.068,
+     0.068,
+     0.068
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 2.581,
+   "gap_dev": 0.577
+  },
+  {
+   "dump_folder": "ticket-831938",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.546,
+   "residuals": [
+    -0.013,
+    0.353,
+    -0.175,
+    0.013,
+    0.099,
+    -0.266
+   ],
+   "boundaries": [
+    25.281,
+    33.567,
+    40.379,
+    47.612,
+    55.478,
+    63.343
+   ],
+   "max_band": 0.071,
+   "max_extent": 1.057,
+   "max_admitted": 0.141,
+   "deltas": {
+    "bands": [
+     0.07,
+     0.071,
+     0.071,
+     0,
+     0,
+     0.071
+    ],
+    "extent": [
+     0.07,
+     1.057
+    ],
+    "admitted": [
+     0.07,
+     0.071,
+     0.141,
+     0,
+     0.07,
+     0.07
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 2.659,
+   "gap_dev": 0.528
+  },
+  {
+   "dump_folder": "ticket-832194",
+   "page": 1,
+   "pass": "template",
+   "ineligible": "A client on this page is printed on several rows. Give it one card per permit and place each stamp on its own row, then measure the page with Draw the bands.",
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.659,
+   "residuals": [
+    -0.736,
+    -0.032,
+    -0.41,
+    0.061,
+    0.272,
+    0.032
+   ],
+   "boundaries": [
+    24.446,
+    33.07,
+    40.032,
+    47.547,
+    55.538,
+    63.528
+   ],
+   "max_band": 0.119,
+   "max_extent": 1.172,
+   "max_admitted": 8.663,
+   "deltas": {
+    "bands": [
+     0.119,
+     0.118,
+     0.118,
+     0.118,
+     0.118,
+     0.039,
+     0.039,
+     0.04,
+     0.04,
+     0.039
+    ],
+    "extent": [
+     0.046,
+     1.172
+    ],
+    "admitted": [
+     8.663,
+     0.039,
+     0.039,
+     0.04,
+     0.04,
+     0.039
+    ]
+   },
+   "verdict": "INELIGIBLE_BUT_MATCHED",
+   "min_clearance": 2.312,
+   "gap_dev": 0.704
+  },
+  {
+   "dump_folder": "ticket-832194",
+   "page": 2,
+   "pass": "template",
+   "ineligible": "A client on this page is printed on a different page of this sheet. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A stamp sits on the line between two rows. Place it again.",
+   "detail": "row 5 stamp at 29.9, slot 55.169 to 63.178, clearance 0.5",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-832487",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.792,
+   "residuals": [
+    -0.533,
+    -0.066,
+    -0.47,
+    0.066,
+    0.351,
+    0.105
+   ],
+   "boundaries": [
+    24.516,
+    32.903,
+    39.839,
+    47.419,
+    55.484,
+    63.468
+   ],
+   "max_band": 0.161,
+   "max_extent": 0.161,
+   "max_admitted": 0.242,
+   "deltas": {
+    "bands": [
+     0.161,
+     0.081,
+     0.081,
+     0.08,
+     0.08,
+     0.08,
+     0.08,
+     0.081,
+     0.081,
+     0
+    ],
+    "extent": [
+     0.161,
+     0
+    ],
+    "admitted": [
+     0.242,
+     0.081,
+     0.08,
+     0.081,
+     0.081,
+     0.08
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.119,
+   "gap_dev": 0.535
+  },
+  {
+   "dump_folder": "ticket-832487",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -1.195,
+   "residuals": [
+    -0.614,
+    0.016,
+    -0.39,
+    -0.016,
+    0.27,
+    0.105
+   ],
+   "boundaries": [
+    24.032,
+    32.581,
+    39.516,
+    46.935,
+    55,
+    63.065
+   ],
+   "max_band": 0.161,
+   "max_extent": 0.161,
+   "max_admitted": 0.081,
+   "deltas": {
+    "bands": [
+     0.161,
+     0.081,
+     0.081,
+     0.081,
+     0.081,
+     0,
+     0,
+     0.081,
+     0.081,
+     0
+    ],
+    "extent": [
+     0.161,
+     0
+    ],
+    "admitted": [
+     0.08,
+     0.08,
+     0.081,
+     0.081,
+     0.081,
+     0.08
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 1.796,
+   "gap_dev": 0.629
+  },
+  {
+   "dump_folder": "ticket-833049",
+   "page": 1,
+   "pass": "template",
+   "ineligible": "A client on this page is printed on a different page of this sheet. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 1 expected near 26.204 (shift 0.364), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-833049",
+   "page": 2,
+   "pass": "template",
+   "ineligible": "A client on this page is printed on a different page of this sheet. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 4 expected near 48.099 (shift -0.046), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-833395",
+   "page": 1,
+   "pass": "template",
+   "ineligible": "A client on this page is printed on several rows. Give it one card per permit and place each stamp on its own row, then measure the page with Draw the bands.",
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 1 expected near 25.012 (shift -0.828), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-833813",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.065,
+   "residuals": [
+    0.017,
+    0.46,
+    -0.19,
+    -0.017,
+    0.302,
+    -0.182
+   ],
+   "boundaries": [
+    25.792,
+    34.155,
+    40.845,
+    48.063,
+    56.162,
+    63.908
+   ],
+   "max_band": 0.088,
+   "max_extent": 0.088,
+   "max_admitted": 0.088,
+   "deltas": {
+    "bands": [
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088
+    ],
+    "extent": [
+     0.088,
+     0.088
+    ],
+    "admitted": [
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.125,
+   "gap_dev": 0.65
+  },
+  {
+   "dump_folder": "ticket-833813",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -1.452,
+   "residuals": [
+    -0.541,
+    0.139,
+    -0.465,
+    -0.063,
+    0.137,
+    0.063
+   ],
+   "boundaries": [
+    23.848,
+    32.447,
+    39.184,
+    46.631,
+    54.61,
+    62.766
+   ],
+   "max_band": 0.089,
+   "max_extent": 0.089,
+   "max_admitted": 0.089,
+   "deltas": {
+    "bands": [
+     0,
+     0.088,
+     0.088,
+     0.089,
+     0.089,
+     0.089,
+     0.089,
+     0.089,
+     0.089,
+     0.089
+    ],
+    "extent": [
+     0,
+     0.089
+    ],
+    "admitted": [
+     0,
+     0.088,
+     0.089,
+     0.089,
+     0.089,
+     0.089
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 1.464,
+   "gap_dev": 0.679
+  },
+  {
+   "dump_folder": "ticket-834287",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.217,
+   "residuals": [
+    -0.057,
+    0.399,
+    -0.204,
+    0.057,
+    0.085,
+    -0.337
+   ],
+   "boundaries": [
+    25.567,
+    33.942,
+    40.68,
+    47.985,
+    55.793,
+    63.602
+   ],
+   "max_band": 0.063,
+   "max_extent": 0.063,
+   "max_admitted": 0.063,
+   "deltas": {
+    "bands": [
+     0.063,
+     0.063
+    ],
+    "extent": [
+     0.063,
+     0.063
+    ],
+    "admitted": [
+     0.063,
+     0.063,
+     0.063,
+     0.063,
+     0.063,
+     0.063
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 4.142,
+   "gap_dev": 0.602
+  },
+  {
+   "dump_folder": "ticket-834433",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -1.3,
+   "residuals": [
+    0.069,
+    0.483,
+    -0.218,
+    -0.101,
+    -0.069,
+    -0.616
+   ],
+   "boundaries": [
+    24.609,
+    32.943,
+    39.583,
+    46.745,
+    54.557,
+    62.24
+   ],
+   "max_band": 0.065,
+   "max_extent": 0.13,
+   "max_admitted": 0.13,
+   "deltas": {
+    "bands": [
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.065
+    ],
+    "extent": [
+     0.065,
+     0.13
+    ],
+    "admitted": [
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.13
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.967,
+   "gap_dev": 0.7
+  },
+  {
+   "dump_folder": "ticket-834742",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 1 expected near 25.677 (shift -0.163), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "REFUSED"
+  },
+  {
+   "dump_folder": "ticket-834742",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.461,
+   "residuals": [
+    -0.027,
+    0.24,
+    -0.322,
+    0.027,
+    0.258,
+    -0.05
+   ],
+   "boundaries": [
+    25.352,
+    33.539,
+    40.317,
+    47.711,
+    55.722,
+    63.644
+   ],
+   "max_band": 0.214,
+   "max_extent": 0.214,
+   "max_admitted": 0.214,
+   "deltas": {
+    "bands": [
+     0.214,
+     0.032,
+     0.032,
+     0.196,
+     0.196,
+     0.003,
+     0.003,
+     0.029,
+     0.029,
+     0.028
+    ],
+    "extent": [
+     0.214,
+     0.028
+    ],
+    "admitted": [
+     0.214,
+     0.032,
+     0.196,
+     0.003,
+     0.029,
+     0.028
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.597,
+   "gap_dev": 0.562
+  },
+  {
+   "dump_folder": "ticket-834986",
+   "page": 1,
+   "pass": "template",
+   "ineligible": "A client on this page is not on the printed list of this sheet, so its row cannot be found automatically. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 4 expected near 48.012 (shift -0.133), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-834986",
+   "page": 2,
+   "pass": "template",
+   "ineligible": "A client on this page is not on the printed list of this sheet, so its row cannot be found automatically. A person needs to check this page in Draw the bands.",
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.335,
+   "residuals": [
+    0.042,
+    0.434,
+    -0.257,
+    -0.042,
+    0.071,
+    -0.374
+   ],
+   "boundaries": [
+    25.547,
+    33.859,
+    40.509,
+    47.769,
+    55.661,
+    63.447
+   ],
+   "max_band": null,
+   "max_extent": 0.126,
+   "max_admitted": 0.153,
+   "deltas": {
+    "bands": [],
+    "extent": [
+     0.126,
+     0.017
+    ],
+    "admitted": [
+     0.126,
+     0.153,
+     0.026,
+     0.004,
+     0.037,
+     0.017
+    ]
+   },
+   "verdict": "INELIGIBLE_BUT_MATCHED",
+   "min_clearance": null,
+   "gap_dev": 0.69
+  },
+  {
+   "dump_folder": "ticket-835076",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.085,
+   "residuals": [
+    0.201,
+    0.499,
+    -0.138,
+    -0.003,
+    0.003,
+    -0.486
+   ],
+   "boundaries": [
+    26.125,
+    34.343,
+    41.047,
+    48.227,
+    56.012,
+    63.754
+   ],
+   "max_band": 0.044,
+   "max_extent": 0.044,
+   "max_admitted": 0.044,
+   "deltas": {
+    "bands": [
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.044
+    ],
+    "extent": [
+     0.043,
+     0.044
+    ],
+    "admitted": [
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.044
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.327,
+   "gap_dev": 0.636
+  },
+  {
+   "dump_folder": "ticket-835076",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.335,
+   "residuals": [
+    -0.001,
+    0.413,
+    -0.194,
+    0.001,
+    0.05,
+    -0.395
+   ],
+   "boundaries": [
+    25.505,
+    33.838,
+    40.572,
+    47.811,
+    55.64,
+    63.426
+   ],
+   "max_band": 0,
+   "max_extent": 0,
+   "max_admitted": 0,
+   "deltas": {
+    "bands": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "extent": [
+     0,
+     0
+    ],
+    "admitted": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.852,
+   "gap_dev": 0.606
+  },
+  {
+   "dump_folder": "ticket-835309",
+   "page": 1,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.143,
+   "residuals": [
+    0.051,
+    0.45,
+    -0.201,
+    -0.028,
+    0.028,
+    -0.413
+   ],
+   "boundaries": [
+    25.748,
+    34.067,
+    40.757,
+    47.975,
+    55.81,
+    63.6
+   ],
+   "max_band": 0.139,
+   "max_extent": 0.09,
+   "max_admitted": 0.258,
+   "deltas": {
+    "bands": [
+     0.033,
+     0.054,
+     0.054,
+     0.137,
+     0.137,
+     0.139
+    ],
+    "extent": [
+     0.033,
+     0.09
+    ],
+    "admitted": [
+     0.033,
+     0.054,
+     0.137,
+     0.139,
+     0.258,
+     0.09
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.037,
+   "gap_dev": 0.65
+  },
+  {
+   "dump_folder": "ticket-835309",
+   "page": 2,
+   "pass": "template",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -1.445,
+   "residuals": [
+    -0.564,
+    0.038,
+    -0.426,
+    -0.075,
+    0.235,
+    -0.038
+   ],
+   "boundaries": [
+    23.832,
+    32.353,
+    39.23,
+    46.626,
+    54.715,
+    62.673
+   ],
+   "max_band": 0.158,
+   "max_extent": 0.116,
+   "max_admitted": 0.158,
+   "deltas": {
+    "bands": [
+     0.116,
+     0.115,
+     0.115,
+     0.03,
+     0.03,
+     0.042,
+     0.042,
+     0.158,
+     0.158,
+     0.016
+    ],
+    "extent": [
+     0.116,
+     0.016
+    ],
+    "admitted": [
+     0.116,
+     0.115,
+     0.03,
+     0.042,
+     0.158,
+     0.016
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.091,
+   "gap_dev": 0.601
+  }
+ ],
+ "pass2": [
+  {
+   "dump_folder": "ticket-310429",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.982,
+   "residuals": [
+    0.229,
+    0.171,
+    0.087,
+    -0.005,
+    0.005,
+    -0.087
+   ],
+   "boundaries": [
+    26.273,
+    34.584,
+    41.287,
+    48.458,
+    56.367,
+    64.142
+   ],
+   "max_band": 0.067,
+   "max_extent": 0.473,
+   "max_admitted": 0.067,
+   "deltas": {
+    "bands": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0.067,
+     0.067,
+     0.067,
+     0.067,
+     0.067
+    ],
+    "extent": [
+     0.473,
+     0.258
+    ],
+    "admitted": [
+     0.067,
+     0.067,
+     0.067,
+     0.067,
+     0.067,
+     0.067
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 3.136,
+   "gap_dev": 0.092
+  },
+  {
+   "dump_folder": "ticket-310429",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.67,
+   "residuals": [
+    0.405,
+    0.325,
+    0.156,
+    -0.156,
+    -0.301,
+    -0.481
+   ],
+   "boundaries": [
+    26.136,
+    34.425,
+    41.043,
+    47.995,
+    55.749,
+    63.436
+   ],
+   "max_band": 0.134,
+   "max_extent": 0.336,
+   "max_admitted": 0.134,
+   "deltas": {
+    "bands": [
+     0.066,
+     0.067,
+     0.067,
+     0.134
+    ],
+    "extent": [
+     0.336,
+     0.264
+    ],
+    "admitted": [
+     0.134,
+     0,
+     0.067,
+     0.066,
+     0.067,
+     0.134
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.295,
+   "gap_dev": 0.311
+  },
+  {
+   "dump_folder": "ticket-310590",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.082,
+   "residuals": [
+    0.129,
+    0.078,
+    0.018,
+    -0.018,
+    -0.098,
+    -0.193
+   ],
+   "boundaries": [
+    25.273,
+    33.591,
+    40.318,
+    47.545,
+    55.364,
+    63.136
+   ],
+   "max_band": 0.091,
+   "max_extent": 0.137,
+   "max_admitted": 0.091,
+   "deltas": {
+    "bands": [
+     0.045,
+     0.045,
+     0.045,
+     0.046,
+     0.046,
+     0.046,
+     0.046,
+     0.091
+    ],
+    "extent": [
+     0.045,
+     0.137
+    ],
+    "admitted": [
+     0.045,
+     0.091,
+     0.045,
+     0.091,
+     0.045,
+     0.046
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.598,
+   "gap_dev": 0.095
+  },
+  {
+   "dump_folder": "ticket-310590",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.211,
+   "residuals": [
+    0.245,
+    0.192,
+    0.016,
+    -0.016,
+    -0.116,
+    -0.287
+   ],
+   "boundaries": [
+    25.517,
+    33.833,
+    40.444,
+    47.676,
+    55.475,
+    63.171
+   ],
+   "max_band": 0.155,
+   "max_extent": 0.155,
+   "max_admitted": 0.052,
+   "deltas": {
+    "bands": [
+     0,
+     0.052,
+     0.052,
+     0.052,
+     0.051,
+     0,
+     0,
+     0.155
+    ],
+    "extent": [
+     0,
+     0.155
+    ],
+    "admitted": [
+     0,
+     0.051,
+     0.052,
+     0,
+     0.052,
+     0.052
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.724,
+   "gap_dev": 0.176
+  },
+  {
+   "dump_folder": "ticket-310607",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.659,
+   "residuals": [
+    -0.569,
+    -0.3,
+    -0.152,
+    0.152,
+    0.386,
+    0.59
+   ],
+   "boundaries": [
+    23.834,
+    32.472,
+    39.407,
+    46.974,
+    55.107,
+    63.178
+   ],
+   "max_band": 0.189,
+   "max_extent": 0.422,
+   "max_admitted": 0.126,
+   "deltas": {
+    "bands": [
+     0.189,
+     0.126,
+     0.126,
+     0.126,
+     0.126,
+     0,
+     0,
+     0.063
+    ],
+    "extent": [
+     0.134,
+     0.422
+    ],
+    "admitted": [
+     0.063,
+     0.063,
+     0.063,
+     0.063,
+     0.063,
+     0.126
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 1.687,
+   "gap_dev": 0.304
+  },
+  {
+   "dump_folder": "ticket-311045",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.169,
+   "residuals": [
+    0.383,
+    0.199,
+    0.027,
+    -0.027,
+    -0.123,
+    -0.229
+   ],
+   "boundaries": [
+    25.276,
+    33.461,
+    40.076,
+    47.286,
+    55.089,
+    62.85
+   ],
+   "max_band": null,
+   "max_extent": 0.59,
+   "max_admitted": 0.043,
+   "deltas": {
+    "bands": [],
+    "extent": [
+     0.426,
+     0.59
+    ],
+    "admitted": [
+     0.042,
+     0.042,
+     0.043,
+     0.042,
+     0,
+     0.042
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 2.356,
+   "gap_dev": 0.184
+  },
+  {
+   "dump_folder": "ticket-311780",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.425,
+   "residuals": [
+    0.159,
+    0.177,
+    0.003,
+    -0.003,
+    -0.16,
+    0.039
+   ],
+   "boundaries": [
+    25.645,
+    34.032,
+    40.645,
+    47.903,
+    55.645,
+    63.71
+   ],
+   "max_band": 0.242,
+   "max_extent": 0.242,
+   "max_admitted": 0.484,
+   "deltas": {
+    "bands": [
+     0.242,
+     0.081,
+     0.081,
+     0.081,
+     0.081,
+     0,
+     0,
+     0.081,
+     0.081,
+     0.242
+    ],
+    "extent": [
+     0.242,
+     0.242
+    ],
+    "admitted": [
+     0.484,
+     0.242,
+     0.161,
+     0.081,
+     0.081,
+     0.323
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.925,
+   "gap_dev": 0.198
+  },
+  {
+   "dump_folder": "ticket-311780",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.388,
+   "residuals": [
+    0.2,
+    0.111,
+    -0.022,
+    0.022,
+    -0.086,
+    -0.161
+   ],
+   "boundaries": [
+    25.649,
+    33.929,
+    40.584,
+    47.89,
+    55.682,
+    63.474
+   ],
+   "max_band": 0.163,
+   "max_extent": 0.081,
+   "max_admitted": 0.082,
+   "deltas": {
+    "bands": [
+     0,
+     0.162,
+     0.162,
+     0.163,
+     0.163,
+     0.081,
+     0.081,
+     0.081,
+     0.081,
+     0.081
+    ],
+    "extent": [
+     0,
+     0.081
+    ],
+    "admitted": [
+     0.082,
+     0.081,
+     0.082,
+     0.081,
+     0.081,
+     0.081
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.864,
+   "gap_dev": 0.132
+  },
+  {
+   "dump_folder": "ticket-312433",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is printed on several rows. Give it one card per permit and place each stamp on its own row, then measure the page with Draw the bands.",
+   "ok": false,
+   "reason": "A stamp sits on the line between two rows. Place it again.",
+   "detail": "row 2 stamp at 43.801, slot 33.178 to 39.852, clearance 0.5",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-312433",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.274,
+   "residuals": [
+    0.586,
+    0.337,
+    0.093,
+    -0.093,
+    -0.246,
+    -0.367
+   ],
+   "boundaries": [
+    25.374,
+    33.494,
+    40.037,
+    47.115,
+    54.861,
+    62.607
+   ],
+   "max_band": 0.183,
+   "max_extent": 0.027,
+   "max_admitted": 0.027,
+   "deltas": {
+    "bands": [
+     0.027,
+     0.026,
+     0.026,
+     0.183,
+     0.183,
+     0.103,
+     0.103,
+     0.027,
+     0.027,
+     0.027
+    ],
+    "extent": [
+     0.027,
+     0.027
+    ],
+    "admitted": [
+     0.027,
+     0.026,
+     0.027,
+     0.027,
+     0.027,
+     0.027
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.955,
+   "gap_dev": 0.249
+  },
+  {
+   "dump_folder": "ticket-312500",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.959,
+   "residuals": [
+    -0.124,
+    -0.075,
+    0.027,
+    0.034,
+    -0.021,
+    0.021
+   ],
+   "boundaries": [
+    23.98,
+    32.398,
+    39.286,
+    46.556,
+    54.401,
+    62.309
+   ],
+   "max_band": 0.064,
+   "max_extent": 0.063,
+   "max_admitted": 0.064,
+   "deltas": {
+    "bands": [
+     0.063,
+     0.064,
+     0.064,
+     0.063
+    ],
+    "extent": [
+     0.063,
+     0.063
+    ],
+    "admitted": [
+     0.063,
+     0.064,
+     0.063,
+     0.064,
+     0.063,
+     0.063
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 1.566,
+   "gap_dev": 0.101
+  },
+  {
+   "dump_folder": "ticket-831325",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": false,
+   "reason": "The printed rows could not be found on this scan.",
+   "detail": "only 4 of 6 boundaries have a line within 2.5pp of the layout",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "REFUSED"
+  },
+  {
+   "dump_folder": "ticket-831938",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.046,
+   "residuals": [
+    0.03,
+    0.062,
+    0.038,
+    -0.054,
+    -0.03,
+    -0.11
+   ],
+   "boundaries": [
+    25.137,
+    33.538,
+    40.301,
+    47.473,
+    55.396,
+    63.183
+   ],
+   "max_band": 0.137,
+   "max_extent": 1.217,
+   "max_admitted": 0.069,
+   "deltas": {
+    "bands": [
+     0.068,
+     0,
+     0,
+     0.069,
+     0.069,
+     0.136,
+     0.136,
+     0,
+     0,
+     0.137
+    ],
+    "extent": [
+     0.068,
+     1.217
+    ],
+    "admitted": [
+     0.068,
+     0.069,
+     0.068,
+     0.068,
+     0.068,
+     0.068
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 2.581,
+   "gap_dev": 0.091
+  },
+  {
+   "dump_folder": "ticket-831938",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.134,
+   "residuals": [
+    0.086,
+    0.003,
+    0.028,
+    -0.003,
+    -0.036,
+    -0.038
+   ],
+   "boundaries": [
+    25.281,
+    33.567,
+    40.379,
+    47.612,
+    55.478,
+    63.343
+   ],
+   "max_band": 0.071,
+   "max_extent": 1.057,
+   "max_admitted": 0.141,
+   "deltas": {
+    "bands": [
+     0.07,
+     0.071,
+     0.071,
+     0,
+     0,
+     0.071
+    ],
+    "extent": [
+     0.07,
+     1.057
+    ],
+    "admitted": [
+     0.07,
+     0.071,
+     0.141,
+     0,
+     0.07,
+     0.07
+    ]
+   },
+   "verdict": "RULES_ONLY",
+   "min_clearance": 2.659,
+   "gap_dev": 0.083
+  },
+  {
+   "dump_folder": "ticket-832194",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is printed on several rows. Give it one card per permit and place each stamp on its own row, then measure the page with Draw the bands.",
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.06,
+   "residuals": [
+    -0.556,
+    -0.301,
+    -0.126,
+    0.126,
+    0.218,
+    0.341
+   ],
+   "boundaries": [
+    24.446,
+    33.07,
+    40.032,
+    47.547,
+    55.538,
+    63.528
+   ],
+   "max_band": 0.119,
+   "max_extent": 1.172,
+   "max_admitted": 8.663,
+   "deltas": {
+    "bands": [
+     0.119,
+     0.118,
+     0.118,
+     0.118,
+     0.118,
+     0.039,
+     0.039,
+     0.04,
+     0.04,
+     0.039
+    ],
+    "extent": [
+     0.046,
+     1.172
+    ],
+    "admitted": [
+     8.663,
+     0.039,
+     0.039,
+     0.04,
+     0.04,
+     0.039
+    ]
+   },
+   "verdict": "INELIGIBLE_BUT_MATCHED",
+   "min_clearance": 2.312,
+   "gap_dev": 0.255
+  },
+  {
+   "dump_folder": "ticket-832194",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is printed on a different page of this sheet. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A stamp sits on the line between two rows. Place it again.",
+   "detail": "row 5 stamp at 29.9, slot 55.169 to 63.178, clearance 0.5",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-832487",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.221,
+   "residuals": [
+    -0.326,
+    -0.308,
+    -0.159,
+    0.159,
+    0.325,
+    0.442
+   ],
+   "boundaries": [
+    24.516,
+    32.903,
+    39.839,
+    47.419,
+    55.484,
+    63.468
+   ],
+   "max_band": 0.161,
+   "max_extent": 0.161,
+   "max_admitted": 0.242,
+   "deltas": {
+    "bands": [
+     0.161,
+     0.081,
+     0.081,
+     0.08,
+     0.08,
+     0.08,
+     0.08,
+     0.081,
+     0.081,
+     0
+    ],
+    "extent": [
+     0.161,
+     0
+    ],
+    "admitted": [
+     0.242,
+     0.081,
+     0.08,
+     0.081,
+     0.081,
+     0.08
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.119,
+   "gap_dev": 0.317
+  },
+  {
+   "dump_folder": "ticket-832487",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.624,
+   "residuals": [
+    -0.406,
+    -0.226,
+    -0.078,
+    0.078,
+    0.244,
+    0.442
+   ],
+   "boundaries": [
+    24.032,
+    32.581,
+    39.516,
+    46.935,
+    55,
+    63.065
+   ],
+   "max_band": 0.161,
+   "max_extent": 0.161,
+   "max_admitted": 0.081,
+   "deltas": {
+    "bands": [
+     0.161,
+     0.081,
+     0.081,
+     0.081,
+     0.081,
+     0,
+     0,
+     0.081,
+     0.081,
+     0
+    ],
+    "extent": [
+     0.161,
+     0
+    ],
+    "admitted": [
+     0.08,
+     0.08,
+     0.081,
+     0.081,
+     0.081,
+     0.08
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 1.796,
+   "gap_dev": 0.198
+  },
+  {
+   "dump_folder": "ticket-833049",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is printed on a different page of this sheet. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 1 expected near 24.849 (shift -0.214), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-833049",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is printed on a different page of this sheet. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 3 expected near 39.902 (shift -0.316), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-833395",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is printed on several rows. Give it one card per permit and place each stamp on its own row, then measure the page with Draw the bands.",
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.272,
+   "residuals": [
+    -0.55,
+    -0.286,
+    -0.167,
+    0.167,
+    0.279,
+    0.561
+   ],
+   "boundaries": [
+    24.24,
+    32.873,
+    39.779,
+    47.376,
+    55.387,
+    63.536
+   ],
+   "max_band": 14.572,
+   "max_extent": 0.069,
+   "max_admitted": 0.069,
+   "deltas": {
+    "bands": [
+     0.069,
+     14.572,
+     0.069,
+     0.069,
+     0.069,
+     0.069
+    ],
+    "extent": [
+     0.069,
+     0.069
+    ],
+    "admitted": [
+     0.069,
+     0.069,
+     0.069,
+     0.069,
+     0.069,
+     0.069
+    ]
+   },
+   "verdict": "INELIGIBLE_BUT_MATCHED",
+   "min_clearance": 3.073,
+   "gap_dev": 0.334
+  },
+  {
+   "dump_folder": "ticket-833813",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.693,
+   "residuals": [
+    0.038,
+    0.032,
+    -0.066,
+    -0.111,
+    0.09,
+    -0.032
+   ],
+   "boundaries": [
+    25.792,
+    34.155,
+    40.845,
+    48.063,
+    56.162,
+    63.908
+   ],
+   "max_band": 0.088,
+   "max_extent": 0.088,
+   "max_admitted": 0.088,
+   "deltas": {
+    "bands": [
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088
+    ],
+    "extent": [
+     0.088,
+     0.088
+    ],
+    "admitted": [
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088,
+     0.088
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.125,
+   "gap_dev": 0.2
+  },
+  {
+   "dump_folder": "ticket-833813",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.917,
+   "residuals": [
+    -0.297,
+    -0.067,
+    -0.117,
+    0.067,
+    0.147,
+    0.436
+   ],
+   "boundaries": [
+    23.848,
+    32.447,
+    39.184,
+    46.631,
+    54.61,
+    62.766
+   ],
+   "max_band": 0.089,
+   "max_extent": 0.089,
+   "max_admitted": 0.089,
+   "deltas": {
+    "bands": [
+     0,
+     0.088,
+     0.088,
+     0.089,
+     0.089,
+     0.089,
+     0.089,
+     0.089,
+     0.089,
+     0.089
+    ],
+    "extent": [
+     0,
+     0.089
+    ],
+    "admitted": [
+     0,
+     0.088,
+     0.089,
+     0.089,
+     0.089,
+     0.089
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 1.464,
+   "gap_dev": 0.289
+  },
+  {
+   "dump_folder": "ticket-834287",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.483,
+   "residuals": [
+    0.022,
+    0.028,
+    -0.021,
+    0.021,
+    -0.07,
+    -0.128
+   ],
+   "boundaries": [
+    25.567,
+    33.942,
+    40.68,
+    47.985,
+    55.793,
+    63.602
+   ],
+   "max_band": 0.063,
+   "max_extent": 0.063,
+   "max_admitted": 0.063,
+   "deltas": {
+    "bands": [
+     0.063,
+     0.063
+    ],
+    "extent": [
+     0.063,
+     0.063
+    ],
+    "admitted": [
+     0.063,
+     0.063,
+     0.063,
+     0.063,
+     0.063,
+     0.063
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 4.142,
+   "gap_dev": 0.091
+  },
+  {
+   "dump_folder": "ticket-834433",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.686,
+   "residuals": [
+    0.233,
+    0.198,
+    0.051,
+    -0.051,
+    -0.138,
+    -0.322
+   ],
+   "boundaries": [
+    24.609,
+    32.943,
+    39.583,
+    46.745,
+    54.557,
+    62.24
+   ],
+   "max_band": 0.065,
+   "max_extent": 0.13,
+   "max_admitted": 0.13,
+   "deltas": {
+    "bands": [
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.065
+    ],
+    "extent": [
+     0.065,
+     0.13
+    ],
+    "admitted": [
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.065,
+     0.13
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.967,
+   "gap_dev": 0.184
+  },
+  {
+   "dump_folder": "ticket-834742",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.042,
+   "residuals": [
+    -0.386,
+    0.175,
+    -0.034,
+    0.034,
+    0.218,
+    0.434
+   ],
+   "boundaries": [
+    24.718,
+    33.647,
+    40.226,
+    47.556,
+    55.639,
+    63.722
+   ],
+   "max_band": 0.368,
+   "max_extent": 0.32,
+   "max_admitted": 0.368,
+   "deltas": {
+    "bands": [
+     0.246,
+     0.337,
+     0.337,
+     0.315,
+     0.315,
+     0.115,
+     0.115,
+     0.368,
+     0.368,
+     0.32
+    ],
+    "extent": [
+     0.246,
+     0.32
+    ],
+    "admitted": [
+     0.246,
+     0.337,
+     0.315,
+     0.115,
+     0.368,
+     0.32
+    ]
+   },
+   "verdict": "MISMATCH",
+   "min_clearance": 2.506,
+   "gap_dev": 0.56
+  },
+  {
+   "dump_folder": "ticket-834742",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.169,
+   "residuals": [
+    0.121,
+    -0.061,
+    -0.07,
+    0.061,
+    0.173,
+    0.228
+   ],
+   "boundaries": [
+    25.352,
+    33.539,
+    40.317,
+    47.711,
+    55.722,
+    63.644
+   ],
+   "max_band": 0.214,
+   "max_extent": 0.214,
+   "max_admitted": 0.214,
+   "deltas": {
+    "bands": [
+     0.214,
+     0.032,
+     0.032,
+     0.196,
+     0.196,
+     0.003,
+     0.003,
+     0.029,
+     0.029,
+     0.028
+    ],
+    "extent": [
+     0.214,
+     0.028
+    ],
+    "admitted": [
+     0.214,
+     0.032,
+     0.196,
+     0.003,
+     0.029,
+     0.028
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.597,
+   "gap_dev": 0.182
+  },
+  {
+   "dump_folder": "ticket-834986",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is not on the printed list of this sheet, so its row cannot be found automatically. A person needs to check this page in Draw the bands.",
+   "ok": false,
+   "reason": "A printed line between two rows is not visible on this scan.",
+   "detail": "boundary 3 expected near 39.818 (shift -0.400), no line within 0.75pp",
+   "shift": null,
+   "residuals": null,
+   "boundaries": null,
+   "verdict": "INELIGIBLE_AND_REFUSED"
+  },
+  {
+   "dump_folder": "ticket-834986",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": "A client on this page is not on the printed list of this sheet, so its row cannot be found automatically. A person needs to check this page in Draw the bands.",
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.29,
+   "residuals": [
+    0.196,
+    0.139,
+    0.002,
+    -0.002,
+    -0.009,
+    -0.09
+   ],
+   "boundaries": [
+    25.547,
+    33.859,
+    40.509,
+    47.769,
+    55.661,
+    63.447
+   ],
+   "max_band": null,
+   "max_extent": 0.126,
+   "max_admitted": 0.153,
+   "deltas": {
+    "bands": [],
+    "extent": [
+     0.126,
+     0.017
+    ],
+    "admitted": [
+     0.126,
+     0.153,
+     0.026,
+     0.004,
+     0.037,
+     0.017
+    ]
+   },
+   "verdict": "INELIGIBLE_BUT_MATCHED",
+   "min_clearance": null,
+   "gap_dev": 0.137
+  },
+  {
+   "dump_folder": "ticket-835076",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.788,
+   "residuals": [
+    0.276,
+    0.125,
+    0.042,
+    -0.042,
+    -0.156,
+    -0.281
+   ],
+   "boundaries": [
+    26.125,
+    34.343,
+    41.047,
+    48.227,
+    56.012,
+    63.754
+   ],
+   "max_band": 0.044,
+   "max_extent": 0.044,
+   "max_admitted": 0.044,
+   "deltas": {
+    "bands": [
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.044
+    ],
+    "extent": [
+     0.043,
+     0.044
+    ],
+    "admitted": [
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.043,
+     0.044
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.327,
+   "gap_dev": 0.151
+  },
+  {
+   "dump_folder": "ticket-835076",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.342,
+   "residuals": [
+    0.101,
+    0.065,
+    0.012,
+    -0.012,
+    -0.082,
+    -0.163
+   ],
+   "boundaries": [
+    25.505,
+    33.838,
+    40.572,
+    47.811,
+    55.64,
+    63.426
+   ],
+   "max_band": 0,
+   "max_extent": 0,
+   "max_admitted": 0,
+   "deltas": {
+    "bands": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "extent": [
+     0,
+     0
+    ],
+    "admitted": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 2.852,
+   "gap_dev": 0.081
+  },
+  {
+   "dump_folder": "ticket-835309",
+   "page": 1,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": 0.517,
+   "residuals": [
+    0.17,
+    0.12,
+    0.023,
+    -0.023,
+    -0.087,
+    -0.164
+   ],
+   "boundaries": [
+    25.748,
+    34.067,
+    40.757,
+    47.975,
+    55.81,
+    63.6
+   ],
+   "max_band": 0.139,
+   "max_extent": 0.09,
+   "max_admitted": 0.258,
+   "deltas": {
+    "bands": [
+     0.033,
+     0.054,
+     0.054,
+     0.137,
+     0.137,
+     0.139
+    ],
+    "extent": [
+     0.033,
+     0.09
+    ],
+    "admitted": [
+     0.033,
+     0.054,
+     0.137,
+     0.139,
+     0.258,
+     0.09
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.037,
+   "gap_dev": 0.097
+  },
+  {
+   "dump_folder": "ticket-835309",
+   "page": 2,
+   "pass": "calibrated",
+   "ineligible": null,
+   "ok": true,
+   "reason": null,
+   "detail": null,
+   "shift": -0.922,
+   "residuals": [
+    -0.309,
+    -0.157,
+    -0.067,
+    0.067,
+    0.257,
+    0.348
+   ],
+   "boundaries": [
+    23.832,
+    32.353,
+    39.23,
+    46.626,
+    54.715,
+    62.673
+   ],
+   "max_band": 0.158,
+   "max_extent": 0.116,
+   "max_admitted": 0.158,
+   "deltas": {
+    "bands": [
+     0.116,
+     0.115,
+     0.115,
+     0.03,
+     0.03,
+     0.042,
+     0.042,
+     0.158,
+     0.158,
+     0.016
+    ],
+    "extent": [
+     0.116,
+     0.016
+    ],
+    "admitted": [
+     0.116,
+     0.115,
+     0.03,
+     0.042,
+     0.158,
+     0.016
+    ]
+   },
+   "verdict": "MATCH",
+   "min_clearance": 3.091,
+   "gap_dev": 0.19
+  }
+ ],
+ "lines": {
+  "ticket-310429_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1646/address_1.jpeg",
+   "detect": {
+    "W": 1024,
+    "H": 746,
+    "skew": 0,
+    "n": 19
+   },
+   "lines": [
+    {
+     "pct": 11.997,
+     "run": 0.512,
+     "kind": "divider"
+    },
+    {
+     "pct": 13.807,
+     "run": 0.393,
+     "kind": "divider"
+    },
+    {
+     "pct": 14.544,
+     "run": 0.512,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.928,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 26.273,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 30.228,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 34.584,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.869,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 41.287,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 44.437,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 48.458,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 52.212,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 56.367,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 60.054,
+     "run": 0.398,
+     "kind": "divider"
+    },
+    {
+     "pct": 64.142,
+     "run": 0.985,
+     "kind": "boundary"
+    },
+    {
+     "pct": 67.359,
+     "run": 0.484,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.164,
+     "run": 0.392,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.633,
+     "run": 0.392,
+     "kind": "divider"
+    },
+    {
+     "pct": 69.705,
+     "run": 0.512,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-310429_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1646/address_2.jpeg",
+   "detect": {
+    "W": 1024,
+    "H": 748,
+    "skew": 0,
+    "n": 19
+   },
+   "lines": [
+    {
+     "pct": 11.631,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 11.965,
+     "run": 0.393,
+     "kind": "divider"
+    },
+    {
+     "pct": 14.238,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 23.73,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 26.136,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 30.013,
+     "run": 0.402,
+     "kind": "divider"
+    },
+    {
+     "pct": 34.425,
+     "run": 0.934,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.567,
+     "run": 0.402,
+     "kind": "divider"
+    },
+    {
+     "pct": 41.043,
+     "run": 0.905,
+     "kind": "boundary"
+    },
+    {
+     "pct": 44.118,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.995,
+     "run": 0.952,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.738,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.749,
+     "run": 0.971,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.358,
+     "run": 0.398,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.436,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.578,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 68.048,
+     "run": 0.394,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.917,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 78.142,
+     "run": 0.398,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-310590_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1671/address_1.JPG",
+   "detect": {
+    "W": 1472,
+    "H": 1100,
+    "skew": 0,
+    "n": 18
+   },
+   "lines": [
+    {
+     "pct": 11.909,
+     "run": 0.338,
+     "kind": "divider"
+    },
+    {
+     "pct": 13.364,
+     "run": 0.479,
+     "kind": "divider"
+    },
+    {
+     "pct": 22.909,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.5,
+     "run": 0.355,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.273,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.364,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.591,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.955,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.318,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.591,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.545,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.273,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.364,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.091,
+     "run": 0.402,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.136,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.318,
+     "run": 0.438,
+     "kind": "divider"
+    },
+    {
+     "pct": 67.909,
+     "run": 0.398,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.727,
+     "run": 0.438,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-310590_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1671/address_2.JPG",
+   "detect": {
+    "W": 1284,
+    "H": 968,
+    "skew": 0,
+    "n": 15
+   },
+   "lines": [
+    {
+     "pct": 13.585,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 23.089,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.517,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.494,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.833,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.138,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.444,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.75,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.676,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.343,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.475,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.143,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.171,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.374,
+     "run": 0.452,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.698,
+     "run": 0.452,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-310607_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1667/address_1.jpg",
+   "detect": {
+    "W": 1080,
+    "H": 793,
+    "skew": 0,
+    "n": 15
+   },
+   "lines": [
+    {
+     "pct": 11.602,
+     "run": 0.965,
+     "kind": "boundary"
+    },
+    {
+     "pct": 21.501,
+     "run": 0.368,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.834,
+     "run": 0.965,
+     "kind": "boundary"
+    },
+    {
+     "pct": 28.121,
+     "run": 0.369,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.472,
+     "run": 0.965,
+     "kind": "boundary"
+    },
+    {
+     "pct": 35.939,
+     "run": 0.368,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.407,
+     "run": 0.965,
+     "kind": "boundary"
+    },
+    {
+     "pct": 42.875,
+     "run": 0.369,
+     "kind": "divider"
+    },
+    {
+     "pct": 46.974,
+     "run": 0.965,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.946,
+     "run": 0.369,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.107,
+     "run": 0.964,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.953,
+     "run": 0.369,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.178,
+     "run": 0.963,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.393,
+     "run": 0.963,
+     "kind": "boundary"
+    },
+    {
+     "pct": 68.916,
+     "run": 0.757,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-311045_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1698/address_1.jpeg",
+   "detect": {
+    "W": 1600,
+    "H": 1179,
+    "skew": 0,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 13.486,
+     "run": 0.504,
+     "kind": "divider"
+    },
+    {
+     "pct": 22.901,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.276,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 29.22,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.461,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 36.768,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.076,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 43.384,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.286,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 51.018,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.089,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 58.821,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 62.85,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 65.988,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.321,
+     "run": 0.542,
+     "kind": "divider"
+    },
+    {
+     "pct": 77.82,
+     "run": 0.399,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-311780_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1725/address_1.jpg",
+   "detect": {
+    "W": 816,
+    "H": 620,
+    "skew": 0,
+    "n": 22
+   },
+   "lines": [
+    {
+     "pct": 11.29,
+     "run": 0.928,
+     "kind": "boundary"
+    },
+    {
+     "pct": 13.952,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 16.29,
+     "run": 0.399,
+     "kind": "divider"
+    },
+    {
+     "pct": 18.065,
+     "run": 0.422,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.645,
+     "run": 0.857,
+     "kind": "boundary"
+    },
+    {
+     "pct": 26.129,
+     "run": 0.958,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.919,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 34.032,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.419,
+     "run": 0.421,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.645,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 40.968,
+     "run": 0.354,
+     "kind": "divider"
+    },
+    {
+     "pct": 43.871,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.903,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.613,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.645,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 55.968,
+     "run": 0.396,
+     "kind": "divider"
+    },
+    {
+     "pct": 59.355,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.306,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 63.71,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 66.452,
+     "run": 0.659,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.79,
+     "run": 0.696,
+     "kind": "divider"
+    },
+    {
+     "pct": 78.871,
+     "run": 0.988,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-311780_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1725/address_2.jpg",
+   "detect": {
+    "W": 812,
+    "H": 616,
+    "skew": 0,
+    "n": 19
+   },
+   "lines": [
+    {
+     "pct": 11.201,
+     "run": 0.854,
+     "kind": "boundary"
+    },
+    {
+     "pct": 13.799,
+     "run": 0.503,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.649,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.789,
+     "run": 0.399,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.929,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 34.253,
+     "run": 0.412,
+     "kind": "divider"
+    },
+    {
+     "pct": 37.256,
+     "run": 0.413,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.584,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 40.909,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 43.831,
+     "run": 0.412,
+     "kind": "divider"
+    },
+    {
+     "pct": 44.156,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.89,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.461,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.682,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.253,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 59.578,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.474,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.64,
+     "run": 0.813,
+     "kind": "boundary"
+    },
+    {
+     "pct": 68.994,
+     "run": 0.484,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-312433_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1760/address_1.jpg",
+   "detect": {
+    "W": 2460,
+    "H": 1828,
+    "skew": 0,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 13.239,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 22.702,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.918,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.048,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.178,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.597,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.852,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.162,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.073,
+     "run": 0.984,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.848,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.951,
+     "run": 0.991,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.671,
+     "run": 0.402,
+     "kind": "divider"
+    },
+    {
+     "pct": 62.719,
+     "run": 0.991,
+     "kind": "boundary"
+    },
+    {
+     "pct": 65.837,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 68.217,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 77.626,
+     "run": 0.393,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-312433_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1760/address_2.jpg",
+   "detect": {
+    "W": 2512,
+    "H": 1872,
+    "skew": -0.002,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 13.862,
+     "run": 0.721,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.077,
+     "run": 0.399,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.374,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.3,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.494,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.752,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.037,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.243,
+     "run": 0.402,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.115,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.801,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.861,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.547,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 62.607,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 65.732,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 68.109,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 77.484,
+     "run": 0.394,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-312500_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1769/address_1.jpg",
+   "detect": {
+    "W": 1024,
+    "H": 784,
+    "skew": 0,
+    "n": 17
+   },
+   "lines": [
+    {
+     "pct": 11.798,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 21.62,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.98,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 28.125,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.398,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 35.778,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.286,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 42.474,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 46.556,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.191,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.401,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.099,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 62.309,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 65.434,
+     "run": 0.997,
+     "kind": "boundary"
+    },
+    {
+     "pct": 67.857,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 77.296,
+     "run": 0.395,
+     "kind": "divider"
+    },
+    {
+     "pct": 78.253,
+     "run": 0.997,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-831325_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1644/address_1.jpg",
+   "detect": {
+    "W": 896,
+    "H": 724,
+    "skew": -0.005,
+    "n": 12
+   },
+   "lines": [
+    {
+     "pct": 13.26,
+     "run": 0.917,
+     "kind": "boundary"
+    },
+    {
+     "pct": 23.757,
+     "run": 0.415,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.967,
+     "run": 0.72,
+     "kind": "divider"
+    },
+    {
+     "pct": 30.456,
+     "run": 0.413,
+     "kind": "divider"
+    },
+    {
+     "pct": 34.807,
+     "run": 0.509,
+     "kind": "divider"
+    },
+    {
+     "pct": 38.26,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 41.575,
+     "run": 0.475,
+     "kind": "divider"
+    },
+    {
+     "pct": 45.028,
+     "run": 0.393,
+     "kind": "divider"
+    },
+    {
+     "pct": 49.033,
+     "run": 0.384,
+     "kind": "divider"
+    },
+    {
+     "pct": 52.831,
+     "run": 0.333,
+     "kind": "divider"
+    },
+    {
+     "pct": 77.624,
+     "run": 0.371,
+     "kind": "divider"
+    },
+    {
+     "pct": 78.522,
+     "run": 0.456,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-831938_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1680/address_1.JPG",
+   "detect": {
+    "W": 924,
+    "H": 732,
+    "skew": -0.005,
+    "n": 19
+   },
+   "lines": [
+    {
+     "pct": 12.158,
+     "run": 0.438,
+     "kind": "divider"
+    },
+    {
+     "pct": 13.115,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 22.883,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.907,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.137,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.167,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.538,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.817,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.301,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.443,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.473,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.161,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.396,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.016,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.183,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.325,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 67.486,
+     "run": 0.399,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.716,
+     "run": 0.588,
+     "kind": "divider"
+    },
+    {
+     "pct": 78.21,
+     "run": 0.386,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-831938_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1680/address_2.JPG",
+   "detect": {
+    "W": 940,
+    "H": 712,
+    "skew": 0,
+    "n": 18
+   },
+   "lines": [
+    {
+     "pct": 13.343,
+     "run": 0.512,
+     "kind": "divider"
+    },
+    {
+     "pct": 22.893,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.228,
+     "run": 0.335,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.281,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.424,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.567,
+     "run": 0.991,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.938,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.379,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.539,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.612,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.545,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.478,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.129,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.343,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.433,
+     "run": 0.512,
+     "kind": "divider"
+    },
+    {
+     "pct": 67.135,
+     "run": 0.397,
+     "kind": "divider"
+    },
+    {
+     "pct": 67.837,
+     "run": 0.397,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.82,
+     "run": 0.892,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-832194_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1691/address_1.JPG",
+   "detect": {
+    "W": 1576,
+    "H": 1264,
+    "skew": 0,
+    "n": 14
+   },
+   "lines": [
+    {
+     "pct": 12.025,
+     "run": 0.884,
+     "kind": "boundary"
+    },
+    {
+     "pct": 14.597,
+     "run": 0.334,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.446,
+     "run": 0.925,
+     "kind": "boundary"
+    },
+    {
+     "pct": 33.07,
+     "run": 0.904,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.63,
+     "run": 0.344,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.032,
+     "run": 0.94,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.394,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.547,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.226,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.538,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.177,
+     "run": 0.402,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.528,
+     "run": 0.874,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.812,
+     "run": 0.558,
+     "kind": "divider"
+    },
+    {
+     "pct": 69.146,
+     "run": 0.76,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-832194_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1691/address_2.JPG",
+   "detect": {
+    "W": 1556,
+    "H": 1180,
+    "skew": -0.003,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 14.153,
+     "run": 0.331,
+     "kind": "divider"
+    },
+    {
+     "pct": 16.186,
+     "run": 0.33,
+     "kind": "divider"
+    },
+    {
+     "pct": 21.61,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.025,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 28.263,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.669,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.144,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.576,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 42.924,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.034,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.89,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.169,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.941,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.178,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.483,
+     "run": 0.516,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.941,
+     "run": 0.555,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-832487_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1700/address_1.jpg",
+   "detect": {
+    "W": 788,
+    "H": 620,
+    "skew": 0,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 11.774,
+     "run": 0.511,
+     "kind": "divider"
+    },
+    {
+     "pct": 22.016,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.194,
+     "run": 0.997,
+     "kind": "boundary"
+    },
+    {
+     "pct": 24.516,
+     "run": 0.427,
+     "kind": "divider"
+    },
+    {
+     "pct": 28.468,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.903,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.371,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.839,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.226,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.419,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.129,
+     "run": 0.412,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.484,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.194,
+     "run": 0.412,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.468,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.613,
+     "run": 0.638,
+     "kind": "divider"
+    },
+    {
+     "pct": 69.032,
+     "run": 0.718,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-832487_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1700/address_2.jpg",
+   "detect": {
+    "W": 784,
+    "H": 620,
+    "skew": 0,
+    "n": 19
+   },
+   "lines": [
+    {
+     "pct": 11.613,
+     "run": 0.916,
+     "kind": "boundary"
+    },
+    {
+     "pct": 21.29,
+     "run": 0.351,
+     "kind": "divider"
+    },
+    {
+     "pct": 21.694,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.71,
+     "run": 0.508,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.032,
+     "run": 0.956,
+     "kind": "boundary"
+    },
+    {
+     "pct": 27.903,
+     "run": 0.371,
+     "kind": "divider"
+    },
+    {
+     "pct": 28.226,
+     "run": 0.371,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.581,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 35.806,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 36.129,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.516,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 42.742,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 46.935,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.645,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 55,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.71,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.065,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.29,
+     "run": 0.513,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.71,
+     "run": 0.552,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-833049_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1710/address_1.jpg",
+   "detect": {
+    "W": 980,
+    "H": 728,
+    "skew": 0,
+    "n": 18
+   },
+   "lines": [
+    {
+     "pct": 13.118,
+     "run": 0.719,
+     "kind": "divider"
+    },
+    {
+     "pct": 15.865,
+     "run": 0.981,
+     "kind": "boundary"
+    },
+    {
+     "pct": 26.992,
+     "run": 0.359,
+     "kind": "divider"
+    },
+    {
+     "pct": 29.396,
+     "run": 0.98,
+     "kind": "boundary"
+    },
+    {
+     "pct": 32.349,
+     "run": 0.368,
+     "kind": "divider"
+    },
+    {
+     "pct": 35.096,
+     "run": 0.981,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.981,
+     "run": 0.359,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.728,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.613,
+     "run": 0.366,
+     "kind": "divider"
+    },
+    {
+     "pct": 46.36,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 49.245,
+     "run": 0.359,
+     "kind": "divider"
+    },
+    {
+     "pct": 51.992,
+     "run": 0.983,
+     "kind": "boundary"
+    },
+    {
+     "pct": 54.876,
+     "run": 0.363,
+     "kind": "divider"
+    },
+    {
+     "pct": 57.624,
+     "run": 0.984,
+     "kind": "boundary"
+    },
+    {
+     "pct": 60.508,
+     "run": 0.361,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.324,
+     "run": 0.984,
+     "kind": "boundary"
+    },
+    {
+     "pct": 65.385,
+     "run": 0.984,
+     "kind": "boundary"
+    },
+    {
+     "pct": 67.995,
+     "run": 0.983,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-833049_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1710/address_2.jpg",
+   "detect": {
+    "W": 936,
+    "H": 736,
+    "skew": 0,
+    "n": 20
+   },
+   "lines": [
+    {
+     "pct": 12.296,
+     "run": 0.786,
+     "kind": "divider"
+    },
+    {
+     "pct": 14.878,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 25.476,
+     "run": 0.362,
+     "kind": "divider"
+    },
+    {
+     "pct": 27.921,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 30.503,
+     "run": 0.362,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.356,
+     "run": 0.983,
+     "kind": "boundary"
+    },
+    {
+     "pct": 35.938,
+     "run": 0.362,
+     "kind": "divider"
+    },
+    {
+     "pct": 38.655,
+     "run": 0.983,
+     "kind": "boundary"
+    },
+    {
+     "pct": 41.372,
+     "run": 0.362,
+     "kind": "divider"
+    },
+    {
+     "pct": 44.09,
+     "run": 0.985,
+     "kind": "boundary"
+    },
+    {
+     "pct": 46.807,
+     "run": 0.363,
+     "kind": "divider"
+    },
+    {
+     "pct": 49.389,
+     "run": 0.985,
+     "kind": "boundary"
+    },
+    {
+     "pct": 52.174,
+     "run": 0.362,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.823,
+     "run": 0.985,
+     "kind": "boundary"
+    },
+    {
+     "pct": 57.541,
+     "run": 0.363,
+     "kind": "divider"
+    },
+    {
+     "pct": 60.19,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 62.228,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 64.674,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 76.223,
+     "run": 0.396,
+     "kind": "divider"
+    },
+    {
+     "pct": 76.97,
+     "run": 0.986,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-833395_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1735/address_2.jpg",
+   "detect": {
+    "W": 932,
+    "H": 724,
+    "skew": -0.005,
+    "n": 15
+   },
+   "lines": [
+    {
+     "pct": 11.809,
+     "run": 0.976,
+     "kind": "boundary"
+    },
+    {
+     "pct": 21.754,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.24,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 28.384,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.873,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.326,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.779,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.232,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.376,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.174,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.387,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.254,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.536,
+     "run": 0.515,
+     "kind": "divider"
+    },
+    {
+     "pct": 66.851,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 69.268,
+     "run": 0.406,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-833813_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1750/address_1.jpg",
+   "detect": {
+    "W": 732,
+    "H": 568,
+    "skew": 0,
+    "n": 18
+   },
+   "lines": [
+    {
+     "pct": 11.004,
+     "run": 0.918,
+     "kind": "boundary"
+    },
+    {
+     "pct": 13.644,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.239,
+     "run": 0.381,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.792,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.842,
+     "run": 0.387,
+     "kind": "divider"
+    },
+    {
+     "pct": 34.155,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 40.845,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 44.19,
+     "run": 0.413,
+     "kind": "divider"
+    },
+    {
+     "pct": 48.063,
+     "run": 0.601,
+     "kind": "divider"
+    },
+    {
+     "pct": 48.415,
+     "run": 0.378,
+     "kind": "divider"
+    },
+    {
+     "pct": 51.761,
+     "run": 0.413,
+     "kind": "divider"
+    },
+    {
+     "pct": 56.162,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.683,
+     "run": 0.413,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.908,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 67.077,
+     "run": 0.451,
+     "kind": "divider"
+    },
+    {
+     "pct": 69.366,
+     "run": 0.451,
+     "kind": "divider"
+    },
+    {
+     "pct": 75.704,
+     "run": 0.355,
+     "kind": "divider"
+    },
+    {
+     "pct": 78.961,
+     "run": 0.411,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-833813_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1750/address_2.jpg",
+   "detect": {
+    "W": 736,
+    "H": 564,
+    "skew": -0.008,
+    "n": 14
+   },
+   "lines": [
+    {
+     "pct": 11.879,
+     "run": 0.52,
+     "kind": "divider"
+    },
+    {
+     "pct": 21.454,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.848,
+     "run": 0.91,
+     "kind": "boundary"
+    },
+    {
+     "pct": 32.447,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 39.184,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 46.631,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.177,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.61,
+     "run": 0.95,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.245,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 62.766,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 65.869,
+     "run": 0.618,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.262,
+     "run": 0.507,
+     "kind": "divider"
+    },
+    {
+     "pct": 74.113,
+     "run": 0.344,
+     "kind": "divider"
+    },
+    {
+     "pct": 79.078,
+     "run": 0.637,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-834287_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1768/address_1.jpg",
+   "detect": {
+    "W": 1024,
+    "H": 794,
+    "skew": 0,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 13.728,
+     "run": 0.509,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.237,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.567,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.786,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.942,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.343,
+     "run": 0.411,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.68,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 44.018,
+     "run": 0.411,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.985,
+     "run": 0.996,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.7,
+     "run": 0.411,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.793,
+     "run": 0.997,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.509,
+     "run": 0.411,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.602,
+     "run": 0.997,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.751,
+     "run": 0.997,
+     "kind": "boundary"
+    },
+    {
+     "pct": 69.144,
+     "run": 0.997,
+     "kind": "boundary"
+    },
+    {
+     "pct": 78.401,
+     "run": 0.398,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-834433_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1771/address_1.jpg",
+   "detect": {
+    "W": 964,
+    "H": 768,
+    "skew": 0,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 12.63,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 22.331,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.609,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 28.711,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.943,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.263,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.583,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 42.904,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 46.745,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.456,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.557,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.268,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 62.24,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 65.495,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 67.839,
+     "run": 0.51,
+     "kind": "divider"
+    },
+    {
+     "pct": 78.125,
+     "run": 0.995,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-834742_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1776/address_1.jpg",
+   "detect": {
+    "W": 696,
+    "H": 532,
+    "skew": 0,
+    "n": 21
+   },
+   "lines": [
+    {
+     "pct": 12.406,
+     "run": 0.998,
+     "kind": "boundary"
+    },
+    {
+     "pct": 14.85,
+     "run": 0.332,
+     "kind": "divider"
+    },
+    {
+     "pct": 16.917,
+     "run": 0.332,
+     "kind": "divider"
+    },
+    {
+     "pct": 22.368,
+     "run": 0.416,
+     "kind": "divider"
+    },
+    {
+     "pct": 24.718,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 28.947,
+     "run": 0.416,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.271,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 33.647,
+     "run": 0.461,
+     "kind": "divider"
+    },
+    {
+     "pct": 36.842,
+     "run": 0.415,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.226,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.609,
+     "run": 0.416,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.556,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 47.932,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.504,
+     "run": 0.415,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.639,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 56.015,
+     "run": 0.842,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.586,
+     "run": 0.413,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.722,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 64.098,
+     "run": 0.413,
+     "kind": "divider"
+    },
+    {
+     "pct": 67.105,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 69.549,
+     "run": 1,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-834742_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1776/address_2.jpg",
+   "detect": {
+    "W": 720,
+    "H": 568,
+    "skew": 0,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 12.852,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 22.623,
+     "run": 0.414,
+     "kind": "divider"
+    },
+    {
+     "pct": 25,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 25.352,
+     "run": 0.412,
+     "kind": "divider"
+    },
+    {
+     "pct": 29.225,
+     "run": 0.412,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.539,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 36.972,
+     "run": 0.415,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.317,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.662,
+     "run": 0.417,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.711,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.496,
+     "run": 0.415,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.722,
+     "run": 0.995,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.507,
+     "run": 0.414,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.644,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.901,
+     "run": 0.835,
+     "kind": "boundary"
+    },
+    {
+     "pct": 69.366,
+     "run": 0.718,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-834986_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1840/address_1.jpg",
+   "detect": {
+    "W": 3168,
+    "H": 2444,
+    "skew": -0.002,
+    "n": 19
+   },
+   "lines": [
+    {
+     "pct": 14.73,
+     "run": 0.437,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.348,
+     "run": 0.352,
+     "kind": "divider"
+    },
+    {
+     "pct": 27.66,
+     "run": 0.88,
+     "kind": "boundary"
+    },
+    {
+     "pct": 30.462,
+     "run": 0.351,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.101,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 35.884,
+     "run": 0.352,
+     "kind": "divider"
+    },
+    {
+     "pct": 38.543,
+     "run": 0.983,
+     "kind": "boundary"
+    },
+    {
+     "pct": 41.326,
+     "run": 0.353,
+     "kind": "divider"
+    },
+    {
+     "pct": 43.965,
+     "run": 0.921,
+     "kind": "boundary"
+    },
+    {
+     "pct": 46.788,
+     "run": 0.352,
+     "kind": "divider"
+    },
+    {
+     "pct": 49.468,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 52.23,
+     "run": 0.352,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.91,
+     "run": 0.95,
+     "kind": "boundary"
+    },
+    {
+     "pct": 57.692,
+     "run": 0.353,
+     "kind": "divider"
+    },
+    {
+     "pct": 60.393,
+     "run": 0.983,
+     "kind": "boundary"
+    },
+    {
+     "pct": 62.398,
+     "run": 0.982,
+     "kind": "boundary"
+    },
+    {
+     "pct": 64.771,
+     "run": 0.702,
+     "kind": "divider"
+    },
+    {
+     "pct": 76.759,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 77.455,
+     "run": 0.981,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-834986_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1840/address_2.jpg",
+   "detect": {
+    "W": 3108,
+    "H": 2376,
+    "skew": -0.002,
+    "n": 15
+   },
+   "lines": [
+    {
+     "pct": 13.742,
+     "run": 0.513,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.211,
+     "run": 0.401,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.547,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.609,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.859,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.205,
+     "run": 0.399,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.509,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.792,
+     "run": 0.399,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.769,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.494,
+     "run": 0.4,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.661,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.28,
+     "run": 0.399,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.447,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.582,
+     "run": 0.986,
+     "kind": "boundary"
+    },
+    {
+     "pct": 68.939,
+     "run": 0.987,
+     "kind": "boundary"
+    }
+   ]
+  },
+  "ticket-835076_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1929/address_1.jpg",
+   "detect": {
+    "W": 1492,
+    "H": 1156,
+    "skew": 0,
+    "n": 15
+   },
+   "lines": [
+    {
+     "pct": 14.317,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 23.789,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 26.125,
+     "run": 0.99,
+     "kind": "boundary"
+    },
+    {
+     "pct": 30.19,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 34.343,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.716,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 41.047,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 44.291,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 48.227,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.903,
+     "run": 0.403,
+     "kind": "divider"
+    },
+    {
+     "pct": 56.012,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.689,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.754,
+     "run": 0.989,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.912,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 69.247,
+     "run": 0.698,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-835076_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1929/address_2.jpg",
+   "detect": {
+    "W": 1544,
+    "H": 1188,
+    "skew": 0,
+    "n": 15
+   },
+   "lines": [
+    {
+     "pct": 13.678,
+     "run": 0.507,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.148,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.505,
+     "run": 0.992,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.588,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 33.838,
+     "run": 0.993,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.247,
+     "run": 0.411,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.572,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 43.897,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.811,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.599,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.64,
+     "run": 0.994,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.428,
+     "run": 0.41,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.426,
+     "run": 0.507,
+     "kind": "divider"
+    },
+    {
+     "pct": 66.709,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 69.108,
+     "run": 0.407,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-835309_p1": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1912/address_1.jpg",
+   "detect": {
+    "W": 1504,
+    "H": 1136,
+    "skew": 0,
+    "n": 16
+   },
+   "lines": [
+    {
+     "pct": 13.82,
+     "run": 0.997,
+     "kind": "boundary"
+    },
+    {
+     "pct": 23.46,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 25.748,
+     "run": 0.999,
+     "kind": "boundary"
+    },
+    {
+     "pct": 29.886,
+     "run": 0.409,
+     "kind": "divider"
+    },
+    {
+     "pct": 34.067,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 37.5,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 40.757,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 44.058,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 47.975,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 51.717,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 55.81,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 59.551,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 63.6,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 66.725,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 69.058,
+     "run": 1,
+     "kind": "boundary"
+    },
+    {
+     "pct": 73.195,
+     "run": 0.409,
+     "kind": "divider"
+    }
+   ]
+  },
+  "ticket-835309_p2": {
+   "image_url": "https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/1912/address_2.jpg",
+   "detect": {
+    "W": 1584,
+    "H": 1156,
+    "skew": -0.004,
+    "n": 15
+   },
+   "lines": [
+    {
+     "pct": 21.497,
+     "run": 0.404,
+     "kind": "divider"
+    },
+    {
+     "pct": 23.832,
+     "run": 0.985,
+     "kind": "boundary"
+    },
+    {
+     "pct": 27.984,
+     "run": 0.405,
+     "kind": "divider"
+    },
+    {
+     "pct": 32.353,
+     "run": 0.985,
+     "kind": "boundary"
+    },
+    {
+     "pct": 35.77,
+     "run": 0.406,
+     "kind": "divider"
+    },
+    {
+     "pct": 39.23,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 42.561,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 46.626,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 50.389,
+     "run": 0.408,
+     "kind": "divider"
+    },
+    {
+     "pct": 54.715,
+     "run": 0.987,
+     "kind": "boundary"
+    },
+    {
+     "pct": 58.348,
+     "run": 0.407,
+     "kind": "divider"
+    },
+    {
+     "pct": 62.673,
+     "run": 0.988,
+     "kind": "boundary"
+    },
+    {
+     "pct": 65.83,
+     "run": 0.482,
+     "kind": "divider"
+    },
+    {
+     "pct": 68.253,
+     "run": 0.476,
+     "kind": "divider"
+    },
+    {
+     "pct": 77.855,
+     "run": 0.437,
+     "kind": "divider"
+    }
+   ]
+  }
+ }
+}
