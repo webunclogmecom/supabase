@@ -1,6 +1,6 @@
 # Generated sheets finish themselves: measure from the scan, guided by the layout we printed
 
-*Design, 2026-09-14. Built the same day (plan: docs/superpowers/plans/2026-09-14-generated-sheet-finisher.md; migrations `2026-09-14_0605` to `_0620`, edge fn `measure-generated-page`, cron `generated-sheet-finisher`). Step A (section 4.A) is NOT built, pending Fred.*
+*Design, 2026-09-14. Built the same day (plan: docs/superpowers/plans/2026-09-14-generated-sheet-finisher.md; migrations `2026-09-14_0605` to `_0620`, edge fn `measure-generated-page`, cron `generated-sheet-finisher`). Step A (section 4.A) shipped the same day (`2026-09-14_0810`) after Fred's "go ahead with all of them"; its VERIFY found and closed a gap in `fn_sheet_publishable` (a derived band on a page that already has an extent read as publishable).*
 
 ## 1. The problem, stated as it actually is
 
@@ -236,7 +236,7 @@ not yet said yes to it (open question 2).
 
 1. **Auto-complete from day one.** Recorded in section 7: B and C ship together; the config key is
    an off switch with a `true` default, not a launch gate.
-2. **Step A: pending.** The question as first written was not understandable. Restated: when a
+2. **Step A: yes** (Fred, later on 2026-09-14: "go ahead with all of them"). Shipped. The question as first written was not understandable. Restated: when a
    sheet's page-2 read arrives a moment too late, its page-2 cards are left unstamped (the 835076
    case). Should the finisher stamp them automatically once the read and the row reads exist, or
    should those cards wait for a person to press Auto-place? Recommendation: automatic, because

@@ -2608,7 +2608,7 @@ cd "C:/Users/FRED/Desktop/Virtrify/Yannick/Claude" && printf '%s\n' "" "## $(dat
 
 ---
 
-## Phase 2 (Step A): not in this plan
+## Phase 2 (Step A): shipped 2026-09-14 after this plan's Tasks 0 to 8 (`2026-09-14_0810_finisher_places_cards_awaiting_page_map.sql`, assembled by `scripts/probes/generated_finisher/assemble_step_a_migration.py`). The paragraph below is the pre-decision text.
 
 Re-placing cards that a late sheet-number read left unplaced (the 835076 race) reverses the
 2026-09-03 decision against unattended re-placement. It is one function (re-run the insert

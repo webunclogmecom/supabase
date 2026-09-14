@@ -1817,9 +1817,29 @@ wrong.
 machine-made), and `derm._require_stamp_key` lets service_role through. Do not add a second
 machine label.
 
-⚠ **Not shipped: re-placing cards left unplaced by a late sheet-number read** (the 835076 race;
-Step A of the design). Those cards still wait for Auto-place, and `derm.v_cards_awaiting_page_map`
-still lists them. Fred's call, pending.
+✅ **Step A shipped the same day (`2026-09-14_0810`, Fred: "go ahead with all of them"): cards a
+late sheet-number read left unplaced are placed by the cron's step 0**,
+`derm.fn_place_cards_awaiting_page_map`, which re-runs the insert trigger's chain for
+`derm.v_cards_awaiting_page_map` with three gates the trigger lacks: the row OCR must have read
+THIS client's code on THIS printed row (`fn_row_read_confirms(...) IS TRUE`, not merely no
+opinion), the client must hold exactly one card on the folder (a multi-permit client's cards would
+all stack on its first row), and the sheet must not be reopened. Refusals stay in the view with the
+reason in the function's return value. Off switch `app_config` `generated_sheet_auto_place`
+(missing = on). This is the one path that reverses the 2026-09-03 "no unattended re-placement"
+decision, and it is safe where that decision was right: the page map is a suffixed high-confidence
+read and the row OCR has to name the client, where the earlier mis-placements had no read at all.
+
+🛑 **ITS VERIFY FOUND A GAP IN THE PUBLISH GATE, NOW CLOSED IN THE SAME MIGRATION.**
+`derm.fn_sheet_publishable` flagged a derived (stamp-midpoint) band only on a page WITHOUT an
+extent, because that is what `v_blackout_blocked_sheets` reports. A stamp cleared and placed again
+on an already-measured page arrives with no band while the page keeps its extent, so the sheet read
+as publishable and the blackout would have published the heuristic band: the 2026-08-19 shape,
+reachable by hand in the Studio (clear, place, Mark completed) and automatically by Step A. The gate
+now has a fourth arm: any stamped card without a saved band is `needs_snap_then_extent`, whatever
+the extent says, and the finisher measures that page before it can complete. Measured at install:
+**3 pages estate-wide** (`ticket-831102` p1+p2, `ticket-831325` p1, the dark scans of 2026-08-20),
+all completed and serving; they stay completed (the gate binds the false-to-true transition only)
+and would be refused if re-completed unmeasured, which is the rule.
 
 ### 🛑 A DERM SHEET IS A REGULATOR-FACING COMPLIANCE FORM: FILL IT, NEVER MARK IT (Fred, 2026-08-04)
 
@@ -2569,7 +2589,10 @@ is a client-facing decision for Fred, not a repair. Widening the filter is one l
 ⚠ Mitigating, so the risk is not overstated: `fn_sheet_image_position` only honours a
 high-confidence read carrying a `-N` SUFFIX, so unsuffixed noise like `224` is inert.
 
-🛑 **UNATTENDED RE-PLACEMENT IS DELIBERATELY NOT SHIPPED.** The timing half stands: `ticket-834742`
+🛑 **UNATTENDED RE-PLACEMENT IS DELIBERATELY NOT SHIPPED.** ✅ **Superseded 2026-09-14: shipped as
+Step A of the generated-sheet finisher, with the row-read requirement that makes it safe (see
+"GENERATED SHEETS FINISH THEMSELVES" below). The paragraph is kept as the record of why it waited.**
+The timing half stands: `ticket-834742`
 was filed at 12:20:39 and its OCR ran **9m24s later**, and even a trigger cannot guarantee the read
 beats the filing. Since `2026-09-03_1510` a missing map no longer corrupts anything, so the failure
 mode is a silently UNPLACED card rather than a wrongly-placed one. Auto-placement is what put every
