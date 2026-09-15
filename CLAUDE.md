@@ -3849,6 +3849,13 @@ manifest ONLY since 2026-09-11: `customer.work_orders.derm_manifest_url`, never 
 A receipt-only report (12 live visits) shows the "will be sent separately" note and does not
 suppress; it does unlock.
 
+🟡 **TEMPORARY SINCE 2026-09-15 10:09 ET, for Fred's tutorial video:** `city_email_delay` = `2 minutes` and the
+`city-email-sweep` cron runs `*/3 * * * *` (3-minute floor, see the double-send note below). Everything
+else is production (live sends, real inboxes, `start_from` unchanged, test recipient empty), so every send
+during the recording is REAL. Fred will say when to put 24 hours / `7 * * * *` back; the restore SQL is
+`video_restore.sql` in the 2026-09-15 Building Apps session scratchpad (`ce/`), and it is two statements:
+delay `24 hours`, cron `7 * * * *`. Remove this paragraph in the same commit. Owner: @Building Apps.
+
 🟢 **PRODUCTION SINCE 2026-09-15 09:07:34 ET** (Fred: *"i think is ready ... So make it on production
 now"*). Migration `2026-09-15_0907_city_email_go_live.sql` (one transaction, VERIFY inside it): delay
 back to 24 hours, gate open, test recipient cleared, sweep hourly at :07, `city_email_start_from` =
