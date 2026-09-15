@@ -150,34 +150,42 @@ sends do. `include_manifest` is `customer.work_orders.derm_manifest_url IS NOT N
 the DERM manifest only, never the WWTP receipt (narrowed 2026-09-11 in the sender and in
 `public.v_visit_report_manifest` together).
 
-🛑 **Go-live coupling:** `send-visit-photos-email` hardcodes `IS_TEST = true`. Flip it in the same
-change as `city_email_live_sends`, or no Admin Review send will count once the city gate is live.
+✅ **Go-live coupling, closed 2026-09-15:** `send-visit-photos-email` (v35) no longer has `IS_TEST`; it
+resolves the To address from the visit's property, logs `is_test = false`, refuses a body `test_recipient`
+with 400 `test_recipient_retired`, and BCCs the compliance archive like `send-derm-email`. Sender 1 is
+now a real regulator submission and the unlocking send for sender 3.
 
 ## The gates, and what "test mode" means
 
-Everything lives in `public.app_config`, which is audited.
+Everything lives in `public.app_config`, which is audited. **Production since 2026-09-15 09:07 ET**
+(`2026-09-15_0907_city_email_go_live.sql`); the table shows the production values.
 
 | key | today | effect |
 |---|---|---|
-| `city_email_live_sends` | **`false`** | every city send is forced to the test recipient and logged `is_test=true` |
-| `city_email_test_recipient` | `fred@ayache.com` | where gated sends land |
+| `city_email_live_sends` | **`true`** | when `false`, every city send is forced to the test recipient and logged `is_test=true` |
+| `city_email_test_recipient` | **empty** | where gated sends land; must stay empty in production (a value here is copied into every sweep body and honoured even with the gate open) |
 | `client_email_live_sends` | **`true`** | the CUSTOMER-facing send is LIVE and reaching real addresses |
-| `city_email_start_from` | **`infinity`** | the automatic sweep's on/off switch AND backlog cutoff in one value |
+| `city_email_start_from` | **`2026-09-15 13:07:34.336825+00`** | the automatic sweep's on/off switch AND backlog cutoff in one value; `infinity` = OFF |
 | `city_email_delay` | `24 hours` | how long after the blackout the automatic email may go, once a manual send has unlocked it (see below) |
 | `city_email_retry_after` | `20 hours` | stops a re-send loop |
 | `city_email_batch_limit` | `5` | per sweep run |
 
-**What is test-mode scaffolding, and must go at cutover:**
+**What was test-mode scaffolding, and went at cutover (all done 2026-09-15):**
 
 1. The **INTERNAL TEST strip** above the letter. It is keyed on `isTest`, which is keyed on
    `test_recipient`, so it disappears by itself the moment the gate opens. Nothing to remove.
 2. **`city_email_test_recipient`** must be cleared, or every automatic email keeps going to Fred and
    is logged `is_test=true`, which also means the `already_sent` guard never matches and the sweep
    retries the same manifests forever.
-3. The DERM Tracker's **test-recipient modal**, which is test scaffolding
-   (`project_city_email_test_modal_must_be_removed_at_prod` in memory).
+3. The ADMIN REVIEW dialog's **test-recipient field and Test mode box** (Fred, 2026-08-16: "On prod it needs
+   to send directly to the correct email set for it"; the memory note
+   `project_city_email_test_modal_must_be_removed_at_prod` is about this dialog, not the DERM one).
+   Removed 2026-09-15: the dialog shows a read-only To line from `public.v_visit_city_email.city_emails`.
+4. The DERM Tracker city dialog's **Test mode banner and prefilled test address**. Removed 2026-09-15: it
+   opens in real mode with a To line per recipient from `derm.v_manifest_recipient_city_emails`; typing
+   an internal address into the optional field still sends a deliberate test copy.
 
-### 🛑 Cutover order, and it is not one statement
+### 🛑 Cutover order, and it is not one statement (shipped 2026-09-15 as one transaction; kept as the rule for any future flip)
 
 ```sql
 -- 0. FIRST: no test address may be sitting in properties.city_emails, or the sweep mails it as a
@@ -207,8 +215,7 @@ select recipient_type, is_test, recipient_email, include_photos,
   from public.derm_email_sends where sent_at > now() - interval '2 hours' order by id desc;
 ```
 
-⚠ **`city-email-sweep` is already running hourly and sending nothing.** That is the intended state,
-not a broken job: `city_email_start_from = infinity` admits nothing. A cron that has been running
+⚠ **Before go-live `city-email-sweep` ran hourly and sent nothing** because `city_email_start_from = infinity` admitted nothing; since 2026-09-15 it admits pairs whose `GREATEST(blacked_at, manual_sent_at)` is after the go-live instant. A cron that has been running
 harmlessly for days is a far better thing to switch on than one whose first execution is also its
 first real send.
 

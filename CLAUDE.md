@@ -3849,26 +3849,27 @@ manifest ONLY since 2026-09-11: `customer.work_orders.derm_manifest_url`, never 
 A receipt-only report (12 live visits) shows the "will be sent separately" note and does not
 suppress; it does unlock.
 
-🟡 **TEST MODE SINCE 2026-09-12 06:39:44 ET, on Fred's request ("for testing can you make the
-automatic email to be send every 5 min").** The table below shows the STANDARD values; right now
-`city_email_delay` = `5 minutes`, `city_email_start_from` = `2026-09-12 10:39:44.333224+00`, and
-the `city-email-sweep` cron runs `*/3 * * * *` (every minute for 12 minutes first, moved to 3 for
-the double-send reason below). `city_email_live_sends` is still `false`, so every
-automatic send lands at fred@ayache.com. Queue was 0 and the census unchanged when this was
-applied: only a manual Admin Review send or a blackout AFTER that instant produces an automatic
-email, about 5 minutes later. Do not "fix" these values; the restore checklist further down puts
-them back, and this paragraph is removed in the same commit. Owner: @Building Apps session.
-**Everything is `public.app_config`, which is audited.** Values read 2026-08-29:
+🟢 **PRODUCTION SINCE 2026-09-15 09:07:34 ET** (Fred: *"i think is ready ... So make it on production
+now"*). Migration `2026-09-15_0907_city_email_go_live.sql` (one transaction, VERIFY inside it): delay
+back to 24 hours, gate open, test recipient cleared, sweep hourly at :07, `city_email_start_from` =
+`2026-09-15 13:07:34.336825+00`, and five properties that held an internal or test-client city email
+cleared (42, 973, 363, 162, 1057; backup in `backups/`). At commit: queue 0, ready 0, waiting 0,
+awaiting_manual_send 118, already_sent 16. The 2026-09-12 test mode (5 minutes, `*/3`) is history.
+🛑 **`t7_restore.sql` from the 2026-09-12 session must never be run now**: it sets `start_from` to
+`infinity`, which is the OFF switch. Same hour: `send-visit-photos-email` v35 (IS_TEST retired, To
+resolved server-side from the visit's property, compliance BCC), `2026-09-15_0925_city_email_to_lines`
+(the dialogs' To lines), and both Lovable dialogs republished without their test-mode boxes.
+**Everything is `public.app_config`, which is audited.** Values read 2026-09-15 09:07 ET (production):
 
 | key | value | what it does |
 |---|---|---|
-| `city_email_start_from` | **`infinity`** | **the on/off switch AND the backlog cutoff in one value**, so they cannot disagree. A missing key reads as `infinity`, so deleting the row fails closed. |
+| `city_email_start_from` | **`2026-09-15 13:07:34.336825+00`** (was `infinity` = OFF until go-live) | **the on/off switch AND the backlog cutoff in one value**, so they cannot disagree. It gates `GREATEST(blacked_at, manual_sent_at)`, so nothing before the go-live instant is ever swept unless a REAL manual send after it unlocks the pair. A missing key reads as `infinity`, so deleting the row fails closed; setting it back to `infinity` switches production OFF. |
 | `city_email_delay` | `24 hours` | data, not a literal, so a test can shorten it. Falls back to 24h when the key is missing or empty, **never to zero**. ⚠ An **unparseable** value does NOT fall back, it RAISES (see below) |
 | `city_email_retry_after` | `20 hours` | stops a re-send loop. Falls back to 20h when missing or empty, never to zero. Same raise-on-unparseable behaviour |
 | `city_email_batch_limit` | `5` | cap per run; the sender renders a PDF per manifest |
-| `city_email_live_sends` | **`false`** | forces every city send to the test recipient, `is_test=true` |
+| `city_email_live_sends` | **`true`** (since 2026-09-15) | `false` forces every city send to the test recipient, `is_test=true`; `true` resolves the property inboxes, BCCs the compliance archive, and makes only `is_test=false` rows count as the unlocking manual send |
 | `client_email_live_sends` | **`true`** (measured 2026-09-03) | the same gate on the CLIENT-facing send. 🛑 **OPEN**, so a client send reaches the real customer unless a `test_recipient` is supplied |
-| `city_email_test_recipient` | `fred@ayache.com` | where gated sends land |
+| `city_email_test_recipient` | **empty** (since 2026-09-15) | when non-empty the sweep puts it in EVERY body and the mailer honours it even with the gate open: every automatic email would go there as a test, never satisfy `already_sent`, and retry every 20 hours. Keep it empty in production. |
 
 🛑 **AN UNPARSEABLE INTERVAL RAISES, IT DOES NOT FALL BACK.** The `::interval` cast sits
 INSIDE the `coalesce` argument in both `fn_city_email_delay()` and `fn_city_email_retry_after()`,
@@ -3878,7 +3879,7 @@ radius is the whole sweep: `derm.v_city_email_candidates` reads both functions, 
 either key takes the view and every consumer down. Still fail-closed (nothing sends), but it
 fails LOUDLY, and "falls back" would tell a reader a typo is harmless.
 
-🛑 **GO-LIVE IS FOUR STEPS IN THIS ORDER, NOT ONE STATEMENT. The "one statement" wording below
+✅ **GO-LIVE SHIPPED 2026-09-15 as `2026-09-15_0907_city_email_go_live.sql`, in exactly this order and in one transaction.** The reasoning stays as the standing rule for any future flip (a rehearsal that switches it off and on again must follow the same order). 🛑 **GO-LIVE IS FOUR STEPS IN THIS ORDER, NOT ONE STATEMENT. The "one statement" wording below
 was true when it was written and is now WRONG (corrected 2026-08-31).** It predates both the send
 gate (`425f32a`) and `city_email_test_recipient` being populated, and running it alone produces a
 silent failure that looks like success.
@@ -3921,7 +3922,7 @@ update public.app_config set value = ''     where key = 'city_email_test_recipie
 update public.app_config set value = now()::text where key = 'city_email_start_from';
 ```
 
-**Restore checklist after ANY rehearsal** (each of these was changed on 2026-09-11 and put back):
+**Restore checklist after ANY rehearsal** (each of these was changed on 2026-09-11 and put back). ⚠ Since 2026-09-15 the first line below (`infinity`) is the PRODUCTION OFF SWITCH, not a restore: after a rehearsal in production, put `start_from` back to the go-live instant (or a later one), never to `infinity`, unless you mean to stop the feature:
 
 ```sql
 update public.app_config set value = 'infinity' where key = 'city_email_start_from';
@@ -3943,7 +3944,7 @@ select recipient_type, is_test, recipient_email, sent_at at time zone 'America/N
 has nothing to do with this go-live. It was restored to `true` at some point before 2026-09-03, so
 it needs no action; the city gate is the only one still shut.
 
-🛑 **THE CITY GATE IS OFF FOR TESTING AND MUST BE RESTORED. THE CLIENT GATE IS ALREADY OPEN.**
+🟢 **BOTH GATES ARE OPEN SINCE 2026-09-15** (client since before 2026-09-03). The paragraph below describes the SHUT states and is kept because either gate can be shut again. Historical heading: 🛑 **THE CITY GATE IS OFF FOR TESTING AND MUST BE RESTORED. THE CLIENT GATE IS ALREADY OPEN.**
 Nothing expires either and nothing alerts on them, which is why this paragraph went stale: it said
 BOTH were off until 2026-09-03, when `client_email_live_sends` was measured at `true`.
 ⚠ The description that follows is what a SHUT client gate does, and it is kept because the gate can
@@ -3952,9 +3953,10 @@ success, writes a `derm_email_sends` row, and **no customer receives anything**.
 2026-08-29: that path has 37 real sends to 23 distinct customer addresses historically (23 stored
 strings, 22 actual mailboxes: one differs only in casing), so it is a live mailing path. ⚠ Since the
 DERM Tracker demo-mode change (`7c859bb`, 2026-09-01) the city dialog no longer shows a "temporarily
-disabled" banner — its buttons are ENABLED and it shows a **"Test mode. This goes only to the address
-below, never to the city."** banner (the server still forces the test recipient). **The client dialog
-shows nothing**, so `app_config` remains the only way to know the true gate state.
+disabled" banner — its buttons are ENABLED and it showed a **"Test mode. This goes only to the address
+below, never to the city."** banner until 2026-09-15, when the banner was removed and the dialog
+opens in real mode with a read-only To line (`derm.v_manifest_recipient_city_emails`). **Neither dialog
+shows the gate state**, so `app_config` remains the only way to know it.
 
 🛑 **READ `derm.v_city_email_candidates.status`, NOT THE QUEUE.** `derm.v_city_email_queue` only ever
 shows `ready`; the candidates view names why every other row is not, and **never filters a row away**.
