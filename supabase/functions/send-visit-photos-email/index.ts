@@ -9,14 +9,18 @@
 // the visit's CLASSIFIED PHOTOS. Different payload, different gate, different log
 // table (public.visit_photo_email_sends, NOT derm_email_sends).
 //
-// 🛑 CITY SENDING IS DISABLED (Fred, 2026-08-10: "the emailing functionality to the
-// city is disabled for now, until i explicitly say otherwise"). Fred's instruction
-// for THIS button on 2026-08-15 was "Build it, but test-send only to me", so the
-// recipient is the hard-wired constant below and every row logs is_test = true.
-// 🛑 THE RECIPIENT IS NOT READABLE FROM THE REQUEST BODY, DELIBERATELY. send-derm-email
-// accepts `test_recipient` as any string containing '@' with no allowlist, which means
-// a caller chooses who receives a client's documents. That mistake is not repeated
-// here: to change the recipient you edit this file and redeploy.
+// 🛑 CITY SENDING IS LIVE SINCE 2026-09-15 (Fred: "make it on production now"). From 2026-08-15 to
+// 2026-09-15 this function was hard-wired to a test recipient with is_test = true on every row;
+// those rows stay in visit_photo_email_sends as history and count for nothing (the automatic city
+// email, derm.v_city_email_candidates, only reads is_test = false rows once city_email_live_sends
+// is true).
+// 🛑 THE RECIPIENT IS NOT READABLE FROM THE REQUEST BODY, DELIBERATELY. The To address is the
+// visit's property: public.properties.city_emails of visits.property_id, every element containing
+// '@', trimmed and lower-cased, in stored order (the same rule public.v_visit_city_email.city_emails
+// shows the operator in the dialog, 2026-09-15_0925). A body `test_recipient` is refused with 400
+// test_recipient_retired, so a stale bundle can never send for real while claiming a test. Cc and
+// Bcc remain caller-supplied and stay domain-locked to the internal allowlist below.
+// A compliance copy of every real send goes to CITY_BCC, as send-derm-email does for its city sends.
 //
 // 🛑 AND UNLIKE send-derm-email, THIS FUNCTION ACTUALLY CHECKS WHO IS CALLING.
 // send-derm-email is deployed verify_jwt=true but asserts no role, and the public
@@ -95,9 +99,9 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
-// 🛑 Hard-wired while city sending is off. Fred: "test-send only to me".
-const TEST_RECIPIENT = 'fred@ayache.com'
-const IS_TEST = true
+// 🛑 The compliance archive copy on every real send (same address send-derm-email BCCs on its city
+// sends). Deduped against any caller Bcc; never shown to the recipient.
+const CITY_BCC = 'derm@ayache.com'
 
 // 🛑 THE 48 HOURS IS THE CREW'S POSTING DEADLINE, NOT A SEND DELAY (Fred, 2026-08-18).
 // This constant used to drive a hard time gate: no send until completed_at + 48h, always.
@@ -188,28 +192,9 @@ if (RECIPIENT_RE.test('probe@evil.com') || RECIPIENT_RE.test('probeXayache!com')
   throw new Error('recipient allowlist is too permissive; check the escaping in RECIPIENT_RE')
 }
 
-// 🛑 AT PROD CUTOVER THIS WHOLE PARAMETER IS DELETED, ALONG WITH THE MODAL.
-// Fred, 2026-08-16: "when changed to prod we need to remove that modal. On prod it needs
-// to send directly to the correct email set for it." The real recipient must then be
-// resolved server-side from public.properties.city_emails for the property in question,
-// the way send-derm-email does. NEVER from the request.
-// ⚠ UPDATED 2026-08-21: this used to say municipality_regulators. The city inbox moved from the
-//   CITY to the PROPERTY, and that table is now empty of live addresses, so following the old
-//   instruction at cutover would resolve ZERO recipients and look like "no city configured".
-//   See docs/migrations/2026-08-21_2130_property_city_emails_per_property.sql.
-// While IS_TEST is true the blast radius of a caller-supplied address is an internal
-// inbox; the moment city sending is enabled it becomes "anyone can direct a client's DERM
-// document anywhere". So do not flip IS_TEST without removing this in the same change.
-// Checklist: Building Apps/Admin Review/docs/11-city-email.md
-function resolveTestRecipient(raw: unknown): { email: string } | { error: string } {
-  if (raw === undefined || raw === null || raw === '') return { email: TEST_RECIPIENT }
-  if (typeof raw !== 'string') return { error: 'recipient_not_allowed' }
-  const candidate = raw.trim()
-  // ⚠ fullmatch semantics: the anchors plus the [^@\s]+ class mean a trailing newline or a
-  // second address cannot be smuggled in. "a@ayache.com,b@evil.com" fails, as it must.
-  if (!RECIPIENT_RE.test(candidate)) return { error: 'recipient_not_allowed' }
-  return { email: candidate }
-}
+// 2026-09-15: the caller-supplied test recipient and its resolver were deleted at go-live (Fred,
+// 2026-08-16: "when changed to prod we need to remove that modal. On prod it needs to send directly
+// to the correct email set for it"). The recipient is resolved from the visit's property below.
 
 // The Field Portal report, rendered to PDF by the pdf-service on Railway. Both secrets
 // already exist for generate-fog-manifest / generate-derm-address-pdf; reused, not new.
@@ -423,12 +408,8 @@ function buildHtml(v: VisitRow, counts: Record<string, number>, includePhotos = 
     .map(([l, n]) => `${l} ${n}`)
     .join(' &middot; ')
 
-  // The TEST strip sits OUTSIDE the card, so the card itself is byte-for-byte what
-  // a municipality would receive. Fred needs to review the real thing, not a
-  // watermarked approximation of it.
-  const testStrip = IS_TEST
-    ? `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;"><tr><td style="padding:0 0 14px 0;font-family:${FONT_STACK};font-size:12px;line-height:1.5;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;"><strong>INTERNAL TEST.</strong> City sending is disabled; this went only to the internal test address. Everything below the line is exactly what the municipality would receive.</td></tr></table>`
-    : ''
+  // 2026-09-15: the amber test strip that sat above the card during the testing era is gone;
+  // every send is real and the card is what the municipality receives.
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Grease Trap Service Completed</title></head>
@@ -440,7 +421,6 @@ function buildHtml(v: VisitRow, counts: Record<string, number>, includePhotos = 
      and "Service details only" on the card. That contradiction would have been introduced BY the
      card change, so removing it is part of that change, not scope added to it. -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;"><tr><td align="center" style="padding:32px 16px;">
-${testStrip}
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#ffffff;border-radius:12px;border:1px solid #e6e8eb;">
 <tr><td style="padding:26px 36px 18px 36px;border-bottom:2px solid #f14714;"><img src="${LOGO_URL}" alt="UnclogMe" width="144" height="48" style="display:block;border:0;outline:none;text-decoration:none;height:48px;width:144px;"></td></tr>
 
@@ -583,25 +563,21 @@ Deno.serve(async (req: Request) => {
   // `=== true` would silently strip the photos from every existing integration.
   const includePhotos = (body as Record<string, unknown>)?.include_photos !== false
 
-  const resolved = resolveTestRecipient((body as Record<string, unknown>)?.test_recipient)
-  if ('error' in resolved) {
-    // Refused BEFORE any render or send, and deliberately not logged to
-    // visit_photo_email_sends: nothing was attempted, so a log row would imply one was.
+  // 🛑 Refused BEFORE any render or send, and deliberately not logged: a caller that still ships a
+  // test recipient is a stale bundle from the testing era, and nothing was attempted.
+  const staleTest = (body as Record<string, unknown>)?.test_recipient
+  if (staleTest !== undefined && staleTest !== null && String(staleTest).trim() !== '') {
     return json({
-      error: 'recipient_not_allowed',
-      detail: `Test emails may only go to ${ALLOWED_RECIPIENT_DOMAINS.map((d) => '@' + d).join(' or ')}.`,
-      allowed_domains: ALLOWED_RECIPIENT_DOMAINS,
-    }, 422, cors)
+      error: 'test_recipient_retired',
+      detail: 'The city recipient is the property\'s City Email and cannot be chosen per send. Reload the app.',
+    }, 400, cors)
   }
-  const recipient = resolved.email
 
-  // Parsed AFTER the To address so a copy that duplicates it is dropped rather than double-sent.
-  const ccParsed = parseCopyList((body as Record<string, unknown>)?.cc, 'Cc', [recipient])
-  if ('error' in ccParsed) return json({ error: 'recipient_not_allowed', detail: ccParsed.error }, 422, cors)
-  const bccParsed = parseCopyList((body as Record<string, unknown>)?.bcc, 'Bcc', [recipient, ...ccParsed.list])
-  if ('error' in bccParsed) return json({ error: 'recipient_not_allowed', detail: bccParsed.error }, 422, cors)
-  const ccList = ccParsed.list
-  const bccList = bccParsed.list
+  // Resolved from the visit's property below; declared here because logSend closes over them and
+  // runs on skip paths that fire before the resolution (same temporal-dead-zone rule as hasDermDocs).
+  let recipientEmail: string | null = null
+  let ccList: string[] = []
+  let bccList: string[] = []
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
     global: { headers: { 'x-app-source': 'send-visit-photos-email' } },
@@ -627,8 +603,10 @@ Deno.serve(async (req: Request) => {
   ) => {
     try {
       const { error } = await sb.from('visit_photo_email_sends').insert({
-        visit_id: visitId, recipient_email: recipient, status, reason,
-        is_test: IS_TEST, photo_count: photoCount, bytes_sent: bytes,
+        // recipient_email is NOT NULL: skip paths that fire before the property is resolved log an
+        // empty string, never a placeholder address (the testing era logged the test inbox here).
+        visit_id: visitId, recipient_email: recipientEmail ?? '', status, reason,
+        is_test: false, photo_count: photoCount, bytes_sent: bytes,
         resend_email_id: resendId, subject, include_photos: includePhotos,
         // 🛑 THE INTERLOCK, BOTH WAYS SINCE 2026-09-11. TRUE cancels the automatic city email for
         // every manifest on this visit (derm.v_city_email_candidates -> 'suppressed_manual').
@@ -658,7 +636,7 @@ Deno.serve(async (req: Request) => {
       // ⚠ properties columns are address / city / state / zip. NOT address_line1 or
       // postal_code: those were a guess, and PostgREST reported them only at runtime
       // (the deploy succeeded regardless, so nothing caught it until the first call).
-      .select('id, visit_date, completed_at, deleted_at, client_id, property_id, public_id, derm_required, clients(name, client_code), properties(address, city, state, zip)')
+      .select('id, visit_date, completed_at, deleted_at, client_id, property_id, public_id, derm_required, clients(name, client_code), properties(address, city, state, zip, city_emails)')
       .eq('id', visitId)
       .maybeSingle()
     if (vErr) throw new Error(`visit lookup failed: ${vErr.message}`)
@@ -675,6 +653,30 @@ Deno.serve(async (req: Request) => {
       visit_date: String(v.visit_date ?? '').slice(0, 10),
       public_id: (v as Record<string, any>).public_id ?? null,
     }
+
+    // -- GATE 0: the visit's property must carry a city inbox ------------------
+    // The To address, resolved server-side and only here. Mirrors public.v_visit_city_email.city_emails
+    // (2026-09-15_0925), which is what the dialog shows the operator as "To".
+    const cityEmails = [...new Set(((pr?.city_emails ?? []) as unknown[])
+      .map((e) => String(e ?? '').trim().toLowerCase())
+      .filter((e) => e.includes('@')))]
+    if (cityEmails.length === 0) {
+      await logSend('skipped', 'no_city_email', 0, 0, null, null)
+      return json({
+        error: 'no_city_email',
+        detail: 'This property has no City email on file, so the report has nowhere to go. Add the email on the property first.',
+      }, 409, cors)
+    }
+    recipientEmail = cityEmails.join(', ')
+
+    // Cc / Bcc parsed AFTER the To addresses so a copy that duplicates one is dropped rather than
+    // double-sent. A refused copy address returns before any render, unlogged (nothing was attempted).
+    const ccParsed = parseCopyList((body as Record<string, unknown>)?.cc, 'Cc', cityEmails)
+    if ('error' in ccParsed) return json({ error: 'recipient_not_allowed', detail: ccParsed.error }, 422, cors)
+    const bccParsed = parseCopyList((body as Record<string, unknown>)?.bcc, 'Bcc', [...cityEmails, ...ccParsed.list])
+    if ('error' in bccParsed) return json({ error: 'recipient_not_allowed', detail: bccParsed.error }, 422, cors)
+    ccList = ccParsed.list
+    bccList = bccParsed.list
 
     // -- GATE 1: the visit must be DERM-required ------------------------------
     // 🛑 Fred, 2026-08-15: "it means the visit needs to be DERM Required, because the way
@@ -755,7 +757,7 @@ Deno.serve(async (req: Request) => {
     const { data: prior, error: pErr } = await sb
       .from('visit_photo_email_sends')
       .select('id, sent_at, sent_by_email, photo_count')
-      .eq('visit_id', visitId).eq('status', 'sent')
+      .eq('visit_id', visitId).eq('status', 'sent').eq('is_test', false)
       .order('sent_at', { ascending: false }).limit(1)
     if (pErr) throw new Error(`send-log lookup failed: ${pErr.message}`)
     if (prior && prior.length > 0 && !confirmResend) {
@@ -922,18 +924,18 @@ Deno.serve(async (req: Request) => {
     const skipped: { file: string; reason: string }[] = []
 
     // Fred's subject line, verbatim: "Grease Trap Service Completed — [Client Name],
-    // [Address] ([Date])". While IS_TEST the real subject is prefixed so a stray copy in
-    // an inbox is unmistakable; the BODY is left exactly as a municipality would see it.
-    const realSubject = buildSubject(visitRow)
-    const subject = IS_TEST ? `[TEST] ${realSubject}` : realSubject
+    // [Address] ([Date])".
+    const subject = buildSubject(visitRow)
+    // Compliance archive copy, deduped against whatever the sender blind-copied.
+    const bccAll = [...new Set([CITY_BCC, ...bccList].map((e) => e.toLowerCase()))]
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: RESEND_FROM,
-        to: [recipient],
+        to: cityEmails,
         ...(ccList.length ? { cc: ccList } : {}),
-        ...(bccList.length ? { bcc: bccList } : {}),
+        bcc: bccAll,
         reply_to: CONTACT_EMAIL,
         subject,
         html: buildHtml(visitRow, phaseCounts, includePhotos, hasDermDocs === true),
@@ -950,7 +952,7 @@ Deno.serve(async (req: Request) => {
     const resendId = (er as { id?: string })?.id ?? null
     await logSend('sent', null, prepared.length, total, resendId, subject)
     return json({
-      ok: true, is_test: IS_TEST, sent_to: recipient, visit_id: visitId,
+      ok: true, is_test: false, sent_to: cityEmails, visit_id: visitId,
       attached: prepared.length, bytes: total,
       by_phase: prepared.reduce((a, p) => { a[p.phase] = (a[p.phase] ?? 0) + 1; return a }, {} as Record<string, number>),
       skipped, resend_email_id: resendId, subject,

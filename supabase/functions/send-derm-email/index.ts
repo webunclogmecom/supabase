@@ -660,7 +660,8 @@ Deno.serve(async (req: Request) => {
   // clients yet."*
   //
   // Each target has its OWN flag, so client sending can be restored without also opening the city,
-  // and vice versa. Both ship false during the testing phase.
+  // and vice versa. Both shipped false during the testing phase; city_email_live_sends is true since
+  // 2026-09-15 09:07 ET (client_email_live_sends since before 2026-09-03).
   // ⚠ client_email_live_sends=false DISABLES A WORKING PRODUCTION FEATURE. That is deliberate and
   // temporary; one config update restores it.
   let cityGate: string | null = null

@@ -222,7 +222,8 @@ const CITY_COPY: LetterCopy = {
   greeting: 'Dear Environmental Compliance Team,',
   intro: 'We are writing to confirm that the scheduled grease trap service for the location below has been successfully completed.',
   closing: 'Thank you for your continued partnership in keeping our community compliant and clean.',
-  testNote: 'City sending is disabled; this went only to the internal test address. Everything below the line is exactly what the municipality would receive.',
+  // 2026-09-15: city sending is live; this note renders only on a deliberate test copy (a test address typed into the dialog).
+  testNote: 'This copy went only to the internal test address; the city did not receive it. Everything below the line is exactly what the municipality would receive.',
 }
 
 // The customer letter keeps the wording Unclogme has always used with clients. Only the SHELL is
