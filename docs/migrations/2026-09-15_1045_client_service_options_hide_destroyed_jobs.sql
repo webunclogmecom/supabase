@@ -5,6 +5,11 @@
 -- exactly two things: job_status = 'archived' and a title carrying [OLD]. A job Jobber has DELETED
 -- arrives here as job_status = 'destroyed' (JOB_DESTROY, webhook-jobber), which the view did not
 -- hide, so a deleted job was OFFERED for a new visit until the poll re-read it as 'archived'.
+-- ⚠ CORRECTION (same day, comment only, the SQL below is what ran): the converger is NOT the poll.
+--   'archived' comes back when sync-jobber-job-drift's gone-arm (every 30 minutes, :15/:45) asks
+--   Jobber for the job by id and gets nothing; the poll pulls by updatedAt and never re-pulled the
+--   six. 08-21's "20 minutes" was the 01:45 drift run. The window is up to 30 minutes, longer when
+--   a drift run fails (10:45 on 2026-09-15 went partial on three HTTP 401s).
 --
 -- WHAT IT COST, 2026-09-15 10:33 ET. Fred deleted three 112-YA properties in Jobber (1057, 1091,
 -- 1107; Fred: "Delete all the properties except Miami Beach for 112-YA"). Jobber cascades a property

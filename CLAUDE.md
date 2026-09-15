@@ -965,16 +965,48 @@ is never delivered, so re-run `scripts/probes/property_estate_audit.mjs` rather 
 That is what keeps a dead site out of the Visit Calendar's New Visit picker (which selects a JOB, not
 a property). It is a two-instance observation, not a proven invariant: if a live job is ever found on
 a retired property the picker WILL offer it.
-🛑 **CORRECTED 2026-09-15: it arrives as `destroyed` FIRST, and the picker was offering it.** The cascade
-reaches us as one `JOB_DESTROY` webhook per job, which sets `job_status='destroyed'` on EVERY job of the
-property, including jobs that were already `archived` (112-YA: 1285/1305/1306/1307 flipped archived ->
-destroyed in the same second as the two open ones). `archived` only comes back when the `*/5` poll
-re-reads the job, about 20 minutes later (08-21's job 1848). `ops.client_service_options`, the Calendar's
-New Visit picker, hid only `archived` and `[OLD]`, so for that window a deleted job was offered for a new
-visit, and previously-archived test jobs came back with it (Fred: "Now what is this mess?"). Fixed by
-`2026-09-15_1045`: the view also hides `destroyed`. `closed` is deliberately still offered (0 closed jobs
-exist; whether one may take a visit is a product question). The 2026-08-21 sentence above measured the
-END state of the cascade and called it the arrival; the two-instance caveat stands.
+🛑 **CORRECTED 2026-09-15: it arrives as `destroyed` FIRST, and eleven objects were treating that as LIVE.**
+The cascade reaches us as one `JOB_DESTROY` webhook per job, which sets `job_status='destroyed'` on EVERY job
+of the property, including jobs that were already `archived` (112-YA: 1285/1305/1306/1307 flipped archived ->
+destroyed in the same second as the two open ones, 1846 and 1849). `archived` comes back only when
+**`sync-jobber-job-drift`'s gone-arm** (every 30 minutes at :15/:45, the 14-day recent-terminal arm,
+`gone_archived`) asks Jobber for the job by id and gets nothing. **Not the poll**: the poll pulls by
+`updatedAt` and never re-pulled the six (their `raw.jobber_pull_jobs` rows date from June and August), and
+08-21's "20 minutes later" for job 1848 was simply the 01:45 drift run. So the window is up to 30 minutes,
+longer when a drift run fails (10:45 on 2026-09-15 went `partial` on three HTTP 401s from Jobber), and
+during it a deleted job read as live to everything that hid only `archived`.
+⇒ **THE RULE, shipped 2026-09-15: `destroyed` is terminal wherever `archived` is.** A destroyed job is a
+deleted job, strictly more final than an archived one, and nothing in this estate needs to tell them
+apart. `2026-09-15_1045` fixed the surface Fred saw (`ops.client_service_options`, the Calendar's New Visit
+picker: six cards for two live jobs, Fred: "Now what is this mess?"); `2026-09-15_1100` did the rest
+(Fred: "we need to fix that for all the times we delete a property"): `client.fn_client_live_sa_jobs`,
+`client.preview_job_action`, `client.recurring_eligibility`, `client.update_client_status(bigint,text,text)`,
+`ops.create_visit_request`, `public.create_calendar_visit`, `public.fn_generate_sa_visits`,
+`client.v_client_billing`, `customer.clients`, `ops.client_jobs`, `public.v_sa_schedule_gaps`: every
+`<> 'archived'` became `NOT IN ('archived', 'destroyed')` with the left operand untouched (NULL semantics
+per object exactly as before), bodies spliced from the live definitions with the md5 pinned. Verified on a
+rolled-back fixture (112-YA's job 765 flipped to destroyed): no longer a live SA, gone from `ops.client_jobs`,
+neither open nor reopenable in `recurring_eligibility`, `customer.clients.service_frequency_days` drops to
+NULL, and both `create_calendar_visit` and `create_visit_request` refuse it with "is not an active job".
+- **Deliberate exceptions.** `client.recurring_eligibility` keeps `is_closed = (job_status = 'archived')`,
+  because its `closed_eligible` list exists to be REOPENED through save-client-job and a deleted job cannot
+  be; it excludes destroyed jobs from its scope instead. `closed` was added NOWHERE: whether a closed Jobber
+  job may take a visit is a product question, and 0 closed jobs existed. `client.global_search`'s
+  `<> 'archived'` is about QUOTES and is untouched.
+- **Already right before this:** `public.visits_with_review`, `sync-jobber-job-drift`, `archive-client`,
+  `unarchive-client`, `sync-jobber-billing-observe` and `_shared/service-call-job.ts` list archived, closed
+  and destroyed together. **One dormant spot left as is:** `jobber-push-visit`'s no-`job_id` fallback filters
+  `!== "archived"` when picking a client's single active job; `create_calendar_visit` always sets `job_id`,
+  so that arm does not run for Calendar visits.
+- **Re-run the sweep before trusting a new consumer of `job_status`:** every view and function whose
+  definition matches `['"]archived['"]` and `job` must also mention `destroyed`, or be about something
+  other than jobs. Measured after `_1100`: 14 objects know `destroyed`, the only `archived`-only hit is
+  `client.global_search` (quotes).
+- The Client App still filters `client.jobs` on `job_status <> 'archived'` in at least one of its own
+  queries (measured in `pg_stat_statements`), which is app code, not a view; the RPCs it decides with
+  (`preview_job_action`, `recurring_eligibility`, `update_client_status`) are covered here.
+The 2026-08-21 sentence above measured the END state of the cascade and called it the arrival; the
+two-instance caveat stands.
 
 ### Jobber PROPERTY sync — enabled 2026-08-04, hourly, and it was dead before that
 
