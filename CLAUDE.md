@@ -965,6 +965,16 @@ is never delivered, so re-run `scripts/probes/property_estate_audit.mjs` rather 
 That is what keeps a dead site out of the Visit Calendar's New Visit picker (which selects a JOB, not
 a property). It is a two-instance observation, not a proven invariant: if a live job is ever found on
 a retired property the picker WILL offer it.
+🛑 **CORRECTED 2026-09-15: it arrives as `destroyed` FIRST, and the picker was offering it.** The cascade
+reaches us as one `JOB_DESTROY` webhook per job, which sets `job_status='destroyed'` on EVERY job of the
+property, including jobs that were already `archived` (112-YA: 1285/1305/1306/1307 flipped archived ->
+destroyed in the same second as the two open ones). `archived` only comes back when the `*/5` poll
+re-reads the job, about 20 minutes later (08-21's job 1848). `ops.client_service_options`, the Calendar's
+New Visit picker, hid only `archived` and `[OLD]`, so for that window a deleted job was offered for a new
+visit, and previously-archived test jobs came back with it (Fred: "Now what is this mess?"). Fixed by
+`2026-09-15_1045`: the view also hides `destroyed`. `closed` is deliberately still offered (0 closed jobs
+exist; whether one may take a visit is a product question). The 2026-08-21 sentence above measured the
+END state of the cascade and called it the arrival; the two-instance caveat stands.
 
 ### Jobber PROPERTY sync — enabled 2026-08-04, hourly, and it was dead before that
 
