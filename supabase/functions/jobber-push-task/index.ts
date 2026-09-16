@@ -15,14 +15,20 @@
 // Jobber AI itself notes an Event is "not a true single-person assignment ... visible to all team
 // members". And the crew ALREADY uses Tasks exactly this way: 11 in one week, 7 with no client.
 //
-// 🛑 ASSIGNMENT: EVERYONE ON THAT TRUCK THAT DAY (Fred, 2026-08-06). A marker is per-TRUCK; a Jobber
-// Task assigns to PEOPLE — and `assignedTo` is a LIST, which is what makes this honest. Measured over
-// 30 days, a truck-day is NOT one driver: 42 had one, 13 had two, 2 had three. So assign them all;
-// picking "the" driver would put the marker on the wrong person about a quarter of the time.
-// ⚠ And on FUTURE dates nobody is usually known yet — next 14 days, all 50 visits carry a truck but
-// only 11 carry a driver. Markers are placed ahead of time, so "unassigned" is the NORMAL early state.
-// We send `assignedTo` only when we resolved someone: sending [] on an edit would STRIP an assignment
-// a dispatcher set by hand, and "we don't know" must never overwrite "somebody decided".
+// 🛑 ASSIGNMENT SINCE 2026-09-16: THE MARKER'S DRIVER (Fred: "the task needs to be assigned to a driver
+// instead, for it to be actually the driver to see this task"). ops.calendar_day_markers.employee_id
+// names ONE person; the Task is titled "Day Start (Grecia)" and assigned to that person's Jobber user
+// (entity_source_links, entity_type=employee). The marker's driver is AUTHORITATIVE: on an EDIT we send
+// assignedTo even when it is empty, so a marker set back to Unassigned strips the previous driver from
+// the Task (the Calendar is the master; the Task's own text says "Edit it there, not here"). On a CREATE
+// an empty list is simply omitted. The read-back verifies the assignees, not only title and startAt.
+//
+// LEGACY (rows placed before 2026-09-16: employee_id NULL, vehicle_id set) keep the previous rule,
+// EVERYONE ON THAT TRUCK THAT DAY (Fred, 2026-08-06): a Jobber Task assigns to PEOPLE and `assignedTo`
+// is a LIST. Measured over 30 days, a truck-day was NOT one driver: 42 had one, 13 had two, 2 had three.
+// For those rows `assignedTo` is sent only when someone resolved: sending [] on an edit would STRIP an
+// assignment a dispatcher set by hand, and "we don't know" must never overwrite "somebody decided".
+// A marker with NEITHER a driver nor a truck is an Unassigned marker under the new model.
 //
 // AUTH: invoked by a DB trigger (pg_net) with a service_role bearer. Deployed verify_jwt=true, and
 // the handler ALSO asserts role=service_role — the anon key is a validly signed JWT, so the gateway
@@ -174,6 +180,17 @@ async function assigneesFor(vehicleId: number | null, dateISO: string): Promise<
   return found;
 }
 
+// The marker's own driver (2026-09-16 model): that employee's Jobber user, or [] when the employee has
+// no Jobber link (logged, not a failure: the marker is still worth showing, unassigned).
+async function assigneeForEmployee(employeeId: number): Promise<string[]> {
+  const { data: link, error } = await db.from("entity_source_links")
+    .select("source_id").eq("entity_type", "employee").eq("source_system", "jobber")
+    .eq("entity_id", employeeId).maybeSingle();
+  if (error) { console.error("[task] employee link lookup failed:", error.message); return []; }
+  if (!link?.source_id) { console.warn(`[task] employee ${employeeId} has no Jobber user link`); return []; }
+  return [link.source_id];
+}
+
 const TITLES: Record<string, string> = { start: "Day Start", end: "Day End", dump: "Dump" };
 
 Deno.serve(async (req) => {
@@ -245,13 +262,18 @@ Deno.serve(async (req) => {
 
   // ---- UPSERT ----------------------------------------------------------------
   const { data: m } = await ops.from("calendar_day_markers")
-    .select("id, marker_date, marker_type, minutes, dump_site, vehicle_id").eq("id", markerId).maybeSingle();
+    .select("id, marker_date, marker_type, minutes, dump_site, vehicle_id, employee_id").eq("id", markerId).maybeSingle();
   if (!m) return json({ ok: false, error: `marker ${markerId} not found` }, 404);
 
-  let truck: string | null = null;
-  if (m.vehicle_id) {
+  // Who the marker belongs to, for the title: the driver (2026-09-16 model), else the legacy truck.
+  const driverModel = m.employee_id != null || m.vehicle_id == null;
+  let owner: string | null = null;
+  if (m.employee_id != null) {
+    const { data: e } = await db.from("employees").select("full_name").eq("id", m.employee_id).maybeSingle();
+    owner = e?.full_name ?? null;
+  } else if (m.vehicle_id) {
     const { data: v } = await db.from("vehicles").select("name").eq("id", m.vehicle_id).maybeSingle();
-    truck = v?.name ?? null;
+    owner = v?.name ?? null;
   }
 
   const startAt = etToUtcISO(m.marker_date, m.minutes);
@@ -263,20 +285,25 @@ Deno.serve(async (req) => {
   const title = [
     label,
     m.marker_type === "dump" && m.dump_site ? `- ${m.dump_site}` : null,
-    truck ? `(${truck})` : null,
+    owner ? `(${owner})` : null,
   ].filter(Boolean).join(" ");
 
-  const assignedTo = await assigneesFor(m.vehicle_id, m.marker_date);
+  const assignedTo = m.employee_id != null
+    ? await assigneeForEmployee(m.employee_id)
+    : await assigneesFor(m.vehicle_id, m.marker_date);
 
-  // assignedTo is sent ONLY when we actually resolved someone. Sending [] on an edit would strip an
-  // assignment a dispatcher may have set by hand in Jobber, which is a silent destructive write —
-  // "we don't know" must not overwrite "somebody decided".
+  // Driver model: the marker's driver is authoritative, so an EDIT always carries assignedTo (an empty
+  // list strips the previous driver when the marker became Unassigned); a CREATE omits an empty list.
+  // Legacy truck rows: assignedTo is sent ONLY when we actually resolved someone. Sending [] on an edit
+  // would strip an assignment a dispatcher may have set by hand in Jobber, which is a silent destructive
+  // write; "we don't know" must not overwrite "somebody decided".
   const input: Record<string, unknown> = {
     title,
     instructions: "Route marker from the UnclogMe Visit Calendar. Edit it there, not here.",
     startAt, endAt, allDay: false,
   };
-  if (assignedTo.length) input.assignedTo = assignedTo;
+  const assignedSent = driverModel ? (assignedTo.length > 0 || !!link) : assignedTo.length > 0;
+  if (assignedSent) input.assignedTo = assignedTo;
 
   let taskId = link?.source_id as string | undefined;
   if (taskId) {
@@ -300,12 +327,36 @@ Deno.serve(async (req) => {
   const check = await gql(token, `query($id: EncodedId!){ task(id: $id){ id title startAt endAt
     assignedUsers(first:10){ nodes{ id name{ full } } } } }`, { id: taskId });
   const t = check?.data?.task;
+  // A verify failure on the CREATE path leaves a Task we cannot track; undo it, the same compensation
+  // the link-write failure below has always had (2026-09-16: before this, a failed verify on create
+  // left the Task alive and the next upsert would have minted a second one). On an EDIT the Task
+  // legitimately pre-exists and must survive.
+  const verifyFailed = async (error: string, detail: Record<string, unknown>) => {
+    let rolledBack = false;
+    if (!link) {
+      const del = await gql(token, `mutation($ids: [EncodedId!]!){ taskDelete(taskIds: $ids){
+        userErrors{ message } } }`, { ids: [taskId] });
+      rolledBack = errsOf(del, "taskDelete").length === 0;
+      console.error(`[task] ${error}; created task ${taskId} rolledBack=${rolledBack}`);
+    }
+    return json({ ok: false, error, ...detail, jobber_task: taskId, rolled_back: rolledBack }, 200);
+  };
   const startMatches = t?.startAt && Math.abs(new Date(t.startAt).getTime() - new Date(startAt).getTime()) < 60_000;
   if (!t || t.title !== title || !startMatches) {
-    return json({
-      ok: false, error: "verify failed — Jobber did not confirm the task; link NOT recorded",
+    return await verifyFailed("verify failed — Jobber did not confirm the task; link NOT recorded", {
       expected: { title, startAt }, got: t ? { title: t.title, startAt: t.startAt } : null,
-    }, 200);
+    });
+  }
+  // When we asserted WHO the Task is for, the read-back must agree, as a set (2026-09-16). A driver
+  // change that Jobber quietly ignored would otherwise be recorded as synced.
+  if (assignedSent) {
+    const got = ((t.assignedUsers?.nodes ?? []).map((u: any) => u?.id).filter(Boolean) as string[]).sort();
+    const want = [...assignedTo].sort();
+    if (got.length !== want.length || got.some((g, i) => g !== want[i])) {
+      return await verifyFailed("verify failed: Jobber did not confirm the assignees; link NOT recorded", {
+        expected: { assignedTo: want }, got: { assignedTo: got },
+      });
+    }
   }
 
   // ⚠ THE LINK WRITE MUST FAIL LOUDLY. An earlier version ignored this error and it bit immediately:
