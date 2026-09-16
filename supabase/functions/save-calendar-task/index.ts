@@ -132,6 +132,21 @@ const TZ = "America/New_York";
 
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
+// Attribution for the audit trail, same idiom as save-calendar-visit. audit.log_change() derives
+// app_source from the request Origin, and this is a server-to-server call with NO Origin, so every
+// RPC write had been landing as app_source='sql' (get_record_history reads that as 'System').
+// x-app-source wins over Origin; x-actor-name is captured into request_context.actor_name and is
+// the EMAIL (get_record_history maps it to employees.full_name), the same value the RPC already
+// stamps into jwt_claims via ops.fn_calendar_task_set_actor. Attribution only, never authorization.
+// The plain db client above stays header-less on purpose: it also refreshes public.webhook_tokens,
+// which is audited, and those rows keep the label they have today.
+function writeClient(actorEmail: string) {
+  return createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+    global: { headers: { "x-app-source": "visit-calendar", "x-actor-name": actorEmail } },
+  });
+}
+
 const ENTITY_TYPE = "calendar_task";                            // entity_source_links.entity_type
 
 const CORS = {
@@ -548,6 +563,7 @@ Deno.serve(async (req) => {
   if (userErr || !email || (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail(403, "forbidden", "Not a staff account.");
   }
+  const wdb = writeClient(email);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return fail(400, "bad_request", "Malformed JSON."); }
@@ -628,7 +644,7 @@ Deno.serve(async (req) => {
       }
 
       // Jobber has confirmed it is gone. Only now does our copy change.
-      const { data: removed, error: dErr } = await db.schema("ops")
+      const { data: removed, error: dErr } = await wdb.schema("ops")
         .rpc("fn_delete_calendar_task", { p_task_id: taskId, p_actor_email: email });
       if (dErr) {
         // ⚠ NOT COMPENSABLE, and said out loud rather than buried. The Jobber Task is already gone
@@ -679,7 +695,7 @@ Deno.serve(async (req) => {
           { expected: { isComplete: wanted }, got: t ? { isComplete: t.isComplete } : null });
       }
 
-      const { data: recId, error: rpcErr } = await db.schema("ops")
+      const { data: recId, error: rpcErr } = await wdb.schema("ops")
         .rpc("fn_record_calendar_task", {
           p: {
             jobber_gid: link!.source_id,
@@ -1032,7 +1048,7 @@ Deno.serve(async (req) => {
     // Omitted when empty, matching the omitted assignedTo above so the two sides agree.
     if (assigneeIds?.length) p.assignee_ids = assigneeIds;
 
-    const { data: recId, error: rpcErr } = await db.schema("ops")
+    const { data: recId, error: rpcErr } = await wdb.schema("ops")
       .rpc("fn_record_calendar_task", { p, p_actor_email: email });
 
     if (rpcErr) {

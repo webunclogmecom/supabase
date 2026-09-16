@@ -119,6 +119,16 @@ const SYNC_SOURCE = "calendar-task-poll";
 
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
+// The recorder's writes are Jobber's state being mirrored, so the audit trail labels them 'jobber'
+// and get_record_history reads them as 'Created in Jobber' / 'Completed in Jobber' / 'Changed in
+// Jobber'. A SEPARATE client so the token refresh (public.webhook_tokens, which IS audited) and the
+// sync_log / sync_cursors writes keep exactly the label they have today.
+// NEVER add x-actor-name here: the 'jobber' branch prints that header as a person's name.
+const rpcDb = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { persistSession: false },
+  global: { headers: { "x-app-source": "jobber" } },
+});
+
 const ENTITY_TYPE = "calendar_task";
 const PAGE = 100;                       // Jobber's measured hard cap; asking for more is silently 100
 const MAX_PAGES = 60;                   // 6,000 tasks. A runaway cursor must end, loudly.
@@ -642,7 +652,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const { error: rpcErr } = await db.schema("ops")
+        const { error: rpcErr } = await rpcDb.schema("ops")
           .rpc("fn_record_calendar_task", { p, p_actor_email: null });   // machine actor, NO DEFAULT
 
         if (rpcErr) {
@@ -723,7 +733,7 @@ Deno.serve(async (req) => {
         if (iso) p.completed_at = iso; else { p.completed_at = new Date().toISOString(); estimated.push(gid); }
         p.completed_source = "jobber";
       }
-      const { error: rpcErr } = await db.schema("ops")
+      const { error: rpcErr } = await rpcDb.schema("ops")
         .rpc("fn_record_calendar_task", { p, p_actor_email: null });
       if (rpcErr) { errors.push(`discovery: ${gid}: ${rpcErr.code ?? "?"} ${rpcErr.message ?? ""}`.trim()); continue; }
       discoveredNew++;
