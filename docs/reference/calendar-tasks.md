@@ -17,6 +17,7 @@ the objects are today and which invariants must not regress. The **app-facing** 
 | [`.../docs/specs/2026-09-16-calendar-tasks-create-two-way-design.md`](../../../Building%20Apps/Visit%20Calendar/docs/specs/2026-09-16-calendar-tasks-create-two-way-design.md) | the delta: unscheduled state, poll widened plus discovery, tray colours, date at open |
 | migrations `2026-08-26_1800` to `_1901` and `2026-09-16_1300_calendar_tasks_unscheduled` | the objects, with their PRE checks and rolled-back probes |
 | `supabase/functions/save-calendar-task/index.ts`, `supabase/functions/poll-calendar-tasks/index.ts` | the two functions; their headers are the detailed reasoning |
+| migration `2026-09-16_1700_get_record_history_calendar_tasks` | the Activity tab: `get_record_history` widened to tasks, the render types, the header-based actor labels |
 | `scripts/probes/calendar_task_unscheduled_contract.js`, `calendar_task_poll_run.js`, `calendar_task_jobber_edit.js` | live Jobber probes, safe to re-run (each cleans up after itself) |
 
 ---
@@ -76,6 +77,29 @@ owned by `jobber-push-task`). It never deletes ours: a task Jobber no longer has
 `missing` (the long-known task 214, `gid://Jobber/Task/2304786340`, is the one such today). A client,
 property or assignee it cannot map to one of our rows is logged under `unmapped_*` and the field is
 left alone.
+
+## The Activity tab (since the evening of 2026-09-16)
+
+The task drawer shows the same history list a visit has, read through `public.get_record_history(p_table =>
+'calendar_tasks', p_record_id => <id>, p_hide_system => false)` (migration
+`2026-09-16_1700_get_record_history_calendar_tasks`, applied 19:2x ET after a full dry run with ROLLBACK):
+- the allow-list admits `calendar_tasks` (and only that: `calendar_task_assignees` as `p_table` is still
+  refused); the assignee child rows fold in by `task_id` exactly as `visit_team` does for a visit, with the
+  same delete-then-reinsert churn filter;
+- `audit.entity_render_config` holds ten rows for the task columns (Title, Notes, Date, Start time, Duration,
+  Client, Property, Visit, Completed, Assigned to), and `audit.render_value` learned two additive types:
+  `minutes` ('450' becomes '7:30 AM ET') and `duration` ('90' becomes '1 hr 30 min', 1440 becomes 'All day');
+- the actor label comes from the request headers, never from a guess: `save-calendar-task` (v15) sends
+  `x-app-source: visit-calendar` and `x-actor-name: <email>` on its three RPC writes, so a row reads
+  "Edited in Visit Calendar by <employees.full_name>"; `poll-calendar-tasks` (v11) sends `x-app-source:
+  jobber` on its two, so a discovery reads "Created in Jobber", an adoption "Changed in Jobber" and a
+  completion flip "Completed in Jobber" / "Reopened in Jobber". Both keep their plain, header-less client for
+  everything else (the audited `webhook_tokens` refresh keeps its label).
+- Rows written before those headers (every task row up to 2026-09-16 19:21 ET, 167 of them) carry
+  `app_source = 'sql'` and read "System" for good. Do not add a path or email heuristic to relabel them;
+  the trail is a record of what was observed.
+- Both function bodies were spliced from the live definitions with their md5 pinned before and after; the
+  previous bodies are in `backups/2026-09-16_get_record_history_and_render_value_before_calendar_tasks.sql`.
 
 ## Jobber facts these depend on (measured 2026-09-16 against the live API)
 
