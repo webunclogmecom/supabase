@@ -20,6 +20,35 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 
 ## The objects
 
+> **🚚 -> 🧑 MARKERS BELONG TO A DRIVER SINCE 2026-09-16** (`2026-09-16_1000_calendar_day_markers_per_driver`,
+> Fred, voice: *"the task needs to be assigned to a driver instead, for it to be actually the driver to
+> see this task"*). What changed, and what the paragraphs below still describe correctly:
+> - **`employee_id bigint NULL REFERENCES public.employees(id)`** is the marker's owner. NULL = **Unassigned**,
+>   a supported value. `vehicle_id` STAYS on the table for the five rows placed before that date (74, 75,
+>   77, 79, 80, all Moises) and the app no longer writes it.
+> - **Uniqueness is per (marker_date, employee_id, marker_type) NULLS NOT DISTINCT, Start/End only**
+>   (`calendar_day_markers_start_end_driver_uniq`); the old truck index is gone. Dump stays repeatable.
+> - **`updated_at` is trigger-managed** (`trg_calendar_day_markers_updated_at` -> `public.set_updated_at()`).
+>   Before this it froze at insert; the app never issued an UPDATE until this change (a "move" was
+>   delete-then-insert, which is still what a NEW pill dropped on an occupied day does).
+> - **The app now issues UPDATEs** of `marker_date`, `minutes` and `employee_id` (drag an existing chip,
+>   or its popover), so `trg_push_marker_to_jobber` sends `upsert` and the edge fn does `taskEdit` on the
+>   SAME Task GID. The UPDATE guard in `fn_push_marker_to_jobber` gained `employee_id` (a driver change is
+>   a Jobber-visible change: title and assignee).
+> - **Jobber:** title `Day Start (<driver full name>)`, assigned to that ONE person via
+>   `entity_source_links` (employee, jobber). The driver is authoritative: on an EDIT `assignedTo` is
+>   always sent, an empty list strips the previous driver when the marker became Unassigned; on a CREATE
+>   an empty list is omitted. The read-back verifies the assignees too, and a failed verify on the create
+>   path now deletes the Task it just made (it used to leave it untracked). Legacy truck rows keep the
+>   everyone-on-that-truck rule below. All 9 ACTIVE employees carry a Jobber link (measured 2026-09-16).
+> - **The stored minute is the user's.** The app used to overwrite a dropped Start/End time with a
+>   drive-time back-solve (first stop minus drive minus 30 / last stop plus drive); it no longer does. The
+>   route is shown inside the chip ("ETA to next visit: N min", computed from the driver's next stop at or
+>   after the marker) and never applied to the row.
+> - Applied with two rolled-back pg_net probes (old body: an `employee_id`-only UPDATE enqueues nothing;
+>   new body: exactly one request) and `relacl` asserted unchanged before and after. The table is still
+>   audit opt-out.
+
 **`ops.calendar_day_markers`** — 8 columns: `id`, `marker_date` (date), `marker_type`
 (`start` / `end` / `dump`), `minutes` (smallint, **minutes past ET midnight, the exact minute, not a
 snapped slot**), `dump_site` (text, required iff `marker_type='dump'`), `vehicle_id` (bigint,
@@ -230,10 +259,13 @@ an unreachable delete control would defeat the cleanup fix entirely.
 
 `jobber-push-task` creates a Jobber **Task** (not an Event, not a Visit — see its header for why):
 
-- **Title** `Day Start (<Truck>)` / `Day End (<Truck>)` / `Dump (<Truck>) - <site>`
+- **Title** `Day Start (<Driver>)` / `Day End (<Driver>)` / `Dump - <site> (<Driver>)` (the owner in
+  parentheses is the driver since 2026-09-16, the truck on the legacy rows; measured 2026-08-17 as
+  `Dump - Homestead (000-DH) (David)`, site before owner)
 - **Description** `Route marker from the UnclogMe Visit Calendar. Edit it there, not here.`
 - **Window** the marker minute, +30 minutes
-- **`assignedTo`** — resolved from `ops.v_calendar_visit.driver_id` for that **(vehicle, date)**,
+- **`assignedTo`** — since 2026-09-16 the marker's own driver (`employee_id`, see the box at the top;
+  the rules in this bullet are the LEGACY truck rows'); resolved from `ops.v_calendar_visit.driver_id` for that **(vehicle, date)**,
   mapped to Jobber user ids through `entity_source_links` (`entity_type='employee'`).
   🛑 **It is a LIST and it is often more than one person; it is also often NOBODY, which is normal**
   for a marker placed ahead of the crew being assigned. An empty result sends **no** `assignedTo` key
