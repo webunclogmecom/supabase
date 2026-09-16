@@ -91,6 +91,11 @@
 //
 // ⇒ THE DATE IS VERIFIABLE ON AN ALL-DAY TASK AND IS VERIFIED. verifyTask compares the ET CALENDAR
 //   DATE of startAt (and of endAt) against task_date.
+// ⇒ SINCE 2026-09-16 UNSCHEDULED IS ALSO A STATE THIS FUNCTION ASKS FOR (Fred: a task with no date
+//   sits in the Calendar's "to be scheduled" tray). task_date absent on a create, or an explicit
+//   task_date: null on an edit, means no startAt/endAt (omitted on create, sent as null on edit,
+//   both proven live by scripts/probes/calendar_task_unscheduled_contract.js), allDay false, and
+//   the read-back REQUIRES startAt/endAt null. The RPC accepts the shape since 2026-09-16_1300.
 // ⇒ COMPARE THE ET DATE, NEVER THE INSTANT. Jobber normalises an all-day endAt to 23:59:59, so an
 //   exact-instant comparison misses by one second — that is not a margin, it is a broken check.
 // ⇒ WHY THIS MATTERS MOST HERE: taskCreate takes a UTC `startAt`, while Jobber's own all-day input
@@ -396,8 +401,10 @@ function etDateOf(iso: string | null | undefined): string | null {
 }
 
 type TaskWant = {
-  title: string; instructions: string | null; taskDate: string;
-  allDay: boolean; startAt: string; endAt: string;
+  title: string; instructions: string | null;
+  // taskDate null = UNSCHEDULED (2026-09-16): Jobber must hold NO startAt/endAt and allDay false.
+  taskDate: string | null;
+  allDay: boolean; startAt: string | null; endAt: string | null;
   // null = "make it none" (assert it IS none). undefined = "not stated" (assert nothing).
   clientGid: string | null | undefined; propertyGid: string | null | undefined;
   // null = we did NOT send assignedTo, so Jobber's set is none of our business on this save.
@@ -426,7 +433,11 @@ function verifyTask(t: any, want: TaskWant): string[] {
   // is what makes "Jobber dropped our startAt and left it unscheduled" — the most likely all-day
   // failure mode, because taskCreate takes a UTC instant while Jobber's all-day input wants
   // {startDate, timezone} — visible instead of silently accepted.
-  if (want.allDay) {
+  // Since 2026-09-16 UNSCHEDULED is also a state we ASK for: then Jobber must hold no window at all.
+  if (want.taskDate === null) {
+    if (t.startAt) bad.push(`startAt (sent none, Jobber has ${t.startAt}: the task is still scheduled)`);
+    if (t.endAt) bad.push(`endAt (sent none, Jobber has ${t.endAt})`);
+  } else if (want.allDay) {
     const gotStart = etDateOf(t.startAt);
     const gotEnd = etDateOf(t.endAt);
     if (!t.startAt) {
@@ -443,8 +454,8 @@ function verifyTask(t: any, want: TaskWant): string[] {
   } else {
     const near = (a: string | null, b: string) =>
       !!a && Math.abs(new Date(a).getTime() - new Date(b).getTime()) < 60_000;
-    if (!near(t.startAt, want.startAt)) bad.push(`startAt (sent ${want.startAt}, Jobber has ${t.startAt})`);
-    if (!near(t.endAt, want.endAt)) bad.push(`endAt (sent ${want.endAt}, Jobber has ${t.endAt})`);
+    if (!near(t.startAt, want.startAt as string)) bad.push(`startAt (sent ${want.startAt}, Jobber has ${t.startAt})`);
+    if (!near(t.endAt, want.endAt as string)) bad.push(`endAt (sent ${want.endAt}, Jobber has ${t.endAt})`);
   }
 
   // 🛑 EQUALITY, NOT "did it attach". `if (want.clientGid && ...)` skipped the check entirely when
@@ -703,41 +714,64 @@ Deno.serve(async (req) => {
       ? (body.instructions === null ? null : String(body.instructions))
       : ((cur?.instructions as string | null) ?? null);
 
-    const taskDate = has(body, "task_date") ? String(body.task_date ?? "") : String(cur?.task_date ?? "");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(taskDate)) {
-      return fail(400, "invalid_input", "task_date is required and must be YYYY-MM-DD.");
-    }
-    // 🛑 THE SHAPE CHECK ABOVE IS NOT A DATE CHECK. It admits 2026-02-30 / 2026-04-31 / 2026-13-05
-    // / 2026-00-10, all of which then make etToUtcISO return null — the SAME signal the
-    // spring-forward gap uses — so an impossible date used to be explained as a daylight-saving
-    // problem. Both refuse and write nothing; only one of them was telling the truth.
-    if (!isRealCalendarDate(taskDate)) {
-      return fail(400, "invalid_input",
-        `${taskDate} is not a real date on the calendar. Check the day and month.`);
+    // ---- the date: a task may have NONE (2026-09-16) ----------------------------------------
+    // 🛑 UNSCHEDULED IS A STATE, NOT AN ERROR. Fred: "if it does not have a date (a date, not a
+    // time) it needs to be placed on the to-be-scheduled". Jobber holds the same state natively:
+    // taskCreate without startAt is accepted and reads back startAt null (proven live,
+    // scripts/probes/calendar_task_unscheduled_contract.js), taskEdit with startAt null / endAt
+    // null unschedules a dated task again. So: task_date absent on a create, or an explicit
+    // task_date: null on an edit, means "no date, no time, not all-day"; the RPC accepts exactly
+    // that shape since 2026-09-16_1300. An absent key on an EDIT keeps the current date, as before.
+    const taskDate: string | null = has(body, "task_date")
+      ? (body.task_date === null || body.task_date === "" ? null : String(body.task_date))
+      : ((cur?.task_date as string | null | undefined) ?? null);
+    const scheduled = taskDate !== null;
+    if (scheduled) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(taskDate)) {
+        return fail(400, "invalid_input", "task_date must be YYYY-MM-DD, or null for a task with no date yet.");
+      }
+      // 🛑 THE SHAPE CHECK ABOVE IS NOT A DATE CHECK. It admits 2026-02-30 / 2026-04-31 / 2026-13-05
+      // / 2026-00-10, all of which then make etToUtcISO return null — the SAME signal the
+      // spring-forward gap uses — so an impossible date used to be explained as a daylight-saving
+      // problem. Both refuse and write nothing; only one of them was telling the truth.
+      if (!isRealCalendarDate(taskDate)) {
+        return fail(400, "invalid_input",
+          `${taskDate} is not a real date on the calendar. Check the day and month.`);
+      }
     }
 
     // ---- all-day vs timed -------------------------------------------------------------------
     // 🛑 all_day is DERIVED from minutes on the RPC side and an explicit null RAISES 22023, so the
     // app's convenience flag is translated into minutes HERE and `all_day` is never forwarded.
     // That also makes {...task, all_day: task.all_day ?? null} — the natural client spread — safe.
+    // An UNSCHEDULED task is neither: no time, all_day false (the RPC derives false from the
+    // missing date). A time stated together with no date is refused, never silently dropped.
     let allDay: boolean;
-    if (has(body, "minutes")) allDay = body.minutes === null;
-    else if (has(body, "all_day")) allDay = body.all_day === true;
-    else if (cur) allDay = cur.all_day === true;
-    else return fail(400, "invalid_input", "A new task needs either minutes (0-1439) or all_day: true.");
-
     let minutes: number | null = null;
-    if (!allDay) {
-      const raw = has(body, "minutes") ? body.minutes : cur?.minutes;
-      if (!isIntIn(raw, 0, 1439)) {
-        return fail(400, "invalid_input", "minutes must be a whole number of minutes past ET midnight (0-1439), or null for an all-day task.");
+    if (!scheduled) {
+      allDay = false;
+      if (has(body, "minutes") && body.minutes !== null) {
+        return fail(400, "invalid_input", "A task with no date cannot have a time. Pick a date first, or leave the time empty.");
       }
-      minutes = raw as number;
+    } else {
+      if (has(body, "minutes")) allDay = body.minutes === null;
+      else if (has(body, "all_day")) allDay = body.all_day === true;
+      else if (cur && cur.task_date != null) allDay = cur.all_day === true;
+      else return fail(400, "invalid_input", "A task with a date needs either minutes (0-1439) or all_day: true.");
+
+      if (!allDay) {
+        const raw = has(body, "minutes") ? body.minutes : cur?.minutes;
+        if (!isIntIn(raw, 0, 1439)) {
+          return fail(400, "invalid_input", "minutes must be a whole number of minutes past ET midnight (0-1439), or null for an all-day task.");
+        }
+        minutes = raw as number;
+      }
     }
 
     // ⚠ duration is resolved AFTER all_day, and is sent EXPLICITLY on every timed save. A task
     // leaving all-day whose payload omits duration_minutes would otherwise be reset to the column
     // default of 30 by the RPC, silently shrinking a task the office never touched the length of.
+    // An unscheduled task keeps a normal duration (it becomes the block length once a date lands).
     let duration = 30;
     if (!allDay) {
       if (has(body, "duration_minutes")) {
@@ -846,26 +880,37 @@ Deno.serve(async (req) => {
     //    ET day is only 23 HOURS long, so `startAt + 1440min - 1s` lands at 00:59:59 the NEXT day
     //    and verifyTask's end-date check would refuse every all-day save on that date. Asking for
     //    ET 23:59 on the same date is correct on all three kinds of day.
-    const startAt = etToUtcISO(taskDate, allDay ? 0 : (minutes as number));
-    if (startAt === null) {
-      // Only reachable in the spring-forward gap: 02:00-02:59 ET does not exist on that date.
-      return fail(400, "invalid_input",
-        `There is no ${String(Math.floor((minutes ?? 0) / 60)).padStart(2, "0")}:${String((minutes ?? 0) % 60).padStart(2, "0")} on ${taskDate} in Eastern Time — the clocks jump from 02:00 to 03:00 that morning. Pick another time.`);
+    // An UNSCHEDULED task has no window at all: startAt/endAt are null (sent as null on an edit so
+    // a dated task is unscheduled again, omitted on a create) and allDay is false.
+    let startAt: string | null = null;
+    let endAt: string | null = null;
+    if (scheduled) {
+      startAt = etToUtcISO(taskDate as string, allDay ? 0 : (minutes as number));
+      if (startAt === null) {
+        // Only reachable in the spring-forward gap: 02:00-02:59 ET does not exist on that date.
+        return fail(400, "invalid_input",
+          `There is no ${String(Math.floor((minutes ?? 0) / 60)).padStart(2, "0")}:${String((minutes ?? 0) % 60).padStart(2, "0")} on ${taskDate} in Eastern Time — the clocks jump from 02:00 to 03:00 that morning. Pick another time.`);
+      }
+      const endBase = allDay ? etToUtcISO(taskDate as string, 1439) : null;
+      if (allDay && endBase === null) {
+        return fail(500, "unexpected", `Could not derive the end of ${taskDate} in Eastern Time.`);
+      }
+      endAt = allDay
+        ? new Date(new Date(endBase as string).getTime() + 59_000).toISOString()   // ET 23:59:00 -> 23:59:59
+        : new Date(new Date(startAt).getTime() + duration * 60_000).toISOString();
     }
-    const endBase = allDay ? etToUtcISO(taskDate, 1439) : null;
-    if (allDay && endBase === null) {
-      return fail(500, "unexpected", `Could not derive the end of ${taskDate} in Eastern Time.`);
-    }
-    const endAt = allDay
-      ? new Date(new Date(endBase as string).getTime() + 59_000).toISOString()   // ET 23:59:00 -> 23:59:59
-      : new Date(new Date(startAt).getTime() + duration * 60_000).toISOString();
 
     // ========================================================================================
     // 5. CREATE / EDIT
     // ========================================================================================
     const token = await getJobberToken();
 
-    const input: Record<string, unknown> = { title, instructions, startAt, endAt, allDay };
+    // Unscheduled: on a CREATE the three schedule keys are simply absent (that is the shape proven
+    // live to yield startAt null); on an EDIT they are sent as null / false, which is what moves a
+    // dated task back to unscheduled (also proven live).
+    const input: Record<string, unknown> = scheduled
+      ? { title, instructions, startAt, endAt, allDay }
+      : (op === "edit" ? { title, instructions, startAt: null, endAt: null, allDay: false } : { title, instructions });
     // ⚠ OMIT the key when nobody is resolved, never send []. Sending [] strips an assignment a
     // dispatcher set by hand in Jobber. assignedGids is null exactly when the caller did not state
     // an assignee list, and verifyTask then asserts nothing about Jobber's set either.
