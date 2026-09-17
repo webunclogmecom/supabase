@@ -1573,12 +1573,107 @@ async function softStatusFlip(
   // flip it to 'cancelled' (that would lose the skip status/reason and drop it out of the skip
   // watchdogs). Instead complete the skip's intended end-state: unlink the ESL and keep 'skipped'.
   if (entity_type === 'visit') {
-    const { data: vrow } = await supabase.from('visits').select('visit_status').eq('id', existingId).maybeSingle()
+    // 🛑 DESTRUCTURE THE ERROR: a discarded error reads as "not skipped, not completed" and the
+    //    flip below then runs against a row this function never actually read. And RETRY before
+    //    giving up: the webhook was acknowledged before this ran, Jobber never redelivers, and a
+    //    completed visit left linked to a dead GID is what the nightly anomaly reconciler soft-deletes.
+    let vrow: { visit_status: string | null } | null = null
+    let vErr: { message: string } | null = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await supabase.from('visits').select('visit_status').eq('id', existingId).maybeSingle()
+      vrow = r.data as { visit_status: string | null } | null
+      vErr = r.error
+      if (!vErr) break
+      await new Promise((res) => setTimeout(res, 500 * (attempt + 1)))
+    }
+    if (vErr) throw new Error(`visit ${existingId} status read failed after 3 attempts: ${vErr.message}`)
     if (vrow?.visit_status === 'skipped') {
       await supabase.from('entity_source_links').delete()
         .eq('entity_type', 'visit').eq('entity_id', existingId).eq('source_system', 'jobber')
       console.log(`[softStatusFlip visit] ${existingId} is skipped in DB — unlinked instead of cancelling (skip-removal echo)`)
       return { entity_id: existingId }
+    }
+    // 🛑 A COMPLETED VISIT: WORK THAT HAPPENED IS HISTORY, A PHANTOM IS NOT (2026-09-18).
+    //    Until today this branch rewrote every completed visit Jobber destroyed as 'cancelled'. That
+    //    was right for ONE shape and wrong for the other, and the review of this change measured both
+    //    on the four real rows:
+    //      - 8020 (171-CAF): a person completed a duplicate by mistake and deleted just that visit in
+    //        Jobber within a minute. 0 photos, 0 manifests, no invoice; its twin 8012 carries the 18
+    //        photos and the invoice. Cancelling it was exactly the intent; keeping it "as history"
+    //        would serve the customer a phantom completed work order and park it on the DERM
+    //        two-week list for ever.
+    //      - 8107 / 8108 (112-YA): a JOB_DESTROY cascade destroyed visits that carried photos and a
+    //        filed manifest. Cancelling those falsified DERM and invoice history.
+    //    So the rule is: EVIDENCE decides, and where there is none, the SHAPE of the destroy does.
+    //      evidence (photos, a manifest link, an invoice)  -> keep completed, unlink, FLAG for a person
+    //      no evidence, the parent job still exists in Jobber -> a person deleted this one visit: cancel
+    //      no evidence, the job is gone or cannot be read     -> a cascade, or unknown: keep, unlink, FLAG
+    //    The flag is a visit_sync_flags row (reason jobber_visit_destroyed_after_completion) that the
+    //    Calendar's push-health card shows; fn_calendar_push_auto_retry marks an unknown reason
+    //    needs_data_fix and never pushes it. The flag is written BEFORE the unlink and fails closed:
+    //    once the link is gone a replay resolves nothing, so a lost flag would be unrecoverable.
+    //    Unlinking is what keeps the drift reconcilers from reading the dead GID as "Jobber says this
+    //    visit is gone" and soft-deleting it; the health function's orphan detector skips completed
+    //    and skipped visits for the same reason (migration 2026-09-18_0100).
+    if (vrow?.visit_status === 'completed') {
+      const [ph, mv, vi] = await Promise.all([
+        supabase.from('photo_links').select('id', { count: 'exact', head: true }).eq('entity_type', 'visit').eq('entity_id', existingId).is('deleted_at', null),
+        supabase.from('manifest_visits').select('visit_id', { count: 'exact', head: true }).eq('visit_id', existingId),
+        supabase.from('visits').select('invoice_id, job_id').eq('id', existingId).maybeSingle(),
+      ])
+      if (ph.error || mv.error || vi.error) {
+        throw new Error(`visit ${existingId} evidence read failed: ${ph.error?.message ?? mv.error?.message ?? vi.error?.message}`)
+      }
+      const evidence = (ph.count ?? 0) > 0 || (mv.count ?? 0) > 0 || vi.data?.invoice_id != null
+      let keep = evidence
+      let why = evidence
+        ? 'It carries photos, a DERM manifest or an invoice, so the work happened.'
+        : ''
+      if (!evidence) {
+        // No evidence either way: ask Jobber whether the parent job still exists. Null inside a
+        // well-formed reply means the job is gone (a job or client deletion cascade); a missing
+        // answer is UNKNOWN and is treated like a cascade, the conservative direction.
+        let jobState: 'exists' | 'gone' | 'unknown' = 'unknown'
+        try {
+          const jobGid = vi.data?.job_id ? await (async () => {
+            const { data: jl } = await supabase.from('entity_source_links').select('source_id')
+              .eq('entity_type', 'job').eq('source_system', 'jobber').eq('entity_id', vi.data!.job_id).maybeSingle()
+            return jl?.source_id ? String(jl.source_id) : null
+          })() : null
+          if (jobGid) {
+            const d = await gql(`query J($id:EncodedId!){ job(id:$id){ id } }`, { id: jobGid }) as { job?: { id: string } | null } | null | undefined
+            if (d && typeof d === 'object' && 'job' in d) jobState = d.job ? 'exists' : 'gone'
+          }
+        } catch (e) {
+          console.log(`[softStatusFlip visit] ${existingId} job existence read failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
+        keep = jobState !== 'exists'
+        why = jobState === 'exists'
+          ? 'Its job still exists in Jobber, so a person deleted this one visit there.'
+          : jobState === 'gone'
+            ? 'Its job is gone in Jobber too (a job or client deletion), so it is kept as history until a person decides.'
+            : 'Jobber could not be asked whether its job still exists, so it is kept as history until a person decides.'
+      }
+
+      if (!keep) {
+        console.log(`[softStatusFlip visit] ${existingId} completed with no evidence and its job still in Jobber — cancelling (single-visit deletion). ${why}`)
+        // fall through to the status flip below: the old behaviour, which matched the human's intent
+      } else {
+        const { error: flErr } = await supabase.from('visit_sync_flags').upsert({
+          visit_id: existingId,
+          reason: 'jobber_visit_destroyed_after_completion',
+          detail: `Jobber no longer has visit gid://Jobber/Visit/${numericId}; it was deleted there after being completed here. Kept as completed and unlinked from Jobber. ${why} Keep it if the work happened; cancel it here if it was a mistake or a duplicate.`,
+          resolved_at: null,
+          auto_retry_state: null,
+          next_attempt_at: null,
+        }, { onConflict: 'visit_id' })
+        if (flErr) throw new Error(`visit ${existingId} flag write failed (nothing changed): ${flErr.message}`)
+        const { error: ulErr } = await supabase.from('entity_source_links').delete()
+          .eq('entity_type', 'visit').eq('entity_id', existingId).eq('source_system', 'jobber')
+        if (ulErr) throw new Error(`visit ${existingId} unlink failed (flag written): ${ulErr.message}`)
+        console.log(`[softStatusFlip visit] ${existingId} is completed in DB — kept, flagged and unlinked instead of cancelling. ${why}`)
+        return { entity_id: existingId }
+      }
     }
   }
   // supabaseJobber: every *_DESTROY / JOB_CLOSED topic is Jobber-originated -> the
@@ -1588,7 +1683,81 @@ async function softStatusFlip(
   return { entity_id: existingId }
 }
 
-const handleClientDestroy = (id: string) => softStatusFlip('client', 'clients', 'status', 'INACTIVE', id)
+// CLIENT_DESTROY: the client was deleted in the Jobber UI (permanent there, cascading to its jobs,
+// quotes, requests and invoices, each of which arrives as its own *_DESTROY). Our row stays, as
+// INACTIVE, with its link and children: rule 6, and the DERM history behind it. Since 2026-09-18 the
+// deletion is also RECORDED, as a client_status_changes row with event='deleted_in_jobber', so the
+// Clients App can tell "deleted in Jobber" from "archived by us" (audit graft 2) and Status history
+// explains why the client went INACTIVE with nobody on our side having touched it. Idempotent: a
+// redelivered or replayed event finds the existing ledger row and writes nothing more.
+async function handleClientDestroy(id: string): Promise<{ entity_id: number }> {
+  const gid = btoa(`gid://Jobber/Client/${id}`)
+  const existingId = await findEntityBySourceId('client', 'jobber', gid)
+  if (!existingId) {
+    console.log(`[CLIENT_DESTROY] unknown source_id=${gid} — nothing to update`)
+    return { entity_id: 0 }
+  }
+  // old_status is read BEFORE the flip (a PAUSED or RECURRING client can be deleted in Jobber too;
+  // guessing ACTIVE would falsify the ledger). DESTRUCTURE THE ERROR: a discarded error reads as
+  // "status unknown" and the row would still be written, which is the fail-open shape.
+  const { data: crow, error: cErr } = await supabase.from('clients').select('status').eq('id', existingId).maybeSingle()
+  if (cErr) throw new Error(`client ${existingId} status read failed: ${cErr.message}`)
+  const oldStatus: string | null = crow?.status ? String(crow.status) : null
+
+  // The status flip fires trg_clients_cleanup_sa_visits_on_status, which soft-deletes upcoming
+  // Service Agreement visits; count them the way client.update_client_status does so the ledger row
+  // carries the real visits_removed instead of a hard-coded 0.
+  const countUpcoming = async (): Promise<number | null> => {
+    const { count, error } = await supabase.from('visits')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', existingId).is('deleted_at', null).eq('visit_status', 'scheduled')
+      .gte('visit_date', new Date().toISOString().slice(0, 10))
+    return error || typeof count !== 'number' ? null : count
+  }
+  const before = await countUpcoming()
+
+  const res = await softStatusFlip('client', 'clients', 'status', 'INACTIVE', id)
+  // softStatusFlip resolves the GID itself; if its lookup failed transiently it returns entity_id 0
+  // without flipping. Never record a deletion the flip did not perform: throw so the event lands as
+  // failed and a replay converges (flip no-op once done, ledger row written once).
+  if (!res.entity_id || res.entity_id !== existingId) {
+    throw new Error(`client ${existingId} CLIENT_DESTROY: status flip did not reach the row (got ${res.entity_id})`)
+  }
+
+  const { data: prior, error: priorErr } = await supabase.from('client_status_changes')
+    .select('id').eq('client_id', existingId).eq('event', 'deleted_in_jobber').limit(1)
+  if (priorErr) throw new Error(`client ${existingId} ledger read failed: ${priorErr.message}`)
+  if (prior && prior.length) return res
+
+  const after = await countUpcoming()
+  const removed = before != null && after != null ? Math.max(before - after, 0) : 0
+
+  const { error: insErr } = await supabaseJobber.from('client_status_changes').insert({
+    client_id: existingId,
+    old_status: oldStatus,
+    new_status: 'INACTIVE',
+    reason: `Deleted in the Jobber UI (CLIENT_DESTROY gid://Jobber/Client/${id})`,
+    changed_by: null,
+    changed_by_email: null,
+    visits_removed: removed,
+    event: 'deleted_in_jobber',
+  })
+  if (insErr) {
+    // Two deliveries of the same event can both pass the prior read; the partial unique index
+    // client_status_changes_one_deletion_per_client (migration 2026-09-18_0100) makes the second
+    // insert a 23505, which is convergence, not a failure.
+    if (insErr.code === '23505') {
+      console.log(`[CLIENT_DESTROY] client ${existingId} already recorded as deleted_in_jobber (concurrent delivery)`)
+      return res
+    }
+    // Otherwise throw so the event lands as failed rather than processed: a deletion we cannot
+    // record is a deletion nobody will see in the app. The flip already committed (PostgREST calls
+    // are separate transactions), so a replay converges.
+    throw new Error(`client ${existingId} deleted_in_jobber ledger insert failed: ${insErr.message}`)
+  }
+  console.log(`[CLIENT_DESTROY] client ${existingId} recorded as deleted_in_jobber (was ${oldStatus ?? 'unknown'}, ${removed} upcoming SA visits removed)`)
+  return res
+}
 const handleJobClosed     = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'closed',    id)
 const handleJobDestroy    = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'destroyed', id)
 const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  'visit_status', 'cancelled', id) // double-L: canonical enum + visits_visit_status_chk

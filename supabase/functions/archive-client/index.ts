@@ -43,6 +43,30 @@
 //    It is called with the CALLER'S JWT so auth.uid() resolves and audit.logs attributes the change
 //    to the human rather than to service_role.
 //
+// ✅ "ARCHIVE IS THE DELETE" (2026-09-18, audit Building Apps/Client App/docs/2026-09-18_client-delete-audit.md,
+//    Fred: "go ahead with all the recommended"). Four additions, all additive on the wire:
+//    - action:'preview' reads Jobber and our side and WRITES NOTHING, so the dialog can show open
+//      jobs, isArchivable and the blockers we can count before the operator commits.
+//    - a client with NO Jobber link (id 153 today) is archived HERE ONLY through the same 3-arg RPC,
+//      returning jobber:'no_link' and stamping the ledger row event='archived_here_only', instead of
+//      refusing and telling the operator to do that write by hand from Edit client status. The
+//      unarchive direction still refuses: an unlinked row can never receive a job or a visit, so
+//      "reactivating" it would promise a client that cannot be served.
+//    - a client Jobber no longer HAS (client(id) null inside a well-formed reply: it was deleted in
+//      the Jobber UI and the CLIENT_DESTROY never arrived) is likewise archived here only on
+//      action:'archive', returning jobber:'not_found' and stamping event='deleted_in_jobber'. The old
+//      not_in_jobber refusal sent the operator to Edit client status, which calls THIS function and
+//      refused again: a client deleted in Jobber could not be made INACTIVE from the app at all.
+//    - jobs(first:50) is a PAGE. The read now walks the connection with the cursor (up to 10 pages)
+//      so every open job is seen and closed, instead of archiving with a 51st open job unseen;
+//      only a client past the cap is refused (too_many_jobs_to_inspect), and only on archive of a
+//      live client (unarchive and an already-archived client never needed the jobs).
+//    - the ledger row the RPC writes is stamped event='archived' (client_status_changes.event,
+//      migration 2026-09-18_0100), so Status history and the list can tell an archive from a plain
+//      status change and from a deletion in the Jobber UI (deleted_in_jobber, written by webhook-jobber).
+//    - the reply is honest about a failed write: ok:false status_write_failed when the only write
+//      (our status) failed, never ok:true with a failed status_write buried inside.
+//
 // ⚠ THE HELPER BLOCK BELOW IS SPLICED BYTE-IDENTICALLY FROM save-client-property BY
 //    scripts/probes/build_archive_client.mjs. Do not hand-edit it here; edit the source and re-run,
 //    or the two copies drift and the content-type guard is exactly the kind of thing that gets lost.
@@ -180,8 +204,8 @@ Deno.serve(async (req) => {
   const closeJobs = body?.close_jobs === true;
   const reason = String(body?.reason ?? "").trim() || null;
   if (!clientId) return fail("bad_request", "client_id is required.");
-  if (action !== "archive" && action !== "unarchive") {
-    return fail("bad_request", "action must be 'archive' or 'unarchive'.");
+  if (action !== "archive" && action !== "unarchive" && action !== "preview") {
+    return fail("bad_request", "action must be 'archive', 'unarchive' or 'preview'.");
   }
 
   // ---- our row + its Jobber link ------------------------------------------
@@ -197,20 +221,88 @@ Deno.serve(async (req) => {
     .eq("entity_id", clientId).maybeSingle();
   if (linkErr) return fail("db_error", linkErr.message);
   if (!link?.source_id) {
-    return fail("no_jobber_link",
-      `${label} has no Jobber link, so it cannot be archived there. Change its status here instead.`);
+    // No Jobber record to archive. For 'archive' converge our side through the same RPC the linked
+    // path uses (reason required, status_source pinned, ledger row, audit names the human); that is
+    // byte-for-byte the write the old refusal told the operator to make by hand. For 'preview'
+    // report it so the dialog can say "archives here only". For 'unarchive' refuse: see the header.
+    if (action === "preview") {
+      return done({ action, jobber: "no_link", status: row.status, open_jobs: [], is_archivable: null,
+        more_jobs_than_inspected: false,
+        blocker_counts: await countArchiveBlockers(clientId), history: await historyKept(clientId) });
+    }
+    if (action === "unarchive") {
+      return fail("no_jobber_link",
+        `${label} has no Jobber record, so it cannot be reactivated. Create the client again instead; this record stays as history.`);
+    }
+    const r = await setStatus(m[1], clientId, "INACTIVE", reason);
+    if (!r.ok) return fail("status_write_failed", `${label} could not be marked archived here: ${r.message}. Nothing was changed.`);
+    await stampLedger(r.result, "archived_here_only");
+    return done({ action, jobber: "no_link", archived: false, jobs_closed: [], status_write: r });
   }
 
   const token = await getJobberToken();
+  // jobs(first:50) is a PAGE. The first read carries pageInfo; readAllJobs() below walks the rest
+  // with the cursor when a client has more, so open work is never left unseen on a later page.
   const READ =
-    `query C($id:EncodedId!){ client(id:$id){ id isArchived jobs(first:50){ nodes { id jobStatus jobNumber title } } } }`;
+    `query C($id:EncodedId!){ client(id:$id){ id isArchived isArchivable jobs(first:50){ nodes { id jobStatus jobNumber title } pageInfo { hasNextPage endCursor } } } }`;
 
   const before = await gql(token, READ, { id: link.source_id });
   if (!before.ok) {
     return fail("jobber_unavailable", `Jobber did not answer, so nothing was changed. (${before.detail})`);
   }
-  const jc = before.data?.client;
-  if (!jc) return fail("not_in_jobber", "Jobber has no client at that id. Nothing was changed.");
+  // 🛑 A MISSING ANSWER IS NOT AN ABSENT CLIENT. The shared gql helper turns an unparseable or
+  //    data-less JSON body into ok:true with data undefined (it must not be hand-edited here, see the
+  //    header), and the converge arm below WRITES on a null client. So only a reply that carries the
+  //    `client` key may proceed; anything else is Jobber not answering.
+  if (before.data == null || typeof before.data !== "object" || !("client" in before.data)) {
+    return fail("jobber_unavailable", "Jobber did not answer, so nothing was changed. (reply carried no client)");
+  }
+  const jc = before.data.client;
+  if (!jc) {
+    // A well-formed reply with client: null. gql() already separated this from busy / no_answer /
+    // rejected, and the key check above from a data-less body, so Jobber is affirmatively saying it
+    // holds no such client (deleted in its UI).
+    if (action === "preview") {
+      return done({ action, jobber: "not_found", status: row.status, open_jobs: [], is_archivable: null,
+        more_jobs_than_inspected: false,
+        blocker_counts: await countArchiveBlockers(clientId), history: await historyKept(clientId) });
+    }
+    if (action === "unarchive") {
+      return fail("not_in_jobber",
+        `${label} was deleted in Jobber, so it cannot be reactivated. Create the client again instead; this record stays as history.`);
+    }
+    const r = await setStatus(m[1], clientId, "INACTIVE", reason);
+    if (!r.ok) return fail("status_write_failed", `${label} could not be marked archived here: ${r.message}. Nothing was changed.`);
+    await stampLedger(r.result, "deleted_in_jobber");
+    return done({ action, jobber: "not_found", archived: false, jobs_closed: [], status_write: r });
+  }
+  // The rest of the jobs, if any (bounded; a client past the cap is refused on archive only).
+  const paged = await readAllJobs(token, link.source_id, jc);
+  if (paged === "too_many" && action === "archive" && !jc.isArchived) {
+    return fail("too_many_jobs_to_inspect",
+      `${label} has more than ${MAX_JOB_PAGES * 50} jobs in Jobber, more than this can inspect. Archive it in Jobber directly, then use Archive client here to match. Nothing was changed.`);
+  }
+
+  const TERMINAL = new Set(["archived", "closed", "destroyed"]);
+  const open = (jc.jobs?.nodes ?? []).filter((j: any) => !TERMINAL.has(String(j.jobStatus).toLowerCase()));
+  const openList = open.map((j: any) => ({ id: j.id, number: j.jobNumber, title: j.title, status: j.jobStatus }));
+
+  // ============================= PREVIEW ====================================
+  // Read-only: what the Archive dialog shows BEFORE Save. Nothing is written on either side.
+  if (action === "preview") {
+    return done({
+      action,
+      jobber: jc.isArchived ? "archived" : "live",
+      status: row.status,
+      is_archivable: typeof jc.isArchivable === "boolean" ? jc.isArchivable : null,
+      open_jobs: openList,
+      more_jobs_than_inspected: paged === "too_many",
+      // quotes / invoices from OUR records (a count is omitted, never zeroed, on a read error);
+      // Jobber work requests are not in our DB and only show up as a refusal after the attempt.
+      blocker_counts: await countArchiveBlockers(clientId),
+      history: await historyKept(clientId),
+    });
+  }
 
   // ============================ UNARCHIVE ===================================
   if (action === "unarchive") {
@@ -239,20 +331,19 @@ Deno.serve(async (req) => {
   }
 
   // ============================= ARCHIVE ====================================
-  const TERMINAL = new Set(["archived", "closed", "destroyed"]);
-  const open = (jc.jobs?.nodes ?? []).filter((j: any) => !TERMINAL.has(String(j.jobStatus).toLowerCase()));
-
   // Already archived upstream: converge our side and stop. Idempotent (rule 5).
   if (jc.isArchived) {
     const r = await setStatus(m[1], clientId, "INACTIVE", reason);
-    return done({ action, already_archived: true, status_write: r, open_jobs: open.length });
+    if (r.ok) await stampLedger(r.result, "archived");
+    if (!r.ok) return fail("status_write_failed", `${label} is archived in Jobber but could not be marked archived here: ${r.message}. Retry.`);
+    return done({ action, already_archived: true, status_write: r, open_jobs_count: open.length, jobs_closed: [] });
   }
 
   // ---- open jobs: ASK, never act -------------------------------------------
   if (open.length && !closeJobs) {
     return fail("open_jobs",
       `${label} still has ${open.length} open job${open.length === 1 ? "" : "s"} in Jobber. Closing a job destroys its remaining visits, so confirm before continuing.`,
-      { jobs: open.map((j: any) => ({ id: j.id, number: j.jobNumber, title: j.title, status: j.jobStatus })) });
+      { jobs: openList });
   }
 
   // ---- explicit teardown ----------------------------------------------------
@@ -324,8 +415,63 @@ Deno.serve(async (req) => {
   }
 
   const statusWrite = await setStatus(m[1], clientId, "INACTIVE", reason);
+  if (statusWrite.ok) await stampLedger(statusWrite.result, "archived");
   return done({ action, archived: true, jobs_closed: closed, status_write: statusWrite });
 });
+
+// Marks the ledger row the RPC just wrote as an ARCHIVE (client_status_changes.event, 2026-09-18).
+// Best effort and service_role: the status is already written and verified, and a missing stamp
+// only costs the "Archived" chip its precision, never the archive. update_client_status returns
+// noop with status_change_id null when the status did not move (already INACTIVE); nothing to stamp.
+async function stampLedger(result: unknown, event: "archived" | "archived_here_only" | "deleted_in_jobber") {
+  const id = Number((result as { status_change_id?: number } | null)?.status_change_id);
+  if (!id) return;
+  const { error } = await db.from("client_status_changes").update({ event }).eq("id", id);
+  if (error) console.log(`[archive-client] ledger stamp failed for status_change ${id}: ${error.message}`);
+}
+
+// Walks the client's job connection past the first page (which the READ already holds), appending
+// nodes onto jc.jobs.nodes in place. Returns "too_many" when the cap is reached with pages still
+// left, "ok" otherwise. A transport failure mid-walk is treated as "too_many" for archive (nothing
+// is written when open work may be unseen) and as complete-so-far for preview.
+const MAX_JOB_PAGES = 10;
+async function readAllJobs(token: string, gid: string, jc: any): Promise<"ok" | "too_many"> {
+  let hasNext = jc.jobs?.pageInfo?.hasNextPage === true;
+  let cursor: string | null = jc.jobs?.pageInfo?.endCursor ?? null;
+  let pages = 1;
+  while (hasNext) {
+    if (pages >= MAX_JOB_PAGES || !cursor) return "too_many";
+    const res = await gql(token,
+      `query J($id:EncodedId!,$after:String){ client(id:$id){ jobs(first:50, after:$after){ nodes { id jobStatus jobNumber title } pageInfo { hasNextPage endCursor } } } }`,
+      { id: gid, after: cursor });
+    if (!res.ok) return "too_many";
+    const page = res.data?.client?.jobs;
+    if (!page || !Array.isArray(page.nodes)) return "too_many";   // no answer is not an empty page
+    for (const n of page.nodes) jc.jobs.nodes.push(n);
+    hasNext = page?.pageInfo?.hasNextPage === true;
+    cursor = page?.pageInfo?.endCursor ?? null;
+    pages++;
+  }
+  return "ok";
+}
+
+// What stays after an archive, for the dialog's "history kept" line. Counts only; a count is
+// omitted on a read error rather than shown as zero.
+async function historyKept(clientId: number): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  const tables: Array<[string, string, boolean]> = [
+    ["visits", "visits", true], ["invoices", "invoices", false], ["derm_manifests", "manifests", true],
+    ["derm_email_sends", "derm_emails", false], ["client_status_changes", "status_changes", false],
+  ];
+  for (const [table, key, softDeleted] of tables) {
+    try {
+      const base = db.from(table).select("id", { count: "exact", head: true }).eq("client_id", clientId);
+      const { count, error } = softDeleted ? await base.is("deleted_at", null) : await base;
+      if (!error && typeof count === "number") out[key] = count;
+    } catch { /* omit */ }
+  }
+  return out;
+}
 
 // Writes our side through the 3-ARG overload, as the CALLER, so the gate inside the RPC still
 // applies, status_source is pinned to 'manual', and audit.logs names the human.
