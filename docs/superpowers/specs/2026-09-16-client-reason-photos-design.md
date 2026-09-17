@@ -1,6 +1,9 @@
 # Images on "Reason for this change" (Client App)
 
-- **Status:** building 2026-09-16 (Fred: "do not send me the plan and wait for my response, do it").
+- **Status:** ✅ **SHIPPED 2026-09-16** (Fred: "do not send me the plan and wait for my response, do it").
+  DB `2026-09-16_2030_client_reason_photos` (`b4caf66`); `save-client-job` v39 `PROOF_MAX` 5 (`a7f089c`);
+  Client App pass 1 live as `index-Do6FE87Y` / `clients._id-DcJtni7o`, pass 2 as `index-e2ocD1IZ` /
+  `clients._id-CZd64TLg`; smoke-tested end to end on 112-YA (Building Apps `ccfbe2e`, Client App rule 2q).
 - **Asked for by:** Fred, voice note 2026-09-16. Transcript in the session scratchpad; the operative
   sentences are quoted where they bind.
 - **Scope owner:** Supabase (bucket, migration, RPCs, view) + Client App (Lovable `dbf2133c-…`, docs).
