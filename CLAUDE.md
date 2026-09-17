@@ -3253,6 +3253,54 @@ one printed line was detected twice 0.32pp apart on 9 pages, and **in an alterna
 duplicate flips every label below it** — two pages verified clean by eye were reporting bands that
 span multiple slots.
 
+### 🛑 REASON PHOTOS: ONE WRITER, A PATH-GATED BUCKET, AND REMOVE THAT REMOVES (2026-09-16)
+
+Fred (voice note): a "Reason for this change" in the Client App must also take **up to five images,
+images only**, previewable / replaceable / removable. Design record:
+`docs/superpowers/specs/2026-09-16-client-reason-photos-design.md`; migration
+`2026-09-16_2030_client_reason_photos`. The app-side rules live in
+`Building Apps/Client App/CLAUDE.md` 2q.
+
+**No new table.** ADR 009 forbids per-entity photo tables and the 2026-08-19 approval-proof audit
+re-affirmed it, so a reason image is a `photos` row + a `photo_links` row
+(`entity_type='client_status_change'`, `role='reason_photo'`, target `public.client_status_changes`),
+and the new architecture is the layer around them:
+
+| object | what it is |
+|---|---|
+| bucket **`reason-photos`** (private, 5 MB, jpeg/png/webp) | policies `reason_photos_staff_read` (SELECT), `_insert` (INSERT iff `client.fn_reason_photo_path_ok(name)`), `_delete` (DELETE iff `client.fn_reason_photo_object_removable(name)`). **No UPDATE**: an object is immutable, replace = remove + upload + attach |
+| `client.fn_reason_photo_target_exists(kind, id)` | **the whitelist**, postgres-only. Adding a reason site = one WHEN arm here + the `photo_links_entity_type_chk` value |
+| `client.attach_reason_photo(...)` | **the ONLY writer** of a reason link: staff gate → target exists → the path names THIS record → advisory lock per record → idempotent on the same path → cap (`client.reason_photo_max()` = 5) → the object exists in the bucket, `owner_id` = the caller, `metadata->>'mimetype'` is `image/*` (size and mime read from the object, never from the caller) → `photos` + `photo_links`. MESSAGE is a sentence for the operator, DETAIL carries `blocker=<code>` |
+| `client.remove_reason_photo(link_id)` | soft-deletes the link (audited with `old_row`) and returns `{bucket, storage_path}` so the app then deletes the object through the Storage API |
+| `client.reason_photos` | one row per live image, **`bucket` is a column** (photos.storage_path does not carry it; the wrong-bucket signing trap) |
+| `client.update_client_status(bigint,text,text)` | now returns **`status_change_id`** (spliced, two lines; `archive-client` passes it through as `status_write.result`) |
+
+🛑 **THE BROWSER NEVER WRITES `photos` / `photo_links` FOR A REASON IMAGE.** The 2026-08-19 audit's
+core defect was a proof link forgeable from a browser. The authenticated INSERT policy on `photo_links`
+now refuses `client_status_change` and `reason_photo` exactly as it refuses `approval_proof`;
+`fn_photo_link_target_exists` validates the new kind (the dangling-link class). Both spliced from the
+live bodies, md5-pinned.
+
+🛑 **THE BUCKET IS BROWSER-UPLOADABLE AND STILL CANNOT HOLD AN OBJECT FOR A CHANGE THAT DID NOT
+HAPPEN.** `approval-proof` gets that invariant by being service_role-only (the edge fn uploads after
+Jobber confirms). A status change is DB-only, so the INSERT policy enforces it instead: the path must
+be `client-app/<kind>/<id>/<uuid>.<ext>` for an **existing** whitelisted record, from a staff JWT.
+Do not "simplify" the policy to `bucket_id = ...`; the path function IS the invariant.
+
+🛑 **REMOVE REMOVES, AND IT TAKES TWO STEPS BY NECESSITY.** Supabase's `protect_objects_delete`
+trigger refuses `DELETE FROM storage.objects` ("Use the Storage API instead"), so the RPC cannot
+delete the file itself. The DELETE policy allows the API call only once no live reason link points at
+the path: an attached image cannot be pulled from under its record; a removed or orphan object can be
+cleaned up. Measured live 2026-09-16 on 112-YA: after Replace, the old object was gone from the
+bucket and only the new one remained; after Remove, the bucket was empty for that change.
+
+⚠ **The frequency-change proofs are NOT on this path** (13 objects in `approval-proof`, written by
+`save-client-job` after Jobber confirms; only `PROOF_MAX` moved 3 → 5, v39). Two bucket postures for
+two kinds of write; the read tiles pick the bucket by entity kind. Unifying them is a migration of
+objects, deliberately not done here.
+⚠ `public.photos` is still not audited and still has no soft-delete; recorded in the migration
+header, unchanged.
+
 ### 🛑 JOBBER NOTES ARE SCOPED TO THE **JOB**, NOT THE VISIT (Fred, 2026-08-18)
 
 `Visit.notes` reads like a per-visit field and is not one. **JobNote is JOB-scoped** (every visit
