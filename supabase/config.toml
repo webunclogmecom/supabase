@@ -678,6 +678,15 @@ verify_jwt = true
 [functions.calculate-driving-time]
 verify_jwt = true
 
+# plan-drive-fill: the Calendar "Hours driven" planner (2026-09-17). Buys the missing Google Routes
+# legs of ops.fn_drive_chain into ops.route_leg_cache. Invoked ONLY by pg_cron
+# (public.fn_request_plan_drive_fill, 09:15 UTC) and by ops.request_drive_fill (the Calendar's
+# throttled kick), both through pg_net with the vault service key; the handler decodes the JWT and
+# requires role=service_role, so the gateway MUST verify the signature. Never deploy --no-verify-jwt.
+# The browser never calls it.
+[functions.plan-drive-fill]
+verify_jwt = true
+
 # Calendar day markers (Day Start/End/Dump) -> Jobber Tasks. Invoked by a DB trigger via pg_net with
 # a service_role bearer. verify_jwt = TRUE and the handler ALSO asserts role=service_role, because the
 # anon key is a validly signed JWT and this function holds the Jobber WRITE token. Never deploy this

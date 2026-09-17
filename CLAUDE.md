@@ -3793,6 +3793,36 @@ minutes. **If `blackout-health` moves, move `health-escalation` too**, or it rep
 blackout verdict and says nothing changed.
 
 
+### ✅ CALENDAR "HOURS DRIVEN" IS A GOOGLE-TIMED ROUTE PER TRUCK PER DAY, BUILT LIVE IN SQL (2026-09-17)
+
+Fred: *"the logic for it, is to use the Google API to have a time it takes coming out of the YARD, up to
+the 1st visit, from the 1st visit to the 2nd visit, and so on and so forth, up to the last visit then
+to YARD back again, all on the same day at the calendar."* The old number was the browser summing gaps
+between completed visits' timestamps, capped at 2 hours, every truck mixed together (2026-09-16 read
+2.0 h; the route is 6.8 h). Full reference, read it before touching any of these objects:
+[docs/reference/calendar-drive-hours.md](docs/reference/calendar-drive-hours.md).
+
+- **The chain is computed LIVE on every read** (`ops.fn_drive_chain` from `ops.v_calendar_visit` and
+  `ops.v_depot`); only the LEGS are cached (`ops.route_leg_cache`, `traffic_aware = false`, 30 days,
+  the new `duration_seconds` column). A dragged, reassigned or completed visit is never served under
+  old numbers. Missing legs are bought by edge fn `plan-drive-fill` (service_role only): cron
+  `plan-drive-warm` at 09:15 UTC (today -7 .. +21) and the Calendar's throttled kick
+  `ops.request_drive_fill`. The app reads `ops.calendar_drive_days` and nothing else.
+- **A day shows a number only when every leg of every chain is known** (`bool_and` guard;
+  `drive_seconds` NULL otherwise, the app renders a dash and a sentence). `pending` is the only
+  condition the app polls or kicks on and it is never NULL (`2026-09-17_1850`).
+- **Budget: a THIRD fail-closed bucket** (`ops.plan_routing_usage`, cap `ops.plan_routing_cap()` = 300
+  attempts per ET day), never shared with the day markers' `ops.dispatch_routing_usage` (300) or the
+  DUMP app's `public.dump_eta_usage` (500). First run measured 146 legs in 10.6 s, 0 failures.
+- 🛑 **Cells are computed in SQL only.** The edge function upserts the four cells exactly as
+  `fn_drive_missing_pairs` returned them; JS `toFixed(2)` and Postgres `round(numeric, 2)` disagree
+  at `.xx5`, and a pair under a key the reader never joins on is bought on every run for ever.
+- 🛑 **A yard return adds ONE leg**, not two: the trip back; the trip out replaces the direct leg.
+  `legs = stops + 1 + yard_returns` is asserted by `_1835`'s VERIFY (its first draft assumed two and
+  failed against real data, which is the check working).
+- `calculate-driving-time` (DUMP ETA, day markers) shares the cache table but is NOT ported onto
+  `_shared/google-routes.ts` and was not redeployed; that port is its own change.
+
 ### 🛑 THE AUTOMATIC CITY EMAIL: A LIVE HOURLY CRON THAT IS DOING NOTHING ON PURPOSE (2026-08-28)
 
 **`city-email-sweep` (`7 * * * *`, active) runs every hour and sends nothing.** That is the intended
