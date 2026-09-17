@@ -3774,6 +3774,18 @@ continuously `attention` for **3,008 runs across 251 hours**, all reporting the 
 task (`calendar_task` 214, `gid://Jobber/Task/2304786340`). That is a real unresolved item that was
 invisible for eleven days because `sync_log` has no dedup. **Resolving the item is a separate,
 pending decision for Fred** - the detector only makes it visible.
+✅ **Resolved 2026-09-16 23:36 ET**: poll-calendar-tasks v12 mirrors Jobber-side deletions, so task 214
+and four newer ghosts left the table and the poll's streak turned `ok`.
+🛑 **AND THAT EXPOSED THE STUCK ARM'S OWN DEFECT, fixed by `2026-09-16_2350`.** The arm tested
+`status <> 'success'`, but calendar-task-poll writes `ok` / `attention` and never `success`, so the
+first three clean days would have reported the healthiest state the poll has as "stuck". It now tests
+`status not in ('success', 'ok')`, and the failed arm counts a run carrying `error_details` (the
+poll's real failures are `attention` rows with error_details, 5 in 30 days, invisible before) as well
+as `partial` / `error`. **A new sync surface must say which word is its clean word before it is
+watched**: the two vocabularies in this table are `success` / `partial` / `error` (the Node syncs)
+and `ok` / `attention` (the two edge polls). Measured at apply: the other seven sources' fail counts
+unchanged, the poll's current `ok` streak no longer flagged, jobber_visit_drift's `attention` streak
+still flagged (that arm is its purpose).
 
 ⚠ **Timing:** the escalation runs 13:30 UTC because `blackout-health` writes at 08:00 ET and
 `ops.v_health_items` reads only the LATEST run of each check. In WINTER that gap narrows to 30
