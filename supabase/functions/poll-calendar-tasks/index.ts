@@ -32,8 +32,27 @@
 //    duration, including task_date NULL for an unscheduled Task since 2026-09-16_1300), client and
 //    property (through their link rows), the assignee set (through employee links), and isComplete
 //    exactly as before. What it will NOT do: adopt a client, property or assignee it cannot map to
-//    one of our rows (logged under unmapped_*, the field is left alone), or delete a task Jobber no
-//    longer has (rule 6; surfaced under `missing`).
+//    one of our rows (logged under unmapped_*, the field is left alone).
+// 🛑 SINCE THE EVENING OF 2026-09-16 IT ALSO MIRRORS A JOBBER-SIDE DELETION (section 4). Rule 6 of
+//    the v2 design ("the poll never deletes ours") was reversed by Fred after five tasks the office had
+//    created and then deleted in Jobber sat on the Calendar as ghosts in one afternoon (214, 244,
+//    247, 248, 249). A task absent from a COMPLETE walk is confirmed one GID at a time with task(id):
+//    only Jobber's explicit "No object found" answer counts as gone (a waiting-room page, a throttle,
+//    a thrown fetch or a node that reappears all keep the task; the unanswered ones are listed under
+//    `missing` for the next cycle, a reappearing one under `walk_missed_but_present`). A
+//    confirmed-gone task is removed through ops.fn_delete_calendar_task, the same recorder the
+//    Calendar's own Remove uses, so the audit trail carries old_row and the label 'jobber'. Four
+//    guards bound the blast radius, in this order: (1) the token must answer `account { id }` as
+//    JOBBER_ACCOUNT_GID or nothing is mirrored this cycle; (2) a cycle that finds more than half of
+//    the held tasks absent deletes NOTHING and says so (a wrong token or account, not a dispatcher
+//    tidying up); (3) a task is only deleted on its SECOND consecutive sighting: it must already be
+//    listed under `missing` in the previous sync_log row of this source, so a transient miss, a
+//    permission blip or the Calendar's own Remove (which drops our row within seconds of Jobber's)
+//    never reaches the recorder; (4) at most DELETE_CAP deletions and 2 x DELETE_CAP existence
+//    checks per cycle (the rest wait, counted under `deletions_deferred`). A recorder answer of
+//    false (the row was already gone) is counted under `deletions_already_gone`, not as a deletion.
+//    Scope is the walked set: open tasks and tasks completed within REOPEN_WINDOW_DAYS; a task
+//    completed longer ago is never walked and therefore never deleted here.
 //    It also DISCOVERS tasks created in Jobber (section 6): createdAt after the last successful
 //    discovery (public.sync_cursors entity 'calendar_tasks'), plus the scheduled horizon, each new
 //    GID recorded through the same recorder. GIDs linked to a calendar_day_marker are NEVER imported:
@@ -133,6 +152,8 @@ const ENTITY_TYPE = "calendar_task";
 const PAGE = 100;                       // Jobber's measured hard cap; asking for more is silently 100
 const MAX_PAGES = 60;                   // 6,000 tasks. A runaway cursor must end, loudly.
 const REOPEN_WINDOW_DAYS = 30;          // how far back a completed task stays watched (see below)
+const DELETE_CAP = 10;                  // mirrored deletions per cycle; the rest wait (section 4)
+const JOBBER_ACCOUNT_GID = "Z2lkOi8vSm9iYmVyL0FjY291bnQvMTQ0NDYwNQ==";   // gid://Jobber/Account/1444605 "Unclogme": a deletion is mirrored only when the token answers as this account
 
 // 🛑 A TIME BUDGET FOR THE TIMESTAMP SEARCHES, because they are the only unbounded work here.
 // Measured on a real production task completed in March 2025: 32 probes, 5.07 SECONDS. That is fine
@@ -566,20 +587,99 @@ Deno.serve(async (req) => {
 
       checked = seen.size;
 
-      // ---- 4. Missing from Jobber: SURFACE, never auto-delete (rule 6) --------------------------
+      // ---- 4. Missing from Jobber: CONFIRM per GID, then mirror the deletion ---------------------
       // Debounced by a re-read: between taskDelete and fn_delete_calendar_task the saga leaves our
       // row present while Jobber has already dropped it, so a normal delete would fire a false alert
       // on every run. Re-checking the row still exists right now collapses that window.
+      // Then each candidate is asked for by id. Jobber answers a deleted task with data.task = null
+      // AND an error reading "No object found for `id: ...`" (measured 2026-09-16 on task
+      // 2334018989 after the Calendar removed it). Anything else is NOT an answer of "no": a
+      // waiting-room page or a throttle comes back with no data key, a transient miss comes back with
+      // the node, and both keep the task for the next cycle.
       const absentGids = gids.filter((g) => !seen.has(g));
+      const deletedFromJobber: { task_id: number; gid: string; title: string }[] = [];
+      const walkMissedButPresent: string[] = [];
+      let deletionsDeferred = 0, deletionsAlreadyGone = 0, deletionsFirstSighting = 0;
+      // Published by reference BEFORE the loop, so a run that dies mid-loop still reports what it did.
+      details.deleted_from_jobber = deletedFromJobber;
+      details.walk_missed_but_present = walkMissedButPresent;
+      details.deletions_deferred = 0;
+      details.deletions_already_gone = 0;
+      details.deletions_first_sighting = 0;
       if (absentGids.length) {
         const absentIds = absentGids.map((g) => taskByGid.get(g)!).filter(Boolean);
-        const { data: still } = await db.schema("ops").from("calendar_tasks").select("id").in("id", absentIds);
-        const stillThere = new Set((still ?? []).map((r: { id: number }) => Number(r.id)));
-        for (const g of absentGids) {
-          const id = taskByGid.get(g)!;
-          if (stillThere.has(id)) missing.push(g);      // still ours, genuinely absent from Jobber
+        const { data: still, error: stillErr } = await db.schema("ops").from("calendar_tasks").select("id").in("id", absentIds);
+        if (stillErr) {
+          // A failed re-read is not an empty list. Surface it and decide nothing this cycle.
+          errors.push(`re-read of the absent tasks failed: ${stillErr.message}; no deletion decided this cycle`);
+          for (const g of absentGids) missing.push(g);
+        } else {
+          const stillThere = new Set((still ?? []).map((r: { id: number }) => Number(r.id)));
+          const candidates = absentGids.filter((g) => stillThere.has(taskByGid.get(g)!));
+          // Guard 1: the token answers as OUR account, or nothing is mirrored.
+          let accountOk = false;
+          if (candidates.length) {
+            try {
+              const acct = await gql(token, `{ account { id } }`);
+              accountOk = answered(acct) && acct.data.account?.id === JOBBER_ACCOUNT_GID;
+              if (!accountOk) errors.push(`the Jobber token did not answer as account ${JOBBER_ACCOUNT_GID} (${errsOf(acct, "account").join("; ") || JSON.stringify(acct?.data?.account ?? null)}); mirroring NO deletion this cycle`);
+            } catch (e) {
+              errors.push(`the Jobber account check threw ${e instanceof Error ? e.message : String(e)}; mirroring NO deletion this cycle`);
+            }
+          }
+          // Guard 2: more than half of what we hold absent at once is not a dispatcher tidying up.
+          const tooMany = candidates.length > 0 && candidates.length * 2 > gids.length;
+          if (tooMany) errors.push(`${candidates.length} of ${gids.length} held tasks are absent from Jobber at once; mirroring NO deletion this cycle (check the Jobber token and account before trusting this)`);
+          // Guard 3: only a task already reported missing by the PREVIOUS run is eligible.
+          let prevMissing = new Set<string>();
+          if (candidates.length && accountOk && !tooMany) {
+            const { data: prevRows, error: prevErr } = await db.from("sync_log").select("details")
+              .eq("sync_source", SYNC_SOURCE).order("started_at", { ascending: false }).limit(1);
+            if (prevErr) errors.push(`previous sync_log read failed: ${prevErr.message}; every absent task counts as a first sighting this cycle`);
+            const pm = (prevRows?.[0] as { details?: { missing?: unknown } } | undefined)?.details?.missing;
+            if (Array.isArray(pm)) prevMissing = new Set(pm.filter((x): x is string => typeof x === "string"));
+          }
+          let checks = 0;
+          for (const g of candidates) {
+            const id = taskByGid.get(g)!;
+            if (!accountOk || tooMany) { missing.push(g); continue; }
+            if (!prevMissing.has(g)) { missing.push(g); deletionsFirstSighting++; continue; }   // first sighting: report, delete next cycle if still gone
+            // Guard 4: the blast radius per cycle, on deletions AND on existence checks.
+            if (deletedFromJobber.length >= DELETE_CAP || checks >= DELETE_CAP * 2) { missing.push(g); deletionsDeferred++; continue; }
+            checks++;
+            let chk: any;
+            try {
+              chk = await gql(token, `query($id:EncodedId!){ task(id:$id){ id } }`, { id: g });   // EncodedId, not ID: ID! is a type mismatch on this API
+            } catch (e) {
+              missing.push(g);
+              errors.push(`${g}: the existence check threw ${e instanceof Error ? e.message : String(e)}; kept for the next cycle`);
+              continue;
+            }
+            const chkErrs = errsOf(chk, "task");
+            if (answered(chk) && chk.data.task && chk.data.task.id === g) { walkMissedButPresent.push(g); continue; }   // it is there after all; the walk missed it
+            const gone = answered(chk) && chk.data.task === null && chkErrs.some((m) => /No object found/i.test(m));
+            if (!gone) {
+              missing.push(g);
+              errors.push(`${g}: absent from the walk but the existence check did not answer "no" (${chkErrs.join("; ") || (answered(chk) ? "answered but not gone: " + JSON.stringify(chk.data.task ?? null) : "no data")}); kept for the next cycle`);
+              continue;
+            }
+            const { data: removed, error: delErr } = await rpcDb.schema("ops")
+              .rpc("fn_delete_calendar_task", { p_task_id: id, p_actor_email: null });   // machine actor, NO DEFAULT
+            if (delErr) {
+              missing.push(g);
+              errors.push(`${g}: Jobber no longer has task ${id} but fn_delete_calendar_task failed: ${delErr.code ?? "?"} ${delErr.message ?? ""}`.trim());
+              continue;
+            }
+            if (removed !== true) { deletionsAlreadyGone++; continue; }   // the Calendar's own Remove got there first; nothing to report as ours
+            const title = ours.get(id)?.title ?? "";
+            deletedFromJobber.push({ task_id: id, gid: g, title });
+            console.log(`[task-poll] mirrored a Jobber deletion: task ${id} "${title}" (${g})`);
+          }
         }
       }
+      details.deletions_deferred = deletionsDeferred;
+      details.deletions_already_gone = deletionsAlreadyGone;
+      details.deletions_first_sighting = deletionsFirstSighting;
 
       // ---- 5. Adopt the differences, field by field ------------------------------------------
       const fieldCounts: Record<string, number> = {};

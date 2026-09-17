@@ -73,8 +73,12 @@ first run 30 days back, plus the scheduled horizon [today - 30d, today + 60d], a
 cycle; the cursor advances to the run's start only when the `createdAt` walk completed and nothing was
 deferred by the cap, so a leftover is seen next time) and records them through the same recorder;
 **GIDs linked to a `calendar_day_marker` are never imported** (those are the Calendar's route markers,
-owned by `jobber-push-task`). It never deletes ours: a task Jobber no longer has is surfaced under
-`missing` (the long-known task 214, `gid://Jobber/Task/2304786340`, is the one such today). A client,
+owned by `jobber-push-task`). **Since the evening of 2026-09-16 (v12) it mirrors a Jobber-side deletion**:
+a GID absent from a complete walk is re-read in our DB, confirmed with `task(id)` (only "No object
+found" with `task: null` counts), and removed through `ops.fn_delete_calendar_task` with a null actor on
+the `jobber`-labelled client; at most 10 per cycle, none when more than half of the held tasks are
+absent at once; anything unconfirmed stays under `missing` for the next cycle. Fred reversed the v2
+design's rule 6 after five real ghosts in one afternoon (214, 244, 247, 248, 249). A client,
 property or assignee it cannot map to one of our rows is logged under `unmapped_*` and the field is
 left alone.
 
@@ -120,8 +124,10 @@ The task drawer shows the same history list a visit has, read through `public.ge
 2. **The recorder is spliced from its LIVE body, never rewritten from memory.** `2026-09-16_1300` PRE
    1 pins the md5 of the body it was written against and refuses otherwise. Do the same for the next
    change (`scratchpad mkmig3.js` is the pattern: `pg_get_functiondef`, anchor, splice, control).
-3. **The poll never deletes and never invents.** Missing in Jobber is reported, not acted on (rule 6
-   of the v2 design). Unmappable references are logged, not guessed.
+3. **The poll deletes only what Jobber has confirmed gone, and never invents.** A deletion needs the
+   per-GID "No object found" answer, is capped per cycle, and is refused wholesale when more than half
+   of the held tasks vanish at once (rule 6 of the v2 design, reversed by Fred on 2026-09-16 with these
+   guards). Unmappable references are logged, not guessed.
 4. **The CHECK encodes the state machine.** Dateless implies no time and not all-day. A migration that
    relaxes it must also change `save-calendar-task`'s read-back and the Calendar's tray predicate
    (`task_date IS NULL OR task_date BETWEEN range`).
