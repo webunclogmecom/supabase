@@ -610,13 +610,13 @@ function jobToRecord(
 // mime rule mean one thing on a cadence change and another on a later attach, and the second copy
 // is the one nobody re-tests.
 // ============================================================================
-const PROOF_MAX = 3;
+const PROOF_MAX = 5;                            // 3 until 2026-09-16; Fred: "a maximum amount of five images per reason"
 const PROOF_MAX_BYTES = 2_500_000;              // decoded; ~2MB after the client's re-encode
 type ProofIn = { file_name: string; content_type: string; data_base64: string };
 
 // `budget` is how many MORE images this change may carry: PROOF_MAX for a fresh cadence change,
 // PROOF_MAX minus the live count for an attach. That makes the cap per-CHANGE, not per-REQUEST —
-// otherwise three separate attach calls of three images each would put nine on one change.
+// otherwise three separate attach calls of five images each would put fifteen on one change.
 function parseProofImages(
   raw: unknown,
   budget: number,
@@ -793,13 +793,13 @@ Deno.serve(async (req) => {
     }
 
     // The cap counts LIVE links only. Removing a proof soft-deletes its link, and freeing the slot is
-    // the intended behaviour — otherwise a mistaken upload would permanently consume one of three.
+    // the intended behaviour — otherwise a mistaken upload would permanently consume one of five.
     const { count: liveCount, error: cntErr } = await db
       .from("photo_links").select("id", { count: "exact", head: true })
       .eq("entity_type", "job_frequency_change").eq("entity_id", changeId)
       .eq("role", "approval_proof").is("deleted_at", null);
     // ⚠ Destructured and checked: a discarded error here returns count null, which coalesces to 0 and
-    // hands out a full budget of 3 on a change that already has 3.
+    // hands out a full budget of 5 on a change that already has 5.
     if (cntErr) return fail("db_error", "Couldn't count the proof already attached.", { detail: cntErr.message });
 
     const parsed = parseProofImages(body.frequency_proof, PROOF_MAX - (liveCount ?? 0));
