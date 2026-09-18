@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
-**Last updated:** 2026-09-18 (the dry-run queue now serves a mixed sample across jurisdictions so a Broward yellow ticket is always in it, and the served-but-undocumented `ticket_number` / `jurisdiction` fields are in the report-object table, see §3). Previously 2026-08-31 (🛑 **the queue now serves EVERY permit on a ticket in one batch, so `visit_id` is no longer unique within a batch and the work key is the pair `(visit_id, gdo_id)`; the result POST is idempotent on `(visit_id, gdo_id, run_id)` and `gdo_id` is now USED rather than ignored**, see §3 and §4). Previously 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
+**Last updated:** 2026-09-18, second change (🛑 **`gallons` is no longer always null: on a ticket offloaded OUTSIDE Miami-Dade every row carries the client's grease trap CAPACITY, with `gallons_source` and a ticket-level `dade_pickup_gallons` block; white tickets stay null. Yan's decision, see §4c**). Earlier the same day (the dry-run queue now serves a mixed sample across jurisdictions so a Broward yellow ticket is always in it, and the served-but-undocumented `ticket_number` / `jurisdiction` fields are in the report-object table, see §3). Previously 2026-08-31 (🛑 **the queue now serves EVERY permit on a ticket in one batch, so `visit_id` is no longer unique within a batch and the work key is the pair `(visit_id, gdo_id)`; the result POST is idempotent on `(visit_id, gdo_id, run_id)` and `gdo_id` is now USED rather than ignored**, see §3 and §4). Previously 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -413,6 +413,7 @@ the queue, whose job is to never hand the same work out twice.
     "reported": false,                // has this ticket been recorded as filed?
     "filing": null,                   // the filing block when reported=true
     "excluded_rows": 0,                   // rows on THIS ticket that fell out of scope
+    "dade_pickup_gallons": null,          // null on a white ticket; a block on a yellow one, see §4c
     "rows": [{
       "pickup_date": "2026-05-28",        // the VISIT date. see the warning below
       "client_code": "017-FIA",
@@ -422,7 +423,8 @@ the queue, whose job is to never hand the same work out twice.
       "pickup_in_dade": true, "in_scope": true,
       "truck": "Moises", "truck_capacity_gallons": 9000,   // INTERNAL fleet fact, do NOT file
       "truck_decal": "C1184",             // the vehicle's PERMIT NUMBER. null => refuse the ticket.
-      "gallons": null,                    // ALWAYS null. County bills MEASURED gallons.
+      "gallons": null,                    // null on a WHITE ticket (this one). See §4c for yellow.
+      "gallons_source": null,             // 'grease_trap_size' | 'service_config_size' | null
       "visit_id": 4636,
       "anomaly": null                     // non-null = this row's dates are impossible
     }]
@@ -506,13 +508,51 @@ that is the bug, not the data.
 ⚠ **A pickup can fall in the previous month.** Ticket `831710` offloaded 2026-08-02 carrying a
 2026-07-30 pickup. The month selects on the offload date so a ticket is never split in two.
 
-### ⚠ `gallons` is always `null`, and that is the contract
+### 🛑 `gallons`: null on a Miami-Dade-offload ticket, a trap CAPACITY per client on a Broward-offload ticket (changed 2026-09-18)
 
-We store **no measured volume per load** (0 non-null of 700 rows), so any number here would be a
-guess dressed as data.
+**Until 2026-09-18 this section read "`gallons` is always `null`, and that is the contract".** That
+changed when Yan decided (Slack, 2026-09-18) that Dade pickups disposed in Broward go on the report
+with **gallons per client**, paying the Dade fee, and Fred chose the Grease Trap Size as the number.
+The rule now, per row:
 
-🛑 **CORRECTED 2026-08-26. An earlier version of this section said "the filed quantity is the truck
-capacity". That was wrong, and if you built against it, re-check.** Jonathan, 2026-08-25:
+| ticket | `gallons` | `gallons_source` |
+|---|---|---|
+| `offload_in_dade: true` (white, Miami-Dade offload) | **always `null`**. Your quantity is the county invoice figure per manifest, as before | `null` |
+| `offload_in_dade: false` (yellow, Broward offload) | the grease trap **capacity** of the visit's property (`properties.grease_trap_size_gallons`, the Jobber "Grease Trap Size", two-way synced, edited in the Client App), else the client's Pumping service-config size, else `null` | `grease_trap_size` / `service_config_size` / `null` |
+
+- **It is a capacity, not a measured volume.** We store no measured volume per load (still true). A
+  0 stored anywhere reads as empty. Every non-null value is a positive integer.
+- **Every yellow ticket also carries a ticket-level block**, computed over ALL its Dade-pickup rows
+  (so `include=all` cannot change it):
+
+  ```jsonc
+  "dade_pickup_gallons": {
+    "total": 1675,          // SUM of gallons over rows with pickup_in_dade = true
+    "rows": 4,              // how many such rows
+    "rows_missing": 0,      // how many of them have gallons null (no size on record)
+    "complete": true        // rows > 0 AND rows_missing = 0. false => DO NOT FILE this ticket yet
+  }
+  ```
+  On a white ticket it is `null`.
+- 🛑 **Rules for your side, in order of how badly it goes wrong if skipped.** (1) SUM the
+  Dade-pickup rows per ticket, or read `total`; never treat "exactly one distinct value" as the
+  ticket's figure. (2) A null row makes the ticket **unresolved**: never file a partial sum, and
+  **never fall back to the Miami-Dade decal constant (3,800 / 2,000) on a Broward-disposed ticket**;
+  that number is a Dade load convention and has nothing to do with a Broward dump. (3) What goes on
+  the form is decided by `pickup_in_dade` / `in_scope`, never by whether `gallons` is present: under
+  `include=all` the out-of-scope Broward-pickup rows of a yellow ticket also carry a value.
+- ⚠ **Rows with no size on record will exist until someone types the Grease Trap Size into the
+  Client App** (it pushes to Jobber and this feed reads it live, no redeploy). On 2026-09-18 the
+  August Broward tickets stood at 24 of 31 Dade-pickup rows with a value; only 310607 was complete.
+  Dated observation: the counts move with every edit.
+- ⚠ Two sanity facts you may want to check rather than trust: a trap size can exceed the truck that
+  hauled it (189-FRE, 250 gal on Cloggy, 126 gal), and the Broward receipt's own "Waste Volume" is
+  the whole LOAD across every pickup on the ticket (312024: 1,700 gal) and is stored nowhere on our
+  side, so it cannot be split to the Dade rows.
+
+🛑 **CORRECTED 2026-08-26 (kept as history). An earlier version of this section said "the filed
+quantity is the truck capacity". That was wrong, and if you built against it, re-check.** Jonathan,
+2026-08-25:
 
 > *"The county invoice bills actual gallons per manifest — 828837 is 3,800 on the invoice, which as
 > you noted matches no truck — and the form's fee is computed from those gallons. So decal capacity
@@ -522,6 +562,12 @@ Verified against our own data: ticket **828837** is Moises, decal **C1184**, and
 `truck_capacity_gallons` **9000** here, against **3,800** billed by the county.
 ⇒ **`truck_capacity_gallons` is an INTERNAL FLEET FACT.** Nothing on the county form is computed
 from it. It is still served because it is useful for sanity-checking a load, but do not file it.
+⚠ **Corrected again 2026-09-18, in the other direction:** the "3,800" on the county invoice is not a
+plant measurement either. The WWTP receipt is hand-written "approximately 3800 gallons" for every
+Moises load and "approximately 2000" for David, i.e. a per-decal constant, and July 2026 filed as
+exactly 7 x 3,800 + 8 x 2,000 = 42,600 gal. So the Dade quantities are decal constants and the
+Broward quantities are trap capacities; neither is a measured volume. (Moises's tank reads 3,840 on
+our side since the LM11 measurement; the 9000 above is what the fleet table held on 2026-08-26.)
 
 ### `truck_decal`, added 2026-08-26: the vehicle's permit number
 
@@ -532,9 +578,10 @@ on a stable permit number instead of matching on truck names.
 Moises → C1184        David → C0976        Cloggy → null        (no truck) → null
 ```
 
-⚠ **It does not resolve a quantity.** The county bills **measured gallons off the invoice** (see the
-correction above), so nothing on the form is computed from the decal or from capacity. The decal
-answers *which permitted vehicle carried this manifest*, and nothing else.
+⚠ **It does not resolve a quantity on our side.** On a white ticket the quantity is the county
+invoice figure you resolve by decal (see the corrections above); on a yellow ticket it is the row
+`gallons`. Nothing in this feed is computed from the decal or from TRUCK capacity. The decal answers
+*which permitted vehicle carried this manifest*, and nothing else.
 
 Each ticket also carries **`truck_decals`**, the de-duplicated set for that ticket.
 
@@ -563,9 +610,11 @@ county filing.
 mixes two grains: 51 counts every row, 43 counts only the in-scope ones. `43 + 6 = 49`, so the
 arithmetic did not close and a careful reader would have gone looking for two missing rows.*
 
-⚠ **Miami-Dade only, on purpose.** The Broward decal exists in our data and is deliberately not
-served, because which decal a Broward-offload row should carry is entangled with the scope question
-that is still with Yan.
+⚠ **Miami-Dade only, on purpose.** The Broward decal exists in our data (EPD 07058 David, 07675
+Moises) and is deliberately not served. The scope question this used to defer to Yan was answered on
+2026-09-18 (Dade pickups disposed in Broward DO go on the report, with gallons per client, see §4c);
+which decal, if any, a Broward-offload row should print is still not decided, so the field stays
+Miami-Dade only until it is.
 
 ⚠ **No temporal validity.** If a decal is ever replaced, historical months will report the *current*
 one. True today for all four decals, and a real trap the first time a truck is re-permitted.

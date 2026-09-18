@@ -689,7 +689,7 @@
                 }
               ]
             },
-            "description": "The Miami-Dade LWT monthly report for the last completed month.\n\nREAD ONLY: no lease, no dispense, no side effects. Safe to run as often as you like, unlike the queue.\n\nReturns only IN-SCOPE activities. Scope is evaluated PER ACTIVITY, not per ticket: pickup county = Dade OR the ticket offloaded in Miami-Dade. A ticket with no in-scope activity is omitted entirely, and excluded_rows tells you how many rows that cost so nothing is dropped silently.\n\nNote gallons is ALWAYS null by design: the county bills MEASURED gallons per manifest, off the invoice. It is NOT resolved from the decal or from truck capacity, and nothing on the form is computed from either. truck and truck_capacity_gallons are provided."
+            "description": "The Miami-Dade LWT monthly report for the last completed month.\n\nREAD ONLY: no lease, no dispense, no side effects. Safe to run as often as you like, unlike the queue.\n\nReturns only IN-SCOPE activities. Scope is evaluated PER ACTIVITY, not per ticket: pickup county = Dade OR the ticket offloaded in Miami-Dade. A ticket with no in-scope activity is omitted entirely, and excluded_rows tells you how many rows that cost so nothing is dropped silently.\n\ngallons (changed 2026-09-18, Yan): null on every row of a ticket offloaded in Miami-Dade (white), whose quantity you resolve from the county invoice by decal; on a ticket offloaded outside Miami-Dade (yellow, Broward) it is the grease trap CAPACITY per client (the Jobber Grease Trap Size on the visit property, else the client Pumping service config size), a capacity, not a measured volume, with gallons_source saying which. Each yellow ticket also carries dade_pickup_gallons {total, rows, rows_missing, complete}: SUM the Dade-pickup rows, never take a single row value, never fall back to the Dade decal constant, and do not file a ticket whose complete is false. It is NOT resolved from the decal or from TRUCK capacity, and nothing on the form is computed from either. truck and truck_capacity_gallons are provided. README section 4c."
           },
           "event": [
             {
@@ -720,7 +720,44 @@
                   "});",
                   "const rows = (j.tickets || []).flatMap(t => t.rows || []);",
                   "pm.test('every returned row is in scope', () => rows.forEach(r => pm.expect(r.in_scope).to.eql(true)));",
-                  "pm.test('gallons is always null (the county bills MEASURED gallons, off the invoice)', () => rows.forEach(r => pm.expect(r.gallons).to.eql(null)));",
+                  "// --- 2026-09-18: gallons on Broward-disposed tickets (Yan; migration 2026-09-18_1455) ------",
+                  "// The old assertion here was 'gallons is always null'. The contract is now an INVARIANT set,",
+                  "// not a literal count: counts move with every Client App edit of a Grease Trap Size.",
+                  "const _tk = (j.tickets || []);",
+                  "const _rowsK = _tk.flatMap(t => (t.rows || []).map(r => ({ ...r, _off: t.offload_in_dade })));",
+                  "pm.test('gallons: null on every row of a Miami-Dade-offload (white) ticket', () => {",
+                  "    // 🛑 THE LOAD-BEARING HALF. The consumer takes ANY non-null row gallons over the county",
+                  "    // invoice, so a value on a white row silently changes the Dade filing.",
+                  "    const bad = _rowsK.filter(r => r._off === true && (r.gallons !== null || r.gallons_source !== null));",
+                  "    pm.expect(bad.map(r => r.client_code + '=' + r.gallons), 'a white row carries gallons').to.eql([]);",
+                  "    // anchor: a white row must exist, or the assertion above is vacuous",
+                  "    pm.expect(_rowsK.some(r => r._off === true), 'no white row in this month, the check proves nothing').to.eql(true);",
+                  "});",
+                  "pm.test('gallons and gallons_source are null together, and a value is a positive integer with a known source', () => {",
+                  "    _rowsK.forEach(r => pm.expect('gallons_source' in r, 'gallons_source key missing on ' + r.client_code).to.eql(true));",
+                  "    const mis = _rowsK.filter(r => (r.gallons === null) !== (r.gallons_source === null));",
+                  "    pm.expect(mis.map(r => r.client_code), 'gallons and gallons_source disagree on null').to.eql([]);",
+                  "    const badVal = _rowsK.filter(r => r.gallons !== null && !(Number.isInteger(r.gallons) && r.gallons > 0",
+                  "        && ['grease_trap_size', 'service_config_size'].includes(r.gallons_source)));",
+                  "    pm.expect(badVal.map(r => r.client_code + '=' + JSON.stringify([r.gallons, r.gallons_source])), 'bad gallons value').to.eql([]);",
+                  "});",
+                  "pm.test('dade_pickup_gallons: null on white tickets, a consistent block on yellow tickets', () => {",
+                  "    _tk.forEach(t => {",
+                  "        if (t.offload_in_dade === true) { pm.expect(t.dade_pickup_gallons, 'white ticket ' + t.ticket_number).to.eql(null); return; }",
+                  "        const g = t.dade_pickup_gallons;",
+                  "        pm.expect(g, 'yellow ticket ' + t.ticket_number + ' has no dade_pickup_gallons').to.be.an('object');",
+                  "        const dade = (t.rows || []).filter(r => r.pickup_in_dade === true);",
+                  "        const missing = dade.filter(r => r.gallons === null).length;",
+                  "        const total = dade.reduce((a, r) => a + (r.gallons === null ? 0 : r.gallons), 0);",
+                  "        pm.expect([g.total, g.rows, g.rows_missing, g.complete], 'dade_pickup_gallons disagrees with the rows on ' + t.ticket_number)",
+                  "            .to.eql([total, dade.length, missing, dade.length > 0 && missing === 0]);",
+                  "    });",
+                  "});",
+                  "// ⚠ SAY WHAT WAS CHECKED: a month with no yellow ticket (2026-09 today) exercises none of the",
+                  "// yellow-side assertions. The pinned positive control lives in the next request.",
+                  "console.log('yellow tickets this month: ' + _tk.filter(t => t.offload_in_dade === false).length +",
+                  "    ', rows with gallons: ' + _rowsK.filter(r => r.gallons !== null).length +",
+                  "    (_tk.some(t => t.offload_in_dade === false) ? '' : ' -- NO YELLOW TICKET, the gallons invariants were only exercised on white rows'));",
                   "pm.test(\"pickup_date is the VISIT date, not the dump date\", () => {",
                   "    // 🛑 THE REGRESSION EVERY DOC NAMES AS THE ONE TO WATCH. Until now this asserted only",
                   "    // typeof pickup_date === \"string\", so setting pickup_date := offload_date on every row",
@@ -930,23 +967,23 @@
                   "",
                   "pm.test(\"truck_capacity_gallons is a known fleet capacity\", () => {",
                   "    // 🛑 CORRECTED 2026-08-26: this is NOT the filed quantity and NOT the fee basis. Jonathan",
-                  "    // confirmed the county bills MEASURED gallons per manifest from the invoice, and ticket 828837",
+                  "    // confirmed the county figure is per manifest off the invoice (a per-decal constant, corrected 2026-09-18: not a measurement), and ticket 828837",
                   "    // is Moises / decal C1184 / capacity 9000 here while the county bills it at 3,800. This test",
                   "    // is still worth having as an INTERNAL CONSISTENCY check (a truck must report its own",
                   "    // capacity), but nothing on the county form is computed from it. Do not restore the old",
-                  "    // wording: it would send the next reader to the wrong field. `gallons` is null on 700/700.",
-                  "    // Measured live: Moises 9000, David 1800, Cloggy 126 (Goliath 4800 is decommissioned but",
+                  "    // wording: it would send the next reader to the wrong field. (`gallons` was null on 700/700 until 2026-09-18; it now carries a trap capacity on Broward-disposed tickets only, see the gallons tests above.)",
+                  "    // Measured live 2026-09-18: Moises 3840 (was 9000 in this file until then; vehicles.grease_tank_capacity_gallons reads 3840), David 1800, Cloggy 126 (Goliath 4800 is decommissioned but",
                   "    // still appears on historical rows). 6 of 700 rows carry no truck, and those correctly",
                   "    // carry no capacity -- that is a known gap, not a failure, so it is allowed through.",
                   "    // 0 rows have a truck with a null capacity, and 0 carry a capacity outside the fleet.",
                   "    // 🛑 PER-TRUCK, not membership. A membership check let every David row report 9000 with",
                   "    // NOTHING FAILING on any month. Still a real defect (the value is wrong), but the consequence",
                   "    // is INTERNAL, not a five-fold county fee. The mapping is strictly 1:1",
-                  "    // live (Moises 9000 n=425, David 1800 n=224, Cloggy 126 n=45, and 0 trucks carry two",
+                  "    // live (Moises 3840, David 1800, Cloggy 126; 0 trucks carry two",
                   "    // capacities), so naming it costs nothing in false positives.",
                   "    // Goliath 4800 is decommissioned but may still appear on historical rows.",
-                  "    const CAP = { \"Moises\": 9000, \"David\": 1800, \"Cloggy\": 126, \"Goliath\": 4800 };",
-                  "    const FLEET = [9000, 4800, 1800, 126];",
+                  "    const CAP = { \"Moises\": 3840, \"David\": 1800, \"Cloggy\": 126, \"Goliath\": 4800 };",
+                  "    const FLEET = [3840, 4800, 1800, 126];",
                   "    const withTruck = _rows.filter(r => r.truck !== null && r.truck !== undefined);",
                   "    const badCap = withTruck.filter(r => !FLEET.includes(r.truck_capacity_gallons));",
                   "    const wrongCap = withTruck.filter(r => CAP[r.truck] !== undefined &&",
@@ -954,7 +991,7 @@
                   "    pm.expect(wrongCap.map(r => r.truck + \" reported \" + r.truck_capacity_gallons +",
                   "                                \" but is \" + CAP[r.truck]),",
                   "        \"a truck is reporting the WRONG capacity for itself, an internal consistency error. \" +",
-                  "        \"NOTE: this is NOT the filed quantity; the county bills measured gallons\").to.eql([]);",
+                  "        \"NOTE: this is NOT the filed quantity; the Dade figure is the per-decal invoice constant, the Broward figure is the row gallons\").to.eql([]);",
                   "    pm.expect(badCap.map(r => r.truck + \"=\" + JSON.stringify(r.truck_capacity_gallons)),",
                   "        \"a truck carries a capacity that is not one of ours, an internal consistency \" +",
                   "        \"error, not a filed-quantity error\").to.eql([]);",
@@ -1200,6 +1237,70 @@
           ]
         },
         {
+          "name": "Monthly - 2026-08 gallons on Broward tickets (pinned positive control)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rpa-derm-monthly?month=2026-08",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "2026-08"
+                }
+              ]
+            },
+            "description": "PINNED to 2026-08 on purpose: the START HERE request follows the wall clock, and a month with no Broward-disposed ticket (2026-09 at the time of writing) exercises none of the gallons invariants, so a broken feed could stay green. August 2026 holds 5 Broward-disposed tickets in default mode. Asserts >= 1, never == N: the counts move every time a Grease Trap Size is typed into the Client App, and moving is the point.\n\nWhat this proves: the yellow rows carry a positive integer trap capacity with gallons_source set, at least one comes from the property arm, every yellow ticket carries dade_pickup_gallons consistent with its rows, and the white tickets of the same month carry nothing. It logs how many August rows still lack a size and which arm served the rest."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const yt = (j.tickets || []).filter(t => t.offload_in_dade === false);",
+                  "const wt = (j.tickets || []).filter(t => t.offload_in_dade === true);",
+                  "const yrows = yt.flatMap(t => t.rows || []);",
+                  "pm.test('2026-08 serves at least one Broward-disposed ticket (else this control proves nothing)', () => pm.expect(yt.length).to.be.at.least(1));",
+                  "pm.test('at least one yellow row carries gallons from the property arm', () => {",
+                  "    pm.expect(yrows.filter(r => r.gallons_source === 'grease_trap_size').length).to.be.at.least(1);",
+                  "});",
+                  "pm.test('every yellow gallons value is a positive integer with a known source', () => {",
+                  "    const bad = yrows.filter(r => r.gallons !== null && !(Number.isInteger(r.gallons) && r.gallons > 0 && ['grease_trap_size', 'service_config_size'].includes(r.gallons_source)));",
+                  "    pm.expect(bad.map(r => r.client_code + '=' + JSON.stringify([r.gallons, r.gallons_source]))).to.eql([]);",
+                  "});",
+                  "pm.test('white tickets of the same month carry nothing', () => {",
+                  "    pm.expect(wt.length, 'no white ticket in 2026-08, the negative half is vacuous').to.be.at.least(1);",
+                  "    pm.expect(wt.flatMap(t => t.rows).filter(r => r.gallons !== null).length).to.eql(0);",
+                  "    wt.forEach(t => pm.expect(t.dade_pickup_gallons, 'white ' + t.ticket_number).to.eql(null));",
+                  "});",
+                  "pm.test('dade_pickup_gallons agrees with the rows on every yellow ticket', () => {",
+                  "    yt.forEach(t => {",
+                  "        const g = t.dade_pickup_gallons; pm.expect(g, t.ticket_number).to.be.an('object');",
+                  "        const dade = t.rows.filter(r => r.pickup_in_dade === true);",
+                  "        const missing = dade.filter(r => r.gallons === null).length;",
+                  "        pm.expect([g.total, g.rows, g.rows_missing, g.complete], t.ticket_number)",
+                  "            .to.eql([dade.reduce((a, r) => a + (r.gallons === null ? 0 : r.gallons), 0), dade.length, missing, dade.length > 0 && missing === 0]);",
+                  "    });",
+                  "});",
+                  "const sc = yrows.filter(r => r.gallons_source === 'service_config_size').length;",
+                  "const missing = yrows.filter(r => r.gallons === null).map(r => r.client_code);",
+                  "console.log('2026-08: ' + yt.length + ' Broward tickets, ' + yrows.length + ' Dade-pickup rows, ' + (yrows.length - missing.length) + ' with gallons (' + sc + ' from the service_config fallback), missing: ' + (missing.join(', ') || 'none') + '; complete tickets: ' + yt.filter(t => t.dade_pickup_gallons.complete).map(t => t.ticket_number).join(', '));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Monthly - ETag revalidation -> 304",
           "request": {
             "method": "GET",
@@ -1294,6 +1395,12 @@
               ],
               "path": [
                 "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "unreported",
+                  "value": "1"
+                }
               ]
             }
           },
@@ -1344,10 +1451,19 @@
                   "    if (!rows.length) { pm.expect(true).to.eql(true); return; }",
                   "",
                   "    const DECAL = { \"Moises\": \"C1184\", \"David\": \"C0976\" };",
-                  "    const CAP   = { \"Moises\": 9000, \"David\": 1800, \"Cloggy\": 126, \"Goliath\": 4800 };",
+                  "    const CAP   = { \"Moises\": 3840, \"David\": 1800, \"Cloggy\": 126, \"Goliath\": 4800 };",
                   "",
-                  "    pm.expect(rows.filter(r => r.gallons !== null).length,",
-                  "        \"gallons must be null on every row; the county bills MEASURED gallons off the invoice\").to.eql(0);",
+                  "    // 2026-09-18: gallons are no longer always null. White (Miami-Dade offload) rows must stay",
+                  "    // null; yellow rows carry a trap capacity or null, never 0, and gallons_source names the arm.",
+                  "    const rowsK = j.tickets.flatMap(t => t.rows.map(r => ({ ...r, _off: t.offload_in_dade })));",
+                  "    pm.expect(rowsK.filter(r => r._off === true && r.gallons !== null).map(r => r.client_code),",
+                  "        \"a white row carries gallons; the consumer would take it over the county invoice\").to.eql([]);",
+                  "    pm.expect(rowsK.filter(r => (r.gallons === null) !== (r.gallons_source === null)).map(r => r.client_code),",
+                  "        \"gallons and gallons_source disagree on null\").to.eql([]);",
+                  "    pm.expect(rowsK.filter(r => r.gallons !== null && !(Number.isInteger(r.gallons) && r.gallons > 0)).map(r => r.client_code + '=' + r.gallons),",
+                  "        \"a gallons value is not a positive integer\").to.eql([]);",
+                  "    j.tickets.forEach(t => pm.expect(t.offload_in_dade === true ? t.dade_pickup_gallons === null : typeof t.dade_pickup_gallons === 'object' && t.dade_pickup_gallons !== null,",
+                  "        'dade_pickup_gallons shape on ' + t.ticket_number).to.eql(true));",
                   "",
                   "    pm.expect(rows.filter(r => DECAL[r.truck] !== undefined && r.truck_decal !== DECAL[r.truck])",
                   "              .map(r => r.truck + \"=\" + JSON.stringify(r.truck_decal)),",
@@ -1402,6 +1518,16 @@
               ],
               "path": [
                 "rpa-derm-monthly"
+              ],
+              "query": [
+                {
+                  "key": "month",
+                  "value": "{{reportMonth}}"
+                },
+                {
+                  "key": "unreported",
+                  "value": "1"
+                }
               ]
             }
           },

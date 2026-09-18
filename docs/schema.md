@@ -666,14 +666,23 @@ documented here; enumerate the rest from `pg_class` rather than trusting this ta
 2. **`pickup_date` is `visits.visit_date`.** `derm_manifests.service_date` is a misnomer holding the
    DUMP date (632 of 669 live manifests identical, measured 2026-08-25 -- this grows), so reading it would make every pickup
    equal its own offload. The migration's VERIFY asserts against exactly that.
-3. **`gallons` is deliberately absent** (always null). We store no measured volume per load.
-   🛑 **The filed quantity is NOT the truck capacity and is NOT resolved from the decal.** That
-   claim was an inference, it was in this file, the API reference, two code comments and the view's
-   own comment, and it was retracted on 2026-08-26 against Jonathan's invoice: ticket 828837 is
-   Moises, decal C1184, capacity 9,000 on our side, and the county billed **3,800**. The county
-   bills **measured gallons per manifest**, off the invoice. `truck_capacity_gallons` is an
-   internal fleet fact served for sanity-checking a load, and nothing on the form is computed from
-   it or from `truck_decal`, which is a permit number.
+3. **`gallons` (changed 2026-09-18, `2026-09-18_1455`)**: NULL on every row of a Miami-Dade-offload
+   (white) ticket; on a ticket offloaded outside Miami-Dade (yellow) the grease trap CAPACITY of the
+   visit's property (`properties.grease_trap_size_gallons`, 0 read as empty), else the client's
+   Pumping `service_configs.equipment_size_gallons::integer`, else NULL. `gallons_source` (column 22,
+   text) names the arm: `grease_trap_size` / `service_config_size` / NULL, null exactly when gallons
+   is. We still store no measured volume per load. Decided by Yan (gallons per client on Dade pickups
+   dumped in Broward, paying the Dade fee). Never fill white rows: the consumer takes any non-null
+   row value over the county invoice.
+   🛑 **The filed quantity is NOT the truck capacity and is NOT resolved from the decal on our
+   side.** That claim was an inference, it was in this file, the API reference, two code comments
+   and the view's own comment, and it was retracted on 2026-08-26 against Jonathan's invoice:
+   ticket 828837 is Moises, decal C1184, capacity 9,000 on our side (3,840 since the LM11
+   measurement), and the county billed **3,800**. ⚠ Corrected again 2026-09-18: that 3,800 is a
+   per-decal constant hand-written as "approximately" on the WWTP receipt (July filed as exactly
+   7 x 3,800 + 8 x 2,000), not a plant measurement. `truck_capacity_gallons` is an internal fleet
+   fact served for sanity-checking a load, and nothing on the form is computed from it or from
+   `truck_decal`, which is a permit number.
 
 Not granted to `anon` or `authenticated`: `service_role` only, because it is read through an edge
 function that authenticates with `x-rpa-key`.

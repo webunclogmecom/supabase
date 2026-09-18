@@ -3453,18 +3453,52 @@ these grow, re-measure rather than quoting**). Serving it would make every
 pickup equal its own offload. **If you ever see that, service_date has crept back in** - the
 migration's VERIFY asserts against exactly this.
 
-⚠ **`gallons` is ALWAYS null and that is the contract, not a gap.** We store no measured volume per
-load. The fee arithmetic (`total gal x $0.00419`, **truncated** to cents, never rounded) lives only
-in John's generator, which is validated against filed county pages. Do not add a second
-implementation here.
+🛑 **`gallons` IS NO LONGER ALWAYS NULL (2026-09-18). It is a per-client grease trap CAPACITY on
+every row of a ticket offloaded OUTSIDE Miami-Dade, and stays NULL on every row of a Miami-Dade-offload
+ticket.** Yan, Slack 2026-09-18, on Jonathan adding Broward disposals to the report: *"yes for the
+miami dade pick up and Broward dump we need the gallons per client to add then to the report"*, and
+those gallons pay the Dade fee. Fred: *"we can use the Grease Trap Size from our DB to fill it"*, then
+*"Go with option A"* (per-row values, the consumer sums). Shipped as `2026-09-18_1455_lwt_broward_gallons`
++ `rpa-derm-monthly` v17; design and the 13-agent verification behind it in
+`docs/superpowers/specs/2026-09-18-lwt-broward-gallons-design.md`. The rule, in the VIEW:
+`CASE WHEN white_manifest_number IS NULL THEN COALESCE(NULLIF(visit property grease_trap_size_gallons, 0),
+client Pumping service_configs.equipment_size_gallons::integer) END`, with `gallons_source`
+(`grease_trap_size` | `service_config_size` | null) appended as column 22, and on the ticket head
+`dade_pickup_gallons {total, rows, rows_missing, complete}` (sum over the Dade-pickup rows; `complete`
+false means do not file the ticket yet). Four traps, all measured: the `::integer` cast is mandatory
+(an uncast COALESCE is numeric and `CREATE OR REPLACE` refuses it, 42P16); the fallback must be a scalar
+LATERAL pinned to `service_type = 'Pumping'` (a plain join fans the view 784 -> 1,119 rows); 0 reads as
+empty (the CHECK admits 0 and the Client App RPC accepts it); and **never fill white rows**, because the
+consumer takes any non-null row value over the county invoice (444 white rows sit on sized properties,
+so the gate is load-bearing). **Still true:** we store no measured volume per load (the number is a
+capacity, and the Dade quantities are decal constants, see below), and the fee arithmetic
+(`total gal x $0.00419`, **truncated** to cents, never rounded) lives only in John's generator, which
+is validated against filed county pages. Do not add a second implementation here.
+⚠ **The consumer's generator needed changes of its own** (read from `webunclogmecom/unclogme-gdo-report-bot`):
+it dropped `offload_in_dade: false` tickets whole, used a row gallons value only when a ticket carried
+exactly ONE distinct value (nulls ignored), and fell back to the Miami-Dade decal constant when it had
+none, so per-client values sent as-is would have conflicted on 10 of 12 Broward tickets and filed
+3,800 or 2,000 gal on a Broward load. That is why the ticket-head block exists.
+⚠ **Rows with no size anywhere print null until a person types the Grease Trap Size into the Client
+App property** (the view reads the column live; no redeploy). 2026-09-18: August's Broward tickets
+stood at 24 of 31 Dade-pickup rows with a value and only 310607 complete; 186-PV, 306-16, 293-ALC,
+249-LOU, 014-JOY, 226-JER, 309-KEB had no size. Dated observation.
 
-🛑 **THE FILED QUANTITY IS *NOT* THE TRUCK CAPACITY, AND IT IS NOT RESOLVED FROM THE DECAL. THIS
-PARAGRAPH SAID OTHERWISE UNTIL 2026-08-26 AND IT WAS WRONG.** That was my inference, never a fact
-from the county, and Jonathan's invoice disproves it: ticket **828837** is Moises, decal **C1184**,
-capacity **9,000** on our side, and Miami-Dade billed **3,800**. **The county bills MEASURED gallons
-per manifest, off the invoice.** `truck_capacity_gallons` is an internal fleet fact, served only for
-sanity-checking a load, and `truck_decal` is a permit number identifying which vehicle carried the
-manifest. Nothing on the form is computed from either.
+🛑 **THE FILED QUANTITY IS *NOT* THE TRUCK CAPACITY, AND IT IS NOT RESOLVED FROM THE DECAL ON OUR
+SIDE. THIS PARAGRAPH SAID OTHERWISE UNTIL 2026-08-26 AND IT WAS WRONG.** That was my inference, never
+a fact from the county, and Jonathan's invoice disproves it: ticket **828837** is Moises, decal
+**C1184**, capacity **9,000** on our side (3,840 since the LM11 measurement), and Miami-Dade billed
+**3,800**. `truck_capacity_gallons` is an internal fleet fact, served only for sanity-checking a load,
+and `truck_decal` is a permit number identifying which vehicle carried the manifest. Nothing on the
+form is computed from either.
+🛑 **CORRECTED AGAIN 2026-09-18, IN THE OTHER DIRECTION: "the county bills MEASURED gallons per
+manifest" was itself a mischaracterisation.** The WWTP receipt is hand-written *"approximately 3800
+gallons"* on every Moises load and *"approximately 2000"* on every David load, Jonathan's own generator
+holds `DECAL_GALLONS = {C1184: 3800, C0976: 2000}`, and July 2026 filed as exactly 7 x 3,800 + 8 x 2,000
+= 42,600 gal / $178.49. So the Dade quantities are **per-decal constants**, not plant measurements, and a
+trap-capacity sum on a Broward ticket (August: 1,675 / 2,355 / 3,540 / 1,150 / 3,840) files at or below
+what the same manifest would carry under the Dade convention. Do not contrast "capacity" with
+"measured": neither number is measured.
 ⚠ **Worth knowing HOW this survived:** the retraction was applied the same morning to the Postman
 README, two comment blocks in `rpa-derm-monthly` and the assertion messages, and still missed FIVE
 places, including this file, `docs/schema.md`, the view's own `COMMENT`, and a test written HOURS

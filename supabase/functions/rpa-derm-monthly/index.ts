@@ -312,6 +312,31 @@ Deno.serve(async (req: Request) => {
       // length. Join on the row's own truck_decal, never by index.
       truck_decals: [...new Set(all.map((r) => r.truck_decal).filter(Boolean))],
       excluded_rows: excluded,
+      // 2026-09-18 (Yan: "for the miami dade pick up and Broward dump we need the gallons per
+      // client"; Fred: "Go with option A"). On a ticket offloaded OUTSIDE Miami-Dade the row
+      // `gallons` carry a per-client trap capacity (see the row mapper), and this block is the
+      // ticket-level answer so the consumer does not have to re-derive the null rule:
+      //   total        sum of `gallons` over the rows picked up in Miami-Dade (the in-scope rows)
+      //   rows         how many such rows the ticket has
+      //   rows_missing how many of them carry no size (gallons null)
+      //   complete     rows > 0 and rows_missing = 0. false means DO NOT FILE this ticket yet:
+      //                a partial sum is a wrong quantity, and a null must never become the
+      //                Miami-Dade decal constant (3,800 / 2,000) on a Broward-disposed load.
+      // null on a Miami-Dade-offload (white) ticket: its quantity is the county invoice figure,
+      // and every row `gallons` on it is null by design.
+      // Computed over ALL rows of the ticket, not `kept`, so include=all cannot change it.
+      dade_pickup_gallons: head.offload_in_dade === false
+        ? (() => {
+          const dade = all.filter((r) => r.pickup_in_dade === true)
+          const missing = dade.filter((r) => r.gallons == null).length
+          return {
+            total: dade.reduce((s, r) => s + (r.gallons == null ? 0 : Number(r.gallons)), 0),
+            rows: dade.length,
+            rows_missing: missing,
+            complete: dade.length > 0 && missing === 0,
+          }
+        })()
+        : null,
       // Filing state for this ticket. `reported` is an EXISTENCE question, not a state machine:
       // true means some non-dry-run filing recorded this ticket. A refiled ticket reports the
       // most recent real filing. dry_run filings never set it.
@@ -354,8 +379,11 @@ Deno.serve(async (req: Request) => {
         // The vehicle's ACTIVE Miami-Dade decal, added 2026-08-26. It is the PERMIT NUMBER
         // identifying which vehicle carried the manifest; the payload previously carried only
         // truck names, which are not stable identifiers to a regulator.
-        // 🛑 It does NOT resolve a quantity. The county bills MEASURED gallons per manifest off
-        // the invoice, and nothing on the form is computed from the decal or from capacity. This
+        // 🛑 It does NOT resolve a quantity on OUR side. On a Miami-Dade-offload ticket the
+        // consumer resolves the per-manifest figure from the county invoice by decal (C1184 3,800 /
+        // C0976 2,000, hand-written as "approximately" on the WWTP receipt: a decal constant, not a
+        // plant measurement, corrected 2026-09-18); nothing on the form is computed from the decal
+        // or from TRUCK capacity here. This
         // comment said "the caller resolves quantity from a decal-keyed table" until 2026-08-26,
         // which was the sixth surviving copy of a claim retracted that morning, and it survived a
         // phrase sweep because it words the same claim differently. Grep the MEANING, not one
@@ -368,9 +396,20 @@ Deno.serve(async (req: Request) => {
         // name, or another jurisdiction's decal: that would put a wrong permit number on a
         // county filing.
         truck_decal: r.truck_decal ?? null,
-        // ALWAYS null. We store no measured volume (0 non-null of 700), and the county bills
-        // measured gallons, so any value here would be a guess presented as a fact.
-        gallons: null,
+        // Since 2026-09-18 (migration 2026-09-18_1455, Yan's decision, Fred: "Go with option A"):
+        // null on every row of a Miami-Dade-offload (white) ticket, whose quantity is the county
+        // invoice figure; on a ticket offloaded OUTSIDE Miami-Dade (yellow, Broward) the grease trap
+        // CAPACITY of the visit's property (the Jobber "Grease Trap Size"), else the client's Pumping
+        // service_configs size, else null. A capacity, not a measured volume: we store none (that
+        // half of the old "ALWAYS null" contract still holds). 0 reads as empty in the view.
+        // Integer arrives as a JSON number over PostgREST, so no Number() is needed.
+        // 🛑 The consumer must SUM these per ticket and treat a null row as unresolved; it must never
+        // fall back to the Dade decal constant on a Broward-disposed ticket. dade_pickup_gallons on
+        // the ticket head carries that rule ready-made.
+        gallons: r.gallons ?? null,
+        // which arm produced `gallons`: 'grease_trap_size' | 'service_config_size' | null. Null
+        // exactly when gallons is null.
+        gallons_source: r.gallons_source ?? null,
         visit_id: r.visit_id,
         // null on a healthy row. Present = this activity is internally contradictory
         // and should be checked against the paper manifest before it is filed.

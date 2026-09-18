@@ -5,6 +5,19 @@ form plus six filed pages.* **Status: SHIPPED 2026-08-24.** `derm.v_lwt_monthly_
 `rpa-derm-monthly` endpoint are live, docs and Postman updated. 17 of 17 end-to-end assertions pass,
 including the scope controls below.
 
+🛑 **CHANGE 2026-09-18: `gallons` is no longer always null, and section 6's "gallons stays null"
+is superseded.** Yan decided that Dade pickups disposed in Broward go on the report with gallons per
+client, paying the Dade fee (Slack #C0B15CHQ1D4). `2026-09-18_1455_lwt_broward_gallons` fills `gallons`
+on every row of a ticket offloaded OUTSIDE Miami-Dade with the client's grease trap CAPACITY (the
+visit property's `grease_trap_size_gallons`, else the Pumping service-config size), appends
+`gallons_source`, and `rpa-derm-monthly` v17 adds a ticket-head `dade_pickup_gallons {total, rows,
+rows_missing, complete}`. White (Miami-Dade offload) rows stay null. Design, the consumer facts (his
+generator used a row value only when exactly one distinct value existed, and fell back to the Dade
+decal constant otherwise) and the verification: `docs/superpowers/specs/2026-09-18-lwt-broward-gallons-design.md`.
+Also corrected there: "the county bills MEASURED gallons per manifest" below is a mischaracterisation;
+the Dade quantities are per-decal constants (3,800 / 2,000, "approximately" on the receipt). Read
+sections 6 and 7 below as history.
+
 🛑 **CORRECTION 2026-08-26, AND IT CHANGES HOW SECTION 7 READS.** This spec was written assuming
 **the filed quantity is the truck capacity resolved from the decal**. That was my inference and it
 is FALSE. Jonathan's invoice settled it: ticket **828837** is Moises / decal **C1184** / capacity
