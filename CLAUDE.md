@@ -895,7 +895,9 @@ Two more things that bite on the same write:
 
 Precedent: audit decision 7 (2026-09-17) restored visits 8025/8107/8108 this way after the pre-v115
 `softStatusFlip` rewrote them as cancelled; verified afterwards by `entity_source_links` staying at 0 created
-system-wide. Full record in `Building Apps/Client App/docs/2026-09-18_client-delete-audit.md` §8 decision 7.
+system-wide. ⚠ Those three were then **soft-deleted the same night** (they are 112-YA test rows and Jobber no
+longer has their job), so do not read them as live examples — the same suppression was needed for the
+`deleted_at` write, because `deleted_at` is in the trigger's `WHEN` list too and computes `op='delete'`. Full record in `Building Apps/Client App/docs/2026-09-18_client-delete-audit.md` §8 decision 7.
 ⚠ That restore is also the standing example of **per-row evidence deciding**: visit 8020 on a REAL client was
 deliberately left cancelled, because a standalone `VISIT_DESTROY` with no cascade and zero photos/manifest/invoice
 means a person deleted a mis-completed duplicate. Do not restore a batch because they share a symptom.
