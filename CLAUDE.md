@@ -868,6 +868,38 @@ chips silently.
 **Full spec — read it before touching either name:**
 [docs/reference/service-type-vocabulary.md](docs/reference/service-type-vocabulary.md).
 
+### 🛑 A BY-HAND `visits.visit_status` WRITE PUSHES TO JOBBER — SUPPRESS IT (2026-09-17)
+
+`public.visits` carries **`trg_push_visit_update` → `fn_push_visit_to_jobber`**, whose `WHEN` fires on any
+`visit_status` change for `source IN ('visit-calendar','supabase_cron')`. A `cancelled -> completed` write
+computes `op='upsert'` with `changed=['completion']` and `net.http_post`s to `jobber-push-visit`. **On a visit
+Jobber no longer has (unlinked, job destroyed), an upsert tries to RECREATE it in Jobber.** Restoring a visit is
+not an inert row edit; it is an outbound write unless you stop it.
+
+```sql
+begin;
+set local app.suppress_jobber_push = 'on';   -- fn_push_visit_to_jobber returns immediately
+update public.visits set visit_status = 'completed' where id = ...;
+update public.visits set sync_state   = 'confirmed' where id = ... and sync_state = 'pending';
+commit;
+```
+
+Two more things that bite on the same write:
+- **`sync_state` needs a second statement.** The BEFORE trigger `fn_mark_visit_sync_pending` forces
+  `NEW.sync_state := 'pending'` on any status change, so it overrides a `sync_state` you set in the same
+  `UPDATE`. Put it back in a separate statement (a `sync_state`-only write does not re-fire the push trigger —
+  `sync_state` is not in its `WHEN` list).
+- **`trg_zz_freeze_line_items_on_complete`** fires on any transition *into* `completed`. It is guarded by
+  `NOT EXISTS (line_items WHERE visit_id = NEW.id)`, so it is a no-op on a visit that was completed once
+  before — but verify that per row rather than assuming it.
+
+Precedent: audit decision 7 (2026-09-17) restored visits 8025/8107/8108 this way after the pre-v115
+`softStatusFlip` rewrote them as cancelled; verified afterwards by `entity_source_links` staying at 0 created
+system-wide. Full record in `Building Apps/Client App/docs/2026-09-18_client-delete-audit.md` §8 decision 7.
+⚠ That restore is also the standing example of **per-row evidence deciding**: visit 8020 on a REAL client was
+deliberately left cancelled, because a standalone `VISIT_DESTROY` with no cascade and zero photos/manifest/invoice
+means a person deleted a mis-completed duplicate. Do not restore a batch because they share a symptom.
+
 ### Soft-delete on visits (added 2026-05-29)
 
 `public.visits.deleted_at TIMESTAMPTZ` is set by
