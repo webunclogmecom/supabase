@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
-**Last updated:** 2026-08-31 (🛑 **the queue now serves EVERY permit on a ticket in one batch, so `visit_id` is no longer unique within a batch and the work key is the pair `(visit_id, gdo_id)`; the result POST is idempotent on `(visit_id, gdo_id, run_id)` and `gdo_id` is now USED rather than ignored**, see §3 and §4). Previously 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
+**Last updated:** 2026-09-18 (the dry-run queue now serves a mixed sample across jurisdictions so a Broward yellow ticket is always in it, and the served-but-undocumented `ticket_number` / `jurisdiction` fields are in the report-object table, see §3). Previously 2026-08-31 (🛑 **the queue now serves EVERY permit on a ticket in one batch, so `visit_id` is no longer unique within a batch and the work key is the pair `(visit_id, gdo_id)`; the result POST is idempotent on `(visit_id, gdo_id, run_id)` and `gdo_id` is now USED rather than ignored**, see §3 and §4). Previously 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -51,7 +51,8 @@ Missing/invalid key → `401 {"error":"unauthorized"}`. Key not configured on ou
 
 ## 3. `GET /functions/v1/rpa-derm-queue` — the work queue
 
-Returns up to **25** reports to file, **oldest first**.
+Returns up to **25** reports to file, **oldest first** (live mode; the dry-run sample is ordered
+differently, see the `mode` table below).
 
 ### 🛑 One report per ACTIVE PERMIT, not per ticket (changed 2026-08-11)
 
@@ -109,7 +110,17 @@ integer matching can never merge one client's own permits.
 
 | Param | Values | Meaning |
 |---|---|---|
-| `mode` | `dryrun` | Serve a fixed set of **historical** visits for testing. Omit for the live queue. |
+| `mode` | `dryrun` | Serve a **sample of historical** visits for testing, no lease. Omit for the live queue. |
+
+🛑 **The dry-run sample covers EVERY jurisdiction (changed 2026-09-18).** Until then dry-run served
+the 25 **oldest** historical rows, which were all Miami-Dade (January to April 2026); the Broward
+rows in the dry-run set sat past the cap, so a bot tested only against dry-run had never once seen a
+**yellow ticket** (`jurisdiction: "broward"`, `disposal_facility: "Water and Wastewater Services"`,
+`white_manifest_number: null`, the number to file in `ticket_number`). The sample is now **newest
+first within each jurisdiction, interleaved across jurisdictions** (broward, dade, broward, dade,
+dade ...), still capped at 25. It is a **sample, not a queue**: do not build on its order, and
+expect the same rows on every pull until a manifest changes. Live mode is untouched: oldest first,
+capped, leased.
 
 **Response `200`**
 
@@ -137,8 +148,10 @@ integer matching can never merge one client's own permits.
 | `gdo_number` | string \| null | The GDO permit number. |
 | `service_date` | date | When the visit was serviced. |
 | `dump_ticket_date` | date | Date on the disposal receipt. |
-| `white_manifest_number` | string \| null | Miami-Dade WWTP/dump receipt number. |
-| `disposal_facility` | string \| null | |
+| `ticket_number` | string | **The dump-ticket number to file, whatever the county** (served since 2026-07-24, documented here 2026-09-18): the Miami-Dade white manifest # or the Broward yellow Septage Receiving #. Use this, not `white_manifest_number`. |
+| `jurisdiction` | string | `dade` \| `broward` \| `unknown`, from which ticket number the manifest carries (served since 2026-07-24, documented here 2026-09-18). |
+| `white_manifest_number` | string \| null | Miami-Dade WWTP/dump receipt number. **`null` on a Broward load**; kept for back-compat, read `ticket_number`. |
+| `disposal_facility` | string \| null | `South District WWTP` (Miami-Dade) or `Water and Wastewater Services` (Broward). |
 | `documents.address` | string[] | **Signed URLs** to the DERM Address / Manifest Form sheet(s). |
 | `documents.receipt` | string[] | **Signed URLs** to the Transporter Manifest / WWTP receipt(s). |
 
@@ -165,7 +178,8 @@ start of a run; **never log or persist the URLs**.
   `2026-07-21`). This exists so the bot's first live run cannot re-submit the entire historical backlog
   to the county. We widen the cutoff deliberately if a backfill is ever wanted.
 - `?mode=dryrun` serves already-serviced **historical** visits and does **not** place a lease; use it
-  freely for testing.
+  freely for testing. Since 2026-09-18 it is a mixed sample across jurisdictions (see the `mode`
+  table in section 3), so a Broward yellow ticket is always in it.
 
 ### 🛑 `held` — why the queue is empty (added 2026-08-25)
 

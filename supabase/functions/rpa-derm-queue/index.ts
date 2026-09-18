@@ -35,6 +35,33 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SIGNED_URL_TTL_SECONDS = 4 * 60 * 60 // 4 hours, sized to one bot run
 const BATCH_CAP = 25
+// Dry-run only: how many rows of v_derm_portal_dryrun to read before sampling.
+// The view holds 49 rows (2026-09-18) and only grows if the launch cutoff moves;
+// 500 leaves room and stays under PostgREST's own 1000-row default.
+const DRYRUN_SCAN_CAP = 500
+
+// Dry-run sampling: rows arrive grouped by jurisdiction, newest first within each
+// group. Round-robin across the groups (sorted by name, so the order is stable:
+// broward, dade, unknown) until the cap, so every jurisdiction that has rows is
+// represented however lopsided the counts are. Live mode never calls this.
+// deno-lint-ignore no-explicit-any
+type Row = Record<string, any>
+function interleaveByJurisdiction(rows: Row[], cap: number): Row[] {
+  const groups = new Map<string, Row[]>()
+  for (const r of rows) {
+    const k = typeof r.jurisdiction === 'string' ? r.jurisdiction : 'unknown'
+    if (!groups.has(k)) groups.set(k, [])
+    groups.get(k)!.push(r)
+  }
+  const lanes = [...groups.keys()].sort().map((k) => groups.get(k)!)
+  const out: Row[] = []
+  for (let i = 0; out.length < cap && lanes.some((l) => i < l.length); i++) {
+    for (const lane of lanes) {
+      if (i < lane.length && out.length < cap) out.push(lane[i])
+    }
+  }
+  return out
+}
 
 const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
   .split(',')
@@ -88,15 +115,42 @@ Deno.serve(async (req: Request) => {
     { global: { headers: { 'x-app-source': 'gdo-report-bot' } } },
   )
 
-  const { data: rows, error } = await sb
-    .from(view)
-    .select('*')
-    .order('dump_ticket_date', { ascending: true })
-    .order('manifest_id', { ascending: true })
-    .limit(BATCH_CAP)
-  if (error) {
-    console.error('queue query failed:', error.message)
-    return json({ error: 'queue_query_failed' }, 500)
+  // LIVE: oldest first, capped, the DB decides. Unchanged since launch.
+  //
+  // DRY-RUN (2026-09-18, Fred: "i'd expect to read all kind when i do the
+  // dry-run if it's for testing"): the sample used to be the 25 OLDEST rows of
+  // v_derm_portal_dryrun, which are all Miami-Dade (Jan-Apr 2026). The view's
+  // Broward rows (2 of 49) sat past the cap, so a bot tested against dry-run had
+  // never once seen a yellow ticket. The sample is now newest-first within each
+  // jurisdiction and interleaved across them (broward, dade, broward, dade, dade
+  // ...), so every kind lands inside the cap whatever the counts. It is a
+  // SAMPLE, not a queue: no lease, no ordering contract, capped at the same 25.
+  let rows: Row[] | null
+  if (mode === 'live') {
+    const { data, error } = await sb
+      .from(view)
+      .select('*')
+      .order('dump_ticket_date', { ascending: true })
+      .order('manifest_id', { ascending: true })
+      .limit(BATCH_CAP)
+    if (error) {
+      console.error('queue query failed:', error.message)
+      return json({ error: 'queue_query_failed' }, 500)
+    }
+    rows = data
+  } else {
+    const { data, error } = await sb
+      .from(view)
+      .select('*')
+      .order('jurisdiction', { ascending: true })
+      .order('dump_ticket_date', { ascending: false })
+      .order('manifest_id', { ascending: true })
+      .limit(DRYRUN_SCAN_CAP)
+    if (error) {
+      console.error('dryrun query failed:', error.message)
+      return json({ error: 'queue_query_failed' }, 500)
+    }
+    rows = interleaveByJurisdiction(data ?? [], BATCH_CAP)
   }
 
   const sign = async (raw: string | null): Promise<string | null> => {
