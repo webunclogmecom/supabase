@@ -1,0 +1,51 @@
+name: Postman API docs drift
+
+# ───────────────────────────────────────────────────────────────────────────
+# postman/README.md is the contract an EXTERNAL developer (Jonathan's LWT / GDO
+# bot) builds against, and the Postman collection's Overview description is a
+# generated copy of it. Two things go stale silently and this job refuses both:
+#
+#   1. the README no longer names an error code / query param / row field the
+#      bot-facing endpoints emit            -> scripts/checks/api-doc-drift.js
+#   2. the collection's info.description is not the current README
+#                                           -> scripts/postman/sync_collection_description.js --check
+#
+# Fred, 2026-09-18, on finding the Postman overview still reading "THIS
+# DESCRIPTION IS A FROZEN SNAPSHOT FROM 2026-07-23 AND IS OUT OF DATE":
+# "everytime we do an update on the docs it should also update as well".
+# The fix for a red run is one command, printed by the failing check.
+#
+# No secrets: both checks read the repo only. Exit 1 = drift, exit 2 = the
+# check itself is broken; both fail the job on purpose.
+# ───────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'postman/**'
+      - 'supabase/functions/rpa-derm-*/**'
+      - 'scripts/checks/api-doc-drift.js'
+      - 'scripts/postman/**'
+      - '.github/workflows/postman-doc-drift.yml'
+  pull_request:
+    paths:
+      - 'postman/**'
+      - 'supabase/functions/rpa-derm-*/**'
+      - 'scripts/checks/api-doc-drift.js'
+      - 'scripts/postman/**'
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: README documents what the endpoints emit
+        run: node scripts/checks/api-doc-drift.js
+      - name: Collection description is the current README
+        run: node scripts/postman/sync_collection_description.js --check

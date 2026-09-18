@@ -1,0 +1,25 @@
+#!/bin/sh
+# Refuse a commit that changes postman/README.md (or the collection) while the collection's
+# generated description is stale. Enable once per clone: git config core.hooksPath .githooks
+# It never modifies or stages anything: it only says what to run.
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+case "$staged" in
+  *postman/README.md*|*postman/gdo-reporting-bot.postman_collection.json*|*sync_collection_description.js*)
+    # Check the STAGED content, not the working tree: a synced working copy that was not staged
+    # would otherwise let a stale collection through.
+    tmp=$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/pm-hook-$$")
+    mkdir -p "$tmp/postman" "$tmp/scripts/postman"
+    for f in postman/README.md postman/gdo-reporting-bot.postman_collection.json scripts/postman/sync_collection_description.js; do
+      if git cat-file -e ":$f" 2>/dev/null; then git show ":$f" > "$tmp/$f"; else cp "$f" "$tmp/$f"; fi
+    done
+    if ! node "$tmp/scripts/postman/sync_collection_description.js" --check >/dev/null 2>&1; then
+      echo "pre-commit: the Postman collection description is stale against postman/README.md." >&2
+      echo "            run: node scripts/postman/sync_collection_description.js" >&2
+      echo "            then: git add postman/gdo-reporting-bot.postman_collection.json" >&2
+      rm -rf "$tmp"
+      exit 1
+    fi
+    rm -rf "$tmp"
+    ;;
+esac
+exit 0

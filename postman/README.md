@@ -927,6 +927,17 @@ We send the key and the county portal login privately. You expose nothing to us 
 The collection in this folder (`gdo-reporting-bot.postman_collection.json`) is a ready-to-run test
 harness for the two endpoints above.
 
+🛑 **The collection's Overview description IS this file, generated, never hand-edited (since
+2026-09-18).** From 2026-07-23 to 2026-09-18 it was a pasted copy that nobody re-pasted, and it opened
+with a "FROZEN SNAPSHOT, OUT OF DATE" banner while this README moved eleven times. Now
+`node scripts/postman/sync_collection_description.js` writes this README into `info.description`
+(one line of the JSON changes, nothing else), `--check` refuses a stale copy, and both the pre-commit
+hook (`.githooks/pre-commit`, enabled with `git config core.hooksPath .githooks`) and the
+`postman-doc-drift` workflow run that check together with `scripts/checks/api-doc-drift.js`. So the
+routine after editing this file is: run the sync script, commit the collection with the README,
+re-import the collection into the Postman workspace (Import → file → **Replace**; the Replace resets
+`rpaBotKey`, paste it again). Relative links do not resolve inside Postman; the GitHub copy does.
+
 **Setup (once):** right-click the collection **UnclogMe - GDO Online Reporting Bot API** → **Edit** →
 **Variables** tab → paste your key into `rpaBotKey`'s **Current value** column → **Save**. The value is
 `RPA_BOT_KEY` in `Supabase/.env` (never commit it). Auth is one collection-level header
