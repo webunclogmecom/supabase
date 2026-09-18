@@ -229,8 +229,10 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
   It never stages or modifies anything. The `postman-doc-drift` workflow runs the same check in CI. Why:
   the Postman Overview read "THIS DESCRIPTION IS A FROZEN SNAPSHOT FROM 2026-07-23" for eight weeks
   while the README moved eleven times (Fred, 2026-09-18: "everytime we do an update on the docs it
-  should also update as well"). ⚠ The Postman WORKSPACE copy is still a manual re-import (file → Replace,
-  which resets `rpaBotKey`); the repo cannot push into Postman without a Postman API key.
+  should also update as well"). On a push to `main` the same workflow then PUSHES the collection into the
+  Postman workspace through the Postman API and reads it back (`scripts/postman/publish_collection.js`,
+  repository secret `POSTMAN_API_KEY`, uid pinned in the workflow), so no re-import is needed; a push
+  blanks the INITIAL value of `rpaBotKey`, which therefore lives in the `UnclogMe - RPA (Prod)` environment.
 - **Fred records his asks.** When he types `/speech-to-text`, open the recorder widget for him and,
   when he says he recorded it, read the transcript from the widget context. The exact tool names
   and the never-call-it-twice rule are in the root `CLAUDE.md`, section 3b (the workspace manual

@@ -10,13 +10,20 @@ name: Postman API docs drift
 #   2. the collection's info.description is not the current README
 #                                           -> scripts/postman/sync_collection_description.js --check
 #
+# Then, on a push to main (never on a PR), the checked collection is PUSHED to
+# the Postman workspace through the Postman API and read back
+#                                           -> scripts/postman/publish_collection.js
+# so the copy people open in Postman is the repo's, with a stable uid. Until
+# 2026-09-18 that copy was a hand re-import that minted a new uid every time.
+#
 # Fred, 2026-09-18, on finding the Postman overview still reading "THIS
 # DESCRIPTION IS A FROZEN SNAPSHOT FROM 2026-07-23 AND IS OUT OF DATE":
 # "everytime we do an update on the docs it should also update as well".
-# The fix for a red run is one command, printed by the failing check.
+# The fix for a red drift run is one command, printed by the failing check.
 #
-# No secrets: both checks read the repo only. Exit 1 = drift, exit 2 = the
-# check itself is broken; both fail the job on purpose.
+# Secrets: POSTMAN_API_KEY (repository secret, publish job only). The
+# collection uid is not a secret. Exit 1 = drift or a refused/unverified
+# push, exit 2 = the check itself is broken; both fail the job on purpose.
 # ───────────────────────────────────────────────────────────────────────────
 
 on:
@@ -36,6 +43,10 @@ on:
       - 'scripts/postman/**'
   workflow_dispatch:
 
+concurrency:
+  group: postman-doc-drift
+  cancel-in-progress: false
+
 jobs:
   drift:
     runs-on: ubuntu-latest
@@ -49,3 +60,23 @@ jobs:
         run: node scripts/checks/api-doc-drift.js
       - name: Collection description is the current README
         run: node scripts/postman/sync_collection_description.js --check
+
+  publish:
+    # Only from main, only after the checks, never from a PR (a fork PR has no secret anyway).
+    needs: drift
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Push the collection to the Postman workspace and read it back
+        env:
+          POSTMAN_API_KEY: ${{ secrets.POSTMAN_API_KEY }}
+          # "UnclogMe - GDO Online Reporting Bot API" in the Unclogme workspace
+          # (8033927e-349a-45a8-8a1f-8adb4c232946). Re-importing by file mints a new uid;
+          # if that ever happens again, update this value.
+          POSTMAN_COLLECTION_UID: 54570404-724901cd-3e00-4c44-99de-f41bdcfadd32
+        run: node scripts/postman/publish_collection.js

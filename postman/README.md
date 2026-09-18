@@ -933,10 +933,15 @@ with a "FROZEN SNAPSHOT, OUT OF DATE" banner while this README moved eleven time
 `node scripts/postman/sync_collection_description.js` writes this README into `info.description`
 (one line of the JSON changes, nothing else), `--check` refuses a stale copy, and both the pre-commit
 hook (`.githooks/pre-commit`, enabled with `git config core.hooksPath .githooks`) and the
-`postman-doc-drift` workflow run that check together with `scripts/checks/api-doc-drift.js`. So the
-routine after editing this file is: run the sync script, commit the collection with the README,
-re-import the collection into the Postman workspace (Import → file → **Replace**; the Replace resets
-`rpaBotKey`, paste it again). Relative links do not resolve inside Postman; the GitHub copy does.
+`postman-doc-drift` workflow run that check together with `scripts/checks/api-doc-drift.js`. **On a
+push to `main` the same workflow then pushes the collection into the Postman workspace through the
+Postman API and reads it back** (`scripts/postman/publish_collection.js`, key in the repository secret
+`POSTMAN_API_KEY`, collection uid pinned in the workflow), so the copy you open in Postman is the
+repo's within a minute of the push, under a stable uid. So the routine after editing this file is:
+run the sync script, commit the collection with the README, push. No re-import. ⚠ A push replaces the
+collection definition, so the INITIAL value of `rpaBotKey` is blank after every push: keep the key in
+the **`UnclogMe - RPA (Prod)` environment** (never touched by the push) and select it when you run.
+Relative links do not resolve inside Postman; the GitHub copy does.
 
 **Setup (once):** right-click the collection **UnclogMe - GDO Online Reporting Bot API** → **Edit** →
 **Variables** tab → paste your key into `rpaBotKey`'s **Current value** column → **Save**. The value is

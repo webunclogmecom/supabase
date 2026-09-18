@@ -17,9 +17,10 @@
  *   - `--check` refuses a stale copy, and is run by the pre-commit hook (.githooks/pre-commit) and by
  *     the postman-doc-drift workflow, so a README edit cannot be committed or merged without it.
  *
- * ⚠ The Postman WORKSPACE copy still has to be re-imported (Import -> file, then "Replace"); the
- *   repo cannot push into Postman without a Postman API key. The header line the script prepends
- *   names the README commit so a reader can tell which version they are looking at.
+ * ⚠ The Postman WORKSPACE copy is pushed by the postman-doc-drift workflow on every push to main
+ *   (scripts/postman/publish_collection.js, repository secret POSTMAN_API_KEY). Locally this script
+ *   only rewrites the file. The banner it prepends carries the README's "Last updated" stamp so a
+ *   reader can tell which version they are looking at.
  * ⚠ Relative links in the README (docs/..., ../Building Apps/...) do not resolve inside Postman.
  *   That is accepted: the text is what matters, and the GitHub copy is one click away.
  */
@@ -78,4 +79,4 @@ fs.writeFileSync(COLLECTION, out)
 let sha = 'uncommitted'
 try { sha = execSync('git log -1 --format=%h -- postman/README.md', { cwd: ROOT, encoding: 'utf8' }).trim() } catch { /* no git */ }
 console.log('WRITTEN: info.description <- postman/README.md (' + expected.length + ' chars; README last committed at ' + sha + ').')
-console.log('         Re-import the collection into the Postman workspace (Import -> file -> Replace) to publish it.')
+console.log('         Commit it with the README; the postman-doc-drift workflow pushes it to the Postman workspace from main.')
