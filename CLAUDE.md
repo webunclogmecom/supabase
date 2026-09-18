@@ -500,6 +500,49 @@ The one real tension is rule #6 (never hard-delete). Narrowing it would require 
 and **parent Building Apps rule #7 explicitly defers role-gated delete until auth roles land**, so
 changing it now would be a policy decision rather than a fix. Revisit with the role work, not before.
 
+### ✅ WHAT JOBBER'S OWN DOCS SAY ABOUT ERRORS, NULLS AND LIMITS (read 2026-09-18)
+
+**Fred, 2026-09-18: read `https://developer.getjobber.com/docs` alongside introspecting the schema.**
+Introspection says what EXISTS and a probe says what happened ONCE; only the docs state intent. The
+pages that matter here are **API Rate Limits**, **Handling API Errors** and **API Versioning**.
+⚠ The docs 403 to `WebFetch`; they render fine in the browser, which is how these were read.
+
+**1. A NULL FROM A FIND-BY-ID IS DOCUMENTED, AND IT HAS THREE CAUSES, NOT ONE.** Verbatim: a
+find-by-unique-identifier query is nullable *"because the item doesn't belong to the account, the
+item doesn't exist or the item has been deleted"*, and *"instead of causing the entire query to
+fail, only the requested field will return null"*. So reading `property(id:) -> null` as "gone" is
+the vendor's own semantics **only once you know the reply is an answer** - which is the whole point
+of the guards below.
+
+**2. 🛑 "This account is not active" USES SINGULAR `error`, NOT AN `errors` ARRAY, AND CARRIES NO
+`data` KEY.** Documented shape: `{"error": {"message": "This account is not active"}}`. Every
+`gql()` helper in this repo tests `Array.isArray(j.errors)`, which does **not** match it, so before
+the 2026-09-18 hardening that reply reached callers as `ok:true` with `data: undefined` and every
+`?.thing ? live : gone` branch read it as **absence**. This is independent vendor confirmation that
+the `!("data" in j)` guard is necessary and not belt-and-braces. The docs also say to treat this
+error as a disconnect and **stop making requests on that token**.
+- Same family, all carrying an `errors` array so they land as `rejected`: a permissions/scope miss
+  (`"data": null` + `"... was hidden due to permissions"`), an app disconnect (*"User has
+  disconnected this app from their account"*), a scalar coercion failure, and Jobber's own
+  **"Service temporarily unavailable"** - which is a TRANSIENT backend state that looks like a hard
+  refusal. ⇒ On a destructive path, never report a `rejected` as "nothing happened" without
+  re-reading; `save-client-property`'s remove arm does exactly that.
+
+**3. THERE ARE TWO RATE LIMITERS, AND THIS FILE ONLY KNEW ABOUT ONE.**
+- **DDoS middleware (Rack::Attack): 2,500 requests / 300 s, per APP+ACCOUNT, not per IP.** Exceeding
+  it returns **429**. This is a REQUEST-COUNT limit and is entirely independent of query cost, so a
+  fleet of cheap queries can trip it while the cost bucket looks healthy.
+- **Query cost: leaky bucket, `maximumAvailable` 10,000, `restoreRate` 500/s**, reported on every
+  reply under `extensions.cost.throttleStatus`. This matches what the poll already measures.
+- `requestedQueryCost` is an estimate and `actualQueryCost` is what is billed; the docs say they
+  differ because a query may return less than it asked for (measured here once at +53%).
+
+**4. WHAT THE DOCS DO *NOT* COVER, so a probe stays the only source.** There is no per-object
+reference in the docs nav (object docs live in GraphiQL's schema browser), and **nothing documents
+that `clientEdit(propertiesToDelete:)` cascades to the property's jobs.** That was established by
+running it on live Jobber (property + job both re-read `null`, `userErrors []`). ⇒ Docs = CONTRACT,
+live probe = BEHAVIOUR. Never let a doc page replace a probe on a destructive path.
+
 ### 🛑 JOBBER SHEDS LOAD WITH AN HTML "WAITING ROOM" AT **HTTP 200** — AND 12 OF OUR 13 CALLERS MISREAD IT (2026-08-13)
 
 Observed live: `POST https://api.getjobber.com/api/graphql` returned **HTTP 200**,
