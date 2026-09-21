@@ -49,7 +49,44 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 >   new body: exactly one request) and `relacl` asserted unchanged before and after. The table is still
 >   audit opt-out.
 
-**`ops.calendar_day_markers`** — 8 columns: `id`, `marker_date` (date), `marker_type`
+> **🚚 A START CAN BE PLACED BY TRUCK SINCE 2026-09-21** (`2026-09-21_1225_calendar_day_markers_start_by_truck`,
+> comment fix `2026-09-21_1520`; Fred: *"select between trucks ... the first visit of that truck that
+> day ... an ETA between the yard and that first visit ... the task on Jobber assigned to the person who
+> is assigned to that visit"*). App rule: `Building Apps/Visit Calendar/CLAUDE.md` 13p; plan:
+> `.../docs/specs/2026-09-21-start-pill-by-truck-plan.md`. DB facts:
+> - **Three new nullable columns**: `source_visit_id bigint REFERENCES public.visits(id) ON DELETE SET
+>   NULL` (the visit the Start was derived from), `eta_minutes integer CHECK (>= 0)` (the free-flow Doral
+>   Yard to that visit ETA that set the minute), `eta_computed_at timestamptz`. All NULL on End, Dump,
+>   driver-placed and legacy rows. On a hand edit of the time the app NULLs the two eta columns and
+>   KEEPS `source_visit_id` (DERIVED = `eta_minutes IS NOT NULL`).
+> - **A truck-placed Start carries BOTH `vehicle_id` and `employee_id`** (the driver read off the first
+>   visit's `driver_id`). 🛑 The edge fn decides the assignment model per row with
+>   `driverModel = employee_id != null || vehicle_id == null`, so a row with a truck and NO driver falls
+>   into the 2026-08-06 everyone-on-the-truck branch; the app refuses to place one (an uncrewed first
+>   visit is a refusal) and never writes `employee_id` NULL on a row that has a `vehicle_id`.
+> - **Two unique indexes now.** `calendar_day_markers_start_end_driver_uniq` is
+>   `(marker_date, employee_id, marker_type) NULLS NOT DISTINCT WHERE marker_type IN ('start','end') AND
+>   vehicle_id IS NULL` (every End, the driver-placed Starts); `calendar_day_markers_start_truck_uniq` is
+>   `(marker_date, vehicle_id) WHERE marker_type = 'start' AND vehicle_id IS NOT NULL` (one Start per
+>   TRUCK per day; the three legacy truck rows sit on distinct dates). So one person can hold two truck
+>   Starts on one day (two Jobber Tasks), and a 23505 on a truck-placed Start can only come from the
+>   truck index: the app's Replace dialog looks the blocking row up by (day, truck), never by driver.
+> - **The push guard is unchanged and must stay so**: `fn_push_marker_to_jobber` compares
+>   `marker_date, marker_type, minutes, vehicle_id, employee_id, dump_site`; an UPDATE that changes only
+>   the three new columns is NOT a Jobber change (a Recompute that lands on the same minute and driver
+>   pushes nothing, on purpose).
+> - **`jobber-push-task` v14**: a row carrying both ids is titled `Day Start (<truck>, <driver>)`, truck
+>   first, and assigned to the driver alone; a driver-placed row still reads `Day Start (<driver>)`
+>   (control 2026-09-21: marker 108 for Fred pushed as `Day Start (Fred)`).
+> - **`calculate-driving-time` v8** accepts `traffic: false` in the body and then reads/writes the
+>   `traffic_aware = false` bucket of `ops.route_leg_cache` (24 h TTL) with `TRAFFIC_UNAWARE`, whatever
+>   the clock says; the reply echoes `traffic_aware`. Only the literal `false` forces it. Measured on
+>   depot to property 162 at 14:11 ET: 41 min free-flow vs 47 min traffic-aware. That is the number a
+>   truck-placed Start stores, so the same Start placed at noon and at 9 PM lands on the same minute.
+> - Grants unchanged (`authenticated` INSERT/UPDATE/DELETE cover the new columns), audit still opt-out,
+>   `relacl` asserted equal in the migration's VERIFY.
+
+**`ops.calendar_day_markers`** — 8 columns (11 since 2026-09-21, see the block above): `id`, `marker_date` (date), `marker_type`
 (`start` / `end` / `dump`), `minutes` (smallint, **minutes past ET midnight, the exact minute, not a
 snapped slot**), `dump_site` (text, required iff `marker_type='dump'`), `vehicle_id` (bigint,
 **nullable and NULL is a supported value meaning "whole day, no truck"**), `created_at`, `updated_at`.
