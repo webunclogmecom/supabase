@@ -86,7 +86,7 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 > - Grants unchanged (`authenticated` INSERT/UPDATE/DELETE cover the new columns), audit still opt-out,
 >   `relacl` asserted equal in the migration's VERIFY.
 
-**`ops.calendar_day_markers`** — 8 columns (11 since 2026-09-21, see the block above): `id`, `marker_date` (date), `marker_type`
+**`ops.calendar_day_markers`**: 8 columns (11 since 2026-09-21, see the block above): `id`, `marker_date` (date), `marker_type`
 (`start` / `end` / `dump`), `minutes` (smallint, **minutes past ET midnight, the exact minute, not a
 snapped slot**), `dump_site` (text, required iff `marker_type='dump'`), `vehicle_id` (bigint,
 **nullable and NULL is a supported value meaning "whole day, no truck"**), `created_at`, `updated_at`.
