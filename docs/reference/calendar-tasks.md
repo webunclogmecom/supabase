@@ -57,7 +57,15 @@ nothing. Failures are non-200 `{ ok: false, code, message }` written for a dispa
 Task (`taskCreate` without `startAt`; `taskEdit` with `startAt: null, endAt: null, allDay: false`);
 the read-back requires no window in that case; a time without a date is refused (`22023` from the
 recorder, surfaced as a sentence). An empty assignee list on an edit **omits** `assignedTo` rather
-than stripping Jobber's assignment.
+than stripping Jobber's assignment. Since 2026-09-21 a stated `property_id` must belong to the task's
+client (the stated `client_id`, else the task's current client): `properties.client_id` is compared
+before any Jobber call, and the reply is `400 property_not_of_client` (`property_id`,
+`property_client_id`, `client_id` in the body) or `400 property_without_client` when a property is
+sent with no client at all. Existence alone used to be the only check, and the Calendar's task
+Property Select was sending a `client_locations` id as `property_id` (112-YA's location 95 is
+261-LC's property 95); the app is fixed the same day (Building Apps/Visit Calendar rule 11h) and the
+guard makes the door independent of the bundle. Measured before the guard: 20 tasks carried a
+property, all of the task's own client, so nothing had to be repaired.
 
 **`poll-calendar-tasks`** (the safety net, cron `calendar-task-poll`, every 5 minutes, service_role).
 Walks every GID we hold (open tasks, plus completed ones for 30 days) with pagination and a
@@ -133,3 +141,7 @@ The task drawer shows the same history list a visit has, read through `public.ge
    (`task_date IS NULL OR task_date BETWEEN range`).
 5. **Route-marker Tasks are not Calendar Tasks.** The discovery exclusion by `calendar_day_marker`
    link is what keeps a Start/End/Dump marker from being imported as a second task every cycle.
+6. **A property is attached through its client.** `save-calendar-task` refuses a `property_id` that
+   does not belong to the task's client (`property_not_of_client`) and one sent with no client at all
+   (`property_without_client`), before Jobber is touched. Any caller, not only the Calendar bundle,
+   goes through that check; do not weaken it to existence again.

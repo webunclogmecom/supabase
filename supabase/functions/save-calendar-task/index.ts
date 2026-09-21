@@ -7,6 +7,7 @@
 //
 //     push to Jobber  ->  READ THE TASK BACK to verify  ->  only then call the RPC
 //     on ANY failure: write NOTHING locally, return a typed error the app shows
+//     since 2026-09-21: a stated property_id must belong to the task's client (property_not_of_client)
 //
 // Fred, verbatim: "like a transaction ... if jobber gets an issue while completing it on our app,
 // then our app also shows that error so it can't be completed. I don't want discrepancies."
@@ -833,6 +834,34 @@ Deno.serve(async (req) => {
       const { data: found, error: fErr } = await db.from(table).select("id").eq("id", v).maybeSingle();
       if (fErr) return fail(500, "db_error", `${table} lookup failed: ${fErr.message}`);
       if (!found) return fail(400, "invalid_input", `${k} ${v} does not exist.`);
+    }
+
+    // ---- a stated property must belong to the task's client (2026-09-21) --------------------
+    // 🛑 Existence is not ownership. Until 2026-09-21 the Calendar's task Property Select was fed
+    // from ops.client_locations and sent the LOCATION id as property_id (112-YA's only location is
+    // client_locations 95 "Main", and public.properties 95 is 261-LC's "2200 West 8th Court");
+    // 414 of the 482 active location ids collide with another client's property id. The existence
+    // loop above passed such an id, and the GID lookup below would have attached the task to a
+    // stranger's property in Jobber. The app is fixed (Building Apps/Visit Calendar/CLAUDE.md rule
+    // 11h), but the door must not depend on the bundle: refuse here, before Jobber is touched.
+    // The client the property is checked against is the stated client_id, else the task's current
+    // client on an edit. A property with no client to belong to is refused too: Jobber attaches a
+    // property through its client (taskCreate takes both as args).
+    if (propertyId !== undefined && propertyId !== null) {
+      const effectiveClient = clientId !== undefined
+        ? clientId
+        : (cur?.client_id == null ? null : Number(cur.client_id));
+      if (effectiveClient === null) {
+        return fail(400, "property_without_client",
+          `property_id ${propertyId} was given without a client. A property is attached through its client: send client_id too, or no property. Nothing was saved.`);
+      }
+      const { data: prop, error: pErr } = await db.from("properties").select("id, client_id").eq("id", propertyId).maybeSingle();
+      if (pErr) return fail(500, "db_error", `properties lookup failed: ${pErr.message}`);
+      if (!prop || Number(prop.client_id) !== Number(effectiveClient)) {
+        return fail(400, "property_not_of_client",
+          `Property ${propertyId} does not belong to client ${effectiveClient}, so the task cannot be attached to it. Nothing was saved.`,
+          { property_id: propertyId, property_client_id: prop ? Number(prop.client_id) : null, client_id: effectiveClient });
+      }
     }
 
     // ---- assignees ---------------------------------------------------------------------------
