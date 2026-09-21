@@ -956,6 +956,33 @@ longer has their job), so do not read them as live examples — the same suppres
 deliberately left cancelled, because a standalone `VISIT_DESTROY` with no cascade and zero photos/manifest/invoice
 means a person deleted a mis-completed duplicate. Do not restore a batch because they share a symptom.
 
+### ✅ "UNSCHEDULE" A CALENDAR VISIT = `ops.unschedule_calendar_visit(p_visit_id)`, a request plus a soft delete in one transaction (2026-09-21)
+
+Fred (voice note): the visit drawer's Date & time section gets the same "Unschedule" button the task
+drawer has, moving the visit to the To Be Scheduled list. A visit cannot be dateless (`visit_date`
+NOT NULL by design, `2026-07-30_1156`), so the RPC (`2026-09-21_0925`) copies the visit into
+`ops.visit_requests` (+ services, locations, team, truck, title, notes, and the new column
+`unscheduled_from_visit_id`) and then calls `public.delete_calendar_visit`, whose `deleted_at`
+transition is what removes the visit from Jobber through the existing push. `authenticated` only.
+- **Services:** the visit's own `line_items` rows mapped back to the catalogue by title (that is how
+  `create_calendar_visit` writes them); a generated agreement visit has none, so it takes the job's
+  schedulable line items (the `client_service_options` code-prefix mapping), its own `service_type`
+  first, code 08 left out. An unmappable line item is a refusal, never a silent drop.
+- **The list now holds Service Agreement work too** (746 of 763 pending visits are agreement visits),
+  so `ops.v_visit_requests` gained `job_kind` ('SA' | 'SC'), `unscheduled_from_visit_id` and
+  `unscheduled_from_date` (appended), and `ops.update_visit_request` accepts Service Agreement
+  services when the request's JOB is an agreement. `create_visit_request` is unchanged.
+- 🛑 **It refuses the LAST future visit of an agreement** (`blocker=agreement_tail`):
+  `fn_generate_sa_visits` anchors on max(future visit_date) + frequency, so removing the tail lets the
+  nightly run put a visit back on that date while the request sits in the list. A mid-chain gap is
+  real until the request is scheduled. Measured at ship: 158 tail visits, 0 inside 60 days.
+- Every refusal is `22023`, MESSAGE = the plain sentence the app shows verbatim, DETAIL =
+  `blocker=<code> in ops.unschedule_calendar_visit` (the 2026-09-14 operator-message rule). The
+  twelve-case matrix (tail, mid-chain, re-run, an SC visit with prices/team/truck/locations, completed,
+  cancelled, skipped, closed job, no service, unknown line item, the update_visit_request widening
+  both ways, schedule back) ran in a rolled-back transaction before apply; the Jobber side was proven
+  live on 112-YA through the app (`Building Apps/Visit Calendar/docs/08-changelog.md` 2026-09-21 (c)).
+
 ### Soft-delete on visits (added 2026-05-29)
 
 `public.visits.deleted_at TIMESTAMPTZ` is set by
