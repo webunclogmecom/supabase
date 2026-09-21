@@ -1149,38 +1149,34 @@ Deno.serve(async (req: Request) => {
 
         let toEmail: string | null = testRecipient
         if (!toEmail) {
-          // ⚠ THE ORDER BY IS LOAD-BEARING — do not drop it as noise.
-          // This used to be a bare .limit(1) with NO ordering, so with more than one
-          // emailed contact the recipient of a client's DERM manifest was whichever
-          // row Postgres happened to return. That was survivable only because
-          // client_contacts was capped at one row per role per client (max 3).
-          // Migration 2026-07-30_0539 added per-property contacts for the Client App's
-          // "Add Contact", which makes multi-contact clients the normal case — so
-          // unordered selection would mean adding a contact could silently redirect a
-          // client-facing compliance email to a different person.
-          // Deterministic preference: client-level (property_id IS NULL) first, then
-          // the `primary` role, then oldest row. That is the narrowest reading of the
-          // previous intent ("the client's main email").
-          const { data: cc } = await sb
-            .from('client_contacts')
-            .select('email, property_id, contact_role, id')
-            .eq('client_id', clientId)
-            .not('email', 'is', null)
-            .neq('email', '')
-            .order('property_id', { ascending: true, nullsFirst: true })
-            // DESCENDING is deliberate, and it is the one line here that is easy to
-            // "tidy" into a bug. The role vocabulary is exactly three values, fixed by
-            // the CHECK in client.create_client_contact: accounting | city | primary.
-            // Descending alphabetical yields primary > city > accounting, so `primary`
-            // sorts FIRST. Ascending would put `accounting` first and send the client's
-            // DERM manifest to their bookkeeper. PostgREST cannot ORDER BY a CASE
-            // expression, so this ordering carries the preference. ⚠ If a fourth role is
-            // ever added, re-derive this rather than assuming it still holds.
-            .order('contact_role', { ascending: false })
-            .order('id', { ascending: true })
-            .limit(1)
-            .maybeSingle()
-          toEmail = cc?.email ?? null
+          // 🛑 WHO RECEIVES THIS IS ONE DEFINITION, AND IT LIVES IN THE DATABASE:
+          // client.fn_derm_recipient (migration 2026-09-21_1515). Do not re-inline it.
+          //
+          // History, because the reasoning is still load-bearing. This was once a bare
+          // .limit(1) with NO ordering, so with more than one emailed contact the recipient
+          // of a client's DERM manifest was whichever row Postgres happened to return —
+          // survivable only while client_contacts was capped at one row per role per client.
+          // 2026-07-30_0539 added per-property contacts, making multi-contact clients normal,
+          // so unordered selection meant adding a contact could silently redirect a
+          // client-facing compliance email. The fix was
+          //   order by property_id NULLS FIRST, contact_role DESC, id
+          // which put `primary` first ONLY because {accounting, city, primary} sorted that way
+          // DESCENDING — an invariant held up by the alphabet, in front of a regulator-facing
+          // email, with no CHECK constraint behind it and an identical copy in derm.visits.
+          // The function replaces that with an explicit rank, so an unknown fourth role sorts
+          // LAST instead of above `primary`. Verified equal on all 473 clients before shipping.
+          //
+          // ⚠ A LOOKUP FAILURE IS NOT "no email". Reporting it as no_email would silently
+          // skip a send and look identical to a client who genuinely has no address.
+          const { data: rec, error: recErr } = await sb
+            .schema('client')
+            .rpc('fn_derm_recipient', { p_client_id: clientId })
+          if (recErr) {
+            results.push({ manifest_id: id, status: 'skipped', reason: 'recipient_lookup_failed', client: clientCode })
+            await logSend(id, logClientId, null, null, 'skipped', `recipient_lookup_failed: ${recErr.message}`)
+            continue
+          }
+          toEmail = (rec as { email?: string | null } | null)?.email ?? null
         }
         if (!toEmail) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_email', client: clientCode }); await logSend(id, logClientId, null, null, 'skipped', 'no_email'); continue }
         logEmail = toEmail
