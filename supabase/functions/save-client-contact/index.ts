@@ -738,6 +738,22 @@ async function handlePromote(body: any, actor: string) {
   const clientId = Number(body.client_id);
   if (!Number.isInteger(clientId) || clientId <= 0) return fail("bad_request", "client_id is required.");
 
+  // Handing the badge BACK to the client record needs no Jobber write at all: the client's own
+  // email and phone are already whatever they are. Only the pointer moves. (It does NOT restore an
+  // address a previous promote overwrote - that is a separate edit, and pretending otherwise would
+  // be the kind of false success this function exists to avoid.)
+  if (body?.to_client_record === true) {
+    if (preview) {
+      return done({ action: "promote", preview: true, client_id: clientId, to_client_record: true,
+        person: { label: "the client record", email: null, phone: null, source: "client_record" },
+        refusal: null,
+        note: "The badge moves back to the client record. Nothing is written to Jobber, and the client's email and phone stay exactly as they are." });
+    }
+    const { error } = await db.from("clients").update({ primary_contact_ref: null }).eq("id", clientId);
+    if (error) return fail("db_error", `Could not move the primary back: ${error.message}`);
+    return done({ action: "promote", client_id: clientId, to_client_record: true, primary_contact_ref: null });
+  }
+
   const jRowId = body.jobber_contact_row_id != null ? Number(body.jobber_contact_row_id) : null;
   const oRowId = body.contact_id != null ? Number(body.contact_id) : null;
   if ((jRowId == null) === (oRowId == null)) {
@@ -843,10 +859,27 @@ async function handlePromote(body: any, actor: string) {
   catch (e) { return fail("jobber_unavailable", `Could not reach Jobber: ${e instanceof Error ? e.message : String(e)}`); }
 
   // ONE writer. Same drift guard, same verify, same rollback as a hand edit of the client record.
-  return await editClientRecord({
+  const res = await editClientRecord({
     token, gid: link.source_id as string, row: mirror, contactId: Number(mirror!.id),
     wantEmail, wantPhone, actor, via: `promote:${person.source}`,
   });
+
+  // 🛑 THE BADGE MOVES ONLY AFTER JOBBER IS VERIFIED. editClientRecord returns a 200 for refusals
+  // too, so read body.ok - the same rule the UI has to follow. If Jobber refused or the rollback
+  // ran, the pointer must NOT move, or the app would show a primary whose details never landed.
+  const out = await res.clone().json().catch(() => null);
+  if (out?.ok !== true) return res;
+
+  // clients.primary_contact_ref is the marker BECAUSE contact_role cannot be: that row is the
+  // poll's ON CONFLICT target, so moving contact_role mints a second primary within ~20 seconds.
+  const ref = person.source === "jobber" ? `jobber:${jRowId}` : `ours:${oRowId}`;
+  const { error: pErr } = await db.from("clients").update({ primary_contact_ref: ref }).eq("id", clientId);
+  if (pErr) {
+    return fail("record_failed",
+      `Jobber was updated and verified, but marking ${person.label} as the primary here failed ` +
+      `(${pErr.message}). The details did move in Jobber; refresh and set the primary again.`);
+  }
+  return done({ ...out, primary_contact_ref: ref, promoted: person.label });
 }
 
 Deno.serve(async (req) => {
