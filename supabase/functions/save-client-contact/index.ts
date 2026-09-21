@@ -184,6 +184,19 @@ const enumDesc = (raw: unknown, allowed: string[]) => {
   return allowed.includes(v) ? v : "MAIN";
 };
 
+// Jobber validates a phone it is given and refuses a number it cannot text when the object has
+// its SMS toggle on. Its own wording ("turn off the receives text messages toggle") is Jobber UI
+// jargon that means nothing to someone standing in our app, and it arrives on a PROMOTE as well
+// as on a hand edit, so translate it once here. Measured 2026-09-21 promoting a contact whose
+// phone was 555-555-5555.
+function explainJobberRefusal(raw: string, phone: string | null): string {
+  if (/cannot receive text messages|valid mobile phone/i.test(raw)) {
+    return `Jobber rejected the phone number${phone ? ` "${phone}"` : ""}: it will not accept a number that cannot receive texts while that contact has text messages switched on. ` +
+      `Use a real mobile number, or switch texting off for it in Jobber. Nothing was changed - the email did not move either, because both go in one call.`;
+  }
+  return `Jobber refused the contact change: ${raw}. Nothing was written on our side.`;
+}
+
 // pick the object Jobber treats as the primary; see the header note on the fallback
 const pickPrimary = <T extends { primary?: boolean }>(arr: T[] | null | undefined): T | null => {
   const a = Array.isArray(arr) ? arr : [];
@@ -455,7 +468,7 @@ async function handleEditJobberContact(body: any) {
       `Jobber did not accept the contact change (${mut.kind}): ${mut.detail}. Nothing was written on our side.`);
   }
   const uerr = ue(mut.data?.clientEdit);
-  if (uerr) return fail("jobber_rejected", `Jobber refused the contact change: ${uerr}. Nothing was written on our side.`);
+  if (uerr) return fail("jobber_rejected", explainJobberRefusal(uerr, wantPhone));
 
   // ---- RE-READ and VERIFY, never the mutation echo --------------------------------------------
   const after = await gql(token, Q_ONE_CONTACT, { id: link.source_id });
@@ -528,78 +541,18 @@ async function handleEditJobberContact(body: any) {
   return done({ action: "edit_jobber_contact", jobber_contact_row_id: rowId, jobber: "updated" });
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
-  if (req.method !== "POST") return fail("method", "POST only");
-
-  // AUTH — in-handler, NOT gateway verify_jwt (ES256 session tokens; the gateway
-  // rejects them with UNAUTHORIZED_ASYMMETRIC_JWT). Same gate as save-client-fields.
-  const m = (req.headers.get("authorization") ?? "").match(/^Bearer (.+)$/);
-  if (!m) return fail("forbidden", "Staff account required.");
-  const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
-  const actor = String(userData?.user?.email ?? "").toLowerCase();
-  if (userErr || !userData?.user?.id ||
-      (!actor.endsWith("@ayache.com") && !actor.endsWith("@unclogme.com"))) {
-    return fail("forbidden", "Staff account required.");
-  }
-
-  let body: any;
-  try { body = await req.json(); } catch { return fail("bad_request", "Invalid JSON body."); }
-
-  // action:"refresh" takes a client_id, not a contact_id, so it routes BEFORE the contact checks.
-  if (String(body?.action ?? "").trim().toLowerCase() === "refresh") {
-    return await handleRefresh(Number(body.client_id));
-  }
-  if (String(body?.action ?? "").trim().toLowerCase() === "edit_jobber_contact") {
-    return await handleEditJobberContact(body);
-  }
-
-  const contactId = Number(body.contact_id);
-  if (!Number.isInteger(contactId) || contactId <= 0) return fail("bad_request", "contact_id is required.");
-  const patch = body.patch ?? {};
-  const keys = Object.keys(patch);
-  if (keys.length === 0 || keys.some((k) => !["email", "phone"].includes(k))) {
-    return fail("bad_request",
-      "patch may contain only: email, phone. The contact's name follows the client name (Edit client); " +
-      "accounting and city contacts are saved by client.update_client_contact.");
-  }
-
-  // ---- load our side --------------------------------------------------------
-  const { data: row, error: rowErr } = await db.from("client_contacts")
-    .select("id, client_id, property_id, contact_role, name, email, phone").eq("id", contactId).maybeSingle();
-  if (rowErr) return fail("db_error", `Could not read the contact: ${rowErr.message}`);
-  if (!row) return fail("not_found", `Contact ${contactId} does not exist.`);
-
-  // This function exists ONLY for the class the RPC refuses. Anything else must go
-  // through client.update_client_contact, which already works and does not need Jobber.
-  const isClientPrimary = row.property_id === null && row.contact_role === "primary";
-  if (!isClientPrimary) {
-    return fail("not_primary",
-      `This is the ${row.contact_role} contact, which is ours and is saved directly — it does not go to Jobber. ` +
-      `Use the normal contact save.`);
-  }
-
-  const wantEmail = "email" in patch ? norm(patch.email) : null;
-  const wantPhone = "phone" in patch ? norm(patch.phone) : null;
-  if (wantEmail !== null && wantEmail !== "" && !EMAIL_RE.test(wantEmail)) {
-    return fail("bad_request", `That does not look like an email address: ${wantEmail}`, { field: "email" });
-  }
-  if (wantPhone !== null && wantPhone !== "" && digits(wantPhone).length < 7) {
-    return fail("bad_request", "That phone number looks too short.", { field: "phone" });
-  }
-
-  const { data: link } = await db.from("entity_source_links").select("source_id")
-    .eq("entity_type", "client").eq("source_system", "jobber").eq("entity_id", row.client_id).maybeSingle();
-  if (!link?.source_id) {
-    return fail("not_linked",
-      "This client has no live Jobber link, so a contact edit cannot be verified against Jobber. Fix the link first.");
-  }
-  const gid = link.source_id as string;
-
-  let token: string;
-  try { token = await getJobberToken(); }
-  catch (e) { return fail("jobber_unavailable", `Could not reach Jobber: ${e instanceof Error ? e.message : String(e)}`); }
-
+// ============================================================================
+// THE CLIENT-RECORD WRITE PATH, extracted so PROMOTE reuses it instead of becoming a
+// SECOND writer of the Jobber client's primary email and phone.
+//
+// 🛑 Exactly one piece of code may change those two values. Two writers means two drift
+// guards, two verifies and two rollbacks, and eventually a rollback fighting a rollback.
+// Promote decides WHO, then hands the same {email, phone} to this.
+async function editClientRecord(opts: {
+  token: string; gid: string; row: any; contactId: number;
+  wantEmail: string | null; wantPhone: string | null; actor: string; via?: string;
+}) {
+  const { token, gid, row, contactId, wantEmail, wantPhone, actor, via } = opts;
   // ---- READ Jobber: we need the email/phone GIDs, which we do not store -------
   const before = await gql(token, Q_CLIENT, { id: gid });
   if (!before.ok) return fail("jobber_unavailable", `Could not read the client from Jobber (${before.kind}): ${before.detail}`);
@@ -684,7 +637,7 @@ Deno.serve(async (req) => {
       `Jobber did not accept the contact change (${mut.kind}): ${mut.detail}. Nothing was written on our side.`);
   }
   const uerr = ue(mut.data?.clientEdit);
-  if (uerr) return fail("jobber_rejected", `Jobber refused the contact change: ${uerr}. Nothing was written on our side.`);
+  if (uerr) return fail("jobber_rejected", explainJobberRefusal(uerr, wantPhone));
 
   // ---- RE-READ and VERIFY — never trust the mutation echo ---------------------
   const after = await gql(token, Q_CLIENT, { id: gid });
@@ -757,9 +710,219 @@ Deno.serve(async (req) => {
   return done({
     contact_id: contactId,
     client_id: row.client_id,
+    via,
     email: wantEmail === null ? row.email : (wantEmail === "" ? null : wantEmail),
     phone: wantPhone === null ? row.phone : (wantPhone === "" ? null : wantPhone),
     pushed_to_jobber: true,
     actor,
   });
+}
+// ============================================================================
+// action:"promote" - make a person's details the client's own contact details.
+//
+// 🛑 JOBBER HAS NO PRIMARY-CONTACT FLAG. A 751-type schema sweep, with a positive control that
+// DID return Email.primary and ClientPhoneNumber.primary, found `primary` only on email and
+// phone objects; isBillingContact is a different boolean. So "primary contact" is OUR concept
+// and there is nothing in Jobber to set. Fred's decision (2026-09-21) is the only version Jobber
+// can express: promoting COPIES that person's email and phone onto the Jobber CLIENT's own
+// primary Email and ClientPhoneNumber. It is a copy, not a move - the person keeps their own.
+//
+// MEASURED, so the implementation can be simple: setting primary:true on a second email
+// AUTO-DEMOTES the first, in the same call, atomically. There is no two-primary window to guard
+// and no explicit demote to issue. (⚠ `description` does NOT move with it: "Main" stayed on the
+// demoted address. We deliberately leave descriptions alone.)
+//
+// AND IT GOES THROUGH editClientRecord, not its own write. One writer for those two values.
+async function handlePromote(body: any, actor: string) {
+  const preview = body?.preview === true;
+  const clientId = Number(body.client_id);
+  if (!Number.isInteger(clientId) || clientId <= 0) return fail("bad_request", "client_id is required.");
+
+  const jRowId = body.jobber_contact_row_id != null ? Number(body.jobber_contact_row_id) : null;
+  const oRowId = body.contact_id != null ? Number(body.contact_id) : null;
+  if ((jRowId == null) === (oRowId == null)) {
+    return fail("bad_request", "Pass exactly one of jobber_contact_row_id or contact_id.");
+  }
+
+  // ---- who is being promoted -------------------------------------------------------------
+  let person: { label: string; email: string | null; phone: string | null; source: string };
+  if (jRowId != null) {
+    const { data: p, error } = await db.from("client_jobber_contacts")
+      .select("id, client_id, name, first_name, last_name, email, phone, deleted_at")
+      .eq("id", jRowId).maybeSingle();
+    if (error) return fail("db_error", `Could not read the contact: ${error.message}`);
+    if (!p || p.deleted_at) return fail("not_found", "That contact no longer exists. Refresh the page.");
+    if (Number(p.client_id) !== clientId) return fail("bad_request", "That contact belongs to a different client.");
+    person = {
+      label: norm(p.name) || norm(`${p.first_name ?? ""} ${p.last_name ?? ""}`) || "this contact",
+      email: p.email, phone: p.phone, source: "jobber",
+    };
+  } else {
+    const { data: p, error } = await db.from("client_contacts")
+      .select("id, client_id, name, first_name, last_name, contact_role, property_id, email, phone")
+      .eq("id", oRowId).maybeSingle();
+    if (error) return fail("db_error", `Could not read the contact: ${error.message}`);
+    if (!p) return fail("not_found", "That contact does not exist.");
+    if (Number(p.client_id) !== clientId) return fail("bad_request", "That contact belongs to a different client.");
+    if (p.property_id === null && p.contact_role === "primary") {
+      return fail("already_primary", "That row IS the client record. There is nothing to promote.");
+    }
+    person = {
+      label: norm(p.name) || norm(`${p.first_name ?? ""} ${p.last_name ?? ""}`) || `the ${p.contact_role} contact`,
+      email: p.email, phone: p.phone, source: "ours",
+    };
+  }
+
+  // ---- refusals, IN THE FUNCTION so the UI is not the only guard ---------------------------
+  // 🛑 A COMMA-BEARING ADDRESS IS REFUSED. 20 of our 22 `city` rows hold several addresses in
+  // one string. Jobber stores whatever string it is given, the verify would compare equal and
+  // PASS, and the client's email of record would silently become "a@x, b@y, c@z" - which then
+  // reaches five ops.* views and every DERM send. Splitting it is a human decision.
+  const emailHasComma = (person.email ?? "").includes(",");
+  const hasSomething = norm(person.email) !== "" || norm(person.phone) !== "";
+
+  // ---- the mirror row (the client record) --------------------------------------------------
+  const { data: mirror } = await db.from("client_contacts")
+    .select("id, client_id, property_id, contact_role, name, email, phone")
+    .eq("client_id", clientId).is("property_id", null).eq("contact_role", "primary").maybeSingle();
+
+  // ---- what the DERM recipient is now, and would be after ----------------------------------
+  // Both lines come from client.fn_derm_recipient, the SAME function send-derm-email uses, so
+  // the dialog cannot claim one thing while the sender does another.
+  const { data: dermNow } = await db.schema("client").rpc("fn_derm_recipient", { p_client_id: clientId });
+  const { data: dermAfter } = await db.schema("client").rpc("fn_derm_recipient", {
+    p_client_id: clientId,
+    p_override_primary_email: norm(person.email) === "" ? null : person.email,
+  });
+  const nowEmail = (dermNow as any)?.email ?? null;
+  const afterEmail = (dermAfter as any)?.email ?? null;
+
+  const refusal =
+    emailHasComma ? { code: "multi_address",
+        message: `${person.label} holds several addresses in one field ("${person.email}"), and a client can only have one email in Jobber. Split it into separate contacts first.` }
+    : !hasSomething ? { code: "nothing_to_copy",
+        message: `${person.label} has no email and no phone, so there is nothing to copy onto the client record.` }
+    : !mirror ? { code: "no_client_record",
+        message: "This client has no contact details in Jobber yet, so there is nothing to promote onto. Add an email or phone with Edit client first." }
+    : null;
+
+  if (preview) {
+    return done({
+      action: "promote", preview: true, client_id: clientId,
+      person: { label: person.label, email: person.email, phone: person.phone, source: person.source },
+      client_record: mirror ? { contact_id: mirror.id, email: mirror.email, phone: mirror.phone } : null,
+      after: {
+        email: norm(person.email) === "" ? (mirror?.email ?? null) : person.email,
+        phone: norm(person.phone) === "" ? (mirror?.phone ?? null) : person.phone,
+      },
+      derm: { now: nowEmail, after: afterEmail, moves: nowEmail !== afterEmail },
+      // 🛑 a missing value is OMITTED, never cleared. Promote must not empty the client's phone
+      // just because the person it promotes has none.
+      keeps: {
+        email: norm(person.email) === "",
+        phone: norm(person.phone) === "",
+      },
+      refusal,
+    });
+  }
+
+  if (refusal) return fail(refusal.code, refusal.message);
+
+  const wantEmail = norm(person.email) === "" ? null : norm(person.email);
+  const wantPhone = norm(person.phone) === "" ? null : norm(person.phone);
+  if (wantEmail !== null && !EMAIL_RE.test(wantEmail)) {
+    return fail("bad_request", `${person.label}'s email does not look valid: ${wantEmail}`);
+  }
+
+  const { data: link } = await db.from("entity_source_links").select("source_id")
+    .eq("entity_type", "client").eq("source_system", "jobber").eq("entity_id", clientId).maybeSingle();
+  if (!link?.source_id) return fail("not_linked", "This client has no live Jobber link.");
+
+  let token: string;
+  try { token = await getJobberToken(); }
+  catch (e) { return fail("jobber_unavailable", `Could not reach Jobber: ${e instanceof Error ? e.message : String(e)}`); }
+
+  // ONE writer. Same drift guard, same verify, same rollback as a hand edit of the client record.
+  return await editClientRecord({
+    token, gid: link.source_id as string, row: mirror, contactId: Number(mirror!.id),
+    wantEmail, wantPhone, actor, via: `promote:${person.source}`,
+  });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
+  if (req.method !== "POST") return fail("method", "POST only");
+
+  // AUTH — in-handler, NOT gateway verify_jwt (ES256 session tokens; the gateway
+  // rejects them with UNAUTHORIZED_ASYMMETRIC_JWT). Same gate as save-client-fields.
+  const m = (req.headers.get("authorization") ?? "").match(/^Bearer (.+)$/);
+  if (!m) return fail("forbidden", "Staff account required.");
+  const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
+  const actor = String(userData?.user?.email ?? "").toLowerCase();
+  if (userErr || !userData?.user?.id ||
+      (!actor.endsWith("@ayache.com") && !actor.endsWith("@unclogme.com"))) {
+    return fail("forbidden", "Staff account required.");
+  }
+
+  let body: any;
+  try { body = await req.json(); } catch { return fail("bad_request", "Invalid JSON body."); }
+
+  // action:"refresh" takes a client_id, not a contact_id, so it routes BEFORE the contact checks.
+  if (String(body?.action ?? "").trim().toLowerCase() === "refresh") {
+    return await handleRefresh(Number(body.client_id));
+  }
+  if (String(body?.action ?? "").trim().toLowerCase() === "edit_jobber_contact") {
+    return await handleEditJobberContact(body);
+  }
+  if (String(body?.action ?? "").trim().toLowerCase() === "promote") {
+    return await handlePromote(body, actor);
+  }
+
+  const contactId = Number(body.contact_id);
+  if (!Number.isInteger(contactId) || contactId <= 0) return fail("bad_request", "contact_id is required.");
+  const patch = body.patch ?? {};
+  const keys = Object.keys(patch);
+  if (keys.length === 0 || keys.some((k) => !["email", "phone"].includes(k))) {
+    return fail("bad_request",
+      "patch may contain only: email, phone. The contact's name follows the client name (Edit client); " +
+      "accounting and city contacts are saved by client.update_client_contact.");
+  }
+
+  // ---- load our side --------------------------------------------------------
+  const { data: row, error: rowErr } = await db.from("client_contacts")
+    .select("id, client_id, property_id, contact_role, name, email, phone").eq("id", contactId).maybeSingle();
+  if (rowErr) return fail("db_error", `Could not read the contact: ${rowErr.message}`);
+  if (!row) return fail("not_found", `Contact ${contactId} does not exist.`);
+
+  // This function exists ONLY for the class the RPC refuses. Anything else must go
+  // through client.update_client_contact, which already works and does not need Jobber.
+  const isClientPrimary = row.property_id === null && row.contact_role === "primary";
+  if (!isClientPrimary) {
+    return fail("not_primary",
+      `This is the ${row.contact_role} contact, which is ours and is saved directly — it does not go to Jobber. ` +
+      `Use the normal contact save.`);
+  }
+
+  const wantEmail = "email" in patch ? norm(patch.email) : null;
+  const wantPhone = "phone" in patch ? norm(patch.phone) : null;
+  if (wantEmail !== null && wantEmail !== "" && !EMAIL_RE.test(wantEmail)) {
+    return fail("bad_request", `That does not look like an email address: ${wantEmail}`, { field: "email" });
+  }
+  if (wantPhone !== null && wantPhone !== "" && digits(wantPhone).length < 7) {
+    return fail("bad_request", "That phone number looks too short.", { field: "phone" });
+  }
+
+  const { data: link } = await db.from("entity_source_links").select("source_id")
+    .eq("entity_type", "client").eq("source_system", "jobber").eq("entity_id", row.client_id).maybeSingle();
+  if (!link?.source_id) {
+    return fail("not_linked",
+      "This client has no live Jobber link, so a contact edit cannot be verified against Jobber. Fix the link first.");
+  }
+  const gid = link.source_id as string;
+
+  let token: string;
+  try { token = await getJobberToken(); }
+  catch (e) { return fail("jobber_unavailable", `Could not reach Jobber: ${e instanceof Error ? e.message : String(e)}`); }
+
+  return await editClientRecord({ token, gid, row, contactId, wantEmail, wantPhone, actor });
 });
