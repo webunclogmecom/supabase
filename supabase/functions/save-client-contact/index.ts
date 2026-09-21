@@ -191,6 +191,137 @@ const pickPrimary = <T extends { primary?: boolean }>(arr: T[] | null | undefine
 };
 
 // ============================================================================
+// ============================================================================
+// action:"refresh" - mirror Jobber's REAL contacts into public.client_jobber_contacts.
+//
+// WHAT THESE ARE. A Jobber Client carries `contacts: ContactModelConnection`, people with their
+// own firstName/lastName/role/title/emails/phones/properties. They are NOT the rows in
+// public.client_contacts: that table holds the client-record mirror webhook-jobber synthesises,
+// plus the accounting/city rows we invented. Nothing here had ever read Jobber's contacts, so
+// 112-YA's ContactModel/135562 ("Mr. Yannick ayache", role QUOTE/INVOICE) was invisible in the
+// app while sitting in Jobber the whole time.
+//
+// READ-THROUGH, called when a client page opens. NOT on the poll:
+// - adding contacts(first:5) to webhook-jobber's client query takes it from 26 requested points
+//   to 166, and first:25 to 1094, against a 10,000 bucket restoring at 500/s, on a path replayed
+//   ~400x/day for data only a human looks at. Wrong trade.
+// - and keeping it out is what makes the poll STRUCTURALLY unable to touch this table: it cannot
+//   revert, duplicate or orphan a row it never selects.
+//
+// EVERY CONNECTION IS BOUNDED. Measured 2026-09-21: the same shape with the nested connections
+// unbounded costs 81,119 and is THROTTLED outright. Bounded it costs 22 actual / 755 requested.
+const CONTACT_PAGE = 25;
+const Q_CONTACTS = `query($id: EncodedId!) {
+  client(id: $id) {
+    id
+    contacts(first: ${CONTACT_PAGE}) {
+      totalCount
+      nodes {
+        id firstName lastName name role title isBillingContact
+        emails(first: 3) { nodes { address primary } }
+        phones(first: 3) { nodes { number primary } }
+        properties(first: 5) { nodes { id } }
+      }
+    }
+  }
+}`;
+
+// Jobber returns each contact's own emails/phones as CONNECTIONS (unlike Client.emails, which is
+// a plain list), so these take .nodes. Prefer the primary, fall back to the first.
+const pickNode = (conn: any): any => {
+  const a = Array.isArray(conn?.nodes) ? conn.nodes : [];
+  return a.find((x: any) => x?.primary === true) ?? a[0] ?? null;
+};
+
+async function handleRefresh(clientId: number) {
+  if (!Number.isInteger(clientId) || clientId <= 0) {
+    return fail("bad_request", "client_id is required for action:'refresh'.");
+  }
+  const { data: link, error: linkErr } = await db.from("entity_source_links").select("source_id")
+    .eq("entity_type", "client").eq("source_system", "jobber").eq("entity_id", clientId).maybeSingle();
+  if (linkErr) return fail("db_error", `Could not read the Jobber link: ${linkErr.message}`);
+  if (!link?.source_id) {
+    return fail("not_linked", "This client has no live Jobber link, so its Jobber contacts cannot be read.");
+  }
+
+  let token: string;
+  try { token = await getJobberToken(); }
+  catch (e) { return fail("jobber_unavailable", `Could not get a Jobber token: ${String(e)}`); }
+
+  const r = await gql(token, Q_CONTACTS, { id: link.source_id });
+  if (!r.ok) {
+    return fail("jobber_unavailable",
+      `Could not read this client's contacts from Jobber (${r.kind}): ${r.detail}. Nothing was changed.`);
+  }
+  const conn = r.data?.client?.contacts;
+  if (!conn) return fail("not_found_jobber", "Jobber has no client at that id - the link is stale.");
+
+  const nodes: any[] = Array.isArray(conn.nodes) ? conn.nodes : [];
+  const total = Number(conn.totalCount ?? nodes.length);
+  const nowIso = new Date().toISOString();
+
+  const rows = nodes.filter((n) => n?.id).map((n) => {
+    const em = pickNode(n.emails), ph = pickNode(n.phones);
+    return {
+      client_id: clientId,
+      jobber_contact_id: String(n.id),
+      first_name: n.firstName ?? null,
+      last_name: n.lastName ?? null,
+      name: n.name ?? null,
+      jobber_role: n.role ?? null,
+      title: n.title ?? null,
+      is_billing_contact: n.isBillingContact ?? null,
+      email: em?.address ?? null,
+      phone: ph?.number ?? null,
+      property_gids: (Array.isArray(n.properties?.nodes) ? n.properties.nodes : [])
+        .map((p: any) => p?.id).filter(Boolean),
+      // 🛑 CLEARING deleted_at IS MANDATORY, not tidiness. Without it a contact that is removed in
+      // Jobber and then added back stays soft-deleted here forever - the re-add-writer failure
+      // this estate has already paid for once.
+      deleted_at: null,
+      synced_at: nowIso,
+      updated_at: nowIso,
+    };
+  });
+
+  if (rows.length) {
+    const { error: upErr } = await db.from("client_jobber_contacts")
+      .upsert(rows, { onConflict: "jobber_contact_id" });
+    if (upErr) return fail("db_error", `Could not save this client's Jobber contacts: ${upErr.message}`);
+  }
+
+  // 🛑 THE REMOVAL PASS RUNS ONLY WHEN THE READ WAS COMPLETE. If Jobber reports more contacts than
+  // we asked for, or returned fewer nodes than it counted, we do NOT know who is missing versus
+  // merely unread - and retiring on a truncated read would soft-delete live people. Skip it and
+  // SAY SO in the response rather than letting a partial read look like a full one.
+  const complete = total <= CONTACT_PAGE && nodes.length === total;
+  let retired = 0;
+  if (complete) {
+    const keep = rows.map((x) => x.jobber_contact_id);
+    let qy = db.from("client_jobber_contacts")
+      .update({ deleted_at: nowIso, synced_at: nowIso })
+      .eq("client_id", clientId).is("deleted_at", null);
+    // PostgREST rejects an empty in.() list, and "Jobber has none" is a real, common state
+    // (432 of 490 clients), so that case retires everything we still hold for the client.
+    if (keep.length) qy = qy.not("jobber_contact_id", "in", `(${keep.map((k) => `"${k}"`).join(",")})`);
+    const { data: gone, error: delErr } = await qy.select("id");
+    if (delErr) return fail("db_error", `Could not retire removed contacts: ${delErr.message}`);
+    retired = gone?.length ?? 0;
+  }
+
+  return done({
+    action: "refresh",
+    client_id: clientId,
+    contacts: rows.length,
+    total_in_jobber: total,
+    complete,
+    truncated: !complete,
+    retired,
+    note: complete ? undefined
+      : `Jobber reports ${total} contacts and this read covers ${nodes.length}; removed contacts were NOT retired.`,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
   if (req.method !== "POST") return fail("method", "POST only");
@@ -208,6 +339,12 @@ Deno.serve(async (req) => {
 
   let body: any;
   try { body = await req.json(); } catch { return fail("bad_request", "Invalid JSON body."); }
+
+  // action:"refresh" takes a client_id, not a contact_id, so it routes BEFORE the contact checks.
+  if (String(body?.action ?? "").trim().toLowerCase() === "refresh") {
+    return await handleRefresh(Number(body.client_id));
+  }
+
   const contactId = Number(body.contact_id);
   if (!Number.isInteger(contactId) || contactId <= 0) return fail("bad_request", "contact_id is required.");
   const patch = body.patch ?? {};
