@@ -322,6 +322,212 @@ async function handleRefresh(clientId: number) {
   });
 }
 
+// ============================================================================
+// action:"edit_jobber_contact" - edit one of Jobber's REAL contact people.
+//
+// This is the path that finally makes Fred's ask true: first name, last name, role, email and
+// phone all round-trip, because a ContactModel genuinely has all of them. It is NOT the client
+// record: that is the mirror row and its email/phone go through the original path below.
+//
+// PROVEN BEFORE IT WAS BUILT (2026-09-21, live on 112-YA ContactModel/135562, rolled back):
+// clientEdit(contactsToEdit:[{id, emailsToEdit:[{id,address}], phonesToEdit:[{id,number}]}])
+// returns userErrors [] and the write LANDS, edited IN PLACE - the Email keeps its id, no new
+// object is minted. Introspection only proved the field exists; Jobber's docs never define
+// ContactModel at all, so the run was the only way to know.
+const Q_ONE_CONTACT = `query($id: EncodedId!) {
+  client(id: $id) {
+    id
+    contacts(first: ${CONTACT_PAGE}) {
+      totalCount
+      nodes {
+        id firstName lastName name role title isBillingContact
+        emails(first: 3) { nodes { id address description primary } }
+        phones(first: 3) { nodes { id number description primary } }
+        properties(first: 5) { nodes { id } }
+      }
+    }
+  }
+}`;
+
+const PERSON_FIELDS = ["first_name", "last_name", "role", "email", "phone"];
+
+async function handleEditJobberContact(body: any) {
+  const rowId = Number(body.jobber_contact_row_id);
+  if (!Number.isInteger(rowId) || rowId <= 0) {
+    return fail("bad_request", "jobber_contact_row_id is required for action:'edit_jobber_contact'.");
+  }
+  const patch = body.patch ?? {};
+  const keys = Object.keys(patch);
+  if (keys.length === 0 || keys.some((k) => !PERSON_FIELDS.includes(k))) {
+    return fail("bad_request", `patch may contain only: ${PERSON_FIELDS.join(", ")}.`);
+  }
+
+  const { data: row, error: rowErr } = await db.from("client_jobber_contacts")
+    .select("id, client_id, jobber_contact_id, first_name, last_name, jobber_role, email, phone, deleted_at")
+    .eq("id", rowId).maybeSingle();
+  if (rowErr) return fail("db_error", `Could not read the contact: ${rowErr.message}`);
+  if (!row) return fail("not_found", `Jobber contact row ${rowId} does not exist.`);
+  if (row.deleted_at) return fail("gone", "That contact no longer exists in Jobber. Refresh the page.");
+
+  const wantFirst = "first_name" in patch ? norm(patch.first_name) : null;
+  const wantLast  = "last_name"  in patch ? norm(patch.last_name)  : null;
+  const wantRole  = "role"       in patch ? norm(patch.role)       : null;
+  const wantEmail = "email"      in patch ? norm(patch.email)      : null;
+  const wantPhone = "phone"      in patch ? norm(patch.phone)      : null;
+  if (wantEmail !== null && wantEmail !== "" && !EMAIL_RE.test(wantEmail)) {
+    return fail("bad_request", `That does not look like an email address: ${wantEmail}`, { field: "email" });
+  }
+  if (wantPhone !== null && wantPhone !== "" && digits(wantPhone).length < 7) {
+    return fail("bad_request", "That phone number looks too short.", { field: "phone" });
+  }
+  if (wantFirst !== null && wantFirst === "" && wantLast !== null && wantLast === "") {
+    return fail("bad_request", "A contact needs a first or last name.");
+  }
+
+  const { data: link } = await db.from("entity_source_links").select("source_id")
+    .eq("entity_type", "client").eq("source_system", "jobber").eq("entity_id", row.client_id).maybeSingle();
+  if (!link?.source_id) return fail("not_linked", "This client has no live Jobber link.");
+
+  let token: string;
+  try { token = await getJobberToken(); }
+  catch (e) { return fail("jobber_unavailable", `Could not get a Jobber token: ${String(e)}`); }
+
+  // ---- READ Jobber first: we need the Email/Phone object ids, which we do not store ----------
+  const before = await gql(token, Q_ONE_CONTACT, { id: link.source_id });
+  if (!before.ok) {
+    return fail("jobber_unavailable", `Could not read the contact from Jobber (${before.kind}): ${before.detail}. Nothing was changed.`);
+  }
+  const findIn = (r: any) => (r?.data?.client?.contacts?.nodes ?? [])
+    .find((n: any) => String(n?.id) === String(row.jobber_contact_id));
+  const jc = findIn(before);
+  if (!jc) {
+    return fail("gone", "Jobber no longer has that contact. Refresh the page; it will disappear from the list.");
+  }
+  const curEmail = pickNode(jc.emails);
+  const curPhone = pickNode(jc.phones);
+
+  // 🛑 DRIFT GUARD, same posture as the client-record path: refuse rather than overwrite a value
+  // the user was never shown. An EMPTY stored value counts as drift when Jobber holds one - that
+  // exact conjunct is what made the client-record guard skippable and had to be removed there.
+  const drifted: string[] = [];
+  const cmp = (label: string, ours: unknown, theirs: unknown) => {
+    if (norm(ours).toLowerCase() !== norm(theirs).toLowerCase()) {
+      drifted.push(`${label} (we show "${norm(ours)}", Jobber has "${norm(theirs) || "none"}")`);
+    }
+  };
+  if (wantFirst !== null) cmp("first name", row.first_name, jc.firstName);
+  if (wantLast  !== null) cmp("last name",  row.last_name,  jc.lastName);
+  if (wantRole  !== null) cmp("role",       row.jobber_role, jc.role);
+  if (wantEmail !== null) cmp("email",      row.email,      curEmail?.address);
+  if (wantPhone !== null && digits(row.phone) !== digits(curPhone?.number)) {
+    drifted.push(`phone (we show "${row.phone ?? ""}", Jobber has "${curPhone?.number ?? "none"}")`);
+  }
+  if (drifted.length) {
+    return fail("stale_view",
+      `Jobber has changed since this page loaded, so saving could overwrite the wrong value: ${drifted.join("; ")}. ` +
+      `Refresh to pull Jobber's current values, then re-apply your edit.`, { drifted });
+  }
+
+  // ---- build the nested contactsToEdit --------------------------------------------------------
+  const attrs: Record<string, unknown> = { id: row.jobber_contact_id };
+  if (wantFirst !== null) attrs.firstName = wantFirst;
+  if (wantLast  !== null) attrs.lastName  = wantLast;
+  if (wantRole  !== null) attrs.role      = wantRole;
+  let emailAct: "none" | "add" | "edit" | "delete" = "none";
+  let phoneAct: "none" | "add" | "edit" | "delete" = "none";
+  if (wantEmail !== null) {
+    if (wantEmail === "") { if (curEmail) { attrs.emailsToDelete = [curEmail.id]; emailAct = "delete"; } }
+    else if (curEmail)    { attrs.emailsToEdit = [{ id: curEmail.id, address: wantEmail }]; emailAct = "edit"; }
+    else                  { attrs.emailsToAdd  = [{ address: wantEmail, description: "MAIN", primary: true }]; emailAct = "add"; }
+  }
+  if (wantPhone !== null) {
+    if (wantPhone === "") { if (curPhone) { attrs.phonesToDelete = [curPhone.id]; phoneAct = "delete"; } }
+    else if (curPhone)    { attrs.phonesToEdit = [{ id: curPhone.id, number: wantPhone }]; phoneAct = "edit"; }
+    else                  { attrs.phonesToAdd  = [{ number: wantPhone, description: "MAIN", primary: true }]; phoneAct = "add"; }
+  }
+  if (Object.keys(attrs).length === 1) {
+    return done({ code: "no_changes", message: "Nothing to change.", jobber_contact_row_id: rowId });
+  }
+
+  const mut = await gql(token, M_EDIT, { id: link.source_id, input: { contactsToEdit: [attrs] } });
+  if (!mut.ok) {
+    return fail(mut.kind === "rejected" ? "jobber_rejected" : "jobber_unavailable",
+      `Jobber did not accept the contact change (${mut.kind}): ${mut.detail}. Nothing was written on our side.`);
+  }
+  const uerr = ue(mut.data?.clientEdit);
+  if (uerr) return fail("jobber_rejected", `Jobber refused the contact change: ${uerr}. Nothing was written on our side.`);
+
+  // ---- RE-READ and VERIFY, never the mutation echo --------------------------------------------
+  const after = await gql(token, Q_ONE_CONTACT, { id: link.source_id });
+  const ja = after.ok ? findIn(after) : null;
+  const gotEmails: any[] = Array.isArray(ja?.emails?.nodes) ? ja.emails.nodes : [];
+  const gotPhones: any[] = Array.isArray(ja?.phones?.nodes) ? ja.phones.nodes : [];
+  const gotEmail = pickNode(ja?.emails), gotPhone = pickNode(ja?.phones);
+
+  const ok =
+    (wantFirst === null || norm(ja?.firstName) === wantFirst) &&
+    (wantLast  === null || norm(ja?.lastName)  === wantLast) &&
+    (wantRole  === null || norm(ja?.role)      === wantRole) &&
+    (wantEmail === null || (wantEmail === ""
+        ? (!curEmail || !gotEmails.some((e) => e?.id === curEmail.id))
+        : norm(gotEmail?.address).toLowerCase() === wantEmail.toLowerCase())) &&
+    (wantPhone === null || (wantPhone === ""
+        ? (!curPhone || !gotPhones.some((p) => p?.id === curPhone.id))
+        : digits(gotPhone?.number) === digits(wantPhone)));
+
+  if (!after.ok || !ja || !ok) {
+    // undo mirrors the action, for the same reason as the client-record path
+    const undo: Record<string, unknown> = { id: row.jobber_contact_id };
+    if (wantFirst !== null) undo.firstName = norm(jc.firstName);
+    if (wantLast  !== null) undo.lastName  = norm(jc.lastName);
+    if (wantRole  !== null) undo.role      = norm(jc.role);
+    if (emailAct === "edit" && curEmail) undo.emailsToEdit = [{ id: curEmail.id, address: curEmail.address }];
+    else if (emailAct === "add") {
+      const born = gotEmails.find((e) => norm(e?.address).toLowerCase() === String(wantEmail).toLowerCase());
+      if (born?.id) undo.emailsToDelete = [born.id];
+    } else if (emailAct === "delete" && curEmail) {
+      undo.emailsToAdd = [{ address: curEmail.address, description: enumDesc(curEmail.description, EMAIL_DESCRIPTIONS), primary: curEmail.primary === true }];
+    }
+    if (phoneAct === "edit" && curPhone) undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number }];
+    else if (phoneAct === "add") {
+      const born = gotPhones.find((p) => digits(p?.number) === digits(wantPhone));
+      if (born?.id) undo.phonesToDelete = [born.id];
+    } else if (phoneAct === "delete" && curPhone) {
+      undo.phonesToAdd = [{ number: curPhone.number, description: enumDesc(curPhone.description, PHONE_DESCRIPTIONS), primary: curPhone.primary === true }];
+    }
+    let undone = false;
+    if (Object.keys(undo).length > 1) {
+      const rb = await gql(token, M_EDIT, { id: link.source_id, input: { contactsToEdit: [undo] } });
+      undone = rb.ok && !ue(rb.data?.clientEdit);
+    }
+    return fail("verify_failed",
+      undone
+        ? "Jobber accepted the change but the re-read did not match; it was rolled back in Jobber (confirmed) and nothing was written on our side."
+        : "Jobber accepted the change but the re-read did not match, and the rollback could NOT be confirmed - Jobber's state is unknown. Open the client in Jobber to check. Nothing was written on our side.",
+      { rolled_back: undone });
+  }
+
+  // ---- only now, our side ---------------------------------------------------------------------
+  const nowIso = new Date().toISOString();
+  const { error: wErr } = await db.from("client_jobber_contacts").update({
+    first_name: ja.firstName ?? null,
+    last_name: ja.lastName ?? null,
+    name: ja.name ?? null,
+    jobber_role: ja.role ?? null,
+    title: ja.title ?? null,
+    is_billing_contact: ja.isBillingContact ?? null,
+    email: gotEmail?.address ?? null,
+    phone: gotPhone?.number ?? null,
+    synced_at: nowIso,
+    updated_at: nowIso,
+  }).eq("id", rowId);
+  if (wErr) {
+    return fail("db_error_after_jobber",
+      `The change is saved in Jobber but could not be written here: ${wErr.message}. Refresh the page to pull it back.`);
+  }
+  return done({ action: "edit_jobber_contact", jobber_contact_row_id: rowId, jobber: "updated" });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsPreflight(req) });
   if (req.method !== "POST") return fail("method", "POST only");
@@ -343,6 +549,9 @@ Deno.serve(async (req) => {
   // action:"refresh" takes a client_id, not a contact_id, so it routes BEFORE the contact checks.
   if (String(body?.action ?? "").trim().toLowerCase() === "refresh") {
     return await handleRefresh(Number(body.client_id));
+  }
+  if (String(body?.action ?? "").trim().toLowerCase() === "edit_jobber_contact") {
+    return await handleEditJobberContact(body);
   }
 
   const contactId = Number(body.contact_id);
