@@ -173,6 +173,17 @@ const norm = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim();
 const digits = (s: unknown) => String(s ?? "").replace(/\D/g, "");
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Jobber READS a description back capitalised ("Main", "Other", "Mobile") but the INPUT
+// enums are upper case. Re-adding an object we deleted with the value we read would be
+// rejected, so normalise, and fall back rather than send something the enum has never
+// heard of. Introspected 2026-09-21 at version 2026-04-16.
+const EMAIL_DESCRIPTIONS = ["MAIN", "WORK", "PERSONAL", "OTHER"];
+const PHONE_DESCRIPTIONS = ["MAIN", "WORK", "MOBILE", "HOME", "FAX", "OTHER"];
+const enumDesc = (raw: unknown, allowed: string[]) => {
+  const v = String(raw ?? "").trim().toUpperCase();
+  return allowed.includes(v) ? v : "MAIN";
+};
+
 // pick the object Jobber treats as the primary; see the header note on the fallback
 const pickPrimary = <T extends { primary?: boolean }>(arr: T[] | null | undefined): T | null => {
   const a = Array.isArray(arr) ? arr : [];
@@ -262,14 +273,18 @@ Deno.serve(async (req) => {
   // "Other" + non-primary "Main") alongside serena@unclogme.com, and 134 of 439 clients
   // (30.5%) hold more than one email. Picking the wrong one of three is a live risk, and
   // an equality check against what we displayed is the only thing standing in front of it.
+  // 🛑 AN EMPTY STORED VALUE IS DRIFT TOO. The `norm(row.email) !== ""` conjunct that used
+  // to sit here SKIPPED the guard exactly when we had nothing stored — so a save on a
+  // NULL-valued contact took the `curEmail` branch and OVERWROTE a Jobber address the user
+  // was never shown, which is the one outcome this guard exists to prevent. Both-empty is
+  // still not drift, because norm(undefined) === norm(null) === "".
   const drifted: string[] = [];
-  if (wantEmail !== null && norm(row.email) !== "" &&
+  if (wantEmail !== null &&
       norm(curEmail?.address).toLowerCase() !== norm(row.email).toLowerCase()) {
-    drifted.push(`email (we show "${row.email}", Jobber's primary is "${curEmail?.address ?? "none"}")`);
+    drifted.push(`email (we show "${row.email ?? ""}", Jobber's primary is "${curEmail?.address ?? "none"}")`);
   }
-  if (wantPhone !== null && digits(row.phone) !== "" &&
-      digits(curPhone?.number) !== digits(row.phone)) {
-    drifted.push(`phone (we show "${row.phone}", Jobber's primary is "${curPhone?.number ?? "none"}")`);
+  if (wantPhone !== null && digits(curPhone?.number) !== digits(row.phone)) {
+    drifted.push(`phone (we show "${row.phone ?? ""}", Jobber's primary is "${curPhone?.number ?? "none"}")`);
   }
   if (drifted.length) {
     return fail("stale_view",
@@ -279,25 +294,37 @@ Deno.serve(async (req) => {
   }
 
   // ---- build the add/edit/delete triples -------------------------------------
+  // ⚠ Remember WHICH of the three we chose. The undo below has to mirror the action: an
+  // ADD cannot be undone by an edit, and a DELETE cannot be undone by an edit on an id
+  // Jobber has already destroyed. Guessing "it was probably an edit" is what made two of
+  // the three branches report a false "Jobber's state is unknown".
+  type Act = "none" | "add" | "edit" | "delete";
+  let emailAct: Act = "none";
+  let phoneAct: Act = "none";
+
   const input: Record<string, unknown> = {};
   if (wantEmail !== null) {
     if (wantEmail === "") {
-      if (curEmail) input.emailsToDelete = [curEmail.id];
+      if (curEmail) { input.emailsToDelete = [curEmail.id]; emailAct = "delete"; }
     } else if (curEmail) {
       // description deliberately omitted so Jobber KEEPS whatever it has
       // (Main/Work/Personal/Other are all in live use across the fleet).
       input.emailsToEdit = [{ id: curEmail.id, address: wantEmail, primary: true }];
+      emailAct = "edit";
     } else {
       input.emailsToAdd = [{ address: wantEmail, description: "MAIN", primary: true }];
+      emailAct = "add";
     }
   }
   if (wantPhone !== null) {
     if (wantPhone === "") {
-      if (curPhone) input.phonesToDelete = [curPhone.id];
+      if (curPhone) { input.phonesToDelete = [curPhone.id]; phoneAct = "delete"; }
     } else if (curPhone) {
       input.phonesToEdit = [{ id: curPhone.id, number: wantPhone, primary: true }];
+      phoneAct = "edit";
     } else {
       input.phonesToAdd = [{ number: wantPhone, description: "MAIN", primary: true }];
+      phoneAct = "add";
     }
   }
   if (Object.keys(input).length === 0) {
@@ -316,21 +343,48 @@ Deno.serve(async (req) => {
   // ---- RE-READ and VERIFY — never trust the mutation echo ---------------------
   const after = await gql(token, Q_CLIENT, { id: gid });
   const ac = after.ok ? after.data?.client : null;
-  const gotEmail = pickPrimary<any>(ac?.emails);
-  const gotPhone = pickPrimary<any>(ac?.phones);
+  const emailList: any[] = Array.isArray(ac?.emails) ? ac.emails : [];
+  const phoneList: any[] = Array.isArray(ac?.phones) ? ac.phones : [];
+  const gotEmail = pickPrimary<any>(emailList);
+  const gotPhone = pickPrimary<any>(phoneList);
 
+  // 🛑 A CLEAR IS VERIFIED BY THE ID BEING ABSENT, NOT BY pickPrimary RETURNING NOTHING.
+  // pickPrimary falls back to `?? a[0]`, which is right for SELECTING and wrong for
+  // VERIFYING: on the 134 of 439 clients that hold more than one email, the survivor comes
+  // back, `!gotEmail` is false, and a clear that actually succeeded is rolled back and
+  // reported as verify_failed. 112-YA is in exactly that shape.
   const emailOk = wantEmail === null ? true
-    : wantEmail === "" ? !gotEmail
+    : wantEmail === "" ? (!curEmail || !emailList.some((e) => e?.id === curEmail.id))
     : norm(gotEmail?.address).toLowerCase() === wantEmail.toLowerCase();
   const phoneOk = wantPhone === null ? true
-    : wantPhone === "" ? !gotPhone
+    : wantPhone === "" ? (!curPhone || !phoneList.some((p) => p?.id === curPhone.id))
     : digits(gotPhone?.number) === digits(wantPhone);
 
   if (!after.ok || !emailOk || !phoneOk) {
     // roll Jobber back to exactly what we read before the mutation
+    // 🛑 THE UNDO MIRRORS THE ACTION. Undoing an ADD means DELETING the object we just
+    // created — and its id exists only in the re-read, never in `before`. Undoing a DELETE
+    // means RE-ADDING the captured values, because emailsToEdit on the id we destroyed is a
+    // guaranteed no-op that still reports success. The old code emitted an edit for all
+    // three, so an ADD produced an EMPTY undo object and a DELETE addressed a dead GID:
+    // both then said "the rollback could NOT be confirmed" when a real rollback existed.
     const undo: Record<string, unknown> = {};
-    if (wantEmail !== null && curEmail) undo.emailsToEdit = [{ id: curEmail.id, address: curEmail.address, primary: curEmail.primary === true }];
-    if (wantPhone !== null && curPhone) undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number, primary: curPhone.primary === true }];
+    if (emailAct === "edit" && curEmail) {
+      undo.emailsToEdit = [{ id: curEmail.id, address: curEmail.address, primary: curEmail.primary === true }];
+    } else if (emailAct === "add") {
+      const born = emailList.find((e) => norm(e?.address).toLowerCase() === String(wantEmail).toLowerCase());
+      if (born?.id) undo.emailsToDelete = [born.id];
+    } else if (emailAct === "delete" && curEmail) {
+      undo.emailsToAdd = [{ address: curEmail.address, description: enumDesc(curEmail.description, EMAIL_DESCRIPTIONS), primary: curEmail.primary === true }];
+    }
+    if (phoneAct === "edit" && curPhone) {
+      undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number, primary: curPhone.primary === true }];
+    } else if (phoneAct === "add") {
+      const born = phoneList.find((p) => digits(p?.number) === digits(wantPhone));
+      if (born?.id) undo.phonesToDelete = [born.id];
+    } else if (phoneAct === "delete" && curPhone) {
+      undo.phonesToAdd = [{ number: curPhone.number, description: enumDesc(curPhone.description, PHONE_DESCRIPTIONS), primary: curPhone.primary === true }];
+    }
     let undone = false;
     if (Object.keys(undo).length) {
       const rb = await gql(token, M_EDIT, { id: gid, input: undo });
