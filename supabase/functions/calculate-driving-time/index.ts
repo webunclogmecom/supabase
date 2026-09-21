@@ -21,6 +21,10 @@
 // console.warn, no toast, no "estimated" flag. So a number that reads as measured may be a default,
 // and the UI cannot tell. Ours renders nothing when it does not know. Silence, never a guess.
 //
+// REQUEST: { legs: [{from, to}], traffic?: false }. `traffic: false` (2026-09-21, the Start pill by
+// truck) forces the FREE-FLOW answer on every leg whatever the clock says, so a minute that becomes a
+// Jobber Task is reproducible; the reply's `traffic_aware` echoes what was actually used.
+//
 // AUTH: verify_jwt = true in config.toml, but that is only HALF a gate — the anon key is itself a
 // validly signed JWT, so the handler must also assert the ROLE. authenticated (the Visit Calendar,
 // which carries a real staff session) and service_role (cron/server callers) are allowed; anon is not.
@@ -123,11 +127,13 @@ async function resolveEndpoint(e: Endpoint, cache: { depot?: Point | null; dumps
 
 const r2 = (n: number) => Number(n.toFixed(2));   // ~1.1km cells; matches dump_eta_cache's ACTUAL rounding
 
-async function leg(o: Point, d: Point): Promise<{ minutes: number; distance_mi: number | null; source: string } | null> {
+// trafficAware is decided ONCE per request by the caller (see Deno.serve): the working-day rule, or
+// forced off by the body's `traffic: false`. Threading it through keeps the cache read, the Routes
+// call and the cache write on the same bucket, which is the whole point of the flag.
+async function leg(o: Point, d: Point, trafficAware: boolean): Promise<{ minutes: number; distance_mi: number | null; source: string } | null> {
   const key = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
   if (!key) { console.warn("[drive] GOOGLE_MAPS_API_KEY missing - drive time disabled"); return null; }
 
-  const trafficAware = trafficMattersNow();
   const oLat = r2(o.lat), oLng = r2(o.lng), dLat = r2(d.lat), dLng = r2(d.lng);
 
   // Same cell for origin and destination: a real leg of under ~1km. Routing it would spend a token to
@@ -225,12 +231,19 @@ Deno.serve(async (req) => {
     return json(req, { ok: false, error: "forbidden" }, 403);
   }
 
-  let body: { legs?: Array<{ from?: Endpoint; to?: Endpoint }> };
+  let body: { legs?: Array<{ from?: Endpoint; to?: Endpoint }>; traffic?: unknown };
   try { body = await req.json(); } catch { return json(req, { ok: false, error: "invalid json" }, 400); }
 
   const legs = Array.isArray(body?.legs) ? body.legs : [];
   if (legs.length === 0) return json(req, { ok: false, error: "no legs" }, 400);
   if (legs.length > MAX_LEGS) return json(req, { ok: false, error: `too many legs (max ${MAX_LEGS})` }, 400);
+
+  // `traffic: false` asks for the FREE-FLOW answer whatever the clock says (the Start pill by truck,
+  // 2026-09-21): the minute it derives becomes a Jobber Task, and a traffic-aware ETA taken at Monday
+  // lunchtime for a Wednesday morning would differ from the same request made at 9 PM. Only the
+  // literal `false` forces it; anything else keeps the working-day rule, so existing callers are
+  // untouched. It is echoed back as `traffic_aware` so the caller can prove which answer it got.
+  const trafficAware = body?.traffic === false ? false : trafficMattersNow();
 
   const cache: { depot?: Point | null; dumps?: Record<string, Point> } = {};
   const results: Array<Record<string, unknown> | null> = [];
@@ -241,12 +254,12 @@ Deno.serve(async (req) => {
     const o = await resolveEndpoint(l?.from ?? {}, cache);
     const d = await resolveEndpoint(l?.to ?? {}, cache);
     if (!o || !d) { results.push(null); continue; }   // unresolvable endpoint (e.g. no depot set) = unknown
-    results.push(await leg(o, d));
+    results.push(await leg(o, d, trafficAware));
   }
 
   return json(req, {
     ok: true,
-    traffic_aware: trafficMattersNow(),
+    traffic_aware: trafficAware,
     legs: results,     // null entries mean UNKNOWN. They must render as nothing, never as a number.
   });
 });

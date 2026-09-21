@@ -22,6 +22,10 @@
 // assignedTo even when it is empty, so a marker set back to Unassigned strips the previous driver from
 // the Task (the Calendar is the master; the Task's own text says "Edit it there, not here"). On a CREATE
 // an empty list is simply omitted. The read-back verifies the assignees, not only title and startAt.
+// A Start placed BY TRUCK (2026-09-21, the Start pill picks a truck and derives the driver from that
+// truck's first visit) carries BOTH vehicle_id and employee_id: the title names both, truck first
+// ("Day Start (Cloggy, Grecia)"), and the assignment is still the one driver. Only rows with both set
+// get the two-name title, so a driver-placed marker (vehicle_id NULL) reads exactly as before.
 //
 // LEGACY (rows placed before 2026-09-16: employee_id NULL, vehicle_id set) keep the previous rule,
 // EVERYONE ON THAT TRUCK THAT DAY (Fred, 2026-08-06): a Jobber Task assigns to PEOPLE and `assignedTo`
@@ -266,14 +270,19 @@ Deno.serve(async (req) => {
   if (!m) return json({ ok: false, error: `marker ${markerId} not found` }, 404);
 
   // Who the marker belongs to, for the title: the driver (2026-09-16 model), else the legacy truck.
+  // A Start placed BY TRUCK (2026-09-21) carries both, and its title names both, truck first:
+  // "Day Start (Cloggy, Grecia)". The assignment is still the driver's alone (driverModel below).
   const driverModel = m.employee_id != null || m.vehicle_id == null;
   let owner: string | null = null;
+  const truckName = m.vehicle_id
+    ? (await db.from("vehicles").select("name").eq("id", m.vehicle_id).maybeSingle()).data?.name ?? null
+    : null;
   if (m.employee_id != null) {
     const { data: e } = await db.from("employees").select("full_name").eq("id", m.employee_id).maybeSingle();
-    owner = e?.full_name ?? null;
-  } else if (m.vehicle_id) {
-    const { data: v } = await db.from("vehicles").select("name").eq("id", m.vehicle_id).maybeSingle();
-    owner = v?.name ?? null;
+    const driverName = e?.full_name ?? null;
+    owner = [truckName, driverName].filter(Boolean).join(", ") || null;
+  } else {
+    owner = truckName;
   }
 
   const startAt = etToUtcISO(m.marker_date, m.minutes);
