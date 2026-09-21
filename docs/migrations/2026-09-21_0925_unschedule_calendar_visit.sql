@@ -24,8 +24,10 @@
 --        the assigned driver first) and locations (visit_locations) into ops.visit_requests and its
 --        child tables, with unscheduled_from_visit_id (new column) pointing back at the visit;
 --     3. services: the visit's own line_items rows when it has any, mapped back to the catalogue by
---        title (that is how create_calendar_visit writes them; every one of the 17 pending Service
---        Call visits maps that way today), keeping quantity, unit price and description. A generated
+--        title (that is how create_calendar_visit writes them; of the 763 pending visits, 17 carry rows,
+--        one each, 16 on Service Call jobs and 1 on an agreement, and all 17 rows map by title; the
+--        grain was corrected forward on 2026-09-21, the first wording said 17 Service Call visits),
+--        keeping quantity, unit price and description. A generated
 --        agreement visit has NO line_items rows (737 of the 738 future ones, measured 2026-09-21), so
 --        it takes the job's schedulable line items instead (the same code-prefix mapping
 --        ops.client_service_options uses), the visit's own service_type first, code 08 (Warranty of
