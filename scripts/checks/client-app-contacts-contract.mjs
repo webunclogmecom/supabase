@@ -52,6 +52,16 @@ const PRESENT = [
   // already shipped and must not regress
   'contact_role', 'is_primary', 'jobber_contacts', 'edit_jobber_contact', 'promote', 'stale_view',
   'In Jobber', 'Not in Jobber',
+  // the drift banner INSTRUCTS rather than explains (2026-09-23). The star is deliberately never
+  // written to Jobber, so this sentence is the only thing that actually fixes a wrong prefill:
+  // a person types the address over it once and Jobber remembers. See
+  // Building Apps/Client App/docs/2026-09-22_jobber-star-decision.md.
+  'To fix it for good:', 'over the prefilled address before sending',
+  'Jobber remembers it from then on.',
+  // 🛑 the branch the instruction edit was told NOT to touch. It is here as a REGRESSION guard:
+  // the copy change altered the holder branch of that same ternary, and this is what proves the
+  // no-holder branch was not collateral damage.
+  'Tick Invoice and Quote approval on the right contact so we both agree.',
 ];
 
 const ABSENT = [
@@ -62,6 +72,13 @@ const ABSENT = [
   'It does not change who receives what',
   // the contact role retired on 2026-09-22; the server refuses it
   'value:"city"', "value:'city'",
+  // superseded by the instruction above. It explained and then stopped, which left the operator
+  // knowing the prefill was wrong and not knowing what to do about it.
+  'It will only change once someone in Jobber types a different address over the prefill on a send.',
+  // 🛑 stated a mechanism nobody here has observed. Jobber's memory is written by a send, but
+  // "the FIRST send decides it" is a finality we have never measured, and 0 of 461 clients are
+  // even in the empty-history state it describes.
+  'The first send from Jobber decides it.',
 ];
 
 const walk = async () => {
