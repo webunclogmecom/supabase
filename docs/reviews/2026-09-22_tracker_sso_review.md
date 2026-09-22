@@ -270,21 +270,31 @@ both shapes, watch until the old one stops being used, then close it.
 ## 6. What to put to him before scheduling any of this
 
 **37 in-scope tickets have no filing recorded with us** (measured 2026-09-22, `derm.v_lwt_monthly_rows`
-in scope, against `derm.v_lwt_ticket_reported`):
+in scope, against `derm.v_lwt_ticket_reported`). 🛑 **Read the split, not the total.** By month it is
+Jun 1, Jul 9, Aug 16, Sep 11, and framed that way it reads as a three-month compliance gap, which is
+wrong and which he could dismiss in one line. By ticket kind it is a different and much sharper finding:
 
-| offload month | in scope | recorded | **not recorded** |
+| | ever marked filed | not recorded | offload range of the unrecorded |
 |---|---|---|---|
-| Jan to May | 74 | 74 | 0 |
-| Jun | 11 | 10 | **1** |
-| Jul | 20 | 11 | **9** |
-| Aug | 16 | 0 | **16** |
-| Sep | 11 | 0 | **11** |
+| white (Miami-Dade offload) | **95** | 25 | 2026-07-27 to 2026-09-19 |
+| yellow (Broward offload) | **0** | **12** | 2026-06-11 to 2026-08-27 |
 
-⚠ **This does not prove August was not filed.** `reported` means we hold a mark-as-filed record, and
-the filing window is his invoice package, not our month. He may have filed and not posted
-`rpa-derm-monthly-filed`. **That ambiguity is the point**: today the only way we know whether a county
-report exists, and who filed it, is what he chooses to post back. That is the same weakness as reason
-(a), one level up, and it is worth more than the SSO button.
+- The **25 white** all offloaded **after 2026-07-25**, which is exactly where `SP00013840` ended. They
+  are the packages after that one and are simply not raised yet. Not a gap.
+- **No Broward ticket has ever been marked filed**, against 95 Miami-Dade ones that have. **All six**
+  unrecorded tickets that fall inside a period he has already filed are yellow: `306859` (06-11, inside
+  the Jan to Jun backfill) and `308792`, `306915`, `309661`, `309898`, `309944` (07-08 to 07-24, inside
+  the 06-28 to 07-25 package). That is systematic, not timing, and the innocent explanation is close to
+  hand: Broward gallons support only shipped on 2026-09-18.
+
+⚠ **This still does not prove the Broward side was never filed with the county.** `reported` means we
+hold a mark-as-filed record, and the filing window is his invoice package, not our month.
+**That ambiguity is the point**: today the only way we know whether a county report exists, and who
+filed it, is what the Reporter posts back. That is the same weakness as reason (a), one level up, and
+it is worth more than the SSO button.
+
+⚠ Unrelated but worth knowing before anyone quotes the September figure to him: one of the 11 September
+tickets (`111113`, 09-15) is **112-YA**, our own sanctioned test client.
 
 Also open from 2026-09-18 and never answered: whether he wants `month=` or `unreported=1` for the
 period, and the Cloggy no-decal case on ticket 310590.
