@@ -273,6 +273,15 @@ async function handleRefresh(clientId: number) {
   const total = Number(conn.totalCount ?? nodes.length);
   const nowIso = new Date().toISOString();
 
+  // 🛑 THIS PAYLOAD IS AN ARRAY, SO EVERY `?? null` BELOW IS LOAD-BEARING, NOT TIDINESS.
+  // postgrest-js sends `?columns=<union of Object.keys over every element>`, and PostgREST NULLs
+  // that column on any row whose object lacked the key. Because every field here is `?? null`,
+  // no key is ever `undefined`, all elements carry an identical key set, and the union equals
+  // each row's own keys. Change one to a bare `n.foo?.bar` and JSON.stringify drops it for the
+  // rows where it is undefined while the union still lists it - that column then gets NULLed on
+  // exactly those rows, silently. person_role / person_role_other are safe here only because
+  // they are in no key at all. See Supabase/CLAUDE.md, "A PostgREST .upsert() WITH AN ARRAY
+  // PAYLOAD" for the measurement.
   const rows = nodes.filter((n) => n?.id).map((n) => {
     const em = pickNode(n.emails), ph = pickNode(n.phones);
     return {

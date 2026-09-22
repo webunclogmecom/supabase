@@ -598,6 +598,17 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
   // still de-duplicates to exactly one client-level `primary` row per client
   // (verified: after this upsert the row count stays 1, it does not become 2).
   if (primaryEmail || primaryPhone) {
+    // 🛑 THIS MUST STAY A SINGLE OBJECT, NOT AN ARRAY, AND THAT IS NOT A STYLE POINT.
+    // postgrest-js's upsert() has an `if (Array.isArray(values))` branch that reduces
+    // Object.keys over EVERY element and sends the UNION as `?columns=`. PostgREST then puts
+    // every column in that union into ON CONFLICT DO UPDATE SET, and any element lacking the
+    // key is written NULL. With a single object the union path never runs, so a column absent
+    // from these six keys survives. That is the entire reason client_contacts.person_role
+    // (and person_role_other) cannot be cleared by the */5 poll - measured 2026-09-22 against
+    // the real transport, and readable in pg_stat_statements as a six-column DO UPDATE SET.
+    // Wrapping this in [ ] to batch contacts would silently break it. `defaultToNull:false`
+    // does NOT mitigate it, because those columns default to NULL.
+    // See Supabase/CLAUDE.md, "A PostgREST .upsert() WITH AN ARRAY PAYLOAD".
     const contactRow = {
       client_id: entityId,
       property_id: null,

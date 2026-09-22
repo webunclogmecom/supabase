@@ -876,6 +876,63 @@ though reportlab already drags it in. **Depend on what you import.**
 ⚠ It also refuses its own output unless that output is smaller, starts with `%PDF`, re-parses and
 keeps the page count. "It ran without raising" is not evidence it helped.
 
+### 🛑 A PostgREST `.upsert()` WITH AN **ARRAY** PAYLOAD NULLS COLUMNS THAT ARE IN NO OBJECT'S KEYS (2026-09-22)
+
+The rule everyone relies on is *"`.update(obj)` / `.upsert(obj)` SET only the object's keys, so a
+column absent from the payload survives."* **That is true for a SINGLE OBJECT and false for an
+ARRAY**, and the difference is one character at the call site.
+
+`postgrest-js`'s `upsert()` has an `if (Array.isArray(values))` branch that reduces `Object.keys(x)`
+over **every** element and puts the **UNION** into `?columns=`. PostgREST then places every column in
+that union into the INSERT column list and therefore into `ON CONFLICT DO UPDATE SET`, and any
+element that lacks the key is written as **NULL**.
+
+Measured on Prod against a throwaway table with the real library (supabase-js 2.112.3, PostgREST
+14.5), constraint shaped like `client_contacts_client_property_role_key`:
+
+```
+.upsert({k1:'A', name:'x'}, {onConflict:'k1,k2'})                     -> person_role 'owner' SURVIVES
+.upsert({k1:'A', name:'x', person_role:null}, ...)                    -> cleared          (control)
+.upsert([{k1:'A', name:'x'}, {k1:'C', name:'y', person_role:'z'}],...)
+   wire: ?on_conflict=k1%2Ck2&columns="k1","k2","name","person_role"
+                                                                      -> row A's person_role
+                                                                         'owner' -> NULL,
+                                                                         and 'person_role' is in
+                                                                         ZERO keys of object A
+```
+
+🛑 **`defaultToNull:false` (`Prefer: missing=default`) does NOT save you** when the column's default
+is NULL, which it is for every column added by a plain `ADD COLUMN`. Measured: same clear.
+
+**What this means here, and why nothing is broken today:**
+
+| call site | shape | why it is safe |
+|---|---|---|
+| `webhook-jobber/index.ts` handleClient -> `client_contacts` | **single object**, 6 keys | the union path never runs. **Wrapping it in `[ ]` to batch contacts would silently turn it on.** |
+| `save-client-contact/index.ts` `action:'refresh'` -> `client_jobber_contacts` | **array**, 14 keys | already gets a `columns=` union. Safe ONLY because every field in that `.map()` uses `?? null`, so no key is ever `undefined` and every element has an identical key set. Change one to a bare `n.foo?.bar` and that column gets NULLed on the rows where it is undefined. |
+
+⇒ **When you add a column to a table an edge function upserts into, the question is not "is the new
+column in the payload" but "is the payload an ARRAY, and do all its elements have identical keys".**
+A `?? null` in a `.map()` is load-bearing, not tidiness.
+
+✅ **THE EMITTED SQL IS READABLE AND NOBODY WAS READING IT.** `pg_stat_statements` is installed on
+Prod and holds the literal statement PostgREST sent, which settles this class of question directly
+instead of by inference:
+
+```sql
+select left(query, 340), calls, rows from pg_stat_statements
+ where query like '%<table>%' and (query like '%INSERT%' or query like '%UPDATE%')
+ order by calls desc;
+```
+
+For `client_contacts` it returns a six-column INSERT with a six-column `DO UPDATE SET` over 1,200
+calls. ⚠ It is a capped, evictable buffer (reset 2026-09-03), so **presence is strong evidence and
+absence is weak** — a statement that ran rarely may simply have been evicted.
+
+⚠ And `audit.logs` **cannot** settle it: `audit.log_change` returns early when the cleaned old and
+new rows are identical, so an upsert that writes NULL over an already-NULL column leaves no audit row
+at all. Test with a **non-null sentinel**, or the trail is silent for the exact case you are probing.
+
 ## Column-name gotchas
 
 Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Most-repeated mistakes:
