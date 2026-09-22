@@ -395,10 +395,17 @@ Deno.serve(async (req) => {
         count: cat === "quotes" ? (counts.open_quotes ?? null)
           : cat === "invoices" ? (counts.unresolved_invoices ?? null)
           : null,
+        // The actual rows, so the operator is told WHICH quote or invoice to clear instead of being
+        // sent to hunt. Absent for work_requests, which are not in our DB at all. An empty array here
+        // means "we could not name them", never "there are none": Jobber's userError is what says a
+        // blocker exists.
+        items: cat === "quotes" ? (counts.quote_items ?? [])
+          : cat === "invoices" ? (counts.invoice_items ?? [])
+          : [],
       }));
       const human = blockers.map((c) => BLOCKER_LABEL[c]).join(", ");
       return fail("archive_blocked_preconditions",
-        `${label} cannot be archived yet: Jobber still has open ${human}. These cannot be cleared from here — open the client in Jobber and archive/convert/delete the quotes and work requests and mark the invoices paid, void or bad debt, then retry. Nothing was changed here.`,
+        `${label} cannot be archived yet: Jobber still has open ${human}. These cannot be cleared from here. Open the client in Jobber and archive/convert/delete the quotes and work requests and mark the invoices paid, void or bad debt, then retry. Nothing was changed here.`,
         { blockers: detail, jobber_error: aerr, jobs_closed: closed });
     }
     return fail("archive_failed", `Jobber refused: ${aerr}`, { jobs_closed: closed });
@@ -516,23 +523,100 @@ function parseArchiveBlockers(msg: string): string[] {
 // Verified against 112-YA (client 381) 2026-09-01: 7 open quotes, 1 unresolved invoice. NOT IN also
 // excludes NULL-status rows, the conservative direction for a convenience count. Jobber Requests are
 // NOT in our DB, so they are never counted — they come only from the parsed userError text.
+// 🛑 IT NOW RETURNS THE ITEMS, NOT ONLY A COUNT (2026-09-22). Diego hit this on 176-SOU and could not
+// act on it: the reply said "Jobber still has open quotes, invoices" and nothing else, so the operator
+// had to go and hunt for which ones. The blockers are in OUR database with a 100% Jobber link rate
+// (measured: 265/265 quotes, 2631/2631 invoices), so naming them costs one extra select each.
+//
+// ⚠ The counts stay EXACTLY as they were and keep their meaning: null means "not counted", never
+// "zero". `items` is best-effort in the same way, and a missing `items` must never be read as "there
+// are none" - the categories come from Jobber's own userError, which is the authority on whether a
+// blocker exists. Our rows only say WHICH.
+//
+// ⚠ The URL patterns were verified live in Jobber on 2026-09-22, not assumed:
+//   gid://Jobber/Quote/52743720   -> https://secure.getjobber.com/quotes/52743720
+//                                    (tab title "Quote for What Soup - 176-SOU - Jobber")
+//   gid://Jobber/Invoice/165813891 -> https://secure.getjobber.com/invoices/165813891
+// Per the parent CLAUDE.md rule 1b the id comes from entity_source_links, NEVER from the visible
+// number, and an item with no link renders without one rather than as a dead link.
+type BlockerItem = {
+  kind: "quote" | "invoice";
+  number: string | null;
+  status: string | null;
+  total: number | null;
+  outstanding: number | null;
+  title: string | null;
+  url: string | null;
+};
+
+async function jobberUrlsFor(
+  entityType: "quote" | "invoice",
+  ids: number[],
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (!ids.length) return out;
+  try {
+    const { data, error } = await db.from("entity_source_links")
+      .select("entity_id,source_id")
+      .eq("entity_type", entityType).eq("source_system", "jobber")
+      .in("entity_id", ids);
+    if (error || !data) return out;
+    const seg = entityType === "quote" ? "quotes" : "invoices";
+    for (const row of data as Array<{ entity_id: number; source_id: string }>) {
+      try {
+        const m = /^gid:\/\/Jobber\/\w+\/(\d+)$/.exec(atob(row.source_id));
+        if (m) out.set(row.entity_id, `https://secure.getjobber.com/${seg}/${m[1]}`);
+      } catch { /* a malformed link just means no url for that row */ }
+    }
+  } catch { /* no urls, never fail the response */ }
+  return out;
+}
+
 async function countArchiveBlockers(
   clientId: number,
-): Promise<{ open_quotes?: number; unresolved_invoices?: number }> {
-  const out: { open_quotes?: number; unresolved_invoices?: number } = {};
+): Promise<{ open_quotes?: number; unresolved_invoices?: number; quote_items?: BlockerItem[]; invoice_items?: BlockerItem[] }> {
+  const out: { open_quotes?: number; unresolved_invoices?: number; quote_items?: BlockerItem[]; invoice_items?: BlockerItem[] } = {};
   try {
-    const { count, error } = await db.from("quotes")
-      .select("id", { count: "exact", head: true })
+    const { data, count, error } = await db.from("quotes")
+      .select("id,quote_number,quote_status,total,title", { count: "exact" })
       .eq("client_id", clientId)
-      .not("quote_status", "in", "(archived,converted)");
+      .not("quote_status", "in", "(archived,converted)")
+      .order("quote_number", { ascending: true })
+      .limit(25);
     if (!error && typeof count === "number") out.open_quotes = count;
+    if (!error && data) {
+      const urls = await jobberUrlsFor("quote", data.map((r: { id: number }) => r.id));
+      out.quote_items = (data as Array<Record<string, unknown>>).map((r) => ({
+        kind: "quote" as const,
+        number: (r.quote_number as string) ?? null,
+        status: (r.quote_status as string) ?? null,
+        total: r.total == null ? null : Number(r.total),
+        outstanding: null,
+        title: ((r.title as string) ?? "").trim() || null,
+        url: urls.get(r.id as number) ?? null,
+      }));
+    }
   } catch { /* omit the count, never fail the response */ }
   try {
-    const { count, error } = await db.from("invoices")
-      .select("id", { count: "exact", head: true })
+    const { data, count, error } = await db.from("invoices")
+      .select("id,invoice_number,invoice_status,total,outstanding_amount,subject", { count: "exact" })
       .eq("client_id", clientId)
-      .not("invoice_status", "in", "(paid,void,bad_debt)");
+      .not("invoice_status", "in", "(paid,void,bad_debt)")
+      .order("invoice_number", { ascending: true })
+      .limit(25);
     if (!error && typeof count === "number") out.unresolved_invoices = count;
+    if (!error && data) {
+      const urls = await jobberUrlsFor("invoice", data.map((r: { id: number }) => r.id));
+      out.invoice_items = (data as Array<Record<string, unknown>>).map((r) => ({
+        kind: "invoice" as const,
+        number: (r.invoice_number as string) ?? null,
+        status: (r.invoice_status as string) ?? null,
+        total: r.total == null ? null : Number(r.total),
+        outstanding: r.outstanding_amount == null ? null : Number(r.outstanding_amount),
+        title: ((r.subject as string) ?? "").trim() || null,
+        url: urls.get(r.id as number) ?? null,
+      }));
+    }
   } catch { /* omit the count, never fail the response */ }
   return out;
 }
