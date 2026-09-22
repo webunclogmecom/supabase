@@ -624,7 +624,37 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
 
   // Upsert billing property from Jobber address
   if (addr?.street || addr?.city) {
-    // Find existing billing property for this client
+    // 🛑 SKIP ENTIRELY WHEN A LIVE SERVICE PROPERTY ALREADY HOLDS THIS ADDRESS (2026-09-22).
+    // Fred: "we need to make sure we only have one property shown ... I don't need a second property
+    // that cannot be seen." Until today this branch minted a billing twin for every client, and 454 of
+    // the 471 that existed were an exact address duplicate of a service property, invisible in every
+    // app because each one filters them back out. They were merged and soft-deleted by
+    // docs/migrations/2026-09-22_1749_merge_billing_twin_properties.sql; this guard is what stops the
+    // next CLIENT_UPDATE recreating them. The 17 whose address is genuinely different are KEPT, which
+    // is exactly the case this check lets through.
+    const normAddr = (s: unknown) =>
+      String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ')
+    const billingAddr = normAddr(addr.street)
+    if (billingAddr !== '') {
+      const { data: liveService } = await supabase
+        .from('properties')
+        .select('id,address')
+        .eq('client_id', entityId)
+        .eq('is_billing', false)
+        .is('deleted_at', null)
+      if ((liveService ?? []).some((p) => normAddr((p as { address?: string }).address) === billingAddr)) {
+        console.log(
+          `webhook-jobber: skipped billing property for client ${entityId} — a live service property already holds "${addr.street}"`,
+        )
+        // ⚠ handleClient ends with `return { entity_id: entityId }`; a bare `return` here would hand
+        // the caller undefined and break every CLIENT_UPDATE. Return the same shape.
+        return { entity_id: entityId }
+      }
+    }
+
+    // Find existing billing property for this client. Soft-deleted rows are INCLUDED on purpose: if a
+    // merged twin's address later becomes genuinely different, the duplicate guard above lets it
+    // through and this revives the same row rather than minting a second one.
     const { data: existingProps } = await supabase
       .from('properties')
       .select('id')
@@ -648,7 +678,11 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
 
     if (existingProps?.length) {
       // UPDATE — do NOT touch county; AT enrichment may have set it.
-      await supabase.from('properties').update(propRow).eq('id', existingProps[0].id)
+      // `deleted_at: null` revives a row retired by the 2026-09-22 merge. Reaching here already
+      // means the duplicate guard above passed, i.e. this billing address is genuinely NOT one of
+      // the client's live service addresses, so reviving it is the correct outcome rather than a
+      // regression of the merge.
+      await supabase.from('properties').update({ ...propRow, deleted_at: null }).eq('id', existingProps[0].id)
     } else {
       // 🛑 ATOMIC find-or-create (2026-09-09), sharing fn_jobber_resolve_property with
       // handleProperty. THIS BRANCH IS THE DOMINANT PROPERTY CREATOR — 452 of the property links
