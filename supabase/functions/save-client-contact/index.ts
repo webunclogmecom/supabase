@@ -329,6 +329,21 @@ async function handleRefresh(clientId: number) {
     const { data: gone, error: delErr } = await qy.select("id");
     if (delErr) return fail("db_error", `Could not retire removed contacts: ${delErr.message}`);
     retired = gone?.length ?? 0;
+
+    // 🛑 A SOFT-DELETED JOBBER CONTACT MUST NOT KEEP HOLDING THE CLIENT'S INVOICE SLOT.
+    // client.jobber_contacts filters `deleted_at is null`, so the card disappears from the UI
+    // while client_comm_one_invoice_per_client still counts the row: the client's only Invoice
+    // slot stays taken forever, and save_contact_settings' 23505 names a person who is not on
+    // screen. There is no way out through the app - it would take SQL. Freeing the slot here is
+    // what keeps "removed in Jobber" from becoming a dead end.
+    const retiredIds = (gone ?? []).map((g: { id: number }) => g.id).filter(Boolean);
+    if (retiredIds.length) {
+      const { error: prefErr } = await db.from("client_communication_prefs")
+        .delete().eq("client_id", clientId).in("jobber_contact_id", retiredIds);
+      // ⚠ Not fatal: the contacts ARE retired by this point, and failing the whole refresh over
+      // the cleanup would leave the caller thinking nothing synced. Loud in the log instead.
+      if (prefErr) console.error(`[save-client-contact] could not free comm prefs for retired contacts: ${prefErr.message}`);
+    }
   }
 
   return done({
@@ -814,13 +829,24 @@ async function handlePromote(body: any, actor: string) {
   // ---- what the DERM recipient is now, and would be after ----------------------------------
   // Both lines come from client.fn_derm_recipient, the SAME function send-derm-email uses, so
   // the dialog cannot claim one thing while the sender does another.
-  const { data: dermNow } = await db.schema("client").rpc("fn_derm_recipient", { p_client_id: clientId });
-  const { data: dermAfter } = await db.schema("client").rpc("fn_derm_recipient", {
+  // 🛑 THE SET, NOT THE SINGLE ADDRESS (2026-09-22). Several people can now hold the service
+  // report, so the dialog has to be able to say so.
+  const { data: dermNow } = await db.schema("client").rpc("fn_derm_recipients", { p_client_id: clientId });
+  const { data: dermAfter } = await db.schema("client").rpc("fn_derm_recipients", {
     p_client_id: clientId,
     p_override_primary_email: norm(person.email) === "" ? null : person.email,
   });
-  const nowEmail = (dermNow as any)?.email ?? null;
-  const afterEmail = (dermAfter as any)?.email ?? null;
+  const mails = (v: unknown): string[] =>
+    ((v ?? []) as Array<{ email?: string | null }>)
+      .map((r) => String(r?.email ?? "").trim()).filter((e) => e.includes("@"));
+  const nowAll = mails(dermNow);
+  const afterAll = mails(dermAfter);
+  // 🛑 `now` / `after` STAY STRINGS. The published app reads them, and changing a shape the live
+  // bundle already renders is the deploy-order mistake this estate keeps paying for: server first
+  // only ever works when it ACCEPTS more, never when it RETURNS something different. The arrays
+  // are ADDED alongside, so the dialog can move to them whenever it ships.
+  const nowEmail = nowAll[0] ?? null;
+  const afterEmail = afterAll[0] ?? null;
 
   const refusal =
     emailHasComma ? { code: "multi_address",
@@ -840,7 +866,12 @@ async function handlePromote(body: any, actor: string) {
         email: norm(person.email) === "" ? (mirror?.email ?? null) : person.email,
         phone: norm(person.phone) === "" ? (mirror?.phone ?? null) : person.phone,
       },
-      derm: { now: nowEmail, after: afterEmail, moves: nowEmail !== afterEmail },
+      derm: {
+        now: nowEmail, after: afterEmail, moves: nowEmail !== afterEmail,
+        // appended 2026-09-22; `now`/`after` above are kept for the published bundle
+        now_all: nowAll, after_all: afterAll,
+        moves_all: JSON.stringify(nowAll) !== JSON.stringify(afterAll),
+      },
       // 🛑 a missing value is OMITTED, never cleared. Promote must not empty the client's phone
       // just because the person it promotes has none.
       keeps: {

@@ -726,6 +726,15 @@ Deno.serve(async (req: Request) => {
   const logSend = async (
     manifestId: number, clientId: number | null, recipientEmail: string | null,
     resendEmailId: string | null, status: string, reason: string | null, recipientType = 'client',
+    // 🛑 THE DEFAULTS ARE TODAY'S BEHAVIOUR, SO EVERY skipped/error CALL SITE IS UNTOUCHED.
+    // They exist because the columns were closing over the INVOCATION-scoped ccList/bccList,
+    // which are the CALLER's lists. The real city bcc is `cityBcc`, which adds CITY_BCC
+    // ('derm@ayache.com') on every non-test send, so the standing compliance BCC had NEVER been
+    // logged: rows 176 and 177 on 112-YA are real city sends and both record bcc []. This file's
+    // own comment calls that column "The ONLY record a Bcc ever leaves" and it was wrong about
+    // the one BCC that goes on every real city send. The three sites that follow an actual
+    // Resend call now pass what was really sent.
+    cc: string[] = ccList, bcc: string[] = bccList,
   ): Promise<void> => {
     if (clientId == null) { console.warn(`[send-derm-email] log skipped (no client_id) manifest=${manifestId} status=${status}`); return }
     try {
@@ -733,7 +742,7 @@ Deno.serve(async (req: Request) => {
         manifest_id: manifestId, client_id: clientId, recipient_email: recipientEmail,
         resend_email_id: resendEmailId, status, reason, is_test: isTest, recipient_type: recipientType,
         // 🛑 The ONLY record a Bcc ever leaves. Nobody on the thread can see it.
-        cc_emails: ccList, bcc_emails: bccList,
+        cc_emails: cc, bcc_emails: bcc,
         // What the regulator actually received. The rendered PDF is not stored, so without this
         // the send log cannot say whether the report carried the photographs. 2026-09-12: NULL on
         // every row that did not deliver the rendered report (skipped, error, and the city
@@ -1094,7 +1103,61 @@ Deno.serve(async (req: Request) => {
           ...bccList,
         ].map((e) => e.trim()).filter(Boolean))]
         if (cityBcc.length) payload.bcc = cityBcc
-        if (ccList.length) payload.cc = ccList
+
+        // 🛑 THE CITY REPORT CC: the people we tell that we emailed the city.
+        // Fred: "when we send an email to the city we need to send a notification to the person
+        // letting them know we did so." It is resolved SERVER-SIDE from client_communication_prefs,
+        // addressed by the properties THIS send is actually going to, and NEVER from the request
+        // body - a caller must not be able to name who gets a copy of a regulator submission.
+        //
+        // 🛑 THE GUARD IS `!testRecipient`, FULL STOP. `status === 'sent'` would not do: a test
+        // send logs 'sent' too. A test send must never put a client's contact on a message
+        // carrying the INTERNAL TEST strip.
+        //
+        // 🛑 IT MUST NOT GO THROUGH parseCopyList. That helper holds every address to
+        // TEST_RECIPIENT_RE (@ayache.com / @unclogme.com) and 422s otherwise, so a store manager
+        // at @gmail.com would fail the ENTIRE regulator send. Merging after that call is correct
+        // and is not a bypass: this list came from our own database, not from the caller.
+        let cityReportCc: string[] = []
+        if (!testRecipient && inboxPropIds.size) {
+          const { data: prefRows, error: prefErr } = await sb
+            .from('client_communication_prefs')
+            .select('property_id, contact_id, jobber_contact_id')
+            .eq('client_id', clientId).eq('comm_type', 'city_report')
+            .in('property_id', [...inboxPropIds])
+          if (prefErr) {
+            // ⚠ A lookup failure is NOT "nobody is configured". Do not silently drop the copy;
+            // say so in the log and still send the regulator submission, which is the thing with
+            // a deadline.
+            console.error(`[send-derm-email] city_report cc lookup failed: ${prefErr.message}`)
+          } else {
+            const ourIds = (prefRows ?? []).map((r) => r.contact_id).filter((x): x is number => !!x)
+            const jobIds = (prefRows ?? []).map((r) => r.jobber_contact_id).filter((x): x is number => !!x)
+            const found = new Set<string>()
+            const take = (rows: { email: string | null }[] | null) => {
+              for (const r of rows ?? []) {
+                const e = String(r.email ?? '').trim().toLowerCase()
+                // a comma bag would reach Resend as one malformed address and report success
+                if (e.includes('@') && !e.includes(',')) found.add(e)
+              }
+            }
+            if (ourIds.length) {
+              const { data } = await sb.from('client_contacts').select('email').in('id', ourIds)
+              take(data as { email: string | null }[] | null)
+            }
+            if (jobIds.length) {
+              const { data } = await sb.from('client_jobber_contacts').select('email')
+                .in('id', jobIds).is('deleted_at', null)   // removed in Jobber = not a recipient
+              take(data as { email: string | null }[] | null)
+            }
+            // never CC somebody who is already a To recipient, and never out-run the cap the
+            // caller-supplied lists are held to
+            for (const e of cityEmails) found.delete(String(e).trim().toLowerCase())
+            cityReportCc = [...found].slice(0, MAX_COPY_RECIPIENTS)
+          }
+        }
+        const ccAll = [...new Set([...ccList, ...cityReportCc])]
+        if (ccAll.length) payload.cc = ccAll
 
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -1115,7 +1178,8 @@ Deno.serve(async (req: Request) => {
         // disambiguates, and `status='sent' AND reason IS NOT NULL` is unambiguous, but a
         // reader needs telling. Query with `reason LIKE 'attachment:%'`.
         await logSend(id, logClientId, logEmail, sentEmailId, 'sent',
-          attachMode === 'report' ? 'attachment:report' : `attachment:manifest_images:${attachReason || 'unknown'}`, 'city')
+          attachMode === 'report' ? 'attachment:report' : `attachment:manifest_images:${attachReason || 'unknown'}`, 'city',
+          ccAll, cityBcc)
       } catch (e) {
         const msg = String((e as Error)?.message ?? e)
         results.push({ manifest_id: id, status: 'error', reason: msg })
@@ -1147,8 +1211,12 @@ Deno.serve(async (req: Request) => {
         const clientName = c?.name || 'Customer'
         const clientCode = c?.client_code || null
 
-        let toEmail: string | null = testRecipient
-        if (!toEmail) {
+        // 🛑 ONE RECIPIENT BECAME A SET (2026-09-22). Who receives the service report is now
+        // configuration - client_communication_prefs, comm_type 'service_report' - and a client
+        // may legitimately have several people on it. `testRecipient` still short-circuits the
+        // WHOLE set, so a test send can never fan out to real customers.
+        let toList: string[] = testRecipient ? [testRecipient] : []
+        if (!toList.length) {
           // 🛑 WHO RECEIVES THIS IS ONE DEFINITION, AND IT LIVES IN THE DATABASE:
           // client.fn_derm_recipient (migration 2026-09-21_1515). Do not re-inline it.
           //
@@ -1168,18 +1236,23 @@ Deno.serve(async (req: Request) => {
           //
           // ⚠ A LOOKUP FAILURE IS NOT "no email". Reporting it as no_email would silently
           // skip a send and look identical to a client who genuinely has no address.
-          const { data: rec, error: recErr } = await sb
+          const { data: recs, error: recErr } = await sb
             .schema('client')
-            .rpc('fn_derm_recipient', { p_client_id: clientId })
+            .rpc('fn_derm_recipients', { p_client_id: clientId })
           if (recErr) {
             results.push({ manifest_id: id, status: 'skipped', reason: 'recipient_lookup_failed', client: clientCode })
             await logSend(id, logClientId, null, null, 'skipped', `recipient_lookup_failed: ${recErr.message}`)
             continue
           }
-          toEmail = (rec as { email?: string | null } | null)?.email ?? null
+          toList = ((recs ?? []) as Array<{ email?: string | null }>)
+            .map((r) => String(r?.email ?? '').trim())
+            .filter((e) => e.includes('@'))
         }
-        if (!toEmail) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_email', client: clientCode }); await logSend(id, logClientId, null, null, 'skipped', 'no_email'); continue }
-        logEmail = toEmail
+        if (!toList.length) { results.push({ manifest_id: id, status: 'skipped', reason: 'no_email', client: clientCode }); await logSend(id, logClientId, null, null, 'skipped', 'no_email'); continue }
+        // ⚠ logEmail is the SKIPPED/ERROR label only. A delivered send writes ONE ROW PER
+        // RECIPIENT below; a comma-joined recipient_email is the disease the city arm already has
+        // and it must not spread here.
+        logEmail = toList.join(', ')
 
         // 🛑 THE CLIENT NO LONGER RECEIVES THE RAW WWTP RECEIPT (Fred, 2026-08-26): "we don't
         // send the DERM Manifests, or the receipts anymore, we send the Report PDF Files from
@@ -1270,12 +1343,13 @@ Deno.serve(async (req: Request) => {
           preheader: `Your Service Report from Unclogme, including your Manifest Form and disposal receipt.`,
         }
 
+        const clientBcc = [...new Set([...(testCc ? [testCc] : []), ...bccList])]
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             from: RESEND_FROM,
-            to: [toEmail],
+            to: toList,
             subject: SUBJECT,
             html: buildClientLetterHtml(clientLetter),
             text: buildClientLetterText(clientLetter),
@@ -1283,18 +1357,23 @@ Deno.serve(async (req: Request) => {
             ...(ccList.length ? { cc: ccList } : {}),
             // "send to both": real client send + a BCC copy to the test address, plus any the
             // sender blind-copied. Deduped so one address cannot be listed twice.
-            ...((() => {
-              const b = [...new Set([...(testCc ? [testCc] : []), ...bccList])]
-              return b.length ? { bcc: b } : {}
-            })()),
+            // Hoisted out of the inline IIFE so the send log can record what was really blind
+            // copied instead of the caller's list.
+            ...(clientBcc.length ? { bcc: clientBcc } : {}),
           }),
         })
         const er = await emailRes.json().catch(() => ({}))
         if (!emailRes.ok) { results.push({ manifest_id: id, status: 'error', reason: 'resend_failed', detail: er, client: clientCode }); await logSend(id, logClientId, logEmail, null, 'error', 'resend_failed'); continue }
 
         const sentEmailId = (er as { id?: string })?.id ?? null
-        results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toEmail} (TEST)` : toEmail, client: clientCode, number, email_id: sentEmailId })
-        await logSend(id, logClientId, logEmail, sentEmailId, 'sent', null)
+        results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toList.join(', ')} (TEST)` : toList.join(', '), client: clientCode, number, email_id: sentEmailId })
+        // 🛑 ONE ROW PER RECIPIENT, SHARING resend_email_id. Not a comma-joined recipient_email
+        // (unreadable and unqueryable) and not cc_emails (that would log as CC something that was
+        // on To). The shared resend_email_id is what lets a reader group them back into one send,
+        // and derm.visits.client_last_email_to now aggregates on exactly that.
+        for (const r of toList) {
+          await logSend(id, logClientId, r, sentEmailId, 'sent', null, 'client', ccList, clientBcc)
+        }
       } catch (e) {
         const msg = String((e as Error)?.message ?? e)
         results.push({ manifest_id: id, status: 'error', reason: msg })
