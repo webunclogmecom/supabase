@@ -227,6 +227,16 @@ const CONTACT_PAGE = 25;
 const Q_CONTACTS = `query($id: EncodedId!) {
   client(id: $id) {
     id
+    # 🛑 WHAT JOBBER WILL ACTUALLY PREFILL ON THE NEXT SEND, piggybacked onto the refresh the
+    # client page already makes rather than a second round trip per page load. Measured on
+    # 112-YA: the whole query costs 9 points, so this is free in practice.
+    # These are Jobber's MEMORY of the address the office last sent to, and NOTHING we can write
+    # through the API changes them - not the star, not isBillingContact. Only a real send does.
+    # That is why the app can only show drift and never fix it. Both enum values verified against
+    # the live EmailTypes enum (18 values) before shipping; a wrong one 400s the whole refresh
+    # and would take the contacts list down on page open.
+    invoiceDefault: defaultEmails(emailType: INVOICE_SENT)
+    quoteDefault: defaultEmails(emailType: QUOTE_SENT)
     contacts(first: ${CONTACT_PAGE}) {
       totalCount
       nodes {
@@ -267,6 +277,14 @@ async function handleRefresh(clientId: number) {
       `Could not read this client's contacts from Jobber (${r.kind}): ${r.detail}. Nothing was changed.`);
   }
   const conn = r.data?.client?.contacts;
+  // ⚠ Read these from the SAME reply, never a second call. An empty array is a real answer
+  // ("Jobber has no remembered address for this client yet"), not a failure.
+  const asList = (v: unknown): string[] =>
+    (Array.isArray(v) ? v : []).map((x) => String(x ?? "").trim().toLowerCase()).filter((x) => x.includes("@"));
+  const jobberDefaults = {
+    invoice: asList((r.data?.client as any)?.invoiceDefault),
+    quote: asList((r.data?.client as any)?.quoteDefault),
+  };
   if (!conn) return fail("not_found_jobber", "Jobber has no client at that id - the link is stale.");
 
   const nodes: any[] = Array.isArray(conn.nodes) ? conn.nodes : [];
@@ -352,6 +370,10 @@ async function handleRefresh(clientId: number) {
     contacts: rows.length,
     total_in_jobber: total,
     complete,
+    // Jobber's remembered prefill addresses. Arrays, possibly empty: empty means Jobber has no
+    // memory for this client yet, which is NOT the same as "nothing has been sent" - the API
+    // cannot tell us who a message went to.
+    jobber_defaults: jobberDefaults,
     truncated: !complete,
     retired,
     note: complete ? undefined
