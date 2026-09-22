@@ -1584,6 +1584,55 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
     console.error(`[handleProperty] custom-field sync threw for property ${entityId}: ${(e as Error).message}`)
   }
 
+  // 🛑 RETIRE A BILLING TWIN AT THIS ADDRESS (2026-09-22). The guard in handleClient skips creating
+  // one when a live service property already holds the address, but on a BRAND NEW client the
+  // CLIENT webhook runs BEFORE the PROPERTY webhook, so at that moment no service property exists
+  // yet and the twin is created anyway. Measured the day the guard shipped: client 339-CHA got its
+  // billing row at 22:15:52.218Z and its real property at 22:15:52.743Z, half a second apart. The
+  // client-side guard alone therefore cannot close this; it has to be closed from this side too,
+  // once the real property exists.
+  //
+  // ⚠ Soft-delete FIRST, then promote: uq_properties_one_primary_per_client is partial on
+  //    (is_primary AND deleted_at IS NULL), so retiring the twin is what frees the slot.
+  // ⚠ Never let this throw. A property sync failing because a cleanup failed would be a worse bug
+  //    than the duplicate it is cleaning up.
+  try {
+    const { data: me } = await supabase
+      .from('properties')
+      .select('client_id,address,is_billing,deleted_at')
+      .eq('id', entityId)
+      .maybeSingle()
+    const norm = (s: unknown) => String(s ?? '').toLowerCase().trim().replace(/\s+/g, ' ')
+    if (me && me.is_billing !== true && !me.deleted_at && norm(me.address) !== '') {
+      const { data: twins } = await supabase
+        .from('properties')
+        .select('id,address,is_primary')
+        .eq('client_id', me.client_id)
+        .eq('is_billing', true)
+        .is('deleted_at', null)
+      const dupes = (twins ?? []).filter((t) => norm((t as { address?: string }).address) === norm(me.address))
+      for (const t of dupes) {
+        const tw = t as { id: number; is_primary: boolean | null }
+        await supabase.from('properties')
+          .update({ deleted_at: new Date().toISOString(), is_primary: false })
+          .eq('id', tw.id).is('deleted_at', null)
+        console.log(
+          `webhook-jobber: retired billing twin ${tw.id} for client ${me.client_id} — property ${entityId} holds the same address`,
+        )
+        if (tw.is_primary === true) {
+          const { data: anyPrimary } = await supabase
+            .from('properties').select('id')
+            .eq('client_id', me.client_id).eq('is_primary', true).is('deleted_at', null).limit(1)
+          if (!anyPrimary?.length) {
+            await supabase.from('properties').update({ is_primary: true }).eq('id', entityId)
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[handleProperty] billing-twin retirement threw for property ${entityId}: ${(e as Error).message}`)
+  }
+
   // The link is written inside fn_jobber_resolve_property, in the same transaction as the row.
   // Re-asserting it here named the wrong conflict target and was one half of the race.
   return { entity_id: entityId }
