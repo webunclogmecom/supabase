@@ -119,5 +119,17 @@ why the promised "snapshot gallons on `lwt_filing_tickets`" was NOT built: it wo
 fiction. The risk it was meant to cover is already carried by the `audit_properties` trail and by
 `property_intake_accepts`, which records old and new per accepted key.
 
+**🛑 A SUPABASE EDGE FUNCTION CANNOT SERVE THE COLLECTOR FORM. Measured 2026-09-23, do not retry it.**
+Serving the form as HTML from a GET on `intake-submit` was the plan, and the gateway refuses it: it
+rewrites an HTML response to `content-type: text/plain` and stamps
+`content-security-policy: default-src 'none'; sandbox` on it. `sandbox` with no `allow-scripts` kills
+the inline script, so even a rendered page would be inert. Confirmed in a browser: it displays the raw
+source as text. JSON from the same function is untouched (`application/json`), which is how we know it
+is HTML-specific rather than a blanket rewrite. It is an anti-abuse control on the platform and should
+not be worked around. The form must live on a real web origin; `supabase/functions/intake-submit/form-page.ts`
+holds the finished form, ready to port. The GET stays reserved as the future **302** to that host, so
+that every link the office has already handed out keeps working and a change of form host is one
+deploy instead of a reissue of every token.
+
 **The Clients list is at `/`, not `/clients`.** `/clients` returns a real 404 and the app renders a
 bare "Starting..." shell, which looks exactly like a broken deploy while every asset serves 200.

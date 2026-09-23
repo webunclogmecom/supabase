@@ -2,8 +2,11 @@
 // intake-submit — the collector side of the Client Intake System
 // Section 4 of Building Apps/docs/2026-09-23_client-intake-build-plan.md
 // ============================================================================
-// WHAT. The one endpoint the person on site talks to. Four operations on a single
-// POST, all authorised by the intake TOKEN and nothing else:
+// WHAT. The one endpoint the person on site talks to. Four operations ride a single
+// POST, all authorised by the intake TOKEN and nothing else. A GET is reserved for
+// sending the collector to the form; see the GET branch for why it cannot BE the form:
+//
+//   GET ?t=<token>                                     -> 503 today, a 302 once the form has a host
 //
 //   load    { token }                                  -> the questions to show
 //   upload  { token, content_type }                    -> a short-lived signed upload URL
@@ -56,6 +59,8 @@
 // ============================================================================
 
 import { supabase } from '../_shared/supabase-client.ts'
+// form-page.ts is NOT imported: the gateway cannot serve it (see the GET branch).
+// It stays in the repo as the finished form, ready to port to a real web origin.
 
 const MAX_BODY_BYTES = 262_144
 const PHOTO_CAP = 40
@@ -68,7 +73,7 @@ const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/he
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey, x-app-source',
   'Access-Control-Max-Age': '86400',
 }
@@ -110,6 +115,30 @@ async function resolveToken(token: unknown): Promise<{ intake?: Intake; error?: 
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+
+  // ------------------------------------------------------------------ GET
+  // 🛑 AN EDGE FUNCTION CANNOT SERVE THE FORM. MEASURED 2026-09-23, DO NOT RETRY IT.
+  //    Serving form-page.ts from here was the plan, and it does not work: the Supabase
+  //    edge gateway REWRITES an HTML response to `content-type: text/plain` and stamps
+  //    `content-security-policy: default-src 'none'; sandbox` on it. `sandbox` with no
+  //    `allow-scripts` kills the inline script, so even the rendered page would be
+  //    inert. Confirmed in a browser: it displays the raw source as text.
+  //    This is NOT a header this function can override, and it is an anti-abuse control
+  //    on the platform, so it should not be worked around. JSON from this same function
+  //    is untouched (`application/json`), which is how we know it is HTML-specific.
+  //
+  //    ⇒ THE FORM MUST LIVE ON A REAL WEB ORIGIN. When it does, this GET becomes a 302
+  //      to `<form host>/?t=<token>` rather than a page. Keeping the redirect HERE is
+  //      deliberate: every link the office has already handed out stays valid, and a
+  //      change of form host is then one deploy instead of a reissue of every token.
+  //      `form-page.ts` holds the finished form and is the thing to port to that host.
+  if (req.method === 'GET') {
+    return new Response(
+      'This form is not ready yet. Please ask the office for the new link.',
+      { status: 503, headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8', 'Referrer-Policy': 'no-referrer' } },
+    )
+  }
+
   if (req.method !== 'POST') return fail(405, 'Method not allowed.')
 
   const raw = await req.text()
