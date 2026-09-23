@@ -46,6 +46,13 @@ const args = process.argv.slice(2);
 const DRY_RUN = !args.includes('--execute');
 const LIMIT_ARG = args.find(a => a.startsWith('--limit='));
 const LIMIT = LIMIT_ARG ? parseInt(LIMIT_ARG.split('=')[1]) : null;
+// --only=recAAA,recBBB restricts the run to named Airtable records.
+// 🛑 ADDED 2026-09-23 BECAUSE --limit CANNOT EXPRESS "the ones still missing". It slices the FIRST
+// N records, and an interrupted run always leaves the TAIL undone, so finishing 3 records meant
+// walking all 444 and re-asserting ~4,000 links that were already there.
+const ONLY_ARG = args.find(a => a.startsWith('--only='));
+const ONLY = ONLY_ARG ? new Set(ONLY_ARG.split('=')[1].split(',').map(x => x.trim()).filter(Boolean)) : null;
+if (ONLY_ARG && (!ONLY || ONLY.size === 0)) throw new Error('--only was given with no record ids');
 
 const AT_KEY = process.env.AIRTABLE_API_KEY;
 const AT_BASE = process.env.AIRTABLE_BASE_ID;
@@ -215,6 +222,14 @@ function extFromContentType(ct, fallbackName) {
   console.log('\n[2/3] Pulling Airtable PRE-POST records...');
   let recs = await airtableFetchAll(TABLE);
   console.log(`  ${recs.length} records`);
+  if (ONLY) {
+    recs = recs.filter(r => ONLY.has(r.id));
+    console.log(`  --only applied → ${recs.length} of ${ONLY.size} named records found`);
+    if (recs.length !== ONLY.size) {
+      // Fail loudly: a typo in a record id would otherwise look like a clean run over nothing.
+      throw new Error(`--only named ${ONLY.size} records but only ${recs.length} exist in Airtable`);
+    }
+  }
   if (LIMIT) {
     recs = recs.slice(0, LIMIT);
     console.log(`  --limit applied → processing first ${recs.length}`);
@@ -229,6 +244,19 @@ function extFromContentType(ct, fallbackName) {
   `);
   for (const r of existingPhotos) photoIdByAttId.set(r.source_id, r.entity_id);
   console.log(`  ${photoIdByAttId.size} airtable-source photos already in DB`);
+
+  // 🛑 PRELOAD THE LINKS TOO. Without this the "photo already migrated" branch still issued ONE
+  // DB round trip per attachment to re-assert a link that was already there: ~4,000 redundant
+  // calls per run. On 2026-09-23 that tripped the Management API rate limiter and the run finished
+  // with 2,553 `429 ThrottlerException` errors, uploading 3 of the 22 files it had left to do.
+  // Nothing was lost (every 429 was on a link that already existed) but the run could not finish,
+  // and a re-run hit the same wall. One query replaces the lot.
+  const linkKey = (photoId, inspId, role) => `${photoId}|${inspId}|${role}`;
+  const haveLink = new Set();
+  for (const r of await sbQuery(`
+    SELECT photo_id, entity_id, role FROM photo_links WHERE entity_type='inspection';
+  `)) haveLink.add(linkKey(r.photo_id, r.entity_id, r.role));
+  console.log(`  ${haveLink.size} inspection photo_links already in DB`);
 
   console.log('\n--- Processing inspections ---');
   const startMs = Date.now();
@@ -261,6 +289,7 @@ function extFromContentType(ct, fallbackName) {
         if (existingPhotoId) {
           stats.attachments_skipped_already++;
           if (DRY_RUN) continue;
+          if (haveLink.has(linkKey(existingPhotoId, ourInspId, role))) continue;  // nothing to do
           try {
             await sbQuery(`
               INSERT INTO photo_links (photo_id, entity_type, entity_id, role, caption)
@@ -335,5 +364,14 @@ function extFromContentType(ct, fallbackName) {
   if (errors.length) {
     console.log(`\nFirst 10 errors (${errors.length} total):`);
     errors.slice(0, 10).forEach(e => console.log('  ' + e));
+  }
+
+  // 🛑 EXIT NON-ZERO WHEN ANYTHING FAILED. On 2026-09-23 this script finished with 2,553 errors and
+  // STILL exited 0, so every caller - a shell, a background task, a person reading the status - was
+  // told it succeeded. A summary table nobody reads is not a failure signal.
+  if (!DRY_RUN && stats.attachments_failed > 0) {
+    console.error(`
+FAILED: ${stats.attachments_failed} attachment(s) did not migrate. Re-run; it is idempotent.`);
+    process.exit(2);
   }
 })().catch(e => { console.error('FATAL:', e.message); process.exit(1); });

@@ -481,6 +481,25 @@ mappings were missing from it all along**: `Pictures of the boots`, `Hose Extens
 Idempotency is `entity_source_links(entity_type='photo', source_system='airtable', source_id=<att id>)`
 plus the unique `photos.storage_path`, so a re-run re-downloads nothing.
 
+**Final state: 4,061 of 4,061 attachments on the 425 linked records are mirrored, 0 missing**, with
+`boots` 105, `hose_extensions` 29 and `truck_off_switch` 23 now carrying real rows.
+
+🛑 **GETTING THERE EXPOSED THREE DEFECTS IN THAT SCRIPT, ALL FIXED, AND THE FIRST TWO COMPOUND.**
+
+1. **"Already migrated" still cost one DB round trip per attachment.** The branch that skips a
+   downloaded photo went on to re-assert its `photo_links` row anyway, so a re-run made ~4,000
+   redundant calls. That is what tripped the Management API rate limiter: one run finished with
+   **2,553 `429 ThrottlerException` errors** and uploaded 3 of the 22 files it had left. Nothing was
+   lost, because every 429 landed on a link that already existed, but the run could not finish and a
+   re-run hit the same wall. Fixed by preloading `photo_links` once and skipping in memory.
+2. **`--limit` slices the FIRST N records, and an interrupted run always leaves the TAIL undone.**
+   The 22 stragglers sat on three records beginning `recy` and `recz`, so finishing them meant
+   walking all 444. Added `--only=recAAA,recBBB`, which also **raises** when a named id is not in
+   Airtable, so a typo cannot read as a clean run over nothing.
+3. 🛑 **It exited 0 with 2,553 errors.** Every caller (a shell, a background task, a person reading
+   the status) was told it succeeded; the failures were only in a summary table. It now exits **2**
+   when `attachments_failed > 0`. **A summary nobody reads is not a failure signal.**
+
 ---
 
 ## 10. Still open
