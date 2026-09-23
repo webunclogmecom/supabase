@@ -364,6 +364,24 @@ async function handleRefresh(clientId: number) {
     }
   }
 
+  // Does this client actually receive DERM service reports? The Edit-contact dialog warns that
+  // changing this contact's email moves the service-report recipient, and that sentence is only
+  // TRUE for a client who gets one. 🛑 It is deliberately NOT the `service_report` communication
+  // tick: trg_seed_client_communication seeds that on every client at contact birth (1,191 rows
+  // over 397 clients, exactly three each, not one differing), so it carries no intent.
+  // ⚠ On ANY error this stays FALSE. The warning asserts a fact, so "we could not check" must
+  // never render as "the service report goes here" - the fallback is today's behaviour, no
+  // warning at all. See Building Apps/Client App/docs/2026-09-23_derm-recipient-disclosure-decision.md
+  let dermActive = false;
+  {
+    // 🛑 .schema("client") is load-bearing: the function is client.*, and a bare db.rpc() resolves
+    // against `public`, errors, and (by the fail-false rule above) would silently never warn.
+    const { data: da, error: daErr } = await db.schema("client")
+      .rpc("fn_client_has_derm_activity", { p_client_id: clientId });
+    if (daErr) console.error(`[save-client-contact] derm_active lookup failed for client ${clientId}: ${daErr.message}`);
+    else dermActive = da === true;
+  }
+
   return done({
     action: "refresh",
     client_id: clientId,
@@ -374,6 +392,7 @@ async function handleRefresh(clientId: number) {
     // memory for this client yet, which is NOT the same as "nothing has been sent" - the API
     // cannot tell us who a message went to.
     jobber_defaults: jobberDefaults,
+    derm_active: dermActive,
     truncated: !complete,
     retired,
     note: complete ? undefined
