@@ -62,6 +62,11 @@ const PRESENT = [
   // the copy change altered the holder branch of that same ternary, and this is what proves the
   // no-holder branch was not collateral damage.
   'Tick Invoice and Quote approval on the right contact so we both agree.',
+  // the emailless-holder branch (2026-09-23). Without it the instruction rendered as
+  // "type  over the prefilled address" - a double space and nothing to type. It must appear
+  // TWICE, once in the combined banner and once in the per-type one; a single hit means only
+  // one of the two components was fixed, which is how this defect shipped in the first place.
+  'That contact has no email address yet',
 ];
 
 const ABSENT = [
@@ -137,6 +142,11 @@ if (mutating) {
   if (stillHere.length) fails.push(`MUTATION: needles still present on another app: ${stillHere.join(', ')}`);
   console.log(`MUTATION MODE: ${PRESENT.length - stillHere.length}/${PRESENT.length} needles correctly absent`);
 } else {
+  // 🛑 COUNT, not presence: this copy lives in BOTH banner components and the bug was that only
+  // one would get fixed. Minified identifier names churn between builds, so assert the SENTENCE
+  // (stable, it is ours) rather than the guard expression (`gt(m)?`, which renames on any rebuild).
+  const nEmailless = (all.match(/That contact has no email address yet/g) || []).length;
+  if (nEmailless !== 2) fails.push(`emailless-holder copy found ${nEmailless}x, want 2 (combined + per-type banner)`);
   for (const n of missing) fails.push(`MISSING: ${JSON.stringify(n)}`);
   for (const n of leaked) fails.push(`PRESENT BUT MUST NOT BE (the copy would be false): ${JSON.stringify(n)}`);
 }
