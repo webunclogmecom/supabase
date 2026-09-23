@@ -829,3 +829,14 @@ verify_jwt = true
 # and writes ONLY a sync_log verdict row; never clients, visits or entity_source_links.
 [functions.sync-jobber-client-state-sweep]
 verify_jwt = true
+
+# The collector side of the Client Intake System. Fred's decision 6 (2026-09-22) is that
+# the person on site does NOT log in: measured, ZERO of the four active field staff hold
+# an @ayache.com / @unclogme.com address, which is the gate every staff app enforces, and
+# Grecia has no email on file at all. So the caller is anonymous BY DESIGN and the
+# authorisation is the intake token plus the structural ceilings stated in the function
+# header (body size, photo slots, answer count, note length, token expiry, single-submit
+# compare-and-set). Same posture as dump-visit-create, which is also an unauthenticated
+# field surface on shared phones.
+[functions.intake-submit]
+verify_jwt = false
