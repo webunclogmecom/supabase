@@ -433,6 +433,12 @@ verify_jwt = false
 [functions.fillout-inspection]
 verify_jwt = false
 
+# Inbound file drainer. Cron-invoked with the service key, so verify_jwt stays TRUE (the 2026-07-29
+# rule for pollers). It holds no shared secret of its own on purpose: there is nothing to leave
+# fail-open, and an unauthenticated caller cannot reach it at the gateway at all.
+[functions.inbound-file-drain]
+verify_jwt = true
+
 # pg_cron pollers: verify_jwt = TRUE as of 2026-07-29. This REVERSES the previous rule, so read
 # this before "restoring" it.
 #
