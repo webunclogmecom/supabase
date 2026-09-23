@@ -4084,16 +4084,51 @@ and on **19** the star is a different person from where invoices actually go —
 19.
 
 **What the star DOES drive:** `webhook-jobber/index.ts:282` derives our mirror contact's email from
-`emails.find(e => e.primary)`, and `client.fn_derm_recipients` reads that row to choose the DERM
-**service report** recipient. So a star write moves a regulator-facing compliance email.
+`emails.find(e => e.primary)` and writes it to `client_contacts.email`, which is the column
+`client.fn_derm_recipients` reads to choose the DERM **service report** recipient. So a star write
+moves a regulator-facing compliance email.
 
-⚠ **This is already live, and pre-dates the Contacts work:** editing the client-record contact's
-email in the Client App sets `primary: true` (`save-client-contact/index.ts:657`, and `:660` on the
-add path), so it **already moves the DERM recipient**, with nothing on screen to say so. Measured
-2026-09-23: **397 of 397** clients with prefs hold Invoice and Service report on the **same contact**
-(it was 395 of 395 on 2026-09-22 — two clients backfilled since; the shape, "all of them", has not
-changed). `create-client/index.ts:661` stars the address at birth, which is why the "new client with
-no send memory" case does not exist.
+🛑 **CORRECTION, 2026-09-23 (an earlier version of this section, commit `2793af7`, had the mechanism
+wrong — if you read it before this line existed, re-read it).** That version said
+`fn_derm_recipients` "reads that row", implying the star is the link. **It is not. The function never
+touches the star at all.** Read the body (`pg_get_functiondef`) rather than trusting either version:
+
+```
+from public.client_communication_prefs p          -- comm_type = 'service_report'
+join public.client_contacts cc on cc.id = p.contact_id      -> takes cc.email
+union all ... join client_jobber_contacts jc on jc.id = p.jobber_contact_id  -> jc.email
+```
+
+It picks the ROW from the prefs table and takes the email off that row, live. Consequences that the
+old wording hid:
+
+- **An in-app email edit does not go via Jobber at all.** `save-client-contact` writes
+  `client_contacts.email` directly (`index.ts:749`) once Jobber verifies, so the recipient changes
+  on that write. The star → poll → mirror-row path is a **second, slower writer of the same column**,
+  not the link. "Change the star to change the recipient" is the wrong mental model in both
+  directions.
+- **Removing a `service_report` pref row removes a recipient**, whatever the star says. The star is
+  irrelevant to who is on the list; only the prefs table decides that.
+- `jc.deleted_at is null` is in the Jobber-contact arm: removed in Jobber = not a recipient.
+- The function drops blanks and any address containing a comma, and de-dupes on
+  `lower(btrim(email))` — so two prefs rows pointing at the same address yield ONE recipient.
+
+⚠ **This is live and pre-dates the Contacts work:** editing the client-record contact's email in the
+Client App changes the DERM service-report recipient, with nothing on screen to say so.
+(`save-client-contact/index.ts:657` also sets `primary: true`, so the star moves too — but that is a
+consequence, not the cause.) `create-client/index.ts:661` stars the address at birth, which is why
+the "new client with no send memory" case does not exist.
+
+🛑 **And do not read the pref counts as configuration.** Measured 2026-09-23: **394 of 397** clients
+hold `service_report` on the client-record row itself (3 on another of our contacts, **0** on a
+Jobber contact). Every client has **exactly three** pref rows — invoice, quote_approval,
+service_report — 1,191 over 397 clients, **no client differs**. That uniformity is
+`trg_seed_client_communication` (enabled on `public.client_contacts`) seeding all three at contact
+birth. **Nobody chose it.** An earlier version of this section reported "397 of 397 hold Invoice and
+Service report on the same contact" as if it were a meaningful fact about how the office works; it
+is a trigger default. Do not build a rule, a warning or a gate on that tick believing it carries
+intent — it carries none.
+
 
 ⇒ **Never ship "write the star so invoices go to the right person".** It does not work, and it fails
 in the dangerous direction: silently redirecting a compliance PDF from a checkbox labelled Invoice.
