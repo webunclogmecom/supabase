@@ -4029,6 +4029,88 @@ between completed visits' timestamps, capped at 2 hours, every truck mixed toget
 - `calculate-driving-time` (DUMP ETA, day markers) shares the cache table but is NOT ported onto
   `_shared/google-routes.ts` and was not redeployed; that port is its own change.
 
+### 🛑 CONTACT COMMUNICATION PREFS: THE INVOICE TICK IS A RECORD, AND THE STAR MOVES A COMPLIANCE EMAIL (2026-09-23)
+
+The Client App's **Contacts** section (Role + Communication) shipped 2026-09-22/23. It is an app
+feature, but three quarters of it is DB, and **none of it was described in this file until now** —
+which is exactly the §5.5 trap: a session auditing the DERM email path would find an `authenticated`
+EXECUTE grant on two functions and no explanation of who uses them.
+
+**The storage.** `public.client_communication_prefs`, a junction table, one row per
+(client, comm_type, target):
+
+| | |
+|---|---|
+| `comm_type` | CHECKed to `invoice`, `quote_approval`, `service_report`, `city_report` |
+| target | exactly ONE of `contact_id` / `jobber_contact_id` — `client_comm_one_target_chk` is `num_nonnulls(...) = 1` |
+| `property_id` | NOT NULL **iff** `comm_type='city_report'` — `client_comm_scope_chk` makes that an identity, both directions |
+
+⚠ **The cardinality rules are PARTIAL UNIQUE INDEXES, not triggers, and that is deliberate.**
+`client_comm_one_invoice_per_client` (one invoice holder per client) and
+`client_comm_one_city_report_per_property` (one city-report holder per property). A `BEFORE` trigger
+doing `count(*) > 0` lets two concurrent transactions each see zero and both commit; the index
+cannot. Do not "simplify" either into a trigger. The two `client_comm_no_dup_*` indexes use
+**`NULLS NOT DISTINCT`**, without which a null `property_id` would let the same contact be added to
+the same comm_type repeatedly.
+
+**The write path is one RPC:** `client.save_contact_settings(p_source text, p_contact_id bigint,
+p_patch jsonb)`, SECURITY DEFINER, EXECUTE to `authenticated` + `service_role` (**not `anon`**).
+`p_source` picks the target column (`'contact'` → `contact_id`, `'jobber'` → `jobber_contact_id`).
+Its 13 operator-reachable refusals carry a `blocker=<code>` in DETAIL while the MESSAGE stays plain
+language, per the 2026-09-14 rule below. The caller-shape refusals (`p_source`, `p_patch`,
+`unsupported field(s)`, `communication must be a list`, `property_id must be a positive integer`)
+are deliberately left technical — an operator cannot reach them.
+
+**The read path:** `client.fn_derm_recipients(p_client_id, p_override_primary_email)`, SECURITY
+DEFINER, **returns a `jsonb` ARRAY**. Called by `send-derm-email` and `save-client-contact`.
+🛑 **Row count is NOT recipient count** — it returns one value holding N recipients, so a check that
+counts rows to count recipients reads 1 no matter how many there are.
+
+🛑 **`client.fn_derm_recipient` (SINGULAR) still exists, is granted to `authenticated`, and silently
+truncates.** Its whole body is `select client.fn_derm_recipients(...) -> 0` — a back-compat shim that
+returns only the FIRST recipient and drops the rest with no error. It has no live caller (both edge
+functions use the plural; the two greppable mentions of the singular are comments). If you are
+grepping for the recipient function, the singular is the one that will quietly give you a wrong
+answer.
+
+#### 🛑 The star is load-bearing for DERM, not for invoices — and editing an email already moves it
+
+The tempting conclusion is backwards, so it is worth stating as a rule. **The starred (primary)
+email on a Jobber client does NOT route invoices or quotes.** `Client.defaultEmails(emailType:)` is
+what Jobber prefills, it is Jobber's MEMORY of the last send, and **no API mutation at any version
+sets it**. Measured 2026-09-22 across all 461 non-archived Jobber clients, read-only: 386 have an
+email, **all 386** already have a remembered invoice address, **0** have an email but no send memory,
+and on **19** the star is a different person from where invoices actually go — the memory wins on all
+19.
+
+**What the star DOES drive:** `webhook-jobber/index.ts:282` derives our mirror contact's email from
+`emails.find(e => e.primary)`, and `client.fn_derm_recipients` reads that row to choose the DERM
+**service report** recipient. So a star write moves a regulator-facing compliance email.
+
+⚠ **This is already live, and pre-dates the Contacts work:** editing the client-record contact's
+email in the Client App sets `primary: true` (`save-client-contact/index.ts:657`, and `:660` on the
+add path), so it **already moves the DERM recipient**, with nothing on screen to say so. Measured
+2026-09-23: **397 of 397** clients with prefs hold Invoice and Service report on the **same contact**
+(it was 395 of 395 on 2026-09-22 — two clients backfilled since; the shape, "all of them", has not
+changed). `create-client/index.ts:661` stars the address at birth, which is why the "new client with
+no send memory" case does not exist.
+
+⇒ **Never ship "write the star so invoices go to the right person".** It does not work, and it fails
+in the dangerous direction: silently redirecting a compliance PDF from a checkbox labelled Invoice.
+The only honest fix for a wrong prefill is a human typing the right address over it once in Jobber,
+which is what the Client App's drift banner now instructs. Full decision record, including the 19
+clients and the preconditions if it is ever revisited:
+`Building Apps/Client App/docs/2026-09-22_jobber-star-decision.md`.
+⚠ Jobber's help-search **AI answer** claims the star routes sends. It is not documentation, it
+contradicts the measurement, and it is probably where the belief comes from.
+✅ **Settled, not provisional** (Fred, 2026-09-23: *"no we don't use batch deliver"*) — Batch Deliver
+was the one path where the star would have been authoritative. Re-open ONLY if the office starts
+batch-delivering, which nothing in our data would detect; it has to come from a person.
+
+**The contract check** that guards the shipped copy is
+`scripts/checks/client-app-contacts-contract.mjs` (25 strings that must be PRESENT, 9 that must be
+ABSENT because they would be FALSE). Run it after any Client App publish that touches Contacts.
+
 ### 🛑 THE AUTOMATIC CITY EMAIL: A LIVE HOURLY CRON THAT IS DOING NOTHING ON PURPOSE (2026-08-28)
 
 **`city-email-sweep` (`7 * * * *`, active) runs every hour and sends nothing.** That is the intended
