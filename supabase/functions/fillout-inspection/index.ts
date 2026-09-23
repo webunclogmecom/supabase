@@ -164,13 +164,52 @@ function inspectionType(v: unknown): 'PRE' | 'POST' | null {
   return null
 }
 
-/** Accepts a single URL or several. Fillout's exact multi-file encoding is confirmed by the first
- *  real submission (see the raw payload in webhook_events_log), so both shapes are handled. */
+/**
+ * Extract file URLs from a Fillout file answer.
+ *
+ * 🛑 MEASURED ON A REAL SUBMISSION 2026-09-23, AND THE FIRST VERSION OF THIS FUNCTION WAS WRONG IN
+ * THE WORST WAY. Fillout sends a file answer as an ARRAY OF OBJECTS:
+ *
+ *   "photo_dashboard": [ {"url": "https://prod-fillout-oregon-s3...../probe-b.jpg",
+ *                         "filename": "probe-b.jpg"}, {...} ]
+ *
+ * The original code did `v.map(str)`, and `String({url:...})` is **"[object Object]"**, which is a
+ * non-empty string and therefore PASSED the filter. So a real submission queued one row with
+ * source_url "[object Object]", and because both files stringify identically the unique constraint
+ * collapsed them into ONE. Two photos were silently lost and a junk row burned its retry budget.
+ *
+ * ⚠ That is this estate's recurring shape, one layer along: a value of the WRONG SHAPE coerced into
+ * a plausible-looking one and then used. It is invisible to any test that sends strings, which is
+ * exactly what every synthetic test here did. Only a real submission could find it.
+ *
+ * ⚠ The URLs carry NO query string, so they are unsigned public S3 objects rather than presigned
+ * links: measured, both fetched 200 with the right content-type. That is what makes queueing them
+ * for later safe. It is an observation about today, not a promise from Fillout, so the drainer still
+ * treats a 404/403/410 as a link that has gone.
+ */
 function urls(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map((x) => str(x)).filter((x): x is string => !!x)
-  const s = str(v)
-  if (!s) return []
-  return s.split(/[\s,]+/).map((x) => x.trim()).filter((x) => /^https?:\/\//i.test(x))
+  const one = (x: unknown): string | null => {
+    // The object form is what Fillout actually sends; the string form is kept because the future
+    // mobile app posts this same contract and a plain URL is the obvious thing for it to send.
+    if (x && typeof x === 'object' && 'url' in (x as Record<string, unknown>)) {
+      return str((x as Record<string, unknown>).url)
+    }
+    return str(x)
+  }
+
+  const raw: Array<string | null> = Array.isArray(v)
+    ? v.map(one)
+    : (() => {
+      const direct = one(v)
+      // A single string may still carry several URLs separated by spaces or commas.
+      return direct ? direct.split(/[\s,]+/) : []
+    })()
+
+  // 🛑 The http(s) test is load-bearing, not tidiness: it is what turns a future unexpected shape
+  // into ZERO rows instead of a queue full of "[object Object]".
+  return raw
+    .map((x) => (x ?? '').trim())
+    .filter((x) => /^https?:\/\//i.test(x))
 }
 
 // ---------------------------------------------------------------------------
