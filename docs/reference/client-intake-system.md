@@ -30,11 +30,17 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | photos | `photo_links` kind `property_intake`, bucket `intake-photos` | `2026-09-22_2120_property_intake_photos.sql` |
 | site map | `public.properties.site_map`, `public.fn_site_map_problem`, `fn_site_map_round`, `client.update_property_site_map` | `2026-09-22_2210_property_site_map.sql` |
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
+| question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
 | collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22 |
 
-NOT built: the published driver page, `Verified`, two-person approval, the client confirmation page,
-the Jobber link, and the office screens beyond the Clients-list column.
+Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
+`Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
+Edit property dialog (step 5.2), both live 2026-09-23.
+
+NOT built: **the collector form the link actually opens** (the endpoint is live, the page is not),
+the published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
+link, the New Client modal button and the office Accept screen.
 
 ---
 
