@@ -4492,6 +4492,30 @@ a step-by-step demo script is in `16-city-email-video-guide.md` beside it.
 
 ---
 
+### 🛑 CLIENT INTAKE SYSTEM: THE PHOTO KIND IS `property_intake`, NEVER `property` (2026-09-22)
+
+The site-visit intake shipped its back half on 2026-09-22/23: `public.property_intakes` (immutable raw
+submission, per PROPERTY), `property_intake_accepts` (who accepted what, old and new),
+`client.v_property_intake` (Nothing / Incomplete / Complete), `client.schedule_property_intake` /
+`get_intake_compare` / `accept_intake_answers`, `public.fn_intake_form_current()` (the question tree),
+`properties.site_map` (GT pin, truck pin, arrows), and the anonymous edge fn `intake-submit`.
+
+**Full reference, read it before touching any of them:**
+[`docs/reference/client-intake-system.md`](docs/reference/client-intake-system.md).
+
+Three things that will bite someone who does not know them:
+
+1. **The photo kind is `property_intake` and must never be `property`.**
+   `customer.client_access_photos` selects `photo_links` where `entity_type IN ('client','property')`
+   and returns `caption` verbatim, through `customer.get_client_portal`, which `anon` can EXECUTE on a
+   guessable client code. Widening that CHECK to `property` publishes intake photos and raw collector
+   captions to a public feed. See also
+   [`reference_widening_a_check_can_switch_on_a_dormant_exposed_view`] in memory.
+2. **`accept_intake_answers` CALLS `client.update_property_operational` and
+   `update_property_capacity`.** Change either signature or allowlist and the intake breaks.
+3. **Intake question keys are append-only.** They are shared by the form snapshot, the requested set,
+   the answers, the photo `role` and the accept map. A changed meaning gets a new key.
+
 ## Documentation map
 
 | Doc | When to read |
