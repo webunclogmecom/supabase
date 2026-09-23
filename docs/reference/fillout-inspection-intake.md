@@ -21,8 +21,9 @@ Drivers fill two Fillout forms at each shift end. Those submissions land in **Ai
 pipeline is live and untouched by any of this.
 
 What died in July 2026 was only the **feed from Airtable into this warehouse**. `public.inspections`
-stopped on 2026-07-11 at 319 rows while the Airtable table kept filling and now holds 443. So the
-data was never missing, it just stopped arriving here.
+stopped on 2026-07-11 at 319 rows while the Airtable table kept filling and now holds 444. So the
+data was never missing, it just stopped arriving here. ✅ The 106 storable ones were imported on
+2026-09-23, see §9.
 
 🛑 **Airtable is NOT being replaced.** This adds a *second* destination. The real forms keep posting
 to Airtable exactly as before. See the corrected Airtable paragraph in `CLAUDE.md`: "Airtable is
@@ -55,8 +56,9 @@ Fillout form ──> edge fn fillout-inspection ──> public.inspections
 
 **Nothing else changed, and that was verified rather than assumed**: `entity_source_links` and
 `photo_links` already whitelist `inspection`, `photos.source` has no CHECK, `inspections.gas_level`
-already stores exactly Fillout's four choices, `inspection_type` is `PRE`/`POST`, and all 15 photo
-roles used here already exist in live data.
+already stores exactly Fillout's four choices, and `inspection_type` is `PRE`/`POST`. ⚠ The sentence
+that sat here, "all 15 photo roles used here already exist in live data", was true of the test-form
+mapping and is not true of the live one: see §6, three roles are new.
 
 Migrations: `2026-09-23_0926`, `_0944`, `_0946`, `_1259`. Commits `56e391e`, `4839506`, `980a800`.
 
@@ -284,9 +286,21 @@ must not do. What made it cheap was measured, not assumed:
 
 - **`photo_links.role` carries no CHECK constraint.** Only `entity_type` does
   (`photo_links_entity_type_chk`, 7 values), and `inspection` is in it.
-- **No app enumerates inspection photo roles.** A sweep of every Building Apps repo for the role
-  literals returned **0 code hits**, docs only. `other` would have been equally unknown to a
-  consumer, since it has 0 live rows too.
+- **No app enumerates inspection photo roles.** 🛑 **The first version of this bullet was a false
+  all-clear and is corrected here.** It said "a sweep of every Building Apps repo returned 0 code
+  hits, docs only" - and *docs only* was the whole problem: `Building Apps/Admin Review/` holds
+  **23 files, every one of them `.md`**. The Lovable apps' source is not in that folder at all
+  (only `ops-portal` has a `src/`), so the grep could not have found app code if it existed.
+  **An instrument pointed at a folder with no source in it returns zero for any question.**
+  ⇒ Re-measured against the **published bundle** at `admin.unclogme.app`, which is the consumer
+  that matters (`useShiftForms` and `useShiftFormDetail` both read `inspections`): 3 chunks,
+  908,912 bytes, **1,549 distinct string literals**, and **none of the 21 role values appears**.
+  Controls present in the same walk: `inspections`, `photo_links`, `shift_reviews`, `employees`,
+  which are the literals unique to the shift-review route, so the walk demonstrably reached the
+  code in question rather than stopping short. The extractor captures the quote delimiter and
+  back-references it, and follows both `/assets/...` and relative `./x.js`, so a backtick bundle
+  is not invisible to it (the 2026-07-31 trap). ⇒ Admin Review renders whatever `photo_links`
+  returns; a new role cannot break it.
 
 ⇒ So the cost was one row in ADR 009's table and one in `docs/schema.md`, both updated in the same
 change. ⚠ **That is the standing rule, not a one-off:** a role appearing here for the first time gets

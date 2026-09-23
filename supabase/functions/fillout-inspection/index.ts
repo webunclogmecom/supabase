@@ -113,9 +113,13 @@ const PHOTO_FIELDS: Record<string, string> = {
   // and they are two DIFFERENT checks: are the hose extensions on the truck, and was the master
   // cut-off switch under the seat set. Landing both as `other` on the same inspection would make
   // them indistinguishable, which is the one thing this intake exists to prevent. `photo_links.role`
-  // carries no CHECK constraint (only `entity_type` does) and NO app enumerates inspection roles
-  // (measured: 0 code hits across the Building Apps repos, docs only), so the whole cost is one row
-  // in ADR 009's table and in docs/schema.md, both updated in the same change.
+  // carries no CHECK constraint (only `entity_type` does) and NO app enumerates inspection roles.
+  // ⚠ That last claim was first 'measured' by grepping `Building Apps/`, which holds NO app source
+  // (Admin Review is 23 files, all .md) - a zero from an instrument that could not see. Re-measured
+  // against the published admin.unclogme.app bundle, the consumer that actually reads `inspections`:
+  // 3 chunks, 908,912 bytes, 1,549 string literals, 0 of the 21 role values, with `inspections` /
+  // `photo_links` / `shift_reviews` present as controls. So the whole cost is one row in ADR 009's
+  // table and in docs/schema.md, both updated in the same change.
   photo_hose_extensions: 'hose_extensions',
   photo_truck_off_switch: 'truck_off_switch',
 }
