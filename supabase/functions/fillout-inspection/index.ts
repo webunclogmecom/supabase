@@ -73,11 +73,20 @@ const TRUCK_ALIASES: Record<string, string> = {
   'cloggy': 'Cloggy',
 }
 
-// Body key -> photo_links.role. Every role here is one ALREADY IN USE on live inspection links
-// (measured 2026-09-23), so a consumer never meets an unknown tile. The migration's VERIFY asserts
-// that precedent and fails if a role here has none.
-// ⚠ This vocabulary is RICHER than ADR 009's table, which lists tires/boots (never used) and omits
-// six that are. The live data is the contract, not the ADR.
+// Body key -> photo_links.role.
+//
+// 🛑 CORRECTED 2026-09-23 WHEN THE TWO LIVE FORMS WERE READ. This comment used to say "every role
+// here is one ALREADY IN USE on live inspection links, so a consumer never meets an unknown tile",
+// and cited the 2026-09-23_0926 migration's VERIFY as the guarantee. That was true of the 16 roles
+// mapped for the TEST form and is NOT true of the three added when the real PRE and POST forms were
+// mapped: `boots`, `hose_extensions`, `truck_off_switch` each have 0 live rows. The migration's
+// VERIFY ran against the earlier list and cannot re-assert this one, so do not read it as cover.
+// Why that is the right answer anyway is argued at each of the three below.
+//
+// ⚠ The live vocabulary is RICHER than ADR 009's table, which lists `tires` (still unused) and
+// omitted seven that are used. The live data is the contract, not the ADR - but the ADR is kept in
+// step, so a value appearing here for the first time is added to ADR 009 and docs/schema.md in the
+// same change rather than left to drift.
 const PHOTO_FIELDS: Record<string, string> = {
   photo_dashboard: 'dashboard',
   photo_cabin: 'cabin',
@@ -95,10 +104,20 @@ const PHOTO_FIELDS: Record<string, string> = {
   photo_closed_valve: 'closed_valve',
   photo_issue: 'issue',
   photo_expense_receipt: 'expense_receipt',
-  // Two fields on the form have no established role yet. They are enqueued as `other` rather than
-  // invented, because a new role value is a schema-shaped decision, not a mapping detail.
-  photo_hose_extensions: 'other',
-  photo_truck_off_switch: 'other',
+  // ⚠ `boots` was in ADR 009's documented vocabulary with ZERO live photo_links rows, so it read as
+  // a value nobody uses. It is not: the PRE form asks for it and 110 of the 444 Airtable records
+  // carry the photo (measured 2026-09-23). The dead Airtable feed simply never mapped it. This is
+  // the ADR's own value finally being used, not a new one.
+  photo_boots: 'boots',
+  // 🛑 THESE TWO ARE A DELIBERATE VOCABULARY EXTENSION (2026-09-23). Both are live POST-form fields
+  // and they are two DIFFERENT checks: are the hose extensions on the truck, and was the master
+  // cut-off switch under the seat set. Landing both as `other` on the same inspection would make
+  // them indistinguishable, which is the one thing this intake exists to prevent. `photo_links.role`
+  // carries no CHECK constraint (only `entity_type` does) and NO app enumerates inspection roles
+  // (measured: 0 code hits across the Building Apps repos, docs only), so the whole cost is one row
+  // in ADR 009's table and in docs/schema.md, both updated in the same change.
+  photo_hose_extensions: 'hose_extensions',
+  photo_truck_off_switch: 'truck_off_switch',
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +265,29 @@ Deno.serve(async (req) => {
   }
 
   const submissionId = str(body.submission_id)
-  const type = inspectionType(body.pre_post ?? body.inspection_type)
+  // 🛑 THREE SOURCES IN ORDER, AND THE THIRD IS NOT BELT-AND-BRACES. The Pre/Post dropdown is NOT a
+  // required question on either live form, and 10 of the 444 Airtable records have it EMPTY
+  // (measured 2026-09-23). Without a fallback every one of those is a 400 here, which Fillout
+  // retries and then abandons: exactly the lost shift inspection this intake exists to prevent. So
+  // each form also sends `pre_post_default`, a static literal naming which form it is.
+  // ⚠ The DRIVER'S OWN ANSWER STILL WINS, so this destination can never disagree with Airtable on a
+  // submission where they answered - including a driver who opens the PRE form and picks "Post
+  // Inspection", which Airtable records as POST and so do we.
+  // ⚠ Chained on inspectionType(), not on `??` over the raw values: Fillout may send an unanswered
+  // dropdown as "" rather than omitting it, and `"" ?? x` is "".
+  //
+  // 🛑 THE FORM CARRIES ITS DEFAULT IN THE **URL**, NOT IN THE BODY, AND THAT IS NOT A STYLE CHOICE.
+  // Measured in the Fillout editor 2026-09-23: a REST integration's body VALUE is a reference PICKER
+  // (it answers "No references found" to typed text), so a static literal CANNOT be expressed as a
+  // body key. The URL field is free text, so each live form posts to
+  //   .../fillout-inspection?default_type=PRE     (7FeakRTGTDus)
+  //   .../fillout-inspection?default_type=POST    (jBBi8r53nQus)
+  // `pre_post_default` is kept ahead of it because the driver mobile app posts a body, not a URL,
+  // and a body is the more obvious thing for it to send.
+  const type = inspectionType(body.pre_post)
+    ?? inspectionType(body.inspection_type)
+    ?? inspectionType(body.pre_post_default)
+    ?? inspectionType(new URL(req.url).searchParams.get('default_type'))
   const eventType = type ? `${type.toLowerCase()}_shift_inspection` : 'shift_inspection'
 
   // 🛑 LOG THE RAW PAYLOAD BEFORE ANYTHING CAN FAIL. If the mapping below is wrong, the submission

@@ -54,9 +54,20 @@ photo_links
 |---|---|
 | `visit` | `before`, `after`, `grease_pit`, `damage`, `derm_manifest`, `address`, `remote`, `other` |
 | `property` | `overview`, `access`, `grease_trap_location`, `manhole`, `other` |
-| `inspection` | `dashboard`, `cabin`, `front`, `back`, `tires`, `boots`, `sludge_level`, `water_level`, `derm_manifest`, `derm_address`, `issue`, `other` |
+| `inspection` | `dashboard`, `cabin`, `cabin_left`, `cabin_right`, `front`, `back`, `left_side`, `right_side`, `sludge_level`, `water_level`, `derm_manifest`, `derm_address`, `closed_valve`, `remote`, `boots`, `hose_extensions`, `truck_off_switch`, `expense_receipt`, `issue`, `tires`, `other` |
 | `note` | `attachment` (generic) |
 | `vehicle` | `general` |
+
+> ⚠ **The `inspection` row was WIDENED 2026-09-23 and the original list was wrong in both
+> directions.** It omitted seven roles that live data had been using for months (`left_side`,
+> `right_side`, `cabin_left`, `cabin_right`, `closed_valve`, `remote`, `expense_receipt`) and listed
+> `boots` as if unused when the Pre Shift Inspection form asks for it on every shift. Two values are
+> genuinely new, added when that form was wired to `fillout-inspection`: `hose_extensions` and
+> `truck_off_switch`, which were previously collapsed into `other` and are two different checks.
+> `tires` is the only entry here no form asks for. **The list is maintained against measured
+> `photo_links` data plus the live form fields, so a new role goes in here in the same change that
+> starts writing it.** Workings:
+> [docs/reference/fillout-inspection-intake.md](../reference/fillout-inspection-intake.md) section 6.
 
 Dropped tables: `visit_photos`, `inspection_photos`. Both were empty at the time of migration.
 
