@@ -662,14 +662,40 @@ async function editClientRecord(opts: {
   // ADD cannot be undone by an edit, and a DELETE cannot be undone by an edit on an id
   // Jobber has already destroyed. Guessing "it was probably an edit" is what made two of
   // the three branches report a false "Jobber's state is unknown".
-  type Act = "none" | "add" | "edit" | "delete";
+  type Act = "none" | "add" | "edit" | "delete" | "star";
   let emailAct: Act = "none";
   let phoneAct: Act = "none";
+
+  // An object this client ALREADY holds carrying the value we want. If one exists we star it
+  // rather than overwriting a different object's value. See the "star" branches below.
+  const emailTwin = wantEmail
+    ? (Array.isArray(jc.emails) ? jc.emails : [])
+        .find((e: any) => e?.id && norm(e.address).toLowerCase() === wantEmail.toLowerCase()) ?? null
+    : null;
+  const phoneTwin = wantPhone
+    ? (Array.isArray(jc.phones) ? jc.phones : [])
+        .find((p: any) => p?.id && digits(p.number) === digits(wantPhone)) ?? null
+    : null;
 
   const input: Record<string, unknown> = {};
   if (wantEmail !== null) {
     if (wantEmail === "") {
       if (curEmail) { input.emailsToDelete = [curEmail.id]; emailAct = "delete"; }
+    } else if (emailTwin && emailTwin.id !== curEmail?.id) {
+      // 🛑 THIS CLIENT ALREADY HOLDS THIS ADDRESS ON ANOTHER Email OBJECT: STAR THAT ONE.
+      // The `emailsToEdit {id: curEmail.id, address: wantEmail}` branch below rewrites the
+      // CURRENTLY-STARRED object's address in place, which DESTROYS the address it held.
+      // That is correct for an EDIT (this contact's address really is changing) and wrong
+      // for a PROMOTE, where we are making a DIFFERENT contact's existing address primary
+      // and the old one must survive. Both callers share this writer (:943 promote,
+      // :1041 edit), which is why the defect was invisible: the drift guard above compares
+      // our stored value against Jobber's primary, and on a promote those AGREE - the
+      // clobber comes from writing the NEW address onto the OLD object, not from staleness.
+      // Measured on 112-YA 2026-09-23 before writing this: `emailsToEdit [{id, primary:true}]`
+      // with NO address is accepted, moves the star, auto-demotes the previous one, leaves
+      // exactly one star, and every address survives.
+      input.emailsToEdit = [{ id: emailTwin.id, primary: true }];
+      emailAct = "star";
     } else if (curEmail) {
       // description deliberately omitted so Jobber KEEPS whatever it has
       // (Main/Work/Personal/Other are all in live use across the fleet).
@@ -683,6 +709,10 @@ async function editClientRecord(opts: {
   if (wantPhone !== null) {
     if (wantPhone === "") {
       if (curPhone) { input.phonesToDelete = [curPhone.id]; phoneAct = "delete"; }
+    } else if (phoneTwin && phoneTwin.id !== curPhone?.id) {
+      // Same defect, same fix, on the phone side - promote copies the phone too.
+      input.phonesToEdit = [{ id: phoneTwin.id, primary: true }];
+      phoneAct = "star";
     } else if (curPhone) {
       input.phonesToEdit = [{ id: curPhone.id, number: wantPhone, primary: true }];
       phoneAct = "edit";
@@ -740,8 +770,14 @@ async function editClientRecord(opts: {
       if (born?.id) undo.emailsToDelete = [born.id];
     } else if (emailAct === "delete" && curEmail) {
       undo.emailsToAdd = [{ address: curEmail.address, description: enumDesc(curEmail.description, EMAIL_DESCRIPTIONS), primary: curEmail.primary === true }];
+    } else if (emailAct === "star" && curEmail) {
+      // Undoing a STAR is re-starring the object that held it. No address moved, so there is
+      // nothing else to restore, and Jobber auto-demotes the one we starred (measured 112-YA).
+      undo.emailsToEdit = [{ id: curEmail.id, primary: true }];
     }
-    if (phoneAct === "edit" && curPhone) {
+    if (phoneAct === "star" && curPhone) {
+      undo.phonesToEdit = [{ id: curPhone.id, primary: true }];
+    } else if (phoneAct === "edit" && curPhone) {
       undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number, primary: curPhone.primary === true }];
     } else if (phoneAct === "add") {
       const born = phoneList.find((p) => digits(p?.number) === digits(wantPhone));
