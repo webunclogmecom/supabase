@@ -1,6 +1,11 @@
 // ============================================================================
-// airtable_inspection_attachments.js — migrate Airtable PRE-POST inspection
+// airtable_inspection_attachments.js - migrate Airtable PRE-POST inspection
 // images into Production storage + photos/photo_links.
+//
+// 🛑 BROUGHT BACK OUT OF _archive ON 2026-09-23. It was retired when the Airtable feed died;
+// it is live tooling again because `airtable_inspection_backfill.js` imported 106 inspections
+// that have no photos yet, and because three of its role mappings were missing all along.
+// There is ONE copy of this file on purpose: two would drift and only one would be re-tested.
 // ============================================================================
 //
 // Source-of-truth: Airtable PRE-POST insptection table (sic — typo is real).
@@ -73,6 +78,13 @@ const FIELD_ROLE_MAP = [
   ['Expense Receipt',       'expense_receipt'],
   ['DERM manifest',         'derm_manifest'],
   ['DERM Adress manifest',  'derm_address'],
+  // 🛑 ADDED 2026-09-23, AND THEIR ABSENCE WAS A REAL GAP, NOT AN OVERSIGHT WORTH IGNORING.
+  // `Pictures of the boots` is asked on every PRE shift and 110 of the 444 Airtable records
+  // carry it, yet photo_links held ZERO `boots` rows because this map never listed it. The
+  // other two were landing nowhere at all. Roles match supabase/functions/fillout-inspection.
+  ['Pictures of the boots', 'boots'],
+  ['Hose Extensions',       'hose_extensions'],
+  ['Truck OFF switch (under seat)', 'truck_off_switch'],
 ];
 
 console.log('='.repeat(60));

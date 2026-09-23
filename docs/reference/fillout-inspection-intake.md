@@ -368,16 +368,118 @@ Proven before publishing, because it is the thing that could have gone wrong sil
   write config, not a failed publish**, and the control that settles it is the TEST form, which is
   proven end to end by a real submission and reads exactly the same way.
 
-**Still open, and both are Fred's call:**
+---
 
-1. **The backfill.** Airtable holds ~124 inspections this warehouse never received (444 there, 319
-   here). Importing them is a separate one-off and they would carry `source_system='airtable'`, not
-   `fillout`. Nothing about going live moves them.
-2. **Telling Viktor.** He was told on 2026-09-23 to keep reading Airtable for inspections and to
-   change nothing until told, because `public.inspections` was the stale 319-row mirror. **That
-   instruction has now expired and he has not been told**, so he is currently working from a premise
-   that stopped being true today. Contacting him needs Fred's word (`CLAUDE.md`, Viktor is on-demand
-   only).
+## 9. The backfill, 2026-09-23 (Fred: "Go ahead first with the backfill")
+
+`scripts/migrate/airtable_inspection_backfill.js` (structured rows) and
+`scripts/migrate/airtable_inspection_attachments.js` (their photos). Both are idempotent and both
+only ever READ Airtable.
+
+| | |
+|---|---|
+| Airtable records | 444 |
+| already linked before | 319 |
+| **imported** | **106** |
+| refused, no `Pre/Post` value | 10 |
+| refused by the shift unique index | 9 |
+| `public.inspections` | 319 -> **425** |
+
+The natural key is the **Airtable record id**, in `entity_source_links` (`entity_type='inspection'`,
+`source_system='airtable'`). All 319 pre-existing rows carried one, so the gap was exactly computable
+and a re-run imports nothing. 🛑 **`public.inspections` has no unique key of its own beyond the shift
+index, so that link is the only thing between a second run and 444 duplicates.** The insert and the
+link go in one statement.
+
+🛑 **THE GO-LIVE CUTOFF IS A CORRECTNESS GUARD.** A submission made after the forms were wired sits
+in Airtable AND arrives through the webhook, under two different natural keys, so nothing would stop
+the script inserting a second copy. Records created at or after `--cutoff` are reported and never
+imported. It was 0 on the day, and it will not be next time.
+
+### 9a. 🛑 `idx_inspections_shift_unique` exists, and `pg_constraint` cannot see it
+
+`CREATE UNIQUE INDEX idx_inspections_shift_unique ON public.inspections (shift_date, vehicle_id,
+employee_id, inspection_type) WHERE vehicle_id IS NOT NULL AND employee_id IS NOT NULL`
+
+It is a **partial unique INDEX, not a table constraint**, so the catalogue query that lists
+constraints returns nothing for it. I read that silence as "no unique key" and found out from nine
+23505s mid-run. ⇒ **Read `pg_indexes` as well as `pg_constraint` before calling a table unkeyed.**
+
+**Those nine are second submissions for a shift we already hold** (a driver redoing a form). The
+index refused them, which is the index working, so they stay unimported and Airtable keeps them:
+`recBqDdFGTCgVnaPz` `recKsm5NhvqQ6MqP4` `recU4cDGXtO8L6N94` `recb2QLTg8Jf9hIii` `reccWay2Dtk8dnyJm`
+`recd4PtzgzGeIbdqR` `recjV3ym6VXsRg6Mg` `recptjz4pr97KO2c3` `recrvDnjsoaXB5PhE`. Choosing which of two
+conflicting records wins is a person's decision, not a script's.
+
+🛑 **AND IT WAS A LIVE DEFECT, NOT JUST A BACKFILL ONE. FIXED IN v7, see §9b.** Measured: **19 shift
+groups in Airtable hold 2 or more records, 38 of 444, about 4% of shifts.** Every one of those would
+have hit the same 23505 in the webhook, thrown, returned 500, and been retried into the same 500 for
+ever.
+
+### 9b. A second submission for the same shift now MERGES (edge fn v7)
+
+`insert` -> on `23505` -> find the row for that (shift_date, vehicle, driver, type) -> `update` it
+with the new answers -> return 200 with `merged_into_shift: true`. **Later submission wins, whole
+row**, because a redo is the driver correcting themselves and both forms require the fields that
+matter.
+
+🛑 **THE LINK CANNOT BE DUPLICATED, AND THE FIRST ATTEMPT AT THIS SHIPPED THAT BUG.** `idx_esl_entity_source`
+is UNIQUE on `(entity_type, entity_id, source_system)` with **zero exceptions anywhere in the table**,
+so an inspection holds exactly ONE `fillout` link. v6 updated the row and then threw 23505 inserting a
+second link: data landed, caller got a 500, Fillout retried for ever. v7 keeps the FIRST submission's
+id as the link and records the second in `webhook_events_log` under its own event id, which is what
+that table is for. The response says which id the link carries (`linked_submission_id`).
+
+⚠ **The index is PARTIAL**, so a merge cannot happen when the driver or truck did not resolve. Two
+rows for one shift is then the correct outcome: we do not know they are the same shift, and guessing
+is how one driver's inspection overwrites another's.
+
+Proven with four cases and a control: first submission inserts; a second with new values merges into
+it; **a retry of that second one is byte-identical and queues no duplicate photo**; a submission on a
+different day still inserts separately.
+
+### 9c. ⚠ OPEN FOR FRED: 75 legacy rows are dated one day late
+
+The dead feed derived `shift_date` from a **UTC slice** of `submitted_at`. The estate's operating-date
+rule is the **ET clock date**, which is what the webhook and this backfill both use. Measured across
+every row that has a `submitted_at`:
+
+| cohort | rows | match ET | match UTC |
+|---|---|---|---|
+| legacy (written before 2026-09-23) | 319 | 244 | **319** |
+| backfilled 2026-09-23 | 106 | **106** | 74 |
+
+100% and 100%, so this is not a guess about the old code, it is what the old code did. **75 legacy
+rows sit on the day after the shift.** Re-dating them is a data correction with real consequences: it
+is not audited (`public.inspections` carries no audit trigger), and **6 shift groups would collide on
+the unique index** once moved, so it needs a backup and a decision about those 6 first. Not done.
+
+⚠ One pair created by this backfill is a genuine double submission spanning ET midnight (ids 407 and
+433, Aaron on Goliath, submitted 2 hours apart at 22:00 and 00:00 ET). The unique index cannot catch
+that one, because two different ET dates is the correct reading of the rule.
+
+### 9d. The photos
+
+4,061 Airtable attachments across the 425 linked records; 2,476 were already mirrored, so **1,585 were
+new**. `airtable_inspection_attachments.js` came back out of `_archive` for this and **three role
+mappings were missing from it all along**: `Pictures of the boots`, `Hose Extensions`, and
+`Truck OFF switch (under seat)` were landing nowhere, which is why `boots` read as an unused role.
+Idempotency is `entity_source_links(entity_type='photo', source_system='airtable', source_id=<att id>)`
+plus the unique `photos.storage_path`, so a re-run re-downloads nothing.
+
+---
+
+## 10. Still open
+
+1. **Telling Viktor.** He was told on 2026-09-23 to keep reading Airtable for inspections and change
+   nothing until told, because `public.inspections` was the stale 319-row mirror. Fred asked for him
+   to be told once the live posting was on prod.
+2. **The 75 mis-dated legacy rows** (§9c) and **the 19 unimported Airtable records** (§9a plus the 10
+   with no `Pre/Post`, of which 3 are empty rows created when the table was set up and 7 are real
+   May/June 2025 inspections from before the form had that question).
+3. **The out-of-range sludge values.** 34 of the stored values are between 4,560 and 18,900 on a
+   fleet whose largest tank is 3,800, nearly all of them one driver in mid-2025. Stored as typed,
+   because inventing a correction is worse. The Post form's `(1-3,800)` label is the human's own fix.
 
 ⚠ **What has NOT been observed yet: a real driver submission through a live form.** The full path
 was proven end to end on the test copy, and the live config was verified declaratively, but the
