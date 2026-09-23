@@ -32,14 +32,23 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22 |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id) |
+| forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
+| one form, read-only (`/forms/$id`) | `client.get_intake(bigint)` | same |
+| staff photo read | storage policy `intake_photos_staff_read` (a copy of `reason_photos_staff_read`) | same |
+| read-only roles | `grant execute on public.fn_intake_answered to pg_read_all_data` | same |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
 Edit property dialog (step 5.2), both live 2026-09-23.
 
-NOT built: **the collector form the link actually opens** (the endpoint is live, the page is not),
-the published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
+Read surface for the Picture Planner forms viewer: **database half live 2026-09-23** (the list view,
+`get_intake`, the photo policy). Picture Planner itself still has no backend, so nothing renders it yet;
+the plan is `Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`, sections B to D.
+
+NOT built: **the collector form the link actually opens** (the endpoint is live, the page is not; it
+will be `/intake/$token` in Picture Planner), Picture Planner's login and `/forms` screens, the
+published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
 link, the New Client modal button and the office Accept screen.
 
 ---
@@ -75,7 +84,8 @@ The token is the only gate, which makes the ceilings in its header load-bearing 
 
 **6. The reason-photos upload gates do NOT transfer.** All three are keyed on a signed-in staff
 identity (`auth.uid()`, the staff domain, storage `owner_id`) and Fred's decision 6 removes the
-login. The replacements are token-derived: the storage path is derived from the token, slots are
+login. The replacements are token-derived: the storage FOLDER is the intake the token resolves to
+(its id, since intake-submit v7), attach checks the exact path shape the upload issued, slots are
 capped, the signed URL is short-lived, the token expires and dies on submit.
 
 **7. `Verified` is deliberately absent from `client.v_property_intake`.** It describes the published
@@ -88,6 +98,20 @@ is NULL (not `Nothing`) when the client has no live service property. 463 client
 
 **9. Writing `site_map` does not reach Jobber.** `trg_properties_enqueue_outbound` fires only when
 `grease_trap_size_gallons` or `lock_box_key` change. Asserted in the migration.
+
+**10. 🛑 The token must never be copied into a path, a caption, or any column staff can read.** It is
+the collector's capability: holding it lets anyone submit that form, and the raw submission is
+immutable, so a stolen token can block the real collector permanently. A secret is exactly as
+exposed as the least-protected column that copies it. `public.photos` carries three authenticated
+SELECT policies with `qual true` and `client.photos` is an unfiltered view, so `storage_path` is
+readable by every staff session. That is why the photo folder is the intake id.
+
+**11. No function inside a `storage.objects` policy for this bucket.** Every permissive SELECT policy
+on `storage.objects` is OR'd into every staff storage read in every bucket, and Postgres checks
+EXECUTE when it initialises the expression. A predicate function there makes all staff photo reads
+estate-wide depend on one grant. `intake_photos_staff_read` is `bucket_id = 'intake-photos' AND
+auth.uid() IS NOT NULL`, nothing more. The product rule that an awaiting form shows no photos lives
+in `client.get_intake`, where it belongs.
 
 ---
 
@@ -133,3 +157,21 @@ deploy instead of a reissue of every token.
 
 **The Clients list is at `/`, not `/clients`.** `/clients` returns a real 404 and the app renders a
 bare "Starting..." shell, which looks exactly like a broken deploy while every asset serves 200.
+
+**The first viewer design leaked the token, and the premise was the bug, not the code.** It gated photos
+behind "readable once submitted" because `authenticated` holds no grant on `public.property_intakes`, so
+staff "cannot read tokens". True of that table, false of the system: the token was copied into
+`photos.storage_path`, which every staff session can read. Two reviewers found it independently in an
+adversarial pass before the migration shipped. **Before trusting "X cannot read the secret", list every
+column the secret is copied into and ask who can read each one.** The fix removed the copy rather than
+guarding it.
+
+**A cleanup keyed on a shape you just changed deletes nothing and reports success.** After the folder moved
+from token to id, the test harness still deleted `photos` by `intake-photos/<token>/%`, matched zero rows,
+and its baseline check passed because it did not count `photos`. Two orphaned rows were found only by a
+separate count. Count every table you wrote to, not the ones you expect to have cleaned.
+
+**A backslash inside a JS template literal is swallowed.** The attach-path regex was written as
+`` `...{12}\.(jpg|png)$` `` and compiled to `...{12}.(jpg|png)$`, so `<uuid>Xjpg` was accepted. Caught by
+running the pattern against cases that must fail, before deploy. Write `\\.` in the template (two backslashes, so the compiled pattern keeps one), and test
+a regex with inputs it must refuse, not only ones it must accept.

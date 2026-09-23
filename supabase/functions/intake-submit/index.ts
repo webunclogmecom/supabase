@@ -27,8 +27,13 @@
 //    fn_reason_photo_path_ok opens with `if auth.uid() is null then return false`, and
 //    the attach RPC compares storage owner_id to the caller. An anonymous collector
 //    has none of those. So the gates here are TOKEN-DERIVED instead:
-//      1. the storage path is derived from the token, so one intake cannot write into
-//         another intake's folder,
+//      1. the storage folder is the INTAKE ID the token resolves to, so one intake cannot
+//         write into another intake's folder. 🛑 It is the id and NEVER the token itself:
+//         photos.storage_path is readable by every staff session (public.photos carries
+//         three authenticated SELECT policies with qual true, and client.photos is an
+//         unfiltered view), so a token in the path is a live token published to staff.
+//         Found by the 2026-09-23 adversarial review of the viewer migration; 0 photos
+//         had been stored under the old token-named scheme, so nothing needed moving,
 //      2. the number of photo slots per intake is capped (PHOTO_CAP),
 //      3. the signed upload URL is short-lived,
 //      4. the token itself expires (property_intakes.expires_at) and dies on submit.
@@ -54,7 +59,8 @@
 //   ONLY gate, which is what makes the ceilings above load-bearing rather than tidy.
 //   Verified end to end the same day, 21 of 21 cases: an unknown token 404s, a
 //   malformed one 400s, an expired one 410s, an oversized body 413s, a photo path
-//   outside the token's own folder 400s, a second submit 409s and does NOT overwrite
+//   outside the intake's own folder 400s (the folder was the token until 2026-09-23 and
+//   is the intake id since; see point 1 above), a second submit 409s and does NOT overwrite
 //   the first, and an upload after submit 409s.
 // ============================================================================
 
@@ -199,12 +205,12 @@ Deno.serve(async (req) => {
       return fail(429, `That is the maximum of ${PHOTO_CAP} photos for this visit.`)
     }
 
-    // The path is DERIVED FROM THE TOKEN. This is the gate that replaces the
-    // staff-identity checks the reason-photos migration uses: a token can only ever
-    // write inside its own folder.
+    // The folder is the INTAKE the token resolved to (i.id), never the token: see the
+    // header, point 1. The server builds the path, so the collector cannot choose it,
+    // and attach re-checks the exact shape below.
     const ext = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp'
       : contentType === 'image/heic' ? 'heic' : 'jpg'
-    const path = `${body.token}/${crypto.randomUUID()}.${ext}`
+    const path = `${i.id}/${crypto.randomUUID()}.${ext}`
 
     const { data: signed, error: sErr } = await supabase.storage
       .from(BUCKET)
@@ -220,8 +226,10 @@ Deno.serve(async (req) => {
     const role = String(body.role ?? '').slice(0, 120)
     const caption = body.caption == null ? null : String(body.caption).slice(0, MAX_VALUE_CHARS)
 
-    // Re-derive rather than trust: the path must live in THIS token's folder.
-    if (!path.startsWith(`${body.token}/`)) return fail(400, 'That photo does not belong to this form.')
+    // Re-derive rather than trust: the path must be EXACTLY the shape upload issues for
+    // THIS intake. A startsWith check alone would accept `5/../6/x.jpg` or junk.
+    const PATH_RE = new RegExp(`^${i.id}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|webp|heic)$`)
+    if (!PATH_RE.test(path)) return fail(400, 'That photo does not belong to this form.')
     if (!role) return fail(400, 'A photo needs to say which question it belongs to.')
 
     const { data: photo, error: pErr } = await supabase

@@ -4503,7 +4503,7 @@ submission, per PROPERTY), `property_intake_accepts` (who accepted what, old and
 **Full reference, read it before touching any of them:**
 [`docs/reference/client-intake-system.md`](docs/reference/client-intake-system.md).
 
-Three things that will bite someone who does not know them:
+Four things that will bite someone who does not know them:
 
 1. **The photo kind is `property_intake` and must never be `property`.**
    `customer.client_access_photos` selects `photo_links` where `entity_type IN ('client','property')`
@@ -4515,6 +4515,14 @@ Three things that will bite someone who does not know them:
    `update_property_capacity`.** Change either signature or allowlist and the intake breaks.
 3. **Intake question keys are append-only.** They are shared by the form snapshot, the requested set,
    the answers, the photo `role` and the accept map. A changed meaning gets a new key.
+4. **The intake token must never be copied into a path, a caption or any column staff can read.** It is
+   the collector's capability, and a stolen one can block the real collector permanently because the
+   raw submission is immutable. `public.photos.storage_path` is readable by every staff session (three
+   authenticated SELECT policies with `qual true`, plus the unfiltered `client.photos` view), which is
+   why `intake-submit` v7 names the photo folder by INTAKE ID. The first draft of the forms-viewer
+   migration assumed staff could not read tokens because they hold no grant on `property_intakes`; an
+   adversarial review found the copy in `storage_path` before it shipped (2026-09-23). A secret is as
+   exposed as the least-protected column that copies it.
 
 ## Documentation map
 
