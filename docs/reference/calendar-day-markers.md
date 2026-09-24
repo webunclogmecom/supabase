@@ -312,6 +312,25 @@ Measured the same day: both Tasks landed assigned to **Grecia**, who is the driv
 2026-08-17. Deleting each marker returned `{"op":"delete","verified_gone":true}` and both disappeared
 from the Jobber schedule.
 
+### ✅ FIXED 2026-09-23 (v16): a lookup that FAILS stops the push; it is never read as "nobody"
+
+Until v15, `assigneeForEmployee` returned `[]` both when the driver has no Jobber link (legitimate:
+push the Task unassigned) and when the link lookup itself ERRORED. On an edit of a driver-model row
+`assignedSent` is true whenever a link exists, so `assignedTo: []` went to Jobber and **stripped the
+driver from their Day Start**, and the read-back passed because it compares against the same `[]`.
+Any transient database error during a drag or a Recompute could do it, silently, with `ok:true`.
+The truck-name and driver-name lookups had the same shape: an error silently retitled the Task
+(e.g. `Day Start (Grecia)` with the truck missing).
+
+Now all four lookups (truck name, driver name, the driver's link, the legacy truck's crew) return
+`null` on an error, and the handler answers `{ok:false, error:"<what> lookup failed; nothing pushed,
+Task and link untouched"}` without calling Jobber. A missing link still pushes unassigned, as before.
+⚠ Nothing retries a failed push: the Task keeps its previous state until the marker is written again.
+Proof: `node scripts/probes/push_task_assignee_guard_test.mjs` extracts the helper from the working
+tree AND from `fb9f761` (the pre-fix body) and requires the old one to FAIL the error case. Live
+happy path on v16: marker 121 re-pushed, `{"ok":true,"op":"edit","assigned":["Grecia "]}`, Task
+unchanged. Found by the adversarial audit of `Building Apps/Visit Calendar/docs/specs/2026-09-23-start-freshness-design.md` (§7.1).
+
 ---
 
 ## Verifying a push — the traps

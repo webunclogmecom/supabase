@@ -160,19 +160,19 @@ function errsOf(res: any, field: string): string[] {
 //
 // driver_id on ops.v_calendar_visit is COALESCE(GPS actual, assigned) — the app's canonical
 // "effective driver" — so this matches what the Calendar itself shows for that day.
-async function assigneesFor(vehicleId: number | null, dateISO: string): Promise<string[]> {
+async function assigneesFor(vehicleId: number | null, dateISO: string): Promise<string[] | null> {
   if (!vehicleId) return [];
   const { data: visits, error: vErr } = await ops.from("v_calendar_visit")
     .select("driver_id").eq("vehicle_id", vehicleId).eq("visit_date", dateISO)
     .not("driver_id", "is", null);
-  if (vErr) { console.error("[task] driver lookup failed:", vErr.message); return []; }
+  if (vErr) { console.error("[task] driver lookup failed:", vErr.message); return null; }
   const driverIds = [...new Set((visits ?? []).map((v: any) => v.driver_id))];
   if (!driverIds.length) return [];
 
   const { data: links, error: lErr } = await db.from("entity_source_links")
     .select("entity_id, source_id")
     .eq("entity_type", "employee").eq("source_system", "jobber").in("entity_id", driverIds);
-  if (lErr) { console.error("[task] employee link lookup failed:", lErr.message); return []; }
+  if (lErr) { console.error("[task] employee link lookup failed:", lErr.message); return null; }
 
   const found = (links ?? []).map((l: any) => l.source_id).filter(Boolean);
   // A driver with no Jobber user link is dropped rather than failing the push — the marker is still
@@ -186,13 +186,26 @@ async function assigneesFor(vehicleId: number | null, dateISO: string): Promise<
 
 // The marker's own driver (2026-09-16 model): that employee's Jobber user, or [] when the employee has
 // no Jobber link (logged, not a failure: the marker is still worth showing, unassigned).
-async function assigneeForEmployee(employeeId: number): Promise<string[]> {
+// null = the lookup itself FAILED. It must never collapse into [] (2026-09-23): on an edit, [] is sent
+// as assignedTo and strips the driver from the Task, and the read-back then confirms the strip because
+// it compares against the same []. So a transient database error removed a driver from their Day Start
+// and reported ok:true.
+async function assigneeForEmployee(employeeId: number): Promise<string[] | null> {
   const { data: link, error } = await db.from("entity_source_links")
     .select("source_id").eq("entity_type", "employee").eq("source_system", "jobber")
     .eq("entity_id", employeeId).maybeSingle();
-  if (error) { console.error("[task] employee link lookup failed:", error.message); return []; }
+  if (error) { console.error("[task] employee link lookup failed:", error.message); return null; }
   if (!link?.source_id) { console.warn(`[task] employee ${employeeId} has no Jobber user link`); return []; }
   return [link.source_id];
+}
+
+// A lookup that ERRORS stops the push: nothing is sent, the Task and the link stay exactly as they were.
+// Pushing what we have instead writes a degraded Task (a title missing a name, or an empty assignee list
+// on an edit), and the read-back cannot tell, because it verifies against what we sent. The Task keeps
+// its previous state until this marker is pushed again.
+function lookupFailed(what: string, message: string): Response {
+  console.error(`[task] ${what} lookup failed, nothing pushed: ${message}`);
+  return json({ ok: false, error: `${what} lookup failed; nothing pushed, Task and link untouched` }, 200);
 }
 
 const TITLES: Record<string, string> = { start: "Day Start", end: "Day End", dump: "Dump" };
@@ -274,11 +287,15 @@ Deno.serve(async (req) => {
   // "Day Start (Cloggy, Grecia)". The assignment is still the driver's alone (driverModel below).
   const driverModel = m.employee_id != null || m.vehicle_id == null;
   let owner: string | null = null;
-  const truckName = m.vehicle_id
-    ? (await db.from("vehicles").select("name").eq("id", m.vehicle_id).maybeSingle()).data?.name ?? null
-    : null;
+  let truckName: string | null = null;
+  if (m.vehicle_id) {
+    const { data: v, error: vErr } = await db.from("vehicles").select("name").eq("id", m.vehicle_id).maybeSingle();
+    if (vErr) return lookupFailed("truck name", vErr.message);
+    truckName = v?.name ?? null;
+  }
   if (m.employee_id != null) {
-    const { data: e } = await db.from("employees").select("full_name").eq("id", m.employee_id).maybeSingle();
+    const { data: e, error: eErr } = await db.from("employees").select("full_name").eq("id", m.employee_id).maybeSingle();
+    if (eErr) return lookupFailed("driver name", eErr.message);
     const driverName = e?.full_name ?? null;
     owner = [truckName, driverName].filter(Boolean).join(", ") || null;
   } else {
@@ -297,9 +314,11 @@ Deno.serve(async (req) => {
     owner ? `(${owner})` : null,
   ].filter(Boolean).join(" ");
 
-  const assignedTo = m.employee_id != null
+  const resolved = m.employee_id != null
     ? await assigneeForEmployee(m.employee_id)
     : await assigneesFor(m.vehicle_id, m.marker_date);
+  if (resolved === null) return lookupFailed("driver link", "see the log line above");
+  const assignedTo: string[] = resolved;
 
   // Driver model: the marker's driver is authoritative, so an EDIT always carries assignedTo (an empty
   // list strips the previous driver when the marker became Unassigned); a CREATE omits an empty list.
