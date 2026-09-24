@@ -14,7 +14,8 @@ for (const l of fs.readFileSync('C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/S
 const ANON = fs.readFileSync(SP + '/prod_anon.txt', 'utf8').trim();
 const BASE = env.SUPABASE_URL;
 const AUTH_EMAIL = process.env.AUTH_EMAIL || 'fred@ayache.com';
-const AUTH_PW = process.env.AUTH_PW || '24438839';
+const AUTH_PW = process.env.AUTH_PW;   // never a literal here: this repo is PUBLIC
+if (!AUTH_PW) { console.error('set AUTH_PW (and AUTH_EMAIL) in the environment'); process.exit(2); }
 
 function raw(method, pathname, body, headers) {
   return new Promise((res) => {
