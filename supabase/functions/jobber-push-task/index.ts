@@ -229,9 +229,12 @@ Deno.serve(async (req) => {
 
   // Existing link, if any. This is what decides create vs edit, and it is the ONLY place the
   // Jobber id lives — there is deliberately no jobber_task_id column (Supabase CLAUDE.md rule #1).
-  const { data: link } = await db.from("entity_source_links")
+  // 🛑 A FAILED read must stop the push (2026-09-24). Read as "no link", an error made an upsert run
+  // taskCreate a SECOND time, and the link upsert then overwrote source_id, orphaning the first Task.
+  const { data: link, error: linkReadErr } = await db.from("entity_source_links")
     .select("id, source_id").eq("entity_type", ENTITY_TYPE)
     .eq("entity_id", markerId).eq("source_system", "jobber").maybeSingle();
+  if (linkReadErr) return lookupFailed("Jobber link", linkReadErr.message);
 
   // ---- DELETE ----------------------------------------------------------------
   if (op === "delete") {
@@ -244,11 +247,14 @@ Deno.serve(async (req) => {
     const res = await gql(token, `mutation($ids: [EncodedId!]!){ taskDelete(taskIds: $ids){
       userErrors{ message } } }`, { ids: [link.source_id] });
     const errs = errsOf(res, "taskDelete");
-    if (errs.length) return json({ ok: false, error: errs.join("; ") }, 200);
 
     // ⚠ VERIFY THE REMOTE EFFECT, not just the absence of an error. Read the Task back: it must be
     // gone. Only then drop the link. Dropping the link first is unrecoverable — without it there is
     // no handle on the Task at all.
+    // 🛑 READ BACK EVEN WHEN THE MUTATION ERRORED (2026-09-24, ported from save-calendar-task's
+    // deleteAndVerify, its "finding 7"). A delete of a Task that is ALREADY gone (a hand delete in
+    // Jobber, or an earlier attempt whose link removal failed) errors, and returning on that error
+    // wedged every retry for ever: the link could never be removed.
     const check = await gql(token, `query($id: EncodedId!){ task(id: $id){ id } }`, { id: link.source_id });
 
     // 🛑 REQUIRE POSITIVE PROOF THAT JOBBER ANSWERED (2026-08-14). The check below used to be
@@ -268,13 +274,24 @@ Deno.serve(async (req) => {
       !!check.data && typeof check.data === "object";
     if (!answered) {
       return json({ ok: false, task: link.source_id,
-        error: "verify unconfirmed — Jobber did not return an answer, so the task may still exist; link KEPT. Retry once Jobber is responding." }, 200);
+        error: (errs.length ? `Jobber rejected the delete (${errs.join("; ")}) and then ` : "") +
+          "did not return an answer, so the task may still exist; link KEPT. Retry once Jobber is responding." }, 200);
     }
     if (check.data.task?.id) {
-      return json({ ok: false, error: "verify failed — task still exists in Jobber; link KEPT", task: link.source_id }, 200);
+      return json({ ok: false, task: link.source_id, error: errs.length
+        ? `Jobber rejected the delete: ${errs.join("; ")}; task still exists, link KEPT`
+        : "verify failed: task still exists in Jobber; link KEPT" }, 200);
     }
-    await db.from("entity_source_links").delete().eq("id", link.id);
-    return json({ ok: true, op: "delete", task: link.source_id, verified_gone: true });
+    // Absent. If the mutation errored, the Task was already gone: that is the outcome asked for.
+    // 🛑 And check the link removal: an unchecked failure here reported verified_gone with the link
+    // still in place, an orphan link pointing at a Task that no longer exists.
+    const { error: unlinkErr } = await db.from("entity_source_links").delete().eq("id", link.id);
+    if (unlinkErr) {
+      console.error(`[task] task ${link.source_id} is gone but the link could not be removed: ${unlinkErr.message}`);
+      return json({ ok: false, task: link.source_id, task_gone: true,
+        error: `the task is gone in Jobber but the link could not be removed: ${unlinkErr.message}` }, 200);
+    }
+    return json({ ok: true, op: "delete", task: link.source_id, verified_gone: true, already_gone: errs.length > 0 });
   }
 
   // ---- UPSERT ----------------------------------------------------------------
@@ -338,7 +355,14 @@ Deno.serve(async (req) => {
     const res = await gql(token, `mutation($id: EncodedId!, $in: TaskEditInput!){
       taskEdit(taskId: $id, input: $in){ task{ id } userErrors{ message } } }`, { id: taskId, in: input });
     const errs = errsOf(res, "taskEdit");
-    if (errs.length) return json({ ok: false, error: errs.join("; ") }, 200);
+    if (errs.length) {
+      // Say WHY when we can: a Task deleted by hand in Jobber makes every edit fail for ever, and the
+      // health check needs to tell that apart from a transient refusal. The link is kept either way.
+      const gone = await gql(token, `query($id: EncodedId!){ task(id: $id){ id } }`, { id: taskId });
+      const taskGone = !!gone?.data && typeof gone.data === "object" && gone.data.task === null;
+      if (taskGone) console.error(`[task] edit of marker ${markerId} failed: task ${taskId} no longer exists in Jobber`);
+      return json({ ok: false, error: errs.join("; "), task: taskId, task_gone: taskGone }, 200);
+    }
   } else {
     const res = await gql(token, `mutation($in: TaskCreateInput!){
       taskCreate(input: $in){ task{ id } userErrors{ message } } }`, { in: input });
