@@ -32,7 +32,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments, hours days need a real open and close, a link collision reads as already attached) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
@@ -45,6 +45,11 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | hidden answers refused | `get_intake_compare` state `not_shown`; `accept_intake_answers` refuses it | same |
 | token hidden from `yannick_readonly` | column-level SELECT on `property_intakes`, every column except `token` | same |
 | standing check | `scripts/checks/intake-showif-mirror.mjs` (the grammar in its three places) | 2026-09-24 |
+| one trim, the JS `trim()` set | `public.fn_intake_trim` (used by `fn_intake_answered` and `fn_intake_applicable`) | `2026-09-24_0311_intake_round4_gallons_pruning_trim.sql` |
+| a follow-up only with its parent | `public.fn_intake_parent_key`, `public.fn_intake_prune_requested`; `schedule_property_intake` stores the pruned set and returns `dropped` | same |
+| gallons OR measurements; grease-trap gating | `grease_trap.capacity_gallons` optional; photos / gallons / capacity photos only if `systems_count > 0` | same |
+| one live link per intake photo | unique index `photo_links_intake_one_live_link_per_photo` | same |
+| Picture Planner audit label | `audit.log_change` maps `planner.unclogme.app`, `%unclogme-pics-organizer%`, `%d9464151%` to `picture-planner` | `2026-09-24_0301_audit_origin_picture_planner.sql` |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -96,7 +101,14 @@ recorded (never the caller's). `PHOTO_CAP 40` is the product limit on ATTACHED p
 slots are headroom for retries on a bad signal. History, both bypassed by a burst of calls: before v8
 upload URLs were unlimited; v8 counted objects already stored, which a burst made before any object
 landed still slipped past. A slot is never freed (a `ponytail:` note in the migration): a collector
-who burns 60 uploads through retries is stuck until someone reclaims expired unused slots. ⚠ There is no upload TTL of ours:
+who burns 60 uploads through retries is stuck until someone reclaims expired unused slots.
+**Since v10 (fourth review):** one live link per intake photo is a unique index, so a parallel burst of
+attaches of one file under many roles makes one link (a collision reads as `already_attached`).
+`PHOTO_CAP` is checked and then inserted without a lock, so parallel attaches can pass 40 by a few; the
+hard bound is structural (links <= photos <= 60 ledger slots). At submit the server, not the client,
+decides two kinds of answer: a photos answer becomes the paths actually attached to that question
+(dropped when none, so a claimed photo cannot count), and a weekly-hours answer keeps only days with a
+real `HH:MM` open and close, the only shape the accept path takes. ⚠ There is no upload TTL of ours:
 the old `SIGNED_UPLOAD_TTL 900` was declared and returned as `expires_in` but never applied. The real
 lifetime is Supabase's, **measured at 7,200 s** from the signed-upload JWT's `exp - iat`.
 
@@ -144,7 +156,13 @@ in `client.get_intake`, where it belongs.
 2026-09-24 a requested key counts only if it is REQUIRED (`public.fn_intake_required`: shown AND not
 `"optional": true`). `access_entry.obstacles` is optional (Fred: shown, never blocks Complete), and the
 list's `applicable_count` / `answered_count` and `get_intake`'s counts are over required questions only.
-Before that date a requested key counted if it was APPLICABLE, i.e. the collector was shown it: every `show_if` in its chain
+**`grease_trap.capacity_gallons` is optional too (fourth review)**: the gallons and "Measurements, if the
+gallons are not written anywhere" are either-or, so a site whose gallons are unknown can be Complete
+without typing a false 0 (372 of 506 live properties hold no gallons). And the grease-trap photos,
+gallons and capacity photos are asked only when `grease_trap.systems_count > 0`, the lift-station rule
+applied to the third equipment section. `site_map.gt_location` is deliberately NOT gated: it sits in an
+earlier section, so it would appear above the collector after they answer the count further down.
+Before 2026-09-24 a requested key counted if it was APPLICABLE, i.e. the collector was shown it: every `show_if` in its chain
 matches the submitted answers (`public.fn_intake_applicable`, the same comparison as the form's
 `visible()`). Before 2026-09-23 19:49 ET status was "every requested key answered", so answering *No*
 to "Is there a closed gate?" left the gate-code follow-up forever unanswered and the form read
@@ -155,8 +173,14 @@ all call it now; until v8 the edge function carried its own TypeScript copy, whi
 with SQL on whitespace-only answers. Requested keys are normalised there too (NULL, blank and
 duplicates ignored), so the list, the detail and the status count the same set.
 ⚠ **Blank means exactly what JavaScript's `trim()` removes** (TAB, LF, VT, FF, CR, SPACE, NBSP, U+1680,
-U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF), written with `chr()` codes. Before
-2026-09-24 seven Unicode spaces were an answer in SQL and blank in the form.
+U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF), defined ONCE in
+`public.fn_intake_trim` and used for answers AND conditions. Before 2026-09-24 seven Unicode spaces were
+an answer in SQL and blank in the form, and (until 0311) the condition side still used plain `btrim`.
+🛑 **The rule must never raise.** 0233's `>` guard tested `[[:space:]]*-?[0-9]+...` and then cast
+`btrim(v_got)::numeric`; `[[:space:]]` accepts 19 Unicode spaces `btrim` leaves in place, so a count of
+NBSP+"5" raised 22P02 inside `fn_intake_missing`, which `client.clients` calls for every staff read of the
+Clients list. It never landed only because intake-submit computes status BEFORE writing. Since 0311 `>`
+tests an ASCII number on the already-trimmed value, so the cast cannot see anything it would refuse.
 ⚠ **1949 was not enough**: it only helped a follow-up that CARRIES a `show_if`. With the live tree, all
 35 keys requested and a truthful survey of a site with no lift station and no water tank, 8 keys were
 still missing, 3 of them photo questions nobody can answer (you cannot photograph a lift station that
@@ -190,10 +214,23 @@ Jobber. The raw submission stays immutable: the filter is at the consumer, never
 is a LOGIN role with BYPASSRLS, and the public schema's default ACL had given it table-level SELECT,
 live tokens included. A new column on `property_intakes` is therefore invisible to that role until
 granted by name, which is the safe default; **never "fix" that by granting table-level SELECT again.**
+The same default ACL handed it SELECT on `property_intake_uploads` the moment 0233 created it, while
+0233's header said "service_role only"; 0311 revoked it and now asserts the whole `relacl`. **A new
+table in `public` gets `yannick_readonly=r` by default: check every one.**
 ⚠ Separately, that role's password sits in the public repo
 (`docs/handoffs/yannick-*/YANNICK-CLAUDE-CODE-SETUP.md`, since 2026-06-09). Fred chose (2026-09-24) to
 have Yannick change it; the literals come out of the docs after he does, and scrubbing git history is a
 force-push that needs Fred's OK.
+
+**16. 🛑 A follow-up is only ever asked together with the question it depends on.** An empty `key=`
+reads a parent that was never ASKED as "left blank", so a requested set with a follow-up but not its
+parent asked the collector to measure a trap whose gallons the office already had. The Schedule dialog
+produced exactly that set by default (its pre-check unchecks a question whose value we hold and left
+the follow-up checked). Now closed twice: `client.schedule_property_intake` stores
+`fn_intake_prune_requested(snapshot, requested)` (drops every key whose parent chain is not requested)
+and returns what it dropped as `dropped`, refusing an all-orphan set in words; and the dialog's initial state
+applies the same rule its uncheck path does (live 2026-09-24, `clients._id-DvCP4-eC.js`, verified by
+executing the live code against property 162).
 
 ---
 
@@ -253,11 +290,16 @@ from token to id, the test harness still deleted `photos` by `intake-photos/<tok
 and its baseline check passed because it did not count `photos`. Two orphaned rows were found only by a
 separate count. Count every table you wrote to, not the ones you expect to have cleaned.
 
-**A consistency check built on an INNER join is blind to the defect it exists for.** The 0233 VERIFY
-counts conditions whose parent key is missing, spelled wrong, or `>` on a non-number. Written with a
-plain `LATERAL` join to find the parent, a condition naming a MISSING parent drops its own row and the
-count reads 0. It is a `LEFT JOIN LATERAL ... ON true`, so the row survives with a NULL parent and is
-counted. Ask of every "0 violations" check: can the violating row reach the WHERE clause at all?
+**A "0 violations" check was blind to the violation it existed for, TWICE, and the second fix was
+wrong too.** 0233's V4a counts conditions whose parent key is missing, spelled wrong, or `>` on a
+non-number. A plain `LATERAL` join to the parent would drop a missing parent's row, so it used
+`LEFT JOIN LATERAL ... ON true`, and this document then said the row "survives and is counted". **It
+survived the join and was dropped by the WHERE**: every branch of `NOT (A OR B OR C OR D)` compares
+against the NULL parent, `NOT(NULL)` is NULL, and WHERE keeps only TRUE. Found by the fourth review.
+0311's version wraps the test in `NOT coalesce(..., false)` and proves it with a MUTATED TREE (a
+missing parent, no operator, an empty condition, an empty `=` on a missing key) that must count 4.
+**A LEFT JOIN is necessary, not sufficient: ask whether the violating row reaches the final predicate
+as TRUE, and keep one fixture that must fail.**
 
 **A backslash inside a JS template literal is swallowed.** The attach-path regex was written as
 `` `...{12}\.(jpg|png)$` `` and compiled to `...{12}.(jpg|png)$`, so `<uuid>Xjpg` was accepted. Caught by

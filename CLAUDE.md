@@ -4540,7 +4540,12 @@ Six things that will bite someone who does not know them:
    `node scripts/checks/intake-showif-mirror.mjs`, which compares all three against the live tree and
    the LIVE Client App bundle. Uploads are bounded by a ledger (`public.property_intake_uploads`, 60
    slots per intake, ever), and `yannick_readonly` reads `property_intakes` by a column grant that
-   leaves out `token`: never grant it table-level SELECT again.
+   leaves out `token`: never grant it table-level SELECT again. Since the fourth review (0311): every
+   trim is `public.fn_intake_trim` (the JS `trim()` set) and the rule can no longer raise;
+   `schedule_property_intake` drops a follow-up whose parent was not requested (`dropped`); the
+   gallons are optional (measurements are the alternative) and grease-trap photos / gallons / capacity
+   photos need `systems_count > 0`; one live `photo_links` row per intake photo; and intake-submit v10
+   takes a photos answer from what is actually attached, never from the client.
 
 ## Documentation map
 
