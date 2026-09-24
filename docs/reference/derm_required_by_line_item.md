@@ -305,7 +305,12 @@ locked**. Do not treat one list as a copy of the other.
 ## Consumers (all key off `derm_required`, NULL-safe)
 - `public.manifest_pickable_visits` — `WHERE completed AND (derm_required IS NULL OR = true) AND no manifest`.
 - `derm.visits.needs_manifest` = `COALESCE(derm_required, true)` (DERM Tracker "Missing Docs").
-- `customer.work_orders` — `WHERE COALESCE(derm_required, true) = true` (Field Portal grease-trap work orders).
+- `customer.work_orders`: `WHERE COALESCE(derm_required, true) = true` (Field Portal grease-trap work orders)
+  **OR the visit is grey water pumping** (since 2026-09-24, `2026-09-24_1353`), so a grey water visit marked not
+  required stays visible, without DERM paperwork.
+- `derm.visits.grey_water_pumping` (2026-09-24, `_1600`/`_1615`): the same grey water rule as a column, read
+  by the DERM Tracker bulk dialog so it does not count grey water as hidden. Change it together with the
+  work_orders arm.
 - `ops.v_derm_compliance` — missing-manifest count now uses `derm_required` (was `service_type='GT'`);
   the view stays **Pumping-config-roster scoped** (`service_type = 'Pumping'`, formerly 'GT') (it joins `service_configs` GT for equipment/frequency), so
   grey-water/lift-station-**only** clients are tracked via `derm.visits`, not this ops dashboard.

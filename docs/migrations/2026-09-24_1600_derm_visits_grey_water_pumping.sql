@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 2026-09-24 · derm.visits.grey_water_pumping: the DERM Tracker bulk dialog stops overcounting
 -- ============================================================================
--- 🛑 THIS FILE WAS NEVER APPLIED AS WRITTEN. My mutation-test harness applied it at ~16:03 ET with the
+-- 🛑 THIS FILE WAS NEVER APPLIED AS WRITTEN. My mutation-test harness applied it at about 15:57 ET with the
 --   own-lines-first test removed (its cut point was computed before the mutation shortened the file, so the
 --   COMMIT ran). 2026-09-24_1615_derm_visits_grey_water_pumping_own_lines_first.sql put the rule below back.
 --   The VERIFY blocks here passed on the mutated rule: on today's data V3/V4 cannot tell the two apart
@@ -22,8 +22,9 @@
 --   fee/admin codes (reason 'fee'/'other') abstaining. The DERM Tracker list reads it and the dialog
 --   counts a visit as hidden only when derm_required !== false AND grey_water_pumping !== true
 --   (Lovable bd120ad4, same day).
---   Inline in the view, like the work_orders arm: the view runs with its owner's rights and already reads
---   both tables. CTE names are prefixed gw_ because derm.visits already has a LATERAL alias "lc".
+--   Inline in the view, like the work_orders arm: the view runs with its owner's rights, so no function,
+--   RPC or grant is needed. It already read public.visits and public.line_items; public.service_line_items
+--   is a new dependency of derm.visits (harmless: owner-rights view). CTE names are prefixed gw_ because derm.visits already has a LATERAL alias "lc".
 --
 -- 🛑 THE RULE NOW EXISTS TWICE (customer.work_orders WHERE, derm.visits column). Change one, change both.
 --   V3 below is the tie: over every portal-eligible derm.visits row stored FALSE, "is in

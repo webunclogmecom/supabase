@@ -3528,7 +3528,10 @@ one, so shipping a better rule does not heal history.
 > pickups are no longer offered for manifest linking, so they stop reaching the Miami-Dade LWT monthly
 > filing: `derm.v_lwt_grey_water_unlinked` (service_role) lists them for Jonathan. The Field Portal keeps
 > showing grey water visits (Fred, same day): `customer.work_orders` admits grey water pumping and
-> carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`). Known gaps (free-text grey water
+> carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`). 🛑 The same
+> grey water rule is ALSO the column `derm.visits.grey_water_pumping` (`2026-09-24_1600`, corrected by `_1615`),
+> read by the DERM Tracker's bulk "Mark DERM Not Required" dialog and selected by its Visits list: the rule
+> exists twice, change both (V3 of `_1615` ties them), and a rebuild of `derm.visits` must keep the column. Known gaps (free-text grey water
 > still reads TRUE; `edit_calendar_visit` recomputes on completed visits): the reference doc, section
 > "2026-09-24".
 

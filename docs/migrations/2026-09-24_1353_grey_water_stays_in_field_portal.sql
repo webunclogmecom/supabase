@@ -16,8 +16,11 @@
 --      'Grey Water', codes 03 and 10 today, asserted) and decided by the visit's OWN coded service lines
 --      first, then its job's, then its invoice's (fee/admin codes 25/26/27 abstain). Own lines first,
 --      because 66 invoices cover more than one visit: with an any-path test, a grease trap sibling on an
---      invoice that also bills a 10 line would be admitted with its DERM parts suppressed (invoice 2299:
---      7323, a 09 grease trap pump switched off, next to 7085's 10). Inline, because the view runs with
+--      invoice that also bills a 10 line would be admitted with its DERM parts suppressed. (Corrected
+--      2026-09-24 16:25 ET: this line first gave invoice 2299 / visit 7323 as a live example. It is not:
+--      invoice 2299 bills a 09 and a 25 line and no 10, and no completed visit today takes a grey water
+--      line only from a sibling's job or invoice. The precedence was proven by the rolled-back 112-YA
+--      fixture on invoice 2816, see 2026-09-24_1615.) Inline, because the view runs with
 --      its owner's rights and already reads both tables: no new function, RPC or grant.
 --      New LAST column derm_required = COALESCE(v.derm_required, true), never NULL: TRUE on every row the
 --      old filter admitted, FALSE only on a grey water row admitted by the new arm. The Field Portal hides
@@ -43,7 +46,8 @@
 -- NOT CHANGED, on purpose: Admin Review (Send / Open report still key on visits.derm_required; grey
 -- water has no city report to send), send-visit-photos-email (gate 0 already refuses: no grey water
 -- property has a City email), send-derm-email and derm-visit-report (latent only). The DERM Tracker bulk
--- "Hide these visits from the client portal?" dialog now overstates for grey water: follow-up.
+-- "Hide these visits from the client portal?" dialog now overstates for grey water: follow-up (done the
+-- same day: derm.visits.grey_water_pumping, 2026-09-24_1600 / _1615, and DERM Tracker changelog 2026-09-24 (e)).
 --
 -- AUDIT-TRAIL STANDING CHECK (rule 8): no table changes; views are not audited.
 -- ROLLBACK: re-create the three views from docs/migrations/_baseline/2026-09-24_customer_work_orders.before.sql

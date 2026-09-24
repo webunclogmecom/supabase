@@ -2,7 +2,7 @@
 -- 2026-09-24 · derm.visits.grey_water_pumping: put back the "own lines first" rule
 -- ============================================================================
 -- WHAT HAPPENED
---   2026-09-24_1600_derm_visits_grey_water_pumping.sql was applied at ~16:03 ET, but in a MUTATED form,
+--   2026-09-24_1600_derm_visits_grey_water_pumping.sql was applied at about 15:57 ET, but in a MUTATED form,
 --   by my own mutation-test harness, not by a --commit run. The harness removed the own-lines-first test
 --   from the column (to prove the checks can see a wrong rule), and then cut the file at a COMMIT offset
 --   computed BEFORE that edit shortened it. The cut therefore kept the migration's COMMIT: the mutated
@@ -14,8 +14,10 @@
 --   The committed column read "any 03/10 service line on the visit, its job or its invoice", without the
 --   precedence customer.work_orders uses (the visit's OWN coded service lines first, then its job's, then
 --   its invoice's). That rule can only ADD visits to the correct set, and on 2026-09-24 both rules give the
---   same 27 of 1259 derm.visits rows (equal counts on a superset = the same set). No app read the column
---   yet: the DERM Tracker change that reads it ships after this file.
+--   same 27 of 1259 derm.visits rows (equal counts on a superset = the same set). No app code used the
+--   column yet: two DERM Tracker pages select * from derm.visits and so received it, but nothing read the
+--   field, and the mutated values equalled the intended ones on every row. The DERM Tracker change that
+--   reads it shipped after this file.
 --   ⚠ The 1600 VERIFY passed on the mutated rule. Its V3 (the tie to customer.work_orders) and V4 cannot
 --   tell the two rules apart on today's data, because no completed visit has a grey water line only on a
 --   sibling's job or invoice. The rolled-back fixture in the probe (a 112-YA visit with its own 06 line on
@@ -25,7 +27,9 @@
 --   derm.visits: the grey_water_pumping expression is replaced by the intended one (same text as the
 --   1600 file), spliced between " AS client_emails," and " AS grey_water_pumping", each counted to one.
 --   Values do not change today (V1). Same checks as 1600, plus V2b: the stored rule carries the
---   min(tier) precedence.
+--   min(tier) precedence. V2b and the probe fixture are the only checks that tell the two rules apart;
+--   V5's 7323 is a regression control, not a discriminator (its invoice 2299 bills no 03/10 line).
+--   The 1600 / 1615 in the file names are not apply times: this file was applied at about 16:01 ET.
 --
 -- 🛑 THE RULE EXISTS TWICE (customer.work_orders WHERE, derm.visits column). Change one, change both.
 -- 🛑 Do not SET search_path in this file (see 1600).
