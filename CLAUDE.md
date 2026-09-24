@@ -3528,12 +3528,18 @@ one, so shipping a better rule does not heal history.
 > pickups are no longer offered for manifest linking, so they stop reaching the Miami-Dade LWT monthly
 > filing: `derm.v_lwt_grey_water_unlinked` (service_role) lists them for Jonathan. The Field Portal keeps
 > showing grey water visits (Fred, same day): `customer.work_orders` admits grey water pumping and
-> carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`). 🛑 The same
-> grey water rule is ALSO the column `derm.visits.grey_water_pumping` (`2026-09-24_1600`, corrected by `_1615`),
-> read by the DERM Tracker's bulk "Mark DERM Not Required" dialog and selected by its Visits list: the rule
-> exists twice, change both (V3 of `_1615` ties them), and a rebuild of `derm.visits` must keep the column. Known gaps (free-text grey water
-> still reads TRUE; `edit_calendar_visit` recomputes on completed visits): the reference doc, section
-> "2026-09-24".
+> carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`).
+> 🛑 **"Is this visit grey water pumping" is ONE view since `2026-09-24_1920`: `public.v_visit_grey_water_pumping`
+> (visit_id; live visits, no status filter, service_role SELECT only).** Its three readers are owner-rights
+> views that no longer carry a copy: `customer.work_orders` (the Field Portal arm), `derm.visits.grey_water_pumping`
+> (the DERM Tracker bulk "Mark DERM Not Required" dialog; a rebuild of `derm.visits` must keep that LAST column)
+> and `derm.v_lwt_grey_water_unlinked`. Change the rule there and only there; `'Grey Water'` appears in none of
+> the three readers (V5 of `_1920`). A free-text line whose WHOLE text is grey water pumping ("Grey Water
+> Pumping", exact-phrase list in `public.fn_line_item_is_free_text_grey_water`) counts as grey water and, in
+> `fn_line_item_requires_derm` (arm b0), answers the catalogue's grey water flag; a MIXED line ("GT & grey water
+> pumping") is deliberately not matched and stays TRUE. `edit_calendar_visit` only ever PROMOTES `derm_required`
+> on a completed or filed visit (`2026-09-24_1910`), like every other automatic writer. Details and the one
+> remaining open item (typed fee lines, item 11, skipped by Fred): the reference doc, section "2026-09-24".
 
 To find a missing DERM link, work in the Supabase DB. **Airtable is fully retired (2026-07-24) and must not be read** — there is no AT DERM table to cross-reference any more:
 1. **`derm_manifests`** — match on `white_manifest_number` + `client_id`, then compare `service_date` to the candidate visit's `visit_date`. Never match on `dump_ticket_date` alone: dump dates lag service dates by weeks.

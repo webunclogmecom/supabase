@@ -117,3 +117,8 @@ Consequences: grey water pickups are no longer offered for manifest linking, so 
 Miami-Dade LWT monthly filing (tracked by `derm.v_lwt_grey_water_unlinked` for Jonathan); the Field
 Portal keeps showing grey water visits by a separate exception (Fred, same day). Full detail and the known
 gaps: `docs/reference/derm_required_by_line_item.md`, section "2026-09-24".
+
+Same evening (`2026-09-24_1910`, `_1920`): a free-text line that is exactly grey water pumping answers the
+catalogue's grey water flag (a mixed "GT & grey water pumping" line stays TRUE); "is this visit grey water
+pumping" became one view, `public.v_visit_grey_water_pumping`, read by all three consumers; and
+`edit_calendar_visit` only promotes `derm_required` on a completed or filed visit.

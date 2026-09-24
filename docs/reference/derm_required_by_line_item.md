@@ -24,19 +24,50 @@ Migration `2026-09-24_1220_grey_water_not_derm_required.sql` (Supabase `2b1ef74`
    New visits need nothing: the SA generator and the Calendar RPCs write `bool_or(...)` = FALSE.
 
 **Left alone on purpose.** 23 completed grey water visits stored TRUE, every one with a manifest (214-MYK 18,
-084-ULT 3, 209-TRUE 1, 212-TRUE 1). 19 of them now DERIVE FALSE while stored TRUE (nothing demotes them); 4
-(4855, 5028, 5043, 5061) still derive TRUE through a free-text "Grey Water Pumping" line. 8165 (code 10,
-completed, manifest) stays TRUE. 8185 (338-PRT, code 10) is `scheduled` but dated 2026-09-22, so not
-pending: when it completes it will show as needing a manifest; use the per-visit toggle.
+084-ULT 3, 209-TRUE 1, 212-TRUE 1). 19 of them DERIVED FALSE from 2026-09-24_1220 on while stored TRUE
+(nothing demotes them); 4 (4855, 5028, 5043, 5061) kept deriving TRUE through a free-text "Grey Water
+Pumping" line until `2026-09-24_1920` (below). 8165 (code 10, completed, manifest) stays TRUE. 8185
+(338-PRT, code 10) is `scheduled` but dated 2026-09-22, so not pending: when it completes it will show as
+needing a manifest; use the per-visit toggle. Measured after `_1920`: **30** completed, filed grey water
+visits are stored TRUE and **all 30 derive FALSE**; the stored TRUE stays, by design.
+
+**Follow-ups 9, 10 and 12, shipped 2026-09-24 ~19:50 ET** (Fred: "Go ahead with all these, but skip 11"):
+- **Item 10, free-text grey water** (`2026-09-24_1920_grey_water_one_rule_and_free_text.sql`). New pure helper
+  `public.fn_line_item_is_free_text_grey_water(text)`: an EXACT-PHRASE allowlist anchored at both ends, so the
+  WHOLE line must be grey water pumping ("Grey Water Pumping", "Gray water pump out", "Greywater pumping",
+  "Pump out the grey water", ...). `fn_line_item_requires_derm` gained arm **(b0)** before the free-text PUMP
+  branch: such a line answers **the catalogue's grey water flag** (`bool_and(requires_derm)` over Pumping +
+  Grey Water, FALSE today), so the policy lives in one place. 🛑 A MIXED line ("GT & grey water pumping",
+  "Grease trap & grey water pumping", "Grey water pumping (GT)") is deliberately NOT matched and stays TRUE:
+  it may be a grease trap too. A permissive "names grey water and no other vessel" test was drafted first and
+  rejected in review because it moved exactly those lines TRUE -> FALSE. Moved by it (measured): the two live
+  names only; 11 completed visits' derive TRUE -> FALSE, no stored value, no pending visit;
+  `client.fn_client_has_derm_activity` 253-CG (client 208) TRUE -> FALSE (the Client App stops warning about a
+  DERM service report on its contact edit); `ops.v_derm_human_override_conflict` 64 -> 63 (5159: the person
+  and the derive now agree); `customer.permits` row-identical.
+- **Item 12, one rule** (same file). `public.v_visit_grey_water_pumping` (visit_id) is the grey water rule,
+  once: live visits; nearest tier of lines (own, else job, else invoice); catalogue Pumping + Grey Water or a
+  free-text grey water line; fee/admin codes abstain; no status filter (each reader adds its own). Owner-rights,
+  SELECT to service_role only; its three readers (below, Consumers) are owner-rights views and read it with
+  their owner's rights. They were three copies before, not two: `derm.v_lwt_grey_water_unlinked` had its own
+  looser one. Rule count after: 33 in `derm.visits` (was 27; the 6 are filed visits whose own line is
+  free-text grey water, 084-ULT x4 and 209-TRUE / 212-TRUE on 5/8), work orders 799 unchanged.
+- **Item 9, the Calendar edit** (`2026-09-24_1910_edit_calendar_visit_completed_never_demotes_derm.sql`). A
+  line edit on a COMPLETED visit, or on any visit with a live manifest link, now only ever PROMOTES
+  `derm_required` (writes TRUE when the new lines derive TRUE, otherwise keeps the stored value); a plain
+  pending visit still takes the full recompute. It was the one writer that could demote, and it could also
+  fill a completed NULL with FALSE, which hides a filed work order from the Field Portal (29 completed,
+  unlocked, NULL, filed visits were exposed to that). Proven on a 54-cell matrix (completed / scheduled /
+  filed-then-uncompleted x stored TRUE/FALSE/NULL x lines 01/03/25 x catalogue/lines path) with the old body
+  as the control, which failed exactly its 16 expected cells.
 
 **Known gaps, stated so nobody reads the rule as airtight:**
-- The free-text PUMP branch (step 2 below) still answers TRUE for "grey water ... pump" names. They exist
-  only on January to May 2026 history; removing grey water from that branch would make them NULL, not FALSE.
-  A NEW typed grey water line in Jobber would read TRUE and `set_visit_derm_required` would promote.
 - Only CODED fees abstain. A typed fee ("CC Fees ...", "ACH fee") still answers FALSE (step 3 below), so a
-  visit reaching only "25" plus a typed fee is FALSE, not NULL. 0 live visits have that shape.
-- `public.edit_calendar_visit` recomputes `derm_required` on a line edit even on a completed visit, so a
-  Calendar line edit on one of the 19 kept-TRUE visits would demote it.
+  visit reaching only "25" plus a typed fee is FALSE, not NULL. 0 live visits have that shape. This was
+  item 11; Fred skipped it.
+- `send-visit-photos-email` GATE 1 still treats `derm_required === false` as "no report". Unreachable for a
+  grey water visit today (gate 0, no city email, fires first, and Admin Review hides the button), so left
+  as is; whether a grey water report should ever go to the city is Fred's call.
 - A not-required visit is no longer offered for manifest linking (`manifest_pickable_visits`, the DERM
   Tracker "Attach visit" picker, `dump_route_today`), and the Miami-Dade LWT monthly filing
   (`derm.v_lwt_monthly_rows`) is built from manifest links. So grey water pickups stop reaching that filing
@@ -93,6 +124,9 @@ The line items are the real signal.
    mirrored line always hits it ("25 - Credit card fee (3.53%)" carries its code prefix). The free-text
    branch (3) still answers FALSE for a fee-ish string, since that same regex also covers
    cleaning/camera/labour where FALSE genuinely IS evidence.
+   **(b0), since 2026-09-24_1920:** a line whose WHOLE text is grey water pumping
+   (`fn_line_item_is_free_text_grey_water`) answers the catalogue's grey water flag (FALSE today). Mixed
+   lines are not matched and fall through to 2.
 2. else **free-text PUMPING** (`fn`'s `PUMP_RE`): a regulated vessel (grease trap / grease interceptor /
    interceptor / grey water / lift station, typo-tolerant "Tap"/"Lyft") near a pump word in either order,
    or an explicit pump-out (any word-form: pump/pumped/pumping/pumps out) → **true**. PUMP is tested
@@ -166,7 +200,8 @@ real answer was still 0. **Never accept a 0 here without the control printed bes
 **Monotonic invariant (automated paths):** `set_visit_derm_required` + `rederive_visits_derm_required`
 never demote a stored **TRUE** to false/null and never write NULL. Precisely (live bodies read 2026-09-24):
 `set_visit_derm_required` writes only where the stored value IS NOT TRUE (it fills NULL and promotes
-false→true), and the nightly rederive fills NULL only. This stops a later non-pump invoice from hiding a pumping visit and protects a human's
+false→true), and the nightly rederive fills NULL only. Since `2026-09-24_1910`, `edit_calendar_visit` joins
+them for a completed or filed visit (promote only); on a plain pending visit it still recomputes in full. This stops a later non-pump invoice from hiding a pumping visit and protects a human's
 NULL→true reclassification. (The one-time backfill is authoritative: it writes the function's verdict
 including re-surfacing a stale false→null, protecting only existing trues.)
 
@@ -308,9 +343,10 @@ locked**. Do not treat one list as a copy of the other.
 - `customer.work_orders`: `WHERE COALESCE(derm_required, true) = true` (Field Portal grease-trap work orders)
   **OR the visit is grey water pumping** (since 2026-09-24, `2026-09-24_1353`), so a grey water visit marked not
   required stays visible, without DERM paperwork.
-- `derm.visits.grey_water_pumping` (2026-09-24, `_1600`/`_1615`): the same grey water rule as a column, read
-  by the DERM Tracker bulk dialog so it does not count grey water as hidden. Change it together with the
-  work_orders arm.
+- **The grey water rule is `public.v_visit_grey_water_pumping`, once (since `2026-09-24_1920`).** Its readers:
+  the `customer.work_orders` arm above, `derm.visits.grey_water_pumping` (`_1600`/`_1615`, the DERM Tracker
+  bulk dialog, so it does not count grey water as hidden) and `derm.v_lwt_grey_water_unlinked` (the LWT gap
+  list). None of them carries its own copy any more; change the view, never a reader.
 - `ops.v_derm_compliance` — missing-manifest count now uses `derm_required` (was `service_type='GT'`);
   the view stays **Pumping-config-roster scoped** (`service_type = 'Pumping'`, formerly 'GT') (it joins `service_configs` GT for equipment/frequency), so
   grey-water/lift-station-**only** clients are tracked via `derm.visits`, not this ops dashboard.
