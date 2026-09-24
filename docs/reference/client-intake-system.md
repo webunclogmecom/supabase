@@ -32,7 +32,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused); v13 2026-09-24 (the one-line check refuses what Postgres `[[:cntrl:]]` refuses, C1 included; the 4,000-character refusal names its question; an hours key must be an OWN key of the day names) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused); v14 2026-09-24 (byte body ceiling, NUL / lone surrogate refused naming the question, real pins only, hours refusals named); v13 2026-09-24 (the one-line check refuses what Postgres `[[:cntrl:]]` refuses, C1 included; the 4,000-character refusal names its question; an hours key must be an OWN key of the day names) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
@@ -40,7 +40,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | staff photo read | storage policy `intake_photos_staff_read` (a copy of `reason_photos_staff_read`) | same |
 | read-only roles | `grant execute on public.fn_intake_answered to pg_read_all_data` | same |
 | required = shown and not optional | `public.fn_intake_required`; `fn_intake_applicable` reads `>` and empty `=` | `2026-09-24_0233_intake_tree_conditions_and_bounds.sql` |
-| tree conditions + `optional` | `fn_intake_form_current()` (16 conditional questions, `access_entry.obstacles` optional; keys unchanged) | same |
+| tree conditions + `optional` | `fn_intake_form_current()` (16 conditional questions at 0233, 21 since 0426; `access_entry.obstacles` optional; keys unchanged) | same |
 | upload ledger | `public.property_intake_uploads`, `public.fn_intake_claim_upload_slot` (60 slots per intake, ever) | same |
 | hidden answers refused | `get_intake_compare` state `not_shown`; `accept_intake_answers` refuses it | same |
 | token hidden from `yannick_readonly` | column-level SELECT on `property_intakes`, every column except `token` | same |
@@ -53,7 +53,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | the GT pin under the trap count; writer ranges in the tree | `site_map.gt_location` moved after `grease_trap.systems_count` (`>0`); gallons `min 1 max 20000`, manholes `max 50` | same |
 | accept refuses what the writer cannot take | `client.accept_intake_answers`: whole numbers in range, lock box without control characters, trimmed | same |
 | the lock box shape reaches submit; the outside note; no all-optional request | `lock_box_code` `"single_line": true, "max_chars": 100`; NEW key `access_entry.where_outside_note` (36 questions); `schedule_property_intake` refuses a request of only optional questions | `2026-09-24_0426_intake_round6_lockbox_outside_note.sql` |
-| the list agrees with the detail; a dropped follow-up is refused in words | `client.v_intake_submissions` `photo_count` / `has_gt_pin` / `has_truck_pin` count only what the collector was shown; `schedule_property_intake` refuses a follow-up whose parent was not ticked ("Pick the question each follow-up depends on as well.", DETAIL names the keys) | `2026-09-24_0450_intake_round7_list_counts_orphan_reason.sql` |
+| the list agrees with the detail; a dropped follow-up is refused in words | `client.v_intake_submissions` `photo_count` / `has_gt_pin` / `has_truck_pin` count only what the collector was shown (0450), and `photo_count` also only answered questions, as the detail does (0715); `schedule_property_intake` refuses EVERY follow-up whose parent was not ticked ("Pick the question each follow-up depends on as well.", DETAIL names the keys). ⚠ 0450 refused one only when pruning left nothing or only optional questions; a follow-up next to a required question was pruned silently until 0715 | `2026-09-24_0450_intake_round7_list_counts_orphan_reason.sql`, `2026-09-24_0715_intake_round8_photo_answered_every_orphan_refused.sql` |
 | Picture Planner audit label | `audit.log_change` maps `planner.unclogme.app`, `%unclogme-pics-organizer%`, `%d9464151%` to `picture-planner` | `2026-09-24_0301_audit_origin_picture_planner.sql` |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
@@ -125,8 +125,13 @@ question the tree marks `single_line` / `max_chars` (the lock box code, whose wr
 or more than 100 characters) is refused at submit too, and every refusal names the question WITH its
 section, because two questions read "How many manholes?". Since v13 "one line" means what the writer's
 CHECK means: no character Postgres `[[:cntrl:]]` matches, which includes the C1 block (U+0085 is a line
-break a JS `\u0000-\u001f` class let through) plus U+2028/U+2029, and the 4,000-character refusal names its
-question too (v12 said "every refusal" while that one still read "One of the notes is too long."). A ticked hours day without a real `HH:MM` open and close is REFUSED naming the day ("For any
+break a JS `\u0000-\u001f` class let through). Submit ALSO refuses U+2028/U+2029, which `[[:cntrl:]]` on this
+database does NOT match (measured 2026-09-24), so submit is stricter than the writer there, never looser. The
+4,000-character refusal names its question too (v12 said "every refusal" while that one still read "One of
+the notes is too long."), and since v14 so do the access-hours refusals. v14 also measures the 262,144 body
+ceiling in BYTES (it counted UTF-16 units, up to 3x), refuses a NUL or a lone surrogate anywhere in an answer
+or the collector name in words (Postgres refuses both, which was a 500 no retry fixed), and stores a map pin
+only as a finite `{lat, lng, accuracy_m}` in range. A ticked hours day without a real `HH:MM` open and close is REFUSED naming the day ("For any
 time, use 00:00 to 00:00"); v10 dropped it silently, which turned "any time" into "not that day" in an
 immutable record. ⚠ There is no upload TTL of ours:
 the old `SIGNED_UPLOAD_TTL 900` was declared and returned as `expires_in` but never applied. The real
