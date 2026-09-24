@@ -109,6 +109,10 @@ them stable test fixtures: they are not about to become blacked out under the te
 ## Out of scope
 
 - The `pdf_service_504` on photo-heavy renders. Pre-existing, unrelated, still outstanding.
+  🛑 **CORRECTED 2026-09-24: the cause was not photo weight.** Every failing visit had a GDO
+  Online Report screenshot, and the Field Portal report page re-fetched it once a second, so it never
+  went network-quiet and the pdf-service hit its 30 s wall. Fixed in the Field Portal 2026-09-24
+  (`Building Apps/Field Portal/docs/08-changelog.md`); 6568, the heaviest, renders in 7 s.
 - ~~The client dialog's stale **preview** text in the app.~~ **DONE 2026-09-03**, and not by
   retyping the copy: `send-derm-email` gained a `preview: true` mode that returns the letter it
   would actually send, and the dialog renders that. The early return sits above both send loops, so
