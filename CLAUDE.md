@@ -445,7 +445,7 @@ applies no DERM filter while `customer.work_orders` does, *therefore* the filter
   `customer.work_orders_all` + `customer.get_work_order_internal(text)` are the same objects without the
   derm_required predicate, **service_role only**. Their one reader is `derm.get_visit_report` (bullet
   above). The pdf-service `work_order_override` path they were first built for (edge fn
-  `derm-visit-report`, non-DERM visits) ran for a few hours on 2026-09-24 and has no caller since. Copied from the live
+  `derm-visit-report`, non-DERM visits) ran for a few hours on 2026-09-24 and was removed in pdf-service 0.8.0 (2026-09-25). Copied from the live
   definitions, md5-pinned: if the originals change, rebuild the twin
   (`docs/migrations/2026-09-24_1150_customer_work_order_internal.sql`). Never grant either to anon or
   authenticated.
