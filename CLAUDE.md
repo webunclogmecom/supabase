@@ -435,6 +435,12 @@ simply the normal rate of non-pumping work completing). The reasoning was: `cust
 applies no DERM filter while `customer.work_orders` does, *therefore* the filter is unintentional.
 **That does not follow — two views can simply have different jobs.**
 
+- ✅ **THE DERM TRACKER'S OWN REPORT READS `derm.get_visit_report(bigint)` (2026-09-24, `2026-09-24_1347`).**
+  Staff JWT or service_role only (body gate + grants; anon gets 42501 through PostgREST). It returns
+  `customer.get_work_order_internal(public_id)` plus the visit's own `client` (by id, never by slug) and
+  `derm_required`, NULL for a missing, deleted or not-completed visit. Edge fn `derm-visit-report` reads it
+  and hands it to the pdf-service (`/generate/derm-visit-report`), which answers the DERM page's one RPC
+  call with it. So the twin below is load-bearing for the DERM report too.
 - ✅ **A STAFF-ONLY TWIN EXISTS, AND IT DOES NOT CHANGE THAT RULE (2026-09-24).**
   `customer.work_orders_all` + `customer.get_work_order_internal(text)` are the same objects without the
   derm_required predicate, **service_role only**, for the DERM Tracker's "Download Report" on non-DERM

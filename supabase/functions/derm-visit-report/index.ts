@@ -1,40 +1,32 @@
 // ============================================================================
-// derm-visit-report/index.ts — Edge Function (2026-09-24)
+// derm-visit-report/index.ts: Edge Function (2026-09-24)
 // ============================================================================
 // Fred: a "Download Report" button on the DERM Tracker's visit page
-// (derm.unclogme.app/visits/XXXX), before "Open in FP", that downloads the SAME
-// Service Report the Field Portal's "Download report" produces.
+// (derm.unclogme.app/visits/XXXX) that downloads the visit's Service Report, and then:
+// "the idea is to make the report at the DERM App too, for whatever visit we want. The FP App is
+// for the clients so it's only for the DERM Required visits." He chose a one-click PDF file.
 //
-// So this does not build a report. It asks the pdf-service to PRINT the Field
-// Portal's own report page (/{slug}/visit/{public_id}/report) - the exact page FP
-// users save as PDF - and streams the bytes back. Same structure, logic, style and
-// theme by construction: there is one report, and this prints it.
+// So the DERM Tracker has its OWN report page, /visits/$visitId/report (a copy of the Field
+// Portal report's layout), and this function has the pdf-service PRINT that page. The Field Portal
+// is no longer involved. (Until 2026-09-24 afternoon this printed the FP page, with a staff-only
+// work_order_override for non-DERM visits; that path is retired.)
 //
 // Flow:
 //   browser (POST, body {visit_id}, the STAFF user's access token)
-//     -> this function (staff gate, resolves public_id + client_code server-side)
-//     -> pdf-service POST /generate/visit-report (bearer PDF_SERVICE_API_KEY)
+//     -> this function (staff gate; reads derm.get_visit_report(visit_id) with the service role)
+//     -> pdf-service POST /generate/derm-visit-report {visit_id, client_code?, include_photos, report}
+//        (bearer PDF_SERVICE_API_KEY). Its headless browser opens the DERM report page, which has no
+//        session, and answers the page's own rpc/get_visit_report call with `report` (0.7.0).
 //     -> application/pdf streamed back, Content-Disposition passed through
 //
 // Read-only: no storage write, no DB write.
 //
 // 🛑 verify_jwt = false in config.toml, and the gate is IN THE HANDLER: a real signed-in
 // @ayache.com / @unclogme.com user. The gateway alone would accept the public anon key.
-// 🛑 public_id and client_code are resolved HERE from visit_id, never taken from the caller:
-// the Field Portal resolves a report from public_id alone, so a caller-supplied id would let
-// anyone with a staff login pull any client's report under a different visit.
-// client_code is still sent so the pdf-service refuses (409 client_mismatch) a report that
-// does not name that client.
-//
-// NOT DERM-REQUIRED VISITS (2026-09-24). Fred: "I need it also when is not DERM Required, like
-// cases where is a SC visit, like https://derm.unclogme.app/visits/8117". The Field Portal shows
-// DERM-required work only, by design (customer.work_orders filters derm_required; Fred
-// 2026-08-05), and that rule is NOT changed. For such a visit this function reads the staff-only
-// twin customer.get_work_order_internal (service_role only, migration 2026-09-24_1150) and hands
-// it to the pdf-service as work_order_override: the service answers the FP page's own
-// get_work_order call with it inside its headless browser, so the PDF is still FP's report page,
-// same structure and style. Customers see nothing new. A DERM-required visit never takes this
-// path, so its report keeps FP's visit numbering exactly.
+// 🛑 The report is resolved HERE from visit_id, never taken from the caller, and passed to the
+// pdf-service UNALTERED: the PDF must be exactly what the staff page shows.
+// client_code (when the client has one) is still sent so the pdf-service refuses
+// (409 client_mismatch) a page that does not name that client.
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -46,7 +38,7 @@ const PDF_SERVICE_URL = Deno.env.get('PDF_SERVICE_URL')
 const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
 
 // The renderer is a headless browser printing a page with photos. Same budget as the Admin
-// Review email path (send-visit-photos-email), which calls the same endpoint.
+// Review email path (send-visit-photos-email), which calls the same service.
 const PDF_TIMEOUT_MS = 65_000
 
 const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
@@ -97,47 +89,32 @@ Deno.serve(async (req: Request) => {
   const visitId = Number(body?.visit_id)
   if (!Number.isInteger(visitId) || visitId <= 0) return fail('visit_id_required', 'No visit was given.', 400, cors)
 
-  // -- resolve the visit server-side --------------------------------------------------------
+  // -- the report data, read server-side with the service role --------------------------------
+  // derm.get_visit_report returns NULL for a missing, deleted or not-completed visit.
   const sb = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'derm-visit-report' } } })
-  const { data: v, error: vErr } = await sb.from('visits')
-    .select('id, public_id, deleted_at, derm_required, clients(client_code)')
-    .eq('id', visitId).maybeSingle()
-  if (vErr) {
-    console.error(`[derm-visit-report] visit ${visitId} lookup failed: ${vErr.message}`)
+  const { data: report, error: rErr } = await sb.schema('derm').rpc('get_visit_report', { p_visit_id: visitId })
+  if (rErr) {
+    console.error(`[derm-visit-report] visit ${visitId}: get_visit_report failed: ${rErr.message}`)
     return fail('lookup_failed', 'Could not look up this visit. Try again.', 502, cors)
   }
-  if (!v || v.deleted_at) return fail('visit_not_found', 'This visit no longer exists.', 404, cors)
-  const publicId = String((v as any).public_id ?? '').trim()
-  if (!publicId) return fail('no_report', 'This visit has no service report yet.', 409, cors)
-  const clientCode = String(((v as any).clients as any)?.client_code ?? '').trim() || null
-
-  // customer.work_orders keeps COALESCE(derm_required, true) = true, so exactly the visits with
-  // derm_required = false have no Field Portal report and need the staff-only work order.
-  let workOrderOverride: unknown = null
-  if ((v as any).derm_required === false) {
-    const { data: wo, error: woErr } = await sb.schema('customer')
-      .rpc('get_work_order_internal', { p_work_order_id: publicId })
-    if (woErr) {
-      console.error(`[derm-visit-report] visit ${visitId}: get_work_order_internal failed: ${woErr.message}`)
-      return fail('lookup_failed', 'Could not look up this visit. Try again.', 502, cors)
-    }
-    if (!wo) return fail('no_report', 'This visit has no service report yet.', 409, cors)
-    workOrderOverride = wo
+  if (!report || typeof report !== 'object') {
+    return fail('no_report', 'This visit has no service report yet. Only completed visits have one.', 409, cors)
   }
+  const clientCode = String((report as any)?.client?.client_code ?? '').trim() || null
 
-  // -- ask the pdf-service to print the Field Portal report ---------------------------------
+  // -- ask the pdf-service to print the DERM Tracker's report page ----------------------------
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), PDF_TIMEOUT_MS)
   let up: Response
   try {
-    up = await fetch(`${PDF_SERVICE_URL.replace(/\/$/, '')}/generate/visit-report`, {
+    up = await fetch(`${PDF_SERVICE_URL.replace(/\/$/, '')}/generate/derm-visit-report`, {
       method: 'POST', signal: ctrl.signal,
       headers: { Authorization: `Bearer ${PDF_SERVICE_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        visit_id: visitId,
         ...(clientCode ? { client_code: clientCode } : {}),
-        public_id: publicId,
         include_photos: true,
-        ...(workOrderOverride ? { work_order_override: workOrderOverride } : {}),
+        report,
       }),
     })
   } catch (e) {
@@ -152,16 +129,15 @@ Deno.serve(async (req: Request) => {
     let code = 'report_not_available'
     try { code = (await up.json())?.error ?? code } catch { /* keep default */ }
     return code === 'client_mismatch'
-      ? fail(code, 'The report the Field Portal returned is for a different client, so it was not downloaded.', 409, cors)
-      : fail(code, 'The Field Portal has no service report for this visit.', 409, cors)
+      ? fail(code, 'The report page showed a different client, so it was not downloaded.', 409, cors)
+      : fail(code, 'The report page could not show this visit, so no PDF was made.', 409, cors)
   }
   if (up.status === 503) {
     clearTimeout(timer)
     return fail('renderer_busy', 'The report maker is busy. Try again in a moment.', 503, cors)
   }
-  // 504 = the Field Portal page did not finish loading inside the pdf-service's 30 s wall. On
-  // 2026-09-24 that was the FP report page re-fetching its GDO image in a loop (visits 8088 and
-  // 7831), which no retry can fix, so it gets its own code in the logs and says so.
+  // 504 = the report page did not finish loading inside the pdf-service's 30 s wall. On 2026-09-24
+  // that was the FP report page re-fetching its GDO image in a loop (visits 8088, 7831).
   if (up.status === 504) {
     clearTimeout(timer)
     console.error(`[derm-visit-report] visit ${visitId}: pdf-service 504: ${(await up.text().catch(() => '')).slice(0, 300)}`)
