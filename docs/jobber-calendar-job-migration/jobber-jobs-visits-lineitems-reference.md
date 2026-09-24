@@ -28,14 +28,14 @@ These 27 items are **already implemented in Jobber as line-item names** (confirm
 |---|---|:--:|---|---|---|---|
 | 01 | Service Agreement - Pumping - Grease Trap & Tank Cleaning | **Y** | Service Agreement | Pumping | Grease Trap & Tank Cleaning | |
 | 02 | Service Agreement - Pumping - Grease Trap, Tank Cleaning & Warranty of Drainnage | **Y** | Service Agreement | Pumping | Grease Trap, Tank Cleaning & Warranty | |
-| 03 | Service Agreement - Pumping - Grey Water | **Y** | Service Agreement | Pumping | Grey Water | |
+| 03 | Service Agreement - Pumping - Grey Water | N (Y until 2026-09-24) | Service Agreement | Pumping | Grey Water | |
 | 04 | Service Agreement - Pumping - Lift Station & Tank Cleaning | **Y** | Service Agreement | Pumping | Lift Station & Tank Cleaning | |
 | 05 | Service Agreement - Cleaning - Main Line Cleaning | N | Service Agreement | Cleaning | Main Line Cleaning | |
 | 06 | Service Agreement - Cleaning - Aux Cleaning | N | Service Agreement | Cleaning | Aux Cleaning | |
 | 07 | Service Agreement - Cleaning - Tank Cleaning | N | Service Agreement | Cleaning | Tank Cleaning | |
 | 08 | Service Agreement - Warranty of Drainage | N | Service Agreement | Warranty of Drainage | | |
 | 09 | Service Call - Pumping - Grease Trap & Tank Cleaning | **Y** | Service Call | Pumping | Grease Trap & Tank Cleaning | |
-| 10 | Service Call - Pumping - Grey Water | **Y** | Service Call | Pumping | Grey Water | |
+| 10 | Service Call - Pumping - Grey Water | N (Y until 2026-09-24) | Service Call | Pumping | Grey Water | |
 | 11 | Service Call - Pumping - Lift Station & Tank Cleaning | **Y** | Service Call | Pumping | Lift Station & Tank Cleaning | |
 | 12 | Service Call - Cleaning - Main Line Cleaning | N | Service Call | Cleaning | Main Line Cleaning | |
 | 13 | Service Call - Cleaning - Auxiliary Line Cleaning | N | Service Call | Cleaning | Auxiliary Line Cleaning | |
@@ -54,7 +54,7 @@ These 27 items are **already implemented in Jobber as line-item names** (confirm
 | 26 | ACH Fee (1%) | N | fee | | | |
 | 27 | GDO Online Reporting | N | GDO Online Reporting | | | |
 
-**DERM rule:** `derm_required = (col A == "Y")`, which is exactly the **7 Pumping items** (01–04, 09–11). All non-pumping = N.
+**DERM rule:** `derm_required = (col A == "Y")`, which is exactly the **5 grease trap and lift station Pumping items** (01, 02, 04, 09, 11). All non-pumping = N. Grey water pumping (03, 10) was Y until 2026-09-24, when Diego and Fred ruled it needs no DERM manifest (migration `2026-09-24_1220`; Fred's sheet still says Y until he edits it).
 **Visit-title candidates** are the *service* rows **01–24**; 25–26 are billing fees (not visits), 27 is a reporting add-on.
 
 ---
@@ -155,7 +155,7 @@ VisitCreateLineItemAttributes { name: String!, quantity: Float!, unitPrice: Floa
 
 ## 4. DERM logic (for the DERM app)
 On each visit, resolve its **title → line-item row → column A**:
-`derm_required = (lineItem.requires_derm == "Y")` → the 7 Pumping services. Surface as **"DERM required"** vs **"Not DERM required"**
+`derm_required = (lineItem.requires_derm == "Y")` → the 5 grease trap and lift station Pumping services (grey water left the set on 2026-09-24). Surface as **"DERM required"** vs **"Not DERM required"**
 in the DERM Tracker. (We already have `visits.derm_required boolean` to hold this.)
 
 ---

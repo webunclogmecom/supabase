@@ -95,3 +95,25 @@ where FALSE genuinely is evidence. Splitting that branch is a separate change wi
 - The 94 NULL visits remain surfaced for review and resolve as Jobber line items get reformatted to the
   01–27 taxonomy. Free-text classification is best-effort and lives in the function (auditable, re-runnable).
 - Rollback: `derm_required_backfill_snapshot_2026_06_24`; `cron.unschedule('derm-required-rederive')`.
+
+## Amendment 2026-09-24: grey water pumping is not DERM required
+
+The Context above says grey-water pumping "does require DERM". That was the decision on 2026-06-24 and is
+kept as the record; it is no longer true. Diego (DERM operations, Slack C0BD3VDPB9S): *"we need that all
+grey water services say DERM they're not required"*; Fred: *"Noted, so we don't need the DERM anymore for
+Grey Water"*. Staff had marked grey water visits "not required" by hand since July (214-MYK 5745 and
+253-CG 5159 three times each).
+
+Migration `2026-09-24_1220_grey_water_not_derm_required.sql`:
+- `service_line_items.requires_derm = false` for 03 and 10 (grey water). The DERM-required set is
+  {01, 02, 04, 09, 11}.
+- `fn_visit_requires_derm` leaves coded fee/admin lines (25, 26, 27) out of the fold, matching the Calendar
+  and SA writers (`bool_or`, 2026-08-13). Without it, 03 + 25 derived NULL ("still needs a manifest").
+  A visit reaching only such lines is still NULL.
+- The 32 pending unlocked grey water visits were set FALSE; the 23 completed ones with a manifest keep TRUE
+  (Fred: *"leave the filed ones alone"*).
+
+Consequences: grey water pickups are no longer offered for manifest linking, so they stop reaching the
+Miami-Dade LWT monthly filing (tracked by `derm.v_lwt_grey_water_unlinked` for Jonathan); the Field
+Portal keeps showing grey water visits by a separate exception (Fred, same day). Full detail and the known
+gaps: `docs/reference/derm_required_by_line_item.md`, section "2026-09-24".

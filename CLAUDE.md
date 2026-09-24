@@ -3511,7 +3511,18 @@ one, so shipping a better rule does not heal history.
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
 
-> **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01–04/09–11); `service_type` is unreliable as a proxy — `handleVisit` falls back to a default when the line-item derive is non-concrete, and grey-water pumping was coded as cleaning. *(That default was `GT` and grey water was `CL` until the 2026-08-03 rename; today they read `Pumping` and `Cleaning`. The unreliability is unchanged — this is why the derive keys off line items, not off this column.)* Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic — never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
+> **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01, 02, 04, 09, 11; grey water 03 and 10 stopped requiring DERM on 2026-09-24, see below); `service_type` is unreliable as a proxy — `handleVisit` falls back to a default when the line-item derive is non-concrete, and grey-water pumping was coded as cleaning. *(That default was `GT` and grey water was `CL` until the 2026-08-03 rename; today they read `Pumping` and `Cleaning`. The unreliability is unchanged — this is why the derive keys off line items, not off this column.)* Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic — never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
+
+> 🛑 **GREY WATER PUMPING (03, 10) IS NOT DERM REQUIRED SINCE 2026-09-24** (Diego and Fred; migration
+> `2026-09-24_1220_grey_water_not_derm_required.sql`). Coded fee lines (25/26/27) no longer block the fold
+> in `fn_visit_requires_derm`, as in the Calendar and SA writers. The 32 pending grey water visits were set
+> FALSE; the 23 COMPLETED ones that already had a manifest keep TRUE on purpose (Fred: "leave the filed
+> ones alone"), so a manifest on a grey water visit is history, not a missing obligation. Grey water
+> pickups are no longer offered for manifest linking, so they stop reaching the Miami-Dade LWT monthly
+> filing: `derm.v_lwt_grey_water_unlinked` (service_role) lists them for Jonathan. The Field Portal keeps
+> showing grey water visits by a separate exception (Fred, same day). Known gaps (free-text grey water
+> still reads TRUE; `edit_calendar_visit` recomputes on completed visits): the reference doc, section
+> "2026-09-24".
 
 To find a missing DERM link, work in the Supabase DB. **Airtable is fully retired (2026-07-24) and must not be read** — there is no AT DERM table to cross-reference any more:
 1. **`derm_manifests`** — match on `white_manifest_number` + `client_id`, then compare `service_date` to the candidate visit's `visit_date`. Never match on `dump_ticket_date` alone: dump dates lag service dates by weeks.

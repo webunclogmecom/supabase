@@ -60,9 +60,9 @@ archived Wynd phantom) are edge cases needing Itemized-sheet line items or archi
     (visit scope).
   - `visits.service_type` (GT/CL/WD/LS, or NULL) is derived from the primary service.
   - **DERM required** iff the visit has a *pumping* line item (`service_line_items.requires_derm`,
-    codes 01–04 / 09–11). `visits.derm_required` is **derived from the visit's line items** (union of
+    codes 01, 02, 04, 09, 11; grey water 03 and 10 left the set on 2026-09-24). `visits.derm_required` is **derived from the visit's line items** (union of
     visit/invoice/job scope; taxonomy code → free-text classifier → NULL), **not** `service_type` —
-    which is too blunt (handleVisit defaults to GT; grey-water pumping is coded CL but needs DERM). NULL
+    which is too blunt (handleVisit defaults to GT; grey-water pumping was coded CL while it still needed DERM, until 2026-09-24). NULL
     = unknown = surfaced for review. Full spec: [`reference/derm_required_by_line_item.md`](../reference/derm_required_by_line_item.md)
     + ADR [018](../decisions/018-derm-required-from-line-items.md). Set by the Calendar RPC, `handleVisit`
     (`set_visit_derm_required`), and nightly pg_cron `derm-required-rederive` (all monotonic — never

@@ -3,11 +3,59 @@
 **Status: IMPLEMENTED 2026-06-24** (migration `migrations/2026-06-24_derm_required_from_line_items.sql`,
 ADR [018](../decisions/018-derm-required-from-line-items.md)). Supersedes the 2026-06-02 stopgap.
 
+## 🛑 2026-09-24: GREY WATER PUMPING (03, 10) IS NO LONGER DERM REQUIRED, AND CODED FEES NO LONGER BLOCK THE FOLD
+
+Diego (Slack C0BD3VDPB9S): *"we need that all grey water services say DERM they're not required"*. Fred:
+*"Noted, so we don't need the DERM anymore for Grey Water"*, then *"go ahead, leave the filed ones alone"*.
+Migration `2026-09-24_1220_grey_water_not_derm_required.sql` (Supabase `2b1ef74`), one transaction:
+
+1. **Catalogue.** `service_line_items.requires_derm = false` for **03** (Service Agreement - Pumping - Grey
+   Water) and **10** (Service Call - Pumping - Grey Water). The DERM-required set is now **{01, 02, 04, 09,
+   11}**. ⚠ Fred's sheet still says Y for 03 and 10 until he edits it; the catalogue is what runs.
+2. **Fold.** `fn_visit_requires_derm` leaves CODED fee/admin lines (25, 26, 27) out before folding: they
+   neither decide the verdict nor block it. Without this, part 1 did nothing useful: 53 of the 56 visits that
+   reach a 03 line also reach "25 - Credit card fee", and the old fold turned any NULL line into a NULL
+   verdict, so 03 (false) + 25 (NULL) = NULL = "still needs a manifest". The Calendar and SA writers have
+   folded this way (`bool_or`) since 2026-08-13; the function now matches them (101 visits already stored
+   FALSE by those writers now also derive FALSE; no stored value moved). A visit reaching ONLY fee/admin lines
+   is still NULL (the 2026-08-06 guard below). An unrecognised free-text line still blocks.
+3. **Backfill.** The 32 PENDING (`scheduled`, dated today or later) unlocked grey water visits were set
+   FALSE (214-MYK 26, 084-ULT 6). The automated writers never demote a TRUE, so without it they stayed TRUE.
+   New visits need nothing: the SA generator and the Calendar RPCs write `bool_or(...)` = FALSE.
+
+**Left alone on purpose.** 23 completed grey water visits stored TRUE, every one with a manifest (214-MYK 18,
+084-ULT 3, 209-TRUE 1, 212-TRUE 1). 19 of them now DERIVE FALSE while stored TRUE (nothing demotes them); 4
+(4855, 5028, 5043, 5061) still derive TRUE through a free-text "Grey Water Pumping" line. 8165 (code 10,
+completed, manifest) stays TRUE. 8185 (338-PRT, code 10) is `scheduled` but dated 2026-09-22, so not
+pending: when it completes it will show as needing a manifest; use the per-visit toggle.
+
+**Known gaps, stated so nobody reads the rule as airtight:**
+- The free-text PUMP branch (step 2 below) still answers TRUE for "grey water ... pump" names. They exist
+  only on January to May 2026 history; removing grey water from that branch would make them NULL, not FALSE.
+  A NEW typed grey water line in Jobber would read TRUE and `set_visit_derm_required` would promote.
+- Only CODED fees abstain. A typed fee ("CC Fees ...", "ACH fee") still answers FALSE (step 3 below), so a
+  visit reaching only "25" plus a typed fee is FALSE, not NULL. 0 live visits have that shape.
+- `public.edit_calendar_visit` recomputes `derm_required` on a line edit even on a completed visit, so a
+  Calendar line edit on one of the 19 kept-TRUE visits would demote it.
+- A not-required visit is no longer offered for manifest linking (`manifest_pickable_visits`, the DERM
+  Tracker "Attach visit" picker, `dump_route_today`), and the Miami-Dade LWT monthly filing
+  (`derm.v_lwt_monthly_rows`) is built from manifest links. So grey water pickups stop reaching that filing
+  (30 of its 808 rows were grey water, 20 on filed tickets). Fred: "ship now, track it".
+  **`derm.v_lwt_grey_water_unlinked`** (service_role only) lists completed grey water pickups since
+  2026-09-24 with no manifest link. Empty means nothing is missing. Open question for Jonathan.
+- The Field Portal: `customer.work_orders` hides a not-required visit. Fred decided the same day that grey
+  water visits must stay visible to the client; that exception is a separate change (see the Field Portal
+  changelog and its own migration).
+
+Side effect, wanted: `public.v_gdo_reporting_derm_mismatch` can fire again. Since 2026-08-06 a visit with a
+visit-scoped 27 line could never derive FALSE, so that check was blind; a 27 line on a grey water visit now
+shows there.
+
 **Source of truth:** Fred's Google Sheet — https://docs.google.com/spreadsheets/d/19ArflSwdhcpnu1U6Lii5q2VFmDLjwskurDCghN0aanE/edit (gid=0). Column **"Requires DERM reporting"** (Y/N) per formatted line-item type (01–27).
 
 ## The rule
 **A visit requires a DERM manifest iff it includes a "Pumping" line item** — Grease Trap (incl. grease
-*interceptor*), Grey Water, or Lift Station pumping. Every other **service** (Cleaning, Hydrojet,
+*interceptor*) or Lift Station pumping. Grey water pumping was on this list until 2026-09-24 (see above). Every other **service** (Cleaning, Hydrojet,
 Unclogging, Camera/Dye/Assessment, Labor, Parts, Warranty) does **not**.
 
 🛑 **FEE AND ADMIN LINES ARE A THIRD CATEGORY: THEY ABSTAIN, and they are NOT in the "does not" set.**
@@ -21,13 +69,16 @@ fee says nothing about whether the work needed a manifest, and storing "no" wher
 line does not say" is what makes the SC fee mirror dangerous (worked through under the derivation
 section below).
 
-`service_line_items.requires_derm = true` for exactly codes **{01, 02, 03, 04, 09, 10, 11}** (all Pumping;
-01–04 = Service Agreement, 09–11 = Service Call). This column is already correct and matches the sheet.
+`service_line_items.requires_derm = true` for exactly codes **{01, 02, 04, 09, 11}** since 2026-09-24 (grease
+trap and lift station pumping; 01–04 = Service Agreement, 09–11 = Service Call). 03 and 10, grey water, were
+turned off that day, and the sheet still says Y for them until Fred edits it. Until then the set was
+{01, 02, 03, 04, 09, 10, 11}.
 ⚠ It is **NOT NULL**, so it cannot express "this line does not say". That is why the abstention lives in
 the function and not in the column: widening the column would have touched all 28 catalogue rows.
 
 `visits.service_type` is **too blunt** and is NOT the DERM signal: `handleVisit` *defaults*
-service_type to GT (so cleaning visits looked GT), and grey-water pumping is coded CL but DOES need DERM.
+service_type to GT (so cleaning visits looked GT), and grey-water pumping was coded CL while it still needed
+DERM (until 2026-09-24).
 The line items are the real signal.
 
 ## How `visits.derm_required` is derived
@@ -55,6 +106,8 @@ line items across all three scopes (visit-scoped `visit_id`, invoice-scoped `inv
 - **any** item true → **true** (union, so pumping carried on the job/invoice is never masked);
 - has items, all classified, none true → **false**;
 - otherwise (some unknown, or no items) → **NULL**.
+- Since 2026-09-24, CODED fee/admin lines (25, 26, 27) are left out before folding: they neither decide nor
+  block. A visit that reaches only such lines has no items left and is **NULL**.
 
 **NULL is the safe default** — every consumer treats `derm_required IS NULL OR = true` as *still needs a
 manifest* (surfaced for review), so a genuinely-ambiguous visit is never silently dropped. False
@@ -110,8 +163,9 @@ real answer was still 0. **Never accept a 0 here without the control printed bes
   **Skips human-locked rows** (`derm_required_locked` — see below).
 
 **Monotonic invariant (automated paths):** `set_visit_derm_required` + `rederive_visits_derm_required`
-never demote a stored **TRUE** to false/null and never write NULL — they only promote NULL→{true,false}
-and false→true. This stops a later non-pump invoice from hiding a pumping visit and protects a human's
+never demote a stored **TRUE** to false/null and never write NULL. Precisely (live bodies read 2026-09-24):
+`set_visit_derm_required` writes only where the stored value IS NOT TRUE (it fills NULL and promotes
+false→true), and the nightly rederive fills NULL only. This stops a later non-pump invoice from hiding a pumping visit and protects a human's
 NULL→true reclassification. (The one-time backfill is authoritative: it writes the function's verdict
 including re-surfacing a stale false→null, protecting only existing trues.)
 

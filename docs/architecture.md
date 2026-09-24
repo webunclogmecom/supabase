@@ -104,7 +104,7 @@ are now **rejected** by both CHECK constraints (`23514`).
 
 | Value | Meaning | Where it appears |
 |---|---|---|
-| `Pumping` | Grease trap / grey water / lift-station pumping (DERM-regulated) | `service_configs`, `visits`, `service_line_items` |
+| `Pumping` | Grease trap / grey water / lift-station pumping (grease trap and lift station are DERM-regulated; grey water is not since 2026-09-24) | `service_configs`, `visits`, `service_line_items` |
 | `Cleaning` | Line / tank cleaning | same |
 | `Warranty of Drainage` | The warranty subscription | same |
 | `Unclogging`, `Camera Inspection`, `Dye Test`, `Assessment`, `Labor`, `Parts`, `Labor BUS`, `Dump Offload` | The rest of the catalogue taxonomy | `visits`, `service_line_items` — **NOT** `service_configs` |
