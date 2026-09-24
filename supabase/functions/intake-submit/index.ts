@@ -63,6 +63,12 @@
 // question's min/max (the writer's range, from the tree); a ticked hours day without a real open AND
 // close is REFUSED in words naming the day (v10 dropped it silently, and the record is immutable); a
 // photo already linked to another question on this form is refused, never reported as attached.
+// v12 (2026-09-24, sixth review): a text question marked "single_line" / "max_chars" in the tree (the lock
+// box code, whose writer refuses a line break or >100 characters) is refused at submit, not only at accept;
+// every refusal names the question WITH its section ("Grease trap: How many manholes?", there are two);
+// an hours answer with a day key outside mon..sun is refused, and a day set to false or "" is unticked;
+// a re-attach blocked by a REMOVED link says so instead of blaming another question; the default number
+// ceiling is 999,999, the largest value accept's whole-number check takes.
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -337,6 +343,7 @@ Deno.serve(async (req) => {
       const roles = await liveLinkRoles()
       if (roles === undefined) return fail(500, 'Could not attach the photo, please try again.')
       if (roles.includes(role)) return json(200, { ok: true, photo_id: photoId, already_attached: true })
+      if (!roles.length) return fail(409, 'That photo was removed from this form. Take it again.')
       return fail(409, 'This photo is already attached to another question on this form.')
     }
     if (lErr) return fail(500, 'Could not attach the photo, please try again.')
@@ -380,12 +387,27 @@ Deno.serve(async (req) => {
     //  - a PHOTOS answer is the paths ACTUALLY attached to that question (live photo_links, role = key).
     //    A claimed answer with nothing attached is dropped (v10); an attached photo nobody claimed still
     //    counts when its question was shown (v11).
-    type Q = { key: string; type?: string; label?: string; min?: number; max?: number }
+    type Q = { key: string; type?: string; label?: string; min?: number; max?: number; single_line?: boolean; max_chars?: number; section?: string }
     const qs = new Map<string, Q>()
-    for (const sec of ((i.form_snapshot as { sections?: unknown[] }).sections ?? []) as { questions?: unknown[] }[]) {
+    for (const sec of ((i.form_snapshot as { sections?: unknown[] }).sections ?? []) as { title?: string; questions?: unknown[] }[]) {
       for (const q of (sec?.questions ?? []) as Q[]) {
-        if (q && typeof q.key === 'string' && typeof q.type === 'string') qs.set(q.key, q)
+        if (q && typeof q.key === 'string' && typeof q.type === 'string') qs.set(q.key, { ...q, section: sec?.title })
       }
+    }
+    const named = (q: Q) => `"${q.section ? q.section + ': ' : ''}${q.label ?? q.key}"`
+    // One-line text (the tree says so): the writer refuses a line break or control character, and a length.
+    for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'text' && (qs.get(k)?.single_line || qs.get(k)?.max_chars))) {
+      const q = qs.get(k) as Q
+      const v = (answers[k] as { value?: unknown }).value
+      if (v == null) { delete answers[k]; continue }
+      if (typeof v !== 'string') return fail(400, `Could not read ${named(q)}.`)
+      const t = v.trim()
+      if (t === '') { delete answers[k]; continue }
+      const max = typeof q.max_chars === 'number' ? q.max_chars : MAX_VALUE_CHARS
+      if ((q.single_line && /[\u0000-\u001f\u007f\u2028\u2029]/.test(t)) || t.length > max) {
+        return fail(400, `${named(q)} must be on one line, with at most ${max} characters.`)
+      }
+      answers[k] = { value: t }
     }
     for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'number')) {
       const q = qs.get(k) as Q
@@ -393,9 +415,9 @@ Deno.serve(async (req) => {
       if (v == null || (typeof v === 'string' && v.trim() === '')) { delete answers[k]; continue }
       if (typeof v === 'string') v = /^[0-9]+$/.test(v.trim()) ? Number(v.trim()) : NaN
       const min = typeof q.min === 'number' ? q.min : 0
-      const max = typeof q.max === 'number' ? q.max : 1_000_000
+      const max = typeof q.max === 'number' ? q.max : 999_999
       if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) {
-        return fail(400, `"${q.label ?? k}" needs a whole number from ${min} to ${max}.`
+        return fail(400, `${named(q)} needs a whole number from ${min} to ${max}.`
           + (min > 0 ? ' Leave it blank if you do not know it.' : ''))
       }
       answers[k] = { value: v }
@@ -404,11 +426,14 @@ Deno.serve(async (req) => {
     const DAY_NAMES: Record<string, string> = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' }
     for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'weekly_hours')) {
       const v = (answers[k] as { value?: unknown }).value
-      if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(400, 'Could not read the access hours.')
+      if (v == null || v === '') { delete answers[k]; continue }
+      if (typeof v !== 'object' || Array.isArray(v)) return fail(400, 'Could not read the access hours.')
+      if (Object.keys(v).some((d) => !(d in DAY_NAMES))) return fail(400, 'Could not read the access hours.')
       const days: Record<string, { open: string; close: string }> = {}
       for (const d of Object.keys(DAY_NAMES)) {
-        const w = (v as Record<string, { open?: unknown; close?: unknown } | undefined>)[d]
-        if (w == null) continue
+        const w = (v as Record<string, { open?: unknown; close?: unknown } | false | '' | undefined>)[d]
+        if (w == null || w === false || w === '') continue      // an unticked day
+        if (typeof w !== 'object') return fail(400, 'Could not read the access hours.')
         if (typeof w.open !== 'string' || typeof w.close !== 'string' || !HHMM.test(w.open) || !HHMM.test(w.close)) {
           return fail(400, `${DAY_NAMES[d]} needs an opening and a closing time. For any time, use 00:00 to 00:00, or untick the day.`)
         }

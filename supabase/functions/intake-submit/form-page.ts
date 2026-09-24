@@ -84,7 +84,7 @@ function api(b){b.token=TOKEN;return fetch(EP,{method:'POST',headers:{'Content-T
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(A))}catch(e){}}
 function load(){try{var v=localStorage.getItem(KEY);if(v)A=JSON.parse(v)||{}}catch(e){A={}}}
-function show(m){var d=document.createElement('div');d.className='err';d.textContent=m;document.getElementById('main').prepend(d)}
+function show(m){var d=document.createElement('div');d.className='err';d.textContent=m;document.getElementById('main').prepend(d);try{d.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){}}
 
 // show_if is "<key>=<value>" (the value may be empty: the parent was left blank) or "<key>>N" (the
 // parent is a number above N). The operator is the FIRST "=" or ">", both sides trimmed, and a
@@ -157,6 +157,9 @@ function field(q){
   } else if(t==='number'){
     var n=document.createElement('input'); n.type='number'; n.inputMode='numeric'; n.step='1'; n.min=String(typeof q.min==='number'?q.min:0); if(typeof q.max==='number') n.max=String(q.max);
     n.value=(v==null?'':v); n.onchange=function(){setA(q.key, n.value===''?'':Number(n.value))}; d.appendChild(n);
+  } else if(t==='text'&&q.single_line){
+    var x1=document.createElement('input'); x1.type='text'; x1.value=(v==null?'':v); if(typeof q.max_chars==='number') x1.maxLength=q.max_chars;
+    x1.oninput=function(){A[q.key]=x1.value;save()}; x1.onblur=function(){setA(q.key,x1.value)}; d.appendChild(x1);
   } else if(t==='text'){
     var x=document.createElement('textarea'); x.value=(v==null?'':v);
     x.oninput=function(){A[q.key]=x.value;save()}; x.onblur=function(){setA(q.key,x.value)}; d.appendChild(x);
