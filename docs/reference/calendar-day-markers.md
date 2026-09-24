@@ -20,6 +20,44 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 
 ## The objects
 
+> **🟡 A TRUCK START IS JUDGED FOR FRESHNESS SINCE 2026-09-24** (`2026-09-24_0715_start_freshness_phase1`,
+> Supabase `d81b69a`; plan `Building Apps/Visit Calendar/docs/specs/2026-09-23-start-freshness-design.md`).
+> A truck Start (`marker_type='start'`, `vehicle_id` AND `employee_id` set) is a snapshot of its truck's
+> first visit, so the database now flags it when that first visit changes. It never recomputes and never
+> deletes anything (those are phases 2 and 3). The objects:
+> - **`stale_reason`** / **`stale_since`** on this table. `stale_reason` is `'no timed visit'` (red),
+>   `'first visit changed'` or `'driver changed'` (amber), NULL = fresh. **A caller can never set or clear
+>   them**: the BEFORE trigger `trg_aa_start_judge` replaces whatever a write sends with the verdict, and
+>   only `ops.fn_judge_starts` (under the transaction GUC `app.start_judge_write`) writes them directly.
+>   A frozen Start (its own minute has passed, ET: `public.fn_start_frozen`) carries no flag.
+> - **The rule is `public.fn_start_verdict`.** The first visit comes from **`public.fn_start_first_visit`
+>   (date, truck)**, the one SQL copy of 13p's selection, on the ASSIGNED truck only (`visits.vehicle_id`;
+>   Fred: "go by assigned trucks only") and timed visits only. A DERIVED Start is stale when that visit is
+>   not its `source_visit_id`, or when the start its OWN minute implies (`marker_date + minutes +
+>   eta_minutes + fn_start_block_minutes()` at ET) is not that visit's start. 🛑 **Not a stored snapshot**:
+>   the app computes the minute when the truck is picked and writes it later, so a snapshot stamped at
+>   write time called a stale Recompute fresh (the review's must-fix #5). `fn_start_block_minutes()` = 30
+>   must equal the app's `START_BLOCK_MINUTES`; changing one alone flags every derived Start, which is the
+>   correct outcome of a block change. A hand-edited Start is never judged on its minute.
+> - **The write path only notes the DAY.** `trg_zz_queue_start_recheck` on `public.visits` (UPDATE OF
+>   visit_date, start_at, end_at, vehicle_id, visit_status, deleted_at, property_id, client_id,
+>   assigned_driver_id), `public.visit_assignments` and `public.inspections` (shift_date +/- 1) inserts into
+>   **`ops.start_recheck_queue`** only when a truck Start exists on that day (one probe on
+>   `calendar_day_markers_start_truck_uniq`). The queue is append-only on purpose: no insert can wait on
+>   another transaction, and an uncommitted writer's note is invisible to a drain, so no change is lost.
+> - **`ops.refresh_start_flags()`** drains and judges. The app calls it after its own visit writes; cron
+>   `start-flags-drain` runs it every 2 minutes; `start-flags-sweep` (08:00 UTC) re-judges every truck
+>   Start from today, covering what is not instrumented (a re-geocode, an employee going INACTIVE).
+>   `ops.start_first_visit(date, truck)` is the app's read-only wrapper. Both are `authenticated` +
+>   `service_role`; every other new function has no API grant.
+> - **`zzz_broadcast_inval` on this table** sends `inval:calendar_day_markers`, so a flag the cron sets
+>   reaches an open Calendar.
+> - **Kill switch:** `public.app_config` `start_recheck_enabled` (anything but `'true'` is off; a missing
+>   row is on). Off stops queueing and draining, and every marker write then clears its flags. Bulk jobs:
+>   `set local app.suppress_start_recheck = 'on'`. Rollback order is in the migration header (app first).
+> - Errors never abort a visit write and never stay silent: `sync_log` sources `start-recheck-queue` and
+>   `start-flags-judge`. Watch them.
+
 > **🚚 -> 🧑 MARKERS BELONG TO A DRIVER SINCE 2026-09-16** (`2026-09-16_1000_calendar_day_markers_per_driver`,
 > Fred, voice: *"the task needs to be assigned to a driver instead, for it to be actually the driver to
 > see this task"*). What changed, and what the paragraphs below still describe correctly:
