@@ -237,6 +237,10 @@ const Q_CONTACTS = `query($id: EncodedId!) {
     # and would take the contacts list down on page open.
     invoiceDefault: defaultEmails(emailType: INVOICE_SENT)
     quoteDefault: defaultEmails(emailType: QUOTE_SENT)
+    # Every address the client itself holds, so the Edit dialog can predict what an email edit does to
+    # the prefill above. Measured 2026-09-24 on 112-YA: Jobber keeps remembering an address only while
+    # it is still on the client or on one of its contacts, and falls back to the STAR when none is.
+    emails { address primary }
     contacts(first: ${CONTACT_PAGE}) {
       totalCount
       nodes {
@@ -288,6 +292,20 @@ async function handleRefresh(clientId: number) {
   if (!conn) return fail("not_found_jobber", "Jobber has no client at that id - the link is stale.");
 
   const nodes: any[] = Array.isArray(conn.nodes) ? conn.nodes : [];
+
+  // Every address Jobber holds for this client, for the Edit dialog's invoice/quote prediction.
+  // Jobber's own order and DUPLICATES KEPT, both on purpose: an address held twice survives an edit of
+  // one copy (041-MB holds its star twice), and when the star is deleted Jobber stars the next one in
+  // this order (measured once, 112-YA 2026-09-24). A contact's list is capped at emails(first: 3).
+  const jcEmails = (Array.isArray((r.data?.client as any)?.emails) ? (r.data!.client as any).emails : [])
+    .filter((e: any) => String(e?.address ?? "").includes("@"));
+  const jobberEmails = {
+    client: jcEmails.map((e: any) => String(e.address).trim().toLowerCase()),
+    star: jcEmails.find((e: any) => e?.primary === true)?.address?.trim().toLowerCase() ?? null,
+    contacts: Object.fromEntries(nodes.filter((n) => n?.id).map((n) => [String(n.id),
+      (Array.isArray(n.emails?.nodes) ? n.emails.nodes : [])
+        .map((e: any) => String(e?.address ?? "").trim().toLowerCase()).filter((x: string) => x.includes("@"))])),
+  };
   const total = Number(conn.totalCount ?? nodes.length);
   const nowIso = new Date().toISOString();
 
@@ -392,6 +410,8 @@ async function handleRefresh(clientId: number) {
     // memory for this client yet, which is NOT the same as "nothing has been sent" - the API
     // cannot tell us who a message went to.
     jobber_defaults: jobberDefaults,
+    // appended 2026-09-24; nothing above changed shape, so the published bundle is unaffected
+    jobber_emails: jobberEmails,
     derm_active: dermActive,
     truncated: !complete,
     retired,
