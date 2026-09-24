@@ -14,13 +14,15 @@
 // the planted refresh token). A correct module returns nothing, so no planted token leaves the page.
 //
 // Three cases per app:
-//   OFF      remember=false, localStorage copy, no cookie -> MUST NOT use the planted session (the fix)
-//   ON       remember=true,  localStorage copy, no cookie -> the control: the module is allowed (by
-//            design) to fall back to this origin's copy, so the planted token MUST be seen. If it is
-//            not, this app never touches auth on load and the OFF result proves nothing.
-//   COOKIE   remember=false, planted SESSION cookie on .unclogme.app -> MUST be used (SSO still reads
-//            the shared cookie).
-// Exit 1 if any OFF or COOKIE case fails, or any control is blind.
+//   OFF      remember=false, a localStorage copy, no cookie -> MUST NOT use the planted session
+//   ON-COPY  remember=true,  a localStorage copy, no cookie -> MUST NOT use it either: on *.unclogme.app
+//            the shared cookie is the only source (a missing cookie means signed out, for example by a
+//            sign-out in another app). The old modules used the copy here; that is the stale-copy defect.
+//   COOKIE   remember=false, a planted SESSION cookie on .unclogme.app -> MUST be used. This is the
+//            positive control: it proves the app touches auth on load and the instrument can see a planted
+//            session being used. If it fails, the two NOT-used results prove nothing.
+// It also reports whether the planted localStorage copy is still there after the page loaded (the
+// canonical module sweeps it). Exit 1 if any rule fails.
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
@@ -67,12 +69,12 @@ let bad = 0
 for (const app of want) {
   const host = APPS[app]
   const off = await runCase(browser, host, 'OFF'), on = await runCase(browser, host, 'ON'), ck = await runCase(browser, host, 'COOKIE')
-  const blind = !on.used
-  const offOk = !off.used, ckOk = ck.used
-  if (blind || !offOk || !ckOk) bad++
-  console.log(`${app.padEnd(9)} OFF ${offOk ? 'PASS (planted session NOT used)' : 'FAIL (planted session USED after "restart")'}${off.after.ls ? ', localStorage copy still there' : ', localStorage copy gone'}`)
-  console.log(`${''.padEnd(9)} ON  ${blind ? 'BLIND (the control never used the planted session: no auth call on load)' : 'control ok (planted session used, as designed)'}`)
-  console.log(`${''.padEnd(9)} COOKIE ${ckOk ? 'PASS (shared cookie read)' : 'FAIL (shared cookie ignored)'}`)
+  const offOk = !off.used, onOk = !on.used, ckOk = ck.used
+  if (!offOk || !onOk || !ckOk) bad++
+  const swept = (r) => (r.after.ls ? 'copy still there' : 'copy swept')
+  console.log(`${app.padEnd(9)} OFF     ${offOk ? 'PASS (planted copy not used)' : 'FAIL (planted copy USED after "restart")'}, ${swept(off)}`)
+  console.log(`${''.padEnd(9)} ON-COPY ${onOk ? 'PASS (planted copy not used)' : 'FAIL (a per-origin copy stood in for the missing cookie)'}, ${swept(on)}`)
+  console.log(`${''.padEnd(9)} COOKIE  ${ckOk ? 'PASS (shared cookie read: the instrument sees auth use)' : 'FAIL (shared cookie ignored, or no auth call: the two results above prove nothing)'}`)
   if (process.env.VERBOSE) console.log('   ', JSON.stringify({ off: off.hits, on: on.hits, cookie: ck.hits }))
 }
 await browser.close()
