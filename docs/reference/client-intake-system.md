@@ -32,7 +32,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
@@ -52,6 +52,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | an optional question keeps its alternative | `public.fn_intake_normalise_requested`; `schedule_property_intake` returns `added` | `2026-09-24_0348_intake_round5_alternatives_ranges.sql` |
 | the GT pin under the trap count; writer ranges in the tree | `site_map.gt_location` moved after `grease_trap.systems_count` (`>0`); gallons `min 1 max 20000`, manholes `max 50` | same |
 | accept refuses what the writer cannot take | `client.accept_intake_answers`: whole numbers in range, lock box without control characters, trimmed | same |
+| the lock box shape reaches submit; the outside note; no all-optional request | `lock_box_code` `"single_line": true, "max_chars": 100`; NEW key `access_entry.where_outside_note` (36 questions); `schedule_property_intake` refuses a request of only optional questions | `2026-09-24_0426_intake_round6_lockbox_outside_note.sql` |
 | Picture Planner audit label | `audit.log_change` maps `planner.unclogme.app`, `%unclogme-pics-organizer%`, `%d9464151%` to `picture-planner` | `2026-09-24_0301_audit_origin_picture_planner.sql` |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
@@ -66,8 +67,7 @@ screens (section C) and the collector route (section D) are next; the plan is
 `Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`.
 
 NOT built: **the collector form the link actually opens** (the endpoint is live, the page is not; it
-will be `/intake/$token` in Picture Planner), Picture Planner's login and `/forms` screens, the
-published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
+will be `/intake/$token` in Picture Planner), the published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
 link, the New Client modal button and the office Accept screen.
 
 ---
@@ -117,8 +117,11 @@ hard bound is structural (links <= photos <= 60 ledger slots). At submit the ser
 decides the answers the office acts on. A photos answer is the paths actually attached to that question
 (dropped when none, so a claimed photo cannot count; since v11 an attached photo nobody claimed, after a
 lost attach response or a lost draft, counts when its question was shown). A number must be a whole
-number inside the question's `min`/`max` (the tree carries the writer's range), refused in words
-otherwise. A ticked hours day without a real `HH:MM` open and close is REFUSED naming the day ("For any
+number inside the question's `min`/`max` (the tree carries the writer's range; default 0 to 999,999,
+the largest value accept's whole-number check takes), refused in words otherwise. Since v12 a text
+question the tree marks `single_line` / `max_chars` (the lock box code, whose writer refuses a line break
+or more than 100 characters) is refused at submit too, and every refusal names the question WITH its
+section, because two questions read "How many manholes?". A ticked hours day without a real `HH:MM` open and close is REFUSED naming the day ("For any
 time, use 00:00 to 00:00"); v10 dropped it silently, which turned "any time" into "not that day" in an
 immutable record. ⚠ There is no upload TTL of ours:
 the old `SIGNED_UPLOAD_TTL 900` was declared and returned as `expires_in` but never applied. The real
@@ -215,8 +218,11 @@ consumer ever met a condition it could not read.
 **Run `node scripts/checks/intake-showif-mirror.mjs` after touching any of the three.** It reads the
 live tree, the form's own functions out of `form-page.ts` (never retyped) and the parser out of the
 LIVE Client App bundle, then compares every condition's parent key three ways and every question's
-visibility in form vs SQL over 14 scenarios, with a positive control that must flip. Measured
-2026-09-24: 16 conditions parsed three ways, 490 cells, all agree.
+visibility in form vs SQL over 20 scenarios, with a positive control that must flip. Measured
+2026-09-24 after 0426: 21 conditions parsed three ways, 720 cells, all agree. ⚠ It finds the dialog's
+parser as the function the "only if" note renderer CALLS, not by position: a helper added between them
+(the alternative helper, 2026-09-24) made the positional rule read the wrong function and the check
+failed on 19 of 20 conditions, which is the check working.
 
 **14. 🛑 Compare and accept honour whether a question was SHOWN.** The collector form keeps what was typed
 into a follow-up when its parent later changes, so an abandoned lock-box code (how_access switched from
@@ -242,7 +248,8 @@ reads a parent that was never ASKED as "left blank", so a requested set with a f
 parent asked the collector to measure a trap whose gallons the office already had. The Schedule dialog
 produced exactly that set by default (its pre-check unchecks a question whose value we hold and left
 the follow-up checked). Now closed twice: `client.schedule_property_intake` stores
-`fn_intake_prune_requested(snapshot, requested)` (drops every key whose parent chain is not requested)
+`fn_intake_normalise_requested(snapshot, requested)` (prune since 0311: drops every key whose parent
+chain is not requested; plus alternatives since 0348, below)
 and returns what it dropped as `dropped`, refusing an all-orphan set in words; and the dialog's initial state
 applies the same rule its uncheck path does (live 2026-09-24, `clients._id-DvCP4-eC.js`, verified by
 executing the live code against property 162).
@@ -265,7 +272,8 @@ RPC.** A CHECK may not contain a subquery but may call a function that does.
 **The answered predicate was wrong twice.** v1 used `->>`, which renders `{}` and `[]` as non-empty,
 so a blank intake scored Complete. v2 fixed that and still returned SQL NULL for an ABSENT key, which
 the view read as answered, so an intake with zero answers scored Complete. **Fix: `coalesce(..., false)`
-and `btrim`, and assert the VIEW rather than the function.** The function passing in isolation is what
+and a trim (`btrim` then; `public.fn_intake_trim`, the JS `trim()` set, since 0311), and assert the VIEW
+rather than the function.** The function passing in isolation is what
 hid it both times.
 
 **Round before you size-check.** A maximal site map exceeds its own 16 KB cap at full double
