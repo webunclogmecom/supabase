@@ -32,7 +32,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments, hours days need a real open and close, a link collision reads as already attached) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
@@ -49,6 +49,9 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | a follow-up only with its parent | `public.fn_intake_parent_key`, `public.fn_intake_prune_requested`; `schedule_property_intake` stores the pruned set and returns `dropped` | same |
 | gallons OR measurements; grease-trap gating | `grease_trap.capacity_gallons` optional; photos / gallons / capacity photos only if `systems_count > 0` | same |
 | one live link per intake photo | unique index `photo_links_intake_one_live_link_per_photo` | same |
+| an optional question keeps its alternative | `public.fn_intake_normalise_requested`; `schedule_property_intake` returns `added` | `2026-09-24_0348_intake_round5_alternatives_ranges.sql` |
+| the GT pin under the trap count; writer ranges in the tree | `site_map.gt_location` moved after `grease_trap.systems_count` (`>0`); gallons `min 1 max 20000`, manholes `max 50` | same |
+| accept refuses what the writer cannot take | `client.accept_intake_answers`: whole numbers in range, lock box without control characters, trimmed | same |
 | Picture Planner audit label | `audit.log_change` maps `planner.unclogme.app`, `%unclogme-pics-organizer%`, `%d9464151%` to `picture-planner` | `2026-09-24_0301_audit_origin_picture_planner.sql` |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
@@ -56,8 +59,11 @@ Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`
 Edit property dialog (step 5.2), both live 2026-09-23.
 
 Read surface for the Picture Planner forms viewer: **database half live 2026-09-23** (the list view,
-`get_intake`, the photo policy). Picture Planner itself still has no backend, so nothing renders it yet;
-the plan is `Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`, sections B to D.
+`get_intake`, the photo policy). **Picture Planner got its backend on 2026-09-24** (plan section B): a
+Prod client, the shared staff session and the Command Deck login on a staff layout route, published at
+`unclogme-pics-organizer.lovable.app`; `planner.unclogme.app` is pending the GoDaddy step. The `/forms`
+screens (section C) and the collector route (section D) are next; the plan is
+`Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`.
 
 NOT built: **the collector form the link actually opens** (the endpoint is live, the page is not; it
 will be `/intake/$token` in Picture Planner), Picture Planner's login and `/forms` screens, the
@@ -103,12 +109,18 @@ upload URLs were unlimited; v8 counted objects already stored, which a burst mad
 landed still slipped past. A slot is never freed (a `ponytail:` note in the migration): a collector
 who burns 60 uploads through retries is stuck until someone reclaims expired unused slots.
 **Since v10 (fourth review):** one live link per intake photo is a unique index, so a parallel burst of
-attaches of one file under many roles makes one link (a collision reads as `already_attached`).
+attaches of one file under many roles makes one link. **Since v11** a collision (or a sequential re-attach)
+reads as `already_attached` only when the existing link is to the SAME question; another question gets a
+409, because reporting "attached" there made the form record a photo that submit then dropped.
 `PHOTO_CAP` is checked and then inserted without a lock, so parallel attaches can pass 40 by a few; the
 hard bound is structural (links <= photos <= 60 ledger slots). At submit the server, not the client,
-decides two kinds of answer: a photos answer becomes the paths actually attached to that question
-(dropped when none, so a claimed photo cannot count), and a weekly-hours answer keeps only days with a
-real `HH:MM` open and close, the only shape the accept path takes. ⚠ There is no upload TTL of ours:
+decides the answers the office acts on. A photos answer is the paths actually attached to that question
+(dropped when none, so a claimed photo cannot count; since v11 an attached photo nobody claimed, after a
+lost attach response or a lost draft, counts when its question was shown). A number must be a whole
+number inside the question's `min`/`max` (the tree carries the writer's range), refused in words
+otherwise. A ticked hours day without a real `HH:MM` open and close is REFUSED naming the day ("For any
+time, use 00:00 to 00:00"); v10 dropped it silently, which turned "any time" into "not that day" in an
+immutable record. ⚠ There is no upload TTL of ours:
 the old `SIGNED_UPLOAD_TTL 900` was declared and returned as `expires_in` but never applied. The real
 lifetime is Supabase's, **measured at 7,200 s** from the signed-upload JWT's `exp - iat`.
 
@@ -160,8 +172,11 @@ list's `applicable_count` / `answered_count` and `get_intake`'s counts are over 
 gallons are not written anywhere" are either-or, so a site whose gallons are unknown can be Complete
 without typing a false 0 (372 of 506 live properties hold no gallons). And the grease-trap photos,
 gallons and capacity photos are asked only when `grease_trap.systems_count > 0`, the lift-station rule
-applied to the third equipment section. `site_map.gt_location` is deliberately NOT gated: it sits in an
-earlier section, so it would appear above the collector after they answer the count further down.
+applied to the third equipment section. **`site_map.gt_location` too, since 0348**: 0311 left it ungated
+because in the site-map section it would have appeared ABOVE the collector after they answered the count;
+0348 moved it (key unchanged) into the grease-trap section right after the count. Real no-trap sites exist
+(057-BAY is a lift station). **The gallons carry `min: 1`**: 0 means nobody knows it, so it is refused at
+submit and at accept, and the measurements take its place.
 Before 2026-09-24 a requested key counted if it was APPLICABLE, i.e. the collector was shown it: every `show_if` in its chain
 matches the submitted answers (`public.fn_intake_applicable`, the same comparison as the form's
 `visible()`). Before 2026-09-23 19:49 ET status was "every requested key answered", so answering *No*
@@ -231,6 +246,11 @@ the follow-up checked). Now closed twice: `client.schedule_property_intake` stor
 and returns what it dropped as `dropped`, refusing an all-orphan set in words; and the dialog's initial state
 applies the same rule its uncheck path does (live 2026-09-24, `clients._id-DvCP4-eC.js`, verified by
 executing the live code against property 162).
+**And the converse, since 0348: an optional question is asked together with its ALTERNATIVE** (the
+question whose `show_if` is `<that key>=`, today the measurements for the gallons). Without it a request
+with the gallons but not the measurements read Complete with no capacity at all. The stored set is
+`public.fn_intake_normalise_requested` (prune, then add), `schedule_property_intake` reports the
+additions as `added`, and the dialog ticks and unticks the pair together.
 
 ---
 

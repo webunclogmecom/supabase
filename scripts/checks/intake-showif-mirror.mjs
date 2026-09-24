@@ -46,12 +46,17 @@ while (q.length && !dialogVs) {
   const t = await (await fetch(B + q.shift())).text(); add(t)
   const i = t.indexOf('only if: ')
   if (i < 0) continue
-  // the parser is the function just before the one that renders "only if:"
-  const fStart = t.lastIndexOf('function ', t.lastIndexOf('function ', i) - 1)
-  const fEnd = t.lastIndexOf('function ', i)
-  const src = t.slice(fStart, fEnd)
-  const name = src.match(/^function ([A-Za-z_$][\w$]*)\(/)?.[1]
-  if (name) dialogVs = new Function(src + `;return ${name}`)()
+  // The parser is the function the "only if:" renderer CALLS on the condition, found by reading that
+  // renderer, never by position: a helper added in between (the 2026-09-24 alternative helper) made the
+  // positional rule pick the wrong function, and this check then failed loudly on 19 of 20 conditions.
+  const rStart = t.lastIndexOf('function ', i)
+  const renderer = t.slice(rStart, i)
+  const name = renderer.match(/([A-Za-z_$][\w$]*)\(t\)\?\?""/)?.[1]
+  if (!name) throw new Error('could not find the parser call in the "only if:" renderer: update this check')
+  const fStart = t.indexOf('function ' + name + '(')
+  const fEnd = t.indexOf('function ', fStart + 9)
+  if (fStart < 0) throw new Error('parser ' + name + ' not found in the chunk')
+  dialogVs = new Function(t.slice(fStart, fEnd) + `;return ${name}`)()
 }
 if (!dialogVs) throw new Error('could not find the dialog show_if parser in the live Client App bundle: update this check')
 
