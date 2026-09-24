@@ -702,6 +702,13 @@ verify_jwt = true
 [functions.plan-drive-fill]
 verify_jwt = true
 
+# heal-day-starts: recomputes a truck's Start of day when its first visit changed (2026-09-24, Start
+# freshness phase 2). Invoked ONLY by public.fn_request_start_heal through pg_net with the vault key
+# edge_invoke_service_key; the handler requires role=service_role and forwards that header to
+# calculate-driving-time. Never deploy --no-verify-jwt. The browser never calls it.
+[functions.heal-day-starts]
+verify_jwt = true
+
 # Calendar day markers (Day Start/End/Dump) -> Jobber Tasks. Invoked by a DB trigger via pg_net with
 # a service_role bearer. verify_jwt = TRUE and the handler ALSO asserts role=service_role, because the
 # anon key is a validly signed JWT and this function holds the Jobber WRITE token. Never deploy this
