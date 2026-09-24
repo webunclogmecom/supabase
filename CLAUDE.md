@@ -443,8 +443,9 @@ applies no DERM filter while `customer.work_orders` does, *therefore* the filter
   call with it. So the twin below is load-bearing for the DERM report too.
 - ✅ **A STAFF-ONLY TWIN EXISTS, AND IT DOES NOT CHANGE THAT RULE (2026-09-24).**
   `customer.work_orders_all` + `customer.get_work_order_internal(text)` are the same objects without the
-  derm_required predicate, **service_role only**, for the DERM Tracker's "Download Report" on non-DERM
-  visits (edge fn `derm-visit-report` -> pdf-service `work_order_override`). Copied from the live
+  derm_required predicate, **service_role only**. Their one reader is `derm.get_visit_report` (bullet
+  above). The pdf-service `work_order_override` path they were first built for (edge fn
+  `derm-visit-report`, non-DERM visits) ran for a few hours on 2026-09-24 and has no caller since. Copied from the live
   definitions, md5-pinned: if the originals change, rebuild the twin
   (`docs/migrations/2026-09-24_1150_customer_work_order_internal.sql`). Never grant either to anon or
   authenticated.
