@@ -159,6 +159,14 @@ Deno.serve(async (req: Request) => {
     clearTimeout(timer)
     return fail('renderer_busy', 'The report maker is busy. Try again in a moment.', 503, cors)
   }
+  // 504 = the Field Portal page did not finish loading inside the pdf-service's 30 s wall. On
+  // 2026-09-24 that was the FP report page re-fetching its GDO image in a loop (visits 8088 and
+  // 7831), which no retry can fix, so it gets its own code in the logs and says so.
+  if (up.status === 504) {
+    clearTimeout(timer)
+    console.error(`[derm-visit-report] visit ${visitId}: pdf-service 504: ${(await up.text().catch(() => '')).slice(0, 300)}`)
+    return fail('render_timeout', 'The report page took too long to load, so no PDF was made. Try again in a minute. If it keeps happening, the report page for this visit needs a fix.', 504, cors)
+  }
   if (!up.ok) {
     clearTimeout(timer)
     console.error(`[derm-visit-report] visit ${visitId}: pdf-service ${up.status}: ${(await up.text().catch(() => '')).slice(0, 300)}`)

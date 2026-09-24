@@ -4,11 +4,19 @@
 // Written 2026-08-25 to diagnose WORKER_RESOURCE_LIMIT on send-visit-photos-email.
 // The 546 body literally says "please check logs" and nothing else in this repo could read them.
 //
-// Log sources are BigQuery-ish, NOT Postgres:
-//   function_edge_logs  - one row per edge function invocation (status, execution time)
-//   function_logs       - console.* output from inside a function
-//   edge_logs           - the API gateway in front of everything
-// metadata is a REPEATED field: reach its children with `cross join unnest(metadata) as m`.
+// 🛑 2026-09-24: Supabase REMOVED the old `logs.all` endpoint (it now answers "The logs.all
+// endpoint has been removed"). This reader calls `.../analytics/endpoints/logs`, which speaks
+// CLICKHOUSE SQL over ONE table named `logs`. The per-source tables below no longer exist as
+// tables ("Table function_logs does not exist"); they are values of the column `source`
+// (NOT `source_name`, which the changelog names and the API rejects):
+//   SELECT timestamp, event_message FROM logs
+//    WHERE source = 'function_logs' AND event_message LIKE '%<fn-name>%'
+//    ORDER BY timestamp DESC LIMIT 20
+// Nested fields are read from `log_attributes['a.b']`, never with `unnest`. The endpoint also
+// returns a transient "Backend error! Retry your query" now and then: retry before concluding.
+// Sources seen 2026-09-24: function_logs (console.* inside a function), function_edge_logs (one
+// row per invocation), edge_logs (the API gateway), postgres_logs, postgrest_logs, storage_logs,
+// auth_logs, pgbouncer_logs.
 // A field that does not exist is a hard ERROR rather than a null, which makes a failed
 // query a usable way to discover the schema.
 const https = require('https');
@@ -37,7 +45,7 @@ if (process.argv[5]) params.iso_timestamp_end = process.argv[5];
 const qs = new URLSearchParams(params).toString();
 const req = https.request({
   hostname: 'api.supabase.com',
-  path: `/v1/projects/${process.env.SUPABASE_PROJECT_ID}/analytics/endpoints/logs.all?${qs}`,
+  path: `/v1/projects/${process.env.SUPABASE_PROJECT_ID}/analytics/endpoints/logs?${qs}`,
   method: 'GET',
   headers: { Authorization: 'Bearer ' + process.env.SUPABASE_PAT },
 }, res => {
