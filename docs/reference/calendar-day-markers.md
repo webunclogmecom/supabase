@@ -23,8 +23,8 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 > **🟡 A TRUCK START IS JUDGED FOR FRESHNESS SINCE 2026-09-24** (`2026-09-24_0715_start_freshness_phase1`,
 > Supabase `d81b69a`; plan `Building Apps/Visit Calendar/docs/specs/2026-09-23-start-freshness-design.md`).
 > A truck Start (`marker_type='start'`, `vehicle_id` AND `employee_id` set) is a snapshot of its truck's
-> first visit, so the database now flags it when that first visit changes. It never recomputes and never
-> deletes anything (those are phases 2 and 3). The objects:
+> first visit, so the database now flags it when that first visit changes. Phase 1 itself never recomputes and
+> never deletes anything; since phase 2 (the block below) the Start heals itself when healing is switched on. The objects:
 > - **`stale_reason`** / **`stale_since`** on this table. `stale_reason` is `'no timed visit'` (red),
 >   `'first visit changed'` or `'driver changed'` (amber), NULL = fresh. **A caller can never set or clear
 >   them**: the BEFORE trigger `trg_aa_start_judge` replaces whatever a write sends with the verdict, and
@@ -57,6 +57,71 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 >   `set local app.suppress_start_recheck = 'on'`. Rollback order is in the migration header (app first).
 > - Errors never abort a visit write and never stay silent: `sync_log` sources `start-recheck-queue` and
 >   `start-flags-judge`. Watch them.
+
+> **🟢 A TRUCK START HEALS ITSELF SINCE 2026-09-24 (phase 2)** (`2026-09-24_0845_start_freshness_phase2`,
+> Supabase `292800a`; edge fn `heal-day-starts`). Fred, verbatim: *"if it's changed by Jobber and our App
+> adopts ... then we don't need any warning or whatsoever just remove the Start Point if there are no more
+> visits (or they're anytime) or recalculate if there are any other visit with scheduled time ... and we
+> need to actually check if there are errors because of it."*
+> 🛑 **Gated by `public.app_config` `start_heal_enabled`**, which shipped `'false'` and is switched on in the
+> same hour as the Calendar's "last timed visit is leaving" dialog. Missing row = OFF (fail closed; the
+> opposite of the judge's switch). Bulk jobs: `set local app.suppress_start_heal = 'on'`.
+> What each verdict does when it is on, whoever changed the visits:
+> - **`'no timed visit'`: the Start is DELETED** by `ops.fn_judge_starts` (the push trigger then deletes its
+>   Task). Only when its Jobber link is older than 10 s (a create push takes 0.5 to 1.3 s), or it has no
+>   link and is older than 10 minutes. Anytime visits do not keep a Start (Fred's decision 3).
+> - **`'driver changed'`: `employee_id` becomes the first visit's driver**, only when that visit is still
+>   the Start's `source_visit_id`. 🛑 A hand-typed Start's minute is never judged, so on it 'driver changed'
+>   can hide a DIFFERENT first visit; the review reproduced it being handed to that visit's driver and
+>   marked fresh. It now stays flagged for a person. A first visit with no driver also stays flagged.
+> - **`'first visit changed'` (derived only): RECOMPUTED** by the edge fn `heal-day-starts`, kicked by
+>   `public.fn_request_start_heal()` from `ops.refresh_start_flags` (so within 2 minutes, or at once after
+>   the Calendar's own write), at most once a minute, only when `ops.start_heal_candidates()` has a row.
+>   It asks `calculate-driving-time` for the ETA (traffic:false, the dispatch budget of 300 a day) and
+>   `ops.apply_start_heal` writes minute = the first visit's ET minute - ETA - 30, its driver, its id, the
+>   ETA, under a row lock, refusing when the first visit is not exactly the one the ETA was computed for.
+>   Refusals are stored per first visit in `ops.start_heal_attempts` and back off by cause: no driver
+>   10 minutes, unknown or implausible drive time 1 hour, before midnight / already passed / a verdict the
+>   write cannot clear until the first visit changes.
+> - **Frozen means frozen:** a Start whose minute has passed is never healed (`apply_start_heal` returns
+>   `'frozen'`). A Start still flagged when its minute passes is logged as an ERROR under
+>   `start-flags-judge` (`details.action = 'froze_while_stale'`): the crew started from a wrong Task.
+>   `ops.refresh_start_flags` now re-judges every day that still carries a flag, so this is caught within
+>   2 minutes and a skipped heal is retried.
+> - Every heal is journalled in `sync_log` source **`start-flags-heal`** (`action` removed, driver_updated,
+>   recompute_run with per-marker outcomes), with the before and after values.
+> - **`fn_start_verdict` compares ET wall-clock minutes** since phase 2. It used to convert
+>   `marker_date + minutes` back to an instant, and on the repeated 01:xx hour of the November clock change
+>   that picked EST for an EDT visit, so a correct Start read 'first visit changed' for ever.
+> - **The dialog's pre-check** is `ops.preview_start_impact(p_changes jsonb)` (read-only, `authenticated`).
+>   The app passes one object per visit the gesture writes (`visit_id` + the changed keys among
+>   `visit_date`, `start_at`, `end_at`, `vehicle_id`, `visit_status`, `deleted`); on a ripple-routed write
+>   it passes the rows of a `ripple_reschedule_visit` dry run too (the pre-check deliberately does not copy
+>   the chain rule). Returns each unfrozen truck Start whose day has a timed visit now and would have none.
+>   A date move without `start_at` keeps the ET time (as the ripple does); a `start_at` without a date moves
+>   the date with it (as `trg_aa_reconcile_operating_date` does).
+> - **`push_changed_at`** + `trg_ab_marker_push_stamp`: when a Jobber-visible column last changed (the six
+>   `fn_push_marker_to_jobber` tests). A caller cannot set it; a write under `app.suppress_marker_push` is
+>   not stamped. `updated_at` could not be used: every flag write bumps it.
+> - **`ops.retry_marker_pushes()`, cron `start-push-retry` (1-59/5)**, all marker types: re-sends a Task
+>   DELETE whose link outlived its marker, and a Task EDIT whose `push_changed_at` is later than the link's
+>   `synced_at` (today or later, settled 2 minutes, its minute not yet passed). 3 tries 5 minutes apart,
+>   then one every 6 hours. **Never a create** (not idempotent: a create that reached Jobber unlinked would
+>   make a second Task). Ledger `ops.marker_push_retries`; a row per run with a re-send under
+>   `start-flags-push-retry`.
+> - **`public.log_start_flags_health()`, cron `start-flags-health` 13:20 UTC**, registered in BOTH
+>   `ops.v_health_items` and `ops.v_health_status`, so `health-escalate` (13:30) emails: a Start out of date
+>   for 30+ minutes (with why it did not heal), a marker with no Task after 10 minutes, a Task not deleted
+>   after a failed retry, a Task not updated after 20 minutes, each Start that began out of date (one item
+>   per incident), other errors in 26 hours (one per source), the judge switched off, the retry cron not
+>   running, a marker Task imported as a Calendar Task (a duplicate). Healthy = silence.
+> - **Known limits, kept on purpose:** (1) the edit retry compares `push_changed_at` (DB clock, start of the
+>   writing transaction) with `synced_at` (edge clock, end of the push); two pushes of ONE marker in flight
+>   at once that land out of order can leave Jobber one version behind unseen (the exact fix is
+>   `jobber-push-task` recording the version it pushed). (2) The check runs once a day before 13:30 UTC, so
+>   an evening failure is emailed the next morning; an evening escalation would change every check's
+>   cadence, Fred's call. (3) The whole day is one Start, so a timed stop after midnight IS the truck's first
+>   visit and the recompute follows it.
 
 > **🚚 -> 🧑 MARKERS BELONG TO A DRIVER SINCE 2026-09-16** (`2026-09-16_1000_calendar_day_markers_per_driver`,
 > Fred, voice: *"the task needs to be assigned to a driver instead, for it to be actually the driver to
@@ -140,7 +205,11 @@ and `ops.dispatch_routing_usage`. 🛑 **Do not revoke the `authenticated` grant
 **`trg_push_marker_to_jobber` → `public.fn_request_marker_push`** — the only trigger on the table.
 It `pg_net`-POSTs to the `jobber-push-task` edge function. It is on the **TABLE** on purpose, so a
 script or a future app is covered, not just the Calendar. **The app must never call the edge function
-itself.** Escape hatch: `set local app.suppress_marker_push = 'on'`.
+itself.** Escape hatch: `set local app.suppress_marker_push = 'on'`. ⚠ Since 2026-09-24 (phase 2) that
+keeps an EDIT away from Jobber for good (it is not stamped in `push_changed_at`, so `start-push-retry`
+never re-sends it), but a suppressed DELETE of a marker that has a Jobber link leaves the link behind,
+and the retry then deletes that Task 2 to 7 minutes later. A backfill that must delete markers without
+touching Jobber has to remove their links in the same transaction.
 
 **`entity_source_links`** — `entity_type = 'calendar_day_marker'`, `entity_id` = the marker id,
 `source_id` = the Jobber Task GID, `source_name` = the Task title. **This row is the only thing that
@@ -363,11 +432,29 @@ The truck-name and driver-name lookups had the same shape: an error silently ret
 Now all four lookups (truck name, driver name, the driver's link, the legacy truck's crew) return
 `null` on an error, and the handler answers `{ok:false, error:"<what> lookup failed; nothing pushed,
 Task and link untouched"}` without calling Jobber. A missing link still pushes unassigned, as before.
-⚠ Nothing retries a failed push: the Task keeps its previous state until the marker is written again.
+⚠ Until 2026-09-24 nothing retried a failed push. Since phase 2, `start-push-retry` re-sends a failed
+edit or delete (never a create); see the phase-2 block at the top.
 Proof: `node scripts/probes/push_task_assignee_guard_test.mjs` extracts the helper from the working
 tree AND from `fb9f761` (the pre-fix body) and requires the old one to FAIL the error case. Live
 happy path on v16: marker 121 re-pushed, `{"ok":true,"op":"edit","assigned":["Grecia "]}`, Task
 unchanged. Found by the adversarial audit of `Building Apps/Visit Calendar/docs/specs/2026-09-23-start-freshness-design.md` (§7.1).
+
+### ✅ HARDENED 2026-09-24 (v18, Supabase `589c7c1`): three holes an automatic healer would hit
+
+Found by the read-only investigation for Start freshness phase 2, fixed before any healing existed:
+- **The link read ignored its error.** A failed read was taken as "no link", so an upsert ran
+  `taskCreate` a second time and the link upsert orphaned the first Task. It now stops the push
+  (`lookupFailed`), like the other lookups since v16.
+- **A delete returned on any `taskDelete` error BEFORE reading the Task back**, so deleting a Task that was
+  already gone wedged every retry for ever. It now reads back whatever the mutation said (the
+  `deleteAndVerify` shape from `save-calendar-task`) and treats "errored but absent" as done
+  (`already_gone: true`).
+- **The link removal after a verified delete ignored its error** and still reported `verified_gone`. It
+  now returns `{ok:false, task_gone:true, error:"the task is gone in Jobber but the link could not be
+  removed: ..."}`.
+A failed `taskEdit` also reports `task_gone`, so a Task deleted by hand in Jobber can be told from a
+transient refusal. Live on v18: marker 121 re-pushed through the real trigger path, `ok:true` edit, same
+Task, same time and driver.
 
 ---
 
