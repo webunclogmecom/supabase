@@ -3520,7 +3520,8 @@ one, so shipping a better rule does not heal history.
 > ones alone"), so a manifest on a grey water visit is history, not a missing obligation. Grey water
 > pickups are no longer offered for manifest linking, so they stop reaching the Miami-Dade LWT monthly
 > filing: `derm.v_lwt_grey_water_unlinked` (service_role) lists them for Jonathan. The Field Portal keeps
-> showing grey water visits by a separate exception (Fred, same day). Known gaps (free-text grey water
+> showing grey water visits (Fred, same day): `customer.work_orders` admits grey water pumping and
+> carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`). Known gaps (free-text grey water
 > still reads TRUE; `edit_calendar_visit` recomputes on completed visits): the reference doc, section
 > "2026-09-24".
 

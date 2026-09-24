@@ -44,8 +44,9 @@ pending: when it completes it will show as needing a manifest; use the per-visit
   **`derm.v_lwt_grey_water_unlinked`** (service_role only) lists completed grey water pickups since
   2026-09-24 with no manifest link. Empty means nothing is missing. Open question for Jonathan.
 - The Field Portal: `customer.work_orders` hides a not-required visit. Fred decided the same day that grey
-  water visits must stay visible to the client; that exception is a separate change (see the Field Portal
-  changelog and its own migration).
+  water visits must stay visible to the client: `2026-09-24_1353_grey_water_stays_in_field_portal.sql`
+  (`customer.work_orders` admits grey water pumping, decided by the visit's own coded lines first, and
+  gains `derm_required`; Field Portal rule 11 hides the DERM paperwork pieces).
 
 Side effect, wanted: `public.v_gdo_reporting_derm_mismatch` can fire again. Since 2026-08-06 a visit with a
 visit-scoped 27 line could never derive FALSE, so that check was blind; a 27 line on a grey water visit now
