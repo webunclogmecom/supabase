@@ -69,6 +69,9 @@
 // an hours answer with a day key outside mon..sun is refused, and a day set to false or "" is unticked;
 // a re-attach blocked by a REMOVED link says so instead of blaming another question; the default number
 // ceiling is 999,999, the largest value accept's whole-number check takes.
+// v13 (2026-09-24, seventh review): the one-line check refuses what Postgres [[:cntrl:]] refuses (C1 too,
+// U+0085 is a line break); the 4,000-character refusal names its question; an hours key is checked
+// against the day names' OWN keys ("constructor" passed `in`).
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -366,27 +369,6 @@ Deno.serve(async (req) => {
     // Normalise to the { value: ... } shape public.fn_intake_answered expects. A bare
     // scalar from the form is wrapped rather than rejected, so the predicate that the
     // whole status column rests on can never see a shape it was not written for.
-    const answers: Record<string, unknown> = {}
-    for (const [k, v] of entries) {
-      if (typeof k !== 'string' || k.length > 120) return fail(400, 'One of the answers has a bad name.')
-      const wrapped = (v !== null && typeof v === 'object' && !Array.isArray(v) && 'value' in (v as object))
-        ? v as Record<string, unknown>
-        : { value: v }
-      const val = wrapped.value
-      if (typeof val === 'string' && val.length > MAX_VALUE_CHARS) {
-        return fail(413, 'One of the notes is too long.')
-      }
-      answers[k] = wrapped
-    }
-
-    // The server, not the client, decides what three kinds of answer are:
-    //  - a NUMBER is a whole number inside the question's min/max (the tree carries the writer's range;
-    //    default 0 to 1,000,000). Refused in words otherwise (v11);
-    //  - a WEEKLY-HOURS answer needs a real HH:MM open AND close on every ticked day, the only shape the
-    //    accept path takes. A day without one is refused, naming the day (v11; v10 dropped it silently);
-    //  - a PHOTOS answer is the paths ACTUALLY attached to that question (live photo_links, role = key).
-    //    A claimed answer with nothing attached is dropped (v10); an attached photo nobody claimed still
-    //    counts when its question was shown (v11).
     type Q = { key: string; type?: string; label?: string; min?: number; max?: number; single_line?: boolean; max_chars?: number; section?: string }
     const qs = new Map<string, Q>()
     for (const sec of ((i.form_snapshot as { sections?: unknown[] }).sections ?? []) as { title?: string; questions?: unknown[] }[]) {
@@ -395,6 +377,27 @@ Deno.serve(async (req) => {
       }
     }
     const named = (q: Q) => `"${q.section ? q.section + ': ' : ''}${q.label ?? q.key}"`
+    const answers: Record<string, unknown> = {}
+    for (const [k, v] of entries) {
+      if (typeof k !== 'string' || k.length > 120) return fail(400, 'One of the answers has a bad name.')
+      const wrapped = (v !== null && typeof v === 'object' && !Array.isArray(v) && 'value' in (v as object))
+        ? v as Record<string, unknown>
+        : { value: v }
+      const val = wrapped.value
+      if (typeof val === 'string' && val.length > MAX_VALUE_CHARS) {
+        return fail(413, `${named(qs.get(k) ?? { key: k })} is too long (at most ${MAX_VALUE_CHARS} characters).`)
+      }
+      answers[k] = wrapped
+    }
+
+    // The server, not the client, decides what three kinds of answer are:
+    //  - a NUMBER is a whole number inside the question's min/max (the tree carries the writer's range;
+    //    default 0 to 999,999, the largest value accept's whole-number check takes). Refused in words (v11);
+    //  - a WEEKLY-HOURS answer needs a real HH:MM open AND close on every ticked day, the only shape the
+    //    accept path takes. A day without one is refused, naming the day (v11; v10 dropped it silently);
+    //  - a PHOTOS answer is the paths ACTUALLY attached to that question (live photo_links, role = key).
+    //    A claimed answer with nothing attached is dropped (v10); an attached photo nobody claimed still
+    //    counts when its question was shown (v11).
     // One-line text (the tree says so): the writer refuses a line break or control character, and a length.
     for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'text' && (qs.get(k)?.single_line || qs.get(k)?.max_chars))) {
       const q = qs.get(k) as Q
@@ -404,7 +407,7 @@ Deno.serve(async (req) => {
       const t = v.trim()
       if (t === '') { delete answers[k]; continue }
       const max = typeof q.max_chars === 'number' ? q.max_chars : MAX_VALUE_CHARS
-      if ((q.single_line && /[\u0000-\u001f\u007f\u2028\u2029]/.test(t)) || t.length > max) {
+      if ((q.single_line && /[\p{Cc}\u2028\u2029]/u.test(t)) || t.length > max) {
         return fail(400, `${named(q)} must be on one line, with at most ${max} characters.`)
       }
       answers[k] = { value: t }
@@ -428,7 +431,7 @@ Deno.serve(async (req) => {
       const v = (answers[k] as { value?: unknown }).value
       if (v == null || v === '') { delete answers[k]; continue }
       if (typeof v !== 'object' || Array.isArray(v)) return fail(400, 'Could not read the access hours.')
-      if (Object.keys(v).some((d) => !(d in DAY_NAMES))) return fail(400, 'Could not read the access hours.')
+      if (Object.keys(v).some((d) => !Object.hasOwn(DAY_NAMES, d))) return fail(400, 'Could not read the access hours.')
       const days: Record<string, { open: string; close: string }> = {}
       for (const d of Object.keys(DAY_NAMES)) {
         const w = (v as Record<string, { open?: unknown; close?: unknown } | false | '' | undefined>)[d]

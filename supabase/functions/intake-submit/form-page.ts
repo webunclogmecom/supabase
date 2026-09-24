@@ -161,7 +161,7 @@ function field(q){
     var x1=document.createElement('input'); x1.type='text'; x1.value=(v==null?'':v); if(typeof q.max_chars==='number') x1.maxLength=q.max_chars;
     x1.oninput=function(){A[q.key]=x1.value;save()}; x1.onblur=function(){setA(q.key,x1.value)}; d.appendChild(x1);
   } else if(t==='text'){
-    var x=document.createElement('textarea'); x.value=(v==null?'':v);
+    var x=document.createElement('textarea'); x.maxLength=4000; x.value=(v==null?'':v);
     x.oninput=function(){A[q.key]=x.value;save()}; x.onblur=function(){setA(q.key,x.value)}; d.appendChild(x);
   } else if(t==='weekly_hours'){
     var cur=(v&&typeof v==='object'&&!Array.isArray(v))?v:{};
