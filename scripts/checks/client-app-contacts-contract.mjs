@@ -69,8 +69,11 @@ const PRESENT = [
   'That contact has no email address yet',
   // the Edit dialogs' invoice/quote prefill line (2026-09-24). Static fragments of the templates only,
   // because the addresses are interpolated. 'jobber_emails' proves the new refresh field is read.
-  'jobber_emails', 'After you save, it will still prefill ', ' instead, because that will be the client',
-  'After you save, it will prefill only ',
+  // (the lead phrase is a parameter since the make-primary dialog got the line, so assert what follows it)
+  'jobber_emails', ', it will still prefill ', ' instead, because that will be the client',
+  ', it will prefill only ',
+  // the make-primary dialog's corrected sentence (2026-09-24): the starred email does not route invoices
+  "This is what Jobber shows as the client's own details.",
   'If that is wrong, type the right address over the prefilled one on the next invoice before sending.',
   // regression guards for lines that share the Email field and the banner this change touched
   'The service report goes to this address. Save and the next one goes to the new address.',
@@ -97,6 +100,8 @@ const ABSENT = [
   'Saving will move the invoice contact off', 'Saving will move City report off',
   // Jobber-sent mail is a record for us: nothing here may promise where Jobber sends
   'will receive', 'Jobber will send',
+  // false: Jobber prefills invoices from its memory of past sends, not from the client's own email
+  'and what quotes and invoices use',
 ];
 
 const walk = async () => {
@@ -165,9 +170,14 @@ if (mutating) {
   const count = (re) => (all.match(re) || []).length;
   const nPrefill = count(/ on invoices and quotes today\./g);
   if (nPrefill !== 1) fails.push(`prefill sentence found ${nPrefill}x, want 1 (one shared builder)`);
-  for (const k of ['client_record', 'jobber_contact']) {
+  for (const [k, want] of [['client_record', 3], ['jobber_contact', 2]]) {
     const n = count(new RegExp(`(["'\`])${k}\\1`, 'g'));
-    if (n < 2) fails.push(`"${k}" literal found ${n}x, want >= 2 (helper + its dialog call)`);
+    if (n < want) fails.push(`"${k}" literal found ${n}x, want >= ${want} (helper + every dialog that calls it)`);
+  }
+  // the two lead phrases: the default (both edit dialogs) and the make-primary dialog's own
+  for (const lead of ['After you save', 'After this']) {
+    const n = count(new RegExp(`(["'\`])${lead}\\1`, 'g'));
+    if (n < 1) fails.push(`lead phrase "${lead}" literal found ${n}x, want >= 1`);
   }
   const nDerm = count(/The service report goes to this address\. Save and the next one goes to the new address\./g);
   if (nDerm !== 1) fails.push(`DERM recipient line found ${nDerm}x, want 1`);

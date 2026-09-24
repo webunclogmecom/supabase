@@ -4145,7 +4145,7 @@ was the one path where the star would have been authoritative. Re-open ONLY if t
 batch-delivering, which nothing in our data would detect; it has to come from a person.
 
 **The contract check** that guards the shipped copy is
-`scripts/checks/client-app-contacts-contract.mjs` (33 strings that must be PRESENT, 15 that must be
+`scripts/checks/client-app-contacts-contract.mjs` (34 strings that must be PRESENT, 16 that must be
 ABSENT because they would be FALSE, plus counts). Run it after any Client App publish that touches Contacts.
 
 **`save-client-contact` `action:'refresh'` also returns `jobber_emails`** (v23, 2026-09-24):
