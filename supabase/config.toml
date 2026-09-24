@@ -862,3 +862,9 @@ verify_jwt = true
 # field surface on shared phones.
 [functions.intake-submit]
 verify_jwt = false
+
+# derm-visit-report: the DERM Tracker's "Download Report" (2026-09-24). Prints the Field Portal's
+# own Service Report through the pdf-service. The gate is IN THE HANDLER (a signed-in @ayache.com /
+# @unclogme.com user), like save-client-contact: the browser sends the staff session token.
+[functions.derm-visit-report]
+verify_jwt = false
