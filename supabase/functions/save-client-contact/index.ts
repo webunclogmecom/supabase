@@ -294,17 +294,25 @@ async function handleRefresh(clientId: number) {
   const nodes: any[] = Array.isArray(conn.nodes) ? conn.nodes : [];
 
   // Every address Jobber holds for this client, for the Edit dialog's invoice/quote prediction.
-  // Jobber's own order and DUPLICATES KEPT, both on purpose: an address held twice survives an edit of
-  // one copy (041-MB holds its star twice), and when the star is deleted Jobber stars the next one in
-  // this order (measured once, 112-YA 2026-09-24). A contact's list is capped at emails(first: 3).
+  // 🛑 EXACT SPELLINGS, NOT LOWERCASED, unlike jobber_defaults above. Measured 2026-09-24: all 426
+  // remembered addresses fleet-wide match a held address byte for byte, and 64 clients hold their star
+  // twice in two capitalisations ("Cogaaccounting@" starred + "cogaaccounting@"). Whether Jobber keeps a
+  // remembered address alive through a copy that differs only in case is NOT measured (Jobber now
+  // refuses such a copy), so the dialog may only claim survival on an exact match. Lowercasing here
+  // would turn that unknown into a confident claim. Jobber's own order and DUPLICATES KEPT: when the
+  // star is deleted Jobber stars the next one in this order (measured once, 112-YA). A contact's list
+  // is capped at emails(first: 3).
+  const raw = (v: unknown): string[] =>
+    (Array.isArray(v) ? v : []).map((x) => String(x ?? "").trim()).filter((x) => x.includes("@"));
   const jcEmails = (Array.isArray((r.data?.client as any)?.emails) ? (r.data!.client as any).emails : [])
     .filter((e: any) => String(e?.address ?? "").includes("@"));
   const jobberEmails = {
-    client: jcEmails.map((e: any) => String(e.address).trim().toLowerCase()),
-    star: jcEmails.find((e: any) => e?.primary === true)?.address?.trim().toLowerCase() ?? null,
+    client: jcEmails.map((e: any) => String(e.address).trim()),
+    star: jcEmails.find((e: any) => e?.primary === true)?.address?.trim() ?? null,
     contacts: Object.fromEntries(nodes.filter((n) => n?.id).map((n) => [String(n.id),
-      (Array.isArray(n.emails?.nodes) ? n.emails.nodes : [])
-        .map((e: any) => String(e?.address ?? "").trim().toLowerCase()).filter((x: string) => x.includes("@"))])),
+      raw((Array.isArray(n.emails?.nodes) ? n.emails.nodes : []).map((e: any) => e?.address))])),
+    invoice: raw((r.data?.client as any)?.invoiceDefault),
+    quote: raw((r.data?.client as any)?.quoteDefault),
   };
   const total = Number(conn.totalCount ?? nodes.length);
   const nowIso = new Date().toISOString();
