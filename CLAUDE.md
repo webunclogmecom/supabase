@@ -3949,9 +3949,40 @@ For a watchdog a duplicate is cheap and a miss is the whole failure mode. Do not
 That is why this is cron -> `net.http_post` -> edge fn, using `edge_invoke_service_key` like the four
 `fn_request_*` helpers. `unclogme.com` is Verified in Resend.
 
-⚠ **A new health check MUST be added to the CASE in BOTH `ops.v_health_items` and
-`ops.v_health_status`** or it contributes zero items, always looks unchanged, and can never escalate.
-Two places by accident of history; if you touch one, check the other.
+⚠ **A new health check MUST be registered in BOTH `ops.v_health_items` and `ops.v_health_status`,
+in the source list AND the CASE.** The two failures are different, so know which one you have:
+missing from `v_health_items`, or listed there with no CASE arm (it falls to `ELSE '[]'`), and it
+contributes zero items and **can never escalate**; missing only from `v_health_status`, and it still
+escalates (`fn_health_alert_scan` reads `v_health_items` only) but the *"Full state"* view the email
+points to does not show it. The second one was real: `note-photo-sync-health` was in
+`v_health_items` only from 2026-09-08 until `2026-09-24_1045`, although its migration header claimed
+both. Two places by accident of history; if you touch one, check the other, and compare the two
+source lists afterwards (V4 of `2026-09-24_1045` does it, with a fixture item, because a check that
+has 0 items reads 0 in both views whether or not its CASE arm exists).
+
+🛑 **THE CHAIN IS CALLABLE ONLY BY WHAT RUNS IT: pg_cron as `postgres`, `health-escalate` as
+`service_role` (`2026-09-24_1045_health_chain_grants`).** Until then `authenticated` held EXECUTE on
+`fn_health_ack`, `fn_health_alert_mark_sent`, `fn_health_alert_scan` and
+`fn_request_health_escalation`, all SECURITY DEFINER and all at `/rest/v1/rpc/...` because PostgREST
+exposes `public`. Any signed-in staff user could therefore mute an alert for up to 365 days, mark
+alerts as sent so they are never emailed, or trigger the email on demand. **Measured, not inferred:**
+as `authenticated`, the body of `fn_health_ack` ran (it raised its own `22023` on `p_days = 0`).
+Nobody granted it: Supabase's default privileges grant EXECUTE BY NAME on every new `public`
+function, and `2026-08-24_1820`'s service_role-only GRANT could not remove what it did not create.
+The same migration closed `fn_request_auth_recovery_watch` (it posts to an edge fn with the vault key;
+its cron is gone and `public.auth_recovery_state` has been stuck at `down` since 2026-09-01), the
+INVOKER loggers `log_rpa_derm_health`, `log_jobber_note_photo_health`, `log_calendar_push_health` and
+`log_sa_schedule_gaps` (not reachable, they fail on `sync_log` or their view, but that was an accident
+of another grant), and `public.v_jobber_note_photo_health` (was `authenticated=arwdDxtm`; now the
+same ACL as its sibling `v_rpa_derm_health`). **No `fn_request_*` poster is open to `anon` or
+`authenticated` any more (16 of 16).**
+⇒ **Every new function in the chain (a `log_*_health`, a scan helper, a `fn_request_*`) is revoked BY
+NAME from `public, anon, authenticated` in its own migration, and the migration asserts it with
+`has_function_privilege`** (see this file's default-privileges rule above). Find the chain by what a
+function DOES, not by its name: `log_sa_schedule_gaps` writes a watched source and does not match
+`log_*_health`, and the first sweep for this fix missed it for exactly that reason.
+⚠ `ops.v_health_items` and `ops.v_health_status` stay READABLE by `authenticated`. Reading the state
+was not the finding; changing it was.
 
 ✅ **THE JOBBER SYNC SURFACES ARE NOW WATCHED (`2026-09-07_0330`), AND THEY WERE NOT BEFORE.**
 The chain covered five sources and **no Jobber sync surface was one of them**, so

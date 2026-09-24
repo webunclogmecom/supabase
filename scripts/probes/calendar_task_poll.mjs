@@ -24,8 +24,8 @@
 //
 // * THE GRANTS. ALTER DEFAULT PRIVILEGES on schema public grants EXECUTE on new functions to anon,
 //   authenticated AND service_role before any GRANT statement runs, so `REVOKE ... FROM PUBLIC` is
-//   not enough. That is why fn_request_health_escalation carries an `authenticated` grant its own
-//   migration never wrote.
+//   not enough. That is why fn_request_health_escalation carried an `authenticated` grant its own
+//   migration never wrote (revoked by docs/migrations/2026-09-24_1045_health_chain_grants.sql).
 //
 // 🛑 EVERY WRITE RUNS INSIDE begin/rollback. This probe never leaves a row behind, and it asserts
 //    that at the end rather than assuming it.
