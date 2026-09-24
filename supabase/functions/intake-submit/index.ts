@@ -69,6 +69,10 @@
 // an hours answer with a day key outside mon..sun is refused, and a day set to false or "" is unticked;
 // a re-attach blocked by a REMOVED link says so instead of blaming another question; the default number
 // ceiling is 999,999, the largest value accept's whole-number check takes.
+// v14 (2026-09-24, eighth review): the body ceiling is measured in BYTES (it counted UTF-16 units, so up
+// to 3x); a NUL or a lone surrogate anywhere in an answer or the name is refused in words (Postgres
+// refuses both, which was a 500 no retry fixed); a map pin must be a finite lat/lng in range (any object
+// counted as answered); the hours refusals name their question.
 // v13 (2026-09-24, seventh review): the one-line check refuses what Postgres [[:cntrl:]] refuses (C1 too,
 // U+0085 is a line break); the 4,000-character refusal names its question; an hours key is checked
 // against the day names' OWN keys ("constructor" passed `in`).
@@ -184,10 +188,11 @@ Deno.serve(async (req) => {
 
   if (req.method !== 'POST') return fail(405, 'Method not allowed.')
 
-  const raw = await req.text()
-  if (raw.length > MAX_BODY_BYTES) {
+  const bytes = new Uint8Array(await req.arrayBuffer())
+  if (bytes.byteLength > MAX_BODY_BYTES) {
     return fail(413, 'That is too much data to send at once. Submit fewer answers or smaller notes.')
   }
+  const raw = new TextDecoder().decode(bytes)
 
   let body: Record<string, unknown>
   try {
@@ -358,6 +363,14 @@ Deno.serve(async (req) => {
   if (op === 'submit') {
     const collector = String(body.collector ?? '').trim().slice(0, MAX_COLLECTOR)
     if (!collector) return fail(400, 'Put your name so the office knows who collected this.')
+    // Postgres text and jsonb refuse U+0000 and a lone surrogate; left alone they become a 500 that
+    // no retry fixes. Checked on every string, nested ones included, before anything is written.
+    const unstorable = (x: unknown, depth = 0): boolean =>
+      typeof x === 'string' ? x.includes('\u0000') || !x.isWellFormed()
+      : depth < 6 && x !== null && typeof x === 'object'
+        ? Object.entries(x as Record<string, unknown>).some(([kk, vv]) => unstorable(kk) || unstorable(vv, depth + 1))
+        : false
+    if (unstorable(collector)) return fail(400, 'Your name has a character that cannot be saved. Type it again.')
 
     const rawAnswers = body.answers
     if (rawAnswers === null || typeof rawAnswers !== 'object' || Array.isArray(rawAnswers)) {
@@ -384,6 +397,9 @@ Deno.serve(async (req) => {
         ? v as Record<string, unknown>
         : { value: v }
       const val = wrapped.value
+      if (unstorable(val)) {
+        return fail(400, `${named(qs.get(k) ?? { key: k })} has a character that cannot be saved. Type it again.`)
+      }
       if (typeof val === 'string' && val.length > MAX_VALUE_CHARS) {
         return fail(413, `${named(qs.get(k) ?? { key: k })} is too long (at most ${MAX_VALUE_CHARS} characters).`)
       }
@@ -430,20 +446,34 @@ Deno.serve(async (req) => {
     for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'weekly_hours')) {
       const v = (answers[k] as { value?: unknown }).value
       if (v == null || v === '') { delete answers[k]; continue }
-      if (typeof v !== 'object' || Array.isArray(v)) return fail(400, 'Could not read the access hours.')
-      if (Object.keys(v).some((d) => !Object.hasOwn(DAY_NAMES, d))) return fail(400, 'Could not read the access hours.')
+      const q = qs.get(k) as Q
+      if (typeof v !== 'object' || Array.isArray(v)) return fail(400, `Could not read ${named(q)}.`)
+      if (Object.keys(v).some((d) => !Object.hasOwn(DAY_NAMES, d))) return fail(400, `Could not read ${named(q)}.`)
       const days: Record<string, { open: string; close: string }> = {}
       for (const d of Object.keys(DAY_NAMES)) {
         const w = (v as Record<string, { open?: unknown; close?: unknown } | false | '' | undefined>)[d]
         if (w == null || w === false || w === '') continue      // an unticked day
-        if (typeof w !== 'object') return fail(400, 'Could not read the access hours.')
+        if (typeof w !== 'object') return fail(400, `Could not read ${named(q)}.`)
         if (typeof w.open !== 'string' || typeof w.close !== 'string' || !HHMM.test(w.open) || !HHMM.test(w.close)) {
-          return fail(400, `${DAY_NAMES[d]} needs an opening and a closing time. For any time, use 00:00 to 00:00, or untick the day.`)
+          return fail(400, `${named(q)}: ${DAY_NAMES[d]} needs an opening and a closing time. For any time, use 00:00 to 00:00, or untick the day.`)
         }
         days[d] = { open: w.open, close: w.close }
       }
       if (Object.keys(days).length) answers[k] = { value: days }
       else delete answers[k]
+    }
+    for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'gps_pin')) {
+      const q = qs.get(k) as Q
+      const v = (answers[k] as { value?: unknown }).value
+      if (v == null || v === '') { delete answers[k]; continue }
+      const p = v as { lat?: unknown; lng?: unknown; accuracy_m?: unknown }
+      const lat = typeof p.lat === 'number' ? p.lat : NaN, lng = typeof p.lng === 'number' ? p.lng : NaN
+      if (typeof v !== 'object' || Array.isArray(v) || !Number.isFinite(lat) || !Number.isFinite(lng)
+        || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return fail(400, `${named(q)} is not a location this phone gave. Tap the button again.`)
+      }
+      const acc = typeof p.accuracy_m === 'number' && Number.isFinite(p.accuracy_m) && p.accuracy_m >= 0 ? Math.round(p.accuracy_m) : undefined
+      answers[k] = { value: acc === undefined ? { lat, lng } : { lat, lng, accuracy_m: acc } }
     }
     const requested = new Set(Array.isArray(i.requested) ? i.requested : [])
     const photoKeys = [...new Set([...Object.keys(answers), ...requested])].filter((k) => qs.get(k)?.type === 'photos')
