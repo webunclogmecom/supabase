@@ -1,6 +1,6 @@
 # Client Intake System — what is built, and the rules that must not regress
 
-**Last updated 2026-09-23.** Written while building it, from measurements, not from the design docs.
+**Last updated 2026-09-24.** Written while building it, from measurements, not from the design docs.
 
 A site-visit survey: one person documents a property once (access, gate and code, grease traps,
 truck parking, hours, photos, two GPS pins), the office curates it, and the output is a page a
@@ -32,13 +32,19 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
 | one form, read-only (`/forms/$id`) | `client.get_intake(bigint)` | same |
 | staff photo read | storage policy `intake_photos_staff_read` (a copy of `reason_photos_staff_read`) | same |
 | read-only roles | `grant execute on public.fn_intake_answered to pg_read_all_data` | same |
+| required = shown and not optional | `public.fn_intake_required`; `fn_intake_applicable` reads `>` and empty `=` | `2026-09-24_0233_intake_tree_conditions_and_bounds.sql` |
+| tree conditions + `optional` | `fn_intake_form_current()` (16 conditional questions, `access_entry.obstacles` optional; keys unchanged) | same |
+| upload ledger | `public.property_intake_uploads`, `public.fn_intake_claim_upload_slot` (60 slots per intake, ever) | same |
+| hidden answers refused | `get_intake_compare` state `not_shown`; `accept_intake_answers` refuses it | same |
+| token hidden from `yannick_readonly` | column-level SELECT on `property_intakes`, every column except `token` | same |
+| standing check | `scripts/checks/intake-showif-mirror.mjs` (the grammar in its three places) | 2026-09-24 |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -82,10 +88,15 @@ vocabulary, and the Jobber outbound push, which only fires because a real person
 **5. `intake-submit` is fully public.** Measured: it answers 200 with **no apikey header at all**.
 The token is the only gate, which makes the ceilings in its header load-bearing rather than tidy:
 `MAX_BODY_BYTES 262144`, `PHOTO_CAP 40`, `MAX_ANSWER_KEYS 200`, `MAX_VALUE_CHARS 4000`,
-`MAX_COLLECTOR 120`, plus token expiry and a single-submit compare-and-set. Since v8 `PHOTO_CAP` binds
-BOTH steps: upload counts objects actually stored in the intake's folder, attach counts live links and
-refuses a path whose object does not exist (before v8 a token holder could request unlimited upload
-URLs, and attach inserted a photo row for any correctly-shaped path). ⚠ There is no upload TTL of ours:
+`MAX_COLLECTOR 120`, plus token expiry and a single-submit compare-and-set. **Since v9 uploads are bounded by a LEDGER**:
+`public.fn_intake_claim_upload_slot` hands out at most **60 upload slots per intake, ever**, under an
+advisory lock, and returns the path itself (`<intake id>/<uuid>.<ext>`). Attach accepts only a path
+the ledger issued to that intake, whose object exists in the bucket, with the content type storage
+recorded (never the caller's). `PHOTO_CAP 40` is the product limit on ATTACHED photos; the 20 extra
+slots are headroom for retries on a bad signal. History, both bypassed by a burst of calls: before v8
+upload URLs were unlimited; v8 counted objects already stored, which a burst made before any object
+landed still slipped past. A slot is never freed (a `ponytail:` note in the migration): a collector
+who burns 60 uploads through retries is stuck until someone reclaims expired unused slots. ⚠ There is no upload TTL of ours:
 the old `SIGNED_UPLOAD_TTL 900` was declared and returned as `expires_in` but never applied. The real
 lifetime is Supabase's, **measured at 7,200 s** from the signed-upload JWT's `exp - iat`.
 
@@ -129,8 +140,11 @@ estate-wide depend on one grant. `intake_photos_staff_read` is `bucket_id = 'int
 auth.uid() IS NOT NULL`, nothing more. The product rule that an awaiting form shows no photos lives
 in `client.get_intake`, where it belongs.
 
-**12. 🛑 Completeness is ONE rule: `public.fn_intake_missing`. Call it, never re-implement it.** A requested
-key counts only if it was APPLICABLE, i.e. the collector was shown it: every `show_if` in its chain
+**12. 🛑 Completeness is ONE rule: `public.fn_intake_missing`. Call it, never re-implement it.** Since
+2026-09-24 a requested key counts only if it is REQUIRED (`public.fn_intake_required`: shown AND not
+`"optional": true`). `access_entry.obstacles` is optional (Fred: shown, never blocks Complete), and the
+list's `applicable_count` / `answered_count` and `get_intake`'s counts are over required questions only.
+Before that date a requested key counted if it was APPLICABLE, i.e. the collector was shown it: every `show_if` in its chain
 matches the submitted answers (`public.fn_intake_applicable`, the same comparison as the form's
 `visible()`). Before 2026-09-23 19:49 ET status was "every requested key answered", so answering *No*
 to "Is there a closed gate?" left the gate-code follow-up forever unanswered and the form read
@@ -140,6 +154,46 @@ from 2026-09-22 and feeds the Clients-list Intake status column. `client.v_prope
 all call it now; until v8 the edge function carried its own TypeScript copy, which also disagreed
 with SQL on whitespace-only answers. Requested keys are normalised there too (NULL, blank and
 duplicates ignored), so the list, the detail and the status count the same set.
+⚠ **Blank means exactly what JavaScript's `trim()` removes** (TAB, LF, VT, FF, CR, SPACE, NBSP, U+1680,
+U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF), written with `chr()` codes. Before
+2026-09-24 seven Unicode spaces were an answer in SQL and blank in the form.
+⚠ **1949 was not enough**: it only helped a follow-up that CARRIES a `show_if`. With the live tree, all
+35 keys requested and a truthful survey of a site with no lift station and no water tank, 8 keys were
+still missing, 3 of them photo questions nobody can answer (you cannot photograph a lift station that
+does not exist). The fix was conditions in the tree, not a looser rule.
+
+**13. 🛑 The `show_if` grammar lives in THREE places, and they must agree.**
+1. `public.fn_intake_applicable` (SQL: what counts toward Complete).
+2. `visible()` in `supabase/functions/intake-submit/form-page.ts` (what the collector is shown).
+3. The Client App's Schedule dialog helpers (which questions it ticks together as follow-ups).
+
+The grammar: `key=value` (shown when the parent's trimmed answer equals `value`), `key=` with an
+EMPTY value (shown when the parent was left blank), `key>N` (shown when the parent's answer is a number
+above N). The operator is the FIRST `=` or `>`, both sides trimmed, and the parent chain is walked
+(a hidden parent hides its children; depth capped at 10, a cycle ends as shown). **Change it reader
+first, writer second**: the dialog shipped first (2026-09-24 02:35 ET), then SQL, then the form, so no
+consumer ever met a condition it could not read.
+**Run `node scripts/checks/intake-showif-mirror.mjs` after touching any of the three.** It reads the
+live tree, the form's own functions out of `form-page.ts` (never retyped) and the parser out of the
+LIVE Client App bundle, then compares every condition's parent key three ways and every question's
+visibility in form vs SQL over 14 scenarios, with a positive control that must flip. Measured
+2026-09-24: 16 conditions parsed three ways, 490 cells, all agree.
+
+**14. 🛑 Compare and accept honour whether a question was SHOWN.** The collector form keeps what was typed
+into a follow-up when its parent later changes, so an abandoned lock-box code (how_access switched from
+Lock box to Key) reaches the raw submission. `get_intake_compare` marks such a key `not_shown`, and
+`accept_intake_answers` refuses it (`22023`, MESSAGE in plain words, DETAIL `blocker=not_shown ...`)
+before anything is written, because accepting it would write `properties.lock_box_key` and push it to
+Jobber. The raw submission stays immutable: the filter is at the consumer, never a rewrite of `answers`.
+
+**15. 🛑 `yannick_readonly` reads `property_intakes` through a COLUMN grant that leaves out `token`.** It
+is a LOGIN role with BYPASSRLS, and the public schema's default ACL had given it table-level SELECT,
+live tokens included. A new column on `property_intakes` is therefore invisible to that role until
+granted by name, which is the safe default; **never "fix" that by granting table-level SELECT again.**
+⚠ Separately, that role's password sits in the public repo
+(`docs/handoffs/yannick-*/YANNICK-CLAUDE-CODE-SETUP.md`, since 2026-06-09). Fred chose (2026-09-24) to
+have Yannick change it; the literals come out of the docs after he does, and scrubbing git history is a
+force-push that needs Fred's OK.
 
 ---
 
@@ -198,6 +252,12 @@ guarding it.
 from token to id, the test harness still deleted `photos` by `intake-photos/<token>/%`, matched zero rows,
 and its baseline check passed because it did not count `photos`. Two orphaned rows were found only by a
 separate count. Count every table you wrote to, not the ones you expect to have cleaned.
+
+**A consistency check built on an INNER join is blind to the defect it exists for.** The 0233 VERIFY
+counts conditions whose parent key is missing, spelled wrong, or `>` on a non-number. Written with a
+plain `LATERAL` join to find the parent, a condition naming a MISSING parent drops its own row and the
+count reads 0. It is a `LEFT JOIN LATERAL ... ON true`, so the row survives with a NULL parent and is
+counted. Ask of every "0 violations" check: can the violating row reach the WHERE clause at all?
 
 **A backslash inside a JS template literal is swallowed.** The attach-path regex was written as
 `` `...{12}\.(jpg|png)$` `` and compiled to `...{12}.(jpg|png)$`, so `<uuid>Xjpg` was accepted. Caught by

@@ -4503,7 +4503,7 @@ submission, per PROPERTY), `property_intake_accepts` (who accepted what, old and
 **Full reference, read it before touching any of them:**
 [`docs/reference/client-intake-system.md`](docs/reference/client-intake-system.md).
 
-Five things that will bite someone who does not know them:
+Six things that will bite someone who does not know them:
 
 1. **The photo kind is `property_intake` and must never be `property`.**
    `customer.client_access_photos` selects `photo_links` where `entity_type IN ('client','property')`
@@ -4529,7 +4529,17 @@ Five things that will bite someone who does not know them:
    question counts only if the collector was shown it (`public.fn_intake_applicable`: every `show_if`
    in its chain matched). Until 2026-09-23 a follow-up hidden by its parent's answer counted as
    missing, so a correctly completed form read Incomplete forever. The three intake views/functions
-   and `intake-submit` all call it; the edge function used to carry its own copy.
+   and `intake-submit` all call it; the edge function used to carry its own copy. Since 2026-09-24 it
+   counts only REQUIRED questions (`public.fn_intake_required` = shown AND not `"optional": true`), so
+   an optional question never blocks Complete.
+6. **The `show_if` grammar lives in THREE places: `public.fn_intake_applicable`, `visible()` in
+   `intake-submit/form-page.ts`, and the Client App's Schedule dialog.** `key=value`, `key=` (parent
+   left blank), `key>N` (parent is a number above N); the operator is the first `=` or `>`, both sides
+   trimmed. Change the reader first, then the writer, and run
+   `node scripts/checks/intake-showif-mirror.mjs`, which compares all three against the live tree and
+   the LIVE Client App bundle. Uploads are bounded by a ledger (`public.property_intake_uploads`, 60
+   slots per intake, ever), and `yannick_readonly` reads `property_intakes` by a column grant that
+   leaves out `token`: never grant it table-level SELECT again.
 
 ## Documentation map
 
