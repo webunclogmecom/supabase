@@ -4056,7 +4056,8 @@ the same comm_type repeatedly.
 
 **The write path is one RPC:** `client.save_contact_settings(p_source text, p_contact_id bigint,
 p_patch jsonb)`, SECURITY DEFINER, EXECUTE to `authenticated` + `service_role` (**not `anon`**).
-`p_source` picks the target column (`'contact'` → `contact_id`, `'jobber'` → `jobber_contact_id`).
+`p_source` picks the target column (`'ours'` → `contact_id`, `'jobber'` → `jobber_contact_id`; corrected
+2026-09-24, this said `'contact'`, which the RPC refuses).
 Its 13 operator-reachable refusals carry a `blocker=<code>` in DETAIL while the MESSAGE stays plain
 language, per the 2026-09-14 rule below. The caller-shape refusals (`p_source`, `p_patch`,
 `unsupported field(s)`, `communication must be a list`, `property_id must be a positive integer`)
@@ -4144,8 +4145,33 @@ was the one path where the star would have been authoritative. Re-open ONLY if t
 batch-delivering, which nothing in our data would detect; it has to come from a person.
 
 **The contract check** that guards the shipped copy is
-`scripts/checks/client-app-contacts-contract.mjs` (25 strings that must be PRESENT, 9 that must be
-ABSENT because they would be FALSE). Run it after any Client App publish that touches Contacts.
+`scripts/checks/client-app-contacts-contract.mjs` (33 strings that must be PRESENT, 15 that must be
+ABSENT because they would be FALSE, plus counts). Run it after any Client App publish that touches Contacts.
+
+**`save-client-contact` `action:'refresh'` also returns `jobber_emails`** (v23, 2026-09-24):
+`{ client, star, contacts: {<ContactModel gid>: [...]}, invoice, quote }`, 🛑 **exact spellings, never
+lowercased** (unlike `jobber_defaults`). The Client App's Edit dialogs predict from it where Jobber will
+prefill the next invoice and quote. The model it encodes, measured live on 112-YA on 2026-09-24, every read settled by two identical reads 45 s apart, every
+step restored afterwards:
+
+| step | what we did | Jobber prefilled after |
+|---|---|---|
+| rewrite a remembered, non-starred address | `fred@` -> `fred+memtest@` | the STAR (`yannick@`) |
+| move the star while nothing remembered survives | star -> `serena@` | `serena@`: the fallback follows the live star |
+| rewrite the STAR's address (the client-record edit) | `serena@` -> `serena+memtest@` | the new address |
+| add a new starred address, then delete it | | the new star, then the email Jobber starred next |
+| copy the remembered address onto a Jobber contact, hide the client's copy | | still `fred@`: a contact's copy keeps it |
+| rewrite that contact's copy (the Jobber-contact edit) | | the STAR |
+| add a second copy of an address, or a capitals-only copy | | refused: "is already taken" |
+| change only the capitals of the remembered address | | stored lowercase, prefill unchanged |
+
+So Jobber keeps a remembered address only while the client OR one of its Jobber contacts still holds
+it, and when none survives it prefills the client's starred email, whatever that is at the time.
+Fleet read (463 clients, read-only): invoice and quote memory are identical on all 463; 14 clients
+remember an address that exists only on a Jobber contact; all 426 remembered addresses match a held
+address byte for byte; 64 clients hold their star twice (71 of 74 duplicate pairs differ only in
+capital letters).
+Full record: `Building Apps/Client App/docs/08-changelog.md` 2026-09-24.
 
 ### 🛑 THE AUTOMATIC CITY EMAIL: A LIVE HOURLY CRON THAT IS DOING NOTHING ON PURPOSE (2026-08-28)
 

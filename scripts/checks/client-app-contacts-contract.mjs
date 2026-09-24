@@ -67,6 +67,14 @@ const PRESENT = [
   // TWICE, once in the combined banner and once in the per-type one; a single hit means only
   // one of the two components was fixed, which is how this defect shipped in the first place.
   'That contact has no email address yet',
+  // the Edit dialogs' invoice/quote prefill line (2026-09-24). Static fragments of the templates only,
+  // because the addresses are interpolated. 'jobber_emails' proves the new refresh field is read.
+  'jobber_emails', 'After you save, it will still prefill ', ' instead, because that will be the client',
+  'After you save, it will prefill only ',
+  'If that is wrong, type the right address over the prefilled one on the next invoice before sending.',
+  // regression guards for lines that share the Email field and the banner this change touched
+  'The service report goes to this address. Save and the next one goes to the new address.',
+  'Jobber has no remembered ',
 ];
 
 const ABSENT = [
@@ -84,6 +92,11 @@ const ABSENT = [
   // "the FIRST send decides it" is a finality we have never measured, and 0 of 461 clients are
   // even in the empty-history state it describes.
   'The first send from Jobber decides it.',
+  // the one-per rules reversed by 2026-09-23_1610; their copy was deleted on 2026-09-24
+  'Only one contact per client', 'One contact per location',
+  'Saving will move the invoice contact off', 'Saving will move City report off',
+  // Jobber-sent mail is a record for us: nothing here may promise where Jobber sends
+  'will receive', 'Jobber will send',
 ];
 
 const walk = async () => {
@@ -147,6 +160,17 @@ if (mutating) {
   // (stable, it is ours) rather than the guard expression (`gt(m)?`, which renames on any rebuild).
   const nEmailless = (all.match(/That contact has no email address yet/g) || []).length;
   if (nEmailless !== 2) fails.push(`emailless-holder copy found ${nEmailless}x, want 2 (combined + per-type banner)`);
+  // ONE shared sentence builder for the prefill line, called by BOTH Edit dialogs. Two copies of the
+  // sentence would drift; a kind literal seen once means one dialog was never wired.
+  const count = (re) => (all.match(re) || []).length;
+  const nPrefill = count(/ on invoices and quotes today\./g);
+  if (nPrefill !== 1) fails.push(`prefill sentence found ${nPrefill}x, want 1 (one shared builder)`);
+  for (const k of ['client_record', 'jobber_contact']) {
+    const n = count(new RegExp(`(["'\`])${k}\\1`, 'g'));
+    if (n < 2) fails.push(`"${k}" literal found ${n}x, want >= 2 (helper + its dialog call)`);
+  }
+  const nDerm = count(/The service report goes to this address\. Save and the next one goes to the new address\./g);
+  if (nDerm !== 1) fails.push(`DERM recipient line found ${nDerm}x, want 1`);
   for (const n of missing) fails.push(`MISSING: ${JSON.stringify(n)}`);
   for (const n of leaked) fails.push(`PRESENT BUT MUST NOT BE (the copy would be false): ${JSON.stringify(n)}`);
 }
