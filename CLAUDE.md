@@ -435,6 +435,13 @@ simply the normal rate of non-pumping work completing). The reasoning was: `cust
 applies no DERM filter while `customer.work_orders` does, *therefore* the filter is unintentional.
 **That does not follow — two views can simply have different jobs.**
 
+- ✅ **A STAFF-ONLY TWIN EXISTS, AND IT DOES NOT CHANGE THAT RULE (2026-09-24).**
+  `customer.work_orders_all` + `customer.get_work_order_internal(text)` are the same objects without the
+  derm_required predicate, **service_role only**, for the DERM Tracker's "Download Report" on non-DERM
+  visits (edge fn `derm-visit-report` -> pdf-service `work_order_override`). Copied from the live
+  definitions, md5-pinned: if the originals change, rebuild the twin
+  (`docs/migrations/2026-09-24_1150_customer_work_order_internal.sql`). Never grant either to anon or
+  authenticated.
 - **Warning signs you are deducing intent:** "X has no such filter, therefore Y's is accidental";
   "no comment explains it"; "this looks like a service history". Measure freely; **recommend only with
   a source.** Asking costs one question.

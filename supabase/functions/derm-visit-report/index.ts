@@ -25,6 +25,16 @@
 // anyone with a staff login pull any client's report under a different visit.
 // client_code is still sent so the pdf-service refuses (409 client_mismatch) a report that
 // does not name that client.
+//
+// NOT DERM-REQUIRED VISITS (2026-09-24). Fred: "I need it also when is not DERM Required, like
+// cases where is a SC visit, like https://derm.unclogme.app/visits/8117". The Field Portal shows
+// DERM-required work only, by design (customer.work_orders filters derm_required; Fred
+// 2026-08-05), and that rule is NOT changed. For such a visit this function reads the staff-only
+// twin customer.get_work_order_internal (service_role only, migration 2026-09-24_1150) and hands
+// it to the pdf-service as work_order_override: the service answers the FP page's own
+// get_work_order call with it inside its headless browser, so the PDF is still FP's report page,
+// same structure and style. Customers see nothing new. A DERM-required visit never takes this
+// path, so its report keeps FP's visit numbering exactly.
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -90,7 +100,7 @@ Deno.serve(async (req: Request) => {
   // -- resolve the visit server-side --------------------------------------------------------
   const sb = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'derm-visit-report' } } })
   const { data: v, error: vErr } = await sb.from('visits')
-    .select('id, public_id, deleted_at, clients(client_code)')
+    .select('id, public_id, deleted_at, derm_required, clients(client_code)')
     .eq('id', visitId).maybeSingle()
   if (vErr) {
     console.error(`[derm-visit-report] visit ${visitId} lookup failed: ${vErr.message}`)
@@ -101,6 +111,20 @@ Deno.serve(async (req: Request) => {
   if (!publicId) return fail('no_report', 'This visit has no service report yet.', 409, cors)
   const clientCode = String(((v as any).clients as any)?.client_code ?? '').trim() || null
 
+  // customer.work_orders keeps COALESCE(derm_required, true) = true, so exactly the visits with
+  // derm_required = false have no Field Portal report and need the staff-only work order.
+  let workOrderOverride: unknown = null
+  if ((v as any).derm_required === false) {
+    const { data: wo, error: woErr } = await sb.schema('customer')
+      .rpc('get_work_order_internal', { p_work_order_id: publicId })
+    if (woErr) {
+      console.error(`[derm-visit-report] visit ${visitId}: get_work_order_internal failed: ${woErr.message}`)
+      return fail('lookup_failed', 'Could not look up this visit. Try again.', 502, cors)
+    }
+    if (!wo) return fail('no_report', 'This visit has no service report yet.', 409, cors)
+    workOrderOverride = wo
+  }
+
   // -- ask the pdf-service to print the Field Portal report ---------------------------------
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), PDF_TIMEOUT_MS)
@@ -109,9 +133,12 @@ Deno.serve(async (req: Request) => {
     up = await fetch(`${PDF_SERVICE_URL.replace(/\/$/, '')}/generate/visit-report`, {
       method: 'POST', signal: ctrl.signal,
       headers: { Authorization: `Bearer ${PDF_SERVICE_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(clientCode
-        ? { client_code: clientCode, public_id: publicId, include_photos: true }
-        : { public_id: publicId, include_photos: true }),
+      body: JSON.stringify({
+        ...(clientCode ? { client_code: clientCode } : {}),
+        public_id: publicId,
+        include_photos: true,
+        ...(workOrderOverride ? { work_order_override: workOrderOverride } : {}),
+      }),
     })
   } catch (e) {
     clearTimeout(timer)
