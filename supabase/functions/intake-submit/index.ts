@@ -57,8 +57,12 @@
 // ledger slots <= 60. Move count + insert into one locked RPC if 40 must ever be exact.
 //
 // v10 (2026-09-24, fourth review): at submit the SERVER decides what a photos answer is (the paths
-// actually attached to that question), and drops a weekly-hours day without a real open AND close.
-// A client could otherwise claim photos it never attached, or send a day the office can never accept.
+// actually attached to that question). A client could otherwise claim photos it never attached.
+// v11 (2026-09-24, fifth review): a photo attached but not claimed (lost attach response, lost draft)
+// still counts when its question was shown; a number answer must be a whole number inside the
+// question's min/max (the writer's range, from the tree); a ticked hours day without a real open AND
+// close is REFUSED in words naming the day (v10 dropped it silently, and the record is immutable); a
+// photo already linked to another question on this form is refused, never reported as attached.
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -277,13 +281,20 @@ Deno.serve(async (req) => {
     }
     let photoId = await priorPhoto()
     if (photoId === undefined) return fail(500, 'Could not attach the photo, please try again.')
+    // A live link for this photo on this form: the same question means a retry (already attached); a
+    // different question means the photo belongs elsewhere, and saying "attached" would be false (v11).
+    const liveLinkRoles = async (): Promise<string[] | undefined> => {
+      const { data, error } = await supabase
+        .from('photo_links').select('role')
+        .eq('photo_id', photoId as number).eq('entity_type', 'property_intake').eq('entity_id', i.id)
+        .is('deleted_at', null)
+      return error || !Array.isArray(data) ? undefined : data.map((l) => String(l.role))
+    }
     if (photoId !== null) {
-      const { data: link, error: lkErr } = await supabase
-        .from('photo_links').select('id')
-        .eq('photo_id', photoId).eq('entity_type', 'property_intake').eq('entity_id', i.id)
-        .is('deleted_at', null).limit(1)
-      if (lkErr) return fail(500, 'Could not attach the photo, please try again.')
-      if (link && link.length) return json(200, { ok: true, photo_id: photoId, already_attached: true })
+      const roles = await liveLinkRoles()
+      if (roles === undefined) return fail(500, 'Could not attach the photo, please try again.')
+      if (roles.includes(role)) return json(200, { ok: true, photo_id: photoId, already_attached: true })
+      if (roles.length) return fail(409, 'This photo is already attached to another question on this form.')
     }
 
     // The cap on ATTACHED photos (the product limit). The ledger above caps uploads.
@@ -321,8 +332,12 @@ Deno.serve(async (req) => {
       .from('photo_links')
       .insert({ photo_id: photoId, entity_type: 'property_intake', entity_id: i.id, role, caption })
     if (lErr && (lErr as { code?: string }).code === '23505') {
-      // One live link per intake photo (v10 index): a parallel attach of this file already linked it.
-      return json(200, { ok: true, photo_id: photoId, already_attached: true })
+      // One live link per intake photo (v10 index): a parallel attach of this file got there first.
+      // Report "attached" only if that link is to THIS question (v11).
+      const roles = await liveLinkRoles()
+      if (roles === undefined) return fail(500, 'Could not attach the photo, please try again.')
+      if (roles.includes(role)) return json(200, { ok: true, photo_id: photoId, already_attached: true })
+      return fail(409, 'This photo is already attached to another question on this form.')
     }
     if (lErr) return fail(500, 'Could not attach the photo, please try again.')
 
@@ -357,19 +372,53 @@ Deno.serve(async (req) => {
       answers[k] = wrapped
     }
 
-    // The server, not the client, decides what two kinds of answer are (v10):
-    //  - a photos answer is the paths ACTUALLY attached to that question (live photo_links, role = key);
-    //    a claimed photos answer with nothing attached is dropped, so it cannot count as answered;
-    //  - a weekly-hours answer keeps only days with a real HH:MM open AND close, the shape the only
-    //    accept path (client.update_property_operational) takes. A day the office could never accept
-    //    must not make the form read Complete.
-    const types = new Map<string, string>()
+    // The server, not the client, decides what three kinds of answer are:
+    //  - a NUMBER is a whole number inside the question's min/max (the tree carries the writer's range;
+    //    default 0 to 1,000,000). Refused in words otherwise (v11);
+    //  - a WEEKLY-HOURS answer needs a real HH:MM open AND close on every ticked day, the only shape the
+    //    accept path takes. A day without one is refused, naming the day (v11; v10 dropped it silently);
+    //  - a PHOTOS answer is the paths ACTUALLY attached to that question (live photo_links, role = key).
+    //    A claimed answer with nothing attached is dropped (v10); an attached photo nobody claimed still
+    //    counts when its question was shown (v11).
+    type Q = { key: string; type?: string; label?: string; min?: number; max?: number }
+    const qs = new Map<string, Q>()
     for (const sec of ((i.form_snapshot as { sections?: unknown[] }).sections ?? []) as { questions?: unknown[] }[]) {
-      for (const q of (sec?.questions ?? []) as { key?: unknown; type?: unknown }[]) {
-        if (q && typeof q.key === 'string' && typeof q.type === 'string') types.set(q.key, q.type)
+      for (const q of (sec?.questions ?? []) as Q[]) {
+        if (q && typeof q.key === 'string' && typeof q.type === 'string') qs.set(q.key, q)
       }
     }
-    const photoKeys = Object.keys(answers).filter((k) => types.get(k) === 'photos')
+    for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'number')) {
+      const q = qs.get(k) as Q
+      let v = (answers[k] as { value?: unknown }).value
+      if (v == null || (typeof v === 'string' && v.trim() === '')) { delete answers[k]; continue }
+      if (typeof v === 'string') v = /^[0-9]+$/.test(v.trim()) ? Number(v.trim()) : NaN
+      const min = typeof q.min === 'number' ? q.min : 0
+      const max = typeof q.max === 'number' ? q.max : 1_000_000
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) {
+        return fail(400, `"${q.label ?? k}" needs a whole number from ${min} to ${max}.`
+          + (min > 0 ? ' Leave it blank if you do not know it.' : ''))
+      }
+      answers[k] = { value: v }
+    }
+    const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
+    const DAY_NAMES: Record<string, string> = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' }
+    for (const k of Object.keys(answers).filter((k) => qs.get(k)?.type === 'weekly_hours')) {
+      const v = (answers[k] as { value?: unknown }).value
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(400, 'Could not read the access hours.')
+      const days: Record<string, { open: string; close: string }> = {}
+      for (const d of Object.keys(DAY_NAMES)) {
+        const w = (v as Record<string, { open?: unknown; close?: unknown } | undefined>)[d]
+        if (w == null) continue
+        if (typeof w.open !== 'string' || typeof w.close !== 'string' || !HHMM.test(w.open) || !HHMM.test(w.close)) {
+          return fail(400, `${DAY_NAMES[d]} needs an opening and a closing time. For any time, use 00:00 to 00:00, or untick the day.`)
+        }
+        days[d] = { open: w.open, close: w.close }
+      }
+      if (Object.keys(days).length) answers[k] = { value: days }
+      else delete answers[k]
+    }
+    const requested = new Set(Array.isArray(i.requested) ? i.requested : [])
+    const photoKeys = [...new Set([...Object.keys(answers), ...requested])].filter((k) => qs.get(k)?.type === 'photos')
     if (photoKeys.length) {
       const { data: links, error: lkErr } = await supabase
         .from('photo_links').select('photo_id, role')
@@ -384,25 +433,18 @@ Deno.serve(async (req) => {
       }
       for (const k of photoKeys) {
         const paths = links.filter((l) => l.role === k).map((l) => pathOf.get(l.photo_id)).filter((p): p is string => !!p)
-        if (paths.length) answers[k] = { value: paths }
-        else delete answers[k]
-      }
-    }
-    const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
-    const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-    for (const k of Object.keys(answers).filter((k) => types.get(k) === 'weekly_hours')) {
-      const v = (answers[k] as { value?: unknown }).value
-      const days: Record<string, { open: string; close: string }> = {}
-      if (v && typeof v === 'object' && !Array.isArray(v)) {
-        for (const d of DAYS) {
-          const w = (v as Record<string, { open?: unknown; close?: unknown }>)[d]
-          if (w && typeof w.open === 'string' && typeof w.close === 'string' && HHMM.test(w.open) && HHMM.test(w.close)) {
-            days[d] = { open: w.open, close: w.close }
-          }
+        if (!paths.length) { delete answers[k]; continue }
+        if (!(k in answers)) {
+          // Attached but not claimed (a lost attach response, a lost draft): it counts only if the
+          // collector was shown that question, so no answer to a hidden question enters the record.
+          const { data: shown, error: aErr } = await supabase.rpc('fn_intake_applicable', {
+            p_snapshot: i.form_snapshot, p_answers: answers, p_key: k,
+          })
+          if (aErr) return fail(500, 'Could not check the photos, please try again.')
+          if (shown !== true) continue
         }
+        answers[k] = { value: paths }
       }
-      if (Object.keys(days).length) answers[k] = { value: days }
-      else delete answers[k]
     }
 
     // Status comes from THE rule, public.fn_intake_missing, the same function the views

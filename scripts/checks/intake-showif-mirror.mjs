@@ -28,7 +28,7 @@ const qs = tree.sections.flatMap((s) => s.questions).filter((q) => q && typeof q
 
 // ---- 2. the form's own functions, taken verbatim from form-page.ts
 const page = fs.readFileSync(path.join(ROOT, 'supabase/functions/intake-submit/form-page.ts'), 'utf8')
-const a = page.indexOf('var NUM='), b = page.indexOf('function setA(')
+const a = page.indexOf('var HHMM='), b = page.indexOf('function setA(')
 if (a < 0 || b < 0) throw new Error('form-page.ts no longer has the expected visible() block: update this check')
 let A = {}
 const F = { form: tree }

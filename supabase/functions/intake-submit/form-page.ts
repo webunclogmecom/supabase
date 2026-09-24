@@ -90,7 +90,7 @@ function show(m){var d=document.createElement('div');d.className='err';d.textCon
 // parent is a number above N). The operator is the FIRST "=" or ">", both sides trimmed, and a
 // follow-up is shown only if its parent was itself shown. public.fn_intake_applicable and the Client
 // App's Schedule dialog read it exactly the same way: change all three together.
-var NUM=/^\s*-?[0-9]+(\.[0-9]+)?\s*$/, THRESHOLD=/^-?[0-9]+(\.[0-9]+)?$/;
+var HHMM=/^([01][0-9]|2[0-3]):[0-5][0-9]$/, NUM=/^\s*-?[0-9]+(\.[0-9]+)?\s*$/, THRESHOLD=/^-?[0-9]+(\.[0-9]+)?$/;
 function cond(show){
   if(!show) return null;
   var e=show.indexOf('='), g=show.indexOf('>');
@@ -134,7 +134,7 @@ function render(){
   document.getElementById('cnt').textContent=answered+' of '+shown+' answered'+(busy?' - uploading '+busy+'...':'');
   document.getElementById('send').disabled=busy>0;
 }
-function isAns(q){var v=A[q.key];if(v==null)return false;if(typeof v==='string')return v.trim()!=='';if(Array.isArray(v))return v.length>0;if(typeof v==='object')return Object.keys(v).length>0;return true}
+function isAns(q){var v=A[q.key];if(v==null)return false;if(q.type==='weekly_hours'){if(typeof v!=='object'||Array.isArray(v))return false;var ks=Object.keys(v);return ks.length>0&&ks.every(function(d){var w=v[d]||{};return HHMM.test(w.open||'')&&HHMM.test(w.close||'')})}if(typeof v==='string')return v.trim()!=='';if(Array.isArray(v))return v.length>0;if(typeof v==='object')return Object.keys(v).length>0;return true}
 
 function field(q){
   var d=document.createElement('div'); d.className='q';
@@ -155,7 +155,7 @@ function field(q){
       b.onclick=function(){setA(q.key, v===o?'':o)}; w2.appendChild(b);
     }); d.appendChild(w2);
   } else if(t==='number'){
-    var n=document.createElement('input'); n.type='number'; n.inputMode='numeric'; n.min='0';
+    var n=document.createElement('input'); n.type='number'; n.inputMode='numeric'; n.step='1'; n.min=String(typeof q.min==='number'?q.min:0); if(typeof q.max==='number') n.max=String(q.max);
     n.value=(v==null?'':v); n.onchange=function(){setA(q.key, n.value===''?'':Number(n.value))}; d.appendChild(n);
   } else if(t==='text'){
     var x=document.createElement('textarea'); x.value=(v==null?'':v);
@@ -174,7 +174,7 @@ function field(q){
       row.appendChild(cb); row.appendChild(nm); row.appendChild(o); row.appendChild(c); d.appendChild(row);
     });
     var hn=document.createElement('div'); hn.className='note';
-    hn.textContent='Tick a day, then set when we can come. A close time earlier than the open time means overnight.';
+    hn.textContent='Tick a day, then set when we can come. For any time, use 00:00 to 00:00. A close time earlier than the open time means overnight.';
     d.appendChild(hn);
   } else if(t==='gps_pin'){
     var b3=document.createElement('button'); b3.type='button'; b3.className='btn'; b3.textContent='Use my location';
