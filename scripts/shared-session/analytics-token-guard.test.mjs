@@ -63,9 +63,9 @@ const check = (ok, msg) => { console.log((ok ? '  PASS ' : '  FAIL ') + msg); if
   const x = new e.window.XMLHttpRequest(); x.open('POST', '/~api/analytics'); x.send(BODY)
   check(e.sent.length === 1, 'installing the guard twice is harmless (one send, not two)')
 }
-{ // the file each app downloads must be exactly the tested artifact (plus the newline --print adds)
+{ // the file each app downloads must be exactly the tested artifact (no trailing newline, so the served inline text equals it exactly)
   const shipped = fs.readFileSync(new URL('./analytics-token-guard.inline.js', import.meta.url), 'utf8')
-  check(shipped === GUARD + '\n', 'analytics-token-guard.inline.js is byte-identical to the tested one-line artifact')
+  check(shipped === GUARD,'analytics-token-guard.inline.js is byte-identical to the tested one-line artifact')
 }
 console.log(`\nguard: ${GUARD.length} characters, one line`)
 if (fails) { console.log(`${fails} FAILED`); process.exit(1) } else console.log('all passed')

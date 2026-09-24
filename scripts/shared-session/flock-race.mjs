@@ -48,9 +48,16 @@ for (const c of cases) {
   const guarded = await page.evaluate(() => !!window.__unclogmeAnalyticsGuard).catch(() => null)
   await ctx.close()
   const leaked = posts.some((p) => p.leak), sentView = posts.length > 0
-  const ok = sentView && !leaked
+  // what the server actually sends: the inline guard must be byte-identical to the tested artifact
+  let served = 'n/a (--inject)'
+  if (!inject) {
+    const html = await (await fetch(`https://${c.host}${c.path}?cb=${Date.now()}`)).text()
+    const inl = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).filter((s) => s.includes('__unclogmeAnalyticsGuard'))
+    served = inl.length === 0 ? 'MISSING' : inl.length > 1 ? `DUPLICATED x${inl.length}` : inl[0].trim() === GUARD ? 'byte-identical' : 'DIFFERS'
+  }
+  const ok = sentView && !leaked && (inject || served === 'byte-identical')
   if (!ok) bad++
-  console.log(`${(c.host + c.path + (c.type ? ' (' + c.type + ')' : '')).padEnd(46)} ${ok ? 'PASS' : 'FAIL'}  tracker posts=${posts.length} leaked=${leaked} redacted=${posts.some((p) => p.redacted)} guard=${guarded} fragment-still-in-URL-at-700ms=${hashAt700} webdriver=${webdriver}`)
+  console.log(`${(c.host + c.path + (c.type ? ' (' + c.type + ')' : '')).padEnd(46)} ${ok ? 'PASS' : 'FAIL'}  tracker posts=${posts.length} leaked=${leaked} redacted=${posts.some((p) => p.redacted)} guard=${guarded} served-inline=${served} fragment-still-in-URL-at-700ms=${hashAt700} webdriver=${webdriver}`)
 }
 await browser.close()
 process.exit(bad ? 1 : 0)
