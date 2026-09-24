@@ -86,13 +86,32 @@ function save(){try{localStorage.setItem(KEY,JSON.stringify(A))}catch(e){}}
 function load(){try{var v=localStorage.getItem(KEY);if(v)A=JSON.parse(v)||{}}catch(e){A={}}}
 function show(m){var d=document.createElement('div');d.className='err';d.textContent=m;document.getElementById('main').prepend(d)}
 
-// show_if is "<key>=<value>". A follow-up stays hidden until its parent matches. The
-// office checklist renders the same contract; here it decides what is actually ASKED.
-function visible(q){
-  if(!q.show_if) return true;
-  var i=q.show_if.indexOf('='); if(i<0) return true;
-  var k=q.show_if.slice(0,i), want=q.show_if.slice(i+1);
-  return String(A[k]==null?'':A[k])===want;
+// show_if is "<key>=<value>" (the value may be empty: the parent was left blank) or "<key>>N" (the
+// parent is a number above N). The operator is the FIRST "=" or ">", both sides trimmed, and a
+// follow-up is shown only if its parent was itself shown. public.fn_intake_applicable and the Client
+// App's Schedule dialog read it exactly the same way: change all three together.
+var NUM=/^\s*-?[0-9]+(\.[0-9]+)?\s*$/, THRESHOLD=/^-?[0-9]+(\.[0-9]+)?$/;
+function cond(show){
+  if(!show) return null;
+  var e=show.indexOf('='), g=show.indexOf('>');
+  var p=(e<0&&g<0)?-1:(e<0?g:(g<0?e:Math.min(e,g)));
+  if(p<0) return null;
+  return {k:show.slice(0,p).trim(), op:show.charAt(p), v:show.slice(p+1).trim()};
+}
+function findQ(k){
+  var sec=(F&&F.form&&F.form.sections)||[];
+  for(var i=0;i<sec.length;i++){var qs=sec[i].questions||[];for(var j=0;j<qs.length;j++){var q=qs[j];if(q&&typeof q==='object'&&q.key===k)return q}}
+  return null;
+}
+function visible(q, depth){
+  depth=depth||0;
+  if(depth>=10) return true;                       // a cycle in an authored tree: stay visible
+  var c=cond(q&&q.show_if); if(!c) return true;
+  var raw=A[c.k], got=(raw==null)?'':String(raw);
+  if(c.op==='='){ if(got.trim()!==c.v) return false; }
+  else { if(!(NUM.test(got)&&THRESHOLD.test(c.v)&&Number(got)>Number(c.v))) return false; }
+  var parent=findQ(c.k);
+  return parent ? visible(parent, depth+1) : true;
 }
 function setA(k,v){ if(v===''||v==null) delete A[k]; else A[k]=v; save(); render(); }
 
@@ -100,16 +119,18 @@ function render(){
   if(!F) return;
   var m=document.getElementById('main'); m.innerHTML='';
   var req={}; (F.requested||[]).forEach(function(k){req[k]=1});
-  var shown=0, answered=0;
+  // `shown` counts the questions that decide Complete: visible and not optional, the same set
+  // public.fn_intake_missing counts. An optional question is still rendered and still sent.
+  var rendered=0, shown=0, answered=0;
   ((F.form||{}).sections||[]).forEach(function(s){
     var qs=(s.questions||[]).filter(function(q){return req[q.key]&&visible(q)});
     if(!qs.length) return;
     var sec=document.createElement('div'); sec.className='sec';
     var h=document.createElement('h2'); h.textContent=s.title; sec.appendChild(h);
-    qs.forEach(function(q){ shown++; if(isAns(q)) answered++; sec.appendChild(field(q)) });
+    qs.forEach(function(q){ rendered++; if(!q.optional){ shown++; if(isAns(q)) answered++; } sec.appendChild(field(q)) });
     m.appendChild(sec);
   });
-  if(!shown) m.innerHTML='<div class="big"><h2>Nothing to collect</h2><p>This form has no questions on it. Tell the office.</p></div>';
+  if(!rendered) m.innerHTML='<div class="big"><h2>Nothing to collect</h2><p>This form has no questions on it. Tell the office.</p></div>';
   document.getElementById('cnt').textContent=answered+' of '+shown+' answered'+(busy?' - uploading '+busy+'...':'');
   document.getElementById('send').disabled=busy>0;
 }
@@ -117,7 +138,7 @@ function isAns(q){var v=A[q.key];if(v==null)return false;if(typeof v==='string')
 
 function field(q){
   var d=document.createElement('div'); d.className='q';
-  var lab=document.createElement('label'); lab.textContent=q.label; d.appendChild(lab);
+  var lab=document.createElement('label'); lab.textContent=q.label+(q.optional?' (optional)':''); d.appendChild(lab);
   var t=q.type, v=A[q.key];
   if(t==='yes_no'){
     var w=document.createElement('div'); w.className='yn';
@@ -204,11 +225,16 @@ function up(key,file){
 function submit(){
   var who=(document.getElementById('who').value||'').trim();
   if(!who){ show('Put your name so the office knows who collected this.'); return }
-  var out={};
-  Object.keys(A).forEach(function(k){
-    var v=A[k];
-    out[k]=Array.isArray(v)?v.map(function(p){return (p&&p.path)?p.path:p}):v;
-  });
+  // Send only answers to questions the collector can SEE now. A follow-up keeps what was typed into it
+  // when its parent changes (a lock-box code typed, then "How do we get in?" switched to Key); that
+  // leftover must not reach the immutable record. The office compare and accept refuse it too.
+  var out={}, req={};
+  (F.requested||[]).forEach(function(k){req[k]=1});
+  ((F.form||{}).sections||[]).forEach(function(s){ (s.questions||[]).forEach(function(q){
+    if(!q||typeof q!=='object'||!req[q.key]||!visible(q)||!(q.key in A)) return;
+    var v=A[q.key];
+    out[q.key]=Array.isArray(v)?v.map(function(p){return (p&&p.path)?p.path:p}):v;
+  }) });
   var b=document.getElementById('send'); b.disabled=true; b.textContent='Submitting...';
   api({op:'submit',collector:who,answers:out}).then(function(r){
     if(!r.ok){ b.disabled=false; b.textContent='Submit'; show(r.message||'Could not submit.'); return }

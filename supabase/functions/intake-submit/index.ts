@@ -47,8 +47,10 @@
 // unbounded write, so change them deliberately:
 //   MAX_BODY_BYTES 262144   PHOTO_CAP 40        MAX_ANSWER_KEYS 200
 //   MAX_VALUE_CHARS 4000    MAX_COLLECTOR 120
-// PHOTO_CAP binds BOTH steps since v8: upload counts objects actually stored in the intake's
-// folder, attach counts live links and refuses a path whose object does not exist.
+// PHOTO_CAP (40) caps ATTACHED photos. Uploads are capped separately since v9 by a ledger,
+// public.property_intake_uploads: at most 60 signed upload URLs per intake EVER, handed out by
+// public.fn_intake_claim_upload_slot under a lock. Attach refuses a path the ledger did not issue
+// to this intake, or whose object does not exist.
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -123,15 +125,14 @@ async function resolveToken(token: unknown): Promise<{ intake?: Intake; error?: 
   return { intake: data as Intake }
 }
 
-/** The objects stored in this intake's folder, or null when storage could not answer.
- *  🛑 A null must never be read as "empty": that would lift the photo cap on a storage error. */
-async function folderObjects(intakeId: number): Promise<{ name: string; metadata: Record<string, unknown> | null }[] | null> {
-  const { data, error } = await supabase.storage.from(BUCKET).list(String(intakeId), { limit: PHOTO_CAP + 1 })
-  if (error || !Array.isArray(data)) return null
-  // list() reports sub-folders as entries with id null; an intake folder has none, but skip them.
-  return data
-    .filter((o) => o.id !== null)
-    .map((o) => ({ name: o.name, metadata: (o.metadata ?? null) as Record<string, unknown> | null }))
+/** One object in this intake's folder, looked up by name.
+ *  null = it is not there; undefined = storage could not answer.
+ *  🛑 Never read undefined as "not there": a storage error must refuse, not approve. */
+async function storedObject(intakeId: number, fileName: string): Promise<{ name: string; metadata: Record<string, unknown> | null } | null | undefined> {
+  const { data, error } = await supabase.storage.from(BUCKET).list(String(intakeId), { search: fileName, limit: 10 })
+  if (error || !Array.isArray(data)) return undefined
+  const hit = data.find((o) => o.id !== null && o.name === fileName)
+  return hit ? { name: hit.name, metadata: (hit.metadata ?? null) as Record<string, unknown> | null } : null
 }
 
 Deno.serve(async (req) => {
@@ -208,33 +209,26 @@ Deno.serve(async (req) => {
   if (op === 'upload') {
     const contentType = String(body.content_type ?? 'image/jpeg')
     if (!ALLOWED_MIME.has(contentType)) return fail(400, 'That file type is not supported. Use a photo.')
-
-    // The cap counts what is actually STORED in this intake's folder. It used to count
-    // photo_links, so a token holder could keep requesting upload URLs without ever
-    // attaching, and storage writes on this public endpoint were unbounded (second review
-    // round, 2026-09-23).
-    // ponytail: parallel upload calls made before any object lands can overshoot by the
-    // size of the burst; an issued-uploads ledger is the upgrade if that ever matters.
-    const stored = await folderObjects(i.id)
-    if (stored === null) return fail(500, 'Could not prepare the upload, please try again.')
-    if (stored.length >= PHOTO_CAP) {
-      return fail(429, `That is the maximum of ${PHOTO_CAP} photos for this visit.`)
-    }
-
-    // The folder is the INTAKE the token resolved to (i.id), never the token: see the
-    // header, point 1. The server builds the path, so the collector cannot choose it,
-    // and attach re-checks the exact shape below.
     const ext = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp'
       : contentType === 'image/heic' ? 'heic' : 'jpg'
-    const path = `${i.id}/${crypto.randomUUID()}.${ext}`
+
+    // The path comes from the upload LEDGER: public.fn_intake_claim_upload_slot hands out at most
+    // 60 slots per intake EVER, under a lock, and returns `<intake id>/<uuid>.<ext>` (never the
+    // token; see the header, point 1). v8 counted objects already stored, so a burst of calls made
+    // before any object landed could mint unlimited URLs (third review round, 2026-09-24).
+    const { data: path, error: slotErr } = await supabase.rpc('fn_intake_claim_upload_slot', {
+      p_intake_id: i.id, p_ext: ext,
+    })
+    if (slotErr) return fail(500, 'Could not prepare the upload, please try again.')
+    if (typeof path !== 'string' || !path) {
+      return fail(429, 'That is the most uploads this form can take. Ask the office for help.')
+    }
 
     const { data: signed, error: sErr } = await supabase.storage
       .from(BUCKET)
       .createSignedUploadUrl(path, { upsert: false })
     if (sErr || !signed) return fail(500, 'Could not prepare the upload, please try again.')
 
-    // No expires_in: this function never set the URL's lifetime (see the header), and a
-    // number it did not control was a claim it could not keep.
     return json(200, { ok: true, path, token: signed.token, signed_url: signed.signedUrl })
   }
 
@@ -244,30 +238,37 @@ Deno.serve(async (req) => {
     const role = String(body.role ?? '').slice(0, 120)
     const caption = body.caption == null ? null : String(body.caption).slice(0, MAX_VALUE_CHARS)
 
-    // Re-derive rather than trust: the path must be EXACTLY the shape upload issues for
-    // THIS intake. A startsWith check alone would accept `5/../6/x.jpg` or junk.
+    // Re-derive rather than trust: the path must be EXACTLY the shape the ledger issues for THIS
+    // intake. A startsWith check alone would accept `5/../6/x.jpg` or junk.
     const PATH_RE = new RegExp(`^${i.id}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|webp|heic)$`)
     if (!PATH_RE.test(path)) return fail(400, 'That photo does not belong to this form.')
     if (!role) return fail(400, 'A photo needs to say which question it belongs to.')
 
-    // The object must EXIST. Attach used to insert a photos row for any path of the right
-    // shape, so a token holder could create unlimited rows pointing at nothing. The content
-    // type is read from what storage recorded, never from the caller.
-    const stored = await folderObjects(i.id)
-    if (stored === null) return fail(500, 'Could not attach the photo, please try again.')
-    const obj = stored.find((o) => o.name === path.slice(path.indexOf('/') + 1))
-    if (!obj) return fail(400, 'That photo has not finished uploading. Please try again.')
+    // ...and it must be a path the ledger actually ISSUED to this intake.
+    const { data: slot, error: slErr } = await supabase
+      .from('property_intake_uploads').select('slot')
+      .eq('intake_id', i.id).eq('path', path).maybeSingle()
+    if (slErr) return fail(500, 'Could not attach the photo, please try again.')
+    if (!slot) return fail(400, 'That photo does not belong to this form.')
+
+    // The object must EXIST, looked up directly by name (v8 scanned a capped page of the folder,
+    // which could miss a real file near the cap). The content type is what storage recorded; the
+    // bucket's own allow-list is the type control, this re-reads it rather than trusting the caller.
+    const obj = await storedObject(i.id, path.slice(path.indexOf('/') + 1))
+    if (obj === undefined) return fail(500, 'Could not attach the photo, please try again.')
+    if (obj === null) return fail(400, 'That photo has not finished uploading. Please try again.')
     const mime = String((obj.metadata ?? {})['mimetype'] ?? '')
     if (!ALLOWED_MIME.has(mime)) return fail(400, 'That file is not a supported photo.')
 
     // Re-attaching the same file is a retry on a bad signal, not a second photo.
-    // ponytail: two attaches of one path racing each other can still both insert; a unique
-    // index on photos.storage_path is the upgrade if that is ever seen.
     const storagePath = `${BUCKET}/${path}`
-    const { data: prior, error: prErr } = await supabase
-      .from('photos').select('id').eq('storage_path', storagePath).limit(1)
-    if (prErr) return fail(500, 'Could not attach the photo, please try again.')
-    let photoId: number | null = prior && prior.length ? prior[0].id : null
+    const priorPhoto = async (): Promise<number | null | undefined> => {
+      const { data, error } = await supabase.from('photos').select('id').eq('storage_path', storagePath).limit(1)
+      if (error) return undefined
+      return data && data.length ? data[0].id : null
+    }
+    let photoId = await priorPhoto()
+    if (photoId === undefined) return fail(500, 'Could not attach the photo, please try again.')
     if (photoId !== null) {
       const { data: link, error: lkErr } = await supabase
         .from('photo_links').select('id')
@@ -277,7 +278,7 @@ Deno.serve(async (req) => {
       if (link && link.length) return json(200, { ok: true, photo_id: photoId, already_attached: true })
     }
 
-    // The cap binds attach too, not only upload.
+    // The cap on ATTACHED photos (the product limit). The ledger above caps uploads.
     const { count, error: cErr } = await supabase
       .from('photo_links')
       .select('id', { count: 'exact', head: true })
@@ -295,8 +296,15 @@ Deno.serve(async (req) => {
         .insert({ storage_path: storagePath, source: 'intake_upload', content_type: mime })
         .select('id')
         .single()
-      if (pErr || !photo) return fail(500, 'Could not save the photo, please try again.')
-      photoId = photo.id
+      if (pErr && (pErr as { code?: string }).code === '23505') {
+        // photos_storage_path_key: a parallel attach of the same file won the insert. Use its row.
+        photoId = await priorPhoto()
+        if (typeof photoId !== 'number') return fail(500, 'Could not attach the photo, please try again.')
+      } else if (pErr || !photo) {
+        return fail(500, 'Could not save the photo, please try again.')
+      } else {
+        photoId = photo.id
+      }
     }
 
     // entity_type is 'property_intake', never 'property'. See the section 2 migration:
