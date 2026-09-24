@@ -51,6 +51,14 @@
 // public.property_intake_uploads: at most 60 signed upload URLs per intake EVER, handed out by
 // public.fn_intake_claim_upload_slot under a lock. Attach refuses a path the ledger did not issue
 // to this intake, or whose object does not exist.
+// ponytail: PHOTO_CAP is checked, then the link inserted, with no lock, so a burst of PARALLEL attaches
+// (the form uploads a multi-select in parallel) can pass it by a few. The HARD bound is structural since
+// v10: one live link per photo (unique index photo_links_intake_one_live_link_per_photo), and photos <=
+// ledger slots <= 60. Move count + insert into one locked RPC if 40 must ever be exact.
+//
+// v10 (2026-09-24, fourth review): at submit the SERVER decides what a photos answer is (the paths
+// actually attached to that question), and drops a weekly-hours day without a real open AND close.
+// A client could otherwise claim photos it never attached, or send a day the office can never accept.
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -312,6 +320,10 @@ Deno.serve(async (req) => {
     const { error: lErr } = await supabase
       .from('photo_links')
       .insert({ photo_id: photoId, entity_type: 'property_intake', entity_id: i.id, role, caption })
+    if (lErr && (lErr as { code?: string }).code === '23505') {
+      // One live link per intake photo (v10 index): a parallel attach of this file already linked it.
+      return json(200, { ok: true, photo_id: photoId, already_attached: true })
+    }
     if (lErr) return fail(500, 'Could not attach the photo, please try again.')
 
     return json(200, { ok: true, photo_id: photoId })
@@ -343,6 +355,54 @@ Deno.serve(async (req) => {
         return fail(413, 'One of the notes is too long.')
       }
       answers[k] = wrapped
+    }
+
+    // The server, not the client, decides what two kinds of answer are (v10):
+    //  - a photos answer is the paths ACTUALLY attached to that question (live photo_links, role = key);
+    //    a claimed photos answer with nothing attached is dropped, so it cannot count as answered;
+    //  - a weekly-hours answer keeps only days with a real HH:MM open AND close, the shape the only
+    //    accept path (client.update_property_operational) takes. A day the office could never accept
+    //    must not make the form read Complete.
+    const types = new Map<string, string>()
+    for (const sec of ((i.form_snapshot as { sections?: unknown[] }).sections ?? []) as { questions?: unknown[] }[]) {
+      for (const q of (sec?.questions ?? []) as { key?: unknown; type?: unknown }[]) {
+        if (q && typeof q.key === 'string' && typeof q.type === 'string') types.set(q.key, q.type)
+      }
+    }
+    const photoKeys = Object.keys(answers).filter((k) => types.get(k) === 'photos')
+    if (photoKeys.length) {
+      const { data: links, error: lkErr } = await supabase
+        .from('photo_links').select('photo_id, role')
+        .eq('entity_type', 'property_intake').eq('entity_id', i.id).is('deleted_at', null)
+      if (lkErr || !Array.isArray(links)) return fail(500, 'Could not check the photos, please try again.')
+      const ids = [...new Set(links.map((l) => l.photo_id))]
+      const pathOf = new Map<number, string>()
+      if (ids.length) {
+        const { data: phs, error: phErr } = await supabase.from('photos').select('id, storage_path').in('id', ids)
+        if (phErr || !Array.isArray(phs)) return fail(500, 'Could not check the photos, please try again.')
+        for (const p of phs) pathOf.set(p.id, String(p.storage_path).replace(`${BUCKET}/`, ''))
+      }
+      for (const k of photoKeys) {
+        const paths = links.filter((l) => l.role === k).map((l) => pathOf.get(l.photo_id)).filter((p): p is string => !!p)
+        if (paths.length) answers[k] = { value: paths }
+        else delete answers[k]
+      }
+    }
+    const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
+    const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    for (const k of Object.keys(answers).filter((k) => types.get(k) === 'weekly_hours')) {
+      const v = (answers[k] as { value?: unknown }).value
+      const days: Record<string, { open: string; close: string }> = {}
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        for (const d of DAYS) {
+          const w = (v as Record<string, { open?: unknown; close?: unknown }>)[d]
+          if (w && typeof w.open === 'string' && typeof w.close === 'string' && HHMM.test(w.open) && HHMM.test(w.close)) {
+            days[d] = { open: w.open, close: w.close }
+          }
+        }
+      }
+      if (Object.keys(days).length) answers[k] = { value: days }
+      else delete answers[k]
     }
 
     // Status comes from THE rule, public.fn_intake_missing, the same function the views

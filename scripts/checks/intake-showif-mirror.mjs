@@ -55,9 +55,12 @@ while (q.length && !dialogVs) {
 }
 if (!dialogVs) throw new Error('could not find the dialog show_if parser in the live Client App bundle: update this check')
 
-// ---- A. every condition in the tree: all three read the same parent key
+// ---- A. every condition in the tree: all three read the same parent key (SQL's own parser, not a copy)
+const sqlParents = Object.fromEntries((await sql(`select q ->> 'key' k, public.fn_intake_parent_key(t.t, q ->> 'key') p
+    from (select public.fn_intake_form_current() t) t, jsonb_array_elements(t.t -> 'sections') s, jsonb_array_elements(s -> 'questions') q
+   where q ? 'show_if'`)).map((r) => [r.k, r.p]))
 for (const qq of qs.filter((x) => x.show_if)) {
-  const sqlParent = qq.show_if.slice(0, Math.min(...['=', '>'].map((o) => qq.show_if.indexOf(o)).filter((i) => i >= 0))).trim()
+  const sqlParent = sqlParents[qq.key]
   const formParent = form.cond(qq.show_if)?.k
   const dialogParent = dialogVs(qq.show_if)
   if (!(sqlParent === formParent && formParent === dialogParent)) fail(`${qq.key}: sql=${sqlParent} form=${formParent} dialog=${dialogParent}`)
@@ -73,6 +76,10 @@ const S = [
   { 'access_entry.access_point': 'Other' }, { 'grease_trap.capacity_gallons': 1000 }, { 'grease_trap.capacity_gallons': '' },
   { 'lift_station.count': 0, 'water_tank.count': 0 }, { 'lift_station.count': 2, 'water_tank.count': 1 },
   { 'lift_station.count': 'abc' }, { 'access_entry.alarm': 'yes' },
+  // round 4: the JS trim() set must be blank / a number the same way in SQL and in the form
+  { 'lift_station.count': '\u00a02', 'water_tank.count': '\u30001\u2028' }, { 'grease_trap.capacity_gallons': '\u00a0' },
+  { 'lift_station.count': '\u200b2' }, { 'grease_trap.systems_count': 0 }, { 'grease_trap.systems_count': 1 },
+  { 'grease_trap.systems_count': 1, 'grease_trap.capacity_gallons': '\t' },
 ]
 const wrap = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { value: v }]))
 const values = S.map((ans, si) => `(${si}, '${JSON.stringify(wrap(ans)).replace(/'/g, "''")}'::jsonb)`).join(',')
