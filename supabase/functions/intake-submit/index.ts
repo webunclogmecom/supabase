@@ -35,7 +35,10 @@
 //         Found by the 2026-09-23 adversarial review of the viewer migration; 0 photos
 //         had been stored under the old token-named scheme, so nothing needed moving,
 //      2. the number of photo slots per intake is capped (PHOTO_CAP),
-//      3. the signed upload URL is short-lived,
+//      3. each signed upload URL is good for ONE object. Its lifetime is set by Supabase, not
+//         here: MEASURED 2026-09-23 as 7,200 s (the signed-upload JWT's exp - iat). Until v8
+//         this file declared SIGNED_UPLOAD_TTL = 900 and returned expires_in: 900, a number it
+//         never applied; both are gone,
 //      4. the token itself expires (property_intakes.expires_at) and dies on submit.
 //
 // STRUCTURAL CEILINGS, stated here the way dump-visit-create states its own
@@ -43,7 +46,9 @@
 // They are the only thing standing between an unauthenticated endpoint and an
 // unbounded write, so change them deliberately:
 //   MAX_BODY_BYTES 262144   PHOTO_CAP 40        MAX_ANSWER_KEYS 200
-//   MAX_VALUE_CHARS 4000    MAX_COLLECTOR 120   SIGNED_UPLOAD_TTL 900s
+//   MAX_VALUE_CHARS 4000    MAX_COLLECTOR 120
+// PHOTO_CAP binds BOTH steps since v8: upload counts objects actually stored in the intake's
+// folder, attach counts live links and refuses a path whose object does not exist.
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -73,7 +78,6 @@ const PHOTO_CAP = 40
 const MAX_ANSWER_KEYS = 200
 const MAX_VALUE_CHARS = 4_000
 const MAX_COLLECTOR = 120
-const SIGNED_UPLOAD_TTL = 900
 const BUCKET = 'intake-photos'
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic'])
 
@@ -117,6 +121,17 @@ async function resolveToken(token: unknown): Promise<{ intake?: Intake; error?: 
     return { error: fail(410, 'This link has expired. Ask the office for a new one.') }
   }
   return { intake: data as Intake }
+}
+
+/** The objects stored in this intake's folder, or null when storage could not answer.
+ *  🛑 A null must never be read as "empty": that would lift the photo cap on a storage error. */
+async function folderObjects(intakeId: number): Promise<{ name: string; metadata: Record<string, unknown> | null }[] | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).list(String(intakeId), { limit: PHOTO_CAP + 1 })
+  if (error || !Array.isArray(data)) return null
+  // list() reports sub-folders as entries with id null; an intake folder has none, but skip them.
+  return data
+    .filter((o) => o.id !== null)
+    .map((o) => ({ name: o.name, metadata: (o.metadata ?? null) as Record<string, unknown> | null }))
 }
 
 Deno.serve(async (req) => {
@@ -194,14 +209,15 @@ Deno.serve(async (req) => {
     const contentType = String(body.content_type ?? 'image/jpeg')
     if (!ALLOWED_MIME.has(contentType)) return fail(400, 'That file type is not supported. Use a photo.')
 
-    const { count, error: cErr } = await supabase
-      .from('photo_links')
-      .select('id', { count: 'exact', head: true })
-      .eq('entity_type', 'property_intake')
-      .eq('entity_id', i.id)
-      .is('deleted_at', null)
-    if (cErr) return fail(500, 'Could not prepare the upload, please try again.')
-    if ((count ?? 0) >= PHOTO_CAP) {
+    // The cap counts what is actually STORED in this intake's folder. It used to count
+    // photo_links, so a token holder could keep requesting upload URLs without ever
+    // attaching, and storage writes on this public endpoint were unbounded (second review
+    // round, 2026-09-23).
+    // ponytail: parallel upload calls made before any object lands can overshoot by the
+    // size of the burst; an issued-uploads ledger is the upgrade if that ever matters.
+    const stored = await folderObjects(i.id)
+    if (stored === null) return fail(500, 'Could not prepare the upload, please try again.')
+    if (stored.length >= PHOTO_CAP) {
       return fail(429, `That is the maximum of ${PHOTO_CAP} photos for this visit.`)
     }
 
@@ -217,7 +233,9 @@ Deno.serve(async (req) => {
       .createSignedUploadUrl(path, { upsert: false })
     if (sErr || !signed) return fail(500, 'Could not prepare the upload, please try again.')
 
-    return json(200, { ok: true, path, token: signed.token, signed_url: signed.signedUrl, expires_in: SIGNED_UPLOAD_TTL })
+    // No expires_in: this function never set the URL's lifetime (see the header), and a
+    // number it did not control was a claim it could not keep.
+    return json(200, { ok: true, path, token: signed.token, signed_url: signed.signedUrl })
   }
 
   // -------------------------------------------------------------- attach
@@ -232,21 +250,63 @@ Deno.serve(async (req) => {
     if (!PATH_RE.test(path)) return fail(400, 'That photo does not belong to this form.')
     if (!role) return fail(400, 'A photo needs to say which question it belongs to.')
 
-    const { data: photo, error: pErr } = await supabase
-      .from('photos')
-      .insert({ storage_path: `${BUCKET}/${path}`, source: 'intake_upload', content_type: String(body.content_type ?? 'image/jpeg') })
-      .select('id')
-      .single()
-    if (pErr || !photo) return fail(500, 'Could not save the photo, please try again.')
+    // The object must EXIST. Attach used to insert a photos row for any path of the right
+    // shape, so a token holder could create unlimited rows pointing at nothing. The content
+    // type is read from what storage recorded, never from the caller.
+    const stored = await folderObjects(i.id)
+    if (stored === null) return fail(500, 'Could not attach the photo, please try again.')
+    const obj = stored.find((o) => o.name === path.slice(path.indexOf('/') + 1))
+    if (!obj) return fail(400, 'That photo has not finished uploading. Please try again.')
+    const mime = String((obj.metadata ?? {})['mimetype'] ?? '')
+    if (!ALLOWED_MIME.has(mime)) return fail(400, 'That file is not a supported photo.')
+
+    // Re-attaching the same file is a retry on a bad signal, not a second photo.
+    // ponytail: two attaches of one path racing each other can still both insert; a unique
+    // index on photos.storage_path is the upgrade if that is ever seen.
+    const storagePath = `${BUCKET}/${path}`
+    const { data: prior, error: prErr } = await supabase
+      .from('photos').select('id').eq('storage_path', storagePath).limit(1)
+    if (prErr) return fail(500, 'Could not attach the photo, please try again.')
+    let photoId: number | null = prior && prior.length ? prior[0].id : null
+    if (photoId !== null) {
+      const { data: link, error: lkErr } = await supabase
+        .from('photo_links').select('id')
+        .eq('photo_id', photoId).eq('entity_type', 'property_intake').eq('entity_id', i.id)
+        .is('deleted_at', null).limit(1)
+      if (lkErr) return fail(500, 'Could not attach the photo, please try again.')
+      if (link && link.length) return json(200, { ok: true, photo_id: photoId, already_attached: true })
+    }
+
+    // The cap binds attach too, not only upload.
+    const { count, error: cErr } = await supabase
+      .from('photo_links')
+      .select('id', { count: 'exact', head: true })
+      .eq('entity_type', 'property_intake')
+      .eq('entity_id', i.id)
+      .is('deleted_at', null)
+    if (cErr) return fail(500, 'Could not attach the photo, please try again.')
+    if ((count ?? 0) >= PHOTO_CAP) {
+      return fail(429, `That is the maximum of ${PHOTO_CAP} photos for this visit.`)
+    }
+
+    if (photoId === null) {
+      const { data: photo, error: pErr } = await supabase
+        .from('photos')
+        .insert({ storage_path: storagePath, source: 'intake_upload', content_type: mime })
+        .select('id')
+        .single()
+      if (pErr || !photo) return fail(500, 'Could not save the photo, please try again.')
+      photoId = photo.id
+    }
 
     // entity_type is 'property_intake', never 'property'. See the section 2 migration:
     // customer.client_access_photos publishes 'property' rows to an anon-reachable portal.
     const { error: lErr } = await supabase
       .from('photo_links')
-      .insert({ photo_id: photo.id, entity_type: 'property_intake', entity_id: i.id, role, caption })
+      .insert({ photo_id: photoId, entity_type: 'property_intake', entity_id: i.id, role, caption })
     if (lErr) return fail(500, 'Could not attach the photo, please try again.')
 
-    return json(200, { ok: true, photo_id: photo.id })
+    return json(200, { ok: true, photo_id: photoId })
   }
 
   // -------------------------------------------------------------- submit
@@ -277,6 +337,15 @@ Deno.serve(async (req) => {
       answers[k] = wrapped
     }
 
+    // Status comes from THE rule, public.fn_intake_missing, the same function the views
+    // call. This function used to carry its own TypeScript copy, which disagreed with the
+    // views on follow-ups hidden by their parent's answer and on whitespace-only answers.
+    // It is computed BEFORE the write, so a failure to compute it writes nothing.
+    const { data: missing, error: mErr } = await supabase.rpc('fn_intake_missing', {
+      p_snapshot: i.form_snapshot, p_requested: i.requested, p_answers: answers,
+    })
+    if (mErr || !Array.isArray(missing)) return fail(500, 'Could not check the answers, please try again.')
+
     // Atomic compare-and-set: only the first submit wins. `.is('submitted_at', null)`
     // is the whole guard, so two taps on a bad signal cannot produce two submissions.
     const { data: updated, error: uErr } = await supabase
@@ -291,23 +360,10 @@ Deno.serve(async (req) => {
       return fail(409, 'This form has already been submitted.')
     }
 
-    const missing = (i.requested ?? []).filter((k) => {
-      const a = answers[k] as Record<string, unknown> | undefined
-      if (!a || !('value' in a)) return true
-      const v = a.value
-      if (v === null || v === undefined) return true
-      if (typeof v === 'string') return v.trim() === ''
-      if (Array.isArray(v)) return v.length === 0
-      if (typeof v === 'object') return Object.keys(v as object).length === 0
-      return false
-    })
-
     return json(200, {
       ok: true,
       intake_id: i.id,
       submitted_at: updated[0].submitted_at,
-      // Mirrors client.v_property_intake so the form can say the same thing the office
-      // will see. The VIEW remains the source of truth for the status column.
       status: missing.length === 0 ? 'Complete' : 'Incomplete',
       missing_keys: missing,
     })

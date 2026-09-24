@@ -32,7 +32,9 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule) |
+| THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
+| token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
 | one form, read-only (`/forms/$id`) | `client.get_intake(bigint)` | same |
 | staff photo read | storage policy `intake_photos_staff_read` (a copy of `reason_photos_staff_read`) | same |
@@ -80,13 +82,19 @@ vocabulary, and the Jobber outbound push, which only fires because a real person
 **5. `intake-submit` is fully public.** Measured: it answers 200 with **no apikey header at all**.
 The token is the only gate, which makes the ceilings in its header load-bearing rather than tidy:
 `MAX_BODY_BYTES 262144`, `PHOTO_CAP 40`, `MAX_ANSWER_KEYS 200`, `MAX_VALUE_CHARS 4000`,
-`MAX_COLLECTOR 120`, `SIGNED_UPLOAD_TTL 900`, plus token expiry and a single-submit compare-and-set.
+`MAX_COLLECTOR 120`, plus token expiry and a single-submit compare-and-set. Since v8 `PHOTO_CAP` binds
+BOTH steps: upload counts objects actually stored in the intake's folder, attach counts live links and
+refuses a path whose object does not exist (before v8 a token holder could request unlimited upload
+URLs, and attach inserted a photo row for any correctly-shaped path). ⚠ There is no upload TTL of ours:
+the old `SIGNED_UPLOAD_TTL 900` was declared and returned as `expires_in` but never applied. The real
+lifetime is Supabase's, **measured at 7,200 s** from the signed-upload JWT's `exp - iat`.
 
 **6. The reason-photos upload gates do NOT transfer.** All three are keyed on a signed-in staff
 identity (`auth.uid()`, the staff domain, storage `owner_id`) and Fred's decision 6 removes the
 login. The replacements are token-derived: the storage FOLDER is the intake the token resolves to
 (its id, since intake-submit v7), attach checks the exact path shape the upload issued, slots are
-capped, the signed URL is short-lived, the token expires and dies on submit.
+capped on both upload and attach, each signed upload URL is good for one object (for Supabase's
+2-hour lifetime, not a TTL of ours; see rule 5), the token expires and dies on submit.
 
 **7. `Verified` is deliberately absent from `client.v_property_intake`.** It describes the published
 page, which does not exist. The status column is Nothing / Incomplete / Complete only. When the page
@@ -105,6 +113,14 @@ immutable, so a stolen token can block the real collector permanently. A secret 
 exposed as the least-protected column that copies it. `public.photos` carries three authenticated
 SELECT policies with `qual true` and `client.photos` is an unfiltered view, so `storage_path` is
 readable by every staff session. That is why the photo folder is the intake id.
+🛑 **And `audit.logs` copies whole rows**, and `authenticated` holds SELECT on it (RLS `true`). Not
+reachable through the API today, one config change away. `property_intakes.token` is therefore in
+`audit.redacted_columns`, the estate's mechanism for exactly this. Audit rows written before
+2026-09-23 19:49 ET still carry tokens; every one belongs to a deleted intake, so all are dead, and
+scrubbing them would be an audit-trail rewrite needing Fred's OK. **This premise was wrong twice in
+one evening** (first `storage_path`, then `audit.logs`), both times found by an adversarial review.
+The question that finds them is not "who can read the table the secret lives in" but "every place
+the secret gets copied, and who can read each".
 
 **11. No function inside a `storage.objects` policy for this bucket.** Every permissive SELECT policy
 on `storage.objects` is OR'd into every staff storage read in every bucket, and Postgres checks
@@ -112,6 +128,18 @@ EXECUTE when it initialises the expression. A predicate function there makes all
 estate-wide depend on one grant. `intake_photos_staff_read` is `bucket_id = 'intake-photos' AND
 auth.uid() IS NOT NULL`, nothing more. The product rule that an awaiting form shows no photos lives
 in `client.get_intake`, where it belongs.
+
+**12. 🛑 Completeness is ONE rule: `public.fn_intake_missing`. Call it, never re-implement it.** A requested
+key counts only if it was APPLICABLE, i.e. the collector was shown it: every `show_if` in its chain
+matches the submitted answers (`public.fn_intake_applicable`, the same comparison as the form's
+`visible()`). Before 2026-09-23 19:49 ET status was "every requested key answered", so answering *No*
+to "Is there a closed gate?" left the gate-code follow-up forever unanswered and the form read
+Incomplete forever, and requesting both branches of a choice made Complete impossible. It was live
+from 2026-09-22 and feeds the Clients-list Intake status column. `client.v_property_intake`,
+`client.v_intake_submissions`, `client.get_intake` and `intake-submit` (via `rpc`, before the write)
+all call it now; until v8 the edge function carried its own TypeScript copy, which also disagreed
+with SQL on whitespace-only answers. Requested keys are normalised there too (NULL, blank and
+duplicates ignored), so the list, the detail and the status count the same set.
 
 ---
 
