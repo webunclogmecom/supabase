@@ -65,7 +65,7 @@
 // photo already linked to another question on this form is refused, never reported as attached.
 // v12 (2026-09-24, sixth review): a text question marked "single_line" / "max_chars" in the tree (the lock
 // box code, whose writer refuses a line break or >100 characters) is refused at submit, not only at accept;
-// every refusal names the question WITH its section ("Grease trap: How many manholes?", there are two);
+// every answer refusal names the question WITH its section (the 4,000-character one only from v13) ("Grease trap: How many manholes?", there are two);
 // an hours answer with a day key outside mon..sun is refused, and a day set to false or "" is unticked;
 // a re-attach blocked by a REMOVED link says so instead of blaming another question; the default number
 // ceiling is 999,999, the largest value accept's whole-number check takes.
