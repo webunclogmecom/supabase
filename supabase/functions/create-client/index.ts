@@ -888,6 +888,7 @@ Deno.serve(async (req) => {
   let jobStep: "skipped" | "created" | "existing" | "failed" | "orphaned" = "skipped";
   let jobId: number | null = null;
   let jobNote: string | null = null;
+  let servicePropertyId: number | null = null; // returned so the app can offer the intake for it
 
   if (property_mode === "none") {
     jobNote = "No property was created, so this client has no Service Call job and cannot be scheduled yet.";
@@ -895,6 +896,7 @@ Deno.serve(async (req) => {
     const { data: realProp } = await db
       .from("properties").select("id").eq("client_id", clientId).eq("is_billing", false)
       .order("id", { ascending: false }).limit(1).maybeSingle();
+    servicePropertyId = realProp?.id ? Number(realProp.id) : null;
     if (!realProp?.id) {
       jobStep = "orphaned";
       jobNote = "The property did not materialise here, so no Service Call job was created.";
@@ -955,6 +957,9 @@ Deno.serve(async (req) => {
     duplicate_check,
     idempotency_key: idem,
     job: { step: jobStep, job_id: jobId, note: jobNote },
+    // The service property (never the billing twin) the client was created with, or null when
+    // there is none. The New Client dialog uses it to offer the site-survey intake right away.
+    property_id: servicePropertyId,
     // The caller needs ONE boolean it can act on. A client with no Service Call job cannot be
     // dispatched from the Calendar, and that is invisible from client_code alone.
     schedulable: jobStep === "created" || jobStep === "existing",
