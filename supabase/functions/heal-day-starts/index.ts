@@ -23,7 +23,8 @@
 // Migrations: docs/migrations/2026-09-24_0845_start_freshness_phase2.sql, 2026-09-24_2100_jobber_first_day_markers.sql.
 //
 // CALLERS: public.fn_request_start_heal, through pg_net with the vault key edge_invoke_service_key,
-// only when ops.start_heal_candidates() has a row, at most once a minute. It is kicked by
+// only when ops.start_heal_candidates() has a row, at most once every 15 seconds (2026-09-24_2100). Runs can
+// overlap; the per-marker claim keeps two of them from changing the same Start. It is kicked by
 // ops.refresh_start_flags (the 2-minute drain, and the Calendar right after its own writes).
 // The browser NEVER calls this function.
 //
@@ -150,19 +151,31 @@ async function healOne(r: Candidate, eta: number | null): Promise<Record<string,
              to_minutes: mk?.minutes ?? null, from_employee_id: r.employee_id, to_employee_id: mk?.employee_id ?? null,
              jobber_task: save.jobber_task, jobber_changed: save.jobber_changed };
   }
+  // A failure that may have left Jobber different from the row is an error for the run, whatever its code
+  // (the claim stays for start-push-retry, which repairs it).
+  if (save.dirty) {
+    await noteFailure(r, "failed");
+    return { ...base, error: save.code + ": " + save.message, claim_left: true };
+  }
   if (save.code === "refused") return { ...base, outcome: save.outcome, jobber_restored: save.jobber_restored ?? null };
   if (SKIPPED.has(save.code)) return { ...base, outcome: save.code };
   if (save.code.startsWith("jobber_")) {
     // Jobber refused or did not answer: back off 10 minutes (the Start stays flagged; the health check
     // reports it after 30). Recorded as refused in the run row, not as an error.
-    const { error } = await ops.rpc("note_start_heal_attempt", {
-      p_marker_id: r.marker_id, p_first_visit_id: r.first_visit_id, p_first_start_at: r.first_start_at,
-      p_outcome: "jobber_failed",
-    });
-    if (error) console.error("[heal-day-starts] note_start_heal_attempt failed:", error.message);
+    await noteFailure(r, "jobber_failed");
     return { ...base, outcome: "jobber_failed", code: save.code, message: save.message };
   }
-  return { ...base, error: save.code + ": " + save.message, claim_left: save.dirty ?? false };
+  // Anything else (a database error, a refused value): an error for the run, and a 10-minute back-off so
+  // the Start is not tried again on every kick.
+  await noteFailure(r, "failed");
+  return { ...base, error: save.code + ": " + save.message, claim_left: false };
+}
+
+async function noteFailure(r: Candidate, outcome: "jobber_failed" | "failed") {
+  const { error } = await ops.rpc("note_start_heal_attempt", {
+    p_marker_id: r.marker_id, p_first_visit_id: r.first_visit_id, p_first_start_at: r.first_start_at, p_outcome: outcome,
+  });
+  if (error) console.error("[heal-day-starts] note_start_heal_attempt failed:", error.message);
 }
 
 Deno.serve(async (req) => {

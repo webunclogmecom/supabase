@@ -85,6 +85,9 @@ async function human() {
     r = await save({ op: "create", marker: { marker_type: "end", marker_date: "2027-02-30", minutes: 600, employee_id: FRED } });
     ok("A6 a date that does not exist -> 400", r.status === 400, r.j.message);
 
+    r = await save({ op: "update", marker_id: 5, patch: { minutes: 1 }, replace_marker_id: 5 });
+    ok("A7 a marker replacing itself -> 400", r.status === 400, r.j.message);
+
     // T1 create
     r = await save({ op: "create", marker: { marker_type: "end", marker_date: D, minutes: 600, employee_id: FRED } });
     const id1 = r.j.marker_id; if (id1) created.push(id1);

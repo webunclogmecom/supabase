@@ -29,7 +29,9 @@
 //   400 invalid_input · 401 unauthorized · 403 forbidden · 404 not_found
 //   409 already_exists (blocking_marker_id, blocking) · 409 changed_elsewhere · 409 busy
 //   502 jobber_rejected / jobber_unavailable / jobber_unverified · 503 lookup_failed
-//   500 db_error / partly_moved / unexpected
+//   500 db_error / partly_moved / unexpected / commit_unknown · 503 too_slow
+// A failure that may have left the Jobber Task different from the row carries a message saying so (Jobber
+// is corrected automatically within minutes by start-push-retry, from the claim the save leaves behind).
 //
 // AUTH — verify_jwt = false, DELIBERATE, the same as save-calendar-task (read its header): this project
 // signs session tokens with ES256 and the gateway rejects them on newer deployments. The control is
@@ -80,6 +82,7 @@ Deno.serve(async (req) => {
   const replace = body.replace_marker_id ?? null;
   if (replace !== null && !isPosInt(replace)) return fail(400, "bad_request", "replace_marker_id must be a marker id.");
   if (op !== "create" && !isPosInt(body.marker_id)) return fail(400, "bad_request", "marker_id is required.");
+  if (replace !== null && replace === body.marker_id) return fail(400, "bad_request", "A marker cannot replace itself.");
 
   // The shape, before anything reaches Jobber. The shared saga validates the resulting row.
   let values: Record<string, unknown> | undefined;

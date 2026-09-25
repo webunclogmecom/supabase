@@ -19,6 +19,10 @@
 //    call with no answer, a compensation that failed) is RELEASED DIRTY: it stays, expired, and
 //    start-push-retry has jobber-push-task repair the marker from it; the health check reports it after
 //    20 minutes. A new marker needs no claim: nothing else can reach a row that does not exist yet.
+//    Hardened after the code review (migration 2026-09-24_2145): a claim remembers it is DIRTY, and only a
+//    commit that verified the Task clears it; a save stops touching Jobber 90 s after its claim; a dirty
+//    release that finds its claim gone leaves one anyway; a commit whose reply was lost is left to the retry
+//    rather than "compensated" (it may have landed).
 //
 // The Task (unchanged from jobber-push-task v18, measured live since 2026-08-17):
 //   title       "Day Start (<owner>)" / "Day End (<owner>)" / "Dump - <site> (<owner>)"; owner = the driver,
@@ -50,6 +54,7 @@ const TITLES: Record<string, string> = { start: "Day Start", end: "Day End", dum
 const INSTRUCTIONS = "Route marker from the UnclogMe Visit Calendar. Edit it there, not here.";
 const TASK_MINUTES = 30;          // the Task's visible extent on the crew's schedule
 const CLAIM_SECONDS = 120;        // longer than a saga, even with Jobber throttling
+const SAVE_BUDGET_MS = 90_000;    // no new Jobber write after this: the claim could be taken over at 120 s
 const MARKER_COLS = "id, marker_date, marker_type, minutes, dump_site, vehicle_id, employee_id, " +
   "source_visit_id, eta_minutes, eta_computed_at, stale_reason";
 // What a patch may change (the RPC enforces the same list). A marker's type, truck and dump site are fixed.
@@ -80,6 +85,8 @@ const MSG = {
   unavailable: "Jobber is not answering right now, so nothing was changed. Try again in a minute.",
   unverified: "Jobber did not confirm the change, so nothing was changed. Try again.",
   taken: "Another marker already holds this spot.",
+  dirty: "The change could not be confirmed with Jobber, so the calendar keeps the version it had. Jobber is checked again and corrected automatically within a few minutes.",
+  slow: "Jobber is too slow right now, so nothing more was changed. Try again in a minute.",
 };
 
 // ============================================================================================
@@ -416,12 +423,28 @@ async function pushTask(token: string, gid: string | null, want: Want): Promise<
     sent = { ...want, assignedSent: want.assignedTo.length > 0 };
     const res = await gql(token, M_TASK_CREATE, { in: taskInput(sent) });
     const errs = errsOf(res, "taskCreate");
-    if (errs.length) return { ...jobberFail(res, errs, "taskCreate"), mutated: false };
+    if (errs.length) {
+      // No answer at all: the create may have reached Jobber, and we would never know the Task's id.
+      if (!answered(res)) console.error("[day-marker] a taskCreate got no answer: a Task may exist that nothing points at (possible orphan)");
+      return { ...jobberFail(res, errs, "taskCreate"), mutated: !answered(res) };
+    }
     gid = res?.data?.taskCreate?.task?.id ?? null;
     if (!gid) return { ...fail(502, "jobber_unverified", MSG.unverified), mutated: false };
     created = true;
   }
-  const check = await gql(token, Q_TASK, { id: gid });
+  let check;
+  try {
+    check = await gql(token, Q_TASK, { id: gid });
+  } catch (e) {
+    // The network failed after the Task was written: never lose a created Task's id.
+    console.error(`[day-marker] read-back of Task ${gid} failed: ${e instanceof Error ? e.message : String(e)}`);
+    if (created) {
+      const del = await deleteAndVerify(token, gid).catch(() => null);
+      if (!del?.gone) console.error(`[day-marker] ORPHANED Jobber task ${gid}: created, not confirmed, and not removed. MANUAL CLEANUP NEEDED.`);
+      return { ...fail(502, "jobber_unavailable", MSG.unavailable), mutated: false, orphan: del?.gone ? null : gid };
+    }
+    return { ...fail(502, "jobber_unavailable", MSG.unavailable), mutated: true };
+  }
   const bad = answered(check) ? verify(check.data.task, sent) : ["Jobber did not answer the read-back"];
   if (bad.length) {
     console.error(`[day-marker] Jobber did not confirm Task ${gid}: ${bad.join("; ")}`);
@@ -464,6 +487,12 @@ async function commit(op: string, markerId: number | null, token: string | null,
   });
   if (error) {
     const msg = error.message ?? "database error";
+    // No SQLSTATE = the reply was lost on the way (network, gateway). The commit may have landed: never
+    // "compensate" a possibly committed write. The caller leaves it to the retry (dirty) or checks it.
+    if (!error.code) {
+      console.error(`[day-marker] save_day_marker ${op} gave no answer: ${msg}`);
+      return fail(500, "commit_unknown", MSG.dirty, { dirty: true });
+    }
     switch (error.code) {
       case "ZZ002": case "ZZ005": return fail(409, "changed_elsewhere", MSG.changed, { db_code: error.code });
       case "ZZ004": return fail(409, "busy", MSG.busy);
@@ -494,8 +523,8 @@ async function claim(ids: number[], holder: string): Promise<string | Fail> {
   }
   return String(data);
 }
-async function release(token: string, dirty: boolean): Promise<void> {
-  const { error } = await ops.rpc("release_day_marker", { p_token: token, p_dirty: dirty });
+async function release(token: string, dirty: boolean, ids: number[]): Promise<void> {
+  const { error } = await ops.rpc("release_day_marker", { p_token: token, p_dirty: dirty, p_marker_ids: ids });
   if (error) console.error(`[day-marker] release (${dirty ? "dirty" : "clean"}) failed: ${error.message}`);
 }
 
@@ -589,8 +618,9 @@ const visibleChange = (a: Record<string, unknown>, b: Record<string, unknown>) =
 // Make the marker's Task match its CURRENT row: edit it, or create it when it has none or it was deleted
 // by hand, then commit the link (relink). Used to put Jobber back after a refused or failed commit, and by
 // the net. A row that moved in between (a direct SQL write) is re-read, 3 rounds at most.
-async function reconcileHeld(token: string, jt: string, id: number): Promise<Ok | Fail> {
+async function reconcileHeld(token: string, jt: string, id: number, deadline = Date.now() + SAVE_BUDGET_MS): Promise<Ok | Fail> {
   for (let round = 1; round <= 3; round++) {
+    if (Date.now() > deadline) return fail(503, "too_slow", MSG.slow, { dirty: true });
     const cur = await readMarker(id);
     if (isFail(cur)) return { ...cur, dirty: true };
     if (!cur) {
@@ -618,14 +648,16 @@ async function reconcileHeld(token: string, jt: string, id: number): Promise<Ok 
 
 // A Jobber write landed but the commit did not: put Jobber back to the committed row. The result says
 // whether that worked (dirty = false) or the claim must stay for the retry (dirty = true).
-async function putBack(token: string, jt: string, id: number, why: Fail): Promise<Fail> {
-  const r = await reconcileHeld(token, jt, id);
+async function putBack(token: string, jt: string, id: number, why: Fail, deadline: number): Promise<Fail> {
+  const r = await reconcileHeld(token, jt, id, deadline);
   if (r.ok) return { ...why, dirty: false, jobber_restored: true };
   console.error(`[day-marker] marker ${id}: Jobber changed, the commit failed (${why.code}), and putting Jobber back failed (${r.code}). start-push-retry will repair it.`);
   return { ...why, dirty: true, jobber_restored: false };
 }
 
-async function updateHeld(token: string, jtRef: { t: string | null }, id: number, patch: Record<string, unknown>,
+type Ctx = { t: string | null; deadline: number };
+
+async function updateHeld(token: string, jtRef: Ctx, id: number, patch: Record<string, unknown>,
                           heal: Record<string, unknown> | null, slot: Record<string, unknown> | null): Promise<Ok | Fail> {
   const cur = await readMarker(id);
   if (isFail(cur)) return cur;
@@ -656,6 +688,7 @@ async function updateHeld(token: string, jtRef: { t: string | null }, id: number
   if (!d.ok) return d;
   if (!jtRef.t) { const t = await jobberToken(); if (isFail(t)) return t; jtRef.t = t; }
   const jt = jtRef.t;
+  if (Date.now() > jtRef.deadline) return fail(503, "too_slow", MSG.slow);
   const p = await pushTask(jt, cur.gid, d.want);
   if (!p.ok) {
     if (p.orphan) console.error(`[day-marker] ORPHANED Jobber task ${p.orphan} (marker ${id}). MANUAL CLEANUP NEEDED.`);
@@ -663,19 +696,28 @@ async function updateHeld(token: string, jtRef: { t: string | null }, id: number
   }
   const c = await commit("update", id, token, expectOf(cur), patch, { gid: p.gid, title: d.want.title }, heal);
   if (isFail(c)) {
+    if (c.code === "commit_unknown") return c;                  // may have landed: the retry decides
+    let out: Fail;
     if (p.created) {
-      // the Task was new (the old one gone, or none): remove it, the row keeps what it had
+      // The Task was new (the old one gone, or none): remove it, then give the marker a Task matching the
+      // committed row, so it is never left without one.
       const del = await deleteAndVerify(jt, p.gid);
-      if (!del.gone) console.error(`[day-marker] ORPHANED Jobber task ${p.gid} (marker ${id}). MANUAL CLEANUP NEEDED.`);
-      return { ...c, dirty: !del.gone };
+      if (!del.gone) {
+        console.error(`[day-marker] ORPHANED Jobber task ${p.gid} (marker ${id}). MANUAL CLEANUP NEEDED.`);
+        out = { ...c, dirty: true };
+      } else out = await putBack(token, jt, id, c, jtRef.deadline);
+    } else out = await putBack(token, jt, id, c, jtRef.deadline);
+    if (c.code === "already_exists") {
+      const b = await findBlocking(target, id);
+      if (!isFail(b) && b) return { ...alreadyExists(b), dirty: out.dirty, jobber_restored: out.jobber_restored };
     }
-    return await putBack(token, jt, id, c);
+    return out;
   }
   return { ok: true, op: "update", outcome: c.outcome, marker_id: id, marker: c.marker, jobber_task: p.gid,
            jobber_changed: true, jobber_recreated: p.created && !!cur.gid };
 }
 
-async function deleteHeld(token: string, jtRef: { t: string | null }, id: number,
+async function deleteHeld(token: string, jtRef: Ctx, id: number,
                           heal: Record<string, unknown> | null): Promise<Ok | Fail> {
   const cur = await readMarker(id);
   if (isFail(cur)) return cur;
@@ -687,6 +729,7 @@ async function deleteHeld(token: string, jtRef: { t: string | null }, id: number
   const expect = heal ? expectOf(cur) : { link_gid: cur.gid };
   if (cur.gid) {
     if (!jtRef.t) { const t = await jobberToken(); if (isFail(t)) return t; jtRef.t = t; }
+    if (Date.now() > jtRef.deadline) return fail(503, "too_slow", MSG.slow);
     const del = await deleteAndVerify(jtRef.t, cur.gid);
     if (!del.gone) {
       console.error(`[day-marker] Task ${cur.gid} of marker ${id} was not deleted: ${del.reason}`);
@@ -699,7 +742,8 @@ async function deleteHeld(token: string, jtRef: { t: string | null }, id: number
   if (isFail(c)) {
     // The Task is gone but the marker stays (a visit came back, the marker moved, a database error):
     // give it its Task again.
-    return cur.gid && jtRef.t ? await putBack(token, jtRef.t, id, c) : c;
+    if (c.code === "commit_unknown") return c;                  // may have landed: the retry decides
+    return cur.gid && jtRef.t ? await putBack(token, jtRef.t, id, c, jtRef.deadline) : c;
   }
   return { ok: true, op: "delete", outcome: c.outcome, marker_id: id, marker: c.marker, jobber_task: cur.gid,
            jobber_changed: !!cur.gid };
@@ -721,7 +765,7 @@ export type SaveRequest = {
 };
 
 export async function saveMarker(req: SaveRequest): Promise<Ok | Fail> {
-  const jt: { t: string | null } = { t: null };
+  const jt: Ctx = { t: null, deadline: Date.now() + SAVE_BUDGET_MS };
   try {
     // ---- a new marker: no claim, nothing else can reach it yet ------------------------------------
     if (req.op === "create" && req.replaceMarkerId == null) {
@@ -739,7 +783,16 @@ export async function saveMarker(req: SaveRequest): Promise<Ok | Fail> {
         if (p.orphan) console.error(`[day-marker] ORPHANED Jobber task ${p.orphan} (new marker). MANUAL CLEANUP NEEDED.`);
         return p;
       }
-      const c = await commit("create", null, null, null, values, { gid: p.gid, title: d.want.title }, null);
+      let c = await commit("create", null, null, null, values, { gid: p.gid, title: d.want.title }, null);
+      if (isFail(c) && c.code === "commit_unknown") {
+        // Did it land? The Task id is unique in entity_source_links: its link answers it.
+        const { data: l } = await db.from("entity_source_links").select("entity_id")
+          .eq("entity_type", ENTITY_TYPE).eq("source_system", "jobber").eq("source_id", p.gid).maybeSingle();
+        if (l?.entity_id) {
+          const { data: row } = await ops.from("calendar_day_markers").select(MARKER_COLS).eq("id", l.entity_id).maybeSingle();
+          c = { ok: true, outcome: "saved", marker: (row as unknown as Record<string, unknown>) ?? { id: l.entity_id }, before: null };
+        }
+      }
       if (isFail(c)) {
         const del = await deleteAndVerify(t, p.gid);
         if (!del.gone) console.error(`[day-marker] ORPHANED Jobber task ${p.gid}: created, the marker was not saved, and the Task was not removed. MANUAL CLEANUP NEEDED.`);
@@ -797,7 +850,9 @@ export async function saveMarker(req: SaveRequest): Promise<Ok | Fail> {
       res = fail(500, "unexpected", "Something went wrong, and the change may not be complete. The calendar now shows what was saved.", { dirty: true });
     }
     // A commit removed its own claim. Whatever is left: dirty (Jobber may differ, the retry repairs it) or clean.
-    await release(token, !res.ok && !!res.dirty);
+    await release(token, !res.ok && !!res.dirty, ids);
+    // A failure that may have left Jobber different says so, instead of "nothing was changed".
+    if (!res.ok && res.dirty && res.code !== "partly_moved") res = { ...res, message: MSG.dirty };
     return res;
   } catch (e) {
     console.error("[day-marker] unexpected:", e instanceof Error ? e.message : String(e));
@@ -850,6 +905,6 @@ export async function syncMarkerTask(op: "upsert" | "delete", markerId: number):
     out = { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
   if (op === "delete" && out.op === "edit") out.note = "the marker still exists, so its Task was updated instead of deleted";
-  await release(token, dirty);
+  await release(token, dirty, [markerId]);
   return out;
 }
