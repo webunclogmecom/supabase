@@ -1,5 +1,14 @@
 # Emergency access mode: the `Default` user
 
+> ✅ **RETIRED 2026-09-25** (Fred: *"yes, remove the emergency-session leftovers"*; Supabase migration
+> `2026-09-25_0025_retire_emergency_session`). The window closed 2026-09-01 10:11 ET. Removed: the edge fn
+> `emergency-session` (source, `config.toml` entry; it was no longer deployed), the edge secrets
+> `EMERGENCY_PASSPHRASE` and `EMERGENCY_JWT_SECRET`, `public.emergency_whoami()` and the `app_config` key
+> `emergency_access_until`. Kept as a frozen, read-only record: `public.emergency_session_grants` (85 requests,
+> 70 grants). ⚠ Six apps (Hub, Admin, Client App, Calendar, DERM, Stamp) still carry the dormant bootstrap that
+> POSTs to `emergency-session` on load and carries on when refused (now always a 404). To bring the mode back
+> for a future outage, start from git history, not from this page alone.
+
 > 🛑 **SUPERSEDED IN TWO WAYS ON 2026-08-31, LATER THE SAME DAY. READ THIS FIRST OR YOU WILL BUILD
 > THE WRONG THING.** The design below is kept because its *reasoning* is still the record of why
 > `anon` was not widened - but two of its mechanisms are dead:
