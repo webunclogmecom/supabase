@@ -1846,6 +1846,22 @@ offer **Mark as bad debt** and **Void** (Void since v17, below). What shipped:
   verify re-read both run at API 2026-09-09**: at 2026-04-16 the re-read says `awaiting_payment`, so the
   function would report a successful void as failed. The status reason reads
   "invoice #N voided ($x) (client request)".
+  ✅ **PROVEN FROM THE LIVE DIALOG ON 112-YA, 2026-09-25 ~21:22 UTC (Fred-approved).** [TEST] invoice #3248
+  voided through the header Archive dialog: one call with `resolve:[{gid, action:'void',
+  void_reason:'CREATED_IN_ERROR'}]` + `close_jobs:true`, `status_after:'voided'`, 3 jobs closed, archived in
+  5.2 s, ledger #102. Restored by `unarchive-client` + `jobReopen`; three read-only verifiers found every
+  business field back to baseline. Record: `Building Apps/Client App/docs/08-changelog.md` 2026-09-25 (g).
+  ✅ **A void made through the API DOES move the invoice's `updatedAt` and DOES fire a real `INVOICE_UPDATE`
+  webhook** (#3248: 21:19:35 -> 21:22:08; real nested webhooks 410333/410334 13 s later wrote `voided` through
+  handleInvoice). A plan reviewer had concluded the opposite from #3247 and predicted voids would wait up to 6 h
+  for the drift run; the live run refuted it (#3247's 19:44:37 webhook was most likely its void). Not observed:
+  a void made in Jobber's own screens.
+  ⚠ **Pre-existing race seen in the same run, not fixed:** `JOB_CLOSED` is a blind `softStatusFlip('closed')`
+  (`webhook-jobber` ~1859). Normally the paired job update re-reads and lands `archived` within a second (24 of
+  25 historical transitions), but on job 765 the flip landed LAST and left `closed` over Jobber's `archived`.
+  Many readers filter `NOT IN ('archived','destroyed')`, so a stuck `closed` job reads as live until something
+  re-syncs it. Also seen: paired `INVOICE_UPDATE` deliveries race handleInvoice's delete-then-insert of line
+  items, leaving a duplicate for ~4 minutes until the poll replay.
 - **Without the new scopes nothing changes**: Jobber answers "An object of type Quote was hidden due to
   permissions" for a client that HAS quotes (measured on 201-ALA), `readLiveBlockers` reads that as
   `no_scope`, and the previous path runs. A client with none returns an empty list and no error.
