@@ -255,6 +255,9 @@ Lock box to Key) reaches the raw submission. `get_intake_compare` marks such a k
 `accept_intake_answers` refuses it (`22023`, MESSAGE in plain words, DETAIL `blocker=not_shown ...`)
 before anything is written, because accepting it would write `properties.lock_box_key` and push it to
 Jobber. The raw submission stays immutable: the filter is at the consumer, never a rewrite of `answers`.
+The Picture Planner's Page Builder is the third consumer (2026-09-25, `2026-09-25_1821`): it reads forms ONLY through
+`client.get_page_builder_forms`, which returns shown-and-answered keys only (rule 18). Before that the builder read
+`get_intake` and ignored `applicable`, so its prefill could offer an abandoned lock-box code.
 
 **15. 🛑 `yannick_readonly` reads `property_intakes` through a COLUMN grant that leaves out `token`.** It
 is a LOGIN role with BYPASSRLS, and the public schema's default ACL had given it table-level SELECT,
@@ -361,6 +364,16 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     page: advisory only.
   - Fixtures: two approved `[TEST]` pages on 112-YA (properties 162 and 1164), approved by `test.agent@ayache.com`, made an
     approver for that one transaction only. Pages are append-only: fixtures stay; rotate their links if one leaks.
+  - 🛑 **The builder fills from intake forms through ONE read, `client.get_page_builder_forms(p_property_id)`**
+    (2026-09-25, `2026-09-25_1821_page_builder_forms.sql`, Fred: *"fill the Builder Phase with the data from the intake
+    forms (complete or incomplete)"*). A jsonb array, newest first, one element per SUBMITTED, not cancelled form:
+    `{intake_id, submitted_at, collector, status, answered_count, applicable_count, not_shown_count, answers, photos}`.
+    Staff JWT only (authenticated EXECUTE, revoked from public and anon), read only. It CALLS `client.v_intake_submissions`
+    (which forms, and the one completeness rule), `fn_intake_applicable` + `fn_intake_answered` (rule 14: shown and
+    answered keys only; photo-type answers left out) and `fn_page_photo_ids` (the exact set submit accepts, only photos
+    whose path is in the question's SUBMITTED answer, never a caption). Change any of those and this function moves
+    with it; never copy their logic into it. Filling changes the page's draft only; accepting into the property stays
+    `accept_intake_answers` in the Client App. App-side rules: Picture Planner CLAUDE.md rule 13.
 
 **19. SHARE FORM: staff can see an AWAITING intake's link again (2026-09-25, `2026-09-25_1600_intake_link_share.sql`).**
 Fred: a "Share form" item on each `/forms` card, *"so the collector or any other person can open the form to fill in
