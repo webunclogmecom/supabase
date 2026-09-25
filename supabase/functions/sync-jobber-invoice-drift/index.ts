@@ -63,7 +63,9 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const GQL_VERSION = "2026-04-16";
+// 2026-09-25: 2026-09-09, in step with webhook-jobber's handleInvoice. At 2026-04-16 a VOIDED invoice reads
+// "awaiting_payment" (test invoice #3247), so this reconciler would write that back over a stored 'voided'.
+const GQL_VERSION = "2026-09-09";
 const BATCH = 25;                       // 275 cost/request, measured
 const BATCH_PAUSE_MS = 250;
 const MAX_CONSECUTIVE_BATCH_FAILURES = 3;

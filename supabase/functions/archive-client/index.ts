@@ -706,7 +706,7 @@ async function countArchiveBlockers(
     const { data, count, error } = await db.from("invoices")
       .select("id,invoice_number,invoice_status,total,outstanding_amount,subject", { count: "exact" })
       .eq("client_id", clientId)
-      .not("invoice_status", "in", "(paid,void,bad_debt)")
+      .not("invoice_status", "in", "(paid,voided,bad_debt,destroyed)")
       .order("invoice_number", { ascending: true })
       .limit(25);
     if (!error && typeof count === "number") out.unresolved_invoices = count;
@@ -737,14 +737,20 @@ async function countArchiveBlockers(
 //   work request                                          -> archive    (requestArchive)
 //   quote                                                 -> none: Jobber has no quote archive mutation
 //   draft invoice                                         -> none: it has to be deleted in Jobber
-// 🛑 VOID IS NOT OFFERED YET. invoiceVoid exists only from API 2026-09-09, where the status reads
-// "voided", a value the 2026-04-16 invoice sync has never seen. It turns on after a voided test invoice
-// is proven harmless to that sync.
+//   invoice (same statuses)                               -> void       (invoiceVoid, API 2026-09-09 only)
+// ✅ VOID IS OFFERED SINCE 2026-09-25 (v17), after the invoice sync learned to store 'voided'
+// (migration 2026-09-25_1650, webhook-jobber v120 handleInvoice + sync-jobber-invoice-drift v4 at 2026-09-09).
+// Both the mutation AND its verify re-read run at 2026-09-09: at 2026-04-16 a voided invoice reads
+// "awaiting_payment", so an older re-read would report a successful void as failed.
 type LiveItem = {
   kind: "quote" | "invoice" | "request"; gid: string; number: string | null; status: string | null;
   total: number | null; outstanding: number | null; title: string | null; url: string | null; actions: string[];
 };
-type Resolve = { gid: string; action: "bad_debt" | "archive" };
+type Resolve = { gid: string; action: "bad_debt" | "archive" | "void"; void_reason?: string };
+const VOID_REASONS = new Set(["DUPLICATE_INVOICE", "CREATED_IN_ERROR", "CLIENT_REQUEST", "OTHER"]);
+const VOID_LABEL: Record<string, string> = {
+  DUPLICATE_INVOICE: "duplicate invoice", CREATED_IN_ERROR: "created in error", CLIENT_REQUEST: "client request", OTHER: "other",
+};
 type Live = { ok: true; items: LiveItem[]; truncated: boolean } | { ok: false; kind: "no_scope" | "unavailable"; detail: string };
 
 const CAT: Record<string, string> = { quote: "quotes", invoice: "invoices", request: "work_requests" };
@@ -765,12 +771,18 @@ function parseResolve(raw: unknown): { ok: true; list: Resolve[] } | { ok: false
   for (const r of raw as Array<Record<string, unknown>>) {
     const gid = String(r?.gid ?? "").trim();
     const action = String(r?.action ?? "");
-    if (!gid || (action !== "bad_debt" && action !== "archive")) {
-      return { ok: false, message: "Each item to clear needs its Jobber id and an action (bad_debt or archive)." };
+    if (!gid || (action !== "bad_debt" && action !== "archive" && action !== "void")) {
+      return { ok: false, message: "Each item to clear needs its Jobber id and an action (bad_debt, void or archive)." };
     }
     if (seen.has(gid)) return { ok: false, message: "The same item was listed twice." };
     seen.add(gid);
-    list.push({ gid, action });
+    if (action === "void") {
+      const vr = String(r?.void_reason ?? "OTHER").toUpperCase();
+      if (!VOID_REASONS.has(vr)) return { ok: false, message: "Choose why the invoice is being voided." };
+      list.push({ gid, action, void_reason: vr });
+    } else {
+      list.push({ gid, action });
+    }
   }
   return { ok: true, list };
 }
@@ -801,7 +813,7 @@ function toLiveItem(key: string, n: any): LiveItem | null {
   if (INVOICE_DONE.has(st)) return null;
   return { kind: "invoice", gid: n.id, number: n.invoiceNumber == null ? null : String(n.invoiceNumber), status: st || null,
     total: num(n.amounts?.total), outstanding: num(n.amounts?.invoiceBalance), title: String(n.subject ?? "").trim() || null,
-    url: jobberWebUrl("invoices", n.id), actions: INVOICE_ACTIONABLE.has(st) ? ["bad_debt"] : [] };
+    url: jobberWebUrl("invoices", n.id), actions: INVOICE_ACTIONABLE.has(st) ? ["bad_debt", "void"] : [] };
 }
 
 async function readLiveBlockers(token: string, gid: string): Promise<Live> {
@@ -858,6 +870,7 @@ function describeItem(it: LiveItem): string {
 }
 function summarizeAction(it: LiveItem, r: Resolve): string {
   if (it.kind === "invoice" && r.action === "bad_debt") return `invoice #${it.number ?? "?"} marked as bad debt${money(it.outstanding ?? it.total)}`;
+  if (it.kind === "invoice" && r.action === "void") return `invoice #${it.number ?? "?"} voided${money(it.outstanding ?? it.total)} (${VOID_LABEL[r.void_reason ?? "OTHER"] ?? "other"})`;
   if (it.kind === "request" && r.action === "archive") return `work request${it.title ? ` "${it.title}"` : ""} archived`;
   return `${describeItem(it)}: ${r.action}`;
 }
@@ -869,7 +882,13 @@ function summarizeAction(it: LiveItem, r: Resolve): string {
 type Applied = { ok: true; status: string } | { ok: false; message: string; unverified?: boolean };
 async function applyResolution(token: string, it: LiveItem, r: Resolve): Promise<Applied> {
   let mutation: string, vars: Record<string, unknown>, payloadKey: string, readKey: string, statusField: string, want: string, wantLabel: string;
-  if (it.kind === "invoice" && r.action === "bad_debt") {
+  let ver = GQL_VERSION;
+  if (it.kind === "invoice" && r.action === "void") {
+    mutation = `mutation Vd($id:EncodedId!,$input:InvoiceVoidInput!){ invoiceVoid(id:$id, input:$input){ invoice { id invoiceStatus } userErrors { message } } }`;
+    vars = { id: it.gid, input: { voidReasonCode: r.void_reason ?? "OTHER", voidReasonDetails: "Voided from the UnclogMe Client App while making the client inactive." } };
+    payloadKey = "invoiceVoid"; readKey = "invoice"; statusField = "invoiceStatus"; want = "voided"; wantLabel = "voided";
+    ver = "2026-09-09";
+  } else if (it.kind === "invoice" && r.action === "bad_debt") {
     mutation = `mutation B($id:EncodedId!,$input:InvoiceCloseInput!){ invoiceClose(id:$id, input:$input){ invoice { id invoiceStatus } userErrors { message } } }`;
     vars = { id: it.gid, input: { closeOption: "BAD_DEBT" } };
     payloadKey = "invoiceClose"; readKey = "invoice"; statusField = "invoiceStatus"; want = "bad_debt"; wantLabel = "bad debt";
@@ -880,9 +899,9 @@ async function applyResolution(token: string, it: LiveItem, r: Resolve): Promise
   } else {
     return { ok: false, message: "That action is not available for this item." };
   }
-  const res = await gql(token, mutation, vars);
+  const res = await gql(token, mutation, vars, 0, ver);
   const err = res.ok ? ue(res.data?.[payloadKey]) : null;
-  const back = await gql(token, `query V($id:EncodedId!){ ${readKey}(id:$id){ id ${statusField} } }`, { id: it.gid });
+  const back = await gql(token, `query V($id:EncodedId!){ ${readKey}(id:$id){ id ${statusField} } }`, { id: it.gid }, 0, ver);
   const node = back.ok ? back.data?.[readKey] : undefined;
   if (!node) {
     const what = !res.ok ? "Jobber did not answer" : err ? `Jobber refused (${err})` : "Jobber accepted it";

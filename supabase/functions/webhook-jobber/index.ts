@@ -177,14 +177,14 @@ async function getAccessToken(): Promise<string> {
 }
 
 // ---- Jobber GraphQL query ----
-async function gql(query: string, variables: Record<string, unknown> = {}): Promise<unknown> {
+async function gql(query: string, variables: Record<string, unknown> = {}, version = '2026-04-16'): Promise<unknown> {
   const token = await getAccessToken()
   const resp = await fetch(JOBBER_GQL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-JOBBER-GRAPHQL-VERSION': '2026-04-16',
+      'X-JOBBER-GRAPHQL-VERSION': version,
     },
     body: JSON.stringify({ query, variables }),
   })
@@ -1170,7 +1170,11 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
         }
       }
     }`,
-    { id: gid }
+    { id: gid },
+    // 2026-09-25: read at 2026-09-09. At 2026-04-16 a VOIDED invoice reads invoiceStatus "awaiting_payment"
+    // with a 0 balance (test invoice #3247); only 2026-09-09 says "voided". Keep in step with
+    // sync-jobber-invoice-drift, or it writes the old reading back within 6 hours.
+    '2026-09-09',
   )
   const inv = data.invoice
   if (!inv) throw new Error(`Invoice ${numericId} not found in Jobber`)
