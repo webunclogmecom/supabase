@@ -4296,11 +4296,13 @@ returned `skipped: grey_water`, 0 sent (row 183).
 ⚠ **Deploy order: migration first, functions second.** Both functions refuse every city send if the view is
 missing, and three logged errors park a pair at `too_many_errors` for good; a rollback redeploys the old
 functions BEFORE running the baseline.
-⚠ **Not yet taught to the apps** (the server refusal is what enforces the rule): Admin Review's pre-check still
-toasts "no City email on file ... Add the email on the property first" for a grey water visit (it reads
-`public.v_visit_city_email` before calling the server), and the DERM Tracker's `has_city_email` /
-`city_total_count` flags do not know the rule (a grey water pair would be offered, then refused as
-`skipped: grey_water`).
+✅ **Admin Review knows it too since 2026-09-25** (`2026-09-25_0045`): `public.v_visit_city_email.not_for_city`
+(last column, never NULL) and the "Send email to City" button checks it FIRST, showing the grey water sentence
+without opening the dialog (live chunk `App-CDAKbMfY.js`). Before that it told the operator "no City email on
+file ... Add the email on the property first", the one action that points the wrong way.
+⚠ **Still not taught:** the DERM Tracker's `has_city_email` / `city_total_count` flags do not know the rule (a
+grey water pair would be offered, then refused as `skipped: grey_water`). The server refusal is what enforces
+it either way.
 
 ⚠ Rows from before `include_manifest` existed (NULL) are reconstructed from timing
 (`2026-09-11_2310`): `customer.work_orders.derm_manifest_url` is written only by the blackout
