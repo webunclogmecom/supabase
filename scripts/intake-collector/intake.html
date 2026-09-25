@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Site survey</title>
 <style>
-:root{--bg:#f6f6f7;--card:#fff;--ink:#18181b;--mut:#6b7280;--line:#e4e4e7;--red:#ea3a24}
+:root{--bg:#f6f6f7;--card:#fff;--ink:#18181b;--mut:#6b7280;--line:#e4e4e7;--red:#f14714}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding-bottom:104px}
 header{background:var(--ink);color:#fff;padding:16px 16px 14px}
@@ -167,9 +167,10 @@ function field(q){
     d.appendChild(b3); d.appendChild(out);
   } else if(t==='photos'){
     var list=Array.isArray(v)?v:[];
-    var f=document.createElement('input'); f.type='file'; f.accept='image/*'; f.setAttribute('capture','environment'); f.multiple=true; f.className='btn';
+    var f=document.createElement('input'); f.type='file'; f.accept='image/*'; f.setAttribute('capture','environment'); f.multiple=true; f.style.display='none';
     f.onchange=function(){ var fs=[].slice.call(f.files||[]); f.value=''; fs.forEach(function(file){up(q.key,file)}) };
-    d.appendChild(f);
+    var fb=document.createElement('button'); fb.type='button'; fb.className='btn'; fb.textContent=list.length?'Add more photos':'Take or add photos'; fb.onclick=function(){f.click()};
+    d.appendChild(fb); d.appendChild(f);
     var g=document.createElement('div'); g.className='ph';
     list.forEach(function(p){ var im=document.createElement('img'); im.alt=''; if(p&&p.preview)im.src=p.preview; g.appendChild(im) });
     d.appendChild(g);

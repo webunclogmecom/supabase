@@ -6,7 +6,7 @@
 // POST, all authorised by the intake TOKEN and nothing else. A GET is reserved for
 // sending the collector to the form; see the GET branch for why it cannot BE the form:
 //
-//   GET ?t=<token>                                     -> 503 today, a 302 once the form has a host
+//   GET ?t=<token>                                     -> 302 to planner.unclogme.app/intake.html#code=<token>
 //
 //   load    { token }                                  -> the questions to show
 //   upload  { token, content_type }                    -> a short-lived signed upload URL
@@ -106,6 +106,7 @@ const MAX_ANSWER_KEYS = 200
 const MAX_VALUE_CHARS = 4_000
 const MAX_COLLECTOR = 120
 const BUCKET = 'intake-photos'
+const FORM_URL = 'https://planner.unclogme.app/intake.html'  // the collector page; see the GET branch
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic'])
 
 const cors = {
@@ -179,11 +180,18 @@ Deno.serve(async (req) => {
   //      deliberate: every link the office has already handed out stays valid, and a
   //      change of form host is then one deploy instead of a reissue of every token.
   //      `form-page.ts` holds the finished form and is the thing to port to that host.
+  //    ✅ 2026-09-25: the form lives at FORM_URL (Picture Planner's public/intake.html, built from
+  //      form-page.ts by scripts/intake-collector/build.mjs). The token rides in the FRAGMENT as
+  //      `code`: a fragment never reaches a server log or a Referer, and `code` is a key the estate's
+  //      analytics token guard already scrubs from Lovable's page tracker. 302, never 301: a cached
+  //      permanent redirect would pin the form host in browsers we cannot clear. Only a token of the
+  //      shape resolveToken accepts is echoed into the Location header.
   if (req.method === 'GET') {
-    return new Response(
-      'This form is not ready yet. Please ask the office for the new link.',
-      { status: 503, headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8', 'Referrer-Policy': 'no-referrer' } },
-    )
+    const t = new URL(req.url).searchParams.get('t') ?? ''
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(t)) {
+      return new Response('This link is not valid.', { status: 400, headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8', 'Referrer-Policy': 'no-referrer' } })
+    }
+    return new Response(null, { status: 302, headers: { ...cors, Location: `${FORM_URL}#code=${t}`, 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' } })
   }
 
   if (req.method !== 'POST') return fail(405, 'Method not allowed.')
