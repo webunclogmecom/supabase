@@ -320,7 +320,7 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
 - **🛑 MOBILE FIRST, THEN PC (Fred, 2026-09-25: *"the intake form where the collectors puts the data needs to be mobile
   responsive first, and then to be good looking on a PC"*).** Design and check every change at phone width (360 and 390)
   before tablet (768) and desktop (1280): 44px touch targets, inputs at 16px or more (iOS zooms below that), no sideways
-  scroll, little fixed chrome, and the desktop layout aligned to one column. Screenshot all four widths, never only one.
+  scroll, little fixed chrome, and the desktop layout aligned to one column. Screenshot 360 and 390 (touch), 768 with touch, 768 with a mouse and 1280 (mouse), never only one. The 44px targets and 16px inputs apply to TOUCH; a mouse or trackpad from 600px up (never iOS) gets the smaller PC scale, the LAST @media block in form-page.ts (2026-09-25, Fred: on a laptop it looked "big/chunky and bold"): 40px tiles and inputs at 14px/400, 36px day chips, a 53px bar with a 36px 14px/600 Submit, and only weights 400 and 600 (Segoe UI draws 500 as Semibold and 800 as Black). `shots.mjs` checks touch contexts against the phone numbers and mouse contexts against the PC ones. e2e.mjs and parity.mjs run at 390 with no touch, which stays phone scale (the 600px floor keeps them there).
 - **THE PIN MAPS (2026-09-25, Fred: *"we need a map there, a pin that we can move, like an interactive map, like the
   Picture Planner has"*).** Each `gps_pin` question (`site_map.truck_parking`, orange "T"; `site_map.gt_location`, red
   "GT") shows a satellite (hybrid) Google map centred on the pin, else on the property (`property.lat`/`lng` in the load

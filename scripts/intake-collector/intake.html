@@ -116,6 +116,58 @@ footer{padding-top:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
 }
 @media (max-height:500px){footer{position:static}}
 @media (prefers-reduced-motion:reduce){.pb i{transition:none}}
+/* PC scale (Fred, 2026-09-25: on a laptop the phone-sized controls look big, chunky and bold). Only a
+   precise pointer that can hover (mouse or trackpad), 600px and wider, and never iOS: a phone, a touch
+   tablet and an iPad with a trackpad keep the phone scale above untouched. 600px, not 768px, so a laptop
+   window snapped to half the screen gets it too. Heights and type follow the Page Builder bar Fred
+   approved. Only two weights, 400 and 600: Segoe UI has no 500 and Chrome on Windows draws 500 as
+   Semibold. This block must stay the LAST rule in the style sheet. */
+@media (min-width:600px) and (hover:hover) and (pointer:fine){@supports not (-webkit-touch-callout:none){
+body{font-size:15px}
+.wrap{max-width:640px}
+button:focus-visible{outline-width:2px}
+header{padding-bottom:18px}
+.brand{font-size:11px;font-weight:600}
+header h1{margin-top:6px;font-size:22px;font-weight:600}
+header p{font-size:14px}
+.intro{margin-top:16px;font-size:14px}
+.intro,.hint,.note{text-wrap:pretty}
+.card,.q{padding:16px 20px;margin-top:10px}
+.q>label,.card>label{margin-bottom:10px;font-size:15px;font-weight:600}
+.tag{font-size:13px;font-weight:400}
+.hint,.note,.pin,.gst{font-size:13px}
+.sec{margin-top:28px}
+.sech h2{font-size:17px;font-weight:600}
+.sech span{font-size:12px;font-weight:400}
+input[type=text],input[type=number],input[type=time],textarea{min-height:40px;padding:8px 12px;font-size:14px}
+textarea{min-height:84px}
+.opt{min-height:40px;padding:8px 12px;gap:10px;font-size:14px;font-weight:400}
+.dot{width:18px;height:18px}
+.opt:hover,.day:hover,.chip:hover,.step button:hover{border-color:var(--ink2)}
+.step{grid-template-columns:40px minmax(0,1fr) 40px;max-width:200px}
+.step button{min-height:40px;font-size:20px;font-weight:400}
+.step input{font-size:16px;font-weight:600}
+.act{width:fit-content;min-height:38px;padding:8px 14px;gap:8px;font-size:14px;font-weight:600}
+.act svg{width:18px;height:18px}
+.day{min-height:36px;font-size:13px;font-weight:600}
+.hh{font-size:11px;font-weight:600}
+.hr .dn{font-size:14px;font-weight:600}
+.hr input[type=time]{min-height:36px;padding:6px}
+.hr .rh{font-size:12px;font-weight:400}
+.chip{min-height:32px;padding:6px 14px;font-size:13px;font-weight:400}
+.pin.set,.note.ok{font-weight:400}
+.err{padding:10px 10px 10px 12px;font-size:14px;font-weight:400}
+.err button{min-height:30px;min-width:48px;font-size:12px;font-weight:600}
+footer{padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+.prog{min-height:36px}
+#cnt{font-size:12px;font-weight:400}
+.pb{height:4px;margin-top:5px}
+#send{min-height:36px;min-width:96px;padding:0 16px;border-radius:10px;font-size:14px;font-weight:600}
+.cf{padding:10px 12px;font-size:14px;font-weight:400}
+.cf button{flex:none;min-height:34px;padding:0 14px;font-size:14px;font-weight:600}
+.off{font-size:14px;font-weight:400}
+.big h2{font-size:20px;font-weight:600}
+}}
 </style></head>
 <body>
 <header><div class="wrap">
