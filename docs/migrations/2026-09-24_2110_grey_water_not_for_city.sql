@@ -1,6 +1,13 @@
 -- ============================================================================
 -- 2026-09-24 · Grey water reports do not go to the city; the automatic city email stops using the test inbox
 -- ============================================================================
+-- APPLIED 2026-09-24 ~21:40 ET, then send-visit-photos-email v37 and send-derm-email v60 deployed (both
+-- byte-identical to git, commit 5a292f3). Before applying: a 3-lens adversarial review (13 agents) whose
+-- findings reshaped items 1 and 3 below and the VERIFY; a dry run; a rollback proof (this file then the
+-- baseline in one rolled-back transaction, with a control that omits the baseline and fails). After: live
+-- 65 listed, 27 pairs grey_water, queue 0; one service-role call to the DERM city arm for manifest 1840 /
+-- 214-MYK (no city inbox anywhere, so nothing could send) returned skipped 'grey_water', 0 sent (row 183).
+-- The Admin Review send cannot be exercised without a signed-in staff session; its deployed body is verified.
 -- THE ASK
 --   Fred, 2026-09-24, asked whether a grey water visit's report should ever go to the city: "No, grey water
 --   reports don't go to the city."

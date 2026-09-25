@@ -3530,7 +3530,8 @@ one, so shipping a better rule does not heal history.
 > showing grey water visits (Fred, same day): `customer.work_orders` admits grey water pumping and
 > carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`).
 > 🛑 **"Is this visit grey water pumping" is ONE view since `2026-09-24_1920`: `public.v_visit_grey_water_pumping`
-> (visit_id; live visits, no status filter, service_role SELECT only).** Its three readers are owner-rights
+> (visit_id, and since `2026-09-24_2110` the deciding `tier`: 1 own lines, 2 job, 3 invoice; live visits, no
+> status filter, service_role SELECT only).** Its readers are owner-rights
 > views that no longer carry a copy: `customer.work_orders` (the Field Portal arm), `derm.visits.grey_water_pumping`
 > (the DERM Tracker bulk "Mark DERM Not Required" dialog; a rebuild of `derm.visits` must keep that LAST column)
 > and `derm.v_lwt_grey_water_unlinked`. Change the rule there and only there; `'Grey Water'` appears in none of
@@ -3540,6 +3541,8 @@ one, so shipping a better rule does not heal history.
 > pumping") is deliberately not matched and stays TRUE. `edit_calendar_visit` only ever PROMOTES `derm_required`
 > on a completed or filed visit (`2026-09-24_1910`), like every other automatic writer. Details and the one
 > remaining open item (typed fee lines, item 11, skipped by Fred): the reference doc, section "2026-09-24".
+> 🛑 **Grey water reports never go to the city** (Fred, same evening): `public.v_visit_not_for_city`
+> (`2026-09-24_2110`) and the three city readers of it; see the automatic city email section, status `grey_water`.
 
 To find a missing DERM link, work in the Supabase DB. **Airtable is fully retired (2026-07-24) and must not be read** — there is no AT DERM table to cross-reference any more:
 1. **`derm_manifests`** — match on `white_manifest_number` + `client_id`, then compare `service_date` to the candidate visit's `visit_date`. Never match on `dump_ticket_date` alone: dump dates lag service dates by weeks.
@@ -4264,6 +4267,30 @@ Concretely, per (manifest, client) in `derm.v_city_email_candidates`
 | `awaiting_manual_send` | no `status=sent` row without the manifest yet (`include_manifest = false`, or NULL sent before `blacked_at`, see the reconstruction note below). The blackout may be done; nothing moves until Admin Review sends |
 | `waiting` / `before_go_live` / `ready` | unlocked by such a row; `manual_include_photos`, `manual_sent_at`, `manual_visit_id`, `manual_inferred` (appended columns) say which one. `due_at = greatest(blacked_at, manual_sent_at) + city_email_delay` since `2026-09-11_2310` |
 | `already_sent` | a city row in `derm_email_sends`: a previous sweep, OR a person pressing **Send to city** in the DERM Tracker. Fred, 2026-09-11: *"the derm app already will send the derm manifest yes or yes so having an automatic email that will send it makes no senses."* |
+| `grey_water` | every live visit of that client on that manifest is on `public.v_visit_not_for_city` (`2026-09-24_2110`). Never sent, by rule. Sits after `already_sent` / `suppressed_manual` and BEFORE `no_property` / `no_city_email` on purpose, so nobody is told a grey water pair "has no city email" and adds one. 27 pairs at apply |
+
+🛑 **GREY WATER REPORTS NEVER GO TO THE CITY (Fred, 2026-09-24: *"No, grey water reports don't go to the
+city."*).** Until `2026-09-24_2110` nothing enforced it: no city mailer tested grey water, the 30 filed grey
+water visits kept stored `derm_required = TRUE` passed Admin Review's GATE 1, and it held only because no
+grey water client has a city inbox. Test visit 8108 proved both city paths deliver a grey water report
+(2026-09-15, rows 179 and 175). Now ONE list, **`public.v_visit_not_for_city`** (service_role only): grey
+water pumping (`public.v_visit_grey_water_pumping`) with no line, on its deciding `tier` or nearer, that
+requires DERM or might (`fn_line_item_requires_derm IS NOT FALSE`; fee/admin codes abstain). So a visit whose
+OWN lines are grey water and grease trap still reports, an unknown line keeps it reporting (fail-safe), and
+a grease trap line belonging to a sibling visit on a shared invoice does not count (7085). 65 visits at apply.
+Three readers, same order: **`send-visit-photos-email`** (v37: 409 `grey_water` before GATE 0, 503
+`grey_water_check_failed` if the lookup fails), **`send-derm-email`'s city arm** (v60: skipped `grey_water`
+before the property checks; a listed visit sharing a pair with a reporting one is dropped from inbox, date,
+FOG document and report picks), and the `grey_water` status above. Proven live: manifest 1840 / 214-MYK
+returned `skipped: grey_water`, 0 sent (row 183).
+⚠ **Deploy order: migration first, functions second.** Both functions refuse every city send if the view is
+missing, and three logged errors park a pair at `too_many_errors` for good; a rollback redeploys the old
+functions BEFORE running the baseline.
+⚠ **Not yet taught to the apps** (the server refusal is what enforces the rule): Admin Review's pre-check still
+toasts "no City email on file ... Add the email on the property first" for a grey water visit (it reads
+`public.v_visit_city_email` before calling the server), and the DERM Tracker's `has_city_email` /
+`city_total_count` flags do not know the rule (a grey water pair would be offered, then refused as
+`skipped: grey_water`).
 
 ⚠ Rows from before `include_manifest` existed (NULL) are reconstructed from timing
 (`2026-09-11_2310`): `customer.work_orders.derm_manifest_url` is written only by the blackout
@@ -4421,7 +4448,7 @@ resolved server-side from the visit's property, compliance BCC), `2026-09-15_092
 | `city_email_batch_limit` | `5` | cap per run; the sender renders a PDF per manifest |
 | `city_email_live_sends` | **`true`** (since 2026-09-15) | `false` forces every city send to the test recipient, `is_test=true`; `true` resolves the property inboxes, BCCs the compliance archive, and makes only `is_test=false` rows count as the unlocking manual send |
 | `client_email_live_sends` | **`true`** (measured 2026-09-03) | the same gate on the CLIENT-facing send. 🛑 **OPEN**, so a client send reaches the real customer unless a `test_recipient` is supplied |
-| `city_email_test_recipient` | **empty** (since 2026-09-15) | when non-empty the sweep puts it in EVERY body and the mailer honours it even with the gate open: every automatic email would go there as a test, never satisfy `already_sent`, and retry every 20 hours. Keep it empty in production. |
+| `city_email_test_recipient` | **a staff address** (since 2026-09-22 10:36 ET) | read by `send-derm-email` ONLY while a live flag is not `true`: it is where a gated send is forced, and the mailer refuses (503 `city_gate_misconfigured`) when it is unusable, so a staff address here arms that fail-closed path. 🛑 **Until `2026-09-24_2110` the sweep copied this key into EVERY request whatever the gate said**, and the mailer honours a `test_recipient` in the body, so from 2026-09-22 10:36 to 2026-09-24 ~21:40 ET the next automatic city email would have gone here as a test, never counted as sent, and been retried every 20 hours (nothing was due in that window: 0 ready, 0 waiting). The sweep no longer forwards it at all. Do not re-add a forward: SQL `btrim` and JS `trim` disagree on a tab or newline, so gating it on the live flag in SQL brings the redirect back. |
 
 🛑 **AN UNPARSEABLE INTERVAL RAISES, IT DOES NOT FALL BACK.** The `::interval` cast sits
 INSIDE the `coalesce` argument in both `fn_city_email_delay()` and `fn_city_email_retry_after()`,
@@ -4436,7 +4463,9 @@ was true when it was written and is now WRONG (corrected 2026-08-31).** It preda
 gate (`425f32a`) and `city_email_test_recipient` being populated, and running it alone produces a
 silent failure that looks like success.
 
-**Why the single statement is not enough.** `fn_request_city_email_sweep` copies
+**Why the single statement is not enough** (⚠ historical since `2026-09-24_2110`: the sweep no longer copies
+the key, so a staff address left in it no longer redirects anything while live; the table row above has the
+current behaviour). `fn_request_city_email_sweep` copied
 `city_email_test_recipient` into the request body **unconditionally**, and `send-derm-email` only
 FORCES that value when the gate is off - it never CLEARS it when the gate is on. So with the
 recipient still set to `fred@ayache.com`:

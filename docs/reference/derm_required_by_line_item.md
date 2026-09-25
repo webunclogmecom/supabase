@@ -65,9 +65,13 @@ visits are stored TRUE and **all 30 derive FALSE**; the stored TRUE stays, by de
 - Only CODED fees abstain. A typed fee ("CC Fees ...", "ACH fee") still answers FALSE (step 3 below), so a
   visit reaching only "25" plus a typed fee is FALSE, not NULL. 0 live visits have that shape. This was
   item 11; Fred skipped it.
-- `send-visit-photos-email` GATE 1 still treats `derm_required === false` as "no report". Unreachable for a
-  grey water visit today (gate 0, no city email, fires first, and Admin Review hides the button), so left
-  as is; whether a grey water report should ever go to the city is Fred's call.
+- ✅ **Grey water reports never go to the city** (Fred, 2026-09-24: *"No, grey water reports don't go to the
+  city."*). The earlier note here said `send-visit-photos-email` GATE 1 (stored `derm_required === false`)
+  covered it; it did not: the 30 filed grey water visits kept stored TRUE pass it, and the DERM email's
+  city arm and sweep had no test at all. `2026-09-24_2110` adds `public.v_visit_not_for_city` (grey water
+  with no DERM line on its deciding tier; `v_visit_grey_water_pumping` gained that `tier` column), read by
+  both mailers and by `derm.v_city_email_candidates` (status `grey_water`). Details: `Supabase/CLAUDE.md`,
+  automatic city email section.
 - A not-required visit is no longer offered for manifest linking (`manifest_pickable_visits`, the DERM
   Tracker "Attach visit" picker, `dump_route_today`), and the Miami-Dade LWT monthly filing
   (`derm.v_lwt_monthly_rows`) is built from manifest links. So grey water pickups stop reaching that filing
