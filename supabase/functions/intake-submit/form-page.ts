@@ -93,7 +93,7 @@ input::placeholder,textarea::placeholder{color:#a1a1aa}
 .opt[aria-pressed=true] .dot{border-color:var(--or);background:var(--or);color:#fff}
 .step{display:grid;grid-template-columns:56px minmax(0,1fr) 56px;gap:8px;max-width:280px}
 .step button{min-height:54px;border:1.5px solid var(--line2);border-radius:12px;background:#fff;font-size:26px;font-weight:600;line-height:1;display:grid;place-items:center}
-.step button:disabled{opacity:.35;cursor:default}
+.step button:disabled,.step button[aria-disabled=true]{opacity:.35;cursor:default}
 .step input{text-align:center;font-size:20px;font-weight:700}
 .act{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:54px;padding:12px 16px;border:1.5px solid transparent;border-radius:12px;background:var(--bg);font-size:16px;font-weight:700}
 .act svg{color:var(--or)}
@@ -357,7 +357,7 @@ function field(q){
       var minus=el('button','','−'); minus.type='button'; minus.setAttribute('aria-label','One less'); minus.setAttribute('data-f',q.key+':-');
       var plus=el('button','','+'); plus.type='button'; plus.setAttribute('aria-label','One more'); plus.setAttribute('data-f',q.key+':+');
       var num=function(){ return (n.value===''||isNaN(Number(n.value)))?null:Number(n.value) };
-      var sync=function(){ var c0=num(); minus.disabled=(c0!=null&&c0<=mn); plus.disabled=(mx!=null&&c0!=null&&c0>=mx) };
+      var sync=function(){ var c0=num(); minus.setAttribute('aria-disabled',(c0!=null&&c0<=mn)?'true':'false'); plus.setAttribute('aria-disabled',(mx!=null&&c0!=null&&c0>=mx)?'true':'false') };
       minus.onclick=function(){ var c0=num(); if(c0==null) setA(q.key,mn); else if(c0>mn) setA(q.key,c0-1) };
       plus.onclick=function(){ var c0=num(), nx=(c0==null)?Math.max(mn,1):c0+1; if(mx==null||nx<=mx) setA(q.key,nx) };
       n.onchange=function(){ typed(q.key,n.value===''?'':Number(n.value)); sync() };
@@ -558,7 +558,7 @@ function start(r,offline){
   var ft=document.getElementById('foot'), fh=function(){ document.documentElement.style.setProperty('--fh',(getComputedStyle(ft).position==='sticky'?ft.offsetHeight:0)+'px') };
   fh(); try{ new ResizeObserver(fh).observe(ft) }catch(e){} window.addEventListener('resize',fh);
   document.addEventListener('focusin',function(e){
-    var t=e.target; if(!t||ft.contains(t)||getComputedStyle(ft).position!=='sticky') return;
+    var t=e.target; if(PRESS||!t||ft.contains(t)||getComputedStyle(ft).position!=='sticky') return;   // never mid-tap: moving the page loses the click
     var r=t.getBoundingClientRect(), top=ft.getBoundingClientRect().top-12;
     if(r.bottom>top) window.scrollBy(0,Math.min(r.bottom-top,Math.max(0,r.top-12)));
   });
