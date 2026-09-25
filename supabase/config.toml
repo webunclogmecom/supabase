@@ -860,6 +860,13 @@ verify_jwt = true
 [functions.intake-submit]
 verify_jwt = false
 
+# driver-page: the public driver page (Picture Planner /driver#code=..., 2026-09-25). Drivers have no
+# staff login; the 22-character code in the body is the only credential, and public.fn_driver_page
+# (service_role only) decides everything a code opens. Read-only except a throttled open log. Same
+# posture as intake-submit. Plan: Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md.
+[functions.driver-page]
+verify_jwt = false
+
 # derm-visit-report: the DERM Tracker's "Download Report" (2026-09-24). Prints the Field Portal's
 # own Service Report through the pdf-service. The gate is IN THE HANDLER (a signed-in @ayache.com /
 # @unclogme.com user), like save-client-contact: the browser sends the staff session token.
