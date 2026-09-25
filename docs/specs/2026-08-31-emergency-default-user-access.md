@@ -5,8 +5,10 @@
 > `emergency-session` (source, `config.toml` entry; it was no longer deployed), the edge secrets
 > `EMERGENCY_PASSPHRASE` and `EMERGENCY_JWT_SECRET`, `public.emergency_whoami()` and the `app_config` key
 > `emergency_access_until`. Kept as a frozen, read-only record: `public.emergency_session_grants` (85 requests,
-> 70 grants). ⚠ Six apps (Hub, Admin, Client App, Calendar, DERM, Stamp) still carry the dormant bootstrap that
-> POSTs to `emergency-session` on load and carries on when refused (now always a 404). To bring the mode back
+> 70 grants). The dormant client-side bootstrap (the "Starting…" screen that POSTed to `emergency-session` on
+> load, its helpers, the second client branch, the banner) was removed from Hub, Admin, Calendar, DERM and Stamp
+> on 2026-09-25 (each app's `Building Apps/<App>/docs/08-changelog.md`). ⚠ The Client App still carries it (it
+> POSTs on load and carries on at the 404) until the session holding that project releases it. To bring the mode back
 > for a future outage, start from git history, not from this page alone.
 
 > 🛑 **SUPERSEDED IN TWO WAYS ON 2026-08-31, LATER THE SAME DAY. READ THIS FIRST OR YOU WILL BUILD
