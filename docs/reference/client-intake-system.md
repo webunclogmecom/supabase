@@ -310,6 +310,23 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
   responsive first, and then to be good looking on a PC"*).** Design and check every change at phone width (360 and 390)
   before tablet (768) and desktop (1280): 44px touch targets, inputs at 16px or more (iOS zooms below that), no sideways
   scroll, little fixed chrome, and the desktop layout aligned to one column. Screenshot all four widths, never only one.
+- **THE PIN MAPS (2026-09-25, Fred: *"we need a map there, a pin that we can move, like an interactive map, like the
+  Picture Planner has"*).** Each `gps_pin` question (`site_map.truck_parking`, orange "T"; `site_map.gt_location`, red
+  "GT") shows a satellite (hybrid) Google map centred on the pin, else on the property (`property.lat`/`lng` in the load
+  reply), else Miami. Tap places the pin, drag adjusts it, "Use my location" still works and moves it. A hand-placed pin is
+  `{lat, lng}` rounded to 6 decimals with no `accuracy_m`; the server validator and the accept path are unchanged.
+  - The key is the edge secret **`GOOGLE_MAPS_BROWSER_KEY`**, returned as `maps_key` by `op:'load'` (the Planner's own
+    browser key, restricted by referrer to `planner.unclogme.app`). **No secret, a refused key (`gm_authFailure`), or no
+    signal: no map, and the question works exactly as before** (both fallbacks tested). Maps loads only when a pin
+    question is on screen.
+  - `render()` rebuilds the list on every answer, so each map is built ONCE and its node moved into the new card (a new
+    map would refetch tiles and lose the zoom). `gestureHandling: 'cooperative'`: one finger scrolls the page, not the map.
+  - 🛑 **Measured before shipping: Maps sends Google the page's origin and path, never the fragment** (its
+    `MapsJsInternalService` RPC carries `origin/path`; 0 of 27 to 43 Google requests per run carried the code). And the
+    key works under the page's `no-referrer` policy (tiles drew on the real host), so the policy was NOT weakened.
+  - Test: `scripts/intake-collector/map-test.mjs <[TEST] intake id> <outdir>` serves the local build on the real host and
+    injects the key into the load reply, so it runs before a deploy and before the secret exists. 4 widths; tap, GPS, the
+    same map node after another answer, no code in any Google request; `none`/`bad` as a 4th argument test the fallbacks.
 - **18. DRIVER PAGES (2026-09-25, `2026-09-25_1330_property_pages.sql`).** Plan:
   `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md`. The rules that must not regress:
   - 🛑 **Drivers see only an APPROVED version**, and nobody approves their own (a CHECK, the RPC, and the approver list

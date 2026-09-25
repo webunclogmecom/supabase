@@ -218,9 +218,10 @@ Deno.serve(async (req) => {
   if (op === 'load') {
     const { data: prop } = await supabase
       .from('properties')
-      .select('name, address, city, client_id')
+      .select('name, address, city, client_id, latitude, longitude')
       .eq('id', i.property_id)
       .maybeSingle()
+    const coord = (x: unknown) => (x == null || x === '' || !Number.isFinite(Number(x)) ? null : Number(x))
 
     return json(200, {
       ok: true,
@@ -230,8 +231,13 @@ Deno.serve(async (req) => {
       expires_at: i.expires_at,
       requested: i.requested,
       form: i.form_snapshot,
-      property: prop ? { name: prop.name, address: prop.address, city: prop.city } : null,
+      property: prop
+        ? { name: prop.name, address: prop.address, city: prop.city, lat: coord(prop.latitude), lng: coord(prop.longitude) }
+        : null,
       photo_cap: PHOTO_CAP,
+      // The Google Maps BROWSER key for the pin maps (public by design, restricted by referrer to the form's
+      // host). No secret, no map: the form falls back to "Use my location".
+      maps_key: Deno.env.get('GOOGLE_MAPS_BROWSER_KEY') || null,
     })
   }
 

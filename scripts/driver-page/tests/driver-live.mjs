@@ -58,6 +58,8 @@ for (const [name, w, h, dpr] of [['phone360', 360, 740, 2], ['phone390', 390, 84
   await p.goto(HOST + '/driver#code=' + CODE)
   await p.waitForFunction(() => /Checked by|not valid|Could not open/.test(document.body.innerText), null, { timeout: 20000 })
   await p.waitForTimeout(1500)
+  // Photos are lazy: bring each into view and let it decode (or fail) before judging it, then go back up.
+  await p.evaluate(async () => { for (const i of [...document.images]) { i.scrollIntoView(); await Promise.race([i.decode().catch(() => {}), new Promise((r) => setTimeout(r, 8000))]) } scrollTo(0, 0) })
   const m = await p.evaluate(() => ({
     text: document.body.innerText,
     title: document.title,

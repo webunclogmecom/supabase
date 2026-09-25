@@ -34,8 +34,12 @@ console.log(`source ${SRC.pathname.replace(/^\/([A-Z]:)/, '$1')}: ${src.length} 
 check(/<title>Site survey<\/title>/.test(s), 'control: the source is the collector form')
 check(/<meta name="referrer" content="no-referrer">/.test(s), 'no-referrer meta (the token must not leave in a Referer)')
 check(/<meta name="robots" content="noindex,nofollow">/.test(s), 'noindex meta (a capability URL must never be indexed)')
-const origins = [...new Set([...s.matchAll(/https?:\/\/[A-Za-z0-9.-]+/g)].map((m) => m[0]))]
-check(origins.length === 1 && origins[0] === 'https://wbasvhvvismukaqdnouk.supabase.co', `exactly one origin, the function's (${origins.join(', ') || 'none'})`)
+// Two network origins and no others: the function, and the Google Maps loader for the pin maps (2026-09-25).
+// http://www.w3.org is the SVG namespace inside the pin icon, never fetched.
+const origins = [...new Set([...s.matchAll(/https?:\/\/[A-Za-z0-9.-]+/g)].map((m) => m[0]))].filter((o) => o !== 'http://www.w3.org').sort()
+check(origins.join(' ') === 'https://maps.googleapis.com https://wbasvhvvismukaqdnouk.supabase.co', `exactly two origins, the function's and the Maps loader (${origins.join(', ') || 'none'})`)
+check((s.match(/maps\.googleapis\.com/g) || []).length === 1 && s.includes("'https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(F.maps_key)"),
+  'Google is reached only through the Maps loader, with the key from the load reply')
 check(s.includes(`'${EP}'`), 'the endpoint is the absolute intake-submit URL')
 for (const [bad, why] of [[/eyJ[A-Za-z0-9_-]{10,}/, 'a JWT (an anon key would stop the token being the only gate)'],
   [/apikey/i, 'an apikey header'], [/\/rest\/v1\//, 'a PostgREST path'], [/\/auth\/v1\//, 'an Auth path'],
