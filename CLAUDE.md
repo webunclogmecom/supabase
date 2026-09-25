@@ -4300,9 +4300,13 @@ functions BEFORE running the baseline.
 (last column, never NULL) and the "Send email to City" button checks it FIRST, showing the grey water sentence
 without opening the dialog (live chunk `App-CDAKbMfY.js`). Before that it told the operator "no City email on
 file ... Add the email on the property first", the one action that points the wrong way.
-⚠ **Still not taught:** the DERM Tracker's `has_city_email` / `city_total_count` flags do not know the rule (a
-grey water pair would be offered, then refused as `skipped: grey_water`). The server refusal is what enforces
-it either way.
+✅ **The DERM Tracker knows it too since 2026-09-25** (`2026-09-25_0100`, `c776b14`): `derm.manifest_recipients`,
+`derm.manifests.city_total_count`, `derm.visits` and `derm.v_manifest_recipient_city_emails` skip listed visits,
+and `derm.manifest_recipients.not_for_city` / `derm.visits.not_for_city` (appended, never NULL) drive the grey
+water label in the Send to city dialog and on the visit page. A mixed pair keeps its city route and its To line
+through the grease trap visit only. The server refusal stays the real guard. ⚠ When timing a view, build every
+row (`sum(length(to_jsonb(x)::text))`): a bare `count(*)` over `to_jsonb` lets the planner drop the select list,
+so the expressions you changed never run (the first draft of this migration reported 369 ms for a 2.1 s read).
 
 ⚠ Rows from before `include_manifest` existed (NULL) are reconstructed from timing
 (`2026-09-11_2310`): `customer.work_orders.derm_manifest_url` is written only by the blackout
