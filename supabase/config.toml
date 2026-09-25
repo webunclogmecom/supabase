@@ -852,9 +852,6 @@ verify_jwt = true
 [functions.emergency-session]
 verify_jwt = false
 
-[functions.auth-recovery-watch]
-verify_jwt = true
-
 # sync-jobber-client-state-sweep: weekly READ-ONLY client state check (pg_cron 15 7 * * 0 via
 # fn_request_jobber_sync('client-state-sweep'), vault bearer). Handler requires role=service_role. Reads Jobber
 # and writes ONLY a sync_log verdict row; never clients, visits or entity_source_links.

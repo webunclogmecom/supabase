@@ -4012,8 +4012,9 @@ alerts as sent so they are never emailed, or trigger the email on demand. **Meas
 as `authenticated`, the body of `fn_health_ack` ran (it raised its own `22023` on `p_days = 0`).
 Nobody granted it: Supabase's default privileges grant EXECUTE BY NAME on every new `public`
 function, and `2026-08-24_1820`'s service_role-only GRANT could not remove what it did not create.
-The same migration closed `fn_request_auth_recovery_watch` (it posts to an edge fn with the vault key;
-its cron is gone and `public.auth_recovery_state` has been stuck at `down` since 2026-09-01), the
+The same migration closed `fn_request_auth_recovery_watch` (it posted to an edge fn with the vault key;
+its cron was gone and `public.auth_recovery_state` stuck at `down` since 2026-09-01; the whole watcher, function,
+table and edge fn `auth-recovery-watch`, was RETIRED by `2026-09-25_0005`, Fred: "retire the auth recovery watcher"), the
 INVOKER loggers `log_rpa_derm_health`, `log_jobber_note_photo_health`, `log_calendar_push_health` and
 `log_sa_schedule_gaps` (not reachable, they fail on `sync_log` or their view, but that was an accident
 of another grant), and `public.v_jobber_note_photo_health` (was `authenticated=arwdDxtm`; now the
