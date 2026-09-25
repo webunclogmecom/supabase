@@ -4633,6 +4633,9 @@ a step-by-step demo script is in `16-city-email-video-guide.md` beside it.
 
 ### 🛑 CLIENT INTAKE SYSTEM: THE PHOTO KIND IS `property_intake`, NEVER `property` (2026-09-22)
 
+**The whole flow, end to end (apps, endpoint, DB, tests, open decisions): `Building Apps/docs/client-intake-flow.md`.**
+Read it before changing any part of the flow; the DB rules below and in the reference doc stay the detail.
+
 The site-visit intake shipped its back half on 2026-09-22/23: `public.property_intakes` (immutable raw
 submission, per PROPERTY), `property_intake_accepts` (who accepted what, old and new),
 `client.v_property_intake` (Nothing / Incomplete / Complete), `client.schedule_property_intake` /
