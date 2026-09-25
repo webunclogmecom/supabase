@@ -130,7 +130,9 @@ async function getJobberToken(): Promise<string> {
 
 type GqlResult = { ok: true; data: any } | { ok: false; kind: "busy" | "unreachable" | "no_answer" | "rejected"; detail: string };
 
-async function gql(token: string, query: string, variables: Record<string, unknown>, _retry = 0): Promise<GqlResult> {
+// `version` added 2026-09-25 for the live-blocker invoice read only (see readLiveBlockers); every other
+// call keeps GQL_VERSION. This block is no longer byte-identical to save-client-property.
+async function gql(token: string, query: string, variables: Record<string, unknown>, _retry = 0, version = GQL_VERSION): Promise<GqlResult> {
   let r: Response;
   try {
     r = await fetch("https://api.getjobber.com/api/graphql", {
@@ -138,7 +140,7 @@ async function gql(token: string, query: string, variables: Record<string, unkno
       headers: {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
-        "X-JOBBER-GRAPHQL-VERSION": GQL_VERSION,
+        "X-JOBBER-GRAPHQL-VERSION": version,
       },
       body: JSON.stringify({ query, variables }),
     });
@@ -165,7 +167,7 @@ async function gql(token: string, query: string, variables: Record<string, unkno
   if (throttled) {
     if (_retry < 5) {
       await new Promise((res) => setTimeout(res, 400 * Math.pow(2, _retry)));
-      return gql(token, query, variables, _retry + 1);
+      return gql(token, query, variables, _retry + 1, version);
     }
     return { ok: false, kind: "busy", detail: "throttled after 5 retries" };
   }
@@ -814,9 +816,12 @@ async function readLiveBlockers(token: string, gid: string): Promise<Live> {
     let after: string | null = null;
     for (let page = 0; ; page++) {
       if (page >= LIVE_PAGES) { truncated = true; break; }
+      // 🛑 Invoices are read at 2026-09-09. At 2026-04-16 a VOIDED invoice reads "awaiting_payment" with a
+      // 0 balance (measured on test invoice #3247, 2026-09-25), so it would show as a blocker offering
+      // bad debt, although Jobber counts a voided invoice as resolved.
       const res = await gql(token,
         `query L($id:EncodedId!,$after:String){ client(id:$id){ ${key}(first:50, after:$after){ nodes { ${sel} } pageInfo { hasNextPage endCursor } } } }`,
-        { id: gid, after });
+        { id: gid, after }, 0, key === "invoices" ? "2026-09-09" : GQL_VERSION);
       if (!res.ok) {
         const noScope = res.kind === "rejected" && /permission|scope|not authori[sz]ed|access denied/i.test(res.detail);
         return { ok: false, kind: noScope ? "no_scope" : "unavailable", detail: res.detail };

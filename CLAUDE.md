@@ -1847,6 +1847,21 @@ offer **Mark as bad debt** and **Void** (Void deferred, below). What shipped:
   `no_scope`, and the previous path runs. A client with none returns an empty list and no error.
 - ⚠ Until the Client App ships the per-item buttons, the refusal shows the items with no way to act on
   them in the app: the old wording "clear them in Jobber, then try again" is what reaches staff.
+- ✅ **PROVEN END TO END ON 112-YA, 2026-09-25 ~15:47 ET (v16, Fred-approved).** With blockers present
+  and `close_jobs:true` but no `resolve`, it refused and **Jobber still showed all 3 jobs open** (the
+  201-ALA shape cannot recur). With `resolve` it archived a [TEST] request, marked [TEST] invoice #3246
+  bad debt, closed the 3 jobs and archived the client in **4.0 s**, ledger row #100 carrying "Cleared in
+  Jobber first: ...". This proved the one thing only a write could: bad debt + an archived request DO
+  clear Jobber's archive block. Restored by `unarchive-client` + `jobReopen` on the other two jobs; the
+  SA came back `active` this time, not `requires_invoicing`.
+- 🛑 **AT API 2026-04-16 A VOIDED INVOICE READS `awaiting_payment` WITH A 0 BALANCE** (voided [TEST]
+  invoice #3247 on 112-YA; at 2026-09-09 it reads `voided`). Two consequences: (1) v16 reads the
+  live-blocker INVOICE list at 2026-09-09, or a hand-voided invoice would show as a blocker offering bad
+  debt (v15 had that bug); (2) **our invoice sync (2026-04-16) stores every voided invoice as
+  `awaiting_payment`, `outstanding_amount = 0`** (measured: #3247 synced exactly so). The past-due rule
+  needs `outstanding_amount > 0`, so they never read past due, but the status is wrong. **Void stays off
+  in the app until the sync reads `voided`.** #3246 (bad debt) and #3247 (voided) remain on 112-YA in
+  Jobber as test artefacts: Jobber has no invoice delete mutation.
 
 🛑 **`jobs.job_status` IS A PURE MIRROR OF JOBBER — it does NOT self-correct via the `*/5` poll
 (measured 2026-09-01).** The poll copies Jobber's `jobStatus`; it never derives one. Surfaced by the
