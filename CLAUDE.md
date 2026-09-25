@@ -3964,6 +3964,11 @@ Driven by cron `health-escalation` (`30 13 * * *`, jobid 30) via `fn_request_hea
 
 **It emails only when an item is NEW, or has been open >= 3 DAYS unacknowledged** (then weekly, not
 daily). Resolutions ride along in a mail already going out and never trigger one.
+⚠ **"Weekly" was really every 8 days until `2026-09-24_2350`**: `fn_health_alert_mark_sent` stamps
+`last_alerted_at` a fraction of a second AFTER the scan's `now()`, so an exact `>= 7 days` fell short on
+the 7th run (measured: re-sends exactly 8.000 days apart). The scan's two day comparisons now allow one
+hour. **Any new "every N days" rule between two stamps taken at slightly different moments needs the
+same tolerance**, well under the one-day gap between runs.
 **SILENCE IS THE NORMAL, HEALTHY OUTCOME. Do not "fix" it into a daily summary** - that is precisely
 what made `sync_log` unreadable, and Fred chose this threshold deliberately after seeing the numbers
 (only 7 attention streaks of 3+ days in two months, about one email per eight days).
