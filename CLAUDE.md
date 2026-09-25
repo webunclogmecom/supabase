@@ -4764,7 +4764,9 @@ Six things that will bite someone who does not know them:
    `public.property_intake_link_reveals` (no token, no URL, no app role reads it). The link is
    `https://planner.unclogme.app/intake#code=<token>`: `/intake` is a Picture Planner route that 308s to `/intake.html`;
    🛑 it must never serve the form itself (Lovable injects its tracker into worker-served HTML). A mis-shared link has a
-   remedy until an in-app cancel exists: on Fred's word, set `cancelled_at` with the one-line UPDATE in reference rule 10.
+   Cancel from the Planner's `/forms` card: `client.cancel_intake` (staff JWT only, awaiting forms only; a submit landing
+   after a cancel is refused by trigger `property_intakes_no_submit_after_cancel`; reference rule 20, `2026-09-25_1705`).
+   `public.fn_intake_link_url` is the one SQL builder of the collector link; `schedule_property_intake` returns it as `url`.
 
 ## Documentation map
 

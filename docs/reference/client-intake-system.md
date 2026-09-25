@@ -59,6 +59,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | driver pages (build plan section 6) | `public.property_pages` (append-only versions), `public.property_page_links` (one 22-character driver link per property, redacted from audit), `public.property_page_opens` (throttled open log); `client.page_builder_list()`, `client.get_page_builder`, `client.submit_property_page`, `client.approve_property_page`, `client.rotate_driver_link`; helpers `fn_page_photo_ids`, `fn_page_content_problem`, `fn_page_source`, `fn_page_blocker`, `fn_page_person_name`, `fn_page_approver_ids/_names`; `app_config.page_approvers` | `2026-09-25_1330_property_pages.sql` (Supabase `44f50ae`) |
 | driver page endpoint | edge fn `driver-page`, `verify_jwt = false`, calls `public.fn_driver_page` (service role only) | deployed 2026-09-25 |
 | short collector link | Picture Planner route `/intake` (`src/routes/intake.ts`): **308** to `/intake.html`, empty body, `no-cache`; the fragment survives the redirect | live 2026-09-25 |
+| Cancel form (staff only, from the Planner) | `client.cancel_intake(bigint)`; trigger `property_intakes_no_submit_after_cancel`; `public.fn_intake_link_url(text)` (the one SQL builder of the short link, used by `get_intake_link` and by `schedule_property_intake`, which now returns `url` next to `token`) | `2026-09-25_1705_intake_cancel_and_short_link.sql` (Supabase `0b8dbdc`) |
 | Share form (re-show an awaiting link to staff) | `client.get_intake_link(bigint)` returns `https://planner.unclogme.app/intake#code=<token>`; each reveal logged in `public.property_intake_link_reveals` (no token, no URL, no app role reads it) | `2026-09-25_1600_intake_link_share.sql` (Supabase `48b4771`) |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
@@ -97,7 +98,7 @@ that migration asserts zero stored intakes and zero accepts first, because it is
 rename is free.
 
 **3. 🛑 The raw submission is immutable.** A trigger refuses any change to `answers`, `submitted_at`,
-`collector` or `requested` once submitted. `accepted` and `cancelled_at` stay editable.
+`collector` or `requested` once submitted. `accepted` stays editable. `cancelled_at` is set by people only through `client.cancel_intake` (rule 20): only on a form that is neither submitted nor already cancelled, and a submit that lands on a cancelled form is refused by trigger `property_intakes_no_submit_after_cancel`. The table does NOT yet refuse a raw service-role UPDATE that cancels a submitted form or clears `cancelled_at` (no such writer exists, measured 2026-09-25; open question for Fred), so any script that writes it must keep `and submitted_at is null and cancelled_at is null`.
 
 **4. `accept_intake_answers` CALLS the existing writers**, `client.update_property_operational` and
 `client.update_property_capacity`, rather than touching `public.properties`. Change either signature
@@ -178,10 +179,11 @@ the secret gets copied, and who can read each".
 ✅ **ONE sanctioned re-display exists since 2026-09-25: `client.get_intake_link` (rule 19).** It returns the
 link of ONE awaiting intake to a staff JWT, on a click, and logs who asked. It copies the token nowhere: the
 log row holds no token and no URL. It does not change this rule; any new place the token lands still needs
-the same review. **A mis-shared link has a remedy today**: on Fred's word, a Supabase session runs
-`update public.property_intakes set cancelled_at = now() where id = <id> and submitted_at is null and cancelled_at is null;`
-and from then on every operation on `intake-submit` answers 404 "This link is no longer active." (one
-`resolveToken` gates load, upload, attach and submit). An in-app cancel is still open (build plan 13.2 item 7).
+the same review. **A mis-shared link is cancelled from the Planner**: "Cancel form" on the `/forms` card
+(`client.cancel_intake`, rule 20). From then on every `intake-submit` request that starts after the cancel answers 404
+"This link is no longer active." (one `resolveToken` gates load, upload, attach and submit). The raw UPDATE
+(`... set cancelled_at = now() where id = <id> and submitted_at is null and cancelled_at is null`) is only a fallback:
+it records no staff email.
 
 **11. No function inside a `storage.objects` policy for this bucket.** Every permissive SELECT policy
 on `storage.objects` is OR'd into every staff storage read in every bucket, and Postgres checks
@@ -368,9 +370,11 @@ case they need it again"*. Until then the token was shown once, by `schedule_pro
   browsers keep the fragment across it. 🛑 **Never make `/intake` serve the form itself**: Lovable hosting injects
   `~flock.js` and an og:image into HTML a worker returns (measured: 416 bytes added, the tracker loaded), and not
   into a static file, which is why the form stays `public/intake.html` and the route only redirects.
-  `public/_redirects` is not supported there. The office link (`intake-submit?t=`) is unchanged; the direct link
-  also keeps the code out of `function_edge_logs`, where `?t=` lands.
-- 🛑 **The FORM_URL coupling:** the host is written in two places, this function and `intake-submit`'s redirect.
+  `public/_redirects` is not supported there. Since `2026-09-25_1705` `schedule_property_intake` returns the same short
+  link as `url` (built by `public.fn_intake_link_url`), and the Client App is to read it (prompt CA1, waiting on that
+  project's owner); until then the office link stays `intake-submit?t=`, whose `?t=` lands in `function_edge_logs`.
+  Old `?t=` links keep working (the GET still 302s).
+- 🛑 **The FORM_URL coupling:** the host is written in two places, `public.fn_intake_link_url` and `intake-submit`'s redirect.
   Move the collector and both change together.
 - **It refuses, in words, with `blocker=<code>` in DETAIL** (22023 unless noted): not signed in (28000), not staff
   (42501), no id, not found (P0002), cancelled, submitted, expired (`expires_at <= now()`), removed property, and a
@@ -385,11 +389,34 @@ case they need it again"*. Until then the token was shown once, by `schedule_pro
   signed in: intake 160's link equalled `'https://planner.unclogme.app/intake#code=' || token` (compared as a SHA-256,
   never printed) and wrote exactly one reveal row.
 - **Share widens where a link circulates.** Before this only the scheduler held it. That is Fred's call, made; the
-  cancel half of 13.2 item 7 stays open, with the SQL remedy in rule 10 meanwhile.
+  cancel half shipped the same day (rule 20).
 - VERIFY V1 to V10 (whole ACLs, URL equality inside SQL, one reveal row per success and none per refusal, no audit
   row, no 16+ token-like run in any refusal MESSAGE, anon and non-staff refused, list and detail untouched) and seven
   mutants run before apply (anon grant, the office link, the old `.html` link, no log, a readable log, no
   removed-property or submitted refusal), each caught by that VERIFY.
+
+**20. CANCEL FORM: only signed-in staff, only from the Planner (2026-09-25, `2026-09-25_1705_intake_cancel_and_short_link.sql`).**
+Fred: *"Cancelling an intake form should only be possible at the Planner App, meaning a logged in staff can do it. Not
+by a driver."*
+- `client.cancel_intake(p_intake_id)` -> `{ok, intake_id, cancelled_at}`. EXECUTE to `authenticated` only (whole proacl
+  asserted); the same staff gate as `get_intake_link`. The collector endpoint has no cancel operation and `anon` holds
+  nothing, so nobody holding a link can cancel. ⚠ "Staff" means the `@ayache.com` / `@unclogme.com` allow-list, not a
+  role: 0 of 4 active field employees had such an account on 2026-09-25. If a driver ever gets one, they could cancel
+  (open question for Fred: require `employees.access_level` admin or office).
+- Refuses in words with `blocker=<code>`: not signed in, not staff, no id, not found, already cancelled, submitted (a
+  submitted form stays a record), and `changed` when the guarded write finds the row no longer awaiting. Allows an expired
+  link and a removed property.
+- 🛑 **Race-safe twice:** `FOR UPDATE` plus a guarded write (`... and submitted_at is null and cancelled_at is null`);
+  VERIFY 1e asserts both stay in the body, because a single-session test cannot exercise a race. And trigger
+  `property_intakes_no_submit_after_cancel` refuses a collector submit landing after a cancel (intake-submit's
+  compare-and-set only checks `submitted_at`): the collector sees "Could not save the form, please try again.", a retry
+  gets the 404. It keys on the TRANSITION, never on comparing timestamps (the edge function stamps `submitted_at` from
+  its own clock).
+- ⚠ An upload or attach already past its token check can still store a file or a photo link on a cancelled intake;
+  nothing reads a cancelled intake's photos.
+- Who cancelled is in `audit.logs` (`audit_property_intakes`, `jwt_claims->>'email'`, `app_source` picture-planner).
+- VERIFY V1 to V10 plus 1e to 1g (lock and guarded write in the body, `search_path` pinned, SECURITY DEFINER / INVOKER
+  IMMUTABLE flags); 15 mutants, each caught; a four-lens adversarial review before apply.
 
 ---
 
