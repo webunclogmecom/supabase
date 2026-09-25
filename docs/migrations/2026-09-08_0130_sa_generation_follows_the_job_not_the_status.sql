@@ -10,6 +10,15 @@
 -- So RECURRING is being retired as a status. That settles the business call the
 -- 2026-07-31_1430 header put to Fred and deliberately refused to make silently.
 --
+-- 🛑 SUPERSEDED 2026-09-25 (Fred chose "RECURRING is real": an open visit-generating SA means
+-- RECURRING, and RECURRING -> ACTIVE is how staff stop a schedule). The retirement above was
+-- never carried out (149 clients still held RECURRING), and the widening below RE-CREATED
+-- schedules staff had stopped on purpose: 201-ALA (#25 "THIS CLIENT NEVER PAID US") and
+-- 084-ULT (#28) were NOT "stranded" victims, their public.client_status_changes rows already
+-- held the stop reasons; 029-JOS (#44) was stopped 09-17 and rebuilt 09-18 06:00.
+-- See 2026-09-25_1345_recurring_is_real_promote_and_relabel.sql. The generation gate returns
+-- to RECURRING-only in a later 2026-09-25 migration. Kept as written for the record.
+--
 -- WHY THIS IS URGENT, MEASURED TODAY.
 --    public.fn_generate_sa_visits selected jobs with a RECURRING-only client test, and it
 --    is the ONLY generator: pg_cron 'sa-visit-generation' calls it, and
