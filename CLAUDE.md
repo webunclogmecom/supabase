@@ -4684,6 +4684,12 @@ Six things that will bite someone who does not know them:
    gallons are optional (measurements are the alternative) and grease-trap photos / gallons / capacity
    photos need `systems_count > 0`; one live `photo_links` row per intake photo; and intake-submit v10
    takes a photos answer from what is actually attached, never from the client.
+7. **Driver pages (2026-09-25, `2026-09-25_1330_property_pages.sql`, edge fn `driver-page`): read rule 18 of the
+   reference before touching them.** Append-only versions, a second person approves, a 22-character driver link
+   (redacted from `audit.logs`). 🛑 A page photo is served only from the bucket its LINK KIND names and only if the
+   object exists there: `photos.storage_path` is staff-writable and a `../` path otherwise reached another bucket
+   (an unredacted DERM sheet, found before apply). 🛑 `public.fn_page_blocker` is the ONE answer to "will this link
+   open"; every surface calls it. 🛑 The three tables are revoked by name from `yannick_readonly` as well.
 
 ## Documentation map
 

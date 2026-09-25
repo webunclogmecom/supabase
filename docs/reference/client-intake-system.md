@@ -56,6 +56,8 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | the lock box shape reaches submit; the outside note; no all-optional request | `lock_box_code` `"single_line": true, "max_chars": 100`; NEW key `access_entry.where_outside_note` (36 questions); `schedule_property_intake` refuses a request of only optional questions | `2026-09-24_0426_intake_round6_lockbox_outside_note.sql` |
 | the list agrees with the detail; a dropped follow-up is refused in words | `client.v_intake_submissions` `photo_count` / `has_gt_pin` / `has_truck_pin` count only what the collector was shown (0450), and `photo_count` also only answered questions, as the detail does (0715); `schedule_property_intake` refuses EVERY follow-up whose parent was not ticked ("Pick the question each follow-up depends on as well.", DETAIL names the keys). ⚠ 0450 refused one only when pruning left nothing or only optional questions; a follow-up next to a required question was pruned silently until 0715 | `2026-09-24_0450_intake_round7_list_counts_orphan_reason.sql`, `2026-09-24_0715_intake_round8_photo_answered_every_orphan_refused.sql` |
 | Picture Planner audit label | `audit.log_change` maps `planner.unclogme.app`, `%unclogme-pics-organizer%`, `%d9464151%` to `picture-planner` | `2026-09-24_0301_audit_origin_picture_planner.sql` |
+| driver pages (build plan section 6) | `public.property_pages` (append-only versions), `public.property_page_links` (one 22-character driver link per property, redacted from audit), `public.property_page_opens` (throttled open log); `client.page_builder_list()`, `client.get_page_builder`, `client.submit_property_page`, `client.approve_property_page`, `client.rotate_driver_link`; helpers `fn_page_photo_ids`, `fn_page_content_problem`, `fn_page_source`, `fn_page_blocker`, `fn_page_person_name`, `fn_page_approver_ids/_names`; `app_config.page_approvers` | `2026-09-25_1330_property_pages.sql` (Supabase `44f50ae`) |
+| driver page endpoint | edge fn `driver-page`, `verify_jwt = false`, calls `public.fn_driver_page` (service role only) | deployed 2026-09-25 |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -69,8 +71,10 @@ Prod client, the shared staff session and the Command Deck login on a staff layo
 published bundle. **The collector form (section D) is live since 2026-09-25** as a static page, see rule 17;
 the plan is `Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`.
 
-NOT built: the published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
-link and the office Accept screen. (The New Client "Time to do the intake now?" step: see the Client App changelog.)
+**Driver pages, database half live 2026-09-25** (rule 18): versions, two-person approval, the driver link and the
+`driver-page` endpoint. NOT built yet: the Picture Planner screens that use them (builder wiring and the public
+`/driver` route, plan `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md` P1 to P7), `Verified` in the
+Client App status column, the client confirmation page, the Jobber link and the office Accept screen. (The New Client "Time to do the intake now?" step: see the Client App changelog.)
 
 ---
 
@@ -306,6 +310,29 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
   responsive first, and then to be good looking on a PC"*).** Design and check every change at phone width (360 and 390)
   before tablet (768) and desktop (1280): 44px touch targets, inputs at 16px or more (iOS zooms below that), no sideways
   scroll, little fixed chrome, and the desktop layout aligned to one column. Screenshot all four widths, never only one.
+- **18. DRIVER PAGES (2026-09-25, `2026-09-25_1330_property_pages.sql`).** Plan:
+  `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md`. The rules that must not regress:
+  - 🛑 **Drivers see only an APPROVED version**, and nobody approves their own (a CHECK, the RPC, and the approver list
+    `app_config.page_approvers`, auth user ids, today Diego, Serena and Yannick; only the service role can edit it).
+  - 🛑 **A page photo is served only from the bucket its LINK KIND names, and only if that object exists there**
+    (`fn_page_photo_ids` joins `storage.objects`). `photos.storage_path` is writable by any staff session, and a path like
+    `../manifests/...` joined into a storage URL is normalised into ANOTHER bucket: the pre-apply review served an
+    unredacted DERM sheet that way. `driver-page` never takes a path from the page content.
+  - 🛑 **ONE answer to "will this link open": `public.fn_page_blocker`** (removed, billing, client INACTIVE). The driver
+    function, submit, approve, the builder and the list all call it, so the office never sees "Live" on a dead link.
+  - 🛑 **`fn_page_content_problem` reads tables: never make it a CHECK.** The table CHECK is only
+    `jsonb_typeof(content -> 'photos') = 'array'`.
+  - 🛑 **Submit requires the prefill baseline back** (`p_expected_source` = `get_page_builder.property.source`) and
+    refuses when it changed (`blocker=source_changed`), and it strips the server-owned `site_map` and per-photo `rot`,
+    so a stored version can be sent back as it is. The baseline compares the MAP BY CONTENT, not by `rev` (the rev
+    repeats after a clear and moves on a no-op save).
+  - 🛑 **Grants:** the three tables are revoked by name from `yannick_readonly` too (a login role with BYPASSRLS that the
+    default ACL grants on every new public table); every `public` helper is revoked from anon and authenticated; the list
+    is a SECURITY DEFINER function, not a view (a function inside a view runs with the caller's rights).
+  - `property_page_links.public_id` is in `audit.redacted_columns`. The staff mark on an open is self-reported by the
+    page: advisory only.
+  - Fixtures: two approved `[TEST]` pages on 112-YA (properties 162 and 1164), approved by `test.agent@ayache.com`, made an
+    approver for that one transaction only. Pages are append-only: fixtures stay; rotate their links if one leaks.
 
 ---
 
