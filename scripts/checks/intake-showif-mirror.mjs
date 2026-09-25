@@ -2,7 +2,7 @@
 //
 //   1. public.fn_intake_applicable           (SQL: decides what counts toward Complete)
 //   2. visible() in supabase/functions/intake-submit/form-page.ts   (what the collector is shown)
-//   3. vs() in the LIVE Client App bundle     (the Schedule dialog's parent-key parser)
+//   3. intakeParentKey() in the LIVE Client App bundle (the Schedule dialog's parent-key parser)
 //
 // Run:  cd Supabase && node scripts/checks/intake-showif-mirror.mjs
 // Exits 1 on any disagreement. Change the grammar in all three, reader first, writer second
@@ -44,19 +44,21 @@ for (const r of ['/', '/clients/381']) add(await (await fetch(B + r)).text())
 let dialogVs = null
 while (q.length && !dialogVs) {
   const t = await (await fetch(B + q.shift())).text(); add(t)
-  const i = t.indexOf('only if: ')
+  // Since 2026-09-25 the dialog shows no "only if" note (Fred: L1 and L2 only), so the parser is found by
+  // its STABLE name: the Client App keeps it as the method intakeParentKey on a small object, and minifiers
+  // keep property names. Extract that method by brace matching and call it.
+  const i = t.search(/intakeParentKey[(][A-Za-z_$][A-Za-z0-9_$]*[)][{]/)  // the DEFINITION, never a call site
   if (i < 0) continue
-  // The parser is the function the "only if:" renderer CALLS on the condition, found by reading that
-  // renderer, never by position: a helper added in between (the 2026-09-24 alternative helper) made the
-  // positional rule pick the wrong function, and this check then failed loudly on 19 of 20 conditions.
-  const rStart = t.lastIndexOf('function ', i)
-  const renderer = t.slice(rStart, i)
-  const name = renderer.match(/([A-Za-z_$][\w$]*)\(t\)\?\?""/)?.[1]
-  if (!name) throw new Error('could not find the parser call in the "only if:" renderer: update this check')
-  const fStart = t.indexOf('function ' + name + '(')
-  const fEnd = t.indexOf('function ', fStart + 9)
-  if (fStart < 0) throw new Error('parser ' + name + ' not found in the chunk')
-  dialogVs = new Function(t.slice(fStart, fEnd) + `;return ${name}`)()
+  const open = t.indexOf('{', i)
+  let depth = 0, j = open, quote = null
+  for (; j < t.length; j++) {
+    const c = t[j]
+    if (quote) { if (c === String.fromCharCode(92)) j++; else if (c === quote) quote = null; continue }
+    if (c === '"' || c === "'" || c === '`') { quote = c; continue }
+    if (c === '{') depth++
+    else if (c === '}' && --depth === 0) break
+  }
+  dialogVs = new Function('return ({' + t.slice(i, j + 1) + '}).intakeParentKey')()
 }
 if (!dialogVs) throw new Error('could not find the dialog show_if parser in the live Client App bundle: update this check')
 

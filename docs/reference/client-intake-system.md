@@ -32,6 +32,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
+| collector PAGE | `planner.unclogme.app/intake.html#code=<token>`, a static file byte-identical to `scripts/intake-collector/intake.html` (built from `form-page.ts` by `build.mjs`) | live 2026-09-25 (Supabase `c9213b4`, `42ee2a3`); `intake-submit` GET 302s there |
 | collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused); v14 2026-09-24 (byte body ceiling, NUL / lone surrogate refused naming the question, real pins only, hours refusals named); v13 2026-09-24 (the one-line check refuses what Postgres `[[:cntrl:]]` refuses, C1 included; the 4,000-character refusal names its question; an hours key must be an OWN key of the day names) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
@@ -65,12 +66,11 @@ Read surface for the Picture Planner forms viewer: **database half live 2026-09-
 Prod client, the shared staff session and the Command Deck login on a staff layout route, published at
 `unclogme-pics-organizer.lovable.app` and, since 2026-09-24, `planner.unclogme.app` (live, primary). The `/forms` and `/forms/$id` screens
 (section C) and a separate `/reset-password` page went live the same day, read-only and verified on the
-published bundle. The collector route (section D, `/intake/$token`) is next; the plan is
-`Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`.
+published bundle. **The collector form (section D) is live since 2026-09-25** as a static page, see rule 17;
+the plan is `Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`.
 
-NOT built: **the collector form the link actually opens** (the endpoint is live, the page is not; it
-will be `/intake/$token` in Picture Planner), the published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
-link, the New Client modal button and the office Accept screen.
+NOT built: the published driver page, `Verified`, two-person approval, the client confirmation page, the Jobber
+link and the office Accept screen. (The New Client "Time to do the intake now?" step: see the Client App changelog.)
 
 ---
 
@@ -269,6 +269,25 @@ with the gallons but not the measurements read Complete with no capacity at all.
 `public.fn_intake_normalise_requested` (prune, then add), `schedule_property_intake` reports the
 additions as `added`, and the dialog ticks and unticks the pair together.
 
+**17. 🛑 THE COLLECTOR FORM IS ONE STATIC FILE, AND ITS TOKEN RIDES IN THE FRAGMENT AS `code` (2026-09-25).**
+The office link stays `<supabase>/functions/v1/intake-submit?t=<token>` (every link already handed out keeps
+working); its GET answers **302** (never 301, `no-store`) to `https://planner.unclogme.app/intake.html#code=<token>`,
+and 400 "This link is not valid." for a missing or malformed token. Why each piece:
+- **A static file, not a React route.** `intake.html` is `form-page.ts` (the reviewed form) plus four anchored edits in
+  `scripts/intake-collector/build.mjs`: the analytics token guard as the first script, no-referrer + noindex, the endpoint
+  URL, and the token read from `#code=`. There is ONE form. Change `form-page.ts`, rerun `build.mjs`, commit, and have
+  Lovable download the file byte for byte into Picture Planner's `public/intake.html` (pin the commit in the raw URL,
+  `main` is cached for minutes); then check the live SHA-256. **Never edit `public/intake.html` in Lovable.**
+- **`#code=`, not `/intake/<token>` or `?t=`.** Lovable hosting's `/~flock.js` posts `location.href` (fragment
+  included) to its analytics. `code` is a key the estate's guard already scrubs, so the guard stays byte-identical in all
+  eight apps, and a fragment never reaches a server log or a Referer. Measured 2026-09-25: Lovable does NOT inject the
+  tracker into this static file, and the page carries the guard anyway in case that changes.
+- **It loads no Supabase code**: `fetch` to `intake-submit` and the signed storage upload, nothing else. Verified by the
+  test's request log (0 calls to `/rest/v1` or `/auth/v1`).
+- **Test:** `scripts/intake-collector`'s form is proven by an end-to-end browser run on a `[TEST]` intake of 112-YA
+  (15 checks: bad links, the redirect, follow-ups, photo upload + attach, GPS pin, submit, "Already submitted", the DB
+  row). Clean up every `[TEST]` intake afterwards (storage objects through the Storage API first).
+
 ---
 
 ## Traps paid for while building this
@@ -300,7 +319,7 @@ why the promised "snapshot gallons on `lwt_filing_tickets`" was NOT built: it wo
 fiction. The risk it was meant to cover is already carried by the `audit_properties` trail and by
 `property_intake_accepts`, which records old and new per accepted key.
 
-**🛑 A SUPABASE EDGE FUNCTION CANNOT SERVE THE COLLECTOR FORM. Measured 2026-09-23, do not retry it.**
+**🛑 A SUPABASE EDGE FUNCTION CANNOT SERVE THE COLLECTOR FORM. Measured 2026-09-23, do not retry it.** (Resolved 2026-09-25 by rule 17.)
 Serving the form as HTML from a GET on `intake-submit` was the plan, and the gateway refuses it: it
 rewrites an HTML response to `content-type: text/plain` and stamps
 `content-security-policy: default-src 'none'; sandbox` on it. `sandbox` with no `allow-scripts` kills
