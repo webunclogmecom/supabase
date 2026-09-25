@@ -285,8 +285,23 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
 - **It loads no Supabase code**: `fetch` to `intake-submit` and the signed storage upload, nothing else. Verified by the
   test's request log (0 calls to `/rest/v1` or `/auth/v1`).
 - **Test:** `scripts/intake-collector`'s form is proven by an end-to-end browser run on a `[TEST]` intake of 112-YA
-  (15 checks: bad links, the redirect, follow-ups, photo upload + attach, GPS pin, submit, "Already submitted", the DB
-  row). Clean up every `[TEST]` intake afterwards (storage objects through the Storage API first).
+  (16 checks: bad links, the redirect, follow-ups, photo upload + attach, GPS pin, submit, the partial-submit
+  confirmation, "Already submitted", the DB row). Clean up every `[TEST]` intake afterwards (storage objects through the
+  Storage API first). `scripts/checks/intake-form-host.mjs` checks the source rules (`--source`) and then that the live
+  file equals the source and the redirect carries `#code=` (it pointed at an abandoned path and `#t=` until 2026-09-25).
+- **Traps the 2026-09-25 redesign paid for (two adversarial rounds; do not reintroduce):**
+  - Rebuilding the question list while a pointer is down replaces the control under it and the click is lost. Rebuilds
+    wait for the whole tap (`afterPress`: pointerdown, pointerup, then its click, 450 ms fallback). A typed text answer
+    never rebuilds (only an answer a `show_if` reads does), and an hours time edit saves in place (rebuilding on each
+    segment turned a typed 09:30 into 00:00).
+  - Errors live in state (`ERR` per question, `GEO` for the location search, `#fmsg` in the bar) because every rebuild
+    wipes the list; a message goes away only on OK or when its cause ends. Browser errors ("Failed to fetch") are shown
+    as plain words.
+  - Submit refuses while a photo uploads or the location search runs, and nothing writes the draft after the thank-you.
+  - The draft (`intake-draft-<token>`) and the submit body are unchanged; the name (`-who`) and a copy of the load reply
+    (`-form`, ignored once `expires_at` passes) sit under their own keys and are removed on submit.
+  - Tapping a selected answer keeps it (a double tap used to clear it); a newly ticked day copies the first ticked day's
+    hours.
 - **🛑 MOBILE FIRST, THEN PC (Fred, 2026-09-25: *"the intake form where the collectors puts the data needs to be mobile
   responsive first, and then to be good looking on a PC"*).** Design and check every change at phone width (360 and 390)
   before tablet (768) and desktop (1280): 44px touch targets, inputs at 16px or more (iOS zooms below that), no sideways
