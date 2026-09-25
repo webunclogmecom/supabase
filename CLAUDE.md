@@ -1824,6 +1824,29 @@ can't clear them".) It returns a structured `archive_blocked_preconditions` erro
 / `quotes` / `invoices`, and a count is **omitted, never zeroed**, on a read error. See
 [[reference_jobber_client_archive_needs_quotes_invoices_cleared]] in memory and the consolidated
 as-built reference `docs/reference/client-job-status-lifecycle.md`.
+✅ **CHANGED 2026-09-25 (`archive-client` v15, `8d3a8b3`): invoices and work requests CAN now be
+cleared from the app, and the check happens BEFORE any write.** Fred: *"is there a way for it to show a
+confirmation dialog saying ... 'Close invoice' or 'Archive Quote' and continue the process"*, then chose
+to add Invoices R+W / Requests R+W / Quotes R to the Jobber WRITE app (`jobber_write`, 2600594d) and to
+offer **Mark as bad debt** and **Void** (Void deferred, below). What shipped:
+- On `action:'archive'` the function reads the client's quotes, requests and invoices from Jobber
+  (`readLiveBlockers`) **before closing any job**, and refuses `archive_blocked_preconditions` with
+  `live: true`, `open_jobs`, and per-item `gid` + `actions` unless every blocker is covered by the
+  caller's `resolve: [{gid, action:'bad_debt'|'archive'}]`. So the half-archive shape (every job closed,
+  then Jobber refuses: 176-SOU 2026-09-22, 201-ALA 2026-09-25) cannot happen once the scopes are in.
+- Each confirmed item is changed Jobber-first (`invoiceClose BAD_DEBT`, `requestArchive`) and the
+  FRESH re-read decides (`unverified` when the re-read fails); the status reason gets "Cleared in Jobber
+  first: ...", length-checked BEFORE the first write because `update_client_status` refuses over 500.
+- 🛑 **Quotes still cannot be cleared from here**: Jobber has no quote archive/delete/convert mutation at
+  any API version (introspected 2026-04-16 and 2026-09-09). Draft invoices must be deleted in Jobber.
+- 🛑 **Void is NOT offered yet.** `invoiceVoid` exists only from API 2026-09-09, whose status is
+  `voided`, a value the 2026-04-16 invoice sync has never seen (0 rows). Prove one voided test invoice on
+  112-YA is harmless to that sync before offering it.
+- **Without the new scopes nothing changes**: Jobber answers "An object of type Quote was hidden due to
+  permissions" for a client that HAS quotes (measured on 201-ALA), `readLiveBlockers` reads that as
+  `no_scope`, and the previous path runs. A client with none returns an empty list and no error.
+- ⚠ Until the Client App ships the per-item buttons, the refusal shows the items with no way to act on
+  them in the app: the old wording "clear them in Jobber, then try again" is what reaches staff.
 
 🛑 **`jobs.job_status` IS A PURE MIRROR OF JOBBER — it does NOT self-correct via the `*/5` poll
 (measured 2026-09-01).** The poll copies Jobber's `jobStatus`; it never derives one. Surfaced by the

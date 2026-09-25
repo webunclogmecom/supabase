@@ -153,6 +153,10 @@ invoices** (not just open jobs). archive-client parses that one opaque userError
   resolvable *there* by archive/convert/delete — `countArchiveBlockers` treats
   `quote_status IN (archived,converted)` as resolved; the point is our app can't do it, **not** that
   quotes have no archive path.)
+  ✅ **Superseded for invoices and work requests on 2026-09-25 (`archive-client` v15).** Once the Jobber
+  write app holds Invoices R+W / Requests R+W / Quotes R, `archive` reads the live blockers BEFORE any
+  write and accepts `resolve: [{gid, action:'bad_debt'|'archive'}]`; quotes and draft invoices stay
+  manual. Full description: `Supabase/CLAUDE.md`, "clients.status values", the 2026-09-25 note.
 - The app surfaces `message` on the red confirm dialog. See
   [`reference_jobber_client_archive_needs_quotes_invoices_cleared`] in memory.
 
