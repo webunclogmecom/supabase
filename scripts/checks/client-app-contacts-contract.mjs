@@ -181,6 +181,15 @@ if (mutating) {
   }
   const nDerm = count(/The service report goes to this address\. Save and the next one goes to the new address\./g);
   if (nDerm !== 1) fails.push(`DERM recipient line found ${nDerm}x, want 1`);
+  // 🛑 THE DERM SENTENCE IS GATED ON THE CONTACT THAT HOLDS THE SERVICE REPORT (2026-09-24), never on
+  // "is the client record": the two differ on 8 DERM-active clients (the sentence was false there) and
+  // on every accounting holder (it was missing there). One gate function, called by BOTH edit dialogs;
+  // its argument names are object keys, so they survive minification.
+  const nGateCalls = count(/clearingWarningShowing:/g);
+  if (nGateCalls < 2) fails.push(`DERM sentence gate called ${nGateCalls}x, want >= 2 (Edit contact + Jobber contact dialogs)`);
+  if (!/clearingWarningShowing[^;]{0,120}\.dermActive[^;]{0,160}(["'`])service_report\1/.test(all)) {
+    fails.push("DERM sentence gate does not test dermActive and the contact's own service_report tick");
+  }
   for (const n of missing) fails.push(`MISSING: ${JSON.stringify(n)}`);
   for (const n of leaked) fails.push(`PRESENT BUT MUST NOT BE (the copy would be false): ${JSON.stringify(n)}`);
 }

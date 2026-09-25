@@ -445,7 +445,7 @@ applies no DERM filter while `customer.work_orders` does, *therefore* the filter
   `customer.work_orders_all` + `customer.get_work_order_internal(text)` are the same objects without the
   derm_required predicate, **service_role only**. Their one reader is `derm.get_visit_report` (bullet
   above). The pdf-service `work_order_override` path they were first built for (edge fn
-  `derm-visit-report`, non-DERM visits) ran for a few hours on 2026-09-24 and was removed in pdf-service 0.8.0 (2026-09-25). Copied from the live
+  `derm-visit-report`, non-DERM visits) ran for a few hours on 2026-09-24 and was removed in pdf-service 0.8.0 that evening. Copied from the live
   definitions, md5-pinned: if the originals change, rebuild the twin
   (`docs/migrations/2026-09-24_1150_customer_work_order_internal.sql`). Never grant either to anon or
   authenticated.
@@ -4189,8 +4189,13 @@ old wording hid:
 - The function drops blanks and any address containing a comma, and de-dupes on
   `lower(btrim(email))` — so two prefs rows pointing at the same address yield ONE recipient.
 
-⚠ **This is live and pre-dates the Contacts work:** editing the client-record contact's email in the
-Client App changes the DERM service-report recipient, with nothing on screen to say so.
+⚠ **Editing the email of ANY contact that holds the Service report changes the DERM service-report
+recipient on save.** The Client App's Edit contact and Jobber contact dialogs say so (*"The service
+report goes to this address. Save and the next one goes to the new address."*), only when the client is
+DERM-active (`derm_active` from `client.fn_client_has_derm_activity`) AND that contact holds the
+Service report. From 2026-09-23 it was gated on "is the client-record contact" instead, which was FALSE
+on 8 DERM-active clients whose client record holds no Service report and missing on the accounting
+holders; fixed 2026-09-24 (`Building Apps/Client App/docs/08-changelog.md`).
 (`save-client-contact/index.ts:657` also sets `primary: true`, so the star moves too — but that is a
 consequence, not the cause.) `create-client/index.ts:661` stars the address at birth, which is why
 the "new client with no send memory" case does not exist.
