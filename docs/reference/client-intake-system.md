@@ -287,6 +287,10 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
 - **Test:** `scripts/intake-collector`'s form is proven by an end-to-end browser run on a `[TEST]` intake of 112-YA
   (15 checks: bad links, the redirect, follow-ups, photo upload + attach, GPS pin, submit, "Already submitted", the DB
   row). Clean up every `[TEST]` intake afterwards (storage objects through the Storage API first).
+- **🛑 MOBILE FIRST, THEN PC (Fred, 2026-09-25: *"the intake form where the collectors puts the data needs to be mobile
+  responsive first, and then to be good looking on a PC"*).** Design and check every change at phone width (360 and 390)
+  before tablet (768) and desktop (1280): 44px touch targets, inputs at 16px or more (iOS zooms below that), no sideways
+  scroll, little fixed chrome, and the desktop layout aligned to one column. Screenshot all four widths, never only one.
 
 ---
 
