@@ -811,6 +811,15 @@ verify_jwt = false
 [functions.save-calendar-task]
 verify_jwt = false
 
+# save-day-marker: the Visit Calendar's only door for changing a day marker (2026-09-24_2100): claim,
+# push the Jobber Task, read it back, then commit. Browser-called with a staff session, so the SAME
+# deliberate verify_jwt = false as save-calendar-task above, for the same reason (ES256 session tokens
+# rejected by the gateway on newer deployments). The control is IN-HANDLER: auth.getUser() + the
+# @ayache.com / @unclogme.com gate; a service-role key carries no email and is refused 403.
+# Never "harmonise" it to true: every real staff user would get a 401.
+[functions.save-day-marker]
+verify_jwt = false
+
 # poll-calendar-tasks: the Calendar Tasks safety net (2026-08-26). Every 5 minutes (cron
 # 'calendar-task-poll' at 2-57/5) it asks Jobber about OUR OWN task GIDs, reads isComplete, and
 # mirrors changes back through ops.fn_record_calendar_task. It closes the one direction

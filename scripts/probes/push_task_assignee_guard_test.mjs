@@ -4,10 +4,14 @@
 // only runs the fixed body cannot tell a real guard from a no-op.
 //
 //   node scripts/probes/push_task_assignee_guard_test.mjs [pre-fix-ref, default fb9f761]
+//
+// Since 2026-09-24 the helper lives in supabase/functions/_shared/day-marker-task.ts (jobber-push-task
+// imports it); the pre-fix control still reads jobber-push-task/index.ts at the ref, where it was then.
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 
-const FILE = "supabase/functions/jobber-push-task/index.ts";
+const FILE = "supabase/functions/_shared/day-marker-task.ts";
+const PRE_FILE = "supabase/functions/jobber-push-task/index.ts";
 const preRef = process.argv[2] ?? "fb9f761";
 
 function extract(src) {
@@ -44,7 +48,7 @@ async function run(label, src) {
 
 console.error = () => {}; console.warn = () => {};
 const now = await run("current", readFileSync(FILE, "utf8"));
-const pre = await run(preRef, execSync(`git show ${preRef}:${FILE}`, { encoding: "utf8" }));
+const pre = await run(preRef, execSync(`git show ${preRef}:${PRE_FILE}`, { encoding: "utf8" }));
 if (now !== 0) { console.log("\nFAIL: the current body does not meet the contract"); process.exit(1); }
 if (pre === 0) { console.log(`\nFAIL: the ${preRef} body passes too, so this test cannot see the bug`); process.exit(1); }
 console.log(`\nPASS: current body meets all ${CASES.length} cases; ${preRef} fails ${pre} (the control)`);

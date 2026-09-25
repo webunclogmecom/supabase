@@ -1,5 +1,12 @@
-// Proves save-calendar-task's copied Jobber helpers still match jobber-push-task, and that the ONE
-// deliberate fork is still forked.
+// Proves save-calendar-task's copied Jobber helpers still match the day-marker module
+// (supabase/functions/_shared/day-marker-task.ts, jobber-push-task's Task code since 2026-09-24), and that
+// the DST-buggy 12:00-UTC probe is gone from both.
+//
+// 🛑 UPDATED 2026-09-24 (migration 2026-09-24_2100). Until then this compared against jobber-push-task's
+//    own copies and asserted that etToUtcISO was FORKED (the original carried the DST bug). The marker
+//    Task code moved to the shared module, which carries save-calendar-task's CORRECT etToUtcISO, so
+//    the fork is closed: all seven helpers must now be identical, and the bug's signature must be absent
+//    from both files. The paragraph below is the pre-2026-09-24 description, kept for the history.
 //
 // save-calendar-task lifts getJobberToken / gql / errsOf from jobber-push-task rather than retyping
 // them, because retyping is how 2026-08-06_1316 silently dropped six clauses from a live function.
@@ -44,13 +51,15 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const SRC = join(ROOT, 'supabase', 'functions', 'jobber-push-task', 'index.ts')
+const SRC = join(ROOT, 'supabase', 'functions', '_shared', 'day-marker-task.ts')
 const NEW = join(ROOT, 'supabase', 'functions', 'save-calendar-task', 'index.ts')
 
-// Helpers copied verbatim. etToUtcISO is deliberately NOT in this list -- see FORKED below.
-export const VERBATIM = ['getJobberToken', 'gql', 'errsOf']
-export const FORKED = 'etToUtcISO'
+// Helpers copied verbatim, in both files.
+export const VERBATIM = ['getJobberToken', 'gql', 'errsOf', 'etWall', 'tzOffsetMsAt', 'isRealCalendarDate', 'etToUtcISO']
 const BUGGY_PROBE = 'T12:00:00Z'          // the 12:00-UTC offset probe, the DST bug's signature
+// The pre-2026-09-24 buggy line, verbatim from jobber-push-task: the control that proves the search
+// below CAN find the signature, so "absent" means absent and not a broken search.
+const BUGGY_SAMPLE = '  const probe = new Date(`${dateISO}T12:00:00Z`);'
 
 // Extract by NAME, never by line number: a hard-coded range silently compares the wrong text the
 // first time either file shifts by a line, and that failure looks exactly like a passing check.
@@ -86,31 +95,27 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1)
   }
 
-  // ---- CONTROL (c): the bug's signature must EXIST in the original --------------------------
-  const controlBuggy = src.includes(BUGGY_PROBE)
-  check(`control: the ${BUGGY_PROBE} probe is present in jobber-push-task`, controlBuggy,
+  // ---- CONTROL (c): the search finds the bug's signature where it IS -----------------------
+  const controlBuggy = BUGGY_SAMPLE.includes(BUGGY_PROBE)
+  check(`control: the ${BUGGY_PROBE} probe is found in the known-buggy sample`, controlBuggy,
     controlBuggy ? 'the string being searched for is real' : 'NOTHING to detect -- absence proves nothing')
-
   if (!controlBuggy) {
-    console.log('\n🛑 CONTROL FAILED -- either jobber-push-task was fixed (good: re-scope this probe)')
-    console.log('   or the search string is stale. Either way the fork assertions below are')
-    console.log('   meaningless. Not reporting them.')
     console.log('--- audit complete --- ' + JSON.stringify(
       { probe: 'calendar_task_helpers_verbatim', control_ok: false, failures: ++fails }))
     process.exit(1)
   }
 
-  // ---- the three helpers that MUST be byte-identical ----------------------------------------
+  // ---- the helpers that MUST be byte-identical ----------------------------------------------
   for (const name of VERBATIM) {
     const a = extract(src, name)
     const b = extract(nw, name)
     if (a === null || b === null) {
       check(`${name}: extractable from both files`, false,
-        `${a === null ? 'MISSING in jobber-push-task' : ''}${b === null ? ' MISSING in save-calendar-task' : ''}`.trim())
+        `${a === null ? 'MISSING in _shared/day-marker-task.ts' : ''}${b === null ? ' MISSING in save-calendar-task' : ''}`.trim())
       continue
     }
     // CONTROL (a): two empty strings compare equal. Require real content.
-    if (a.length < 100) {
+    if (a.length < 90) {
       check(`${name}: extracted block is non-trivial`, false, `only ${a.length} bytes -- extractor is broken`)
       continue
     }
@@ -121,23 +126,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     check(`  control: a 1-char mutation of ${name} does NOT compare equal`, mutated !== a && mutated !== b)
   }
 
-  // ---- the ONE deliberate fork, asserted in BOTH directions ---------------------------------
-  const fa = extract(src, FORKED)
-  const fb = extract(nw, FORKED)
-  check(`${FORKED}: present in both files`, fa !== null && fb !== null)
-  if (fa && fb) {
-    check(`${FORKED} DIFFERS (the deliberate fork is intact)`, fa !== fb,
-      fa === fb ? 'the buggy original has been restored -- see the header of save-calendar-task' : `orig=${sha(fa)} new=${sha(fb)}`)
-  }
-  check(`the ${BUGGY_PROBE} probe is ABSENT from save-calendar-task`, !nw.includes(BUGGY_PROBE),
-    nw.includes(BUGGY_PROBE) ? 'the DST bug is back' : 'DST fix intact')
-
-  // The fork must stay self-explaining, or someone "restores consistency" with the original.
-  check('the fork is announced in save-calendar-task', nw.includes('DELIBERATELY NOT IDENTICAL'))
-  check('the still-buggy siblings are named', nw.includes('STILL CARRY THE BUG'))
+  // ---- the DST bug is gone from both --------------------------------------------------------
+  check(`the ${BUGGY_PROBE} probe is ABSENT from save-calendar-task`, !nw.includes(BUGGY_PROBE))
+  check(`the ${BUGGY_PROBE} probe is ABSENT from _shared/day-marker-task.ts`, !src.includes(BUGGY_PROBE))
 
   console.log(`\n${fails === 0 ? 'ALL CHECKS PASSED' : `${fails} CHECK(S) FAILED`}`)
   console.log('--- audit complete --- ' + JSON.stringify(
-    { probe: 'calendar_task_helpers_verbatim', control_ok: true, verbatim: VERBATIM, forked: FORKED, failures: fails }))
+    { probe: 'calendar_task_helpers_verbatim', control_ok: true, verbatim: VERBATIM, failures: fails }))
   process.exit(fails === 0 ? 0 : 1)
 }

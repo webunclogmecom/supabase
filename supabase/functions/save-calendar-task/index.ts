@@ -49,14 +49,15 @@
 //   file guards against everywhere else, aimed at itself.
 //   ⇒ The check is REAL now and it is a probe someone RUNS, not a build step:
 //        node scripts/probes/calendar_task_helpers_verbatim.mjs
-//     It asserts the three helpers are byte-identical to jobber-push-task's, that etToUtcISO
-//     DIFFERS, and that the buggy 12:00-UTC probe is absent here and present there — with a control
-//     that fails if that probe string ever stops existing in the original. Run it after touching
-//     this file or jobber-push-task. Nothing runs it for you.
-// ⚠ etToUtcISO is the ONE DELIBERATE EXCEPTION — it is NOT identical, because the shared original
-//   has a DST spring-forward bug that a timed task's read-back structurally cannot see. The long
-//   explanation sits directly above the function; jobber-push-task and jobber-push-visit still
-//   carry the bug and fixing them was out of scope here.
+//     Since 2026-09-24 it compares against supabase/functions/_shared/day-marker-task.ts, where
+//     jobber-push-task's Task code now lives: the three helpers AND the four ET-time helpers
+//     (etWall, tzOffsetMsAt, isRealCalendarDate, etToUtcISO) must be byte-identical, and the buggy
+//     12:00-UTC probe must be absent from both, with a control proving the search can find it. Run it
+//     after touching this file or that module. Nothing runs it for you.
+// ⚠ etToUtcISO WAS the one deliberate exception until 2026-09-24: jobber-push-task's copy had a DST
+//   spring-forward bug that a timed task's read-back structurally cannot see (the long explanation
+//   sits directly above the function). That copy is gone: the shared module carries THIS version,
+//   and jobber-push-task uses it (migration 2026-09-24_2100).
 // Retyping is how 2026-08-06_1316 silently dropped six clauses from a live function. The two that
 // carry the hardest-won logic:
 //   * gql()'s HTML WAITING-ROOM CHECK. Jobber sheds load with text/html at HTTP 200; a naive helper
@@ -225,12 +226,11 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
 }
 
 // ============================================================================================
-// 🛑 THIS COPY OF etToUtcISO IS **DELIBERATELY NOT IDENTICAL** TO jobber-push-task's.
-//    DO NOT "RESTORE" IT ON THE GROUNDS THAT THE COPIES SHOULD MATCH.
+// 🛑 THIS COPY OF etToUtcISO WAS **DELIBERATELY NOT IDENTICAL** TO jobber-push-task's, AND IT IS THE
+//    ONE _shared/day-marker-task.ts NOW CARRIES. NEVER "RESTORE" THE OLD 12:00-UTC VERSION.
 // ============================================================================================
-// Everything else in this file's helper block IS byte-for-byte from jobber-push-task, and the
-// build-time check still asserts that. This one is the single, deliberate exception, because the
-// shared original has a DST SPRING-FORWARD BUG:
+// Until 2026-09-24 everything else in this file's helper block was byte-for-byte from jobber-push-task
+// and this was the single, deliberate exception, because that original had a DST SPRING-FORWARD BUG:
 //
 //   It probes the zone offset at 12:00 UTC — which is 07:00/08:00 ET, i.e. AFTER the 02:00
 //   transition — and then applies that post-transition offset to minute 0, which is BEFORE it.
@@ -248,10 +248,9 @@ async function gql(token: string, query: string, variables?: unknown, _retry = 0
 //   2026-03-07 in Jobber while our copy says Mar 8 with verified:true — a written, verified-clean
 //   discrepancy, which is the one thing this whole function exists to prevent.
 //
-// 🛑 jobber-push-task AND jobber-push-visit STILL CARRY THE BUG. Both are LIVE. Fixing the shared
-//   source touches production functions that own the day markers and every Calendar visit push,
-//   which was out of scope for the task that wrote this file. It is a real open item, not an
-//   oversight: whoever picks it up should port the version below and re-verify both callers.
+// ✅ PORTED FOR THE DAY MARKERS 2026-09-24: jobber-push-task's Task code moved to
+//   _shared/day-marker-task.ts, which carries this exact copy (the probe asserts it). This paragraph
+//   used to say jobber-push-visit carried the bug too; measured 2026-09-24, it has no etToUtcISO at all.
 //
 // HOW THIS ONE WORKS: it asks the zone for its offset AT THE CANDIDATE INSTANT rather than at an
 //   arbitrary probe time, twice — the first pass guesses, the second settles the DST edge — and
