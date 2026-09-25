@@ -1,5 +1,15 @@
 # Jobber write-OAuth setup (Phase 2 — Calendar → Jobber write-back)
 
+> ✅ **2026-09-25: RENAMED "Unclogme Apps Sync" and re-authorized by Fred with new scopes.** Same client_id
+> `2600594d`, same `webhook_tokens` row (`jobber_write`). Scope now: `read_clients write_clients read_requests
+> write_requests read_quotes write_quotes read_jobs write_jobs read_scheduled_items write_scheduled_items
+> read_invoices write_invoices read_jobber_payments read_users write_users read_custom_field_configurations
+> write_custom_field_configurations` (0 lost, refresh verified). The Calendar name had long been wrong: this is
+> the ONLY app that writes to Jobber for us (12 functions, Client App + Calendar + custom-field push). Added so
+> `archive-client` (v15) can read the archive blockers and clear invoices (bad debt) and work requests.
+> ⚠ A scope change makes the re-authorization show Jobber's CONSENT screen (it did not auto-approve), and the
+> person who clicks Allow becomes the user every write is attributed to.
+
 > ✅ **DONE 2026-06-01.** New app **"Unclogme Calendar sync"** (`2600594d…`) authorized by Yannick (admin).
 > Granted: `read_clients read_jobs write_jobs read_scheduled_items write_scheduled_items read_users
 > read_custom_field_configurations`. Live-tested (406 clients / 591 jobs / 625 visits). Stored in
