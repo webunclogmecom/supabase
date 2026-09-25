@@ -1,7 +1,7 @@
-// map-test.mjs : the collector form's pin maps, on the REAL host (planner.unclogme.app), before anything is deployed.
+// form-map.mjs : the collector form's pin maps, on the REAL host (planner.unclogme.app), before anything is deployed.
 // intake.html is served from the local build and the load reply gets maps_key (+ property lat/lng if missing)
 // injected; the key is the Planner's own browser key, read from its public bundle and never printed.
-//   node scripts/intake-collector/map-test.mjs <[TEST] intake id> <outdir> [no-referrer|strict-origin] [real|none|bad]
+//   node scripts/intake-collector/tests/form-map.mjs <[TEST] intake id> <outdir> [no-referrer|strict-origin] [real|none|bad]
 // Loads and pins only (localStorage); it never submits, so the intake stays usable. Refuses a non-[TEST] intake.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const [intakeId, out = './mapshots', policy = 'no-referrer', keyMode = 'real'] = process.argv.slice(2)
 fs.mkdirSync(out, { recursive: true })
-const env = Object.fromEntries(fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
+const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
 const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/database/query', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SUPABASE_PAT, 'content-type': 'application/json' }, body: JSON.stringify({ query: q }) })).json()
 const [row] = await sql(`select i.token, i.requested_by, p.latitude, p.longitude from public.property_intakes i join public.properties p on p.id=i.property_id where i.id = ${Number(intakeId)}`)
 if (!row || !/^\[TEST\]/.test(row.requested_by)) throw new Error('not a [TEST] intake')
@@ -20,7 +20,7 @@ let KEY = null
   const walk = async (n) => { if (KEY || seen.has(n)) return; seen.add(n); const s = await (await fetch(H + '/' + n)).text(); const m = s.match(/AIza[0-9A-Za-z_-]{35}/); if (m) { KEY = m[0]; return } for (const x of s.matchAll(/["'`]\.?\/?((?:assets\/)?[A-Za-z0-9_.-]+\.js)["'`]/g)) await walk(x[1].startsWith('assets/') ? x[1] : 'assets/' + x[1]) }
   for (const n of new Set([...html0.matchAll(/assets\/[A-Za-z0-9_.-]+\.js/g)].map((m) => m[0]))) await walk(n) }
 if (!KEY) throw new Error('no key in the Planner bundle')
-let html = fs.readFileSync(new URL('./intake.html', import.meta.url), 'utf8')
+let html = fs.readFileSync(new URL('../intake.html', import.meta.url), 'utf8')
 if (policy !== 'no-referrer') html = html.replace('<meta name="referrer" content="no-referrer">', `<meta name="referrer" content="${policy}">`)
 const PAGE = H + '/intake.html'
 const res = []

@@ -324,7 +324,7 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
   - 🛑 **Measured before shipping: Maps sends Google the page's origin and path, never the fragment** (its
     `MapsJsInternalService` RPC carries `origin/path`; 0 of 27 to 43 Google requests per run carried the code). And the
     key works under the page's `no-referrer` policy (tiles drew on the real host), so the policy was NOT weakened.
-  - Test: `scripts/intake-collector/map-test.mjs <[TEST] intake id> <outdir>` serves the local build on the real host and
+  - Test: `scripts/intake-collector/tests/form-map.mjs <[TEST] intake id> <outdir>` serves the local build on the real host and
     injects the key into the load reply, so it runs before a deploy and before the secret exists. 4 widths; tap, GPS, the
     same map node after another answer, no code in any Google request; `none`/`bad` as a 4th argument test the fallbacks.
 - **18. DRIVER PAGES (2026-09-25, `2026-09-25_1330_property_pages.sql`).** Plan:
