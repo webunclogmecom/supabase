@@ -63,6 +63,14 @@ if (!process.argv.includes('--source')) {
   const loc = g.headers.get('location') || ''
   check(g.status === 302, `GET intake-submit answers 302 (${g.status})`)
   check(loc === PAGE + '#code=check-not-a-token', `Location is the form with the token in the fragment as code (${loc || 'none'})`)
+
+  // --- the short link Share form hands out (2026-09-25): /intake must only REDIRECT. A worker-served HTML
+  // body gets Lovable's ~flock.js and og:image injected; the static file does not. Empty body = nothing to inject.
+  const sh = await fetch(HOST + '/intake?cb=' + Date.now(), { redirect: 'manual' })
+  const shBody = Buffer.from(await sh.arrayBuffer())
+  check(sh.status === 308, `GET /intake answers 308 (${sh.status})`)
+  check(/^(https:\/\/planner\.unclogme\.app)?\/intake\.html$/.test(sh.headers.get('location') || ''), `/intake Location is /intake.html (${sh.headers.get('location') || 'none'})`)
+  check(shBody.length === 0, `/intake body is empty (${shBody.length} bytes)`)
 }
 
 if (fails) { console.log(`\n${fails} FAILED`); process.exit(1) } else console.log('\nall passed')

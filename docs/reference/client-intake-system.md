@@ -1,6 +1,6 @@
 # Client Intake System — what is built, and the rules that must not regress
 
-**Last updated 2026-09-24.** Written while building it, from measurements, not from the design docs.
+**Last updated 2026-09-25.** Written while building it, from measurements, not from the design docs.
 
 A site-visit survey: one person documents a property once (access, gate and code, grease traps,
 truck parking, hours, photos, two GPS pins), the office curates it, and the output is a page a
@@ -58,6 +58,8 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | Picture Planner audit label | `audit.log_change` maps `planner.unclogme.app`, `%unclogme-pics-organizer%`, `%d9464151%` to `picture-planner` | `2026-09-24_0301_audit_origin_picture_planner.sql` |
 | driver pages (build plan section 6) | `public.property_pages` (append-only versions), `public.property_page_links` (one 22-character driver link per property, redacted from audit), `public.property_page_opens` (throttled open log); `client.page_builder_list()`, `client.get_page_builder`, `client.submit_property_page`, `client.approve_property_page`, `client.rotate_driver_link`; helpers `fn_page_photo_ids`, `fn_page_content_problem`, `fn_page_source`, `fn_page_blocker`, `fn_page_person_name`, `fn_page_approver_ids/_names`; `app_config.page_approvers` | `2026-09-25_1330_property_pages.sql` (Supabase `44f50ae`) |
 | driver page endpoint | edge fn `driver-page`, `verify_jwt = false`, calls `public.fn_driver_page` (service role only) | deployed 2026-09-25 |
+| short collector link | Picture Planner route `/intake` (`src/routes/intake.ts`): **308** to `/intake.html`, empty body, `no-cache`; the fragment survives the redirect | live 2026-09-25 |
+| Share form (re-show an awaiting link to staff) | `client.get_intake_link(bigint)` returns `https://planner.unclogme.app/intake#code=<token>`; each reveal logged in `public.property_intake_link_reveals` (no token, no URL, no app role reads it) | `2026-09-25_1600_intake_link_share.sql` (Supabase `48b4771`) |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -173,6 +175,13 @@ scrubbing them would be an audit-trail rewrite needing Fred's OK. **This premise
 one evening** (first `storage_path`, then `audit.logs`), both times found by an adversarial review.
 The question that finds them is not "who can read the table the secret lives in" but "every place
 the secret gets copied, and who can read each".
+✅ **ONE sanctioned re-display exists since 2026-09-25: `client.get_intake_link` (rule 19).** It returns the
+link of ONE awaiting intake to a staff JWT, on a click, and logs who asked. It copies the token nowhere: the
+log row holds no token and no URL. It does not change this rule; any new place the token lands still needs
+the same review. **A mis-shared link has a remedy today**: on Fred's word, a Supabase session runs
+`update public.property_intakes set cancelled_at = now() where id = <id> and submitted_at is null and cancelled_at is null;`
+and from then on every operation on `intake-submit` answers 404 "This link is no longer active." (one
+`resolveToken` gates load, upload, attach and submit). An in-app cancel is still open (build plan 13.2 item 7).
 
 **11. No function inside a `storage.objects` policy for this bucket.** Every permissive SELECT policy
 on `storage.objects` is OR'd into every staff storage read in every bucket, and Postgres checks
@@ -350,6 +359,37 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     page: advisory only.
   - Fixtures: two approved `[TEST]` pages on 112-YA (properties 162 and 1164), approved by `test.agent@ayache.com`, made an
     approver for that one transaction only. Pages are append-only: fixtures stay; rotate their links if one leaks.
+
+**19. SHARE FORM: staff can see an AWAITING intake's link again (2026-09-25, `2026-09-25_1600_intake_link_share.sql`).**
+Fred: a "Share form" item on each `/forms` card, *"so the collector or any other person can open the form to fill in
+case they need it again"*. Until then the token was shown once, by `schedule_property_intake`, and never again.
+- **The link is `https://planner.unclogme.app/intake#code=<token>`, built in SQL.** Fred: *"can't we remove that
+  `.html`?"* `/intake` is a Picture Planner server route answering **308** to `/intake.html` with an EMPTY body;
+  browsers keep the fragment across it. 🛑 **Never make `/intake` serve the form itself**: Lovable hosting injects
+  `~flock.js` and an og:image into HTML a worker returns (measured: 416 bytes added, the tracker loaded), and not
+  into a static file, which is why the form stays `public/intake.html` and the route only redirects.
+  `public/_redirects` is not supported there. The office link (`intake-submit?t=`) is unchanged; the direct link
+  also keeps the code out of `function_edge_logs`, where `?t=` lands.
+- 🛑 **The FORM_URL coupling:** the host is written in two places, this function and `intake-submit`'s redirect.
+  Move the collector and both change together.
+- **It refuses, in words, with `blocker=<code>` in DETAIL** (22023 unless noted): not signed in (28000), not staff
+  (42501), no id, not found (P0002), cancelled, submitted, expired (`expires_at <= now()`), removed property, and a
+  token that does not look like one. The app shows the MESSAGE only when DETAIL starts `blocker=`, a plain sentence
+  otherwise.
+- **The reveal log** `public.property_intake_link_reveals` (intake, who, email, when) is the trail, so it is not
+  audited; FK `on delete cascade`; RLS on; revoked from public, anon, authenticated and `yannick_readonly`, sequence
+  included, and the migration asserts the whole `relacl`. An app-driven write: the Picture Planner writes it through
+  the RPC on every Share click.
+- **The app half is live since 2026-09-25** (Picture Planner `/forms`, its CLAUDE.md rule 9): the link is fetched only on
+  the click, a late reply for another card is dropped, and the MESSAGE is shown only for a `blocker=` refusal. Checked
+  signed in: intake 160's link equalled `'https://planner.unclogme.app/intake#code=' || token` (compared as a SHA-256,
+  never printed) and wrote exactly one reveal row.
+- **Share widens where a link circulates.** Before this only the scheduler held it. That is Fred's call, made; the
+  cancel half of 13.2 item 7 stays open, with the SQL remedy in rule 10 meanwhile.
+- VERIFY V1 to V10 (whole ACLs, URL equality inside SQL, one reveal row per success and none per refusal, no audit
+  row, no 16+ token-like run in any refusal MESSAGE, anon and non-staff refused, list and detail untouched) and seven
+  mutants run before apply (anon grant, the office link, the old `.html` link, no log, a readable log, no
+  removed-property or submitted refusal), each caught by that VERIFY.
 
 ---
 

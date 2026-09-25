@@ -4731,6 +4731,12 @@ Six things that will bite someone who does not know them:
    object exists there: `photos.storage_path` is staff-writable and a `../` path otherwise reached another bucket
    (an unredacted DERM sheet, found before apply). 🛑 `public.fn_page_blocker` is the ONE answer to "will this link
    open"; every surface calls it. 🛑 The three tables are revoked by name from `yannick_readonly` as well.
+8. **Share form (2026-09-25, `2026-09-25_1600_intake_link_share.sql`): `client.get_intake_link` is the ONE sanctioned
+   re-display of a collector link** (rule 19 of the reference). Awaiting intakes only, staff JWT only, every reveal logged in
+   `public.property_intake_link_reveals` (no token, no URL, no app role reads it). The link is
+   `https://planner.unclogme.app/intake#code=<token>`: `/intake` is a Picture Planner route that 308s to `/intake.html`;
+   🛑 it must never serve the form itself (Lovable injects its tracker into worker-served HTML). A mis-shared link has a
+   remedy until an in-app cancel exists: on Fred's word, set `cancelled_at` with the one-line UPDATE in reference rule 10.
 
 ## Documentation map
 
