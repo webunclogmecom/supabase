@@ -20,6 +20,64 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 
 ## The objects
 
+> **🟢 A MARKER IS SAVED JOBBER-FIRST SINCE 2026-09-24** (`2026-09-24_2100_jobber_first_day_markers`,
+> Supabase `ada5a53` + `ac0083b`; design `Building Apps/Visit Calendar/docs/specs/2026-09-24-jobber-first-day-markers-design.md`).
+> Fred: *"I was thinking that we do like with the visits, that it first confirms the data was changed in jobber
+> being reflected in the app/db"*. A person's change and the Start healer's are pushed to Jobber, READ BACK, and
+> only then committed. If Jobber refuses, nothing changes and the person is told why.
+> - **The door: edge fn `save-day-marker`** (browser; `verify_jwt = false` + `auth.getUser()` + the staff-domain
+>   gate, like `save-calendar-task`). `{op:'create', marker}`, `{op:'update', marker_id, patch}`,
+>   `{op:'delete', marker_id}`, optional `replace_marker_id`. Real HTTP statuses with `{ok:false, code, message}`;
+>   `message` is a sentence for staff. Codes: `invalid_input` 400, `not_found` 404, `already_exists` 409 (with
+>   `blocking_marker_id`), `changed_elsewhere` 409, `busy` 409, `jobber_rejected` / `jobber_unavailable` /
+>   `jobber_unverified` 502, `lookup_failed` 503, `db_error` / `partly_moved` / `unexpected` 500.
+> - **ONE definition: `supabase/functions/_shared/day-marker-task.ts`**, the Task (title, window, assignees, the
+>   read-back, unchanged from `jobber-push-task` v18) and the saga, imported by `save-day-marker`,
+>   `heal-day-starts` and `jobber-push-task`. Its `etToUtcISO` is `save-calendar-task`'s DST-correct copy: a
+>   marker minute inside the spring-forward gap is refused (the old copy moved minutes 0-119 of that date to the
+>   previous day). `scripts/probes/calendar_task_helpers_verbatim.mjs` asserts the seven helpers stay identical.
+> - **🛑 ONE WRITER PER MARKER.** Every change to an existing marker first claims it:
+>   `ops.claim_day_marker(ids, holder, seconds)` writes `ops.marker_jobber_claims` (ZZ004 `busy` while another
+>   writer holds it; an expired claim is taken over). The commit, **`ops.save_day_marker(op, id, token, expect,
+>   values, task, heal)`**, writes the row, its `entity_source_links` row and removes the claim in ONE transaction,
+>   with the trigger push suppressed and `app.marker_push_verified` stamping `push_changed_at` = the link's
+>   `synced_at`. It refuses ZZ005 (claim lost), ZZ002 (a Jobber-visible column or the linked Task changed since
+>   the caller read it), ZZ003 (a Jobber-visible change without its verified Task: that would never reach Jobber),
+>   P0002 (gone), 23505 (slot taken). A new marker needs no claim. service_role only; the body
+>   `ops.save_day_marker_step` is callable by nobody but the wrapper.
+> - **A claim left behind = Jobber may differ from the row.** A save that dies, a Jobber call with no answer, or a
+>   compensation that fails releases its claim DIRTY (`ops.release_day_marker(token, true)`: kept, expired).
+>   `ops.retry_marker_pushes` arm (c) then hands the marker to `jobber-push-task`, which takes the claim over and
+>   makes the Task match the row; `public.log_start_flags_health` reports a claim still there after 20 minutes
+>   (item 4b, `marker_sync_interrupted`). Empty `ops.marker_jobber_claims` is the healthy state.
+> - **Compensation.** A commit that fails after a Task CREATE deletes that Task (read back gone). After an EDIT,
+>   or after a DELETE whose commit was refused (a heal re-check: a visit came back), the saga makes the Task match
+>   the committed row again, creating it if it is gone. A Task deleted by hand in Jobber is created again on the
+>   next save or net push, with a new link.
+> - **Replace** (`replace_marker_id`, the marker a 409 named): a create updates that marker IN PLACE (same row,
+>   same Task); a move onto an occupied slot updates the blocker with the mover's values, then deletes the mover
+>   (in that order, so a failure half-way loses nothing: `partly_moved`).
+> - **The healer** goes through the same saga. `ops.fn_judge_starts` only flags now (its SQL delete and driver
+>   swap are gone); `ops.start_heal_candidates()` returns `kind` = remove / driver / recompute and skips a claimed
+>   marker; `heal-day-starts` v2 plans a recompute with `ops.apply_start_heal(..., p_dry_run => true)`, and
+>   `ops.save_day_marker` re-runs that plan under the row lock. A Jobber refusal is recorded as `jobber_failed`
+>   (`ops.note_start_heal_attempt`, retried after 10 minutes). The kick gate is 15 s. A removal now lands 2-3 s
+>   after the Calendar's `refresh_start_flags` call (a Jobber delete and read-back come first).
+> - **The net, `jobber-push-task` v19**, still serves `trg_push_marker_to_jobber` (any SQL writer) and
+>   `start-push-retry`: it claims, then `upsert` = edit the Task (or create it: no link, or deleted by hand) and
+>   commit the link through `ops.save_day_marker('relink')`; `delete` = `taskDelete`, read back gone, drop the
+>   link. A claimed marker answers `{ok:false, busy:true}`; the holder's commit or the next retry covers it.
+> - **Superseded below:** the phase-2 "Known limit (1)" (two pushes of one marker landing out of order) is CLOSED
+>   by the claim; the Calendar's 3 s / 10 s "placed a moment ago" lock is no longer needed (the link is written
+>   with the row). The 10-second link-age guards in the candidates stay, harmless.
+> - **Verified live** (2027-01-13 fixtures, every Task read back from Jobber, all removed after):
+>   `node scripts/probes/day_marker_saga_e2e.js human` (auth, input refusals, create, move, driver change, slot
+>   conflict, replace in place, move onto an occupied slot, busy, the net for a SQL write, a Task deleted by hand,
+>   a change Jobber cannot see, dump, delete, idempotent delete), `... heal` (remove, driver, recompute, remove
+>   after the visit is deleted), and `node scripts/probes/day_marker_saga_net_e2e.js` (a SQL-created marker, a
+>   crashed save repaired by the retry, a SQL delete). The migration's own VERIFY has 17 checks and was run
+>   against 10 deliberate breakages, each refused by its own check.
+
 > **🟡 A TRUCK START IS JUDGED FOR FRESHNESS SINCE 2026-09-24** (`2026-09-24_0715_start_freshness_phase1`,
 > Supabase `d81b69a`; plan `Building Apps/Visit Calendar/docs/specs/2026-09-23-start-freshness-design.md`).
 > A truck Start (`marker_type='start'`, `vehicle_id` AND `employee_id` set) is a snapshot of its truck's
@@ -115,7 +173,7 @@ belongs, in `Building Apps/Visit Calendar/` (root `CLAUDE.md` §4b) — do not d
 >   after a failed retry, a Task not updated after 20 minutes, each Start that began out of date (one item
 >   per incident), other errors in 26 hours (one per source), the judge switched off, the retry cron not
 >   running, a marker Task imported as a Calendar Task (a duplicate). Healthy = silence.
-> - **Known limits, kept on purpose:** (1) the edit retry compares `push_changed_at` (DB clock, start of the
+> - **Known limits, kept on purpose:** (1) [CLOSED 2026-09-24_2100 by the one-writer claim, see the block above] the edit retry compares `push_changed_at` (DB clock, start of the
 >   writing transaction) with `synced_at` (edge clock, end of the push); two pushes of ONE marker in flight
 >   at once that land out of order can leave Jobber one version behind unseen (the exact fix is
 >   `jobber-push-task` recording the version it pushed). (2) The check runs once a day before 13:30 UTC, so
