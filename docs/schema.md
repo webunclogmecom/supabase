@@ -320,7 +320,7 @@ Covers 1,398 unique visits and 14 unique employees. Populated by `scripts/popula
 | subject | TEXT | |
 | subtotal / tax_amount / total | NUMERIC(12,2) | |
 | outstanding_amount / deposit_amount | NUMERIC(12,2) | |
-| invoice_status | TEXT | `draft`, `sent`, `awaiting_payment`, `paid`, `void`, `overdue`, `bad_debt` |
+| invoice_status | TEXT | CHECK `invoices_invoice_status_chk`: `draft`, `awaiting_payment`, `paid`, `past_due`, `bad_debt`, `sent_not_due`, `destroyed`, `voided` (added 2026-09-25; the old `sent` / `void` / `overdue` list here was never the stored vocabulary). Read from Jobber at API 2026-09-09 by `webhook-jobber` and `sync-jobber-invoice-drift`; at 2026-04-16 a voided invoice reads `awaiting_payment`. Table audited (`audit_invoices`) since 2026-09-25 |
 | due_date | DATE | |
 | sent_at / paid_at | TIMESTAMPTZ | `paid_at` = payment received |
 | created_at, updated_at | TIMESTAMPTZ | |

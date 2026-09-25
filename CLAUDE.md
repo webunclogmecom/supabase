@@ -1828,25 +1828,29 @@ as-built reference `docs/reference/client-job-status-lifecycle.md`.
 cleared from the app, and the check happens BEFORE any write.** Fred: *"is there a way for it to show a
 confirmation dialog saying ... 'Close invoice' or 'Archive Quote' and continue the process"*, then chose
 to add Invoices R+W / Requests R+W / Quotes R to the Jobber WRITE app (`jobber_write`, 2600594d) and to
-offer **Mark as bad debt** and **Void** (Void deferred, below). What shipped:
+offer **Mark as bad debt** and **Void** (Void since v17, below). What shipped:
 - On `action:'archive'` the function reads the client's quotes, requests and invoices from Jobber
   (`readLiveBlockers`) **before closing any job**, and refuses `archive_blocked_preconditions` with
   `live: true`, `open_jobs`, and per-item `gid` + `actions` unless every blocker is covered by the
-  caller's `resolve: [{gid, action:'bad_debt'|'archive'}]`. So the half-archive shape (every job closed,
+  caller's `resolve: [{gid, action:'bad_debt'|'void'|'archive', void_reason?}]`. So the half-archive shape (every job closed,
   then Jobber refuses: 176-SOU 2026-09-22, 201-ALA 2026-09-25) cannot happen once the scopes are in.
 - Each confirmed item is changed Jobber-first (`invoiceClose BAD_DEBT`, `requestArchive`) and the
   FRESH re-read decides (`unverified` when the re-read fails); the status reason gets "Cleared in Jobber
   first: ...", length-checked BEFORE the first write because `update_client_status` refuses over 500.
 - 🛑 **Quotes still cannot be cleared from here**: Jobber has no quote archive/delete/convert mutation at
   any API version (introspected 2026-04-16 and 2026-09-09). Draft invoices must be deleted in Jobber.
-- 🛑 **Void is NOT offered yet.** `invoiceVoid` exists only from API 2026-09-09, whose status is
-  `voided`, a value the 2026-04-16 invoice sync has never seen (0 rows). Prove one voided test invoice on
-  112-YA is harmless to that sync before offering it.
+- ✅ **Void IS offered since v17 (2026-09-25, `44323ed`)**, after the invoice sync learned to store
+  `voided` (below). An unpaid invoice's `actions` are `["bad_debt","void"]`. `void_reason` is one of
+  `DUPLICATE_INVOICE | CREATED_IN_ERROR | CLIENT_REQUEST | OTHER` (default OTHER, anything else refused);
+  it becomes `invoiceVoid(id, input:{voidReasonCode, voidReasonDetails})`. 🛑 **The mutation AND its
+  verify re-read both run at API 2026-09-09**: at 2026-04-16 the re-read says `awaiting_payment`, so the
+  function would report a successful void as failed. The status reason reads
+  "invoice #N voided ($x) (client request)".
 - **Without the new scopes nothing changes**: Jobber answers "An object of type Quote was hidden due to
   permissions" for a client that HAS quotes (measured on 201-ALA), `readLiveBlockers` reads that as
   `no_scope`, and the previous path runs. A client with none returns an empty list and no error.
-- ⚠ Until the Client App ships the per-item buttons, the refusal shows the items with no way to act on
-  them in the app: the old wording "clear them in Jobber, then try again" is what reaches staff.
+- ✅ The Client App ships the per-item actions (Mark as bad debt, Void invoice with a reason, Archive
+  work request) and sends ONE call with `resolve` + `close_jobs` (Client App CLAUDE.md rule 2n).
 - ✅ **PROVEN END TO END ON 112-YA, 2026-09-25 ~15:47 ET (v16, Fred-approved).** With blockers present
   and `close_jobs:true` but no `resolve`, it refused and **Jobber still showed all 3 jobs open** (the
   201-ALA shape cannot recur). With `resolve` it archived a [TEST] request, marked [TEST] invoice #3246
@@ -1857,10 +1861,18 @@ offer **Mark as bad debt** and **Void** (Void deferred, below). What shipped:
 - 🛑 **AT API 2026-04-16 A VOIDED INVOICE READS `awaiting_payment` WITH A 0 BALANCE** (voided [TEST]
   invoice #3247 on 112-YA; at 2026-09-09 it reads `voided`). Two consequences: (1) v16 reads the
   live-blocker INVOICE list at 2026-09-09, or a hand-voided invoice would show as a blocker offering bad
-  debt (v15 had that bug); (2) **our invoice sync (2026-04-16) stores every voided invoice as
-  `awaiting_payment`, `outstanding_amount = 0`** (measured: #3247 synced exactly so). The past-due rule
-  needs `outstanding_amount > 0`, so they never read past due, but the status is wrong. **Void stays off
-  in the app until the sync reads `voided`.** #3246 (bad debt) and #3247 (voided) remain on 112-YA in
+  debt (v15 had that bug); (2) our invoice sync stored every voided invoice as `awaiting_payment`,
+  `outstanding_amount = 0` (#3247 synced exactly so). ✅ **FIXED 2026-09-25 (`44323ed`)**: migration
+  `2026-09-25_1650` adds `'voided'` to `invoices_invoice_status_chk` (and the rule-8 audit trigger
+  `audit_invoices`, which the billing table never had); `webhook-jobber` handleInvoice (v120) and
+  `sync-jobber-invoice-drift` (v4) now read at 2026-09-09. #3247 is stored `voided`; the drift sweep
+  adopted 0. Census before the change: 2,674 Jobber invoices read at 2026-09-09, exactly ONE differed
+  (the test invoice).
+  🛑 **The two readers must stay on the SAME version.** Move one back and the other rewrites the old
+  reading within 6 hours (drift runs `25 */6` UTC). Every other `gql()` call in `webhook-jobber` still
+  reads at 2026-04-16 on purpose: only the invoice read moved.
+  ⚠ **Open for Fred:** `client.v_client_billing` and `ops.v_revenue_summary` do not yet say how a
+  `voided` (or `destroyed`) invoice counts. #3246 (bad debt) and #3247 (voided) remain on 112-YA in
   Jobber as test artefacts: Jobber has no invoice delete mutation.
 
 🛑 **`jobs.job_status` IS A PURE MIRROR OF JOBBER — it does NOT self-correct via the `*/5` poll
