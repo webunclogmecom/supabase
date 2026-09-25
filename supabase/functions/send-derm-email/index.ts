@@ -909,14 +909,35 @@ Deno.serve(async (req: Request) => {
         // yet, and the union differed from the visit's property on 2 pairs (a visit on the billing
         // duplicate, a visit with no property), so this is a rule fix, not a data fix.
         const { data: mvs } = await sb.from('manifest_visits').select('visit_id').eq('manifest_id', id)
-        const visitIds = ((mvs || []) as { visit_id: number }[]).map((x) => x.visit_id)
-        let visitPropIds: number[] = []
-        let clientVisitIds: number[] = []
+        let visitIds = ((mvs || []) as { visit_id: number }[]).map((x) => x.visit_id)
+        let clientVisits: { id: number; property_id: number | null }[] = []
         if (visitIds.length) {
           const { data: vps } = await sb.from('visits').select('id, property_id').in('id', visitIds).eq('client_id', clientId).is('deleted_at', null)
-          visitPropIds = [...new Set(((vps || []) as { property_id: number | null }[]).map((v) => v.property_id).filter((p): p is number => p != null))]
-          clientVisitIds = ((vps || []) as { id: number }[]).map((v) => v.id)
+          clientVisits = (vps || []) as { id: number; property_id: number | null }[]
         }
+        // 🛑 GREY WATER: Fred, 2026-09-24, "No, grey water reports don't go to the city."
+        // public.v_visit_not_for_city (2026-09-24_2110) lists grey water pumping that is not DERM required.
+        // All of this client's visits on this manifest listed: skip the pair, BEFORE the property checks so
+        // the reason is the rule and never "no city email" (which would invite someone to add one). Some of
+        // them listed (a grey water visit sharing the pair with a DERM visit): drop them from every list
+        // below, so neither the inbox, the date, the FOG document nor the report can come from them. Same
+        // rule and order as derm.v_city_email_candidates' 'grey_water' status, which the sweep reads.
+        // A lookup error throws into this recipient's catch, logged as an error: nothing is sent.
+        if (clientVisits.length) {
+          const { data: nfc, error: nfcErr } = await sb.from('v_visit_not_for_city').select('visit_id')
+            .in('visit_id', clientVisits.map((v) => v.id))
+          if (nfcErr) throw new Error(`not-for-city lookup failed: ${nfcErr.message}`)
+          const notForCity = new Set(((nfc || []) as { visit_id: number }[]).map((x) => x.visit_id))
+          if (notForCity.size === clientVisits.length) {
+            results.push({ manifest_id: id, status: 'skipped', reason: 'grey_water', client: clientName })
+            await logSend(id, logClientId, null, null, 'skipped', 'grey_water', 'city')
+            continue
+          }
+          clientVisits = clientVisits.filter((v) => !notForCity.has(v.id))
+          visitIds = visitIds.filter((vid) => !notForCity.has(vid))
+        }
+        const visitPropIds = [...new Set(clientVisits.map((v) => v.property_id).filter((p): p is number => p != null))]
+        const clientVisitIds = clientVisits.map((v) => v.id)
         if (rec.property_id == null && visitPropIds.length === 0) {
           // No visit of this client on this manifest names a property, so there is no municipality
           // to resolve. Kept distinct from no_city_email (a property that carries no inbox) because

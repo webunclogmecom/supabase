@@ -643,6 +643,32 @@ Deno.serve(async (req: Request) => {
     if (!v) { await logSend('skipped', 'visit_not_found', 0, 0, null, null); return json({ error: 'visit_not_found' }, 404, cors) }
     if (v.deleted_at) { await logSend('skipped', 'visit_deleted', 0, 0, null, null); return json({ error: 'visit_deleted' }, 409, cors) }
 
+    // -- GREY WATER GATE: this visit's report never goes to the city ------------
+    // 🛑 Fred, 2026-09-24: "No, grey water reports don't go to the city." public.v_visit_not_for_city
+    // (2026-09-24_2110) is the one list: grey water pumping that is not DERM required. GATE 1 below does
+    // NOT cover it: 30 completed grey water visits are stored derm_required = TRUE on purpose (filed
+    // before grey water stopped being DERM required), and since 2026-09-24_1353 customer.work_orders
+    // renders their report. It runs BEFORE GATE 0 on purpose: answering "no City email on file" for a
+    // grey water visit would invite someone to add one. Same rule and order as send-derm-email's city
+    // arm and derm.v_city_email_candidates. A lookup error refuses (fail closed): nothing is sent.
+    const { data: notForCity, error: nfcErr } = await sb
+      .from('v_visit_not_for_city').select('visit_id').eq('visit_id', visitId).maybeSingle()
+    if (nfcErr) {
+      console.error(`[send-visit-photos-email] not-for-city lookup failed: ${nfcErr.message}`)
+      await logSend('error', 'grey_water_check_failed', 0, 0, null, null)
+      return json({
+        error: 'grey_water_check_failed',
+        detail: 'Could not check whether this is a grey water visit, so nothing was sent. Try again in a minute.',
+      }, 503, cors)
+    }
+    if (notForCity) {
+      await logSend('skipped', 'grey_water', 0, 0, null, null)
+      return json({
+        error: 'grey_water',
+        detail: 'This is a grey water pumping visit. Grey water reports do not go to the city, so there is nothing to send.',
+      }, 409, cors)
+    }
+
     const cl = (v as Record<string, any>).clients ?? {}
     const pr = (v as Record<string, any>).properties ?? {}
     const visitRow: VisitRow = {
@@ -688,6 +714,8 @@ Deno.serve(async (req: Request) => {
     // ⚠ THE EXPRESSION IS `COALESCE(..., true)`, NOT `IS TRUE`. NULL counts as required
     // and is the fail-safe answer (39 completed NULL visits ARE visible in the portal).
     // Writing `=== true` here would silently refuse those.
+    // ⚠ Since 2026-09-24_1353 the view also admits grey water pumping whatever derm_required says, so
+    // for a grey water visit the renderer is no longer a second barrier. The grey water gate above is.
     const dermRequired = (v as Record<string, any>).derm_required
     if (dermRequired === false) {
       await logSend('skipped', 'not_derm_required', 0, 0, null, null)
