@@ -132,6 +132,21 @@ invoices unfiltered too. **Enumerate the consumers before quantifying the damage
 ⚠ **`handleJob`, `handleProperty` and `handleVisit` still have the old three-request shape.** They
 show 0 orphans today, which is luck rather than safety: jobs and properties simply have not been
 created concurrently since 2026-08-21. The same one-call treatment applies.
+✅ **SUPERSEDED: all three got it on 2026-09-09** (`fn_jobber_resolve_visit` in `2026-09-09_1200`,
+`fn_jobber_resolve_job` in `2026-09-09_1230`, `fn_jobber_resolve_property` in `2026-09-09_1300`); the
+paragraph above is kept as the record of the gap.
+
+🛑 **`fn_jobber_resolve_job`'s recycled-number guard did not work until `2026-09-26_0313`.** Jobber
+RECYCLES job numbers (99901013 on jobs 1768/1769, 99901068 on 1850/1851), and the function was meant to
+let `jobs_active_job_number_uniq` refuse a live duplicate INSIDE its transaction so the shell and its
+link roll back together. It wrote only `job_number` into the shell, and the index is
+`WHERE job_number IS NOT NULL AND job_status <> 'archived'`: a NULL-status shell is never in it, so the
+refusal fired in handleJob's next request and stranded a linked NULL-status job. The function now takes
+`p_job_status` (handleJob passes Jobber's `jobStatus`, webhook-jobber v123) and the shell carries it: a
+live recycled number refuses inside (nothing left), an ARCHIVED import of one still succeeds, and a
+caller that passes no status keeps the old behaviour. A status-blind pre-check was rejected because it
+would refuse that archived import. Census when fixed: 0 NULL-status jobs. Re-runnable proof, with the
+old body as the control: `scripts/probes/resolve_job_number_guard/`.
 
 ⚠ **`line_items.invoice_id` is `ON DELETE SET NULL`.** Deleting an invoice that has line items
 neither blocks nor cascades: it silently orphans them, and nothing reports it. Always count

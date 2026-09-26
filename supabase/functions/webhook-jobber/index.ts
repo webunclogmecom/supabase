@@ -1335,11 +1335,17 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   //
   // ⚠ public.fn_record_client_job (the Client App's writer) takes the SAME lock key. Locking one
   //   of a pair serialises nothing. See 2026-09-09_1230.
-  // ⚠ p_job_number is passed so that a jobs_active_job_number_uniq refusal (Jobber recycles job
-  //   numbers) fires INSIDE the function, rolling the shell row and its link back together, rather
-  //   than in the payload UPDATE one transaction later where it would strand a linked NULL job.
+  // ⚠ p_job_number AND p_job_status are passed so that a jobs_active_job_number_uniq refusal (Jobber
+  //   recycles job numbers) fires INSIDE the function, rolling the shell row and its link back
+  //   together, rather than in the payload UPDATE one transaction later where it would strand a
+  //   linked NULL-status job. 🛑 job_number ALONE NEVER DID THIS (corrected 2026-09-26_0313): the
+  //   index skips rows whose job_status is not <> 'archived', and a NULL-status shell is one of them,
+  //   so the shell must carry Jobber's status to be in the index at all. An ARCHIVED import of a
+  //   recycled number still succeeds, as the index intends.
   const { data: resolvedJob, error: resolveJobErr } = await supabase
-    .rpc('fn_jobber_resolve_job', { p_gid: gid, p_job_number: j.jobNumber ?? null })
+    .rpc('fn_jobber_resolve_job', {
+      p_gid: gid, p_job_number: j.jobNumber ?? null, p_job_status: j.jobStatus?.toLowerCase() ?? null,
+    })
     .single()
   if (resolveJobErr || !resolvedJob) {
     throw new Error(`Job resolve failed: ${resolveJobErr?.message ?? 'no row returned'}`)

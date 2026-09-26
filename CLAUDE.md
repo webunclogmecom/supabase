@@ -716,7 +716,9 @@ never observed.
 - ⚠ **Not a total ordering.** Nothing orders the three concurrent re-reads of one close, so a read taken just
   before a close-and-reopen within a second or two can still land last. Only the drift heals that (below).
 - **What a close now also does**, as every JOB_UPDATE already did: an unknown gid is IMPORTED through
-  `fn_jobber_resolve_job` (the flip did nothing; 0 of 32 real events hit one), and an SA job's job-scope lines
+  `fn_jobber_resolve_job` (the flip did nothing; 0 of 32 real events hit one; since `2026-09-26_0313` it
+  takes `p_job_status`, so a recycled job number held by a live job refuses INSIDE the function instead of
+  stranding a linked NULL-status job; see `docs/reference/jobber-client-identity-and-links.md`), and an SA job's job-scope lines
   are rewritten (about 2 x N audit rows). Jobber-originated closes now audit as `sql` ("System" in
   `client.job_activity`) instead of `jobber`, because handleJob writes through the plain client.
 - 🛑 **Do not "fix" this with a generic guard in `softStatusFlip`.** A `NOT IN ('archived','destroyed')`
