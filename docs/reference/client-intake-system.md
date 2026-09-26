@@ -373,7 +373,9 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     answered keys only; photo-type answers left out) and `fn_page_photo_ids` (the exact set submit accepts, only photos
     whose path is in the question's SUBMITTED answer, never a caption). Change any of those and this function moves
     with it; never copy their logic into it. Filling changes the page's draft only; accepting into the property stays
-    `accept_intake_answers` in the Client App. App-side rules: Picture Planner CLAUDE.md rule 13.
+    `accept_intake_answers` in the Client App. App-side rules: Picture Planner CLAUDE.md rule 13. Since 2026-09-26
+    the builder's Site survey panel (1280px and up, PP rule 15) shows the same reply field by field; it adds no call
+    and reads nothing else.
 
 **19. SHARE FORM: staff can see an AWAITING intake's link again (2026-09-25, `2026-09-25_1600_intake_link_share.sql`).**
 Fred: a "Share form" item on each `/forms` card, *"so the collector or any other person can open the form to fill in
