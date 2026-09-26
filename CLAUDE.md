@@ -649,13 +649,27 @@ The three writes (the gone arm's archive, the status/title/date/frequency patch,
 with a live status, so the patch back to Jobber's `active` hit `jobs_active_job_number_uniq` (23505).
 Pre-fix v18 logged `updated: 1`, status `success` (sync_log 61466) and 765 never changed; v19 logged
 `updated: 0`, `errors: 1`, `write_errors: 1`, sample "job 765: update of job_status refused (23505)",
-status `partial` (61469), with all 509 jobs still checked. Both test rows were removed afterwards (a
-false 'success' and a test 'partial'; saved in the session scratchpad `dr/test_sync_log_rows.json`),
-the fixture deleted and 765 restored by a JOB_UPDATE re-read.
+status `partial` (61469), with all 509 jobs still checked. Both test rows were removed afterwards
+(61466 recorded an update that never happened; 61469 would have counted toward a real alert), so
+the figures above are their record: `public.sync_log` has no audit trigger, the ids are gaps. The
+fixture was deleted and 765 restored by a JOB_UPDATE re-read (every field matches its pre-test row;
+the rig window 09:59:48-10:03:42 UTC overlapped the :00 SA generation and the :01 poll, neither of
+which touched 765). The first scheduled v19 run (10:15 UTC) was `success`, 509 of 509.
 - Now: each write checks its error; a failure goes to `errors` (so the run reads `partial` and
   `log_jobber_sync_health` can see it: it alerts at 2+ failed runs in 24 h and at least 2%) and to the
   new `write_errors`, with the SQLSTATE in the sample, and the row carries on to its next step. One
   failing row never aborts the batch.
+- ⚠ **A row refused on EVERY run makes every run `partial`.** That is intended: sync_failed fires within
+  the hour and sync_stuck after 72 h. Two things to know when it happens: the alert text says "Those runs
+  did not reconcile anything", which is wrong for a write-error partial (508 of 509 were reconciled, read
+  `details->>'write_errors'`); and a refused row in the 14-day recent-terminal arm leaves the candidate
+  set after 14 days (a refused write does not bump `updated_at`), so the runs go back to `success` while
+  the row is still wrong.
+- After a refused patch the row still gets its line-item step, decided from Jobber's title: the lines
+  follow Jobber (the source of truth) and the refused fields are retried next run. Pre-existing.
+- `getReadToken` also discarded its read error (a DB failure read as "no jobber read token"); fixed in v20.
+  `scripts/probes/job_drift_gql_guard_test.mjs` now defaults its control to `a98fd5a^` (defaulting to
+  HEAD compared the fixed body with itself and printed a false "NOT PROVEN").
 - The same shape in READS, fixed in the same change: the two candidate reads and the link read
   discarded their errors, so a failed read became "0 candidates" and a `success` run that compared
   nothing; the read of our own job-scope lines did the same and would have rewritten lines on a

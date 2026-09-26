@@ -32,7 +32,9 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const SRC = 'supabase/functions/sync-jobber-job-drift/index.ts';
-const PRE_FIX_REF = process.argv[2] ?? 'HEAD';
+// The control must be the body BEFORE the gql() guard (a98fd5a). Defaulting to HEAD compared the fixed
+// body with itself and printed a false "NOT PROVEN" when run without an argument (found 2026-09-26).
+const PRE_FIX_REF = process.argv[2] ?? 'a98fd5a^';
 
 // Extract the gql function body verbatim, never retyped. (CLAUDE.md: copy the body, do not retype
 // it; a retyped body silently loses whatever you fail to reproduce.)

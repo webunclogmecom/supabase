@@ -71,7 +71,8 @@ function bearerRole(req: Request): string | null {
 
 // READ token (source_system='jobber') — this fn only reads Jobber.
 async function getReadToken(): Promise<string> {
-  const { data } = await db.from("webhook_tokens").select("access_token").eq("source_system", "jobber").single();
+  const { data, error } = await db.from("webhook_tokens").select("access_token").eq("source_system", "jobber").single();
+  if (error) throw new Error(`jobber read token read failed: ${error.message}`);
   if (!data?.access_token) throw new Error("no jobber read token");
   return data.access_token;
 }
