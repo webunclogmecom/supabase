@@ -1074,6 +1074,9 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // per-visit advisory lock (rewrite_visit_line_items), never .delete() + .insert() again. A failure
   // leaves the previous lines intact; it is still only logged here, as before, because the DERM
   // derivation and visit_locations steps below must run either way.
+  // ⚠ public.edit_calendar_visit rewrites visit lines WITHOUT this lock. Measured 2026-09-26: 2 open
+  // Jobber-sourced visits and 0 Calendar line edits on Jobber-sourced visits in 90 days, so the two
+  // writers do not meet today; if they ever do, add the same lock key there.
   const visitLineNodes: any[] = v.lineItems?.nodes ?? []
   const { error: vliErr } = await supabase.rpc('rewrite_visit_line_items', {
     p_visit_id: entityId,
@@ -1243,9 +1246,14 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
   // lines, among them $349 + fee counted twice on 275-MLP #3065). rewrite_invoice_line_items takes a
   // per-invoice advisory lock and does both in one transaction. Same rows as before, same predicate.
   // ⚠ Identical lines are LEGITIMATE (21 invoices hold exactly what Jobber holds, repeats included):
-  // never dedupe line_items DB-side. Jobber exposes no stable line-item id we sync.
+  // never dedupe line_items DB-side. Jobber does expose InvoiceLineItem.id; we do not store it, so the
+  // whole set is replaced under the lock rather than diffed.
   // A failure now leaves the previous lines intact (one transaction) and is re-thrown at the end of
-  // this handler, so the event lands as 'failed' (visible, replayable) instead of 'processed'.
+  // this handler, so the event lands as 'failed' instead of 'processed'. Nothing reads 'failed' rows
+  // automatically and a real webhook is never retried (ACK first): visible to a query, replay by hand.
+  // ⚠ The lock serialises only callers of rewrite_invoice_line_items. It does not order Jobber READS: a
+  // stale read can take the lock last (last writer wins, no duplicate). A lineItems field missing from
+  // the reply becomes [] and clears the lines, and only the first 50 are read (both pre-existing).
   const lineItemNodes: any[] = inv.lineItems?.nodes ?? []
   const { error: liErr } = await supabase.rpc('rewrite_invoice_line_items', {
     p_invoice_id: entityId,
@@ -1868,14 +1876,20 @@ async function handleClientDestroy(id: string): Promise<{ entity_id: number }> {
 // 'closed' is not a Jobber job status: JobStatusTypeEnum (2026-04-16 and 2026-09-09) has no such value,
 // and every 'closed' ever stored (33 of 33) was invented by the old softStatusFlip('closed') here. After
 // a close Jobber reports archived, or requires_invoicing (uninvoiced work), or an OPEN status when the
-// job was reopened before this late event arrived. JOB_CLOSED and its paired JOB_UPDATE share one
-// second-precision occurredAt and land in either order, so the blind flip overwrote a correct re-read
-// 6 times in 33, left job 765 'closed' over Jobber's 'archived' on 2026-09-25, wrote 'closed' over
-// reopened jobs, and on an archived job whose number a live job shares it raised 23505 (the flip puts
-// the row back into jobs_active_job_number_uniq). The 5-minute poll cannot repair any of it: it pulls
-// jobs by createdAt and Jobber's job filter has no updatedAt. Only the :15/:45 drift run would.
+// job was reopened before this late event arrived. A close arrives as one JOB_CLOSED plus two JOB_UPDATEs
+// sharing one second-precision occurredAt, in either order (JOB_CLOSED first in 29 of 32). In 32 real
+// events the blind flip landed on an already-correct status 8 times (5 over 'archived', 3 over a Client
+// App reopen); once, job 765 on 2026-09-25, it was the last write and stayed 'closed' over Jobber's
+// 'archived' for 78 s. An archived-to-closed flip also puts the row back into
+// jobs_active_job_number_uniq, so on an archived job whose number a live job shares it raises 23505
+// (reproduced by a control replay on 1850; latent, never seen live). The 5-minute poll cannot repair
+// any of it: it pulls jobs by createdAt and Jobber's job filter has no updatedAt. Only the :15/:45
+// drift run would.
 // ⇒ A close is a status change like any other: re-read and store Jobber's jobStatus. A failed read
 // throws before writing (logged 'failed'); a job Jobber no longer has throws 'not found' and writes nothing.
+// ⚠ Nothing orders the (now three) concurrent re-reads, so a read taken just before a quick reopen can
+// still land last; the drift is what heals that. Also new for a close: an unknown gid is IMPORTED via
+// fn_jobber_resolve_job, and an SA job's job-scope lines are rewritten, as on every JOB_UPDATE.
 // Do NOT "harden" softStatusFlip with a generic terminal guard instead: it would stop JOB_DESTROY and
 // QUOTE_DESTROY moving archived rows to destroyed.
 const handleJobClosed     = (id: string, topic: string) => handleJob(id, topic)

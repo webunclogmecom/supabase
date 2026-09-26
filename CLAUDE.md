@@ -690,21 +690,35 @@ Fail-closed is what you want when the upstream is unreadable.
 ### 🛑 JOB_CLOSED RE-READS JOBBER, AND LINE-ITEM REWRITES ARE ATOMIC (webhook-jobber v121, 2026-09-25)
 
 Both were found live during the 112-YA void test and both come from the same fact about Jobber's webhooks:
-**they arrive at least once, in PAIRS, a few hundred ms apart, with one second-precision `occurredAt`, and in
-either order** (JOB_CLOSED + JOB_UPDATE for one close; two INVOICE_UPDATEs for one change). Jobber's docs say
-only "at least once" and that the app must query the API for the object. So: **a handler must never write a
-value it did not just read from Jobber, and a wipe-and-replace must be ONE transaction.**
+**they arrive at least once, in GROUPS, a few hundred ms apart (p50 0.15 s, p90 1 s), with one
+second-precision `occurredAt`, and in either order.** A close is one JOB_CLOSED plus TWO JOB_UPDATEs (JOB_CLOSED
+logged first in 29 of 32); an invoice change is 2 or 4 INVOICE_UPDATEs (up to 10). Jobber's webhooks page (read
+in the browser 2026-09-25; it 403s to WebFetch) promises only at-least-once delivery and says to query the API
+for the object. So: **a handler must never write a value it did not just read from Jobber, and a
+wipe-and-replace must be ONE transaction.**
 
 **JOB_CLOSED RE-READS JOBBER.** It used to be `softStatusFlip('closed')`, a blind write. 🛑 **`closed` is not a
 Jobber job status**: `JobStatusTypeEnum` (identical at 2026-04-16 and 2026-09-09) is requires_invoicing,
 archived, late, today, upcoming, action_required, on_hold, unscheduled, active, expiring_within_30_days, and
-every `closed` ever stored (33 of 33) was invented by that flip. After a close Jobber reports `archived`, or
-`requires_invoicing` (uninvoiced work; 5 of 33), or an OPEN status when the job was reopened before the late
-event landed (5 of 33, e.g. job 1514). The flip overwrote a correct re-read 6 times in 33 and left job 765
-`closed` over Jobber's `archived` for 78 s; an archived-to-closed flip also puts the row back into
-`jobs_active_job_number_uniq` (it excludes only `archived`), so on job 1850 it raised 23505.
-- **Now `JOB_CLOSED` runs `handleJob`**, exactly like JOB_UPDATE: the stored status is always Jobber's. A failed
-  read throws before writing (logged `failed`); a job Jobber no longer has throws "not found" and writes nothing.
+every `closed` ever stored was invented by that flip (audit.logs on `jobs` starts 2026-07-30). Over the **32
+real JOB_CLOSED events** (2026-08-26 to 09-25, nested payloads) Jobber reported, after the close, `archived`
+for most, `requires_invoicing` (uninvoiced work) 5 times, and an OPEN status 5 times because the job had been
+reopened before the late event landed (e.g. job 1514, reopened in the Client App 10 s earlier). The flip
+landed on an already-correct status 8 times: 5 over `archived` (2 written by a handleJob re-read, 3 by the
+Client App) and 3 over a Client App reopen. Only once was it the LAST write: job 765 on 2026-09-25 stayed
+`closed` over Jobber's `archived` for 78 s. An archived-to-closed flip also puts the row back into
+`jobs_active_job_number_uniq` (it excludes only `archived`), so on an archived job whose number a live job
+shares it raises 23505: reproduced by the control on 1850, latent in live traffic (1850/1851 and 1768/1769),
+never observed.
+- **Now `JOB_CLOSED` runs `handleJob`**, exactly like JOB_UPDATE, so what it stores is Jobber's `jobStatus` as
+  of that read. A failed read throws before writing (logged `failed`); a job Jobber no longer has throws "not
+  found" and writes nothing.
+- ⚠ **Not a total ordering.** Nothing orders the three concurrent re-reads of one close, so a read taken just
+  before a close-and-reopen within a second or two can still land last. Only the drift heals that (below).
+- **What a close now also does**, as every JOB_UPDATE already did: an unknown gid is IMPORTED through
+  `fn_jobber_resolve_job` (the flip did nothing; 0 of 32 real events hit one), and an SA job's job-scope lines
+  are rewritten (about 2 x N audit rows). Jobber-originated closes now audit as `sql` ("System" in
+  `client.job_activity`) instead of `jobber`, because handleJob writes through the plain client.
 - 🛑 **Do not "fix" this with a generic guard in `softStatusFlip`.** A `NOT IN ('archived','destroyed')`
   predicate there would stop JOB_DESTROY and QUOTE_DESTROY moving archived rows to `destroyed`, and a
   job-only guard still lets `closed` land over requires_invoicing or a reopened job.
@@ -712,31 +726,47 @@ event landed (5 of 33, e.g. job 1514). The flip overwrote a correct re-read 6 ti
   `closed` as terminal) still name it: dead but harmless, deliberately left alone.
 - **Who repairs a status the webhooks got wrong: only the drift.** The poll pulls JOBS by `createdAt` (Jobber's
   job filter has no `updatedAt`), so it never re-reads an existing job. `sync-jobber-job-drift`'s 14-day
-  recent-terminal arm does, at :15/:45 (up to ~30 min, ~60 if a run aborts).
+  recent-terminal arm would, at :15/:45 (up to ~30 min, ~60 if a run aborts). That heal is read from the code
+  and has never been observed: every real case so far was healed by the next webhook re-read, and 765 by a reopen.
 - Proof (112-YA, signed replays, no Jobber writes): pre-fix v120 wrote `closed` over `archived` (1283) and over
   `action_required` (766), and raised 23505 on 1850; v121 kept `archived`, kept `action_required`, and failed
-  1850 with "not found" (Jobber has deleted it) with no write. ⚠ Audit rows 225596/225597 (1283, 2026-09-26
-  03:45 UTC) are that synthetic control, not a real race: their webhook payloads are FLAT.
+  1850 with "not found" (Jobber has deleted it) with no write.
+- ⚠ **Synthetic control artefacts, exclude them from any rate:** audit.logs 225596/225597 (1283) and
+  225648/225649 (766), webhook_events_log 410984-410986 and 411032-411040, all 2026-09-26 03:45-04:00 UTC and
+  all with FLAT payloads (real Jobber deliveries are nested `{data:{webHookEvent:...}}`).
 
 **LINE-ITEM REWRITES ARE ATOMIC** (migration `2026-09-25_2350`). handleInvoice and handleVisit replaced an
 owner's lines as `.delete()` then `.insert()`, two transactions, so a webhook pair interleaved as delete,
 delete, insert, insert. Now `public.rewrite_invoice_line_items(p_invoice_id, p_lines)` and
 `public.rewrite_visit_line_items(p_visit_id, p_lines)` (SECDEF, service_role only) take a per-owner advisory
-lock and do both in one transaction, same predicate as before, rows in Jobber's order; a non-array payload
-RAISES instead of wiping. They are siblings of `rewrite_job_line_items`, which already did this for jobs;
-handleJob now also checks that RPC's error.
-- Measured before: group-by (invoice_id, name, unit_price, quantity) found 32 groups on 27 invoices, but line
+lock and do both in one transaction, same predicate as before, rows in Jobber's order. They are siblings of
+`rewrite_job_line_items`, which already did this for jobs; handleJob now also checks that RPC's error.
+Jobber does expose `InvoiceLineItem.id`; we do not store it, so the set is replaced under a lock, not diffed.
+- Measured BEFORE: group-by (invoice_id, name, unit_price, quantity) found 32 groups on 27 invoices, but line
   by line against Jobber **21 of those invoices hold exactly what Jobber holds**. 🛑 **Identical lines are
   real; never dedupe `line_items` DB-side.** 6 invoices held 8 extra lines (all since 2026-08-31), among them
-  275-MLP #3065 ($349 + fee counted twice) and 076-TCE #3087. Pre-fix control: 4 concurrent replays of
-  invoice 2836 duplicated in 3 of 5 rounds; post-fix 8 concurrent, 0 of 8. Visit RPC: 8 concurrent calls x 5
-  rounds on test visit 8208, 1 line each time, content unchanged.
-- The 5 live invoices were repaired by one INVOICE_UPDATE replay each (Jobber read only; 0 invoice rows
-  changed). Left as is: #3134 (id 2719, 323-CHA) holds two $0 lines but Jobber deleted the invoice, so it
-  cannot be re-read.
-- ⚠ An invoice line rewrite failure now marks the event `failed` (re-thrown at the end of handleInvoice, after
+  275-MLP #3065 ($349 + fee counted twice) and 076-TCE #3087.
+- AFTER (the fix plus one INVOICE_UPDATE replay per affected invoice, Jobber read only, 0 invoice rows changed):
+  25 groups on 22 invoices, of which 21 are the genuine ones and 1 is #3134 (id 2719, 323-CHA), two $0 lines
+  on an invoice Jobber has deleted, so it cannot be re-read. Invoice lines 4,251 -> 4,244. Visits: 3 groups;
+  1319 and 6815 match Jobber; 6357 (152-DAV) holds two extra $0 lines inserted in ONE transaction on
+  2026-09-03 (stale completed-visit data, not this race).
+- Proof: pre-fix control, 4 concurrent replays of invoice 2836 duplicated in 3 of 5 rounds; post-fix 8
+  concurrent, 0 of 8. Visit RPC: 8 concurrent calls x 5 rounds on test visit 8208, 0 of 5, while the SAME
+  harness running the old delete-then-insert duplicated in 4 of 5 (up to 8 lines).
+- ⚠ **Limits, stated so nobody over-reads the fix.** (1) The lock serialises only callers of these RPCs:
+  `public.edit_calendar_visit` still rewrites visit lines without it (measured 2026-09-26: 2 open
+  Jobber-sourced visits, 0 Calendar line edits on Jobber-sourced visits in 90 days, so they do not meet
+  today). (2) It orders the WRITES, not the Jobber READS: a stale read can take the lock last (last writer
+  wins, no duplicate). (3) The non-array RAISE protects direct SQL callers only; in the handler a missing
+  `lineItems` becomes `[]` and clears the lines, and only the first 50 are read (both pre-existing).
+- An invoice line rewrite failure now marks the event `failed` (re-thrown at the end of handleInvoice, after
   the invoice row and visit links are written); a visit line failure is still only logged, because the DERM
-  derivation and visit_locations steps after it must run.
+  derivation and visit_locations steps after it must run. Nothing reads `failed` rows automatically and a
+  real webhook is never retried (ACK first): visible to a query, replay by hand.
+- 🛑 **`rewrite_job_line_items` was EXECUTE-able by `authenticated` from 2026-09-01 until `2026-09-26_0018`**
+  (SECDEF; any staff browser could rewrite any job's lines). Revoked; its callers are service_role and
+  `fn_record_client_job` (SECDEF, runs as owner). All three rewrite functions are now service_role only.
 
 ### 🛑 THE NEVER-EXECUTED REPORT: `scripts/checks/never-executed.mjs` (added 2026-08-21)
 
