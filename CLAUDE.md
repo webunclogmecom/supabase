@@ -707,7 +707,8 @@ reopened before the late event landed (e.g. job 1514, reopened in the Client App
 landed on an already-correct status 8 times: 5 over `archived` (2 written by a handleJob re-read, 3 by the
 Client App) and 3 over a Client App reopen. Only once was it the LAST write: job 765 on 2026-09-25 stayed
 `closed` over Jobber's `archived` for 78 s. An archived-to-closed flip also puts the row back into
-`jobs_active_job_number_uniq` (it excludes only `archived`), so on an archived job whose number a live job
+`jobs_active_job_number_uniq` (it excluded only `archived` then; since `2026-09-26_0358` it excludes `archived`
+and `destroyed`, still not `closed`), so on an archived job whose number a live job
 shares it raises 23505: reproduced by the control on 1850, latent in live traffic (1850/1851 and 1768/1769),
 never observed.
 - **Now `JOB_CLOSED` runs `handleJob`**, exactly like JOB_UPDATE, so what it stores is Jobber's `jobStatus` as

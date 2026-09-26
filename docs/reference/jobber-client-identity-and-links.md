@@ -147,13 +147,19 @@ live recycled number refuses inside (nothing left), an ARCHIVED import of one st
 caller that passes no status keeps the old behaviour. A status-blind pre-check was rejected because it
 would refuse that archived import. Census when fixed: 0 NULL-status jobs. Re-runnable proof, with the
 old body as the control: `scripts/probes/resolve_job_number_guard/`.
-- ⚠ **Jobber reuses a number after DELETING the job that held it** (the originals of both 99901013 and
-  99901068 are gone in Jobber). JOB_DESTROY writes `destroyed`, which the index still covers, so the new
-  job is refused (cleanly) until `sync-jobber-job-drift`'s gone arm archives the old row: 8 of 8 rows ever
-  set to `destroyed` were archived 20 to 40 minutes later. A later poll replay (needs_populate stays TRUE
-  on a failed replay) then imports the job. Visits arriving for it in that window keep `job_id` NULL
-  (inferred, never observed). Excluding `destroyed` (and the writer-less `closed`) from the index would
-  remove the delay; that is a decision for Fred, not done.
+- ✅ **A job Jobber DELETED no longer holds its number (`2026-09-26_0358`, Fred: "do a check on it first
+  before fixing it").** Jobber assigns numbers by counting up from the highest in the account, so deleting
+  the top job frees its number and the next job reuses it (the originals of both 99901013 and 99901068 are
+  gone in Jobber). The index is now `WHERE job_number IS NOT NULL AND job_status NOT IN ('archived',
+  'destroyed')`. Before, JOB_DESTROY's `destroyed` stayed in the index, so the new job was refused until
+  `sync-jobber-job-drift`'s gone arm archived the old row (8 of 8 destroyed rows, 20 to 42 minutes), and a
+  JOB_DESTROY on an archived row whose number a live job holds failed with 23505. Both stop. ⚠ Only when
+  JOB_DESTROY lands before the new job's create: a destroy that arrives late or never (job 1850 went
+  straight to `archived`) still waits for the drift, then a poll replay imports the job. `closed` is
+  deliberately still covered (it was a live Jobber job; the 2026-09-15 rule). Checked first by three
+  read-only reviewers: no ON CONFLICT arbiter uses the index, no reader assumes one live row per number,
+  two live jobs still cannot share a number, and a destroyed row can never come back to life with its
+  number taken (refused, and Jobber has no job undelete).
 - 10000317 (517/520) and 10000318 (518/521) are a different shape: same client, both archived, the older
   row of each has no Jobber link. Not recycling.
 

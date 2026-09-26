@@ -1339,10 +1339,11 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   //   recycles job numbers) fires INSIDE the function, rolling the shell row and its link back
   //   together, rather than in the payload UPDATE one transaction later where it would strand a
   //   linked NULL-status job. 🛑 job_number ALONE NEVER DID THIS (corrected 2026-09-26_0313): the
-  //   index covers only rows where (job_status <> 'archived') is TRUE, and for a NULL-status shell it
-  //   is NULL, so the shell must carry Jobber's status to be in the index at all. An ARCHIVED import of
-  //   a recycled number still succeeds, as the index intends. A holder in 'destroyed' also refuses
-  //   until the drift archives it (20-40 min measured); then a later poll replay imports the job.
+  //   index covers only rows where its status test is TRUE, and for a NULL-status shell it is NULL,
+  //   so the shell must carry Jobber's status to be in the index at all. An ARCHIVED import of a
+  //   recycled number still succeeds, as the index intends. Since 2026-09-26_0358 the index excludes
+  //   'destroyed' too, so a job Jobber deleted no longer blocks the new job that reuses its number
+  //   (when JOB_DESTROY landed first; otherwise the drift archives the old row, 20-42 min measured).
   const { data: resolvedJob, error: resolveJobErr } = await supabase
     .rpc('fn_jobber_resolve_job', {
       p_gid: gid, p_job_number: j.jobNumber ?? null, p_job_status: j.jobStatus?.toLowerCase() ?? null,

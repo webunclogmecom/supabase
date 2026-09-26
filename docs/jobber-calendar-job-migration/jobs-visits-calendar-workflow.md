@@ -179,7 +179,8 @@ Diego/Yannick create/update clients + create visits in Jobber. **Ownership model
   soft-delete exclusion. All test artifacts cleaned up (0 orphaned Jobber visits). The SC catalog exposes
   all 16 SC line items (09–24).
 - ✅ **`jobs.job_number` integrity** (2026-06-24 audit follow-up #1, `2026-06-24_jobs_job_number_unique.sql`):
-  partial unique index `jobs_active_job_number_uniq` on non-archived `job_number` — blocks a future
+  partial unique index `jobs_active_job_number_uniq` on non-archived `job_number` (non-archived AND
+  non-destroyed since `2026-09-26_0358`, so a job Jobber deleted frees its number) — blocks a future
   duplicate ACTIVE row for one Jobber job (the one-card-per-job + ESL-bridge invariant). Root cause of the
   2 historical dupes (10000317/318) was a raw-numeric-vs-base64 GID drift, now historical (2/1691 ESLs).
   Smoke-tested 3/3 (dupe blocked, archived dupe allowed, normal insert ok).
