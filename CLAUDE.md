@@ -641,6 +641,27 @@ both, and **requires the pre-fix body to FAIL** the two guard cases (it returns 
 `null`) while still passing a valid payload. A suite that only exercises the fixed body cannot
 tell a real guard from a no-op.
 
+🛑 **A REFUSED WRITE WAS COUNTED AS A WRITE, AND A FAILED READ AS AN EMPTY ONE (fixed 2026-09-26, v19).**
+The three writes (the gone arm's archive, the status/title/date/frequency patch, and the
+`rewrite_job_line_items` call) discarded their `error`, so a write PostgREST refused was counted in
+`updated` / `gone_archived` / `line_syncs` and its change was lost with no trace. Proven live on
+112-YA before the fix: 765 marked `archived` in our DB only, and a [TEST] fixture holding its number
+with a live status, so the patch back to Jobber's `active` hit `jobs_active_job_number_uniq` (23505).
+Pre-fix v18 logged `updated: 1`, status `success` (sync_log 61466) and 765 never changed; v19 logged
+`updated: 0`, `errors: 1`, `write_errors: 1`, sample "job 765: update of job_status refused (23505)",
+status `partial` (61469), with all 509 jobs still checked. Both test rows were removed afterwards (a
+false 'success' and a test 'partial'; saved in the session scratchpad `dr/test_sync_log_rows.json`),
+the fixture deleted and 765 restored by a JOB_UPDATE re-read.
+- Now: each write checks its error; a failure goes to `errors` (so the run reads `partial` and
+  `log_jobber_sync_health` can see it: it alerts at 2+ failed runs in 24 h and at least 2%) and to the
+  new `write_errors`, with the SQLSTATE in the sample, and the row carries on to its next step. One
+  failing row never aborts the batch.
+- The same shape in READS, fixed in the same change: the two candidate reads and the link read
+  discarded their errors, so a failed read became "0 candidates" and a `success` run that compared
+  nothing; the read of our own job-scope lines did the same and would have rewritten lines on a
+  comparison with nothing. They now throw (the run, or that row, lands as an error). The `sync_log`
+  insert's own error is reported in the edge log and the reply (`sync_log_error`).
+
 **Every path that WROTE on an unanswered Jobber has been closed (2026-08-14).** The remaining 10
 produce a misleading error message and nothing worse — each was traced to a named stopper (an
 unhandled TypeError, a positive-match verify, or an early return), not merely "no path was found".

@@ -137,28 +137,50 @@ Deno.serve(async (req) => {
   }
 
   const started = new Date().toISOString();
-  const stats = { candidates: 0, checked: 0, updated: 0, gone_archived: 0, line_syncs: 0, errors: 0, aborted_after_consecutive_failures: 0, db_only_drift: [] as string[], error_samples: [] as string[] };
+  const stats = { candidates: 0, checked: 0, updated: 0, gone_archived: 0, line_syncs: 0, errors: 0, write_errors: 0, aborted_after_consecutive_failures: 0, db_only_drift: [] as string[], error_samples: [] as string[] };
+
+  // 🛑 A REFUSED WRITE IS NOT A WRITE (2026-09-26). Until today the three writes below discarded their
+  //    `error`, so a write PostgREST refused was counted as `updated` / `gone_archived` / `line_syncs`
+  //    and its title/status/date/frequency changes were lost with no trace. Proven live on 112-YA: a
+  //    patch refused by jobs_active_job_number_uniq (23505) logged `updated: 1`, status 'success',
+  //    while the row never changed. Now every write checks its error: a failure is counted in
+  //    `errors` (so sync_log reads 'partial' and log_jobber_sync_health can see it) and in
+  //    `write_errors`, with the code in the sample, and the row carries on to its next step: one
+  //    failing row never aborts the batch.
+  const writeFailed = (msg: string, err: { code?: string; message?: string }) => {
+    stats.errors++;
+    stats.write_errors++;
+    const m = `${msg} (${err.code ?? "no code"}): ${err.message ?? "unknown error"}`;
+    if (stats.error_samples.length < 3) stats.error_samples.push(m);
+    console.error(`[jobs-drift] ${m}`);
+  };
 
   try {
     const token = await getReadToken();
 
     // Candidate set: linked jobs that are live in our DB, PLUS ones that went
     // terminal here in the last 14 days (fix #2 in the header).
-    const { data: live } = await db.from("jobs")
+    // 🛑 These reads THROW on error (2026-09-26). They used to discard it, so a failed read became
+    //    "0 candidates" and the run logged 'success' having compared nothing: a missing answer read
+    //    as an empty one, the exact shape the header forbids. Now the run lands as 'partial'.
+    const { data: live, error: liveErr } = await db.from("jobs")
       .select("id, title, job_status, start_at, end_at, frequency_days, updated_at")
       .not("job_status", "in", "(archived,closed,destroyed)");
+    if (liveErr) throw new Error(`live jobs read failed: ${liveErr.message}`);
     const cutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
-    const { data: recentTerminal } = await db.from("jobs")
+    const { data: recentTerminal, error: termErr } = await db.from("jobs")
       .select("id, title, job_status, start_at, end_at, frequency_days, updated_at")
       .in("job_status", ["archived", "closed", "destroyed"])
       .gte("updated_at", cutoff);
+    if (termErr) throw new Error(`recent-terminal jobs read failed: ${termErr.message}`);
     const rows = [...(live ?? []), ...(recentTerminal ?? [])];
 
     const ids = rows.map((r) => r.id);
-    const { data: links } = await db.from("entity_source_links")
+    const { data: links, error: linkErr } = await db.from("entity_source_links")
       .select("entity_id, source_id")
       .eq("entity_type", "job").eq("source_system", "jobber")
       .in("entity_id", ids.length ? ids : [-1]);
+    if (linkErr) throw new Error(`job links read failed: ${linkErr.message}`);
     const gidByJob = new Map((links ?? []).map((l: any) => [l.entity_id, l.source_id]));
     const linked = rows.filter((r) => gidByJob.has(r.id));
     // ⚠ `candidates` is how many rows we INTENDED to check. `checked` counts the ones actually
@@ -216,8 +238,9 @@ Deno.serve(async (req) => {
             // Not returned for an explicit id filter = gone on Jobber's side
             // (destroyed from their UI; the API itself cannot delete jobs).
             if (row.job_status !== "archived") {
-              await db.from("jobs").update({ job_status: "archived" }).eq("id", row.id);
-              stats.gone_archived++;
+              const { error: goneErr } = await db.from("jobs").update({ job_status: "archived" }).eq("id", row.id);
+              if (goneErr) writeFailed(`job ${row.id}: gone-arm archive refused`, goneErr);
+              else stats.gone_archived++;
             }
             continue;
           }
@@ -233,8 +256,9 @@ Deno.serve(async (req) => {
             patch.frequency_days = Number(cf.valueNumeric);
           }
           if (Object.keys(patch).length) {
-            await db.from("jobs").update(patch).eq("id", row.id);
-            stats.updated++;
+            const { error: patchErr } = await db.from("jobs").update(patch).eq("id", row.id);
+            if (patchErr) writeFailed(`job ${row.id}: update of ${Object.keys(patch).join(",")} refused`, patchErr);
+            else stats.updated++;
           }
 
           // Line items: an SA job carries the set, EVERY OTHER KIND CARRIES NONE.
@@ -267,9 +291,12 @@ Deno.serve(async (req) => {
                 unit_price: Number(n.unitPrice ?? 0), total_price: n.totalPrice != null ? Number(n.totalPrice) : null,
               }))
             : [];
-          const { data: have } = await db.from("line_items")
+          const { data: have, error: haveErr } = await db.from("line_items")
             .select("name, quantity, unit_price")
             .eq("job_id", row.id).is("visit_id", null).is("invoice_id", null);
+          // A failed read of OUR lines is not "we hold none": skip this row's line sync (the catch
+          // below counts it) rather than rewrite on a comparison with nothing.
+          if (haveErr) throw new Error(`line_items read failed: ${haveErr.message}`);
           // ⚠ MULTISET compare, not find-by-name. Jobs legitimately carry 2-3 lines
           // with the SAME name at different prices (split pricing — measured live:
           // 10+ jobs). A find-by-name diff always matched the first duplicate,
@@ -290,8 +317,9 @@ Deno.serve(async (req) => {
             // Atomic, per-job-serialized rewrite via public.rewrite_job_line_items — ends the
             // concurrent delete-then-insert duplication race (a reopen makes this and the */5 poll
             // overlap on the same job). `want` is the desired set; [] deletes and inserts nothing.
-            await db.rpc("rewrite_job_line_items", { p_job_id: row.id, p_lines: want });
-            stats.line_syncs++;
+            const { error: rwErr } = await db.rpc("rewrite_job_line_items", { p_job_id: row.id, p_lines: want });
+            if (rwErr) writeFailed(`job ${row.id}: line_items rewrite refused`, rwErr);
+            else stats.line_syncs++;
           }
         } catch (e) {
           stats.errors++;
@@ -308,7 +336,7 @@ Deno.serve(async (req) => {
     console.error(`[jobs-drift] ${msg}`);
   }
 
-  await db.from("sync_log").insert({
+  const { error: logErr } = await db.from("sync_log").insert({
     sync_source: "jobber_job_drift",
     started_at: started,
     finished_at: new Date().toISOString(),
@@ -317,6 +345,8 @@ Deno.serve(async (req) => {
     status: stats.errors ? "partial" : "success",
     details: stats,
   });
+  // The run's only record is that row; if it cannot be written, say so in the edge log and the reply.
+  if (logErr) console.error(`[jobs-drift] sync_log insert failed: ${logErr.message}`);
 
-  return new Response(JSON.stringify({ ok: true, ...stats }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ ok: true, sync_log_error: logErr?.message ?? null, ...stats }), { headers: { "Content-Type": "application/json" } });
 });
