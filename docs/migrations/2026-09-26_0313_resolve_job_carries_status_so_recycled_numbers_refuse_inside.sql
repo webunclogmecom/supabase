@@ -32,12 +32,28 @@
 -- the caller's UPDATE hit 23505; the NEW body raised 23505 inside and left 0 rows, 0 links. Mutation
 -- check: pointing that case at the old body fails it ("did not raise 23505").
 -- CENSUS 2026-09-26 03:05 ET: 0 jobs with job_status NULL; the only real 23505 on record (363445,
--- 2026-09-09) predates the atomic resolve.
+-- 2026-09-08 20:15 ET) predates the atomic resolve (applied 2026-09-09 12:39 ET).
+--
+-- ⚠ ADDED AFTER REVIEW (the executable part of this file is unchanged):
+--   * "A live recycled number" includes a holder in 'destroyed' or 'closed': the index excludes only
+--     'archived', so those still hold the number and the new job is refused (now cleanly). Jobber reuses a
+--     number after DELETING the job that held it (the originals of both 99901013 and 99901068 are gone in
+--     Jobber), and JOB_DESTROY writes 'destroyed'. It heals: every row ever set to 'destroyed' (8 of 8) was
+--     moved to 'archived' by sync-jobber-job-drift's gone arm 20 to 40 minutes later, after which a later
+--     sync-jobber-poll replay (needs_populate stays TRUE on a failed replay) imports the job. Visits that
+--     arrive for it in that window keep job_id NULL (inferred; never observed). Narrowing the index to
+--     NOT IN ('archived','destroyed','closed') would remove the delay; not done here, it is a decision.
+--   * A status-AWARE pre-check was also possible; it was not chosen because it would restate the index
+--     predicate in a second place. Inserting the status lets the index stay the single rule.
+--   * This file has no BEGIN/COMMIT: it was applied as ONE query through the Management API, which runs it
+--     in one implicit transaction. Replaying it with psql needs -1 (--single-transaction), or the DROP
+--     could commit alone.
 --
 -- RULE 8: no table change; public.jobs stays audited. GRANTS: service_role only, revoked BY NAME (a new
 -- function in public gets EXECUTE for authenticated by default).
--- ROLLBACK: redeploy webhook-jobber v122 first, then drop function public.fn_jobber_resolve_job(text, text, text)
---           and re-create the 2026-09-09_1230 body.
+-- ROLLBACK: redeploy webhook-jobber v122 first, then drop function public.fn_jobber_resolve_job(text, text, text),
+--           re-create the 2026-09-09_1230 body AND its revoke/grant lines (a re-created function in public
+--           gets EXECUTE for authenticated again by default).
 -- ============================================================================
 
 drop function public.fn_jobber_resolve_job(text, text);

@@ -147,6 +147,15 @@ live recycled number refuses inside (nothing left), an ARCHIVED import of one st
 caller that passes no status keeps the old behaviour. A status-blind pre-check was rejected because it
 would refuse that archived import. Census when fixed: 0 NULL-status jobs. Re-runnable proof, with the
 old body as the control: `scripts/probes/resolve_job_number_guard/`.
+- ⚠ **Jobber reuses a number after DELETING the job that held it** (the originals of both 99901013 and
+  99901068 are gone in Jobber). JOB_DESTROY writes `destroyed`, which the index still covers, so the new
+  job is refused (cleanly) until `sync-jobber-job-drift`'s gone arm archives the old row: 8 of 8 rows ever
+  set to `destroyed` were archived 20 to 40 minutes later. A later poll replay (needs_populate stays TRUE
+  on a failed replay) then imports the job. Visits arriving for it in that window keep `job_id` NULL
+  (inferred, never observed). Excluding `destroyed` (and the writer-less `closed`) from the index would
+  remove the delay; that is a decision for Fred, not done.
+- 10000317 (517/520) and 10000318 (518/521) are a different shape: same client, both archived, the older
+  row of each has no Jobber link. Not recycling.
 
 ⚠ **`line_items.invoice_id` is `ON DELETE SET NULL`.** Deleting an invoice that has line items
 neither blocks nor cascades: it silently orphans them, and nothing reports it. Always count
