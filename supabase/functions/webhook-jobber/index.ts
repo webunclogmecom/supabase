@@ -1070,21 +1070,23 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // Sync visit-scoped line items (idempotent: wipe + replace by visit_id). Mirrors the
   // invoice line-item sync — captures each scheduled visit's services verbatim (incl. the
   // formatted "NN - ..." codes) so the registered visit carries its full service detail.
+  // 🛑 ATOMIC since 2026-09-25_2350, same race and same fix as handleInvoice: one transaction under a
+  // per-visit advisory lock (rewrite_visit_line_items), never .delete() + .insert() again. A failure
+  // leaves the previous lines intact; it is still only logged here, as before, because the DERM
+  // derivation and visit_locations steps below must run either way.
   const visitLineNodes: any[] = v.lineItems?.nodes ?? []
-  await supabase.from('line_items').delete().eq('visit_id', entityId)
-  if (visitLineNodes.length > 0) {
-    const liRows = visitLineNodes.map((n: any) => ({
-      visit_id: entityId,
+  const { error: vliErr } = await supabase.rpc('rewrite_visit_line_items', {
+    p_visit_id: entityId,
+    p_lines: visitLineNodes.map((n: any) => ({
       name: n.name ?? null,
       description: n.description ?? null,
       quantity: n.quantity ?? null,
       unit_price: n.unitPrice ?? null,
       total_price: n.totalPrice ?? null,
       taxable: n.taxable ?? null,
-    }))
-    const { error: liErr } = await supabase.from('line_items').insert(liRows)
-    if (liErr) console.error(`Visit ${numericId}: line_items insert failed:`, liErr.message)
-  }
+    })),
+  })
+  if (vliErr) console.error(`Visit ${numericId}: line_items rewrite failed:`, vliErr.message)
 
   // Derive DERM-required from this visit's line items (visit/invoice/job-scoped, per the taxonomy
   // "Requires DERM reporting" rule). MONOTONIC + idempotent in SQL: never demotes a known TRUE,
@@ -1234,27 +1236,29 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
     match_method: 'webhook',
   })
 
-  // Sync invoice-scoped line items. Idempotent: wipe + replace.
-  // (Invoice line items have no stable Jobber ID we sync, so dedup by
-  // invoice_id is the simplest correct strategy.)
+  // Sync invoice-scoped line items: wipe + replace, ATOMICALLY (2026-09-25_2350).
+  // 🛑 DO NOT SPLIT THIS BACK INTO .delete() + .insert(). Those were two PostgREST requests, two
+  // transactions, and Jobber delivers webhooks in PAIRS: the two runs interleaved as delete, delete,
+  // insert, insert and left a duplicate line (invoice #3248, 2026-09-25; 6 live invoices held 8 extra
+  // lines, among them $349 + fee counted twice on 275-MLP #3065). rewrite_invoice_line_items takes a
+  // per-invoice advisory lock and does both in one transaction. Same rows as before, same predicate.
+  // ⚠ Identical lines are LEGITIMATE (21 invoices hold exactly what Jobber holds, repeats included):
+  // never dedupe line_items DB-side. Jobber exposes no stable line-item id we sync.
+  // A failure now leaves the previous lines intact (one transaction) and is re-thrown at the end of
+  // this handler, so the event lands as 'failed' (visible, replayable) instead of 'processed'.
   const lineItemNodes: any[] = inv.lineItems?.nodes ?? []
-  await supabase.from('line_items').delete().eq('invoice_id', entityId)
-  if (lineItemNodes.length > 0) {
-    const lineRows = lineItemNodes.map((n: any) => ({
-      invoice_id: entityId,
+  const { error: liErr } = await supabase.rpc('rewrite_invoice_line_items', {
+    p_invoice_id: entityId,
+    p_lines: lineItemNodes.map((n: any) => ({
       name: n.name ?? null,
       description: n.description ?? null,
       quantity: n.quantity ?? null,
       unit_price: n.unitPrice ?? null,
       total_price: n.totalPrice ?? null,
       taxable: n.taxable ?? null,
-    }))
-    const { error: liErr } = await supabase.from('line_items').insert(lineRows)
-    if (liErr) {
-      console.error(`Invoice ${numericId}: line_items insert failed:`, liErr.message)
-      // Don't throw — invoice itself succeeded, line items can be backfilled
-    }
-  }
+    })),
+  })
+  if (liErr) console.error(`Invoice ${numericId}: line_items rewrite failed:`, liErr.message)
 
   // Update linked visits' invoice_id. cron_jobber pulls visits with a
   // completedAt cursor — once a visit is completed it's never re-pulled,
@@ -1269,6 +1273,7 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
     }
   }
 
+  if (liErr) throw new Error(`Invoice ${numericId}: line_items rewrite failed (invoice row and visit links written): ${liErr.message}`)
   return { entity_id: entityId }
 }
 
@@ -1367,7 +1372,9 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
   // Atomic, per-job-serialized rewrite via public.rewrite_job_line_items — ends the concurrent
   // delete-then-insert duplication race (line_items has no unique key by design). Same rows this
   // used to insert; an empty array deletes the job-scope lines and inserts nothing (SC/legacy).
-  await supabase.rpc('rewrite_job_line_items', {
+  // 2026-09-25: the RPC's error is no longer discarded. It is atomic, so a failure leaves the previous
+  // lines intact; throwing marks the event 'failed' (visible, replayable) instead of 'processed'.
+  const { error: jliErr } = await supabase.rpc('rewrite_job_line_items', {
     p_job_id: entityId,
     p_lines: jobLineNodes.map((n: any) => ({
       name: n.name, description: n.description ?? '',
@@ -1375,6 +1382,7 @@ async function handleJob(numericId: string, topic: string): Promise<{ entity_id:
       total_price: n.totalPrice ?? 0, taxable: !!n.taxable,
     })),
   })
+  if (jliErr) throw new Error(`Job ${numericId}: line_items rewrite failed (job row written): ${jliErr.message}`)
 
   return { entity_id: entityId }
 }
@@ -1642,7 +1650,7 @@ async function handleProperty(numericId: string, topic: string): Promise<{ entit
   return { entity_id: entityId }
 }
 
-// Soft-delete / status-flip handlers for DESTROY / CLOSED events.
+// Soft-delete / status-flip handlers for DESTROY events (JOB_CLOSED re-reads instead, see handleJobClosed).
 // Per rule #6 (never hard-delete): we flip a status column so joins + history stay intact.
 
 // Map our entity_type → Jobber's GID Type token (for re-encoding numericId → GID)
@@ -1774,7 +1782,7 @@ async function softStatusFlip(
       }
     }
   }
-  // supabaseJobber: every *_DESTROY / JOB_CLOSED topic is Jobber-originated -> the
+  // supabaseJobber: every *_DESTROY topic is Jobber-originated -> the
   // cancel/archive audits as "Changed in Jobber" (visits/clients are user-visible).
   const { error } = await supabaseJobber.from(table).update({ [statusCol]: newStatus }).eq('id', existingId)
   if (error) throw new Error(`${table}.${statusCol}='${newStatus}' failed: ${error.message}`)
@@ -1856,7 +1864,21 @@ async function handleClientDestroy(id: string): Promise<{ entity_id: number }> {
   console.log(`[CLIENT_DESTROY] client ${existingId} recorded as deleted_in_jobber (was ${oldStatus ?? 'unknown'}, ${removed} upcoming SA visits removed)`)
   return res
 }
-const handleJobClosed     = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'closed',    id)
+// 🛑 JOB_CLOSED RE-READS JOBBER. NEVER FLIP IT BLINDLY AGAIN (2026-09-25).
+// 'closed' is not a Jobber job status: JobStatusTypeEnum (2026-04-16 and 2026-09-09) has no such value,
+// and every 'closed' ever stored (33 of 33) was invented by the old softStatusFlip('closed') here. After
+// a close Jobber reports archived, or requires_invoicing (uninvoiced work), or an OPEN status when the
+// job was reopened before this late event arrived. JOB_CLOSED and its paired JOB_UPDATE share one
+// second-precision occurredAt and land in either order, so the blind flip overwrote a correct re-read
+// 6 times in 33, left job 765 'closed' over Jobber's 'archived' on 2026-09-25, wrote 'closed' over
+// reopened jobs, and on an archived job whose number a live job shares it raised 23505 (the flip puts
+// the row back into jobs_active_job_number_uniq). The 5-minute poll cannot repair any of it: it pulls
+// jobs by createdAt and Jobber's job filter has no updatedAt. Only the :15/:45 drift run would.
+// ⇒ A close is a status change like any other: re-read and store Jobber's jobStatus. A failed read
+// throws before writing (logged 'failed'); a job Jobber no longer has throws 'not found' and writes nothing.
+// Do NOT "harden" softStatusFlip with a generic terminal guard instead: it would stop JOB_DESTROY and
+// QUOTE_DESTROY moving archived rows to destroyed.
+const handleJobClosed     = (id: string, topic: string) => handleJob(id, topic)
 const handleJobDestroy    = (id: string) => softStatusFlip('job',    'jobs',    'job_status', 'destroyed', id)
 const handleVisitDestroy  = (id: string) => softStatusFlip('visit',  'visits',  'visit_status', 'cancelled', id) // double-L: canonical enum + visits_visit_status_chk
 const handleInvoiceDestroy= (id: string) => softStatusFlip('invoice','invoices','invoice_status','destroyed',id)

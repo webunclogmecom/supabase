@@ -687,6 +687,57 @@ distinguish an answer of "no" from no answer at all.
 `save-client-contact` returned `jobber_unavailable` and wrote **nothing**, leaving the contact intact.
 Fail-closed is what you want when the upstream is unreadable.
 
+### 🛑 JOB_CLOSED RE-READS JOBBER, AND LINE-ITEM REWRITES ARE ATOMIC (webhook-jobber v121, 2026-09-25)
+
+Both were found live during the 112-YA void test and both come from the same fact about Jobber's webhooks:
+**they arrive at least once, in PAIRS, a few hundred ms apart, with one second-precision `occurredAt`, and in
+either order** (JOB_CLOSED + JOB_UPDATE for one close; two INVOICE_UPDATEs for one change). Jobber's docs say
+only "at least once" and that the app must query the API for the object. So: **a handler must never write a
+value it did not just read from Jobber, and a wipe-and-replace must be ONE transaction.**
+
+**JOB_CLOSED RE-READS JOBBER.** It used to be `softStatusFlip('closed')`, a blind write. 🛑 **`closed` is not a
+Jobber job status**: `JobStatusTypeEnum` (identical at 2026-04-16 and 2026-09-09) is requires_invoicing,
+archived, late, today, upcoming, action_required, on_hold, unscheduled, active, expiring_within_30_days, and
+every `closed` ever stored (33 of 33) was invented by that flip. After a close Jobber reports `archived`, or
+`requires_invoicing` (uninvoiced work; 5 of 33), or an OPEN status when the job was reopened before the late
+event landed (5 of 33, e.g. job 1514). The flip overwrote a correct re-read 6 times in 33 and left job 765
+`closed` over Jobber's `archived` for 78 s; an archived-to-closed flip also puts the row back into
+`jobs_active_job_number_uniq` (it excludes only `archived`), so on job 1850 it raised 23505.
+- **Now `JOB_CLOSED` runs `handleJob`**, exactly like JOB_UPDATE: the stored status is always Jobber's. A failed
+  read throws before writing (logged `failed`); a job Jobber no longer has throws "not found" and writes nothing.
+- 🛑 **Do not "fix" this with a generic guard in `softStatusFlip`.** A `NOT IN ('archived','destroyed')`
+  predicate there would stop JOB_DESTROY and QUOTE_DESTROY moving archived rows to `destroyed`, and a
+  job-only guard still lets `closed` land over requires_invoicing or a reopened job.
+- `closed` now has no writer. `jobs_job_status_chk` and `public.visits_with_review` (the one reader that treats
+  `closed` as terminal) still name it: dead but harmless, deliberately left alone.
+- **Who repairs a status the webhooks got wrong: only the drift.** The poll pulls JOBS by `createdAt` (Jobber's
+  job filter has no `updatedAt`), so it never re-reads an existing job. `sync-jobber-job-drift`'s 14-day
+  recent-terminal arm does, at :15/:45 (up to ~30 min, ~60 if a run aborts).
+- Proof (112-YA, signed replays, no Jobber writes): pre-fix v120 wrote `closed` over `archived` (1283) and over
+  `action_required` (766), and raised 23505 on 1850; v121 kept `archived`, kept `action_required`, and failed
+  1850 with "not found" (Jobber has deleted it) with no write. ⚠ Audit rows 225596/225597 (1283, 2026-09-26
+  03:45 UTC) are that synthetic control, not a real race: their webhook payloads are FLAT.
+
+**LINE-ITEM REWRITES ARE ATOMIC** (migration `2026-09-25_2350`). handleInvoice and handleVisit replaced an
+owner's lines as `.delete()` then `.insert()`, two transactions, so a webhook pair interleaved as delete,
+delete, insert, insert. Now `public.rewrite_invoice_line_items(p_invoice_id, p_lines)` and
+`public.rewrite_visit_line_items(p_visit_id, p_lines)` (SECDEF, service_role only) take a per-owner advisory
+lock and do both in one transaction, same predicate as before, rows in Jobber's order; a non-array payload
+RAISES instead of wiping. They are siblings of `rewrite_job_line_items`, which already did this for jobs;
+handleJob now also checks that RPC's error.
+- Measured before: group-by (invoice_id, name, unit_price, quantity) found 32 groups on 27 invoices, but line
+  by line against Jobber **21 of those invoices hold exactly what Jobber holds**. 🛑 **Identical lines are
+  real; never dedupe `line_items` DB-side.** 6 invoices held 8 extra lines (all since 2026-08-31), among them
+  275-MLP #3065 ($349 + fee counted twice) and 076-TCE #3087. Pre-fix control: 4 concurrent replays of
+  invoice 2836 duplicated in 3 of 5 rounds; post-fix 8 concurrent, 0 of 8. Visit RPC: 8 concurrent calls x 5
+  rounds on test visit 8208, 1 line each time, content unchanged.
+- The 5 live invoices were repaired by one INVOICE_UPDATE replay each (Jobber read only; 0 invoice rows
+  changed). Left as is: #3134 (id 2719, 323-CHA) holds two $0 lines but Jobber deleted the invoice, so it
+  cannot be re-read.
+- ⚠ An invoice line rewrite failure now marks the event `failed` (re-thrown at the end of handleInvoice, after
+  the invoice row and visit links are written); a visit line failure is still only logged, because the DERM
+  derivation and visit_locations steps after it must run.
+
 ### 🛑 THE NEVER-EXECUTED REPORT: `scripts/checks/never-executed.mjs` (added 2026-08-21)
 
 **Run it before trusting any dispatch surface, and after adding one.** `node scripts/checks/never-executed.mjs`
@@ -1161,8 +1212,10 @@ The cascade reaches us as one `JOB_DESTROY` webhook per job, which sets `job_sta
 of the property, including jobs that were already `archived` (112-YA: 1285/1305/1306/1307 flipped archived ->
 destroyed in the same second as the two open ones, 1846 and 1849). `archived` comes back only when
 **`sync-jobber-job-drift`'s gone-arm** (every 30 minutes at :15/:45, the 14-day recent-terminal arm,
-`gone_archived`) asks Jobber for the job by id and gets nothing. **Not the poll**: the poll pulls by
-`updatedAt` and never re-pulled the six (their `raw.jobber_pull_jobs` rows date from June and August), and
+`gone_archived`) asks Jobber for the job by id and gets nothing. **Not the poll**: for JOBS the poll filters
+by **`createdAt`**, not `updatedAt` (corrected 2026-09-25: Jobber's `JobFilterAttributes` has no `updatedAt`
+at 2026-04-16 or 2026-09-09, so the poll can never see a status change on an existing job; it runs
+`1-59/5`), and it never re-pulled the six (their `raw.jobber_pull_jobs` rows date from June and August), and
 08-21's "20 minutes later" for job 1848 was simply the 01:45 drift run. So the window is up to 30 minutes,
 longer when a drift run fails (10:45 on 2026-09-15 went `partial` on three HTTP 401s from Jobber), and
 during it a deleted job read as live to everything that hid only `archived`.
@@ -1856,12 +1909,9 @@ offer **Mark as bad debt** and **Void** (Void since v17, below). What shipped:
   handleInvoice). A plan reviewer had concluded the opposite from #3247 and predicted voids would wait up to 6 h
   for the drift run; the live run refuted it (#3247's 19:44:37 webhook was most likely its void). Not observed:
   a void made in Jobber's own screens.
-  ⚠ **Pre-existing race seen in the same run, not fixed:** `JOB_CLOSED` is a blind `softStatusFlip('closed')`
-  (`webhook-jobber` ~1859). Normally the paired job update re-reads and lands `archived` within a second (24 of
-  25 historical transitions), but on job 765 the flip landed LAST and left `closed` over Jobber's `archived`.
-  Many readers filter `NOT IN ('archived','destroyed')`, so a stuck `closed` job reads as live until something
-  re-syncs it. Also seen: paired `INVOICE_UPDATE` deliveries race handleInvoice's delete-then-insert of line
-  items, leaving a duplicate for ~4 minutes until the poll replay.
+  ✅ **Two pre-existing races seen in the same run are FIXED (webhook-jobber v121, 2026-09-25 ~23:57 ET):**
+  the blind `JOB_CLOSED` flip, and the invoice/visit line-item delete-then-insert. See "JOB_CLOSED RE-READS
+  JOBBER" and "LINE-ITEM REWRITES ARE ATOMIC" in the Jobber section below.
 - **Without the new scopes nothing changes**: Jobber answers "An object of type Quote was hidden due to
   permissions" for a client that HAS quotes (measured on 201-ALA), `readLiveBlockers` reads that as
   `no_scope`, and the previous path runs. A client with none returns an empty list and no error.
