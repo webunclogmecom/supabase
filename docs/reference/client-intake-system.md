@@ -344,6 +344,21 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     the search's `stop()` (kept on its `GEO` state). `tests/form-map.mjs` holds the GPS answer back, taps the map, fires
     the answer, and asserts the pin did not move: 4 of 4 widths FAIL with the fix removed, 33 of 33 pass with it. The
     script now exits 1 when a check fails.
+  - **An address box above each map (2026-09-27, `89f9fd5`;** Fred: *"he should be able to write an address down too,
+    and then move the Pin, because he could be doing the collection of the data far away"*). Places API (New) in the
+    browser (`importLibrary('places')`, `AutocompleteSuggestion.fetchAutocompleteSuggestions`, US only, biased 50 km
+    around the property): at least 3 characters, 350 ms after the last key, at most 5 suggestions, only the newest
+    request's reply shown. A pick (or Enter, which takes the first) moves the map there at zoom 20 AND puts the pin on
+    it through the same `put()` a tap uses, so it stops a running GPS search and stores no `accuracy_m`. The collector
+    then drags it to the exact spot. The one line under the box (`role="status"`) says what happened; a refusal from
+    Google reads "Address search is not available right now. Move the map by hand." and the map still works.
+    - 🛑 **Google refuses it today.** Places API (New) is enabled in the GCP project "Locations Search", but the key
+      "Picture Planner App - Browser Key" lists only Maps JavaScript API under API restrictions, so every search returns
+      "... AutocompletePlaces are blocked" (measured 2026-09-27 by loading the key on planner.unclogme.app in a browser, after Fred enabled the API).
+      The box shows the refusal sentence until the key allows Places API (New). No code change is needed then.
+    - Test: `tests/form-map.mjs` with `ADDRESS_SEARCH=blocked` expects the refusal sentence (40 of 40 pass live); in
+      normal mode it expects 1 to 5 suggestions and a pick within 0.002 degrees of the property with no `accuracy_m`.
+      Normal mode is what to run once the key is fixed.
 - **The collector's writes are labelled `intake-collector` in `audit.logs` (2026-09-27, intake-submit v19).** The function
   builds its own service-role client with `x-app-source: intake-collector` instead of the shared webhook client, so a
   submit, an upload attach and a photo link no longer land as `sql`. Checked live on [TEST] intake 694 (deleted after).
@@ -362,7 +377,13 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     "developer approval". Enforced by the RPC and by the append-only trigger (the CHECK `property_pages_check1` was
     dropped by `2026-09-27_1155_page_developer_approval.sql`); the Activity says "..., who also made it (developer
     approval)". Only the service role can edit either list; adding a login to `page_self_approvers` is Fred's call alone
-    (that login can then publish a page with nobody else looking).
+    (that login can then publish a page with nobody else looking). The builder reads `can_self_approve` from
+    `get_page_builder` (true only when the login is on BOTH lists): its Submit confirm then says "You can approve it
+    yourself right after (developer approval).", and its review button reads "Approve my own version N (developer
+    approval)". Tested live by `scripts/page-builder/tests/address_approval.mjs`.
+  - **The builder's map has the same address box as the collector form (2026-09-27, Planner batch M3)**, above the map
+    buttons. A pick only moves the map (zoom 20); it places and moves no pin, arrow or fact, so the draft's map is
+    unchanged. It needs the same key fix as rule 17 and shows the same refusal sentence until then.
   - 🛑 **A page photo is served only from the bucket its LINK KIND names, and only if that object exists there**
     (`fn_page_photo_ids` joins `storage.objects`). `photos.storage_path` is writable by any staff session, and a path like
     `../manifests/...` joined into a storage URL is normalised into ANOTHER bucket: the pre-apply review served an
@@ -419,7 +440,7 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
   - **Staff names: `public.fn_page_staff_name(email)`** = the employee's full name, else the login email, else null.
     `get_page_builder` (live and pending names) and `page_builder_list` use it, so nobody is "the office" on a staff
     screen. The PUBLIC driver page keeps `fn_page_person_name` (first name, else "the office"): never a login email to
-    whoever holds the link. Jonathan's `jon.v@ayache.com` has no employee row yet, so he shows as that email.
+    whoever holds the link.
   - **Activity History: `client.get_property_activity(p_property_id)`** (staff JWT only, authenticated EXECUTE). A jsonb
     array, newest first, `{at, kind, text, who, intake_id, version}`; `text` is the finished sentence ("Version 3 of the
     driver page approved by Serena Natali"). Kinds: `form_requested`, `form_link_shown`, `form_filled` (who = the name
