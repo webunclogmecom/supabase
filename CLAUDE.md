@@ -303,6 +303,24 @@ The view laundering the table grant makes it look safe right up until the functi
     (and `anon`) before asserting anything grant-shaped, or use `has_table_privilege(<role>, ...)`
     which does not depend on who is asking.
 
+### 🛑 A TOKEN'S CLAIMS ARE ONLY TRUE BEHIND `verify_jwt = true` (2026-09-27)
+
+A function with `verify_jwt = false` receives the token exactly as the caller sent it. Decoding its
+payload (`JSON.parse(atob(tok.split('.')[1]))`) proves NOTHING: anyone can write
+`{"role":"service_role"}` and sign it with garbage. `get-derm-doc` did exactly that from 2026-07-29 to
+2026-09-27 to recognise service_role on its raw-sheet gate, and a hand-made token got the raw DERM
+address sheet (measured: HTTP 200 and a signed URL). Fixed in v26.
+
+- In a `verify_jwt = false` function: recognise service_role only by an EXACT match with the function's
+  own key, and a user only through `auth.getUser(token)` (the auth server checks the signature).
+- `bearerRole()`-style decoding is fine ONLY with `verify_jwt = true`, which makes the gateway verify
+  the signature first. Pin it in `config.toml` next to the function and never deploy those functions
+  with `--no-verify-jwt`.
+- Checked LIVE the same day (Management API, not config.toml): every other function that decodes a
+  role claim runs with `verify_jwt = true`. Re-check when adding one.
+- The three DERM generators (`generate-derm-address-preview`, `generate-fog-manifest`,
+  `generate-derm-address-pdf`) now take service_role or a signed-in staff email, gateway pinned on.
+
 ### ⚠ A SECDEF function BYPASSES RLS — so wrapping a write in one can silently WIDEN it (2026-08-05)
 
 **`postgres` has `rolbypassrls = true`** (measured; it is not a superuser, but it holds the attribute).

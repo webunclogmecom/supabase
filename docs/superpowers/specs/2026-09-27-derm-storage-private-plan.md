@@ -1,5 +1,20 @@
 # DERM paperwork storage: final plan (reviewed 2026-09-27)
 
+> ## ✅ Stage 0 DONE, 2026-09-27 (Fred: "Start with Stage 0")
+>
+> Every step was tested with a baseline first (the hole proven open), then the change, then the same test
+> (closed), plus a control. No file was moved or deleted.
+>
+> | step | result |
+> |---|---|
+> | 0.1 generators | `generate-derm-address-preview` v27, `generate-fog-manifest` v21 and (added, the plan missed it) `generate-derm-address-pdf` v29: gateway check on (pinned in `config.toml`) plus an in-code check, service_role or a signed-in staff email. Before: anyone (even with no token) reached the preview and fog generators, and the public anon key reached the PDF one. After: anon key, no token and a forged token all get 401; staff and the service key pass. The DERM Tracker's Visits page "Generate" now sends the user's session (it sent the hard-coded anon key), published first (`index-OiSKwQFZ.js`). |
+> | 0.2 get-derm-doc | v26. kind `fog` is staff-only; an unknown client and an unknown manifest now get the same 403. **Found on the way and closed: a forged token bypass.** The address/fog gate read the token's role claim without checking its signature, and this function runs with the gateway check off, so a hand-made `{"role":"service_role"}` token with a garbage signature got the raw sheet (measured HTTP 200). service_role is now recognised only by an exact match with the function's own key; users still go through `auth.getUser`. Every other function that trusts a role claim was checked LIVE: all run with the gateway check on. kind `manifest` (the Field Portal receipt card) stays open until Stage 4d, as planned. |
+> | 0.3 storage rules | `2026-09-27_1215_derm_storage_stage0_policies.sql`. Anonymous uploads under derm/ closed (baseline: an anonymous upload returned 200 in both buckets; after: refused by RLS). Signed-in deletes under derm/ blocked by one RESTRICTIVE policy (signed-in upload still 200; signed-in delete removes nothing; control: a signed-in delete outside derm/ still works). Probe files removed. |
+> | 0.4 mirror job | "Mirror DERM PDFs to Supabase Storage" disabled (`disabled_manually`); no run since. |
+> | 0.5 fog.pdf | Fred: pause it. Storage logs for the last 7 days: 0 real downloads of any fog.pdf (1, from our own test script), 26 uploads by the generator. "Generate FOG Manifests" disabled; re-enabling back-fills. |
+>
+> Commits: Supabase `1b3a4cb` `061b18c` `7bf5537` `1db808f` `cafd642`. Rollback per step is in each step below.
+
 ## 1. Summary
 
 About 3,022 DERM paperwork files (1.39 GB, growing by about 42 a week) sit in two public buckets at numbered paths anyone can walk. Every name pattern downloads with no login: one file of each of the 24 patterns returned HTTP 200. Each file on its own is a Florida public record. Together they are a free, pre-joined map of which businesses share a dump ticket, and the per-client fog.pdf alone is enough to rebuild that map (127 of 127 multi-client tickets).
