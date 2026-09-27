@@ -8,7 +8,8 @@
 // Input (POST JSON):
 //   { manifest_id: number, client_code: string, kind: 'fog'|'address'|'manifest'|'gdo_report',
 //     gdo_id?: number }   // gdo_id: OPTIONAL, gdo_report only, narrows to ONE permit
-//     - fog      → fog_manifest_url            (per-client REDACTED FOG — Field Portal)
+//     - fog      → fog_manifest_url            (per-client generated FOG PDF; signed-in staff only
+//                                              since 2026-09-27, see the gate below)
 //     - address  → address sheet(s), UNIONED across the manifest's client rows (DERM Tracker)
 //     - manifest → WWTP receipt / manifest page(s), UNIONED across the rows
 //   Returns { urls: string[] } — the union for address/manifest matches what the apps render.
@@ -113,7 +114,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // Accepts a real user JWT, or service_role for server-side callers. The anon
   // publishable key is rejected in both its JWT and its newer opaque form,
   // because neither resolves to a user and neither carries role=service_role.
-  if (kind === 'address') {
+  // "A real user" means staff: sign-up is restricted to ayache.com / unclogme.com
+  // by the auth hook public.fn_restrict_signup_domains (measured 2026-09-27: 8 of 8
+  // accounts are staff).
+  //
+  // 2026-09-27 (DERM storage plan, Stage 0.2): kind 'fog' is gated too. The note
+  // above called it "Field Portal, anon BY DESIGN"; that is no longer true. The
+  // Field Portal serves the blacked-out scans (manifests/redacted/*), kind 'fog'
+  // is called by 0 chunks of the live apps, and the fog.pdf generator is paused.
+  // Left open it would sign the per-client fog.pdf for anyone holding a client
+  // code, which is enough to rebuild who shares a ticket. 'manifest' (the Field
+  // Portal WWTP card) stays open until that card moves to a public_id kind.
+  if (kind === 'address' || kind === 'fog') {
     const authz = req.headers.get('Authorization') ?? ''
     const token = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
     let allowed = false
@@ -136,7 +148,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       // diagnosably, not render an empty gallery that looks like "no documents".
       return json({
         error: 'authentication_required',
-        detail: "kind='address' returns the raw multi-client DERM sheet and requires a signed-in staff session",
+        detail: `kind='${kind}' returns DERM paperwork that names other clients and requires a signed-in staff session`,
       }, 401, cors)
     }
   }
@@ -156,7 +168,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const { data: v } = await db.schema('derm').from('manifests')
     .select('client_id, address_photo_url, address_photo_extra_urls, manifest_photo_url, manifest_photo_extra_urls')
     .eq('id', manifest_id).maybeSingle()
-  if (!v) return json({ error: 'not found' }, 404, cors)
+  // The SAME answer as an unknown client_code and as "not entitled" (2026-09-27, Stage 0.2):
+  // a 403 for an unknown client next to a 404 for an unknown manifest let a caller test
+  // whether a client code exists.
+  if (!v) return json({ error: 'forbidden' }, 403, cors)
 
   // AUTHORIZE: manifest's own client, or a linked (non-deleted) visit's client
   let entitled = v.client_id === cl.id
