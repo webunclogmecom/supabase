@@ -412,6 +412,9 @@ function mapFor(q,v){
     var put=function(ll){
       if(DONE) return;
       A[q.key]={lat:Number(ll.lat().toFixed(6)),lng:Number(ll.lng().toFixed(6))};   // placed by hand: no GPS accuracy
+      // A pin placed by hand wins: stop a "Use my location" search still running, or its answer would
+      // land later and silently move the pin back (the collector may be standing far from the spot).
+      if(GEO[q.key]&&GEO[q.key].stop) GEO[q.key].stop();
       M.at=A[q.key].lat+','+A[q.key].lng; delete GEO[q.key]; save(); afterPress(render);
     };
     map.addListener('click',function(e){ if(e.latLng){ mk.setPosition(e.latLng); mk.setMap(map); put(e.latLng) } });
@@ -535,6 +538,7 @@ function field(q){
       if(!navigator.geolocation){ GEO[q.key]={err:'This phone or browser will not share a location.'}; render(); return }
       var st={busy:true,acc:null}, best=null, done=false, wid=null, tm=null; GEO[q.key]=st;
       var stop=function(){ done=true; if(wid!=null) navigator.geolocation.clearWatch(wid); clearTimeout(tm); st.busy=false };
+      st.stop=stop;
       var finish=function(){
         if(done) return; stop();
         if(DONE) return;

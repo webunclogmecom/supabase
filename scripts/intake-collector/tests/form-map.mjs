@@ -77,6 +77,21 @@ for (const [name, w, h] of [['phone360', 360, 740], ['phone390', 390, 844], ['ta
   await p.waitForFunction((k) => { try { const v = JSON.parse(localStorage.getItem(k) || '{}')['site_map.truck_parking']; return v && Math.abs(v.lat - 25.80941) < 1e-6 } catch (e) { return false } }, 'intake-draft-' + TOKEN, { timeout: 25000 }).catch(() => {})
   const a2 = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}')['site_map.truck_parking'], 'intake-draft-' + TOKEN)
   ok(`${name}: Use my location moves the pin to the GPS fix`, a2 && Math.abs(a2.lat - 25.80941) < 1e-6 && a2.accuracy_m === 7, JSON.stringify(a2))
+  // A pin placed by hand while Use my location is still searching wins: the late GPS answer is dropped
+  // (the collector may be standing far from the parking spot). The fix is held back and fired after the tap.
+  await p.evaluate(() => { window.__late = []; navigator.geolocation.watchPosition = (cb) => { window.__late.push(cb); return 4242 }; navigator.geolocation.clearWatch = () => {} })
+  await card.getByRole('button', { name: /Use my location/ }).click()
+  await p.waitForTimeout(300)
+  const box2 = await card.locator('.map').boundingBox()
+  const rx = box2.x + box2.width * 0.3, ry = box2.y + box2.height * 0.6
+  if (mobile) await p.touchscreen.tap(rx, ry); else await p.mouse.click(rx, ry)
+  await p.waitForTimeout(800)
+  const a3 = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}')['site_map.truck_parking'], 'intake-draft-' + TOKEN)
+  const late = await p.evaluate(() => { window.__late.forEach((cb) => cb({ coords: { latitude: 25.7, longitude: -80.3, accuracy: 5 } })); return window.__late.length })
+  await p.waitForTimeout(800)
+  const a4 = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}')['site_map.truck_parking'], 'intake-draft-' + TOKEN)
+  const t4 = await card.textContent()
+  ok(`${name}: a GPS answer arriving after a hand-placed pin does not move it`, late === 1 && a3 && a3.accuracy_m === undefined && a4 && a4.lat === a3.lat && a4.lng === a3.lng && !/Finding your spot/.test(t4), JSON.stringify({ late, a3, a4 }))
   // a render from another answer keeps the same live map (no reload of tiles)
   const same = await p.evaluate(() => { const m1 = document.querySelector('.q .map'); window.__m = m1; return !!m1 })
   await p.locator('.q', { hasText: 'Is there a closed gate?' }).getByRole('button', { name: 'No' }).click()
@@ -90,4 +105,4 @@ for (const [name, w, h] of [['phone360', 360, 740], ['phone390', 390, 844], ['ta
 await b.close()
 console.log(`policy ${policy}, key ...${KEY.slice(-4)}`)
 console.log(res.join('\n'))
-console.log(res.some((r) => r.startsWith('FAIL')) ? 'SOME FAILED' : 'ALL PASS')
+if (res.some((r) => r.startsWith('FAIL'))) { console.log('SOME FAILED'); process.exitCode = 1 } else console.log('ALL PASS')

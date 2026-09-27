@@ -96,7 +96,13 @@
 //   the first, and an upload after submit 409s.
 // ============================================================================
 
-import { supabase } from '../_shared/supabase-client.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// Its own service-role client (not _shared/supabase-client.ts) only to label its writes: every row this
+// function writes is the collector's, and without the header the audit trail files them as "sql".
+const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { headers: { 'x-app-source': 'intake-collector' } },
+})
 // form-page.ts is NOT imported: the gateway cannot serve it (see the GET branch).
 // It stays in the repo as the finished form, ready to port to a real web origin.
 

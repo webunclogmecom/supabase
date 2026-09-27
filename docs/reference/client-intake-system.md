@@ -338,6 +338,15 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     drops the pin, the stored `site_map.truck_parking` equals the tapped spot with no `accuracy_m`, no key error.
   - `render()` rebuilds the list on every answer, so each map is built ONCE and its node moved into the new card (a new
     map would refetch tiles and lose the zoom). `gestureHandling: 'cooperative'`: one finger scrolls the page, not the map.
+  - 🛑 **A pin placed by hand STOPS a running "Use my location" search (2026-09-27).** Before, the search kept listening
+    for up to 20 s, and its answer arriving after a tap or drag silently moved the pin back to where the collector was
+    standing, which is exactly the case of a collector filling the form away from the parking spot. `put()` now calls
+    the search's `stop()` (kept on its `GEO` state). `tests/form-map.mjs` holds the GPS answer back, taps the map, fires
+    the answer, and asserts the pin did not move: 4 of 4 widths FAIL with the fix removed, 33 of 33 pass with it. The
+    script now exits 1 when a check fails.
+- **The collector's writes are labelled `intake-collector` in `audit.logs` (2026-09-27, intake-submit v19).** The function
+  builds its own service-role client with `x-app-source: intake-collector` instead of the shared webhook client, so a
+  submit, an upload attach and a photo link no longer land as `sql`. Checked live on [TEST] intake 694 (deleted after).
   - 🛑 **Measured before shipping: Maps sends Google the page's origin and path, never the fragment** (its
     `MapsJsInternalService` RPC carries `origin/path`; 0 of 27 to 43 Google requests per run carried the code). And the
     key works under the page's `no-referrer` policy (tiles drew on the real host), so the policy was NOT weakened.
