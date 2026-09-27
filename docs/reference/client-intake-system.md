@@ -355,8 +355,14 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     same map node after another answer, no code in any Google request; `none`/`bad` as a 4th argument test the fallbacks.
 - **18. DRIVER PAGES (2026-09-25, `2026-09-25_1330_property_pages.sql`).** Plan:
   `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md`. The rules that must not regress:
-  - 🛑 **Drivers see only an APPROVED version**, and nobody approves their own (a CHECK, the RPC, and the approver list
-    `app_config.page_approvers`, auth user ids, today Diego, Serena and Yannick; only the service role can edit it).
+  - 🛑 **Drivers see only an APPROVED version**, and nobody approves their own, with ONE exception: the approver list is
+    `app_config.page_approvers` (auth user ids; Diego, Serena, Yannick and, since 2026-09-27, Fred), and a login in
+    `app_config.page_self_approvers` (Fred's only; Fred, 2026-09-27: *"only me can double approve it ... because i'm dev
+    side, and for testing and other purposes i can't be waiting on other people"*) may approve its own version: a
+    "developer approval". Enforced by the RPC and by the append-only trigger (the CHECK `property_pages_check1` was
+    dropped by `2026-09-27_1155_page_developer_approval.sql`); the Activity says "..., who also made it (developer
+    approval)". Only the service role can edit either list; adding a login to `page_self_approvers` is Fred's call alone
+    (that login can then publish a page with nobody else looking).
   - 🛑 **A page photo is served only from the bucket its LINK KIND names, and only if that object exists there**
     (`fn_page_photo_ids` joins `storage.objects`). `photos.storage_path` is writable by any staff session, and a path like
     `../manifests/...` joined into a storage URL is normalised into ANOTHER bucket: the pre-apply review served an
@@ -389,7 +395,7 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     the builder shows the same reply side by side, each answer on the same line as its field (1280px and up, PP rule
     15); it adds no call and reads nothing else.
   - 🛑 **THE SITE MAP IS PART OF THE DRAFT SINCE 2026-09-27** (`2026-09-27_0652_page_map_in_draft_and_activity.sql`;
-    Fred: pins and lines stay in the draft until a second person approves). This SUPERSEDES the two bullets above that
+    Fred: pins and lines stay in the draft until the version is approved). This SUPERSEDES the two bullets above that
     say submit strips a client-sent `site_map` and that the baseline compares the map: both still hold for a builder that
     does not send `content.site_map` (the Planner before its matching change), and only for it.
     - **Submit with `content.site_map`**: that map is rounded, validated, bounded (pins within 0.05 degrees of the
