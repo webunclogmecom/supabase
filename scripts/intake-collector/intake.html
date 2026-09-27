@@ -291,7 +291,9 @@ function counts(){
   if(WAIT){ if(busy===0&&!gb){ var fw=document.getElementById('fmsg'); if(fw) fw.innerHTML=''; WAIT=null } else WAIT.textContent=waitText(gb) }
   if(CF){ if(LEFT>0) CF.textContent=cfText(); else { var fm0=document.getElementById('fmsg'); if(fm0) fm0.innerHTML=''; CF=null } }
 }
-function geoBusy(){ for(var k in GEO){ if(GEO[k]&&GEO[k].busy){ var gq=findQ(k); if(gq&&visible(gq)) return true } } return false }
+function geoBusy(){ for(var k in GEO){ if(GEO[k]&&GEO[k].busy){ var gq=findQ(k); if(gq&&visible(gq)) return true } }
+  for(var mk in MAPS){ if(MAPS[mk]&&MAPS[mk].picking){ var mq=findQ(mk); if(mq&&visible(mq)) return true } }   // an address lookup still running
+  return false }
 function cfText(){ return LEFT+(LEFT===1?' question is':' questions are')+' still blank. Once you submit, this form cannot be changed.' }
 // The first visible question that still needs an answer (the ones that decide Complete).
 function nextBlank(){
@@ -379,29 +381,40 @@ function mapFor(q,v){
       if(GEO[q.key]&&GEO[q.key].stop) GEO[q.key].stop();
       M.at=A[q.key].lat+','+A[q.key].lng; delete GEO[q.key]; save(); afterPress(render);
     };
-    map.addListener('click',function(e){ if(e.latLng){ mk.setPosition(e.latLng); mk.setMap(map); put(e.latLng) } });
-    mk.addListener('dragend',function(e){ if(e.latLng) put(e.latLng) });
+    // A pin placed by hand also wins over an address lookup still in flight (cancel), for the same reason.
+    map.addListener('click',function(e){ if(e.latLng){ cancel(); mk.setPosition(e.latLng); mk.setMap(map); put(e.latLng) } });
+    mk.addListener('dragend',function(e){ if(e.latLng){ cancel(); put(e.latLng) } });
     // Type an address to move the map (Fred, 2026-09-27: the collector may be far from where the truck will
     // park). Places API (New) through the same key; the pin lands on the address, then it is dragged to the
     // exact spot. The box lives with the map (built once, moved on each render) so typing is never lost.
     var wrap=el('div'), sr=el('div','asr'), inp=el('input'), list=el('div','alist'), hint=el('div','ahint');
     inp.type='text'; inp.setAttribute('autocomplete','off'); inp.setAttribute('enterkeyhint','search'); inp.maxLength=200;
     inp.placeholder='Type an address to move the map'; inp.setAttribute('aria-label',q.label+': type an address to move the map');
+    inp.setAttribute('data-f',q.key+':addr');     // render() gives focus and the caret back (the phone keyboard stays open)
     hint.setAttribute('role','status'); sr.appendChild(inp); sr.appendChild(list); sr.appendChild(hint);
     wrap.appendChild(sr); wrap.appendChild(box);
-    var S={tok:null,t:0,seq:0}, say=function(t){ hint.textContent=t };
+    // S.seq: only the newest search or pick may act. S.for: the text the list on screen was found for.
+    var S={tok:null,t:0,seq:0,for:null}, say=function(t){ hint.textContent=t };
+    // Every new search, pick, clear or hand pin goes through bump(): the pending search is cancelled, any
+    // reply still on its way is dropped, and an address lookup stops holding Submit.
+    var bump=function(){ clearTimeout(S.t); S.seq++; if(M&&M.picking){ M.picking=false; counts() } return S.seq };
+    var cancel=function(){ bump(); list.textContent=''; S.for=null; if(/^Finding that address/.test(hint.textContent)) say('') };
     var pick=function(pp){
-      var my=++S.seq, pl=pp.toPlace(); say('Finding that address...');
+      var my=bump(), pl=pp.toPlace(); S.tok=null; S.for=null;     // Place Details ends the Places session
+      M.picking=true; counts(); say('Finding that address...');
+      setTimeout(function(){ if(my===S.seq&&M.picking){ bump(); say('Could not open that address. Try again, or move the map by hand.') } },15000);
       pl.fetchFields({fields:['location','formattedAddress']}).then(function(){
-        if(my!==S.seq) return; S.tok=null; list.textContent='';
-        var ll=pl.location; if(!ll){ say('Could not find that address on the map. Move the map by hand.'); return }
+        if(my!==S.seq) return; M.picking=false; list.textContent='';
+        var ll=pl.location; if(!ll){ counts(); say('Could not find that address on the map. Move the map by hand.'); return }
         if(pl.formattedAddress) inp.value=pl.formattedAddress;
+        try{ inp.blur() }catch(e){}                   // close the phone keyboard so the pin is in view
         map.panTo(ll); map.setZoom(20); mk.setPosition(ll); mk.setMap(map); put(ll);
         say('Pin placed at that address. Drag it to the exact spot.');
-      }).catch(function(){ if(my===S.seq) say('Could not open that address. Try again, or move the map by hand.') });
+      }).catch(function(){ if(my!==S.seq) return; M.picking=false; counts(); say('Could not open that address. Try again, or move the map by hand.') });
     };
-    var find=function(txt){
-      var my=++S.seq;
+    // auto: Enter was pressed before this text had its own list, so take the first answer for THIS text.
+    var find=function(txt,auto){
+      var my=bump();
       google.maps.importLibrary('places').then(function(lib){
         if(!S.tok) S.tok=new lib.AutocompleteSessionToken();
         var req={input:txt,sessionToken:S.tok,includedRegionCodes:['us']};
@@ -411,9 +424,10 @@ function mapFor(q,v){
         if(my!==S.seq) return; list.textContent='';
         var sg=((r&&r.suggestions)||[]).map(function(s){ return s.placePrediction }).filter(Boolean).slice(0,5);
         if(!sg.length){ say('No address found. Try the number, the street and the city.'); return }
-        say('');
-        sg.forEach(function(pp){
-          var b=el('button','asug'); b.type='button';
+        if(auto){ pick(sg[0]); return }
+        S.for=txt; say('');
+        sg.forEach(function(pp,i){
+          var b=el('button','asug'); b.type='button'; b.setAttribute('data-f',q.key+':asug:'+i);
           b.appendChild(el('span','m',pp.mainText?pp.mainText.text:pp.text.text));
           if(pp.secondaryText) b.appendChild(el('span','s',pp.secondaryText.text));
           b.onclick=function(){ pick(pp) }; list.appendChild(b);
@@ -422,11 +436,18 @@ function mapFor(q,v){
     };
     inp.oninput=function(){
       clearTimeout(S.t); var txt=inp.value.trim();
-      if(txt.length<3){ S.seq++; list.textContent=''; say(''); return }
+      if(txt.length<3){ bump(); list.textContent=''; S.for=null; say(''); return }
       S.t=setTimeout(function(){ find(txt) },350);
     };
-    inp.onkeydown=function(e){ if(e.key==='Enter'){ e.preventDefault(); var f=list.querySelector('button'); if(f) f.click() } };
-    M=MAPS[q.key]={box:box,wrap:wrap,map:map,mk:mk,at:at};
+    // Enter takes the first suggestion found for the text in the box NOW, never one left from earlier text.
+    inp.onkeydown=function(e){
+      if(e.key==='Escape'){ bump(); list.textContent=''; S.for=null; return }
+      if(e.key!=='Enter') return; e.preventDefault();
+      var txt=inp.value.trim(); if(txt.length<3) return;
+      var f=list.querySelector('button'); if(f&&S.for===txt){ f.click(); return }
+      find(txt,true);
+    };
+    M=MAPS[q.key]={box:box,wrap:wrap,map:map,mk:mk,at:at,cancel:cancel,picking:false};
   }
   // A pin set another way (Use my location, a restored draft) moves the marker and brings it into view.
   if(at!==M.at){ M.at=at; if(pos){ M.mk.setPosition(pos); M.mk.setMap(M.map); M.map.panTo(pos); if(M.map.getZoom()<19) M.map.setZoom(20) } else M.mk.setMap(null) }
@@ -542,6 +563,7 @@ function field(q){
     // the most precise fix, and stop early once it is within 15 m. The state lives in GEO, so a redraw
     // (a photo finishing, another answer) keeps "Finding your spot..." and any error on screen.
     b3.onclick=function(){
+      if(MAPS[q.key]&&MAPS[q.key].cancel) MAPS[q.key].cancel();
       if(!navigator.geolocation){ GEO[q.key]={err:'This phone or browser will not share a location.'}; render(); return }
       var st={busy:true,acc:null}, best=null, done=false, wid=null, tm=null; GEO[q.key]=st;
       var stop=function(){ done=true; if(wid!=null) navigator.geolocation.clearWatch(wid); clearTimeout(tm); st.busy=false };
