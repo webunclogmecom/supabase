@@ -1,6 +1,6 @@
 # Client Intake System — what is built, and the rules that must not regress
 
-**Last updated 2026-09-25.** Written while building it, from measurements, not from the design docs.
+**Last updated 2026-09-27.** Written while building it, from measurements, not from the design docs.
 
 A site-visit survey: one person documents a property once (access, gate and code, grease traps,
 truck parking, hours, photos, two GPS pins), the office curates it, and the output is a page a
@@ -33,7 +33,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
 | collector PAGE | `planner.unclogme.app/intake.html#code=<token>`, a static file byte-identical to `scripts/intake-collector/intake.html` (built from `form-page.ts` by `build.mjs`) | live 2026-09-25 (Supabase `c9213b4`, `42ee2a3`); `intake-submit` GET 302s there |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-22; v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused); v14 2026-09-24 (byte body ceiling, NUL / lone surrogate refused naming the question, real pins only, hours refusals named); v13 2026-09-24 (the one-line check refuses what Postgres `[[:cntrl:]]` refuses, C1 included; the 4,000-character refusal names its question; an hours key must be an OWN key of the day names) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-23 (created about 08:48 ET); v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused); v13 2026-09-24 (the one-line check refuses what Postgres `[[:cntrl:]]` refuses, C1 included; the 4,000-character refusal names its question; an hours key must be an OWN key of the day names); v14 2026-09-24 (byte body ceiling, NUL / lone surrogate refused naming the question, real pins only, hours refusals named); v16 2026-09-25 (GET 302 to `planner.unclogme.app/intake.html#code=`, was 503); v17, v18 2026-09-25 (`load` returns `property.lat/lng` and `maps_key`, the pin maps); v19 2026-09-27 (its own service-role client sending `x-app-source: intake-collector`, rule 17). v19 is the deployed version (measured 2026-09-27) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
@@ -47,7 +47,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | token hidden from `yannick_readonly` | column-level SELECT on `property_intakes`, every column except `token` | same |
 | standing check | `scripts/checks/intake-showif-mirror.mjs` (the grammar in its three places) | 2026-09-24 |
 | one trim, the JS `trim()` set | `public.fn_intake_trim` (used by `fn_intake_answered` and `fn_intake_applicable`) | `2026-09-24_0311_intake_round4_gallons_pruning_trim.sql` |
-| a follow-up only with its parent | `public.fn_intake_parent_key`, `public.fn_intake_prune_requested`; `schedule_property_intake` stores the pruned set and returns `dropped` | same |
+| a follow-up only with its parent | `public.fn_intake_parent_key`, `public.fn_intake_prune_requested`; `schedule_property_intake` pruned and returned `dropped` at 0311; since 0715 it refuses any orphan instead (see the 0450/0715 row), and `dropped` is always [] | same |
 | gallons OR measurements; grease-trap gating | `grease_trap.capacity_gallons` optional; photos / gallons / capacity photos only if `systems_count > 0` | same |
 | one live link per intake photo | unique index `photo_links_intake_one_live_link_per_photo` | same |
 | an optional question keeps its alternative | `public.fn_intake_normalise_requested`; `schedule_property_intake` returns `added` | `2026-09-24_0348_intake_round5_alternatives_ranges.sql` |
@@ -61,6 +61,10 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | short collector link | Picture Planner route `/intake` (`src/routes/intake.ts`): **308** to `/intake.html`, empty body, `no-cache`; the fragment survives the redirect | live 2026-09-25 |
 | Cancel form (staff only, from the Planner) | `client.cancel_intake(bigint)`; trigger `property_intakes_no_submit_after_cancel`; `public.fn_intake_link_url(text)` (the one SQL builder of the short link, used by `get_intake_link` and by `schedule_property_intake`, which returns `url` (and, since `2026-09-27_0733`, `expires_at` and no longer the bare `token`); since CA1, about 18:51 ET, the Client App's "Link ready" and "Yes, fill it now" use that `url` and build no intake URL, so a new office link carries the token only in the fragment) | `2026-09-25_1705_intake_cancel_and_short_link.sql` (Supabase `0b8dbdc`) |
 | Share form (re-show an awaiting link to staff) | `client.get_intake_link(bigint)` returns `https://planner.unclogme.app/intake#code=<token>`; each reveal logged in `public.property_intake_link_reveals` (no token, no URL, no app role reads it) | `2026-09-25_1600_intake_link_share.sql` (Supabase `48b4771`) |
+| the builder reads intake forms (rule 18) | `client.get_page_builder_forms(bigint)` | `2026-09-25_1821_page_builder_forms.sql` (Supabase `2fa83ae`) |
+| site map in the page draft; Activity; staff names (rule 18) | `submit_property_page` freezes `content.site_map`, `approve_property_page` copies it to `properties.site_map`; `client.get_property_activity(bigint)`; `public.fn_page_staff_name(text)` | `2026-09-27_0652_page_map_in_draft_and_activity.sql` (Supabase `3e66172`) |
+| map save retired from staff; `schedule_property_intake` tidied (rule 18) | EXECUTE on `client.update_property_site_map` revoked from `authenticated` (postgres only); `schedule_property_intake` returns `url` and `expires_at`, refuses a non-null `p_form_snapshot` | `2026-09-27_0733_intake_audit_followups.sql` (Supabase `ab86630`) |
+| developer approval (rule 18) | `app_config.page_self_approvers`, `public.fn_page_self_approver_ids()`; the CHECK `property_pages_check1` dropped; the own-version rule now lives in `approve_property_page` and the append-only trigger | `2026-09-27_1155_page_developer_approval.sql` (Supabase `740569d`) |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -74,10 +78,13 @@ Prod client, the shared staff session and the Command Deck login on a staff layo
 published bundle. **The collector form (section D) is live since 2026-09-25** as a static page, see rule 17;
 the plan is `Building Apps/docs/2026-09-23_intake-forms-viewer-plan.md`.
 
-**Driver pages, database half live 2026-09-25** (rule 18): versions, two-person approval, the driver link and the
-`driver-page` endpoint. NOT built yet: the Picture Planner screens that use them (builder wiring and the public
-`/driver` route, plan `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md` P1 to P7), `Verified` in the
-Client App status column, the client confirmation page, the Jobber link and the office Accept screen. (The New Client "Time to do the intake now?" step: see the Client App changelog.)
+**Driver pages, live since 2026-09-25** (rule 18). The database half (versions, two-person approval, the driver link and
+the `driver-page` endpoint) was applied at 13:55 ET (Supabase `44f50ae`). The Picture Planner screens that use it have
+been published since about 14:30 ET: the Page Builder on `/` and `/property/$id`, and the public
+`planner.unclogme.app/driver#code=<22 chars>` page. The plan is
+`Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md` P1 to P7c; see Picture Planner CLAUDE.md rules 8 and
+13 to 18. NOT built yet: `Verified` in the Client App status column and the office Accept screen. Cut from v1: the client
+confirmation page and the Jobber link. (The New Client "Time to do the intake now?" step: see the Client App changelog.)
 
 ---
 
@@ -151,9 +158,14 @@ login. The replacements are token-derived: the storage FOLDER is the intake the 
 capped on both upload and attach, each signed upload URL is good for one object (for Supabase's
 2-hour lifetime, not a TTL of ours; see rule 5), the token expires and dies on submit.
 
-**7. `Verified` is deliberately absent from `client.v_property_intake`.** It describes the published
-page, which does not exist. The status column is Nothing / Incomplete / Complete only. When the page
-ships, `Verified` becomes the highest rank and the `client.clients` rollup gains one arm.
+**7. `Verified` is deliberately absent from `client.v_property_intake` and `client.clients`.** Verified means a
+driver page version approved by a second person (decision 2026-09-22 (5)). That feature has been live since 2026-09-25
+(rule 18, `public.property_pages.approved_at`), but no status reads it yet: Verified is not built (flow doc 13.1). So far
+the only approved versions are test pages on 112-YA. The status column is Nothing / Incomplete / Complete only. To add
+Verified: give `client.v_property_intake` an arm that returns `Verified` when the property has a `public.property_pages`
+row with `approved_at` set, and give the `client.clients` rollup a rank 3 for it. ⚠ Since 2026-09-27 `approved_at` is
+also set when Fred approves his own version (developer approval, rule 18), so that arm would count it too. (Changed
+2026-09-27: this rule used to say the published page does not exist.)
 
 **8. The Clients-list rollup takes the WORST status** across a client's live service properties, and
 is NULL (not `Nothing`) when the client has no live service property. 463 clients have exactly one,
@@ -276,9 +288,13 @@ reads a parent that was never ASKED as "left blank", so a requested set with a f
 parent asked the collector to measure a trap whose gallons the office already had. The Schedule dialog
 produced exactly that set by default (its pre-check unchecks a question whose value we hold and left
 the follow-up checked). Now closed twice: `client.schedule_property_intake` stores
-`fn_intake_normalise_requested(snapshot, requested)` (prune since 0311: drops every key whose parent
-chain is not requested; plus alternatives since 0348, below)
-and returns what it dropped as `dropped`, refusing an all-orphan set in words; and the dialog's initial state
+`fn_intake_normalise_requested(snapshot, requested)` (prune since 0311; plus alternatives since 0348, below)
+and, since 0715, REFUSES any request holding a follow-up whose parent chain is not requested, never dropping it
+silently: 22023 "Pick the question each follow-up depends on as well.", DETAIL
+`blocker=followups_only in client.schedule_property_intake: <keys>` (from 0311 it pruned such keys and returned them
+as `dropped`, refusing only a set that pruning left empty; 0450 also refused when pruning left only optional
+questions). The reply keeps
+`dropped` for compatibility, and it is always [] on success. And the dialog's initial state
 applies the same rule its uncheck path does (live 2026-09-24, `clients._id-DvCP4-eC.js`, verified by
 executing the live code against property 162).
 **And the converse, since 0348: an optional question is asked together with its ALTERNATIVE** (the
@@ -288,9 +304,13 @@ with the gallons but not the measurements read Complete with no capacity at all.
 additions as `added`, and the dialog ticks and unticks the pair together.
 
 **17. 🛑 THE COLLECTOR FORM IS ONE STATIC FILE, AND ITS TOKEN RIDES IN THE FRAGMENT AS `code` (2026-09-25).**
-The office link stays `<supabase>/functions/v1/intake-submit?t=<token>` (every link already handed out keeps
-working); its GET answers **302** (never 301, `no-store`) to `https://planner.unclogme.app/intake.html#code=<token>`,
-and 400 "This link is not valid." for a missing or malformed token. Why each piece:
+The office link is `https://planner.unclogme.app/intake#code=<token>`: `client.schedule_property_intake` returns it as
+`url`, built by `public.fn_intake_link_url`, and since CA1 (2026-09-25, about 18:51 ET) the Client App opens or shows
+that `url` and builds no intake URL of its own. `/intake` answers **308** to `/intake.html` and the browser keeps the
+fragment. Links handed out before CA1 have the form `<supabase>/functions/v1/intake-submit?t=<token>`, and they still
+work: that GET answers **302** (never 301, `no-store`) to `https://planner.unclogme.app/intake.html#code=<token>`, and
+400 "This link is not valid." for a missing or malformed token. (Changed 2026-09-25, CA1: until then the office link
+stayed `intake-submit?t=`.) Why each piece:
 - **A static file, not a React route.** `intake.html` is `form-page.ts` (the reviewed form) plus four anchored edits in
   `scripts/intake-collector/build.mjs`: the analytics token guard as the first script, no-referrer + noindex, the endpoint
   URL, and the token read from `#code=`. There is ONE form. Change `form-page.ts`, rerun `build.mjs`, commit, and have
@@ -300,8 +320,12 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
   included) to its analytics. `code` is a key the estate's guard already scrubs, so the guard stays byte-identical in all
   eight apps, and a fragment never reaches a server log or a Referer. Measured 2026-09-25: Lovable does NOT inject the
   tracker into this static file, and the page carries the guard anyway in case that changes.
-- **It loads no Supabase code**: `fetch` to `intake-submit` and the signed storage upload, nothing else. Verified by the
-  test's request log (0 calls to `/rest/v1` or `/auth/v1`).
+- **It loads no Supabase code**: `fetch` to `intake-submit`, the signed storage upload, and (only when the load reply
+  carries `maps_key` and a pin question is on screen) the Google Maps loader from `maps.googleapis.com` (since
+  2026-09-25) and the Places API (New) calls it makes to `places.googleapis.com` (the address box, since 2026-09-27);
+  nothing else. Verified by the test's request log
+  (0 calls to `/rest/v1` or `/auth/v1`); `scripts/checks/intake-form-host.mjs` asserts exactly two origins in the page,
+  the function's and the Maps loader. The intake code never reaches Google (the pin maps bullets below).
 - **Test:** `scripts/intake-collector`'s form is proven by an end-to-end browser run on a `[TEST]` intake of 112-YA
   (16 checks: bad links, the redirect, follow-ups, photo upload + attach, GPS pin, submit, the partial-submit
   confirmation, "Already submitted", the DB row). Clean up every `[TEST]` intake afterwards (storage objects through the
@@ -431,7 +455,21 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
   - `property_page_links.public_id` is in `audit.redacted_columns`. The staff mark on an open is self-reported by the
     page: advisory only.
   - Fixtures: two approved `[TEST]` pages on 112-YA (properties 162 and 1164), approved by `test.agent@ayache.com`, made an
-    approver for that one transaction only. Pages are append-only: fixtures stay; rotate their links if one leaks.
+    approver for that one transaction only. Pages are append-only: fixtures stay; rotate their links if one leaks
+    (this does not revoke photo URLs already fetched, see the next bullet).
+  - **The `driver-page` endpoint** (`supabase/functions/driver-page/index.ts`, `verify_jwt = false`, v2) takes one POST
+    with a JSON object `{code, staff}`; the 22-character code is the only credential. A body over 4,096 bytes gets 413;
+    a body that is not a JSON object gets 400; a code not matching `^[A-Za-z0-9]{22}$` and every dead state from
+    `public.fn_driver_page` (unknown, rotated, never approved, removed or billing property, INACTIVE client) get the
+    same 404 "This link is not valid."; a database error gets 500 "Could not open this page, please try again.", never
+    a 404. A page holds at most 80 photos (`fn_page_content_problem`). A visit photo is served as a PUBLIC render URL
+    from the bucket `GT - Visits Images`, an intake photo as a signed render URL valid for 6 hours (width 1600, thumbnail
+    480); `photos_unavailable` and `sign_failures` count what was dropped. 🛑 **Rotating a link stops the page at once
+    but does not revoke photo URLs already fetched**: intake photos until their signed URL expires (up to 6 hours),
+    visit photos permanently, because their bucket is public. The open log writes at most one
+    `public.property_page_opens` row per property, per minute and per staff flag (unique key
+    `(property_id, opened_minute, staff)`); that table has no audit trigger, so the function's
+    `x-app-source: driver-page` header labels nothing in `audit.logs`.
   - 🛑 **The builder fills from intake forms through ONE read, `client.get_page_builder_forms(p_property_id)`**
     (2026-09-25, `2026-09-25_1821_page_builder_forms.sql`, Fred: *"fill the Builder Phase with the data from the intake
     forms (complete or incomplete)"*). A jsonb array, newest first, one element per SUBMITTED, not cancelled form:
@@ -450,13 +488,16 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     does not send `content.site_map` (the Planner before its matching change), and only for it.
     - **Submit with `content.site_map`**: that map is rounded, validated, bounded (pins within 0.05 degrees of the
       property's geocode, `blocker=pin_far`; a malformed map is `blocker=site_map`, both 22023) and frozen as an object
-      WITHOUT `rev`, `{}` when it has no pin and no arrow. The property's map is not read; `p_expected_map_rev` is
-      ignored. **That shape (an object without rev) is the marker** that the map came from the draft.
+      WITHOUT `rev`, `{}` when it has no pin and no arrow. The property's map is not read; the value of
+      `p_expected_map_rev` is not compared, but it must still be a non-NULL integer (a NULL is refused with
+      `blocker=expected_version_required`, 22023). **That shape (an object without rev) is the marker** that the map
+      came from the draft.
     - **Approve** copies a draft-built map to `properties.site_map` with the revision + 1, only when it differs, never as
       NULL (a NULL restarts the revision at 0 and a stale save at 0 would be accepted), locking the row only when it
       writes. A version from the older builder (map NULL or WITH `rev`) is NOT copied: that builder saves to the
-      property as it draws. So once the Planner's draft build is live and `update_property_site_map` is revoked,
-      `properties.site_map` is the map of the newest approved page.
+      property as it draws. Both conditions for retiring that path have held since 2026-09-27 (the Planner's draft build
+      is live and `update_property_site_map` is revoked by `2026-09-27_0733`, below), so `properties.site_map` now changes
+      only when a version whose map came from the draft is approved.
     - **`fn_page_source` no longer carries the map.** `get_page_builder.property.source` still does (`fn_page_source ||
       site_map`), for the older builder's "Nothing changed" check; submit strips it before comparing, and
       `page_builder_list` compares `live.source - 'site_map'` so versions stored before 2026-09-27 do not read changed.
@@ -493,9 +534,10 @@ case they need it again"*. Until then the token was shown once, by `schedule_pro
   `~flock.js` and an og:image into HTML a worker returns (measured: 416 bytes added, the tracker loaded), and not
   into a static file, which is why the form stays `public/intake.html` and the route only redirects.
   `public/_redirects` is not supported there. Since `2026-09-25_1705` `schedule_property_intake` returns the same short
-  link as `url` (built by `public.fn_intake_link_url`), and the Client App is to read it (prompt CA1, waiting on that
-  project's owner); until then the office link stays `intake-submit?t=`, whose `?t=` lands in `function_edge_logs`.
-  Old `?t=` links keep working (the GET still 302s).
+  link as `url` (built by `public.fn_intake_link_url`), and since CA1 (2026-09-25, about 18:51 ET) the Client App's
+  "Link ready" and "Yes, fill it now" use that `url` and build no intake URL, so a new office link carries the token
+  only in the fragment and never reaches `function_edge_logs`. Links made before CA1 (`intake-submit?t=`) keep working
+  (the GET still 302s), and they are the only links whose token lands in `function_edge_logs` when opened.
 - 🛑 **The FORM_URL coupling:** the host is written in two places, `public.fn_intake_link_url` and `intake-submit`'s redirect.
   Move the collector and both change together.
 - **It refuses, in words, with `blocker=<code>` in DETAIL** (22023 unless noted): not signed in (28000), not staff

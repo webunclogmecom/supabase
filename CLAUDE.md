@@ -119,7 +119,10 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
 - `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
 - `app_source = 'send-derm-email'` — the DERM email edge fn ("Send DERM to city/clients"); the row also carries `sent_by_email`/`sent_by_user_id` (the human who clicked, from the app-forwarded JWT — 2026-07-21h)
 - `app_source = 'gdo-report-bot'` — the Automated GDO Reporting bot (rpa-derm-queue/result edge fns; 2026-07-21i). Machine actor, not a person. **⚠ Before answering anything about how/when this bot RUNS, read [docs/reference/gdo-rpa-bot-triggers.md](docs/reference/gdo-rpa-bot-triggers.md)** — John's own doc, verbatim. It runs on HIS Railway deployment, not ours. Three traps that catch people: it has **3 triggers, not 1** (webhook, a **60-minute poll that uses the LIVE queue**, and an 8 AM EST Slack digest), `SHADOW_MODE=true` **forces every run to dry-run regardless of the URL**, and `?dry_run=true` hits a **separate 25-item QA queue** rather than production.
-- `app_source = 'picture-planner'` — Picture Planner (`planner.unclogme.app`, its `unclogme-pics-organizer` Lovable hosts and project id `d9464151`). Pinned 2026-09-24 BEFORE the DNS change (`2026-09-24_0301`); the app writes nothing yet, so zero rows is expected, not a dead arm
+- `app_source = 'picture-planner'`: Picture Planner (`planner.unclogme.app`, its `unclogme-pics-organizer` Lovable hosts and project id `d9464151`). Pinned 2026-09-24 BEFORE the DNS change (`2026-09-24_0301`), when the app wrote nothing yet. It has written since 2026-09-25 (first row: a `property_pages` INSERT at 14:36 ET), always through SECURITY DEFINER RPCs called with a staff JWT: `client.submit_property_page` (`property_pages`, and can also insert into `property_page_links`), `client.approve_property_page` (`property_pages`, `properties.site_map`), `client.rotate_driver_link` (`property_page_links`) and `client.cancel_intake` (`property_intakes.cancelled_at`). It also writes through `client.get_intake_link`, which logs every reveal in `public.property_intake_link_reveals`; that table has NO audit trigger, so those writes never show under this label
+- `app_source = 'intake-collector'`: the public site-survey collector, i.e. the `intake-submit` edge function. Its own service-role client sends the header `x-app-source: intake-collector` (v19, since about 06:40 ET 2026-09-27), so it is a header label, not an Origin CASE arm: do not add one. It covers the submit PATCH on `property_intakes` (answers, collector, submitted_at) and the `photo_links` INSERTs. Collector writes before v19 landed as `sql` (service_role, paths `/property_intakes` and `/photo_links`), so for history before 2026-09-27 query both labels
+- `app_source = 'client-app'`: the Client App (`clients.unclogme.app`; Origin CASE since `2026-07-29c`, and the `x-app-source: client-app` header its edge functions send). For the intake it is the label on `property_intakes` INSERTs (`client.schedule_property_intake`)
+- `app_source = 'driver-page'`: the `driver-page` edge function's service client (header). Its only write is the open log `public.property_page_opens` (through `public.fn_driver_page`), which has NO audit trigger, so zero rows under this label is expected and proves nothing
 - `app_source = 'sql'` — direct Management API / psql / scripts (no PostgREST context)
 - `app_source = 'other:<host>'` — unmapped origin (add to the trigger CASE when an app subdomain is added)
 - explicit `X-App-Source: <name>` header overrides everything — use for scripts, bots, one-off curl
@@ -4847,7 +4850,7 @@ submission, per PROPERTY), `property_intake_accepts` (who accepted what, old and
 **Full reference, read it before touching any of them:**
 [`docs/reference/client-intake-system.md`](docs/reference/client-intake-system.md).
 
-Six things that will bite someone who does not know them:
+Eight things that will bite someone who does not know them:
 
 1. **The photo kind is `property_intake` and must never be `property`.**
    `customer.client_access_photos` selects `photo_links` where `entity_type IN ('client','property')`
@@ -4885,7 +4888,9 @@ Six things that will bite someone who does not know them:
    slots per intake, ever), and `yannick_readonly` reads `property_intakes` by a column grant that
    leaves out `token`: never grant it table-level SELECT again. Since the fourth review (0311): every
    trim is `public.fn_intake_trim` (the JS `trim()` set) and the rule can no longer raise;
-   `schedule_property_intake` drops a follow-up whose parent was not requested (`dropped`); the
+   `schedule_property_intake` refuses a follow-up whose parent was not requested (22023, DETAIL
+   `blocker=followups_only` naming the keys, since 0715; before that it was pruned and reported in `dropped`,
+   which is now always []); the
    gallons are optional (measurements are the alternative) and grease-trap photos / gallons / capacity
    photos need `systems_count > 0`; one live `photo_links` row per intake photo; and intake-submit v10
    takes a photos answer from what is actually attached, never from the client.
