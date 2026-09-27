@@ -4877,6 +4877,11 @@ Six things that will bite someone who does not know them:
    object exists there: `photos.storage_path` is staff-writable and a `../` path otherwise reached another bucket
    (an unredacted DERM sheet, found before apply). 🛑 `public.fn_page_blocker` is the ONE answer to "will this link
    open"; every surface calls it. 🛑 The three tables are revoked by name from `yannick_readonly` as well.
+   🛑 **Since 2026-09-27 the site map is part of the page DRAFT** (Fred: "Make it draft-only"): submit freezes the
+   draft's `content.site_map` (an object without `rev`), approve copies it to `properties.site_map` (rev + 1, never
+   NULL), and `client.update_property_site_map` is revoked from staff. Staff screens name people through
+   `public.fn_page_staff_name` (name, else login email); `client.get_property_activity` is the intake-to-page history.
+   Migrations `2026-09-27_0652` and `_0733`; REF rule 18.
 8. **Share form (2026-09-25, `2026-09-25_1600_intake_link_share.sql`): `client.get_intake_link` is the ONE sanctioned
    re-display of a collector link** (rule 19 of the reference). Awaiting intakes only, staff JWT only, every reveal logged in
    `public.property_intake_link_reveals` (no token, no URL, no app role reads it). The link is
