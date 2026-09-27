@@ -333,6 +333,9 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     browser key, restricted by referrer to `planner.unclogme.app`). **No secret, a refused key (`gm_authFailure`), or no
     signal: no map, and the question works exactly as before** (both fallbacks tested). Maps loads only when a pin
     question is on screen.
+  - ✅ **The secret exists since about 03:55 ET 2026-09-27 (added by Fred)**; until then the live form had no map, which
+    the first end-to-end test showed. Checked live with [TEST] intake 687 (deleted after): map drawn (16 tiles), a tap
+    drops the pin, the stored `site_map.truck_parking` equals the tapped spot with no `accuracy_m`, no key error.
   - `render()` rebuilds the list on every answer, so each map is built ONCE and its node moved into the new card (a new
     map would refetch tiles and lose the zoom). `gestureHandling: 'cooperative'`: one finger scrolls the page, not the map.
   - 🛑 **Measured before shipping: Maps sends Google the page's origin and path, never the fragment** (its
