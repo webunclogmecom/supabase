@@ -422,6 +422,11 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     `public_id` is a redacted audit column). It never reads the collector token or the driver link. It records nothing
     new: every event comes from data that already existed. Not included on purpose: driver opens, photo uploads, and map
     saves by the older builder.
+  - **Tests (in this repo since 2026-09-27):** `scripts/page-builder/tests/map_draft.mjs` (the map starts from the version,
+    is draft state, is sent in `p_content.site_map`, never calls `update_property_site_map`; a new page is not filled from
+    the form) and `scripts/page-builder/tests/activity_notice.mjs` (the Activity card, the Changed-in-the-Client-App notice,
+    the /forms fixes). Both run on the LIVE Planner with real data read as Fred's claims, the sign-in faked and every RPC
+    stubbed, so they write nothing; both exit 1 on a failure. `scripts/driver-page/tests/driver-live.mjs` now exits 1 too.
 
 **19. SHARE FORM: staff can see an AWAITING intake's link again (2026-09-25, `2026-09-25_1600_intake_link_share.sql`).**
 Fred: a "Share form" item on each `/forms` card, *"so the collector or any other person can open the form to fill in

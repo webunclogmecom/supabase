@@ -99,4 +99,4 @@ for (const [label, frag] of [['malformed', '#code=short'], ['unknown', '#code=AA
 }
 await b.close()
 console.log(results.join('\n'))
-console.log(results.some((r) => r.startsWith('FAIL')) ? 'SOME FAILED' : 'ALL PASS')
+if (results.some((r) => r.startsWith('FAIL'))) { console.log('SOME FAILED'); process.exitCode = 1 } else console.log('ALL PASS')
