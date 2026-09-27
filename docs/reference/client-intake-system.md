@@ -388,6 +388,35 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     `accept_intake_answers` in the Client App. App-side rules: Picture Planner CLAUDE.md rule 13. Since 2026-09-26
     the builder shows the same reply side by side, each answer on the same line as its field (1280px and up, PP rule
     15); it adds no call and reads nothing else.
+  - 🛑 **THE SITE MAP IS PART OF THE DRAFT SINCE 2026-09-27** (`2026-09-27_0652_page_map_in_draft_and_activity.sql`;
+    Fred: pins and lines stay in the draft until a second person approves). This SUPERSEDES the two bullets above that
+    say submit strips a client-sent `site_map` and that the baseline compares the map: both still hold for a builder that
+    does not send `content.site_map` (the Planner before its matching change), and only for it.
+    - **Submit with `content.site_map`**: that map is rounded, validated, bounded (pins within 0.05 degrees of the
+      property's geocode, `blocker=pin_far`; a malformed map is `blocker=site_map`, both 22023) and frozen as an object
+      WITHOUT `rev`, `{}` when it has no pin and no arrow. The property's map is not read; `p_expected_map_rev` is
+      ignored. **That shape (an object without rev) is the marker** that the map came from the draft.
+    - **Approve** copies a draft-built map to `properties.site_map` with the revision + 1, only when it differs, never as
+      NULL (a NULL restarts the revision at 0 and a stale save at 0 would be accepted), locking the row only when it
+      writes. A version from the older builder (map NULL or WITH `rev`) is NOT copied: that builder saves to the
+      property as it draws. So once the Planner's draft build is live and `update_property_site_map` is revoked,
+      `properties.site_map` is the map of the newest approved page.
+    - **`fn_page_source` no longer carries the map.** `get_page_builder.property.source` still does (`fn_page_source ||
+      site_map`), for the older builder's "Nothing changed" check; submit strips it before comparing, and
+      `page_builder_list` compares `live.source - 'site_map'` so versions stored before 2026-09-27 do not read changed.
+    - `update_property_site_map` now takes the row lock on its read, so it cannot overwrite a concurrent approval.
+  - **Staff names: `public.fn_page_staff_name(email)`** = the employee's full name, else the login email, else null.
+    `get_page_builder` (live and pending names) and `page_builder_list` use it, so nobody is "the office" on a staff
+    screen. The PUBLIC driver page keeps `fn_page_person_name` (first name, else "the office"): never a login email to
+    whoever holds the link. Jonathan's `jon.v@ayache.com` has no employee row yet, so he shows as that email.
+  - **Activity History: `client.get_property_activity(p_property_id)`** (staff JWT only, authenticated EXECUTE). A jsonb
+    array, newest first, `{at, kind, text, who, intake_id, version}`; `text` is the finished sentence ("Version 3 of the
+    driver page approved by Serena Natali"). Kinds: `form_requested`, `form_link_shown`, `form_filled` (who = the name
+    the collector typed), `form_cancelled` (who from `audit.logs`), `page_submitted` ("who made the draft"),
+    `page_approved`, `driver_link_created`, `driver_link_replaced` (from `audit.logs`, keyed on `rotated_at` because
+    `public_id` is a redacted audit column). It never reads the collector token or the driver link. It records nothing
+    new: every event comes from data that already existed. Not included on purpose: driver opens, photo uploads, and map
+    saves by the older builder.
 
 **19. SHARE FORM: staff can see an AWAITING intake's link again (2026-09-25, `2026-09-25_1600_intake_link_share.sql`).**
 Fred: a "Share form" item on each `/forms` card, *"so the collector or any other person can open the form to fill in
