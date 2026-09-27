@@ -344,7 +344,7 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     the search's `stop()` (kept on its `GEO` state). `tests/form-map.mjs` holds the GPS answer back, taps the map, fires
     the answer, and asserts the pin did not move: 4 of 4 widths FAIL with the fix removed, 33 of 33 pass with it. The
     script now exits 1 when a check fails.
-  - **An address box above each map (2026-09-27, `89f9fd5`;** Fred: *"he should be able to write an address down too,
+  - **An address box above each map (2026-09-27, `89f9fd5`, fixed `320eb29`;** Fred: *"he should be able to write an address down too,
     and then move the Pin, because he could be doing the collection of the data far away"*). Places API (New) in the
     browser (`importLibrary('places')`, `AutocompleteSuggestion.fetchAutocompleteSuggestions`, US only, biased 50 km
     around the property): at least 3 characters, 350 ms after the last key, at most 5 suggestions, only the newest
@@ -352,13 +352,32 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     it through the same `put()` a tap uses, so it stops a running GPS search and stores no `accuracy_m`. The collector
     then drags it to the exact spot. The one line under the box (`role="status"`) says what happened; a refusal from
     Google reads "Address search is not available right now. Move the map by hand." and the map still works.
-    - 🛑 **Google refuses it today.** Places API (New) is enabled in the GCP project "Locations Search", but the key
-      "Picture Planner App - Browser Key" lists only Maps JavaScript API under API restrictions, so every search returns
-      "... AutocompletePlaces are blocked" (measured 2026-09-27 by loading the key on planner.unclogme.app in a browser, after Fred enabled the API).
-      The box shows the refusal sentence until the key allows Places API (New). No code change is needed then.
-    - Test: `tests/form-map.mjs` with `ADDRESS_SEARCH=blocked` expects the refusal sentence (40 of 40 pass live); in
-      normal mode it expects 1 to 5 suggestions and a pick within 0.002 degrees of the property with no `accuracy_m`.
-      Normal mode is what to run once the key is fixed.
+    - ✅ **Working (measured about 14:15 ET 2026-09-27)**: Fred added "Places API (New)" to the API restrictions of the key
+      "Picture Planner App - Browser Key" (GCP project "Locations Search"). Geocoding and the legacy Places API stay
+      refused on that key, as they were before (Google's warning when saving listed them only because of refused
+      calls); no code path needs them. It works under the page's `no-referrer` policy (checked: the
+      Places calls, `AutocompletePlaces` and `GetPlace`, carry no intake code).
+    - 🛑 **The rules that came out of testing it for real (`320eb29`, after an adversarial review; all were live defects
+      on `89f9fd5`):**
+      - A pin placed by hand (tap, drag, or "Use my location") CANCELS an address lookup still in flight. Before, a slow
+        Place Details reply landed after the hand pin and silently moved it to the address.
+      - Submit waits ("Locating...") while a lookup runs, like it waits for the GPS; the lookup gives up after 15 s.
+      - Enter takes the first answer for the text in the box NOW: before the first list it searches and picks; with a
+        list found for older text it searches again. It used to pick from the older list, or do nothing.
+      - Escape closes the list and cancels the pending search.
+      - The box carries `data-f` (`<key>:addr`) so `render()` gives the focus and caret back when a GPS fix or a photo
+        upload redraws the page while the collector types (the phone keyboard used to close).
+      - After a pick the box loses focus (the phone keyboard closes so the pin is in view).
+      - Every new search, pick, clear or hand pin goes through ONE `bump()`: the pending search is cancelled and any
+        reply still on its way is dropped. Keep new paths on it.
+    - Test: `tests/form-map.mjs <[TEST] intake id> <outdir>` (never submits). Normal mode, 88 checks at 4 widths: a pick
+      puts the pin at the address, a FAR address (property 162, about 7 km away) must MOVE the pin there, a late GPS
+      answer after a pick does not move it, the six rules above (with Google's Place Details reply slowed by the test),
+      the Places calls carry no code. The previous build fails all six new checks at every width (the control).
+      `ADDRESS_SEARCH=blocked` is only for a key that refuses Places; `INTAKE_HTML=<file>` serves another build.
+      `tests/address-live.mjs <[TEST] intake id>` does it on the LIVE page through to the database (it SUBMITS): the
+      real load reply and key, a far address picked, the stored `site_map.truck_parking` read back (`{value:{lat,lng}}`,
+      no `accuracy_m`). 6/6 on 2026-09-27 with the live file `320eb29` (sha256 2cd31257...).
 - **The collector's writes are labelled `intake-collector` in `audit.logs` (2026-09-27, intake-submit v19).** The function
   builds its own service-role client with `x-app-source: intake-collector` instead of the shared webhook client, so a
   submit, an upload attach and a photo link no longer land as `sql`. Checked live on [TEST] intake 694 (deleted after).
@@ -383,7 +402,17 @@ and 400 "This link is not valid." for a missing or malformed token. Why each pie
     approval)". Tested live by `scripts/page-builder/tests/address_approval.mjs`.
   - **The builder's map has the same address box as the collector form (2026-09-27, Planner batch M3)**, above the map
     buttons. A pick only moves the map (zoom 20); it places and moves no pin, arrow or fact, so the draft's map is
-    unchanged. It needs the same key fix as rule 17 and shows the same refusal sentence until then.
+    unchanged. Working since Fred's key fix (rule 17). Batch M4 (live about 15:00 ET 2026-09-27,
+    `_staff.property._id-Csv5z34c.js`) fixed what the first real run found:
+    - 🛑 **The search effect depends on the two bias NUMBERS, never on the `{lat, lng}` object**, which the map
+      component builds inline on every render. With the object in the dependencies every map move (its idle event
+      updates the draft) and every keystroke in any other field ran the search again: the list reopened after a
+      pick, "Map moved to that address..." was wiped, and each run was a paid Google request (measured: 3 extra
+      searches while typing 3 characters in the notes).
+    - Enter takes the first answer for the text in the box now (a list left from older text is never used; before
+      any list it searches and picks); Escape closes the list and cancels the pending search.
+    - Test: `address_approval.mjs` (33 checks, every `panTo`/`setZoom` recorded; nothing written). `CHUNK_SUB` serves
+      the live chunk with edits, the control for a build that is already live.
   - 🛑 **A page photo is served only from the bucket its LINK KIND names, and only if that object exists there**
     (`fn_page_photo_ids` joins `storage.objects`). `photos.storage_path` is writable by any staff session, and a path like
     `../manifests/...` joined into a storage URL is normalised into ANOTHER bucket: the pre-apply review served an
