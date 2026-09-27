@@ -104,6 +104,13 @@ input::placeholder,textarea::placeholder{color:#a1a1aa}
 .gst{margin-top:4px;font-size:14px;color:var(--mut)}
 .map{height:280px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#e4e4e7;margin-bottom:10px}
 .map.wait{display:grid;place-items:center;color:var(--mut);font-size:14px;font-weight:600}
+.asr{margin-bottom:10px}
+.alist{display:grid;gap:6px}
+.alist:not(:empty){margin-top:6px}
+.asug{display:block;width:100%;min-height:48px;padding:10px 14px;text-align:left;border:1.5px solid var(--line2);border-radius:12px;background:#fff;color:var(--ink);font-size:15px}
+.asug .m{display:block;font-weight:600}
+.asug .s{display:block;margin-top:2px;font-size:13px;color:var(--mut)}
+.ahint:not(:empty){margin-top:6px;font-size:14px;color:var(--mut)}
 .act:disabled{opacity:.6;cursor:default}
 .days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
 .day{min-height:48px;padding:0;border:1.5px solid var(--line2);border-radius:10px;background:#fff;font-size:14px;font-weight:700;white-space:nowrap;overflow-wrap:normal}
@@ -196,6 +203,8 @@ textarea{min-height:84px}
 .step input{font-size:16px;font-weight:600}
 .act{width:fit-content;min-height:38px;padding:8px 14px;gap:8px;font-size:14px;font-weight:600}
 .act svg{width:18px;height:18px}
+.asug{min-height:40px;padding:8px 12px;font-size:14px}
+.asug .s{font-size:12px}
 .day{min-height:36px;font-size:13px;font-weight:600}
 .hh{font-size:11px;font-weight:600}
 .hr .dn{font-size:14px;font-weight:600}
@@ -419,11 +428,56 @@ function mapFor(q,v){
     };
     map.addListener('click',function(e){ if(e.latLng){ mk.setPosition(e.latLng); mk.setMap(map); put(e.latLng) } });
     mk.addListener('dragend',function(e){ if(e.latLng) put(e.latLng) });
-    M=MAPS[q.key]={box:box,map:map,mk:mk,at:at};
+    // Type an address to move the map (Fred, 2026-09-27: the collector may be far from where the truck will
+    // park). Places API (New) through the same key; the pin lands on the address, then it is dragged to the
+    // exact spot. The box lives with the map (built once, moved on each render) so typing is never lost.
+    var wrap=el('div'), sr=el('div','asr'), inp=el('input'), list=el('div','alist'), hint=el('div','ahint');
+    inp.type='text'; inp.setAttribute('autocomplete','off'); inp.setAttribute('enterkeyhint','search'); inp.maxLength=200;
+    inp.placeholder='Type an address to move the map'; inp.setAttribute('aria-label',q.label+': type an address to move the map');
+    hint.setAttribute('role','status'); sr.appendChild(inp); sr.appendChild(list); sr.appendChild(hint);
+    wrap.appendChild(sr); wrap.appendChild(box);
+    var S={tok:null,t:0,seq:0}, say=function(t){ hint.textContent=t };
+    var pick=function(pp){
+      var my=++S.seq, pl=pp.toPlace(); say('Finding that address...');
+      pl.fetchFields({fields:['location','formattedAddress']}).then(function(){
+        if(my!==S.seq) return; S.tok=null; list.textContent='';
+        var ll=pl.location; if(!ll){ say('Could not find that address on the map. Move the map by hand.'); return }
+        if(pl.formattedAddress) inp.value=pl.formattedAddress;
+        map.panTo(ll); map.setZoom(20); mk.setPosition(ll); mk.setMap(map); put(ll);
+        say('Pin placed at that address. Drag it to the exact spot.');
+      }).catch(function(){ if(my===S.seq) say('Could not open that address. Try again, or move the map by hand.') });
+    };
+    var find=function(txt){
+      var my=++S.seq;
+      google.maps.importLibrary('places').then(function(lib){
+        if(!S.tok) S.tok=new lib.AutocompleteSessionToken();
+        var req={input:txt,sessionToken:S.tok,includedRegionCodes:['us']};
+        if(home) req.locationBias={center:home,radius:50000};
+        return lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
+      }).then(function(r){
+        if(my!==S.seq) return; list.textContent='';
+        var sg=((r&&r.suggestions)||[]).map(function(s){ return s.placePrediction }).filter(Boolean).slice(0,5);
+        if(!sg.length){ say('No address found. Try the number, the street and the city.'); return }
+        say('');
+        sg.forEach(function(pp){
+          var b=el('button','asug'); b.type='button';
+          b.appendChild(el('span','m',pp.mainText?pp.mainText.text:pp.text.text));
+          if(pp.secondaryText) b.appendChild(el('span','s',pp.secondaryText.text));
+          b.onclick=function(){ pick(pp) }; list.appendChild(b);
+        });
+      }).catch(function(){ if(my!==S.seq) return; list.textContent=''; say('Address search is not available right now. Move the map by hand.') });
+    };
+    inp.oninput=function(){
+      clearTimeout(S.t); var txt=inp.value.trim();
+      if(txt.length<3){ S.seq++; list.textContent=''; say(''); return }
+      S.t=setTimeout(function(){ find(txt) },350);
+    };
+    inp.onkeydown=function(e){ if(e.key==='Enter'){ e.preventDefault(); var f=list.querySelector('button'); if(f) f.click() } };
+    M=MAPS[q.key]={box:box,wrap:wrap,map:map,mk:mk,at:at};
   }
   // A pin set another way (Use my location, a restored draft) moves the marker and brings it into view.
   if(at!==M.at){ M.at=at; if(pos){ M.mk.setPosition(pos); M.mk.setMap(M.map); M.map.panTo(pos); if(M.map.getZoom()<19) M.map.setZoom(20) } else M.mk.setMap(null) }
-  return M.box;
+  return M.wrap;
 }
 
 var NID=0;

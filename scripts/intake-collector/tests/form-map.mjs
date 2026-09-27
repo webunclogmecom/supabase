@@ -92,6 +92,24 @@ for (const [name, w, h] of [['phone360', 360, 740], ['phone390', 390, 844], ['ta
   const a4 = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}')['site_map.truck_parking'], 'intake-draft-' + TOKEN)
   const t4 = await card.textContent()
   ok(`${name}: a GPS answer arriving after a hand-placed pin does not move it`, late === 1 && a3 && a3.accuracy_m === undefined && a4 && a4.lat === a3.lat && a4.lng === a3.lng && !/Finding your spot/.test(t4), JSON.stringify({ late, a3, a4 }))
+  // Type an address to move the map (2026-09-27). ADDRESS_SEARCH=blocked while the key does not allow Places API (New):
+  // then the box must say so in words and the map must keep working; otherwise a suggestion must move the pin there.
+  const box3 = card.locator('.asr input')
+  ok(`${name}: the address box is above the map`, await box3.isVisible().catch(() => false))
+  await box3.fill('650 NW 33rd St Miami'); await p.waitForTimeout(3500)
+  const sug = await card.locator('.asug').count(), hint3 = (await card.locator('.ahint').textContent().catch(() => '')) || ''
+  if (process.env.ADDRESS_SEARCH === 'blocked') {
+    ok(`${name}: a refused search says so in words`, sug === 0 && /Address search is not available right now\. Move the map by hand\./.test(hint3), hint3)
+    await box3.fill(''); await p.waitForTimeout(300)
+  } else {
+    ok(`${name}: typing an address offers suggestions`, sug >= 1 && sug <= 5, JSON.stringify({ sug, hint3 }))
+    if (sug) {
+      await card.locator('.asug').first().click(); await p.waitForTimeout(3500)
+      const a5 = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}')['site_map.truck_parking'], 'intake-draft-' + TOKEN)
+      const h5 = (await card.locator('.ahint').textContent()) || ''
+      ok(`${name}: picking it puts the pin at that address (then it can be dragged)`, a5 && Math.abs(a5.lat - Number(row.latitude)) < 0.002 && Math.abs(a5.lng - Number(row.longitude)) < 0.002 && a5.accuracy_m === undefined && /Pin placed at that address/.test(h5), JSON.stringify({ a5, h5 }))
+    }
+  }
   // a render from another answer keeps the same live map (no reload of tiles)
   const same = await p.evaluate(() => { const m1 = document.querySelector('.q .map'); window.__m = m1; return !!m1 })
   await p.locator('.q', { hasText: 'Is there a closed gate?' }).getByRole('button', { name: 'No' }).click()
