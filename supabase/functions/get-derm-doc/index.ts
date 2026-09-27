@@ -131,15 +131,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let allowed = false
 
     if (token) {
-      const { data } = await db.auth.getUser(token)
-      if (data?.user) allowed = true
+      // 🛑 service_role is recognised ONLY by an exact match with our own service key.
+      // Until 2026-09-27 this decoded the token's `role` claim WITHOUT checking its
+      // signature, and verify_jwt is false for this function, so a hand-made token
+      // {"role":"service_role"} with a garbage signature passed (measured: HTTP 200 and
+      // a signed URL for the raw sheet). Never trust a claim from an unverified token.
+      if (SERVICE_KEY && token === SERVICE_KEY) allowed = true
       if (!allowed) {
-        // service_role presents a valid JWT with no `sub`, so getUser() returns
-        // nothing — check the role claim directly rather than rejecting it.
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1] ?? ''))
-          if (payload?.role === 'service_role') allowed = true
-        } catch { /* not a JWT (opaque publishable key) → stays denied */ }
+        // getUser() asks the auth server, which verifies the signature and the session.
+        const { data } = await db.auth.getUser(token)
+        if (data?.user) allowed = true
       }
     }
 
