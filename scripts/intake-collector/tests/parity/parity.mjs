@@ -64,22 +64,26 @@ async function run(browser, which, seq) {
     const loc = page.locator('.q').nth(r.i);
     const lab = (await loc.locator('label').first().textContent()) || '';
     if (!lab.startsWith(r.label)) throw new Error(which + ': locator mismatch for ' + key + ' got label ' + lab);
-    if (which === 'new' && (await loc.getAttribute('data-q')) !== key) throw new Error('new: data-q mismatch ' + key);
+    const dq = await loc.getAttribute('data-q');
+    if (dq !== null && dq !== key) throw new Error(which + ': data-q mismatch ' + key);
     return loc;
   };
+  const legacyHours = async (q) => (await q.locator('.hrs input[type=checkbox]').count()) > 0;
   const S = {
     click: async (k, t) => { await (await qLoc(k)).getByRole('button', { name: t, exact: true }).click(); },
     text: async (k, v) => { const l = (await qLoc(k)).locator('textarea, input[type=text]'); await l.fill(v); await l.press('Tab'); },
     num: async (k, v) => { const l = (await qLoc(k)).locator('input[type=number]'); await l.fill(String(v)); await l.press('Tab'); },
+    // The hours question is driven by what the PAGE shows, never by which file it is: builds before the
+    // 2026-09-25 redesign have a checkbox per day (.hrs), later ones day chips ("Mon") with "Mon opens"/"Mon closes".
     day: async (k, d) => {
       const q = await qLoc(k);
-      if (which === 'old') await q.locator('.hrs').nth(DAYS.indexOf(d)).locator('input[type=checkbox]').click();
+      if (await legacyHours(q)) await q.locator('.hrs').nth(DAYS.indexOf(d)).locator('input[type=checkbox]').click();
       else await q.getByRole('button', { name: DAYN[d], exact: true }).click();
     },
     times: async (k, d, o, c) => {
       for (const [idx, val] of [[0, o], [1, c]]) {
         const q = await qLoc(k);
-        const l = which === 'old' ? q.locator('.hrs').nth(DAYS.indexOf(d)).locator('input[type=time]').nth(idx) : q.getByLabel(DAYN[d] + (idx ? ' closes' : ' opens'), { exact: true });
+        const l = (await legacyHours(q)) ? q.locator('.hrs').nth(DAYS.indexOf(d)).locator('input[type=time]').nth(idx) : q.getByLabel(DAYN[d] + (idx ? ' closes' : ' opens'), { exact: true });
         await l.fill(val); await settle();
       }
     },
@@ -106,8 +110,8 @@ async function run(browser, which, seq) {
   // submit
   await page.fill('#who', seq.who || 'Jane Collector');
   await page.click('#send');
-  let confirmShown = false;
-  if (which === 'new') {
+  let confirmShown = false;   // newer builds ask "Submit anyway" on a partial form; the oldest ones submit at once
+  {
     const any = page.getByRole('button', { name: 'Submit anyway', exact: true });
     try { await any.waitFor({ state: 'visible', timeout: 1500 }); confirmShown = true; await any.click(); } catch {}
   }
@@ -193,7 +197,7 @@ for (const [name, seq] of Object.entries(SEQ)) {
     apiEqual: canon(o.api) === canon(nw.api),
     visibleEqual: canon(o.visibleKeys) === canon(nw.visibleKeys),
     draftClearedOld: o.draftAfter === null, draftClearedNew: nw.draftAfter === null,
-    confirmShownNew: nw.confirmShown, thanks: [o.thanks, nw.thanks],
+    confirmShown: [o.confirmShown, nw.confirmShown], thanks: [o.thanks, nw.thanks],
     pageErrors: [o.errs, nw.errs], abortedNonFavicon: [...o.aborted, ...nw.aborted],
   };
   // hidden follow-ups: in the draft but not visible -> must not be in the submit body
@@ -207,7 +211,7 @@ for (const [name, seq] of Object.entries(SEQ)) {
   r.submitBody = sortDeep(nw.submit);
   r.draft = sortDeep(normBlobs(nw.draft));
   out[name] = r;
-  console.log(name, JSON.stringify({ submitEqual: r.submitEqual, draftEqual: r.draftEqual, apiEqual: r.apiEqual, visibleEqual: r.visibleEqual, confirm: r.confirmShownNew, cleared: [r.draftClearedOld, r.draftClearedNew], hiddenOld: r.hiddenInDraft_old, leak: [r.hiddenLeakedToSubmit_old, r.hiddenLeakedToSubmit_new], nonPath: [r.nonPathPhotos_old, r.nonPathPhotos_new], errs: r.pageErrors, aborted: r.abortedNonFavicon }));
+  console.log(name, JSON.stringify({ submitEqual: r.submitEqual, draftEqual: r.draftEqual, apiEqual: r.apiEqual, visibleEqual: r.visibleEqual, confirm: r.confirmShown, cleared: [r.draftClearedOld, r.draftClearedNew], hiddenOld: r.hiddenInDraft_old, leak: [r.hiddenLeakedToSubmit_old, r.hiddenLeakedToSubmit_new], nonPath: [r.nonPathPhotos_old, r.nonPathPhotos_new], errs: r.pageErrors, aborted: r.abortedNonFavicon }));
 }
 fs.writeFileSync(path.join(DIR, 'parity_out.json'), JSON.stringify(out, null, 1));
 await browser.close();
