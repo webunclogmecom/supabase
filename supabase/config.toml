@@ -416,7 +416,8 @@ verify_jwt = false
 # the same visits burn nothing after the first - but bounded is not closed.
 # Closing it is its own change and must not ride along on a feature deploy.
 [functions.generate-derm-address-preview]
-verify_jwt = false
+# 2026-09-27: true, and it must stay true; the in-code caller check trusts claims the gateway verified.
+verify_jwt = true
 
 [functions.webhook-airtable]
 verify_jwt = false
@@ -872,3 +873,11 @@ verify_jwt = false
 # @unclogme.com user), like save-client-contact: the browser sends the staff session token.
 [functions.derm-visit-report]
 verify_jwt = false
+
+[functions.generate-fog-manifest]
+# 2026-09-27: pinned true; the in-code caller check trusts claims the gateway verified.
+verify_jwt = true
+
+[functions.generate-derm-address-pdf]
+# 2026-09-27: pinned true; the in-code caller check trusts claims the gateway verified.
+verify_jwt = true

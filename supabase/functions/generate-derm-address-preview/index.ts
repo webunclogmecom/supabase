@@ -47,6 +47,26 @@ function jsonResponse(
   })
 }
 
+// 🛑 CALLER CHECK (2026-09-27, DERM storage plan Stage 0.1). Until then anyone could call this
+// function: it only checked the browser's Origin, which a script simply ignores. Now only our own
+// server (service_role) or a signed-in staff user may call it. The token's claims can be trusted
+// here ONLY because the gateway verifies the signature first (verify_jwt = true, pinned in
+// config.toml). NEVER deploy this function with --no-verify-jwt, or a hand-made token would pass
+// (that exact bypass was found and closed in get-derm-doc the same day).
+function callerAllowed(req: Request): boolean {
+  try {
+    const tok = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
+    let part = (tok.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')
+    while (part.length % 4) part += '='
+    const c = JSON.parse(atob(part))
+    if (c?.role === 'service_role') return true
+    const email = String(c?.email ?? '').toLowerCase()
+    return c?.role === 'authenticated' && (email.endsWith('@ayache.com') || email.endsWith('@unclogme.com'))
+  } catch {
+    return false
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const cors = corsHeadersFor(req.headers.get('origin'))
 
@@ -56,6 +76,10 @@ Deno.serve(async (req: Request) => {
 
   if (req.method !== 'POST') {
     return jsonResponse({ error: 'method_not_allowed' }, 405, cors)
+  }
+
+  if (!callerAllowed(req)) {
+    return jsonResponse({ error: 'unauthorized', detail: 'Sign in with your UnclogMe staff account.' }, 401, cors)
   }
 
   if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
