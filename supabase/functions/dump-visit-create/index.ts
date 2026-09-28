@@ -740,6 +740,31 @@ async function postManifestUnlinkAlert(
   ], threadTs);
 }
 
+// EVERY GDO number of each visit's client (Fred 2026-09-28: "we need to add the GDO Numbers on the App ...
+// if it has no GDO then put No GDO"), from public.dump_visit_gdo_numbers, which mirrors the Manifest
+// Generator's rule (ACTIVE + strict GDO-####, one printed row per permit). Sets `gdos` on each row:
+// string[] (empty = the client has no GDO, the app prints "No GDO") or NULL when the lookup failed, which
+// the app must render as NOTHING, never as "No GDO". A failed lookup never fails the list itself.
+// The legacy single `gdo` / `gdo_number` fields are overwritten with the first permit of that list: the old
+// resolver ignored status and showed ~20 clients a DEMOTED permit that belongs to another business.
+async function attachGdos(rows: Record<string, unknown>[], legacyKey: "gdo" | "gdo_number") {
+  const ids = [...new Set(rows.map((r) => Number(r.visit_id)).filter((n) => Number.isFinite(n) && n > 0))];
+  if (!ids.length) return;
+  const { data, error } = await db.rpc("dump_visit_gdo_numbers", { p_visit_ids: ids });
+  if (error) {
+    console.error("[dump] gdo list failed:", error.message);
+    for (const r of rows) r.gdos = null;
+    return;
+  }
+  const byVisit = new Map(((data ?? []) as { visit_id: number; gdo_numbers: string[] }[])
+    .map((d) => [Number(d.visit_id), d.gdo_numbers ?? []]));
+  for (const r of rows) {
+    const list = byVisit.get(Number(r.visit_id));
+    r.gdos = list ?? null;
+    if (list) r[legacyKey] = list[0] ?? null;
+  }
+}
+
 async function drivers() {
   const { data, error } = await db
     .from("employees")
@@ -859,6 +884,7 @@ Deno.serve(async (req) => {
           on_sheet: r.on_sheet === true, marked_by: r.marked_by ?? null,
         };
       });
+      await attachGdos(stops, "gdo");
       return json({ ok: true, date: etDate(), count: stops.length, stops });
     }
 
@@ -983,6 +1009,7 @@ Deno.serve(async (req) => {
       const includeConfirmed = body.include_confirmed === true;
       const rows = includeConfirmed ? all : all.filter((r: Record<string, unknown>) => r.confirmed_hidden !== true);
       const hiddenConfirmed = all.length - rows.length;
+      await attachGdos(rows, "gdo_number");
       return json({ ok: true, stops: rows, count: rows.length, hidden_confirmed: hiddenConfirmed, total: all.length });
     }
 
@@ -1084,6 +1111,7 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "could not load the manifest list" }, 500);
       }
       const rows = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
+      await attachGdos(rows, "gdo_number");
 
       // COUNTY GATE REPORTING (Fred 2026-07-28). The RPC has already removed the out-of-county rows for
       // this dump SITE (Homestead may only be handed Miami-Dade work; Pompano takes both). Fred's call was
