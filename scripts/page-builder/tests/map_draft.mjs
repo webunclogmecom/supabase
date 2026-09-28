@@ -67,7 +67,7 @@ const draftContent = (p) => p.evaluate(() => { for (let i = 0; i < localStorage.
 { // ---------------- A
   const { ctx, p } = await open(1440, A)
   const txt = await p.textContent('body')
-  ok(/Pins and arrows are part of this draft\. Drivers see them only after the page is approved\./.test(txt), 'A: the draft note is under the map')
+  ok(/Pins and arrows are part of this draft\. They show on the site file only after the page is approved\./.test(txt), 'A: the draft note is under the map')
   ok(/made by Maker Person, checked by Checker Person/.test(txt), 'A: the header and footer say made by and checked by', (txt.match(/Live v\d+[^.]{0,80}/g) || []).slice(0, 2))
   ok(!/Use this form's pins: moves the property's pins/.test(txt), 'A: the old "moves the property\'s pins. No Undo." hint is gone')
   ok(!/\u2014/.test(txt), 'A: no long dash anywhere on the page', (txt.match(/.{20}\u2014.{20}/g) || []).slice(0, 3))

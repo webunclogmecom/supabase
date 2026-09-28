@@ -1,5 +1,5 @@
 // LIVE Page Builder /property/1164: ACTIVITY C (Fred, 2026-09-28). The Activity card is gone; an Activity button right
-// before "View drivers page" opens a modal: versions (one Live), the chosen version's made/checked/replaced lines, what
+// before "View site file" opens a modal: versions (one Live), the chosen version's made/checked/replaced lines, what
 // changed since the version before (the review's own diff), and the activity around it; full screen with list then
 // detail on a phone. Real replies: get_page_builder / forms / get_property_activity and get_page_versions (migration
 // 2026-09-28_1122) read as Fred's claims. Sign-in faked; every call stubbed; nothing written. Codes are masked in the output.
@@ -90,7 +90,7 @@ async function open(w, versions = VERSIONS, act = row.act, failing = []) {
 const count = (st, n) => st.calls.filter((c) => c === n).length
 const sideways = (p) => p.evaluate(() => document.documentElement.scrollWidth > innerWidth)
 const header = (p) => p.evaluate(() => {
-  const vb = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'View drivers page')
+  const vb = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'View site file')
   const ab = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Activity')
   const box = (e) => (e ? e.getBoundingClientRect().toJSON() : null)
   return { vb: box(vb), ab: box(ab), adjacent: !!(vb && ab && vb.previousElementSibling === ab), hook: !!(ab && ab.hasAttribute('data-activity-open')) }
@@ -134,7 +134,7 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
 {
   const { ctx, p, st } = await open(1440)
   const h = await header(p)
-  ok(h.adjacent && h.hook, '1440: an Activity button sits immediately before View drivers page', h)
+  ok(h.adjacent && h.hook, '1440: an Activity button sits immediately before View site file', h)
   ok(h.ab && h.vb && Math.abs((h.ab.y + h.ab.height / 2) - (h.vb.y + h.vb.height / 2)) <= 2 && h.ab.x + h.ab.width <= h.vb.x, '1440: on the same line, to its left', [h.ab, h.vb])
   ok(h.ab && h.ab.height >= 34 && h.ab.height <= 40, '1440: the laptop size (36px)', h.ab && h.ab.height)
   ok(count(st, 'get_property_activity') === 0 && count(st, 'get_page_versions') === 0, '1440: no activity or versions call before the modal opens', [...new Set(st.calls)])
@@ -150,7 +150,7 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   ok(vs.join() === VERSIONS.map((v) => String(v.version)).join(), '1440: versions newest first', vs)
   ok(!!D && D.liveBadges === 1 && D.items.find((x) => x.v === String(LIVE.version))?.badge === 'live', '1440: exactly one Live badge, on the live version', D && D.items.map((x) => [x.v, x.badge]))
   ok(!!D && D.items.filter((x) => x.v !== 'other' && x.v !== String(LIVE.version)).every((x) => x.badge === 'replaced'), '1440: the older versions read Replaced', D && D.items.map((x) => [x.v, x.badge]))
-  ok(!!D && D.items.some((x) => x.v === 'other' && x.text.includes(`Driver links · ${OTHER.length}`)), '1440: an Other activity item with the driver link count', D && D.items.map((x) => x.text))
+  ok(!!D && D.items.some((x) => x.v === 'other' && x.text.includes(`Site file links · ${OTHER.length}`)), '1440: an Other activity item with the site file link count', D && D.items.map((x) => x.text))
   ok(!!D && D.detail === String(LIVE.version) && D.items.find((x) => x.v === String(LIVE.version))?.cur === 'true', '1440: the live version is shown first', D && D.detail)
   ok(!!D && detailOk(D, LIVE), '1440: Made by, Checked by (developer approval when the same person) and Replaced lines', [D && D.rows, expectRows(LIVE)])
   ok(!!D && changesOk(D, LIVE), `1440: What changed since version ${LIVE.version - 1}, the review's own lines`, [D && D.labels, D && D.changes, diff(LIVE.content, byNum(LIVE.version - 1)?.content)])
@@ -179,11 +179,11 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   const c = await afterClose(p)
   ok(!c.open && c.focusHook && c.inert === 0 && c.overflow === '', '1440: Esc closes, focus is back on Activity, nothing left inert, the page scrolls again', c)
   // the shared layer must leave FullView (the preview) working as before
-  await p.locator('button', { hasText: /^View drivers page$/ }).first().click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(700)
+  await p.locator('button', { hasText: /^View site file$/ }).first().click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(700)
   const pv = await p.evaluate(() => { const d = document.querySelector('[role="dialog"][aria-modal="true"]'); return { open: !!d, title: d ? (document.getElementById(d.getAttribute('aria-labelledby') || '') || {}).textContent : null, locked: document.documentElement.style.overflow === 'hidden' } })
   await p.keyboard.press('Escape'); await p.waitForTimeout(500)
   const pc = await afterClose(p)
-  ok(pv.open && /Preview/.test(pv.title || '') && pv.locked && !pc.open && pc.focus === 'View drivers page' && pc.inert === 0, '1440: the driver page preview still opens, locks, closes on Esc and returns focus', [pv, pc])
+  ok(pv.open && /Preview/.test(pv.title || '') && pv.locked && !pc.open && pc.focus === 'View site file' && pc.inert === 0, '1440: the site file preview still opens, locks, closes on Esc and returns focus', [pv, pc])
   ok(st.errors.length === 0, '1440: no page errors', st.errors)
   ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions'].includes(n)), '1440: no other call', [...new Set(st.calls)])
   await ctx.close()
@@ -225,11 +225,11 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   await ctx.close()
 }
 
-// D. Phone 390: button before View drivers page and 44px; full screen; list first; a version opens in place; Back
+// D. Phone 390: button before View site file and 44px; full screen; list first; a version opens in place; Back
 {
   const { ctx, p, st } = await open(390)
   const h = await header(p)
-  ok(h.adjacent && h.hook, '390: the Activity button sits immediately before View drivers page', h)
+  ok(h.adjacent && h.hook, '390: the Activity button sits immediately before View site file', h)
   ok(h.ab && h.ab.height >= 44, '390: 44px tall', h.ab && h.ab.height)
   ok(count(st, 'get_property_activity') === 0 && count(st, 'get_page_versions') === 0, '390: no activity or versions call before it opens', [...new Set(st.calls)])
   ok(!(await oldCard(p)), '390: the old Activity card is gone')

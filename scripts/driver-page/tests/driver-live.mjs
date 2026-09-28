@@ -84,12 +84,12 @@ for (const [name, w, h, dpr] of [['phone360', 360, 740, 2], ['phone390', 390, 84
     ok('shows the client and the checked chip', /112-YA/.test(m.text) && /Checked by/.test(m.text), m.text.slice(0, 120).replace(/\n/g, ' | '))
     ok('shows the gate code and lock box code of the approved version', [FACTS.gate_code, FACTS.lock_box_code].filter(Boolean).length > 0 && [FACTS.gate_code, FACTS.lock_box_code].filter(Boolean).every((c) => m.text.includes(String(c))), JSON.stringify([FACTS.gate_code ? 'gate' : null, FACTS.lock_box_code ? 'lock box' : null]))
     ok('hours as the approved version has them (overnight / any time / no access)', Object.keys(HOURS).length > 0 && (!WANT_HOURS.overnight || /overnight/i.test(m.text)) && (!WANT_HOURS.anyTime || /Any time/i.test(m.text)) && (!WANT_HOURS.noAccess || /No access/i.test(m.text)), JSON.stringify(WANT_HOURS))
-    // the Directions buttons go to the approved version's pins; with no pin, ONE link goes to the property's address
-    const want = Object.values(PINS).filter((x) => x && x.lat != null).map((x) => `${x.lat},${x.lng}`)
-    const dirOk = want.length ? want.length === m.dirs.length && want.every((w) => m.dirs.some((h) => h.endsWith('destination=' + w)))
-      : m.dirs.length === 1 && decodeURIComponent(m.dirs[0].split('destination=')[1] || '') === prop.address
-    ok('Directions go to the approved pins, else to the address', dirOk, JSON.stringify({ pins: want, dirs: m.dirs.length }))
-    ok('tab title names no client', m.title === 'Driver page · Picture Planner · UnclogMe', m.title)
+    // ONE Directions link since the Site file (2026-09-28): the truck spot, else the grease trap, else the property's address
+    const pin = [PINS.truck, PINS.gt].find((x) => x && x.lat != null)
+    const dirOk = m.dirs.length === 1 && (pin ? m.dirs[0].endsWith(`destination=${pin.lat},${pin.lng}`)
+      : decodeURIComponent(m.dirs[0].split('destination=')[1] || '') === prop.address)
+    ok('ONE Directions link: the truck spot, else the grease trap, else the address', dirOk, JSON.stringify({ target: pin ? (pin === PINS.truck ? 'truck' : 'gt') : 'address', dirs: m.dirs.length }))
+    ok('tab title names no client', m.title === 'Site file · Picture Planner · UnclogMe', m.title)
     ok('fragment still present after load', m.hash > 10)
   }
   ok(`${name}: every visible photo decodes`, m.imgs.length > 0 && m.imgs.every((i) => i.ok), JSON.stringify(m.imgs))

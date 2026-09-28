@@ -148,7 +148,7 @@ for (const w of [390, 1440]) {
   await o.p.locator('button', { hasText: /^Submit for approval$/ }).click({ timeout: 4000 }).catch(() => {}); await o.p.waitForTimeout(800)
   const t4 = await o.p.evaluate(() => document.body.textContent)
   if (process.env.DEBUG_SHOT) { await o.p.screenshot({ path: process.env.DEBUG_SHOT }); console.log('DBG', JSON.stringify(await o.p.evaluate(() => ({ sub: [...document.querySelectorAll('button')].filter((b) => /Submit for approval/.test(b.textContent)).map((b) => b.disabled), foot: (document.querySelector('footer')||document.body).textContent.slice(-300), dialogs: document.querySelectorAll('[role=dialog]').length }))))}
-  ok(/\(not you\) approves it before drivers see it\./.test(t4) && !/approve it yourself/.test(t4), 'another approver: the Submit confirm keeps "(not you) approves it"', (t4.match(/Submit version[^]{0,160}/) || [])[0])
+  ok(/\(not you\) approves it before it goes live on the site file\./.test(t4) && !/approve it yourself/.test(t4), 'another approver: the Submit confirm keeps "(not you) approves it"', (t4.match(/Submit version[^]{0,160}/) || [])[0])
   await o.p.locator('button', { hasText: /^Keep editing$/ }).click().catch(() => {})
   await o.ctx.close()
 }

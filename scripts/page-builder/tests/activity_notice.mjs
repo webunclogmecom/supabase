@@ -53,7 +53,7 @@ const builderReplies = (data, act) => ({ get_page_builder: data.pb, get_page_bui
 { // the driver link copy (the Activity card checks moved to activity_modal.mjs with the card, 2026-09-28)
   const { ctx, p } = await open(1440, '/property/1164', builderReplies({ pb: row.pb, forms: row.forms }, ACT))
   const copy = await p.evaluate(() => document.body.textContent)
-  ok(/Paste it into the job's Instructions in Jobber for the drivers\. You can also send it to the client: they see the same page, codes included\. Never put it in the job title or in a visit\./.test(copy), 'driver link card: the new copy')
+  ok(/Paste it into the job's Instructions in Jobber for the drivers\. You can also send it to the client: they see the same site file, codes included\. Never put it in the job title or in a visit\./.test(copy), 'site file link card: the new copy')
   await ctx.close()
 }
 { // Changed on the property record notice
