@@ -26,6 +26,8 @@ const CODE = link.public_id
 const [ver] = await sql(`select content from public.property_pages where property_id = ${Number(propArg)} and approved_at is not null order by version desc limit 1`)
 const FACTS = (ver && ver.content && ver.content.facts) || {}
 const HOURS = (ver && ver.content && ver.content.hours) || {}
+const PINS = (ver && ver.content && ver.content.site_map && ver.content.site_map.pins) || {}
+const [prop] = await sql(`select address from public.properties where id = ${Number(propArg)}`)
 const WANT_HOURS = { overnight: Object.values(HOURS).some((h) => h && h.close < h.open), anyTime: Object.values(HOURS).some((h) => h && h.open === '00:00' && h.close === '00:00'), noAccess: Object.keys(HOURS).length < 7 }
 const HOST = 'https://planner.unclogme.app'
 const results = []
@@ -74,6 +76,7 @@ for (const [name, w, h, dpr] of [['phone360', 360, 740, 2], ['phone390', 390, 84
     imgs: [...document.images].filter((i) => i.getBoundingClientRect().width > 0).map((i) => ({ ok: i.complete && i.naturalWidth > 0, src: i.currentSrc.slice(0, 60) })),
     small: [...document.querySelectorAll('a,button')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height < 44 && !e.closest('.gm-style') && !e.closest('#lovable-badge, [id*="lovable" i]') && !/^Edit with/.test((e.textContent || '').trim()) }).map((e) => (e.textContent || '').trim().slice(0, 24) + ':' + Math.round(e.getBoundingClientRect().height)).slice(0, 8),
     hash: location.hash.length,
+    dirs: [...document.querySelectorAll('a')].map((a) => a.href).filter((h) => /google\.com\/maps\/dir\//.test(h)),
   }))
   await p.screenshot({ path: `${out}/${name}_top.png` })
   await p.screenshot({ path: `${out}/${name}_full.png`, fullPage: true })
@@ -81,6 +84,11 @@ for (const [name, w, h, dpr] of [['phone360', 360, 740, 2], ['phone390', 390, 84
     ok('shows the client and the checked chip', /112-YA/.test(m.text) && /Checked by/.test(m.text), m.text.slice(0, 120).replace(/\n/g, ' | '))
     ok('shows the gate code and lock box code of the approved version', [FACTS.gate_code, FACTS.lock_box_code].filter(Boolean).length > 0 && [FACTS.gate_code, FACTS.lock_box_code].filter(Boolean).every((c) => m.text.includes(String(c))), JSON.stringify([FACTS.gate_code ? 'gate' : null, FACTS.lock_box_code ? 'lock box' : null]))
     ok('hours as the approved version has them (overnight / any time / no access)', Object.keys(HOURS).length > 0 && (!WANT_HOURS.overnight || /overnight/i.test(m.text)) && (!WANT_HOURS.anyTime || /Any time/i.test(m.text)) && (!WANT_HOURS.noAccess || /No access/i.test(m.text)), JSON.stringify(WANT_HOURS))
+    // the Directions buttons go to the approved version's pins; with no pin, ONE link goes to the property's address
+    const want = Object.values(PINS).filter((x) => x && x.lat != null).map((x) => `${x.lat},${x.lng}`)
+    const dirOk = want.length ? want.length === m.dirs.length && want.every((w) => m.dirs.some((h) => h.endsWith('destination=' + w)))
+      : m.dirs.length === 1 && decodeURIComponent(m.dirs[0].split('destination=')[1] || '') === prop.address
+    ok('Directions go to the approved pins, else to the address', dirOk, JSON.stringify({ pins: want, dirs: m.dirs.length }))
     ok('tab title names no client', m.title === 'Driver page · Picture Planner · UnclogMe', m.title)
     ok('fragment still present after load', m.hash > 10)
   }
