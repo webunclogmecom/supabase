@@ -1,6 +1,6 @@
 // LIVE Page Builder + forms screens, property 1164, real data read in SQL as Fred's claims, edited per scenario.
 // Sign-in faked, every RPC stubbed, nothing written. Checks batch M2 (2026-09-27):
-//   Activity card (rows, Open form link, Show all, error + Try again), the "Changed in the Client App" notice
+//   the "Changed on the property record" notice (renamed 2026-09-28; the Activity card checks moved to activity_modal.mjs)
 //   (list, Submit blocked, Use the new values), the driver link copy, /forms cards (photo plural, city) and the
 //   /forms/$id link to the Page Builder.
 import fs from 'node:fs'
@@ -50,57 +50,26 @@ async function open(w, path, replies, fail500 = []) {
 }
 const builderReplies = (data, act) => ({ get_page_builder: data.pb, get_page_builder_forms: data.forms, get_property_activity: act })
 
-{ // Activity card, 1440
+{ // the driver link copy (the Activity card checks moved to activity_modal.mjs with the card, 2026-09-28)
   const { ctx, p } = await open(1440, '/property/1164', builderReplies({ pb: row.pb, forms: row.forms }, ACT))
-  const card = await p.evaluate(() => { const h = [...document.querySelectorAll('p,h2,h3')].find((x) => x.textContent.trim() === 'Activity'); const c = h && h.closest('.rounded-2xl'); return c ? { text: c.textContent, links: [...c.querySelectorAll('a')].map((a) => [a.textContent.trim(), a.getAttribute('href')]), buttons: [...c.querySelectorAll('button')].map((b) => b.textContent.trim()) } : null })
-  ok(!!card, 'activity: the Activity card is on the page')
-  ok(card && /Who asked for site survey forms, who filled them, who made each version of this page and who approved it\./.test(card.text), 'activity: its explanation line')
-  const shown = card ? ACT.filter((a) => card.text.includes(a.text)).length : 0
-  ok(shown === 8, 'activity: the first 8 rows are shown', shown)
-  ok(card && card.buttons.includes('Show all (10)'), 'activity: "Show all (10)"', card && card.buttons)
-  ok(card && card.links.some(([t, h]) => t === 'Open form' && /\/forms\/686$/.test(h || '')), 'activity: the form row links to /forms/686', card && card.links)
-  ok(card && /Sep 27, 2026,? 6:40\s?AM/.test(card.text), 'activity: the time is in Eastern Time (10:40 UTC = 6:40 AM)', card && card.text.slice(0, 260))
-  await p.locator('button', { hasText: /^Show all \(10\)$/ }).click().catch(() => {}); await p.waitForTimeout(300)
-  const all = await p.evaluate(() => document.body.textContent)
-  ok(ACT.every((a) => all.includes(a.text)), 'activity: Show all shows all 10')
-  ok(calls.includes('get_property_activity'), 'activity: get_property_activity was called')
-  await p.locator('text=Activity').first().scrollIntoViewIfNeeded().catch(() => {})
-  await p.screenshot({ path: `${out}/activity_1440.png` })
   const copy = await p.evaluate(() => document.body.textContent)
   ok(/Paste it into the job's Instructions in Jobber for the drivers\. You can also send it to the client: they see the same page, codes included\. Never put it in the job title or in a visit\./.test(copy), 'driver link card: the new copy')
   await ctx.close()
 }
-{ // Activity error + Try again
-  const { ctx, p, state } = await open(1440, '/property/1164', builderReplies({ pb: row.pb, forms: row.forms }, ACT), ['get_property_activity'])
-  const t = await p.evaluate(() => document.body.textContent)
-  ok(/The activity could not be loaded\./.test(t), 'activity error: the plain sentence')
-  state.fail500.clear()
-  await p.locator('button', { hasText: /^Try again$/ }).click().catch(() => {}); await p.waitForTimeout(1500)
-  const t2 = await p.evaluate(() => document.body.textContent)
-  ok(t2.includes(ACT[0].text), 'activity error: Try again loads it')
-  await ctx.close()
-}
-{ // Activity empty, phone
-  const { ctx, p } = await open(390, '/property/1164', builderReplies({ pb: row.pb, forms: row.forms }, []))
-  const t = await p.evaluate(() => document.body.textContent)
-  ok(/Nothing has happened on this property yet\./.test(t), 'activity empty (390): the empty sentence')
-  ok(!(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)), 'activity (390): no sideways scroll')
-  await ctx.close()
-}
-{ // Changed in the Client App notice
+{ // Changed on the property record notice
   const { ctx, p } = await open(1440, '/property/1164', builderReplies(N, []))
   const t = await p.evaluate(() => document.body.textContent)
-  ok(/Changed in the Client App since this version was made:/.test(t), 'notice: shown when the live version\'s source differs')
+  ok(/Changed on the property record since this version was made:/.test(t), 'notice: shown when the live version\'s source differs')
   ok(/Lock box code(: | \()OLD-LB-1 to NEW-LB-2/.test(t), 'notice: names the lock box code with old and new values', (t.match(/Lock box code.{0,40}/) || [])[0])
   const sub = p.locator('button', { hasText: /^Submit for approval$/ })
   ok(await sub.isDisabled().catch(() => false), 'notice: Submit for approval is disabled until answered')
-  ok(/Check what changed in the Client App first\./.test(t), 'notice: the footer says why')
+  ok(/Check what changed on the property record first\./.test(t), 'notice: the footer says why')
   await p.screenshot({ path: `${out}/notice_1440.png` })
   await p.locator('button', { hasText: /^Use the new values$/ }).click().catch(() => {}); await p.waitForTimeout(700)
   const vals = await p.evaluate(() => [...document.querySelectorAll('input')].map((i) => i.value))
   ok(vals.includes('NEW-LB-2') && !vals.includes('OLD-LB-1'), 'notice: Use the new values puts NEW-LB-2 in the draft', vals.filter((v) => /LB/.test(v)))
   const t2 = await p.evaluate(() => document.body.textContent)
-  ok(!/Changed in the Client App since this version was made:/.test(t2) && /Took the new values from the Client App\./.test(t2), 'notice: hidden, with the Undo notice')
+  ok(!/Changed on the property record since this version was made:/.test(t2) && /Took the new values from the property record\./.test(t2), 'notice: hidden, with the Undo notice')
   ok(await sub.isEnabled().catch(() => false), 'notice: Submit for approval is enabled again')
   await ctx.close()
 }
