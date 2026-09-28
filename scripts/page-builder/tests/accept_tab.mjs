@@ -18,7 +18,7 @@ select client.get_intake(715) as i715, client.get_intake_compare(715) as c715, (
        (select jsonb_agg(to_jsonb(s) order by s.submitted_at desc) from client.v_intake_submissions s where s.property_id = 1164 and s.state = 'submitted') as subs,
        public.fn_page_approver_names() as names;`)
 const row = Array.isArray(r) ? r[r.length - 1] : null
-if (!row || !row.c715 || !('can_accept' in row.c715)) { console.log('FAIL the migration is not applied (get_intake_compare has no can_accept) :: ' + JSON.stringify(r).slice(0, 200)); process.exit(1) }
+if (!row || !row.c715 || !('can_accept' in row.c715)) { console.log('FAIL the migration is not applied (get_intake_compare has no can_accept) :: ' + ((r && r.message) || Object.keys(row || {}))); process.exit(1) }  // never the raw reply: i715.accepted carries new_value, the lock box code once saved
 const clone = (x) => JSON.parse(JSON.stringify(x))
 const KEYS = ['access_entry.lock_box_code', 'access_hours.schedule', 'grease_trap.capacity_gallons', 'grease_trap.manhole_count', 'grease_trap.sample_ports']
 const NAMES = ['Lock box code', 'When we can come', 'Grease trap gallons', 'Manholes', 'Sample ports']
