@@ -15,7 +15,7 @@ const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbas
 const r = await sql(`do $$ begin perform set_config('request.jwt.claims', json_build_object('sub', (select id from auth.users where lower(email)='fred@ayache.com'), 'email', 'fred@ayache.com', 'role', 'authenticated')::text, true); end $$;
 select client.get_page_builder(1164) as pb, client.get_page_builder_forms(1164) as forms, client.get_property_activity(1164) as act, client.get_page_versions(1164) as versions;`)
 const row = Array.isArray(r) ? r[r.length - 1] : null
-if (!row || !row.pb || !Array.isArray(row.act) || !Array.isArray(row.versions)) { console.log('FAIL fixture (is migration 2026-09-28_1122, client.get_page_versions, applied?) :: ' + JSON.stringify(r).slice(0, 200)); process.exit(1) }
+if (!row || !row.pb || !Array.isArray(row.act) || !Array.isArray(row.versions)) { console.log('FAIL fixture (is migration 2026-09-28_1122, client.get_page_versions, applied?) :: ' + ((r && r.message) || Object.keys(row || {}))); process.exit(1) }  // never the raw reply: it opens with the driver link code
 const VERSIONS = row.versions
 console.log(`get_page_versions stub: ${VERSIONS.length} versions of 1164, read as Fred`)
 const clone = (x) => JSON.parse(JSON.stringify(x))

@@ -14,7 +14,7 @@ const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbas
 const r = await sql(`do $$ begin perform set_config('request.jwt.claims', json_build_object('sub', (select id from auth.users where lower(email)='fred@ayache.com'), 'email', 'fred@ayache.com', 'role', 'authenticated')::text, true); end $$;
 select client.get_page_builder(1164) as pb, client.get_page_builder_forms(1164) as forms;`)
 const row = Array.isArray(r) ? r[r.length - 1] : null
-if (!row || !row.pb || !row.pb.live || !Array.isArray(row.forms) || !row.forms.length) { console.log('FAIL fixture: 1164 needs a live version and a submitted form :: ' + JSON.stringify(r).slice(0, 200)); process.exit(1) }
+if (!row || !row.pb || !row.pb.live || !Array.isArray(row.forms) || !row.forms.length) { console.log('FAIL fixture: 1164 needs a live version and a submitted form :: ' + ((r && r.message) || Object.keys(row || {}))); process.exit(1) }  // never the raw reply: it opens with the driver link code
 const clone = (x) => JSON.parse(JSON.stringify(x))
 // every code the page could print, masked in anything this script prints
 const SECRETS = [...new Set([row.pb.property?.source?.lock_box_key, row.pb.link?.public_id,

@@ -229,7 +229,8 @@ for (const w of [1280, 390]) {
   const c0 = count(st, 'get_intake_compare')
   await p.getByRole('button', { name: /^Reload$/ }).click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(1500)
   ok(count(st, 'get_intake_compare') > c0 && !(await alertText(p)).includes(STALE.message), 'stale: Reload reads the compare again and clears the error')
-  ok((await rows(p)).every((x) => x.cb === 'true'), 'stale: Reload ticks the blank rows again')
+  const R = await rows(p)
+  ok(R.length === 5 && R.every((x) => x.cb === 'true'), 'stale: Reload ticks the blank rows again', R.map((x) => x.cb))
   await ctx.close()
 }
 
