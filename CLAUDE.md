@@ -2080,6 +2080,19 @@ tenant-level adjudication: `GDO-07147` (212-TRUE + 213-TRUE), `GDO-08422` (209-T
 built for it -- Section B reads "GDO #", "Facility Name **(if no GDO#)**", "Complete Facility
 Address **(if no GDO#)**" -- and the generator renders `greatest(1, permit_count)` = one row.
 
+**🛑 "WHICH GDOs DOES THIS CLIENT PRINT" HAS TWO IMPLEMENTATIONS NOW, AND THEY MUST STAY IDENTICAL (2026-09-28).**
+The Manifest Generator (`unclogme-pdf-service` `pdf_service/app.py` `_active_gdos`: the client's permits,
+`status='ACTIVE'`, strict `^GDO-\d+$`, sorted by number) and `public.dump_visit_gdo_numbers(bigint[])`,
+which feeds the DUMP app's client cards (Fred: *"put the GDO Numbers ... below the title of the client
+... if it has no GDO then put No GDO"*, after a driver hand-filed ONE Casa Neos line for its three
+permits). Change one, change the other in the same cycle; `2026-09-28_1435`'s VERIFY 4 compares it with
+every generated sheet's `rows_printed`.
+⚠ **`fn_resolve_gdo_id` / `fn_resolve_gdo_number` are a DIFFERENT question** ("which ONE permit is this
+visit's trap") and ignore `status` on purpose. Measured 2026-09-28: for ~20 clients they return a permit
+that was DEMOTED because its DERM PDF names another business (083-SHUL -> Pizza Fiore's GDO-12490,
+241-WYN -> Wynd 28's GDO-13814). The DUMP app no longer shows those; **`ops.v_calendar_visit.gdo_number`
+still does** (open, not fixed here). Never feed that resolver to anything a person copies onto a DERM form.
+
 Historic workaround: `webhook-airtable` used to write the GDO Number to all `service_configs` rows
 for the client (not just GT), and the 2026-05-25 backfill caught the historic gap. That feed is dead
 (Airtable retired 2026-07-24), so nothing writes the GDO Number automatically today. Whatever writes
