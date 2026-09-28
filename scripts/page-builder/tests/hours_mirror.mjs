@@ -157,16 +157,23 @@ for (const w of [1440, 1280]) {
 }
 
 // C. The page has no day yet: nothing to line up, every form day listed
-{
-  const { ctx, p } = await open(1440, make({}, FORM))
+for (const w of [1440, 1280]) {
+  const { ctx, p } = await open(w, make({}, FORM))
   const R = await read(p)
-  ok(R.anyRow === 0, 'empty page: no mirror row (no left row to line up with)', R.anyRow)
-  ok(R.chips.length === 7 && R.chips.filter(ringed).map((c) => c.d).join() === DAYS.filter((d) => FORM[d]).join(), 'empty page: every form day is filled and ringed', R.chips.map((c) => [c.d, ringed(c)]))
-  const want = DAYS.filter((d) => FORM[d]).map((d) => `${d[0].toUpperCase() + d.slice(1)} ${T12[FORM[d].open]} to ${T12[FORM[d].close]}`)
-  ok(R.extra.startsWith('Also on the form, not on this page:') && want.every((s) => R.extra.includes(s)), 'empty page: all six form days under Also on the form', R.extra)
-  ok(/Empty here/.test(R.head) && R.buttons.includes("Use the form's hours"), "empty page: Empty here with Use the form's hours", [R.head, R.buttons])
-  await p.locator('section[aria-label="When we can come on the form"]').first().scrollIntoViewIfNeeded().catch(() => {})
-  await p.screenshot({ path: `${out}/C_empty_1440.png` })
+  if (w === 1440) {
+    ok(R.anyRow === 0, 'empty page: no mirror row (no left row to line up with)', R.anyRow)
+    ok(R.chips.length === 7 && R.chips.filter(ringed).map((c) => c.d).join() === DAYS.filter((d) => FORM[d]).join(), 'empty page: every form day is filled and ringed', R.chips.map((c) => [c.d, ringed(c)]))
+    const want = DAYS.filter((d) => FORM[d]).map((d) => `${d[0].toUpperCase() + d.slice(1)} ${T12[FORM[d].open]} to ${T12[FORM[d].close]}`)
+    ok(R.extra.startsWith('Also on the form, not on this page:') && want.every((s) => R.extra.includes(s)), 'empty page: all six form days under Also on the form', R.extra)
+    ok(/Empty here/.test(R.head) && R.buttons.includes("Use the form's hours"), "empty page: Empty here with Use the form's hours", [R.head, R.buttons])
+  }
+  // the six-line "Also on the form" list shares the card's last grid row: the card's two buttons must not stretch with it (125px before the fix)
+  const qh = await p.evaluate(() => [...document.querySelectorAll('button')].filter((b) => ['Every day', 'Open 24 hours'].includes(b.textContent.trim())).map((b) => Math.round(b.getBoundingClientRect().height)))
+  ok(qh.length === 2 && qh.every((h) => h > 0 && h < 44), `${w}: empty page: Every day and Open 24 hours keep their height beside the Also on the form list`, qh)
+  if (w === 1440) {
+    await p.locator('section[aria-label="When we can come on the form"]').first().scrollIntoViewIfNeeded().catch(() => {})
+    await p.screenshot({ path: `${out}/C_empty_1440.png` })
+  }
   await ctx.close()
 }
 
