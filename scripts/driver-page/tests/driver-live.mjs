@@ -20,6 +20,13 @@ const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbas
 const [link] = await sql(`select public_id from public.property_page_links where property_id = ${Number(propArg)}`)
 if (!link) throw new Error('no driver link for property ' + propArg)
 const CODE = link.public_id
+// What the page must show comes from the newest APPROVED version of this property, never from fixed text, so the
+// test works on any property (162, 1164, ...). Hours: each day in content.hours is either overnight, any time
+// (00:00 to 00:00) or a plain window; a day not in it reads "No access".
+const [ver] = await sql(`select content from public.property_pages where property_id = ${Number(propArg)} and approved_at is not null order by version desc limit 1`)
+const FACTS = (ver && ver.content && ver.content.facts) || {}
+const HOURS = (ver && ver.content && ver.content.hours) || {}
+const WANT_HOURS = { overnight: Object.values(HOURS).some((h) => h && h.close < h.open), anyTime: Object.values(HOURS).some((h) => h && h.open === '00:00' && h.close === '00:00'), noAccess: Object.keys(HOURS).length < 7 }
 const HOST = 'https://planner.unclogme.app'
 const results = []
 const ok = (name, cond, extra = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? '  ' + String(extra).replaceAll(CODE, '<code>') : ''}`)
@@ -65,15 +72,15 @@ for (const [name, w, h, dpr] of [['phone360', 360, 740, 2], ['phone390', 390, 84
     title: document.title,
     overflowX: document.documentElement.scrollWidth > innerWidth,
     imgs: [...document.images].filter((i) => i.getBoundingClientRect().width > 0).map((i) => ({ ok: i.complete && i.naturalWidth > 0, src: i.currentSrc.slice(0, 60) })),
-    small: [...document.querySelectorAll('a,button')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height < 44 && !e.closest('#lovable-badge, [id*="lovable" i]') && !/^Edit with/.test((e.textContent || '').trim()) }).map((e) => (e.textContent || '').trim().slice(0, 24) + ':' + Math.round(e.getBoundingClientRect().height)).slice(0, 8),
+    small: [...document.querySelectorAll('a,button')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height < 44 && !e.closest('.gm-style') && !e.closest('#lovable-badge, [id*="lovable" i]') && !/^Edit with/.test((e.textContent || '').trim()) }).map((e) => (e.textContent || '').trim().slice(0, 24) + ':' + Math.round(e.getBoundingClientRect().height)).slice(0, 8),
     hash: location.hash.length,
   }))
   await p.screenshot({ path: `${out}/${name}_top.png` })
   await p.screenshot({ path: `${out}/${name}_full.png`, fullPage: true })
   if (name === 'phone390') {
     ok('shows the client and the checked chip', /112-YA/.test(m.text) && /Checked by/.test(m.text), m.text.slice(0, 120).replace(/\n/g, ' | '))
-    ok('shows the gate code and lock box code', /\[TEST\] 4321/.test(m.text) && /\[TEST\] 1234/.test(m.text))
-    ok('hours: overnight and any time and no access', /overnight/i.test(m.text) && /Any time/i.test(m.text) && /No access/i.test(m.text))
+    ok('shows the gate code and lock box code of the approved version', [FACTS.gate_code, FACTS.lock_box_code].filter(Boolean).length > 0 && [FACTS.gate_code, FACTS.lock_box_code].filter(Boolean).every((c) => m.text.includes(String(c))), JSON.stringify([FACTS.gate_code ? 'gate' : null, FACTS.lock_box_code ? 'lock box' : null]))
+    ok('hours as the approved version has them (overnight / any time / no access)', Object.keys(HOURS).length > 0 && (!WANT_HOURS.overnight || /overnight/i.test(m.text)) && (!WANT_HOURS.anyTime || /Any time/i.test(m.text)) && (!WANT_HOURS.noAccess || /No access/i.test(m.text)), JSON.stringify(WANT_HOURS))
     ok('tab title names no client', m.title === 'Driver page · Picture Planner · UnclogMe', m.title)
     ok('fragment still present after load', m.hash > 10)
   }
