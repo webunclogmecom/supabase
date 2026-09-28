@@ -457,6 +457,7 @@ stayed `intake-submit?t=`.) Why each piece:
   - Fixtures: two approved `[TEST]` pages on 112-YA (properties 162 and 1164), approved by `test.agent@ayache.com`, made an
     approver for that one transaction only. Pages are append-only: fixtures stay; rotate their links if one leaks
     (this does not revoke photo URLs already fetched, see the next bullet).
+  - Since the full-flow run of 2026-09-28 (`client-intake-flow.md` 11.7), property 1164 has a live v2 made and developer-approved by Fred from intake 715, and its `properties.site_map` is set (rev 1). Keep intake 715: v2 serves its photos. `scripts/driver-page/tests/driver-live.mjs` reads its expectations from the approved version, so it runs on 162 or 1164.
   - **The `driver-page` endpoint** (`supabase/functions/driver-page/index.ts`, `verify_jwt = false`, v2) takes one POST
     with a JSON object `{code, staff}`; the 22-character code is the only credential. A body over 4,096 bytes gets 413;
     a body that is not a JSON object gets 400; a code not matching `^[A-Za-z0-9]{22}$` and every dead state from
