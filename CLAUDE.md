@@ -2080,10 +2080,12 @@ tenant-level adjudication: `GDO-07147` (212-TRUE + 213-TRUE), `GDO-08422` (209-T
 built for it -- Section B reads "GDO #", "Facility Name **(if no GDO#)**", "Complete Facility
 Address **(if no GDO#)**" -- and the generator renders `greatest(1, permit_count)` = one row.
 
-**🛑 "WHICH GDOs DOES THIS CLIENT PRINT" HAS TWO IMPLEMENTATIONS NOW, AND THEY MUST STAY IDENTICAL (2026-09-28).**
-The Manifest Generator (`unclogme-pdf-service` `pdf_service/app.py` `_active_gdos`: the client's permits,
-`status='ACTIVE'`, strict `^GDO-\d+$`, sorted by number) and `public.dump_visit_gdo_numbers(bigint[])`,
-which feeds the DUMP app's client cards (Fred: *"put the GDO Numbers ... below the title of the client
+**🛑 "WHICH GDOs DOES THIS CLIENT PRINT" HAS THREE IMPLEMENTATIONS NOW, AND THEY MUST STAY IDENTICAL (2026-09-28).**
+The Manifest Generator's renderer (`unclogme-pdf-service` `pdf_service/app.py` `_active_gdos`: the
+client's permits, `status='ACTIVE'`, strict `^GDO-\d+$` after `strip()`, sorted by number as a STRING),
+the row count it records (`derm.record_generated_sheet_preview` -> `address_sheet_clients.rows_printed`,
+the same predicate in SQL, no trim), and `public.dump_visit_gdo_numbers(bigint[])`, which feeds the DUMP
+app's client cards (Fred: *"put the GDO Numbers ... below the title of the client
 ... if it has no GDO then put No GDO"*, after a driver hand-filed ONE Casa Neos line for its three
 permits). Change one, change the other in the same cycle; `2026-09-28_1435`'s VERIFY 4 compares it with
 every generated sheet's `rows_printed`.
