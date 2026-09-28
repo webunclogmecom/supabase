@@ -165,6 +165,7 @@ for (const w of [1440, 1280]) {
   const want = DAYS.filter((d) => FORM[d]).map((d) => `${d[0].toUpperCase() + d.slice(1)} ${T12[FORM[d].open]} to ${T12[FORM[d].close]}`)
   ok(R.extra.startsWith('Also on the form, not on this page:') && want.every((s) => R.extra.includes(s)), 'empty page: all six form days under Also on the form', R.extra)
   ok(/Empty here/.test(R.head) && R.buttons.includes("Use the form's hours"), "empty page: Empty here with Use the form's hours", [R.head, R.buttons])
+  await p.locator('section[aria-label="When we can come on the form"]').first().scrollIntoViewIfNeeded().catch(() => {})
   await p.screenshot({ path: `${out}/C_empty_1440.png` })
   await ctx.close()
 }
