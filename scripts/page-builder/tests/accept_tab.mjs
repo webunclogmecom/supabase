@@ -253,7 +253,20 @@ for (const w of [1280, 390]) {
   ok((await saveBtn(p).count()) === 0 && (await T(p)).includes(RO), 'read-only (390): no Save, the approvers sentence instead', RO)
   ok(R.length === 5 && R.every((x) => x.prop.includes('Not on file')), 'read-only (390): the values still show')
   ok(count(st, 'accept_intake_answers') === 0, 'read-only (390): nothing sent')
+  const orange = await p.evaluate(() => [...document.querySelectorAll('[data-accept-row]')].filter((el) => getComputedStyle(el).borderTopColor === 'rgb(241, 71, 20)').length)
+  ok(orange === 0, 'read-only (390): no row has the ticked orange border', orange)
   await p.screenshot({ path: `${out}/F_readonly_390.png`, fullPage: true })
+  await ctx.close()
+}
+
+// F2. A week with a gap: a day with no hours ends a group and is left out of the confirm
+{
+  const d0 = Object.values(HOURS)[0], GAP = { mon: d0, tue: d0, wed: d0, thu: d0, fri: d0, sun: d0 }
+  const c = blank(); c.fields.find((f) => f.key === KEYS[1]).theirs = GAP
+  const { ctx, p } = await open(1280, 715, DATA(c))
+  await openRecord(p); await openConfirm(p)
+  const got = ((await T(p)).match(/When we can come: replaced \([^)]*\)/) || [])[0]
+  ok(summary(GAP).includes(', Sun ') && got === `When we can come: replaced (${summary(GAP)})`, 'gap week: Mon to Fri, then Sun, and no Sat', [summary(GAP), got])
   await ctx.close()
 }
 
@@ -264,6 +277,8 @@ for (const w of [1280, 390]) {
   for (const [nm, i] of [['awaiting', aw], ['cancelled', ca]]) {
     const { ctx, p } = await open(1280, 715, DATA(blank(), i))
     ok((await tabs(p)).length === 0 && !(await T(p)).includes('Add to the property record'), `${nm}: no tab bar`)
+    const dangling = await p.evaluate(() => [...document.querySelectorAll('[role="tabpanel"], [aria-labelledby]')].filter((e) => e.getAttribute('role') === 'tabpanel' || (e.getAttribute('aria-labelledby') || '').split(/\s+/).some((id) => !document.getElementById(id))).length)
+    ok(dangling === 0, `${nm}: no tab panel and no label pointing at a missing element`, dangling)
     await ctx.close()
   }
 }
