@@ -610,7 +610,7 @@ by a driver."*
 
 **21. ACCEPT FROM THE PLANNER: page approvers only, stale screens refused (2026-09-28, `2026-09-28_1015_intake_accept_from_planner.sql`).** Fred,
 2026-09-28: *"it should be only the ones that are page approvers"*. The only caller of `client.accept_intake_answers` is the
-Picture Planner form page's Property record tab (Picture Planner CLAUDE.md rule 19).
+Picture Planner form page's Property record tab (Picture Planner CLAUDE.md rule 19). Opened to every property 2026-09-28 (Fred: "Yes, after the check passes").
 - Signature `(p_intake_id bigint, p_keys text[], p_expected jsonb)`; the two-argument form is dropped. authenticated only
   (revoked by name).
 - Gates, in order: signed in (28000 `not_signed_in`), staff email (42501 `not_staff`), a page approver
