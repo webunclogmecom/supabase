@@ -2080,7 +2080,9 @@ tenant-level adjudication: `GDO-07147` (212-TRUE + 213-TRUE), `GDO-08422` (209-T
 built for it -- Section B reads "GDO #", "Facility Name **(if no GDO#)**", "Complete Facility
 Address **(if no GDO#)**" -- and the generator renders `greatest(1, permit_count)` = one row.
 
-**🛑 "WHICH GDOs DOES THIS CLIENT PRINT" HAS THREE IMPLEMENTATIONS NOW, AND THEY MUST STAY IDENTICAL (2026-09-28).**
+**🛑 "WHICH GDOs DOES THIS CLIENT PRINT" HAS FOUR IMPLEMENTATIONS NOW, AND THEY MUST STAY IDENTICAL (2026-09-28).**
+The fourth is `ops.v_calendar_visit.gdo_permits` (+ the five legacy `gdo_*` columns, now its first element),
+`2026-09-28_1515`, whose VERIFY proves it equals `dump_visit_gdo_numbers` on every row.
 The Manifest Generator's renderer (`unclogme-pdf-service` `pdf_service/app.py` `_active_gdos`: the
 client's permits, `status='ACTIVE'`, strict `^GDO-\d+$` after `strip()`, sorted by number as a STRING),
 the row count it records (`derm.record_generated_sheet_preview` -> `address_sheet_clients.rows_printed`,
@@ -2092,8 +2094,10 @@ every generated sheet's `rows_printed`.
 ⚠ **`fn_resolve_gdo_id` / `fn_resolve_gdo_number` are a DIFFERENT question** ("which ONE permit is this
 visit's trap") and ignore `status` on purpose. Measured 2026-09-28: for ~20 clients they return a permit
 that was DEMOTED because its DERM PDF names another business (083-SHUL -> Pizza Fiore's GDO-12490,
-241-WYN -> Wynd 28's GDO-13814). The DUMP app no longer shows those; **`ops.v_calendar_visit.gdo_number`
-still does** (open, not fixed here). Never feed that resolver to anything a person copies onto a DERM form.
+241-WYN -> Wynd 28's GDO-13814). No app shows those any more: the DUMP app since `f5857ac`, the Visit
+Calendar since `2026-09-28_1515` (Fred picked "All permits"). Its last caller is `fn_resolve_gdo_number` ->
+`public.dump_outstanding_visits`, whose value the DUMP edge fn overwrites. Never feed that resolver to
+anything a person reads or copies onto a DERM form.
 
 Historic workaround: `webhook-airtable` used to write the GDO Number to all `service_configs` rows
 for the client (not just GT), and the 2026-05-25 backfill caught the historic gap. That feed is dead
