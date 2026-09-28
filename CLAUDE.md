@@ -119,7 +119,7 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
 - `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
 - `app_source = 'send-derm-email'` — the DERM email edge fn ("Send DERM to city/clients"); the row also carries `sent_by_email`/`sent_by_user_id` (the human who clicked, from the app-forwarded JWT — 2026-07-21h)
 - `app_source = 'gdo-report-bot'` — the Automated GDO Reporting bot (rpa-derm-queue/result edge fns; 2026-07-21i). Machine actor, not a person. **⚠ Before answering anything about how/when this bot RUNS, read [docs/reference/gdo-rpa-bot-triggers.md](docs/reference/gdo-rpa-bot-triggers.md)** — John's own doc, verbatim. It runs on HIS Railway deployment, not ours. Three traps that catch people: it has **3 triggers, not 1** (webhook, a **60-minute poll that uses the LIVE queue**, and an 8 AM EST Slack digest), `SHADOW_MODE=true` **forces every run to dry-run regardless of the URL**, and `?dry_run=true` hits a **separate 25-item QA queue** rather than production.
-- `app_source = 'picture-planner'`: Picture Planner (`planner.unclogme.app`, its `unclogme-pics-organizer` Lovable hosts and project id `d9464151`). Pinned 2026-09-24 BEFORE the DNS change (`2026-09-24_0301`), when the app wrote nothing yet. It has written since 2026-09-25 (first row: a `property_pages` INSERT at 14:36 ET), always through SECURITY DEFINER RPCs called with a staff JWT: `client.submit_property_page` (`property_pages`, and can also insert into `property_page_links`), `client.approve_property_page` (`property_pages`, `properties.site_map`), `client.rotate_driver_link` (`property_page_links`) and `client.cancel_intake` (`property_intakes.cancelled_at`). It also writes through `client.get_intake_link`, which logs every reveal in `public.property_intake_link_reveals`; that table has NO audit trigger, so those writes never show under this label
+- `app_source = 'picture-planner'`: Picture Planner (`planner.unclogme.app`, its `unclogme-pics-organizer` Lovable hosts and project id `d9464151`). Pinned 2026-09-24 BEFORE the DNS change (`2026-09-24_0301`), when the app wrote nothing yet. It has written since 2026-09-25 (first row: a `property_pages` INSERT at 14:36 ET), always through SECURITY DEFINER RPCs called with a staff JWT: `client.submit_property_page` (`property_pages`, and can also insert into `property_page_links`), `client.approve_property_page` (`property_pages`, `properties.site_map`), `client.rotate_driver_link` (`property_page_links`) and `client.cancel_intake` (`property_intakes.cancelled_at`). It also writes through `client.get_intake_link`, which logs every reveal in `public.property_intake_link_reveals`; that table has NO audit trigger, so those writes never show under this label. Since 2026-09-28 also `client.accept_intake_answers` (the form page's Property record tab, page approvers only): `properties` (operational columns and gallons), `property_intake_accepts`, `property_intakes.accepted`, and `sync.outbound_queue` through `trg_properties_enqueue_outbound`.
 - `app_source = 'intake-collector'`: the public site-survey collector, i.e. the `intake-submit` edge function. Its own service-role client sends the header `x-app-source: intake-collector` (v19, since about 06:40 ET 2026-09-27), so it is a header label, not an Origin CASE arm: do not add one. It covers the submit PATCH on `property_intakes` (answers, collector, submitted_at) and the `photo_links` INSERTs. Collector writes before v19 landed as `sql` (service_role, paths `/property_intakes` and `/photo_links`), so for history before 2026-09-27 query both labels
 - `app_source = 'client-app'`: the Client App (`clients.unclogme.app`; Origin CASE since `2026-07-29c`, and the `x-app-source: client-app` header its edge functions send). For the intake it is the label on `property_intakes` INSERTs (`client.schedule_property_intake`)
 - `app_source = 'driver-page'`: the `driver-page` edge function's service client (header). Its only write is the open log `public.property_page_opens` (through `public.fn_driver_page`), which has NO audit trigger, so zero rows under this label is expected and proves nothing
@@ -4863,7 +4863,7 @@ Read it before changing any part of the flow; the DB rules below and in the refe
 The site-visit intake shipped its back half on 2026-09-22/23: `public.property_intakes` (immutable raw
 submission, per PROPERTY), `property_intake_accepts` (who accepted what, old and new),
 `client.v_property_intake` (Nothing / Incomplete / Complete), `client.schedule_property_intake` /
-`get_intake_compare` / `accept_intake_answers`, `public.fn_intake_form_current()` (the question tree),
+`get_intake_compare` / `accept_intake_answers` (three arguments and page approvers only since 2026-09-28), `public.fn_intake_form_current()` (the question tree),
 `properties.site_map` (GT pin, truck pin, arrows), and the anonymous edge fn `intake-submit`.
 
 **Full reference, read it before touching any of them:**
@@ -4878,7 +4878,7 @@ Eight things that will bite someone who does not know them:
    captions to a public feed. See also
    [`reference_widening_a_check_can_switch_on_a_dormant_exposed_view`] in memory.
 2. **`accept_intake_answers` CALLS `client.update_property_operational` and
-   `update_property_capacity`.** Change either signature or allowlist and the intake breaks.
+   `update_property_capacity`.** Change either signature or allowlist and the intake breaks. Since 2026-09-28 (`2026-09-28_1015_intake_accept_from_planner`) its only caller is the Picture Planner's Property record tab; it takes `p_expected` (refuses a stale screen) and refuses a login that is not a page approver.
 3. **Intake question keys are append-only.** They are shared by the form snapshot, the requested set,
    the answers, the photo `role` and the accept map. A changed meaning gets a new key.
 4. **The intake token must never be copied into a path, a caption or any column staff can read.** It is
@@ -4922,8 +4922,10 @@ Eight things that will bite someone who does not know them:
    🛑 **Since 2026-09-27 the site map is part of the page DRAFT** (Fred: "Make it draft-only"): submit freezes the
    draft's `content.site_map` (an object without `rev`), approve copies it to `properties.site_map` (rev + 1, never
    NULL), and `client.update_property_site_map` is revoked from staff. Staff screens name people through
-   `public.fn_page_staff_name` (name, else login email); `client.get_property_activity` is the intake-to-page history.
-   Migrations `2026-09-27_0652` and `_0733`; REF rule 18.
+   `public.fn_page_staff_name` (name, else login email); `client.get_property_activity` is the intake-to-page history (and, since 2026-09-28, of every accept into the property record).
+   Since 2026-09-28 `client.get_page_versions` (`2026-09-28_1122_page_versions_read`, read only, staff JWT) lists every version of a page,
+   newest first, for the builder's Activity modal; Live is the highest approved version, and a version has no link to
+   the forms it came from. Migrations `2026-09-27_0652`, `_0733` and `2026-09-28_1122_page_versions_read`; REF rule 18.
 8. **Share form (2026-09-25, `2026-09-25_1600_intake_link_share.sql`): `client.get_intake_link` is the ONE sanctioned
    re-display of a collector link** (rule 19 of the reference). Awaiting intakes only, staff JWT only, every reveal logged in
    `public.property_intake_link_reveals` (no token, no URL, no app role reads it). The link is

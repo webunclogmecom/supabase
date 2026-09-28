@@ -26,7 +26,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | status | `client.v_property_intake` | same |
 | office compare | `client.get_intake_compare(bigint)` | same |
 | schedule | `client.schedule_property_intake(bigint, text[], jsonb, text)` | same, reshaped `2026-09-23_0933` |
-| accept | `client.accept_intake_answers(bigint, text[])` | same |
+| accept | `client.accept_intake_answers(bigint, text[], jsonb)` (page approvers only, stale guard; since 2026-09-28, rule 21) | `2026-09-28_1015_intake_accept_from_planner.sql` |
 | photos | `photo_links` kind `property_intake`, bucket `intake-photos` | `2026-09-22_2120_property_intake_photos.sql` |
 | site map | `public.properties.site_map`, `public.fn_site_map_problem`, `fn_site_map_round`, `client.update_property_site_map` | `2026-09-22_2210_property_site_map.sql` |
 | question tree | `public.fn_intake_form_current()` | `2026-09-23_0933_intake_form_definition.sql` |
@@ -65,6 +65,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | site map in the page draft; Activity; staff names (rule 18) | `submit_property_page` freezes `content.site_map`, `approve_property_page` copies it to `properties.site_map`; `client.get_property_activity(bigint)`; `public.fn_page_staff_name(text)` | `2026-09-27_0652_page_map_in_draft_and_activity.sql` (Supabase `3e66172`) |
 | map save retired from staff; `schedule_property_intake` tidied (rule 18) | EXECUTE on `client.update_property_site_map` revoked from `authenticated` (postgres only); `schedule_property_intake` returns `url` and `expires_at`, refuses a non-null `p_form_snapshot` | `2026-09-27_0733_intake_audit_followups.sql` (Supabase `ab86630`) |
 | developer approval (rule 18) | `app_config.page_self_approvers`, `public.fn_page_self_approver_ids()`; the CHECK `property_pages_check1` dropped; the own-version rule now lives in `approve_property_page` and the append-only trigger | `2026-09-27_1155_page_developer_approval.sql` (Supabase `740569d`) |
+| page versions for the builder's Activity modal (rule 18) | `client.get_page_versions(bigint)` | `2026-09-28_1122_page_versions_read.sql` (Supabase `cd225d4`) |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -83,7 +84,7 @@ the `driver-page` endpoint) was applied at 13:55 ET (Supabase `44f50ae`). The Pi
 been published since about 14:30 ET: the Page Builder on `/` and `/property/$id`, and the public
 `planner.unclogme.app/driver#code=<22 chars>` page. The plan is
 `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md` P1 to P7c; see Picture Planner CLAUDE.md rules 8 and
-13 to 18. NOT built yet: `Verified` in the Client App status column and the office Accept screen. Cut from v1: the client
+13 to 18. NOT built yet: `Verified` in the Client App status column. (The office Accept screen is built since 2026-09-28: the Picture Planner form page's Property record tab, rule 21.) Cut from v1: the client
 confirmation page and the Jobber link. (The New Client "Time to do the intake now?" step: see the Client App changelog.)
 
 ---
@@ -110,7 +111,7 @@ rename is free.
 **4. `accept_intake_answers` CALLS the existing writers**, `client.update_property_operational` and
 `client.update_property_capacity`, rather than touching `public.properties`. Change either signature
 or allowlist and this calls you. That reuse is deliberate: it inherits the staff gate, the error
-vocabulary, and the Jobber outbound push, which only fires because a real person's JWT is present.
+vocabulary, and the Jobber outbound push, which only fires because a real person's JWT is present. Since 2026-09-28 it also takes `p_expected` and refuses a changed property (`blocker=stale`), and refuses a login that is not a page approver (rule 21).
 
 **5. `intake-submit` is fully public.** Measured: it answers 200 with **no apikey header at all**.
 The token is the only gate, which makes the ceilings in its header load-bearing rather than tidy:
@@ -269,7 +270,7 @@ before anything is written, because accepting it would write `properties.lock_bo
 Jobber. The raw submission stays immutable: the filter is at the consumer, never a rewrite of `answers`.
 The Picture Planner's Page Builder is the third consumer (2026-09-25, `2026-09-25_1821`): it reads forms ONLY through
 `client.get_page_builder_forms`, which returns shown-and-answered keys only (rule 18). Before that the builder read
-`get_intake` and ignored `applicable`, so its prefill could offer an abandoned lock-box code.
+`get_intake` and ignored `applicable`, so its prefill could offer an abandoned lock-box code. The Planner's Property record tab (2026-09-28, rule 21) is the fourth: it reads `get_intake_compare` and calls `accept_intake_answers`, so it inherits the `not_shown` refusal.
 
 **15. 🛑 `yannick_readonly` reads `property_intakes` through a COLUMN grant that leaves out `token`.** It
 is a LOGIN role with BYPASSRLS, and the public schema's default ACL had given it table-level SELECT,
@@ -480,8 +481,8 @@ stayed `intake-submit?t=`.) Why each piece:
     (which forms, and the one completeness rule), `fn_intake_applicable` + `fn_intake_answered` (rule 14: shown and
     answered keys only; photo-type answers left out) and `fn_page_photo_ids` (the exact set submit accepts, only photos
     whose path is in the question's SUBMITTED answer, never a caption). Change any of those and this function moves
-    with it; never copy their logic into it. Filling changes the page's draft only; accepting into the property stays
-    `accept_intake_answers` in the Client App. App-side rules: Picture Planner CLAUDE.md rule 13. Since 2026-09-26
+    with it; never copy their logic into it. Filling changes the page's draft only; accepting into the property is
+    `accept_intake_answers`, called only by the form page's Property record tab (rule 21). App-side rules: Picture Planner CLAUDE.md rule 13. Since 2026-09-26
     the builder shows the same reply side by side, each answer on the same line as its field (1280px and up, PP rule
     15); it adds no call and reads nothing else.
   - 🛑 **THE SITE MAP IS PART OF THE DRAFT SINCE 2026-09-27** (`2026-09-27_0652_page_map_in_draft_and_activity.sql`;
@@ -513,17 +514,38 @@ stayed `intake-submit?t=`.) Why each piece:
     `get_page_builder` (live and pending names) and `page_builder_list` use it, so nobody is "the office" on a staff
     screen. The PUBLIC driver page keeps `fn_page_person_name` (first name, else "the office"): never a login email to
     whoever holds the link.
-  - **Activity History: `client.get_property_activity(p_property_id)`** (staff JWT only, authenticated EXECUTE). A jsonb
+  - **Activity History: `client.get_property_activity(p_property_id)`** (staff JWT only, authenticated EXECUTE). Since 2026-09-28 the builder reads it in its Activity modal (the card is gone), with `get_page_versions` (next bullet). A jsonb
     array, newest first, `{at, kind, text, who, intake_id, version}`; `text` is the finished sentence ("Version 3 of the
     driver page approved by Serena Natali"). Kinds: `form_requested`, `form_link_shown`, `form_filled` (who = the name
     the collector typed), `form_cancelled` (who from `audit.logs`), `page_submitted` ("who made the draft"),
     `page_approved`, `driver_link_created`, `driver_link_replaced` (from `audit.logs`, keyed on `rotated_at` because
-    `public_id` is a redacted audit column). It never reads the collector token or the driver link. It records nothing
+    `public_id` is a redacted audit column), and since 2026-09-28 `intake_accepted`, one per `property_intake_accepts` row ("Accepted from Site survey form #717 by Fred: Lock box code Not on file → 7390"; hours "When we can come replaced"; rows of one save keep their saved order). It never reads the collector token or the driver link. It records nothing
     new: every event comes from data that already existed. Not included on purpose: driver opens, photo uploads, and map
     saves by the older builder.
+  - **Versions: `client.get_page_versions(p_property_id)`** (2026-09-28, `2026-09-28_1122_page_versions_read.sql`; Fred: *"I like you go with
+    versioning for it"*). Staff JWT only (authenticated EXECUTE, revoked by name from public and anon), SECURITY DEFINER,
+    read only; the Planner's Activity modal calls it with `get_property_activity` (Picture Planner CLAUDE.md rule 20). A
+    jsonb array, newest first, one element per `property_pages` row: `page_id`, `version`, `status` (`live`, `replaced`,
+    `waiting`, `superseded`, all derived, none stored), the whole `content` (for the modal's "What changed"),
+    `submitted_at` / `submitted_by_name`, `approved_at` / `approved_by_name` (null until approved), `self_approved`, and
+    `replaced_by_version` / `replaced_at` (set only on replaced and superseded versions); `[]` for an unknown property.
+    Names through `fn_page_staff_name`, never `fn_page_person_name` (that one is for the public page). It reads only
+    `property_pages`, never the link table or the intakes, so it cannot return a driver link or a collector token.
+    - 🛑 **It is the first staff read of REPLACED versions' content, their old lock box and gate codes included.**
+      `audit.logs` holds them and `authenticated` holds SELECT, but schema `audit` is not exposed by PostgREST and
+      `get_record_history` refuses `property_pages`, so no staff screen could read them before; the modal's "What
+      changed" prints them as the review does (mockup C showed it). Hiding them for non-live versions is Fred's call.
+    - 🛑 **Live = the highest APPROVED version**, the one `fn_driver_page` serves; an approved version is replaced when
+      the next approval happens. Approve takes only the NEWEST version (`blocker=not_newest`), so a version submitted
+      while another was waiting leaves the older one unapproved for ever: it was never live and it does not wait
+      (`superseded`, naming the next version and when it was submitted). Only the newest version, when unapproved, is
+      `waiting`; a `replaced` version names the next APPROVED version and when it was approved.
+    - 🛑 **A version has no link to the forms it came from** (`property_pages` has no intake column, its photos keep only
+      `photo_id`, and the builder's fills are browser state). So the modal groups `get_property_activity` events by time
+      around each version; never show a "made from form N" claim without first storing that link.
   - **Tests (in this repo since 2026-09-27):** `scripts/page-builder/tests/map_draft.mjs` (the map starts from the version,
     is draft state, is sent in `p_content.site_map`, never calls `update_property_site_map`; a new page is not filled from
-    the form) and `scripts/page-builder/tests/activity_notice.mjs` (the Activity card, the Changed-in-the-Client-App notice,
+    the form) and `scripts/page-builder/tests/activity_notice.mjs` (the Activity card until 2026-09-28, when its card checks left with the card and `activity_modal.mjs` took over the modal; the Changed-on-the-property-record notice (renamed 2026-09-28),
     the /forms fixes). Both run on the LIVE Planner with real data read as Fred's claims, the sign-in faked and every RPC
     stubbed, so they write nothing; both exit 1 on a failure. `scripts/driver-page/tests/driver-live.mjs` now exits 1 too.
 
@@ -585,6 +607,31 @@ by a driver."*
   IMMUTABLE flags); 15 mutants, each caught; a four-lens adversarial review before apply.
 
 ---
+
+**21. ACCEPT FROM THE PLANNER: page approvers only, stale screens refused (2026-09-28, `2026-09-28_1015_intake_accept_from_planner.sql`).** Fred,
+2026-09-28: *"it should be only the ones that are page approvers"*. The only caller of `client.accept_intake_answers` is the
+Picture Planner form page's Property record tab (Picture Planner CLAUDE.md rule 19).
+- Signature `(p_intake_id bigint, p_keys text[], p_expected jsonb)`; the two-argument form is dropped. authenticated only
+  (revoked by name).
+- Gates, in order: signed in (28000 `not_signed_in`), staff email (42501 `not_staff`), a page approver
+  `public.fn_page_approver_ids()` (42501 `not_an_approver`: "Only Diego, Fred, Serena or Yannick can save these answers to the
+  property record."), at least one key (`no_keys`), `p_expected` an object (`no_expected`), the intake exists (P0002
+  `not_found`) and is submitted (`not_submitted`), its property is on the test client 112-YA unless
+  `app_config.intake_accept_all_properties` = 'true' (42501 `test_only`: "For now, answers can only be saved on the test
+  client 112-YA."; the compare returns the same sentence as `accept_blocker`); per key: in the accept map (`no_property_field`), in `requested`
+  (`not_requested`), answered (`not_answered`), shown (`not_shown`), then 🛑 **the compare's `ours` equals `p_expected[key]`
+  (JSON null and a missing key both mean Not on file), else 22023 `stale`**, then the value checks (whole numbers, ranges,
+  lock box shape, `hours_shape`). Every DETAIL is `blocker=<code> in client.accept_intake_answers[: <key>]` and every
+  message a plain sentence.
+- A repeated key is taken once. `get_intake_compare` returns `can_accept` and `accept_blocker` (the `get_page_builder`
+  pattern). `get_property_activity` lists `intake_accepted` (ord 9) per ledger row.
+- Unchanged: the writers it calls, the Jobber push through `trg_properties_enqueue_outbound` (lock box and gallons only),
+  `property_intakes.accepted` holding only the LAST batch, and a cancelled intake is not refused (flow doc 13.2 item 27).
+- Proof: the migration's VERIFY, rolled back: approver, non-approver, non-staff; every refusal; a save of all five with one
+  key twice (5 ledger rows, both Jobber queue rows, the five history lines); the stale pair (the same call with the value the
+  property now holds goes through); `not_requested`, `hours_shape` and `not_submitted` on two made-up [TEST] forms;
+  `test_only` on a made-up form on another client's property, and the switch row opening it. The screen:
+  `scripts/page-builder/tests/accept_tab.mjs`.
 
 ## Traps paid for while building this
 
