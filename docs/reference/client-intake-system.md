@@ -85,7 +85,7 @@ the `driver-page` endpoint) was applied at 13:55 ET (Supabase `44f50ae`). The Pi
 been published since about 14:30 ET: the Page Builder on `/` and `/property/$id`, and the public
 `planner.unclogme.app/driver#code=<22 chars>` page. The plan is
 `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md` P1 to P7c; see Picture Planner CLAUDE.md rules 8 and
-13 to 18. NOT built yet: `Verified` in the Client App status column. (The office Accept screen is built since 2026-09-28: the Picture Planner form page's Property record tab, rule 21.) Cut from v1: the client
+13 to 18. NOT built yet: `Verified` in the Client App status column. (The office Accept screen is built since 2026-09-28: the Picture Planner form page's Property record tab, rule 21 of this reference.) Cut from v1: the client
 confirmation page and the Jobber link. Since 2026-09-28 every screen calls the driver page the Site file (Picture Planner rule 21); the database and edge names keep "driver". (The New Client "Time to do the intake now?" step: see the Client App changelog.)
 
 ---
