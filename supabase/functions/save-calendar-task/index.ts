@@ -8,6 +8,9 @@
 //     push to Jobber  ->  READ THE TASK BACK to verify  ->  only then call the RPC
 //     on ANY failure: write NOTHING locally, return a typed error the app shows
 //     since 2026-09-21: a stated property_id must belong to the task's client (property_not_of_client)
+//     since 2026-09-29: `app` (audit label, allowlisted) and `intake_id` (create only: a site survey form of the
+//     same property, checked before Jobber, linked to the task after the RPC). The Client App's Schedule intake.
+//     A create whose Jobber reply is not a clear yes or no answers jobber_unknown (maybe_created), not jobber_rejected.
 //
 // Fred, verbatim: "like a transaction ... if jobber gets an issue while completing it on our app,
 // then our app also shows that error so it can't be completed. I don't want discrepancies."
@@ -142,10 +145,12 @@ const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: fal
 // stamps into jwt_claims via ops.fn_calendar_task_set_actor. Attribution only, never authorization.
 // The plain db client above stays header-less on purpose: it also refreshes public.webhook_tokens,
 // which is audited, and those rows keep the label they have today.
-function writeClient(actorEmail: string) {
+// `app` (2026-09-29): the Client App makes intake tasks through this same door, and its rows must read "Client App"
+// in the audit trail, not "Visit Calendar". Only a name from APPS below ever reaches the header.
+function writeClient(actorEmail: string, app: string) {
   return createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false },
-    global: { headers: { "x-app-source": "visit-calendar", "x-actor-name": actorEmail } },
+    global: { headers: { "x-app-source": app, "x-actor-name": actorEmail } },
   });
 }
 
@@ -337,6 +342,8 @@ function errsOf(res: any, field: string): string[] {
 // ============================================================================================
 const OPS = ["create", "edit", "complete", "delete"] as const;
 type Op = (typeof OPS)[number];
+// The apps allowed to name themselves in x-app-source (2026-09-29). Absent = visit-calendar.
+const APPS = ["visit-calendar", "client-app"];
 
 // Key PRESENCE is the whole contract on the RPC side (a key present is written, a key absent is
 // left alone), so presence has to be read the same way here rather than inferred from undefined.
@@ -552,7 +559,12 @@ async function deleteAndVerify(token: string, gid: string): Promise<
 
 // ============================================================================================
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  // Echo the requested headers on the preflight (the save-calendar-visit lesson): the Client App calls this through
+  // supabase-js functions.invoke, and a browser drops the POST, with no error to read, if any header it asks for is
+  // missing from the list.
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: { ...CORS, "Access-Control-Allow-Headers": req.headers.get("access-control-request-headers") ?? CORS["Access-Control-Allow-Headers"] } });
+  }
   if (req.method !== "POST") return fail(405, "method_not_allowed", "POST only.");
 
   // ---- AUTH: a real, staff-domain human. Never service_role-by-default. --------------------
@@ -563,7 +575,6 @@ Deno.serve(async (req) => {
   if (userErr || !email || (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail(403, "forbidden", "Not a staff account.");
   }
-  const wdb = writeClient(email);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return fail(400, "bad_request", "Malformed JSON."); }
@@ -574,6 +585,26 @@ Deno.serve(async (req) => {
   const op = String(body.op ?? "") as Op;
   if (!OPS.includes(op)) {
     return fail(400, "bad_request", `op must be one of ${OPS.join(" | ")}.`);
+  }
+
+  // ---- the calling app and the site survey form (2026-09-29, the Client App's Schedule intake) -------------
+  // Fred: "when we schedule it, we need to assign it to a person, and it needs to create a Task at jobber and
+  // calendar app too". `app` labels the audit trail; `intake_id` links the new task to the form so the form can
+  // prefill "Your name". Both are checked here, before anything is read.
+  const app = has(body, "app") ? String(body.app ?? "") : "visit-calendar";
+  if (!APPS.includes(app)) {
+    return fail(400, "bad_request", `app must be one of ${APPS.join(" | ")}.`);
+  }
+  const wdb = writeClient(email, app);
+  let intakeId: number | null = null;
+  if (has(body, "intake_id") && body.intake_id !== null) {
+    if (op !== "create") {
+      return fail(400, "invalid_input", "intake_id can only be sent when a task is created.");
+    }
+    if (!isIntIn(body.intake_id, 1, Number.MAX_SAFE_INTEGER)) {
+      return fail(400, "invalid_input", "intake_id must be a positive whole number.");
+    }
+    intakeId = body.intake_id as number;
   }
 
   // Tracked OUTSIDE the try so the CATCH can still name the task. gql() calls fetch(), which
@@ -863,6 +894,30 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ---- the site survey form (2026-09-29): this property's, still open, not linked yet ---------------------
+    // Checked BEFORE Jobber is touched, like every FK target above, so a refusal here (no jobber_task in the reply)
+    // means nothing was made, and the Client App then cancels the form's link. The link is written in section 6.
+    if (intakeId !== null) {
+      if (propertyId === undefined || propertyId === null) {
+        return fail(400, "invalid_input", "A task for a site survey form needs the form's property. Nothing was saved.");
+      }
+      const { data: intake, error: iErr } = await db.from("property_intakes")
+        .select("id, property_id, submitted_at, cancelled_at, expires_at, calendar_task_id").eq("id", intakeId).maybeSingle();
+      if (iErr) return fail(500, "db_error", `property_intakes lookup failed: ${iErr.message}`);
+      if (!intake) {
+        return fail(400, "intake_not_found", `Site survey form ${intakeId} does not exist. Nothing was saved.`);
+      }
+      if (Number(intake.property_id) !== propertyId) {
+        return fail(400, "intake_not_of_property", `Site survey form ${intakeId} belongs to another property. Nothing was saved.`);
+      }
+      if (intake.cancelled_at || intake.submitted_at || new Date(intake.expires_at).getTime() < Date.now()) {
+        return fail(409, "intake_closed", `Site survey form ${intakeId} is cancelled, submitted or expired, so it cannot get a task. Nothing was saved.`);
+      }
+      if (intake.calendar_task_id != null) {
+        return fail(409, "intake_already_linked", `Site survey form ${intakeId} already has a task. Nothing was saved.`);
+      }
+    }
+
     // ---- assignees ---------------------------------------------------------------------------
     let assigneeIds: number[] | null = null;              // null = "not stated", leave both sides alone
     if (has(body, "assignee_ids")) {
@@ -1000,15 +1055,21 @@ Deno.serve(async (req) => {
       const res = await gql(token, `mutation(${decls.join(", ")}){
         taskCreate(${args.join(", ")}){ task{ id } userErrors{ message } } }`, vars);
       const errs = errsOf(res, "taskCreate");
-      if (errs.length) {
+      gid = res?.data?.taskCreate?.task?.id ?? "";
+      // 🛑 (2026-09-29) ONLY userErrors with no top-level error and no task is a definite "Jobber said no". A top-level
+      // error (a 5xx JSON body, the waiting room, a throttle that outlived the retries) or a reply with no task id (a body
+      // read that failed partway becomes {} in gql) can follow a create Jobber DID run, so it is jobber_unknown with
+      // maybe_created: never "nothing was saved". The Client App cancels a form's link only on a definite refusal.
+      if (errs.length && !(Array.isArray(res?.errors) && res.errors.length) && !gid) {
         return fail(502, "jobber_rejected",
           `Jobber refused to create the task, so nothing was saved here: ${errs.join("; ")}`,
           { jobber_errors: errs });
       }
-      gid = res?.data?.taskCreate?.task?.id ?? "";
-      if (!gid) {
-        return fail(502, "jobber_unverified",
-          "Jobber reported no error but returned no task id, so we cannot record the task. Nothing was saved.");
+      if (errs.length || !gid) {
+        console.error(`[calendar-task] taskCreate unclear (${errs.length ? errs.join("; ") : "no task id"}): a Jobber task MAY exist${gid ? ` (${gid})` : ""}. Check Jobber.`);
+        return fail(502, "jobber_unknown",
+          "Jobber did not answer clearly, so we cannot tell whether the task was created. Nothing was saved here. Check Jobber before trying again.",
+          { maybe_created: true, ...(gid ? { jobber_task: gid } : {}), ...(errs.length ? { jobber_errors: errs } : {}) });
       }
       createdGid = gid;          // from here on, a throw MUST still name this task
     }
@@ -1104,6 +1165,21 @@ Deno.serve(async (req) => {
         });
     }
 
+    createdGid = null;   // recorded on both sides now: a throw below is not an orphan (2026-09-29)
+
+    // ---- link the site survey form to the task (2026-09-29). The task is real and recorded on both sides by now,
+    // so a failed link is reported, never undone: the only loss is the name prefill on the form. The guard
+    // (calendar_task_id is null) keeps a form from being moved to a second task.
+    let intakeLinked: boolean | null = null;
+    if (intakeId !== null) {
+      const { data: linked, error: lkErr } = await wdb.from("property_intakes")
+        .update({ calendar_task_id: Number(recId) }).eq("id", intakeId).is("calendar_task_id", null).select("id");
+      intakeLinked = !lkErr && Array.isArray(linked) && linked.length === 1;
+      if (!intakeLinked) {
+        console.error(`[calendar-task] task ${recId} was made but site survey form ${intakeId} was not linked: ${lkErr?.message ?? "0 rows"}`);
+      }
+    }
+
     return json({
       ok: true, op, task_id: Number(recId), jobber_task: gid,
       title, task_date: taskDate, all_day: allDay,
@@ -1122,6 +1198,7 @@ Deno.serve(async (req) => {
       // switched off on a premise that turned out to be wrong.
       date_verified_in_jobber: true,
       verified: true,
+      ...(intakeId !== null ? { intake_id: intakeId, intake_linked: intakeLinked } : {}),
     });
   } catch (e) {
     // Anything unhandled reaches here. Nothing local has been written on any path that throws

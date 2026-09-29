@@ -76,6 +76,10 @@
 // v13 (2026-09-24, seventh review): the one-line check refuses what Postgres [[:cntrl:]] refuses (C1 too,
 // U+0085 is a line break); the 4,000-character refusal names its question; an hours key is checked
 // against the day names' OWN keys ("constructor" passed `in`).
+// v20 (2026-09-29, Fred: "up to 3 pictures for the Alarm" and "prefill the name field at the intake form"): attach
+// refuses a photo past the question's max_photos in the form's own snapshot (429 "This question takes at most N
+// photos."); load adds assignee_name, the stored name of the linked calendar task's ONE assignee (none when the
+// task has zero or several). Both additive: a snapshot without max_photos and a form without a task behave as before.
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -134,6 +138,7 @@ type Intake = {
   expires_at: string
   submitted_at: string | null
   cancelled_at: string | null
+  calendar_task_id: number | null
 }
 
 /** Resolve the token to a usable intake, or return the reason it is not usable. */
@@ -143,7 +148,7 @@ async function resolveToken(token: unknown): Promise<{ intake?: Intake; error?: 
   }
   const { data, error } = await supabase
     .from('property_intakes')
-    .select('id, property_id, form_snapshot, requested, expires_at, submitted_at, cancelled_at')
+    .select('id, property_id, form_snapshot, requested, expires_at, submitted_at, cancelled_at, calendar_task_id')
     .eq('token', token)
     .maybeSingle()
 
@@ -165,6 +170,30 @@ async function storedObject(intakeId: number, fileName: string): Promise<{ name:
   if (error || !Array.isArray(data)) return undefined
   const hit = data.find((o) => o.id !== null && o.name === fileName)
   return hit ? { name: hit.name, metadata: (hit.metadata ?? null) as Record<string, unknown> | null } : null
+}
+
+/** The per-question photo limit (tree key max_photos, 2026-09-29) from the form's OWN snapshot, or null. */
+function questionMax(snapshot: Record<string, unknown>, key: string): number | null {
+  for (const sec of ((snapshot as { sections?: unknown[] }).sections ?? []) as { questions?: unknown[] }[]) {
+    for (const q of (sec?.questions ?? []) as { key?: unknown; type?: unknown; max_photos?: unknown }[]) {
+      if (q && q.key === key && q.type === 'photos' && Number.isInteger(q.max_photos) && (q.max_photos as number) > 0) return q.max_photos as number
+    }
+  }
+  return null
+}
+
+/** "Your name" prefill (2026-09-29): the stored full_name of the linked calendar task's assignee, ONLY when the task
+ *  has exactly one. Read at every load, so a reassignment in the Calendar or in Jobber follows. Never an email or a
+ *  phone. Any failure sends nothing: the form works without it. */
+async function assigneeName(taskId: number | null): Promise<string | null> {
+  if (!taskId) return null
+  const { data: rows, error } = await supabase.schema('ops').from('calendar_task_assignees')
+    .select('employee_id').eq('task_id', taskId).limit(2)
+  if (error || !Array.isArray(rows) || rows.length !== 1) return null
+  const { data: emp, error: eErr } = await supabase.from('employees').select('full_name').eq('id', rows[0].employee_id).maybeSingle()
+  if (eErr || !emp) return null
+  const n = String(emp.full_name ?? '').trim().slice(0, MAX_COLLECTOR)
+  return n || null
 }
 
 Deno.serve(async (req) => {
@@ -228,6 +257,7 @@ Deno.serve(async (req) => {
       .eq('id', i.property_id)
       .maybeSingle()
     const coord = (x: unknown) => (x == null || x === '' || !Number.isFinite(Number(x)) ? null : Number(x))
+    const assignee = await assigneeName(i.calendar_task_id)
 
     return json(200, {
       ok: true,
@@ -241,6 +271,8 @@ Deno.serve(async (req) => {
         ? { name: prop.name, address: prop.address, city: prop.city, lat: coord(prop.latitude), lng: coord(prop.longitude) }
         : null,
       photo_cap: PHOTO_CAP,
+      // Only when the linked task has exactly one assignee; the page puts it in "Your name" when no draft name is saved.
+      ...(assignee ? { assignee_name: assignee } : {}),
       // The Google Maps BROWSER key for the pin maps (public by design, restricted by referrer to the form's
       // host). No secret, no map: the form falls back to "Use my location".
       maps_key: Deno.env.get('GOOGLE_MAPS_BROWSER_KEY') || null,
@@ -329,6 +361,25 @@ Deno.serve(async (req) => {
       if (roles === undefined) return fail(500, 'Could not attach the photo, please try again.')
       if (roles.includes(role)) return json(200, { ok: true, photo_id: photoId, already_attached: true })
       if (roles.length) return fail(409, 'This photo is already attached to another question on this form.')
+    }
+
+    // A per-question limit (2026-09-29, Fred: "up to 3 pictures for the Alarm"): max_photos on this question in the
+    // form's own snapshot. After the retry above, so re-sending an attached photo still answers "attached". 429 like
+    // the two other limits here; the page shows the message and never retries.
+    // ponytail: count then insert, like PHOTO_CAP below; two parallel attaches could make one more. The page sends at most the room left.
+    const maxHere = questionMax(i.form_snapshot, role)
+    if (maxHere !== null) {
+      const { count: nHere, error: nErr } = await supabase
+        .from('photo_links')
+        .select('id', { count: 'exact', head: true })
+        .eq('entity_type', 'property_intake')
+        .eq('entity_id', i.id)
+        .eq('role', role)
+        .is('deleted_at', null)
+      if (nErr) return fail(500, 'Could not attach the photo, please try again.')
+      if ((nHere ?? 0) >= maxHere) {
+        return fail(429, `This question takes at most ${maxHere} ${maxHere === 1 ? 'photo' : 'photos'}.`)
+      }
     }
 
     // The cap on ATTACHED photos (the product limit). The ledger above caps uploads.
