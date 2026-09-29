@@ -549,7 +549,9 @@ stayed `intake-submit?t=`.) Why each piece:
       around each version; never show a "made from form N" claim without first storing that link.
   - **Tests (in this repo since 2026-09-27):** `scripts/page-builder/tests/map_draft.mjs` (the map starts from the version,
     is draft state, is sent in `p_content.site_map`, never calls `update_property_site_map`; a new page is not filled from
-    the form) and `scripts/page-builder/tests/activity_notice.mjs` (the Activity card until 2026-09-28, when its card checks left with the card and `activity_modal.mjs` took over the modal; the Changed-on-the-property-record notice (renamed 2026-09-28),
+    the form) and `scripts/page-builder/tests/activity_notice.mjs` (the Activity card until 2026-09-28, when its card checks left with the card and `activity_modal.mjs` took over the modal; the builder notice, "Changed in the Client App's property data since this ..." since
+    2026-09-29 (named "Changed on the property record ..." from 2026-09-28, "Changed in the Client App ..." before; its
+    CHUNK_SUB controls since `dc3939b` fail the heading check, and the footer and Undo checks),
     the /forms fixes). Both run on the LIVE Planner with real data read as Fred's claims, the sign-in faked and every RPC
     stubbed, so they write nothing; both exit 1 on a failure. `scripts/driver-page/tests/driver-live.mjs` now exits 1 too.
 
