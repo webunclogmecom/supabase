@@ -104,12 +104,17 @@ input::placeholder,textarea::placeholder{color:#a1a1aa}
 .gst{margin-top:4px;font-size:14px;color:var(--mut)}
 .map{height:280px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#e4e4e7;margin-bottom:10px}
 .map.wait{display:grid;place-items:center;color:var(--mut);font-size:14px;font-weight:600}
-.asr{margin-bottom:10px}
-.alist{display:grid;gap:6px}
-.alist:not(:empty){margin-top:6px}
-.asug{display:block;width:100%;min-height:48px;padding:10px 14px;text-align:left;border:1.5px solid var(--line2);border-radius:12px;background:#fff;color:var(--ink);font-size:15px}
+/* The address suggestions are ONE dropdown hanging from the box (Fred, 2026-09-29, variant A): absolute, so it lies
+   over the map instead of pushing it down; z-index 3 keeps it under the sticky Submit bar (5). */
+.asr{position:relative;z-index:3;margin-bottom:10px}
+.asr input[aria-expanded=true]{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom-color:var(--line);box-shadow:none}
+.alist{position:absolute;left:0;right:0;background:#fff;border:1.5px solid var(--or);border-top:0;border-radius:0 0 12px 12px;box-shadow:0 14px 30px rgba(24,24,27,.16),0 2px 6px rgba(24,24,27,.08);overflow:hidden}
+.alist:empty{display:none}
+.asug{display:block;width:100%;min-height:52px;margin:0;padding:7px 14px;border:0;border-top:1px solid var(--line);border-radius:0;background:#fff;color:var(--ink);text-align:left;font-size:16px;line-height:1.25}
+.asug:first-child{border-top:0}
+.asug.on{background:var(--ort)}
 .asug .m{display:block;font-weight:600}
-.asug .s{display:block;margin-top:2px;font-size:13px;color:var(--mut)}
+.asug .s{display:block;margin-top:1px;font-size:13px;color:var(--mut)}
 .ahint:not(:empty){margin-top:6px;font-size:14px;color:var(--mut)}
 .act:disabled{opacity:.6;cursor:default}
 .days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
@@ -203,8 +208,8 @@ textarea{min-height:84px}
 .step input{font-size:16px;font-weight:600}
 .act{width:fit-content;min-height:38px;padding:8px 14px;gap:8px;font-size:14px;font-weight:600}
 .act svg{width:18px;height:18px}
-.asug{min-height:40px;padding:8px 12px;font-size:14px}
-.asug .s{font-size:12px}
+.asug{min-height:44px;padding:4px 12px;font-size:14px;line-height:1.2}
+.asug .s{font-size:13px}
 .day{min-height:36px;font-size:13px;font-weight:600}
 .hh{font-size:11px;font-weight:600}
 .hr .dn{font-size:14px;font-weight:600}
@@ -434,24 +439,32 @@ function mapFor(q,v){
     // Type an address to move the map (Fred, 2026-09-27: the collector may be far from where the truck will
     // park). Places API (New) through the same key; the pin lands on the address, then it is dragged to the
     // exact spot. The box lives with the map (built once, moved on each render) so typing is never lost.
-    var wrap=el('div'), sr=el('div','asr'), inp=el('input'), list=el('div','alist'), hint=el('div','ahint');
+    var wrap=el('div'), sr=el('div','asr'), inp=el('input'), list=el('div','alist'), hint=el('div','ahint'), lid='al-'+q.key.replace(/[^A-Za-z0-9_-]/g,'-');
     inp.type='text'; inp.setAttribute('autocomplete','off'); inp.setAttribute('enterkeyhint','search'); inp.maxLength=200;
     inp.placeholder='Type an address to move the map'; inp.setAttribute('aria-label',q.label+': type an address to move the map');
     inp.setAttribute('data-f',q.key+':addr');     // render() gives focus and the caret back (the phone keyboard stays open)
+    // A combobox (2026-09-29): the suggestions are one listbox hanging from the box; the focus stays in the box,
+    // the arrows move a highlight (aria-activedescendant), Enter takes the highlighted row.
+    inp.setAttribute('role','combobox'); inp.setAttribute('aria-autocomplete','list'); inp.setAttribute('aria-expanded','false'); inp.setAttribute('aria-controls',lid);
+    list.id=lid; list.setAttribute('role','listbox'); list.setAttribute('aria-label','Address suggestions');
     hint.setAttribute('role','status'); sr.appendChild(inp); sr.appendChild(list); sr.appendChild(hint);
     wrap.appendChild(sr); wrap.appendChild(box);
-    // S.seq: only the newest search or pick may act. S.for: the text the list on screen was found for.
-    var S={tok:null,t:0,seq:0,for:null}, say=function(t){ hint.textContent=t };
+    // S.seq: only the newest search or pick may act. S.for: the text the list on screen was found for. S.hi: the highlighted row.
+    var S={tok:null,t:0,seq:0,for:null,hi:-1}, say=function(t){ hint.textContent=t };
+    var shut=function(){ list.textContent=''; S.hi=-1; inp.setAttribute('aria-expanded','false'); inp.removeAttribute('aria-activedescendant') };
+    var hi=function(i){ var rs=list.children; S.hi=i;
+      for(var j=0;j<rs.length;j++){ rs[j].classList.toggle('on',j===i); rs[j].setAttribute('aria-selected',j===i?'true':'false') }
+      if(rs[i]) inp.setAttribute('aria-activedescendant',rs[i].id); else inp.removeAttribute('aria-activedescendant') };
     // Every new search, pick, clear or hand pin goes through bump(): the pending search is cancelled, any
     // reply still on its way is dropped, and an address lookup stops holding Submit.
     var bump=function(){ clearTimeout(S.t); S.seq++; if(M&&M.picking){ M.picking=false; counts() } return S.seq };
-    var cancel=function(){ bump(); list.textContent=''; S.for=null; if(/^Finding that address/.test(hint.textContent)) say('') };
+    var cancel=function(){ bump(); shut(); S.for=null; if(/^Finding that address/.test(hint.textContent)) say('') };
     var pick=function(pp){
       var my=bump(), pl=pp.toPlace(); S.tok=null; S.for=null;     // Place Details ends the Places session
       M.picking=true; counts(); say('Finding that address...');
       setTimeout(function(){ if(my===S.seq&&M.picking){ bump(); say('Could not open that address. Try again, or move the map by hand.') } },15000);
       pl.fetchFields({fields:['location','formattedAddress']}).then(function(){
-        if(my!==S.seq) return; M.picking=false; list.textContent='';
+        if(my!==S.seq) return; M.picking=false; shut();
         var ll=pl.location; if(!ll){ counts(); say('Could not find that address on the map. Move the map by hand.'); return }
         if(pl.formattedAddress) inp.value=pl.formattedAddress;
         try{ inp.blur() }catch(e){}                   // close the phone keyboard so the pin is in view
@@ -468,32 +481,42 @@ function mapFor(q,v){
         if(home) req.locationBias={center:home,radius:50000};
         return lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
       }).then(function(r){
-        if(my!==S.seq) return; list.textContent='';
+        if(my!==S.seq) return; shut();
         var sg=((r&&r.suggestions)||[]).map(function(s){ return s.placePrediction }).filter(Boolean).slice(0,5);
         if(!sg.length){ say('No address found. Try the number, the street and the city.'); return }
         if(auto){ pick(sg[0]); return }
         S.for=txt; say('');
         sg.forEach(function(pp,i){
-          var b=el('button','asug'); b.type='button'; b.setAttribute('data-f',q.key+':asug:'+i);
+          var b=el('button','asug'); b.type='button'; b.id=lid+'-'+i; b.tabIndex=-1; b.setAttribute('role','option'); b.setAttribute('aria-selected','false');
           b.appendChild(el('span','m',pp.mainText?pp.mainText.text:pp.text.text));
           if(pp.secondaryText) b.appendChild(el('span','s',pp.secondaryText.text));
+          // Pressing a row leaves the focus (and the phone keyboard) in the box, so the blur below never closes the list first.
+          b.onpointerdown=b.onmousedown=function(ev){ ev.preventDefault() };
+          b.onmouseenter=function(){ hi(i) };
           b.onclick=function(){ pick(pp) }; list.appendChild(b);
         });
-      }).catch(function(){ if(my!==S.seq) return; list.textContent=''; say('Address search is not available right now. Move the map by hand.') });
+        inp.setAttribute('aria-expanded','true');
+      }).catch(function(){ if(my!==S.seq) return; shut(); say('Address search is not available right now. Move the map by hand.') });
     };
     inp.oninput=function(){
       clearTimeout(S.t); var txt=inp.value.trim();
-      if(txt.length<3){ bump(); list.textContent=''; S.for=null; say(''); return }
+      if(txt.length<3){ bump(); shut(); S.for=null; say(''); return }
       S.t=setTimeout(function(){ find(txt) },350);
     };
-    // Enter takes the first suggestion found for the text in the box NOW, never one left from earlier text.
+    // Enter takes the highlighted row, else the first, of a list found for the text in the box NOW, never one left from
+    // earlier text. The arrows move the highlight and wrap around.
     inp.onkeydown=function(e){
-      if(e.key==='Escape'){ bump(); list.textContent=''; S.for=null; return }
+      var rs=list.children, n=rs.length;
+      if(e.key==='Escape'){ bump(); shut(); S.for=null; return }
+      if((e.key==='ArrowDown'||e.key==='ArrowUp')&&n){ e.preventDefault(); hi(e.key==='ArrowDown'?(S.hi+1)%n:(S.hi<=0?n-1:S.hi-1)); return }
       if(e.key!=='Enter') return; e.preventDefault();
       var txt=inp.value.trim(); if(txt.length<3) return;
-      var f=list.querySelector('button'); if(f&&S.for===txt){ f.click(); return }
+      if(n&&S.for===txt){ (rs[S.hi]||rs[0]).click(); return }
       find(txt,true);
     };
+    // The list lies over the map, so leaving the box (a tap outside, Tab) closes it like Escape; a lookup already
+    // running is left to finish. Checked a tick later: render() moves this box into the new card and gives the focus back.
+    inp.onblur=function(){ setTimeout(function(){ if(document.activeElement===inp) return; if(M&&M.picking) shut(); else { bump(); shut(); S.for=null } },0) };
     M=MAPS[q.key]={box:box,wrap:wrap,map:map,mk:mk,at:at,cancel:cancel,picking:false};
   }
   // A pin set another way (Use my location, a restored draft) moves the marker and brings it into view.
