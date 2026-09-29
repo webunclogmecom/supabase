@@ -59,7 +59,7 @@ const sys = page.locator('.q', { hasText: 'How many grease trap systems?' }).loc
 await sys.fill('1'); await sys.dispatchEvent('change')
 await page.waitForFunction(() => [...document.querySelectorAll('.q>label')].some((l) => /Grease trap location/.test(l.textContent)), null, { timeout: 5000 }).catch(() => {})
 const labels2 = await page.$$eval('.q>label', (ls) => ls.map((l) => l.textContent))
-ok('systems_count 1 shows the grease trap follow-ups', labels2.some((l) => /Grease trap location/.test(l)) && labels2.some((l) => /Total capacity in gallons/.test(l)))
+ok('systems_count 1 shows the grease trap follow-ups', labels2.some((l) => /Grease trap location/.test(l)) && labels2.some((l) => /^Gallons/.test(l)))
 // a photo on the gate photos question (1x1 PNG)
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 await page.locator('.q', { hasText: 'Photos of the gate or entrance' }).locator('input[type=file]').setInputFiles({ name: 'gate.png', mimeType: 'image/png', buffer: png })
