@@ -4929,6 +4929,10 @@ Eight things that will bite someone who does not know them:
    Since `2026-09-28_1816_site_file_wording` (2026-09-28) the activity sentences, Get a new link's refusal and `fn_page_blocker`'s
    INACTIVE sentence say "site file", and since 2026-09-28 every screen calls the page the Site file (Picture Planner
    rule 21). The internal names (`/driver`, `driver-page`, `fn_driver_page`, `rotate_driver_link`, the `driver_link_*` kinds) keep "driver".
+   Since `2026-09-29_1411_page_restore` (2026-09-29) a Replaced version can be restored as a NEW version: `property_pages.restored_from_version`
+   (CHECK, FK), `submit_property_page(..., p_restored_from_version)` refuses anything but a Replaced version
+   (`blocker=not_restorable`), `get_page_versions` returns it and `source`, `get_page_builder.referenced` lists every
+   version's photos; REF rule 18, Picture Planner rule 22.
 8. **Share form (2026-09-25, `2026-09-25_1600_intake_link_share.sql`): `client.get_intake_link` is the ONE sanctioned
    re-display of a collector link** (rule 19 of the reference). Awaiting intakes only, staff JWT only, every reveal logged in
    `public.property_intake_link_reveals` (no token, no URL, no app role reads it). The link is

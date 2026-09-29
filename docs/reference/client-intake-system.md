@@ -67,6 +67,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | map save retired from staff; `schedule_property_intake` tidied (rule 18) | EXECUTE on `client.update_property_site_map` revoked from `authenticated` (postgres only); `schedule_property_intake` returns `url` and `expires_at`, refuses a non-null `p_form_snapshot` | `2026-09-27_0733_intake_audit_followups.sql` (Supabase `ab86630`) |
 | developer approval (rule 18) | `app_config.page_self_approvers`, `public.fn_page_self_approver_ids()`; the CHECK `property_pages_check1` dropped; the own-version rule now lives in `approve_property_page` and the append-only trigger | `2026-09-27_1155_page_developer_approval.sql` (Supabase `740569d`) |
 | page versions for the builder's Activity modal (rule 18) | `client.get_page_versions(bigint)` | `2026-09-28_1122_page_versions_read.sql` (Supabase `cd225d4`) |
+| restore a version (rule 18) | `property_pages.restored_from_version`; `client.submit_property_page(..., p_restored_from_version)`; `get_page_versions` adds `restored_from_version` and `source`; `get_property_activity`'s restore tail; `get_page_builder.referenced` lists every version's photos | `2026-09-29_1411_page_restore.sql` (Supabase `94ae9cd`) |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -569,6 +570,24 @@ stayed `intake-submit?t=`.) Why each piece:
     - 🛑 **A version has no link to the forms it came from** (`property_pages` has no intake column, its photos keep only
       `photo_id`, and the builder's fills are browser state). So the modal groups `get_property_activity` events by time
       around each version; never show a "made from form N" claim without first storing that link.
+  - 🛑 **RESTORE A VERSION (2026-09-29, `2026-09-29_1411_page_restore`; Fred, 2026-09-29: "i want like a go back way ... without removing
+    the version 4").** The Planner loads a Replaced version into its draft and submits it as a NEW version through the usual
+    path (Picture Planner CLAUDE.md rule 22); nothing is deleted and the approval is the usual one.
+    - `public.property_pages.restored_from_version int NULL`: a LABEL, not a copy guarantee (the draft may be adjusted).
+      CHECK `>= 1 and < version`, FOREIGN KEY `(property_id, restored_from_version)` to `(property_id, version)`; frozen at
+      insert by the append-only trigger (unchanged), audited with the row.
+    - `client.submit_property_page` takes `p_restored_from_version integer DEFAULT NULL` (dropped and created again; the
+      five named arguments still work). Only a REPLACED version (approved, below the Live one) may be named: 22023 "Only a
+      version that was live before can be restored. ...", DETAIL `blocker=not_restorable ... (version N)`, checked after
+      the version clash check under the same lock. Widening it is that one predicate.
+    - 🛑 `p_expected_version` is still the NEWEST version and `p_expected_source` today's `property.source`: the old
+      number is refused (`version_clash`) and the old source too (`source_changed`). The builder's notice compares the
+      version's own `source` with today's instead.
+    - `get_page_versions` returns `restored_from_version` and `source`; `get_property_activity` ends a restore's
+      `page_submitted` sentence "(restored from version N)"; `get_page_builder.referenced` lists the photos of EVERY
+      version (each `owned` true with bucket, path, rotation, or false), so a restored photo older than the pool is shown
+      or named as gone. A photo removed since the old version still refuses the whole submit (`blocker=content
+      photo_id=N`).
   - **Tests (in this repo since 2026-09-27):** `scripts/page-builder/tests/map_draft.mjs` (the map starts from the version,
     is draft state, is sent in `p_content.site_map`, never calls `update_property_site_map`; a new page is not filled from
     the form) and `scripts/page-builder/tests/activity_notice.mjs` (the Activity card until 2026-09-28, when its card checks left with the card and `activity_modal.mjs` took over the modal; the builder notice, "Changed in the Client App's property data since this ..." since
