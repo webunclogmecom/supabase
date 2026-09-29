@@ -4,6 +4,9 @@
 // with aria-expanded. Nothing else in the panel changes (Add into, the order, the counts). Real replies read in SQL as
 // Fred's claims; 1164 has no visit photos, so the stub adds three FIXTURE visit photos (two dates) to the pool, never
 // in Prod. Sign-in faked, every call stubbed, storage 400, nothing written. Prints titles and counts only.
+// Also the photo cards' source label (Fred, 2026-09-29: "why some photos are locked? why can't i delete them?"; he
+// approved dropping the lock): "From: <source>" ("From: not recorded" with no source), its title the same full text,
+// no lock, no "From the database, locked", the box and the Remove button unchanged on every card.
 //   node scripts/page-builder/tests/add_from_visits.mjs <outdir>
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
@@ -27,6 +30,12 @@ D.pb.pool = [...(D.pb.pool || []).filter((x) => x.kind !== 'visit'), V(990001, '
 const surveyIds = new Set(D.forms.flatMap((f) => (f.photos || []).map((x) => String(x.photo_id))))
 const onPage = new Set((D.pb.live.content.photos || []).map((x) => String(x.photo_id)))
 const SURVEY_N = D.pb.pool.filter((x) => x.kind !== 'visit' && surveyIds.has(String(x.photo_id)) && !onPage.has(String(x.photo_id))).length
+// the photo cards' source label (Fred, 2026-09-29: the lock read as "cannot be removed"; approved "From: <source>"):
+// the source each card on the live version must name, the same value the label showed before ("Site survey · <label>")
+const poolById = new Map(D.pb.pool.map((x) => [String(x.photo_id), x]))
+const CARDS = D.pb.live.content.photos || []
+const EXPECT_SURVEY = CARDS.map((ph) => poolById.get(String(ph.photo_id))).filter((x) => x && x.kind === 'intake' && x.owned !== false).map((x) => `Site survey · ${x.label ?? x.question_key ?? 'photo'}`).sort()
+const LABEL_BOX = 'flex items-center gap-1 rounded border border-border bg-muted/60 px-1.5 py-1 text-[11px] text-muted-foreground'
 
 const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -96,6 +105,22 @@ for (const w of [390, 1440]) {
   ok(!!S && S.expanded === 'true', `${w}: the Site survey toggle says aria-expanded="true" on load`, S && S.expanded)
   ok(vis.length > 0 && vis.every((g) => g.shown === 0), `${w}: every visit group starts collapsed (no photo shown)`, vis.map((g) => g.shown))
   ok(vis.length > 0 && vis.every((g) => g.expanded === 'false'), `${w}: every visit group toggle says aria-expanded="false" on load`, vis.map((g) => g.expanded))
+  // THE PHOTO CARD LABEL: no lock, "From: <source>", its title the full text; box, classes and place unchanged
+  const L = await p.evaluate(() => [...document.querySelectorAll('[title="Drag to reorder or move to another category"]')].map((h) => {
+    const card = h.parentElement, info = card.children[1], lab = info && info.firstElementChild, tr = lab && lab.querySelector('.truncate')
+    const cs = tr && getComputedStyle(tr)
+    return { cls: lab && lab.className, text: lab && lab.textContent, title: lab && lab.getAttribute('title'), trText: tr && tr.textContent, ellipsis: !!cs && cs.textOverflow === 'ellipsis' && cs.whiteSpace === 'nowrap', h: lab && Math.round(lab.getBoundingClientRect().height), remove: !!info && [...info.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Remove' && b.getClientRects().length > 0) }
+  }))
+  const oldTip = await p.evaluate(() => document.querySelectorAll('[title="From the database, locked"]').length)
+  ok(L.length === CARDS.length && CARDS.length > 0 && L.every((l) => l.cls === LABEL_BOX && l.ellipsis), `${w}: one card per photo on the page (${CARDS.length}), each with its source label in the same box (classes, first line of the card, truncating)`, L.map((l) => [l.cls === LABEL_BOX, l.ellipsis, l.h]))
+  ok(L.length > 0 && L.every((l) => l.remove), `${w}: every photo card still has its Remove button`, L.map((l) => l.remove))
+  ok(L.length > 0 && L.every((l) => (l.text || '').startsWith('From: ')), `${w}: every photo card's source label starts with "From: "`, L.map((l) => (l.text || '').slice(0, 24)))
+  ok(L.length > 0 && L.every((l) => !(l.text || '').includes('\u{1F512}')), `${w}: no photo card's label has the lock (U+1F512)`, L.filter((l) => (l.text || '').includes('\u{1F512}')).length)
+  ok(L.length > 0 && L.every((l) => l.title === l.text), `${w}: every label's title equals its text (the full "From: <source>" on hover)`, L.map((l) => [l.title, (l.text || '').slice(0, 30)]).slice(0, 2))
+  ok(oldTip === 0, `${w}: no element has the title "From the database, locked"`, oldTip)
+  ok(L.length > 0 && L.every((l) => l.trText === l.text), `${w}: the whole label text sits in the truncating span (a long source still ends in "...")`, L.map((l) => [l.trText, l.text]).slice(0, 1))
+  const survey = L.map((l) => l.text || '').filter((t) => t.startsWith('From: Site survey · ')).map((t) => t.slice(6)).sort()
+  ok(L.length > 0 && JSON.stringify(survey) === JSON.stringify(EXPECT_SURVEY) && L.every((l) => /^From: (Site survey · |Visit · |Photo no longer available$)/.test(l.text || '')), `${w}: each label names the same source as before, after "From: " (${EXPECT_SURVEY.length} Site survey photos)`, survey.slice(0, 2))
   await p.locator('xpath=//h3[normalize-space()="Add from visits"]').evaluate((e) => e.parentElement.scrollIntoView({ block: 'start' }))
   await p.screenshot({ path: `${out}/afv_${w}_load.png` })
   // the toggle keeps working both ways, and aria-expanded follows what is shown
