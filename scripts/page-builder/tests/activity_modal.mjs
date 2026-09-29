@@ -1,6 +1,6 @@
 // LIVE Page Builder /property/1164: ACTIVITY C (Fred, 2026-09-28). The Activity card is gone; an Activity button right
 // before "View site file" opens a modal: versions (one Live), the chosen version's made/checked/replaced lines, what
-// changed since the version before (the review's own diff), and the activity around it; full screen with list then
+// changed since the version before (the review's own diff, the changed days in week order), and the activity around it; full screen with list then
 // detail on a phone. Real replies: get_page_builder / forms / get_property_activity and get_page_versions (migration
 // 2026-09-28_1122) read as Fred's claims. Sign-in faked; every call stubbed; nothing written. Codes are masked in the output.
 //   node scripts/page-builder/tests/activity_modal.mjs <outdir>
@@ -33,10 +33,12 @@ const show = (v) => (v == null || v === '' ? '(empty)' : v === true ? 'Yes' : v 
 const canon = (v) => (v == null ? 'null' : Array.isArray(v) ? `[${v.map(canon).join(',')}]` : typeof v === 'object' ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon(v[k])}`).join(',')}}` : JSON.stringify(v))
 const eq = (a, b) => canon(a ?? null) === canon(b ?? null)
 const mapOf = (m) => { if (!m || typeof m !== 'object') return null; const { rev, ...n } = m; const pins = n.pins && typeof n.pins === 'object' ? n.pins : {}; const ar = Array.isArray(n.arrows) ? n.arrows : []; return !pins.gt && !pins.truck && !ar.length ? null : n }
+// the changed days in week order since the Site file build (Fred, 2026-09-28: "Fine, days in week order"); any other key after them
+const WEEK = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], dayRank = (d) => (WEEK.includes(d) ? WEEK.indexOf(d) : WEEK.length)
 function diff(nw, old) {
   const out = [], a = nw?.facts ?? {}, b = old?.facts ?? {}
   for (const k of new Set([...Object.keys(b), ...Object.keys(a)])) if (!eq(a[k] === '' ? null : a[k], b[k] === '' ? null : b[k])) out.push(`${lab(k)}: ${show(b[k])} -> ${show(a[k])}`)
-  const ha = nw?.hours ?? {}, hb = old?.hours ?? {}, hd = [...new Set([...Object.keys(hb), ...Object.keys(ha)])].filter((d) => !eq(ha[d], hb[d]))
+  const ha = nw?.hours ?? {}, hb = old?.hours ?? {}, hd = [...new Set([...Object.keys(hb), ...Object.keys(ha)])].filter((d) => !eq(ha[d], hb[d])).sort((x, y) => dayRank(x) - dayRank(y))
   if (hd.length) out.push(`Hours changed: ${hd.join(', ')}`)
   if ((nw?.notes ?? '') !== (old?.notes ?? '')) out.push('Notes changed')
   if (!eq(nw?.contacts, old?.contacts)) out.push('Contacts changed')
@@ -154,6 +156,11 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   ok(!!D && D.detail === String(LIVE.version) && D.items.find((x) => x.v === String(LIVE.version))?.cur === 'true', '1440: the live version is shown first', D && D.detail)
   ok(!!D && detailOk(D, LIVE), '1440: Made by, Checked by (developer approval when the same person) and Replaced lines', [D && D.rows, expectRows(LIVE)])
   ok(!!D && changesOk(D, LIVE), `1440: What changed since version ${LIVE.version - 1}, the review's own lines`, [D && D.labels, D && D.changes, diff(LIVE.content, byNum(LIVE.version - 1)?.content)])
+  // the week order, derived from the stubbed versions: only a live version with 2 or more changed days stored out of week order can tell the two orders apart
+  const prevL = byNum(LIVE.version - 1), hrs = (c) => c?.hours ?? {}, hDiff = (d) => !eq(hrs(LIVE.content)[d], hrs(prevL?.content)[d])
+  const wkDays = prevL ? WEEK.filter(hDiff) : [], rawDays = prevL ? [...new Set([...Object.keys(hrs(prevL.content)), ...Object.keys(hrs(LIVE.content))])].filter(hDiff) : []
+  const wkLine = `Hours changed: ${wkDays.join(', ')}`, wkUsable = wkDays.length > 1 && rawDays.join() !== wkDays.join()
+  ok(wkUsable && !!D && (D.changes || []).includes(wkLine), wkUsable ? '1440: What changed lists the changed days in week order (mon to sun)' : 'fixture: the live version needs 2 or more changed days stored out of week order', { shown: D && (D.changes || []).find((x) => x.startsWith('Hours changed')), want: wkLine, stored: rawDays.join(', ') })
   const aL = around(LIVE)
   ok(!!D && D.labels.includes('Before it went live') && D.labels.includes('While it is live'), '1440: the activity is grouped Before it went live / While it is live', D && D.labels)
   ok(!!D && D.before && D.live && D.before.length === aL.before.length && D.live.length === aL.live.length && aL.before.every((e, i) => D.before[i].text.includes(e.text)) && aL.live.every((e, i) => D.live[i].text.includes(e.text)), '1440: each event sits in the right group, newest first', [D && D.before && D.before.map((x) => x.text), D && D.live && D.live.map((x) => x.text)])

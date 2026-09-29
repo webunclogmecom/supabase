@@ -13,6 +13,7 @@ const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbas
 const r = await sql(`do $$ begin perform set_config('request.jwt.claims', json_build_object('sub', (select id from auth.users where lower(email)='fred@ayache.com'), 'email', 'fred@ayache.com', 'role', 'authenticated')::text, true); end $$;
 select client.get_page_builder(1164) as pb, client.get_page_builder_forms(1164) as forms;`)
 const row = r[r.length - 1]
+if (row.pb.live) row.pb.property.source = JSON.parse(JSON.stringify(row.pb.live.source))  // the live save of 18:24 ET 2026-09-28 changed 1164's record, which holds Submit behind "Changed on the property record": the stub keeps the record the live version was made from
 const L = Number(row.pb.property.lat), G = Number(row.pb.property.lng)
 const rnd = (x) => Math.round(x * 1e6) / 1e6
 const TRUCK = { lat: rnd(L + 0.0002), lng: rnd(G - 0.0001) }
