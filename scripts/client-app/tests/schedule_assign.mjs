@@ -225,6 +225,9 @@ for (const w of [1280, 390]) {
   // E. unknown outcomes: never cancel, never "Link ready", the link and the check sentence
   for (const [name, task] of [
     ['rolled_back false (502)', { status: 502, body: { ok: false, code: 'jobber_unverified', jobber_task: 'GID', rolled_back: false, message: 'ORPHANED' } }],
+    // a listed code is a refusal only with no jobber_task: Jobber made the task, recording it failed and the delete was not
+    // confirmed (save-calendar-task index.ts, the rpcErr branch: mapRpcError 22023/23502/22P02 = 400 invalid_input)
+    ['listed code with a jobber_task (400 invalid_input, rolled_back false)', { status: 400, body: { ok: false, code: 'invalid_input', jobber_task: 'GID', rolled_back: false, message: 'The Jobber task was created but our copy could not be recorded: x' } }],
     ['unexpected with no jobber_task (500)', { status: 500, body: { ok: false, code: 'unexpected', message: 'Something went wrong and nothing was saved.' } }],
     ['jobber_unknown with no jobber_task (502, maybe_created)', { status: 502, body: { ok: false, code: 'jobber_unknown', maybe_created: true, message: 'Jobber did not answer clearly, so we cannot tell whether the task was created. Nothing was saved here. Check Jobber before trying again.' } }],
     ['intake_already_linked (409, the form already has a task)', { status: 409, body: { ok: false, code: 'intake_already_linked', message: 'Site survey form 999 already has a task. Nothing was saved.' } }],
