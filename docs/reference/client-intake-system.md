@@ -680,6 +680,39 @@ Picture Planner form page's Property record tab (Picture Planner CLAUDE.md rule 
   `test_only` on a made-up form on another client's property, and the switch row opening it. The screen:
   `scripts/page-builder/tests/accept_tab.mjs`.
 
+**22. SCHEDULE WITH AN ASSIGNEE: the task, the link in its notes, the name, the photo limit, and a text Gallons (2026-09-29, `2026-09-29_1713_intake_task_link_text_gallons`, `2026-09-29_1731_intake_form_v2`).**
+Fred: *"when we schedule it, we need to assign it to a person, and it needs to create a Task at jobber and calendar app
+too, and we can take even advantage of that to prefill the name field"*; alarm photos; "Gallons" and "Measurements"
+"both are texts". Design: `Building Apps/Client App/docs/specs/2026-09-29-schedule-assign-task-design.md`.
+- `property_intakes.calendar_task_id` (UNIQUE, FK `ops.calendar_tasks` ON DELETE SET NULL) is written ONLY by
+  `save-calendar-task` (`intake_id`, create only, checked before Jobber: the stated property's form, not cancelled,
+  submitted or expired, not linked; linked after the record with `calendar_task_id is null` as the guard; a failed link
+  answers `intake_linked: false` and is never undone). `fn_property_intake_immutable` does not freeze it; no app role
+  reads it.
+- `intake-submit` load returns `assignee_name` only when the linked task has exactly ONE assignee (a stored name, never
+  an email or a phone; read at every load). `attach` refuses past a question's `max_photos` (429 "This question takes
+  at most N photos."), after the retry check. A form without `max_photos` is not limited.
+- 🛑 **The link sits in the task's notes** (Jobber and `ops.calendar_tasks.instructions`, so also `audit.logs`): anyone
+  who sees the task can open the form, and that copy is outside `property_intake_link_reveals`. Fred accepted it. The
+  notes open with a fixed 55-character sentence so the function's 40-character mismatch echo never holds the code.
+- 🛑 **Gallons is TEXT in version 2 under the SAME key.** `public.fn_intake_whole_gallons` is the one reading (trim,
+  optional thousands commas, an optional trailing gal or gallons in any case, at most 6 digits; a version 1 number
+  reads as itself).
+  `get_intake_compare` gives prose or out-of-range text the state `not_savable` (never offered) and compares a number as
+  a number; `accept_intake_answers` saves the number. Never move the key: the Property record tab, `formToPage`,
+  `get_property_activity` and the Client App's on-file map all key on it.
+- Question list version 2: `access_entry.alarm_photos` (optional, `max_photos` 3), the manholes label, Gallons and
+  Measurements (text, optional, always shown under the plate photo). Rule 16's "gallons left blank" alternative does not
+  exist in version 2 (it still applies to version 1 forms).
+- 🛑 `save-calendar-task` answers a create whose Jobber reply is not a clear yes or no (a top-level GraphQL error, no
+  task id) with `jobber_unknown` and `maybe_created: true`, never "nothing was saved": only userErrors with no task is
+  `jobber_rejected`. The Client App cancels a link only on a code from one list (Client App rule 2s) with no
+  `jobber_task`, or `rolled_back` true.
+- Tests: `scripts/probes/save_calendar_task_intake_stub.mjs` and `scripts/probes/intake_submit_cap_assignee_stub.mjs`
+  (Bun, every call stubbed; the pre-change files are the controls), `scripts/intake-collector/tests/cap-and-assignee-live.mjs`
+  ([TEST] forms, tasks of 112-YA only; `--smoke` right after a deploy, `--linked` read only on a real linked form),
+  `scripts/client-app/tests/schedule_assign.mjs`, and both migrations' VERIFY blocks.
+
 ## Traps paid for while building this
 
 **A jsonpath CHECK was wrong twice.** Lax mode auto-unwraps the step before a filter, so v1 rejected
