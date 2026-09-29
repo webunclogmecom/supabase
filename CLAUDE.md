@@ -4926,6 +4926,9 @@ Eight things that will bite someone who does not know them:
    Since 2026-09-28 `client.get_page_versions` (`2026-09-28_1122_page_versions_read`, read only, staff JWT) lists every version of a page,
    newest first, for the builder's Activity modal; Live is the highest approved version, and a version has no link to
    the forms it came from. Migrations `2026-09-27_0652`, `_0733` and `2026-09-28_1122_page_versions_read`; REF rule 18.
+   Since `2026-09-28_1816_site_file_wording` (2026-09-28) the activity sentences, Get a new link's refusal and `fn_page_blocker`'s
+   INACTIVE sentence say "site file", and since 2026-09-28 every screen calls the page the Site file (Picture Planner
+   rule 21). The internal names (`/driver`, `driver-page`, `fn_driver_page`, `rotate_driver_link`, the `driver_link_*` kinds) keep "driver".
 8. **Share form (2026-09-25, `2026-09-25_1600_intake_link_share.sql`): `client.get_intake_link` is the ONE sanctioned
    re-display of a collector link** (rule 19 of the reference). Awaiting intakes only, staff JWT only, every reveal logged in
    `public.property_intake_link_reveals` (no token, no URL, no app role reads it). The link is

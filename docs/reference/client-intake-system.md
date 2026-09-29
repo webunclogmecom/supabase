@@ -58,6 +58,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | Picture Planner audit label | `audit.log_change` maps `planner.unclogme.app`, `%unclogme-pics-organizer%`, `%d9464151%` to `picture-planner` | `2026-09-24_0301_audit_origin_picture_planner.sql` |
 | driver pages (build plan section 6) | `public.property_pages` (append-only versions), `public.property_page_links` (one 22-character driver link per property, redacted from audit), `public.property_page_opens` (throttled open log); `client.page_builder_list()`, `client.get_page_builder`, `client.submit_property_page`, `client.approve_property_page`, `client.rotate_driver_link`; helpers `fn_page_photo_ids`, `fn_page_content_problem`, `fn_page_source`, `fn_page_blocker`, `fn_page_person_name`, `fn_page_approver_ids/_names`; `app_config.page_approvers` | `2026-09-25_1330_property_pages.sql` (Supabase `44f50ae`) |
 | driver page endpoint | edge fn `driver-page`, `verify_jwt = false`, calls `public.fn_driver_page` (service role only) | deployed 2026-09-25 |
+| the driver page named the Site file (Picture Planner rule 21) | six sentences in `client.get_property_activity`, `client.rotate_driver_link` and `public.fn_page_blocker`; internal names kept | `2026-09-28_1816_site_file_wording.sql` (Supabase `6b11434`) |
 | short collector link | Picture Planner route `/intake` (`src/routes/intake.ts`): **308** to `/intake.html`, empty body, `no-cache`; the fragment survives the redirect | live 2026-09-25 |
 | Cancel form (staff only, from the Planner) | `client.cancel_intake(bigint)`; trigger `property_intakes_no_submit_after_cancel`; `public.fn_intake_link_url(text)` (the one SQL builder of the short link, used by `get_intake_link` and by `schedule_property_intake`, which returns `url` (and, since `2026-09-27_0733`, `expires_at` and no longer the bare `token`); since CA1, about 18:51 ET, the Client App's "Link ready" and "Yes, fill it now" use that `url` and build no intake URL, so a new office link carries the token only in the fragment) | `2026-09-25_1705_intake_cancel_and_short_link.sql` (Supabase `0b8dbdc`) |
 | Share form (re-show an awaiting link to staff) | `client.get_intake_link(bigint)` returns `https://planner.unclogme.app/intake#code=<token>`; each reveal logged in `public.property_intake_link_reveals` (no token, no URL, no app role reads it) | `2026-09-25_1600_intake_link_share.sql` (Supabase `48b4771`) |
@@ -85,7 +86,7 @@ been published since about 14:30 ET: the Page Builder on `/` and `/property/$id`
 `planner.unclogme.app/driver#code=<22 chars>` page. The plan is
 `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md` P1 to P7c; see Picture Planner CLAUDE.md rules 8 and
 13 to 18. NOT built yet: `Verified` in the Client App status column. (The office Accept screen is built since 2026-09-28: the Picture Planner form page's Property record tab, rule 21.) Cut from v1: the client
-confirmation page and the Jobber link. (The New Client "Time to do the intake now?" step: see the Client App changelog.)
+confirmation page and the Jobber link. Since 2026-09-28 every screen calls the driver page the Site file (Picture Planner rule 21); the database and edge names keep "driver". (The New Client "Time to do the intake now?" step: see the Client App changelog.)
 
 ---
 
@@ -444,6 +445,8 @@ stayed `intake-submit?t=`.) Why each piece:
     unredacted DERM sheet that way. `driver-page` never takes a path from the page content.
   - 🛑 **ONE answer to "will this link open": `public.fn_page_blocker`** (removed, billing, client INACTIVE). The driver
     function, submit, approve, the builder and the list all call it, so the office never sees "Live" on a dead link.
+    Its INACTIVE sentence is "This client is inactive, so the site file link would not open." since 2026-09-28
+    (`2026-09-28_1816_site_file_wording`; "a driver link" before). `fn_driver_page` only tests it for NULL, so the public page never shows it.
   - 🛑 **`fn_page_content_problem` reads tables: never make it a CHECK.** The table CHECK is only
     `jsonb_typeof(content -> 'photos') = 'array'`.
   - 🛑 **Submit requires the prefill baseline back** (`p_expected_source` = `get_page_builder.property.source`) and
@@ -516,7 +519,8 @@ stayed `intake-submit?t=`.) Why each piece:
     whoever holds the link.
   - **Activity History: `client.get_property_activity(p_property_id)`** (staff JWT only, authenticated EXECUTE). Since 2026-09-28 the builder reads it in its Activity modal (the card is gone), with `get_page_versions` (next bullet). A jsonb
     array, newest first, `{at, kind, text, who, intake_id, version}`; `text` is the finished sentence ("Version 3 of the
-    driver page approved by Serena Natali"). Kinds: `form_requested`, `form_link_shown`, `form_filled` (who = the name
+    site file approved by Serena Natali"; "of the driver page" until 2026-09-28, when `2026-09-28_1816_site_file_wording` also made the link
+    rows "Site file link created" / "Site file link replaced"; the kinds keep their names). Kinds: `form_requested`, `form_link_shown`, `form_filled` (who = the name
     the collector typed), `form_cancelled` (who from `audit.logs`), `page_submitted` ("who made the draft"),
     `page_approved`, `driver_link_created`, `driver_link_replaced` (from `audit.logs`, keyed on `rotated_at` because
     `public_id` is a redacted audit column), and since 2026-09-28 `intake_accepted`, one per `property_intake_accepts` row ("Accepted from Site survey form #717 by Fred: Lock box code Not on file → 7390"; hours "When we can come replaced"; rows of one save keep their saved order). It never reads the collector token or the driver link. It records nothing
