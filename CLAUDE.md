@@ -4869,7 +4869,7 @@ submission, per PROPERTY), `property_intake_accepts` (who accepted what, old and
 **Full reference, read it before touching any of them:**
 [`docs/reference/client-intake-system.md`](docs/reference/client-intake-system.md).
 
-Eight things that will bite someone who does not know them:
+Nine things that will bite someone who does not know them:
 
 1. **The photo kind is `property_intake` and must never be `property`.**
    `customer.client_access_photos` selects `photo_links` where `entity_type IN ('client','property')`
