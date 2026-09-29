@@ -1,6 +1,6 @@
 // LIVE Page Builder + forms screens, property 1164, real data read in SQL as Fred's claims, edited per scenario.
 // Sign-in faked, every RPC stubbed, nothing written. Checks batch M2 (2026-09-27):
-//   the "Changed in the Client App's property data" notice (renamed twice on 2026-09-28; the Activity card checks moved to activity_modal.mjs)
+//   the "Changed in the Client App's property data" notice (renamed on 2026-09-28 and again on 2026-09-29 about 00:25 ET; the Activity card checks moved to activity_modal.mjs)
 //   (list, Submit blocked, Use the new values), the driver link copy, /forms cards (photo plural, city) and the
 //   /forms/$id link to the Page Builder.
 //   node scripts/page-builder/tests/activity_notice.mjs <outdir>
