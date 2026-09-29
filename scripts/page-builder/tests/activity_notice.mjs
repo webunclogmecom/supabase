@@ -3,6 +3,8 @@
 //   the "Changed in the Client App's property data" notice (renamed twice on 2026-09-28; the Activity card checks moved to activity_modal.mjs)
 //   (list, Submit blocked, Use the new values), the driver link copy, /forms cards (photo plural, city) and the
 //   /forms/$id link to the Page Builder.
+//   node scripts/page-builder/tests/activity_notice.mjs <outdir>
+//   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
@@ -28,7 +30,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 let pass = 0, fail = 0
 const ok = (c, name, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}${v === undefined ? '' : ' :: ' + JSON.stringify(v).slice(0, 400)}`) }
 const out = process.argv[2] || './act_shots'; fs.mkdirSync(out, { recursive: true })
-const calls = []
+const calls = [], subHits = []
 async function open(w, path, replies, fail500 = []) {
   const ctx = await browser.newContext({ viewport: { width: w, height: 900 } })
   await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
@@ -44,6 +46,8 @@ async function open(w, path, replies, fail500 = []) {
   })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
+  // CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
   await p.goto(H + path)
   await p.waitForTimeout(4500)
   return { ctx, p, state }
@@ -102,5 +106,6 @@ const builderReplies = (data, act) => ({ get_page_builder: data.pb, get_page_bui
   await d.ctx.close()
 }
 await browser.close()
+if (process.env.CHUNK_SUB) console.log('CHUNK_SUB edits applied:', [...new Set(subHits)].length, 'of', process.env.CHUNK_SUB.split('@@@').length)
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail) process.exitCode = 1
