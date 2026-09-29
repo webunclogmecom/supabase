@@ -404,6 +404,22 @@ stayed `intake-submit?t=`.) Why each piece:
       `tests/address-live.mjs <[TEST] intake id>` does it on the LIVE page through to the database (it SUBMITS): the
       real load reply and key, a far address picked, the stored `site_map.truck_parking` read back (`{value:{lat,lng}}`,
       no `accuracy_m`). 6/6 on 2026-09-27 with the live file `320eb29` (sha256 2cd31257...).
+    - **The suggestions are ONE dropdown under the box since `f3d3a37` (2026-09-29, variant A; live since Fred's publish,
+      checked 11:12 ET: 57,171 bytes, sha256 `2970c4b42b593d4ee2ddda5ce9de9a60a7c119d5b408b56a7fa2191d8272a055`, byte-equal
+      to `scripts/intake-collector/intake.html`, `intake-form-host.mjs` all passed; the live copy was `320eb29` from
+      2026-09-27 until then).** Fred: *"At the intake form, the whole form, the address at the site map, it shows those
+      cards as the autocomplete address, i don't want that, make it be on the same searchbar like a dropdown with the
+      options, like a normal searchbar for addresses of usual apps..."*, then *"go with A, and do the same on the Page
+      Builder"*. The stacked cards that pushed the map down became one `.alist` (`role="listbox"`, "Address
+      suggestions") hanging from the box, `position:absolute` so it lies over the map, inside `.asr` at z-index 3 so it
+      stays under the sticky Submit bar; rows (`.asug`, `role="option"`) split by hairlines, street then city, 52px on a
+      phone and 44px at the PC scale, the highlighted one `.on` in `#fff4ef`. The box is a combobox (`aria-expanded`,
+      `aria-controls`, `aria-activedescendant`; the focus stays in the box). ArrowDown / ArrowUp and the mouse move the
+      highlight, Enter takes the highlighted row (else the first, exactly the rule above), Escape unchanged, leaving the
+      box closes the list. What a pick does is unchanged (map at zoom 20, the pin through `put()`), and the rules above
+      all hold. Test: `tests/address-dropdown.mjs [outdir]` (stubbed Maps and Places, a fake backend answers the load,
+      never submits) 140 of 140; the previous build fails 89; `REAL_MAP=1` draws the real map (key read from the
+      Planner's public bundle, never printed) with Places still stubbed, 58 of 58.
 - **The collector's writes are labelled `intake-collector` in `audit.logs` (2026-09-27, intake-submit v19).** The function
   builds its own service-role client with `x-app-source: intake-collector` instead of the shared webhook client, so a
   submit, an upload attach and a photo link no longer land as `sql`. Checked live on [TEST] intake 694 (deleted after).
@@ -439,6 +455,12 @@ stayed `intake-submit?t=`.) Why each piece:
       any list it searches and picks); Escape closes the list and cancels the pending search.
     - Test: `address_approval.mjs` (33 checks, every `panTo`/`setZoom` recorded; nothing written). `CHUNK_SUB` serves
       the live chunk with edits, the control for a build that is already live.
+    - **One dropdown since 2026-09-29 (variant A, the collector's twin above; Lovable `MapPinner.tsx`, live chunk
+      `_staff.property._id-CSi1o1gy.js`)**: a combobox box and ONE absolute listbox "Address suggestions" under it, over
+      the map and under the sticky footer, arrows and the mouse move a `#fff4ef` highlight, Enter takes the highlighted
+      row (else the Enter above), Escape or a click outside closes it. A pick still only moves the map. `address_approval.mjs`
+      (Supabase `6a87a38`) answers Places from a stub by default (`PLACES=real` restores Google) and adds the variant A
+      checks: 72 of 72; removing the ArrowDown branch through `CHUNK_SUB` fails exactly its two checks at each width.
   - 🛑 **A page photo is served only from the bucket its LINK KIND names, and only if that object exists there**
     (`fn_page_photo_ids` joins `storage.objects`). `photos.storage_path` is writable by any staff session, and a path like
     `../manifests/...` joined into a storage URL is normalised into ANOTHER bucket: the pre-apply review served an
