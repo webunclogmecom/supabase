@@ -1,6 +1,6 @@
 // LIVE Page Builder + forms screens, property 1164, real data read in SQL as Fred's claims, edited per scenario.
 // Sign-in faked, every RPC stubbed, nothing written. Checks batch M2 (2026-09-27):
-//   the "Changed on the property record" notice (renamed 2026-09-28; the Activity card checks moved to activity_modal.mjs)
+//   the "Changed in the Client App's property data" notice (renamed twice on 2026-09-28; the Activity card checks moved to activity_modal.mjs)
 //   (list, Submit blocked, Use the new values), the driver link copy, /forms cards (photo plural, city) and the
 //   /forms/$id link to the Page Builder.
 import fs from 'node:fs'
@@ -56,20 +56,20 @@ const builderReplies = (data, act) => ({ get_page_builder: data.pb, get_page_bui
   ok(/Paste it into the job's Instructions in Jobber for the drivers\. You can also send it to the client: they see the same site file, codes included\. Never put it in the job title or in a visit\./.test(copy), 'site file link card: the new copy')
   await ctx.close()
 }
-{ // Changed on the property record notice
+{ // Changed in the Client App's property data notice (was "Changed on the property record" until the 2026-09-28 rewording)
   const { ctx, p } = await open(1440, '/property/1164', builderReplies(N, []))
   const t = await p.evaluate(() => document.body.textContent)
-  ok(/Changed on the property record since this version was made:/.test(t), 'notice: shown when the live version\'s source differs')
+  ok(/Changed in the Client App's property data since this version was made:/.test(t) && !/Changed on the property record since this/.test(t), 'notice: shown when the live version\'s source differs, new wording, old wording gone')
   ok(/Lock box code(: | \()OLD-LB-1 to NEW-LB-2/.test(t), 'notice: names the lock box code with old and new values', (t.match(/Lock box code.{0,40}/) || [])[0])
   const sub = p.locator('button', { hasText: /^Submit for approval$/ })
   ok(await sub.isDisabled().catch(() => false), 'notice: Submit for approval is disabled until answered')
-  ok(/Check what changed on the property record first\./.test(t), 'notice: the footer says why')
+  ok(/Check what changed in the Client App's property data first\./.test(t) && !/Check what changed on the property record first/.test(t), 'notice: the footer says why, new wording, old wording gone')
   await p.screenshot({ path: `${out}/notice_1440.png` })
   await p.locator('button', { hasText: /^Use the new values$/ }).click().catch(() => {}); await p.waitForTimeout(700)
   const vals = await p.evaluate(() => [...document.querySelectorAll('input')].map((i) => i.value))
   ok(vals.includes('NEW-LB-2') && !vals.includes('OLD-LB-1'), 'notice: Use the new values puts NEW-LB-2 in the draft', vals.filter((v) => /LB/.test(v)))
   const t2 = await p.evaluate(() => document.body.textContent)
-  ok(!/Changed on the property record since this version was made:/.test(t2) && /Took the new values from the property record\./.test(t2), 'notice: hidden, with the Undo notice')
+  ok(!/Changed in the Client App's property data since this version was made:/.test(t2) && !/Changed on the property record since this/.test(t2) && /Took the new values from the Client App's property data\./.test(t2) && !/Took the new values from the property record/.test(t2), 'notice: hidden, with the Undo notice, new wording, old wording gone')
   ok(await sub.isEnabled().catch(() => false), 'notice: Submit for approval is enabled again')
   await ctx.close()
 }
