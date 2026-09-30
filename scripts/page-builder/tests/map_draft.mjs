@@ -6,8 +6,9 @@
 //   B. a new page (no version) is filled from the property record only, never from the newest form.
 //   F. (2026-09-29, T2) the map opens on the pins: a restored far draft is in view, a click moves a pin and never the view,
 //      the draft bar's Discard refits (only after the view had moved off the live pins), "Use this form's pins" and its
-//      Undo refit. The builder's Google map is captured when the Maps loader calls back, so
-//      the checks read the map's own settled bounds. CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with edits.
+//      Undo refit (the Undo too only after the view had moved off the live truck pin). The builder's Google map is
+//      captured when the Maps loader calls back, so the checks read the map's own settled bounds.
+//      CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with edits.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
@@ -147,7 +148,10 @@ const LIVEMAP = { pins: { truck: TRUCK }, arrows: [ARROW] }
 const fbase = () => { const d = { pb: clone(row.pb), forms: clone(row.forms) }; d.pb.pending = null; d.pb.live.content.site_map = clone(LIVEMAP); return d }
 const FD = fbase(); const FARMAP = { pins: { gt: FAR_GT, truck: FAR_T }, arrows: [FAR_ARROW] }
 FD.draft = { base_version: FD.pb.newest_version, source: FD.pb.property.source, saved_at: new Date().toISOString(), content: { ...clone(FD.pb.live.content), site_map: FARMAP } }
-const FP = fbase(); const FORM_GT = { lat: rnd(L - 0.0562), lng: rnd(G - 0.0671) }, FORM_T = { lat: rnd(L - 0.0561), lng: rnd(G - 0.0669) }
+// F2 and F2b: a live map with NO arrow. The form's pins keep the draft's arrows, so a near arrow would hold the live truck pin
+// inside the forward fit and the Undo checks could pass on a build whose Undo never refits (code review, 2026-09-29)
+const FP = fbase(); FP.pb.live.content.site_map = { pins: { truck: TRUCK }, arrows: [] }
+const FORM_GT = { lat: rnd(L - 0.0562), lng: rnd(G - 0.0671) }, FORM_T = { lat: rnd(L - 0.0561), lng: rnd(G - 0.0669) }
 for (const f of FP.forms) f.answers = { ...(f.answers || {}), 'site_map.gt_location': FORM_GT, 'site_map.truck_parking': FORM_T }
 { // F0 guard: no draft, the live version's pins are in view when the builder opens
   const { ctx, p } = await open(1440, fbase())
@@ -182,8 +186,9 @@ for (const f of FP.forms) f.answers = { ...(f.answers || {}), 'site_map.gt_locat
   ok(!!dm && !!dm.pins && !!dm.pins.gt && Math.abs(dm.pins.gt.lat - FORM_GT.lat) < 1e-6, "F2 1024: guard, the form's pins reached the draft", dm)
   ok(await inView(p, [FORM_GT, FORM_T]), "F2 1024: after Use this form's pins the map fits to the form's pins", await view(p))
   await p.screenshot({ path: `${out}/F2_1024.png` }).catch(() => {})
+  const away = !(await inView(p, [TRUCK], 1000))
   await p.locator('button', { hasText: /^Undo$/ }).first().click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(500)
-  ok(await inView(p, pts(LIVEMAP)), "F2 1024: its Undo fits the map back to the draft's own pins", await view(p))
+  ok(away && await inView(p, [TRUCK]), "F2 1024: its Undo fits the map back to the draft's own pins (the view had moved off them)", { moved_first: away, view: await view(p) })
   await ctx.close()
 }
 { // F2b: from 1280px the side by side's pins chip and its "Use pins" (its own click handler in the chunk) must reach the same fit,
@@ -195,8 +200,9 @@ for (const f of FP.forms) f.answers = { ...(f.answers || {}), 'site_map.gt_locat
   ok(!!dm && !!dm.pins && !!dm.pins.gt && Math.abs(dm.pins.gt.lat - FORM_GT.lat) < 1e-6, "F2b 1440: guard, the side by side's Use pins put the form's pins on the draft", dm)
   ok(await inView(p, [FORM_GT, FORM_T]), "F2b 1440: after the side by side's Use pins the map fits to the form's pins", await view(p))
   await p.screenshot({ path: `${out}/F2b_1440.png` }).catch(() => {})
+  const away = !(await inView(p, [TRUCK], 1000))
   await p.locator('button:visible', { hasText: /^Undo$/ }).first().click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(500)
-  ok(await inView(p, pts(LIVEMAP)), "F2b 1440: the footer Undo fits the map back to the draft's own pins", await view(p))
+  ok(away && await inView(p, [TRUCK]), "F2b 1440: the footer Undo fits the map back to the draft's own pins (the view had moved off them)", { moved_first: away, view: await view(p) })
   await ctx.close()
 }
 await browser.close()
