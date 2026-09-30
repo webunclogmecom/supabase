@@ -194,18 +194,29 @@ Request ids for a ticket (09-30, UTC = ET + 4): `01a0f3cd-1913-751f-a9d9-d306191
 ```sql
 -- the gap: time between Cloudflare and the gateway's router, per request
 select timestamp, log_attributes['request.path'] p, log_attributes['request.headers.referer'] ref,
-       toInt32OrZero(log_attributes['response.origin_time']) total_ms,
-       toInt32OrZero(log_attributes['response.headers.x_envoy_upstream_service_time']) db_ms,
+       toFloat64OrNull(log_attributes['response.origin_time']) total_ms,
+       toFloat64OrNull(log_attributes['response.headers.x_envoy_upstream_service_time']) db_ms,
        log_attributes['request_id'] rid
 from logs where source = 'edge_logs'
-  and toInt32OrZero(log_attributes['response.origin_time'])
-    - toInt32OrZero(log_attributes['response.headers.x_envoy_upstream_service_time']) > 1000
-order by timestamp limit 500
+  and toFloat64OrNull(log_attributes['response.origin_time'])
+    - toFloat64OrNull(log_attributes['response.headers.x_envoy_upstream_service_time']) > 1000
+order by timestamp
 ```
+Run it with `node scripts/probes/edge_logs.js "<sql>" <outfile> <isoStart> <isoEnd>` (bounds required,
+exit 3 when the server's 1,000-row cap was hit; a smaller `limit` of your own truncates without that
+signal, so leave it off or count first). ⚠ Use `toFloat64OrNull`, not `toInt32OrZero`: a missing map
+key returns `''` silently, and OrZero turns "no DB timing recorded" into "0 ms in the DB", which
+inflates the gap. Re-checked null-safely on 2026-09-30, over non-OPTIONS rest/auth requests
+(preflights never carry the header): in 15:28-15:35 ET all 687 carried it, 48 had a gap over 1 s,
+12 over 5 s, and **0 spent over 1 s in the DB**. Over 08:40-16:40 ET, 1,595 of 28,166 lacked it
+(1,594 of them before 10:00 ET, the rollout morning), 195 had a measured gap over 1 s, 10 had DB
+time over 1 s.
 
 ⚠ `x_envoy_upstream_service_time` only exists from **2026-09-30 08:41 ET**. Before that, only
 `origin_time` exists, and it cannot separate DB time from path time. OPTIONS preflights never reach
-the origin (origin_time 0), so they are not a control for the gateway leg.
+the origin (origin_time 0), so they are not a control for the gateway leg. The endpoint's other traps
+(no default window, a >24 h span silently clipped, the silent 1,000-row cap, errors inside an HTTP 200,
+10 calls per 60 s per token) are handled and documented in `scripts/probes/edge_logs.js`.
 
 ```sql
 -- lock waits: with log_lock_waits on, zero lines = no wait over deadlock_timeout (1 s)

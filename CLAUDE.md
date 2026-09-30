@@ -929,9 +929,13 @@ kill, not an exception**: no `catch` runs, no `finally` runs, and `logSend()` ne
 `visit_photo_email_sends` holds **zero** rows with a memory-related reason and never will. The
 send log cannot record this class of failure at all, so a clean log is not evidence of health.
 ⇒ The only place it is visible is the **edge log**, via the Management API analytics endpoint.
-`scripts/probes/edge_logs.js` is the reader; `function_logs` is the source, `metadata` is a
-REPEATED field so you must `cross join unnest(metadata)`, and a non-existent field is a hard error
-rather than a null (which makes a failing query a usable way to discover the schema).
+`scripts/probes/edge_logs.js` is the reader and `function_logs` is the source. ⚠ Since 2026-09-24
+the endpoint is ClickHouse over ONE table: `select timestamp, event_message from logs where source =
+'function_logs' ...`, nested fields as `log_attributes['a.b']`; the old `cross join unnest(metadata)`
+no longer runs. A missing COLUMN is an error, but a missing `log_attributes` KEY silently returns `''`,
+so a failing query is no longer a way to discover the schema: list keys with
+`arrayJoin(mapKeys(log_attributes))`. The reader's header comment has the rest (bounds required,
+1,000-row cap, 10 calls per 60 s per token).
 
 **Fixed** in `5320e4a` by encoding in 48KB blocks with `btoa` and joining once.
 - 🛑 **THE CHUNK SIZE MUST STAY A MULTIPLE OF 3.** Base64 encodes 3 bytes to 4 chars; slice
