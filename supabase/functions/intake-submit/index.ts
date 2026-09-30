@@ -10,8 +10,8 @@
 //
 //   load    { token }                                  -> the questions to show
 //   upload  { token, content_type }                    -> a short-lived signed upload URL
-//   attach  { token, path, role, caption }             -> links an uploaded photo to the intake
-//   submit  { token, collector, answers }              -> writes the immutable submission
+//   attach  { token, path, role }                      -> links an uploaded photo to the intake
+//   submit  { token, collector, answers, notes? }      -> writes the immutable submission
 //
 // WHY NO LOGIN. Fred's decision 6, 2026-09-22: "No need to log in, but bear in mind
 // the security of it, simple security is enough." Measured reason it has to be this
@@ -80,6 +80,13 @@
 // refuses a photo past the question's max_photos in the form's own snapshot (429 "This question takes at most N
 // photos."); load adds assignee_name, the stored name of the linked calendar task's ONE assignee (none when the
 // task has zero or several). Both additive: a snapshot without max_photos and a form without a task behave as before.
+// v21 (2026-09-29, Fred: "When uploading a photo we need to also have a comment for the photo"): the collector's
+// comment per photo. attach stores no caption any more (it stored body.caption unchecked; no page ever sent one), so
+// submit is the only writer: it takes notes {<photo path>: text}, refuses a comment that is not one line of at most
+// MAX_NOTE characters or holds a character Postgres cannot store (naming its question), and, BEFORE the save that locks
+// the form, writes each live photo link's caption: its comment, else null. A page from before v21 sends no notes and
+// submits as before, writing no caption. The Page Builder shows the comment on the photo card, read only; the Site
+// file never shows it.
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -115,6 +122,7 @@ const PHOTO_CAP = 40
 const MAX_ANSWER_KEYS = 200
 const MAX_VALUE_CHARS = 4_000
 const MAX_COLLECTOR = 120
+const MAX_NOTE = 300   // a photo comment (v21): one line, the form's box takes 300 too
 const BUCKET = 'intake-photos'
 const FORM_URL = 'https://planner.unclogme.app/intake.html'  // the collector page; see the GET branch
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic'])
@@ -314,7 +322,6 @@ Deno.serve(async (req) => {
   if (op === 'attach') {
     const path = String(body.path ?? '')
     const role = String(body.role ?? '').slice(0, 120)
-    const caption = body.caption == null ? null : String(body.caption).slice(0, MAX_VALUE_CHARS)
 
     // Re-derive rather than trust: the path must be EXACTLY the shape the ledger issues for THIS
     // intake. A startsWith check alone would accept `5/../6/x.jpg` or junk.
@@ -415,7 +422,7 @@ Deno.serve(async (req) => {
     // customer.client_access_photos publishes 'property' rows to an anon-reachable portal.
     const { error: lErr } = await supabase
       .from('photo_links')
-      .insert({ photo_id: photoId, entity_type: 'property_intake', entity_id: i.id, role, caption })
+      .insert({ photo_id: photoId, entity_type: 'property_intake', entity_id: i.id, role, caption: null })   // submit writes the comment (v21)
     if (lErr && (lErr as { code?: string }).code === '23505') {
       // One live link per intake photo (v10 index): a parallel attach of this file got there first.
       // Report "attached" only if that link is to THIS question (v11).
@@ -442,6 +449,13 @@ Deno.serve(async (req) => {
         ? Object.entries(x as Record<string, unknown>).some(([kk, vv]) => unstorable(kk) || unstorable(vv, depth + 1))
         : false
     if (unstorable(collector)) return fail(400, 'Your name has a character that cannot be saved. Type it again.')
+    // v21: the collector's comment per photo, {<photo path>: text}. Optional: a page from before v21 sends none.
+    const rawNotes = body.notes ?? {}
+    if (typeof rawNotes !== 'object' || Array.isArray(rawNotes) || Object.values(rawNotes as Record<string, unknown>).some((x) => typeof x !== 'string')) {
+      return fail(400, 'Could not read the photo comments.')
+    }
+    const notes = rawNotes as Record<string, string>
+    const captionWrites: { id: number; caption: string | null }[] = []
 
     const rawAnswers = body.answers
     if (rawAnswers === null || typeof rawAnswers !== 'object' || Array.isArray(rawAnswers)) {
@@ -548,9 +562,9 @@ Deno.serve(async (req) => {
     }
     const requested = new Set(Array.isArray(i.requested) ? i.requested : [])
     const photoKeys = [...new Set([...Object.keys(answers), ...requested])].filter((k) => qs.get(k)?.type === 'photos')
-    if (photoKeys.length) {
+    if (photoKeys.length || Object.keys(notes).length) {
       const { data: links, error: lkErr } = await supabase
-        .from('photo_links').select('photo_id, role')
+        .from('photo_links').select('id, photo_id, role, caption')
         .eq('entity_type', 'property_intake').eq('entity_id', i.id).is('deleted_at', null)
       if (lkErr || !Array.isArray(links)) return fail(500, 'Could not check the photos, please try again.')
       const ids = [...new Set(links.map((l) => l.photo_id))]
@@ -559,6 +573,22 @@ Deno.serve(async (req) => {
         const { data: phs, error: phErr } = await supabase.from('photos').select('id, storage_path').in('id', ids)
         if (phErr || !Array.isArray(phs)) return fail(500, 'Could not check the photos, please try again.')
         for (const p of phs) pathOf.set(p.id, String(p.storage_path).replace(`${BUCKET}/`, ''))
+      }
+      // v21: the caption each live link must carry: its path's comment, trimmed, else null. Checked here and written
+      // just before the locking save (below), so a refusal writes nothing and a comment cleared on a retry is cleared.
+      for (const l of links) {
+        const path = pathOf.get(l.photo_id)
+        const c = path && Object.hasOwn(notes, path) ? notes[path].trim() : ''
+        if (c) {
+          const q = qs.get(String(l.role)) ?? { key: String(l.role) }
+          if (unstorable(c)) return fail(400, `A photo comment in ${named(q)} has a character that cannot be saved. Type it again.`)
+          if (/[\p{Cc}\u2028\u2029]/u.test(c) || c.length > MAX_NOTE) {
+            return fail(400, `The comment on a photo in ${named(q)} must be on one line, with at most ${MAX_NOTE} characters.`)
+          }
+        }
+        // a page from before v21 sends no notes and never touches a caption, so a second phone with an old page cannot
+        // wipe the comments of the submit that wins
+        if (body.notes != null && (l.caption ?? null) !== (c || null)) captionWrites.push({ id: l.id, caption: c || null })
       }
       for (const k of photoKeys) {
         const paths = links.filter((l) => l.role === k).map((l) => pathOf.get(l.photo_id)).filter((p): p is string => !!p)
@@ -584,6 +614,17 @@ Deno.serve(async (req) => {
       p_snapshot: i.form_snapshot, p_requested: i.requested, p_answers: answers,
     })
     if (mErr || !Array.isArray(missing)) return fail(500, 'Could not check the answers, please try again.')
+
+    // v21: the comments, BEFORE the save that locks the form: a failed write answers 500 with nothing submitted, and a
+    // retry writes the same. Only links whose caption differs are written.
+    // ponytail: one update per changed link (at most PHOTO_CAP), not atomic with the lock: two v21 submits racing (a
+    // double tap, or the link open on two phones at once) can each write their comments before one wins the
+    // compare-and-set below, so the captions are the last writer's. Upgrade if it ever matters: captions and lock in one RPC.
+    for (const w of captionWrites) {
+      const { error: cwErr } = await supabase.from('photo_links').update({ caption: w.caption })
+        .eq('id', w.id).eq('entity_type', 'property_intake').eq('entity_id', i.id).is('deleted_at', null)
+      if (cwErr) return fail(500, 'Could not save the photo comments, please try again.')
+    }
 
     // Atomic compare-and-set: only the first submit wins. `.is('submitted_at', null)`
     // is the whole guard, so two taps on a bad signal cannot produce two submissions.
