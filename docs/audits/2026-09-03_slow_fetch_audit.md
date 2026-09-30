@@ -633,3 +633,16 @@ compare-and-swap claim, THEN raise the batch.
   the cron.
 - Completion authorship across 136 sheets: `stamp-studio` 122 (human), `stamp-studio-ai` 11 (auto),
   migration 2, with **zero AI completions since the gate shipped at 12:25 ET**.
+
+---
+
+## 2026-09-30 follow-up: the stalls are in front of the database
+
+Fred saw DERM Tracker skeletons for about 30 s right after completing a sheet in Stamp Studio and
+suspected the blackout was blocking reads. It was not: see
+[`2026-09-30_complete_blackout_read_stall_audit.md`](2026-09-30_complete_blackout_read_stall_audit.md).
+The gateway started logging `x_envoy_upstream_service_time` on 2026-09-30 08:41 ET, which finally
+separates DB time from path time, the split this audit could never make. The slow requests spent
+22-601 ms in the DB and 1-56 s between Cloudflare (Miami) and the gateway, during an open Supabase
+incident (`w91bvbjhqf0f`, eastern-US API gateway latency). The "whole host stalls" reading in the
+sections above fits that shape, but the host was not the place that stalled.

@@ -417,6 +417,24 @@ memory is the exact failure being documented here.
    through `CREATE OR REPLACE` and only fires on the first real call.
 4. **"Nothing else moved" is a CLAIM, not a note.** Prove it with the diff, or delete the sentence.
 
+### 🛑 DDL ON A VIEW AN APP READS LOCKS OUT ITS READERS UNTIL COMMIT, SO KEEP THAT TRANSACTION SHORT (2026-09-30)
+
+`CREATE OR REPLACE VIEW`, `DROP` and most `ALTER TABLE` forms take ACCESS EXCLUSIVE, which queues
+**every** reader of the object until the transaction ends, and PostgREST reads give up at the 8 s
+`statement_timeout` (HTTP 500 in the app). This is the ONLY thing measured to block app reads in the
+2026-09-24..30 logs: `2026-09-24_1615_derm_visits_grey_water_pumping_own_lines_first` ran
+`CREATE OR REPLACE VIEW derm.visits` and then a ~27 s `DO $verify$` in the same transaction. The DERM
+Tracker's reads waited, and 4 failed. A rolled-back dry run holds the lock just as long.
+**Do:** put the DDL and only cheap checks in the transaction, and run heavy VERIFY blocks (full-view
+scans, per-row comparisons) BEFORE it against a copy, or AFTER the commit as a read-only check with a
+forward fix ready. Or apply outside ET business hours.
+**And the reverse, when an app is "slow":** a Stamp Studio completion or blackout sweep does NOT block
+readers (only row locks; proven 2026-09-30 with a rolled-back probe and live sampling). Before blaming
+the DB, split the time. `origin_time - x_envoy_upstream_service_time` in `edge_logs` is time spent in
+front of the database. On 2026-09-30 that gap was 29 to 56 s while the DB took 22 to 29 ms (Supabase
+incident `w91bvbjhqf0f`). Full method, queries and the new logs API syntax:
+[`docs/audits/2026-09-30_complete_blackout_read_stall_audit.md`](docs/audits/2026-09-30_complete_blackout_read_stall_audit.md).
+
 ### 🛑 "WHO READS THIS COLUMN?" — A WHOLE-ROW RPC READS IT WITHOUT NAMING IT (2026-08-10)
 
 Before dropping or renaming a column, the two obvious sweeps are a regex over `pg_proc.prosrc` and a
