@@ -421,6 +421,14 @@ stayed `intake-submit?t=`.) Why each piece:
       all hold. Test: `tests/address-dropdown.mjs [outdir]` (stubbed Maps and Places, a fake backend answers the load,
       never submits) 140 of 140; the previous build fails 89; `REAL_MAP=1` draws the real map (key read from the
       Planner's public bundle, never printed) with Places still stubbed, 58 of 58.
+- **Photos on the form since `7230c26` (live 2026-09-29, T2; 60297 bytes, sha256 `cfab86793e31cc3a78a12b6e54851c4464f537c490e7f960abc013f0f92d6021`,
+  byte-equal to `scripts/intake-collector/intake.html`).** A photos question with `max_photos` draws its buttons only while
+  room is left and cuts a larger pick with a sentence (the server's 429 is the backstop); "Take a photo" (`capture=
+  "environment"`, one shot, hidden at the PC scale) beside "Choose photos"; a two-line comment box under each photo (D1),
+  one line, 300 characters, kept in the draft on the photo and sent at Submit as `notes {path: text}` (the answers stay
+  paths); "Your name" prefilled from `assignee_name` when no name was typed on the phone. 🛑 Each card now has two file
+  inputs: tests pick the photo one with `input[type=file]:not([capture])`. Tests `tests/photo-cap-name.mjs` and
+  `tests/photo-comment-camera.mjs` (the parity harness). Picture Planner rule 6.
 - **The collector's writes are labelled `intake-collector` in `audit.logs` (2026-09-27, intake-submit v19).** The function
   builds its own service-role client with `x-app-source: intake-collector` instead of the shared webhook client, so a
   submit, an upload attach and a photo link no longer land as `sql`. Checked live on [TEST] intake 694 (deleted after).
@@ -511,12 +519,20 @@ stayed `intake-submit?t=`.) Why each piece:
     `accept_intake_answers`, called only by the form page's Property record tab (rule 21). App-side rules: Picture Planner CLAUDE.md rule 13. Since 2026-09-26
     the builder shows the same reply side by side, each answer on the same line as its field (1280px and up, PP rule
     15); it adds no call and reads nothing else.
+  - 🛑 **A form photo's collector comment reaches the builder ONLY through `get_page_builder` (since `2026-09-29_2126_page_photo_collector_comment`,
+    2026-09-29).** `public.fn_page_photo_ids` passes `nullif(btrim(pl.caption), '')` for intake links (it passed
+    `null::text` from 2026-09-25), so `get_page_builder` carries it as `caption` in pool and referenced; `get_page_builder_forms`
+    still reads no caption and `fn_driver_page` copies only bucket, path and rotation, so the comment never reaches the Site
+    file. The caption is written only by `intake-submit`'s submit (v21, rule 22). The Page Builder shows it on the
+    photo card, read only, in place of the From line (PP rule 13). (`get_page_builder_forms` still carries the comment
+    "Captions are already NULL here."; it is true of that function, which never reads one, and was left as it is.)
   - 🛑 **THE SITE MAP IS PART OF THE DRAFT SINCE 2026-09-27** (`2026-09-27_0652_page_map_in_draft_and_activity.sql`;
     Fred: pins and lines stay in the draft until the version is approved). This SUPERSEDES the two bullets above that
     say submit strips a client-sent `site_map` and that the baseline compares the map: both still hold for a builder that
     does not send `content.site_map` (the Planner before its matching change), and only for it.
-    - **Submit with `content.site_map`**: that map is rounded, validated, bounded (pins within 0.05 degrees of the
-      property's geocode, `blocker=pin_far`; a malformed map is `blocker=site_map`, both 22023) and frozen as an object
+    - **Submit with `content.site_map`**: that map is rounded and validated (a malformed map is `blocker=site_map`,
+      22023; the 0.05-degree `blocker=pin_far` bound was removed by `2026-09-29_2133_page_pin_far_warning`, 2026-09-29: a far pin is a warning in the
+      Page Builder, PP rule 17) and frozen as an object
       WITHOUT `rev`, `{}` when it has no pin and no arrow. The property's map is not read; the value of
       `p_expected_map_rev` is not compared, but it must still be a non-NULL integer (a NULL is refused with
       `blocker=expected_version_required`, 22023). **That shape (an object without rev) is the marker** that the map
@@ -692,6 +708,12 @@ too, and we can take even advantage of that to prefill the name field"*; alarm p
 - `intake-submit` load returns `assignee_name` only when the linked task has exactly ONE assignee (a stored name, never
   an email or a phone; read at every load). `attach` refuses past a question's `max_photos` (429 "This question takes
   at most N photos."), after the retry check. A form without `max_photos` is not limited.
+- **v21 (2026-09-29, T2): the collector's comment per photo.** `attach` stores no caption (it stored `caption`
+  unchecked); `submit` takes `notes {<photo path>: text}` (optional; without it no caption is written), refuses a comment that is not one line of at most 300
+  characters or holds a character Postgres cannot store (naming its question), ignores a path that is not a live photo of
+  the form, and writes every live link's `caption` (the comment, else null) BEFORE the compare-and-set that locks the form;
+  a failed write answers 500 with nothing submitted. Test `scripts/probes/intake_submit_notes_stub.mjs` (18 of 18;
+  T1's v20 file is its control).
 - 🛑 **The link sits in the task's notes** (Jobber and `ops.calendar_tasks.instructions`, so also `audit.logs`): anyone
   who sees the task can open the form, and that copy is outside `property_intake_link_reveals`. Fred accepted it. The
   notes open with a fixed 55-character sentence so the function's 40-character mismatch echo never holds the code.
