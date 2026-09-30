@@ -422,6 +422,17 @@ stayed `intake-submit?t=`.) Why each piece:
       all hold. Test: `tests/address-dropdown.mjs [outdir]` (stubbed Maps and Places, a fake backend answers the load,
       never submits) 140 of 140; the previous build fails 89; `REAL_MAP=1` draws the real map (key read from the
       Planner's public bundle, never printed) with Places still stubbed, 58 of 58.
+    - **The box starts with the property's address since `6c34289` (2026-09-30, live about 15:29 ET;
+      60,966 bytes, sha256 `bdef61806bd79f5033358b5e9ab33976427e50b9a253cec23962d5076b82e895`, byte-equal to `scripts/intake-collector/intake.html`).** Fred:
+      *"We do all this intake form for the properties of a client, so usually (sometimes we don't) have the address in our db, that means we can have prefilled the address where all the site maps are in the intake form"*. `mapFor()` sets the box, where it builds it, to the load reply's `property.address`, trimmed,
+      plus ", <city>" unless the address already contains ", <city>" (compared without case; a city inside a street
+      name, N Miami Ave in Miami, still gets it); no address: empty. Set once, so a render never replaces typed text;
+      page text only, never in the draft or the submit. A `.value` write fires no input event: no Places request, no
+      list and no map move on load, nor on a tap. Enter on the untouched text searches it and pins the first answer only
+      while the map has no pin; with a pin placed it does nothing (a placed pin wins). No state or ZIP (the load reply
+      has neither; `intake-submit` unchanged). Test: `tests/address-prefill.mjs [outdir]` (the parity harness, Maps and
+      Places stubbed, never submits) 33 of 33; the build before fails its 16 prefill checks; eleven broken builds fail
+      exactly their checks. Picture Planner rule 6.
 - **Photos on the form since `7230c26` (live 2026-09-29, T2; 60297 bytes, sha256 `cfab86793e31cc3a78a12b6e54851c4464f537c490e7f960abc013f0f92d6021`,
   byte-equal to `scripts/intake-collector/intake.html`).** A photos question with `max_photos` draws its buttons only while
   room is left and cuts a larger pick with a sentence (the server's 429 is the backstop); "Take a photo" (`capture=
@@ -471,6 +482,9 @@ stayed `intake-submit?t=`.) Why each piece:
       row (else the Enter above), Escape or a click outside closes it. A pick still only moves the map. `address_approval.mjs`
       (Supabase `6a87a38`) answers Places from a stub by default (`PLACES=real` restores Google) and adds the variant A
       checks: 72 of 72; removing the ArrowDown branch through `CHUNK_SUB` fails exactly its two checks at each width.
+    - The builder's box starts EMPTY on purpose (the collector form's starts with the property's address since
+      2026-09-30, rule 17): its search is an effect on the box's text, so a prefill would send a Places request and open
+      the list on load. Not asked (PP rule 18).
   - 🛑 **A page photo is served only from the bucket its LINK KIND names, and only if that object exists there**
     (`fn_page_photo_ids` joins `storage.objects`). `photos.storage_path` is writable by any staff session, and a path like
     `../manifests/...` joined into a storage URL is normalised into ANOTHER bucket: the pre-apply review served an
