@@ -23,6 +23,8 @@ if (!row || !row.pb || !row.pb.live || !Array.isArray(row.forms) || !row.forms.l
 const D = JSON.parse(JSON.stringify({ pb: row.pb, forms: row.forms }))
 D.pb.property.source = JSON.parse(JSON.stringify(D.pb.live.source))  // keep the "Changed in the Client App's property data" notice away (as map_draft.mjs)
 D.pb.pending = null
+// no collector comment on any form photo (2026-09-29, T2 part C: a comment takes the From line's place; photo_comment_card.mjs tests that)
+for (const x of [...(D.pb.pool || []), ...(D.pb.referenced || [])]) if (x.kind === 'intake') x.caption = null
 // fixture visit photos: two on 2026-09-10, one on 2026-08-20 (ids far above any real photo id; storage answers 400)
 const V = (id, date) => ({ kind: 'visit', photo_id: id, visit_id: 990100 + (id % 10), visit_date: date, bucket: 'GT - Visits Images', path: `fixture/${id}.jpg`, label: null, caption: '[TEST] fixture', intake_id: null, question_key: null, content_type: 'image/jpeg', rotation_deg: 0 })
 D.pb.pool = [...(D.pb.pool || []).filter((x) => x.kind !== 'visit'), V(990001, '2026-09-10'), V(990002, '2026-09-10'), V(990003, '2026-08-20')]

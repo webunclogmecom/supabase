@@ -62,11 +62,15 @@ const labels2 = await page.$$eval('.q>label', (ls) => ls.map((l) => l.textConten
 ok('systems_count 1 shows the grease trap follow-ups', labels2.some((l) => /Grease trap location/.test(l)) && labels2.some((l) => /^Gallons/.test(l)))
 // a photo on the gate photos question (1x1 PNG)
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
-await page.locator('.q', { hasText: 'Photos of the gate or entrance' }).locator('input[type=file]').setInputFiles({ name: 'gate.png', mimeType: 'image/png', buffer: png })
+await page.locator('.q', { hasText: 'Photos of the gate or entrance' }).locator('input[type=file]:not([capture])').setInputFiles({ name: 'gate.png', mimeType: 'image/png', buffer: png })
 await page.waitForFunction(() => !/uploading/.test(document.getElementById('cnt').textContent), null, { timeout: 30000 })
 const photoNote = await page.locator('.q', { hasText: 'Photos of the gate or entrance' }).locator('.note').textContent()
 const errBoxes = await page.$$eval('.err', (e) => e.map((x) => x.textContent))
 ok('the photo uploads and attaches', /1 photo attached/.test(photoNote), photoNote + (errBoxes.length ? ' | ' + errBoxes.join(' | ') : ''))
+// the collector's comment on that photo (2026-09-29, T2 part D): typed in the box under it, sent at Submit, stored as its link's caption
+const cmt = page.locator('.q', { hasText: 'Photos of the gate or entrance' }).locator('.pcm')
+ok('the photo has a comment box under it', (await cmt.count()) === 1, String(await cmt.count()))
+await cmt.first().fill('[TEST] gate comment').catch(() => {})
 // GPS pin on truck parking
 await page.locator('.q', { hasText: 'Truck parking spot' }).getByRole('button', { name: 'Use my location' }).click()
 await page.waitForTimeout(1500)
@@ -100,8 +104,10 @@ await browser.close()
 // 4. what the database holds
 const [db] = await sql(`select submitted_at is not null as submitted, collector, answers ? 'access_entry.gate' as has_gate, answers ? 'access_entry.gate_code' as has_code,
   answers ? 'site_map.truck_parking' as has_pin, jsonb_typeof(answers->'access_entry.gate_photos') as photos_kind,
-  (select count(*) from public.photo_links l where l.entity_type = 'property_intake' and l.entity_id = ${Number(intakeId)} and l.deleted_at is null) as links
+  (select count(*) from public.photo_links l where l.entity_type = 'property_intake' and l.entity_id = ${Number(intakeId)} and l.deleted_at is null) as links,
+  (select string_agg(coalesce(l.caption, '<null>'), '|') from public.photo_links l where l.entity_type = 'property_intake' and l.entity_id = ${Number(intakeId)} and l.deleted_at is null) as captions
   from public.property_intakes where id = ${Number(intakeId)}`)
 ok('DB: submitted, collector, gate + code + pin stored, one photo link', db.submitted && db.collector === '[TEST] collector' && db.has_gate && db.has_code && db.has_pin && Number(db.links) === 1, JSON.stringify(db))
+ok('DB: the photo link carries the collector\'s comment as its caption', db.captions === '[TEST] gate comment', JSON.stringify(db.captions))
 console.log(results.join('\n'))
 console.log(results.every((r) => r.startsWith('PASS')) ? 'ALL PASS' : 'FAILURES')

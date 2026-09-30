@@ -94,7 +94,7 @@ async function run(browser, which, seq) {
     },
     photo: async (k) => {
       const before = await page.evaluate((k) => (Array.isArray(A[k]) ? A[k].length : 0), k);
-      await (await qLoc(k)).locator('input[type=file]').setInputFiles({ name: 'p.jpg', mimeType: 'image/jpeg', buffer: JPG });
+      await (await qLoc(k)).locator('input[type=file]:not([capture])').setInputFiles({ name: 'p.jpg', mimeType: 'image/jpeg', buffer: JPG });
       await page.waitForFunction(([k, b]) => busy === 0 && Array.isArray(A[k]) && A[k].length === b + 1, [k, before], { timeout: 10000 });
     },
     reload: async () => { await page.reload(); await page.waitForFunction(() => window.F && document.querySelectorAll('.q').length > 0); },
@@ -136,7 +136,7 @@ const SEQ = {
     ['day', 'access_hours.schedule', 'mon'], ['times', 'access_hours.schedule', 'mon', '07:30', '22:15'],
     ['num', 'grease_trap.systems_count', 2], ['gps', 'site_map.gt_location', 25.7001, -80.3002, 8],
     ['num', 'grease_trap.cleanouts_count', 3], ['num', 'grease_trap.manhole_count', 1], ['photo', 'grease_trap.photos'],
-    ['num', 'grease_trap.capacity_gallons', 20000], ['photo', 'grease_trap.capacity_photos'], ['num', 'grease_trap.sample_ports', 0],
+    ['text', 'grease_trap.capacity_gallons', '20000'], ['photo', 'grease_trap.capacity_photos'], ['num', 'grease_trap.sample_ports', 0],
     ['num', 'lift_station.count', 1], ['photo', 'lift_station.photos'], ['photo', 'lift_station.control_panel_photos'],
     ['num', 'water_tank.count', 1], ['num', 'water_tank.manhole_count', 2], ['text', 'water_tank.capacity', '500 gal'], ['photo', 'water_tank.photos'],
   ] },
@@ -147,14 +147,14 @@ const SEQ = {
     ['click', 'access_entry.equipment_where', 'Outside'], ['click', 'access_entry.where_outside', 'Other'], ['text', 'access_entry.where_outside_note', 'Alley'],
     ['click', 'access_entry.equipment_where', 'Inside'], ['click', 'access_entry.where_inside', 'Kitchen'],
     ['click', 'access_entry.access_point', 'Other'], ['text', 'access_entry.access_point_note', 'x'], ['click', 'access_entry.access_point', 'Front door'],
-    ['num', 'grease_trap.systems_count', 1], ['text', 'grease_trap.capacity_measure', '4x3x2 ft'], ['num', 'grease_trap.capacity_gallons', 750],
+    ['num', 'grease_trap.systems_count', 1], ['text', 'grease_trap.capacity_measure', '4x3x2 ft'], ['text', 'grease_trap.capacity_gallons', '750'],
     ['num', 'water_tank.count', 1], ['text', 'water_tank.capacity', '300'], ['num', 'water_tank.count', 0],
     ['click', 'access_entry.alarm', 'Yes'], ['text', 'access_entry.alarm_instruction', 'zzz'], ['click', 'access_entry.alarm', 'No'],
     ['num', 'lift_station.count', 2], ['photo', 'lift_station.photos'], ['num', 'lift_station.count', 0],
     ['day', 'access_hours.schedule', 'tue'],
   ] },
   S3_numbers_gps: { steps: [
-    ['num', 'grease_trap.systems_count', 3], ['num', 'grease_trap.capacity_gallons', 20000],
+    ['num', 'grease_trap.systems_count', 3], ['text', 'grease_trap.capacity_gallons', '20000'],
     ['num', 'grease_trap.cleanouts_count', '2.5'], ['num', 'grease_trap.manhole_count', 50], ['num', 'grease_trap.sample_ports', 7],
     ['num', 'lift_station.count', 0],
     ['num', 'water_tank.count', 2], ['num', 'water_tank.manhole_count', 4], ['num', 'water_tank.count', ''],

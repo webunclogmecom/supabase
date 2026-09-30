@@ -13,7 +13,7 @@ for (const mode of ['touch', 'mouse']) {
       const f = e.target.closest && e.target.closest('[data-f]'); window.__ev.push(t + ':' + (f ? f.getAttribute('data-f') : (e.target.textContent || '').trim().slice(0, 30) || e.target.tagName)); }, true));
     new MutationObserver(() => window.__ev.push('DOM')).observe(document.body, { childList: true, subtree: false });
   });
-  const inp = file === 'new.html' ? page.locator('[data-q="access_entry.access_photos"] input[type=file]') : page.locator('input[type=file]').nth(0);
+  const inp = file === 'new.html' ? page.locator('[data-q="access_entry.access_photos"] input[type=file]:not([capture])') : page.locator('input[type=file]:not([capture])').nth(0);
   await inp.setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG });
   await sleep(0);
   const tgt = file === 'new.html' ? page.locator('[data-f="access_entry.how_access=Key"]') : page.locator('.q', { hasText: 'Is there an alarm?' }).first().getByRole('button', { name: 'No', exact: true });

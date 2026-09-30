@@ -104,11 +104,13 @@ const session = { access_token: `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ su
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const out = process.argv[2] || './restore_version_shots'; fs.mkdirSync(out, { recursive: true })
 const subHits = []
-async function open(w, data = BASE) {
+async function open(w, data = BASE, opts = {}) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
   await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
+  // the builder's Google map, captured when the Maps loader calls window.__initAccessMap (scenario F loads the real map)
+  if (opts.maps) await ctx.addInitScript(() => { window.__maps = []; let cb; Object.defineProperty(window, '__initAccessMap', { configurable: true, get() { return cb }, set(f) { cb = function () { const M = window.google.maps.Map; if (!M.__cap) { M.__cap = 1; const al = M.prototype.addListener; M.prototype.addListener = function () { if (!window.__maps.includes(this)) window.__maps.push(this); return al.apply(this, arguments) } } return f.apply(this, arguments) } } }) })
   const p = await ctx.newPage()
   const st = { calls: [], submits: [], errors: [] }
   p.on('pageerror', (e) => { if (!/Google Maps/.test(String(e))) st.errors.push(String(e)) })  // Maps is aborted on purpose (no paid tiles)
@@ -120,7 +122,7 @@ async function open(w, data = BASE) {
     return x.fulfill({ status: 404, contentType: 'application/json', body: '{}' }) })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   await p.route(SB + '/functions/v1/**', (x) => x.abort())  // never a real code
-  await p.route('https://maps.googleapis.com/**', (x) => x.abort())
+  if (!opts.maps) await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   await p.route('https://places.googleapis.com/**', (x) => x.abort())
   if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
   await p.goto(H + '/property/1164')
@@ -358,6 +360,36 @@ const NOTICE_H = (n) => `Changed in the Client App's property data since version
   ok(!B.modalOpen && !!B.banner && B.banner.buttons.length === 2 && B.banner.buttons.every((x) => x.h >= 44), '390: the modal closes and the banner\'s Undo and Discard are 44px', B.banner)
   await p.screenshot({ path: `${out}/P_banner_390.png` })
   ok(st.errors.length === 0, '390: no page errors', st.errors)
+  await ctx.close()
+}
+
+// F. 1440, edited stub, the REAL map (T2, 2026-09-29): restoring a version whose pins sit 9.2 km away fits the map to them
+// and shows the pin warning; the banner's Undo, and on a second restore its Discard, fit back to the live version's pins (or
+// the property, when it has none). Each of those two counts only when the restore had moved the view off them first.
+{
+  const BUILDER_MAP = `(window.__maps || []).find((m) => { const w = m.getDiv().closest('.space-y-2'); return w && /GT Location/.test(w.textContent) })`
+  const inView = (p, pts, ms = 10000) => p.waitForFunction(([pts, pick]) => { const m = eval(pick); const b = m && m.getBounds(); return !!b && pts.every((x) => b.contains(x)) }, [pts, BUILDER_MAP], { timeout: ms, polling: 250 }).then(() => true, () => false)
+  const mapView = (p) => p.evaluate((pick) => { const m = eval(pick); if (!m || !m.getBounds()) return null; const c = m.getCenter(); return { lat: c.lat(), lng: c.lng(), zoom: m.getZoom() } }, BUILDER_MAP)
+  const L0 = Number(PB.property.lat), G0 = Number(PB.property.lng), rnd = (x) => Math.round(x * 1e6) / 1e6
+  const FARMAP = { pins: { gt: { lat: rnd(L0 - 0.056468), lng: rnd(G0 - 0.067718) }, truck: { lat: rnd(L0 - 0.056464), lng: rnd(G0 - 0.067539) } }, arrows: [] }
+  const F = clone(BASE); F.versions.find((v) => v.version === FROM.version).content.site_map = clone(FARMAP)
+  const lm = LIVE.content && LIVE.content.site_map
+  const livePts = lm ? [lm.pins && lm.pins.gt, lm.pins && lm.pins.truck, ...(lm.arrows || []).flatMap((a) => a.points || [])].filter(Boolean) : []
+  const back = livePts.length ? livePts : [{ lat: L0, lng: G0 }]
+  const { ctx, p } = await open(1440, F, { maps: true })
+  ok(await inView(p, back), "1440 map: guard, the live version's pins (or the property) are in view when the builder opens", await mapView(p))
+  await restore(p, FROM.version)
+  ok(await inView(p, [FARMAP.pins.gt, FARMAP.pins.truck]), `1440 map: restoring version ${FROM.version} (its pins 9.2 km away, edited stub) fits the map to them`, await mapView(p))
+  const w = await p.evaluate(() => { const u = document.querySelector('[data-pin-warning]'); return u ? u.textContent.replace(/\s+/g, ' ').trim() : null })
+  ok(!!w && /^The GT Location and Truck Parking pins are about \d+\.\d km from this property's address\. Check the map is on the right property\.$/.test(w), '1440 map: the restored far pins are warned about under the map', w)
+  await p.screenshot({ path: `${out}/F_map_1440.png` }).catch(() => {})
+  const away1 = !(await inView(p, back, 1000))
+  await click(p, '[data-restore-undo]')
+  ok(away1 && await inView(p, back), "1440 map: the banner's Undo fits the map back to the live version's pins (the restore had moved the view off them)", { moved_first: away1, view: await mapView(p) })
+  await restore(p, FROM.version)
+  const away2 = (await inView(p, [FARMAP.pins.gt, FARMAP.pins.truck])) && !(await inView(p, back, 1000))
+  await click(p, '[data-restore-discard]')
+  ok(away2 && await inView(p, back), "1440 map: the banner's Discard fits the map back to the live version's pins (the restore had moved the view off them)", { moved_first: away2, view: await mapView(p) })
   await ctx.close()
 }
 

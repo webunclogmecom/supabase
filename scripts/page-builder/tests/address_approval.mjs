@@ -132,12 +132,12 @@ for (const w of [390, 1440]) {
     const st2 = await p.evaluate(() => [...document.querySelectorAll('[role="status"]')].map((x) => x.textContent.trim()).filter(Boolean))
     ok(st2.includes('Map moved to that address. Now place the pins.'), `${w}: Enter picks the first and says the map moved`, st2)
     // the far address, picked by a click at 390 and by Enter at 1440: the map must PAN there at zoom 20
-    const pans0 = await p.evaluate(() => window.__pans.length)
+    const [pans0, zooms0] = await p.evaluate(() => [window.__pans.length, window.__zooms.length])
     await b.fill('1745 Cleveland Road Miami Beach'); await p.waitForTimeout(4000)
     const nFar = await sugs.count()
     if (w < 768) await sugs.first().click().catch(() => {}); else await b.press('Enter').catch(() => {})
     await p.waitForTimeout(3500)
-    const rec = await p.evaluate((n) => ({ pans: window.__pans.slice(n), zooms: window.__zooms.slice(-3) }), pans0)
+    const rec = await p.evaluate(([n, z]) => ({ pans: window.__pans.slice(n), zooms: window.__zooms.slice(z) }), [pans0, zooms0])
     const last = rec.pans[rec.pans.length - 1]
     ok(nFar >= 1 && last && Math.abs(last.lat - Number(far.latitude)) < 0.003 && Math.abs(last.lng - Number(far.longitude)) < 0.003 && rec.zooms.includes(20), `${w}: picking a far address (${w < 768 ? 'click' : 'Enter'}) pans the map there at zoom 20`, { nFar, last, zooms: rec.zooms })
     ok(((await b.inputValue().catch(() => '')) || '').includes('Cleveland'), `${w}: the box shows the picked address`, await b.inputValue().catch(() => ''))

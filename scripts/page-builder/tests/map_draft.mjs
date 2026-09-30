@@ -4,6 +4,10 @@
 //      update_property_site_map call ever), is saved in the browser draft, and is sent in p_content.site_map on Submit;
 //      "Remove last arrow" removes one arrow; the draft note is shown; the header says made by / checked by.
 //   B. a new page (no version) is filled from the property record only, never from the newest form.
+//   F. (2026-09-29, T2) the map opens on the pins: a restored far draft is in view, a click moves a pin and never the view,
+//      the draft bar's Discard refits (only after the view had moved off the live pins), "Use this form's pins" and its
+//      Undo refit. The builder's Google map is captured when the Maps loader calls back, so
+//      the checks read the map's own settled bounds. CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with edits.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
@@ -42,11 +46,14 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 let pass = 0, fail = 0
 const ok = (c, name, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}${v === undefined ? '' : ' :: ' + JSON.stringify(v).slice(0, 400)}`) }
 const out = process.argv[2] || './map_draft_shots'; fs.mkdirSync(out, { recursive: true })
-const calls = [], submits = []
+const calls = [], submits = [], subHits = []
 async function open(w, data, keepStorage) {
   const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, ...(keepStorage ? { storageState: keepStorage } : {}) })
   await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
+  if (data.draft) await ctx.addInitScript(([k, d]) => { try { if (!localStorage.getItem(k)) localStorage.setItem(k, JSON.stringify(d)) } catch {} }, [`pp-draft:${user.id}:1164`, data.draft])
+  // every Google map the page builds, captured when the Maps loader calls window.__initAccessMap (the API is ready then)
+  await ctx.addInitScript(() => { window.__maps = []; let cb; Object.defineProperty(window, '__initAccessMap', { configurable: true, get() { return cb }, set(f) { cb = function () { const M = window.google.maps.Map; if (!M.__cap) { M.__cap = 1; const al = M.prototype.addListener; M.prototype.addListener = function () { if (!window.__maps.includes(this)) window.__maps.push(this); return al.apply(this, arguments) } } return f.apply(this, arguments) } } }) })
   const p = await ctx.newPage()
   const replies = { get_page_builder: JSON.stringify(data.pb), get_page_builder_forms: JSON.stringify(data.forms), get_property_activity: '[]' }
   await p.route(SB + '/auth/v1/**', (x) => x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }))
@@ -57,6 +64,7 @@ async function open(w, data, keepStorage) {
     return x.fulfill({ status: 404, body: '{}' })
   })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
   await p.goto(H + '/property/1164')
   await p.waitForFunction(() => [...document.querySelectorAll('h3')].some((h) => h.textContent === 'Contacts'), null, { timeout: 30000 })
   await p.waitForTimeout(3000)
@@ -125,6 +133,73 @@ const draftContent = (p) => p.evaluate(() => { for (let i = 0; i < localStorage.
   ok(!ov, 'phone 390: no sideways scroll')
   await ctx.close()
 }
+// ---------------- F: the map opens on the pins (T2, 2026-09-29; Fred on 162: the map "opens at default place which are not where the pins the draft has are at")
+const BUILDER_MAP = `(window.__maps || []).find((m) => { const w = m.getDiv().closest('.space-y-2'); return w && /GT Location/.test(w.textContent) })`
+const inView = (p, pts, ms = 10000) => p.waitForFunction(([pts, pick]) => { const m = eval(pick); const b = m && m.getBounds(); return !!b && pts.every((x) => b.contains(x)) }, [pts, BUILDER_MAP], { timeout: ms, polling: 250 }).then(() => true, () => false)
+const view = (p) => p.evaluate((pick) => { const m = eval(pick); if (!m || !m.getBounds()) return null; const c = m.getCenter(); return { lat: c.lat(), lng: c.lng(), zoom: m.getZoom() } }, BUILDER_MAP)
+const draftMap = async (p) => { const d = await draftContent(p); return d && d !== 'bad' ? d.site_map : null }
+const pts = (m) => [m.pins && m.pins.gt, m.pins && m.pins.truck, ...(m.arrows || []).flatMap((a) => a.points)].filter(Boolean)
+const clone = (x) => JSON.parse(JSON.stringify(x))
+// 162's geometry moved onto 1164: intake 742's pins sat -0.0565 / -0.0677 degrees from 162's point (9.2 km)
+const FAR_GT = { lat: rnd(L - 0.056468), lng: rnd(G - 0.067718) }, FAR_T = { lat: rnd(L - 0.056464), lng: rnd(G - 0.067539) }
+const FAR_ARROW = { points: [{ lat: rnd(L - 0.05655), lng: rnd(G - 0.0678) }, { lat: rnd(L - 0.0565), lng: rnd(G - 0.06765) }] }
+const LIVEMAP = { pins: { truck: TRUCK }, arrows: [ARROW] }
+const fbase = () => { const d = { pb: clone(row.pb), forms: clone(row.forms) }; d.pb.pending = null; d.pb.live.content.site_map = clone(LIVEMAP); return d }
+const FD = fbase(); const FARMAP = { pins: { gt: FAR_GT, truck: FAR_T }, arrows: [FAR_ARROW] }
+FD.draft = { base_version: FD.pb.newest_version, source: FD.pb.property.source, saved_at: new Date().toISOString(), content: { ...clone(FD.pb.live.content), site_map: FARMAP } }
+const FP = fbase(); const FORM_GT = { lat: rnd(L - 0.0562), lng: rnd(G - 0.0671) }, FORM_T = { lat: rnd(L - 0.0561), lng: rnd(G - 0.0669) }
+for (const f of FP.forms) f.answers = { ...(f.answers || {}), 'site_map.gt_location': FORM_GT, 'site_map.truck_parking': FORM_T }
+{ // F0 guard: no draft, the live version's pins are in view when the builder opens
+  const { ctx, p } = await open(1440, fbase())
+  ok(await inView(p, pts(LIVEMAP)), "F0 1440: guard, the live version's pins are in the map's view when the builder opens", await view(p))
+  await ctx.close()
+}
+{ // F1: a restored draft whose pins are 9.2 km away: the map fits to them. F3: a click that places a pin never moves the view
+  const { ctx, p } = await open(1440, FD)
+  ok(/Restored your draft from/.test(await p.textContent('body')), 'F1 1440: guard, the far draft was restored (the draft bar shows)')
+  ok(await inView(p, pts(FARMAP)), "F1 1440: the map fits to the restored draft's pins and arrow, 9.2 km from the live version's", await view(p))
+  await p.screenshot({ path: `${out}/F1_1440.png` }).catch(() => {})
+  const v0 = await view(p)
+  await btn(p, /(Place|Move) GT Location/).click().catch(() => {})
+  const mb = await p.evaluate((pick) => { const m = eval(pick); const d = m && m.getDiv(); if (!d) return null; d.scrollIntoView({ block: 'center' }); const b = d.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height } }, BUILDER_MAP)
+  if (mb) { await p.waitForTimeout(600); await p.mouse.click(mb.x + mb.w / 2 + 60, mb.y + mb.h / 2 + 40); await p.waitForTimeout(2500) }
+  const v1 = await view(p), dm = await draftMap(p)
+  const moved = !!(dm && dm.pins && dm.pins.gt && (Math.abs(dm.pins.gt.lat - FAR_GT.lat) > 1e-7 || Math.abs(dm.pins.gt.lng - FAR_GT.lng) > 1e-7))
+  ok(!!v0 && !!v1 && moved && Math.abs(v0.lat - v1.lat) < 1e-9 && Math.abs(v0.lng - v1.lng) < 1e-9 && v0.zoom === v1.zoom, 'F3 1440: placing the G pin by a click moves the pin, never the view', { v0, v1, pinMoved: moved })
+  // F4: the draft bar's Discard puts the live version back, so the map fits back to its pins; it counts only when the view
+  // had moved off them first (a build that never moves the map cannot pass it)
+  const away = !(await inView(p, pts(LIVEMAP), 1000))
+  await btn(p, /^Discard$/).click().catch(() => {}); await p.waitForTimeout(1500)
+  const gone = !/Restored your draft from/.test(await p.textContent('body'))
+  ok(away && gone && await inView(p, pts(LIVEMAP)), "F4 1440: the draft bar's Discard fits the map back to the live version's pins (the view had moved off them)", { moved_first: away, bar_gone: gone, view: await view(p) })
+  await ctx.close()
+}
+{ // F2: "Use this form's pins" fits the map to them; its Undo fits back to the draft's own pins (below 1280px: the card path)
+  const { ctx, p } = await open(1024, FP)
+  await btn(p, /^Use this form's pins \(changes your draft only\)$/).click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(500)
+  await btn(p, /^Replace$/).click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(2000)
+  const dm = await draftMap(p)
+  ok(!!dm && !!dm.pins && !!dm.pins.gt && Math.abs(dm.pins.gt.lat - FORM_GT.lat) < 1e-6, "F2 1024: guard, the form's pins reached the draft", dm)
+  ok(await inView(p, [FORM_GT, FORM_T]), "F2 1024: after Use this form's pins the map fits to the form's pins", await view(p))
+  await p.screenshot({ path: `${out}/F2_1024.png` }).catch(() => {})
+  await p.locator('button', { hasText: /^Undo$/ }).first().click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(500)
+  ok(await inView(p, pts(LIVEMAP)), "F2 1024: its Undo fits the map back to the draft's own pins", await view(p))
+  await ctx.close()
+}
+{ // F2b: from 1280px the side by side's pins chip and its "Use pins" (its own click handler in the chunk) must reach the same fit,
+  // and the sticky footer's Undo must fit back
+  const { ctx, p } = await open(1440, FP)
+  await p.getByRole('button', { name: /^Use this form's pins: / }).first().click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(500)
+  await btn(p, /^Use pins$/).click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(2000)
+  const dm = await draftMap(p)
+  ok(!!dm && !!dm.pins && !!dm.pins.gt && Math.abs(dm.pins.gt.lat - FORM_GT.lat) < 1e-6, "F2b 1440: guard, the side by side's Use pins put the form's pins on the draft", dm)
+  ok(await inView(p, [FORM_GT, FORM_T]), "F2b 1440: after the side by side's Use pins the map fits to the form's pins", await view(p))
+  await p.screenshot({ path: `${out}/F2b_1440.png` }).catch(() => {})
+  await p.locator('button:visible', { hasText: /^Undo$/ }).first().click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(500)
+  ok(await inView(p, pts(LIVEMAP)), "F2b 1440: the footer Undo fits the map back to the draft's own pins", await view(p))
+  await ctx.close()
+}
 await browser.close()
+if (process.env.CHUNK_SUB) console.log(`CHUNK_SUB edits applied: ${new Set(subHits).size} of ${process.env.CHUNK_SUB.split('@@@').length}`)
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail) process.exitCode = 1
