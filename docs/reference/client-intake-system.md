@@ -62,6 +62,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | short collector link | Picture Planner route `/intake` (`src/routes/intake.ts`): **308** to `/intake.html`, empty body, `no-cache`; the fragment survives the redirect | live 2026-09-25 |
 | Cancel form (staff only, from the Planner) | `client.cancel_intake(bigint)`; trigger `property_intakes_no_submit_after_cancel`; `public.fn_intake_link_url(text)` (the one SQL builder of the short link, used by `get_intake_link` and by `schedule_property_intake`, which returns `url` (and, since `2026-09-27_0733`, `expires_at` and no longer the bare `token`); since CA1, about 18:51 ET, the Client App's "Link ready" and "Yes, fill it now" use that `url` and build no intake URL, so a new office link carries the token only in the fragment) | `2026-09-25_1705_intake_cancel_and_short_link.sql` (Supabase `0b8dbdc`) |
 | Share form (re-show an awaiting link to staff) | `client.get_intake_link(bigint)` returns `https://planner.unclogme.app/intake#code=<token>`; each reveal logged in `public.property_intake_link_reveals` (no token, no URL, no app role reads it) | `2026-09-25_1600_intake_link_share.sql` (Supabase `48b4771`) |
+| Collector link on the form page (2026-09-30) | `client.get_intake_link` called once when a WAITING form is opened on `/forms/$id` (PP rule 23); the comments on it and on `public.property_intake_link_reveals` reworded: a row = who was SHOWN which link, from either place | `2026-09-30_0951_intake_link_on_form_page.sql` (Supabase `c98a304`) |
 | the builder reads intake forms (rule 18) | `client.get_page_builder_forms(bigint)` | `2026-09-25_1821_page_builder_forms.sql` (Supabase `2fa83ae`) |
 | site map in the page draft; Activity; staff names (rule 18) | `submit_property_page` freezes `content.site_map`, `approve_property_page` copies it to `properties.site_map`; `client.get_property_activity(bigint)`; `public.fn_page_staff_name(text)` | `2026-09-27_0652_page_map_in_draft_and_activity.sql` (Supabase `3e66172`) |
 | map save retired from staff; `schedule_property_intake` tidied (rule 18) | EXECUTE on `client.update_property_site_map` revoked from `authenticated` (postgres only); `schedule_property_intake` returns `url` and `expires_at`, refuses a non-null `p_form_snapshot` | `2026-09-27_0733_intake_audit_followups.sql` (Supabase `ab86630`) |
@@ -192,7 +193,7 @@ one evening** (first `storage_path`, then `audit.logs`), both times found by an 
 The question that finds them is not "who can read the table the secret lives in" but "every place
 the secret gets copied, and who can read each".
 ✅ **ONE sanctioned re-display exists since 2026-09-25: `client.get_intake_link` (rule 19).** It returns the
-link of ONE awaiting intake to a staff JWT, on a click, and logs who asked. It copies the token nowhere: the
+link of ONE awaiting intake to a staff JWT, on a Share form click or (since 2026-09-30) when a waiting form's page is opened, and logs who was shown it. It copies the token nowhere: the
 log row holds no token and no URL. It does not change this rule; any new place the token lands still needs
 the same review. **A mis-shared link is cancelled from the Planner**: "Cancel form" on the `/forms` card
 (`client.cancel_intake`, rule 20). From then on every `intake-submit` request that starts after the cancel answers 404
@@ -634,11 +635,18 @@ case they need it again"*. Until then the token was shown once, by `schedule_pro
 - **The reveal log** `public.property_intake_link_reveals` (intake, who, email, when) is the trail, so it is not
   audited; FK `on delete cascade`; RLS on; revoked from public, anon, authenticated and `yannick_readonly`, sequence
   included, and the migration asserts the whole `relacl`. An app-driven write: the Picture Planner writes it through
-  the RPC on every Share click.
+  the RPC on every Share click and, since 2026-09-30, every opening of a waiting form's page (`/forms/$id`, PP rule 23):
+  a row means "this login was shown this link at this time" and does not say which (`2026-09-30_0951_intake_link_on_form_page` rewords both
+  comments and supersedes the 1600 premise "every row is a deliberate staff click").
 - **The app half is live since 2026-09-25** (Picture Planner `/forms`, its CLAUDE.md rule 9): the link is fetched only on
   the click, a late reply for another card is dropped, and the MESSAGE is shown only for a `blocker=` refusal. Checked
   signed in: intake 160's link equalled `'https://planner.unclogme.app/intake#code=' || token` (compared as a SHA-256,
   never printed) and wrote exactly one reveal row.
+- **The form page half (live about 08:28 ET 2026-09-30, `_staff.forms._id-CTF0Zfv4.js`, PP rule 23):** `/forms/$id` calls it ONCE per view of a
+  waiting form, inside the gated tree, keyed by the intake id (a quiet `get_intake` reload does not call it again); a reply
+  for another form is dropped; a `blocker=` refusal shows the MESSAGE with no buttons, and `submitted`, `cancelled` and
+  `expired` also reload `get_intake` quietly. Test `scripts/page-builder/tests/form_link.mjs` (143 of 143, every call
+  stubbed with a fake link).
 - **Share widens where a link circulates.** Before this only the scheduler held it. That is Fred's call, made; the
   cancel half shipped the same day (rule 20).
 - VERIFY V1 to V10 (whole ACLs, URL equality inside SQL, one reveal row per success and none per refusal, no audit

@@ -4941,6 +4941,9 @@ Nine things that will bite someone who does not know them:
    Cancel from the Planner's `/forms` card: `client.cancel_intake` (staff JWT only, awaiting forms only; a submit landing
    after a cancel is refused by trigger `property_intakes_no_submit_after_cancel`; reference rule 20, `2026-09-25_1705`).
    `public.fn_intake_link_url` is the one SQL builder of the collector link; `schedule_property_intake` returns it as `url`.
+   Since `2026-09-30_0951_intake_link_on_form_page` (2026-09-30) `client.get_intake_link` is also called ONCE per view of a WAITING form on the
+   Planner's `/forms/$id` (the Collector link, PP rule 23), so a reveal row means "this login was shown this link", from Share form or that
+   page, and no longer counts Share clicks; only the two comments changed (body, RLS and grants asserted unchanged).
 9. **Schedule with an assignee (2026-09-29, rule 22 of the reference).** The Client App's Schedule intake makes a Jobber
    and Calendar task through `save-calendar-task` (new keys `app` and `intake_id`; the preflight echoes the requested
    headers; an unclear Jobber reply to a create is `jobber_unknown`, maybe created) and links it in
