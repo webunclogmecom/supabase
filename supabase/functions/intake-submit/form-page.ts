@@ -42,7 +42,8 @@
 //
 // ⚠ TEST HOOKS (scratchpad collector-test.mjs, see docs/reference/client-intake-system.md
 //   rule 17): #ttl #sub #main #foot #who #send #cnt; one .q per question with its
-//   <label> as a direct child; Yes / No buttons; input[type=file] and a .note
+//   <label> as a direct child; Yes / No buttons; per photos question two input[type=file] (the camera one
+//   has capture=environment, so pick the other with :not([capture])), a textarea.pcm per photo and a .note
 //   "N photo(s) attached"; "Use my location" and a .pin "Pinned at <lat>, <lng>";
 //   errors are .err. The two build.mjs anchors (the charset line and the EP line)
 //   must stay byte for byte.
@@ -130,7 +131,10 @@ input::placeholder,textarea::placeholder{color:#a1a1aa}
 .hr .rh:empty{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .chip{min-height:44px;padding:10px 16px;border:1.5px solid var(--line2);border-radius:999px;background:#fff;font-size:15px;font-weight:600}
-.ph{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-top:12px}
+.ph{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.pi{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ph .pi .t{aspect-ratio:4/3}
+.ph textarea.pcm{min-height:64px;resize:none;line-height:1.3}
 .ph .t{aspect-ratio:1;border-radius:10px;overflow:hidden;background:#f4f4f5;border:1px solid var(--line);display:grid;place-items:center;color:var(--mut);font-size:12px;font-weight:600;text-align:center}
 .ph img{width:100%;height:100%;object-fit:cover;display:block}
 .note{margin:8px 2px 0;font-size:14px;color:var(--mut)}
@@ -162,7 +166,7 @@ footer{position:sticky;bottom:0;z-index:5;margin-top:28px;background:#fff;border
 .big p{margin:6px 0;color:var(--ink2)}
 @media (max-width:399px){.hh,.hr{grid-template-columns:minmax(0,1fr) 22px minmax(0,1fr)}.hh span:first-child{display:none}.hr .dn{grid-column:1/-1;margin-top:4px}.hr .rh{grid-column:1/-1}}
 @media (max-width:359px){.days{gap:4px}.day{font-size:13px}}
-@media (min-width:600px){.opts{grid-template-columns:1fr 1fr}.days{gap:8px}.ph{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}}
+@media (min-width:600px){.opts{grid-template-columns:1fr 1fr}.days{gap:8px}.ph{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}}
 @media (hover:hover){.opt:hover,.day:hover,.chip:hover,.step button:hover{border-color:#a1a1aa}.opt[aria-pressed=true]:hover,.day[aria-pressed=true]:hover{border-color:var(--or2)}.act:hover{background:var(--line)}#send:hover:not(:disabled){background:var(--or2)}}
 @media (min-width:768px){
 header{padding-bottom:26px}header h1{font-size:28px}
@@ -208,6 +212,8 @@ textarea{min-height:84px}
 .step input{font-size:16px;font-weight:600}
 .act{width:fit-content;min-height:38px;padding:8px 14px;gap:8px;font-size:14px;font-weight:600}
 .act svg{width:18px;height:18px}
+.act.cam{display:none}
+.ph textarea.pcm{min-height:52px}
 .asug{min-height:44px;padding:4px 12px;font-size:14px;line-height:1.2}
 .asug .s{font-size:13px}
 .day{min-height:36px;font-size:13px;font-weight:600}
@@ -248,13 +254,14 @@ footer{padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom))}
 </div></footer>
 <script>
 var EP=location.pathname, TOKEN=new URLSearchParams(location.search).get('t')||'';
-var F=null, A={}, DAYS=['mon','tue','wed','thu','fri','sat','sun'], busy=0, ERR={}, PEND={}, GEO={}, SENDING=false, LEFT=0, DONE=false, CF=null, WAIT=null;
+var F=null, A={}, DAYS=['mon','tue','wed','thu','fri','sat','sun'], busy=0, ERR={}, PEND={}, CUT={}, GEO={}, SENDING=false, LEFT=0, DONE=false, CF=null, WAIT=null;
 var DAYN={mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun'};
 var KEY='intake-draft-'+TOKEN;
 var IC={
   check:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
   big:'<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
   cam:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  img:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>',
   pin:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.3-7-11a7 7 0 1 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>'
 };
 function api(b){b.token=TOKEN;return fetch(EP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json().then(function(j){j._s=r.status;return j})})}
@@ -543,6 +550,7 @@ function field(q){
   d.appendChild(lab);
   var t=q.type, v=A[q.key];
   if(ERR[q.key]) d.appendChild(errBox(ERR[q.key],function(){delete ERR[q.key];render()}));
+  if(CUT[q.key]) d.appendChild(errBox(CUT[q.key],function(){delete CUT[q.key];render()}));
   if(t==='yes_no'){
     var w=el('div','yn'); w.setAttribute('role','group'); w.setAttribute('aria-labelledby',lab.id);
     w.appendChild(toggle(q,'yes','Yes','',v)); w.appendChild(toggle(q,'no','No','',v));
@@ -660,21 +668,36 @@ function field(q){
     d.appendChild(b3); d.appendChild(out); d.appendChild(gst);
   } else if(t==='photos'){
     var list=Array.isArray(v)?v:[];
-    var f=el('input'); f.type='file'; f.accept='image/*'; f.multiple=true; f.className='hide'; f.setAttribute('aria-hidden','true'); f.tabIndex=-1;
-    f.onchange=function(){ var fs=[].slice.call(f.files||[]); f.value=''; fs.forEach(function(file){up(q.key,file)}) };
-    var fb=el('button','act'); fb.type='button'; fb.setAttribute('data-f',q.key+':ph'); fb.setAttribute('aria-describedby',lab.id); fb.innerHTML=IC.cam; fb.appendChild(el('span','',list.length?'Add more photos':'Take or add photos')); fb.onclick=function(){f.click()};
-    d.appendChild(fb); d.appendChild(f);
     var pend=PEND[q.key]||0;
+    // A per-question limit (the question's max_photos; Fred 2026-09-29: "up to 3 pictures for the Alarm"). intake-submit
+    // refuses one more with 429; the page never offers it: the button goes at the limit and a pick is cut to the room left.
+    var max=(typeof q.max_photos==='number'&&q.max_photos>0)?Math.floor(q.max_photos):0;
+    var room=function(){ return max?max-(Array.isArray(A[q.key])?A[q.key].length:0)-(PEND[q.key]||0):Infinity };
+    var pick=function(inp){ return function(){ var fs=[].slice.call(inp.files||[]); inp.value=''; var r=room();
+      if(fs.length>r){ var n=fs.length-Math.max(0,r); fs=fs.slice(0,Math.max(0,r)); CUT[q.key]='This question takes at most '+max+' photos, so '+n+(n>1?' photos were':' photo was')+' not added.'; if(!fs.length) render() }
+      fs.forEach(function(file){up(q.key,file)}) } };
+    var mk=function(cam){ var i=el('input'); i.type='file'; i.accept='image/*'; if(cam) i.setAttribute('capture','environment'); else i.multiple=room()>1; i.className='hide'; i.setAttribute('aria-hidden','true'); i.tabIndex=-1; i.onchange=pick(i); return i };
+    if(room()>0){
+      var ci=mk(true), f=mk(false), row=el('div','opts');
+      var cb=el('button','act cam'); cb.type='button'; cb.setAttribute('data-f',q.key+':cam'); cb.setAttribute('aria-describedby',lab.id); cb.innerHTML=IC.cam; cb.appendChild(el('span','',list.length?'Take another photo':'Take a photo')); cb.onclick=function(){ci.click()};
+      var fb=el('button','act'); fb.type='button'; fb.setAttribute('data-f',q.key+':ph'); fb.setAttribute('aria-describedby',lab.id); fb.innerHTML=IC.img; fb.appendChild(el('span','',list.length?'Choose more photos':'Choose photos')); fb.onclick=function(){f.click()};
+      row.appendChild(cb); row.appendChild(fb); d.appendChild(row); d.appendChild(ci); d.appendChild(f);
+    }
     if(list.length||pend){
       var g=el('div','ph');
-      for(var k=0;k<pend;k++) g.appendChild(el('div','t send','Sending...'));
+      for(var k=0;k<pend;k++){ var pw=el('div','pi'); pw.appendChild(el('div','t send','Sending...')); g.appendChild(pw) }
       list.forEach(function(p,i){
         var tl=el('div','t');
         // The preview is a blob: URL that dies when the page reloads; the photo itself is safe on the
         // server. Show a plain "Photo N saved" tile instead of a broken image.
         var gone=function(){ tl.innerHTML=''; tl.textContent='Photo '+(i+1)+' saved'; if(p&&p.preview){ delete p.preview; save() } };
         if(p&&p.preview){ var im=el('img'); im.alt='Photo '+(i+1); im.onerror=gone; im.src=p.preview; tl.appendChild(im) } else gone();
-        g.appendChild(tl);
+        var it=el('div','pi'); it.appendChild(tl);
+        // The collector's comment on this photo (Fred, 2026-09-29: "When uploading a photo we need to also have a comment
+        // for the photo"). One line: Enter is blocked; a pasted line break, tab or other control character becomes a space. Kept in the draft on the
+        // photo; sent at Submit as notes; intake-submit stores it in photo_links.caption.
+        if(p&&typeof p==='object'){ var cm=el('textarea','pcm'); cm.rows=2; cm.maxLength=300; cm.placeholder='Comment (optional)'; cm.setAttribute('aria-label','Comment for photo '+(i+1)); cm.setAttribute('data-f',q.key+':note:'+i); cm.value=typeof p.note==='string'?p.note:''; cm.onkeydown=function(e){ if(e.key==='Enter') e.preventDefault() }; cm.oninput=function(){ var t=cm.value; if(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t)){ t=t.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' '); cm.value=t } p.note=t; save() }; it.appendChild(cm) }
+        g.appendChild(it);
       });
       d.appendChild(g);
     }
@@ -728,15 +751,16 @@ function submit(sure){
   // Send only answers to questions the collector can SEE now. A follow-up keeps what was typed into it
   // when its parent changes (a lock-box code typed, then "How do we get in?" switched to Key); that
   // leftover must not reach the immutable record. The office compare and accept refuse it too.
-  var out={}, req={};
+  var out={}, req={}, notes={};
   (F.requested||[]).forEach(function(k){req[k]=1});
   ((F.form||{}).sections||[]).forEach(function(s){ (s.questions||[]).forEach(function(q){
     if(!q||typeof q!=='object'||!req[q.key]||!visible(q)||!(q.key in A)) return;
     var v=A[q.key];
     out[q.key]=Array.isArray(v)?v.map(function(p){return (p&&p.path)?p.path:p}):v;
+    if(q.type==='photos'&&Array.isArray(v)) v.forEach(function(p){ var c=(p&&typeof p.note==='string')?p.note.trim():''; if(c&&p.path) notes[p.path]=c });
   }) });
   var b=document.getElementById('send'); SENDING=true; b.disabled=true; b.textContent='Submitting...';
-  api({op:'submit',collector:who,answers:out}).then(function(r){
+  api({op:'submit',collector:who,answers:out,notes:notes}).then(function(r){
     if(!r.ok){ SENDING=false; b.disabled=false; b.textContent='Submit'; show(r.message||'Could not submit.'); return }
     try{localStorage.removeItem(KEY);localStorage.removeItem(KEY+'-who');localStorage.removeItem(KEY+'-form')}catch(e){}
     DONE=true;
@@ -758,7 +782,8 @@ function start(r,offline){
   document.getElementById('sub').textContent=[p.name,p.city].filter(Boolean).join(' - ')||'Site survey';
   if(r.already_submitted){ DONE=true; document.getElementById('main').innerHTML='<div class="big"><div class="ic">'+IC.big+'</div><h2>Already submitted</h2><p>This form was sent in. Ask the office if something needs changing.</p></div>'; return }
   var wEl=document.getElementById('who');
-  try{ wEl.value=localStorage.getItem(KEY+'-who')||'' }catch(e){}
+  var an=(typeof r.assignee_name==='string')?r.assignee_name.trim().slice(0,120):'';
+  try{ wEl.value=localStorage.getItem(KEY+'-who')||an }catch(e){ wEl.value=an }
   wEl.oninput=function(){ try{localStorage.setItem(KEY+'-who',wEl.value)}catch(e){} if(wEl.value.trim()){ document.getElementById('whoerr').innerHTML=''; wEl.removeAttribute('aria-invalid') } };
   if(offline){ var o=el('div','off','No signal right now. Keep answering: your answers stay on this device. Submit when you have signal.'); o.setAttribute('role','status'); document.getElementById('pre').prepend(o) }
   document.getElementById('pre').className='';
