@@ -166,10 +166,12 @@ for (const f of FP.forms) f.answers = { ...(f.answers || {}), 'site_map.gt_locat
   const v0 = await view(p)
   await btn(p, /(Place|Move) GT Location/).click().catch(() => {})
   const mb = await p.evaluate((pick) => { const m = eval(pick); const d = m && m.getDiv(); if (!d) return null; d.scrollIntoView({ block: 'center' }); const b = d.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height } }, BUILDER_MAP)
-  if (mb) { await p.waitForTimeout(600); await p.mouse.click(mb.x + mb.w / 2 + 60, mb.y + mb.h / 2 + 40); await p.waitForTimeout(2500) }
+  // click 25 px inside the map's top right corner (no control there: fullscreen is off), far outside the pins' area, so a
+  // refit on a pin change (control c7) must move the view; a click inside the pins' area refits to the same view (2026-09-30)
+  if (mb) { await p.waitForTimeout(600); await p.mouse.click(mb.x + mb.w - 25, mb.y + 25); await p.waitForTimeout(2500) }
   const v1 = await view(p), dm = await draftMap(p)
   const moved = !!(dm && dm.pins && dm.pins.gt && (Math.abs(dm.pins.gt.lat - FAR_GT.lat) > 1e-7 || Math.abs(dm.pins.gt.lng - FAR_GT.lng) > 1e-7))
-  ok(!!v0 && !!v1 && moved && Math.abs(v0.lat - v1.lat) < 1e-9 && Math.abs(v0.lng - v1.lng) < 1e-9 && v0.zoom === v1.zoom, 'F3 1440: placing the G pin by a click moves the pin, never the view', { v0, v1, pinMoved: moved })
+  ok(!!v0 && !!v1 && moved && Math.abs(v0.lat - v1.lat) < 1e-9 && Math.abs(v0.lng - v1.lng) < 1e-9 && v0.zoom === v1.zoom, 'F3 1440: placing the G pin by a click moves the pin, never the view', { v0, v1, pinMoved: moved, gt: dm && dm.pins && dm.pins.gt })
   // F4: the draft bar's Discard puts the live version back, so the map fits back to its pins; it counts only when the view
   // had moved off them first (a build that never moves the map cannot pass it)
   const away = !(await inView(p, pts(LIVEMAP), 1000))
