@@ -401,6 +401,11 @@ function mapFor(q,v){
     var wrap=el('div'), sr=el('div','asr'), inp=el('input'), list=el('div','alist'), hint=el('div','ahint'), lid='al-'+q.key.replace(/[^A-Za-z0-9_-]/g,'-');
     inp.type='text'; inp.setAttribute('autocomplete','off'); inp.setAttribute('enterkeyhint','search'); inp.maxLength=200;
     inp.placeholder='Type an address to move the map'; inp.setAttribute('aria-label',q.label+': type an address to move the map');
+    // It starts with the property's address, plus ", city" unless the address already has ", city" (Fred, 2026-09-30). Set
+    // ONCE, here, so a render never replaces what the collector typed; a .value write fires no input event, so nothing is
+    // searched, no list opens and the map does not move on load. A city inside a street name (N Miami Ave) still gets it.
+    var pa=String(p.address||'').trim(), pc=String(p.city||'').trim();
+    var addr0=(pa&&pc&&pa.toLowerCase().indexOf(', '+pc.toLowerCase())<0)?pa+', '+pc:pa; inp.value=addr0;
     inp.setAttribute('data-f',q.key+':addr');     // render() gives focus and the caret back (the phone keyboard stays open)
     // A combobox (2026-09-29): the suggestions are one listbox hanging from the box; the focus stays in the box,
     // the arrows move a highlight (aria-activedescendant), Enter takes the highlighted row.
@@ -471,6 +476,7 @@ function mapFor(q,v){
       if(e.key!=='Enter') return; e.preventDefault();
       var txt=inp.value.trim(); if(txt.length<3) return;
       if(n&&S.for===txt){ (rs[S.hi]||rs[0]).click(); return }
+      if(txt===addr0&&A[q.key]) return;     // the untouched address never moves a pin already placed (a placed pin wins)
       find(txt,true);
     };
     // The list lies over the map, so leaving the box (a tap outside, Tab) closes it like Escape; a lookup already
