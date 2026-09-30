@@ -19,9 +19,9 @@ let pass = 0, fail = 0
 const ok = (c, name) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}`) }
 // controls that must be present before AND after: the instrument can see the dialog
 for (const n of ['schedule_property_intake', 'intakeParentKey', 'v_intake_questions']) ok(all.includes(n), `control present: ${n}`)
-const NEW = ['Assign to', 'Nobody yet', 'We make a task for this person in Jobber and in the Calendar.', 'Technicians', 'save-calendar-task',
+const NEW = ['Assign to', 'Nobody yet', 'We make a task for this person in Jobber and in the Calendar, and put their name on the form.', 'Technicians', 'save-calendar-task',
   '"client-app"', 'Open this link on site to fill in the site survey form:', 'cancel_intake', 'Task made for ',
-  'It is in Jobber and in the Calendar, with this link in its notes.', 'Could not confirm the task. Check the Calendar before sending the link.',
+  'It is in Jobber and in the Calendar, with this link in its notes.', "'s name is already on the form.", 'Could not confirm the task. Check the Calendar before sending the link.',
   'Check the Calendar', 'No task was made, so the link was cancelled.', 'No task was made, and the link could not be cancelled. Cancel it in the Picture Planner, under Forms.',
   'asked again next to the capacity plate photo.', "We couldn't load the staff list. Close this and try again.", 'rolled_back', 'jobber_task',
   // the definite-refusal list (design 2.3): a code on it, with no jobber_task, cancels the link

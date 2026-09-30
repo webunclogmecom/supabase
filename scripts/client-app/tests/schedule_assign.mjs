@@ -143,7 +143,7 @@ for (const w of [1280, 390]) {
     const { ctx, p, st } = await open(w)
     await toSchedule(p)
     const t = await dlgText(p)
-    ok(/Assign to/.test(t) && /We make a task for this person in Jobber and in the Calendar\./.test(t), `${w}: [new] "Assign to" and its help line are in the Schedule intake dialog`, t.slice(0, 200))
+    ok(/Assign to/.test(t) && /We make a task for this person in Jobber and in the Calendar, and put their name on the form\./.test(t), `${w}: [new] "Assign to" and its help line are in the Schedule intake dialog`, t.slice(0, 200))
     const order = await dlg(p).evaluate((d) => { const txt = d.innerText; return [txt.indexOf('Assign to'), txt.search(/questions selected/)] })
     ok(order[0] >= 0 && order[0] < order[1], `${w}: [new] it sits above the questions`, order)
     ok(/Nobody yet/.test(t) && /Required/.test(t), `${w}: [new] nobody is picked and it reads Required`, t.slice(0, 300))
@@ -177,7 +177,7 @@ for (const w of [1280, 390]) {
     const got = st.task && typeof st.task === 'object' ? Object.fromEntries(Object.keys(want).map((k) => [k, st.task[k]])) : st.task
     ok(JSON.stringify(got) === JSON.stringify(want) && st.task && Object.keys(st.task).length === Object.keys(want).length, `${w}: [new] the task body is exactly the design's`, { got: st.task, want: { ...want, instructions: '(prefix + link)' } })
     const t = await dlgText(p)
-    ok(/Link ready/.test(t) && t.includes(`Task made for ${PICK.name}, ${DAY}, all day: ${title}.`) && t.includes('It is in Jobber and in the Calendar, with this link in its notes.'),
+    ok(/Link ready/.test(t) && t.includes(`Task made for ${PICK.name}, ${DAY}, all day: ${title}.`) && t.includes(`It is in Jobber and in the Calendar, with this link in its notes. ${PICK.name}'s name is already on the form.`),
       `${w}: [new] Link ready says the task was made, for whom, the day, the title`, t.slice(0, 400))
     ok(st.cancel === null, `${w}: [new] the link is not cancelled`)
     ok(GAL_LABEL && t.length > 0, `${w}: [guard] the gallons question label was read from the database`, GAL_LABEL)
