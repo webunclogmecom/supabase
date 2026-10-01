@@ -1,7 +1,7 @@
 // v3-live.mjs <intake id> : the REAL intake-submit (v22) on a [TEST] intake, through its API only (no browser): Remove and,
 // on a question list version 3 form, the explanation required on every photo. Refuses anything but an OPEN intake whose
 // requested_by starts with "[TEST]" on property 1164 or 162 (the test client 112-YA). Reads the token from the DB and never
-// prints it (nor a signed upload URL). SUBMITS the intake at the end; remove it with cleanup.mjs afterwards.
+// prints it (nor a signed upload URL). SUBMITS the intake at the end; remove it with the per-id recipe of Building Apps/docs/client-intake-flow.md 11.3 step 5 (never cleanup.mjs while 167 is kept).
 //   node scripts/intake-collector/tests/v3-live.mjs <intake id>
 // On a version 2 form it checks Remove (the link soft-deleted, the file KEPT: soft delete only) and that a photo without a
 // comment still submits (v1/v2 unchanged): 8 checks. On a version 3 form also the new slots on the real server (a photo
