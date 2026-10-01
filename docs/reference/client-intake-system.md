@@ -460,6 +460,10 @@ stayed `intake-submit?t=`.) Why each piece:
   - Test: `scripts/intake-collector/tests/form-map.mjs <[TEST] intake id> <outdir>` serves the local build on the real host and
     injects the key into the load reply, so it runs before a deploy and before the secret exists. 4 widths; tap, GPS, the
     same map node after another answer, no code in any Google request; `none`/`bad` as a 4th argument test the fallbacks.
+- **A tapped answer keeps the page where it is (2026-10-01, `eb494a5`, live).** `render()` rebuilds the list and gives the focus
+  back; Safari never focuses a tapped button, so the last text box got it back and Safari scrolled there. A capture click
+  listener now focuses the tapped `#qs button[data-f]`, and `render()` restores the scroll if the rebuild moved it. Test
+  `scripts/intake-collector/tests/option-scroll.mjs` (with a Safari model). Picture Planner rule 6.
 - **Question list version 3 on the page (2026-09-30, `6b4d511`, `2026-09-30_2234_intake_form_v3`).** The page reads
   `q.short || q.label` for a card, an `info` (i), and, when the snapshot says `photo_note_required`, requires an
   explanation on every photo it sends (Picture Planner rule 6); `intake-submit` v22 refuses the same (rule 22). Remove,
