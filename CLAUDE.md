@@ -120,7 +120,7 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
 - `app_source = 'send-derm-email'` — the DERM email edge fn ("Send DERM to city/clients"); the row also carries `sent_by_email`/`sent_by_user_id` (the human who clicked, from the app-forwarded JWT — 2026-07-21h)
 - `app_source = 'gdo-report-bot'` — the Automated GDO Reporting bot (rpa-derm-queue/result edge fns; 2026-07-21i). Machine actor, not a person. **⚠ Before answering anything about how/when this bot RUNS, read [docs/reference/gdo-rpa-bot-triggers.md](docs/reference/gdo-rpa-bot-triggers.md)** — John's own doc, verbatim. It runs on HIS Railway deployment, not ours. Three traps that catch people: it has **3 triggers, not 1** (webhook, a **60-minute poll that uses the LIVE queue**, and an 8 AM EST Slack digest), `SHADOW_MODE=true` **forces every run to dry-run regardless of the URL**, and `?dry_run=true` hits a **separate 25-item QA queue** rather than production.
 - `app_source = 'picture-planner'`: Picture Planner (`planner.unclogme.app`, its `unclogme-pics-organizer` Lovable hosts and project id `d9464151`). Pinned 2026-09-24 BEFORE the DNS change (`2026-09-24_0301`), when the app wrote nothing yet. It has written since 2026-09-25 (first row: a `property_pages` INSERT at 14:36 ET), always through SECURITY DEFINER RPCs called with a staff JWT: `client.submit_property_page` (`property_pages`, and can also insert into `property_page_links`), `client.approve_property_page` (`property_pages`, `properties.site_map`), `client.rotate_driver_link` (`property_page_links`) and `client.cancel_intake` (`property_intakes.cancelled_at`). It also writes through `client.get_intake_link`, which logs every reveal in `public.property_intake_link_reveals`; that table has NO audit trigger, so those writes never show under this label. Since 2026-09-28 also `client.accept_intake_answers` (the form page's Property record tab, page approvers only): `properties` (operational columns and gallons), `property_intake_accepts`, `property_intakes.accepted`, and `sync.outbound_queue` through `trg_properties_enqueue_outbound`.
-- `app_source = 'intake-collector'`: the public site-survey collector, i.e. the `intake-submit` edge function. Its own service-role client sends the header `x-app-source: intake-collector` (v19, since about 06:40 ET 2026-09-27), so it is a header label, not an Origin CASE arm: do not add one. It covers the submit PATCH on `property_intakes` (answers, collector, submitted_at) and the `photo_links` INSERTs. Collector writes before v19 landed as `sql` (service_role, paths `/property_intakes` and `/photo_links`), so for history before 2026-09-27 query both labels
+- `app_source = 'intake-collector'`: the public site-survey collector, i.e. the `intake-submit` edge function. Its own service-role client sends the header `x-app-source: intake-collector` (v19, since about 06:40 ET 2026-09-27), so it is a header label, not an Origin CASE arm: do not add one. It covers the submit PATCH on `property_intakes` (answers, collector, submitted_at), the `photo_links` INSERTs, and since v21/v22 (2026-09-29/30) the `photo_links` UPDATEs (the caption written at submit, and the `remove` op's soft delete). Collector writes before v19 landed as `sql` (service_role, paths `/property_intakes` and `/photo_links`), so for history before 2026-09-27 query both labels
 - `app_source = 'client-app'`: the Client App (`clients.unclogme.app`; Origin CASE since `2026-07-29c`, and the `x-app-source: client-app` header its edge functions send). For the intake it is the label on `property_intakes` INSERTs (`client.schedule_property_intake`), and since 2026-09-29 on the intake task: `ops.calendar_tasks`, `calendar_task_assignees` and the `property_intakes.calendar_task_id` UPDATE, written by `save-calendar-task` when the Client App sends `app: "client-app"`
 - `app_source = 'driver-page'`: the `driver-page` edge function's service client (header). Its only write is the open log `public.property_page_opens` (through `public.fn_driver_page`), which has NO audit trigger, so zero rows under this label is expected and proves nothing
 - `app_source = 'sql'` — direct Management API / psql / scripts (no PostgREST context)
@@ -2614,6 +2614,15 @@ healthy. Non-empty means those clients are seeing nothing. **Watch it after any 
 > ⚠ **The blackout escalation email WAS working all along** (`health_alert_state` shows `blackout-health`
 > alerted on 830714 / 312500 / 833049 and auto-resolved the first two once fixed). The gap was never the
 > watchdog; it was that "complete" asserted nothing about the geometry.
+> ✅ **A card on a page with NO IMAGE does not block completion (2026-10-01, `2026-10-01_1048`).** Fred, on
+> 836361 (sheet 1124 printed on 2 pages, only page 1 scanned): *"only the stamped clients should get the
+> blackout and if there's an image missing or a client missing for the stamp, then they don't get the blackout
+> and that's it."* `derm.fn_card_page_missing(ticket, page)` is TRUE only when the ticket has images and the
+> page is past the end of the list; such cards are skipped by `fn_sheet_publishable`, its `_detail` and
+> `v_blackout_blocked_sheets`. `fn_blackout_targets` was already per page and is unchanged, so the card still
+> gets no document. Imaged pages keep every guard; unknown (no ticket, no images) keeps the old behaviour.
+> ⚠ So a completed sheet can now be MISSING a client's document silently: 288-PER on 836361 has none until its
+> page 2 is uploaded and the sheet is re-completed.
 
 🛑 **KEY ON (dump_folder, effective_page), NEVER ON THE FOLDER.** My own first sweep asked whether a
 FOLDER had any extent and found 4 blocked folders. The gate is per PAGE, and the detector found
@@ -4970,7 +4979,7 @@ Nine things that will bite someone who does not know them:
    and Calendar task through `save-calendar-task` (new keys `app` and `intake_id`; the preflight echoes the requested
    headers; an unclear Jobber reply to a create is `jobber_unknown`, maybe created) and links it in
    `property_intakes.calendar_task_id`; `intake-submit` returns `assignee_name` (one assignee only) and enforces
-   `max_photos`. 🛑 The question list is version 2 and **Gallons is TEXT under the same key**:
+   `max_photos`. 🛑 The question list is version 3 since 22:34 ET 2026-09-30 (`2026-09-30_2234_intake_form_v3`: `photo_note_required`, the section `lift_station_photos`, the water tank capacity photos; `intake-submit` v22 refuses an unexplained photo on such a form and has the `remove` op; reference rules 16, 17, 22), and since version 2 **Gallons is TEXT under the same key**:
    `public.fn_intake_whole_gallons` is the one reading and `get_intake_compare` answers `not_savable` for prose. Never
    move that key.
 
