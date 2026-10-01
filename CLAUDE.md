@@ -4964,6 +4964,10 @@ Nine things that will bite someone who does not know them:
    (CHECK, FK), `submit_property_page(..., p_restored_from_version)` refuses anything but a Replaced version
    (`blocker=not_restorable`), `get_page_versions` returns it and `source`, `get_page_builder.referenced` lists every
    version's photos; REF rule 18, Picture Planner rule 22.
+   Since `2026-09-29_2126_page_photo_collector_comment` `public.fn_page_photo_ids` passes the collector's photo comment
+   (builder only, never the Site file), since `2026-09-29_2133_page_pin_far_warning` `submit_property_page` no longer
+   refuses a far pin (the builder warns), and since `2026-09-30_2027_page_sections_lift_station_water_tank` a page photo
+   may sit in `lift_station` or `water_tank` (PP rules 13, 17, 25).
 8. **Share form (2026-09-25, `2026-09-25_1600_intake_link_share.sql`): `client.get_intake_link` is the ONE sanctioned
    re-display of a collector link** (rule 19 of the reference). Awaiting intakes only, staff JWT only, every reveal logged in
    `public.property_intake_link_reveals` (no token, no URL, no app role reads it). The link is

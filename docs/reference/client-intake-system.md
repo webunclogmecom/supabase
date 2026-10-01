@@ -1,6 +1,6 @@
 # Client Intake System — what is built, and the rules that must not regress
 
-**Last updated 2026-09-27.** Written while building it, from measurements, not from the design docs.
+**Last updated 2026-10-01.** Written while building it, from measurements, not from the design docs.
 
 A site-visit survey: one person documents a property once (access, gate and code, grease traps,
 truck parking, hours, photos, two GPS pins), the office curates it, and the output is a page a
@@ -33,7 +33,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | question list for the app | `client.v_intake_questions` | `2026-09-23_1015_client_v_intake_questions.sql` |
 | list rollup | `client.clients.intake_status`, `.intake_property_count` | `2026-09-23_0948_client_clients_intake_status.sql` |
 | collector PAGE | `planner.unclogme.app/intake.html#code=<token>`, a static file byte-identical to `scripts/intake-collector/intake.html` (built from `form-page.ts` by `build.mjs`) | live 2026-09-25 (Supabase `c9213b4`, `42ee2a3`); `intake-submit` GET 302s there |
-| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-23 (created about 08:48 ET); v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused); v13 2026-09-24 (the one-line check refuses what Postgres `[[:cntrl:]]` refuses, C1 included; the 4,000-character refusal names its question; an hours key must be an OWN key of the day names); v14 2026-09-24 (byte body ceiling, NUL / lone surrogate refused naming the question, real pins only, hours refusals named); v16 2026-09-25 (GET 302 to `planner.unclogme.app/intake.html#code=`, was 503); v17, v18 2026-09-25 (`load` returns `property.lat/lng` and `maps_key`, the pin maps); v19 2026-09-27 (its own service-role client sending `x-app-source: intake-collector`, rule 17). v19 is the deployed version (measured 2026-09-27) |
+| collector endpoint | edge fn `intake-submit`, `verify_jwt = false` | deployed 2026-09-23 (created about 08:48 ET); v7 2026-09-23 (photo folder = intake id); v8 2026-09-23 (cap on both steps, attach needs the object, status via the rule); v9 2026-09-24 (upload slots come from the ledger, attach needs a path the ledger issued); v10 2026-09-24 (photo answers come from real attachments); v11 2026-09-24 (numbers inside the question's range, an hours day without a real open and close refused naming the day, an attached but unclaimed photo counts on a shown question, a photo already under another question refused with 409); v12 2026-09-24 (a one-line text question refused at submit when it holds a line break or runs long, refusals name the section, unknown day keys refused); v13 2026-09-24 (the one-line check refuses what Postgres `[[:cntrl:]]` refuses, C1 included; the 4,000-character refusal names its question; an hours key must be an OWN key of the day names); v14 2026-09-24 (byte body ceiling, NUL / lone surrogate refused naming the question, real pins only, hours refusals named); v16 2026-09-25 (GET 302 to `planner.unclogme.app/intake.html#code=`, was 503); v17, v18 2026-09-25 (`load` returns `property.lat/lng` and `maps_key`, the pin maps); v19 2026-09-27 (its own service-role client sending `x-app-source: intake-collector`, rule 17); v20, v21 2026-09-29 (`assignee_name`, `max_photos`, a comment per photo written to `photo_links.caption` at submit, rule 22); v22 2026-09-30 20:33 ET (Supabase `915058d`: an explanation required on every photo of a version 3 form, the `remove` op, rules 16, 17, 22). v22 is the deployed version (measured 2026-10-01) |
 | THE completeness rule | `public.fn_intake_applicable`, `public.fn_intake_missing` | `2026-09-23_1949_intake_applicability_and_token_redaction.sql` |
 | token kept out of audit | `audit.redacted_columns` row `property_intakes.token` | same |
 | forms list (Picture Planner `/forms`) | `client.v_intake_submissions` | `2026-09-23_1855_intake_forms_viewer_read_surface.sql` |
@@ -41,7 +41,7 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | staff photo read | storage policy `intake_photos_staff_read` (a copy of `reason_photos_staff_read`) | same |
 | read-only roles | `grant execute on public.fn_intake_answered to pg_read_all_data` | same |
 | required = shown and not optional | `public.fn_intake_required`; `fn_intake_applicable` reads `>` and empty `=` | `2026-09-24_0233_intake_tree_conditions_and_bounds.sql` |
-| tree conditions + `optional` | `fn_intake_form_current()` (16 conditional questions at 0233, 21 since 0426; `access_entry.obstacles` optional; keys unchanged) | same |
+| tree conditions + `optional` | `fn_intake_form_current()` (16 conditional questions at 0233, 21 from 0426, 24 on version 3; `access_entry.obstacles` optional; keys unchanged) | same |
 | upload ledger | `public.property_intake_uploads`, `public.fn_intake_claim_upload_slot` (60 slots per intake, ever) | same |
 | hidden answers refused | `get_intake_compare` state `not_shown`; `accept_intake_answers` refuses it | same |
 | token hidden from `yannick_readonly` | column-level SELECT on `property_intakes`, every column except `token` | same |
@@ -69,6 +69,12 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | developer approval (rule 18) | `app_config.page_self_approvers`, `public.fn_page_self_approver_ids()`; the CHECK `property_pages_check1` dropped; the own-version rule now lives in `approve_property_page` and the append-only trigger | `2026-09-27_1155_page_developer_approval.sql` (Supabase `740569d`) |
 | page versions for the builder's Activity modal (rule 18) | `client.get_page_versions(bigint)` | `2026-09-28_1122_page_versions_read.sql` (Supabase `cd225d4`) |
 | restore a version (rule 18) | `property_pages.restored_from_version`; `client.submit_property_page(..., p_restored_from_version)`; `get_page_versions` adds `restored_from_version` and `source`; `get_property_activity`'s restore tail; `get_page_builder.referenced` lists every version's photos | `2026-09-29_1411_page_restore.sql` (Supabase `94ae9cd`) |
+| schedule with an assignee; text Gallons (rule 22) | `property_intakes.calendar_task_id` (UNIQUE, FK `ops.calendar_tasks` ON DELETE SET NULL); `fn_intake_whole_gallons`; `get_intake_compare` state `not_savable`; accept md5 `d0c6c6d9...` | `2026-09-29_1713_intake_task_link_text_gallons.sql` |
+| question list version 2 | `fn_intake_form_current()`: alarm photos (`max_photos` 3), the manholes label, Gallons and Measurements as text | `2026-09-29_1731_intake_form_v2.sql` (Supabase `d92009f`) |
+| the collector's photo comment in the builder (rule 18) | `public.fn_page_photo_ids` passes `nullif(btrim(pl.caption), '')` for intake links | `2026-09-29_2126_page_photo_collector_comment.sql` (Supabase `79fb953`) |
+| a far pin is a warning, not a refusal (rule 18) | `blocker=pin_far` removed from `client.submit_property_page` | `2026-09-29_2133_page_pin_far_warning.sql` (Supabase `59984f4`) |
+| Lift station and Water tank page sections (rule 18) | `public.fn_page_content_problem` accepts `lift_station`, `water_tank` (md5 `e1374f5b...`) | `2026-09-30_2027_page_sections_lift_station_water_tank.sql` (Supabase `594a731`) |
+| question list version 3 (rules 16, 17, 22) | `fn_intake_form_current()`: `photo_note_required`, `short`, `info`, section `lift_station_photos`, the water tank capacity photos (39 questions, 7 sections; md5 `08fa7306...`) | `2026-09-30_2234_intake_form_v3.sql` (Supabase `c1b20b2`) |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -302,7 +308,7 @@ questions). The reply keeps
 applies the same rule its uncheck path does (live 2026-09-24, `clients._id-DvCP4-eC.js`, verified by
 executing the live code against property 162).
 **And the converse, since 0348: an optional question is asked together with its ALTERNATIVE** (the
-question whose `show_if` is `<that key>=`, today the measurements for the gallons). Without it a request
+question whose `show_if` is `<that key>=`; on version 1 the measurements for the gallons; versions 2 and 3 have no such question, so nothing is added there). Without it a request
 with the gallons but not the measurements read Complete with no capacity at all. The stored set is
 `public.fn_intake_normalise_requested` (prune, then add), `schedule_property_intake` reports the
 additions as `added`, and the dialog ticks and unticks the pair together.
@@ -335,7 +341,7 @@ stayed `intake-submit?t=`.) Why each piece:
   (0 calls to `/rest/v1` or `/auth/v1`); `scripts/checks/intake-form-host.mjs` asserts exactly two origins in the page,
   the function's and the Maps loader. The intake code never reaches Google (the pin maps bullets below).
 - **Test:** `scripts/intake-collector`'s form is proven by an end-to-end browser run on a `[TEST]` intake of 112-YA
-  (16 checks: bad links, the redirect, follow-ups, photo upload + attach, GPS pin, submit, the partial-submit
+  (17 checks locally, 18 with `--live`: bad links, the redirect, follow-ups, photo upload + attach, GPS pin, submit, the partial-submit
   confirmation, "Already submitted", the DB row). Clean up every `[TEST]` intake afterwards (storage objects through the
   Storage API first). `scripts/checks/intake-form-host.mjs` checks the source rules (`--source`) and then that the live
   file equals the source and the redirect carries `#code=` (it pointed at an abandoned path and `#t=` until 2026-09-25).
@@ -518,7 +524,7 @@ stayed `intake-submit?t=`.) Why each piece:
     approver for that one transaction only. Pages are append-only: fixtures stay; rotate their links if one leaks
     (this does not revoke photo URLs already fetched, see the next bullet).
   - Since the full-flow run of 2026-09-28 (`client-intake-flow.md` 11.7), property 1164 has a live v2 made and developer-approved by Fred from intake 715, and its `properties.site_map` is set (rev 1). Keep intake 715: v2 serves its photos. `scripts/driver-page/tests/driver-live.mjs` reads its expectations from the approved version, so it runs on 162 or 1164.
-  - Since the four-path run of 2026-09-28 (`client-intake-flow.md` 11.8), 1164's live version is v3 (from Incomplete intake 717, two arrows), `properties.site_map` is rev 2, and its driver link was rotated once. Keep intake 717: v3 serves its photo. The approval guard (non-approver refused, a non-developer's own version refused, a second person allowed) was proven by a rolled-back probe through `client.approve_property_page`.
+  - Since the four-path run of 2026-09-28 (`client-intake-flow.md` 11.8), 1164's live version was v3 (from Incomplete intake 717, two arrows; v5 since 2026-09-29 12:30 ET), `properties.site_map` is rev 2, and its driver link was rotated once. Keep intake 717: v3 serves its photo. The approval guard (non-approver refused, a non-developer's own version refused, a second person allowed) was proven by a rolled-back probe through `client.approve_property_page`.
   - **The `driver-page` endpoint** (`supabase/functions/driver-page/index.ts`, `verify_jwt = false`, v2) takes one POST
     with a JSON object `{code, staff}`; the 22-character code is the only credential. A body over 4,096 bytes gets 413;
     a body that is not a JSON object gets 400; a code not matching `^[A-Za-z0-9]{22}$` and every dead state from
@@ -549,7 +555,7 @@ stayed `intake-submit?t=`.) Why each piece:
     `null::text` from 2026-09-25), so `get_page_builder` carries it as `caption` in pool and referenced; `get_page_builder_forms`
     still reads no caption and `fn_driver_page` copies only bucket, path and rotation, so the comment never reaches the Site
     file. The caption is written only by `intake-submit`'s submit (v21, rule 22). The Page Builder shows it on the
-    photo card, read only, in place of the From line (PP rule 13). (`get_page_builder_forms` still carries the comment
+    photo card, read only, under the From line since 2026-09-30 (in place of it from 2026-09-29 until then; PP rule 13). (`get_page_builder_forms` still carries the comment
     "Captions are already NULL here."; it is true of that function, which never reads one, and was left as it is.)
   - 🛑 **THE SITE MAP IS PART OF THE DRAFT SINCE 2026-09-27** (`2026-09-27_0652_page_map_in_draft_and_activity.sql`;
     Fred: pins and lines stay in the draft until the version is approved). This SUPERSEDES the two bullets above that
