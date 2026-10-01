@@ -116,6 +116,24 @@ footer{position:sticky;bottom:0;z-index:5;margin-top:28px;background:#fff;border
 .big .ic{width:64px;height:64px;border-radius:50%;margin:0 auto 16px;display:grid;place-items:center;background:var(--okt);color:var(--ok)}
 .big h2{margin:0 0 8px;font-size:22px}
 .big p{margin:6px 0;color:var(--ink2)}
+/* Question list version 3 (Fred, 2026-09-30): the (i), the required explanation, Remove. */
+.q{position:relative}
+.q.hi>label{padding-right:40px}
+.ib{position:absolute;top:8px;right:8px;width:44px;height:44px;padding:0;border:0;background:none;display:grid;place-items:center}
+.ib span{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line2);background:#fff;color:var(--mut);font:italic 700 13px/1 Georgia,"Times New Roman",serif;display:grid;place-items:center}
+.ib[aria-expanded=true] span{border-color:var(--or2);background:var(--ort);color:var(--or2)}
+.qi{margin:-4px 2px 12px;font-size:14px;color:var(--mut);text-wrap:pretty}
+.pi{position:relative}
+.prm{position:absolute;top:0;right:0;width:44px;height:44px;padding:0;border:0;background:none;display:grid;place-items:center}
+.prm span{width:30px;height:30px;border-radius:50%;background:#fff;color:var(--bad);display:grid;place-items:center;box-shadow:0 1px 4px rgba(24,24,27,.28)}
+.ph .t.rmg{opacity:.45}
+.rmq{background:var(--badt);border:1px solid #fecaca;border-radius:12px;padding:8px 10px;color:var(--bad);font-size:14px;font-weight:600}
+.rmq .row{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.rmq button{min-height:44px;border-radius:10px;font-size:14px;font-weight:700}
+.rmq .no{border:1.5px solid var(--line2);background:#fff;color:var(--ink)}
+.rmq .go{border:0;background:var(--bad);color:#fff}
+.ph textarea.pcm.bad{border-color:var(--bad);background:var(--badt)}
+.ph textarea.pcm.bad:focus{box-shadow:0 0 0 3px rgba(185,28,28,.18)}
 @media (max-width:399px){.hh,.hr{grid-template-columns:minmax(0,1fr) 22px minmax(0,1fr)}.hh span:first-child{display:none}.hr .dn{grid-column:1/-1;margin-top:4px}.hr .rh{grid-column:1/-1}}
 @media (max-width:359px){.days{gap:4px}.day{font-size:13px}}
 @media (min-width:600px){.opts{grid-template-columns:1fr 1fr}.days{gap:8px}.ph{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}}
@@ -186,6 +204,12 @@ footer{padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom))}
 .cf button{flex:none;min-height:34px;padding:0 14px;font-size:14px;font-weight:600}
 .off{font-size:14px;font-weight:400}
 .big h2{font-size:20px;font-weight:600}
+.ib{top:10px;right:10px;width:32px;height:32px}
+.qi{font-size:13px}
+.prm{width:32px;height:32px}
+.prm span{width:26px;height:26px}
+.rmq{font-size:13px}
+.rmq button{min-height:32px;font-size:13px;font-weight:600}
 }}
 </style></head>
 <body>
@@ -208,13 +232,18 @@ footer{padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom))}
 var EP='https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/intake-submit', TOKEN=new URLSearchParams(location.hash.slice(1)).get('code')||'';
 var F=null, A={}, DAYS=['mon','tue','wed','thu','fri','sat','sun'], busy=0, ERR={}, PEND={}, CUT={}, GEO={}, SENDING=false, LEFT=0, DONE=false, CF=null, WAIT=null;
 var DAYN={mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun'};
+// Version 3 state that must survive render(), which rebuilds every card on each answer and each photo landing: INFO (an
+// open (i)), NOTE_BAD (Submit found an unexplained photo: its box stays red), NT (the panel's text), RMQ (a Remove asking
+// Keep / Remove), RMB (a Remove on its way) and RMV (how many are on their way; Submit waits for them).
+var INFO={}, NOTE_BAD=false, NT=null, RMQ={}, RMB={}, RMV=0;
 var KEY='intake-draft-'+TOKEN;
 var IC={
   check:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
   big:'<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
   cam:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   img:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>',
-  pin:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.3-7-11a7 7 0 1 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>'
+  pin:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.3-7-11a7 7 0 1 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  trash:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>'
 };
 function api(b){b.token=TOKEN;return fetch(EP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(r){return r.json().then(function(j){j._s=r.status;return j})})}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -225,8 +254,8 @@ function glide(n){ try{ n.scrollIntoView({behavior:(window.matchMedia&&matchMedi
 function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 // An error stays until the collector dismisses it or fixes the thing it is about; it never fades out.
 function errBox(msg,onClose){var d=el('div','err');d.setAttribute('role','alert');d.appendChild(el('span','',msg));var x=el('button','','OK');x.type='button';x.onclick=onClose||function(){d.remove()};d.appendChild(x);return d}
-function show(m){CF=null;WAIT=null;var box=document.getElementById('fmsg');if(!box||document.getElementById('foot').classList.contains('hide')){var e0=errBox(m);document.getElementById('main').prepend(e0);return e0}box.innerHTML='';var e1=errBox(m,function(){box.innerHTML='';WAIT=null});box.appendChild(e1);return e1}
-function waitText(gb){ return busy>0?(gb?'Wait for the photos and the location to finish, then submit.':'Wait for the photos to finish sending, then submit.'):'Wait for the location to finish, then submit.' }
+function show(m){CF=null;WAIT=null;NT=null;var box=document.getElementById('fmsg');if(!box||document.getElementById('foot').classList.contains('hide')){var e0=errBox(m);document.getElementById('main').prepend(e0);return e0}box.innerHTML='';var e1=errBox(m,function(){box.innerHTML='';WAIT=null});box.appendChild(e1);return e1}
+function waitText(gb){ return (busy>0||RMV>0)?(gb?'Wait for the photos and the location to finish, then submit.':(busy>0?'Wait for the photos to finish sending, then submit.':'Wait for the photo to be removed, then submit.')):'Wait for the location to finish, then submit.' }
 
 // show_if is "<key>=<value>" (the value may be empty: the parent was left blank) or "<key>>N" (the
 // parent is a number above N). The operator is the FIRST "=" or ">", both sides trimmed, and a
@@ -290,17 +319,42 @@ function counts(){
   ((F.form||{}).sections||[]).forEach(function(s){
     var sShown=0, sAns=0;
     (s.questions||[]).forEach(function(q){ if(!req[q.key]||!visible(q)||q.optional) return; shown++; sShown++; if(isAns(q)){ answered++; sAns++ } });
+    // Version 3: a section holding a sent photo with no explanation shows no "Done" (display only: the totals are unchanged).
+    var sBare=noteReq()&&(s.questions||[]).some(function(q){ return req[q.key]&&visible(q)&&bareIn(q)>0 });
     var sc=byAttr('data-sc',String(s.id||s.title));
-    if(sc){ sc.textContent=sShown?(sAns===sShown?'Done':sAns+' of '+sShown):''; sc.className=(sShown&&sAns===sShown)?'done':'' }
+    if(sc){ sc.textContent=sShown?(sAns===sShown?(sBare?'':'Done'):sAns+' of '+sShown):''; sc.className=(sShown&&sAns===sShown&&!sBare)?'done':'' }
   });
   LEFT=shown-answered;
-  document.getElementById('cnt').textContent=answered+' of '+shown+' answered'+(busy?', uploading '+busy+'...':'');
+  document.getElementById('cnt').textContent=answered+' of '+shown+' answered'+(busy?', uploading '+busy+'...':'')+(RMV?', removing '+RMV+'...':'');
   document.getElementById('pfill').style.width=(shown?Math.round(100*answered/shown):0)+'%';
   var sb=document.getElementById('send');
   var gb=geoBusy();
-  if(!SENDING){ sb.disabled=busy>0||gb; sb.textContent=busy?'Sending...':(gb?'Locating...':'Submit') }
-  if(WAIT){ if(busy===0&&!gb){ var fw=document.getElementById('fmsg'); if(fw) fw.innerHTML=''; WAIT=null } else WAIT.textContent=waitText(gb) }
+  if(!SENDING){ sb.disabled=busy>0||RMV>0||gb; sb.textContent=busy?'Sending...':(RMV?'Removing...':(gb?'Locating...':'Submit')) }
+  if(WAIT){ if(busy===0&&RMV===0&&!gb){ var fw=document.getElementById('fmsg'); if(fw) fw.innerHTML=''; WAIT=null } else WAIT.textContent=waitText(gb) }
   if(CF){ if(LEFT>0) CF.textContent=cfText(); else { var fm0=document.getElementById('fmsg'); if(fm0) fm0.innerHTML=''; CF=null } }
+  // Version 3: the explanations panel says again how many are left on every change; at 0 it goes, and the red with it.
+  if(NT){ var ux=unexplained(); if(ux.length) NT.textContent=ntText(ux); else { var fn0=document.getElementById('fmsg'); if(fn0) fn0.innerHTML=''; NT=null; NOTE_BAD=false } }
+}
+// Question list version 3 (Fred, 2026-09-30: "everytime you add a pic you need to put explaination"): the form's snapshot
+// says photo_note_required, so every photo sent needs an explanation. Forms on lists 1 and 2 keep the optional comment.
+function noteReq(){ return !!(F&&F.form&&F.form.photo_note_required===true) }
+// Fred's short word for a card ("Access", "Control panel", "Capacity"); on the card only. Every other reader, the panel
+// below included, shows the label ("Access" alone would read like "Photos of the access point").
+function qname(q){ return (typeof q.short==='string'&&q.short.trim())?q.short.trim():q.label }
+function bareIn(q){ var v=A[q.key]; if(q.type!=='photos'||!Array.isArray(v)) return 0; return v.filter(function(p){ return p&&typeof p==='object'&&p.path&&!(typeof p.note==='string'&&p.note.trim()) }).length }
+// The photos Submit sends (requested, visible, photos) that have no explanation, per question, in form order.
+function unexplained(){ var req={}, out=[]; (F.requested||[]).forEach(function(k){req[k]=1});
+  ((F.form||{}).sections||[]).forEach(function(s){ (s.questions||[]).forEach(function(q){ if(q&&typeof q==='object'&&req[q.key]&&visible(q)){ var n=bareIn(q); if(n) out.push({q:q,n:n}) } }) });
+  return out }
+function ntText(ux){ var t=0; ux.forEach(function(x){t+=x.n}); return t+(t===1?' photo needs':' photos need')+' an explanation: '+ux.map(function(x){ return x.q.label+' ('+x.n+')' }).join(', ')+'. Write what each photo shows in the box under it.' }
+// The panel above Submit (the confirm panel's look), with ONE button. "Show me" finds the first empty box at the moment of
+// the tap (the one found at Submit may have been rebuilt since) and focuses it inside the tap, so a phone opens its keyboard.
+function showNotes(ux){ var fm=document.getElementById('fmsg'); fm.innerHTML=''; CF=null; WAIT=null;
+  var box=el('div','cf nt'); box.setAttribute('role','alert'); NT=el('div','',ntText(ux)); box.appendChild(NT);
+  var row=el('div','row'), go=el('button','go','Show me'); go.type='button';
+  go.onclick=function(){ var bs=document.querySelectorAll('textarea.pcm[aria-required="true"]'), b=null; for(var i=0;i<bs.length;i++){ if(!bs[i].value.trim()){ b=bs[i]; break } } if(b){ glide(b); try{ b.focus({preventScroll:true}) }catch(e){} } };
+  row.appendChild(go); box.appendChild(row); fm.appendChild(box);
+  try{ box.scrollIntoView({block:'nearest'}) }catch(e){}
 }
 function geoBusy(){ for(var k in GEO){ if(GEO[k]&&GEO[k].busy){ var gq=findQ(k); if(gq&&visible(gq)) return true } }
   for(var mk in MAPS){ if(MAPS[mk]&&MAPS[mk].picking){ var mq=findQ(mk); if(mq&&visible(mq)) return true } }   // an address lookup still running
@@ -503,9 +557,19 @@ function hrs12(t){var h=Number(t.slice(0,2)),mi=t.slice(3);return (h%12||12)+':'
 
 function field(q){
   var d=el('div','q'), id='f'+(++NID); d.setAttribute('data-q',q.key);
-  var lab=el('label'); lab.id=id+'l'; lab.textContent=q.label;
+  var lab=el('label'); lab.id=id+'l'; lab.textContent=qname(q);
   if(q.optional){ lab.appendChild(document.createTextNode(' ')); lab.appendChild(el('span','tag','(optional)')) }
   d.appendChild(lab);
+  // Version 3: an (i) beside the label opens a short hint under it (the question's "info"). The open state lives in INFO, so
+  // a redraw (a photo landing, another answer) never closes it. Beside the label, never inside it (a label holds one control).
+  if(typeof q.info==='string'&&q.info.trim()){
+    d.classList.add('hi');
+    var hn=el('div','qi',q.info.trim()); hn.id=id+'i'; hn.hidden=!INFO[q.key];
+    var ib=el('button','ib'); ib.type='button'; ib.setAttribute('aria-label','More about this question'); ib.setAttribute('aria-controls',hn.id);
+    ib.setAttribute('aria-expanded',INFO[q.key]?'true':'false'); ib.setAttribute('data-f',q.key+':info'); ib.appendChild(el('span','','i'));
+    ib.onclick=function(){ INFO[q.key]=!INFO[q.key]; hn.hidden=!INFO[q.key]; ib.setAttribute('aria-expanded',INFO[q.key]?'true':'false') };
+    d.appendChild(ib); d.appendChild(hn);
+  }
   var t=q.type, v=A[q.key];
   if(ERR[q.key]) d.appendChild(errBox(ERR[q.key],function(){delete ERR[q.key];render()}));
   if(CUT[q.key]) d.appendChild(errBox(CUT[q.key],function(){delete CUT[q.key];render()}));
@@ -651,10 +715,29 @@ function field(q){
         var gone=function(){ tl.innerHTML=''; tl.textContent='Photo '+(i+1)+' saved'; if(p&&p.preview){ delete p.preview; save() } };
         if(p&&p.preview){ var im=el('img'); im.alt='Photo '+(i+1); im.onerror=gone; im.src=p.preview; tl.appendChild(im) } else gone();
         var it=el('div','pi'); it.appendChild(tl);
-        // The collector's comment on this photo (Fred, 2026-09-29: "When uploading a photo we need to also have a comment
-        // for the photo"). One line: Enter is blocked; a pasted line break, tab or other control character becomes a space. Kept in the draft on the
-        // photo; sent at Submit as notes; intake-submit stores it in photo_links.caption.
-        if(p&&typeof p==='object'){ var cm=el('textarea','pcm'); cm.rows=2; cm.maxLength=300; cm.placeholder='Comment (optional)'; cm.setAttribute('aria-label','Comment for photo '+(i+1)); cm.setAttribute('data-f',q.key+':note:'+i); cm.value=typeof p.note==='string'?p.note:''; cm.onkeydown=function(e){ if(e.key==='Enter') e.preventDefault() }; cm.oninput=function(){ var t=cm.value; if(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t)){ t=t.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' '); cm.value=t } p.note=t; save() }; it.appendChild(cm) }
+        if(p&&typeof p==='object'&&p.path&&RMB[p.path]){ tl.classList.add('rmg'); it.appendChild(el('div','note','Removing...')) }
+        else if(p&&typeof p==='object'&&p.path&&RMQ[p.path]){
+          // Remove asks first, inside the card (never a browser dialog): Keep, or Remove.
+          var cq=el('div','rmq'); cq.setAttribute('role','group'); cq.setAttribute('aria-label','Remove photo '+(i+1)+'?');
+          cq.appendChild(el('div','','Remove this photo?'));
+          var crow=el('div','row'), keep=el('button','no','Keep'), yes=el('button','go','Remove');
+          keep.type='button'; yes.type='button'; keep.setAttribute('data-f',q.key+':rmno:'+i); yes.setAttribute('data-f',q.key+':rmyes:'+i);
+          keep.onclick=function(){ delete RMQ[p.path]; render(); var b0=byAttr('data-f',q.key+':rm:'+i); if(b0) try{ b0.focus({preventScroll:true}) }catch(e){} };
+          yes.onclick=function(){ removePhoto(q.key,p) };
+          crow.appendChild(keep); crow.appendChild(yes); cq.appendChild(crow); it.appendChild(cq);
+        } else {
+          // Remove (Fred, 2026-09-30): a photo attached before submit can be taken off the form; its place is freed.
+          if(p&&typeof p==='object'&&p.path&&!SENDING){ var rb=el('button','prm'); rb.type='button'; rb.setAttribute('aria-label','Remove photo '+(i+1)); rb.setAttribute('data-f',q.key+':rm:'+i); rb.innerHTML='<span>'+IC.trash+'</span>';
+            rb.onclick=function(){ RMQ[p.path]=1; render(); var k0=byAttr('data-f',q.key+':rmno:'+i); if(k0) try{ k0.focus({preventScroll:true}) }catch(e){} }; it.appendChild(rb) }
+          // The collector's comment on this photo (Fred, 2026-09-29: "When uploading a photo we need to also have a comment
+          // for the photo"). One line: Enter is blocked; a pasted line break, tab or other control character becomes a space. Kept in the draft on the
+          // photo; sent at Submit as notes; intake-submit stores it in photo_links.caption.
+          // On a version 3 form the box is the explanation, required ("What does this photo show?"): red after a Submit that
+          // found it empty, until it has text.
+          if(p&&typeof p==='object'){ var nr=noteReq(), cm=el('textarea','pcm'); cm.rows=2; cm.maxLength=300; cm.placeholder=nr?'What does this photo show?':'Comment (optional)'; cm.setAttribute('aria-label',(nr?'Explanation for photo ':'Comment for photo ')+(i+1)); cm.setAttribute('data-f',q.key+':note:'+i); cm.value=typeof p.note==='string'?p.note:'';
+            if(nr){ cm.setAttribute('aria-required','true'); if(NOTE_BAD&&!cm.value.trim()){ cm.classList.add('bad'); cm.setAttribute('aria-invalid','true') } }
+            cm.onkeydown=function(e){ if(e.key==='Enter') e.preventDefault() }; cm.oninput=function(){ var t=cm.value; if(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t)){ t=t.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' '); cm.value=t } p.note=t; save(); if(nr){ if(t.trim()){ cm.classList.remove('bad'); cm.removeAttribute('aria-invalid') } counts() } }; it.appendChild(cm) }
+        }
         g.appendChild(it);
       });
       d.appendChild(g);
@@ -685,6 +768,21 @@ function up(key,file){
   }).catch(function(e){ ERR[key]=(e&&e.plain&&e.message)?e.message:'The photo did not upload. Check your signal and try again.' })
     .then(function(){ busy--; PEND[key]=Math.max(0,(PEND[key]||0)-1); afterPress(render) });
 }
+// Remove: intake-submit takes the photo off the form before submit (its link soft-deleted; the file is kept). The photo leaves the answer and
+// the draft only once the server says so ("removed", or "already gone"), so a dropped connection never loses a photo that is
+// still on the form. Submit waits while a Remove is on its way.
+function removePhoto(key,p){
+  if(SENDING||DONE||!p||!p.path) return;
+  delete RMQ[p.path]; RMB[p.path]=1; RMV++; delete ERR[key]; render();
+  api({op:'remove',path:p.path}).then(function(r){
+    if(!r.ok) throw plain(r.message||'Could not remove the photo. Try again.');
+    var cur=(Array.isArray(A[key])?A[key]:[]).filter(function(x){ return !(x&&typeof x==='object'&&x.path===p.path) });
+    if(cur.length) A[key]=cur; else delete A[key];
+    try{ if(p.preview) URL.revokeObjectURL(p.preview) }catch(e){}
+    save();
+  }).catch(function(e){ ERR[key]=(e&&e.plain&&e.message)?e.message:'Could not remove the photo. Check your signal and try again.' })
+    .then(function(){ delete RMB[p.path]; RMV=Math.max(0,RMV-1); afterPress(render) });
+}
 
 function submit(sure){
   var wEl=document.getElementById('who'), who=(wEl.value||'').trim(), we=document.getElementById('whoerr');
@@ -693,8 +791,11 @@ function submit(sure){
     glide(wEl); wEl.setAttribute('aria-invalid','true'); wEl.focus({preventScroll:true}); return
   }
   we.innerHTML='';
-  var fm=document.getElementById('fmsg'); fm.innerHTML=''; CF=null;
-  if(busy>0||geoBusy()){ var wb=show(waitText(geoBusy())); WAIT=wb&&wb.querySelector('span'); return }
+  var fm=document.getElementById('fmsg'); fm.innerHTML=''; CF=null; NT=null;
+  if(busy>0||RMV>0||geoBusy()){ var wb=show(waitText(geoBusy())); WAIT=wb&&wb.querySelector('span'); return }
+  // Version 3: every photo sent needs its explanation (intake-submit v22 refuses the same). NOTE_BAD keeps the boxes red
+  // through every redraw; counts() keeps the panel's number right and clears both at 0.
+  if(noteReq()){ var ux=unexplained(); if(ux.length){ NOTE_BAD=true; render(); showNotes(ux); return } }
   if(LEFT>0&&!sure){
     var box=el('div','cf'); box.setAttribute('role','alert');
     CF=el('div','',cfText()); box.appendChild(CF);
