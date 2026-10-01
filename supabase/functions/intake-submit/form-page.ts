@@ -347,6 +347,10 @@ document.addEventListener('pointerdown',function(e){ if(e.button>0) return; PRES
 document.addEventListener('pointerup',function(){ if(PRESS){ PRESS=2; clearTimeout(FT); FT=setTimeout(flush,450) } },true);
 document.addEventListener('pointercancel',flush,true);
 document.addEventListener('click',function(){ if(PRESS===2) flush() });
+// Safari (every iPhone) never focuses a tapped button, so the last text box keeps the focus, render() gives it back after the
+// rebuild and Safari scrolls the page to that box (Fred, 2026-10-01: a tap on an answer jumped the page up). Focus the tapped
+// button first, as Chrome does, so render() gives the focus back to the button the collector is looking at.
+document.addEventListener('click',function(e){ var b=e.target&&e.target.closest&&e.target.closest('#qs button[data-f]'); if(b&&document.activeElement!==b) try{ b.focus({preventScroll:true}) }catch(x){} },true);
 // Keys some other question's show_if reads. Only an answer to one of these can show or hide a question.
 function isParent(k){
   var sec=(F&&F.form&&F.form.sections)||[];
@@ -430,6 +434,7 @@ function render(){
   if(!F||DONE) return;
   var ae=document.activeElement, fk=(ae&&ae.getAttribute)?ae.getAttribute('data-f'):null, s0=null, s1=null;
   if(fk){ try{ s0=ae.selectionStart; s1=ae.selectionEnd }catch(e){} }
+  var sx=window.scrollX, sy=window.scrollY;   // a rebuild never moves the page; checked again after the focus is given back
   var m=document.getElementById('qs'); m.innerHTML='';
   var req={}; (F.requested||[]).forEach(function(k){req[k]=1});
   var rendered=0;
@@ -453,6 +458,7 @@ function render(){
       if(card){ var cs=card.querySelectorAll('[data-f]'); for(var pass=0;pass<2&&!n;pass++){ for(var ci=0;ci<cs.length;ci++){ if(!cs[ci].disabled&&(pass||cs[ci].tagName==='BUTTON')){ n=cs[ci]; break } } } } }
     if(n){ try{ n.focus({preventScroll:true}); if(s0!=null&&n.setSelectionRange&&n.getAttribute('data-f')===fk) n.setSelectionRange(s0,s1) }catch(e){} }
   }
+  if(window.scrollY!==sy||window.scrollX!==sx) window.scrollTo(sx,sy);
 }
 function isAns(q){var v=A[q.key];if(v==null)return false;if(q.type==='weekly_hours'){if(typeof v!=='object'||Array.isArray(v))return false;var ks=Object.keys(v);return ks.length>0&&ks.every(function(d){var w=v[d]||{};return HHMM.test(w.open||'')&&HHMM.test(w.close||'')})}if(typeof v==='string')return v.trim()!=='';if(Array.isArray(v))return v.length>0;if(typeof v==='object')return Object.keys(v).length>0;return true}
 
