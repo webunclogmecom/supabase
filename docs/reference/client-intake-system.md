@@ -307,6 +307,10 @@ with the gallons but not the measurements read Complete with no capacity at all.
 `public.fn_intake_normalise_requested` (prune, then add), `schedule_property_intake` reports the
 additions as `added`, and the dialog ticks and unticks the pair together.
 
+**Version 3 (2026-09-30) adds follow-ups in a section of their own**: the three lift station photo questions sit in
+`lift_station_photos`, their parent `lift_station.count` in `lift_station`. The rules read the parent by key, not by
+section, so normalise, prune and `fn_intake_parent_key` treat them like any follow-up (the `2026-09-30_2234_intake_form_v3` VERIFY 3).
+
 **17. 🛑 THE COLLECTOR FORM IS ONE STATIC FILE, AND ITS TOKEN RIDES IN THE FRAGMENT AS `code` (2026-09-25).**
 The office link is `https://planner.unclogme.app/intake#code=<token>`: `client.schedule_property_intake` returns it as
 `url`, built by `public.fn_intake_link_url`, and since CA1 (2026-09-25, about 18:51 ET) the Client App opens or shows
@@ -450,6 +454,12 @@ stayed `intake-submit?t=`.) Why each piece:
   - Test: `scripts/intake-collector/tests/form-map.mjs <[TEST] intake id> <outdir>` serves the local build on the real host and
     injects the key into the load reply, so it runs before a deploy and before the secret exists. 4 widths; tap, GPS, the
     same map node after another answer, no code in any Google request; `none`/`bad` as a 4th argument test the fallbacks.
+- **Question list version 3 on the page (2026-09-30, `6b4d511`, `2026-09-30_2234_intake_form_v3`).** The page reads
+  `q.short || q.label` for a card, an `info` (i), and, when the snapshot says `photo_note_required`, requires an
+  explanation on every photo it sends (Picture Planner rule 6); `intake-submit` v22 refuses the same (rule 22). Remove,
+  on every form, calls the `remove` op. `get_intake` and `client.v_intake_questions` whitelist their fields, so `short`,
+  `info` and the flag reach only the page and `intake-submit`.
+
 - **18. DRIVER PAGES (2026-09-25, `2026-09-25_1330_property_pages.sql`).** Plan:
   `Building Apps/docs/2026-09-25_page-builder-and-driver-page-plan.md`. The rules that must not regress:
   - 🛑 **Drivers see only an APPROVED version**, and nobody approves their own, with ONE exception: the approver list is
@@ -627,6 +637,10 @@ stayed `intake-submit?t=`.) Why each piece:
     the /forms fixes). Both run on the LIVE Planner with real data read as Fred's claims, the sign-in faked and every RPC
     stubbed, so they write nothing; both exit 1 on a failure. `scripts/driver-page/tests/driver-live.mjs` now exits 1 too.
 
+- **Two more page photo sections (2026-09-30, `2026-09-30_2027_page_sections_lift_station_water_tank`).** `public.fn_page_content_problem` accepts the
+  section values `lift_station` and `water_tank` (md5 `e1374f5bf701ca3b99fabda62cdaea2c`). 🛑 The Site file keeps only the sections
+  it knows, so once a page holds such a photo the Picture Planner must never be rolled back past the B2 publish.
+
 **19. SHARE FORM: staff can see an AWAITING intake's link again (2026-09-25, `2026-09-25_1600_intake_link_share.sql`).**
 Fred: a "Share form" item on each `/forms` card, *"so the collector or any other person can open the form to fill in
 case they need it again"*. Until then the token was shown once, by `schedule_property_intake`, and never again.
@@ -736,6 +750,16 @@ too, and we can take even advantage of that to prefill the name field"*; alarm p
   the form, and writes every live link's `caption` (the comment, else null) BEFORE the compare-and-set that locks the form;
   a failed write answers 500 with nothing submitted. Test `scripts/probes/intake_submit_notes_stub.mjs` (18 of 18;
   T1's v20 file is its control).
+- **v22 (2026-09-30, `915058d`): the explanation and Remove.** On a snapshot with `photo_note_required: true`,
+  submit refuses a CLAIMED photo with no trimmed note (400, "N photos have no explanation: "Section: Label" (k), ...
+  Write what each photo shows in the box under it.", before `fn_intake_missing`, the caption writes and the lock); an
+  attached but unclaimed photo is exempt. `remove {token, path}` (before submit only): the live link on this form
+  soft-deleted with the reason "Removed on the site survey form by the collector, before submit"; the file and the
+  `photos` row stay (soft delete only: nothing shows a file without a live link); no live link answers `removed: false`.
+  🛑 A remove gives back no upload: the ledger allows 60 per form, ever; the 61st answers 429, and the remedy is Cancel
+  form and a new link. ponytail: a remove and a submit from two phones at the same moment are not atomic. Tests
+  `scripts/probes/intake_submit_v22_stub.mjs` (19 of 19; v21 fails its 11 new checks) and
+  `scripts/intake-collector/tests/v3-live.mjs`.
 - 🛑 **The link sits in the task's notes** (Jobber and `ops.calendar_tasks.instructions`, so also `audit.logs`): anyone
   who sees the task can open the form, and that copy is outside `property_intake_link_reveals`. Fred accepted it. The
   notes open with a fixed 55-character sentence so the function's 40-character mismatch echo never holds the code.
