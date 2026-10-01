@@ -41,7 +41,8 @@ const card = async (key) => {
 const click = async (k, t) => { await (await card(k)).getByRole('button', { name: t, exact: true }).click(); await settle() }
 const text = async (k, v) => { const l = (await card(k)).locator('textarea, input[type=text]').first(); await l.fill(v); await l.press('Tab'); await settle() }
 const num = async (k, v) => { const l = (await card(k)).locator('input[type=number]'); await l.fill(String(v)); await l.press('Tab'); await settle() }
-const photo = async (k, f) => { const before = await page.evaluate((k) => (Array.isArray(A[k]) ? A[k].length : 0), k); await (await card(k)).locator('input[type=file]:not([capture])').setInputFiles(f); await page.waitForFunction(([k, n]) => busy === 0 && Array.isArray(A[k]) && A[k].length === n + 1, [k, before], { timeout: 60000 }); say('photo attached to ' + k) }
+// question list version 3 (2026-09-30): every photo needs its explanation, typed in the box drawn under it
+const photo = async (k, f) => { const before = await page.evaluate((k) => (Array.isArray(A[k]) ? A[k].length : 0), k); await (await card(k)).locator('input[type=file]:not([capture])').setInputFiles(f); await page.waitForFunction(([k, n]) => busy === 0 && Array.isArray(A[k]) && A[k].length === n + 1, [k, before], { timeout: 60000 }); await (await card(k)).locator('textarea.pcm').nth(before).fill('[TEST] ' + k.split('.').pop() + ', photo ' + (before + 1)); say('photo attached and explained on ' + k) }
 const tapMap = async (k, fx, fy) => { const c = await card(k); await c.locator('.map').scrollIntoViewIfNeeded(); await page.waitForTimeout(800); const m = await c.locator('.map').boundingBox(); await page.touchscreen.tap(m.x + m.width * fx, m.y + m.height * fy); await settle(1200) }
 const pin = (k) => page.evaluate((k) => A[k] || null, k)
 

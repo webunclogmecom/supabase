@@ -13,7 +13,8 @@ const FILE = pathToFileURL(process.env.INTAKE_HTML || new URL('../intake.html', 
 const clone = (x) => JSON.parse(JSON.stringify(x))
 // the version 2 question (tree_new.json), added to the recorded load reply when it is not there yet
 const ALARM_PHOTOS = { key: 'access_entry.alarm_photos', label: 'Photos of the alarm', type: 'photos', show_if: 'access_entry.alarm=yes', optional: true, max_photos: 3 }
-const withTree = (extra = {}) => { const l = { ...clone(LOAD), ...extra }; const s = l.form.sections.find((x) => x.id === 'access_entry'); if (!s.questions.some((q) => q.key === ALARM_PHOTOS.key)) s.questions.splice(s.questions.findIndex((q) => q.key === 'access_entry.alarm_instruction') + 1, 0, clone(ALARM_PHOTOS)); if (Array.isArray(l.requested) && !l.requested.includes(ALARM_PHOTOS.key)) l.requested.splice(l.requested.indexOf('access_entry.alarm_instruction') + 1, 0, ALARM_PHOTOS.key); return l }
+// the version 2 behaviour is what this file tests: drop version 3's flag if load.json carries it
+const withTree = (extra = {}) => { const l = { ...clone(LOAD), ...extra }; delete l.form.photo_note_required; const s = l.form.sections.find((x) => x.id === 'access_entry'); if (!s.questions.some((q) => q.key === ALARM_PHOTOS.key)) s.questions.splice(s.questions.findIndex((q) => q.key === 'access_entry.alarm_instruction') + 1, 0, clone(ALARM_PHOTOS)); if (Array.isArray(l.requested) && !l.requested.includes(ALARM_PHOTOS.key)) l.requested.splice(l.requested.indexOf('access_entry.alarm_instruction') + 1, 0, ALARM_PHOTOS.key); return l }
 const WHO = 'intake-draft-TESTTOKEN123-who'
 const CAP_MSG = 'This question takes at most 3 photos.'
 let pass = 0, fail = 0

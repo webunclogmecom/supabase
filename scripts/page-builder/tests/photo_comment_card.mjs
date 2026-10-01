@@ -8,6 +8,10 @@
 // photos of the live version (never in Prod). Sign-in faked, every call stubbed, every photo signed to a 1x1 fixture image
 // (so the preview and the review draw the photos and their notes), Maps aborted, nothing written.
 // Spec: Building Apps/Picture Planner/docs/specs/2026-09-29-pin-warning-map-fit-design.md, part C
+// CHANGED 2026-09-30 (form v3, Fred: "Show both lines, on the top is the slot name and in below it show the collector
+// explanation."): a commented form photo keeps its From line, FIRST, and the collector's comment line comes right under
+// it; that From line wraps (never cut), so the slot name shows on a phone. F1, F3 and F3b check that; the "in place of
+// the From line" above is superseded. Spec: 2026-09-30-form-v3-photo-slots-design.md.
 //   node scripts/page-builder/tests/photo_comment_card.mjs <outdir>
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 //   LEAK=1  the control of F8, F9 and F10: the short fixture comment is ALSO written into that photo's STAFF note in the
@@ -98,7 +102,10 @@ const cards = (p) => p.evaluate(() => [...document.querySelectorAll('[title="Dra
   // a From line: an element whose tooltip starts "From: " and equals its own text (the comment line's tooltip starts "From: " too, its text does not)
   const froms = [...card.querySelectorAll('[title^="From: "]')].filter((e) => t(e) === e.getAttribute('title')).length
   const ta = info && info.querySelector('textarea')
-  return { firstIsLock: !!lock && first === lock, firstText: t(first), firstTitle: first && first.getAttribute('title'), firstCls: first && first.className,
+  const firstIsFrom = !!first && (first.getAttribute('title') || '').startsWith('From: ') && t(first) === first.getAttribute('title')
+  const fsp = firstIsFrom ? first.querySelector('span') : null, fcs = fsp && getComputedStyle(fsp)
+  const fromCut = !fsp || fsp.scrollWidth > fsp.clientWidth + 1 || fcs.textOverflow === 'ellipsis' || fcs.whiteSpace === 'nowrap'
+  return { firstIsLock: !!lock && first === lock, firstIsFrom, fromCut, secondIsLock: !!lock && !!info && info.children[1] === lock, firstText: t(first), firstTitle: first && first.getAttribute('title'), firstCls: first && first.className,
     lock: lock ? { text: t(lock), shown: t(txt), title: lock.getAttribute('title'), cls: lock.className, sr: t(sr), hiddenIcon: !!lock.querySelector('[aria-hidden="true"]') && lock.querySelector('[aria-hidden="true"]').textContent.includes('\u{1F512}'),
       h: Math.round(lock.getBoundingClientRect().height), fs: getComputedStyle(lock).fontSize, ws: cs && cs.whiteSpace, clip: !!txt && (txt.scrollWidth > txt.clientWidth + 1 || (cs && cs.textOverflow === 'ellipsis')) } : null,
     froms, note: ta ? ta.placeholder : null, remove: !!info && [...info.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Remove' && b.getClientRects().length > 0) }
@@ -110,14 +117,15 @@ for (const w of [390, 1440]) {
   const C = await cards(p)
   const L = C.filter((c) => c.lock)
   ok(C.length === N_CARDS && L.length === 2, `${w}: F1, exactly the two commented form photos carry the collector's comment line (one card per photo, ${N_CARDS})`, { cards: C.length, locks: L.length })
-  ok(L.length === 2 && L.every((c) => c.firstIsLock), `${w}: F1, the comment line is the FIRST line of its card (in place of the From line)`, L.map((c) => c.firstText && c.firstText.slice(0, 30)))
+  ok(L.length === 2 && L.every((c) => c.firstIsFrom && c.secondIsLock), `${w}: F1, the From line is FIRST and the collector's comment line right under it (Fred, 2026-09-30: "on the top is the slot name")`, L.map((c) => ({ first: c.firstText && c.firstText.slice(0, 40), lockSecond: c.secondIsLock })))
   const got = new Map(L.map((c) => [c.lock.title, c]))
   // F2b and F4 find a card by its source (the tooltip's first sentence), never by the whole tooltip, so a wrong tooltip
   // fails F2 alone (control c12 used to fail F2b and F4 as well, because they could no longer find the card)
   const bySrc = (s) => L.find((c) => (c.lock.title || '').startsWith(`From: ${s}.`))
   ok(L.length === 2 && [...WANT.keys()].every((s) => got.has(TIP(s))), `${w}: F2, its tooltip is "From: <source>. Written by the collector on the form. Read only."`, L.map((c) => c.lock.title))
   ok(L.length === 2 && [...WANT].every(([s, want]) => { const c = bySrc(s); return c &&c.lock.hiddenIcon && c.lock.sr === "Collector's comment, read only:" && c.lock.shown === `Collector's comment, read only: ${want}` }), `${w}: F2, a lock (aria-hidden), the screen reader words "Collector's comment, read only:" and the whole comment`, L.map((c) => ({ text: c.lock.text.slice(0, 60), sr: c.lock.sr, icon: c.lock.hiddenIcon })))
-  ok(L.length === 2 && L.every((c) => c.froms === 0), `${w}: F3, a commented card has NO "From:" line`, L.map((c) => c.froms))
+  ok(L.length === 2 && L.every((c) => c.froms === 1 && sameCls(c.firstCls, LABEL_BOX) && WANT.has((c.firstText || '').replace(/^From: /, ''))), `${w}: F3, a commented card has exactly ONE "From:" line, today's box, naming the photo's slot`, L.map((c) => ({ froms: c.froms, text: c.firstText, cls: c.firstCls })))
+  ok(L.length === 2 && L.every((c) => c.firstIsFrom && !c.fromCut), `${w}: F3b, that From line WRAPS, never cut: the whole slot name shows, on a phone too (review 2026-09-30)`, L.map((c) => ({ text: c.firstText, cut: c.fromCut })))
   const long = bySrc(src(C2))
   ok(!!long && !long.lock.clip && /pre-wrap|normal|pre-line|break-spaces/.test(long.lock.ws || '') && long.lock.h > 40, `${w}: F4, the long comment wraps in full (never cut, never "...")`, long && { h: long.lock.h, ws: long.lock.ws, clip: long.lock.clip })
   ok(L.length === 2 && L.every((c) => sameCls(c.lock.cls, LOCK_BOX) && c.lock.fs === (w < 768 ? '14px' : '11px')), `${w}: F7, the line as drawn: the From box's colours, 14px on a phone and 11px from 768px`, L.map((c) => ({ cls: c.lock.cls, fs: c.lock.fs })))

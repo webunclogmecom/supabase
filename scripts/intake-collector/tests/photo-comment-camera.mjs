@@ -15,7 +15,8 @@ const FILE = pathToFileURL(process.env.INTAKE_HTML || new URL('../intake.html', 
 const clone = (x) => JSON.parse(JSON.stringify(x))
 // the version 2 question, added to the recorded load reply when it is not there yet
 const ALARM = { key: 'access_entry.alarm_photos', label: 'Photos of the alarm', type: 'photos', show_if: 'access_entry.alarm=yes', optional: true, max_photos: 3 }
-const load = () => { const l = clone(LOAD); const s = l.form.sections.find((x) => x.id === 'access_entry'); if (!s.questions.some((q) => q.key === ALARM.key)) s.questions.splice(s.questions.findIndex((q) => q.key === 'access_entry.alarm_instruction') + 1, 0, clone(ALARM)); if (Array.isArray(l.requested) && !l.requested.includes(ALARM.key)) l.requested.splice(l.requested.indexOf('access_entry.alarm_instruction') + 1, 0, ALARM.key); return l }
+// the version 2 behaviour (optional comment) is what this file tests: drop version 3's flag if load.json carries it
+const load = () => { const l = clone(LOAD); delete l.form.photo_note_required; const s = l.form.sections.find((x) => x.id === 'access_entry'); if (!s.questions.some((q) => q.key === ALARM.key)) s.questions.splice(s.questions.findIndex((q) => q.key === 'access_entry.alarm_instruction') + 1, 0, clone(ALARM)); if (Array.isArray(l.requested) && !l.requested.includes(ALARM.key)) l.requested.splice(l.requested.indexOf('access_entry.alarm_instruction') + 1, 0, ALARM.key); return l }
 const img = (n) => ({ name: n + '.png', mimeType: 'image/png', buffer: PNG })
 let pass = 0, fail = 0
 const ok = (c, name, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}${v === undefined ? '' : ' :: ' + JSON.stringify(v).slice(0, 360)}`) }
