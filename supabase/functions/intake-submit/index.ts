@@ -11,6 +11,7 @@
 //   load    { token }                                  -> the questions to show
 //   upload  { token, content_type }                    -> a short-lived signed upload URL
 //   attach  { token, path, role }                      -> links an uploaded photo to the intake
+//   remove  { token, path }                            -> takes an attached photo off the form (before submit)
 //   submit  { token, collector, answers, notes? }      -> writes the immutable submission
 //
 // WHY NO LOGIN. Fred's decision 6, 2026-09-22: "No need to log in, but bear in mind
@@ -87,6 +88,15 @@
 // the form, writes each live photo link's caption: its comment, else null. A page from before v21 sends no notes and
 // submits as before, writing no caption. The Page Builder shows the comment on the photo card, read only; the Site
 // file never shows it.
+// v22 (2026-09-30, Fred: "everytime you add a pic you need to put explaination", and a Remove on the form): on a form
+// whose snapshot says photo_note_required (question list version 3), submit refuses a photo the page CLAIMED in an
+// answer that has no explanation in notes, naming each question and how many (before fn_intake_missing, the caption
+// writes and the lock, so a refusal writes nothing). A photo attached but not claimed (a lost attach reply) is exempt:
+// the collector never had a box to write in. A form from version 1 or 2 submits exactly as v21. New op remove {path}:
+// before submit only, it soft-deletes the photo's live link on THIS form (deleted_at, deleted_reason; audited as
+// intake-collector), so it stops counting under max_photos and PHOTO_CAP and submit never sees it. Nothing is
+// hard-deleted (the workspace rule): the file stays in the private bucket and the photos row stays; nothing shows a file
+// without a live link. The upload ledger keeps its slot (60 uploads per form, ever: a remove gives none back).
 //
 // CORS IS `*` ON PURPOSE, and that is not laziness. The authorisation here is the
 // bearer token in the body; there is no cookie and no ambient credential, so an
@@ -437,6 +447,27 @@ Deno.serve(async (req) => {
     return json(200, { ok: true, photo_id: photoId })
   }
 
+  // -------------------------------------------------------------- remove
+  // v22: a photo attached before submit is taken off the form: its link is soft-deleted (the record, with its reason). The
+  // file and the photos row stay (soft delete only): fn_page_photo_ids, get_intake and submit read live links only, so
+  // nothing shows it. A retry after a lost reply finds no live link and answers removed: false, which the page treats as done.
+  // ponytail: a remove and a submit sent from two phones at the same moment are not atomic (the ceiling of the captions below).
+  if (op === 'remove') {
+    const path = String(body.path ?? '')
+    const PATH_RE = new RegExp(`^${i.id}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|webp|heic)$`)
+    if (!PATH_RE.test(path)) return fail(400, 'That photo does not belong to this form.')
+    const { data: phs, error: pErr } = await supabase.from('photos').select('id').eq('storage_path', `${BUCKET}/${path}`).limit(1)
+    if (pErr || !Array.isArray(phs)) return fail(500, 'Could not remove the photo, please try again.')
+    if (!phs.length) return json(200, { ok: true, removed: false })
+    const { data: gone, error: dErr } = await supabase.from('photo_links')
+      .update({ deleted_at: new Date().toISOString(), deleted_reason: 'Removed on the site survey form by the collector, before submit' })
+      .eq('photo_id', phs[0].id).eq('entity_type', 'property_intake').eq('entity_id', i.id).is('deleted_at', null)
+      .select('id')
+    if (dErr || !Array.isArray(gone)) return fail(500, 'Could not remove the photo, please try again.')
+    if (!gone.length) return json(200, { ok: true, removed: false })
+    return json(200, { ok: true, removed: true })
+  }
+
   // -------------------------------------------------------------- submit
   if (op === 'submit') {
     const collector = String(body.collector ?? '').trim().slice(0, MAX_COLLECTOR)
@@ -456,6 +487,8 @@ Deno.serve(async (req) => {
     }
     const notes = rawNotes as Record<string, string>
     const captionWrites: { id: number; caption: string | null }[] = []
+    // v22: question list version 3 (fn_intake_form_current) carries photo_note_required; versions 1 and 2 do not.
+    const noteRequired = (i.form_snapshot as { photo_note_required?: unknown }).photo_note_required === true
 
     const rawAnswers = body.answers
     if (rawAnswers === null || typeof rawAnswers !== 'object' || Array.isArray(rawAnswers)) {
@@ -590,9 +623,12 @@ Deno.serve(async (req) => {
         // wipe the comments of the submit that wins
         if (body.notes != null && (l.caption ?? null) !== (c || null)) captionWrites.push({ id: l.id, caption: c || null })
       }
+      const bare: { q: Q; n: number }[] = []   // v22: the claimed photos with no explanation, per question
       for (const k of photoKeys) {
         const paths = links.filter((l) => l.role === k).map((l) => pathOf.get(l.photo_id)).filter((p): p is string => !!p)
         if (!paths.length) { delete answers[k]; continue }
+        const cv = (answers[k] as { value?: unknown } | undefined)?.value
+        const claimed = new Set(Array.isArray(cv) ? cv.filter((p): p is string => typeof p === 'string') : [])
         if (!(k in answers)) {
           // Attached but not claimed (a lost attach response, a lost draft): it counts only if the
           // collector was shown that question, so no answer to a hidden question enters the record.
@@ -603,6 +639,15 @@ Deno.serve(async (req) => {
           if (shown !== true) continue
         }
         answers[k] = { value: paths }
+        if (noteRequired) {
+          const n = paths.filter((p) => claimed.has(p) && !(Object.hasOwn(notes, p) && notes[p].trim())).length
+          if (n) bare.push({ q: qs.get(k) ?? { key: k }, n })
+        }
+      }
+      if (bare.length) {
+        const order = [...qs.keys()], total = bare.reduce((a, b) => a + b.n, 0)
+        bare.sort((a, b) => order.indexOf(a.q.key) - order.indexOf(b.q.key))
+        return fail(400, `${total} ${total === 1 ? 'photo has' : 'photos have'} no explanation: ${bare.map((b) => `${named(b.q)} (${b.n})`).join(', ')}. Write what each photo shows in the box under it.`)
       }
     }
 
