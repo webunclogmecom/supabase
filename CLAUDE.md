@@ -2142,6 +2142,25 @@ Calendar since `2026-09-28_1515` (Fred picked "All permits"). Its last caller is
 `public.dump_outstanding_visits`, whose value the DUMP edge fn overwrites. Never feed that resolver to
 anything a person reads or copies onto a DERM form.
 
+✅ **THE NAME UNDER A PERMIT NUMBER (`gdos.location_label`) COMES FROM THE PERMIT PDF (2026-10-05).**
+Fred: *"just put what the actual PDF shows"* and, for the future, read it from the PDF. The 2026-05-22 DERM
+portal lookup had stored the county's facility name on record, sometimes a previous tenant (192-FRK showed
+"Cool Wild Company LLC DBA That Cool Cafe"; its permit says "NB2J INVESTMENTS, LLC DBA FRESKO"). 13 labels
+were corrected by hand on 2026-10-02 (backup `backups/2026-10-02_gdo_location_label_before.json`).
+- Edge fn **`gdo-permit-label`** (verify_jwt pinned, service_role gate) reads "Permit Issued To" (or the
+  company line under "PERMITTEE:" on old permits) with `claude-opus-5-5` and writes the label, audited as
+  `app_source='gdo-permit-reader'`. Cron **`gdo-permit-label-sweep`** (`11-59/15`) through
+  `public.fn_request_gdo_permit_label_sweep()`, which makes no HTTP call when nothing is waiting.
+- **One read per stored PDF**: `public.gdo_permit_label_reads` keys on (gdo, storage eTag); a replaced PDF has
+  a new eTag and is read again, so a staff edit in the Client App stands until the PDF itself changes. Three
+  errors per object, then it is left alone. Old TIFF scans are recorded `not_pdf` and never labelled.
+- Installed with every current PDF recorded `seeded`, so no label moved at install (113 permits have no label;
+  filling them is a decision for Fred). Re-read on demand: POST `{gdo_ids:[...], dry_run:true}`.
+- Proven 2026-10-05: 22 of 22 PDFs read identically to their extracted text, 3 TIFFs refused, the write path
+  on an INACTIVE `[TEST]` permit on 112-YA (gdo 258, left in place), anon refused 401.
+- 🛑 Neither backfill script writes `location_label` any more (`backfill_gdos_from_derm_bot.py`,
+  `backfill_gdos_from_viktor_lookup_2026_05_22.js`). Do not put a portal facility name back in it.
+
 Historic workaround: `webhook-airtable` used to write the GDO Number to all `service_configs` rows
 for the client (not just GT), and the 2026-05-25 backfill caught the historic gap. That feed is dead
 (Airtable retired 2026-07-24), so nothing writes the GDO Number automatically today. Whatever writes

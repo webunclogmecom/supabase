@@ -881,3 +881,9 @@ verify_jwt = true
 [functions.generate-derm-address-pdf]
 # 2026-09-27: pinned true; the in-code caller check trusts claims the gateway verified.
 verify_jwt = true
+
+# gdo-permit-label: reads "Permit Issued To" from each permit PDF into gdos.location_label (2026-10-05).
+# Called by pg_cron (fn_request_gdo_permit_label_sweep) with the vault service_role key; the handler
+# also requires role=service_role, which is only trustworthy behind verify_jwt.
+[functions.gdo-permit-label]
+verify_jwt = true

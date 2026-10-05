@@ -197,7 +197,8 @@ async def main() -> None:
                     "client_id": c["client_id"],
                     "property_id": c["property_id"],
                     "gdo_number": c["gdo_number"],
-                    "location_label": c.get("facility_name"),
+                    # location_label is NOT written: the portal facility name can be a previous tenant.
+                    # It comes from the permit PDF (edge fn gdo-permit-label, 2026-10-05).
                     "permit_expiration": c.get("expiration_date"),
                     "permit_document_path": c.get("pdf_url"),
                     "status": "ACTIVE",

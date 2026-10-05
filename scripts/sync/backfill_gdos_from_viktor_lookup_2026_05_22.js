@@ -15,7 +15,7 @@
 //   - 140-TYO and 213-TRUE: multi-tenant addresses, Fred's call which unit
 //   - 11 not-found cases (Bucket C in Slack thread)
 //
-// Each row stores facility_name in location_label so future ops can spot
+// (Until 2026-10-05) each row stored facility_name in location_label so future ops could spot
 // "huh, permit says G-COFFEE but client is Hubble Bubble" — that's the
 // previous tenant. notes documents source + the original DERM Bot mis-pick
 // (if any) so we have provenance.
@@ -121,7 +121,8 @@ async function rest(qs, opts = {}) {
     const row = {
       client_id: r.client_id,
       gdo_number: r.gdo_number,
-      location_label: r.location_label,
+      // location_label is NOT written: it comes from the permit PDF (edge fn gdo-permit-label, 2026-10-05).
+      // The portal facility name stored here before showed previous tenants on the Field Portal card.
       property_id: r.property_id,
       status: 'ACTIVE',
       notes: r.notes,
