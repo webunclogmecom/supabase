@@ -17,7 +17,7 @@ still in git history; that list stays in the local audit folder.
 | Tell the clients whose lock box codes were exposed | "No need to tell" |
 | Stop showing access notes on the open Field Portal page | "Show them, do not worry." (kept as is) |
 | Yannick's future read access | a staff app login, not a database password ("Sounds good") |
-| Backups: PITR, or an own copy on Railway | "Can we minimize the 6 hours up to 2 hours?" (open) |
+| Backups: PITR, or an own copy on Railway | "Can we minimize the 6 hours up to 2 hours?", then "Go with the 2-hour copy on Railway" |
 | A new Railway project, two-step login, a second admin | "what is this for?" (explained; open) |
 | Make this repo private | yes, after the timed jobs move to Railway and the 3 raw-link flows move; no history purge ("Sounds good") |
 
@@ -116,6 +116,6 @@ still in git history; that list stays in the local audit folder.
 - Going private: after the GitHub timed jobs move (`system-audit-2026-10-05/TIMED_JOBS_PLAN.md`) and the 3
   flows that read files from this repo by raw link move first: `scripts/shared-session/session-storage.ts`
   (all 8 staff apps), the Picture Planner `intake.html`, and John's Postman import link.
-- Backups: PITR is OFF (measured 2026-10-05: `pitr_enabled=false`, one daily backup, 8 listed). Fred is
-  choosing between PITR (about $100 a month) and an own copy on Railway; he asked whether it can be every 2
-  hours. A fifth doc that claimed PITR (`jobber-backup-and-restore.md`) was corrected too.
+- Backups: PITR is OFF (measured 2026-10-05: `pitr_enabled=false`, one daily backup, 8 listed). Fred chose
+  our own copy every 2 hours on Railway: `services/db-backup/README.md`. The role and health check are
+  applied; the service runs once Fred finishes the Railway setup (two-step login, the volume, the password). A fifth doc that claimed PITR (`jobber-backup-and-restore.md`) was corrected too.
