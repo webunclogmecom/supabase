@@ -64,6 +64,9 @@ async function askClaude(imageBuf, contentType, promptText) {
   const body = JSON.stringify({
     model: 'claude-opus-4-7',
     max_tokens: 400,
+    // The schema belongs to v3, which dropped the JSON-in-prose clause. Older versions keep their
+    // original request so their batches stay comparable with the history in state.json.
+    ...(CURRENT_VERSION === 'v3' ? { output_config: { format: { type: 'json_schema', schema: PROMPTS.RECEIPT_OCR_SCHEMA } } } : {}),
     messages: [{
       role: 'user',
       content: [

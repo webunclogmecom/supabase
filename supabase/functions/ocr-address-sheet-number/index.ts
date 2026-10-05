@@ -87,7 +87,9 @@ function classify(raw: string): { sheet_no: string | null; confidence: string } 
   return { sheet_no: m[1] + (m[2] ? "-" + m[2] : ""), confidence: "high" };
 }
 
-async function askVision(bytes: Uint8Array, mediaType: string): Promise<string> {
+type Usage = { input_tokens: number | null; output_tokens: number | null };
+
+async function askVision(bytes: Uint8Array, mediaType: string): Promise<{ text: string; usage: Usage }> {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -100,6 +102,11 @@ async function askVision(bytes: Uint8Array, mediaType: string): Promise<string> 
       // max_tokens. Measured 2026-10-05 it did not think on 8 known sheets (6 tokens out), but 32
       // left no margin if it ever does. max_tokens is a ceiling, not a cost.
       model: MODEL, max_tokens: 2048,
+      // One printed number: keep thinking short. Measured 2026-10-05 ON claude-sonnet-5 on 8 known
+      // sheets (3 read, 4 unreadable, ticket-834433 p1 = 1106), 2 runs each: low gave the same answer
+      // as the default effort on all 16 pairs, same output tokens, no thinking block at either level.
+      // Changing MODEL invalidates this: re-run the default-vs-low comparison on the new model first.
+      output_config: { effort: "low" },
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: mediaType, data: btoa(bin) } },
         { type: "text", text: PROMPT },
@@ -108,18 +115,22 @@ async function askVision(bytes: Uint8Array, mediaType: string): Promise<string> 
   });
   if (!r.ok) throw new Error(`anthropic ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = await r.json();
+  // Token accounting: returned in the JSON reply only, never written to the DB. A cut-off reply
+  // carries it too (on the error), since that is the call that burns the most output tokens.
+  const usage: Usage = { input_tokens: j?.usage?.input_tokens ?? null, output_tokens: j?.usage?.output_tokens ?? null };
   // 🛑 A cut-off (max_tokens) or refused reply is NOT an "unreadable" sheet. Returning its empty text
   // would classify as unreadable and write a row, and a row names the image, so the backlog would
   // never offer this page again. Throwing takes the caller's no-write path instead: the page stays
   // unread and is retried within derm.sheet_number_ocr_attempts.
-  if (j?.stop_reason !== "end_turn") throw new Error(`anthropic stop_reason ${j?.stop_reason ?? "missing"}`);
+  if (j?.stop_reason !== "end_turn") throw Object.assign(new Error(`anthropic stop_reason ${j?.stop_reason ?? "missing"}`), { usage });
   // 🛑 NOT content[0].text — the content array can lead with a non-text block (thinking), making
   // content[0].text undefined, which reads back as "UNREADABLE" on a legible sheet. Because a
   // no-read is treated as "no opinion" by the placement gate, that failure is SILENT: the sheet just
   // never gets a read and nobody sees an error. Found 2026-08-06 in the sibling roster reader, where
   // it zeroed 3 of 5 pages nondeterministically. Select text blocks by TYPE.
-  return ((j?.content ?? []).filter((c: any) => c?.type === "text")
-                            .map((c: any) => c?.text ?? "").join("\n")).trim();
+  const text = ((j?.content ?? []).filter((c: any) => c?.type === "text")
+                                  .map((c: any) => c?.text ?? "").join("\n")).trim();
+  return { text, usage };
 }
 
 Deno.serve(async (req) => {
@@ -170,15 +181,15 @@ Deno.serve(async (req) => {
     // Explicit mode is driven by a caller that loops until the backlog is empty, so it may use a
     // longer window; the cron path keeps the tight budget that protects its 5-minute schedule.
     if (Date.now() - started > (tickets.length ? 55000 : TIME_BUDGET_MS)) { out.push({ stopped: "time budget" }); break; }
-    let raw = "", cls = { sheet_no: null as string | null, confidence: "unreadable" };
+    let raw = "", usage: Usage | undefined, cls = { sheet_no: null as string | null, confidence: "unreadable" };
     try {
       const img = await fetch(r.image_url);
       if (!img.ok) throw new Error(`image ${img.status}`);
       const bytes = new Uint8Array(await img.arrayBuffer());
-      raw = await askVision(bytes, mediaType(r.image_url, img.headers.get("content-type")));
+      ({ text: raw, usage } = await askVision(bytes, mediaType(r.image_url, img.headers.get("content-type"))));
       cls = classify(raw);
     } catch (e) {
-      out.push({ dump_folder: r.dump_folder, page: r.page, error: String(e).slice(0, 160) });
+      out.push({ dump_folder: r.dump_folder, page: r.page, error: String(e).slice(0, 160), usage: (e as any)?.usage });
       continue;   // leave it unread; the gate treats "no read" as no opinion, never as a pass
     }
 
@@ -192,10 +203,10 @@ Deno.serve(async (req) => {
       }),
     });
     if (!w.ok) {
-      out.push({ dump_folder: r.dump_folder, page: r.page, error: `write ${w.status}: ${(await w.text()).slice(0, 120)}` });
+      out.push({ dump_folder: r.dump_folder, page: r.page, error: `write ${w.status}: ${(await w.text()).slice(0, 120)}`, usage });
       continue;
     }
-    out.push({ dump_folder: r.dump_folder, page: r.page, sheet_no_read: cls.sheet_no, confidence: cls.confidence });
+    out.push({ dump_folder: r.dump_folder, page: r.page, sheet_no_read: cls.sheet_no, confidence: cls.confidence, usage });
   }
 
   return json({ candidates: rows.length, processed: out.length, results: out, ms: Date.now() - started });

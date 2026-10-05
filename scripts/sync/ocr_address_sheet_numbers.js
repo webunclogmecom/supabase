@@ -108,6 +108,7 @@ const PROMPT =
 function askVision(buf, mediaType) {
   const body = JSON.stringify({
     model: MODEL, max_tokens: 2048,  // thinking counts toward max_tokens; same as the edge function
+    output_config: { effort: 'low' },  // same request as the edge function (measured there, 2026-10-05)
     messages: [{ role: 'user', content: [
       { type: 'image', source: { type: 'base64', media_type: mediaType, data: buf.toString('base64') } },
       { type: 'text', text: PROMPT }

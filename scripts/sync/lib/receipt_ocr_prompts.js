@@ -58,8 +58,29 @@ Example responses:
 {"jurisdiction":"dade","number":"824533","dump_date":"2026-05-15"}
 {"jurisdiction":"unknown","number":null,"dump_date":null}`;
 
+// v3 - 2026-10-05 - v2 without the "return ONLY a single-line JSON object" clause: the shape
+// is now enforced by structured outputs (output_config.format, RECEIPT_OCR_SCHEMA below).
+const V2_JSON_CLAUSE = ' and return ONLY a single-line JSON object with these keys (no markdown fences, no other text):';
+if (!v2.includes(V2_JSON_CLAUSE)) throw new Error('receipt_ocr_prompts: v2 JSON clause not found, v3 would equal v2');
+const v3 = v2.replace(V2_JSON_CLAUSE, ' with these keys:');
+
+// The one reply schema, shared by calibrate_ocr_receipts.js and ocr_derm_receipts_for_number_and_date.js.
+// Structured outputs guarantee the shape, not the reading: the prompt's rules (6 digits, valid date) still apply.
+const RECEIPT_OCR_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['jurisdiction', 'number', 'dump_date'],
+  properties: {
+    jurisdiction: { type: 'string', enum: ['broward', 'dade', 'unknown'] },
+    number: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    dump_date: { anyOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+  },
+};
+
 module.exports = {
-  CURRENT_VERSION: 'v2',
+  CURRENT_VERSION: 'v3',
   v1,
   v2,
+  v3,
+  RECEIPT_OCR_SCHEMA,
 };

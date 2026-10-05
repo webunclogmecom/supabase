@@ -26,6 +26,8 @@ const ref = process.env.SUPABASE_URL.match(/https?:\/\/([^.]+)\./)[1];
 
 if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY required in .env');
 
+const { RECEIPT_OCR_SCHEMA } = require('./lib/receipt_ocr_prompts');
+
 const ONE = (process.argv.find(a => a.startsWith('--manifest-id=')) || '').split('=')[1];
 const LIMIT = (process.argv.find(a => a.startsWith('--limit=')) || '').split('=')[1];
 
@@ -53,6 +55,7 @@ async function askClaude(imageBuf, contentType) {
   const body = JSON.stringify({
     model: 'claude-opus-4-7',
     max_tokens: 400,
+    output_config: { format: { type: 'json_schema', schema: RECEIPT_OCR_SCHEMA } },
     messages: [{
       role: 'user',
       content: [
@@ -66,7 +69,7 @@ async function askClaude(imageBuf, contentType) {
 
 (C) Something else — a FOG eManifest form, a generic photo, or unreadable.
 
-Extract THREE values and return ONLY a single-line JSON object with these keys (no markdown fences, no other text):
+Extract THREE values with these keys:
 
 {"jurisdiction":"broward"|"dade"|"unknown", "number":"<digits or null>", "dump_date":"<YYYY-MM-DD or null>"}
 
