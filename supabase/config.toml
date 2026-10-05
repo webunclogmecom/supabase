@@ -887,3 +887,9 @@ verify_jwt = true
 # also requires role=service_role, which is only trustworthy behind verify_jwt.
 [functions.gdo-permit-label]
 verify_jwt = true
+
+# stamp-sheets-reminder: daily 10 AM Eastern Slack post of the Stamp Studio sheets not completed
+# (2026-10-05). Called by pg_cron (fn_request_stamp_sheets_reminder) with the vault service_role key;
+# the handler also requires role=service_role, which is only trustworthy behind verify_jwt.
+[functions.stamp-sheets-reminder]
+verify_jwt = true
