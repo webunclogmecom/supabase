@@ -1,5 +1,10 @@
 # UnclogMe Internal Portal
 
+> 🛑 **`prototype.html` is no longer in this repo (2026-10-05).** It holds 50 real client records with prices, and this
+> repo is public. A copy lives in the private Building Apps repo (`ops-portal/prototype.html`; not byte-identical,
+> compare before relying on it) and on Fred's machine (`backups/2026-10-05_supabase_public_cleanup/`). The commands
+> below still work on a local copy.
+
 Yannick's multi-module internal-tool prototype. **`prototype.html` is the
 canonical design** — a single-file React-via-CDN app that runs by opening
 in a browser. No build step.

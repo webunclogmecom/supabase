@@ -5123,8 +5123,7 @@ Nine things that will bite someone who does not know them:
 | [docs/decisions/](docs/decisions/) | ADRs — *why* something is the way it is |
 | [docs/research/](docs/research/) | External-source synthesis (Claude Code best practices, etc.) |
 | [docs/audits/](docs/audits/) | Historical state snapshots |
-| [apps/internal-portal/](apps/internal-portal/) | Yannick's full internal-tool prototype (Dashboard, Sales, Scheduling, Visits, Ops). Single-file React+CDN. Pre-built UI; wiring to live Supabase pending. |
-| [OPS_LIST_YAN.md](OPS_LIST_YAN.md) | Obsolete Yan to-do snapshot from 2026-05-14 (Airtable era). Do not regenerate it: `scripts/probes/generate_ops_list_yan.js` still tells Yan to fix Airtable, which is fully retired. |
+| [apps/internal-portal/](apps/internal-portal/) | Specs for Yannick's internal-tool prototype (Dashboard, Sales, Scheduling, Visits, Ops). The prototype itself (`prototype.html`, 50 real client records) left this public repo on 2026-10-05: a copy lives in the private Building Apps repo (`ops-portal/prototype.html`) and on this machine. |
 
 ---
 

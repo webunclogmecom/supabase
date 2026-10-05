@@ -91,10 +91,10 @@ docs/reports/*.pdf
 *.JPG
 *.JPEG
 *.PNG
-# PDFs only at the repo ROOT (that is where the scratch lands). Deliberately NOT global:
-# docs/audits/ and docs/reports/ hold intentionally-committed PDFs, and a global rule would
-# shadow them. docs/reports/*.pdf already has its own rule above.
-/*.pdf
+# PDFs: GLOBAL since 2026-10-05. The only three PDFs this repo ever tracked held client codes and
+# addresses and were untracked (system audit, REPO_SCRUB_PLAN step 5). This repo is public: client
+# PDFs never belong here. Keep local copies in the workspace-level ..\backups\.
+*.pdf
 # re-allow committed, non-PII product assets (add explicit exceptions here as needed)
 !docs/**/*.png
 !**/app-icon.png
@@ -123,5 +123,19 @@ docs/reports/*.pdf
 /backups/
 
 # PII: client codes, business names and job numbers. Fred: stays local (2026-07-28).
-# Single file, NOT the folder — docs/audits/ is meant to hold committable PDFs.
+# Single file (now also covered by the global *.pdf rule of 2026-10-05; kept as the record).
 docs/audits/2026-06-27_line_item_typos.pdf
+# Client data, untracked 2026-10-05 (system audit SECURITY-05 / HYGIENE_APPS-01, REPO_SCRUB_PLAN step 5).
+# This repo is public. Copies: workspace-level ..\backups\2026-10-05_supabase_public_cleanup\.
+docs/backups/
+/OPS_LIST_*.md
+docs/audits/**/OPS_LIST_*
+docs/audits/2026-05-19/recurring_jobs.json
+docs/audits/EXCLUDED_CLIENTS_REVIEW.md
+docs/audits/2026-05-25-gdo-phase-2/probes/22_our_active_gdos.json
+docs/audits/2026-05-25-gdo-phase-2/probes/23_yan_sheet_diff.md
+docs/audits/2026-06-28_gdo_reconciliation.md
+docs/multi-location-clients-for-diego-yan.md
+docs/reports/build_multi_location_pdf.py
+docs/reports/build_db_audit_pdf.py
+apps/internal-portal/prototype.html
