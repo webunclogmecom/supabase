@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Agent Operating Manual
 
-**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa · Last updated 2026-05-17*
+**Unclogme Centralized Database (v2)** · *Maintained by Fred Zerpa*
 
 Non-negotiable rules + quick reference for any AI agent working on this repo. **Read every session before touching anything.** Everything else is in [`docs/`](docs/).
 
@@ -26,7 +26,7 @@ Related data via FK, never copied. No snapshot columns duplicating join-availabl
 ### 4. Source-of-truth trust hierarchy (revised 2026-04-29)
 - **Jobber + Samsara = 100% trusted.** Jobber owns identity, addresses, contacts, jobs, visits, invoices, line_items, quotes, notes/photos, employees. Samsara owns vehicles, drivers (field), GPS/telemetry, geofences.
 - **DO NOT use Airtable, full stop (hard rule: Fred 2026-06-30, hardened 2026-07-24 when Airtable was fully retired).** Airtable is not merely stale, it is dead: never read it, write it, or use it as a source or reference for a task. Use Jobber / Samsara / the Supabase DB instead, or ask Fred. This overrides the "best-effort enrichment" latitude below.
-- **Airtable = FULLY RETIRED, not a data source (Fred, 2026-07-24).** We do not use Airtable anymore — **no live inbound feed remains** (PRE-POST `inspections` went quiet, last write 2026-07-14; `derm_manifests` severed in code 2026-07-21). Do not read/write/reference it, and **never cite an "AT sunset" as a reason to defer work — that gate is gone; schedule the work on its own internal merits.** (Historically it was best-effort enrichment for service configs + client zone/hours/days/county; all superseded by Jobber / Samsara / the DB.)
+- **Airtable = FULLY RETIRED, not a data source (Fred, 2026-07-24).** We do not use Airtable as a warehouse source (`webhook-airtable` is retired; `derm_manifests` severed in code 2026-07-21). The one live exception is shift inspections: see the project summary above and the Dropped-sources bullet below. Do not read/write/reference it, and **never cite an "AT sunset" as a reason to defer work — that gate is gone; schedule the work on its own internal merits.** (Historically it was best-effort enrichment for service configs + client zone/hours/days/county; all superseded by Jobber / Samsara / the DB.)
 - **`ops.*` merge views** COALESCE Jobber-first over Samsara. Any Airtable-sourced column one of them still falls back to is frozen history, not a live feed (Airtable fully retired 2026-07-24).
 - Dropped sources: Fillout and Airtable as *warehouse feeds* (retired 2026-07-24). 🛑 **CORRECTED 2026-09-23: neither is "dropped entirely" as a TOOL.** Drivers still submit pre/post shift inspections on **Fillout** forms that land in **Airtable**, daily, today. 🔴 **AND SINCE 2026-09-23 THE SAME SUBMISSION ALSO REACHES SUPABASE** through the `fillout-inspection` edge function, so the sentence that used to sit here - *"Nothing of that reaches Supabase"* - is now FALSE. Fillout is a LIVE inbound feed again, and the only one. See the Airtable paragraph in the project summary above. Drivers&Team/Past due/Route Creation/Leads were dropped earlier than the rest, but nothing from Airtable is live now, so do not read this line as implying any AT table survived.
 
@@ -45,7 +45,7 @@ remembered to write beforehand. Measured when Fred approved clearing 2 dead link
 backed up to `backups/` first, and that file is now the sole restore path.
 ⇒ Run the rule-8 trigger query against the specific table **before** deleting, and if it comes back
 empty, write a JSON backup with a restore hint or do not proceed. Do not infer recoverability from
-the fact that *other* tables in `public` are audited — the audited set is 31 tables, not all of them.
+the fact that *other* tables in `public` are audited: the audited set is a subset, so run the query.
 ⇒ And pin the statement to primary keys **while re-asserting the predicate that made the rows
 deletable** (`... WHERE id IN (...) AND NOT EXISTS (<the thing that makes it an orphan>)`), so it
 cannot fire if the world changed between your read and your write.
@@ -237,12 +237,11 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
   Postman workspace through the Postman API and reads it back (`scripts/postman/publish_collection.js`,
   repository secret `POSTMAN_API_KEY`, uid pinned in the workflow), so no re-import is needed; a push
   blanks the INITIAL value of `rpaBotKey`, which therefore lives in the `UnclogMe - RPA (Prod)` environment.
-- **Fred records his asks.** When he types `/speech-to-text`, open the recorder widget for him and,
-  when he says he recorded it, read the transcript from the widget context. The exact tool names
-  and the never-call-it-twice rule are in the root `CLAUDE.md`, section 3b (the workspace manual
-  every session loads). His transcript is the spec: quote it in the migration header and the docs.
+- **Fred records his asks.** When he types `/speech-to-text`, follow the root `CLAUDE.md`, section 3b
+  (the workspace manual every session loads): it has the tool names, the never-call-it-twice rule and
+  how to get the transcript. His transcript is the spec: quote it in the migration header and the docs.
 - **Supabase projects (all in `Dev - Unclogme` org, us-east-1):**
-  - **Prod** `wbasvhvvismukaqdnouk` — source of truth, Pro plan, RLS hardened. **The staff Lovable apps Visit Calendar, Admin Review, DERM Tracker, and the Client App (`clients.unclogme.app`, 2026-07-24) are Supabase-Auth-gated (Google + email/pw, `@ayache.com`/`@unclogme.com`-restricted, email-confirm enforced). ✅ **DERM Stamp Studio IS NOW AUTH-GATED TOO (changed 2026-07-30, supersedes the 2026-07-24 "it is PUBLIC" note).** It moved to **`stamp.unclogme.app`** (`studio.unclogme.app` redirects there) and serves the canonical Command Deck login. Verified live 2026-07-30 while signed in: "Sign out" in the header, and the bundle builds ONE client with `db:{schema:'derm'}` + `persistSession`/`autoRefreshToken` and carries `signInWithPassword`/`signInWithOAuth`. **⇒ Its reads run as `authenticated`, so an anon-key replay of its requests correctly returns `42501` — that is the revoke working, NOT a broken app.** A session hit exactly that on 2026-07-30 and read "anon is revoked yet the public app renders" as a contradiction; the premise had simply expired. ✅ **DONE, DO NOT RE-DO IT: `stamp.unclogme.app` is pinned in `audit.log_change`'s Origin CASE** (`2026-07-30_2030`, applied the same day). This paragraph used to carry a "pin the new host in the CASE" TODO; it was completed on 2026-07-30 and the instruction is retired here (2026-08-07) because a stale TODO sends a reader to do work that is already done. **Both patterns are kept**: `%studio.unclogme.app%` still matches 71 historical rows and a redirect can be undone. Worth keeping is *why it was urgent while nothing looked broken*: 16 rows were already arriving from the new origin and were labelled correctly ONLY because the Studio's single client sends `X-App-Source`, which ADR 016 makes a per-CLIENT override. Add a second Supabase client or drop that header and Studio writes would have started landing as `other:stamp.unclogme.app`, which is the per-client header dependency this file warns about below and the exact shape that cost Admin Review 232 mislabelled rows over 26 days.** **`visits` lifecycle is RPC-only as of Phase 3 (2026-07-11):** anon/authenticated can NO LONGER directly UPDATE `visit_status`/`completed_at`, nor EXECUTE the create/edit/delete/ripple/skip/unskip lifecycle RPCs (revoked in **both** `public.*` and `ops.*`); the Calendar drives lifecycle through the `set_visit_status` / `ops.set_visit_status` SECDEF wrappers (authenticated-only). **As of the 2026-07-12 anon-surface harden, anon is READ-ONLY on all business data** — it can no longer write any table/column or EXECUTE any write/exposure RPC (all revoked → authenticated + service_role; only FP `customer.*` reads + pure immutable helpers remain anon-callable). This also closed an owner-rights auto-updatable-view bypass of the Phase-3 visits lock (`v_visits_live`). Field Portal stays anon read-only. Full model + negative-test matrix: [docs/security.md](docs/security.md#publicvisits--anonauthenticated-write-model-2026-07-09-159e1c6).
+  - **Prod** `wbasvhvvismukaqdnouk` — source of truth, Pro plan, RLS hardened. **The staff Lovable apps Visit Calendar, Admin Review, DERM Tracker, and the Client App (`clients.unclogme.app`, 2026-07-24) are Supabase-Auth-gated (Google + email/pw, `@ayache.com`/`@unclogme.com`-restricted, email-confirm enforced). ✅ **DERM Stamp Studio IS NOW AUTH-GATED TOO (changed 2026-07-30, supersedes the 2026-07-24 "it is PUBLIC" note).** It moved to **`stamp.unclogme.app`** (`studio.unclogme.app` redirects there) and serves the canonical Command Deck login. Verified live 2026-07-30 while signed in: "Sign out" in the header, and the bundle builds ONE client with `db:{schema:'derm'}` + `persistSession`/`autoRefreshToken` and carries `signInWithPassword`/`signInWithOAuth`. **⇒ Its reads run as `authenticated`, so an anon-key replay of its requests correctly returns `42501` — that is the revoke working, NOT a broken app.** A session hit exactly that on 2026-07-30 and read "anon is revoked yet the public app renders" as a contradiction; the premise had simply expired. ✅ **DONE, DO NOT RE-DO IT: `stamp.unclogme.app` is pinned in `audit.log_change`'s Origin CASE** (`2026-07-30_2030`, applied the same day). This paragraph used to carry a "pin the new host in the CASE" TODO; it was completed on 2026-07-30 and the instruction is retired here (2026-08-07) because a stale TODO sends a reader to do work that is already done. **Both patterns are kept**: `%studio.unclogme.app%` still matches 71 historical rows and a redirect can be undone. Worth keeping is *why it was urgent while nothing looked broken*: 16 rows were already arriving from the new origin and were labelled correctly ONLY because the Studio's single client sends `X-App-Source`, which ADR 016 makes a per-CLIENT override. Add a second Supabase client or drop that header and Studio writes would have started landing as `other:stamp.unclogme.app`, which is the per-client header dependency this file warns about below and the exact shape that cost Admin Review 232 mislabelled rows over 26 days.** **`visits` lifecycle is RPC-only as of Phase 3 (2026-07-11):** anon/authenticated can NO LONGER directly UPDATE `visit_status`/`completed_at`, nor EXECUTE the create/edit/delete/ripple/skip/unskip lifecycle RPCs (revoked in **both** `public.*` and `ops.*`); the Calendar drives lifecycle through the `set_visit_status` / `ops.set_visit_status` SECDEF wrappers (authenticated-only). **As of the 2026-07-12 anon-surface harden, anon is READ-ONLY on all business data** — it can no longer write any table/column or EXECUTE any write/exposure RPC (all revoked → authenticated + service_role). Since then `anon` lost table reads too, `customer.*` included: see "`anon` READS NOTHING TODAY" above. This also closed an owner-rights auto-updatable-view bypass of the Phase-3 visits lock (`v_visits_live`). Full model + negative-test matrix: [docs/security.md](docs/security.md#publicvisits--anonauthenticated-write-model-2026-07-09-159e1c6).
   - **Sandbox #1 `ubtlwpcyntelgbykdatn` — DELETED 2026-06-11.** Verified zero consumers (0 API requests/7d; every Lovable app runs on Prod or Lovable Cloud; review data migrated to Prod canonical 2026-06-08). `sandbox-refresh.yml` retired (schedule removed + disabled); audit parity checks retired. Final backup of its unique tables: `..\backups\sandbox1_final_backup_2026-06-11.json` (parent folder, outside repo).
   - **HR Sandbox** `klgtrdwrasrlxbmfyvdh` (renamed from *Field Portal Sandbox*) — 🛑 **NO LONGER the HR app's backend.** The SHIPPED **HR App** (`hr.unclogme.app`, live 2026-09-01) reads **Prod `public.employees` DIRECTLY** (read-only, nine columns), NOT this sandbox; it needed no DB work (`authenticated` already held SELECT). This project keeps its legacy April-clone schema (data re-seeded 2026-06-11: full employees/vehicles/inspections + live subset visits) and the `frozen_leads` schema — don't touch either. One-time-seed model, no periodic refresh; effectively idle for the HR app now.
   - 🛑 **The Prod `hr` schema is EMPTY** (created by migration `2026-08-31_1330`) — the HR App does NOT use it (it reads `public.employees` directly, above). It exists for future HR-owned objects; nothing depends on it yet.
@@ -358,8 +357,7 @@ been anon-only, the same code would have handed every staff user a delete they d
 ### ⚠ Verifying a TRIGGER GUARD: both baselines, a changing value, and the old body as control (2026-08-05)
 
 Three lessons from one defect, all cheap, all learned the expensive way. **This lives here and not only
-in a memory folder, because memory is keyed by working directory and does NOT reach the other sessions
-(root CLAUDE.md §1) — the repos do.**
+in a memory folder because the repo is what every reader of this file is guaranteed to load.**
 
 - **🛑 A guard predicated on `OLD.<col>` CAN ONLY FIRE FROM ONE BASELINE. Test both.**
   `fn_lock_manual_derm_required`'s revert leg needs `OLD.derm_required_locked IS TRUE`. I verified
@@ -641,8 +639,8 @@ the naive grep also matches the *request* header and reports everything as fine)
 
 | inspects response content-type | functions |
 |---|---|
-| **yes (5)** | `save-client-contact`, `save-calendar-visit`, `jobber-push-task`, `sync-jobber-poll` (v26, 2026-09-03), `sync-jobber-job-drift` (v16, 2026-09-06) |
-| **no (8)** | `adopt-visit-from-jobber`, `create-client`, `jobber-push-visit`, `save-client-fields`, `save-client-job`, `sync-jobber-upcoming-visits`, `sync-jobber-visit-drift`, `webhook-jobber` |
+| **yes (6)** | `save-client-contact`, `save-calendar-visit`, `jobber-push-task`, `sync-jobber-poll` (v26, 2026-09-03), `sync-jobber-job-drift` (v16, 2026-09-06), `create-client` |
+| **no (7)** | `adopt-visit-from-jobber`, `jobber-push-visit`, `save-client-fields`, `save-client-job`, `sync-jobber-upcoming-visits`, `sync-jobber-visit-drift`, `webhook-jobber` |
 
 ⚠ **THE 2026-08-13 CENSUS IS A DATED OBSERVATION AND WENT STALE TWICE WITHOUT THE TABLE MOVING.**
 The poll was fixed on 2026-09-03 and the correction was written into the prose below while this
@@ -973,13 +971,9 @@ identical to before the change**.
 ⚠ **AS OF 2026-08-28 THAT SENTENCE WAS TRUE OF THE PATH BUT NOT OF THAT DAY'S TRAFFIC:** both
 `city_email_live_sends` and `client_email_live_sends` were `false` for testing, so every send was
 routed to an internal address and logged `is_test=true`.
-🛑 **CORRECTED 2026-09-03: ONLY THE CITY GATE IS STILL SHUT. `client_email_live_sends` READS
-`true`, SO CLIENT SENDS REACH REAL CUSTOMERS.** Measured directly against `public.app_config`. This
-file said `false` in four places and that is wrong in the DANGEROUS direction: a person reading it
-would believe a client test send is caught by `city_email_test_recipient`, and it is not. Type a
-`test_recipient` into the dialog, or you are mailing the customer. The payload sizes and the
-urgency above are unchanged - the gates are temporary and the path resumes real sends the moment
-they are restored. See the automatic-city-email section near the end of this file. Measured worst payload: **~5.36MB across 2
+🛑 **BOTH GATES ARE OPEN: `city_email_live_sends` and `client_email_live_sends` read `true` in
+`public.app_config`, so a send reaches the real city or the real customer.** Type a
+`test_recipient` into the dialog, or you are mailing them. Re-read `app_config` before any test send. See the automatic-city-email section near the end of this file. Measured worst payload: **~5.36MB across 2
 attachments = ~7.15M base64 chars = ~229MB** against a ceiling that killed a worker at 277.7MB,
 i.e. **single-digit percent headroom**. One extra manifest page would have tipped it, and it
 would have failed exactly as invisibly.
@@ -1130,7 +1124,7 @@ Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Mo
 **The `GT` / `CL` / `WD` / `LS` codes are RETIRED and are now REJECTED (`23514`).** `service_type` holds
 `Pumping`, `Cleaning`, `Warranty of Drainage` and the rest of the catalogue taxonomy (11 values,
 including **`Dump Offload`** — writing a CHECK from "the three recurring services" silently rejects 30
-live visits). `service_configs` is held to the recurring three; `visits` allows the full set **and NULL**
+live visits). `visits` allows the full set **and NULL**
 (206 rows; NULL means not derivable and is the honest answer, never "default to Pumping").
 
 **🛑 THE TRAP: `service_kind` is TWO DIFFERENT CONCEPTS.**
@@ -1254,10 +1248,6 @@ New ops/app views should read `v_visits_live`, NOT bare `public.visits`, so the 
 can't be forgotten. FIXED 2026-06-24 (`2026-06-24_v_visits_live_softdelete.sql`): `ops.visits`,
 `ops.v_route_today`, `ops.v_service_due`, `ops.v_truck_utilization`, `ops.v_driver_kpi`,
 `ops.v_revenue_summary` re-pointed to it; `ops.v_derm_compliance` got the filter in the DERM migration.
-
-Pending follow-up (low-impact): `public.visits_recent`, `public.visits_with_review`,
-`customer.recommendations`, `customer.inspection_items`, `customer.wo_photos`, `customer.permits`
-(`customer.work_orders` already filters). Re-point these at `v_visits_live` when touched.
 
 Hard-delete is still forbidden in general (Rule 6) — `deleted_at` is the
 canonical soft-delete pattern for visits. One-off hard-deletes for clearly
@@ -1654,9 +1644,6 @@ the sync returned ADOPT, and the column came back to Jobber's `5713` with `adopt
 
 ⚠ **Bind by configuration GID, never by label.** Four numeric grease-trap fields exist; two differ
 only by a capital S and one of those is archived, and "GT size" appears twice.
-⚠ **When `customFields` is finally added to the poll's `fields` string, the payload bytes of all 476
-staged rows change at once**, so the first sweep flips every row to `needs_populate` and drains at 10
-per cycle, roughly 4 hours. A full-fleet replay is expected there, not a fault.
 
 ### 🛑 WE DO NOT SYNC EMPLOYEES FROM JOBBER AT ALL, AND AN UNKNOWN CREW MEMBER IS DROPPED SILENTLY (2026-08-17)
 
@@ -1859,13 +1846,13 @@ sources of truth. Repoint one at a time, with the same equality proof.
 **Fred, 2026-08-03: *"leave it, don't extend the reconciler to archived jobs."*** Settled, not deferred.
 
 `sync-jobber-job-drift` builds its candidate set with
-`.not("job_status", "in", "(archived,closed,destroyed)")` (index.ts line 110), plus a 14-day
+`.not("job_status", "in", "(archived,closed,destroyed)")` (in its `index.ts`), plus a 14-day
 recent-terminal arm for jobs that went terminal in our DB but are still open in Jobber. Four archived
 jobs (**10000171, 10000188, 2505, 10000196**) therefore hold stale line-item rows that will **never**
 converge, and that is the correct outcome:
 
 - Measured: those four appear **0 times** in `ops.client_service_options`, which filters
-  `job_status <> 'archived'`. **No app surface reads them.**
+  `job_status NOT IN ('archived','destroyed')`. **No app surface reads them.**
 - Widening the sweep adds a Jobber API call cost to **every 30-minute run, forever**, for records
   nothing queries. The reconciler is already the object of a measured throttling budget (see the
   BATCH / LINE_PAGE cost math in that file's header).
@@ -2080,7 +2067,7 @@ offer **Mark as bad debt** and **Void** (Void since v17, below). What shipped:
 completed, unbilled work ($207.06 on that SA), and it clears to `active` only when that work is invoiced
 in Jobber, **not on a timer** (confirmed over ~10 poll cycles / ~53 min: Jobber stayed put and the DB
 row's `updated_at` never moved because the poll never had a changed value to sync). It is **functionally
-inert**: `fn_generate_sa_visits` keys on `job_status <> 'archived'` (not `= 'active'`), and
+inert**: `fn_generate_sa_visits` keys on `job_status NOT IN ('archived','destroyed')` (not `= 'active'`), and
 `frequency_days` + `jobType=RECURRING` survive the round-trip, so the SA still generates visits. Do not
 expect a poll to fix it, and do not invoice to tidy it (billing = Jobber-mastered). Full E2E + finding:
 `docs/reference/client-job-status-lifecycle.md`.
@@ -2094,10 +2081,9 @@ max-frequency, same PDF. Beyond the permit number, a GDO carries the city-mandat
 **max service frequency** (e.g. "GT must be pumped at least every 90 days") and the
 **expiration date**.
 
-**Schema implication**: currently `service_configs.permit_number` + `permit_document_path`
-sit at the (client, service_type) level. Eventually these belong on `properties`
-(see [operations.md → GDO permits](docs/operations.md#gdo-permits--bound-to-location-not-client-per-fred-2026-05-25)
-for full design + migration plan).
+**Schema**: a permit is a row in `public.gdos` (`gdo_number`, `permit_document_path`, `property_id`,
+`client_location_id`, `max_frequency_days`, `permit_expiration`, `status`). Background:
+[operations.md → GDO permits](docs/operations.md#gdo-permits--bound-to-location-not-client-per-fred-2026-05-25).
 
 **🛑 A GDO NUMBER DOES NOT CHANGE ON RENEWAL. AN EXPIRED PERMIT KEEPS ITS ROW (Fred, 2026-08-24).**
 Verbatim: *"even if a GDO expires their numbers doesn't changes on renewal, so even if it's expired
@@ -2161,10 +2147,8 @@ were corrected by hand on 2026-10-02 (backup `backups/2026-10-02_gdo_location_la
 - 🛑 Neither backfill script writes `location_label` any more (`backfill_gdos_from_derm_bot.py`,
   `backfill_gdos_from_viktor_lookup_2026_05_22.js`). Do not put a portal facility name back in it.
 
-Historic workaround: `webhook-airtable` used to write the GDO Number to all `service_configs` rows
-for the client (not just GT), and the 2026-05-25 backfill caught the historic gap. That feed is dead
-(Airtable retired 2026-07-24), so nothing writes the GDO Number automatically today. Whatever writes
-it next must keep the same write-to-all-rows behaviour.
+Nothing writes a GDO number automatically: `webhook-airtable` (which used to) is retired, and
+`service_configs` was dropped on 2026-10-05. Permits are entered into `public.gdos`.
 
 ### DERM link guards (added 2026-07-07 — read before writing `manifest_visits` or `derm_manifests`)
 
@@ -2594,7 +2578,7 @@ measured extent REQUIRED, order-consistency, page-identity, staleness fingerprin
 limit 1 — edge CPU cap). The WWTP receipt card serves the raw disposal receipt ONLY when its image URL
 is vision-classified safe in `derm.receipt_doc_class` (97/97 verified receipts; new uploads hidden until
 classified). ⚠ RULES: NEW stamped pages generate NOTHING until a measurement pass adds their extent
-(rerun: export pages → `ocr-band-measure` workflow → `apply_bands.js`); NEVER widen the visible region
+(measure the page in the Stamp Studio, which writes through `derm.record_page_rules`; see below); NEVER widen the visible region
 from banded-card math alone (that was the v2 leak, caught by Fred 2026-07-10 — see
 `docs/audits/2026-07-10_ocr_band_refinement.md` + migrations `2026-07-10_fp_blackout_*.sql`).
 
@@ -2801,7 +2785,10 @@ Rules that fall out of it, and the reasoning is what matters, not the numbers:
   `redacted_manifest_docs` row. And roll back in the order extents -> bands -> docs: NULLing bands
   first re-stales the fingerprint and the sweep republishes from the derived bands.
 
-**🛑 `ticket-833049` IS HELD BY A DATABASE CONSTRAINT** (`page_block_extents_no_ticket_833049`).
+✅ **`ticket-833049` WAS UNFROZEN ON 2026-09-07** (`2026-09-07_1730_unfreeze_ticket_833049`, Fred: "yes
+remove the freeze"): the CHECK `page_block_extents_no_ticket_833049` is dropped, the general defect is
+guarded by `trg_zz_page_image_injective`, and the folder serves its 10 documents. The record of why it
+was frozen follows. It was held by that constraint from `2026-08-19_2355` until then.
 `ticket_page_images` groups on `address_row_map.page`, and nine of its ten rows say page=1 while one
 says page=2, so it emits `[address_1, address_1, address_2]` and `effective_page` 1 resolves to the
 physical page 2 image. ⚠ **The obvious one-line fix (normalise the page=2 row) DOUBLES the exposure
@@ -3147,10 +3134,9 @@ redaction sweep. Nothing published for one reason: `fn_blackout_targets`' `geo` 
 later. **"0 rows in `redacted_manifest_docs`" is the outcome, not the mechanism** - do not cite it as
 evidence a corrupt sheet is safe.
 
-⚠ **`ticket-833049` is not a footnote, it is a CUSTOMER BACKLOG.** It is the estate's single
-unpublished completed sheet: **10 client documents undelivered since 2026-08-17**, blocked by the
-deliberate `page_block_extents_no_ticket_833049` CHECK. Four audit lenses read its "0 redacted
-documents" as reassurance. Nobody is tracking it.
+⚠ **`ticket-833049` was a CUSTOMER BACKLOG, not a footnote:** 10 client documents undelivered from
+2026-08-17 until the 2026-09-07 unfreeze. Four audit lenses had read its "0 redacted documents" as
+reassurance. A completed sheet that publishes nothing is a backlog; watch `v_blackout_completed_unpublished`.
 
 ⚠ **A new card must be inserted ALREADY STAMPED.** An unstamped card freezes the whole folder
 (closed-world gate), and `trg_ab_autoplace_generated` only fires when `stamp_placed_at IS NULL` — its
@@ -3601,31 +3587,6 @@ reviewed band mid-transaction and asserting it comes back. Use
 `scripts/probes/derm_band_review/annotate.js` to render a page with its detected rules drawn over the
 scan, and `served.js` when the bands are too tight to judge that way.
 
-✅ **SEVERITY 1 IS CLEARED, AND THE RESULT IS WORTH KNOWING BEFORE YOU WORK THE REST: 22 bands, 15
-pages, ZERO leaks** (`2026-08-23_2333`). Severity 1 is "the band covers more than one printed slot",
-the shape that leaked all of Marie Blachere to 032-LG, and it screened at zero precision. Four
-causes, each verified against the paper:
-1. **the form's header bar reads as a slot boundary** (4) — the bottom edge of "B: Origination of
-   Waste" is full-width and indistinguishable from a real boundary by any local measurement;
-2. **an undetected mid-slot divider flips the phase** (9) — on a dark or handwritten scan the faint
-   divider inside a slot is missed and every label below it inverts;
-3. **the extra slot is empty** (5);
-4. **the client's own handwriting overflows the printed slot** (2) — so `SPANS_MULTIPLE` is
-   sometimes the CORRECT state, not merely imprecise.
-
-⚠ **Nothing in the database would have caught the four real leaks either.** They were bands holding
-another facility's PRINTED text, and on ticket-831047 that neighbour has no row on the sheet at all,
-so there was nothing to collide with. Telling "covers an empty slot" from "covers an occupied one"
-means reading the page. **The tier is a screen, not a verdict: it turned 635 documents into 22 that
-an hour cleared. Keep it, and expect it to be mostly false.**
-
-✅ **`derm.band_review` is the ledger.** A band a person has looked at and accepted drops off the
-worklist, so "empty is healthy" stays true. 🛑 **It is keyed on the BAND VALUES, not just the row: edit
-the band and the review stops matching and the row returns to the worklist.** An acceptance is a
-statement about one geometry, never a standing exemption, and the migration proves it by moving a
-reviewed band and asserting it comes back. Use `scripts/probes/derm_band_review/annotate.js` to
-render a page with its detected rules drawn over the scan; that is what the review was done with.
-
 🛑 **TWO VERDICTS, AND SAFE IS THE CONJUNCTION. Reading either one alone is the mistake that
 shipped at 07:36 and was fixed at 08:11.**
 
@@ -3846,7 +3807,7 @@ To find a missing DERM link, work in the Supabase DB. **Airtable is fully retire
 
 When all 3 align with a DB visit, link it through `public.file_manifest_on_shared_ticket(white#, client_id, visit_id)`, the sanctioned path (idempotent, and it satisfies the `manifest_visits` BEFORE-trigger guards documented above). A raw INSERT into `public.manifest_visits` (PK `(visit_id, manifest_id)`, audit trigger fires) is only for the client's own existing row.
 
-Historical note: a one-off backfill, `scripts/sync/backfill_manifest_visits_via_at_visits_field.js`, walked every Airtable DERM record's `Visits` field, resolved the Airtable visit GID's date and matched the DB visit by client + date (±1 day). It caught 11 missed links on its first run (2026-05-22). **It is dead code: Airtable was retired 2026-07-24, so do not run it.**
+Historical note: a one-off backfill, `scripts/sync/_archive/backfill_manifest_visits_via_at_visits_field.js`, walked every Airtable DERM record's `Visits` field, resolved the Airtable visit GID's date and matched the DB visit by client + date (±1 day). It caught 11 missed links on its first run (2026-05-22). **It is dead code: Airtable was retired 2026-07-24, so do not run it.**
 
 Historical note on why those links were missed: `webhook-airtable`'s link logic keyed on `GT Last Visit` ±2 days, and that field drifted by weeks on jobs invoiced after the fact (Chima 010-CS visit 1511 on 3/18 had a DERM dumped 4/24, Airtable's `GT Last Visit` showed 4/20, 33 days off). That feed is gone: the handler was severed 2026-07-21 and Airtable was fully retired 2026-07-24. Manifests are filed in the DERM Tracker app and linked explicitly, so there is no weekly backfill to run and no webhook left to patch.
 
@@ -4274,8 +4235,8 @@ produces exactly ONE message and then silence for ever. Restoring it is a `git r
 
 🛑 **ACKNOWLEDGEMENT IS ALWAYS TIME-BOXED. There is deliberately NO permanent mute.**
 `fn_health_ack(check, item, days, reason)` rejects `days<1`, `days>365`, and an empty reason.
-`blackout-health`'s `ticket-833049` is frozen on purpose by a CHECK constraint and will NEVER
-resolve; without an expiry it would mail for ever and become the new wallpaper. A permanently
+A deliberately frozen item (`ticket-833049` was one, 2026-08-19 to 2026-09-07) never resolves by
+itself; without an expiry it would mail for ever and become the new wallpaper. A permanently
 silenced problem is an unknown problem.
 
 🛑 **THE MARK HAPPENS ONLY AFTER RESEND ACCEPTS, AND THAT ASYMMETRY IS THE POINT.**
@@ -4548,12 +4509,12 @@ address byte for byte; 64 clients hold their star twice (71 of 74 duplicate pair
 capital letters).
 Full record: `Building Apps/Client App/docs/08-changelog.md` 2026-09-24.
 
-### 🛑 THE AUTOMATIC CITY EMAIL: A LIVE HOURLY CRON THAT IS DOING NOTHING ON PURPOSE (2026-08-28)
+### 🛑 THE AUTOMATIC CITY EMAIL: AN HOURLY CRON, IN PRODUCTION SINCE 2026-09-15 (built 2026-08-28)
 
-**`city-email-sweep` (`7 * * * *`, active) runs every hour and sends nothing.** That is the intended
-state, not a broken job. Do not "repair" it, do not unschedule it, and do not read its empty runs as
-a failure. A cron that has been running harmlessly for days is a far better thing to switch on than
-one whose first ever execution is also its first real send.
+**`city-email-sweep` (`7 * * * *`, active) runs every hour and sends only what is due**, so most runs
+send nothing; do not read empty runs as a failure. It was scheduled weeks before go-live on purpose:
+a cron that has run harmlessly for days is safer to switch on than one whose first execution is a
+real send. The production switch and its state are under "PRODUCTION SINCE 2026-09-15" below.
 
 **What it is for (rule REVERSED 2026-09-11, read this version):** the municipality gets the
 blacked-out DERM manifest automatically, but ONLY after a human has sent the Job Completion Report
@@ -4665,10 +4626,10 @@ unlocks; the only unlock-after-blackout cases are the three visits with no work 
 app refuses as not DERM-required. The `greatest()` timer branch is covered by a rolled-back probe
 in the migration instead.
 
-🛑 **COUPLING AT GO-LIVE:** `send-visit-photos-email` still hardcodes `IS_TEST = true`, so every
-Admin Review send is a test row. The moment `city_email_live_sends` becomes `true`, test rows stop
-unlocking, and NO automatic email would ever fire until `IS_TEST` is flipped in the same change.
-Step 2b below.
+🛑 **COUPLING AT ANY FLIP OF THE GATE:** while `city_email_live_sends` is `true`, only `is_test = false`
+Admin Review sends unlock a pair. `send-visit-photos-email` hardcoded `IS_TEST = true` until v35
+(2026-09-15); if a test flag is ever reintroduced there, it must flip in the same change as the gate,
+or no automatic email fires. Step 2b below.
 
 **Reviewed 2026-09-12 00:45 to 01:30 ET** (100-agent adversarial pass: 6 readers, 3 refuters per
 finding, two independent 18-case rolled-back smoke suites, both green, config and cron intact).
@@ -4722,10 +4683,9 @@ refuted), both real, neither fixed yet:
   send row. Fix direction when it is taken up: pin the reconstruction and the cutoff to the FIRST
   blackout, which needs a timestamp the ledger does not keep today.
 
-🛑 **Three properties hold an internal test address as their ONLY city email: 42 (009-CN), 973
-(249-LOU) and 363 (client 42).** Nothing rejects an @ayache.com address in `properties.city_emails`,
-so at go-live the sweep would mail Fred as if he were a municipality for those clients. Clear them
-(cutover step 0) before flipping the gate.
+🛑 **Nothing rejects an internal or test address in `properties.city_emails`**, so the live sweep
+mails it as if it were a municipality. Three properties held one (42, 973, 363) and were cleared at
+go-live; run cutover step 0 before any future flip of the gate.
 
 ⚠ What the rehearsal could NOT prove (the critic's list, kept honest): the live branch of the gates
 has only run against rolled-back synthetic rows, because `IS_TEST` is still hardcoded and there are
@@ -4795,7 +4755,7 @@ never files.**
 
 ```sql
 -- 0. FIRST, data: no test address may be sitting in properties.city_emails, or the sweep
---    mails it as a real municipality. Known: 009-CN property 42 holds fred@ayache.com.
+--    mails it as a real municipality. (Property 42, 009-CN, held fred@ayache.com until 2026-09-15.)
 select c.client_code, p.id, p.city_emails
   from public.properties p join public.clients c on c.id = p.client_id
  where p.deleted_at is null and p.city_emails && array['fred@ayache.com','test@example.com'];
@@ -4835,7 +4795,7 @@ select recipient_type, is_test, recipient_email, sent_at at time zone 'America/N
 
 ⚠ `client_email_live_sends` is a SEPARATE switch on the manual "Send DERM to clients" button and
 has nothing to do with this go-live. It was restored to `true` at some point before 2026-09-03, so
-it needs no action; the city gate is the only one still shut.
+it needs no action at a city-gate flip.
 
 🟢 **BOTH GATES ARE OPEN SINCE 2026-09-15** (client since before 2026-09-03). The paragraph below describes the SHUT states and is kept because either gate can be shut again. Historical heading: 🛑 **THE CITY GATE IS OFF FOR TESTING AND MUST BE RESTORED. THE CLIENT GATE IS ALREADY OPEN.**
 Nothing expires either and nothing alerts on them, which is why this paragraph went stale: it said
@@ -5061,7 +5021,8 @@ Nine things that will bite someone who does not know them:
 - **Subject ≤ 70 chars.** Imperative ("Add X", "Fix Y"). Not "Added", not "Fixing".
 - **Body explains *why*, not *what*.** Diff shows what.
 - **Co-author line** required on Claude commits:
-  `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
+  `Co-Authored-By: Claude <model name the session runs on> <noreply@anthropic.com>`
+  (e.g. `Claude Opus 5.5`). The root `CLAUDE.md` commit section is the same rule.
 - **Push every commit to origin** (updated 2026-05-27, per Fred). Fred pre-approves
   pushes to non-protected branches — no need to ask. Same trust model as the
   "no approval needed for routine actions" rule. Plain fast-forward `git push`
