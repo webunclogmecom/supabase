@@ -11,7 +11,8 @@
 // summer and in winter, and it makes no call at all when nothing is open).
 // Reads derm.fn_stamp_open_sheets() (the Studio's own list, derm.v_stamp_sheets, not completed).
 // Posts with the shared Slack bot (SLACK_BOT_TOKEN, chat.postMessage), the same bot as the DUMP alerts.
-// Body: { dry_run?: boolean }  dry_run returns the message without posting it.
+// Body: { dry_run?: boolean, test?: boolean }  dry_run returns the message without posting it; test
+// posts it with a "[TEST]" prefix (a one-off check that the bot can post to the channel).
 // Check: node scripts/checks/stamp_sheets_reminder.mjs (runs this file against stubs).
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -38,9 +39,9 @@ function bearerRole(req: Request): string | null {
 const day = (d: string) =>
   new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
-function buildMessage(sheets: Sheet[]): string {
+function buildMessage(sheets: Sheet[], test = false): string {
   const n = sheets.length;
-  const head = `:memo: *Stamp Studio: ${n} ${n === 1 ? "sheet is" : "sheets are"} not completed*`;
+  const head = (test ? "[TEST] " : "") + `:memo: *Stamp Studio: ${n} ${n === 1 ? "sheet is" : "sheets are"} not completed*`;
   const lines = sheets.slice(0, MAX_LINES).map((s) => {
     const date = s.dump_date ?? s.service_date;
     const parts = [
@@ -61,6 +62,7 @@ Deno.serve(async (req) => {
   if (bearerRole(req) !== "service_role") return json({ error: "service_role only" }, 403);
   const body = await req.json().catch(() => ({}));
   const dryRun = body.dry_run === true;
+  const test = body.test === true;
 
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_stamp_open_sheets`, {
     method: "POST",
@@ -76,7 +78,7 @@ Deno.serve(async (req) => {
   if (!Array.isArray(sheets)) return json({ error: "open sheets: not a list" }, 500);
   if (!sheets.length) return json({ posted: false, reason: "every sheet is completed" });
 
-  const text = buildMessage(sheets);
+  const text = buildMessage(sheets, test);
   if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, text });
 
   const token = Deno.env.get("SLACK_BOT_TOKEN");

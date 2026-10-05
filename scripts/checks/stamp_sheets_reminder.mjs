@@ -75,4 +75,10 @@ const anon = await run([sheet('836624')], { role: 'authenticated' });
 assert.strictEqual(anon.status, 403);
 assert.strictEqual(anon.posts.length, 0);
 
+// test: posted, with the [TEST] prefix
+const tst = await run([sheet('836624')], { body: { test: true } });
+assert.strictEqual(tst.posts.length, 1);
+assert.ok(tst.posts[0].text.startsWith('[TEST] :memo: '), tst.posts[0].text);
+assert.ok(!/TEST/.test(one.posts[0].text), 'a normal post carries no TEST mark');
+
 console.log('stamp_sheets_reminder: all checks passed');
