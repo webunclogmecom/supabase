@@ -29,6 +29,7 @@
 // service_role, so this ships without touching the anon grant surface at all.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { slackIdentity } from "../_shared/slack-identity.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -490,6 +491,8 @@ const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =
 //     so that if the bot token is missing, or the bot has not been invited to the PRIVATE #dump-visits yet,
 //     alerts keep firing exactly as they do today rather than going silent.
 // Returns null on every failure. Callers treat a null ts as "post top-level", never as an error.
+// The bot is the ONE shared notification bot (the Slack app renamed "UnclogMe Apps", 2026-10-05); the post shows as
+// "DUMP Schedule" with its icon once the bot holds chat:write.customize (_shared/slack-identity.ts), plain until then.
 async function slackPost(text: string, blocks: unknown[], threadTs?: string | null, broadcast = false): Promise<string | null> {
   const token = Deno.env.get("SLACK_BOT_TOKEN");
   const channel = Deno.env.get("SLACK_DUMP_CHANNEL_ID");
@@ -498,11 +501,12 @@ async function slackPost(text: string, blocks: unknown[], threadTs?: string | nu
 
   if (token && channel) {
     try {
+      const as = await slackIdentity(token, "DUMP Schedule", "dump-schedule");
       const res = await fetch("https://slack.com/api/chat.postMessage", {
         method: "POST",
         headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          channel, ...common,
+          channel, ...common, ...as,
           ...(threadTs ? { thread_ts: threadTs } : {}),
           // reply_broadcast is opt-in per alert, NOT blanket: broadcasting every reply would push them all
           // back into the channel and defeat the point of threading. Meaningless without thread_ts, so it

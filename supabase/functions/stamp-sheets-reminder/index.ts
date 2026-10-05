@@ -10,20 +10,22 @@
 // UTC; the wrapper lets through only the run that is 10 AM in New York, so the hour is right in
 // summer and in winter, and it makes no call at all when nothing is open).
 // Reads derm.fn_stamp_open_sheets() (the Studio's own list, derm.v_stamp_sheets, not completed).
-// Posts with chat.postMessage. The bot is the app's own when the secret APPS_SLACK_BOT_TOKEN is set (Fred,
-// 2026-10-05: "we might need another bot, because you're using the dump visit bot"), otherwise the shared
-// SLACK_BOT_TOKEN, the "Dump Visits" bot of the DUMP alerts. Every reply names the secret it used.
+// Posts with chat.postMessage on the ONE shared notification bot (SLACK_BOT_TOKEN, the Slack app renamed from
+// "Dump Visits" to "UnclogMe Apps"; Fred, 2026-10-05: one bot for every app, each message labelled with its
+// app), shown as "Stamp Studio" with the Stamp icon once the bot holds chat:write.customize
+// (_shared/slack-identity.ts; without that scope the post is plain).
 // Body: { dry_run?: boolean, test?: boolean, check_bot?: boolean }  dry_run returns the message without
-// posting it; test posts it with a "[TEST]" prefix; check_bot asks Slack who the bot is (auth.test) and
-// posts nothing.
+// posting it; test posts it with a "[TEST]" prefix; check_bot asks Slack who the bot is and which scopes it
+// holds (auth.test), and posts nothing.
 // Check: node scripts/checks/stamp_sheets_reminder.mjs (runs this file against stubs).
+
+import { slackIdentity, slackScopes } from "../_shared/slack-identity.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CHANNEL = Deno.env.get("STAMP_REMINDER_CHANNEL_ID") ?? "C0BJYHQKZM1"; // #apps-notifications
 const STUDIO = "https://stamp.unclogme.app";
 const MAX_LINES = 40;
-const BOT_SECRETS = ["APPS_SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN"]; // the first one set is used
 
 type Sheet = {
   manifest: string; service_date: string | null; dump_date: string | null;
@@ -67,14 +69,15 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const dryRun = body.dry_run === true;
   const test = body.test === true;
-  const botSecret = BOT_SECRETS.find((k) => Deno.env.get(k)) ?? null;
-  const token = botSecret ? Deno.env.get(botSecret)! : null;
+  const token = Deno.env.get("SLACK_BOT_TOKEN") ?? null;
 
   if (body.check_bot === true) {
-    if (!token) return json({ error: "no Slack bot token is set", bot_secret: null }, 500);
+    if (!token) return json({ error: "SLACK_BOT_TOKEN is not set" }, 500);
     const who = await fetch("https://slack.com/api/auth.test", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
     const w = await who.json().catch(() => ({}));
-    return json({ bot_secret: botSecret, ok: w.ok === true, bot: w.user ?? null, team: w.team ?? null, error: w.error ?? null });
+    const scopes = await slackScopes(token);
+    return json({ ok: w.ok === true, bot: w.user ?? null, team: w.team ?? null, error: w.error ?? null,
+      scopes, posts_as_app: scopes.includes("chat:write.customize") });
   }
 
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_stamp_open_sheets`, {
@@ -92,15 +95,16 @@ Deno.serve(async (req) => {
   if (!sheets.length) return json({ posted: false, reason: "every sheet is completed" });
 
   const text = buildMessage(sheets, test);
-  if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, bot_secret: botSecret, text });
+  if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, text });
 
-  if (!token) return json({ error: "no Slack bot token is set (APPS_SLACK_BOT_TOKEN or SLACK_BOT_TOKEN)" }, 500);
+  if (!token) return json({ error: "SLACK_BOT_TOKEN is not set" }, 500);
+  const as = await slackIdentity(token, "Stamp Studio", "stamp-studio");
   const res = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ channel: CHANNEL, text, unfurl_links: false, unfurl_media: false }),
+    body: JSON.stringify({ channel: CHANNEL, text, unfurl_links: false, unfurl_media: false, ...as }),
   });
   const out = await res.json().catch(() => ({}));
-  if (!out.ok) return json({ posted: false, bot_secret: botSecret, error: `slack: ${out.error ?? res.status}` }, 502);
-  return json({ posted: true, count: sheets.length, channel: CHANNEL, bot_secret: botSecret, ts: out.ts });
+  if (!out.ok) return json({ posted: false, error: `slack: ${out.error ?? res.status}` }, 502);
+  return json({ posted: true, count: sheets.length, channel: CHANNEL, as_app: "username" in as, ts: out.ts });
 });

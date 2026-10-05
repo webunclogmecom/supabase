@@ -1,61 +1,61 @@
-# The "UnclogMe Apps" Slack bot (app notifications)
+# The shared Slack notification bot ("UnclogMe Apps", formerly "Dump Visits")
 
-Fred, 2026-10-05, after the first Stamp Studio reminder: *"we might need another bot, because you're using the dump
-visit bot"*. Until then the daily reminder posted with the DUMP alerts' token (`SLACK_BOT_TOKEN`, Slack user
-`dump_visits`), so it appeared as "Dump Visits" in #apps-notifications.
+Fred, 2026-10-05: *"we might need another bot, because you're using the dump visit bot"*, then, on the choice
+between one bot and one per app: one bot for every app notification, each message labelled with its app, and
+*"let's remake the Dump Notification Bot then that we have"*. So there is ONE Slack app for one-way app
+notifications: the existing "Dump Visits" app, renamed "UnclogMe Apps". Each app's posts show the APP's own name
+and icon. A bot that does more than post (reads messages, answers people, has buttons or slash commands) stays its
+own Slack app: the GDO bot (`Slack/GDO Bot`) is one.
 
-## How the reminder picks its bot
+## What uses it
 
-Edge fn `stamp-sheets-reminder` (v3) uses the FIRST of these secrets that is set:
+| app | edge function | channel | shown as | icon key |
+|---|---|---|---|---|
+| DUMP Schedule | `dump-visit-create` | #dump-visits (private, secret `SLACK_DUMP_CHANNEL_ID`) | DUMP Schedule | `dump-schedule` |
+| DERM Stamp Studio | `stamp-sheets-reminder` | #apps-notifications (`C0BJYHQKZM1`) | Stamp Studio | `stamp-studio` |
 
-| secret | bot |
-|---|---|
-| `APPS_SLACK_BOT_TOKEN` | the app notifications bot made with the manifest below |
-| `SLACK_BOT_TOKEN` | the shared "Dump Visits" bot (DUMP alerts, `dump-visit-create`) |
+Token: Supabase secret `SLACK_BOT_TOKEN` (Slack bot user `dump_visits` until the app is renamed). Scopes measured
+2026-10-05: `chat:write`, `incoming-webhook` (the webhook is `SLACK_DUMP_WEBHOOK_URL`, the DUMP alerts' fallback
+when Slack refuses a chat.postMessage; a webhook cannot thread and ignores the custom name).
 
-Every reply names the secret it used (`bot_secret`). `{"check_bot": true}` asks Slack who the bot is
-(`auth.test`) and posts nothing:
+## How a post gets its app's name and icon
+
+`supabase/functions/_shared/slack-identity.ts`: `slackIdentity(token, "<App name>", "<icon key>")` returns
+`{username, icon_url}` to spread into the chat.postMessage body, or `{}`. Slack applies those two fields only when
+the app holds `chat:write.customize`, and its docs do not say what a post asking for them without it does, so the
+helper reads the bot's scopes first (`auth.test`, response header `x-oauth-scopes`, once per worker) and sends the
+identity only when that scope is granted. Without it, a post is exactly what it was before. The icons are the app
+icons already published at `.../storage/v1/object/public/manifests/_brand/favicons/<icon key>/icon-512.png`.
+
+Check, posts nothing:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H "Content-Type: application/json" -d '{"check_bot":true}' https://wbasvhvvismukaqdnouk.supabase.co/functions/v1/stamp-sheets-reminder
 ```
 
-`dump-visit-create` keeps `SLACK_BOT_TOKEN`; nothing about the DUMP alerts changes.
+It answers `{ok, bot, team, scopes, posts_as_app}`. `posts_as_app: true` means every app's posts now carry their
+own name. Test: `node scripts/checks/stamp_sheets_reminder.mjs` (runs the real helper; swapping the scope gate for
+`true` fails it).
 
-## Creating the bot (a person does this: it installs an app and handles a token)
+## Remaking the "Dump Visits" app (a person does this in Slack: it changes an installed app)
 
-1. https://api.slack.com/apps : **Create New App**, **From a manifest**, pick the Unclogme workspace, paste the JSON
-   below, **Create**.
-2. **Install to Workspace**, then **Allow**.
-3. **OAuth & Permissions**: copy the **Bot User OAuth Token** (starts `xoxb-`).
-4. Supabase dashboard, project `wbasvhvvismukaqdnouk`, **Edge Functions**, **Secrets**: add
-   `APPS_SLACK_BOT_TOKEN` with that token. No redeploy is needed: the next run reads it.
-5. In #apps-notifications: `/invite @UnclogMe Apps` (the bot has only `chat:write`, so it must be a member).
-6. Optional, for the icon: **Basic Information**, **App icon**, upload
+1. https://api.slack.com/apps, open **Dump Visits**.
+2. **Basic Information**, **Display Information**: App name `UnclogMe Apps`, Short description
+   `Notifications from the UnclogMe staff apps`, Background color `#f14714`, App icon: upload
    https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/_brand/favicons/apps-hub/icon-512.png
-   (the orange UnclogMe mark, 512 px).
-7. Check: run the `check_bot` call above (expect `"bot_secret":"APPS_SLACK_BOT_TOKEN"`), then a `{"test":true}` post.
+   (the UnclogMe mark). **Save Changes**.
+3. **App Home**, **Your App's Presence in Slack**, **Edit**: Display Name `UnclogMe Apps`, Default username
+   `unclogme_apps`. Save.
+4. **OAuth & Permissions**, **Scopes**, **Bot Token Scopes**, **Add an OAuth Scope**: `chat:write.customize`.
+5. Slack then shows a banner asking to reinstall: **Reinstall to Workspace**, **Allow**. Because the app has an
+   incoming webhook, Slack may ask for a channel: pick **#dump-visits** (the existing webhook keeps working).
+6. Run the check above. Expect `posts_as_app: true`. If it says `invalid_auth` or `token_revoked`, the reinstall
+   issued a new token: copy **Bot User OAuth Token** (OAuth & Permissions) into the Supabase secret
+   `SLACK_BOT_TOKEN` (dashboard, Edge Functions, Secrets). No redeploy is needed.
+7. A `{"test":true}` post of the reminder shows as "Stamp Studio"; the next DUMP alert shows as "DUMP Schedule".
 
-```json
-{
-  "display_information": {
-    "name": "UnclogMe Apps",
-    "description": "Notifications from the UnclogMe staff apps",
-    "background_color": "#f14714"
-  },
-  "features": {
-    "bot_user": { "display_name": "UnclogMe Apps", "always_online": false }
-  },
-  "oauth_config": {
-    "scopes": { "bot": ["chat:write"] }
-  },
-  "settings": {
-    "org_deploy_enabled": false,
-    "socket_mode_enabled": false,
-    "token_rotation_enabled": false
-  }
-}
-```
+## Adding a new app's notifications
 
-Only `chat:write`: the bot posts and does nothing else. Any later app notification for #apps-notifications should use
-`APPS_SLACK_BOT_TOKEN` the same way.
+Use `SLACK_BOT_TOKEN`, `chat.postMessage`, and spread `await slackIdentity(token, "<App name>", "<icon key>")` into
+the body. Invite the bot to the channel (`/invite @UnclogMe Apps`). Do not create a new Slack app for a one-way
+notification.

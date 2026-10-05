@@ -2,17 +2,22 @@
 // stripped by Node 22) against a stubbed database and a stubbed Slack, and asserts what is posted.
 //   node scripts/checks/stamp_sheets_reminder.mjs
 // The rules under test (Fred, 2026-10-05): post the not-completed Stamp Studio sheets to
-// #apps-notifications; post NOTHING when every sheet is completed; a dry run never posts.
+// #apps-notifications; post NOTHING when every sheet is completed; a dry run never posts; on the shared bot the
+// post shows as "Stamp Studio" ONLY when the bot holds chat:write.customize (the real _shared/slack-identity.ts
+// is inlined, so its scope gate is what is tested).
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
 import { stripTypeScriptTypes } from 'node:module';
 
 const src = fs.readFileSync(new URL('../../supabase/functions/stamp-sheets-reminder/index.ts', import.meta.url), 'utf8');
-const js = stripTypeScriptTypes(src);
+const helper = fs.readFileSync(new URL('../../supabase/functions/_shared/slack-identity.ts', import.meta.url), 'utf8');
+const IMPORT = 'import { slackIdentity, slackScopes } from "../_shared/slack-identity.ts";';
+assert.ok(src.includes(IMPORT), 'the function imports the shared identity helper');
+const js = [stripTypeScriptTypes(helper).replace(/^export /gm, ''), stripTypeScriptTypes(src.replace(IMPORT, ''))].join('\n');
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 
-async function run(sheets, { body = {}, role = 'service_role', slack = { ok: true, ts: '1.2' }, env = { SLACK_BOT_TOKEN: 'xoxb' } } = {}) {
+async function run(sheets, { body = {}, role = 'service_role', slack = { ok: true, ts: '1.2' }, env = { SLACK_BOT_TOKEN: 'xoxb' }, scopes = 'chat:write,incoming-webhook' } = {}) {
   const posts = [], auths = [];
   let handler, rpcHeaders;
   const ctx = {
@@ -22,7 +27,11 @@ async function run(sheets, { body = {}, role = 'service_role', slack = { ok: tru
       url = String(url);
       if (url.endsWith('/rest/v1/rpc/fn_stamp_open_sheets')) { rpcHeaders = opts.headers; return Response.json(sheets); }
       if (url === 'https://slack.com/api/chat.postMessage') { posts.push(JSON.parse(opts.body)); auths.push(opts.headers.Authorization); return Response.json(slack); }
-      if (url === 'https://slack.com/api/auth.test') { auths.push(opts.headers.Authorization); return Response.json({ ok: true, user: 'unclogme_apps', team: 'UnclogMe' }); }
+      if (url === 'https://slack.com/api/auth.test') {
+        auths.push(opts.headers.Authorization);
+        if (scopes === 'THROW') throw new Error('network down');
+        return Response.json({ ok: true, user: 'unclogme_apps', team: 'UnclogMe' }, { headers: scopes == null ? {} : { 'x-oauth-scopes': scopes } });
+      }
       throw new Error('unexpected fetch ' + url);
     },
     Response, JSON, String, Number, Math, Date, Array, Error, atob, btoa, console, encodeURIComponent,
@@ -82,18 +91,26 @@ assert.strictEqual(tst.posts.length, 1);
 assert.ok(tst.posts[0].text.startsWith('[TEST] :memo: '), tst.posts[0].text);
 assert.ok(!/TEST/.test(one.posts[0].text), 'a normal post carries no TEST mark');
 
-// the bot: the app's own token when APPS_SLACK_BOT_TOKEN is set, else the shared Dump Visits one; always named
-assert.strictEqual(one.body.bot_secret, 'SLACK_BOT_TOKEN');
-const own = await run([sheet('836624')], { env: { SLACK_BOT_TOKEN: 'xoxb-dump', APPS_SLACK_BOT_TOKEN: 'xoxb-apps' } });
-assert.deepStrictEqual(own.auths, ['Bearer xoxb-apps'], 'the app bot wins when its secret is set');
-assert.strictEqual(own.body.bot_secret, 'APPS_SLACK_BOT_TOKEN');
+// identity: plain without chat:write.customize (today's bot), "Stamp Studio" + icon with it, plain if Slack cannot say
+assert.ok(!('username' in one.posts[0]) && !('icon_url' in one.posts[0]), 'no custom name without the scope');
+assert.strictEqual(one.body.as_app, false);
+const asApp = await run([sheet('836624')], { scopes: 'chat:write, chat:write.customize,incoming-webhook' });
+assert.strictEqual(asApp.posts[0].username, 'Stamp Studio');
+assert.ok(asApp.posts[0].icon_url.endsWith('/_brand/favicons/stamp-studio/icon-512.png'), asApp.posts[0].icon_url);
+assert.strictEqual(asApp.body.as_app, true);
+for (const sc of [null, 'THROW']) {
+  const plain = await run([sheet('836624')], { scopes: sc });
+  assert.strictEqual(plain.posts.length, 1, 'an unreadable scope list still posts');
+  assert.ok(!('username' in plain.posts[0]), `no custom name when the scopes are unknown (${sc})`);
+}
 const noTok = await run([sheet('836624')], { env: {} });
 assert.strictEqual(noTok.status, 500); assert.strictEqual(noTok.posts.length, 0);
 
-// check_bot: asks Slack who the bot is, posts nothing, needs no open sheet
-const who = await run([], { body: { check_bot: true }, env: { SLACK_BOT_TOKEN: 'xoxb-dump', APPS_SLACK_BOT_TOKEN: 'xoxb-apps' } });
+// check_bot: who the bot is and what it may do, posts nothing, needs no open sheet
+const who = await run([], { body: { check_bot: true }, scopes: 'chat:write,chat:write.customize' });
 assert.strictEqual(who.posts.length, 0, 'check_bot must not post');
-assert.deepStrictEqual(who.auths, ['Bearer xoxb-apps']);
-assert.strictEqual(who.body.bot_secret, 'APPS_SLACK_BOT_TOKEN'); assert.strictEqual(who.body.bot, 'unclogme_apps');
+assert.strictEqual(who.body.bot, 'unclogme_apps');
+assert.deepStrictEqual(who.body.scopes, ['chat:write', 'chat:write.customize']);
+assert.strictEqual(who.body.posts_as_app, true);
 
 console.log('stamp_sheets_reminder: all checks passed');
