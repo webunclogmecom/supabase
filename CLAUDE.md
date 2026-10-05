@@ -439,6 +439,9 @@ Tracker's reads waited, and 4 failed. A rolled-back dry run holds the lock just 
 **Do:** put the DDL and only cheap checks in the transaction, and run heavy VERIFY blocks (full-view
 scans, per-row comparisons) BEFORE it against a copy, or AFTER the commit as a read-only check with a
 forward fix ready. Or apply outside ET business hours.
+⚠ **Since 2026-10-05 a backup dump runs every 2 hours at HH:17 UTC (even hours)** (`services/db-backup/`) and holds
+ACCESS SHARE on every business table and view until it ends, so DDL on one of them waits behind it and app reads queue
+behind the DDL. Start such a migration with `SET LOCAL lock_timeout = '3s'` and retry if it times out.
 **And the reverse, when an app is "slow":** a Stamp Studio completion or blackout sweep does NOT block
 readers (only row locks; proven 2026-09-30 with a rolled-back probe and live sampling). Before blaming
 the DB, split the time. `origin_time - x_envoy_upstream_service_time` in `edge_logs` is time spent in

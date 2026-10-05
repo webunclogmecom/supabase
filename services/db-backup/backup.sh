@@ -3,11 +3,13 @@
 # Fred, 2026-10-05: "Go with the 2-hour copy on Railway" (instead of PITR, which is off).
 # Setup, restore and the reasons: README.md next to this file.
 #
-# Usage:  backup.sh loop    (Railway start command: run now, then on every 2-hour slot)
-#         backup.sh once    (one run, for tests)
+# Usage:  backup.sh loop    (Railway start command: on every 2-hour slot; at start only if no recent copy)
+#         backup.sh once    (one attempt, for tests)
 # Connection: the standard libpq variables PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE (login db_backup_reader).
 # Options: BACKUP_DIR (/data), KEEP_2H (24), KEEP_DAILY (14), INTERVAL_HOURS (2), SLOT_MINUTE (17),
-#          DAILY_AFTER_HOURS (23), HEARTBEAT (on | dry | off), DUMP_TIMEOUT (45m)
+#          DAILY_AFTER_HOURS (23), HEARTBEAT (on | dry | off), DUMP_TIMEOUT (45m),
+#          MIN_TABLES_2H (120), MIN_TABLES_DAILY (140), REQUIRE_VOLUME (1; 0 only for local tests),
+#          PGSSLROOTCERT (if set to an existing file, PGSSLMODE defaults to verify-full)
 set -uo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-/data}"
@@ -16,9 +18,19 @@ KEEP_DAILY="${KEEP_DAILY:-14}"
 INTERVAL_HOURS="${INTERVAL_HOURS:-2}"
 SLOT_MINUTE="${SLOT_MINUTE:-17}"
 DAILY_AFTER_HOURS="${DAILY_AFTER_HOURS:-23}"
+MIN_TABLES_2H="${MIN_TABLES_2H:-120}"
+MIN_TABLES_DAILY="${MIN_TABLES_DAILY:-140}"
 HEARTBEAT="${HEARTBEAT:-on}"
 DUMP_TIMEOUT="${DUMP_TIMEOUT:-45m}"
+REQUIRE_VOLUME="${REQUIRE_VOLUME:-1}"
+if [ -n "${PGSSLROOTCERT:-}" ] && [ -f "${PGSSLROOTCERT}" ]; then export PGSSLMODE="${PGSSLMODE:-verify-full}"; fi
 export PGCONNECT_TIMEOUT=30 PGAPPNAME=db-backup PGSSLMODE="${PGSSLMODE:-require}"
+
+# A typo in a number must never turn this into a back-to-back dump loop.
+for v in KEEP_2H KEEP_DAILY INTERVAL_HOURS SLOT_MINUTE DAILY_AFTER_HOURS MIN_TABLES_2H MIN_TABLES_DAILY; do
+  case "${!v}" in ''|*[!0-9]*) echo "backup.sh: $v must be a whole number, got '${!v}'" >&2; exit 2 ;; esac
+done
+if [ "$INTERVAL_HOURS" -lt 1 ] || [ "$KEEP_2H" -lt 1 ] || [ "$KEEP_DAILY" -lt 1 ]; then echo "backup.sh: INTERVAL_HOURS, KEEP_2H and KEEP_DAILY must be at least 1" >&2; exit 2; fi
 
 # Business schemas. Not vault (secrets), auth/storage (Supabase-managed), cron/net/realtime (logs).
 SCHEMAS=(public derm ops client sync raw customer hr)
@@ -30,15 +42,12 @@ EXCLUDE_DATA_2H=(public.vehicle_telemetry_readings public.webhook_events_log pub
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
-heartbeat() { # status kind seconds bytes sha256 file message
+heartbeat() { # status kind seconds bytes sha256 file message ; the login's only write
   [ "$HEARTBEAT" = off ] && return 0
   local end=COMMIT; [ "$HEARTBEAT" = dry ] && end=ROLLBACK
-  psql -X -q -v ON_ERROR_STOP=1 -v st="$1" -v kind="$2" -v secs="$3" -v bytes="$4" -v sha="$5" -v file="$6" -v msg="$7" <<SQL
-begin;
-insert into public.sync_log (sync_source, started_at, finished_at, duration_seconds, status, details, error_details)
-values ('db_backup', now() - make_interval(secs => :'secs'::numeric), now(), :'secs'::numeric, :'st',
-        jsonb_build_object('kind', :'kind', 'bytes', :'bytes'::bigint, 'sha256', :'sha', 'file', :'file'),
-        case when :'msg' = '' then null else jsonb_build_object('message', :'msg') end);
+  timeout 2m psql -X -q -v ON_ERROR_STOP=1 -v st="$1" -v kind="$2" -v secs="$3" -v bytes="$4" -v sha="$5" -v file="$6" -v msg="$7" <<SQL
+begin transaction read write;
+select public.fn_db_backup_heartbeat(:'st', :'kind', :'secs'::numeric, :'bytes'::bigint, :'sha', :'file', :'msg');
 ${end};
 SQL
 }
@@ -53,37 +62,59 @@ prune() { # dir keep
   ls -1t "$1"/*.dump 2>/dev/null | tail -n +$(( $2 + 1 )) | while read -r f; do rm -f -- "$f" "$f.sha256"; log "pruned $(basename "$f")"; done
 }
 
-run_once() {
-  local kind=two_hourly keep=$KEEP_2H
-  if [ "$(newest_age_hours "$BACKUP_DIR/daily")" -ge "$DAILY_AFTER_HOURS" ]; then kind=daily; keep=$KEEP_DAILY; fi
+run_once() { # [kind]  (default: daily when the newest daily is DAILY_AFTER_HOURS old, else two_hourly)
+  if [ "$REQUIRE_VOLUME" = 1 ] && [ "${RAILWAY_VOLUME_MOUNT_PATH:-}" != "$BACKUP_DIR" ]; then
+    log "FAILED: no Railway volume mounted at $BACKUP_DIR"
+    heartbeat error setup 0 0 "" "" "no Railway volume mounted at $BACKUP_DIR; copies would be lost on the next deploy" || log "heartbeat failed"
+    return 2
+  fi
+  # Leftovers of a dump killed by a redeploy (Railway never mounts one volume into two live deployments).
+  rm -f -- "$BACKUP_DIR"/*/*.partial "$BACKUP_DIR"/*/*.toc
+
+  local kind="${1:-}"
+  if [ -z "$kind" ]; then
+    kind=two_hourly; [ "$(newest_age_hours "$BACKUP_DIR/daily")" -ge "$DAILY_AFTER_HOURS" ] && kind=daily
+  fi
+  local keep=$KEEP_2H min=$MIN_TABLES_2H
+  [ "$kind" = daily ] && { keep=$KEEP_DAILY; min=$MIN_TABLES_DAILY; }
   local dir="$BACKUP_DIR/$kind"; mkdir -p "$dir"
+  prune "$dir" $(( keep - 1 ))   # make room first, so a full disk can recover
   local file="$dir/prod_${kind}_$(date -u +%Y%m%dT%H%M%SZ).dump" err="$dir/.last_error"
-  local args=(-Fc -Z 6 --no-password)
+  local args=(-Fc -Z 6 --no-password --strict-names --lock-wait-timeout=60s)
   for s in "${SCHEMAS[@]}"; do args+=(-n "$s"); done
   [ "$kind" = daily ] && args+=(-n audit)
   for t in "${EXCLUDE_TABLE[@]}"; do args+=(--exclude-table="$t"); done
   [ "$kind" = two_hourly ] && for t in "${EXCLUDE_DATA_2H[@]}"; do args+=(--exclude-table-data="$t"); done
 
-  local t0; t0=$(date +%s)
+  local t0 rc tables=0; t0=$(date +%s)
   log "start $kind -> $(basename "$file")"
-  if timeout "$DUMP_TIMEOUT" pg_dump "${args[@]}" -f "$file.partial" 2>"$err" \
-     && pg_restore --list "$file.partial" >"$file.toc" 2>>"$err" \
-     && [ "$(grep -c ' TABLE DATA ' "$file.toc")" -ge 50 ]; then
+  timeout -k 1m "$DUMP_TIMEOUT" pg_dump "${args[@]}" -f "$file.partial" 2>"$err"; rc=$?
+  if [ "$rc" -eq 0 ] && pg_restore --list "$file.partial" >"$file.toc" 2>>"$err"; then
+    tables=$(grep -c ' TABLE DATA ' "$file.toc")
+  fi
+  if [ "$rc" -eq 0 ] && [ "$tables" -ge "$min" ]; then
     mv -- "$file.partial" "$file"; rm -f -- "$file.toc" "$err"
     local bytes sha secs; bytes=$(stat -c %s "$file"); sha=$(sha256sum "$file" | cut -d' ' -f1)
     echo "$sha  $(basename "$file")" >"$file.sha256"
     secs=$(( $(date +%s) - t0 ))
-    prune "$dir" "$keep"
-    log "ok $kind bytes=$bytes secs=$secs"
+    log "ok $kind bytes=$bytes tables=$tables secs=$secs"
     heartbeat success "$kind" "$secs" "$bytes" "$sha" "$(basename "$file")" "" || log "heartbeat failed"
   else
     local msg; msg=$(tail -c 400 "$err" 2>/dev/null | tr '\n' ' ')
-    [ -z "$msg" ] && msg="dump produced fewer than 50 tables of data"
+    [ "$rc" -eq 124 ] && msg="pg_dump timed out after $DUMP_TIMEOUT. $msg"
+    [ -z "$msg" ] && { [ "$rc" -ne 0 ] && msg="pg_dump exit $rc" || msg="only $tables tables of data, expected at least $min"; }
     rm -f -- "$file.partial" "$file.toc"
     log "FAILED $kind: $msg"
     heartbeat error "$kind" "$(( $(date +%s) - t0 ))" 0 "" "" "$msg" || log "heartbeat failed"
     return 1
   fi
+}
+
+attempt() { # a due daily that fails must not also cost the 2-hour copy (not retried on a setup error)
+  run_once; local rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 2 ] && return 1
+  [ "$(newest_age_hours "$BACKUP_DIR/daily")" -ge "$DAILY_AFTER_HOURS" ] && run_once two_hourly
 }
 
 seconds_to_next_slot() { # next HH:SLOT_MINUTE on an INTERVAL_HOURS grid, UTC
@@ -94,7 +125,14 @@ seconds_to_next_slot() { # next HH:SLOT_MINUTE on an INTERVAL_HOURS grid, UTC
 }
 
 case "${1:-loop}" in
-  once) run_once ;;
-  loop) while true; do run_once; s=$(seconds_to_next_slot); log "next run in ${s}s"; sleep "$s"; done ;;
+  once) attempt ;;
+  loop)
+    # A redeploy restarts the container: copy at start only when no recent copy exists.
+    a=$(newest_age_hours "$BACKUP_DIR/two_hourly"); b=$(newest_age_hours "$BACKUP_DIR/daily")
+    if [ "$(( a < b ? a : b ))" -ge "$INTERVAL_HOURS" ] || [ "$b" -ge "$DAILY_AFTER_HOURS" ]; then attempt; else log "recent copy found, waiting for the next slot"; fi
+    while true; do
+      s=$(seconds_to_next_slot); [ "${s:-0}" -gt 0 ] 2>/dev/null || s=3600
+      log "next run in ${s}s"; sleep "$s"; attempt
+    done ;;
   *) echo "usage: backup.sh loop|once" >&2; exit 2 ;;
 esac
