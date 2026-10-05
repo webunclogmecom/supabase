@@ -281,17 +281,19 @@ The Picture Planner's Page Builder is the third consumer (2026-09-25, `2026-09-2
 `client.get_page_builder_forms`, which returns shown-and-answered keys only (rule 18). Before that the builder read
 `get_intake` and ignored `applicable`, so its prefill could offer an abandoned lock-box code. The Planner's Property record tab (2026-09-28, rule 21) is the fourth: it reads `get_intake_compare` and calls `accept_intake_answers`, so it inherits the `not_shown` refusal.
 
-**15. 🛑 `yannick_readonly` reads `property_intakes` through a COLUMN grant that leaves out `token`.** It
-is a LOGIN role with BYPASSRLS, and the public schema's default ACL had given it table-level SELECT,
-live tokens included. A new column on `property_intakes` is therefore invisible to that role until
-granted by name, which is the safe default; **never "fix" that by granting table-level SELECT again.**
-The same default ACL handed it SELECT on `property_intake_uploads` the moment 0233 created it, while
-0233's header said "service_role only"; 0311 revoked it and now asserts the whole `relacl`. **A new
-table in `public` gets `yannick_readonly=r` by default: check every one.**
-⚠ Separately, that role's password sits in the public repo
-(`docs/handoffs/yannick-*/YANNICK-CLAUDE-CODE-SETUP.md`, since 2026-06-09). Fred chose (2026-09-24) to
-have Yannick change it; the literals come out of the docs after he does, and scrubbing git history is a
-force-push that needs Fred's OK.
+**15. 🛑 `yannick_readonly` reads `property_intakes` through a COLUMN grant that leaves out `token`.**
+Until 2026-10-05 it was a LOGIN role with BYPASSRLS, and the public schema's default ACL had given it
+table-level SELECT, live tokens included. A new column on `property_intakes` is therefore invisible to
+that role until granted by name, which is the safe default; **never "fix" that by granting table-level
+SELECT again.** The same default ACL handed it SELECT on `property_intake_uploads` the moment 0233
+created it, while 0233's header said "service_role only"; 0311 revoked it and now asserts the whole
+`relacl`.
+✅ **Since 2026-10-05 the role is NOLOGIN, NOBYPASSRLS, has no password and no default privileges**
+(`docs/migrations/2026-10-05_1425_yannick_readonly_login_off.sql`; its password had been published in this
+repo). Its existing grants are kept on purpose but are inert, so new `public` tables no longer get
+`yannick_readonly=r`. 🛑 **Do not copy a `yannick_readonly` assertion from an old VERIFY block onto a NEW
+object**: the role no longer receives default grants, so such an assertion would fail or test nothing. If
+Yannick needs to read data again, Fred chose (2026-10-05) a staff app login, not a database password.
 
 **16. 🛑 A follow-up is only ever asked together with the question it depends on.** An empty `key=`
 reads a parent that was never ASKED as "left blank", so a requested set with a follow-up but not its
@@ -519,8 +521,8 @@ stayed `intake-submit?t=`.) Why each piece:
     refuses when it changed (`blocker=source_changed`), and it strips the server-owned `site_map` and per-photo `rot`,
     so a stored version can be sent back as it is. The baseline compares the MAP BY CONTENT, not by `rev` (the rev
     repeats after a clear and moves on a no-op save).
-  - 🛑 **Grants:** the three tables are revoked by name from `yannick_readonly` too (a login role with BYPASSRLS that the
-    default ACL grants on every new public table); every `public` helper is revoked from anon and authenticated; the list
+  - 🛑 **Grants:** the three tables are revoked by name from `yannick_readonly` too (then a login role with BYPASSRLS that
+    the default ACL granted on every new public table; NOLOGIN with no default grants since 2026-10-05, rule 15); every `public` helper is revoked from anon and authenticated; the list
     is a SECURITY DEFINER function, not a view (a function inside a view runs with the caller's rights).
   - `property_page_links.public_id` is in `audit.redacted_columns`. The staff mark on an open is self-reported by the
     page: advisory only.

@@ -1,3 +1,6 @@
+-- 🛑 DO NOT RE-RUN (2026-10-05). The role was switched off by docs/migrations/2026-10-05_1425_yannick_readonly_login_off.sql
+-- (NOLOGIN, NOBYPASSRLS, no password). Re-running this would turn row-security bypass back on and grant SELECT on
+-- every public table. Kept as the historical record of how the role was created.
 -- ============================================================================
 -- Migration: yannick_readonly Postgres role — 2026-05-08
 -- ============================================================================
