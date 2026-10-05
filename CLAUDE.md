@@ -2315,7 +2315,8 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
 - **Removed from the app:** Auto-place (`derm.auto_place_page`, revoked then dropped after the app
   shipped), Re-measure printed lines AND its silent run on every page open (it wrote runlen-v2 lines
   with no user action), and "Confirm lines manually". The in-app writers of printed lines are now
-  Draw the bands (human-v1, through `save_page_bands`) and the generated-sheet finisher (template-v1).
+  Draw the bands (human-v1, through `save_page_bands`) and the generated-sheet finisher (template-v1);
+  server side, the background measuring below writes runlen-v2.
   🛑 **Do NOT drop the `runlen-v2-%` arm of `_is_rule_source` / `_rule_source_rank`**: 175 pages are
   still served from runlen-v2 lines, and every band check reads them.
 - `assign_card_to_slot` and `save_page_slots` still exist and are no longer called by the app.
@@ -2332,10 +2333,32 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   - **A stamp that already has a band keeps it on a redraw** (a reviewed overflow band is never
     replaced); only stamps without a band take their row.
   - **Independent check:** when the page's scan has a machine measurement (runlen-v2 / template-v1,
-    not FAILED, same image), a drawn row may not cross a measured line between two clients
-    (tolerance 0.5pp, the machine's first and last line exempt). It refuses a half-row shift and a
-    line 1pp off; all 22 hand-drawn pages re-save. ⚠ A NEW handwritten page has no machine
-    measurement (the in-app re-measure is gone), so for it the person's lines are the only truth.
+    graded **OK** since `2026-10-05_1600`, same image), a drawn row may not cross a measured line
+    between two clients (tolerance 0.5pp, the machine's first and last line exempt). It refuses a
+    half-row shift and a line 1pp off; all 22 hand-drawn pages re-save. A new page gets its machine
+    measurement from the background measuring below; until it lands (or if it cannot be measured)
+    the person's lines are the only truth.
+  - **Background measuring (`2026-10-05_1600`, Fred: "yes measure in the background"):** every page
+    of a sheet NOT completed whose current scan has no runlen-v2 / template-v1 scan
+    (`derm.v_page_reference_backlog`) is measured by edge fn `measure-page-reference` (the app's own
+    two steps server side: `_shared/printed_rule_detector.mjs` + `_shared/printed_rule_classifier.mjs`,
+    the page's Limit as the window) and recorded by `derm.fn_page_reference_measured` through
+    `record_page_rules` as `runlen-v2-<ET date>`, detail `background measurement: ...`. It ranks
+    BELOW human-v1 and template-v1, so a person's lines are never replaced; on an undrawn page it is
+    what Draw the bands opens with. Cron `page-reference-measure` ('8-58/10', 2 pages a run, no HTTP
+    when nothing waits) via `public.fn_request_page_reference_measure()`; ledger
+    `derm.page_reference_attempts` (3 attempts per image, a replaced scan gets a fresh budget, the
+    attempt is recorded BEFORE asking). A page the validator refuses is written FAILED (or not at
+    all over an existing OK scan): no reference, the person's lines stand. JPEG only (199 of 203
+    scans). 🛑 The edge runtime allows 2 s of CPU: a 7-megapixel scan died at 2,025 ms until the
+    detector was made 3.7x faster with identical output (64 runs over 32 scans + the frozen control
+    `scripts/probes/generated_finisher/detect_core_test.mjs`); it now takes 1.2 s. Any change to the
+    shared detector must keep both its output and that margin. Checks:
+    `node scripts/checks/page_reference_classifier.mjs` (pipeline = the app on 8 real scans; it
+    excludes background scans as controls, since those were made by the pipeline itself).
+    ⚠ Two April scans (window7-sheet3 p1, window9-sheet1 p1) carry EXIF orientation 3; the whole
+    pipeline (stamps, bands, redactor, detector) works on the stored pixels and their served
+    documents are correct, so the flag is ignored everywhere, deliberately.
   - `place_stamp_in_row` refuses rows drawn on a replaced scan (etag), counts a row as taken by any
     stamp inside it, and keeps the band of a stamp nudged inside it.
   - `record_page_rules`, `save_page_slots`, `assign_card_to_slot`, `set_row_band` and
