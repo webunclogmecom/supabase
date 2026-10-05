@@ -31,7 +31,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
-const MODEL = "claude-sonnet-5";
+// claude-sonnet-5-5 since 2026-10-05 (was claude-sonnet-5). Measured on 6 recent pages (37 rows) against
+// the stored Sonnet 5 reads: Sonnet 5.5 matched 37/37; claude-opus-5-5 matched 36/37 and, 4 runs of 4,
+// declined the tiny printed "249-LOU" on ticket-836200 p1 row 3 (name read, code null, "not sure").
+// A declined code is "no opinion" to the placement gate, so Opus would have held back a correct stamp.
+const MODEL = "claude-sonnet-5-5";
 const TIME_BUDGET_MS = 40000;
 const MAX_PAGES = 6;
 
@@ -99,9 +103,17 @@ async function askVision(bytes: Uint8Array, mt: string): Promise<{ text: string;
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "x-api-key": ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+    headers: {
+      "x-api-key": ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "Content-Type": "application/json",
+      // The default server-side fallback: a refusal is answered by another model inside the same call.
+      "anthropic-beta": "server-side-fallback-2026-07-01",
+    },
     body: JSON.stringify({
-      model: MODEL, max_tokens: 4000,
+      // Sonnet 5.5 thinks by default and thinking counts toward max_tokens, so 16000 leaves room (a
+      // cut-off surfaces as stop=max_tokens and zero rows). Effort pinned to medium, the level measured.
+      model: MODEL, max_tokens: 16000,
+      output_config: { effort: "medium" },
+      fallbacks: "default",
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: mt, data: btoa(bin) } },
         { type: "text", text: PROMPT },
