@@ -1,9 +1,10 @@
-# The shared Slack notification bot ("UnclogMe Apps", formerly "Dump Visits")
+# The shared Slack notification bot ("UnclogMe Apps", formerly the "Dump Notification" app)
 
 Fred, 2026-10-05: *"we might need another bot, because you're using the dump visit bot"*, then, on the choice
 between one bot and one per app: one bot for every app notification, each message labelled with its app, and
 *"let's remake the Dump Notification Bot then that we have"*. So there is ONE Slack app for one-way app
-notifications: the existing "Dump Visits" app, renamed "UnclogMe Apps". Each app's posts show the APP's own name
+notifications: the existing Slack app "Dump Notification" (`A0BK2UBD1ML`, bot user "Dump Visits",
+`U0BJYLYS011`), renamed "UnclogMe Apps". Each app's posts show the APP's own name
 and icon. A bot that does more than post (reads messages, answers people, has buttons or slash commands) stays its
 own Slack app: the GDO bot (`Slack/GDO Bot`) is one.
 
@@ -11,8 +12,12 @@ own Slack app: the GDO bot (`Slack/GDO Bot`) is one.
 
 | app | edge function | channel | shown as | icon key |
 |---|---|---|---|---|
-| DUMP Schedule | `dump-visit-create` | #dump-visits (private, secret `SLACK_DUMP_CHANNEL_ID`) | DUMP Schedule | `dump-schedule` |
-| DERM Stamp Studio | `stamp-sheets-reminder` | #apps-notifications (`C0BJYHQKZM1`) | Stamp Studio | `stamp-studio` |
+| DUMP Schedule | `dump-visit-create` | `C0BJYHQKZM1` (secret `SLACK_DUMP_CHANNEL_ID`) | DUMP Schedule | `dump-schedule` |
+| DERM Stamp Studio | `stamp-sheets-reminder` | `C0BJYHQKZM1` | Stamp Studio | `stamp-studio` |
+
+Both post to the SAME private channel: `C0BJYHQKZM1` was #dump-visits and is now #apps-notifications (all 17
+stored DUMP thread parents in `dump_activity` carry that id, measured 2026-10-05). The app name on each post is
+what tells the two apart.
 
 Token: Supabase secret `SLACK_BOT_TOKEN` (Slack bot user `dump_visits` until the app is renamed). Scopes measured
 2026-10-05: `chat:write`, `incoming-webhook` (the webhook is `SLACK_DUMP_WEBHOOK_URL`, the DUMP alerts' fallback
@@ -37,9 +42,9 @@ It answers `{ok, bot, team, scopes, posts_as_app}`. `posts_as_app: true` means e
 own name. Test: `node scripts/checks/stamp_sheets_reminder.mjs` (runs the real helper; swapping the scope gate for
 `true` fails it).
 
-## Remaking the "Dump Visits" app (a person does this in Slack: it changes an installed app)
+## Remaking the "Dump Notification" app (a person does this in Slack: it changes an installed app)
 
-1. https://api.slack.com/apps, open **Dump Visits**.
+1. https://api.slack.com/apps, open **Dump Notification**.
 2. **Basic Information**, **Display Information**: App name `UnclogMe Apps`, Short description
    `Notifications from the UnclogMe staff apps`, Background color `#f14714`, App icon: upload
    https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/_brand/favicons/apps-hub/icon-512.png
@@ -48,7 +53,8 @@ own name. Test: `node scripts/checks/stamp_sheets_reminder.mjs` (runs the real h
    `unclogme_apps`. Save.
 4. **OAuth & Permissions**, **Scopes**, **Bot Token Scopes**, **Add an OAuth Scope**: `chat:write.customize`.
 5. Slack then shows a banner asking to reinstall: **Reinstall to Workspace**, **Allow**. Because the app has an
-   incoming webhook, Slack may ask for a channel: pick **#dump-visits** (the existing webhook keeps working).
+   incoming webhook, Slack may ask for a channel: pick **#apps-notifications** (the existing webhook keeps
+   working).
 6. Run the check above. Expect `posts_as_app: true`. If it says `invalid_auth` or `token_revoked`, the reinstall
    issued a new token: copy **Bot User OAuth Token** (OAuth & Permissions) into the Supabase secret
    `SLACK_BOT_TOKEN` (dashboard, Edge Functions, Secrets). No redeploy is needed.
