@@ -3095,6 +3095,10 @@ backfills this estate does constantly.
   that alone would retry for ever. `image_url` is IN the ledger key, so replacing a scan re-arms it
   with no expiry logic. The attempt is recorded when the target is HANDED OUT, so a worker that dies
   mid-call still consumes its budget, which is the fail-safe direction.
+  ✅ Since 2026-10-05 a vision reply that did not stop with `end_turn` (cut off at `max_tokens`, or a
+  `refusal`) also takes that no-write path, and `max_tokens` is 2048, not 32: an empty cut-off reply
+  used to classify as `unreadable` and drain the page for good. Test:
+  `node scripts/checks/ocr_sheet_number_guard.mjs` (runs the real `index.ts` against stubs).
 
 🛑 **SCOPE IS UNCHANGED AND THE GAP IS REPORTED, NOT CLOSED.** The `ticket-%` filter is justified on
 "a read can never be used" for `window*` folders, which is **the same premise Arm B exists to

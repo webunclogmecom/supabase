@@ -107,7 +107,7 @@ const PROMPT =
 
 function askVision(buf, mediaType) {
   const body = JSON.stringify({
-    model: MODEL, max_tokens: 32,
+    model: MODEL, max_tokens: 2048,  // thinking counts toward max_tokens; same as the edge function
     messages: [{ role: 'user', content: [
       { type: 'image', source: { type: 'base64', media_type: mediaType, data: buf.toString('base64') } },
       { type: 'text', text: PROMPT }
@@ -121,7 +121,10 @@ function askVision(buf, mediaType) {
     }, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => {
       if (r.statusCode >= 300) return rej(new Error('anthropic ' + r.statusCode + ': ' + d.slice(0, 200)));
       const j = JSON.parse(d);
-      res((j.content && j.content[0] && j.content[0].text || '').trim()); }); });
+      // Same rules as the edge function: a cut-off or refused reply is an error, never an
+      // UNREADABLE read, and text is selected by block TYPE (content[0] can be a thinking block).
+      if (j.stop_reason !== 'end_turn') return rej(new Error('anthropic stop_reason ' + (j.stop_reason || 'missing')));
+      res((j.content || []).filter(c => c && c.type === 'text').map(c => c.text || '').join('\n').trim()); }); });
     req.on('error', rej); req.write(body); req.end();
   });
 }

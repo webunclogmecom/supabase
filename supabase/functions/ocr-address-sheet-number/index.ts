@@ -96,7 +96,10 @@ async function askVision(bytes: Uint8Array, mediaType: string): Promise<string> 
       "x-api-key": ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: MODEL, max_tokens: 32,
+      // Room for thinking: this model may think before answering and thinking counts toward
+      // max_tokens. Measured 2026-10-05 it did not think on 8 known sheets (6 tokens out), but 32
+      // left no margin if it ever does. max_tokens is a ceiling, not a cost.
+      model: MODEL, max_tokens: 2048,
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: mediaType, data: btoa(bin) } },
         { type: "text", text: PROMPT },
@@ -105,6 +108,11 @@ async function askVision(bytes: Uint8Array, mediaType: string): Promise<string> 
   });
   if (!r.ok) throw new Error(`anthropic ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = await r.json();
+  // 🛑 A cut-off (max_tokens) or refused reply is NOT an "unreadable" sheet. Returning its empty text
+  // would classify as unreadable and write a row, and a row names the image, so the backlog would
+  // never offer this page again. Throwing takes the caller's no-write path instead: the page stays
+  // unread and is retried within derm.sheet_number_ocr_attempts.
+  if (j?.stop_reason !== "end_turn") throw new Error(`anthropic stop_reason ${j?.stop_reason ?? "missing"}`);
   // 🛑 NOT content[0].text — the content array can lead with a non-text block (thinking), making
   // content[0].text undefined, which reads back as "UNREADABLE" on a legible sheet. Because a
   // no-read is treated as "no opinion" by the placement gate, that failure is SILENT: the sheet just
