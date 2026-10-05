@@ -1,5 +1,8 @@
 # The shared Slack notification bot ("UnclogMe Apps", formerly the "Dump Notification" app)
 
+The FORMAT of every message (the header, the shape, the writing rules) and how to build a new notification:
+[slack-notifications.md](slack-notifications.md). This file is about the bot.
+
 Fred, 2026-10-05: *"we might need another bot, because you're using the dump visit bot"*, then, on the choice
 between one bot and one per app: one bot for every app notification, each message labelled with its app, and
 *"let's remake the Dump Notification Bot then that we have"*. So there is ONE Slack app for one-way app
@@ -25,7 +28,7 @@ when Slack refuses a chat.postMessage; a webhook cannot thread and ignores the c
 
 ## How a post gets its app's name and icon
 
-`supabase/functions/_shared/slack-identity.ts`: `slackIdentity(token, "<App name>", "<icon key>")` returns
+`supabase/functions/_shared/slack-notify.ts`: `slackIdentity(token, "<App name>", "<icon key>")` returns
 `{username, icon_url}` to spread into the chat.postMessage body, or `{}`. Slack applies those two fields only when
 the app holds `chat:write.customize`, and its docs do not say what a post asking for them without it does, so the
 helper reads the bot's scopes first (`auth.test`, response header `x-oauth-scopes`, once per worker) and sends the

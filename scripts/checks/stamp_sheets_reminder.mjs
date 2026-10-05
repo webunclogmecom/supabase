@@ -3,16 +3,17 @@
 //   node scripts/checks/stamp_sheets_reminder.mjs
 // The rules under test (Fred, 2026-10-05): post the not-completed Stamp Studio sheets to
 // #apps-notifications; post NOTHING when every sheet is completed; a dry run never posts; on the shared bot the
-// post shows as "Stamp Studio" ONLY when the bot holds chat:write.customize (the real _shared/slack-identity.ts
-// is inlined, so its scope gate is what is tested).
+// post shows as "Stamp Studio" ONLY when the bot holds chat:write.customize; every post starts with the header block
+// (Option A) and its sections rebuild the message under Slack's limits (the real _shared/slack-notify.ts is inlined,
+// so its scope gate, header and section split are what is tested).
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
 import { stripTypeScriptTypes } from 'node:module';
 
 const src = fs.readFileSync(new URL('../../supabase/functions/stamp-sheets-reminder/index.ts', import.meta.url), 'utf8');
-const helper = fs.readFileSync(new URL('../../supabase/functions/_shared/slack-identity.ts', import.meta.url), 'utf8');
-const IMPORT = 'import { slackIdentity, slackScopes } from "../_shared/slack-identity.ts";';
+const helper = fs.readFileSync(new URL('../../supabase/functions/_shared/slack-notify.ts', import.meta.url), 'utf8');
+const IMPORT = 'import { slackHeader, slackIdentity, slackScopes, slackSections } from "../_shared/slack-notify.ts";';
 assert.ok(src.includes(IMPORT), 'the function imports the shared identity helper');
 const js = [stripTypeScriptTypes(helper).replace(/^export /gm, ''), stripTypeScriptTypes(src.replace(IMPORT, ''))].join('\n');
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
@@ -64,11 +65,21 @@ assert.ok(two.posts[0].text.includes('Manifest 1> · dumped Sep 20 · 0 of 9 sta
 assert.ok(two.posts[0].text.split('\n')[2].endsWith('In progress'), 'no "waiting" on the day of the dump');
 assert.ok(!/—/.test(two.posts[0].text), 'no em dash in the message');
 
+// the header (Option A) comes first, and the sections rebuild the exact message
+const blocksOf = (p) => p.blocks;
+const sectionsText = (p) => p.blocks.slice(1).map((b) => { assert.strictEqual(b.type, 'section'); assert.strictEqual(b.text.type, 'mrkdwn'); return b.text.text; }).join('\n');
+assert.deepStrictEqual(blocksOf(one.posts[0])[0], { type: 'header', text: { type: 'plain_text', text: '📝 Stamp Studio sheets', emoji: true } });
+assert.strictEqual(sectionsText(one.posts[0]), one.posts[0].text, 'the sections hold the whole message');
+
 // more than 40: capped with a pointer to the Studio
 const many = await run(Array.from({ length: 45 }, (_, i) => sheet(String(900000 + i))));
 const lines = many.posts[0].text.split('\n');
 assert.strictEqual(lines.length, 1 + 40 + 1);
 assert.ok(lines.at(-1).includes('and 5 more'), lines.at(-1));
+assert.strictEqual(sectionsText(many.posts[0]), many.posts[0].text, 'a long list is split without losing a line');
+assert.ok(many.posts[0].blocks.length <= 50, 'Slack allows 50 blocks');
+for (const b of many.posts[0].blocks.slice(1)) assert.ok(b.text.text.length <= 3000, `section of ${b.text.text.length} chars`);
+assert.ok(many.posts[0].blocks.length > 2, 'the 41-line list needs more than one section, so the split is exercised');
 
 // dry run: the text, no post
 const dry = await run([sheet('836624')], { body: { dry_run: true } });

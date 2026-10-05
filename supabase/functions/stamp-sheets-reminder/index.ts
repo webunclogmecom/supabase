@@ -13,13 +13,14 @@
 // Posts with chat.postMessage on the ONE shared notification bot (SLACK_BOT_TOKEN, the Slack app renamed from
 // "Dump Visits" to "UnclogMe Apps"; Fred, 2026-10-05: one bot for every app, each message labelled with its
 // app), shown as "Stamp Studio" with the Stamp icon once the bot holds chat:write.customize
-// (_shared/slack-identity.ts; without that scope the post is plain).
+// (_shared/slack-notify.ts; without that scope the post is plain). Like every app notification it starts with a
+// header block (Fred, 2026-10-05, Option A): docs/reference/slack-notifications.md.
 // Body: { dry_run?: boolean, test?: boolean, check_bot?: boolean }  dry_run returns the message without
 // posting it; test posts it with a "[TEST]" prefix; check_bot asks Slack who the bot is and which scopes it
 // holds (auth.test), and posts nothing.
 // Check: node scripts/checks/stamp_sheets_reminder.mjs (runs this file against stubs).
 
-import { slackIdentity, slackScopes } from "../_shared/slack-identity.ts";
+import { slackHeader, slackIdentity, slackScopes, slackSections } from "../_shared/slack-notify.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -102,7 +103,8 @@ Deno.serve(async (req) => {
   const res = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ channel: CHANNEL, text, unfurl_links: false, unfurl_media: false, ...as }),
+    body: JSON.stringify({ channel: CHANNEL, text, blocks: [slackHeader("📝 Stamp Studio sheets"), ...slackSections(text)],
+      unfurl_links: false, unfurl_media: false, ...as }),
   });
   const out = await res.json().catch(() => ({}));
   if (!out.ok) return json({ posted: false, error: `slack: ${out.error ?? res.status}` }, 502);

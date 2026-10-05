@@ -29,7 +29,7 @@
 // service_role, so this ships without touching the anon grant surface at all.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { slackIdentity } from "../_shared/slack-identity.ts";
+import { slackHeader, slackIdentity } from "../_shared/slack-notify.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -460,7 +460,7 @@ async function dumpMeta(dumpVisitId: number) {
   const whenET = v?.start_at
     ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short",
         month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(v.start_at as string)) + " ET"
-    : "—";
+    : "not recorded";
   let truck = "";
   if (v?.vehicle_id) {
     const { data: veh } = await db.from("vehicles").select("name").eq("id", v.vehicle_id).maybeSingle();
@@ -492,7 +492,9 @@ const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =
 //     alerts keep firing exactly as they do today rather than going silent.
 // Returns null on every failure. Callers treat a null ts as "post top-level", never as an error.
 // The bot is the ONE shared notification bot (the Slack app renamed "UnclogMe Apps", 2026-10-05); the post shows as
-// "DUMP Schedule" with its icon once the bot holds chat:write.customize (_shared/slack-identity.ts), plain until then.
+// "DUMP Schedule" with its icon once the bot holds chat:write.customize (_shared/slack-notify.ts), plain until then.
+// Every alert starts with a header block saying what it is about (Fred, 2026-10-05, Option A). The format rules for
+// every app's notifications: Supabase docs/reference/slack-notifications.md.
 async function slackPost(text: string, blocks: unknown[], threadTs?: string | null, broadcast = false): Promise<string | null> {
   const token = Deno.env.get("SLACK_BOT_TOKEN");
   const channel = Deno.env.get("SLACK_DUMP_CHANNEL_ID");
@@ -601,7 +603,7 @@ async function postDumpCreatedAlert(
   } else if (opts?.truck?.confidence === "conflict") {
     const g = opts.truck.candidates?.gps_vehicle_name ?? "?";
     const c = opts.truck.candidates?.cal_vehicle_name ?? "?";
-    truckLine = `*Truck:* ⚠️ unconfirmed — GPS says ${g}, Calendar says ${c}`;
+    truckLine = `*Truck:* ⚠️ unconfirmed: GPS says ${g}, Calendar says ${c}`;
   } else {
     truckLine = `*Truck:* not identified`;
   }
@@ -618,17 +620,18 @@ async function postDumpCreatedAlert(
   }
   const extra: string[] = [];
   if (opts?.afterHours) extra.push(`📞 *Called ahead:* ${opts.calledAhead ? "✅ yes" : "❌ no (went without calling)"}`);
-  if (loadCount === 0) extra.push(`🫙 *No completed DERM pickups to report on this load* — no visits for this driver this shift.`);
+  if (loadCount === 0) extra.push(`🫙 *No completed DERM pickups to report on this load.* No visits for this driver this shift.`);
   else if (loadCount > 0) extra.push(`📋 *${loadCount}* completed DERM pickup${loadCount === 1 ? "" : "s"} to report on this load.`);
 
   const blocks: unknown[] = [
-    { type: "section", text: { type: "mrkdwn", text: `🚛 ${tag}*${m.titleMd}* — ${driverName} is dumping` } },
+    slackHeader("🚛 Dumping"),
+    { type: "section", text: { type: "mrkdwn", text: `🚛 ${tag}*${m.titleMd}*: ${driverName} is dumping` } },
     { type: "section", text: { type: "mrkdwn", text: fields } },
   ];
   if (extra.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: extra.join("\n") } });
   blocks.push(...routeContext(m.routeLink));
   // This is the PARENT message of the dump run. Keep its ts so the follow-ups can thread under it.
-  const ts = await slackPost(`🚛 ${tag}${m.title} — ${driverName} (dumping)`, blocks);
+  const ts = await slackPost(`🚛 ${tag}${m.title}: ${driverName} is dumping`, blocks);
   const channel = Deno.env.get("SLACK_DUMP_CHANNEL_ID");
   if (ts && channel) await saveParentTs(dumpVisitId, ts, channel);
 }
@@ -656,15 +659,16 @@ async function postDumpAlert(
   // repeated Route Link — the parent message already carries all of that. Just a one-line "update to that
   // dump" context + the payload. Threads under the parent when a bot token is configured.
   const blocks: unknown[] = [
+    slackHeader("📋 Dumping · load reported"),
     ...updateContext(m, driverName),
     { type: "section", text: { type: "mrkdwn", text: `📋 ${tag}*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
   ];
-  if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing — scheduled today, not added (${missing.length}):*\n${clientBullets(missing)}` } });
+  if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing, scheduled today but not added (${missing.length}):*\n${clientBullets(missing)}` } });
   // THREAD-ONLY (Fred 2026-08-04): "can we change it so the updates only gets send as a thread message
   // and not on the channel also?". This used to pass broadcast=true, which added reply_broadcast and made
   // Slack render the "Also sent to the channel" copy on top of the threaded reply. The load report now
   // lives ONLY under its parent dump. Do not re-add the 4th argument here.
-  await slackPost(`📋 ${tag}${m.title} — ${driverName} reported ${confirmed.length} on this load`, blocks, await getParentTs(dumpVisitId));
+  await slackPost(`📋 ${tag}${m.title}: ${driverName} reported ${confirmed.length} on this load`, blocks, await getParentTs(dumpVisitId));
 }
 
 // 3. MANIFEST LINK — fires on `link`. OLDER VISITS catch-up-linked to a chosen dump.
@@ -681,6 +685,7 @@ async function postManifestLinkAlert(driverName: string, dumpVisitId: number, li
   // spans 7 days, so this follow-up routinely belongs to a dump from days ago. Time-proximity correlation
   // would be flat wrong; a thread reply is exactly right.
   await slackPost(`📝 ${tag}${driverName} added ${linked.length} to the ${m.site} dump`, [
+    slackHeader("📝 Dumping · added to the manifest"),
     ...updateContext(m, dumpDriver || driverName),
     { type: "section", text: { type: "mrkdwn", text: `📝 ${tag}*${driverName} added ${linked.length} to the manifest*` } },
     { type: "section", text: { type: "mrkdwn", text: clientBullets(linked) } },
@@ -738,6 +743,7 @@ async function postManifestUnlinkAlert(
   }
 
   await slackPost(`🗑 ${tag}${driverName} removed ${count} from the manifest`, [
+    slackHeader("🗑 Dumping · removed from the manifest"),
     ...context,
     { type: "section", text: { type: "mrkdwn", text: `🗑 ${tag}*${driverName} removed ${count} from the manifest*` } },
     { type: "section", text: { type: "mrkdwn", text: bullets } },
