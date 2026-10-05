@@ -180,6 +180,8 @@ Which **manhole(s)** a visit serviced. A visit can cover several manholes (one p
 
 ### `service_configs` — 202 rows · 3NF
 
+> 🛑 **DROPPED 2026-10-05.** Readers moved to `public.v_client_agreement_services` (same column names, from the agreement jobs). See Supabase CLAUDE.md. The section below is history.
+
 One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd_*` column groups.
 
 | Column | Type | Notes |

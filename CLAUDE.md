@@ -1121,7 +1121,7 @@ Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Mo
 | `v.status` | `v.visit_status` | visits |
 | `v.is_complete` | `(v.visit_status = 'completed')` *(lowercase — canonical value, verified 2026-05-18)* | visits |
 | any `SELECT … FROM visits` | add `WHERE deleted_at IS NULL` *(soft-delete column added 2026-05-29 — see "Soft-delete on visits" below)* | visits |
-| `sc.next_visit`, `sc.status` | Use `clients_due_service` view | service_configs (dropped 2026-04-20) |
+| any `service_configs` read | `public.v_client_agreement_services` (same column names) | service_configs (TABLE DROPPED 2026-10-05) |
 | `m.manifest_number` | `m.white_manifest_number` | derm_manifests |
 | `v.tank_capacity_gallons` | `v.fuel_tank_capacity_gallons` or `v.grease_tank_capacity_gallons` | vehicles |
 
@@ -1216,6 +1216,27 @@ transition is what removes the visit from Jobber through the existing push. `aut
   cancelled, skipped, closed job, no service, unknown line item, the update_visit_request widening
   both ways, schedule back) ran in a rolled-back transaction before apply; the Jobber side was proven
   live on 112-YA through the app (`Building Apps/Visit Calendar/docs/08-changelog.md` 2026-09-21 (c)).
+
+### 🛑 `service_configs` IS GONE: FREQUENCY, PRICE AND LAST VISIT COME FROM THE AGREEMENT (2026-10-05)
+
+Fred, 2026-10-02: *"we actually are working with the agreement (job) these 'service configs' should be
+removed then"*. The table had no writer since 2026-07-14 while the Client App edits `jobs.frequency_days`,
+so every reader served a July snapshot (192-FRK's Field Portal permit card: "Every 30 days", agreement 60).
+- `customer.permits` reads the job directly (`2026-10-02_1352`).
+- The other 13 readers read **`public.v_client_agreement_services`** (`2026-10-02_1414`): one row per
+  (client, service_type) from live `Service Agreement%` jobs (catalogue code of the job-scope line ->
+  `service_line_items.service_type`, lowest code wins, so 01 grease trap beats 03 grey water),
+  `price_per_visit` = that line's price (0 = unknown), `last_visit` = last COMPLETED visit,
+  `equipment_size_gallons` = property trap size; `first_visit`, `stop_date`, `material_type` are NULL.
+  Owner-rights, service_role only. Column names match the old table on purpose: the readers swapped
+  only the relation name, so app column lists did not move.
+- Dropped by `2026-10-05_*_drop_service_configs.sql` with `client.service_configs` and
+  `ops.service_configs`. Backup: `backups/2026-10-05_service_configs_final_backup.json` (263 rows +
+  structure; a DROP leaves no audit row). Six sizes held only there were copied to properties first.
+- ⚠ `derm.v_lwt_monthly_rows.gallons_source` still emits `'service_config_size'` for the CLIENT-level
+  fallback (now the agreement property / first sized property). Kept for the bot contract.
+- ⚠ Dead code still names the table: `scripts/sync/cron_generate_recurring_visits.js` (workflow paused
+  2026-06-02, superseded by `fn_generate_sa_visits`) and `scripts/populate/populate.js`. Do not run them.
 
 ### Soft-delete on visits (added 2026-05-29)
 
