@@ -5037,7 +5037,9 @@ Nine things that will bite someone who does not know them:
    `node scripts/checks/intake-showif-mirror.mjs`, which compares all three against the live tree and
    the LIVE Client App bundle. Uploads are bounded by a ledger (`public.property_intake_uploads`, 60
    slots per intake, ever), and `yannick_readonly` reads `property_intakes` by a column grant that
-   leaves out `token`: never grant it table-level SELECT again. Since the fourth review (0311): every
+   leaves out `token`: never grant it table-level SELECT again. (Since 2026-10-05 that login is
+   NOLOGIN, NOBYPASSRLS, password removed, because its password was published in this repo:
+   `docs/migrations/2026-10-05_1425_yannick_readonly_login_off.sql`. Its grants are kept, inert.) Since the fourth review (0311): every
    trim is `public.fn_intake_trim` (the JS `trim()` set) and the rule can no longer raise;
    `schedule_property_intake` refuses a follow-up whose parent was not requested (22023, DETAIL
    `blocker=followups_only` naming the keys, since 0715; before that it was pruned and reported in `dropped`,

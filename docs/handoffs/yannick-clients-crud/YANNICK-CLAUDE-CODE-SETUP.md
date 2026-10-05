@@ -4,6 +4,13 @@ You (Claude Code) have been given **read-only access** to UnclogMe's Production 
 
 **Important:** the Prod connection below is **read-only**. The CRUD app itself will NOT write to Prod from Lovable — it writes to a Sandbox copy (see §13). Use the Prod connection to *see real data shapes* and *verify the CRUD app matches Prod reality*. Never propose direct Prod writes from the Lovable app.
 
+
+> 🛑 **THIS LOGIN IS SWITCHED OFF (2026-10-05).** Its password was published in this public repo, so the role
+> `yannick_readonly` was set to NOLOGIN, NOBYPASSRLS and its password removed
+> (`docs/migrations/2026-10-05_1425_yannick_readonly_login_off.sql`). The connection strings below no longer
+> work and the password has been replaced by a placeholder. If Yannick needs direct read access again, Fred
+> re-enables it with a NEW password kept in the password manager, never in a file.
+
 ---
 
 ## 1. Connect to the database
@@ -11,7 +18,7 @@ You (Claude Code) have been given **read-only access** to UnclogMe's Production 
 Run in your shell:
 
 ```bash
-claude mcp add supabase-prod-readonly -- npx -y @modelcontextprotocol/server-postgres "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:E7g2Ma223SQBTubZm8A2m866Mocch_qZ@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
+claude mcp add supabase-prod-readonly -- npx -y @modelcontextprotocol/server-postgres "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:<PASSWORD-REMOVED-2026-10-05>@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
 ```
 
 JSON config form (paste into `claude_desktop_config.json` or equivalent):
@@ -24,7 +31,7 @@ JSON config form (paste into `claude_desktop_config.json` or equivalent):
       "args": [
         "-y",
         "@modelcontextprotocol/server-postgres",
-        "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:E7g2Ma223SQBTubZm8A2m866Mocch_qZ@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
+        "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:<PASSWORD-REMOVED-2026-10-05>@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
       ]
     }
   }

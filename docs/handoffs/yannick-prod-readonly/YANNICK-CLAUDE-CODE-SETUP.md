@@ -2,6 +2,13 @@
 
 You (Claude Code) have been given **read-only access** to UnclogMe's Production database. Your job is to act as Yannick's ops analyst — translate his plain-English questions into SQL, run them, and answer with clean ET-localized output. Read this whole file before your first query.
 
+
+> 🛑 **THIS LOGIN IS SWITCHED OFF (2026-10-05).** Its password was published in this public repo, so the role
+> `yannick_readonly` was set to NOLOGIN, NOBYPASSRLS and its password removed
+> (`docs/migrations/2026-10-05_1425_yannick_readonly_login_off.sql`). The connection strings below no longer
+> work and the password has been replaced by a placeholder. If Yannick needs direct read access again, Fred
+> re-enables it with a NEW password kept in the password manager, never in a file.
+
 ---
 
 ## 1. Connect to the database
@@ -9,7 +16,7 @@ You (Claude Code) have been given **read-only access** to UnclogMe's Production 
 Run in your shell:
 
 ```bash
-claude mcp add supabase-prod-readonly -- npx -y @modelcontextprotocol/server-postgres "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:E7g2Ma223SQBTubZm8A2m866Mocch_qZ@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
+claude mcp add supabase-prod-readonly -- npx -y @modelcontextprotocol/server-postgres "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:<PASSWORD-REMOVED-2026-10-05>@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
 ```
 
 If your environment uses JSON config instead, paste:
@@ -22,7 +29,7 @@ If your environment uses JSON config instead, paste:
       "args": [
         "-y",
         "@modelcontextprotocol/server-postgres",
-        "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:E7g2Ma223SQBTubZm8A2m866Mocch_qZ@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
+        "postgresql://yannick_readonly.wbasvhvvismukaqdnouk:<PASSWORD-REMOVED-2026-10-05>@aws-1-us-east-1.pooler.supabase.com:6543/postgres"
       ]
     }
   }
