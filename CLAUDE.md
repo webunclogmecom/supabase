@@ -53,7 +53,7 @@ cannot fire if the world changed between your read and your write.
 ### 7. Timestamps in UTC, money in `NUMERIC(12,2)`
 All `TIMESTAMPTZ` stored UTC; display layer converts. All money `NUMERIC(12,2)`. `updated_at` trigger-managed — **never set it manually**.
 
-### 8. Audit-trail standing check (NEW 2026-05-17 — see [ADR 010](docs/decisions/010-audit-trail.md))
+### 8. Audit-trail standing check (since 2026-05-17, see [ADR 010](docs/decisions/010-audit-trail.md))
 Every new business table or schema change must **explicitly opt-in or opt-out** of `audit.logs` triggers, documented in the migration header.
 
 - **Default for tables with human-editable fields** → opt-in. Add `CREATE TRIGGER audit_<table> AFTER INSERT OR UPDATE OR DELETE ON public.<table> FOR EACH ROW EXECUTE FUNCTION audit.log_change();`
@@ -247,7 +247,7 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
   - 🛑 **The Prod `hr` schema is EMPTY** (created by migration `2026-08-31_1330`) — the HR App does NOT use it (it reads `public.employees` directly, above). It exists for future HR-owned objects; nothing depends on it yet.
   - 🛑 **`public.employees.access_level` is now LOAD-BEARING (`2026-08-31_1330`).** It gates the HR App (admin + office can see it), is CHECK-pinned (`employees_access_level_chk`) to `admin | office | field` or NULL — the old `dev` value was **RETIRED** (now rejected `23514`) and `admin` added — NULL is **fail-safe**, and it is **no longer derived from Jobber** (the `populate.js` writer changed `dev`→`admin`). Live: office 11 / field 8 / admin 2. See `docs/schema.md`.
   - **Client App Mirror `mjxjhwxktedrrnochwli` — DELETED 2026-08-10** (Fred's instruction). It was the hourly full-snapshot mirror of Prod's client domain (19 tables) for the Client App build phase; the app was repointed to Prod 2026-07-24 and the live bundle carries only the Prod ref, so it had no consumer for 17 days. Verified before deleting: **0** ids in the mirror absent from Prod (clients/properties/client_contacts/jobs/gdos), 0 auth users, 0 storage objects, so nothing needed backing up. Its refresh workflow had failed **154 consecutive runs** while `mirror_meta.last_refresh_at` kept advancing, leaving ~3,600 phantom rows (`visit_team` 1,453 vs 131, `visit_locations` 2,501 vs 182) that the circuit breaker refused to delete. Workflow removed in `7f0ac2f` before deletion. Final metadata snapshot: `..\backups\client_app_mirror_final_2026-08-10.json`. Full record: [docs/reference/client-app-mirror.md](docs/reference/client-app-mirror.md).
-- **Docs snapshot:** 2026-07-08. Visit-gen was cut over from Airtable 2026-05-13. **DERM: the DERM Tracker app writes `derm_manifests` directly; the Airtable handler was finally severed in code 2026-07-21** (the 2026-06-26 "verified" note was wrong, see the project summary above). **ZERO Airtable → Supabase automations remain.** PRE-POST `inspections` was the last one and it has gone quiet (last DB write 2026-07-14). Airtable is fully retired (Fred, 2026-07-24).
+- **Docs snapshot:** 2026-07-08. Visit-gen was cut over from Airtable 2026-05-13. **DERM: the DERM Tracker app writes `derm_manifests` directly; the Airtable handler was finally severed in code 2026-07-21** (the 2026-06-26 "verified" note was wrong, see the project summary above). **ZERO Airtable → Supabase automations remain**, and Airtable is fully retired (Fred, 2026-07-24). Shift inspections come from the Fillout (Zite) forms straight into the DB through `fillout-inspection` (Fred, 2026-10-05; see the project summary above).
 
 ---
 
@@ -1986,9 +1986,9 @@ the read-only `client.preview_job_action(client_id, job_id, action)` RPC (`2026-
 dialog and the write cannot disagree. App-side contract: `Building Apps/Client App/CLAUDE.md` rule 2n +
 `docs/08-changelog.md`. Spec/plan: `docs/superpowers/specs/2026-09-01-client-job-status-lifecycle-design.md`.
 ⚠ **`archive-client` can be refused by Jobber** — a client with open quotes / work requests / unpaid
-invoices cannot be archived (not just open jobs). **The point is that NONE of these can be cleared FROM
-THE CLIENT APP** — the `jobber_write` OAuth scope cannot touch quotes/requests/invoices and billing is
-Jobber-mastered — so such a client needs a human in Jobber. (Quotes ARE resolvable *there*, by
+invoices cannot be archived (not just open jobs). **Quotes cannot be cleared FROM THE CLIENT APP**
+(Jobber has no quote archive/delete/convert mutation), so a client with an open quote needs a human in Jobber; invoices (not drafts) and
+work requests can be cleared since `archive-client` v15 (draft invoices still have to be deleted in Jobber), see the CHANGED 2026-09-25 block below. (Quotes ARE resolvable *there*, by
 archive/convert/delete; `countArchiveBlockers` treats `quote_status IN (archived,converted)` as
 resolved. "Quotes have no archive path" was an earlier imprecision — the correct statement is "our app
 can't clear them".) It returns a structured `archive_blocked_preconditions` error
@@ -2666,8 +2666,8 @@ whole thing back.
 ticket-311780's 306-16 row is `page=1, stamp_page=2`. Keying an extent on `page` writes rows that
 satisfy nothing while the migration looks applied.
 
-🛑 **THE DOCUMENTED RERUN PATH DOES NOT EXIST.** The 07-10 note below says to rerun
-`ocr-band-measure` + `apply_bands.js`. **Neither is real** — grep finds them only in prose. Every
+🛑 **THE DOCUMENTED RERUN PATH DOES NOT EXIST.** The 07-10 note above said to rerun
+`ocr-band-measure` + `apply_bands.js`. **Neither is real**; grep finds them only in prose. Every
 `page_block_extents` write in this repo's history has been a hand-authored migration. So a
 measurement pass is a manual task, and nothing prevents the backlog rebuilding. It has now rebuilt
 twice.
@@ -3017,9 +3017,9 @@ then add the page-2 extent + complete:  fn_blackout_targets 10 -> 8
 
 ⇒ **The estate's own instruction "re-place that stamp in the Studio" silently mis-files a page-2
 client.** 106 cards across 24 folders already have `page <> stamp_page`, so this is estate-wide, not a
-834742 quirk. Fixing it means keying `auto_place_page`'s roster on `COALESCE(stamp_page, page)` and
-extending the guard to refuse a `stamp_page` move that lands on an image differing from the row's own
-`stamp_image_url` witness.
+834742 quirk. The first proposed fix was to key `auto_place_page`'s roster on
+`COALESCE(stamp_page, page)` and extend the guard to refuse a `stamp_page` move that lands on an image
+differing from the row's own `stamp_image_url` witness; that is not what shipped (next paragraph).
 
 🛑 **SHIPPED 2026-09-03 (`2026-09-03_2100`), AND THE FIX ABOVE IS NOT THE ONE THAT WORKS. Do not
 re-derive it.** Changing only the roster to `COALESCE(stamp_page, page)` is a **no-op**: measured, 0
@@ -3036,14 +3036,8 @@ a folder" - was measured and is FALSE.** Every arm of `derm.v_blackout_blocked_s
 **`stamp_y_pct IS NOT NULL`**, never on `stamp_page`; so does `derm.v_stamp_row_bands` and therefore
 the closed-world gate in `fn_blackout_targets`. `stamp_y_pct` is still nulled by the clear. The
 migration's VERIFY asserts the blocked worklist is byte-identical across the change.
-⚠ **THE CLIENT SIDE IS NOT SHIPPED, and the divergence is deliberate and safe.** The Studio bundle
-still gates its Auto-place button on `se = l.filter(e => e.page === d)`. Until that ships: tab N>1
-says "Nothing to auto-place on this page" though the server would offer the card (conservative,
-writes nothing), and tab 1 offers it while the server places **0** ("Auto-placed 0") - it no longer
-MIS-FILES, which was the point. The folder-wide Unplaced drag tray is already page-agnostic, so
-dragging onto the right tab still works.
 
-✅ **RESOLVED THE SAME EVENING: the app half shipped at 21:15 ET and the divergence is closed.**
+✅ **RESOLVED THE SAME EVENING: the app half shipped at 21:15 ET, so the Studio and the server now pick a card's page the same way.**
 The Studio's per-page card list now reads `(e.stamp_page ?? e.page) === <tab>`. Verified in the LIVE
 published bundle rather than from the chat: walked to closure, 24 chunks / 939,075 bytes, with
 `fn_sheet_publishable` and `auto_place_page` as positive controls; the new predicate appears **2**
@@ -3055,18 +3049,17 @@ the page-2 extent added, `fn_blackout_targets` emits **10 targets correctly spli
 `address_2.jpg` at effective_page 2, each with its own band. The row-level `image_url = address_1` on
 all ten cards is harmless because the redactor indexes `imgs[effective_page]`, never the row's URL.
 
-🛑 **`derm.fn_sheet_number_ocr_targets()` RETURNS 0 ROWS ESTATE-WIDE, SO CRON 24
-`sheet-number-ocr-sweep` (jobid 24, `2-59/10`, ACTIVE) IS A STRUCTURAL NO-OP.** Measured with a
+🛑 **UNTIL `2026-09-03_2210`, `derm.fn_sheet_number_ocr_targets()` RETURNED 0 ROWS ESTATE-WIDE, SO CRON 24
+`sheet-number-ocr-sweep` (jobid 24, `2-59/10`, ACTIVE) WAS A STRUCTURAL NO-OP.** Measured with a
 positive control - `fn_sheet_number_ocr_targets_for(ARRAY['834742'])` returns 1 row, so the machinery
-works and the zero is not a broken instrument. Both arms are drained:
+works and the zero is not a broken instrument. Both arms were drained:
 - **Arm A** needs a card with `stamp_placed_at IS NULL`. Population across every `ticket-%` folder:
   **0 cards, 0 folders.**
 - **Arm B** is documented SELF-DRAINING - it stops offering a folder once any scan read exists.
   Population: **20 multi-image `ticket-%` folders, all 20 already have one.**
-⇒ **The sweep whose whole job is catching a reversed scan pair can never fire again**, and a reversed
+⇒ **The sweep whose whole job is catching a reversed scan pair could never fire again**, and a reversed
 pair is precisely what put every stamp on the wrong scan on `ticket-833813` and `ticket-312433`. The
-fix is to make Arm B drain per PAGE rather than per FOLDER; until then the only route is the manual
-`_for(...)` variant.
+fix (shipped below) was to make Arm B drain per PAGE rather than per FOLDER.
 
 ✅ **FIXED 2026-09-03 (`2026-09-03_2210`), AND FRED RESHAPED IT FROM A SCHEDULE INTO AN EVENT.**
 His rule: *"it should only be done once per manifest (in all it's pages), unless there is an update
@@ -3187,8 +3180,8 @@ been the all-clear it reads as.** Measured 2026-08-26: 6 folders failed the gate
 'frozen_closed_world'`, so `blackout-health` and the daily escalation mail pick it up with no new
 wiring. Arm A was spliced in verbatim from `pg_get_viewdef` and VERIFY 1 is the control for it.
 
-⚠ **ONE folder is frozen AND SERVING: `ticket-830714` (3 clients).** Improving its bands, its
-extent or the redactor changes nothing about what those clients see.
+⚠ **A folder can be frozen AND SERVING** (`ticket-830714`, 3 clients, was until its 2026-09-02 repair,
+`2026-09-02_1245`): improving its bands, its extent or the redactor changes nothing about what those clients see.
 🛑 **`ticket-828604` WAS the second one and is now CLEAR (2026-08-27)** -- Fred re-stamped it and
 `2026-08-27_1337` measured it, so its 4 documents regenerated. Do not carry the old pairing forward. **Unfreezing needs a person to place
 the missing stamps in the Studio. Clearing the bands does NOT do it -- the gate is on the stamp
@@ -4700,9 +4693,9 @@ refuted), both real, neither fixed yet:
 mails it as if it were a municipality. Three properties held one (42, 973, 363) and were cleared at
 go-live; run cutover step 0 before any future flip of the gate.
 
-⚠ What the rehearsal could NOT prove (the critic's list, kept honest): the live branch of the gates
-has only run against rolled-back synthetic rows, because `IS_TEST` is still hardcoded and there are
-0 real Admin Review rows; the sweep has never delivered to a resolved `properties.city_emails`
+⚠ What the pre-go-live rehearsal could NOT prove (the critic's list, kept honest): the live branch of the gates
+had only run against rolled-back synthetic rows, because `IS_TEST` was still hardcoded and there were
+0 real Admin Review rows; the sweep had never delivered to a resolved `properties.city_emails`
 address; and the queue has never forwarded `manual_include_photos = false` (row 137 was a direct
 call). The first natural case after go-live (a report sent before its blackout, then the blackout)
 is the first real proof, and the view makes it visible: watch that pair go waiting -> ready ->
@@ -4743,10 +4736,10 @@ radius is the whole sweep: `derm.v_city_email_candidates` reads both functions, 
 either key takes the view and every consumer down. Still fail-closed (nothing sends), but it
 fails LOUDLY, and "falls back" would tell a reader a typo is harmless.
 
-✅ **GO-LIVE SHIPPED 2026-09-15 as `2026-09-15_0907_city_email_go_live.sql`, in exactly this order and in one transaction.** The reasoning stays as the standing rule for any future flip (a rehearsal that switches it off and on again must follow the same order). 🛑 **GO-LIVE IS FOUR STEPS IN THIS ORDER, NOT ONE STATEMENT. The "one statement" wording below
-was true when it was written and is now WRONG (corrected 2026-08-31).** It predates both the send
-gate (`425f32a`) and `city_email_test_recipient` being populated, and running it alone produces a
-silent failure that looks like success.
+✅ **GO-LIVE SHIPPED 2026-09-15 as `2026-09-15_0907_city_email_go_live.sql`, in exactly this order and in one transaction.** The reasoning stays as the standing rule for any future flip (a rehearsal that switches it off and on again must follow the same order). 🛑 **GO-LIVE IS FOUR STEPS IN THIS ORDER, NOT ONE STATEMENT.** The old single-statement version
+(set `city_email_start_from` alone) predated both the send gate (`425f32a`) and
+`city_email_test_recipient` being populated, and running it alone produces a silent failure that
+looks like success.
 
 **Why the single statement is not enough** (⚠ historical since `2026-09-24_2110`: the sweep no longer copies
 the key, so a staff address left in it no longer redirects anything while live; the table row above has the
@@ -5025,7 +5018,7 @@ Nine things that will bite someone who does not know them:
 | [docs/research/](docs/research/) | External-source synthesis (Claude Code best practices, etc.) |
 | [docs/audits/](docs/audits/) | Historical state snapshots |
 | [apps/internal-portal/](apps/internal-portal/) | Yannick's full internal-tool prototype (Dashboard, Sales, Scheduling, Visits, Ops). Single-file React+CDN. Pre-built UI; wiring to live Supabase pending. |
-| [OPS_LIST_YAN.md](OPS_LIST_YAN.md) | Current Yan to-do (auto-regenerated from `scripts/probes/generate_ops_list_yan.js`) |
+| [OPS_LIST_YAN.md](OPS_LIST_YAN.md) | Obsolete Yan to-do snapshot from 2026-05-14 (Airtable era). Do not regenerate it: `scripts/probes/generate_ops_list_yan.js` still tells Yan to fix Airtable, which is fully retired. |
 
 ---
 
