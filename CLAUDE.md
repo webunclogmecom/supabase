@@ -2149,8 +2149,10 @@ were corrected by hand on 2026-10-02 (backup `backups/2026-10-02_gdo_location_la
 - **One read per stored PDF**: `public.gdo_permit_label_reads` keys on (gdo, storage eTag); a replaced PDF has
   a new eTag and is read again, so a staff edit in the Client App stands until the PDF itself changes. Three
   errors per object, then it is left alone. Old TIFF scans are recorded `not_pdf` and never labelled.
-- Installed with every current PDF recorded `seeded`, so no label moved at install (113 permits have no label;
-  filling them is a decision for Fred). Re-read on demand: POST `{gdo_ids:[...], dry_run:true}`.
+- Installed with every current PDF recorded `seeded`, so no label moved at install. Then, on Fred's word ("yes
+  fill the 113 from their PDFs"), every ACTIVE permit with a PDF was filled (91 + 9 retried after an Anthropic
+  credit outage); 7 have no PDF file. Re-read on demand: POST `{gdo_ids:[...], dry_run:true}`. Which models we
+  call, with which key, and how to change one safely: [docs/reference/anthropic-api-usage.md](docs/reference/anthropic-api-usage.md).
 - Proven 2026-10-05: 22 of 22 PDFs read identically to their extracted text, 3 TIFFs refused, the write path
   on an INACTIVE `[TEST]` permit on 112-YA (gdo 258, left in place), anon refused 401.
 - 🛑 Neither backfill script writes `location_label` any more (`backfill_gdos_from_derm_bot.py`,
@@ -5008,6 +5010,7 @@ Nine things that will bite someone who does not know them:
 | [docs/migration-plan.md](docs/migration-plan.md) | Jobber sunset + cutover (⚠ two stale threads in that doc: Airtable's sunset is DONE, it was fully retired 2026-07-24, and Odoo was dropped 2026-07-08; successor = in-house Client App) |
 | [docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md](docs/jobber-calendar-job-migration/jobs-visits-calendar-workflow.md) | Jobs↔visits↔calendar workflow + 2026-06-23 restructure + the Calendar Create Visit DB layer |
 | [docs/reference/service-type-vocabulary.md](docs/reference/service-type-vocabulary.md) | **Before touching `service_type` or `service_kind`** — the vocabulary, the two-meanings collision, and how to tell whether an app really reads a column |
+| [docs/reference/anthropic-api-usage.md](docs/reference/anthropic-api-usage.md) | **Before changing a Claude model or adding an Anthropic caller**: the 4 callers, keys, credit, model-specific request settings, and why each reader is on the model it is |
 | [docs/reference/line-item-lifecycle-and-jobber-edit-ripple.md](docs/reference/line-item-lifecycle-and-jobber-edit-ripple.md) | Line-item scopes; how scheduled vs completed visits reflect services; Jobber job-edit ripple + propagation |
 | [docs/reference/client-job-status-lifecycle.md](docs/reference/client-job-status-lifecycle.md) | Client-App job actions drive `clients.status`: `preview_job_action`, `archive-client`/`unarchive-client`, `rewrite_job_line_items`, the four transitions, the archive precondition, the `status_source` pin, and the SA `requires_invoicing` restore finding (2026-09-01) |
 | [docs/reference/admin-review-scope-inclusions.md](docs/reference/admin-review-scope-inclusions.md) | Admin Review queue scope (`job_is_sa_sc` fact vs `in_review_scope` policy) + the `review_scope_inclusions` manual escape hatch (include/remove RPCs, soft-removal, refusals) (2026-09-01) |

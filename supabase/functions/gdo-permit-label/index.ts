@@ -9,8 +9,10 @@
 // public.gdo_permit_label_reads). A replaced PDF has a new eTag, so it is read again; a staff edit
 // of the label in the Client App stands until the PDF itself changes.
 //
-// AUTH: verify_jwt=true (pinned in config.toml) PLUS an in-handler service_role gate. Invoked by
-// pg_cron via public.fn_request_gdo_permit_label_sweep().
+// AUTH: verify_jwt=true (pinned in config.toml) PLUS an in-handler service_role gate. Invoked through
+// public.fn_request_gdo_permit_label_sweep() by triggers on storage.objects (bucket gdo-permits) and on
+// gdos.permit_document_path, and once a day by cron gdo-permit-label-sweep to retry failures (2026-10-05_0831).
+// Models and keys: docs/reference/anthropic-api-usage.md.
 // Body: { limit?: number, gdo_ids?: number[] (re-read these whatever the ledger says), dry_run?: boolean }
 
 import Anthropic from "npm:@anthropic-ai/sdk";
