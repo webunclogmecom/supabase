@@ -2325,6 +2325,26 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   the printed lines are not evenly spaced cannot be saved with these steps (the validator wants an
   evenly spaced chain of row edges). Fred, same day, on multi-row clients: a client with two GDO
   permits already gets one card per permit, each in its own row.
+- 🛑 **Rules added by the same-day adversarial review (`2026-10-05_1545`), do not undo them:**
+  - **The Limit NEVER narrows** (`_write_page_extent_from_slots` takes least/greatest with the page's
+    current extent): a redraw on window5-sheet3 p2 would have shrunk it 65.6 -> 60.5 and shown a
+    client's handwritten address below the footer to every client. A Limit change re-opens the sheet.
+  - **A stamp that already has a band keeps it on a redraw** (a reviewed overflow band is never
+    replaced); only stamps without a band take their row.
+  - **Independent check:** when the page's scan has a machine measurement (runlen-v2 / template-v1,
+    not FAILED, same image), a drawn row may not cross a measured line between two clients
+    (tolerance 0.5pp, the machine's first and last line exempt). It refuses a half-row shift and a
+    line 1pp off; all 22 hand-drawn pages re-save. ⚠ A NEW handwritten page has no machine
+    measurement (the in-app re-measure is gone), so for it the person's lines are the only truth.
+  - `place_stamp_in_row` refuses rows drawn on a replaced scan (etag), counts a row as taken by any
+    stamp inside it, and keeps the band of a stamp nudged inside it.
+  - `record_page_rules`, `save_page_slots`, `assign_card_to_slot`, `set_row_band` and
+    `save_page_geometry` are **revoked from authenticated**; only SECURITY DEFINER code calls them.
+- **Daily Slack reminder (`2026-10-05_1500`):** cron `stamp-sheets-reminder` ('0 14,15 * * *', only
+  the run that is 10 AM in New York goes through) -> `public.fn_request_stamp_sheets_reminder()` ->
+  edge fn `stamp-sheets-reminder` -> #apps-notifications (C0BJYHQKZM1) via the shared bot, listing
+  `derm.fn_stamp_open_sheets()` (the Studio list, not completed). Posts NOTHING when every sheet is
+  completed (Fred). `{dry_run:true}` returns the text. Check: `node scripts/checks/stamp_sheets_reminder.mjs`.
 App-side contract: `Building Apps/DERM Stamp Studio/CLAUDE.md` and its `docs/08-changelog.md`.
 
 ### ✅ GENERATED SHEETS FINISH THEMSELVES: measured from the scan, guided by the layout we printed (2026-09-14)
