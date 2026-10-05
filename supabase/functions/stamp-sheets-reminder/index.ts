@@ -10,9 +10,12 @@
 // UTC; the wrapper lets through only the run that is 10 AM in New York, so the hour is right in
 // summer and in winter, and it makes no call at all when nothing is open).
 // Reads derm.fn_stamp_open_sheets() (the Studio's own list, derm.v_stamp_sheets, not completed).
-// Posts with the shared Slack bot (SLACK_BOT_TOKEN, chat.postMessage), the same bot as the DUMP alerts.
-// Body: { dry_run?: boolean, test?: boolean }  dry_run returns the message without posting it; test
-// posts it with a "[TEST]" prefix (a one-off check that the bot can post to the channel).
+// Posts with chat.postMessage. The bot is the app's own when the secret APPS_SLACK_BOT_TOKEN is set (Fred,
+// 2026-10-05: "we might need another bot, because you're using the dump visit bot"), otherwise the shared
+// SLACK_BOT_TOKEN, the "Dump Visits" bot of the DUMP alerts. Every reply names the secret it used.
+// Body: { dry_run?: boolean, test?: boolean, check_bot?: boolean }  dry_run returns the message without
+// posting it; test posts it with a "[TEST]" prefix; check_bot asks Slack who the bot is (auth.test) and
+// posts nothing.
 // Check: node scripts/checks/stamp_sheets_reminder.mjs (runs this file against stubs).
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -20,6 +23,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CHANNEL = Deno.env.get("STAMP_REMINDER_CHANNEL_ID") ?? "C0BJYHQKZM1"; // #apps-notifications
 const STUDIO = "https://stamp.unclogme.app";
 const MAX_LINES = 40;
+const BOT_SECRETS = ["APPS_SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN"]; // the first one set is used
 
 type Sheet = {
   manifest: string; service_date: string | null; dump_date: string | null;
@@ -63,6 +67,15 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const dryRun = body.dry_run === true;
   const test = body.test === true;
+  const botSecret = BOT_SECRETS.find((k) => Deno.env.get(k)) ?? null;
+  const token = botSecret ? Deno.env.get(botSecret)! : null;
+
+  if (body.check_bot === true) {
+    if (!token) return json({ error: "no Slack bot token is set", bot_secret: null }, 500);
+    const who = await fetch("https://slack.com/api/auth.test", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    const w = await who.json().catch(() => ({}));
+    return json({ bot_secret: botSecret, ok: w.ok === true, bot: w.user ?? null, team: w.team ?? null, error: w.error ?? null });
+  }
 
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_stamp_open_sheets`, {
     method: "POST",
@@ -79,16 +92,15 @@ Deno.serve(async (req) => {
   if (!sheets.length) return json({ posted: false, reason: "every sheet is completed" });
 
   const text = buildMessage(sheets, test);
-  if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, text });
+  if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, bot_secret: botSecret, text });
 
-  const token = Deno.env.get("SLACK_BOT_TOKEN");
-  if (!token) return json({ error: "SLACK_BOT_TOKEN is not set" }, 500);
+  if (!token) return json({ error: "no Slack bot token is set (APPS_SLACK_BOT_TOKEN or SLACK_BOT_TOKEN)" }, 500);
   const res = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ channel: CHANNEL, text, unfurl_links: false, unfurl_media: false }),
   });
   const out = await res.json().catch(() => ({}));
-  if (!out.ok) return json({ posted: false, error: `slack: ${out.error ?? res.status}` }, 502);
-  return json({ posted: true, count: sheets.length, channel: CHANNEL, ts: out.ts });
+  if (!out.ok) return json({ posted: false, bot_secret: botSecret, error: `slack: ${out.error ?? res.status}` }, 502);
+  return json({ posted: true, count: sheets.length, channel: CHANNEL, bot_secret: botSecret, ts: out.ts });
 });

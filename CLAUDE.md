@@ -2368,6 +2368,9 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   edge fn `stamp-sheets-reminder` -> #apps-notifications (C0BJYHQKZM1) via the shared bot, listing
   `derm.fn_stamp_open_sheets()` (the Studio list, not completed). Posts NOTHING when every sheet is
   completed (Fred). `{dry_run:true}` returns the text. Check: `node scripts/checks/stamp_sheets_reminder.mjs`.
+  The bot (v3): `APPS_SLACK_BOT_TOKEN` when that secret is set (its own "UnclogMe Apps" bot, Fred: "we might need
+  another bot"), else the shared `SLACK_BOT_TOKEN` ("Dump Visits"); `{check_bot:true}` names it without posting.
+  Setup and manifest: `docs/reference/slack-unclogme-apps-bot.md`.
 App-side contract: `Building Apps/DERM Stamp Studio/CLAUDE.md` and its `docs/08-changelog.md`.
 
 ### ✅ GENERATED SHEETS FINISH THEMSELVES: measured from the scan, guided by the layout we printed (2026-09-14)

@@ -12,23 +12,24 @@ const src = fs.readFileSync(new URL('../../supabase/functions/stamp-sheets-remin
 const js = stripTypeScriptTypes(src);
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 
-async function run(sheets, { body = {}, role = 'service_role', slack = { ok: true, ts: '1.2' } } = {}) {
-  const posts = [];
+async function run(sheets, { body = {}, role = 'service_role', slack = { ok: true, ts: '1.2' }, env = { SLACK_BOT_TOKEN: 'xoxb' } } = {}) {
+  const posts = [], auths = [];
   let handler, rpcHeaders;
   const ctx = {
-    Deno: { env: { get: (k) => ({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc', SLACK_BOT_TOKEN: 'xoxb' })[k] },
+    Deno: { env: { get: (k) => ({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc', ...env })[k] },
             serve: (h) => { handler = h; } },
     fetch: async (url, opts = {}) => {
       url = String(url);
       if (url.endsWith('/rest/v1/rpc/fn_stamp_open_sheets')) { rpcHeaders = opts.headers; return Response.json(sheets); }
-      if (url === 'https://slack.com/api/chat.postMessage') { posts.push(JSON.parse(opts.body)); return Response.json(slack); }
+      if (url === 'https://slack.com/api/chat.postMessage') { posts.push(JSON.parse(opts.body)); auths.push(opts.headers.Authorization); return Response.json(slack); }
+      if (url === 'https://slack.com/api/auth.test') { auths.push(opts.headers.Authorization); return Response.json({ ok: true, user: 'unclogme_apps', team: 'UnclogMe' }); }
       throw new Error('unexpected fetch ' + url);
     },
     Response, JSON, String, Number, Math, Date, Array, Error, atob, btoa, console, encodeURIComponent,
   };
   vm.runInNewContext(js, ctx);
   const res = await handler(new Request('https://fn', { method: 'POST', headers: { authorization: 'Bearer ' + jwt(role) }, body: JSON.stringify(body) }));
-  return { status: res.status, body: await res.json(), posts, rpcHeaders };
+  return { status: res.status, body: await res.json(), posts, auths, rpcHeaders };
 }
 
 const sheet = (m, o = {}) => ({ manifest: m, service_date: '2026-09-20', dump_date: '2026-09-21', placed: 4, total: 9, pages: 2, status: 'In progress', days_waiting: 14, ...o });
@@ -80,5 +81,19 @@ const tst = await run([sheet('836624')], { body: { test: true } });
 assert.strictEqual(tst.posts.length, 1);
 assert.ok(tst.posts[0].text.startsWith('[TEST] :memo: '), tst.posts[0].text);
 assert.ok(!/TEST/.test(one.posts[0].text), 'a normal post carries no TEST mark');
+
+// the bot: the app's own token when APPS_SLACK_BOT_TOKEN is set, else the shared Dump Visits one; always named
+assert.strictEqual(one.body.bot_secret, 'SLACK_BOT_TOKEN');
+const own = await run([sheet('836624')], { env: { SLACK_BOT_TOKEN: 'xoxb-dump', APPS_SLACK_BOT_TOKEN: 'xoxb-apps' } });
+assert.deepStrictEqual(own.auths, ['Bearer xoxb-apps'], 'the app bot wins when its secret is set');
+assert.strictEqual(own.body.bot_secret, 'APPS_SLACK_BOT_TOKEN');
+const noTok = await run([sheet('836624')], { env: {} });
+assert.strictEqual(noTok.status, 500); assert.strictEqual(noTok.posts.length, 0);
+
+// check_bot: asks Slack who the bot is, posts nothing, needs no open sheet
+const who = await run([], { body: { check_bot: true }, env: { SLACK_BOT_TOKEN: 'xoxb-dump', APPS_SLACK_BOT_TOKEN: 'xoxb-apps' } });
+assert.strictEqual(who.posts.length, 0, 'check_bot must not post');
+assert.deepStrictEqual(who.auths, ['Bearer xoxb-apps']);
+assert.strictEqual(who.body.bot_secret, 'APPS_SLACK_BOT_TOKEN'); assert.strictEqual(who.body.bot, 'unclogme_apps');
 
 console.log('stamp_sheets_reminder: all checks passed');
