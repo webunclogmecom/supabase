@@ -343,7 +343,7 @@ async function buildPropertyPreview(propertyId: number, token: string | null) {
   if (visitIdsR.error) return { err: fail("lookup_failed", `Could not read this property's visits: ${visitIdsR.error.message}`) };
   const visitIds = (visitIdsR.data ?? []).map((v: { id: number }) => v.id);
 
-  const [jobsR, schedR, doneR, invR, manR, gdoR, conR, scR, sibR, linkR] = await Promise.all([
+  const [jobsR, schedR, doneR, invR, manR, gdoR, conR, sibR, linkR] = await Promise.all([
     db.from("jobs").select("id, title, job_status").eq("property_id", propertyId),
     db.from("visits").select("id", { count: "exact", head: true })
       .eq("property_id", propertyId).eq("visit_status", "scheduled").is("deleted_at", null),
@@ -355,7 +355,6 @@ async function buildPropertyPreview(propertyId: number, token: string | null) {
       : Promise.resolve({ data: [] as { manifest_id: number }[], error: null }),
     db.from("gdos").select("id", { count: "exact", head: true }).eq("property_id", propertyId),
     db.from("client_contacts").select("id", { count: "exact", head: true }).eq("property_id", propertyId),
-    db.from("service_configs").select("id", { count: "exact", head: true }).eq("property_id", propertyId),
     // 🛑 SIBLINGS = OTHER **SERVICE** ADDRESSES. Counting the billing duplicate (461 of them exist)
     //    suppressed the "only address" warning almost everywhere it was true. Exclude self AND billing.
     db.from("properties").select("id", { count: "exact", head: true })
@@ -372,7 +371,7 @@ async function buildPropertyPreview(propertyId: number, token: string | null) {
   const reads: Array<[string, { error: unknown }]> = [
     ["jobs", jobsR], ["scheduled visits", schedR], ["completed visits", doneR], ["invoices", invR],
     ["DERM manifests", manR as { error: unknown }], ["GDO permits", gdoR], ["contacts", conR],
-    ["service configs", scR], ["other addresses", sibR], ["the Jobber link", linkR],
+    ["other addresses", sibR], ["the Jobber link", linkR],
   ];
   for (const [what, r] of reads) {
     const e = r.error as { message?: string } | null;
@@ -471,7 +470,6 @@ async function buildPropertyPreview(propertyId: number, token: string | null) {
         derm_manifests: new Set(((manR.data ?? []) as { manifest_id: number }[]).map((m) => m.manifest_id)).size,
         gdo_permits: gdoR.count ?? 0,
         contacts: conR.count ?? 0,
-        service_configs: scR.count ?? 0,
       },
       is_only_property: isOnly,
       required_acknowledgements: acks,
