@@ -2135,8 +2135,17 @@ portal lookup had stored the county's facility name on record, sometimes a previ
 were corrected by hand on 2026-10-02 (backup `backups/2026-10-02_gdo_location_label_before.json`).
 - Edge fn **`gdo-permit-label`** (verify_jwt pinned, service_role gate) reads "Permit Issued To" (or the
   company line under "PERMITTEE:" on old permits) with `claude-opus-5-5` and writes the label, audited as
-  `app_source='gdo-permit-reader'`. Cron **`gdo-permit-label-sweep`** (`11-59/15`) through
-  `public.fn_request_gdo_permit_label_sweep()`, which makes no HTTP call when nothing is waiting.
+  `app_source='gdo-permit-reader'`. **Fired by TRIGGERS** (`2026-10-05_0831`, Fred: "why not just a trigger
+  of when uploading the PDF?"): `zz_gdo_permit_label_on_upload` on `storage.objects` (bucket `gdo-permits`,
+  insert or overwrite) and `zz_gdo_permit_label_on_path` on `public.gdos` (permit pointed at a new file).
+  Both call `public.fn_request_gdo_permit_label_sweep()` (no HTTP call when nothing waits; queued, sent
+  after COMMIT) and swallow their own errors so a save or upload is never blocked. Cron
+  **`gdo-permit-label-sweep`** is now a DAILY safety net (`11 9 * * *`, 05:11 ET) for failures only.
+  ⚠ The storage service DOES fire triggers on `storage.objects` (measured: INSERT, eTag already set,
+  `session_replication_role` origin). ⚠ The ledger keys on file CONTENT (eTag): re-uploading bytes a
+  permit already read is correctly a no-op, which is how a first trigger test looked like a failure.
+  Retry rule: waiting = no read of the current file, or the LATEST read is an error with fewer than 3
+  errors in 24 hours (the first rule let an earlier `seeded` row hide a later error for ever).
 - **One read per stored PDF**: `public.gdo_permit_label_reads` keys on (gdo, storage eTag); a replaced PDF has
   a new eTag and is read again, so a staff edit in the Client App stands until the PDF itself changes. Three
   errors per object, then it is left alone. Old TIFF scans are recorded `not_pdf` and never labelled.
