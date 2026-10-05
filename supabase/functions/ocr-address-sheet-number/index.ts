@@ -28,7 +28,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
-const MODEL = "claude-sonnet-5";
+// claude-sonnet-5-5 since 2026-10-05 (was claude-sonnet-5, Fred approved). Re-measured on 8 known sheets x 4 runs
+// (5 printed numbers, 3 unreadable): 8/8 correct at low AND default effort, so effort low is kept.
+const MODEL = "claude-sonnet-5-5";
 const TIME_BUDGET_MS = 20000;   // edge CPU cap: stop cleanly rather than be killed mid-batch
 const DEFAULT_LIMIT = 3;
 
@@ -96,6 +98,8 @@ async function askVision(bytes: Uint8Array, mediaType: string): Promise<{ text: 
     method: "POST",
     headers: {
       "x-api-key": ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "Content-Type": "application/json",
+      // The default server-side fallback: a refusal is answered by another model inside the same call.
+      "anthropic-beta": "server-side-fallback-2026-07-01",
     },
     body: JSON.stringify({
       // Room for thinking: this model may think before answering and thinking counts toward
@@ -107,6 +111,7 @@ async function askVision(bytes: Uint8Array, mediaType: string): Promise<{ text: 
       // as the default effort on all 16 pairs, same output tokens, no thinking block at either level.
       // Changing MODEL invalidates this: re-run the default-vs-low comparison on the new model first.
       output_config: { effort: "low" },
+      fallbacks: "default",
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: mediaType, data: btoa(bin) } },
         { type: "text", text: PROMPT },

@@ -59,7 +59,7 @@ if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY required in Supabase/
 if (!PAT) throw new Error('SUPABASE_PAT required in Supabase/.env');
 const ref = SUPABASE_URL.match(/https?:\/\/([^.]+)\./)[1];
 
-const MODEL = 'claude-sonnet-5';
+const MODEL = 'claude-sonnet-5-5'; // same model as the edge fn ocr-address-sheet-number (2026-10-05)
 const arg = n => (process.argv.find(a => a.startsWith('--' + n + '=')) || '').split('=')[1];
 const LIMIT = arg('limit');
 const TICKET = arg('ticket');
