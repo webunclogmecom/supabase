@@ -2281,6 +2281,52 @@ banner so the two cannot disagree.
 Removing or renaming a control means grepping every operator sentence that mentions it, in the
 same change. The app-side half of the rule is in `Building Apps/DERM Stamp Studio/CLAUDE.md`.
 
+### 🛑 STAMP STUDIO: DRAW THE BANDS IS REQUIRED BEFORE A MANUAL STAMP (2026-10-05)
+
+Fred, voice note: *"before doing the stamp, we need to do the draw the bands ... it's gonna be
+required. First ... the limit one ... for know where the blackout can happen, and then we need the
+client bands"*, and *"either the AI is gonna do the job, or when the AI cannot do it, we need to do
+the draw the bands requirement and put the stamp on it."* Same day: *"remove the Auto Place button
+and Re-measure Printed Lines ... any kind of functionality they have"*.
+
+**The order is now LINES, then STAMPS, then the Limit writes itself.** A band could never come
+first literally: it is tied to a client only by that client's stamp, and `save_page_geometry`
+refuses a page with no stamp (G1/G3). So the person draws the page's printed lines (two Limit bands,
+the top and bottom of Section B, and a client band on every printed line between them), which become
+the page's ROWS (`derm.page_slots`); each stamp is then dropped INTO a row; and the Limit (the
+extent, `page_block_extents`) is written from the rows as soon as a stamp is in one.
+
+| write | function (migration) | what it does |
+|---|---|---|
+| Save the bands | `derm.save_page_bands(folder, page, source_url, rules, meta)` (`2026-10-05_1310`) | `record_page_rules` (human-v1-<ET date>, validator judges) + rebuilds `page_slots` + puts every stamp already on the page back in the row its point sits in (refuses a stamp outside every row, or two in one row) + Limit, ONE transaction |
+| a stamp drop | `derm.place_stamp_in_row(row, page, x, y)` (`_1310`) | the row from the drop point; no rows / outside every row / a row another stamp holds are refused in plain words; the stamp stays where dropped; band = the row (`band_source 'slot'`); Limit |
+| the Limit | `derm._write_page_extent_from_slots` (service_role only) | first/last row edge, replayed with every publishable card's stored band through `save_page_geometry`, so every G-guard runs. NOT an extent-only writer |
+
+- **A refusal undoes everything.** A refused save also rolls back the FAILED scan row
+  `record_page_rules` writes, so it can never become the newest scan and hide the page's last good
+  lines in `v_page_printed_rules` (that view picks by rank then recency, with no grade filter).
+- **`record_page_rules` accepts a page with a scan but no card yet** (it must be in the ticket's
+  image list): an unplaced card carries `page = 1`, so page 2 has no card until its first stamp.
+- **The three bugs fixed first** (`2026-10-05_1200`): `authenticated` can EXECUTE
+  `derm._is_rule_source`, so `v_page_printed_rules` reads for staff (Draw the bands had opened empty
+  on every page and the line overlay was blank, 42501); `clear_stamp_position` clears `slot_index`
+  and a row is taken only by a STAMPED card; `set_stamp_position` clears the band and row when the
+  point leaves its band or page, so the publish gate holds the sheet until it is in a row again.
+- **Removed from the app:** Auto-place (`derm.auto_place_page`, revoked then dropped after the app
+  shipped), Re-measure printed lines AND its silent run on every page open (it wrote runlen-v2 lines
+  with no user action), and "Confirm lines manually". The in-app writers of printed lines are now
+  Draw the bands (human-v1, through `save_page_bands`) and the generated-sheet finisher (template-v1).
+  🛑 **Do NOT drop the `runlen-v2-%` arm of `_is_rule_source` / `_rule_source_rank`**: 175 pages are
+  still served from runlen-v2 lines, and every band check reads them.
+- `assign_card_to_slot` and `save_page_slots` still exist and are no longer called by the app.
+- The AI path is unchanged: generated sheets are stamped at filing, measured by the finisher and
+  completed without a person. Only a page a PERSON stamps needs its bands.
+- Known, accepted: a page where two clients share one printed row (a hand-squeezed pad) or where
+  the printed lines are not evenly spaced cannot be saved with these steps (the validator wants an
+  evenly spaced chain of row edges). Fred, same day, on multi-row clients: a client with two GDO
+  permits already gets one card per permit, each in its own row.
+App-side contract: `Building Apps/DERM Stamp Studio/CLAUDE.md` and its `docs/08-changelog.md`.
+
 ### ✅ GENERATED SHEETS FINISH THEMSELVES: measured from the scan, guided by the layout we printed (2026-09-14)
 
 Fred, 2026-09-14, on 835076: *"if it's a generated manifest ... it should be auto-stamped and auto
@@ -2674,6 +2720,10 @@ satisfy nothing while the migration looks applied.
 measurement pass is a manual task, and nothing prevents the backlog rebuilding. It has now rebuilt
 twice.
 
+🛑 **SUPERSEDED 2026-10-05: the in-app re-measure (button AND its silent run on page open) is
+REMOVED; a person now draws the lines in Draw the bands, which is required before a manual stamp.**
+See "STAMP STUDIO: DRAW THE BANDS IS REQUIRED" above. The paragraph below is the record of what it
+was; the runlen-v2 lines it wrote are still served and must stay.
 ✅ **THAT IS NO LONGER TRUE: THE STAMP STUDIO MEASURES ITS OWN PAGES (2026-08-28).** An operator
 opens a page, presses re-measure, and the detector runs **in the browser** against the same scan the
 Studio is already displaying; `derm.record_page_rules` (`2026-08-28_1520`) writes the result.
