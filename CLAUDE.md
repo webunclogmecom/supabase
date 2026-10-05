@@ -2356,6 +2356,11 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
     shared detector must keep both its output and that margin. Checks:
     `node scripts/checks/page_reference_classifier.mjs` (pipeline = the app on 8 real scans; it
     excludes background scans as controls, since those were made by the pipeline itself).
+    The 10 pages the OK-only rule left without a reference (all completed, measured SPARSE/IRREGULAR on
+    2026-08-21) got a REVIEWED measurement in `2026-10-05_1505` (Fred: "measure the 10 pages that lost
+    their check"): detector positions only, labels read from the paper and each set refuted by two
+    independent reviewers; 6 are boundaries-only because a printed divider was not detected. Since then
+    0 pages lack an OK reference.
     ⚠ Two April scans (window7-sheet3 p1, window9-sheet1 p1) carry EXIF orientation 3; the whole
     pipeline (stamps, bands, redactor, detector) works on the stored pixels and their served
     documents are correct, so the flag is ignored everywhere, deliberately.
