@@ -34,42 +34,68 @@ export function detectRules(raw, topPct = null, botPct = null) {
 
   // per-column paper level: 70th percentile down the roster, so a column carrying a vertical
   // table line still resolves to paper rather than to the line
+  // (2026-10-05: by counting, not by sorting each column; same value)
   const cut = new Float32Array(W);
+  const hist = new Uint32Array(256);
+  const nCol = yB >= yA ? ((yB - yA) >> 1) + 1 : 0, k = (nCol * 0.7) | 0;
   for (let x = x0; x < x1; x++) {
-    const col = [];
-    for (let y = yA; y <= yB; y += 2) col.push(L[y * W + x]);
-    col.sort((a, b) => a - b);
-    const p = col[(col.length * 0.7) | 0];
+    hist.fill(0);
+    for (let y = yA; y <= yB; y += 2) hist[L[y * W + x]]++;
+    let p = 0;
+    for (let seen = 0; p < 256; p++) { seen += hist[p]; if (seen > k) break; }
     cut[x] = p - Math.max(9, p * 0.1);
+  }
+
+  // 2026-10-05: the dark test is computed ONCE per pixel, not once per slope pass (16 passes), and the
+  // winning pass is kept rather than recomputed. Same output, about a third of the CPU: a 7-megapixel
+  // scan exceeded the edge runtime's 2 s CPU limit (measure-page-reference, ticket-829216 p1).
+  // A pixel is dark when it, or the pixel above or below it, is under its column's paper cut.
+  const DK = new Uint8Array(W * H);
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = x0, p = y * W + x0; x < x1; x++, p++) {
+      const t = cut[x];
+      if (L[p] < t || L[p - W] < t || L[p + W] < t) DK[p] = 1;
+    }
   }
 
   const profileFor = (slope) => {
     const rf = new Float32Array(H);
+    // the row offset of each column for this slope, and its pixel index relative to the row start
+    const off = new Int32Array(x1), rel = new Int32Array(x1);
+    let lo = 0, hi = 0;
+    for (let x = x0; x < x1; x++) {
+      off[x] = (slope * (x - xMid)) | 0; rel[x] = off[x] * W + x;
+      if (off[x] < lo) lo = off[x]; if (off[x] > hi) hi = off[x];
+    }
     for (let y = yA - 12; y <= yB + 12; y++) {
       if (y < 1 || y >= H - 1) continue;
       let best = 0, cur = 0;
-      for (let x = x0; x < x1; x++) {
-        const yy = y + ((slope * (x - xMid)) | 0);
-        if (yy < 1 || yy >= H - 1) { cur = 0; continue; }
-        const t = cut[x];
-        const dark = L[yy * W + x] < t || L[(yy - 1) * W + x] < t || L[(yy + 1) * W + x] < t;
-        if (dark) { cur++; if (cur > best) best = cur; } else cur = 0;
+      if (y + lo >= 1 && y + hi < H - 1) {          // every column of this row is inside the image
+        const base = y * W;
+        for (let x = x0; x < x1; x++) {
+          if (DK[base + rel[x]]) { cur++; if (cur > best) best = cur; } else cur = 0;
+        }
+      } else {
+        for (let x = x0; x < x1; x++) {
+          const yy = y + off[x];
+          if (yy < 1 || yy >= H - 1) { cur = 0; continue; }
+          if (DK[yy * W + x]) { cur++; if (cur > best) best = cur; } else cur = 0;
+        }
       }
       rf[y] = best / span;
     }
     return rf;
   };
 
-  let bestSlope = 0, bestScore = -1;
+  let bestSlope = 0, bestScore = -1, rf = null;
   for (const s of SLOPES) {
-    const rf = profileFor(s);
+    const prof = profileFor(s);
     let n = 0;
-    for (let y = yA - 12; y <= yB + 12; y++) if (rf[y] >= FULL_RUN) n++;
+    for (let y = yA - 12; y <= yB + 12; y++) if (prof[y] >= FULL_RUN) n++;
     if (n > bestScore || (n === bestScore && Math.abs(s) < Math.abs(bestSlope))) {
-      bestScore = n; bestSlope = s;
+      bestScore = n; bestSlope = s; rf = prof;
     }
   }
-  const rf = profileFor(bestSlope);
 
   const sep = Math.max(3, Math.round(H * MIN_SEP_PP / 100));
   const cand = [];

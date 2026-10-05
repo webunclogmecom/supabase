@@ -893,3 +893,10 @@ verify_jwt = true
 # the handler also requires role=service_role, which is only trustworthy behind verify_jwt.
 [functions.stamp-sheets-reminder]
 verify_jwt = true
+
+# measure-page-reference: measures the printed lines of one Stamp Studio page in the background
+# (2026-10-05), so a page a person stamps has a machine reference for save_page_bands. Called by
+# pg_cron (public.fn_request_page_reference_measure) with the vault service_role key; the handler
+# decodes the role claim, which is only trustworthy behind the gateway check.
+[functions.measure-page-reference]
+verify_jwt = true
