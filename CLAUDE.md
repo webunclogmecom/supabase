@@ -195,6 +195,18 @@ Two consequences worth carrying:
 
 ---
 
+## 🛑 This repo is PUBLIC: no secrets, codes or client files in it (2026-10-05)
+
+- Never commit a password, token, connection string with a password, real lock box / gate / access code, or a
+  client-data file (backups, PDFs, client or price lists). Use `REDACTED-<client code>`, `<code redacted>`, or
+  invented test values on 112-YA.
+- Client data and PDFs are git-ignored (`docs/backups/`, `*.pdf`, OPS lists, `reports/`); copies go to the
+  workspace-level `backups/`. To untrack: check `git diff --cached`, then `git commit` with NO path list (a
+  path-list commit re-tracks files still on disk).
+- Record, and what is still open: [docs/audits/2026-10-05_public_repo_security_cleanup.md](docs/audits/2026-10-05_public_repo_security_cleanup.md).
+
+---
+
 ## Collaboration rules
 
 ### With Fred (user)

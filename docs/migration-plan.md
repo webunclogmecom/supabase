@@ -217,7 +217,7 @@ Estimated runtime: ~90 minutes over a weekend window.
 ### Cutover weekend checklist
 
 1. Disable Jobber webhook subscriptions (stop new events flowing into Supabase from Jobber).
-2. Take a Supabase PITR snapshot as "pre-cutover-<date>" reference.
+2. Record the time of the latest daily backup as the "pre-cutover-<date>" reference (PITR is off as of 2026-10-05, so that backup is the only restore point); for a tighter point, take a `pg_dump` to the workspace-level `backups/` first.
 3. Update Odoo.sh to write-through to Supabase (Odoo becomes source of truth for CRM/billing writes).
 4. Redirect DNS / iframes / links from Jobber-backed pages to Odoo.
 5. Keep Jobber in read-only mode for 60 days as an emergency reference.

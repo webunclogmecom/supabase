@@ -42,7 +42,7 @@ Every secret the project uses, where it lives, and how to rotate.
 3. **Never paste secrets into Slack, email, or docs.** If a secret is exposed in any logged channel, treat as compromised.
 4. **Never reuse a dev/local token in production Edge Functions.** Function secrets are set via `supabase secrets set`, not via repo file.
 5. **The `anon` key is public by design** and can be shipped in frontend code — its safety depends on RLS, not on secrecy. The `service_role` key is never public.
-6. **Never put a secret in `cron.job.command`.** It is stored and returned as plaintext, so it leaks into every query result, log, screenshot and transcript that touches `cron.job`, and both repos are public. Put it in **Vault** and have the cron call a `SECURITY DEFINER` function that reads it (`fn_request_jobber_push`, `fn_request_blackout_sweep`, `fn_request_jobber_sync` are the three working examples). Audit with `SELECT jobname FROM cron.job WHERE command ~* '<header-or-key-name>'`.
+6. **Never put a secret in `cron.job.command`.** It is stored and returned as plaintext, so it leaks into every query result, log, screenshot and transcript that touches `cron.job`, and this repo is public (Building Apps, `webunclogmecom/ops-portal`, is private; measured 2026-10-05). Put it in **Vault** and have the cron call a `SECURITY DEFINER` function that reads it (`fn_request_jobber_push`, `fn_request_blackout_sweep`, `fn_request_jobber_sync` are the three working examples). Audit with `SELECT jobname FROM cron.job WHERE command ~* '<header-or-key-name>'`.
 7. **Never write a fail-open auth gate, and `verify_jwt=true` is only half of one.** `if (KEY && header !== KEY)` grants everyone access the moment `KEY` is unset, which is the opposite of what an outage should do: prefer `if (!KEY) return 500`. And because the **`anon` key is a public, valid JWT**, the gateway's signature check alone lets anyone in. A function reachable only by machines must ALSO assert `role === 'service_role'` on the decoded token. Both halves, always.
 8. **To verify a pg_net cron, read `net._http_response`, never `cron.job_run_details`.** pg_net is fire-and-forget: the transaction commits before the far end replies, so `status='succeeded'` means only that the queue insert worked. A 401/403/500 records as `succeeded`. The URL is **not** stored on the response row, so correlate by the id returned from `net.http_post` or by an id watermark. Retention is roughly 6 hours. ⚠ And an **empty** result set is inconclusive, not a pass: if the job demonstrably ran and there is no response row, that is a finding.
 9. **🛑 NEVER grant a column `UPDATE` to `authenticated` on a table whose UPDATE policy is `USING(true)`. Use a SECDEF RPC instead.** RLS is **row**-level: a policy cannot scope *which columns* a grant covers. So on such a table the **column grant is the only limit**, and the day someone adds one more column grant, that column becomes writable **on every row** with no policy change and no review. This is a latent trap, not a live exposure, which is exactly why it survives audits: nothing looks wrong until the grant lands.
@@ -52,6 +52,7 @@ Every secret the project uses, where it lives, and how to rotate.
    ⚠ **Do not "fix" these by narrowing the policy** — there is no row predicate that scopes a column, and `USING(true)` is arguably *correct* on `properties` because there is no tenancy among staff (any staff user editing any client's property is intended). The clean end state is to move the writes to a SECDEF RPC, drop the column grants, then drop the policy, so there is nothing left for a future grant to ride on. That changes the consuming app, so it is a scoped task with app impact, never folded into unrelated work.
    ⚠ And see `STAGED_2026-06-15c_..._DO-NOT-APPLY-YET.sql`: it would `CREATE POLICY ... ON public.visits FOR UPDATE TO authenticated USING (true)`, adding a third instance. It must stay unapplied.
    This is the concrete form of `CLAUDE.md`'s "a grant and a policy can disagree, never let the grant be the only thing holding the line."
+10. **This repo is public: no password, token, real lock box / gate / access code, or client-data file goes in it (2026-10-05).** Use `REDACTED-<client code>` or invented 112-YA values; client data and PDFs are git-ignored and their copies live in the workspace-level `backups/`. A removed value stays in git history, so a published password is fixed only by switching the login off or rotating it. Record: `docs/audits/2026-10-05_public_repo_security_cleanup.md`.
 
 ---
 
@@ -201,6 +202,8 @@ Defined in `docs/company.md` — repeated here with enforcement details.
 
 Enforcement today: access is managed at the *tool* level (Airtable permissions, Jobber roles, Fillout form scopes). Once Odoo.sh replaces Jobber + Airtable, access is managed in Odoo + RLS on this database.
 
+**Database logins for people:** none. `yannick_readonly` was switched off on 2026-10-05 (NOLOGIN, NOBYPASSRLS, no password; `docs/migrations/2026-10-05_1425_yannick_readonly_login_off.sql`) after its password was found in this public repo. If Yannick needs to read data again, Fred chose a staff app login, not a database password.
+
 Any request to "give a tech access to the client list" is a security event. Log in `#viktor-security-setup` and confirm with Fred or Yan directly.
 
 ---
@@ -218,7 +221,7 @@ Any request to "give a tech access to the client list" is a security event. Log 
 2. Cross-reference with `webhook_events_log` by `entity_type` + `entity_id`.
 3. If `webhook_events_log` does not show the change, a direct DB actor made it — review `audit_log` in the Supabase dashboard (Settings → Audit Logs).
 4. Determine scope (which rows, which fields, when).
-5. Restore from Supabase point-in-time recovery (Pro plan, 7-day PITR) if needed.
+5. Restore from the latest daily backup if needed (PITR is OFF as of 2026-10-05; see `runbook.md`, backups and restore).
 
 **Webhook flood (possible DDoS or source-system misconfiguration):**
 1. Check `webhook_events_log` count per minute.

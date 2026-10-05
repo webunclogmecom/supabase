@@ -181,7 +181,7 @@ If you internalize that sentence, everything else is a detail.
 | **entity_source_links** | The polymorphic bridge table for cross-system identity. See [ADR 002](decisions/002-entity-source-links.md). |
 | **GDO** | Grease Disposal Operating permit (Miami-Dade) |
 | **Goliath / Moises / David / Cloggy** | Truck names. NOT people. |
-| **PIT / PITR** | Point-in-time recovery (Supabase Pro feature, 7-day window) |
+| **PIT / PITR** | Point-in-time recovery, a paid Supabase add-on. **Not enabled on Prod** (2026-10-05); only daily backups exist |
 | **RLS** | Row-Level Security (Postgres/Supabase authorization layer) |
 | **Service-role key** | The Supabase JWT with full DB admin. Never in frontend. |
 | **Viktor** | AI coworker in Slack. Different from the Claude agent working in this repo. |
