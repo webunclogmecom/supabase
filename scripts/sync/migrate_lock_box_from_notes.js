@@ -12,7 +12,7 @@
  *
  * WHAT IT DOES NOT DO: it does not delete or edit the note it read the code from. Removing client
  * free text is a destructive act nobody asked for, and the note often carries more than the code
- * ("CODE BOX: 6969" is the whole note, but "gate code 1234, ring the bell twice" is not). The
+ * ("CODE BOX: REDACTED-089-COW" is the whole note, but "gate code 1234, ring the bell twice" is not). The
  * duplication is left visible on the card, where a human can decide.
  *
  * THE ORDER MATTERS, and it is not the obvious one:

@@ -16,8 +16,8 @@
 -- So the field exists upstream and we simply never stored it.
 --
 -- MEASURED ON LIVE JOBBER (490 properties swept): 46 carry a value, lengths 3 to 6, no
--- newlines, and 18 of the 46 are literally "N/A". One of the real ones is "2707", which is
--- also sitting in that property's free-text access_notes as "Lockbox code: 2707" -- the same
+-- newlines, and 18 of the 46 are literally "N/A". One of the real ones is "REDACTED-045-NU", which is
+-- also sitting in that property's free-text access_notes as "Lockbox code: REDACTED-045-NU" -- the same
 -- fact typed twice in two places, which is the actual problem this field solves.
 --
 -- FRED'S DECISION (asked, because it changes the work): mirror Jobber and stay editable here.
@@ -50,7 +50,7 @@ comment on column public.properties.lock_box_key is
   'Lock box or key code for this property. Mirrors the Jobber ALL_PROPERTIES text custom field "Lock Box/Key" (config 3061112) through sync.source_field_shadow, the same path the grease trap size uses. Editable in the Client App (Fred, 2026-09-02); an edit here is NOT pushed to Jobber, so a later Jobber-side edit wins. "N/A" is refused by the sync rather than stored: 18 of the 46 populated Jobber values were that placeholder when this shipped.';
 
 -- Shape only, deliberately not a format: a lock box code is whatever the site uses
--- ("2707", "4066#", "C1709x" are all real). What is NOT acceptable is an empty-but-present
+-- ("REDACTED-045-NU", "REDACTED-047-PAM#", "REDACTED-292-BPM" are all real). What is NOT acceptable is an empty-but-present
 -- string, a control character, or something long enough to be a paragraph of notes.
 alter table public.properties
   drop constraint if exists properties_lock_box_key_shape_chk;
@@ -446,9 +446,9 @@ BEGIN
     -- 3. CONSTRAINT MUTATION TABLE. A constraint nobody tried to break is untested.
     FOR v_val, v_ok IN
       SELECT * FROM (VALUES
-        ('2707',            true),      -- a real code
-        ('C1709x',          true),      -- a real code, letters and digits
-        ('4066#',           true),      -- a real code with punctuation
+        ('REDACTED-045-NU',            true),      -- a real code
+        ('REDACTED-292-BPM',          true),      -- a real code, letters and digits
+        ('REDACTED-047-PAM#',           true),      -- a real code with punctuation
         (NULL,              true),      -- absent is legal
         ('',                false),     -- present but empty is not
         ('   ',             false),     -- whitespace-only is not
@@ -486,20 +486,20 @@ BEGIN
     --    this block asserted ADOPT on the first call and was correctly rejected by this
     --    VERIFY. It also means the 46 values already in Jobber will NOT arrive through the
     --    ongoing sync: they need the deliberate backfill, which is a separate step.
-    r := public.fn_sync_property_custom_field(v_p, lb_key, 'Lock Box/Key', to_jsonb('2707'::text), true);
+    r := public.fn_sync_property_custom_field(v_p, lb_key, 'Lock Box/Key', to_jsonb('REDACTED-045-NU'::text), true);
     IF r <> 'SEED' THEN fails := fails || format('5: the first call returned %s, expected SEED; ', r); END IF;
     IF (SELECT lock_box_key FROM public.properties WHERE id=v_p) IS NOT NULL THEN
       fails := fails || '5b: the seeding call WROTE, and it must not; ';
     END IF;
 
-    r := public.fn_sync_property_custom_field(v_p, lb_key, 'Lock Box/Key', to_jsonb('C1709x'::text), true);
+    r := public.fn_sync_property_custom_field(v_p, lb_key, 'Lock Box/Key', to_jsonb('REDACTED-292-BPM'::text), true);
     IF r <> 'ADOPT' THEN fails := fails || format('5c: a changed source returned %s; ', r); END IF;
-    IF (SELECT lock_box_key FROM public.properties WHERE id=v_p) IS DISTINCT FROM 'C1709x' THEN
+    IF (SELECT lock_box_key FROM public.properties WHERE id=v_p) IS DISTINCT FROM 'REDACTED-292-BPM' THEN
       fails := fails || '5d: the column did not receive the adopted value; ';
     END IF;
 
     -- 6. "N/A" is refused, not stored. 18 of the 46 live Jobber values are exactly this.
-    --    The source is now seen as C1709x, so each of these is a genuine source-side change
+    --    The source is now seen as REDACTED-292-BPM, so each of these is a genuine source-side change
     --    and does reach the adopt branch rather than being dismissed as unchanged.
     FOREACH v_val IN ARRAY ARRAY['N/A','n/a','na','NA'] LOOP
       IF public.fn_sync_property_custom_field(v_p, lb_key, 'Lock Box/Key', to_jsonb(v_val), true)
@@ -507,7 +507,7 @@ BEGIN
         fails := fails || format('6: %L was not treated as a placeholder; ', v_val);
       END IF;
     END LOOP;
-    IF (SELECT lock_box_key FROM public.properties WHERE id=v_p) IS DISTINCT FROM 'C1709x' THEN
+    IF (SELECT lock_box_key FROM public.properties WHERE id=v_p) IS DISTINCT FROM 'REDACTED-292-BPM' THEN
       fails := fails || '6b: a placeholder overwrote the real value; ';
     END IF;
 
@@ -586,3 +586,4 @@ BEGIN
   END IF;
   RAISE NOTICE 'VERIFY OK >>> %', notes;
 END $verify$;
+-- NOTE 2026-10-05: real lock box values in this file were replaced with REDACTED-<client code> placeholders after it was applied (public repo, audit SECURITY-03). The file is a record and is not re-runnable as written.

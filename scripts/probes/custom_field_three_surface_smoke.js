@@ -14,7 +14,7 @@
  * "Our side agrees with Jobber" is the obvious check and it is NOT sufficient, because the Client
  * App does not read our side. It reads the `client.properties` VIEW. Those can disagree, and they
  * HAVE: on 2026-09-02 `lock_box_key` was written to public.properties and exposed nowhere, so the
- * modal rendered an empty box over a stored 5713 and the two-surface check would have passed.
+ * modal rendered an empty box over a stored REDACTED-017-FIA and the two-surface check would have passed.
  * So each property is checked at all three:
  *
  *   1. public.properties.<column>     what we store

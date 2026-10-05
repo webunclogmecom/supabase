@@ -1635,12 +1635,12 @@ only the handler would have produced a field that looked connected and never mov
   real adoption so the next poll does not re-SEED.
 - ⚠ **Adding a column for the Client App is TWO objects.** `2026-09-02_1000` added the column and the
   write path; the app reads the `client.properties` VIEW, which still lacked it, so the published
-  modal rendered an empty box over a stored `5713`. Fixed by `2026-09-02_1100`.
+  modal rendered an empty box over a stored `<017-FIA lock box code>`. Fixed by `2026-09-02_1100`.
 
 **Proven end to end without writing to Jobber** (2026-09-02): property 32 and its shadow were set to
 a stale value, its staged row flagged `needs_populate`, and the poll invoked. It replayed the handler,
-the sync returned ADOPT, and the column came back to Jobber's `5713` with `adopted_from = STALE-1`,
-`adopted_to = 5713`, and an `audit.logs` row attributed to `jobber-custom-field-sync`.
+the sync returned ADOPT, and the column came back to Jobber's `<017-FIA lock box code>` with `adopted_from = STALE-1`,
+`adopted_to = <017-FIA lock box code>`, and an `audit.logs` row attributed to `jobber-custom-field-sync`.
 
 ⚠ **Bind by configuration GID, never by label.** Four numeric grease-trap fields exist; two differ
 only by a capital S and one of those is archived, and "GT size" appears twice.

@@ -8,7 +8,7 @@
 --
 -- HOW IT PRESENTED, and it is worth keeping because it looked like an app bug:
 -- the published modal rendered "Lock Box / Key" with an empty box for property 32
--- (017-FIA) while the base table held '5713'. Manholes (3) and the grease trap size (90)
+-- (017-FIA) while the base table held 'REDACTED-017-FIA'. Manholes (3) and the grease trap size (90)
 -- rendered correctly in the same modal, which is what proved the modal was on the right
 -- property and the READ was the thing at fault.
 --
@@ -85,15 +85,15 @@ BEGIN
   -- 2. it carries the real value, not a NULL placeholder. Property 32 is 017-FIA, the
   --    property whose empty modal box exposed this.
   SELECT lock_box_key INTO v FROM client.properties WHERE id = 32;
-  IF v IS DISTINCT FROM '5713' THEN
-    fails := fails || format('2: client.properties.lock_box_key for 32 reads %L, expected 5713; ', v);
+  IF v IS DISTINCT FROM 'REDACTED-017-FIA' THEN
+    fails := fails || format('2: client.properties.lock_box_key for 32 reads %L, expected REDACTED-017-FIA; ', v);
   END IF;
 
   -- 3. CONTROL: the base table agrees. If this disagreed, assertion 2 would be measuring
   --    the view against nothing.
   SELECT lock_box_key INTO v FROM public.properties WHERE id = 32;
-  IF v IS DISTINCT FROM '5713' THEN
-    fails := fails || '3: CONTROL failed, the base table does not hold 5713; ';
+  IF v IS DISTINCT FROM 'REDACTED-017-FIA' THEN
+    fails := fails || '3: CONTROL failed, the base table does not hold REDACTED-017-FIA; ';
   END IF;
 
   -- 4. the whole imported set is visible through the view, not just one row
@@ -110,3 +110,4 @@ BEGIN
   IF fails <> '' THEN RAISE EXCEPTION 'VERIFY FAILED >>> %', fails; END IF;
   RAISE NOTICE 'VERIFY OK';
 END $verify$;
+-- NOTE 2026-10-05: real lock box values in this file were replaced with REDACTED-<client code> placeholders after it was applied (public repo, audit SECURITY-03). The file is a record and is not re-runnable as written.

@@ -12,7 +12,7 @@
 -- real code.
 --
 -- WHY THAT IS A LATENT FREEZE, not cosmetic. fn_shadow_decision reads our_live vs our_seen
--- to decide whether OUR side moved. With our_seen = null and our_live = '5713' it concludes a
+-- to decide whether OUR side moved. With our_seen = null and our_live = 'REDACTED-017-FIA' it concludes a
 -- human just typed it; combine that with any Jobber-side change and the verdict is CONFLICT,
 -- which sets conflict_at and FREEZES the row for ever ("frozen rows are a human's business").
 -- So all 27 would have frozen on the first Jobber edit - precisely the event this field exists
@@ -21,7 +21,7 @@
 --
 -- THE CONTROL THAT MAKES THIS A DEFECT AND NOT A STYLE CHOICE, two ways:
 --   * property 32 went through a REAL adopt (the poll replay at 09:54) and its our_value is
---     correctly '5713'. Same table, same field, right answer - so the machinery is fine and
+--     correctly 'REDACTED-017-FIA'. Same table, same field, right answer - so the machinery is fine and
 --     the import was the outlier. It is the 1 of 28 that agrees with its column.
 --   * the grease trap field has 370 of 475 rows at JSON null and those are CORRECT: 353 of 458
 --     properties genuinely hold no capacity. A blanket "null is wrong" sweep would have been
@@ -101,3 +101,4 @@ BEGIN
   IF fails <> '' THEN RAISE EXCEPTION 'VERIFY FAILED >>> %', fails; END IF;
   RAISE NOTICE 'VERIFY OK';
 END $verify$;
+-- NOTE 2026-10-05: real lock box values in this file were replaced with REDACTED-<client code> placeholders after it was applied (public repo, audit SECURITY-03). The file is a record and is not re-runnable as written.

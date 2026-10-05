@@ -165,7 +165,7 @@ All flags documented in `scripts/migrate/README.md`.
 
 7,819 images + 176 videos + 24 PDFs = 8,019 total.
 
-**Classifier quality:** 81% visit-scoped triangulation (higher than the ~78% seen mid-run). Most mismatches are legitimately non-visit — historical warnings, access-code changes, client-level instructions. Sample (recent notes) confirms the classifier is placing notes correctly: e.g. "Incomplete — Need Additional pump hose...", "Access code 1435 doesn't work anymore" → visit-scoped; author-less notes, admin announcements → non-visit.
+**Classifier quality:** 81% visit-scoped triangulation (higher than the ~78% seen mid-run). Most mismatches are legitimately non-visit — historical warnings, access-code changes, client-level instructions. Sample (recent notes) confirms the classifier is placing notes correctly: e.g. "Incomplete — Need Additional pump hose...", "Access code <code redacted> doesn't work anymore" → visit-scoped; author-less notes, admin announcements → non-visit.
 
 **Run duration:** Multi-hour with four restart points (DNS crashes, one HTTP hang). Each restart was idempotent — resume from `sync_cursors` + skip-if-already-migrated via `entity_source_links` uniqueness. No data loss across any restart.
 

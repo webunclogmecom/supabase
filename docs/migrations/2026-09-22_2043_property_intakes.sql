@@ -544,7 +544,7 @@ begin
   -- submitted round, and that an answer to an unrequested key is ignored.
   insert into public.property_intakes (property_id, form_snapshot, requested, collector, answers, submitted_at)
   values (v_prop, v_snapshot, '["access_entry.gate","access_entry.lock_box_code"]'::jsonb,
-          '[TEST] migration verify', '{"access_entry.gate":{"value":"yes"},"access_entry.lock_box_code":{"value":"2707"},"access_entry.unrequested":{"value":""}}'::jsonb, now())
+          '[TEST] migration verify', '{"access_entry.gate":{"value":"yes"},"access_entry.lock_box_code":{"value":"REDACTED-045-NU"},"access_entry.unrequested":{"value":""}}'::jsonb, now())
   returning id into v_id1;
 
   select intake_status, missing_keys into v_status, v_missing
@@ -610,3 +610,4 @@ begin
 end $verify$;
 
 notify pgrst, 'reload schema';
+-- NOTE 2026-10-05: one real lock box value in a VERIFY fixture was replaced with a REDACTED-<client code> placeholder after this file was applied (public repo, audit SECURITY-03).

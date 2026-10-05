@@ -26,7 +26,7 @@
  * WRITE -> client.update_property_operational(property_id, patch). The modal sends ONE patch of
  *          changed keys; lock_box_key is just another key in it. There is no separate RPC.
  * READ  -> client.properties. The app does NOT read public.properties. Forgetting that view is
- *          what made the field render an empty box over a stored 5713 on the day it shipped, so
+ *          what made the field render an empty box over a stored REDACTED-017-FIA on the day it shipped, so
  *          a smoke test asserting only the base table would have passed while the app showed
  *          nothing. Every step asserts BOTH.
  *
@@ -111,10 +111,10 @@ const check = (ok, msg) => { if (!ok) fails.push(msg); };
     steps.push('READ');
 
     // ---- UPDATE ----
-    await save('{"lock_box_key":"C1709x"}');
+    await save('{"lock_box_key":"TEST-LB-0001"}');
     s = await readBoth();
-    check(s.col === 'C1709x', `UPDATE: base table kept ${JSON.stringify(s.col)}`);
-    check(s.vw === 'C1709x', `UPDATE: view kept ${JSON.stringify(s.vw)}`);
+    check(s.col === 'TEST-LB-0001', `UPDATE: base table kept ${JSON.stringify(s.col)}`);
+    check(s.vw === 'TEST-LB-0001', `UPDATE: view kept ${JSON.stringify(s.vw)}`);
     steps.push('UPDATE');
 
     // ---- DELETE, the half that normally goes untested ----
