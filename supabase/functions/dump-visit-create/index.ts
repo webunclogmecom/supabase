@@ -91,13 +91,18 @@ const DUMPS = {
 //   false = the visit is created in the DB and SHOWS IN THE VISIT CALENDAR, but is kept OFF Jobber.
 //   true  = production: the visit pushes to Jobber exactly as a Calendar-created visit does.
 //
-// Flipping this to `true` is the ENTIRE go-live step for the Jobber side. Do not flip it until Fred
-// says the app is done — the crew works off the real Jobber schedule and test rows land on it.
-// The suppression itself lives in public.create_dump_visit (see
-// docs/migrations/2026-07-16_create_dump_visit_no_push.sql): it must close TWO paths, the AFTER
-// INSERT trigger AND the */3 'resolve-stale-visit-sync-pending' cron, which would otherwise re-drive
-// any 'pending' row to Jobber ~3 minutes later, silently.
-const PUSH_TO_JOBBER = false;
+// ✅ LIVE SINCE 2026-10-05 (Fred, voice note: "it creates a visit that you can see in the Calendar app,
+// it do not reflect on the Jobber ... it also needs to be assigned to the person ... check that and fix
+// it"). An app dump now reaches Jobber exactly like a Calendar-created dump: on the dump client's job
+// (DUMPS.*.job_id), with the driver as its assigned user (p_team_ids), via trg_push_visit_insert.
+// Checked first: both jobs are active in Jobber, every driver who dumped in the last 60 days has a
+// Jobber user link, and a Calendar-pushed dump (visit 8725) shows its driver assigned in Jobber.
+// Before this, app dumps stayed source='manual' and never left the DB (6 real ones 2026-09-23..10-03).
+// TEST mode is unaffected: p_push_to_jobber is forced false for it below, so a preview never reaches
+// the crew schedule. To take the app back off Jobber, set this to false: the suppression lives in
+// public.create_dump_visit (docs/migrations/2026-07-16_create_dump_visit_no_push.sql) and closes both
+// the AFTER INSERT trigger and the */3 'resolve-stale-visit-sync-pending' cron.
+const PUSH_TO_JOBBER = true;
 
 const SERVICE_LINE_ITEM_DUMP = 28; // "28 - Disposal - Dump Offload" (service_line_items code 28 = row id 28).
                                    // requires_derm=false, service_type NULL, so a dump visit never becomes
