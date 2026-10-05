@@ -2385,9 +2385,13 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   edge fn `stamp-sheets-reminder` -> #apps-notifications (C0BJYHQKZM1) via the shared bot, listing
   `derm.fn_stamp_open_sheets()` (the Studio list, not completed). Posts NOTHING when every sheet is
   completed (Fred). `{dry_run:true}` returns the text. Check: `node scripts/checks/stamp_sheets_reminder.mjs`.
-  The bot (v3): `APPS_SLACK_BOT_TOKEN` when that secret is set (its own "UnclogMe Apps" bot, Fred: "we might need
-  another bot"), else the shared `SLACK_BOT_TOKEN` ("Dump Visits"); `{check_bot:true}` names it without posting.
-  Setup and manifest: `docs/reference/slack-unclogme-apps-bot.md`.
+  The bot (v5): the ONE shared notification bot, `SLACK_BOT_TOKEN` (the Slack app "Dump Notification", to be
+  renamed "UnclogMe Apps"; Fred: one bot for every app, each post labelled with its app); posts show as "Stamp
+  Studio" once it holds `chat:write.customize`, and start with the header "📝 Stamp Studio sheets".
+  `{check_bot:true}` reports the scopes and `posts_as_app` without posting.
+  🛑 **Every Slack notification follows `docs/reference/slack-notifications.md`** (Fred, 2026-10-05, Option A: a
+  header on every message; the shape, the writing rules, threads, test marking, the limits, how to build one, the
+  catalogue). Helpers: `supabase/functions/_shared/slack-notify.ts`. Bot setup: `docs/reference/slack-unclogme-apps-bot.md`.
 App-side contract: `Building Apps/DERM Stamp Studio/CLAUDE.md` and its `docs/08-changelog.md`.
 
 ### ✅ GENERATED SHEETS FINISH THEMSELVES: measured from the scan, guided by the layout we printed (2026-09-14)
