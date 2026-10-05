@@ -532,7 +532,7 @@ BEGIN
     IF (SELECT grease_trap_size_gallons FROM public.properties WHERE id=v_p) <> 2500 THEN
       fails := fails || '8b: the grease-trap column did not receive 2500; ';
     END IF;
-    IF public.fn_sync_property_custom_field(v_p, gt_key, 'Grease Trap size', to_jsonb('2707'::text), true)
+    IF public.fn_sync_property_custom_field(v_p, gt_key, 'Grease Trap size', to_jsonb('2500'::text), true)
        NOT LIKE 'REFUSED:not a number%' THEN
       fails := fails || '8c: the grease-trap path accepted a string; ';
     END IF;
@@ -586,4 +586,4 @@ BEGIN
   END IF;
   RAISE NOTICE 'VERIFY OK >>> %', notes;
 END $verify$;
--- NOTE 2026-10-05: real lock box values in this file were replaced with REDACTED-<client code> placeholders after it was applied (public repo, audit SECURITY-03). The file is a record and is not re-runnable as written.
+-- NOTE 2026-10-05: real lock box values in this file were replaced with REDACTED-<client code> placeholders after it was applied (public repo, audit SECURITY-03); the Grease Trap size string test in step 8c now uses '2500' (its old literal equalled a real code). The file is a record and is not re-runnable as written.
