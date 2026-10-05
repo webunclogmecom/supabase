@@ -198,8 +198,9 @@ Two consequences worth carrying:
 ## 🛑 This repo is PUBLIC: no secrets, codes or client files in it (2026-10-05)
 
 - Never commit a password, token, connection string with a password, real lock box / gate / access code, or a
-  client-data file (backups, PDFs, client or price lists). Use `REDACTED-<client code>`, `<code redacted>`, or
-  invented test values on 112-YA.
+  client-data file (backups, PDFs, client or price lists). In this public repo use a placeholder that does NOT name the client (`REDACTED-A`, `REDACTED-B`, one per value
+  within a file so VERIFY pairs still hold, or `<a client's lock box code>` in prose), or invented values on 112-YA:
+  naming the client next to a removed value turns the public history into a labelled list (it happened in `d11a7cd`).
 - Client data and PDFs are git-ignored (`docs/backups/`, `*.pdf`, OPS lists, `reports/`); copies go to the
   workspace-level `backups/`. To untrack: check `git diff --cached`, then `git commit` with NO path list (a
   path-list commit re-tracks files still on disk).

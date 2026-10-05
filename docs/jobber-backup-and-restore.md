@@ -66,7 +66,7 @@ complete, automatable backup is the **GraphQL API** (developer.getjobber.com):
 ### So our real "auto-backup" already exists: the Supabase warehouse
 Every Jobber entity we care about is mirrored into `public.*` (clients, jobs, visits, line_items,
 invoices, quotes, properties, employees) and cross-linked via `entity_source_links`. That database:
-- is **point-in-time recoverable** (PITR is the pending gate — see [project_pending_pitr_enable]),
+- is restorable only from the daily backup (PITR is **OFF**, measured 2026-10-05; see `runbook.md`, backups and restore),
 - is **queryable and exportable** at will,
 - and is **independent of Jobber** (different vendor, AWS-different).
 
@@ -119,7 +119,7 @@ Key caveats for any Jobber restore:
 |---|---|---|
 | **L0 — Jobber's own daily backup** | Jobber's internal DR | exists, but **not yours to restore** |
 | **L1 — Live mirror** | Supabase warehouse continuously synced from the Jobber API | **already running** |
-| **L2 — Point-in-time** | **Enable PITR** on the Supabase Prod project | **pending gate** ([project_pending_pitr_enable]) — finish it |
+| **L2 — Point-in-time** | **Enable PITR** on the Supabase Prod project | **OFF**; Fred's open decision (`docs/audits/2026-10-05_public_repo_security_cleanup.md` section 5) |
 | **L3 — Versioned snapshots** | Daily JSON/CSV dump of all entities → Storage bucket, 30–90 day retention | **recommended to add** (small cron) |
 | **L4 — Vendor-format copy** | Monthly native Clients/Jobs/Invoices CSV exports | **recommended** (manual or scripted) |
 | **Restore** | Supabase = source of truth → re-seed Jobber's near-term window via the write API | **playbook in §4** |

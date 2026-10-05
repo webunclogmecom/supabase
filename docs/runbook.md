@@ -153,7 +153,7 @@ COMMIT;
 
 There is no automatic rollback after `COMMIT`. Options:
 
-- **Backups and restore (corrected 2026-10-05).** PITR is **OFF** on Prod (measured: `pitr_enabled=false`). What exists is one daily backup (about 01:25 ET), 7 kept, so up to about 24 hours can be lost. A restore replaces the WHOLE project (in place, with downtime) or goes to a new project; prefer the new project and copy rows back, because an in-place restore wipes every session's work since the backup. PITR (about $100 a month for 7 days) is Fred's open decision: `docs/audits/2026-10-05_public_repo_security_cleanup.md` section 5.
+- **Backups and restore (corrected 2026-10-05).** PITR is **OFF** on Prod (measured: `pitr_enabled=false`). What exists is one daily backup (about 01:25 ET), about a week kept (8 listed on 2026-10-05), so up to about 24 hours can be lost. A restore replaces the WHOLE project (in place, with downtime) or goes to a new project; prefer the new project and copy rows back, because an in-place restore wipes every session's work since the backup. PITR (about $100 a month for 7 days) is Fred's open decision: `docs/audits/2026-10-05_public_repo_security_cleanup.md` section 5.
 - **Inverse migration.** Write a new migration that reverses the change. `DROP COLUMN`, `DROP TABLE`, etc. Commit separately.
 - **Pre-check queries.** Before applying, always run `SELECT COUNT(*) FROM <affected_table>` and save the number so you can verify after.
 

@@ -91,7 +91,8 @@ and migrate them if so — flag if you want this run now.
 > historical data rather than filter it. The 598 pre-2026 DERM manifests were backed up + hard-deleted;
 > `public.derm_manifests` is now **2026-only**. DERM Tracker shows only 2026 automatically — **do NOT
 > add a year filter or a "Historical backlog" tab; there's no pre-2026 data left to scope.** (Restore
-> source if ever needed: `Supabase/docs/backups/derm_manifests_2025_backup_2026-06-01.json`.)
+> source if ever needed: `Supabase/docs/backups/derm_manifests_2025_backup_2026-06-01.json`; local only since
+> 2026-10-05, verified copy in the workspace-level `backups/2026-10-05_supabase_public_cleanup/`.)
 >
 > **(2) Found an app data-quality gap — small Bulk Upload fix, please.** While cleaning DERM data I
 > found the form let bad manifests through: **7 manifests with no client** (incl. `#825560` saved

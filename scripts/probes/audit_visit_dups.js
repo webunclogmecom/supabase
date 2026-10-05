@@ -52,6 +52,7 @@ function pg(q){return new Promise((res,rej)=>{const b=JSON.stringify({query:q});
     pairs: rows,
   };
   const p = path.resolve(__dirname, `../../reports/visit_dups_${dateStr}.json`);
+  fs.mkdirSync(path.dirname(p), { recursive: true }); // reports/ is no longer in a fresh clone (2026-10-05)
   fs.writeFileSync(p, JSON.stringify(out, null, 2));
   process.stdout.write(`DUP_AUDIT total=${rows.length} likely_real=${likely.length} maybe_adjacent=${maybe.length} -> ${p}\n`);
 })().catch(e => { process.stdout.write('ERR:' + e.message + '\n'); process.exit(1); });

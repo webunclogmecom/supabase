@@ -1,3 +1,5 @@
+// OBSOLETE (2026-10-05): do not run. It tells Yan to fix Airtable, which is fully retired. Its output,
+// OPS_LIST_YAN.md, is git-ignored since 2026-10-05 (client data in a public repo).
 // Generate OPS_LIST_YAN.md from the live Supabase audit.
 // Re-runnable anytime — overwrites OPS_LIST_YAN.md at repo root.
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });

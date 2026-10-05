@@ -128,6 +128,8 @@ docs/audits/2026-06-27_line_item_typos.pdf
 # Client data, untracked 2026-10-05 (system audit SECURITY-05 / HYGIENE_APPS-01, REPO_SCRUB_PLAN step 5).
 # This repo is public. Copies: workspace-level ..\backups\2026-10-05_supabase_public_cleanup\.
 docs/backups/
+# Still tracked on purpose (schema only, no client rows): derm_softdelete_views_constraints_backup_2026-06-02.json
+# and manifest_pickable_visits_backup_2026-06-02.json. Re-adding one needs git add -f.
 /OPS_LIST_*.md
 docs/audits/**/OPS_LIST_*
 docs/audits/2026-05-19/recurring_jobs.json
