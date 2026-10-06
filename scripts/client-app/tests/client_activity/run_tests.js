@@ -46,7 +46,7 @@ ${sub(fs.readFileSync(path.join(B, 'tests.sql'), 'utf8'))}`;
   const m = msg.match(/TEST_RESULTS:(\{.*\})\s*CONTEXT:/s) || msg.match(/TEST_RESULTS:(\{.*\})/s);
   if (!m) { console.log('NO RESULTS', msg.slice(0, 2000)); process.exit(2); }
   const res = JSON.parse(m[1]);
-  fs.writeFileSync(path.join(B, `tests_out${mut ? '_' + mut : ''}.json`), JSON.stringify(res, null, 1));
+  fs.writeFileSync(path.join(require('os').tmpdir(), `client_activity_tests${mut ? '_' + mut : ''}.json`), JSON.stringify(res, null, 1));   // never in the repo: it carries 112-YA rows
   for (const c of res.cases) console.log(c.ok ? 'PASS' : 'FAIL', c.case);
   console.log(`${res.passed}/${res.total}`, r.ms + 'ms');
   if (mut) {
