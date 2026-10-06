@@ -582,6 +582,18 @@ async function getParentTs(dumpVisitId: number): Promise<string | null> {
 const updateContext = (m: { titleMd: string; whenET: string }, driverName: string) =>
   [{ type: "context", elements: [{ type: "mrkdwn", text: `↳ Update to *${m.titleMd}* · ${driverName} · ${m.whenET}` }] }];
 
+// The load lines of the DUMP CREATED message: this shift's pickups, then the older ones still waiting for
+// a sheet. A count of -1 means it could not be read and its line is left out. Check:
+// node scripts/checks/dump_load_lines.mjs
+const loadLines = (load: number, older: number): string[] => {
+  const out: string[] = [];
+  if (load === 0) out.push(`🫙 *No completed DERM pickups from this shift.*`);
+  else if (load > 0) out.push(`📋 *${load}* completed DERM pickup${load === 1 ? "" : "s"} from this shift to report on this load.`);
+  if (older > 0) out.push(`🗂 *${older}* older completed DERM pickup${older === 1 ? " is" : "s are"} still waiting to be reported.`);
+  else if (older === 0 && load === 0) out[0] = `🫙 *No completed DERM pickups to report on this load.* No visits for this driver this shift.`;
+  return out;
+};
+
 // 1. DUMP CREATED — fires on GO. The dump event; always notifies. Carries two extra signals
 // (Fred 2026-07-24):
 //   * the driver's LOAD count this shift — an EMPTY load reads as an explicit "no completed DERM pickups
@@ -615,18 +627,23 @@ async function postDumpCreatedAlert(
   const fields = [`*Time:* ${m.whenET}`, truckLine, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
 
   // Load = this driver's completed, DERM-required, still-undocumented visits this shift (bucket='load').
-  // dump_manifest_handout_list is STABLE (read-only), so counting here records nothing. -1 = couldn't tell.
+  // Older = the OLDER VISITS the driver can also add: completed DERM pickups still waiting for a sheet
+  // (bucket='outstanding', not yet on any sheet). Fred 2026-10-05: count those too, so "no pickups" is not
+  // followed by a thread reporting 2. dump_manifest_handout_list is STABLE (read-only), so counting here
+  // records nothing. -1 = couldn't tell, and both lines are omitted rather than guessed.
   let loadCount = -1;
+  let olderCount = -1;
   if (driverId) {
     try {
       const { data } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
-      loadCount = (Array.isArray(data) ? data : []).filter((r: Record<string, unknown>) => r.bucket === "load").length;
-    } catch (_e) { /* leave -1 — omit the line rather than guess */ }
+      const rows = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
+      loadCount = rows.filter((r) => r.bucket === "load").length;
+      olderCount = rows.filter((r) => r.bucket === "outstanding" && r.confirmed === false).length;
+    } catch (_e) { /* leave -1: omit the lines rather than guess */ }
   }
   const extra: string[] = [];
   if (opts?.afterHours) extra.push(`📞 *Called ahead:* ${opts.calledAhead ? "✅ yes" : "❌ no (went without calling)"}`);
-  if (loadCount === 0) extra.push(`🫙 *No completed DERM pickups to report on this load.* No visits for this driver this shift.`);
-  else if (loadCount > 0) extra.push(`📋 *${loadCount}* completed DERM pickup${loadCount === 1 ? "" : "s"} to report on this load.`);
+  extra.push(...loadLines(loadCount, olderCount));
 
   const blocks: unknown[] = [
     slackHeader("🚛 Dumping"),
