@@ -85,6 +85,13 @@ an immediate copy, or wait for the next slot (HH:17 UTC, even hours).
 8. Optional, stronger: in Supabase Database settings download the CA certificate, add it to the image, and
    set `PGSSLROOTCERT` to its path; the script then verifies the server certificate (`verify-full`).
 
+## Restore drill (repeat it now and then)
+
+Set the service variable `RUN_DRILL=1` in Railway (it redeploys), then read the log (`railway logs --deployment`):
+the newest daily copy is checksum-checked and restored into a throwaway Postgres inside the container, and
+every table prints a `DRILL_ROWS <schema.table> <rows>` line; compare them with Prod. Remove the variable
+afterwards. Nothing outside the container is touched.
+
 ## Restoring
 
 **Never point the apps at a project built with `pg_restore` from these files.** It has no staff logins, no
@@ -131,7 +138,13 @@ call every public function and read or write every public table.
   `webhook_tokens` and any update.
 - `log_db_backup_health()` with simulated heartbeats (rolled back): stale, fresh, failed, never ran, failing.
 - `scram-verifier.mjs` reproduces RFC 7677's SCRAM-SHA-256 example before printing anything.
-- **Not yet run: a real `pg_dump` and a restore drill.** This machine has no Postgres tools without a
-  download. The first Railway run is the real dump; the restore drill follows it.
+- **Live since 2026-10-06 17:12 ET** (Railway project "UnclogMe Backups", service "supabase", region us-east4,
+  volume `supabase-volume` at `/data`, Watch Paths `/services/db-backup/**`). First copy: daily, 44.4 MB, 11 s.
+  The first two runs reported setup errors on purpose: the login was still off (pooler: "user not found"),
+  then no volume was attached.
+- **Restore drill passed, 2026-10-06 17:17 ET** (`backup.sh drill`): the daily copy restored in 12 s with one
+  expected error ("schema public already exists"); all 150 tables present; 142 of 150 row counts equal to
+  Prod, and the other 8 differ only by rows written in the 6 minutes since the copy (sweep and OCR logs,
+  sync and webhook logs; 95 rows of 1,965,405).
 - An independent three-lens review (script, security, restore) found the issues fixed in
   `2026-10-05_1852` and in this version of `backup.sh`.

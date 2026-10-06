@@ -117,5 +117,5 @@ still in git history; that list stays in the local audit folder.
   flows that read files from this repo by raw link move first: `scripts/shared-session/session-storage.ts`
   (all 8 staff apps), the Picture Planner `intake.html`, and John's Postman import link.
 - Backups: PITR is OFF (measured 2026-10-05: `pitr_enabled=false`, one daily backup, 8 listed). Fred chose
-  our own copy every 2 hours on Railway: `services/db-backup/README.md`. The role and health check are
-  applied; the service runs once Fred finishes the Railway setup (two-step login, the volume, the password). A fifth doc that claimed PITR (`jobber-backup-and-restore.md`) was corrected too.
+  our own copy every 2 hours on Railway: `services/db-backup/README.md`. Live since 2026-10-06 17:12 ET, and
+  the first restore drill passed (150 tables, row counts equal to Prod apart from minutes of new log rows). A fifth doc that claimed PITR (`jobber-backup-and-restore.md`) was corrected too.
