@@ -3910,6 +3910,14 @@ one, so shipping a better rule does not heal history.
 
 > **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01, 02, 04, 09, 11; grey water 03 and 10 stopped requiring DERM on 2026-09-24, see below); `service_type` is unreliable as a proxy — `handleVisit` falls back to a default when the line-item derive is non-concrete, and grey-water pumping was coded as cleaning. *(That default was `GT` and grey water was `CL` until the 2026-08-03 rename; today they read `Pumping` and `Cleaning`. The unreliability is unchanged — this is why the derive keys off line items, not off this column.)* Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic — never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
 
+> ✅ **A FILED MANIFEST MAKES THE VISIT DERM REQUIRED (2026-10-06, `2026-10-06_1240`).** Fred: *"if we file a
+> Manifest to a visit that is DERM Not required, turn it to DERM required."* Trigger `trg_zy_link_marks_derm_required`
+> (AFTER INSERT/UPDATE on `public.manifest_visits`) calls `set_visit_derm_required_manual(visit, true)` when the
+> live visit is `derm_required IS FALSE` and the manifest is not soft-deleted: TRUE and LOCKED, from every writer.
+> NULL and TRUE are left alone. It goes through the manual RPC because the lock trigger reverts a locked value
+> from any non-DERM origin. Not backfilled: 21 Jan-Jun visits still pair a link with FALSE (Fred's call), and
+> restoring a soft-deleted manifest does not re-fire it.
+
 > 🛑 **GREY WATER PUMPING (03, 10) IS NOT DERM REQUIRED SINCE 2026-09-24** (Diego and Fred; migration
 > `2026-09-24_1220_grey_water_not_derm_required.sql`). Coded fee lines (25/26/27) no longer block the fold
 > in `fn_visit_requires_derm`, as in the Calendar and SA writers. The 32 pending grey water visits were set
