@@ -272,8 +272,14 @@ async function upsertRaw(exec: Exec, rawTable: string, nodes: any[]) {
   }
 }
 
+// 🛑 A FAILED READ MUST THROW, NEVER COME BACK AS "NO CURSOR" (2026-10-06). supabase-js does not
+// throw on an HTTP error: it returns { data: null, error }. This used to read `data` only, so a
+// PostgREST 503 became `null`, and a null cursor means "pull everything": at 13:58 ET on
+// 2026-10-06, while the DB was starved on the Free plan, the visits pull fetched all 2,890 Jobber
+// visits and flagged 2,631 for replay. A missing ROW (no error) is still a legitimate null.
 async function getCursor(name: string): Promise<string | null> {
-  const { data } = await supabase.from('sync_cursors').select('last_synced_at').eq('entity', name).maybeSingle()
+  const { data, error } = await supabase.from('sync_cursors').select('last_synced_at').eq('entity', name).maybeSingle()
+  if (error) throw new Error(`cursor read failed for ${name}: ${error.message}`)
   return (data?.last_synced_at as string) ?? null
 }
 async function setCursor(name: string, ts: string, rows: number) {
@@ -340,12 +346,14 @@ async function runSync(): Promise<Record<string, unknown>> {
       // Full sweep, so only once an hour. Skipping the PULL still leaves replayFlagged free to
       // drain anything already staged, which is how the 342-row May backlog gets worked off.
       if (entity.name === 'properties' && !sweepProperties) { pulls[entity.name] = -2; continue }
-      const cursor = await getCursor(entity.name)
+      let cursor: string | null
       let nodes: any[]
       // 🛑 This used to be a bare `catch { ... = -1; continue }`. A two-day property-sync outage
       // was invisible because of it: pg_cron said succeeded and sync_log said status='success'.
       // Record WHAT failed; -1 alone cannot tell a throttle from a bad token from a schema change.
-      try { nodes = await pullDelta(token, entity, cursor) }
+      // The cursor read sits inside the same try: if it fails, this entity skips one cycle
+      // (logged as partial) instead of pulling its whole history.
+      try { cursor = await getCursor(entity.name); nodes = await pullDelta(token, entity, cursor) }
       catch (e) { pulls[entity.name] = -1; pullErrors[entity.name] = String(e).slice(0, 300); continue }
       if (nodes.length) {
         await upsertRaw(exec, entity.rawTable, nodes)
@@ -371,7 +379,10 @@ async function runSync(): Promise<Record<string, unknown>> {
     return { pulled: totalPulled, pulls, replay, duration_s: dur }
   } catch (e) {
     const dur = Math.round((Date.now() - startMs) / 1000)
-    await supabase.from('sync_log').insert({ sync_source: 'jobber_poll_pgcron', started_at: startedAt, finished_at: new Date().toISOString(), rows_inserted: 0, rows_updated: 0, rows_errored: 0, duration_seconds: dur, status: 'error', details: { error: String(e).slice(0, 300) } }).catch(() => {})
+    // A supabase-js query builder has `then` but no `catch`, so the old `.insert(...).catch(() => {})`
+    // threw a TypeError before the insert was ever sent: an errored run wrote no sync_log row.
+    const { error: logErr } = await supabase.from('sync_log').insert({ sync_source: 'jobber_poll_pgcron', started_at: startedAt, finished_at: new Date().toISOString(), rows_inserted: 0, rows_updated: 0, rows_errored: 0, duration_seconds: dur, status: 'error', details: { error: String(e).slice(0, 300) } })
+    if (logErr) console.error('sync_log insert failed:', logErr.message)
     return { error: String(e).slice(0, 300) }
   } finally {
     await db.end().catch(() => {})
