@@ -22,9 +22,10 @@ Both post to the SAME private channel: `C0BJYHQKZM1` was #dump-visits and is now
 stored DUMP thread parents in `dump_activity` carry that id, measured 2026-10-05). The app name on each post is
 what tells the two apart.
 
-Token: Supabase secret `SLACK_BOT_TOKEN` (Slack bot user `dump_visits` until the app is renamed). Scopes measured
-2026-10-05: `chat:write`, `incoming-webhook` (the webhook is `SLACK_DUMP_WEBHOOK_URL`, the DUMP alerts' fallback
-when Slack refuses a chat.postMessage; a webhook cannot thread and ignores the custom name).
+Token: Supabase secret `SLACK_BOT_TOKEN`. Scopes since 2026-10-05 22:00 ET: `chat:write`, `chat:write.customize`,
+`incoming-webhook` (the webhook is `SLACK_DUMP_WEBHOOK_URL`, the DUMP alerts' fallback when Slack refuses a
+chat.postMessage; a webhook cannot thread and ignores the custom name). `auth.test` (and so `check_bot`) still
+reports the bot user's handle as `dump_visits`: the display name and default username changed, the user id did not.
 
 ## How a post gets its app's name and icon
 
@@ -46,6 +47,17 @@ own name. Test: `node scripts/checks/stamp_sheets_reminder.mjs` (runs the real h
 `true` fails it).
 
 ## Remaking the "Dump Notification" app (a person does this in Slack: it changes an installed app)
+
+✅ **DONE 2026-10-05, about 22:00 ET** (Fred: "go ahead with all"), in Fred's signed-in Chrome, steps 1 to 6 below:
+app name `UnclogMe Apps`, short description, background `#f14714`, the UnclogMe mark as the icon; bot display name
+`UnclogMe Apps`, default username `unclogme_apps`; scope `chat:write.customize` added; reinstalled with
+#apps-notifications as the webhook channel. **The bot token did not change** (a SHA-256 fingerprint of the token was
+taken before and after the reinstall and matched), so `SLACK_BOT_TOKEN` needed no update. `check_bot` afterwards:
+`scopes: incoming-webhook, chat:write, chat:write.customize`, `posts_as_app: true`. Step 7 could not run: every
+sheet was completed, so the reminder's test mode posts nothing; the first real DUMP or Stamp post is the visual proof.
+⚠ Two traps met on the way: typing into the **Background color** box opens a picker that froze the tab for every
+tool (set the value with form input, never by clicking the box), and the browser **autofilled an email into the
+Default username box** of the App Home dialog: read the field before saving.
 
 1. https://api.slack.com/apps, open **Dump Notification**.
 2. **Basic Information**, **Display Information**: App name `UnclogMe Apps`, Short description

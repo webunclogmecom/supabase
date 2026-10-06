@@ -54,8 +54,9 @@ and its follow-up, posted as a reply in the thread of that message:
 ### The header
 
 - **Says what the message is about, so it can be read without reading the message.** Since the old #dump-visits
-  became #apps-notifications (2026-10-05) several apps and people share one channel, and until the bot holds
-  `chat:write.customize` every bot post shows the same name.
+  became #apps-notifications (2026-10-05) several apps and people share one channel. Each post also shows its
+  app's name and icon (the bot holds `chat:write.customize` since 2026-10-05), but the header must not rely on it:
+  a webhook fallback post shows the bot's own name.
 - One emoji, then a short subject in sentence case: `🚛 Dumping`, `📝 Stamp Studio sheets`. A follow-up keeps the
   subject and adds its step after ` · `: `📋 Dumping · load reported`.
 - The header's emoji is the same as the main line's emoji, so the two read as one message.
