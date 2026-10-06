@@ -140,7 +140,7 @@ call every public function and read or write every public table.
 - `scram-verifier.mjs` reproduces RFC 7677's SCRAM-SHA-256 example before printing anything.
 - **Live since 2026-10-06 17:12 ET** (Railway project "UnclogMe Backups", service "db-backup" (Railway named it
   "supabase" after the repo; renamed 2026-10-06, no redeploy), region us-east4,
-  volume `supabase-volume` at `/data`, Watch Paths `/services/db-backup/**`). First copy: daily, 44.4 MB, 11 s.
+  volume `db-backup-volume` (was `supabase-volume`) at `/data`, Watch Paths `/services/db-backup/**`). First copy: daily, 44.4 MB, 11 s.
   The first two runs reported setup errors on purpose: the login was still off (pooler: "user not found"),
   then no volume was attached.
 - **Restore drill passed, 2026-10-06 17:17 ET** (`backup.sh drill`): the daily copy restored in 12 s with one
