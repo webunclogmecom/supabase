@@ -63,9 +63,11 @@ prune() { # dir keep
 }
 
 run_once() { # [kind]  (default: daily when the newest daily is DAILY_AFTER_HOURS old, else two_hourly)
-  if [ "$REQUIRE_VOLUME" = 1 ] && [ "${RAILWAY_VOLUME_MOUNT_PATH:-}" != "$BACKUP_DIR" ]; then
-    log "FAILED: no Railway volume mounted at $BACKUP_DIR"
-    heartbeat error setup 0 0 "" "" "no Railway volume mounted at $BACKUP_DIR; copies would be lost on the next deploy" || log "heartbeat failed"
+  local got="${RAILWAY_VOLUME_MOUNT_PATH:-}"
+  if [ "$REQUIRE_VOLUME" = 1 ] && [ "${got%/}" != "${BACKUP_DIR%/}" ]; then
+    local m="no Railway volume mounted at $BACKUP_DIR (Railway reports RAILWAY_VOLUME_MOUNT_PATH='${got:-unset}'); copies would be lost on the next deploy"
+    log "FAILED: $m"
+    heartbeat error setup 0 0 "" "" "$m" || log "heartbeat failed"
     return 2
   fi
   # Leftovers of a dump killed by a redeploy (Railway never mounts one volume into two live deployments).
