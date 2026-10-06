@@ -1121,6 +1121,24 @@ absence is weak** — a statement that ran rarely may simply have been evicted.
 new rows are identical, so an upsert that writes NULL over an already-NULL column leaves no audit row
 at all. Test with a **non-null sentinel**, or the trail is silent for the exact case you are probing.
 
+### ✅ THE CLIENT APP ACTIVITY READER: `client.get_client_activity` (2026-10-06)
+
+Every change at one client, newest first, for the Client App's Activity dialog. Migrations `2026-10-06_1736` and
+`_1748`; spec `Building Apps/Client App/docs/specs/2026-10-06-client-activity-history-design.md`; tests (20 smoke
+cases + 12 mutation controls, all rolled back) in `scripts/client-app/tests/client_activity` (`README.md` there).
+- 🛑 **`audit.entity_render_config` now has TWO readers.** `public.get_record_history` (the Visit Calendar) renders
+  EVERY row of its table for `visits`, `clients`, `derm_manifests` and `calendar_tasks`; the activity reader uses the
+  rows of the client tables plus the new `is_system` column. **Never add or change a `clients` row there** (it would
+  change the Calendar's client history); the activity reader renders `primary_contact_ref` and the "Client code"
+  label itself for that reason. Custom `render_type` values (`address`, `pin`, `zone`, `schedule`, ...) are formatted
+  by `audit.fn_activity_value`; `render_value` would print them raw.
+- **Its grouping, bookkeeping and actor rules live in the function and nowhere else** (the app filters nothing). If
+  you change `function.sql`, run all 12 controls; each must break exactly its case.
+- `audit.render_value` is no longer executable by PUBLIC (it is SECURITY DEFINER with dynamic SQL); its callers run
+  as postgres. Do not grant it back.
+- New audited tables that belong to a client are NOT picked up automatically: the source list is explicit on purpose
+  (`webhook_tokens` also has a `client_id`).
+
 ## Column-name gotchas
 
 Full table in [`docs/operations.md`](docs/operations.md#column-name-gotchas). Most-repeated mistakes:
