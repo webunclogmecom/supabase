@@ -1,0 +1,890 @@
+{
+ "cases": [
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T21:38:26.320465+00:00",
+     "key": "csc:123",
+     "area": "client",
+     "title": "Status changed",
+     "changes": [
+      {
+       "new": "",
+       "old": null,
+       "long": false,
+       "label": "Contact",
+       "subject": null,
+       "is_system": false
+      }
+     ],
+     "subject": null,
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Client",
+     "actor_label": "Fred",
+     "status_card": {
+      "id": 123,
+      "event": "status_change",
+      "reason": "[TEST] reason",
+      "new_status": "PAUSED",
+      "old_status": "ACTIVE",
+      "photo_count": 0,
+      "visits_removed": 0,
+      "changed_by_label": "Fred"
+     },
+     "cadence_card": null
+    }
+   ],
+   "case": "C4 status card, its clients diff 6 s later in another txid is not shown twice"
+  },
+  {
+   "ok": false,
+   "got": [
+    {
+     "at": "2026-10-06T21:48:26.320465+00:00",
+     "key": "a:241921",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "AV (Aventura) on 4 sites",
+       "old": "SO (South Dade)",
+       "long": false,
+       "label": "Zone",
+       "subject": null,
+       "is_system": false
+      }
+     ],
+     "subject": "[TEST] A and 1 more",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Property",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C1 zone on 2 sites is one entry, one Zone line \"on 2 sites\", by Fred"
+  },
+  {
+   "ok": false,
+   "got": [
+    {
+     "at": "2026-10-06T21:58:26.320465+00:00",
+     "key": "a:241923",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "[TEST] b",
+       "old": "a",
+       "long": true,
+       "label": "Notes",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "[TEST] b",
+       "old": "a",
+       "long": true,
+       "label": "Notes",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Property",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T21:58:29.320465+00:00",
+     "key": "a:241924",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "[TEST] b",
+       "old": "a",
+       "long": true,
+       "label": "Access notes",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "[TEST] b",
+       "old": "a",
+       "long": true,
+       "label": "Access notes",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "app",
+     "area_label": "Property",
+     "actor_label": "Client App (person not recorded)",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C2 a save split into two calls 3 s apart is one entry by Fred"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T22:08:26.320465+00:00",
+     "key": "a:241925",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "[TEST] c",
+       "old": "a",
+       "long": true,
+       "label": "Notes",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "[TEST] c",
+       "old": "a",
+       "long": true,
+       "label": "Notes",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Property",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T22:08:34.320465+00:00",
+     "key": "a:241926",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "[TEST] c",
+       "old": "a",
+       "long": true,
+       "label": "Access notes",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "[TEST] c",
+       "old": "a",
+       "long": true,
+       "label": "Access notes",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "app",
+     "area_label": "Property",
+     "actor_label": "Client App (person not recorded)",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C2n the same two calls 8 s apart are two entries"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T22:18:26.320465+00:00",
+     "key": "a:241927",
+     "area": "client",
+     "title": "Balance changed",
+     "changes": [
+      {
+       "new": "$2.00",
+       "old": "$1.00",
+       "long": false,
+       "label": "Balance",
+       "subject": null,
+       "is_system": true
+      }
+     ],
+     "subject": null,
+     "is_system": true,
+     "actor_kind": "jobber",
+     "area_label": "Client",
+     "actor_label": "Jobber",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C3 balance-only is background (gone with the switch off); synced_at-only never shows"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T22:28:26.320465+00:00",
+     "key": "a:241929",
+     "area": "job",
+     "title": "Archived",
+     "changes": [
+      {
+       "new": "Archived",
+       "old": "Action required",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      },
+      {
+       "new": "Archived",
+       "old": "Action required",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      }
+     ],
+     "subject": "#99901110",
+     "is_system": false,
+     "actor_kind": "jobber",
+     "area_label": "Job",
+     "actor_label": "Jobber",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C5 a 60 s Jobber close chain is one \"Archived\" entry, Action required -> Archived"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T22:38:26.320465+00:00",
+     "key": "a:241931",
+     "area": "job",
+     "title": "Closed",
+     "changes": [
+      {
+       "new": "Closed",
+       "old": "Action required",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      },
+      {
+       "new": "Closed",
+       "old": "Action required",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      }
+     ],
+     "subject": "#99901110",
+     "is_system": false,
+     "actor_kind": "jobber",
+     "area_label": "Job",
+     "actor_label": "Jobber",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T22:41:26.320465+00:00",
+     "key": "a:241932",
+     "area": "job",
+     "title": "Archived",
+     "changes": [
+      {
+       "new": "Archived",
+       "old": "Closed",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      },
+      {
+       "new": "Archived",
+       "old": "Closed",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      }
+     ],
+     "subject": "#99901110",
+     "is_system": false,
+     "actor_kind": "system",
+     "area_label": "Job",
+     "actor_label": "System",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C5n the same legs 3 minutes apart are two entries"
+  },
+  {
+   "ok": true,
+   "got": [],
+   "case": "C6 re-saving the same preferences shows nothing"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T22:58:26.320465+00:00",
+     "key": "a:241935",
+     "area": "contacts",
+     "title": "Who receives what changed",
+     "changes": [
+      {
+       "new": null,
+       "old": "Invoices",
+       "long": false,
+       "label": "No longer receives",
+       "subject": "Yan's Restaurant - 112-YA",
+       "is_system": false
+      },
+      {
+       "new": "Invoices",
+       "old": null,
+       "long": false,
+       "label": "Now receives",
+       "subject": "Diego",
+       "is_system": false
+      }
+     ],
+     "subject": "Yan's Restaurant - 112-YA and 1 more",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Contacts",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C6s moving Invoice to another contact is one entry (No longer receives / Now receives)"
+  },
+  {
+   "ok": true,
+   "got": [],
+   "case": "C7 a line item rewritten unchanged across two transactions shows nothing"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T23:18:26.320465+00:00",
+     "key": "a:241939",
+     "area": "contacts",
+     "title": "Contact removed",
+     "changes": [
+      {
+       "new": null,
+       "old": "[TEST] Gone",
+       "long": false,
+       "label": "Contact",
+       "subject": "[TEST] Gone",
+       "is_system": false
+      }
+     ],
+     "subject": "[TEST] Gone",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Contacts",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T23:18:56.320465+00:00",
+     "key": "a:241940",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "Courtyard by Marriott SOBE",
+       "old": "Yan's Restaurant",
+       "long": false,
+       "label": "Client",
+       "subject": "[TEST] Moved",
+       "is_system": false
+      },
+      {
+       "new": "Courtyard by Marriott SOBE",
+       "old": "Yan's Restaurant",
+       "long": false,
+       "label": "Client",
+       "subject": "[TEST] Moved",
+       "is_system": false
+      }
+     ],
+     "subject": "[TEST] Moved",
+     "is_system": false,
+     "actor_kind": "jobber",
+     "area_label": "Property",
+     "actor_label": "Jobber",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T23:18:56.320465+00:00",
+     "key": "a:241940",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "Courtyard by Marriott SOBE",
+       "old": "Yan's Restaurant",
+       "long": false,
+       "label": "Client",
+       "subject": "[TEST] Moved",
+       "is_system": false
+      },
+      {
+       "new": "Courtyard by Marriott SOBE",
+       "old": "Yan's Restaurant",
+       "long": false,
+       "label": "Client",
+       "subject": "[TEST] Moved",
+       "is_system": false
+      }
+     ],
+     "subject": "[TEST] Moved",
+     "is_system": false,
+     "actor_kind": "jobber",
+     "area_label": "Property",
+     "actor_label": "Jobber",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C8 a deleted contact is listed; a moved property shows on the old and the new client"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T23:28:26.320465+00:00",
+     "key": "a:241942",
+     "area": "property",
+     "title": "Accepted from Site survey form #999",
+     "changes": [
+      {
+       "new": "[TEST] B",
+       "old": "[TEST] A",
+       "long": false,
+       "label": "Lock box",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "[TEST] B",
+       "old": "[TEST] A",
+       "long": false,
+       "label": "Lock box",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Property",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T23:33:26.320465+00:00",
+     "key": "a:241944",
+     "area": "property",
+     "title": "Accepted from Site survey form #998",
+     "changes": [
+      {
+       "new": "2",
+       "old": "1",
+       "long": false,
+       "label": "Sample ports",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "2",
+       "old": "1",
+       "long": false,
+       "label": "Sample ports",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Property",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C9 intake accepts: one entry each, \"Accepted from Site survey form #N\", Lock box [TEST] A -> [TEST] B, Sample ports 1 -> 2"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T23:38:26.320465+00:00",
+     "key": "a:241945",
+     "area": "client",
+     "title": "Client created",
+     "changes": [
+      {
+       "new": "112-YA [TEST] Yan",
+       "old": null,
+       "long": false,
+       "label": "Client",
+       "subject": null,
+       "is_system": false
+      }
+     ],
+     "subject": null,
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Client",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C10 a creation is one \"Client created\" entry by the requester"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-06T23:48:26.320465+00:00",
+     "key": "a:241946",
+     "area": "invoice",
+     "title": "Invoice created",
+     "changes": [
+      {
+       "new": "Awaiting payment",
+       "old": "Not set",
+       "long": false,
+       "label": "Status",
+       "subject": "Invoice #T1",
+       "is_system": false
+      },
+      {
+       "new": "Awaiting payment",
+       "old": "Not set",
+       "long": false,
+       "label": "Status",
+       "subject": "Invoice #T1",
+       "is_system": false
+      },
+      {
+       "new": "$100.00",
+       "old": "Not set",
+       "long": false,
+       "label": "Total",
+       "subject": "Invoice #T1",
+       "is_system": false
+      },
+      {
+       "new": "$100.00",
+       "old": "Not set",
+       "long": false,
+       "label": "Total",
+       "subject": "Invoice #T1",
+       "is_system": false
+      }
+     ],
+     "subject": "Invoice #T1",
+     "is_system": false,
+     "actor_kind": "system",
+     "area_label": "Invoice",
+     "actor_label": "System",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T23:49:26.320465+00:00",
+     "key": "a:241947",
+     "area": "invoice",
+     "title": "Invoice paid",
+     "changes": [
+      {
+       "new": "Paid",
+       "old": "Awaiting payment",
+       "long": false,
+       "label": "Status",
+       "subject": "Invoice #T1",
+       "is_system": false
+      },
+      {
+       "new": "Paid",
+       "old": "Awaiting payment",
+       "long": false,
+       "label": "Status",
+       "subject": "Invoice #T1",
+       "is_system": false
+      }
+     ],
+     "subject": "Invoice #T1",
+     "is_system": false,
+     "actor_kind": "system",
+     "area_label": "Invoice",
+     "actor_label": "System",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-06T23:50:26.320465+00:00",
+     "key": "a:241948",
+     "area": "invoice",
+     "title": "Invoice status changed",
+     "changes": [
+      {
+       "new": "Past due",
+       "old": "Awaiting payment",
+       "long": false,
+       "label": "Status",
+       "subject": "Invoice #T2",
+       "is_system": true
+      },
+      {
+       "new": "Past due",
+       "old": "Awaiting payment",
+       "long": false,
+       "label": "Status",
+       "subject": "Invoice #T2",
+       "is_system": true
+      }
+     ],
+     "subject": "Invoice #T2",
+     "is_system": true,
+     "actor_kind": "system",
+     "area_label": "Invoice",
+     "actor_label": "System",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C11 Invoice created (Awaiting payment, $100.00) and Invoice paid shown; past due only with the switch on"
+  },
+  {
+   "ok": false,
+   "got": [
+    {
+     "at": "2026-10-06T23:58:26.320465+00:00",
+     "key": "a:241949",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "Broward",
+       "old": "Dade",
+       "long": false,
+       "label": "County",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "Broward",
+       "old": "Dade",
+       "long": false,
+       "label": "County",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "25.20000, -80.20000",
+       "old": "25.10000, -80.10000",
+       "long": false,
+       "label": "Map position",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "25.20000, -80.20000",
+       "old": "25.10000, -80.10000",
+       "long": false,
+       "label": "Map position",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Property",
+     "actor_label": "Fred",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C12 a person's pin move and county edit are visible with the switch off"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-07T00:08:26.320465+00:00",
+     "key": "a:241950",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "[TEST] burst",
+       "old": "a",
+       "long": false,
+       "label": "Name",
+       "subject": "[TEST] burst ([TEST] burst)",
+       "is_system": true
+      },
+      {
+       "new": "[TEST] burst",
+       "old": "a",
+       "long": false,
+       "label": "Name",
+       "subject": "[TEST] burst ([TEST] burst)",
+       "is_system": true
+      }
+     ],
+     "subject": "[TEST] burst ([TEST] burst)",
+     "is_system": true,
+     "actor_kind": "system",
+     "area_label": "Property",
+     "actor_label": "System",
+     "status_card": null,
+     "cadence_card": null
+    },
+    {
+     "at": "2026-10-07T00:13:26.320465+00:00",
+     "key": "a:241971",
+     "area": "property",
+     "title": "Property removed",
+     "changes": [
+      {
+       "new": null,
+       "old": "[TEST] burst gone",
+       "long": false,
+       "label": "Property",
+       "subject": "[TEST] burst gone",
+       "is_system": false
+      }
+     ],
+     "subject": "[TEST] burst gone",
+     "is_system": false,
+     "actor_kind": "system",
+     "area_label": "Property",
+     "actor_label": "System",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C13 a 21-client burst is background; the DELETE inside it stays visible"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-07T00:18:26.320465+00:00",
+     "key": "a:241972",
+     "area": "job",
+     "title": "Closed",
+     "changes": [
+      {
+       "new": "Closed",
+       "old": "Active",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      },
+      {
+       "new": "Closed",
+       "old": "Active",
+       "long": false,
+       "label": "Status",
+       "subject": "#99901110",
+       "is_system": false
+      }
+     ],
+     "subject": "#99901110",
+     "is_system": false,
+     "actor_kind": "system",
+     "area_label": "Job",
+     "actor_label": "System",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C14 a person-less job close is visible (\"Closed\")"
+  },
+  {
+   "ok": true,
+   "got": [
+    {
+     "at": "2026-10-07T00:28:26.320465+00:00",
+     "key": "a:241973",
+     "area": "property",
+     "title": "Property details changed",
+     "changes": [
+      {
+       "new": "[TEST] by an unknown login",
+       "old": "a",
+       "long": true,
+       "label": "Notes",
+       "subject": "Property #162",
+       "is_system": false
+      },
+      {
+       "new": "[TEST] by an unknown login",
+       "old": "a",
+       "long": true,
+       "label": "Notes",
+       "subject": "Property #162",
+       "is_system": false
+      }
+     ],
+     "subject": "Property #162",
+     "is_system": false,
+     "actor_kind": "person",
+     "area_label": "Property",
+     "actor_label": "Staff (no name on file)",
+     "status_card": null,
+     "cadence_card": null
+    }
+   ],
+   "case": "C17 an unmapped staff email reads \"Staff (no name on file)\""
+  },
+  {
+   "ok": true,
+   "got": 448,
+   "case": "C18 p_limit null returns more than 50 entries"
+  },
+  {
+   "ok": true,
+   "got": "42501 / 28000",
+   "case": "C19 non-staff gets 42501, no login gets 28000"
+  }
+ ],
+ "total": 20,
+ "passed": 17
+}
