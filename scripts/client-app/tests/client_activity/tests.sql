@@ -50,6 +50,7 @@ begin
   v := pg_temp.t_win(381, true, t0);
   res := res || jsonb_build_object('case', 'C4 status card, its clients diff 6 s later in another txid is not shown twice',
     'ok', jsonb_array_length(v) = 1 and v -> 0 -> 'status_card' ->> 'reason' = '[TEST] reason'
+          and jsonb_array_length(v -> 0 -> 'changes') = 0
           and v -> 0 -> 'status_card' ->> 'changed_by_label' = 'Fred'
           and not exists (select 1 from jsonb_array_elements(v) e, jsonb_array_elements(e -> 'changes') c where c ->> 'label' = 'Status'),
     'got', v);

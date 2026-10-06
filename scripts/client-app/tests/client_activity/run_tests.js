@@ -15,6 +15,7 @@ const MUTATIONS = {
   atguard:   ["when public.fn_page_staff_name(en.person) like '%@%' then 'Staff (no name on file)'", "when false then ''", ['C17 ']],
   person:    ["when m.person is not null then false\n             -- never background", "when false then false\n             -- never background", ['C12 ']],
   invshell:  ["when m.is_inv_created then 'Invoice created'", "when false then 'Invoice created'", ['C11 ']],
+  cardline:  ["and mr.tbl not in ('client_status_changes','job_frequency_changes')\n  ),", "\n  ),", ['C4 ']],
   intake:    ["when m.tbl = 'properties' and pa.intake_id is not null then", "when false then", ['C9 ']],
 };
 let fn = fs.readFileSync(path.join(B, 'function.sql'), 'utf8');
@@ -32,7 +33,8 @@ const sql = live ? `
 select set_config('request.jwt.claims', '{"sub":"5ca25eb1-4abe-4aa0-b0d6-b7ca4a47562b","email":"fred@ayache.com","role":"authenticated"}', false);
 ${subLive(fs.readFileSync(path.join(B, 'tests.sql'), 'utf8'))}` : `
 create temp table activity_cfg as
-  select table_name, column_name, label, render_type, fk_table, fk_label_col, sort_order, false as is_system from audit.entity_render_config;
+  select table_name, column_name, label, render_type, fk_table, fk_label_col, sort_order, false as is_system from audit.entity_render_config
+   where table_name not in ('properties','jobs','line_items','gdos','client_contacts','client_jobber_contacts','client_locations','invoices');   -- config_rows.sql adds these
 ${sub(fs.readFileSync(path.join(B, 'config_rows.sql'), 'utf8'))}
 ${sub(fs.readFileSync(path.join(B, 'helpers.sql'), 'utf8'))}
 ${sub(fn)}

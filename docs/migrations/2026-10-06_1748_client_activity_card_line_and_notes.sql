@@ -1,7 +1,29 @@
+-- ============================================================================
+-- 2026-10-06_1748 · client.get_client_activity: no summary line under a card; a note is not "edited"
+-- ============================================================================
+-- Found rendering the round-2 mockup from the live output of 2026-10-06_1736 (112-YA):
+--   1. A status card or a cadence card is an INSERT row, so it also got the one-line summary meant for an added
+--      record, which rendered as an empty "Contact:" line under the card. Cards now carry no summary line.
+--      Smoke case C4 now asserts the card entry has no change lines, and mutation control "cardline" proves it bites.
+--   2. A note (public.notes) came back with long = true, which the app renders as "Note edited". A note is new text:
+--      long is false and the app wraps it.
+-- The whole function body is replaced from scripts/client-app/tests/client_activity/function.sql (the build file the
+-- smoke tests run). Nothing else changes: grants are kept by CREATE OR REPLACE (asserted below).
+-- Proven: 20/20 smoke cases and 12 mutation controls on the pg_temp copy, then 20/20 on the live function.
+-- Rule 8: no table change. ROLLBACK: re-apply the function from 2026-10-06_1736.
+-- ============================================================================
+BEGIN;
+DO $pre$
+BEGIN
+  IF md5(pg_get_functiondef('client.get_client_activity(bigint,boolean,integer,jsonb)'::regprocedure)) <> 'f89bc700449cb00842d6ff330c63c833' THEN
+    RAISE EXCEPTION 'client.get_client_activity changed since 2026-10-06_1736';
+  END IF;
+END $pre$;
+
 -- client.get_client_activity: every change at one client, newest first (spec 2026-10-06-client-activity-history-design.md).
--- __FN__ = client.get_client_activity, __S__ = audit, __CFG__ = audit.entity_render_config (migration);
+-- client.get_client_activity = client.get_client_activity, audit = audit, audit.entity_render_config = audit.entity_render_config (migration);
 -- pg_temp equivalents in the rolled-back test copy.
-CREATE OR REPLACE FUNCTION __FN__(p_client_id bigint, p_include_system boolean DEFAULT false, p_limit integer DEFAULT NULL, p_cursor jsonb DEFAULT NULL)
+CREATE OR REPLACE FUNCTION client.get_client_activity(p_client_id bigint, p_include_system boolean DEFAULT false, p_limit integer DEFAULT NULL, p_cursor jsonb DEFAULT NULL)
  RETURNS TABLE(key text, at timestamptz, area text, area_label text, subject text, title text, actor_label text, actor_kind text,
                is_system boolean, changes jsonb, status_card jsonb, cadence_card jsonb)
  LANGUAGE plpgsql
@@ -41,7 +63,7 @@ begin
            -- the Calendar's clients labels stay as they are for get_record_history; this reader says it in full
            case when c.table_name = 'clients' and c.column_name = 'client_code' then 'Client code' else c.label end,
            c.render_type, c.fk_table, c.fk_label_col, c.sort_order, c.is_system
-      from __CFG__ c
+      from audit.entity_render_config c
      where c.table_name in ('clients','properties','jobs','gdos','client_contacts','client_jobber_contacts',
                             'client_locations','invoices','line_items')
     union all
@@ -194,7 +216,7 @@ begin
   ch0 as (
     select u.*, m.tbl, m.at, m.person, m.rec
       from upd u join members m on m.id = u.mid
-     where __S__.fn_activity_norm(u.ov) is distinct from __S__.fn_activity_norm(u.nv)
+     where audit.fn_activity_norm(u.ov) is distinct from audit.fn_activity_norm(u.nv)
        -- the status card carries the same move with its reason and person
        and not (m.tbl = 'clients' and u.col = 'status' and exists (
              select 1 from public.client_status_changes c
@@ -226,13 +248,13 @@ begin
       from ch0 c
       left join js3 j on j.mid = c.mid and c.col = 'job_status' and c.tbl = 'jobs'
      where j.mid is null
-        or (j.leg = 1 and __S__.fn_activity_norm(j.chain_ov) is distinct from __S__.fn_activity_norm(j.chain_nv))
+        or (j.leg = 1 and audit.fn_activity_norm(j.chain_ov) is distinct from audit.fn_activity_norm(j.chain_nv))
   ),
   -- 5. each change rendered, and whether it is bookkeeping (rule 3.4)
   crow as (
     select c.mid, c.col, c.label, c.sort_order, c.render_type,
-           __S__.fn_activity_value(c.ov, c.render_type, c.fk_table, c.fk_label_col) as old_txt,
-           __S__.fn_activity_value(c.nv, c.render_type, c.fk_table, c.fk_label_col) as new_txt,
+           audit.fn_activity_value(c.ov, c.render_type, c.fk_table, c.fk_label_col) as old_txt,
+           audit.fn_activity_value(c.nv, c.render_type, c.fk_table, c.fk_label_col) as new_txt,
            c.col in ('notes','access_notes') as long,
            c.ov #>> '{}' as ov_s, c.nv #>> '{}' as nv_s,
            case
@@ -258,7 +280,7 @@ begin
      where c.render_type <> 'removed'
   ),
   rem as (
-    select c.mid, __S__.fn_activity_norm(c.nv) is not null as removed_now from ch c where c.render_type = 'removed'
+    select c.mid, audit.fn_activity_norm(c.nv) is not null as removed_now from ch c where c.render_type = 'removed'
   ),
   cagg as (
     select c.mid, count(*) as n_ch,
@@ -594,3 +616,15 @@ begin
    order by x.at desc, x.key desc
    limit p_limit;
 end $function$;
+
+DO $verify$
+BEGIN
+  IF NOT has_function_privilege('authenticated', 'client.get_client_activity(bigint,boolean,integer,jsonb)', 'EXECUTE') THEN RAISE EXCEPTION 'authenticated lost EXECUTE'; END IF;
+  IF has_function_privilege('anon', 'client.get_client_activity(bigint,boolean,integer,jsonb)', 'EXECUTE') THEN RAISE EXCEPTION 'anon can execute'; END IF;
+  IF has_function_privilege('service_role', 'client.get_client_activity(bigint,boolean,integer,jsonb)', 'EXECUTE') THEN RAISE EXCEPTION 'service_role can execute'; END IF;
+  IF position('no summary line under it' in pg_get_functiondef('client.get_client_activity(bigint,boolean,integer,jsonb)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'the new body did not land';
+  END IF;
+END $verify$;
+NOTIFY pgrst, 'reload schema';
+COMMIT;
