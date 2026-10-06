@@ -2343,9 +2343,14 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   evenly spaced chain of row edges). Fred, same day, on multi-row clients: a client with two GDO
   permits already gets one card per permit, each in its own row.
 - 🛑 **Rules added by the same-day adversarial review (`2026-10-05_1545`), do not undo them:**
-  - **The Limit NEVER narrows** (`_write_page_extent_from_slots` takes least/greatest with the page's
-    current extent): a redraw on window5-sheet3 p2 would have shrunk it 65.6 -> 60.5 and shown a
-    client's handwritten address below the footer to every client. A Limit change re-opens the sheet.
+  - 🛑 **SUPERSEDED THE SAME NIGHT (`2026-10-05_2250`): the Limit is EXACTLY the two Limit bands the person
+    drew** (first and last row edges). Fred: *"the idea of doing it manually is for it to have a correct
+    blackout, so the idea is that the blackout only happens inside the limit bands excluding the client one is
+    looking at"*. The "never narrows" rule (least/greatest with the stored Limit) kept ticket-830714's old
+    14.8/65.1 Limit after his redraw at 27.9/60.5, so its documents blacked out all of Section A. Do not bring
+    it back: a person who sees writing run past the last printed line draws the bottom Limit band below it.
+    G8 still refuses a save whose Limit would cut a kept band. A Limit change re-opens the sheet. Pages nobody
+    has drawn keep their older Limits (165 of 190 within 2 points of the measured lines; the rest need a person).
   - **A stamp that already has a band keeps it on a redraw** (a reviewed overflow band is never
     replaced); only stamps without a band take their row.
   - **Independent check:** when the page's scan has a machine measurement (runlen-v2 / template-v1,
