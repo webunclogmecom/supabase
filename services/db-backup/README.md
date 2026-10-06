@@ -138,7 +138,8 @@ call every public function and read or write every public table.
   `webhook_tokens` and any update.
 - `log_db_backup_health()` with simulated heartbeats (rolled back): stale, fresh, failed, never ran, failing.
 - `scram-verifier.mjs` reproduces RFC 7677's SCRAM-SHA-256 example before printing anything.
-- **Live since 2026-10-06 17:12 ET** (Railway project "UnclogMe Backups", service "supabase", region us-east4,
+- **Live since 2026-10-06 17:12 ET** (Railway project "UnclogMe Backups", service "db-backup" (Railway named it
+  "supabase" after the repo; renamed 2026-10-06, no redeploy), region us-east4,
   volume `supabase-volume` at `/data`, Watch Paths `/services/db-backup/**`). First copy: daily, 44.4 MB, 11 s.
   The first two runs reported setup errors on purpose: the login was still off (pooler: "user not found"),
   then no volume was attached.
