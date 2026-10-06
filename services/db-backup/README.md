@@ -72,12 +72,16 @@ A new table that holds a secret must be revoked from this role and added to `EXC
 5. Variables: `PGHOST=aws-1-us-east-1.pooler.supabase.com`, `PGPORT=5432`, `PGDATABASE=postgres`,
    `PGUSER=db_backup_reader.wbasvhvvismukaqdnouk`, and `PGPASSWORD` = a new password of 20+ characters from
    your password manager (plain ASCII, no spaces).
-6. Turn the login on WITHOUT the password reaching the database logs (they record role changes): in your
-   own terminal run `node Supabase/services/db-backup/scram-verifier.mjs`, paste the same password when it
-   asks (it is hidden), and paste the `ALTER ROLE ...` line it prints into the Supabase SQL editor. Never
-   type `ALTER ROLE ... PASSWORD 'the plain password'`.
+6. Turn the login on: in your own terminal run `node Supabase/services/db-backup/scram-verifier.mjs`, paste the
+   same password when it asks (it is hidden), and paste the `ALTER ROLE ...` line it prints into the Supabase SQL
+   editor. (Measured 2026-10-06: Supabase masks the password of a logged `ALTER ROLE` statement, so a plain
+   `ALTER ROLE ... PASSWORD '...'` does not leak it to the logs either; the verifier is the belt-and-braces habit.)
 7. Deploy. The first run starts at once (a daily copy). Tell the session; it checks the heartbeat and runs a
    restore drill. If you forget, the health email reports "never ran" after the next 13:30 UTC run.
+Troubleshooting: the service writes nothing to `sync_log` when it cannot sign in, so look at the pooler log
+(`scripts/probes/edge_logs.js`, source `supavisor_logs`). `(EAUTHQUERY) user not found in the database` = the
+login is still off (step 6 not done when the run happened). After fixing, restart the service in Railway for
+an immediate copy, or wait for the next slot (HH:17 UTC, even hours).
 8. Optional, stronger: in Supabase Database settings download the CA certificate, add it to the image, and
    set `PGSSLROOTCERT` to its path; the script then verifies the server certificate (`verify-full`).
 
