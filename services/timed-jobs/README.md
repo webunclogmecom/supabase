@@ -31,7 +31,9 @@ Planned next (plan section 3.3): note-photo, notes-import (temporary), jobber-vi
 ## Secrets
 
 Values are never in this repo. They are copied from `Supabase/.env` into the service's Railway variables by
-a person (the Claude sessions do not type secrets). Give each service only the variables in its row.
+a person (the Claude sessions do not type secrets), with `node services/timed-jobs/set-secrets.js <service> KEY ...`
+run from the `Supabase` folder (works in PowerShell; values go to the Railway CLI on stdin and are never printed).
+Give each service only the variables in its row.
 
 ## Rollback
 

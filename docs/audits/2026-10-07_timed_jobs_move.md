@@ -54,7 +54,7 @@ The poll had also read `partial` on every run since 01:41 UTC because 2 deleted 
 2. Railway setup. Done 2026-10-07 except the secrets: 2FA on both logins and a second admin
    (fred@ayache.com), per Fred; runner `scripts/sync/run_logged.js` (`1b22b76`, kill timer tested live);
    settings in `services/timed-jobs/services.json` applied by `apply.js` (`6771a65`; Railway refuses
-   railway.json for new services and its new format cannot express cron yet); `set-secrets.sh`
+   railway.json for new services and its new format cannot express cron yet); `set-secrets.js`
    (`f5d5c4a`). Service `samsara-gps` exists with its settings; its three secrets are Fred's to set.
    Change from the plan: each source joins the health watch list at its own cut-over, not all four now.
 3. Then Samsara GPS, driver photos, the 14-day completion check, the nightly Jobber visit check, truck
