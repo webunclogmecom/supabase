@@ -7,9 +7,12 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
   apart from `UnclogMe Backups` on purpose: these jobs hold the service-role key, the backups hold every copy
   of the data, and nobody should get both from one project. 2FA on and two admins (web@unclogme.com,
   fred@ayache.com) since 2026-10-07.
-- **Every service** deploys from `webunclogmecom/supabase`, branch `main`, repo root, and reads its settings
-  from its own file here (Railway setting "Config file path"): start command, cron (UTC only), watch paths,
-  restart policy NEVER. Change the file, not the dashboard.
+- **Every service** deploys from `webunclogmecom/supabase`, branch `main`, repo root. Its settings (start
+  command, cron in UTC, watch paths, restart policy NEVER, builder) live in **`services.json`** here and are
+  pushed with **`node services/timed-jobs/apply.js`** (shows drift, exit 1) / **`--apply`** (writes it).
+  Change the file, then apply; never edit those settings in the dashboard, or the next apply reverts them.
+  ⚠ Not `railway.json`: Railway deprecated it (refused for new services, unread after 2026-12-01), and its
+  replacement `.railway/railway.ts` cannot express cron, watch paths or restart policy yet (2026-10-07).
 - **Every command runs through `scripts/sync/run_logged.js <source>`**, which writes one `public.sync_log` row
   per run (success or error, exit code, duration, stderr tail) and kills a run that passes `RUN_TIMEOUT_MIN`
   (Railway has no timeout, and a run that never exits blocks every later run of its service). Test:
@@ -21,7 +24,7 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
 
 | service | config | cron (UTC) | source | variables | status |
 |---|---|---|---|---|---|
-| samsara-gps | `samsara-gps.railway.json` | `*/5 * * * *` | `railway_samsara_gps` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, AUTO_LOOKBACK_H=48, RUN_TIMEOUT_MIN=30 | being set up 2026-10-07 |
+| samsara-gps | `services.json` | `*/5 * * * *` | `railway_samsara_gps` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, AUTO_LOOKBACK_H=48, RUN_TIMEOUT_MIN=30 | being set up 2026-10-07 |
 
 Planned next (plan section 3.3): note-photo, notes-import (temporary), jobber-visit-nightly.
 

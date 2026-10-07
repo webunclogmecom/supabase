@@ -1,0 +1,13 @@
+{
+  "projectId": "0488911d-3f3d-414b-8783-89234f808513",
+  "environment": "production",
+  "services": {
+    "samsara-gps": {
+      "startCommand": "node scripts/sync/run_logged.js railway_samsara_gps scripts/sync/cron_samsara_locations_history.js",
+      "cronSchedule": "*/5 * * * *",
+      "watchPatterns": ["scripts/sync/**", "scripts/lib/**", "package.json", "package-lock.json"],
+      "restartPolicyType": "NEVER",
+      "builder": "RAILPACK"
+    }
+  }
+}
