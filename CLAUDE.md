@@ -909,7 +909,7 @@ shapes any successor will hit:**
 - **Edge functions have no invocation counter at all.** That section is PROXY evidence only (cron
   chain, `audit.logs.app_source`, `sync_log.sync_source`, `webhook_events_log`). A function invoked
   only from a browser leaves no trace any of those tables can see, so 22 sit at NO EVIDENCE.
-- **`webhook_events_log` is trimmed** (90-day retention job; oldest row currently 2026-07-22). So
+- **`webhook_events_log` is trimmed** (30-day retention since 2026-10-07: pg_cron `daily-cleanup` -> `public.fn_daily_cleanup()`, which also clears stuck `needs_populate` flags on Jobber "not found" rows; was a 90-day job). So
   webhook `NEVER` means "no delivery in the retained window", not "never in history".
 
 **✅ Measured 2026-08-21 on the removal handlers, so nobody re-does it:** all six `softStatusFlip`

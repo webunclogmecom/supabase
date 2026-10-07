@@ -301,7 +301,7 @@ WHERE NOT EXISTS (
 ### Monthly (~15 min)
 
 - Rotate any quarterly-due secrets (see [security.md](security.md#routine-quarterly)).
-- Review `webhook_events_log` retention — trim rows older than 90 days if table is bloated.
+- `webhook_events_log` retention is automatic: pg_cron `daily-cleanup` (03:00 UTC) runs `public.fn_daily_cleanup()`, which deletes rows older than 30 days and clears stuck `needs_populate` flags. To run it by hand: `select public.fn_daily_cleanup();` (returns the counts).
 - Review row counts vs. source systems (spot-check 10 clients, 10 visits, 10 invoices).
 - Review open items in this runbook — anything still blocked after 30 days gets escalated to Fred + Viktor.
 

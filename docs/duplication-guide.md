@@ -271,30 +271,16 @@ Trigger a real edit in each source system → verify a row lands in `webhook_eve
 
 ## Phase 7 — GitHub Actions automation (10 min)
 
-One workflow for this phase lives in `.github/workflows/`. It needs the 5 GitHub Actions secrets below.
+Both jobs of this phase now run in pg_cron, so this phase needs no GitHub Actions secrets.
 
 ### 7.1 Jobber polling (pg_cron, not GitHub)
 The GitHub `jobber-poll.yml` was retired 2026-10-07 (timed-jobs move step 0). The poll runs as pg_cron `jobber-poll-sync`, which calls the edge fn `sync-jobber-poll` every 5 min and replays through `webhook-jobber`. Set it up with the other pg_cron jobs, not here. See ADR 009.
 
-### 7.2 `daily-cleanup.yml` — DB hygiene (09:00 UTC daily)
-Two jobs in one script (`scripts/sync/daily_cleanup.js`):
-- DELETE `webhook_events_log` rows older than 30 days (~700 MB/year savings).
-- Clear `needs_populate=TRUE` on `raw.jobber_pull_*` rows that have failed for 7+ days due to deleted-in-Jobber records (stops cron from retrying dead rows).
-
-### Setup — add 5 GH secrets
-
-```bash
-gh secret set -f .env  # uploads all .env vars; or set the 5 below individually:
-# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_PAT,
-# JOBBER_CLIENT_ID, JOBBER_CLIENT_SECRET
-```
-
-Trigger first run manually:
-```bash
-gh workflow run daily-cleanup.yml
-```
-
-Expected: it completes in ~60–90s. Then it fires on schedule.
+### 7.2 DB hygiene (pg_cron `daily-cleanup`, 03:00 UTC)
+Since 2026-10-07 (timed-jobs move step 1) this runs in the database, not on GitHub: pg_cron `daily-cleanup` calls `public.fn_daily_cleanup()` (migration `2026-10-07_1138`), which
+- deletes `webhook_events_log` rows older than 30 days;
+- clears `needs_populate=TRUE` on `raw.jobber_pull_*` rows whose Jobber entity answered "not found" in the last 7 days (stops the poll retrying dead rows and reading `partial` for ever).
+Set it up with the other pg_cron jobs; no GitHub secrets are needed for it. Run by hand: `select public.fn_daily_cleanup();`.
 
 ---
 

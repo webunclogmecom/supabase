@@ -42,6 +42,7 @@ are Fred's to do.
 | 0.1, 0.3, 0.4, 0.5 | `00e3adf` | 11 dead or failing workflows deleted with their scripts (2 archived) |
 | 0.2 | `655408e` | GitHub token keepalive retired; `sync-jobber-poll` (v32) refreshes the read token 10 minutes before expiry; `log_jobber_sync_health` stops watching it (migration `2026-10-07_1130`) |
 | docs | `2fc0942`, Building Apps `f58cde9` | live docs and comments point at the pg_cron jobs that replaced the retired ones |
+| 1 | (this commit) | daily cleanup moved into pg_cron `daily-cleanup` (job 125, 03:00 UTC) -> `public.fn_daily_cleanup()` (migration `2026-10-07_1138`); replaces job 2; GitHub schedule removed, manual button kept until 2026-10-21. First run by hand: 2,626 log rows over 30 days deleted, the 2 stuck visit flags cleared |
 
 **0.2 verified live:** the read token was due to expire at 11:38 ET; the 11:36 poll refreshed it (new
 expiry 12:36). Check left for 2026-10-14: zero `jobber_job_drift` rows with "HTTP 401" in the week.
@@ -49,7 +50,7 @@ Unrelated and older: the poll reads `partial` on every run because 2 visit repla
 
 ## Next, in the plan's order
 
-1. daily-cleanup into pg_cron (pure SQL).
+1. ~~daily-cleanup into pg_cron~~ done 2026-10-07.
 2. Railway setup: 2FA and second admin (Fred), variables, the runner and its kill timer, 4 sources added
    to the health list.
 3. Then Samsara GPS, driver photos, the 14-day completion check, the nightly Jobber visit check, truck

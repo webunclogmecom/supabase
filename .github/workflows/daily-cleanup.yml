@@ -6,11 +6,10 @@ name: Daily DB cleanup
 #      consistently failing for 7 days due to deleted-in-Jobber records.
 #      (Stops cron from retrying dead rows forever.)
 
+# RETIRED 2026-10-07 (timed-jobs move step 1): pg_cron `daily-cleanup` runs public.fn_daily_cleanup()
+# at 03:00 UTC (migration 2026-10-07_1138). The schedule is gone; the manual button stays as a rollback
+# until 2026-10-21, then this file and scripts/sync/daily_cleanup.js are deleted.
 on:
-  schedule:
-    # 09:00 UTC = 05:00 ET in summer (EDT) / 04:00 ET in winter (EST)
-    # Off-peak: low cron contention with the 2-min jobber-poll workflow.
-    - cron: '0 9 * * *'
   workflow_dispatch:
 
 concurrency:
