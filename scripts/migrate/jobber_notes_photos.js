@@ -812,7 +812,7 @@ async function writeCheckpoint(lastClientId, totalNotes, status, error = null) {
   try {
     for await (const client of iterateClients(lastProcessed)) {
       stats.clients_processed++;
-      console.log(`\n[${stats.clients_processed}] client #${client.client_id} (Jobber ${client.jobber_gid}) — ${client.client_name}`);
+      console.log(`\n[${stats.clients_processed}] client #${client.client_id} (Jobber ${client.jobber_gid})`);
 
       try {
         const notes = await fetchJobberClientNotes(client.jobber_gid);

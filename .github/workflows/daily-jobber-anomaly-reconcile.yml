@@ -77,11 +77,4 @@ jobs:
             node scripts/sync/cron_jobber_reconcile_anomalies.js --days=$DAYS $LIMIT_FLAG
           fi
 
-      - name: Upload anomaly report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jobber-anomaly-report
-          path: reports/jobber_anomalies_*.json
-          if-no-files-found: ignore
-          retention-days: 30
+      # No artifact upload: the report holds client names and codes, and this repo is public (2026-10-07).

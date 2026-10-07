@@ -57,8 +57,8 @@ GitHub's schedule and add `railway_samsara_gps` (30 min) to the health watch lis
 ## Next, in the plan's order
 
 1. ~~daily-cleanup into pg_cron~~ done 2026-10-07.
-2. Railway setup. Done 2026-10-07 except the secrets: 2FA on both logins and a second admin
-   (fred@ayache.com), per Fred; runner `scripts/sync/run_logged.js` (`1b22b76`, kill timer tested live);
+2. Railway setup. Done 2026-10-07 (account security prerequisites met, per Fred; details in the private
+   access register); runner `scripts/sync/run_logged.js` (`1b22b76`, kill timer tested live);
    settings in `services/timed-jobs/services.json` applied by `apply.js` (`6771a65`; Railway refuses
    railway.json for new services and its new format cannot express cron yet); `set-secrets.js`
    (`f5d5c4a`). Service `samsara-gps` exists with its settings; its three secrets are Fred's to set.

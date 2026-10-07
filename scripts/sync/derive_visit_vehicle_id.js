@@ -277,10 +277,10 @@ function haversineM(lat1, lng1, lat2, lng2) {
       byTier[resolved.tier]++;
       updates.push({ visit_id: resolved.visit_id, vehicle_id: resolved.vehicle_id, truck: resolved.truck });
       const goliathNote = excludeGoliath ? '' : ' (Goliath eligible)';
-      console.log(`  ✓ v${v.visit_id} ${(v.client_code || '?').padEnd(8)} ${v.visit_date} → ${resolved.truck} [${resolved.tier}, ${resolved.pings} pings, ${resolved.min_dist_m}m]${goliathNote}`);
+      console.log(`  ✓ v${v.visit_id} ${v.visit_date} → ${resolved.truck} [${resolved.tier}, ${resolved.pings} pings, ${resolved.min_dist_m}m]${goliathNote}`);
     } else if (lastAmbiguous) {
       ambiguous++;
-      console.log(`  ? v${v.visit_id} ${(v.client_code || '?').padEnd(8)} ${v.visit_date} AMBIGUOUS [${lastAmbiguous.tier}]: ${lastAmbiguous.trucks}`);
+      console.log(`  ? v${v.visit_id} ${v.visit_date} AMBIGUOUS [${lastAmbiguous.tier}]: ${lastAmbiguous.trucks}`);
     } else {
       noMatch++;
     }

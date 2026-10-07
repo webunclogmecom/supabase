@@ -438,13 +438,13 @@ async function updateDate(id, startAt, endAt) {
     console.log(`     was soft-deleted on their behalf. Re-run once Jobber is healthy.`);
   }
   console.log(`  ORPHANS soft-deleted${EXECUTE ? '' : ' (would be)'}: ${orphans.length}`);
-  for (const o of orphans) console.log(`    id=${o.id} ${o.client_code || '?'} ${o.client_name} visit_date=${o.visit_date}`);
+  for (const o of orphans) console.log(`    id=${o.id} visit_date=${o.visit_date}`);
   console.log(`\n  DATE DRIFT updated${EXECUTE ? '' : ' (would be)'}: ${dateDrift.length}   [source='jobber' only]`);
-  for (const d of dateDrift) console.log(`    id=${d.id} ${d.code}: DB=${d.dbDate} → JOBBER=${d.jDate}`);
+  for (const d of dateDrift) console.log(`    id=${d.id}: DB=${d.dbDate} → JOBBER=${d.jDate}`);
   console.log(`\n  DRIFT SEEN BUT NOT OURS (ADR 015 — left for the Calendar/generator to own): ${driftSkippedNotOurs.length}`);
-  for (const d of driftSkippedNotOurs) console.log(`    id=${d.id} ${d.code} [${d.source}]: DB=${d.dbDate} vs JOBBER=${d.jDate} — NOT adopted`);
+  for (const d of driftSkippedNotOurs) console.log(`    id=${d.id} [${d.source}]: DB=${d.dbDate} vs JOBBER=${d.jDate} — NOT adopted`);
   console.log(`\n  INVERSIONS flagged (no auto-action): ${inversions.length}`);
-  for (const i of inversions) console.log(`    id=${i.id} ${i.code} ${i.client_name}: scheduled=${i.startAt} completed=${i.completedAt} (${i.hours_inverted}h inversion)`);
+  for (const i of inversions) console.log(`    id=${i.id}: scheduled=${i.startAt} completed=${i.completedAt} (${i.hours_inverted}h inversion)`);
   console.log(`\n  ERRORS: ${errors.length}`);
   for (const e of errors) console.log(`    id=${e.id}: ${e.err}`);
 

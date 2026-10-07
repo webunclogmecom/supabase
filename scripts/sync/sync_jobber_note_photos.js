@@ -145,7 +145,7 @@ async function getReadToken(force) {
         } pageInfo{ hasNextPage endCursor } } } }`, { id: t.visit_gid, after: cursor });
         const vn = d.visit?.notes; if (!vn) break; notes.push(...vn.nodes); cursor = vn.pageInfo.hasNextPage ? vn.pageInfo.endCursor : null;
       } while (cursor && notes.length < 200);
-    } catch (e) { errors++; console.log(`  v${t.visit_id} ${t.client_code} ERR: ${e.message.slice(0, 70)}`); continue; }
+    } catch (e) { errors++; console.log(`  v${t.visit_id} ERR: ${e.message.slice(0, 70)}`); continue; }
 
     // curAtt: every current attachment (for the empty-guard + remove context).
     // noteAtts: per-note attachment set (for note-anchored REMOVE). incompleteNotes:
@@ -276,7 +276,7 @@ async function getReadToken(force) {
     const wouldRemoveGated = !ENABLE_REMOVE ? ours.filter(removable).length : 0;
     if (!toAdd.length && !doRemove) continue;
     changedVisits++;
-    console.log(`  v${t.visit_id} ${t.client_code}: +${toAdd.length} add${doRemove ? `, -${toRemove.length} remove` : (wouldRemoveGated ? `, (${wouldRemoveGated} would-remove — gated)` : '')}`);
+    console.log(`  v${t.visit_id}: +${toAdd.length} add${doRemove ? `, -${toRemove.length} remove` : (wouldRemoveGated ? `, (${wouldRemoveGated} would-remove — gated)` : '')}`);
     if (!EXECUTE) { added += toAdd.length; if (doRemove) removed += toRemove.length; continue; }
 
     // ADD (dedup-safe): if this attachment gid already exists as a photo anywhere,

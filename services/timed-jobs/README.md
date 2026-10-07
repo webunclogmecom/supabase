@@ -5,8 +5,8 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
 
 - **Project:** UnclogMe Timed Jobs, workspace Unclogme (id `0488911d-3f3d-414b-8783-89234f808513`). Kept
   apart from `UnclogMe Backups` on purpose: these jobs hold the service-role key, the backups hold every copy
-  of the data, and nobody should get both from one project. 2FA on and two admins (web@unclogme.com,
-  fred@ayache.com) since 2026-10-07.
+  of the data, and nobody should get both from one project. Who administers it is recorded in the team's
+  private access register, not in this public repo.
 - **Every service** deploys from `webunclogmecom/supabase`, branch `main`, repo root. Its settings (start
   command, cron in UTC, watch paths, restart policy NEVER, builder) live in **`services.json`** here and are
   pushed with **`node services/timed-jobs/apply.js`** (shows drift, exit 1) / **`--apply`** (writes it).

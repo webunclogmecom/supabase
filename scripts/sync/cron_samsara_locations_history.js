@@ -171,4 +171,6 @@ async function pullChunk(vehicleIds, startTime, endTime) {
   }
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
   console.log('Done in ' + dt + 's. Submitted ' + inserted + ' rows (DB will dedup). Failed batches: ' + failedBatches);
+  // A failed batch is lost GPS: exit non-zero so run_logged.js records an error and the health check sees it.
+  if (failedBatches) process.exit(1);
 })().catch(e => { console.error('FATAL:', e.message); process.exit(2); });
