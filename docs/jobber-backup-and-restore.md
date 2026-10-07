@@ -61,7 +61,8 @@ complete, automatable backup is the **GraphQL API** (developer.getjobber.com):
   every entity (clients, properties, jobs, visits, line items, invoices, quotes, payments, expenses,
   users) and write the results to files.
 - This is exactly the mechanism **we already run**: `sync-jobber-poll` / `sync-jobber-upcoming-visits`
-  + the GitHub `cron_jobber.js` poll pull Jobber deltas through the API into **Supabase** continuously.
+  (both on pg_cron) pull Jobber deltas through the API into **Supabase** continuously. The GitHub
+  `cron_jobber.js` poll is retired and archived (2026-10-07).
 
 ### So our real "auto-backup" already exists: the Supabase warehouse
 Every Jobber entity we care about is mirrored into `public.*` (clients, jobs, visits, line_items,

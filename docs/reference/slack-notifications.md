@@ -200,9 +200,9 @@ The DUMP messages' own rules (truck resolution, called ahead, which visits count
 
 ### Not on this format yet (a different bot, `Supabase - Notifications`, posting to #viktor-supabase)
 
-Four GitHub Actions jobs in this repo post with their own bot token (GitHub secret `SLACK_BOT_TOKEN`, a different
-Slack app): `scripts/alerts/audit_critical_poll.js` (Prod audit alert), `scripts/sync/daily_no_photo_visits_alert.js`
-(photo audit), `scripts/sync/weekly_dedup_audit.js`, `scripts/probes/audit_client_code_drift.js`. They are plain text
+Two GitHub Actions jobs in this repo post with their own bot token (GitHub secret `SLACK_BOT_TOKEN`, a different
+Slack app): `scripts/alerts/audit_critical_poll.js` (Prod audit alert) and
+`scripts/sync/weekly_dedup_audit.js`. (`daily_no_photo_visits_alert.js` and `audit_client_code_drift.js` were retired 2026-10-07 (timed-jobs move step 0).) They are plain text
 with no header and some carry em dashes. **They stay on their own bot** (Fred, 2026-10-06: "do not move the audit
 jobs to the shared bot"). The weekly duplicate check was tidied the same day (only addresses not reported the
 week before, inactive clients skipped, client codes and names, escaped text, no em dash): see the header of

@@ -271,10 +271,10 @@ Trigger a real edit in each source system → verify a row lands in `webhook_eve
 
 ## Phase 7 — GitHub Actions automation (10 min)
 
-Two workflows live in `.github/workflows/`. Both need the same 5 GitHub Actions secrets.
+One workflow for this phase lives in `.github/workflows/`. It needs the 5 GitHub Actions secrets below.
 
-### 7.1 `jobber-poll.yml` — Jobber polling fallback (every 2 min)
-Pulls Jobber deltas + replays through `webhook-jobber`. Required because Jobber's webhook delivery is unreliable for In-Development apps. See ADR 009.
+### 7.1 Jobber polling (pg_cron, not GitHub)
+The GitHub `jobber-poll.yml` was retired 2026-10-07 (timed-jobs move step 0). The poll runs as pg_cron `jobber-poll-sync`, which calls the edge fn `sync-jobber-poll` every 5 min and replays through `webhook-jobber`. Set it up with the other pg_cron jobs, not here. See ADR 009.
 
 ### 7.2 `daily-cleanup.yml` — DB hygiene (09:00 UTC daily)
 Two jobs in one script (`scripts/sync/daily_cleanup.js`):
@@ -291,11 +291,10 @@ gh secret set -f .env  # uploads all .env vars; or set the 5 below individually:
 
 Trigger first run manually:
 ```bash
-gh workflow run jobber-poll.yml
 gh workflow run daily-cleanup.yml
 ```
 
-Expected: both complete in ~60–90s. Then they fire on schedule.
+Expected: it completes in ~60–90s. Then it fires on schedule.
 
 ---
 

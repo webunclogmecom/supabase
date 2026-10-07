@@ -6,9 +6,9 @@ name: Daily notes + photos sync from Jobber
 # existing one-shot migration script daily — fully idempotent (every INSERT
 # uses ON CONFLICT DO NOTHING).
 #
-# Timing: 12:00 UTC = 08:00 ET — runs ~1 hour BEFORE the daily-no-photo-alert
-# at 13:00 UTC, so any photos posted overnight by drivers reach the DB before
-# the alert fires (otherwise the alert reports false positives).
+# Timing: 12:00 UTC = 08:00 ET. It used to run ~1 hour BEFORE the daily-no-photo-alert
+# (13:00 UTC) so overnight photos reached the DB first. That alert was dropped 2026-10-07
+# (timed-jobs move step 0), so nothing depends on this slot now.
 
 on:
   schedule:

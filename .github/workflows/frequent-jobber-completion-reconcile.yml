@@ -12,7 +12,8 @@ name: Frequent Jobber completion reconcile (14d window)
 # proposed completed→scheduled). It is a CADENCE problem. The daily job runs 04:30 ET, Diego
 # un-completed after it, so the correction would have sat for up to ~24 hours.
 #
-# Webhooks do not close this gap: cron_jobber.js's visits cursor keys on `completedAt`, so a
+# Webhooks do not close this gap: the visits poll's cursor (pg_cron `jobber-poll-sync`, formerly
+# cron_jobber.js) keys on `completedAt`, so a
 # visit un-completed in Jobber (completedAt → NULL) drops out of the delta query permanently,
 # and VISIT_UPDATE webhooks do not reliably fire for these edits — confirmed 2026-05-27 with
 # the Kendall visit, 7 days of zero webhook events for that record. Polling is the only

@@ -1,7 +1,8 @@
 // ============================================================================
 // cron_jobber_reconcile_completion.js — daily Jobber visit completion drift fix
 // ============================================================================
-// Closes a structural blind spot in cron_jobber.js: the visits-pull cursor uses
+// Closes a structural blind spot in the Jobber visits poll (cron_jobber.js then,
+// pg_cron jobber-poll-sync now): the visits-pull cursor uses
 // `completedAt`, so when a visit is un-completed in Jobber (completedAt cleared
 // to NULL) it drops out of the cron's delta query forever. VISIT_UPDATE webhooks
 // don't always fire for these edits either (confirmed 2026-05-27 with the

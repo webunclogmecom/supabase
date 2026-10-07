@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-12
 **Status:** Accepted
+**Update 2026-10-07:** `cron_generate_recurring_visits.js` and `generate-recurring-visits.yml` are retired 2026-10-07 (timed-jobs move step 0). Generation runs in Postgres as pg_cron `sa-visit-generation` (`public.fn_generate_sa_visits`); see `docs/jobber-calendar-job-migration/service-agreement-visit-generation.md`.
 **Supersedes:** The Airtable "Generate Visits" button-triggered automation (no ADR; pre-dates this decision log)
 **Related:** ADR 011 (source-of-truth canonicalization), ADR 002 (entity-source-links)
 
@@ -117,8 +118,8 @@ Per-candidate-date check: any existing visit at `(same client, same service_type
 
 ## References
 
-- [scripts/sync/cron_generate_recurring_visits.js](../../scripts/sync/cron_generate_recurring_visits.js) — the cron
-- [.github/workflows/generate-recurring-visits.yml](../../.github/workflows/generate-recurring-visits.yml) — schedule (currently disabled)
+- `scripts/sync/cron_generate_recurring_visits.js`: the cron (deleted 2026-10-07; read it from git history)
+- `.github/workflows/generate-recurring-visits.yml`: the schedule (deleted 2026-10-07)
 - [supabase/functions/webhook-jobber/index.ts](../../supabase/functions/webhook-jobber/index.ts) — `handleVisit` promotion logic, search "PROMOTE"
 - [scripts/migrations/add_visits_source_and_inactive_wipe_2026_05_12.sql](../../scripts/migrations/add_visits_source_and_inactive_wipe_2026_05_12.sql) — schema migration
 - Commit [`0b4ad9d`](https://github.com/webunclogmecom/supabase/commit/0b4ad9d) — initial deploy

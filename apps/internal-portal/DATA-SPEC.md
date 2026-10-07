@@ -167,7 +167,8 @@ we want is "rows already in `visits` with `visit_status='scheduled'` and
 
 ## Refresh cadence
 
-- **Cron writes:** daily at 04:30 ET (`.github/workflows/generate-recurring-visits.yml`)
+- **Cron writes:** daily, pg_cron `sa-visit-generation` (`public.fn_generate_sa_visits`). The GitHub
+  `generate-recurring-visits.yml` was retired 2026-10-07 (timed-jobs move step 0).
 - **Merge with Jobber:** when Diego creates a Jobber visit that matches a
   cron-generated one (same client + service + ±7d), `webhook-jobber.handleVisit`
   PROMOTES the row in place — `source` flips from `supabase_cron` to `jobber`.

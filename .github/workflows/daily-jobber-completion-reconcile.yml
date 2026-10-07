@@ -1,6 +1,7 @@
 name: Daily Jobber visit completion reconcile
 
-# Closes a structural gap in cron_jobber.js: its visits cursor uses `completedAt`,
+# Closes a structural gap in the Jobber visits poll (cron_jobber.js then, pg_cron
+# `jobber-poll-sync` now; cron_jobber.js archived 2026-10-07): its visits cursor uses `completedAt`,
 # which is blind to un-completion (un-complete clears completedAt → NULL, so the
 # delta query `completedAt > cursor` can never see it). VISIT_UPDATE webhooks also
 # don't reliably fire for these edits (confirmed 2026-05-27 with Kendall — 7 days

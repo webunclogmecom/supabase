@@ -52,7 +52,7 @@ const SBHOST = `${process.env.SUPABASE_PROJECT_ID}.supabase.co`;
       },
     });
     // webhook-jobber verifies HMAC-SHA256 using JOBBER_CLIENT_SECRET as the key
-    // (Jobber's webhook secret = their client secret). Same pattern as cron_jobber.js.
+    // (Jobber's webhook secret = their client secret). Same pattern as sync-jobber-poll.
     const sig = crypto.createHmac('sha256', process.env.JOBBER_CLIENT_SECRET).update(payload).digest('base64');
     const r = await http({
       hostname: SBHOST,

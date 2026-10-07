@@ -2,7 +2,7 @@
 // cron_jobber_reconcile_anomalies.js — nightly Jobber anomaly reconciler
 // ============================================================================
 //
-// Closes 3 gaps left open by cron_jobber.js + cron_jobber_reconcile_completion.js:
+// Closes 3 gaps left open by cron_jobber.js (now pg_cron jobber-poll-sync) + cron_jobber_reconcile_completion.js:
 //
 //   1. ORPHAN VISITS — Jobber returns "Visit not found" for the stored GID.
 //      Means the Visit was deleted or converted to a Task in Jobber. Our
@@ -152,7 +152,7 @@ const pg = pgFactory({ project: PROJECT, pat: PAT });
 let JOBBER_TOKEN = null;
 async function getJobberToken() {
   // Read current token. If it's < 60s from expiry, refresh via OAuth
-  // (same pattern as cron_jobber.js).
+  // (same pattern as scripts/sync/_archive/cron_jobber.js).
   const r = await rest('/webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,expires_at');
   const row = JSON.parse(r.body)[0];
   if (!row) throw new Error('No jobber row in webhook_tokens');

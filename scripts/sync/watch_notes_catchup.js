@@ -1,3 +1,6 @@
+// RETIRED: the final step runs `gh workflow run sandbox-refresh.yml`, and that workflow was
+// retired 2026-10-07 (timed-jobs move step 0) (Sandbox #1 was deleted 2026-06-11). Do not run this script.
+//
 // One-shot watcher: ensures jobber_notes_photos.js completes by auto-restarting
 // on silent death, then triggers Sandbox refresh when done.
 //

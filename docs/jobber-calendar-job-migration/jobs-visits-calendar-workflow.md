@@ -39,13 +39,14 @@ Every client's work in Jobber (and mirrored in `public.jobs`) is now exactly one
 > fetched neither `lineItems`, `customFields`(Frequency), nor status changes/deletions. Now closed:
 > (a) `webhook-jobber.handleJob` fetches `lineItems` + `customFields`, maps Frequency→`frequency_days`,
 > and syncs job-scoped line items (SA-only, per the rule) — the real-time path; (b)
-> `scripts/sync/reconcile_jobs.js` (daily cron `reconcile-jobs.yml`) reconciles every non-archived
+> pg_cron `jobber-job-drift-reconcile` (edge fn `sync-jobber-job-drift`, every 30 min; it replaced
+> `reconcile_jobs.js` / `reconcile-jobs.yml`, retired 2026-10-07 (timed-jobs move step 0)) reconciles every non-archived
 > job's status + frequency + line items + detects deletions (Jobber null → archived) — the catch-up.
-> `sync_job_line_items.js` is superseded by `reconcile_jobs.js`.
+> `sync_job_line_items.js` is superseded by `sync-jobber-job-drift`.
 
 ### Line-item rule (Fred 2026-06-23)
 **Every Service Agreement job carries line items (its agreed services); no Service Call job carries
-line items** (services are chosen per-visit). Enforced by `handleJob` + `reconcile_jobs.js` (wipe
+line items** (services are chosen per-visit). Enforced by `handleJob` + `sync-jobber-job-drift` (wipe
 job-scoped line items, re-insert only for SA). Verified: 0 SC jobs have line items. The 7 pre-restructure
 SA jobs that lack line items in Jobber (032-LG, 053-PV, 119-ME, 128-MF, 145-NON, Line Barthes, + the
 archived Wynd phantom) are edge cases needing Itemized-sheet line items or archival — flagged to Fred.

@@ -3,7 +3,8 @@
 // ============================================================================
 // Pulls Jobber's materialized upcoming (startAt >= today) visits and replays each
 // through webhook-jobber's handleVisit (upsert + promote/dedup), then VERIFIES every
-// eligible visit is now in our DB. Deno port of scripts/sync/cron_jobber_upcoming_visits.js.
+// eligible visit is now in our DB. Deno port of scripts/sync/cron_jobber_upcoming_visits.js
+// (deleted 2026-10-07, timed-jobs move step 0).
 //
 // WHY this exists: GitHub Actions throttles frequent (*/15) schedules unreliably. This
 // function is driven by pg_cron (every 15 min) via pg_net — a cadence that runs INSIDE

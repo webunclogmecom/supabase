@@ -57,6 +57,8 @@ Edge Function and 22 subscriptions remain in place. Whatever delivery rate Jobbe
 ### B2. Build a 5-minute polling job
 `scripts/sync/cron_jobber.js` (purpose-built for stateless CI execution — does not reuse `incremental_sync.js`) pulls Jobber GraphQL deltas based on `sync_cursors.last_synced_at`, upserts into `raw.jobber_pull_*`, and replays through the live `webhook-jobber` Edge Function. Runs on a GitHub Actions cron (`*/5 * * * *`) — chosen over `*/2` to stay within the free-tier 2,000 min/mo for our private repo.
 
+**Update 2026-10-07:** `cron_jobber.js` and its GitHub workflow `jobber-poll.yml` are retired 2026-10-07 (timed-jobs move step 0); the script is archived at `scripts/sync/_archive/`. The poll runs as pg_cron `jobber-poll-sync`, which calls the edge fn `sync-jobber-poll` every 5 min.
+
 - Pros: Effectively-live for an ops business (5 min ≈ instant operationally). Covers **notes**, which Jobber doesn't webhook at all (zero NOTE_* topics in WebHookTopicEnum). No dev-center mystery.
 - Cons: ~288 runs/day at ~60s each = ~8,640 min/mo worst case. GitHub jitter usually delivers far less. If we ever exceed free tier, options are: make repo public (unlimited free Actions), bump to `*/10`, or migrate to Cloudflare Workers Cron Triggers.
 

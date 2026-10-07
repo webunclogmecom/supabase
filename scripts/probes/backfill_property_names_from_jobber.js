@@ -28,7 +28,7 @@ async function rest(path, opts = {}) {
   return r.body ? JSON.parse(r.body) : null;
 }
 
-// Jobber token mgmt (mirrors cron_jobber.js)
+// Jobber token mgmt (mirrors scripts/sync/_archive/cron_jobber.js)
 async function getJobberToken() {
   const rows = await rest('/webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,expires_at');
   const row = rows[0];

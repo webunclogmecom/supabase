@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-04
 **Status:** Accepted
+**Update 2026-10-07:** `geocode_missing_properties.js` and its GitHub workflow `weekly-geo-backfill.yml` are retired 2026-10-07 (timed-jobs move step 0). Jobber geocodes new service addresses; a Supabase rebuild for billing addresses is planned, not built.
 **Supersedes:** —
 
 ## Context
@@ -99,6 +100,6 @@ created after the last run).
 
 ## References
 
-- [scripts/sync/geocode_missing_properties.js](../../scripts/sync/geocode_missing_properties.js)
+- `scripts/sync/geocode_missing_properties.js` (deleted 2026-10-07; read it from git history)
 - ADR 012 — visit-vehicle-id derivation (downstream consumer)
 - `GOOGLE_API_KEY` in `.env` (also referenced by Slack project's `.env`)

@@ -431,10 +431,9 @@ async function handleClient(numericId: string, topic: string): Promise<{ entity_
     // Self-heal client_code only if missing — Airtable owns the authoritative value,
     // and Jobber's company-name prefix is NOT reliable enough to overwrite an existing
     // code (Yan frequently typos/truncates it there: e.g. "133-MU" for 133-MUT,
-    // "140-TCY" for 140-TYO). Drift correction is handled out-of-band by the
-    // reconciliation probe scripts/probes/audit_client_code_drift.js, which only heals
-    // when the Jobber prefix AND Airtable's Client Code #3 AGREE against a stale DB
-    // value (the 2026-06-17 221-MP→224-MP case). See that probe + ADR / runbook.
+    // "140-TCY" for 140-TYO). Drift correction was handled out-of-band by the probe
+    // scripts/probes/audit_client_code_drift.js, retired 2026-10-07 (timed-jobs move step 0). The check is
+    // planned inside the Sunday client sweep (sync-jobber-client-state-sweep), not built yet.
     //
     // GUARD (2026-07-05): only heal if the parsed code isn't already held by another
     // ACTIVE client. Yan sometimes types the same NNN-XX prefix into TWO Jobber records

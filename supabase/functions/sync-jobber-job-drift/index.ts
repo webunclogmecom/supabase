@@ -4,10 +4,11 @@
 // Fred: "every 30 minutes we need to check we're sync … on the jobs."
 // Design: docs/jobber-calendar-job-migration/2026-07-30_client-app-job-two-way-sync-design.md §3c
 //
-// Port of scripts/sync/reconcile_jobs.js with its three known holes fixed:
+// Port of scripts/sync/reconcile_jobs.js (now in scripts/sync/_archive/) with its three known holes fixed:
 //  1. Runs on pg_cron (vault-bearer wrapper fn_request_jobber_sync('jobs-drift'),
 //     schedule 15,45 * * * *) — NOT GitHub Actions, which throttled the */2 poll
-//     to ~2-3h. The GH reconcile-jobs.yml schedule is retired in the same commit.
+//     to ~2-3h. The GH reconcile-jobs.yml schedule was retired in the same commit;
+//     the workflow file was deleted 2026-10-07 (timed-jobs move step 0).
 //  2. The candidate set INCLUDES jobs that went terminal in our DB within 14 days
 //     (the 076-TCE/056-STM class: archived here, open in Jobber, previously
 //     unable to self-heal because the old reconciler skipped DB-archived rows).

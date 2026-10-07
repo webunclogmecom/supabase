@@ -169,7 +169,7 @@ in the DERM Tracker. (We already have `visits.derm_required boolean` to hold thi
    - else pick the client's **active** job whose **line item matches the visit's title** (the col-B service); prefer non-archived.
 3. **Create** the visit via `visitCreate(jobId, {visits:[{title: <col B>, schedule:{startAt,endAt,notifyTeam:false}}]})`.
 4. **Link back**: store the returned `createdVisits[].id` as `entity_source_links(visit, jobber, GID)` + set `visits.job_id` →
-   the read-sync (`cron_jobber_upcoming_visits.js`) then recognizes it and never duplicates (no loop).
+   the read-sync (edge fn `sync-jobber-upcoming-visits`, pg_cron `jobber-upcoming-visits-sync`) then recognizes it and never duplicates (no loop).
 
 **Decisions (locked 2026-06-01, per Fred):**
 - **Scope = ALL** user-created Calendar visits (full control; Calendar is master; duplication with Jobber's own recurring is acceptable). NOT the `supabase_cron` auto-projections.

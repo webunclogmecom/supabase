@@ -3,7 +3,7 @@
  * DRY RUN for enabling the Jobber property poll. WRITES NOTHING.
  *
  * WHY THIS EXISTS
- *   `PROPERTY_UPDATE` has produced zero events ever. cron_jobber.js pulls properties only on a
+ *   `PROPERTY_UPDATE` has produced zero events ever. cron_jobber.js (archived 2026-10-07) pulled properties only on a
  *   `--full` run (they have no time-filterable cursor), and `--full` is never passed by any
  *   workflow, so a Jobber-side edit to a SERVICE property address never reaches us. That is what
  *   left the DUMP Pompano address stale for two months.

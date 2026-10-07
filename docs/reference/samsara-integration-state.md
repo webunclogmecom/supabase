@@ -34,7 +34,7 @@ arrival/departure is wired but structurally incapable of firing (§5).
 | **Engine/fuel** | `samsara-poll.yml` → `GET /fleet/vehicles/stats` | same table | `*/10` configured, **12 runs in 24h** (expect 144). **No self-heal** — one instantaneous sample per run, so ~92% of intended samples are permanently lost. |
 | **Address Book webhook** | edge fn `webhook-samsara`, HMAC-SHA256 | `properties` geo columns + `entity_source_links` | **Silent since 2026-07-23 16:15:52Z.** 19 processed / 5 skipped (no client match) in the 30-day log. |
 | **Driver webhook** | `handleDriver` | `employees`, `entity_source_links` | **1 event ever** (`DriverCreated`, 2026-07-08). `DriverUpdated` has never fired. |
-| **Weekly geo backfill** | `weekly-geo-backfill.yml` Sundays 13:00 | `properties` geo, **NULL-only, never overwrites** | Last success 2026-08-02. |
+| **Weekly geo backfill** | `weekly-geo-backfill.yml` Sundays 13:00 | `properties` geo, **NULL-only, never overwrites** | Retired 2026-10-07 (timed-jobs move step 0). Jobber geocodes new service addresses; a Supabase rebuild for billing addresses is planned, not built. |
 
 Auth is a static `SAMSARA_API_TOKEN` bearer. **No API version header is sent anywhere.**
 
@@ -42,8 +42,8 @@ Auth is a static `SAMSARA_API_TOKEN` bearer. **No API version header is sent any
 
 - **`handleVehicleStats`** — 0 events ever, **dead by design**: Samsara exposes no such webhook type.
 - **`handleGeofenceAlert`** — 0 events ever, has never written a row. See §5.
-- **Samsara tier in `geocode_missing_properties.js`** — `trySamsara()` is an unconditional-null stub
-  that reads like an ingest path and is not one.
+- **Samsara tier in `geocode_missing_properties.js`** (script deleted 2026-10-07): `trySamsara()` was an
+  unconditional-null stub that read like an ingest path and was not one.
 - **No pg_cron job touches Samsara** (0 of 17). Everything is GitHub Actions.
 - **`sync_log` has no Samsara source** (0 of 16). Samsara pipeline health is observable only from
   `max(recorded_at)` or GitHub run history.
@@ -90,7 +90,7 @@ to a client, a property, or a visit.** The only bridge is indirect and computed:
 Properties **282 / 855 (33.0%)** across 249 distinct clients.
 
 ⚠ **`source_id` uses TWO namespaces for `property`**: 224 bare numeric, **58 prefixed `addr_<id>`**
-(written by `backfill_geo_from_samsara.js:136` and the webhook's new-property branch). A naive join on
+(written by `backfill_geo_from_samsara.js:136`, deleted 2026-10-07, and the webhook's new-property branch). A naive join on
 raw `source_id` finds 204 pairs; normalising `^addr_` finds **232**. **A join that skips the
 normalisation is blind to 21% of property links** — and the sweep that found this hit exactly that bug
 before adding the normaliser.
@@ -105,7 +105,7 @@ a centroid. That is all.
 **What does not exist:** no geofence table, no geofence id, no enter/exit event store, no spatial
 index, no polygon vertices, no event history.
 
-**Polygon shapes are DISCARDED at ingest.** Both `backfill_geo_from_samsara.js:94` and
+**Polygon shapes are DISCARDED at ingest.** Both `backfill_geo_from_samsara.js:94` (deleted 2026-10-07) and
 `webhook-samsara/index.ts` do `geofence?.polygon ? 'polygon' : geofence?.circle ? 'circle' : null`
 and take the radius **only** from `geofence.circle.radiusMeters`. For a polygon we keep the *word*
 "polygon" and a centroid; **the vertices never enter the database.** Samsara's `/addresses` does
@@ -239,7 +239,7 @@ decides whether the first step is a backfill or a cleanup.**
 
 - `supabase/functions/webhook-samsara/index.ts` — routing 414-443, `handleGeofenceAlert` 335
 - `scripts/webhooks/register-samsara.js` ~line 100 — contradicts `integration.md:210-214`
-- `scripts/sync/backfill_geo_from_samsara.js` — line 94 discards polygons, line 136 writes `addr_` ids
+- `scripts/sync/backfill_geo_from_samsara.js`: deleted 2026-10-07 (timed-jobs move step 0); in git history, line 94 discarded polygons and line 136 wrote `addr_` ids
 - `scripts/sync/derive_visit_vehicle_id.js` — the real GPS enrichment
 - `scripts/probes/link_properties_to_samsara.js:99` — the `dist <= 100` matcher behind the bad links
 - `.github/workflows/samsara-locations-history.yml` — the undocumented high-frequency feed

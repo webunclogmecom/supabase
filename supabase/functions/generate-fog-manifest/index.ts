@@ -6,8 +6,9 @@
 // only this manifest row's own client facility), uploads it to Storage, and sets
 // derm_manifests.fog_manifest_url. Keeps PDF_SERVICE_API_KEY off the client.
 //
-// Callers: the generate-fog-manifests cron (server-side) for new manifests, and
-// the DERM Tracker if it wants to regenerate on demand. Server-side callers
+// Callers: the DERM Tracker if it wants to regenerate on demand. The generate-fog-manifests
+// cron that called this for new manifests was retired 2026-10-07 (timed-jobs move step 0); nothing read fog.pdf, and
+// the FOG document clients and the city get comes from the blackout pipeline. Server-side callers
 // bypass CORS; browser callers are origin-restricted below.
 //
 // Env (Supabase Functions secrets, shared with generate-derm-address-pdf):

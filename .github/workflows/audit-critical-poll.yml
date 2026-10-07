@@ -9,7 +9,8 @@ name: Audit critical poll
 #
 # Posts to #viktor-supabase (C0B08S21HHD). State via sync_cursors row
 # entity='audit_alerts'. Free-tier budget: ~288 runs/day · ~15s each
-# ≈ 72 min/day = 2,160 min/mo. Pairs with cron_jobber.js at */5;
+# ≈ 72 min/day = 2,160 min/mo. Paired with cron_jobber.js at */5 until that poll moved to
+# pg_cron `jobber-poll-sync` (cron_jobber.js archived 2026-10-07);
 # combined we're still under the 2,000 min budget for ops-critical jobs
 # (Fred re-evaluates if usage breaches 80% of free tier).
 

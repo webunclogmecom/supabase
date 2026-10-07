@@ -66,7 +66,7 @@ A GitHub Actions incident on **2026-08-26 15:11 UTC** ("we've throttled inbound 
 recovering since.
 
 🛑 **This is why three other syncs already moved to pg_cron**, each with the reason written into the
-workflow file: `jobber-poll` (*"GitHub throttled this */2 to ~2-3h gaps"*), `jobber-upcoming-visits`
+workflow file (those files were deleted 2026-10-07, timed-jobs move step 0): `jobber-poll` (*"GitHub throttled this */2 to ~2-3h gaps"*), `jobber-upcoming-visits`
 (*"immune to GitHub's scheduler throttling"*), `reconcile-jobs` (*"GitHub throttles sub-hourly crons
 unreliably"*). **The note-photo sync is the last sub-hourly Jobber sync still on GitHub's scheduler.**
 Moving its hot window to an edge function on pg_cron is the known fix and would also remove every

@@ -66,7 +66,7 @@ Four things reach it:
 | Live Jobber webhook | Jobber, on change | `CLIENT_CREATE` / `CLIENT_UPDATE` / `CLIENT_DESTROY` |
 | `sync-jobber-poll` replay | pg_cron `jobber-poll-sync`, `1-59/5` | `CLIENT_UPDATE` only |
 | `create-client` (Client App "New client") | a person | synthetic `CLIENT_UPDATE` + `PROPERTY_CREATE` |
-| `scripts/sync/cron_jobber.js` | **not scheduled** since 2026-06-09 | n/a |
+| `scripts/sync/_archive/cron_jobber.js` | **not scheduled** since 2026-06-09; archived 2026-10-07 | n/a |
 
 The webhook payload carries only `{topic, itemId}`. `handleClient` then makes its own GraphQL call
 for the full client, so **the payload is a nudge, not a data source**.

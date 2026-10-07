@@ -18,7 +18,7 @@ A `line_items` row is scoped to **exactly one** container via one of four FK col
 | Scope | Column set | Written by | Meaning |
 |---|---|---|---|
 | **Visit** | `visit_id` | `webhook-jobber.handleVisit` (Jobber-mastered visits only) | The services actually recorded on a completed visit. |
-| **Job** | `job_id` | `webhook-jobber.handleJob` + `reconcile_jobs.js` (SA jobs) | The recurring SA template — the agreed services for the job. |
+| **Job** | `job_id` | `webhook-jobber.handleJob` + `sync-jobber-job-drift` (SA jobs) | The recurring SA template — the agreed services for the job. |
 | **Invoice** | `invoice_id` | `webhook-jobber.handleInvoice` | The billed lines once a visit is invoiced (frozen). |
 | **Quote** | `quote_id` | quote sync | Quote lines (not relevant here). |
 
@@ -101,9 +101,10 @@ jobDeleteLineItems / jobEditLineItems / jobOrderLineItems`; visit-level are `vis
 
 - **`*/5` delta poll** (`sync-jobber-poll`) uses a **`createdAt` cursor** for jobs. Editing an existing job changes
   `updatedAt`, not `createdAt`, so the poll **never re-selects an edited job** → its job-scoped `line_items` go stale.
-- **This gap is already closed** by **`reconcile_jobs.js` / `reconcile-jobs.yml` (every 6h)**: for every non-archived
+- **This gap is already closed** by **pg_cron `jobber-job-drift-reconcile` (edge fn `sync-jobber-job-drift`, every
+  30 min)**, which replaced `reconcile_jobs.js` / `reconcile-jobs.yml` (retired 2026-10-07 (timed-jobs move step 0)): for every non-archived
   job it re-fetches Jobber by GID and, for SA jobs, wipe-replaces the job-scoped `line_items` (also fixes
-  `job_status`, `frequency_days`, `title`, deletions). So an edited job's **job-scoped** copy self-heals within ≤6h.
+  `job_status`, `frequency_days`, `title`, deletions). So an edited job's **job-scoped** copy self-heals within about 30 min.
 - **Completion path** (`sync-jobber-upcoming-visits` / completed-visit poll → `handleVisit`) does **not** close the
   **visit-scoped** gap for DB-mastered visits (early-return above). This is the one real remaining gap.
 
@@ -239,6 +240,6 @@ touches `visits`/`line_items`/job 1472 (the most-shared surface); confirm Supaba
 
 - `webhook-jobber/index.ts`: L522–537 (visit lineItems query), **L687–713 (DB-mastered early-return — skips line_items + derm)**, L781–806 (visit-scoped wipe+replace, `set_visit_derm_required`), L862–970 (handleInvoice), L975–1049 (handleJob job-scoped, SA-only).
 - `sync-jobber-poll/index.ts`: L38 (`createdAt`/`completedAt` cursors), L104–107 (createdAt filter).
-- `scripts/sync/reconcile_jobs.js` + `.github/workflows/reconcile-jobs.yml` (every 6h — re-pulls SA job line items; closes the inbound edit gap).
+- `supabase/functions/sync-jobber-job-drift/index.ts` (pg_cron `jobber-job-drift-reconcile`, every 30 min; re-pulls SA job line items; closes the inbound edit gap). It replaced `reconcile_jobs.js` + `reconcile-jobs.yml`, retired 2026-10-07 (timed-jobs move step 0).
 - `jobber-push-visit/index.ts`: L185–239 (syncVisitLineItems), L278 (source gate), L390–400 (60d horizon).
 - `docs/migrations/2026-06-27_jobber_push_on_purpose.sql` L185–188 (`line_items_rev` → `lineitems` push group); `2026-07-09_work_orders_disposal_facility_services.sql` L72–74 (`services` fee filter + prefix strip).

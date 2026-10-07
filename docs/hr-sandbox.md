@@ -35,7 +35,7 @@ node scripts/sync/hr_sandbox_refresh.js --execute  # apply
 Env: `SUPABASE_PAT` (required), `HR_SANDBOX_PROJECT_ID` (defaults to `klgtrdwrasrlxbmfyvdh`).
 
 **How it stays schema-safe:**
-- **Column-intersection.** Every write uses only columns present in BOTH Prod and HR. Prod's newer columns/tables are silently skipped → the legacy schema is never altered. (This is why the older `hr_sandbox_topup.js` — which pulled Prod's full column list — would now fail; this script supersedes it for the drift era.)
+- **Column-intersection.** Every write uses only columns present in BOTH Prod and HR. Prod's newer columns/tables are silently skipped → the legacy schema is never altered. (This is why the older `hr_sandbox_topup.js`, which pulled Prod's full column list, would now fail; this script supersedes it for the drift era. `hr_sandbox_topup.js` was deleted 2026-10-07, timed-jobs move step 0.)
 - **Reference tables UPSERTed** (refresh values + new rows): `employees`, `vehicles`, `clients` (subset), `client_groups`, `disposal_facilities`. Safe because Yannick adds no rows to these and edits none (verified: no HR-side writes).
 - **Event tables ADDITIVE only** (`ON CONFLICT DO NOTHING`): `properties`, `jobs`, `invoices`, `gdos`, `inspections` (full history), `visits` (subset, live only), `visit_assignments`, `entity_source_links`. Never deletes, never mutates existing rows.
 - **Sequences resynced** after, so the HR app's own inserts won't collide.

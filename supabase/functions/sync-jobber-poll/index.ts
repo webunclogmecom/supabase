@@ -1,12 +1,13 @@
 // ============================================================================
 // sync-jobber-poll — Edge Function (Supabase-native Jobber delta poll)
 // ============================================================================
-// Deno port of scripts/sync/cron_jobber.js's INCREMENTAL run. Pulls Jobber deltas
+// Deno port of scripts/sync/cron_jobber.js's INCREMENTAL run (script archived 2026-10-07 in scripts/sync/_archive/). Pulls Jobber deltas
 // (clients/jobs/visits/invoices/quotes since the sync_cursors cursor), stages them in
 // raw.jobber_pull_* (needs_populate=TRUE), then replays the flagged rows through
-// webhook-jobber (HMAC-signed) so they land in public.* — exactly as the GitHub poll does.
+// webhook-jobber (HMAC-signed) so they land in public.* — exactly as the retired GitHub poll did.
 //
-// WHY: GitHub Actions throttles the */2 jobber-poll.yml schedule to ~2-3h gaps. Driven by
+// WHY: GitHub Actions throttled the */2 jobber-poll.yml schedule to ~2-3h gaps (workflow
+// deleted 2026-10-07, timed-jobs move step 0). Driven by
 // pg_cron (*/5) via pg_net this runs INSIDE the database, immune to GitHub's scheduler —
 // invoices/clients/jobs land within ~5 min. Same pattern as sync-jobber-upcoming-visits.
 //
@@ -73,7 +74,7 @@ type Exec = (q: string) => Promise<any[]>
 //     2026-09-08_1100). THE OTHER HANDLERS STILL HAVE THE OLD SHAPE. Anyone widening this poll,
 //     or reasoning about concurrency anywhere in webhook-jobber, needs that fact and not the
 //     sentence above it.
-//   * `--full` lives in scripts/sync/cron_jobber.js, whose schedule was retired 2026-06-09; no
+//   * `--full` lives in scripts/sync/_archive/cron_jobber.js, whose schedule was retired 2026-06-09; no
 //     workflow passes the flag, so it had not run since 2026-05-27.
 // Measured before the change: PROPERTY_UPDATE had produced ZERO events ever, the `properties`
 // sync_cursor still read 2020-01-01, and 342 rows sat in raw.jobber_pull_properties with

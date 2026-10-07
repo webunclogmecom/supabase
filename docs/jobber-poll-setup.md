@@ -1,8 +1,10 @@
 # Jobber polling cron — first-run setup
 
+> **Retired 2026-10-07 (timed-jobs move step 0).** The GitHub workflow `jobber-poll.yml` this page sets up is deleted, and `cron_jobber.js` is archived at `scripts/sync/_archive/`. The poll now runs as pg_cron `jobber-poll-sync`, which calls the edge fn `sync-jobber-poll` every 5 min; each run lands in `public.sync_log`. The sections below are the old GitHub setup, kept as a record. Do not follow them.
+
 **Why this exists:** Jobber's webhook delivery for our In-Development app is unreliable (verified empirically: edits in Jobber → zero webhook events at our endpoint). This cron polls Jobber every 5 minutes via GitHub Actions and replays results through the same `webhook-jobber` Edge Function — DB stays at most ~5 min stale, regardless of webhook reliability. Detailed rationale in [ADR 009](decisions/009-oversized-storage-and-jobber-webhooks.md).
 
-**Removable:** if Jobber support resolves the webhook issue, just disable or delete `.github/workflows/jobber-poll.yml`. Nothing else changes — webhook-jobber stays the same code path.
+**Removable:** the GitHub workflow is already deleted (2026-10-07). To stop polling, unschedule pg_cron `jobber-poll-sync`. webhook-jobber stays the same code path.
 
 ---
 
