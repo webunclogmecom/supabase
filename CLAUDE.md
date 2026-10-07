@@ -4466,9 +4466,11 @@ draft of this work did exactly that.
 ⚠ **Thresholds are measured, not chosen** (14 days to 2026-09-06, worst single day of partial/error):
 job_drift 8 of 48 (17%), upcoming_visits 13 of 96 (13.5%), poll 2 of 288 (0.7%), note_photo 1. A bare
 `fails >= 2` fires on the poll's 0.7%, which is noise, so the rate arm (`>= 2%`) is what excludes it
-while still catching job_drift. `jobber_note_photo_sync` and `jobber_token_keepalive` carry a **NULL**
-staleness window on purpose: their max observed gaps are 731 and 724 minutes, so any window would be
-a guess. They are watched for failures, never for lateness.
+while still catching job_drift. `jobber_note_photo_sync` carries a **NULL** staleness window on
+purpose: its max observed gap is 731 minutes, so any window would be a guess. It is watched for
+failures, never for lateness. (`jobber_token_keepalive` was the second such source until 2026-10-07,
+when the GitHub keepalive was retired and the 5-minute poll became the only keeper of the read token,
+refreshing 10 minutes before expiry: `2026-10-07_1130_retire_jobber_token_keepalive_watch.sql`.)
 
 ⚠ **It fired on install, which is correct rather than a regression**: `calendar-task-poll` has been
 continuously `attention` for **3,008 runs across 251 hours**, all reporting the SAME missing Jobber

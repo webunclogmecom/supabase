@@ -38,7 +38,7 @@ name: Frequent Jobber completion reconcile (14d window)
 # (docs/integration.md → Rate limits). A run issues ~97 requests over ~32s (~3 req/sec), so it
 # uses roughly 4% of the DDoS bucket and the cost bucket restores faster than we spend it.
 # Actions minutes are free — this repo is PUBLIC. A */30 cadence is already precedented here
-# (jobber-token-keepalive is */30, jobber-upcoming-visits is */15).
+# (jobber-upcoming-visits was */15; both have since been retired from GitHub).
 # If the fleet grows enough that 14d exceeds ~300 candidates, drop this to 8d rather than
 # raising the cadence; the coverage is identical.
 #

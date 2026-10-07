@@ -170,19 +170,23 @@ async function gql(token: string, query: string, variables: Record<string, unkno
   return j.data
 }
 
-// Token + client_secret, with the rotation-race re-read (a sibling refresher — the */30
-// keepalive or the other Jobber cron — may have just rotated the token).
+// Token + client_secret, with the rotation-race re-read (a sibling refresher, such as another Jobber cron,
+// may have just rotated the token).
+// REFRESH_MARGIN_MS: this 5-minute poll is the ONLY keeper of the read token since 2026-10-07 (the GitHub
+// jobber-token-keepalive was retired; it caused most 401 windows by refreshing off-schedule). Refreshing 10
+// minutes before expiry means the token always has 5+ minutes left for the functions that read it raw.
+const REFRESH_MARGIN_MS = 10 * 60_000
 async function getCreds(): Promise<{ token: string; clientSecret: string }> {
   const { data: row } = await supabase.from('webhook_tokens')
     .select('access_token, refresh_token, client_id, client_secret, expires_at').eq('source_system', 'jobber').single()
   if (!row) throw new Error('No jobber row in webhook_tokens')
   let token = row.access_token as string
-  if (new Date(row.expires_at).getTime() <= Date.now() + 60_000) {
+  if (new Date(row.expires_at).getTime() <= Date.now() + REFRESH_MARGIN_MS) {
     const body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(row.refresh_token)}&client_id=${encodeURIComponent(row.client_id)}&client_secret=${encodeURIComponent(row.client_secret)}`
     const tr = await fetch('https://api.getjobber.com/api/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body })
     if (!tr.ok) {
       const { data: row2 } = await supabase.from('webhook_tokens').select('access_token, expires_at').eq('source_system', 'jobber').single()
-      if (row2 && new Date(row2.expires_at).getTime() > Date.now() + 60_000) return { token: row2.access_token, clientSecret: row.client_secret }
+      if (row2 && new Date(row2.expires_at).getTime() > Date.now() + REFRESH_MARGIN_MS) return { token: row2.access_token, clientSecret: row.client_secret }
       throw new Error(`Refresh failed ${tr.status}`)
     }
     const t = await tr.json()
