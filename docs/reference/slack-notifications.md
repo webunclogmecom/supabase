@@ -37,7 +37,7 @@ What it looks like (the DUMP "dump created" message; the picture Fred chose is t
 Time: Wed, Sep 23, 6:34 AM ET                                   <- details
 Truck: Moises
 Team: Michael Escobar
-📋 7 completed DERM pickups to report on this load.             <- extras
+📋 7 completed DERM pickups since this driver's last dump to report on this load.   <- extras
 🧭 Route Link                                                   <- links (small)
 ```
 
@@ -189,11 +189,33 @@ Each of these was set by Fred or learned the hard way; the source is in brackets
 
 | app (edge function) | when | header | main line | thread | test |
 |---|---|---|---|---|---|
-| DUMP Schedule (`dump-visit-create`) | driver taps GO | `🚛 Dumping` | `🚛 *Dump at <site> (<county>)*: <driver> is dumping` + Time / Truck / Team, called ahead, load count, Route Link | first message; `ts` saved | `[TEST]` from the dump visit's notes |
-| DUMP Schedule | driver confirms the load | `📋 Dumping · load reported` | `📋 *Reported on this load (N):*` + list, then `⚠️ *Missing, scheduled today but not added (N):*` + list | reply | same |
+| DUMP Schedule (`dump-visit-create`) | driver taps GO | `🚛 Dumping` | `🚛 *Dump at <site> (<county>)*: <driver> is dumping` + Time / Truck / Team, called ahead, load lines (below), Route Link | first message; `ts` saved | `[TEST]` from the dump visit's notes |
+| DUMP Schedule | driver confirms the load | `📋 Dumping · load reported` | `📋 *Reported on this load (N):*` + list, then `⚠️ *Missing, completed but not added (N):*` + list (or `⚠️ *Missing:* could not be checked.`), then at Homestead `⚠️ *In Broward, file at Pompano (N):*` + list | reply | same |
 | DUMP Schedule | driver adds older visits to a dump | `📝 Dumping · added to the manifest` | `📝 *<driver> added N to the manifest*` + list | reply under the chosen dump | same |
-| DUMP Schedule | driver removes visits from the manifest | `🗑 Dumping · removed from the manifest` | `🗑 *<driver> removed N from the manifest*` + list | reply when it belongs to one dump, else on its own | from the app's test flag |
-| DERM Stamp Studio (`stamp-sheets-reminder`) | 10 AM ET daily, only when a sheet is not completed | `📝 Stamp Studio sheets` | `📝 *Stamp Studio: N sheets are not completed*` + one line per sheet | on its own | `{"test": true}` |
+| DUMP Schedule | driver removes visits from the manifest, OR presses Undo all on the crib sheet (since 2026-10-07) | `🗑 Dumping · removed from the manifest` | `🗑 *<driver> removed N from the manifest*` + list | reply when it belongs to one dump, else on its own | `[TEST]` from that dump (never from the caller) |
+| DERM Stamp Studio (`stamp-sheets-reminder`) | 10 AM ET daily, only when a sheet is not completed | `📝 Stamp Studio sheets` | `📝 *N sheets are not completed*` + one line per sheet; `text` (phone) = `📝 Stamp Studio: N sheets are not completed` | on its own | `{"test": true}` |
+
+**The DUMP load lines** (`loadLines()`, checked by `scripts/checks/dump_load_lines.mjs`), each left out when its count
+could not be read:
+- `📋 *N* completed DERM pickups since this driver's last dump to report on this load.` (or `🫙 *No completed DERM
+  pickups since this driver's last dump.*`; `🫙 *No Miami-Dade DERM pickups to report on this load.*` when only
+  Broward ones exist; `🫙 *No completed DERM pickups to report on this load.*` when there is nothing at all)
+- `⚠️ *N* of this driver's pickups is/are in Broward (<codes>): file it/them at Pompano.` (Homestead only: its county
+  gate hides them from every count)
+- `🗂 *N* other completed DERM pickups are still waiting to be reported (any truck).`
+
+**The counts behind them** come from `public.dump_manifest_handout_list` (the driver's pickups completed after his
+last dump that started BEFORE this one; [TEST] dumps and test clients only on a [TEST] dump), and a dump soft-deleted
+anywhere releases its marks (`trg_zz_dump_delete_releases_holds`), so its pickups show as Missing again
+(`docs/migrations/2026-10-07_1225_dump_load_window_and_deleted_dump_holds.sql`).
+
+**Reviewed 2026-10-07** (Fred: "Is it good now? ... correct Headline ... body/format"): a 20-agent review found every
+header right and the DUMP numbers wrong on real nights (Oct 5: two unreported pickups hidden from Missing because
+their dump had been deleted; Oct 3: a Broward pickup made the post say "No completed DERM pickups"; Jul 31: a dump
+scheduled ahead emptied the load). Fixed the same day (`dump-visit-create` v71, `stamp-sheets-reminder` v6), then
+one `[TEST]` of every message was posted to #apps-notifications with Fred's OK and read back (dump 8750, 112-YA
+visits 7822 / 7027, cleaned up). ⚠ The Slack connector's channel reader can label a post with ANOTHER app's name
+(it showed the Stamp reminder as "DUMP Schedule"): check names and icons in Slack itself, not through it.
 
 The DUMP messages' own rules (truck resolution, called ahead, which visits count, the removal threading rule) are in
 `Building Apps/DUMP Schedule/CLAUDE.md`. The Stamp reminder's are in the Supabase `CLAUDE.md` Draw-the-bands section.
