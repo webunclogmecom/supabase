@@ -24,7 +24,7 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
 
 | service | config | cron (UTC) | source | variables | status |
 |---|---|---|---|---|---|
-| samsara-gps | `services.json` | `*/5 * * * *` | `railway_samsara_gps` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, AUTO_LOOKBACK_H=48, RUN_TIMEOUT_MIN=30 | being set up 2026-10-07 |
+| samsara-gps | `services.json` | `*/5 * * * *` | `railway_samsara_gps` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, AUTO_LOOKBACK_H=48, RUN_TIMEOUT_MIN=30 | live 2026-10-07 12:15 ET, next to GitHub's `samsara-locations-history.yml` until the 24-hour comparison |
 
 Planned next (plan section 3.3): note-photo, notes-import (temporary), jobber-visit-nightly.
 

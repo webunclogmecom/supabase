@@ -48,6 +48,12 @@ are Fred's to do.
 expiry 12:36). Check left for 2026-10-14: zero `jobber_job_drift` rows with "HTTP 401" in the week.
 The poll had also read `partial` on every run since 01:41 UTC because 2 deleted visits kept failing their replay; step 1's first cleanup cleared them.
 
+**3. Samsara GPS on Railway, live 2026-10-07 12:15 ET** (secrets set by Fred). First run: 303 rows in 0.8 s,
+`sync_log` success. Newest GPS point before/after: Cloggy 101 -> 1 min old, David 120 -> 3 min (Moises parked
+since 09:07). GitHub's job still runs beside it (duplicates are ignored). Cut-over check on 2026-10-08: a
+`railway_samsara_gps` success row every ~5 minutes, rows per truck per day at least GitHub's, then remove
+GitHub's schedule and add `railway_samsara_gps` (30 min) to the health watch list.
+
 ## Next, in the plan's order
 
 1. ~~daily-cleanup into pg_cron~~ done 2026-10-07.
