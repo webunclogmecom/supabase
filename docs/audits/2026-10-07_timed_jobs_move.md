@@ -1,0 +1,56 @@
+# Timed jobs move: GitHub schedules to pg_cron and Railway (decision log, started 2026-10-07)
+
+**Why:** since 2026-08-27 GitHub runs our scheduled workflows only every 4 to 8 hours, whatever their
+cron says (measured with `gh run list`). Samsara GPS and the audit Slack alerts are hours stale because
+of it. The full plan (every job, merges, cut-over order) is in the workspace-root folder
+`system-audit-2026-10-05/TIMED_JOBS_PLAN.md`, which is local only; this file is its versioned record of
+what was decided and what shipped.
+
+## Decisions (Fred)
+
+| date | question | answer |
+|---|---|---|
+| 2026-10-07 | the 14 open questions in the plan, section 6 | "Yes to all defaults" |
+| 2026-10-07 | where the Railway jobs live | "put the timed jobs in a separate railway project" |
+
+What the defaults mean, in short: delete the FOG PDF generator and the no-photo alert; webhook log kept
+30 days; audit alerts to Slack for hard deletes, the daily health email for the rest; Samsara stats
+merged into the GPS job; the duplicate-address list kept as an acknowledgeable health item; GPS may fill
+the truck only on dump visits that have none; `cron_jobber.js --full` archived; Postman copy of the API
+docs is enough once the repo goes private; bridging jobs on Railway is allowed.
+
+## The Railway home: project "UnclogMe Timed Jobs"
+
+Created 2026-10-07 in the Unclogme workspace (id `0488911d-3f3d-414b-8783-89234f808513`). It is
+deliberately NOT inside:
+
+- `UnclogMe Backups` (service `db-backup`): it holds only a read-only database login plus a copy of all
+  the data. The timed jobs need the service-role key, which can write anything. One project would give
+  anyone with access to either both the write key and every copy.
+- `unclogme-gdo-report-bot`: another person is a member.
+- `Unclogme - Microservices`: holds the AI keys.
+
+Same cost either way (Railway bills per service). Each job is its own cron service with a
+`railway.json` versioned in this repo, run through the logging runner described in the plan (3.6).
+Before any secret goes in: 2FA on the Railway login and a second named admin (audit SECURITY-15), which
+are Fred's to do.
+
+## What shipped
+
+| step | commit | what |
+|---|---|---|
+| 0.1, 0.3, 0.4, 0.5 | `00e3adf` | 11 dead or failing workflows deleted with their scripts (2 archived) |
+| 0.2 | `655408e` | GitHub token keepalive retired; `sync-jobber-poll` (v32) refreshes the read token 10 minutes before expiry; `log_jobber_sync_health` stops watching it (migration `2026-10-07_1130`) |
+| docs | `2fc0942`, Building Apps `f58cde9` | live docs and comments point at the pg_cron jobs that replaced the retired ones |
+
+**0.2 verified live:** the read token was due to expire at 11:38 ET; the 11:36 poll refreshed it (new
+expiry 12:36). Check left for 2026-10-14: zero `jobber_job_drift` rows with "HTTP 401" in the week.
+Unrelated and older: the poll reads `partial` on every run because 2 visit replays keep failing.
+
+## Next, in the plan's order
+
+1. daily-cleanup into pg_cron (pure SQL).
+2. Railway setup: 2FA and second admin (Fred), variables, the runner and its kill timer, 4 sources added
+   to the health list.
+3. Then Samsara GPS, driver photos, the 14-day completion check, the nightly Jobber visit check, truck
+   from GPS, audit alerts, Samsara stats, notes import, and the last four Supabase moves.
