@@ -200,7 +200,9 @@ Each of these was set by Fred or learned the hard way; the source is in brackets
 DUMP messages fire when a driver taps. The Admin Review lists come from `public.fn_admin_review_pending()` (city: completed
 since 2026-09-15, the city has an email on file, not grey water, no real send from Admin Review; photos: the queue's
 "Photos Not Sorted"). It only sees sends made from Admin Review. Fred plans for Viktor to read these posts and act on
-them, so keep each line's shape stable. Migration `2026-10-07_1305`, check `scripts/checks/admin_review_reminder.mjs`.
+them, so keep each line's shape stable. ⚠ Viktor reads only a post's `text`, never its blocks, so the Admin Review
+post's `text` is its summary line followed by the WHOLE list (an exception to the one-line `text` rule above; the
+phone still shows the first line). Any post Viktor must act on needs the same. Migration `2026-10-07_1305`, check `scripts/checks/admin_review_reminder.mjs`.
 
 **The DUMP load lines** (`loadLines()`, checked by `scripts/checks/dump_load_lines.mjs`), each left out when its count
 could not be read:

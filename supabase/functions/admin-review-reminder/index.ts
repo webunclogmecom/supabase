@@ -101,7 +101,11 @@ Deno.serve(async (req) => {
   if (!p.city.length && !p.photos.count) return json({ posted: false, reason: "nothing is waiting" });
 
   const message = buildMessage(p, test);
-  const text = buildSummary(p, test);
+  // `text` carries the WHOLE list after the summary line: Viktor (Fred, 2026-10-07: he reads these posts and reminds
+  // Diego) sees only `text`, never the blocks. The first line is still what a phone notification shows.
+  const text = `${buildSummary(p, test)}
+
+${message}`;
   if (dryRun) return json({ posted: false, dry_run: true, channel: CHANNEL, text, message });
 
   const token = Deno.env.get("SLACK_BOT_TOKEN") ?? null;

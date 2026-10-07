@@ -55,8 +55,8 @@ assert.strictEqual(real.posts.length, 1);
 const p0 = real.posts[0];
 assert.strictEqual(p0.channel, 'C0BJYHQKZM1', '#apps-notifications');
 assert.deepStrictEqual(p0.blocks[0], { type: 'header', text: { type: 'plain_text', text: '📸 Photos and city emails', emoji: true } });
-assert.strictEqual(p0.text, '📸 Admin Review: 4 visits still need a city email, 138 visits have photos not sorted');
-assert.ok(!p0.text.includes('\n'), 'the phone text is one line');
+assert.ok(p0.text.startsWith('📸 Admin Review: 4 visits still need a city email, 138 visits have photos not sorted\n'), p0.text);
+assert.ok(p0.text.endsWith(body(p0)), 'text carries the whole list (Viktor reads only text)');
 const b = body(p0);
 assert.ok(b.startsWith('📸 *4 visits still need a city email · 138 visits have photos not sorted*'), b);
 assert.ok(b.includes('🏙 *City email not sent (4):*\n*Hallandale Beach (2)*\n• <https://admin.unclogme.app/review/6275|103-BWC Barrel Wine &amp; Cheese> · Sep 15 · Michael Escobar · ✅ photos sorted'), b);
@@ -74,10 +74,10 @@ assert.strictEqual(p0.unfurl_links, false);
 
 // only one list waiting: the other is said out loud, and its section is left out
 const onlyPhotos = await run({ city: [], photos: photos(1, 1, '2026-10-06') });
-assert.strictEqual(onlyPhotos.posts[0].text, '📸 Admin Review: every city email is sent, 1 visit has photos not sorted');
+assert.ok(onlyPhotos.posts[0].text.startsWith('📸 Admin Review: every city email is sent, 1 visit has photos not sorted\n'));
 assert.ok(!body(onlyPhotos.posts[0]).includes('City email not sent'));
 const onlyCity = await run({ city: [v(1, 'Surfside')], photos: photos(0, 0, null) });
-assert.strictEqual(onlyCity.posts[0].text, '📸 Admin Review: 1 visit still needs a city email, every photo is sorted');
+assert.ok(onlyCity.posts[0].text.startsWith('📸 Admin Review: 1 visit still needs a city email, every photo is sorted\n'));
 assert.ok(!body(onlyCity.posts[0]).includes('Photos not sorted'));
 
 // a long list is capped, split under Slack's limits, nothing lost before the cap
