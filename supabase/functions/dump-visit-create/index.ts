@@ -478,11 +478,41 @@ async function dumpMeta(dumpVisitId: number) {
     const { data: emps } = await db.from("employees").select("full_name").in("id", empIds);
     teamNames = (emps ?? []).map((e: Record<string, unknown>) => e.full_name as string).filter(Boolean);
   }
-  return { site, county, routeLink, jobberUrl, title, titleMd, whenET, truck, teamNames, isTest, dumpDriverId: (v?.assigned_driver_id as number) ?? null };
+  // The dump's own driver, for the "↳ Update to" line of every follow-up (the person acting is named on the main
+  // line). 2026-10-07: a threaded removal used to put the remover's name where the dump's driver belongs.
+  let dumpDriver = "";
+  if (v?.assigned_driver_id) {
+    const { data: e } = await db.from("employees").select("full_name").eq("id", v.assigned_driver_id).maybeSingle();
+    dumpDriver = (e?.full_name as string) ?? "";
+  }
+  return { site, county, routeLink, jobberUrl, title, titleMd, whenET, truck, teamNames, isTest, dumpDriver, dumpDriverId: (v?.assigned_driver_id as number) ?? null };
 }
 
+// The driver's DERM pickups the Homestead county gate hides (Broward, Palm Beach): Homestead cannot take them, so
+// every count leaves them out, and the message must say they exist (2026-10-07: dump 8726 on Oct 3 said "No
+// completed DERM pickups" while 318-CAP, Broward, sat on Michael's truck). [] at Pompano, null when unreadable.
+async function browardPickups(driverId: number | null, dumpVisitId: number) {
+  if (!driverId) return null;
+  const { data: d, error: dErr } = await db.from("visits").select("client_id, notes").eq("id", dumpVisitId).maybeSingle();
+  if (dErr || !d) return null;
+  if (d.client_id !== DUMPS.DH.client_id) return [];
+  const { data, error } = await db.from("dump_outstanding_visits")
+    .select("visit_id, client_code, client_name")
+    .eq("assigned_driver_id", driverId).eq("county_bucket", "BROWARD").eq("on_sheet", false);
+  if (error || !Array.isArray(data)) return null;
+  const rows = data as { visit_id: number; client_code?: string; client_name?: string }[];
+  // test and fixture clients only on a [TEST] dump, as in dump_manifest_handout_list
+  if (((d.notes as string) || "").includes("[TEST]")) return rows;
+  const { data: nc, error: ncErr } = await db.from("non_customer_clients").select("client_code").in("kind", ["test", "fixture"]);
+  if (ncErr) return null;
+  const skip = new Set((nc ?? []).map((r: Record<string, unknown>) => r.client_code as string).filter(Boolean));
+  return rows.filter((r) => !skip.has((r.client_code ?? "").trim()));
+}
+
+// Client names can carry &, < or > (7 do, e.g. "Massimo & Umberto Inc"), which Slack reads as formatting.
+const slackEsc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const clientBullets = (rows: { client_code?: string; client_name?: string }[]) =>
-  rows.map((c) => `• ${(c.client_code ?? "").trim()} ${(c.client_name ?? "").trim()}`.trim()).join("\n");
+  rows.map((c) => slackEsc(`• ${(c.client_code ?? "").trim()} ${(c.client_name ?? "").trim()}`.trim())).join("\n");
 
 // Posts to #dump-visits and RETURNS the message ts when it can (null otherwise).
 //
@@ -579,18 +609,26 @@ async function getParentTs(dumpVisitId: number): Promise<string | null> {
 // the big title + Time/Truck/Team block; repeating all of that on every follow-up is exactly what made four
 // posts read as four unrelated events. Inside a thread this is the right density; outside one (no bot
 // token, or a parent that failed to post) it is the graceful degradation.
-const updateContext = (m: { titleMd: string; whenET: string }, driverName: string) =>
-  [{ type: "context", elements: [{ type: "mrkdwn", text: `↳ Update to *${m.titleMd}* · ${driverName} · ${m.whenET}` }] }];
+// `threaded` false = the follow-up posts on its own (no stored parent, or the webhook fallback): it then names the
+// dump without pointing at a message that was never posted (2026-10-07).
+const updateContext = (m: { titleMd: string; whenET: string }, driverName: string, threaded = true) =>
+  [{ type: "context", elements: [{ type: "mrkdwn", text: `${threaded ? "↳ Update to" : "On"} *${m.titleMd}* · ${driverName} · ${m.whenET}` }] }];
 
-// The load lines of the DUMP CREATED message: this shift's pickups, then the older ones still waiting for
-// a sheet. A count of -1 means it could not be read and its line is left out. Check:
+// The load lines of the DUMP CREATED message: the driver's pickups since his last dump, the other ones still
+// waiting for a sheet (any truck), and his Broward pickups Homestead cannot take. A count of -1 (null for
+// Broward) means it could not be read and its line is left out: never a guessed 0. Check:
 // node scripts/checks/dump_load_lines.mjs
-const loadLines = (load: number, older: number): string[] => {
+// Wording 2026-10-07 (Fred, "All, as in the preview"): "since this driver's last dump", not "from this shift"
+// (the window is the last dump, which can be days back); no "No visits for this driver this shift" (nothing
+// measures visits); "other ... from any truck", not "older" (the count is every truck's).
+const loadLines = (load: number, older: number, broward: string[] | null = []): string[] => {
   const out: string[] = [];
-  if (load === 0) out.push(`🫙 *No completed DERM pickups from this shift.*`);
-  else if (load > 0) out.push(`📋 *${load}* completed DERM pickup${load === 1 ? "" : "s"} from this shift to report on this load.`);
-  if (older > 0) out.push(`🗂 *${older}* older completed DERM pickup${older === 1 ? " is" : "s are"} still waiting to be reported.`);
-  else if (older === 0 && load === 0) out[0] = `🫙 *No completed DERM pickups to report on this load.* No visits for this driver this shift.`;
+  const nb = broward?.length ?? 0;
+  if (load === 0 && older === 0 && nb === 0) out.push(`🫙 *No completed DERM pickups to report on this load.*`);
+  else if (load === 0) out.push(nb > 0 ? `🫙 *No Miami-Dade DERM pickups to report on this load.*` : `🫙 *No completed DERM pickups since this driver's last dump.*`);
+  else if (load > 0) out.push(`📋 *${load}* completed DERM pickup${load === 1 ? "" : "s"} since this driver's last dump to report on this load.`);
+  if (nb > 0) out.push(`⚠️ *${nb}* of this driver's pickups ${nb === 1 ? "is" : "are"} in Broward (${broward!.join(", ")}): file ${nb === 1 ? "it" : "them"} at Pompano.`);
+  if (older > 0) out.push(`🗂 *${older}* other completed DERM pickup${older === 1 ? " is" : "s are"} still waiting to be reported (any truck).`);
   return out;
 };
 
@@ -633,17 +671,22 @@ async function postDumpCreatedAlert(
   // records nothing. -1 = couldn't tell, and both lines are omitted rather than guessed.
   let loadCount = -1;
   let olderCount = -1;
+  let broward: string[] | null = null;
   if (driverId) {
-    try {
-      const { data } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
-      const rows = (Array.isArray(data) ? data : []) as Record<string, unknown>[];
+    // supabase-js does not throw: a failed read comes back as { error }, which used to read as an empty list and
+    // post a confident "No completed DERM pickups" (2026-10-07). Unreadable = -1 = the lines are left out.
+    const { data, error } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
+    if (error || !Array.isArray(data)) console.error("[dump] load count read failed:", error?.message ?? "not a list");
+    else {
+      const rows = data as Record<string, unknown>[];
       loadCount = rows.filter((r) => r.bucket === "load").length;
       olderCount = rows.filter((r) => r.bucket === "outstanding" && r.confirmed === false).length;
-    } catch (_e) { /* leave -1: omit the lines rather than guess */ }
+    }
+    broward = (await browardPickups(driverId, dumpVisitId))?.map((r) => (r.client_code ?? "").trim()) ?? null;
   }
   const extra: string[] = [];
   if (opts?.afterHours) extra.push(`📞 *Called ahead:* ${opts.calledAhead ? "✅ yes" : "❌ no (went without calling)"}`);
-  extra.push(...loadLines(loadCount, olderCount));
+  extra.push(...loadLines(loadCount, olderCount, broward));
 
   const blocks: unknown[] = [
     slackHeader("🚛 Dumping"),
@@ -671,47 +714,47 @@ async function postDumpAlert(
 
   // MISSING = this driver's DERM-required load visits this shift he did NOT tick (bucket='load',
   // confirmed=false). dump_outstanding_visits is DERM-filtered, so non-DERM (unclog) never appears here.
-  let missing: { client_code?: string; client_name?: string }[] = [];
-  try {
-    const { data: list } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
-    missing = (Array.isArray(list) ? list : []).filter((r: Record<string, unknown>) => r.bucket === "load" && r.confirmed === false) as { client_code?: string; client_name?: string }[];
-  } catch (_e) { /* best-effort — no missing line rather than a failed alert */ }
+  // A failed read is said ("could not be checked"), never shown as an empty Missing list (2026-10-07).
+  let missing: { client_code?: string; client_name?: string }[] | null = null;
+  const { data: list, error: listErr } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
+  if (listErr || !Array.isArray(list)) console.error("[dump] missing list read failed:", listErr?.message ?? "not a list");
+  else missing = list.filter((r: Record<string, unknown>) => r.bucket === "load" && r.confirmed === false) as { client_code?: string; client_name?: string }[];
+  const broward = await browardPickups(driverId, dumpVisitId);
 
   // FOLLOW-UP FORMAT (Fred 2026-07-27): no repeated big title, no repeated Time/Truck/Team block, no
   // repeated Route Link — the parent message already carries all of that. Just a one-line "update to that
   // dump" context + the payload. Threads under the parent when a bot token is configured.
+  const parent = await getParentTs(dumpVisitId);
   const blocks: unknown[] = [
     slackHeader("📋 Dumping · load reported"),
-    ...updateContext(m, driverName),
+    ...updateContext(m, m.dumpDriver || driverName, !!parent),
     { type: "section", text: { type: "mrkdwn", text: `📋 ${tag}*Reported on this load (${confirmed.length}):*\n${clientLines}` } },
   ];
-  if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing, scheduled today but not added (${missing.length}):*\n${clientBullets(missing)}` } });
+  if (missing === null) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing:* could not be checked.` } });
+  else if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing, completed but not added (${missing.length}):*\n${clientBullets(missing)}` } });
+  if (broward?.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *In Broward, file at Pompano (${broward.length}):*\n${clientBullets(broward)}` } });
   // THREAD-ONLY (Fred 2026-08-04): "can we change it so the updates only gets send as a thread message
   // and not on the channel also?". This used to pass broadcast=true, which added reply_broadcast and made
   // Slack render the "Also sent to the channel" copy on top of the threaded reply. The load report now
   // lives ONLY under its parent dump. Do not re-add the 4th argument here.
-  await slackPost(`📋 ${tag}${m.title}: ${driverName} reported ${confirmed.length} on this load`, blocks, await getParentTs(dumpVisitId));
+  await slackPost(`📋 ${tag}${m.title}: ${driverName} reported ${confirmed.length} on this load`, blocks, parent);
 }
 
 // 3. MANIFEST LINK — fires on `link`. OLDER VISITS catch-up-linked to a chosen dump.
 async function postManifestLinkAlert(driverName: string, dumpVisitId: number, linked: { client_code?: string; client_name?: string }[]) {
   if (!linked.length) return;
   const m = await dumpMeta(dumpVisitId);
-  let dumpDriver = "";
-  if (m.dumpDriverId) {
-    const { data: e } = await db.from("employees").select("full_name").eq("id", m.dumpDriverId).maybeSingle();
-    dumpDriver = (e?.full_name as string) ?? "";
-  }
   const tag = m.isTest ? "[TEST] " : "";
   // Threads under the dump it was filed against — which matters MOST here, because the pick-a-dump list
   // spans 7 days, so this follow-up routinely belongs to a dump from days ago. Time-proximity correlation
   // would be flat wrong; a thread reply is exactly right.
+  const parent = await getParentTs(dumpVisitId);
   await slackPost(`📝 ${tag}${driverName} added ${linked.length} to the ${m.site} dump`, [
     slackHeader("📝 Dumping · added to the manifest"),
-    ...updateContext(m, dumpDriver || driverName),
+    ...updateContext(m, m.dumpDriver || driverName, !!parent),
     { type: "section", text: { type: "mrkdwn", text: `📝 ${tag}*${driverName} added ${linked.length} to the manifest*` } },
     { type: "section", text: { type: "mrkdwn", text: clientBullets(linked) } },
-  ], await getParentTs(dumpVisitId));
+  ], parent);
 }
 
 // 4. MANIFEST UNLINK — fires on `unmark` (Fred 2026-07-24). The mirror of #3: a driver UNSELECTED visits
@@ -745,24 +788,26 @@ async function postManifestUnlinkAlert(
   driverName: string,
   count: number,
   rows: { client_code?: string; client_name?: string }[],
-  isTest: boolean,
   dumpVisitId: number | null,
 ) {
   if (count <= 0) return;
-  const tag = isTest ? "[TEST] " : "";
   const bullets = rows.length ? clientBullets(rows) : "_(marks cleared)_";
 
-  // Only fetch the dump's metadata when we will actually thread — dumpMeta is a round trip, and a
-  // top-level removal keeps its existing standalone format with no dump context line.
+  // 2026-10-07: [TEST] comes from the dump the marks were on (the guide: a caller must never be able to mark a
+  // real event as a test), and the context names the dump and ITS driver whether or not the reply threads.
+  // With no single dump there is nothing to name and nothing to tag.
   let threadTs: string | null = null;
   let context: unknown[] = [];
+  let isTest = false;
   if (dumpVisitId) {
     threadTs = await getParentTs(dumpVisitId);
-    if (threadTs) {
-      try { context = updateContext(await dumpMeta(dumpVisitId), driverName); }
-      catch (_e) { context = []; }  // never lose the alert over a missing context line
-    }
+    try {
+      const m = await dumpMeta(dumpVisitId);
+      isTest = m.isTest;
+      context = updateContext(m, m.dumpDriver || driverName, !!threadTs);
+    } catch (_e) { context = []; }  // never lose the alert over a missing context line
   }
+  const tag = isTest ? "[TEST] " : "";
 
   await slackPost(`🗑 ${tag}${driverName} removed ${count} from the manifest`, [
     slackHeader("🗑 Dumping · removed from the manifest"),
@@ -1115,8 +1160,7 @@ Deno.serve(async (req) => {
       if (!removed) return json({ ok: false, error: "could not remove the marks" }, 500);
 
       await logActivity("unmark", uDriverId, null, { visit_ids: uVisitIds, removed });
-      const uIsTest = body.test_mode === true;
-      try { await postManifestUnlinkAlert(uDriverName, removed, removedInfo, uIsTest, uDumpId); }
+      try { await postManifestUnlinkAlert(uDriverName, removed, removedInfo, uDumpId); }
       catch (e) { console.error("[dump] slack unlink alert failed:", e instanceof Error ? e.message : String(e)); }
       return json({ ok: true, removed });
     }
@@ -1211,6 +1255,21 @@ Deno.serve(async (req) => {
       const relIds = Array.isArray(body.visit_ids)
         ? (body.visit_ids as unknown[]).map(Number).filter((n) => Number.isFinite(n) && n > 0)
         : null;
+      // Who is about to be taken off, read BEFORE the release deletes the rows, so Slack can say it (2026-10-07:
+      // "Undo all" cleared a reported load and the thread still said it was reported). Names come from the
+      // visits themselves: dump_outstanding_visits hides visits already on a DERM sheet.
+      let relQ = db.from("dump_manifest_handout").select("visit_id").eq("dump_visit_id", rDumpVisitId);
+      if (relIds) relQ = relQ.in("visit_id", relIds);
+      const { data: relRows } = await relQ;
+      const relVisitIds = (relRows ?? []).map((r: Record<string, unknown>) => Number(r.visit_id));
+      let relInfo: { client_code?: string; client_name?: string }[] = [];
+      if (relVisitIds.length) {
+        const { data: vs } = await db.from("visits").select("clients(client_code, name)").in("id", relVisitIds);
+        relInfo = (vs ?? []).map((v: Record<string, unknown>) => {
+          const c = v.clients as { client_code?: string; name?: string } | null;
+          return { client_code: c?.client_code ?? "", client_name: c?.name ?? "" };
+        });
+      }
       const { data: released, error } = await db.rpc("dump_manifest_handout_release", {
         p_dump_visit_id: rDumpVisitId, p_visit_ids: relIds,
       });
@@ -1219,6 +1278,17 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "could not release the manifest hand-out" }, 500);
       }
       await logActivity("release", null, rDumpVisitId, { released: released ?? 0 });
+      const relCount = typeof released === "number" ? released : 0;
+      if (relCount > 0) {
+        // The app sends no driver here; the dump's own driver is who pressed Undo all on his phone.
+        const relDriver = Number(body.driver_id)
+          ? (await drivers()).find((d) => d.id === Number(body.driver_id))?.full_name
+          : null;
+        try {
+          const m = await dumpMeta(rDumpVisitId);
+          await postManifestUnlinkAlert(relDriver || m.dumpDriver || "The driver", relCount, relInfo, rDumpVisitId);
+        } catch (e) { console.error("[dump] slack release alert failed:", e instanceof Error ? e.message : String(e)); }
+      }
       return json({ ok: true, released: released ?? 0 });
     }
 
@@ -1231,7 +1301,7 @@ Deno.serve(async (req) => {
       const sinceIso = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
       const { data: vs, error } = await db
         .from("visits")
-        .select("id, client_id, assigned_driver_id, start_at, created_at")
+        .select("id, client_id, assigned_driver_id, start_at, created_at, notes")
         .in("client_id", [365, 76])
         .is("deleted_at", null)
         .gte("start_at", sinceIso)
@@ -1241,7 +1311,12 @@ Deno.serve(async (req) => {
         console.error("[dump] recent_dumps failed:", error.message);
         return json({ ok: false, error: "could not load the recent dumps" }, 500);
       }
-      const dumps = (Array.isArray(vs) ? vs : []) as Record<string, unknown>[];
+      // 2026-10-07: a live [TEST] dump was offered to real drivers (pinned first as "yours" when it carried their
+      // name), so a real catch-up link posted as [TEST] and test cleanup later deleted the real marks. Filtered in
+      // JS on purpose: a PostgREST not-ilike on notes would also drop the NULL-notes Calendar dumps.
+      const testMode = body.test_mode === true;
+      const dumps = ((Array.isArray(vs) ? vs : []) as Record<string, unknown>[])
+        .filter((d) => testMode === String(d.notes ?? "").includes("[TEST]"));
       const dumpIds = dumps.map((d) => d.id as number);
       const driverIds = [...new Set(dumps.map((d) => d.assigned_driver_id as number).filter(Boolean))];
 
@@ -1300,6 +1375,11 @@ Deno.serve(async (req) => {
       if (!lVisitIds.length) return json({ ok: false, error: "no visits to link" }, 400);
       const driverName = (await drivers()).find((d) => d.id === lDriverId)?.full_name;
       if (!driverName) return json({ ok: false, error: "unknown driver" }, 400);
+      // Backstop for the picker filter above: real visits go on a real dump, test ones on a test dump.
+      const { data: tgt } = await db.from("visits").select("notes").eq("id", lDumpVisitId).maybeSingle();
+      if (tgt && String(tgt.notes ?? "").includes("[TEST]") !== (body.test_mode === true)) {
+        return json({ ok: false, error: body.test_mode === true ? "that dump is not a test dump" : "that dump is a test dump" }, 400);
+      }
 
       const { data: linked, error } = await db.rpc("dump_manifest_link", {
         p_driver_id: lDriverId, p_dump_visit_id: lDumpVisitId, p_visit_ids: lVisitIds,

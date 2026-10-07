@@ -42,6 +42,7 @@ async function run(sheets, { body = {}, role = 'service_role', slack = { ok: tru
   return { status: res.status, body: await res.json(), posts, auths, rpcHeaders };
 }
 
+const body = (p) => p.blocks.slice(1).map((b) => b.text.text).join('\n');
 const sheet = (m, o = {}) => ({ manifest: m, service_date: '2026-09-20', dump_date: '2026-09-21', placed: 4, total: 9, pages: 2, status: 'In progress', days_waiting: 14, ...o });
 
 // nothing open: no post at all
@@ -54,29 +55,32 @@ assert.strictEqual(none.rpcHeaders['Content-Profile'], 'derm', 'the list is read
 const one = await run([sheet('836624')]);
 assert.strictEqual(one.posts.length, 1);
 assert.strictEqual(one.posts[0].channel, 'C0BJYHQKZM1', '#apps-notifications');
-assert.match(one.posts[0].text, /^:memo: \*Stamp Studio: 1 sheet is not completed\*\n/);
-assert.ok(one.posts[0].text.includes('• <https://stamp.unclogme.app/836624|Manifest 836624> · dumped Sep 21 · 4 of 9 stamped · In progress · waiting 14 days'), one.posts[0].text);
+// the phone line (text) is ONE line naming the app; the body's first line does not repeat it (2026-10-07)
+assert.strictEqual(one.posts[0].text, ':memo: Stamp Studio: 1 sheet is not completed');
+assert.match(body(one.posts[0]), /^:memo: \*1 sheet is not completed\*\n/);
+assert.ok(body(one.posts[0]).includes('• <https://stamp.unclogme.app/836624|Manifest 836624> · dumped Sep 21 · 4 of 9 stamped · In progress · waiting 14 days'), body(one.posts[0]));
 assert.strictEqual(one.body.posted, true);
 
 // plural, no dump date (falls back to the service date), 1 day, 0 days (no "waiting"), not started
 const two = await run([sheet('1', { dump_date: null, days_waiting: 1, placed: 0, status: 'Not started' }), sheet('2', { days_waiting: 0 })]);
 assert.match(two.posts[0].text, /2 sheets are not completed/);
-assert.ok(two.posts[0].text.includes('Manifest 1> · dumped Sep 20 · 0 of 9 stamped · Not started · waiting 1 day'), two.posts[0].text);
-assert.ok(two.posts[0].text.split('\n')[2].endsWith('In progress'), 'no "waiting" on the day of the dump');
-assert.ok(!/—/.test(two.posts[0].text), 'no em dash in the message');
+assert.ok(body(two.posts[0]).includes('Manifest 1> · dumped Sep 20 · 0 of 9 stamped · Not started · waiting 1 day'), body(two.posts[0]));
+assert.ok(body(two.posts[0]).split('\n')[2].endsWith('In progress'), 'no "waiting" on the day of the dump');
+assert.ok(!/—/.test(body(two.posts[0]) + two.posts[0].text), 'no em dash in the message');
 
 // the header (Option A) comes first, and the sections rebuild the exact message
 const blocksOf = (p) => p.blocks;
 const sectionsText = (p) => p.blocks.slice(1).map((b) => { assert.strictEqual(b.type, 'section'); assert.strictEqual(b.text.type, 'mrkdwn'); return b.text.text; }).join('\n');
 assert.deepStrictEqual(blocksOf(one.posts[0])[0], { type: 'header', text: { type: 'plain_text', text: '📝 Stamp Studio sheets', emoji: true } });
-assert.strictEqual(sectionsText(one.posts[0]), one.posts[0].text, 'the sections hold the whole message');
+assert.ok(!one.posts[0].text.includes('\n'), 'the fallback text is one line');
 
 // more than 40: capped with a pointer to the Studio
 const many = await run(Array.from({ length: 45 }, (_, i) => sheet(String(900000 + i))));
-const lines = many.posts[0].text.split('\n');
+const lines = body(many.posts[0]).split('\n');
 assert.strictEqual(lines.length, 1 + 40 + 1);
 assert.ok(lines.at(-1).includes('and 5 more'), lines.at(-1));
-assert.strictEqual(sectionsText(many.posts[0]), many.posts[0].text, 'a long list is split without losing a line');
+const manyDry = await run(Array.from({ length: 45 }, (_, i) => sheet(String(900000 + i))), { body: { dry_run: true } });
+assert.strictEqual(sectionsText(many.posts[0]), manyDry.body.message, 'a long list is split without losing a line');
 assert.ok(many.posts[0].blocks.length <= 50, 'Slack allows 50 blocks');
 for (const b of many.posts[0].blocks.slice(1)) assert.ok(b.text.text.length <= 3000, `section of ${b.text.text.length} chars`);
 assert.ok(many.posts[0].blocks.length > 2, 'the 41-line list needs more than one section, so the split is exercised');
@@ -84,7 +88,8 @@ assert.ok(many.posts[0].blocks.length > 2, 'the 41-line list needs more than one
 // dry run: the text, no post
 const dry = await run([sheet('836624')], { body: { dry_run: true } });
 assert.strictEqual(dry.posts.length, 0, 'dry run must not post');
-assert.ok(dry.body.text.includes('Manifest 836624'));
+assert.ok(dry.body.message.includes('Manifest 836624'));
+assert.strictEqual(dry.body.text, ':memo: Stamp Studio: 1 sheet is not completed');
 
 // Slack refuses: reported, not swallowed
 const refused = await run([sheet('836624')], { slack: { ok: false, error: 'not_in_channel' } });
@@ -99,8 +104,9 @@ assert.strictEqual(anon.posts.length, 0);
 // test: posted, with the [TEST] prefix
 const tst = await run([sheet('836624')], { body: { test: true } });
 assert.strictEqual(tst.posts.length, 1);
-assert.ok(tst.posts[0].text.startsWith('[TEST] :memo: '), tst.posts[0].text);
-assert.ok(!/TEST/.test(one.posts[0].text), 'a normal post carries no TEST mark');
+assert.strictEqual(tst.posts[0].text, ':memo: [TEST] Stamp Studio: 1 sheet is not completed');
+assert.ok(body(tst.posts[0]).startsWith(':memo: [TEST] *1 sheet'), body(tst.posts[0]));
+assert.ok(!/TEST/.test(one.posts[0].text + body(one.posts[0])), 'a normal post carries no TEST mark');
 
 // identity: plain without chat:write.customize (today's bot), "Stamp Studio" + icon with it, plain if Slack cannot say
 assert.ok(!('username' in one.posts[0]) && !('icon_url' in one.posts[0]), 'no custom name without the scope');

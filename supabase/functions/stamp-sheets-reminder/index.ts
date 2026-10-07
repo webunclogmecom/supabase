@@ -46,9 +46,15 @@ function bearerRole(req: Request): string | null {
 const day = (d: string) =>
   new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
+// The one-line `text` Slack shows in a phone notification and the sidebar (the guide: one line that makes sense
+// alone). The body's first line drops "Stamp Studio": the header and the post's name already say it.
+function buildSummary(n: number, test = false): string {
+  return `:memo: ${test ? "[TEST] " : ""}Stamp Studio: ${n} ${n === 1 ? "sheet is" : "sheets are"} not completed`;
+}
+
 function buildMessage(sheets: Sheet[], test = false): string {
   const n = sheets.length;
-  const head = (test ? "[TEST] " : "") + `:memo: *Stamp Studio: ${n} ${n === 1 ? "sheet is" : "sheets are"} not completed*`;
+  const head = `:memo: ${test ? "[TEST] " : ""}*${n} ${n === 1 ? "sheet is" : "sheets are"} not completed*`;
   const lines = sheets.slice(0, MAX_LINES).map((s) => {
     const date = s.dump_date ?? s.service_date;
     const parts = [
@@ -95,15 +101,16 @@ Deno.serve(async (req) => {
   if (!Array.isArray(sheets)) return json({ error: "open sheets: not a list" }, 500);
   if (!sheets.length) return json({ posted: false, reason: "every sheet is completed" });
 
-  const text = buildMessage(sheets, test);
-  if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, text });
+  const message = buildMessage(sheets, test);
+  const text = buildSummary(sheets.length, test);
+  if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, text, message });
 
   if (!token) return json({ error: "SLACK_BOT_TOKEN is not set" }, 500);
   const as = await slackIdentity(token, "Stamp Studio", "stamp-studio");
   const res = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ channel: CHANNEL, text, blocks: [slackHeader("📝 Stamp Studio sheets"), ...slackSections(text)],
+    body: JSON.stringify({ channel: CHANNEL, text, blocks: [slackHeader("📝 Stamp Studio sheets"), ...slackSections(message)],
       unfurl_links: false, unfurl_media: false, ...as }),
   });
   const out = await res.json().catch(() => ({}));
