@@ -1132,7 +1132,9 @@ cases + 12 mutation controls, all rolled back) in `scripts/client-app/tests/clie
   change the Calendar's client history); the activity reader renders `primary_contact_ref` and the "Client code"
   label itself for that reason. Custom `render_type` values (`address`, `pin`, `zone`, `schedule`, ...) are formatted
   by `audit.fn_activity_value`; `render_value` would print them raw.
-- **Its grouping, bookkeeping and actor rules live in the function and nowhere else** (the app filters nothing). If
+- **Its grouping, bookkeeping and actor rules live in the function and nowhere else** (the app adds no rule of its
+  own; since 2026-10-07 its only filters are ones a person picks in the dialog: search, area, changed by, date,
+  done in the browser over the returned rows, with "Showing X of N" on screen). If
   you change `function.sql`, run all 12 controls; each must break exactly its case.
 - `audit.render_value` is no longer executable by PUBLIC (it is SECURITY DEFINER with dynamic SQL); its callers run
   as postgres. Do not grant it back.
