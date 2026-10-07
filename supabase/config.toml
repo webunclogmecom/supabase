@@ -888,10 +888,16 @@ verify_jwt = true
 [functions.gdo-permit-label]
 verify_jwt = true
 
-# stamp-sheets-reminder: daily 10 AM Eastern Slack post of the Stamp Studio sheets not completed
+# stamp-sheets-reminder: daily 11 AM Eastern (10 AM until 2026-10-07) Slack post of the Stamp Studio sheets not completed
 # (2026-10-05). Called by pg_cron (fn_request_stamp_sheets_reminder) with the vault service_role key;
 # the handler also requires role=service_role, which is only trustworthy behind verify_jwt.
 [functions.stamp-sheets-reminder]
+verify_jwt = true
+
+# admin-review-reminder: daily 11 AM Eastern Slack post of the visits needing a city email and the photos not
+# sorted in Admin Review (2026-10-07). Called by pg_cron (fn_request_admin_review_reminder) with the vault
+# service_role key; the handler requires role=service_role, only trustworthy behind verify_jwt.
+[functions.admin-review-reminder]
 verify_jwt = true
 
 # measure-page-reference: measures the printed lines of one Stamp Studio page in the background

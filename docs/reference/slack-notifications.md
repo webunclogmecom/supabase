@@ -193,7 +193,14 @@ Each of these was set by Fred or learned the hard way; the source is in brackets
 | DUMP Schedule | driver confirms the load | `📋 Dumping · load reported` | `📋 *Reported on this load (N):*` + list, then `⚠️ *Missing, completed but not added (N):*` + list (or `⚠️ *Missing:* could not be checked.`), then at Homestead `⚠️ *In Broward, file at Pompano (N):*` + list | reply | same |
 | DUMP Schedule | driver adds older visits to a dump | `📝 Dumping · added to the manifest` | `📝 *<driver> added N to the manifest*` + list | reply under the chosen dump | same |
 | DUMP Schedule | driver removes visits from the manifest, OR presses Undo all on the crib sheet (since 2026-10-07) | `🗑 Dumping · removed from the manifest` | `🗑 *<driver> removed N from the manifest*` + list | reply when it belongs to one dump, else on its own | `[TEST]` from that dump (never from the caller) |
-| DERM Stamp Studio (`stamp-sheets-reminder`) | 10 AM ET daily, only when a sheet is not completed | `📝 Stamp Studio sheets` | `📝 *N sheets are not completed*` + one line per sheet; `text` (phone) = `📝 Stamp Studio: N sheets are not completed` | on its own | `{"test": true}` |
+| DERM Stamp Studio (`stamp-sheets-reminder`) | 11 AM ET daily (10 AM until 2026-10-07), only when a sheet is not completed | `📝 Stamp Studio sheets` | `📝 *N sheets are not completed*` + one line per sheet; `text` (phone) = `📝 Stamp Studio: N sheets are not completed` | on its own | `{"test": true}` |
+| Admin Review (`admin-review-reminder`) | 11 AM ET daily, only when something is waiting | `📸 Photos and city emails` | `📸 *N visits still need a city email · M visits have photos not sorted*`, then `🏙 *City email not sent (N):*` grouped by city, one line per visit (link to `admin.unclogme.app/review/<visit>` · date · driver · ✅/❌ photos sorted), then `🖼 *Photos not sorted: M visits* · K from the last 7 days · oldest <date>`, and an `Open Admin Review` link; `text` (phone) = one line | on its own | `{"test": true}` |
+
+**Every scheduled reminder posts at 11 AM ET** (Fred, 2026-10-07: "move all notifications to that same time"); the
+DUMP messages fire when a driver taps. The Admin Review lists come from `public.fn_admin_review_pending()` (city: completed
+since 2026-09-15, the city has an email on file, not grey water, no real send from Admin Review; photos: the queue's
+"Photos Not Sorted"). It only sees sends made from Admin Review. Fred plans for Viktor to read these posts and act on
+them, so keep each line's shape stable. Migration `2026-10-07_1305`, check `scripts/checks/admin_review_reminder.mjs`.
 
 **The DUMP load lines** (`loadLines()`, checked by `scripts/checks/dump_load_lines.mjs`), each left out when its count
 could not be read:

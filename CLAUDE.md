@@ -2411,8 +2411,9 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
     stamp inside it, and keeps the band of a stamp nudged inside it.
   - `record_page_rules`, `save_page_slots`, `assign_card_to_slot`, `set_row_band` and
     `save_page_geometry` are **revoked from authenticated**; only SECURITY DEFINER code calls them.
-- **Daily Slack reminder (`2026-10-05_1500`):** cron `stamp-sheets-reminder` ('0 14,15 * * *', only
-  the run that is 10 AM in New York goes through) -> `public.fn_request_stamp_sheets_reminder()` ->
+- **Daily Slack reminder (`2026-10-05_1500`):** cron `stamp-sheets-reminder` ('0 15,16 * * *', only
+  the run that is 11 AM in New York goes through; 10 AM until 2026-10-07, when Fred moved every reminder to 11 and
+  the Admin Review reminder `admin-review-reminder` joined it, see the Slack guide's catalogue) -> `public.fn_request_stamp_sheets_reminder()` ->
   edge fn `stamp-sheets-reminder` -> #apps-notifications (C0BJYHQKZM1) via the shared bot, listing
   `derm.fn_stamp_open_sheets()` (the Studio list, not completed). Posts NOTHING when every sheet is
   completed (Fred). `{dry_run:true}` returns the text. Check: `node scripts/checks/stamp_sheets_reminder.mjs`.
