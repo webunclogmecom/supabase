@@ -12,9 +12,10 @@ name: Samsara locations history (high-frequency GPS)
 # Manual one-shot backfills: use workflow_dispatch with start_time +
 # end_time inputs (ISO 8601 UTC).
 
+# RETIRED 2026-10-08 (timed-jobs move step 3): Railway service samsara-gps (UnclogMe Timed Jobs) runs this
+# script every 5 minutes. The schedule is gone; the manual button stays for backfills and as the rollback
+# until 2026-10-22.
 on:
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       start_time:

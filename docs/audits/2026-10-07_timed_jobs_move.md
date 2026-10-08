@@ -53,6 +53,9 @@ The poll had also read `partial` on every run since 01:41 UTC because 2 deleted 
 since 09:07). GitHub's job still runs beside it (duplicates are ignored). Cut-over check on 2026-10-08: a
 `railway_samsara_gps` success row every ~5 minutes, rows per truck per day at least GitHub's, then remove
 GitHub's schedule and add `railway_samsara_gps` (30 min) to the health watch list.
+**Cut over 2026-10-08 10:48 ET:** 271 of 271 Railway runs successful, max gap 6 min, rows per truck per day
+within range. GitHub schedule removed (manual button until 2026-10-22); `railway_samsara_gps` watched at 30 min
+(migration `2026-10-08_1048`).
 
 ## Next, in the plan's order
 
