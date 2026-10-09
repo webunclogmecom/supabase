@@ -141,3 +141,18 @@ docs/multi-location-clients-for-diego-yan.md
 docs/reports/build_multi_location_pdf.py
 docs/reports/build_db_audit_pdf.py
 apps/internal-portal/prototype.html
+
+# PII GUARD, PART 3: PROBE OUTPUT. THIS REPO IS PUBLIC. (2026-10-09)
+# 715 untracked probe files were measured: 79 of the 351 output/data/bundle files held client-code
+# shapes and 16 held email addresses. Credential scan: none (two downloaded bundles carry only the
+# public anon key). Probe SOURCE (.sql/.js/.mjs/.py) stays committable; query RESULTS stay local.
+scripts/probes/**/*.json
+scripts/probes/**/*.txt
+scripts/probes/**/*.html
+scripts/probes/**/bundle/
+scripts/probes/derm_band_review/*-run.js
+scripts/checks/**/*.out.json
+# Tracked on purpose (fixtures, no client rows):
+!scripts/probes/derm_band_review/README.txt
+!scripts/probes/generated_finisher/detect_core_expected.json
+!scripts/probes/generated_finisher/phase0_calibration.json
