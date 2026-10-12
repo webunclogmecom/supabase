@@ -57,7 +57,7 @@ assert.strictEqual(one.posts.length, 1);
 assert.strictEqual(one.posts[0].channel, 'C0BJYHQKZM1', '#apps-notifications');
 // the phone line (text) is ONE line naming the app; the body's first line does not repeat it (2026-10-07)
 assert.strictEqual(one.posts[0].text, ':memo: Stamp Studio: 1 sheet is not completed');
-assert.match(body(one.posts[0]), /^:memo: \*1 sheet is not completed\*\n/);
+assert.match(body(one.posts[0]), /^:memo: <@U0AL9JZ4V7C> <@U0BKM57UPSS> \*1 sheet is not completed\*\n/);  // Diego + Serena (2026-10-12)
 assert.ok(body(one.posts[0]).includes('• <https://stamp.unclogme.app/836624|Manifest 836624> · dumped Sep 21 · 4 of 9 stamped · In progress · waiting 14 days'), body(one.posts[0]));
 assert.strictEqual(one.body.posted, true);
 
@@ -107,6 +107,7 @@ assert.strictEqual(tst.posts.length, 1);
 assert.strictEqual(tst.posts[0].text, ':memo: [TEST] Stamp Studio: 1 sheet is not completed');
 assert.ok(body(tst.posts[0]).startsWith(':memo: [TEST] *1 sheet'), body(tst.posts[0]));
 assert.ok(!/TEST/.test(one.posts[0].text + body(one.posts[0])), 'a normal post carries no TEST mark');
+assert.ok(!/<@/.test(body(tst.posts[0]) + tst.posts[0].text), 'a [TEST] post tags nobody');
 
 // identity: plain without chat:write.customize (today's bot), "Stamp Studio" + icon with it, plain if Slack cannot say
 assert.ok(!('username' in one.posts[0]) && !('icon_url' in one.posts[0]), 'no custom name without the scope');

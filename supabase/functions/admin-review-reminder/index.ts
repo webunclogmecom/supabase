@@ -44,37 +44,36 @@ const day = (d: string) =>
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-const cityPart = (n: number) => n === 0 ? "every city email is sent" : `${plural(n, "visit still needs", "visits still need")} a city email`;
-const photoPart = (n: number) => n === 0 ? "every photo is sorted" : `${plural(n, "visit has", "visits have")} photos not sorted`;
+// Fred, 2026-10-12 (voice note): tag Diego and Serena; "shorten it": list ONLY the visits whose photos are sorted and
+// whose city email is not sent, Hallandale Beach and Surfside together "and just call it Broward"; drop the summary
+// line (the photos line at the bottom already says it). Visits with photos not sorted (or none) stay out of the list:
+// the photos line counts them. No @-mention on a [TEST] post (it would ping them).
+const TAGS = "<@U0AL9JZ4V7C> <@U0BKM57UPSS>"; // Diego, Serena
+const GROUP = "Broward";
+const sorted = (v: CityVisit) => v.photos_total > 0 && v.photos_sorted >= v.photos_total;
 
-// The one-line `text` Slack shows in a phone notification and the sidebar.
-function buildSummary(p: Pending, test = false): string {
-  return `📸 ${test ? "[TEST] " : ""}Admin Review: ${cityPart(p.city.length)}, ${photoPart(p.photos.count)}`;
+// `text` = this line, then the whole message: Viktor reads only `text`. The first line is the phone notification.
+function buildSummary(ready: number, photos: number, test = false): string {
+  const parts = [];
+  if (ready) parts.push(`${plural(ready, "visit", "visits")} with photos sorted still ${ready === 1 ? "needs" : "need"} a city email`);
+  if (photos) parts.push(`${plural(photos, "visit has", "visits have")} photos not sorted`);
+  return `📸 ${test ? "[TEST] " : ""}Admin Review: ${parts.join(", ")}`;
 }
 
-function photoState(v: CityVisit): string {
-  if (!v.photos_total) return "no photos";
-  return v.photos_sorted >= v.photos_total ? "✅ photos sorted" : "❌ photos not sorted";
-}
-
-function buildMessage(p: Pending, test = false): string {
-  const out = [`📸 ${test ? "[TEST] " : ""}*${cityPart(p.city.length)} · ${photoPart(p.photos.count)}*`];
-  if (p.city.length) {
-    out.push("", `🏙 *City email not sent (${p.city.length}):*`);
-    const shown = p.city.slice(0, MAX_LINES);
-    let city: string | null | undefined;
-    for (const v of shown) {
-      if (v.city !== city) {
-        city = v.city;
-        out.push(`*${esc(city ?? "City not recorded")} (${p.city.filter((x) => x.city === city).length})*`);
-      }
+function buildMessage(ready: CityVisit[], p: Pending, test = false): string {
+  const lead = test ? "[TEST] " : `${TAGS} `;
+  const out: string[] = [];
+  if (ready.length) {
+    out.push(`🏙 ${lead}*${GROUP}: photos sorted, city email not sent yet (${ready.length}):*`);
+    for (const v of ready.slice(0, MAX_LINES)) {
       const who = `${(v.client_code ?? "").trim()} ${(v.client_name ?? "").trim()}`.trim();
-      out.push(`• <${ADMIN}/review/${v.visit_id}|${esc(who)}> · ${day(v.visit_date)} · ${esc(v.driver ?? "driver not recorded")} · ${photoState(v)}`);
+      out.push(`• <${ADMIN}/review/${v.visit_id}|${esc(who)}> · ${day(v.visit_date)} · ${esc(v.driver ?? "driver not recorded")}`);
     }
-    if (p.city.length > MAX_LINES) out.push(`…and ${p.city.length - MAX_LINES} more in <${ADMIN}|Admin Review>.`);
+    if (ready.length > MAX_LINES) out.push(`…and ${ready.length - MAX_LINES} more in <${ADMIN}|Admin Review>.`);
   }
   if (p.photos.count) {
-    out.push("", `🖼 *Photos not sorted: ${plural(p.photos.count, "visit", "visits")}* · ${p.photos.last_7_days} from the last 7 days` +
+    if (out.length) out.push("");
+    out.push(`🖼 ${out.length ? "" : lead}*Photos not sorted: ${plural(p.photos.count, "visit", "visits")}* · ${p.photos.last_7_days} from the last 7 days` +
       (p.photos.oldest ? ` · oldest ${day(p.photos.oldest)}` : ""));
   }
   return out.join("\n");
@@ -98,14 +97,13 @@ Deno.serve(async (req) => {
   if (!r.ok) return json({ error: `pending: HTTP ${r.status} ${(await r.text()).slice(0, 200)}` }, 500);
   const p = (await r.json()) as Pending;
   if (!p || !Array.isArray(p.city) || typeof p.photos?.count !== "number") return json({ error: "pending: unexpected shape" }, 500);
-  if (!p.city.length && !p.photos.count) return json({ posted: false, reason: "nothing is waiting" });
+  const ready = p.city.filter(sorted).sort((a, b) => a.visit_date.localeCompare(b.visit_date) || (a.client_code ?? "").localeCompare(b.client_code ?? ""));
+  if (!ready.length && !p.photos.count) return json({ posted: false, reason: "nothing is waiting" });
 
-  const message = buildMessage(p, test);
+  const message = buildMessage(ready, p, test);
   // `text` carries the WHOLE list after the summary line: Viktor (Fred, 2026-10-07: he reads these posts and reminds
   // Diego) sees only `text`, never the blocks. The first line is still what a phone notification shows.
-  const text = `${buildSummary(p, test)}
-
-${message}`;
+  const text = `${buildSummary(ready.length, p.photos.count, test)}\n\n${message}`;
   if (dryRun) return json({ posted: false, dry_run: true, channel: CHANNEL, text, message });
 
   const token = Deno.env.get("SLACK_BOT_TOKEN") ?? null;
@@ -123,5 +121,5 @@ ${message}`;
   });
   const out = await res.json().catch(() => ({}));
   if (!out.ok) return json({ posted: false, error: `slack: ${out.error ?? res.status}` }, 502);
-  return json({ posted: true, city: p.city.length, photos: p.photos.count, channel: CHANNEL, as_app: "username" in as, ts: out.ts });
+  return json({ posted: true, city: ready.length, photos: p.photos.count, channel: CHANNEL, as_app: "username" in as, ts: out.ts });
 });

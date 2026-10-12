@@ -54,7 +54,8 @@ function buildSummary(n: number, test = false): string {
 
 function buildMessage(sheets: Sheet[], test = false): string {
   const n = sheets.length;
-  const head = `:memo: ${test ? "[TEST] " : ""}*${n} ${n === 1 ? "sheet is" : "sheets are"} not completed*`;
+  // Fred, 2026-10-12: tag Diego and Serena. Never on a [TEST] post (it would ping them).
+  const head = `:memo: ${test ? "[TEST] " : "<@U0AL9JZ4V7C> <@U0BKM57UPSS> "}*${n} ${n === 1 ? "sheet is" : "sheets are"} not completed*`;
   const lines = sheets.slice(0, MAX_LINES).map((s) => {
     const date = s.dump_date ?? s.service_date;
     const parts = [
