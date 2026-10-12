@@ -8,9 +8,18 @@
 //
 // AUTH: verify_jwt=true (pinned in config.toml) PLUS an in-handler service_role gate. Invoked by
 // public.fn_request_admin_review_reminder() from pg_cron `admin-review-reminder` (15:00 and 16:00 UTC; the wrapper
-// lets through only the run that is 11 AM in New York and makes no call when nothing is waiting).
+// lets through only the run that is 11 AM in New York).
 // Reads public.fn_admin_review_pending(). Posts on the ONE shared notification bot (SLACK_BOT_TOKEN, "UnclogMe Apps"),
 // shown as "Admin Review" with its icon, in the format of docs/reference/slack-notifications.md.
+// RUN RECORD (audit 2026-10-12, migration 2026-10-12_1310): the wrapper keeps the 11 AM New York gate and calls this
+// function once a day whether or not anything is waiting; this function decides, and posts nothing when nothing is
+// waiting. Every run writes ONE public.sync_log row: posted (status 'success', reason 'posted'), nothing to post
+// ('success', 'nothing is waiting') or error ('error': the list could not be read, no Slack token, Slack refused the
+// post, or the function threw). The run is wrapped, so a thrown error still writes its row, and a failed sync_log insert
+// never fails the post (it is logged and returned as `sync_log_error`). Real runs use sync_source
+// 'admin_review_reminder'; [TEST] runs use 'admin_review_reminder_test'. When the vault key is missing the wrapper
+// writes the 'error' row itself (the function is never called). A dry run, a caller that is not service_role and a
+// method other than POST write no row.
 // Body: { dry_run?: boolean, test?: boolean }  dry_run returns the message without posting; test posts it with
 // "[TEST]". Check: node scripts/checks/admin_review_reminder.mjs (runs this file against stubs).
 
@@ -21,12 +30,14 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CHANNEL = Deno.env.get("ADMIN_REVIEW_REMINDER_CHANNEL_ID") ?? "C0BJYHQKZM1"; // #apps-notifications
 const ADMIN = "https://admin.unclogme.app";
 const MAX_LINES = 40;
+const SOURCE = "admin_review_reminder";
 
 type CityVisit = {
   visit_id: number; client_code: string | null; client_name: string | null; city: string | null;
   visit_date: string; driver: string | null; photos_total: number; photos_sorted: number;
 };
 type Pending = { city: CityVisit[]; photos: { count: number; last_7_days: number; oldest: string | null } };
+type Outcome = { code: number; reply: Record<string, unknown>; log: Record<string, unknown> };
 
 const json = (p: unknown, status = 200) =>
   new Response(JSON.stringify(p), { status, headers: { "Content-Type": "application/json" } });
@@ -79,12 +90,33 @@ function buildMessage(ready: CityVisit[], p: Pending, test = false): string {
   return out.join("\n");
 }
 
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return json({ error: "POST only" }, 405);
-  if (bearerRole(req) !== "service_role") return json({ error: "service_role only" }, 403);
-  const body = await req.json().catch(() => ({}));
-  const dryRun = body.dry_run === true;
-  const test = body.test === true;
+// The run record: ONE public.sync_log row per run. Returns null, or why the row could not be written (never throws).
+async function logRun(source: string, startedAt: string, ok: boolean, details: Record<string, unknown>): Promise<string | null> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/sync_log`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        sync_source: source, started_at: startedAt, finished_at: new Date().toISOString(),
+        duration_seconds: (Date.now() - Date.parse(startedAt)) / 1000,
+        status: ok ? "success" : "error", rows_errored: ok ? 0 : 1,
+        error_details: ok ? null : { message: `The Admin Review Slack reminder did not post: ${details.reason} (${details.error})` },
+        details,
+      }),
+    });
+    if (r.ok) return null;
+    const e = `HTTP ${r.status} ${(await r.text()).slice(0, 200)}`;
+    console.error(`[admin-review-reminder] sync_log insert failed: ${e}`);
+    return e;
+  } catch (e) {
+    console.error(`[admin-review-reminder] sync_log insert failed: ${e}`);
+    return String(e);
+  }
+}
+
+async function run(dryRun: boolean, test: boolean): Promise<Outcome> {
+  const fail = (code: number, reason: string, error: string, more: Record<string, unknown> = {}): Outcome =>
+    ({ code, reply: { posted: false, error }, log: { posted: false, reason, error, ...more } });
 
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_admin_review_pending`, {
     method: "POST",
@@ -94,20 +126,24 @@ Deno.serve(async (req) => {
     },
     body: "{}",
   });
-  if (!r.ok) return json({ error: `pending: HTTP ${r.status} ${(await r.text()).slice(0, 200)}` }, 500);
+  if (!r.ok) return fail(500, "the list could not be read", `pending: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
   const p = (await r.json()) as Pending;
-  if (!p || !Array.isArray(p.city) || typeof p.photos?.count !== "number") return json({ error: "pending: unexpected shape" }, 500);
+  if (!p || !Array.isArray(p.city) || typeof p.photos?.count !== "number") return fail(500, "the list could not be read", "pending: unexpected shape");
   const ready = p.city.filter(sorted).sort((a, b) => a.visit_date.localeCompare(b.visit_date) || (a.client_code ?? "").localeCompare(b.client_code ?? ""));
-  if (!ready.length && !p.photos.count) return json({ posted: false, reason: "nothing is waiting" });
+  // every waiting visit is recorded, not only the 40 the post shows
+  const listed = { visit_ids: ready.map((v) => v.visit_id), counts: { city: ready.length, photos: p.photos.count } };
+  if (!ready.length && !p.photos.count) {
+    return { code: 200, reply: { posted: false, reason: "nothing is waiting" }, log: { posted: false, reason: "nothing is waiting", ...listed } };
+  }
 
   const message = buildMessage(ready, p, test);
   // `text` carries the WHOLE list after the summary line: Viktor (Fred, 2026-10-07: he reads these posts and reminds
   // Diego) sees only `text`, never the blocks. The first line is still what a phone notification shows.
   const text = `${buildSummary(ready.length, p.photos.count, test)}\n\n${message}`;
-  if (dryRun) return json({ posted: false, dry_run: true, channel: CHANNEL, text, message });
+  if (dryRun) return { code: 200, reply: { posted: false, dry_run: true, channel: CHANNEL, text, message }, log: {} };
 
   const token = Deno.env.get("SLACK_BOT_TOKEN") ?? null;
-  if (!token) return json({ error: "SLACK_BOT_TOKEN is not set" }, 500);
+  if (!token) return fail(500, "no Slack token", "SLACK_BOT_TOKEN is not set", listed);
   const as = await slackIdentity(token, "Admin Review", "admin-review");
   const blocks = [
     slackHeader("📸 Photos and city emails"),
@@ -120,6 +156,31 @@ Deno.serve(async (req) => {
     body: JSON.stringify({ channel: CHANNEL, text, blocks, unfurl_links: false, unfurl_media: false, ...as }),
   });
   const out = await res.json().catch(() => ({}));
-  if (!out.ok) return json({ posted: false, error: `slack: ${out.error ?? res.status}` }, 502);
-  return json({ posted: true, city: ready.length, photos: p.photos.count, channel: CHANNEL, as_app: "username" in as, ts: out.ts });
+  if (!out.ok) return fail(502, "Slack refused the post", `slack: ${out.error ?? res.status}`, listed);
+  return {
+    code: 200,
+    reply: { posted: true, city: ready.length, photos: p.photos.count, channel: CHANNEL, as_app: "username" in as, ts: out.ts },
+    log: { posted: true, reason: "posted", slack_ts: out.ts ?? null, ...listed },
+  };
+}
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (bearerRole(req) !== "service_role") return json({ error: "service_role only" }, 403);
+  const body = (await req.json().catch(() => null)) ?? {};
+  const dryRun = body.dry_run === true;
+  const test = body.test === true;
+  const startedAt = new Date().toISOString();
+
+  let o: Outcome;
+  try {
+    o = await run(dryRun, test);
+  } catch (e) {
+    // a network error, a reply that is not JSON or a malformed item: still a run, so it still gets its row
+    o = { code: 500, reply: { posted: false, error: String(e) },
+          log: { posted: false, reason: "the reminder stopped with an error", error: String(e) } };
+  }
+  if (dryRun) return json(o.reply, o.code);
+  const sync_log_error = await logRun(test ? `${SOURCE}_test` : SOURCE, startedAt, o.code < 400, { ...o.log, test });
+  return json({ ...o.reply, sync_log_error }, o.code);
 });

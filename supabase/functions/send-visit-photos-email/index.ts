@@ -764,12 +764,29 @@ Deno.serve(async (req: Request) => {
       .select('photo_link_id, service_phase')
       .in('photo_link_id', images.map((l: any) => l.id))
     if (cErr) throw new Error(`classification lookup failed: ${cErr.message}`)
+    // phaseBy feeds only phaseCounts (the per-phase numbers in the email body), never the gate below.
     const phaseBy = new Map<number, string>((cls ?? []).map((c: any) => [c.photo_link_id, c.service_phase]))
 
-    const unclassified = images.length - phaseBy.size
+    // 2026-10-12: the gate READS public.v_visit_photo_counts, the count the Admin Review queue chip and its
+    // "Send email to City" pre-check read, so the server and the app can never disagree on what "sorted" means.
+    // Since migration 2026-10-12_1335 that view counts only the 4 phases a reviewer can pick: 'unknown', which
+    // Confirm saves for a photo left untagged, is NOT sorted. This gate used to subtract the number of
+    // classification rows from the number of images, which let 62 untagged photos on 32 visits through
+    // (12:22 ET). Do not copy the phase list back here: scripts/checks/photo_sort_gate.mjs fails if the gate
+    // stops reading the view.
+    // No row for a visit that has photos = nothing counts as sorted (fail closed). A failed read throws, like the
+    // lookups above.
+    const { data: pc, error: pcErr } = await sb
+      .from('v_visit_photo_counts')
+      .select('total_images, classified_images')
+      .eq('visit_id', visitId)
+      .maybeSingle()
+    if (pcErr) throw new Error(`photo count lookup failed: ${pcErr.message}`)
+    const imageTotal = pc ? Number(pc.total_images) : images.length
+    const unclassified = imageTotal - (pc ? Number(pc.classified_images) : 0)
     if (includePhotos && unclassified > 0) {
       await logSend('skipped', `not_classified:${unclassified}`, 0, 0, null, null)
-      return json({ error: 'not_classified', unclassified, total: images.length }, 409, cors)
+      return json({ error: 'not_classified', unclassified, total: imageTotal }, 409, cors)
     }
 
     // -- (REMOVED 2026-08-18, Fred's ruling) THE TIME-BASED SETTLING GATE STOOD HERE ----
