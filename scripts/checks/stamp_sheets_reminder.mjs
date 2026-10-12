@@ -6,6 +6,10 @@
 // post shows as "Stamp Studio" ONLY when the bot holds chat:write.customize; every post starts with the header block
 // (Option A) and its sections rebuild the message under Slack's limits (the real _shared/slack-notify.ts is inlined,
 // so its scope gate, header and section split are what is tested).
+// Since 2026-10-12 (audit): every run that is not a dry run or check_bot writes ONE public.sync_log row (stubbed here),
+// also when every sheet is completed and when the function throws; a [TEST] run logs as stamp_sheets_reminder_test; a
+// failed insert never fails the post. Leaving out test-client sheets happens in SQL (derm.fn_stamp_open_sheets,
+// migration 2026-10-12_1315, whose VERIFY tests it); a stub cannot test what the database returns.
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
@@ -18,16 +22,34 @@ assert.ok(src.includes(IMPORT), 'the function imports the shared identity helper
 const js = [stripTypeScriptTypes(helper).replace(/^export /gm, ''), stripTypeScriptTypes(src.replace(IMPORT, ''))].join('\n');
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 
-async function run(sheets, { body = {}, role = 'service_role', slack = { ok: true, ts: '1.2' }, env = { SLACK_BOT_TOKEN: 'xoxb' }, scopes = 'chat:write,incoming-webhook' } = {}) {
-  const posts = [], auths = [];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// sheets: 'THROW' (network error), 'NOTJSON' (a body that is not JSON), or what the RPC returns; slack: 'THROW' or the reply
+async function run(sheets, { body = {}, role = 'service_role', slack = { ok: true, ts: '1.2' }, env = { SLACK_BOT_TOKEN: 'xoxb' }, scopes = 'chat:write,incoming-webhook', syncLog = 'ok', rpcStatus = 200, delay = 0, rawBody } = {}) {
+  const posts = [], auths = [], logs = [];
   let handler, rpcHeaders;
   const ctx = {
     Deno: { env: { get: (k) => ({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc', ...env })[k] },
             serve: (h) => { handler = h; } },
     fetch: async (url, opts = {}) => {
       url = String(url);
-      if (url.endsWith('/rest/v1/rpc/fn_stamp_open_sheets')) { rpcHeaders = opts.headers; return Response.json(sheets); }
-      if (url === 'https://slack.com/api/chat.postMessage') { posts.push(JSON.parse(opts.body)); auths.push(opts.headers.Authorization); return Response.json(slack); }
+      if (url.endsWith('/rest/v1/rpc/fn_stamp_open_sheets')) {
+        rpcHeaders = opts.headers;
+        if (delay) await sleep(delay);
+        if (sheets === 'THROW') throw new Error('rpc network down');
+        if (sheets === 'NOTJSON') return new Response('<html>gateway</html>', { status: 200 });
+        return Response.json(sheets, { status: rpcStatus });
+      }
+      if (url === 'https://x.supabase.co/rest/v1/sync_log') {
+        logs.push({ method: opts.method, headers: opts.headers, row: JSON.parse(opts.body) });
+        if (syncLog === 'THROW') throw new Error('network down');
+        if (syncLog === 'HTTP500') return new Response('{"message":"boom"}', { status: 500 });
+        return new Response(null, { status: 201 });
+      }
+      if (url === 'https://slack.com/api/chat.postMessage') {
+        if (slack === 'THROW') throw new Error('slack network down');
+        posts.push(JSON.parse(opts.body)); auths.push(opts.headers.Authorization); return Response.json(slack);
+      }
       if (url === 'https://slack.com/api/auth.test') {
         auths.push(opts.headers.Authorization);
         if (scopes === 'THROW') throw new Error('network down');
@@ -38,8 +60,8 @@ async function run(sheets, { body = {}, role = 'service_role', slack = { ok: tru
     Response, JSON, String, Number, Math, Date, Array, Error, atob, btoa, console, encodeURIComponent,
   };
   vm.runInNewContext(js, ctx);
-  const res = await handler(new Request('https://fn', { method: 'POST', headers: { authorization: 'Bearer ' + jwt(role) }, body: JSON.stringify(body) }));
-  return { status: res.status, body: await res.json(), posts, auths, rpcHeaders };
+  const res = await handler(new Request('https://fn', { method: 'POST', headers: { authorization: 'Bearer ' + jwt(role) }, body: rawBody ?? JSON.stringify(body) }));
+  return { status: res.status, body: await res.json(), posts, auths, rpcHeaders, logs };
 }
 
 const body = (p) => p.blocks.slice(1).map((b) => b.text.text).join('\n');
@@ -66,7 +88,7 @@ const two = await run([sheet('1', { dump_date: null, days_waiting: 1, placed: 0,
 assert.match(two.posts[0].text, /2 sheets are not completed/);
 assert.ok(body(two.posts[0]).includes('Manifest 1> · dumped Sep 20 · 0 of 9 stamped · Not started · waiting 1 day'), body(two.posts[0]));
 assert.ok(body(two.posts[0]).split('\n')[2].endsWith('In progress'), 'no "waiting" on the day of the dump');
-assert.ok(!/—/.test(body(two.posts[0]) + two.posts[0].text), 'no em dash in the message');
+assert.ok(!/\u2014/.test(body(two.posts[0]) + two.posts[0].text), 'no em dash in the message');
 
 // the header (Option A) comes first, and the sections rebuild the exact message
 const blocksOf = (p) => p.blocks;
@@ -130,5 +152,92 @@ assert.strictEqual(who.posts.length, 0, 'check_bot must not post');
 assert.strictEqual(who.body.bot, 'unclogme_apps');
 assert.deepStrictEqual(who.body.scopes, ['chat:write', 'chat:write.customize']);
 assert.strictEqual(who.body.posts_as_app, true);
+
+// ---- the run record: ONE public.sync_log row per real run (audit 2026-10-12, P3) ----
+const oneLog = (r) => { assert.strictEqual(r.logs.length, 1, 'exactly one sync_log row'); return r.logs[0]; };
+const l1 = oneLog(one);
+assert.strictEqual(l1.method, 'POST');
+assert.strictEqual(l1.headers.apikey, 'svc'); assert.strictEqual(l1.headers.Authorization, 'Bearer svc');
+assert.strictEqual(l1.headers['Content-Type'], 'application/json', 'PostgREST refuses a POST without it');
+assert.strictEqual(l1.headers.Prefer, 'return=minimal');
+assert.strictEqual(l1.row.sync_source, 'stamp_sheets_reminder');
+assert.strictEqual(l1.row.status, 'success'); assert.strictEqual(l1.row.rows_errored, 0); assert.strictEqual(l1.row.error_details, null);
+assert.ok(Date.parse(l1.row.started_at) <= Date.parse(l1.row.finished_at), 'started before finished');
+assert.deepStrictEqual(l1.row.details, { posted: true, reason: 'posted', slack_ts: '1.2', manifests: ['836624'], counts: { sheets: 1 }, test: false });
+assert.strictEqual(one.body.sync_log_error, null);
+assert.deepStrictEqual(oneLog(many).row.details.manifests.length, 45, 'every open sheet is recorded, not only the 40 shown');
+
+const lNone = oneLog(none);
+assert.strictEqual(lNone.row.status, 'success', 'every sheet completed is a successful run');
+assert.deepStrictEqual(lNone.row.details, { posted: false, reason: 'every sheet is completed', manifests: [], counts: { sheets: 0 }, test: false });
+
+const lRef = oneLog(refused);
+assert.strictEqual(lRef.row.status, 'error'); assert.strictEqual(lRef.row.rows_errored, 1);
+assert.match(lRef.row.details.error, /not_in_channel/); assert.deepStrictEqual(lRef.row.details.manifests, ['836624']);
+assert.match(lRef.row.error_details.message, /^The Stamp Studio Slack reminder did not post: Slack refused the post \(slack: not_in_channel\)$/);
+const lTok = oneLog(noTok);
+assert.strictEqual(lTok.row.status, 'error'); assert.match(lTok.row.details.error, /SLACK_BOT_TOKEN/);
+const readFail = await run({ message: 'boom' }, { rpcStatus: 500 });
+assert.strictEqual(readFail.status, 500); assert.strictEqual(readFail.posts.length, 0);
+assert.strictEqual(oneLog(readFail).row.status, 'error'); assert.match(oneLog(readFail).row.details.error, /HTTP 500/);
+const notList = await run({ message: 'boom' });
+assert.strictEqual(notList.status, 500); assert.strictEqual(oneLog(notList).row.details.error, 'open sheets: not a list');
+assert.strictEqual(oneLog(tst).row.details.test, true, 'a [TEST] run is marked test');
+assert.strictEqual(oneLog(tst).row.sync_source, 'stamp_sheets_reminder_test', 'a [TEST] run logs under its own source');
+assert.strictEqual(oneLog(one).row.details.test, false);
+assert.strictEqual(dry.logs.length, 0, 'a dry run writes no row');
+assert.strictEqual(manyDry.logs.length, 0);
+assert.strictEqual(anon.logs.length, 0, 'a refused caller writes no row');
+assert.strictEqual(who.logs.length, 0, 'check_bot writes no row');
+
+// the duration is measured, not a constant
+const slow = await run([sheet('836624')], { delay: 60 });
+assert.ok(oneLog(slow).row.duration_seconds >= 0.05, `duration ${oneLog(slow).row.duration_seconds}s covers a 60 ms read`);
+assert.deepStrictEqual(oneLog(two).row.details.manifests, ['1', '2'], 'manifests in the order of the post');
+const nullBody = await run([], { rawBody: 'null' });
+assert.strictEqual(nullBody.status, 200, 'a JSON null body is treated as {}');
+assert.strictEqual(oneLog(nullBody).row.sync_source, 'stamp_sheets_reminder');
+
+// a thrown error still writes ONE 'error' row: Slack network error, RPC network error, a body that is not JSON,
+// a null sheet; nothing is posted and the reply is a 500 that names the error
+for (const [name, sheets, opts, msg] of [
+  ['slack throws', [sheet('836624')], { slack: 'THROW' }, /slack network down/],
+  ['rpc throws', 'THROW', {}, /rpc network down/],
+  ['rpc not json', 'NOTJSON', {}, /JSON|Unexpected token/],
+  ['null sheet', [null], {}, /TypeError|null/],
+]) {
+  const r = await run(sheets, opts);
+  assert.strictEqual(r.status, 500, `${name}: 500`);
+  assert.strictEqual(r.posts.length, 0, `${name}: nothing posted`);
+  assert.strictEqual(r.body.posted, false);
+  const row = oneLog(r).row;
+  assert.strictEqual(row.status, 'error', `${name}: an error row`);
+  assert.strictEqual(row.details.reason, 'the reminder stopped with an error');
+  assert.match(row.details.error, msg, `${name}: ${row.details.error}`);
+  assert.match(row.error_details.message, /^The Stamp Studio Slack reminder did not post: the reminder stopped with an error \(/);
+}
+assert.strictEqual(oneLog(await run('THROW', { body: { test: true } })).row.sync_source, 'stamp_sheets_reminder_test', 'a thrown [TEST] run logs as test');
+const thrownDry = await run('THROW', { body: { dry_run: true } });
+assert.strictEqual(thrownDry.status, 500); assert.strictEqual(thrownDry.logs.length, 0, 'a thrown dry run writes no row');
+
+// a failed sync_log insert never fails the post
+for (const mode of ['HTTP500', 'THROW']) {
+  const r = await run([sheet('836624')], { syncLog: mode });
+  assert.strictEqual(r.posts.length, 1, `posted although sync_log failed (${mode})`);
+  assert.strictEqual(r.status, 200); assert.strictEqual(r.body.posted, true);
+  assert.match(r.body.sync_log_error, mode === 'HTTP500' ? /^HTTP 500 / : /network down/);
+  const n = await run([], { syncLog: mode });
+  assert.strictEqual(n.status, 200); assert.strictEqual(n.body.reason, 'every sheet is completed');
+  const th = await run('THROW', { syncLog: mode });
+  assert.strictEqual(th.status, 500, 'a thrown run with a failing log is still a clean 500'); assert.ok(th.body.sync_log_error);
+}
+
+// the header comment states today's schedule (11 AM, 15:00 and 16:00 UTC), not the old 10 AM one
+assert.ok(/once a day at 11 AM Eastern/.test(src) && /15:00 and 16:00[\s/]*UTC/.test(src), 'header says 11 AM, 15:00 and 16:00 UTC');
+assert.ok(!/14:00 and 15:00/.test(src) && !/run that is 10 AM/.test(src), 'no stale 10 AM schedule in the header');
+// ... and the run-record contract the health check relies on
+for (const s of [/once a day whether or not a sheet is open/, /sync_source\s*\n?\/\/\s*'stamp_sheets_reminder'; \[TEST\] runs use 'stamp_sheets_reminder_test'/,
+  /a thrown error still writes its row/, /test or fixture clients by public\.fn_is_non_customer/]) assert.match(src, s);
+assert.ok(!/makes no call at all when nothing is open/.test(src), 'the old wrapper rule is gone from the header');
 
 console.log('stamp_sheets_reminder: all checks passed');

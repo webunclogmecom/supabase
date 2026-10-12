@@ -1,15 +1,27 @@
-// stamp-sheets-reminder: once a day at 10 AM Eastern, tells #apps-notifications which DERM address
-// sheets are not completed in the Stamp Studio.
+// stamp-sheets-reminder: once a day at 11 AM Eastern (10 AM until 2026-10-07), tells #apps-notifications which DERM
+// address sheets are not completed in the Stamp Studio.
 //
 // Fred, 2026-10-05: "we need to create a functionality of sending notifications once per day at
 // 10 AM EST through slack about any Manifest not completed at the Stamp Studio App", channel
 // #apps-notifications (C0BJYHQKZM1), and "post nothing" on a day when every sheet is completed.
+// Fred, 2026-10-07: every scheduled notification at 11 AM ET.
 //
 // AUTH: verify_jwt=true (pinned in config.toml) PLUS an in-handler service_role gate. Invoked by
-// public.fn_request_stamp_sheets_reminder() from pg_cron `stamp-sheets-reminder` (14:00 and 15:00
-// UTC; the wrapper lets through only the run that is 10 AM in New York, so the hour is right in
-// summer and in winter, and it makes no call at all when nothing is open).
-// Reads derm.fn_stamp_open_sheets() (the Studio's own list, derm.v_stamp_sheets, not completed).
+// public.fn_request_stamp_sheets_reminder() from pg_cron `stamp-sheets-reminder` (15:00 and 16:00
+// UTC; the wrapper lets through only the run that is 11 AM in New York, so the hour is right in
+// summer and in winter).
+// Reads derm.fn_stamp_open_sheets() (the Studio's own list, derm.v_stamp_sheets, not completed, minus a sheet whose
+// clients are all test or fixture clients by public.fn_is_non_customer: migration 2026-10-12_1315, so a test sheet
+// never pings Diego and Serena; the Studio app itself still lists it).
+// RUN RECORD (audit 2026-10-12, migration 2026-10-12_1310): the wrapper keeps the 11 AM New York gate and calls this
+// function once a day whether or not a sheet is open; this function decides, and posts nothing when every sheet is
+// completed. Every run writes ONE public.sync_log row: posted (status 'success', reason 'posted'), nothing to post
+// ('success', 'every sheet is completed') or error ('error': the list could not be read, no Slack token, Slack refused
+// the post, or the function threw). The run is wrapped, so a thrown error still writes its row, and a failed sync_log
+// insert never fails the post (it is logged and returned as `sync_log_error`). Real runs use sync_source
+// 'stamp_sheets_reminder'; [TEST] runs use 'stamp_sheets_reminder_test'. When the vault key is missing the wrapper
+// writes the 'error' row itself (the function is never called). A dry run, check_bot, a caller that is not
+// service_role and a method other than POST write no row.
 // Posts with chat.postMessage on the ONE shared notification bot (SLACK_BOT_TOKEN, the Slack app renamed from
 // "Dump Visits" to "UnclogMe Apps"; Fred, 2026-10-05: one bot for every app, each message labelled with its
 // app), shown as "Stamp Studio" with the Stamp icon once the bot holds chat:write.customize
@@ -27,11 +39,13 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CHANNEL = Deno.env.get("STAMP_REMINDER_CHANNEL_ID") ?? "C0BJYHQKZM1"; // #apps-notifications
 const STUDIO = "https://stamp.unclogme.app";
 const MAX_LINES = 40;
+const SOURCE = "stamp_sheets_reminder";
 
 type Sheet = {
   manifest: string; service_date: string | null; dump_date: string | null;
   placed: number; total: number; pages: number; status: string; days_waiting: number | null;
 };
+type Outcome = { code: number; reply: Record<string, unknown>; log: Record<string, unknown> };
 
 const json = (p: unknown, status = 200) =>
   new Response(JSON.stringify(p), { status, headers: { "Content-Type": "application/json" } });
@@ -71,10 +85,77 @@ function buildMessage(sheets: Sheet[], test = false): string {
   return [head, ...lines].join("\n");
 }
 
+// The run record: ONE public.sync_log row per run. Returns null, or why the row could not be written (never throws).
+async function logRun(source: string, startedAt: string, ok: boolean, details: Record<string, unknown>): Promise<string | null> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/sync_log`, {
+      method: "POST",
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({
+        sync_source: source, started_at: startedAt, finished_at: new Date().toISOString(),
+        duration_seconds: (Date.now() - Date.parse(startedAt)) / 1000,
+        status: ok ? "success" : "error", rows_errored: ok ? 0 : 1,
+        error_details: ok ? null : { message: `The Stamp Studio Slack reminder did not post: ${details.reason} (${details.error})` },
+        details,
+      }),
+    });
+    if (r.ok) return null;
+    const e = `HTTP ${r.status} ${(await r.text()).slice(0, 200)}`;
+    console.error(`[stamp-sheets-reminder] sync_log insert failed: ${e}`);
+    return e;
+  } catch (e) {
+    console.error(`[stamp-sheets-reminder] sync_log insert failed: ${e}`);
+    return String(e);
+  }
+}
+
+async function run(dryRun: boolean, test: boolean, token: string | null): Promise<Outcome> {
+  const fail = (code: number, reason: string, error: string, more: Record<string, unknown> = {}): Outcome =>
+    ({ code, reply: { posted: false, error }, log: { posted: false, reason, error, ...more } });
+
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_stamp_open_sheets`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json", "Content-Profile": "derm", "Accept-Profile": "derm",
+      "x-app-source": "stamp-sheets-reminder",
+    },
+    body: "{}",
+  });
+  if (!r.ok) return fail(500, "the list could not be read", `open sheets: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const sheets = ((await r.json()) ?? []) as Sheet[];
+  if (!Array.isArray(sheets)) return fail(500, "the list could not be read", "open sheets: not a list");
+  // every open sheet is recorded, not only the 40 the post shows
+  const listed = { manifests: sheets.map((s) => s.manifest), counts: { sheets: sheets.length } };
+  if (!sheets.length) {
+    return { code: 200, reply: { posted: false, reason: "every sheet is completed" }, log: { posted: false, reason: "every sheet is completed", ...listed } };
+  }
+
+  const message = buildMessage(sheets, test);
+  const text = buildSummary(sheets.length, test);
+  if (dryRun) return { code: 200, reply: { posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, text, message }, log: {} };
+
+  if (!token) return fail(500, "no Slack token", "SLACK_BOT_TOKEN is not set", listed);
+  const as = await slackIdentity(token, "Stamp Studio", "stamp-studio");
+  const res = await fetch("https://slack.com/api/chat.postMessage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ channel: CHANNEL, text, blocks: [slackHeader("📝 Stamp Studio sheets"), ...slackSections(message)],
+      unfurl_links: false, unfurl_media: false, ...as }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!out.ok) return fail(502, "Slack refused the post", `slack: ${out.error ?? res.status}`, listed);
+  return {
+    code: 200,
+    reply: { posted: true, count: sheets.length, channel: CHANNEL, as_app: "username" in as, ts: out.ts },
+    log: { posted: true, reason: "posted", slack_ts: out.ts ?? null, ...listed },
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (bearerRole(req) !== "service_role") return json({ error: "service_role only" }, 403);
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
   const dryRun = body.dry_run === true;
   const test = body.test === true;
   const token = Deno.env.get("SLACK_BOT_TOKEN") ?? null;
@@ -88,33 +169,16 @@ Deno.serve(async (req) => {
       scopes, posts_as_app: scopes.includes("chat:write.customize") });
   }
 
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_stamp_open_sheets`, {
-    method: "POST",
-    headers: {
-      apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`,
-      "Content-Type": "application/json", "Content-Profile": "derm", "Accept-Profile": "derm",
-      "x-app-source": "stamp-sheets-reminder",
-    },
-    body: "{}",
-  });
-  if (!r.ok) return json({ error: `open sheets: HTTP ${r.status} ${(await r.text()).slice(0, 200)}` }, 500);
-  const sheets = ((await r.json()) ?? []) as Sheet[];
-  if (!Array.isArray(sheets)) return json({ error: "open sheets: not a list" }, 500);
-  if (!sheets.length) return json({ posted: false, reason: "every sheet is completed" });
-
-  const message = buildMessage(sheets, test);
-  const text = buildSummary(sheets.length, test);
-  if (dryRun) return json({ posted: false, dry_run: true, count: sheets.length, channel: CHANNEL, text, message });
-
-  if (!token) return json({ error: "SLACK_BOT_TOKEN is not set" }, 500);
-  const as = await slackIdentity(token, "Stamp Studio", "stamp-studio");
-  const res = await fetch("https://slack.com/api/chat.postMessage", {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ channel: CHANNEL, text, blocks: [slackHeader("📝 Stamp Studio sheets"), ...slackSections(message)],
-      unfurl_links: false, unfurl_media: false, ...as }),
-  });
-  const out = await res.json().catch(() => ({}));
-  if (!out.ok) return json({ posted: false, error: `slack: ${out.error ?? res.status}` }, 502);
-  return json({ posted: true, count: sheets.length, channel: CHANNEL, as_app: "username" in as, ts: out.ts });
+  const startedAt = new Date().toISOString();
+  let o: Outcome;
+  try {
+    o = await run(dryRun, test, token);
+  } catch (e) {
+    // a network error, a reply that is not JSON or a malformed sheet: still a run, so it still gets its row
+    o = { code: 500, reply: { posted: false, error: String(e) },
+          log: { posted: false, reason: "the reminder stopped with an error", error: String(e) } };
+  }
+  if (dryRun) return json(o.reply, o.code);
+  const sync_log_error = await logRun(test ? `${SOURCE}_test` : SOURCE, startedAt, o.code < 400, { ...o.log, test });
+  return json({ ...o.reply, sync_log_error }, o.code);
 });
