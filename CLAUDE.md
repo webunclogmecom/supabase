@@ -5156,6 +5156,40 @@ Nine things that will bite someone who does not know them:
    `public.fn_intake_whole_gallons` is the one reading and `get_intake_compare` answers `not_savable` for prose. Never
    move that key.
 
+### 🛑 "HAS THIS VISIT'S CITY EMAIL GONE?" HAS ONE ANSWER: `public.v_visit_city_email_state` (2026-10-12)
+
+Diego, replying to the 11 AM Admin Review post that listed 5 visits as "city email not sent": *"plug in is a unclog ...
+kc is waiting manifest so off course I can not sent it ... a la carte, I already sent it o october 9"*. All 5 were
+false: two unclog jobs, three sent from the DERM Tracker. The audit that followed found SEVEN places answering the
+question, each reading a different send log: the post (Admin Review sends only), the Admin Review card, button and
+server gate (`visit_photo_email_sends` only), the Admin Review dialog and the DERM Tracker views (`derm_email_sends`
+only), `send-derm-email` (no check at all), and the sweep (`derm.v_city_email_candidates`, both, per pair). It had
+already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallandale Beach got 6247 three times and
+6138 twice.
+- **`public.v_visit_city_email_state`** (`2026-10-12_1305`, authenticated + service_role SELECT): one row per live
+  visit, `state` in precedence order `not_completed`, `sent` (the city has the manifest: a real Admin Review send that
+  carried it, a real DERM Tracker or sweep city row; `sent_via`, `city_email_sent_at` = the FIRST),
+  `report_sent_manifest_follows` (Admin Review sent the report without the manifest; the sweep sends it),
+  `not_derm`, `not_for_city` (grey water), `no_city_email`, `before_go_live` (dated before 2026-09-15; Fred: *"we
+  don't care about the old for this"*), `waiting_manifest`, `needs_city_email`. **New readers read this; never
+  rebuild the rule.** `fn_admin_review_pending` reads it. ⚠ `derm_email_sends` has no `visit_id`, so a DERM Tracker
+  send is credited to every visit of that client on that manifest (0 cases today; adding the column is cycle 2).
+- **Cycle 2, NOT done:** the Admin Review card and server gate and the DERM Tracker visit page and `send-derm-email`
+  still read only their own send log, so each app still shows "not sent" for a visit the other app sent (20 and 5
+  visits on 2026-10-12). They need app changes (Lovable) plus server guards shipped together; a server refusal without
+  the app change would strand the user.
+- **The daily check:** `public.log_notification_health()` (cron `notification-health`, 13:15 UTC, `2026-10-12_1400`,
+  registered in `ops.v_health_items` and `ops.v_health_status`) recomputes the list from the RAW send logs and reports
+  `city_list_false_positive`, `city_list_missed`, `manifest_follow_stalled`, `city_inbox_missing`, `reminder_not_run`,
+  `no_manifest_after_14_days` and `city_email_duplicate` into Fred's health email. First run: 6138 and 6247
+  (duplicates, clear Oct 16) and property 1113 (324-BIB, Surfside, no city inbox; open with Fred: the city email may
+  be for the Broward zone only).
+- **Run records:** both 11 AM reminders write one `sync_log` row per run (`admin_review_reminder`,
+  `stamp_sheets_reminder`, `<source>_test`), and their wrappers call the edge function every day (`2026-10-12_1310`).
+- **Photos:** `v_visit_photo_counts` counts only `before`/`after`/`internal`/`extra` as sorted since `2026-10-12_1335`
+  (a photo saved as `unknown` shows untagged on the review page and is now unsorted everywhere, the send gate included).
+- Rules for any notification: `docs/reference/slack-notifications.md` section 6, step 3b.
+
 ## Documentation map
 
 | Doc | When to read |

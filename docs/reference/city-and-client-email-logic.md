@@ -24,6 +24,17 @@ different than when we try to send it at the DERM App, which is not of a problem
 
 ---
 
+## "Has this visit's city email gone?": one view (2026-10-12)
+
+The four senders log to two tables (`visit_photo_email_sends` for #1, `derm_email_sends` for #2 to #4), and until
+2026-10-12 every reader picked one of them. **`public.v_visit_city_email_state`** reads both and gives each live visit
+one state (`sent`, `report_sent_manifest_follows`, `not_derm`, `not_for_city`, `no_city_email`, `before_go_live`,
+`waiting_manifest`, `needs_city_email`, `not_completed`). The 11 AM Admin Review post reads it; the app screens and the
+send-time guards do not yet (cycle 2, see Supabase `CLAUDE.md`, the section on this view). A daily check
+(`notification-health`) reports a visit whose city got the manifest more than once.
+
+---
+
 ## One letter, one file
 
 Both city senders render `supabase/functions/_shared/city-letter.ts`. Before 2026-09-02 they each

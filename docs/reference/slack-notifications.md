@@ -130,6 +130,10 @@ Each of these was set by Fred or learned the hard way; the source is in brackets
   blocks per message. `slackSections` splits text on line breaks to stay under 3,000 (a 41-line Stamp reminder is
   4,872 characters, which Slack refuses in one section).
 - The bot posts only in channels it is a member of: `/invite @UnclogMe Apps` (the name after the rename).
+- **Every scheduled reminder leaves a run record** (since 2026-10-12): one `public.sync_log` row per run, sync_source
+  `admin_review_reminder` / `stamp_sheets_reminder` (`<source>_test` for a `[TEST]` run), status `success` (posted, or
+  nothing to post) or `error`, with what it listed in `details`. The 11 AM wrappers call the edge function every day
+  (`2026-10-12_1310`), so a quiet day and a day the reminder never ran no longer look the same.
 
 ## 6. Building a new notification
 
@@ -169,9 +173,19 @@ Each of these was set by Fred or learned the hard way; the source is in brackets
    ```
 
    The icon key is the app's folder under `manifests/_brand/favicons/` (every staff app has one).
+3b. 🛑 **Read the app's own answer, never rebuild it.** If the message says something an app already decides (a city
+   email is done, a sheet is completed, a pickup is reported), the SQL behind it reads that app's canonical view or
+   function. It never re-derives the rule. The Admin Review post did, with a narrower "already sent" than the apps, and
+   on 2026-10-12 all 5 visits it listed were false (Diego: *"plug in is a unclog ... a la carte, I already sent it o
+   october 9"*); on 2026-10-08 the same list made the office re-send two cities' manifests. If no canonical object
+   exists, make one first and point the app at it too.
 4. **Write a check** that runs the real function against stubs and asserts the message: header first, sections
    rebuild the `text`, limits respected, nothing posted on a dry run. Model:
    `scripts/checks/stamp_sheets_reminder.mjs` (it inlines the real `slack-notify.ts`). Mutation-test it.
+   ⚠ A stub check tests the MESSAGE, never the data: it cannot see a query that lists the wrong rows. The daily
+   `notification-health` check (`public.log_notification_health`, 9:15 AM ET, `2026-10-12_1400`) compares the Admin
+   Review list with the raw send logs and feeds Fred's health email. A new reminder that lists records gets an item
+   there too.
 5. **Have Slack validate the message without posting it.** `chat.scheduleMessage` validates blocks; schedule each
    payload 90 days ahead, delete it at once with `chat.deleteScheduledMessage`, then read
    `chat.scheduledMessages.list` to prove nothing is left. Include a deliberately broken payload as a control (a
@@ -193,16 +207,22 @@ Each of these was set by Fred or learned the hard way; the source is in brackets
 | DUMP Schedule | driver confirms the load | `📋 Dumping · load reported` | `📋 *Reported on this load (N):*` + list, then `⚠️ *Missing, completed but not added (N):*` + list (or `⚠️ *Missing:* could not be checked.`), then at Homestead `⚠️ *In Broward, file at Pompano (N):*` + list | reply | same |
 | DUMP Schedule | driver adds older visits to a dump | `📝 Dumping · added to the manifest` | `📝 *<driver> added N to the manifest*` + list | reply under the chosen dump | same |
 | DUMP Schedule | driver removes visits from the manifest, OR presses Undo all on the crib sheet (since 2026-10-07) | `🗑 Dumping · removed from the manifest` | `🗑 *<driver> removed N from the manifest*` + list | reply when it belongs to one dump, else on its own | `[TEST]` from that dump (never from the caller) |
-| DERM Stamp Studio (`stamp-sheets-reminder`) | 11 AM ET daily (10 AM until 2026-10-07), only when a sheet is not completed | `📝 Stamp Studio sheets` | `📝 @Diego @Serena *N sheets are not completed*` + one line per sheet (tags since 2026-10-12, never on a test); `text` (phone) = `📝 Stamp Studio: N sheets are not completed` | on its own | `{"test": true}` |
+| DERM Stamp Studio (`stamp-sheets-reminder`) | 11 AM ET daily (10 AM until 2026-10-07), only when a sheet is not completed | `📝 Stamp Studio sheets` | `📝 @Diego @Serena *N sheets are not completed*` + one line per sheet (tags since 2026-10-12, never on a test; sheets naming only test or fixture clients are left out since `2026-10-12_1315`); `text` (phone) = `📝 Stamp Studio: N sheets are not completed` | on its own | `{"test": true}` |
 | Admin Review (`admin-review-reminder`) | 11 AM ET daily, only when something is waiting | `📸 Photos and city emails` | `🏙 @Diego @Serena *Broward: photos sorted, city email not sent yet (N):*`, one line per visit whose photos are ALL sorted (link to `admin.unclogme.app/review/<visit>` · date · driver), Hallandale Beach and Surfside together under one name; then `🖼 *Photos not sorted: M visits* · K from the last 7 days · oldest <date>` (the tags move to this line when the list is empty), and an `Open Admin Review` link; `text` (phone) = `📸 Admin Review: N visits with photos sorted still need a city email, M visits have photos not sorted` + the full message. Visits with photos not sorted or no photos are not listed (Fred, 2026-10-12: "shorten it"). No tags on a test | on its own | `{"test": true}` |
 
 **Every scheduled reminder posts at 11 AM ET** (Fred, 2026-10-07: "move all notifications to that same time"); the
-DUMP messages fire when a driver taps. The Admin Review lists come from `public.fn_admin_review_pending()` (city: completed
-since 2026-09-15, the city has an email on file, not grey water, no real send from Admin Review; photos: the queue's
-"Photos Not Sorted"). It only sees sends made from Admin Review. Fred plans for Viktor to read these posts and act on
+DUMP messages fire when a driver taps. The Admin Review lists come from `public.fn_admin_review_pending()`. City: the visits whose state is
+`needs_city_email` in **`public.v_visit_city_email_state`** (since `2026-10-12_1305`; one row per live visit, the one
+answer to "has this visit's city email gone?": a real Admin Review send that carried the manifest, a DERM Tracker "Send
+to city" or the automatic sweep all count; not DERM-required, grey water, no inbox, no manifest yet and visits dated
+before 2026-09-15 each have their own state), dated 2026-09-15 or later, test clients left out, and the edge function
+keeps only those whose photos are all sorted. Photos: the queue's "Photos Not Sorted" (`v_visit_photo_counts`; a photo
+saved as `unknown` is not sorted since `2026-10-12_1335`). Fred plans for Viktor to read these posts and act on
 them, so keep each line's shape stable. ⚠ Viktor reads only a post's `text`, never its blocks, so the Admin Review
 post's `text` is its summary line followed by the WHOLE list (an exception to the one-line `text` rule above; the
-phone still shows the first line). Any post Viktor must act on needs the same. Migration `2026-10-07_1305`, check `scripts/checks/admin_review_reminder.mjs`.
+phone still shows the first line). Any post Viktor must act on needs the same. (Viktor's own 11:15 reminder to Diego
+was retired 2026-10-12: the post tags Diego itself.) Migrations `2026-10-07_1305`, `2026-10-12_1120`, `2026-10-12_1305`,
+check `scripts/checks/admin_review_reminder.mjs`.
 
 **The DUMP load lines** (`loadLines()`, checked by `scripts/checks/dump_load_lines.mjs`), each left out when its count
 could not be read:
@@ -214,7 +234,8 @@ could not be read:
 - `🗂 *N* other completed DERM pickups are still waiting to be reported (any truck).`
 
 **The counts behind them** come from `public.dump_manifest_handout_list` (the driver's pickups completed after his
-last dump that started BEFORE this one; [TEST] dumps and test clients only on a [TEST] dump), and a dump soft-deleted
+last dump that started BEFORE this one, and since `2026-10-12_1330` completed no later than 30 minutes after this
+dump began; a [TEST] dump lists, confirms and links only test and fixture clients, a real dump never lists them), and a dump soft-deleted
 anywhere releases its marks (`trg_zz_dump_delete_releases_holds`), so its pickups show as Missing again
 (`docs/migrations/2026-10-07_1225_dump_load_window_and_deleted_dump_holds.sql`).
 
