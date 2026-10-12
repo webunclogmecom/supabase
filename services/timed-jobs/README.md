@@ -25,6 +25,7 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
 | service | config | cron (UTC) | source | variables | status |
 |---|---|---|---|---|---|
 | samsara-gps | `services.json` | `*/5 * * * *` | `railway_samsara_gps` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, AUTO_LOOKBACK_H=48, RUN_TIMEOUT_MIN=30 | live since 2026-10-07 12:15 ET; sole runner since 2026-10-08 10:48 ET (GitHub schedule removed); health-watched at 30 min |
+| samsara-readings | `services.json` | `*/5 * * * *` | `railway_samsara_readings` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, RUN_TIMEOUT_MIN=10 | created 2026-10-12 (tank sensors on Moises + truck RPM/PTO/geofence events, plan `docs/superpowers/specs/2026-10-12-samsara-tank-sensors-db-plan.md`); history from 2026-08-20 backfilled locally the same day (sync_log 77921 = the resume point); waits on its three secrets; health watch added after its first Railway run |
 
 Planned next (plan section 3.3): note-photo, notes-import (temporary), jobber-visit-nightly.
 

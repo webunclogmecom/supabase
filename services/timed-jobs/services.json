@@ -5,7 +5,24 @@
     "samsara-gps": {
       "startCommand": "node scripts/sync/run_logged.js railway_samsara_gps scripts/sync/cron_samsara_locations_history.js",
       "cronSchedule": "*/5 * * * *",
-      "watchPatterns": ["scripts/sync/**", "scripts/lib/**", "package.json", "package-lock.json"],
+      "watchPatterns": [
+        "scripts/sync/**",
+        "scripts/lib/**",
+        "package.json",
+        "package-lock.json"
+      ],
+      "restartPolicyType": "NEVER",
+      "builder": "RAILPACK"
+    },
+    "samsara-readings": {
+      "startCommand": "node scripts/sync/run_logged.js railway_samsara_readings scripts/sync/cron_samsara_tank_readings.js",
+      "cronSchedule": "*/5 * * * *",
+      "watchPatterns": [
+        "scripts/sync/**",
+        "scripts/lib/**",
+        "package.json",
+        "package-lock.json"
+      ],
       "restartPolicyType": "NEVER",
       "builder": "RAILPACK"
     }
