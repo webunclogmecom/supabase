@@ -170,9 +170,10 @@ create table public.vehicle_tank_configurations (
   vehicle_tank_id      bigint not null references public.vehicle_tanks(id) on delete restrict,
   effective_from       timestamptz not null,
   shape                text not null check (shape = 'horizontal_cylinder'),   -- ponytail: widen when a strapping chart arrives (D1)
-  diameter_meters      numeric(6,4) not null check (diameter_meters > 0),
-  sensor_offset_meters numeric(6,4) not null check (sensor_offset_meters >= 0), -- sensor face to max fill (Samsara "Height Offset")
-  capacity_gallons     numeric(8,1) check (capacity_gallons > 0),             -- NULL = unknown, never guessed
+  -- upper bounds also refuse NaN ('NaN'::numeric > 0 is TRUE in Postgres; review of 2026-10-12)
+  diameter_meters      numeric(6,4) not null check (diameter_meters > 0 and diameter_meters < 5),
+  sensor_offset_meters numeric(6,4) not null check (sensor_offset_meters >= 0 and sensor_offset_meters < 5), -- sensor face to max fill (Samsara "Height Offset")
+  capacity_gallons     numeric(8,1) check (capacity_gallons > 0 and capacity_gallons < 100000), -- NULL = unknown, never guessed
   basis                text not null check (basis in ('fitted_from_readings','vendor_profile','owner_confirmed','measured_on_truck')),
   notes                text,
   created_at           timestamptz not null default now(),
@@ -180,7 +181,8 @@ create table public.vehicle_tank_configurations (
   unique (id, vehicle_tank_id)
 );
 create unique index vtc_live_effective on public.vehicle_tank_configurations (vehicle_tank_id, effective_from)
-  where superseded_at is null;                                                -- also serves the FK
+  where superseded_at is null;                                                -- partial: does NOT serve the FK
+create index vehicle_tank_configurations_tank_idx on public.vehicle_tank_configurations (vehicle_tank_id);  -- the FK
 -- guard('superseded_at'); audit_vehicle_tank_configurations
 
 create table public.tank_sensors (               -- one row per PHYSICAL LM11 device (stable: its gateway serial)
@@ -205,7 +207,9 @@ create table public.tank_sensor_installations (
   exclude using gist (vehicle_tank_id with =, tstzrange(installed_at, removed_at) with &&) where (superseded_at is null)
 );
 create index tank_sensor_installations_tank_idx on public.tank_sensor_installations (vehicle_tank_id);
--- the first GiST index leads with tank_sensor_id and serves that FK
+create index tank_sensor_installations_sensor_idx on public.tank_sensor_installations (tank_sensor_id);
+-- the FK needs this plain index: the GiST exclusions are partial, and a parent DELETE's check (WHERE fk = $1)
+-- cannot use a partial index
 -- guard('removed_at','superseded_at'); audit_tank_sensor_installations
 ```
 
@@ -469,13 +473,20 @@ symbol-to-number map, object field names), with the pinned map [O, read 2026-10-
 `remoteSensingDistance` = `meter`; `fillPercent` = `percent`; `engineRpm` = `rpm`; `ecuPowerTakeoff` = `{off:0, on:1}`;
 `addressEntry` / `addressExit` = Object with field `addressIds`. A mismatch **skips that stream only**, records it in
 the run summary (`skipped_streams`), and the other streams still ingest. The run still exits 0; the skip surfaces as
-item T4 (section 8). Because resume has no floor, nothing is lost once the guard is updated.
+item T4 (section 8). A run that skipped a stream is not a resume point (`resume_point` false in its summary), so
+every later run starts again from the last run that stored every stream: nothing is lost once the guard is updated
+(review of 2026-10-12: the first draft moved the cursor past the skipped data).
 
 **Resume (one cursor for the job, no floor; V32, V38).**
-- Window start = `started_at` of the newest successful `railway_samsara_readings` runner row, minus 30 minutes. Window
-  end = now. If the window is longer than 72 hours (an outage), pull it in 72-hour chunks, oldest first, and record
+- Window start = `started_at` of the newest successful `railway_samsara_readings` runner row whose summary has
+  `resume_point = true`, minus 30 minutes. Window end = now. `resume_point` is true only when no stream was skipped
+  and the run did not start later than that cursor (a targeted `--from` catch-up after an outage must not hide the
+  gap before it). A dry run is never a resume point, and `run_logged.js` refuses `--dry-run` outright, because any
+  `sync_log` row counts as a fresh run for the staleness check. If the window is longer than 72 hours (an outage), pull it in 72-hour chunks, oldest first, and record
   the recovered span in the summary.
 - No successful run yet: start at the backfill start (2026-08-20 14:00Z).
+- A real run refuses to start (exit 1) when `entity_source_links` holds no `tank_sensor` or no `vehicle` samsara link:
+  it would succeed while storing nothing and later runs would start after that history.
 - **Deep pass:** once a day (no successful run with `summary.deep_pass = true` in the last 24 h) the overlap becomes
   48 hours. Inserted rows older than the normal window start are counted as `deep_pass_recovered`.
 - Why one cursor and not one per entity (a change from revision 1): site events store a filtered subset, so a
@@ -496,12 +507,14 @@ chunks of 1,000, identical key sets in every element (rule 44), header `X-App-So
 returned row count is the inserted count.
 
 **Run summary and exit codes (V37, V45).** The job prints one final stdout line `RUN_SUMMARY {json}` with per-stream
-`received / inserted / skipped / unresolved`, `skipped_streams`, `unlinked_level_assets`, `deep_pass`,
-`deep_pass_recovered`, `window_start`, `window_end`, and total `rows_inserted`. `run_logged.js` gains a small,
+`received / inserted / skipped / unresolved`, `skipped_streams`, `unlinked_level_assets` (a list on the deep-pass run;
+**null** on every other run and when the discovery call failed, so "not checked" never reads as "none"),
+`resume_point`, `deep_pass`, `deep_pass_recovered`, `window_start`, `window_end`, and total `rows_inserted`. `run_logged.js` gains a small,
 backwards-compatible change (step R1): it pipes stdout, re-emits it, and stores the parsed summary in
 `details.summary` and `rows_inserted` on the runner row. One `sync_log` row per run (no second job row). Exit 0 when
 every call and insert succeeded (even with skipped streams or data findings); exit 1 on any failed call, insert or
-timeout. Data findings are evaluated in SQL (section 8), never by the exit code.
+timeout, including a failed discovery call (which never stops ingestion: the history loop still runs). Data findings
+are evaluated in SQL (section 8), never by the exit code.
 
 **Backfill:** same script, `--from=2026-08-20T14:00:00Z --window-hours=72`, sequential, 500 ms between calls. Expected
 deduplicated rows to 2026-10-12 15:40Z [O]:
@@ -831,7 +844,7 @@ observation precedent [U on its exact shape until the live body is read], so rec
 |---|---|
 | T1 `stale_sensor` | a sensor with an installation in force has its newest distance reading more than 2 h old (LM11 units report while parked; observed max gaps 40 min sludge, 31 min water [O]) |
 | T2 `gps_gap` | in the last 48 h, an hour where a vehicle has 5 or more RPM samples above 0 but no GPS fix (engine running, no position) |
-| T3 `unlinked_level_asset` | the newest runner summary names a level asset with no `tank_sensor` link |
+| T3 `unlinked_level_asset` | the newest successful runner summary with `deep_pass = true` names a level asset with no `tank_sensor` link (`unlinked_level_assets` null on that row = discovery failed: that run already exited 1) |
 | T4 `skipped_stream` | a runner summary in the last 2 h lists a stream skipped by the units guard |
 | T5 `feed_mode_needed` | `deep_pass_recovered > 0` on 2 of the last 14 days: ship `feed=true` |
 
@@ -919,8 +932,9 @@ anyone subscribes to geofence alerts (M8, D4). Both docs get a reciprocal note (
 - Header: WHAT; WHY quoting the voice note; one 3NF line per column (2.6); rule-8 decision; intended grants (literal
   ACL); volume, retention, partitioning; VERIFY with a positive control; rollback (export first); for any replaced body,
   the live text copied (never retyped) with an md5 pin.
-- One transaction per file, no inner COMMIT; `cron.schedule` in its own file; `SET LOCAL lock_timeout = '3s'` on M1, M7,
-  M9, M10.
+- One transaction per file, no inner COMMIT; `cron.schedule` in its own file; `SET LOCAL lock_timeout = '3s'` on M1, M2,
+  M3, M7, M9, M10 (M2 and M3 because `CREATE TABLE ... REFERENCES` holds SHARE ROW EXCLUSIVE on `vehicles` and, in
+  M3, `properties` until COMMIT; review of 2026-10-12).
 - **Hygiene check before every commit:** grep the staged migrations and docs for `\b\d{3}-[A-Z0-9]{2,6}\b` (client
   codes) and for any Samsara geofence or address name; fail on a hit. ESL seeds carry `source_name` NULL (V17).
 
@@ -1179,7 +1193,7 @@ configuration, one sensor, one installation, two ESL links, then `fn_refresh_sto
 | 35 | Probe as the real role | `SET LOCAL ROLE` service_role / authenticated / anon in M2, M3, M9 |
 | 36 | RLS on new tables | all 12, no policies |
 | 37 | Canonical in public, apps via own schema | facts and views in `public`; apps only through `ops` wrappers (M9) |
-| 38 | Lock discipline | `lock_timeout 3s` on M1, M7, M9, M10; heavy VERIFY outside the transaction |
+| 38 | Lock discipline | `lock_timeout 3s` on M1, M2, M3, M7, M9, M10; heavy VERIFY outside the transaction |
 | 39 | raw.* rules | not used: payloads reduce to typed rows with natural keys at ingest |
 | 40 | sync.* rules | not used: raw tables in `public` for the PostgREST write path, closed by literal ACL assertions; reason in ADR 020 |
 | 41 | Telemetry precedent | natural keys end in the time column |
