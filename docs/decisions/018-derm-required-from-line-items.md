@@ -114,7 +114,8 @@ Migration `2026-09-24_1220_grey_water_not_derm_required.sql`:
   (Fred: *"leave the filed ones alone"*).
 
 Consequences: grey water pickups are no longer offered for manifest linking, so they stop reaching the
-Miami-Dade LWT monthly filing (tracked by `derm.v_lwt_grey_water_unlinked` for Jonathan); the Field
+Miami-Dade LWT monthly filing (tracked for Jonathan by `derm.v_lwt_pickups_without_manifest`, which replaced
+`derm.v_lwt_grey_water_unlinked` on 2026-10-12); the Field
 Portal keeps showing grey water visits by a separate exception (Fred, same day). Full detail and the known
 gaps: `docs/reference/derm_required_by_line_item.md`, section "2026-09-24".
 
@@ -122,3 +123,14 @@ Same evening (`2026-09-24_1910`, `_1920`): a free-text line that is exactly grey
 catalogue's grey water flag (a mixed "GT & grey water pumping" line stays TRUE); "is this visit grey water
 pumping" became one view, `public.v_visit_grey_water_pumping`, read by all three consumers; and
 `edit_calendar_visit` only promotes `derm_required` on a completed or filed visit.
+
+## Amendment 2026-10-12: lift station pumping is not DERM required; its manifest is optional
+
+Fred: *"LS do not need DERM, it's optional."* and *"LS keep them visible"*. Migration
+`2026-10-12_1600_lift_station_not_derm_required.sql`: `requires_derm = false` for 04 and 11, so the DERM-required
+set is {01, 02, 09} (grease trap pumping only). The rule is one view, `public.v_visit_lift_station_pumping`,
+tighter than the grey water one (a deciding tier that also pumps a grease trap keeps a visit out). The 21 pending
+lift-station-only visits were set FALSE; filed visits keep TRUE. The Field Portal keeps showing them, the DERM
+Tracker still offers them for an optional manifest, and `derm.v_lwt_pickups_without_manifest`
+(`2026-10-12_1610`) lists the pickups missing from the LWT filing. Full detail: the reference doc, section
+"2026-10-12".

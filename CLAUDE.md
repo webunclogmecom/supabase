@@ -3931,7 +3931,7 @@ one, so shipping a better rule does not heal history.
 ### DERM 2-week rule (added 2026-05-22, per Fred)
 **Any completed visit older than 2 weeks that needs DERM (i.e. `derm_required IS NOT false`) SHOULD have a `manifest_visits` row linking it to a `derm_manifests` record with both `derm_manifest_url` and `derm_address_url`.** If it doesn't, treat it as a data gap and investigate.
 
-> **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01, 02, 04, 09, 11; grey water 03 and 10 stopped requiring DERM on 2026-09-24, see below); `service_type` is unreliable as a proxy — `handleVisit` falls back to a default when the line-item derive is non-concrete, and grey-water pumping was coded as cleaning. *(That default was `GT` and grey water was `CL` until the 2026-08-03 rename; today they read `Pumping` and `Cleaning`. The unreliability is unchanged — this is why the derive keys off line items, not off this column.)* Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic — never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
+> **`derm_required` is line-item-derived (2026-06-24, ADR 018), NOT `service_type`.** A visit needs DERM iff it has a *pumping* line item (codes 01, 02, 09; grey water 03 and 10 stopped requiring DERM on 2026-09-24 and lift station 04 and 11 on 2026-10-12, see below); `service_type` is unreliable as a proxy: `handleVisit` falls back to a default when the line-item derive is non-concrete, and grey-water pumping was coded as cleaning. *(That default was `GT` and grey water was `CL` until the 2026-08-03 rename; today they read `Pumping` and `Cleaning`. The unreliability is unchanged; this is why the derive keys off line items, not off this column.)* Populated by `fn_visit_requires_derm` via the Calendar RPC, `handleVisit`, and nightly pg_cron `derm-required-rederive` (all monotonic: never demote a known TRUE; NULL = unknown = surfaced). Spec: [docs/reference/derm_required_by_line_item.md](docs/reference/derm_required_by_line_item.md).
 
 > ✅ **A FILED MANIFEST MAKES THE VISIT DERM REQUIRED (2026-10-06, `2026-10-06_1240`).** Fred: *"if we file a
 > Manifest to a visit that is DERM Not required, turn it to DERM required."* Trigger `trg_zy_link_marks_derm_required`
@@ -3947,7 +3947,8 @@ one, so shipping a better rule does not heal history.
 > FALSE; the 23 COMPLETED ones that already had a manifest keep TRUE on purpose (Fred: "leave the filed
 > ones alone"), so a manifest on a grey water visit is history, not a missing obligation. Grey water
 > pickups are no longer offered for manifest linking, so they stop reaching the Miami-Dade LWT monthly
-> filing: `derm.v_lwt_grey_water_unlinked` (service_role) lists them for Jonathan. The Field Portal keeps
+> filing: `derm.v_lwt_pickups_without_manifest` (service_role; it replaced `derm.v_lwt_grey_water_unlinked` on
+> 2026-10-12) lists them for Jonathan, `pickup_type = 'grey water'`. The Field Portal keeps
 > showing grey water visits (Fred, same day): `customer.work_orders` admits grey water pumping and
 > carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`).
 > 🛑 **"Is this visit grey water pumping" is ONE view since `2026-09-24_1920`: `public.v_visit_grey_water_pumping`
@@ -3955,7 +3956,8 @@ one, so shipping a better rule does not heal history.
 > status filter, service_role SELECT only).** Its readers are owner-rights
 > views that no longer carry a copy: `customer.work_orders` (the Field Portal arm), `derm.visits.grey_water_pumping`
 > (the DERM Tracker bulk "Mark DERM Not Required" dialog; a rebuild of `derm.visits` must keep that LAST column)
-> and `derm.v_lwt_grey_water_unlinked`. Change the rule there and only there; `'Grey Water'` appears in none of
+> and `derm.v_lwt_pickups_without_manifest` (its grey water rows; it replaced `derm.v_lwt_grey_water_unlinked` on
+> 2026-10-12). Change the rule there and only there; `'Grey Water'` appears in none of
 > the three readers (V5 of `_1920`). A free-text line whose WHOLE text is grey water pumping ("Grey Water
 > Pumping", exact-phrase list in `public.fn_line_item_is_free_text_grey_water`) counts as grey water and, in
 > `fn_line_item_requires_derm` (arm b0), answers the catalogue's grey water flag; a MIXED line ("GT & grey water
@@ -3964,6 +3966,39 @@ one, so shipping a better rule does not heal history.
 > remaining open item (typed fee lines, item 11, skipped by Fred): the reference doc, section "2026-09-24".
 > 🛑 **Grey water reports never go to the city** (Fred, same evening): `public.v_visit_not_for_city`
 > (`2026-09-24_2110`) and the three city readers of it; see the automatic city email section, status `grey_water`.
+
+> 🛑 **LIFT STATION PUMPING (04, 11) IS NOT DERM REQUIRED SINCE 2026-10-12** (Fred: *"LS do not need DERM, it's
+> optional."*, *"LS keep them visible"*; migration `2026-10-12_1600_lift_station_not_derm_required.sql`, applied
+> 2026-10-12 about 17:52 ET; every post-apply check matched).
+> - The DERM-required set is {01, 02, 09}. The 21 pending lift-station-only visits were set FALSE. Completed ones
+>   were left alone: 18 filed visits stay TRUE, and 6576 stays TRUE and in Missing Docs.
+> - "Is this visit lift station pumping" is ONE view, `public.v_visit_lift_station_pumping` (visit_id, tier). Its
+>   readers: `customer.work_orders` (the Field Portal keeps showing them, `derm_required = false`),
+>   `public.manifest_pickable_visits` (the manifest is OPTIONAL: the DERM Tracker still offers the visit, and
+>   filing one makes it TRUE and locked) and `derm.v_lwt_pickups_without_manifest` (its lift station rows). Change
+>   the rule there only.
+> - 🛑 The rule is TIGHTER than the grey water one. Every line the classifier answers counts, coded or not, and the
+>   deciding tier must hold nothing else that needs DERM. So a visit whose own lines also pump a grease trap, or
+>   whose own line is an uncoded hydrojet, is NOT in it (5844, 7087, 3890, 3919 stay hidden).
+> - 🛑 `public.dump_outstanding_visits` filters `derm_required IS NOT FALSE` since this change. So the DUMP crib
+>   sheet, VIEW ADDRESSES and the link / mark / handout gates never show an optional visit as owing a manifest. A
+>   driver cannot file an optional one in DUMP: it is office only. Never narrow the filter to `IS TRUE`: NULL still
+>   owes a manifest.
+> - 🛑 The picker is `security_invoker`. Any CREATE OR REPLACE of it must restate `WITH (security_invoker = true)`,
+>   and the rule view must stay readable by `authenticated`. When replacing these views, take the locks in the order
+>   DUMP, picker, `customer.work_orders` last.
+> - A free-text line that is only lift station pumping (`public.fn_line_item_is_free_text_lift_station`) answers the
+>   catalogue's lift station flag in `fn_line_item_requires_derm` (arm b1). A MIXED line stays TRUE.
+> - Lift station pickups with no manifest stop reaching the LWT monthly filing (`derm.v_lwt_monthly_rows` is built
+>   from manifest links). **`derm.v_lwt_pickups_without_manifest`** (service_role only, migration
+>   `2026-10-12_1610_lwt_pickups_without_manifest.sql`, applied about 17:55 ET) is the ONE list of pickups missing
+>   from that filing: `pickup_type` 'grey water' (completed since 2026-09-24) or 'lift station' (completed since
+>   2026-10-12), no manifest link. It replaced and dropped `derm.v_lwt_grey_water_unlinked` (Fred: *"yes put the LS
+>   in that list, but then we'd need to change that list to be more semantic, have better naming"*, then *"go ahead
+>   with that name"*). On 2026-10-12: 7 grey water rows, 0 lift station.
+> - Rollback: `docs/migrations/2026-10-12_rollback_lift_station_not_derm_required.sql`, and roll `2026-10-12_1610`
+>   back FIRST (its view reads `public.v_visit_lift_station_pumping`).
+> - Details: the reference doc, section "2026-10-12".
 
 To find a missing DERM link, work in the Supabase DB. **Airtable is fully retired (2026-07-24) and must not be read** — there is no AT DERM table to cross-reference any more:
 1. **`derm_manifests`** — match on `white_manifest_number` + `client_id`, then compare `service_date` to the candidate visit's `visit_date`. Never match on `dump_ticket_date` alone: dump dates lag service dates by weeks.

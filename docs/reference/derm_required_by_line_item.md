@@ -3,6 +3,83 @@
 **Status: IMPLEMENTED 2026-06-24** (migration `migrations/2026-06-24_derm_required_from_line_items.sql`,
 ADR [018](../decisions/018-derm-required-from-line-items.md)). Supersedes the 2026-06-02 stopgap.
 
+## 🛑 2026-10-12: LIFT STATION PUMPING (04, 11) IS NO LONGER DERM REQUIRED; ITS MANIFEST IS OPTIONAL
+
+Fred: *"LS do not need DERM, it's optional."* and *"LS keep them visible"*. Migration
+`2026-10-12_1600_lift_station_not_derm_required.sql` (three calls: PART A + B, B2, C), applied 2026-10-12 about
+17:52 ET. It mirrors grey water (2026-09-24), except for the rule's two tightenings in item 4. Every post-apply
+check matched: catalogue DERM codes {01, 02, 09}, 21 visits backfilled, Field Portal 888 rows (+19), picker 30,
+DUMP lists 9 (unchanged), GDO mismatch 0. Rollback: `2026-10-12_rollback_lift_station_not_derm_required.sql`,
+after rolling back `2026-10-12_1610` first (item 7).
+
+1. **Catalogue.** `requires_derm = false` for **04** and **11**. The DERM-required set is now **{01, 02, 09}**,
+   grease trap pumping only. ⚠ Fred's sheet still says Y for 04 and 11 until he edits it; the catalogue is what runs.
+2. **Free text.** `public.fn_line_item_is_free_text_lift_station(text)` is an exact-phrase allowlist anchored at both
+   ends. It matches 4 live names: "Lyft station cleaning and Pump out", "Lift station pump out and cleaning", "Lift
+   station tank pump out", "Lyft Station Pump out". `fn_line_item_requires_derm` arm **(b1)** answers the catalogue's
+   lift station flag for them. These keep their old answer:
+   - mixed lines ("Grease Trap Pumping & Lift Station Cleaning", "Lift station and grey water pumping"): TRUE;
+   - "Lift station pump repair" / "pumps": TRUE;
+   - a bare "Lift Station": NULL.
+3. **The fold is unchanged.** A visit that also pumps a grease trap stays DERM required.
+4. **The rule, once: `public.v_visit_lift_station_pumping` (visit_id, tier).** The nearest tier decides, among the
+   lines that SAY something about DERM (classifier not NULL, coded or uncoded). That tier must hold lift station
+   pumping and nothing else that needs DERM.
+   - 🛑 This is TIGHTER than `v_visit_grey_water_pumping`, on purpose (review 2026-10-12). The grey water shape would
+     have shown the client 4 visits that are not lift station by their own lines: 5844 (168-AVA, own 01 + 04), 7087
+     (186-PV, own 02 + 04), and 3890 and 3919 (274-CEV, own "Hydrojet Unclogging Commercial").
+   - The nearest tier still decides: 6989 (168-AVA) is in the rule because its own lines are lift station, although
+     its shared invoice 2135 bills a grease trap (so it still derives TRUE), as grey water 7085 is.
+   - SELECT to service_role and authenticated, because the picker is security_invoker.
+5. **Readers.**
+   - `customer.work_orders` admits the rule next to grey water: the Field Portal shows not-required lift station
+     visits with `derm_required = false`.
+   - `public.manifest_pickable_visits` offers a completed, unlinked one stored FALSE: the optional manifest. Filing
+     it turns the visit TRUE and locked (`trg_zy_link_marks_derm_required`).
+   - `public.dump_outstanding_visits` gained `derm_required IS NOT FALSE`, so the DUMP lists did not move and never
+     show an optional visit as owing a manifest.
+6. **Backfill.** The 21 PENDING, unlocked, lift-station-only visits were set FALSE: 031-KRU 8, 057-BAY 7, 013-DIM 6
+   (jobs 1304, 1444, 1338). New visits need nothing: the SA generator and the Calendar RPCs write FALSE.
+7. **The LWT gap list, renamed and widened: `derm.v_lwt_pickups_without_manifest`** (migration
+   `2026-10-12_1610_lwt_pickups_without_manifest.sql`, applied about 17:55 ET, service_role only). Fred: *"yes put
+   the LS in that list, but then we'd need to change that list to be more semantic, have better naming"*, then *"go
+   ahead with that name"*. `derm.v_lwt_monthly_rows` is built from manifest links, so a pickup with no manifest never
+   reaches the Miami-Dade LWT monthly filing; this is the ONE list of them.
+   - Columns: `visit_id`, `pickup_type` ('grey water' | 'lift station'), `client_code`, `client_name`, `visit_date`,
+     `county`, `derm_required`, `not_required_since` (the day that pickup type stopped being DERM required).
+   - Rows: completed grey water pickups since 2026-09-24 (`v_visit_grey_water_pumping`) and completed lift station
+     pickups since 2026-10-12 (`v_visit_lift_station_pumping`), with no live manifest link.
+   - It REPLACED and DROPPED `derm.v_lwt_grey_water_unlinked` (its grey water rows are that view's rows, proven equal
+     before the drop). On 2026-10-12: 7 grey water rows, 0 lift station rows.
+   - The optional `2026-10-12_1605` (`derm.v_lwt_lift_station_unlinked`) drafted for this was never applied; this
+     list replaces it.
+   - Rollback: recreate `derm.v_lwt_grey_water_unlinked` from `2026-09-24_2110_grey_water_not_for_city.sql`, then
+     drop this view. Do it BEFORE the 1600 rollback, because this view reads `public.v_visit_lift_station_pumping`.
+
+**Left alone on purpose.**
+- 18 completed, filed lift station visits stay stored TRUE, although they now derive FALSE ("leave the filed ones
+  alone").
+- **6576** (013-DIM, completed 2026-10-11, no manifest) stays stored TRUE and in Missing Docs. Use the per-visit
+  toggle.
+- 20 completed visits a person had locked FALSE now agree with the derive (`ops.v_derm_human_override_conflict` 66
+  -> 46).
+
+**Measured effects.**
+- Field Portal +19 visits (+49 photos on 8). Picker +19. DUMP lists unchanged. Missing Docs 11 -> 11.
+- LWT filing: 18 of its 869 rows were lift-station-only pickups (about 2 a month). New ones stop reaching it unless
+  a manifest is filed; `derm.v_lwt_pickups_without_manifest` (item 7) lists them.
+- `v_gdo_reporting_derm_mismatch` 0 -> 0.
+- `customer.permits` 057-BAY PSO-00025 loses "Every 30 days".
+- `client.fn_client_has_derm_activity` 274-CEV TRUE -> FALSE.
+
+**Known gaps.**
+- "Optional" is office-only: DUMP's link, mark and handout gate through `dump_outstanding_visits`.
+- The picker has no derm_required column, so the DERM Tracker cannot badge an optional visit.
+- The DERM Tracker bulk "Mark DERM Not Required" dialog still counts lift station visits as hidden from the portal.
+  It overstates.
+- `ops.v_derm_compliance` (no reader) will drift lift-station-only clients toward derm_violation.
+- `visit_num` in `customer.work_orders` orders by date only, so same-date work orders can swap.
+
 ## 🛑 2026-09-24: GREY WATER PUMPING (03, 10) IS NO LONGER DERM REQUIRED, AND CODED FEES NO LONGER BLOCK THE FOLD
 
 Diego (Slack C0BD3VDPB9S): *"we need that all grey water services say DERM they're not required"*. Fred:
@@ -76,8 +153,10 @@ visits are stored TRUE and **all 30 derive FALSE**; the stored TRUE stays, by de
   Tracker "Attach visit" picker, `dump_route_today`), and the Miami-Dade LWT monthly filing
   (`derm.v_lwt_monthly_rows`) is built from manifest links. So grey water pickups stop reaching that filing
   (30 of its 808 rows were grey water, 20 on filed tickets). Fred: "ship now, track it".
-  **`derm.v_lwt_grey_water_unlinked`** (service_role only) lists completed grey water pickups since
-  2026-09-24 with no manifest link. Empty means nothing is missing. Open question for Jonathan.
+  **`derm.v_lwt_pickups_without_manifest`** (service_role only; it replaced `derm.v_lwt_grey_water_unlinked`
+  on 2026-10-12, section above) lists completed grey water pickups since 2026-09-24 with no manifest link
+  (`pickup_type = 'grey water'`), and lift station ones since 2026-10-12. Empty means nothing is missing. Open
+  question for Jonathan.
 - The Field Portal: `customer.work_orders` hides a not-required visit. Fred decided the same day that grey
   water visits must stay visible to the client: `2026-09-24_1353_grey_water_stays_in_field_portal.sql`
   (`customer.work_orders` admits grey water pumping, decided by the visit's own coded lines first, and
@@ -91,7 +170,8 @@ shows there.
 
 ## The rule
 **A visit requires a DERM manifest iff it includes a "Pumping" line item** — Grease Trap (incl. grease
-*interceptor*) or Lift Station pumping. Grey water pumping was on this list until 2026-09-24 (see above). Every other **service** (Cleaning, Hydrojet,
+*interceptor*) pumping. Lift station pumping was on this list until 2026-10-12 (see above), grey water until
+2026-09-24. Every other **service** (Cleaning, Hydrojet,
 Unclogging, Camera/Dye/Assessment, Labor, Parts, Warranty) does **not**.
 
 🛑 **FEE AND ADMIN LINES ARE A THIRD CATEGORY: THEY ABSTAIN, and they are NOT in the "does not" set.**
@@ -105,10 +185,10 @@ fee says nothing about whether the work needed a manifest, and storing "no" wher
 line does not say" is what makes the SC fee mirror dangerous (worked through under the derivation
 section below).
 
-`service_line_items.requires_derm = true` for exactly codes **{01, 02, 04, 09, 11}** since 2026-09-24 (grease
-trap and lift station pumping; 01–04 = Service Agreement, 09–11 = Service Call). 03 and 10, grey water, were
-turned off that day, and the sheet still says Y for them until Fred edits it. Until then the set was
-{01, 02, 03, 04, 09, 10, 11}.
+`service_line_items.requires_derm = true` for exactly codes **{01, 02, 09}** since 2026-10-12 (grease trap
+pumping; 01–04 = Service Agreement, 09–11 = Service Call). 04 and 11 (lift station) were turned off that day,
+03 and 10 (grey water) on 2026-09-24, and the sheet still says Y for them until Fred edits it. Until 2026-09-24
+the set was {01, 02, 03, 04, 09, 10, 11}.
 ⚠ It is **NOT NULL**, so it cannot express "this line does not say". That is why the abstention lives in
 the function and not in the column: widening the column would have touched all 28 catalogue rows.
 
@@ -349,8 +429,13 @@ locked**. Do not treat one list as a copy of the other.
   required stays visible, without DERM paperwork.
 - **The grey water rule is `public.v_visit_grey_water_pumping`, once (since `2026-09-24_1920`).** Its readers:
   the `customer.work_orders` arm above, `derm.visits.grey_water_pumping` (`_1600`/`_1615`, the DERM Tracker
-  bulk dialog, so it does not count grey water as hidden) and `derm.v_lwt_grey_water_unlinked` (the LWT gap
-  list). None of them carries its own copy any more; change the view, never a reader.
+  bulk dialog, so it does not count grey water as hidden) and `derm.v_lwt_pickups_without_manifest` (the LWT gap
+  list; it replaced `derm.v_lwt_grey_water_unlinked` on 2026-10-12). None of them carries its own copy any more;
+  change the view, never a reader.
+- **The lift station rule is `public.v_visit_lift_station_pumping`, once (since `2026-10-12_1600`).** Its readers:
+  `customer.work_orders` (the Field Portal arm), `public.manifest_pickable_visits` (the optional manifest: it also
+  offers a completed, unlinked lift station visit stored FALSE) and `derm.v_lwt_pickups_without_manifest`. See the
+  2026-10-12 section at the top.
 - `ops.v_derm_compliance` — missing-manifest count now uses `derm_required` (was `service_type='GT'`);
   the view stays **Pumping-config-roster scoped** (`service_type = 'Pumping'`, formerly 'GT') (it joins `service_configs` GT for equipment/frequency), so
   grey-water/lift-station-**only** clients are tracked via `derm.visits`, not this ops dashboard.
