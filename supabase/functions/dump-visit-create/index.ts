@@ -501,12 +501,13 @@ async function browardPickups(driverId: number | null, dumpVisitId: number) {
     .eq("assigned_driver_id", driverId).eq("county_bucket", "BROWARD").eq("on_sheet", false);
   if (error || !Array.isArray(data)) return null;
   const rows = data as { visit_id: number; client_code?: string; client_name?: string }[];
-  // test and fixture clients only on a [TEST] dump, as in dump_manifest_handout_list
-  if (((d.notes as string) || "").includes("[TEST]")) return rows;
   const { data: nc, error: ncErr } = await db.from("non_customer_clients").select("client_code").in("kind", ["test", "fixture"]);
   if (ncErr) return null;
-  const skip = new Set((nc ?? []).map((r: Record<string, unknown>) => r.client_code as string).filter(Boolean));
-  return rows.filter((r) => !skip.has((r.client_code ?? "").trim()));
+  const testCodes = new Set((nc ?? []).map((r: Record<string, unknown>) => r.client_code as string).filter(Boolean));
+  // as in dump_manifest_handout_list: a real dump never counts test and fixture clients, and (2026-10-12) a [TEST]
+  // dump counts ONLY them, so a test run never names a real pickup
+  const isTest = ((d.notes as string) || "").includes("[TEST]");
+  return rows.filter((r) => testCodes.has((r.client_code ?? "").trim()) === isTest);
 }
 
 // Client names can carry &, < or > (7 do, e.g. "Massimo & Umberto Inc"), which Slack reads as formatting.
@@ -621,20 +622,44 @@ const updateContext = (m: { titleMd: string; whenET: string }, driverName: strin
 // Wording 2026-10-07 (Fred, "All, as in the preview"): "since this driver's last dump", not "from this shift"
 // (the window is the last dump, which can be days back); no "No visits for this driver this shift" (nothing
 // measures visits); "other ... from any truck", not "older" (the count is every truck's).
-const loadLines = (load: number, older: number, broward: string[] | null = []): string[] => {
+// 2026-10-12: `held` = this driver's pickups since his last dump that are already marked on ANOTHER manifest (another
+// dump's crib sheet, or VIEW ADDRESSES). They are not on this load, so they leave the count, but they are always NAMED:
+// a hold that is wrong (a deleted dump's, Oct 5: 8738 -> 8740) must stay visible, never silently subtracted.
+const loadLines = (load: number, older: number, broward: string[] | null = [], held: string[] | null = []): string[] => {
   const out: string[] = [];
   const nb = broward?.length ?? 0;
-  if (load === 0 && older === 0 && nb === 0) out.push(`🫙 *No completed DERM pickups to report on this load.*`);
+  const nh = held?.length ?? 0;
+  if (load === 0 && (older === 0 || nh > 0) && nb === 0) out.push(`🫙 *No completed DERM pickups to report on this load.*`);
   else if (load === 0) out.push(nb > 0 ? `🫙 *No Miami-Dade DERM pickups to report on this load.*` : `🫙 *No completed DERM pickups since this driver's last dump.*`);
   else if (load > 0) out.push(`📋 *${load}* completed DERM pickup${load === 1 ? "" : "s"} since this driver's last dump to report on this load.`);
   if (nb > 0) out.push(`⚠️ *${nb}* of this driver's pickups ${nb === 1 ? "is" : "are"} in Broward (${broward!.join(", ")}): file ${nb === 1 ? "it" : "them"} at Pompano.`);
+  if (nh > 0) out.push(`↪️ *${nh}* of this driver's pickups ${nh === 1 ? "was" : "were"} already reported elsewhere (${held!.join(", ")}).`);
   if (older > 0) out.push(`🗂 *${older}* other completed DERM pickup${older === 1 ? " is" : "s are"} still waiting to be reported (any truck).`);
   return out;
 };
 
+// The dump_manifest_handout_list rows, counted ONE way for both the parent message and the load report (2026-10-12).
+// Parent dump 8740 said 9 and its thread reported 7 with no Missing line: the load count ignored `confirmed` while
+// Missing required it. load = this driver's pickups not reported anywhere, or already on THIS dump; held = the rows
+// reported elsewhere (each message names them, with heldBy); missing = not reported anywhere; older = other trucks'
+// and older pickups.
+const loadCounts = (rows: Record<string, unknown>[]) => {
+  const load = rows.filter((r) => r.bucket === "load");
+  const held = load.filter((r) => r.confirmed === true && r.on_this_dump !== true);
+  return {
+    load: load.length - held.length,
+    held,
+    missing: load.filter((r) => r.confirmed === false),
+    older: rows.filter((r) => r.bucket === "outstanding" && r.confirmed === false).length,
+  };
+};
+
+// " (who marked it)" after a held pickup, so whoever reads the post can see a hold that is wrong.
+const heldBy = (r: Record<string, unknown>) => (r.held_by ? ` (${String(r.held_by).trim()})` : "");
+
 // 1. DUMP CREATED — fires on GO. The dump event; always notifies. Carries two extra signals
 // (Fred 2026-07-24):
-//   * the driver's LOAD count this shift — an EMPTY load reads as an explicit "no completed DERM pickups
+//   * the driver's LOAD count since his last dump: an EMPTY load reads as an explicit "no completed DERM pickups
 //     to report" line instead of a silently-missing Reported/Missing (which had looked like a bug).
 //   * for an after-hours (Homestead post-intake) dump, whether the driver tapped CALL before going.
 async function postDumpCreatedAlert(
@@ -664,13 +689,15 @@ async function postDumpCreatedAlert(
   }
   const fields = [`*Time:* ${m.whenET}`, truckLine, team ? `*Team:* ${team}` : null].filter(Boolean).join("\n");
 
-  // Load = this driver's completed, DERM-required, still-undocumented visits this shift (bucket='load').
+  // Load = this driver's completed, DERM-required, still-undocumented visits since his last dump (bucket='load'),
+  // less the ones already reported elsewhere, which get their own line (loadCounts).
   // Older = the OLDER VISITS the driver can also add: completed DERM pickups still waiting for a sheet
   // (bucket='outstanding', not yet on any sheet). Fred 2026-10-05: count those too, so "no pickups" is not
   // followed by a thread reporting 2. dump_manifest_handout_list is STABLE (read-only), so counting here
-  // records nothing. -1 = couldn't tell, and both lines are omitted rather than guessed.
+  // records nothing. -1 = couldn't tell, and the lines are omitted rather than guessed.
   let loadCount = -1;
   let olderCount = -1;
+  let held: string[] | null = null;
   let broward: string[] | null = null;
   if (driverId) {
     // supabase-js does not throw: a failed read comes back as { error }, which used to read as an empty list and
@@ -678,15 +705,16 @@ async function postDumpCreatedAlert(
     const { data, error } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
     if (error || !Array.isArray(data)) console.error("[dump] load count read failed:", error?.message ?? "not a list");
     else {
-      const rows = data as Record<string, unknown>[];
-      loadCount = rows.filter((r) => r.bucket === "load").length;
-      olderCount = rows.filter((r) => r.bucket === "outstanding" && r.confirmed === false).length;
+      const c = loadCounts(data as Record<string, unknown>[]);
+      loadCount = c.load;
+      olderCount = c.older;
+      held = c.held.map((r) => slackEsc(`${String(r.client_code ?? "").trim()}${heldBy(r)}`));
     }
     broward = (await browardPickups(driverId, dumpVisitId))?.map((r) => (r.client_code ?? "").trim()) ?? null;
   }
   const extra: string[] = [];
   if (opts?.afterHours) extra.push(`📞 *Called ahead:* ${opts.calledAhead ? "✅ yes" : "❌ no (went without calling)"}`);
-  extra.push(...loadLines(loadCount, olderCount, broward));
+  extra.push(...loadLines(loadCount, olderCount, broward, held));
 
   const blocks: unknown[] = [
     slackHeader("🚛 Dumping"),
@@ -712,13 +740,19 @@ async function postDumpAlert(
   const tag = m.isTest ? "[TEST] " : "";
   const clientLines = confirmed.length ? clientBullets(confirmed) : "_(no clients marked on this load)_";
 
-  // MISSING = this driver's DERM-required load visits this shift he did NOT tick (bucket='load',
+  // MISSING = this driver's DERM-required load visits since his last dump that are on NO manifest (bucket='load',
   // confirmed=false). dump_outstanding_visits is DERM-filtered, so non-DERM (unclog) never appears here.
   // A failed read is said ("could not be checked"), never shown as an empty Missing list (2026-10-07).
+  // HELD = the ones already reported elsewhere, named so the thread adds up to the parent's count (2026-10-12).
   let missing: { client_code?: string; client_name?: string }[] | null = null;
+  let held: Record<string, unknown>[] = [];
   const { data: list, error: listErr } = await db.rpc("dump_manifest_handout_list", { p_driver_id: driverId, p_dump_visit_id: dumpVisitId });
   if (listErr || !Array.isArray(list)) console.error("[dump] missing list read failed:", listErr?.message ?? "not a list");
-  else missing = list.filter((r: Record<string, unknown>) => r.bucket === "load" && r.confirmed === false) as { client_code?: string; client_name?: string }[];
+  else {
+    const c = loadCounts(list as Record<string, unknown>[]);
+    missing = c.missing as { client_code?: string; client_name?: string }[];
+    held = c.held;
+  }
   const broward = await browardPickups(driverId, dumpVisitId);
 
   // FOLLOW-UP FORMAT (Fred 2026-07-27): no repeated big title, no repeated Time/Truck/Team block, no
@@ -732,6 +766,7 @@ async function postDumpAlert(
   ];
   if (missing === null) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing:* could not be checked.` } });
   else if (missing.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *Missing, completed but not added (${missing.length}):*\n${clientBullets(missing)}` } });
+  if (held.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `↪️ *Already reported elsewhere (${held.length}):*\n${clientBullets(held.map((r) => ({ client_code: String(r.client_code ?? ""), client_name: `${String(r.client_name ?? "").trim()}${heldBy(r)}` })))}` } });
   if (broward?.length) blocks.push({ type: "section", text: { type: "mrkdwn", text: `⚠️ *In Broward, file at Pompano (${broward.length}):*\n${clientBullets(broward)}` } });
   // THREAD-ONLY (Fred 2026-08-04): "can we change it so the updates only gets send as a thread message
   // and not on the channel also?". This used to pass broadcast=true, which added reply_broadcast and made

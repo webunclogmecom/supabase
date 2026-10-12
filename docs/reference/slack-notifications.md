@@ -231,6 +231,9 @@ could not be read:
   Broward ones exist; `🫙 *No completed DERM pickups to report on this load.*` when there is nothing at all)
 - `⚠️ *N* of this driver's pickups is/are in Broward (<codes>): file it/them at Pompano.` (Homestead only: its county
   gate hides them from every count)
+- `↪️ *N* of this driver's pickups were already reported elsewhere (<code> (<who>), ...).` (since 2026-10-12,
+  v72: a pickup another dump already holds leaves the count above and is named here; the thread repeats it as
+  `↪️ *Already reported elsewhere (N):*` after Missing)
 - `🗂 *N* other completed DERM pickups are still waiting to be reported (any truck).`
 
 **The counts behind them** come from `public.dump_manifest_handout_list` (the driver's pickups completed after his
