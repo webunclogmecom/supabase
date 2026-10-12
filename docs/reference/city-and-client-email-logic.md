@@ -30,8 +30,10 @@ The four senders log to two tables (`visit_photo_email_sends` for #1, `derm_emai
 2026-10-12 every reader picked one of them. **`public.v_visit_city_email_state`** reads both and gives each live visit
 one state (`sent`, `report_sent_manifest_follows`, `not_derm`, `not_for_city`, `no_city_email`, `before_go_live`,
 `waiting_manifest`, `needs_city_email`, `not_completed`). The 11 AM Admin Review post reads it; the app screens and the
-send-time guards do not yet (cycle 2, see Supabase `CLAUDE.md`, the section on this view). A daily check
-(`notification-health`) reports a visit whose city got the manifest more than once.
+apps do not yet. **`public.v_visit_city_email_sends`** (2026-10-12) lists every real city send of a visit from both
+logs (who, which app, or the automatic email, and whether the manifest went), for the apps to show; Fred, 2026-10-13:
+sending more than once is fine, so nothing blocks a re-send. A daily check (`notification-health`) compares the 11 AM
+post with the raw send logs.
 
 ---
 

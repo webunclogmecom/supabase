@@ -5209,16 +5209,26 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   don't care about the old for this"*), `waiting_manifest`, `needs_city_email`. **New readers read this; never
   rebuild the rule.** `fn_admin_review_pending` reads it. ⚠ `derm_email_sends` has no `visit_id`, so a DERM Tracker
   send is credited to every visit of that client on that manifest (0 cases today; adding the column is cycle 2).
-- **Cycle 2, NOT done:** the Admin Review card and server gate and the DERM Tracker visit page and `send-derm-email`
-  still read only their own send log, so each app still shows "not sent" for a visit the other app sent (20 and 5
-  visits on 2026-10-12). They need app changes (Lovable) plus server guards shipped together; a server refusal without
-  the app change would strand the user.
+- **The send history: `public.v_visit_city_email_sends`** (`2026-10-12_1945`, authenticated + service_role SELECT):
+  one row per real city send per live visit, from BOTH logs, built on the state view's own attribution so the two
+  cannot disagree (asserted: the state view's `city_email_sent_at` = the earliest `with_manifest` row). Columns
+  `visit_id, sent_at, via ('admin_review' | 'derm_tracker' | 'automatic'), sent_by_email, sent_by_name, app_label,
+  recipients (the To line only), with_manifest, with_photos, send_id, source_table`. Test sends are not listed (they
+  never reached a city). A DERM Tracker send from before 2026-09-15 with no sender reads `derm_tracker` with
+  `sent_by_name` NULL ("sender not recorded"); only a no-sender send after go-live is `automatic`. ⚠ `send_id` repeats
+  across the two logs: key a list on `source_table` + `send_id`. 39 rows on 32 visits at apply. It supersedes
+  `public.v_visit_city_email_status` for display (Admin Review's dialog reads that one today).
+- **Cycle 2 (display only, Fred 2026-10-13):** *"we can send multiple emails that doesn't matter, but it's good to
+  know who has sent an email even if it's from across other apps, also show if the email was sent by the system
+  because of the automatic email sending"*. So there is NO send-time guard and no refusal: the Admin Review card and
+  dialog and the DERM Tracker visit and Manifests pages read the history view (pending Fred's pick of a mockup,
+  then Lovable). Until they ship, each app still shows "not sent" for a visit the other app sent.
 - **The daily check:** `public.log_notification_health()` (cron `notification-health`, 13:15 UTC, `2026-10-12_1400`,
   registered in `ops.v_health_items` and `ops.v_health_status`) recomputes the list from the RAW send logs and reports
-  `city_list_false_positive`, `city_list_missed`, `manifest_follow_stalled`, `city_inbox_missing`, `reminder_not_run`,
-  `no_manifest_after_14_days` and `city_email_duplicate` into Fred's health email. First run: 6138 and 6247
-  (duplicates, clear Oct 16) and property 1113 (324-BIB, Surfside, no city inbox; open with Fred: the city email may
-  be for the Broward zone only).
+  `city_list_false_positive`, `city_list_missed`, `manifest_follow_stalled`, `city_inbox_missing`, `reminder_not_run`
+  and `no_manifest_after_14_days` into Fred's health email. `city_email_duplicate` was REMOVED by `2026-10-12_1950`
+  (Fred: multiple emails do not matter); do not add it back. The first run had flagged 6138, 6247 and property 1113
+  (324-BIB, Surfside, no inbox: fixed by `2026-10-12_1530`); the run kept by 1950 reads ok with 0 items.
 - **Run records:** both 11 AM reminders write one `sync_log` row per run (`admin_review_reminder`,
   `stamp_sheets_reminder`, `<source>_test`), and their wrappers call the edge function every day (`2026-10-12_1310`).
 - **Photos:** `v_visit_photo_counts` counts only `before`/`after`/`internal`/`extra` as sorted since `2026-10-12_1335`
