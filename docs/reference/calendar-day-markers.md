@@ -282,12 +282,13 @@ This is the half Fred asked about and the half that was least written down.
 
 A Start or End marker triggers a **live, traffic-aware routing call** and caches the leg in
 `ops.route_leg_cache` (keyed on origin/dest lat/lng **rounded to 2 decimals**), counting the spend in
-`ops.dispatch_routing_usage`. The depot is `ops.v_depot` (Doral Yard, property 80).
+`ops.dispatch_routing_usage`. The depot is `ops.v_depot` (UnclogMe Yard 000-YD, property 1194, 650 NW 33rd St, since 2026-10-12;
+before that property 80, "The Doral Yard", a customer 13 km away: `2026-10-12_1625_unclogme_yard_depot.sql`).
 
 | marker | leg computed | rendered on the chip |
 |---|---|---|
-| **Start** | depot → **first** stop of that truck-day | `Doral Yard, 17 min to first stop` |
-| **End** | **last** stop of that truck-day → depot | `20 min back to Doral Yard` |
+| **Start** | depot → **first** stop of that truck-day | `UnclogMe Yard, 17 min to first stop` |
+| **End** | **last** stop of that truck-day → depot | `20 min back to UnclogMe Yard` |
 
 Measured on truck **David**, 2026-08-17, whose only stop was 077-TCE at 20:30 ET:
 

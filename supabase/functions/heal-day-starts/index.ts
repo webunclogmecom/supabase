@@ -10,7 +10,7 @@
 //   remove     flagged 'no timed visit': the Start and its Jobber Task go.
 //   driver     flagged 'driver changed': employee_id becomes the first visit's driver.
 //   recompute  a DERIVED Start flagged 'first visit changed': minute = the first visit's ET minute - ETA
-//              from Doral Yard - 30, and that visit's driver, exactly as the Calendar's Recompute (13p).
+//              from the depot (ops.v_depot) - 30, and that visit's driver, exactly as the Calendar's Recompute (13p).
 //              The minute is planned in SQL (ops.apply_start_heal with p_dry_run); this function only
 //              fetches the ETA.
 // 🛑 JOBBER FIRST (2026-09-24_2100, Fred: "that it first confirms the data was changed in jobber being
