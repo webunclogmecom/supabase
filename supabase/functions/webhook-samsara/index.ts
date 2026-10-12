@@ -487,20 +487,14 @@ async function handleGeofenceAlert(
     return { entity_type: 'visit', entity_id: null }
   }
 
-  const visitId = visits[0].id
-  const update: Record<string, unknown> = {
-    is_gps_confirmed: true,
-  }
-
-  if (isEntry) {
-    update.actual_arrival_at = eventTime
-  } else if (isExit) {
-    update.actual_departure_at = eventTime
-  }
-
-  await supabase.from('visits').update(update).eq('id', visitId)
-
-  return { entity_type: 'visit', entity_id: visitId }
+  // Neutralised 2026-10-12 (owner decision, Fred, with the time-on-site window extension: "Extend it,
+  // Good."). Time on site is measured from the truck's GPS by public.fn_compute_time_on_site (nightly
+  // pg_cron), which writes actual_arrival_at / actual_departure_at / duration_minutes. This handler
+  // matched the newest visit of the client + truck within 12 h of start_at and would overwrite those
+  // measured times with one alert's timestamp (and set is_gps_confirmed, never duration_minutes).
+  // It has never fired (no geofence alert is subscribed). Log and write nothing.
+  console.log(`Geofence ${isEntry ? 'entry' : 'exit'} at ${eventTime} for visit ${visits[0].id}, vehicle ${vehicleId}: not written (time on site is measured from GPS)`)
+  return { entity_type: 'visit', entity_id: null }
 }
 
 // ============================================================================
