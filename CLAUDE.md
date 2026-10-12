@@ -5225,6 +5225,43 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   (a photo saved as `unknown` shows untagged on the review page and is now unsorted everywhere, the send gate included).
 - Rules for any notification: `docs/reference/slack-notifications.md` section 6, step 3b.
 
+### ✅ TANK SENSORS, STOPS AND VISIT VOLUMES (Samsara LM11 on Moises, live 2026-10-12)
+
+Fred (voice note, 2026-10-12): what the two new sensors on Moises tell us, "time on site per client, water used and
+recovered, sludge pumped", built "compliant with our architecture, 3NF, everything linked, no orphans", and "before
+showing it on an app, let's work on it to be correct everything in the DB, and to have a collector". Plan (read it
+before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-sensors-db-plan.md`; discovery:
+`docs/reference/samsara-tank-sensors-2026-10-12.md`.
+
+| layer | objects | written by |
+|---|---|---|
+| configuration (audited, migrations only) | `vehicle_tanks`, `vehicle_tank_configurations` (sludge 3,840 gal; water 1,200 gal, offset 0.3048 m), `tank_sensors`, `tank_sensor_installations`; ESL `tank_sensor` | migrations `2026-10-12_1501` / `_1502` |
+| raw, append-only | `tank_sensor_distance_readings`, `tank_sensor_fill_percent_readings`, `vehicle_engine_rpm_readings`, `vehicle_pto_readings`, `vehicle_site_events` | collector `scripts/sync/cron_samsara_tank_readings.js`, Railway service `samsara-readings` (every 5 min, source `railway_samsara_readings`) |
+| derived | `vehicle_stops`, `vehicle_stop_tank_levels`, `visit_vehicle_stops` (retired links are soft-deleted, `deleted_at`) | `public.fn_refresh_stop_facts()` (pg_cron `vehicle-stop-facts`, :35 hourly) |
+| read | `v_tank_levels`, `v_vehicle_stop_facts`, `v_vehicle_stop_tank_changes`, `v_visit_tank_service`, `v_vehicle_dumps`, `v_tank_data_quality_issues`, `v_vehicle_site_addresses` | views (`2026-10-12_2300`), service_role only |
+
+- 🛑 **Everything is service_role only. No app reads it yet** (Fred: DB first). Exposing it is plan step M9, after
+  mockups of the real page. Nothing in `derm`, `customer` or `client` may read these (check Z8, hourly); measured
+  gallons are NOT for LWT or DERM filings (owner decision D8 default) without the month-close snapshot of plan M12.
+- 🛑 **A new level value arrives only about every 10 minutes**; rows every ~30 s repeat it. **Ingress/egress are hourly
+  net changes, never gallons pumped.** We store distance and percent, never Samsara litres: gallons come from OUR
+  configuration in force at the reading (`fn_tank_fill_fraction`). A changed configuration is an audited supersede plus
+  insert, never an UPDATE (the append-only guard refuses it); Z3 lists the level rows to re-measure.
+- **Sites:** dump 000-DH (property 98, Samsara 322485232), dump 000-DP (property 155, Samsara 4000003697171, a 200 m
+  circle created by API 2026-10-12, events only from that day), yard 000-YD (property 1194, Samsara 4000000737885, also
+  `ops.v_depot`). The collector stores address events ONLY for those (via `v_vehicle_site_addresses`); client
+  geofence events are counted, not stored. Past Broward dumps are found from GPS coordinates.
+- **Dump rating:** an offload under 10% of capacity, or leaving 90% full or more, is `low`; arriving 97% full or more
+  is `medium` (the true offload may be higher).
+- **Moises's PTO is dead:** RPM of 900 or more is the pump stand-in. David's PTO works. Cloggy and David have no
+  level sensor, so their stops carry no tank rows.
+- **Time on site** stays `fn_compute_time_on_site` (window to 10:00 ET next morning since `2026-10-12_1530`); it keeps
+  the LONGEST stay near the property, a known limit on dense blocks. `webhook-samsara` v40 never writes visit times.
+- **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
+  (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
+- A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
+  rows, then `fn_refresh_stop_facts(vehicle_id, install_date)`.
+
 ## Documentation map
 
 | Doc | When to read |

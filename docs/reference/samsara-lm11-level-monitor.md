@@ -8,6 +8,10 @@
 > correction to this page) and the database plan
 > [../superpowers/specs/2026-10-12-samsara-tank-sensors-db-plan.md](../superpowers/specs/2026-10-12-samsara-tank-sensors-db-plan.md).
 > The hardware facts below (sections 3 and 11) still hold.
+>
+> **2026-10-12 evening: the readings now reach our database.** Tables, the Railway collector `samsara-readings`, stops,
+> tank levels per stop and per visit, dumps and health checks are live; see `Supabase/CLAUDE.md`, section "TANK SENSORS,
+> STOPS AND VISIT VOLUMES". Statements below that "nothing reaches our warehouse" are history.
 
 *Measured live against Samsara org 6009037 and Prod `wbasvhvvismukaqdnouk` on 2026-09-04.
 Read-only except for the one migration named below. Supersedes the conclusion in commit `01e2522`.*
