@@ -1,5 +1,14 @@
 # Samsara LM11 Level Monitor on truck Moises: what it is and what it gives us
 
+> **Status 2026-10-12: partly superseded.** The water unit was fitted on 2026-10-02 (LM11 `GN4X-6TM-7BS`, asset
+> `281475007025272`) and reports **percent only**: its Samsara tank profile has no capacity. The sensor takes a new
+> measurement only about **every 10 minutes**; ingress and egress are hourly net changes, **never** gallons pumped;
+> `daysUntilEmpty` is empty on the sludge sensor. Read
+> [samsara-tank-sensors-2026-10-12.md](samsara-tank-sensors-2026-10-12.md) first (its section 9 lists every
+> correction to this page) and the database plan
+> [../superpowers/specs/2026-10-12-samsara-tank-sensors-db-plan.md](../superpowers/specs/2026-10-12-samsara-tank-sensors-db-plan.md).
+> The hardware facts below (sections 3 and 11) still hold.
+
 *Measured live against Samsara org 6009037 and Prod `wbasvhvvismukaqdnouk` on 2026-09-04.
 Read-only except for the one migration named below. Supersedes the conclusion in commit `01e2522`.*
 

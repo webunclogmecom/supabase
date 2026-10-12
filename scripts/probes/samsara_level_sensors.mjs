@@ -4,6 +4,8 @@
 // water yet. Document it so later on we can work with this info." So this deliberately does NOT
 // hardcode the grease sensor's asset id. It discovers level sensors by asking which assets return
 // levelMonitoring readings, so the day the WATER unit is fitted it shows up here with no code change.
+// ⚠ 2026-10-12: it did NOT, because this filtered on fillVolume and the water unit (fitted 2026-10-02) has
+// no capacity in its Samsara profile, so it sends percent and distance only. Now keyed on the radar reading.
 //
 // Run it when a new sensor is installed, or to check what the fleet is reporting right now:
 //   cd Supabase && node scripts/probes/samsara_level_sensors.mjs
@@ -76,7 +78,10 @@ for (const a of assets) {
   const r = await get(`/readings/latest?readingIds=${PROBE.join(',')}&entityType=asset&entityIds=${a.id}`)
   const vals = {}
   for (const row of r.json?.data || []) if ('value' in row) vals[row.readingId] = { v: row.value, at: row.happenedAtTime }
-  if (vals.fillVolume === undefined && vals.totalCapacityVolume === undefined) continue
+  // Key on the RADAR reading, not on volume. A sensor whose tank profile has no capacity configured
+  // reports remoteSensingDistance and fillPercent but NO fillVolume or totalCapacityVolume. The
+  // 2026-10-12 water unit is exactly that, and the old volume-only filter hid it (2026-10-12).
+  if (vals.remoteSensingDistance === undefined && vals.fillPercent === undefined && vals.fillVolume === undefined) continue
   found.push({ asset: a, gw: gwFor(a.id), vals })
 }
 
@@ -88,6 +93,7 @@ for (const f of found) {
   console.log(`  created ${f.asset.createdAtTime}`)
   if (cap !== undefined) console.log(`  capacity      ${cap.toFixed(1)} L  =  ${gal(cap).toFixed(0)} gal`)
   if (vol !== undefined) console.log(`  current fill  ${vol.toFixed(1)} L  =  ${gal(vol).toFixed(0)} gal   (${f.vals.fillPercent?.v ?? '?'}%)  @${f.vals.fillVolume.at}`)
+  else if (f.vals.fillPercent) console.log(`  current fill  ${f.vals.fillPercent.v}%  @${f.vals.fillPercent.at}   NO VOLUME: the tank profile has no capacity in Samsara, so it reports percent only`)
   if (f.vals.remoteSensingDistance) console.log(`  radar distance ${f.vals.remoteSensingDistance.v} m`)
   if (f.vals.fillCriticality) console.log(`  criticality   ${f.vals.fillCriticality.v}`)
   console.log('')
@@ -104,12 +110,16 @@ if (!found.some(f => f.asset.id === GREASE)) {
 }
 console.log(`control OK: the known grease sensor ${GREASE} was discovered by the same sweep.`)
 
-// --- 4. what is still missing, stated as a fact rather than left implicit
-console.log(`\nEXPECTED BUT NOT YET INSTALLED: a second unit for the WATER tank on Moises.`)
-console.log(`Fred, 2026-09-04: "they haven't installed the one for water yet."`)
-if (found.length >= 2) {
-  console.log(`\n⚠ ${found.length} level sensors now report. If the water unit has been fitted:`)
-  console.log(`  - map its asset id to a vehicle AND a compartment (see docs/reference/samsara-lm11-level-monitor.md)`)
-  console.log(`  - do NOT identify it by NAME; names are free text and get edited`)
-  console.log(`  - vehicles has no water_tank_capacity_gallons column yet; one is needed`)
+// --- 4. the water unit (fitted 2026-10-02) must be seen too. Second control: it reports percent but
+// no volume, so it is the case the old filter missed.
+const WATER = '281475007025272'    // "Moises Water tank Sensor", LM11 GN4X-6TM-7BS, fresh-water tank, fitted 2026-10-02
+if (!found.some(f => f.asset.id === WATER)) {
+  console.error('⚠ the known water sensor ' + WATER + ' did not appear. Removed, silent, or the sweep regressed.')
+}
+const known = new Set([GREASE, WATER])
+const extra = found.filter(f => !known.has(f.asset.id))
+if (extra.length) {
+  console.log(`\n⚠ ${extra.length} level sensor(s) beyond the two known ones. Before using one:`)
+  console.log(`  - map its asset id to a vehicle AND a tank; never identify it by NAME (free text, gets edited)`)
+  console.log(`  - see docs/reference/samsara-tank-sensors-2026-10-12.md and the plan in docs/superpowers/specs/`)
 }
