@@ -61,8 +61,9 @@ Thread: `https://unclogme.slack.com/archives/C0AQY6E704Q/p1791859377342339`. Sum
 - Built, deployed and tested on the test client 112-YA: refusals for no key, a wrong key, a cancelled visit and an
   unknown truck; one real change on visit 8742 (Sep 14) whose history reads
   `Viktor, asked by Fred: "[TEST] add Moises to the visit"` (Moises left on that test visit as the example).
-- 🟡 **Waiting on Fred:** (1) send Viktor the key privately (a Claude session must not type an API key into Slack);
-  then Viktor runs the dry run on visit 8742 and posts the result in the thread. (2) ✅ Answered 2026-10-13 (Fred: "yes, his
-  Jobber and Trello tasks continue"): his Jobber notes, Jobber client onboarding and Trello `/task` cards continue; the
-  "only change" rule covers our database, where this door is his one write.
+- ✅ **Live 2026-10-13.** Fred sent Viktor the key privately; Viktor stored it and ran the dry run on visit 8742,
+  posting the door's message word for word: "I would set Cloggy as the truck on visit 8742 (112-YA Yan's Restaurant,
+  Mon, Sep 14) (now: Moises)." Nothing changed (8742 still Moises, 1 Viktor-labelled audit row: the test change above).
+- ✅ Fred, 2026-10-13: "yes, his Jobber and Trello tasks continue". Viktor confirmed: Jobber notes, Jobber client
+  onboarding and Trello `/task` cards carry on; in our database this door is his only write.
 - A draft of the same instructions was left in Fred's Slack drafts for #viktor-supabase; Fred can delete it.
