@@ -5221,8 +5221,10 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
 - **Cycle 2 (display only, Fred 2026-10-13):** *"we can send multiple emails that doesn't matter, but it's good to
   know who has sent an email even if it's from across other apps, also show if the email was sent by the system
   because of the automatic email sending"*. So there is NO send-time guard and no refusal: the Admin Review card and
-  dialog and the DERM Tracker visit and Manifests pages read the history view (pending Fred's pick of a mockup,
-  then Lovable). Until they ship, each app still shows "not sent" for a visit the other app sent.
+  dialog and the DERM Tracker visit and Manifests pages read the history view, LIVE since 2026-10-13 (Admin Review
+  `App-CohkTac1.js`, DERM Tracker `visits._visitId-B_T-h1Fj.js` + `manifests-323nnBYq.js`; each app's 08-changelog
+  2026-10-13). Each shows the newest send as one line plus "Show all N city emails". The view names the shared login
+  contact@unclogme.com "Diego"; a change of who uses that login is fixed in the view, not in the apps.
 - **The daily check:** `public.log_notification_health()` (cron `notification-health`, 13:15 UTC, `2026-10-12_1400`,
   registered in `ops.v_health_items` and `ops.v_health_status`) recomputes the list from the RAW send logs and reports
   `city_list_false_positive`, `city_list_missed`, `manifest_follow_stalled`, `city_inbox_missing`, `reminder_not_run`
