@@ -3947,7 +3947,10 @@ one, so shipping a better rule does not heal history.
 > FALSE; the 23 COMPLETED ones that already had a manifest keep TRUE on purpose (Fred: "leave the filed
 > ones alone"), so a manifest on a grey water visit is history, not a missing obligation. Grey water
 > pickups are no longer offered for manifest linking, so they stop reaching the Miami-Dade LWT monthly
-> filing: `derm.v_lwt_pickups_without_manifest` (service_role; it replaced `derm.v_lwt_grey_water_unlinked` on
+> filing (✅ **since `2026-10-12_2105` the picker offers them again as an OPTIONAL manifest**, Fred: "yes",
+> like lift station: filing one turns the visit DERM required and locked, it then reaches the LWT filing, and it
+> still never goes to the city because `v_visit_not_for_city` reads line items; `authenticated` reads
+> `v_visit_grey_water_pumping` for that security_invoker picker): `derm.v_lwt_pickups_without_manifest` (service_role; it replaced `derm.v_lwt_grey_water_unlinked` on
 > 2026-10-12) lists them for Jonathan, `pickup_type = 'grey water'`. The Field Portal keeps
 > showing grey water visits (Fred, same day): `customer.work_orders` admits grey water pumping and
 > carries `derm_required` (migration `2026-09-24_1353_grey_water_stays_in_field_portal.sql`).
@@ -5218,12 +5221,12 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   `sent_by_name` NULL ("sender not recorded"); only a no-sender send after go-live is `automatic`. ⚠ `send_id` repeats
   across the two logs: key a list on `source_table` + `send_id`. 39 rows on 32 visits at apply. It supersedes
   `public.v_visit_city_email_status` for display (Admin Review's dialog reads that one today).
-- **Cycle 2 (display only, Fred 2026-10-13):** *"we can send multiple emails that doesn't matter, but it's good to
+- **Cycle 2 (display only, Fred 2026-10-12):** *"we can send multiple emails that doesn't matter, but it's good to
   know who has sent an email even if it's from across other apps, also show if the email was sent by the system
   because of the automatic email sending"*. So there is NO send-time guard and no refusal: the Admin Review card and
-  dialog and the DERM Tracker visit and Manifests pages read the history view, LIVE since 2026-10-13 (Admin Review
+  dialog and the DERM Tracker visit and Manifests pages read the history view, LIVE since 2026-10-12 ~20:40 ET (Admin Review
   `App-CohkTac1.js`, DERM Tracker `visits._visitId-B_T-h1Fj.js` + `manifests-323nnBYq.js`; each app's 08-changelog
-  2026-10-13). Each shows the newest send as one line plus "Show all N city emails". The view names the shared login
+  2026-10-12). Each shows the newest send as one line plus "Show all N city emails". The view names the shared login
   contact@unclogme.com "Diego"; a change of who uses that login is fixed in the view, not in the apps.
 - **The daily check:** `public.log_notification_health()` (cron `notification-health`, 13:15 UTC, `2026-10-12_1400`,
   registered in `ops.v_health_items` and `ops.v_health_status`) recomputes the list from the RAW send logs and reports

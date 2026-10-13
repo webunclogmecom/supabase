@@ -3,6 +3,25 @@
 **Status: IMPLEMENTED 2026-06-24** (migration `migrations/2026-06-24_derm_required_from_line_items.sql`,
 ADR [018](../decisions/018-derm-required-from-line-items.md)). Supersedes the 2026-06-02 stopgap.
 
+## 2026-10-12 (night): GREY WATER VISITS CAN TAKE AN OPTIONAL MANIFEST AGAIN
+
+Fred, asked "Grey water: do you want an optional manifest for grey water visits?": *"yes"*. Migration
+`2026-10-12_2105_grey_water_optional_manifest.sql` (one call), applied 2026-10-12 about 21:15 ET.
+- `public.manifest_pickable_visits` gains a grey water arm next to the lift station one
+  (`... OR EXISTS (SELECT 1 FROM v_visit_grey_water_pumping ...)`), so a completed, unlinked grey water visit stored
+  FALSE is offered again: the DERM Tracker /upload matcher and "Adding a visit" picker, and the Stamp Studio
+  Add-client modal (`derm.v_stamp_unlinked_visits`). The picker went 30 -> 40; the 10 added are all Miami-Dade
+  (214-MYK 6507, 6509, 6510, 6511; 320-MGF 8571, 8585, 8586, 8729; 239-COM 7085; 253-CG 5159).
+- `authenticated` now holds SELECT on `public.v_visit_grey_water_pumping` (visit_id, tier), because the picker is
+  security_invoker and reads it as the caller, as `v_visit_lift_station_pumping` already allowed.
+- Grey water stays NOT DERM required. Filing a manifest turns the visit TRUE and locked
+  (`trg_zy_link_marks_derm_required`); it then reaches `derm.v_lwt_monthly_rows` and leaves
+  `derm.v_lwt_pickups_without_manifest`. It still never goes to the city (`public.v_visit_not_for_city` reads line
+  items, not derm_required) and never reaches the GDO portal queue (no grey water visit has ever had a 27 line).
+- Unchanged, asserted: the DUMP lists (`dump_outstanding_visits` keeps `derm_required IS NOT FALSE`, office only),
+  every row the picker already offered, and the Stamp Studio list apart from the 10.
+- Rollback: `2026-10-12_rollback_grey_water_optional_manifest.sql` (it does not unfile anything already filed).
+
 ## 🛑 2026-10-12: LIFT STATION PUMPING (04, 11) IS NO LONGER DERM REQUIRED; ITS MANIFEST IS OPTIONAL
 
 Fred: *"LS do not need DERM, it's optional."* and *"LS keep them visible"*. Migration
@@ -150,7 +169,8 @@ visits are stored TRUE and **all 30 derive FALSE**; the stored TRUE stays, by de
   both mailers and by `derm.v_city_email_candidates` (status `grey_water`). Details: `Supabase/CLAUDE.md`,
   automatic city email section.
 - A not-required visit is no longer offered for manifest linking (`manifest_pickable_visits`, the DERM
-  Tracker "Attach visit" picker, `dump_route_today`), and the Miami-Dade LWT monthly filing
+  Tracker "Attach visit" picker, `dump_route_today`; the picker offers grey water again since `2026-10-12_2105`, as an
+  optional manifest, section at the top), and the Miami-Dade LWT monthly filing
   (`derm.v_lwt_monthly_rows`) is built from manifest links. So grey water pickups stop reaching that filing
   (30 of its 808 rows were grey water, 20 on filed tickets). Fred: "ship now, track it".
   **`derm.v_lwt_pickups_without_manifest`** (service_role only; it replaced `derm.v_lwt_grey_water_unlinked`

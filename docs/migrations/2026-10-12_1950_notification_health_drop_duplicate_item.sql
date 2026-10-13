@@ -4,7 +4,7 @@
 --                  docs/migrations: sorted order = apply order.)
 -- ============================================================================
 -- THE ASK
---   Fred, 2026-10-13: "we can send multiple emails that doesn't matter". Item G of 2026-10-12_1400
+--   Fred, 2026-10-12: "we can send multiple emails that doesn't matter". Item G of 2026-10-12_1400
 --   (city_email_duplicate:visit-<id>, "the city received its manifest 2 or more times") flagged 6138 and 6247 in his
 --   health email on its first run, for something he has now said is fine. Who sent what, and how often, is shown
 --   instead by the history view public.v_visit_city_email_sends (its own migration, visit_city_email_sends).
