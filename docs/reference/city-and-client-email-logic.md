@@ -29,11 +29,52 @@ different than when we try to send it at the DERM App, which is not of a problem
 The four senders log to two tables (`visit_photo_email_sends` for #1, `derm_email_sends` for #2 to #4), and until
 2026-10-12 every reader picked one of them. **`public.v_visit_city_email_state`** reads both and gives each live visit
 one state (`sent`, `report_sent_manifest_follows`, `not_derm`, `not_for_city`, `no_city_email`, `before_go_live`,
-`waiting_manifest`, `needs_city_email`, `not_completed`). The 11 AM Admin Review post reads it; the app screens and the
-apps do not yet. **`public.v_visit_city_email_sends`** (2026-10-12) lists every real city send of a visit from both
-logs (who, which app, or the automatic email, and whether the manifest went), for the apps to show; Fred, 2026-10-12:
-sending more than once is fine, so nothing blocks a re-send. A daily check (`notification-health`) compares the 11 AM
-post with the raw send logs.
+`waiting_manifest`, `needs_city_email`, `not_completed`). The 11 AM Admin Review post reads it.
+**`public.v_visit_city_email_sends`** (2026-10-12) lists every real city send of a visit from both logs (who, which
+app, or the automatic email, and whether the manifest went); since 2026-10-12 ~20:40 ET the Admin Review card and
+dialog and the DERM Tracker visit page and /manifests show it. Fred, 2026-10-12: sending more than once is fine, so
+nothing blocks a re-send. A daily check (`notification-health`) compares the 11 AM post with the raw send logs.
+⚠ A city email sent from someone's own mailbox, outside both apps, is recorded nowhere and still reads as not sent.
+
+---
+
+## Which cities get the email, and the Broward cities we cannot reach (2026-10-12)
+
+**The rule.** A city email goes to the inboxes in `properties.city_emails` of the property the visit was set at, and
+nowhere else. A visit whose property has none reads `no_city_email`: it is never on the 11 AM list and never swept.
+That is by design, not a gap in the list. Fred, 2026-10-12, on which cities: *"Broward, surfside and hallandale"*.
+
+**Inboxes on file (2026-10-12):** Surfside 39 properties (three added by `2026-10-12_1530`), Hallandale Beach 19,
+Miami Beach 1. No other city has one.
+
+**The Broward cities we have clients in but no address for** (active clients, measured 2026-10-12):
+
+| city | properties | visits since go-live (2026-09-15) reading `no_city_email` | what was found |
+|---|---|---|---|
+| Fort Lauderdale | 17 | 7 | no published FOG address |
+| Hollywood | 14 | 2 | no published FOG address |
+| Pembroke Pines | 3 | 1 | no email: haulers upload to a portal, `pembroke.carmody.co` (questions: dnaranjo@ppines.com) |
+| Pompano Beach | 3 | 0 | no published FOG address |
+| Plantation | 1 | 0 | no published FOG address |
+
+Found by web research on 2026-10-12 (read only, nothing written). So today none of these cities gets a copy from us.
+
+**The law, read on leg.state.fl.us on 2026-10-12.** Florida Statutes s. 403.0741 (grease waste removal and disposal):
+- (3)(a): the hauler documents each removal and disposal with a service manifest.
+- (3)(d): **within 30 days after disposal, the hauler sends a completed, signed manifest to the originator (the
+  restaurant), the county where the originator is, and the municipality where the originator is.**
+- (3)(e): the originator and the hauler each keep a signed copy on site for 1 year.
+- (6)(a): local governments may receive manifest copies and violation reports from haulers.
+
+⚠ That is our reading of the text, not legal advice. **OPEN (Fred, with Jonathan):** whether we must still send a copy
+to a city that publishes no address, and whether Broward County collects the copies for its cities. Nothing is built
+for it.
+
+**To add a city once its address is known:** put the address in `city_emails` on each property in that city (the
+Client App property dialog, or a migration like `2026-10-12_1530`). ⚠ The city's visits since go-live then move from
+`no_city_email` to `needs_city_email` at once and appear on the next 11 AM list (10 visits today, table above), so
+send those or expect them. The Pembroke Pines portal cannot be reached by the mailers: it would be a manual upload, or
+a bot of its own.
 
 ---
 
