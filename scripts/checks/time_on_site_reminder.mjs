@@ -129,6 +129,53 @@ async function checks(code) {
   const nx = bodyText((await run(day([next]), { code })).posts[0]).split('\n')[1];
   assert.ok(nx.includes('|Moises> was there on Oct 10, 4:01 AM to 5:26 AM, but'), nx);
 
+  // 6b. a truck parked near our map point when the job was marked complete (visit 6509, real data 2026-09-25):
+  // never "only drove past" (Fred, 2026-10-13). The Place is the real 214-MYK circle (100 m, 95 m from our point).
+  const myka = { visit_id: 6509, visit_date: '2026-09-25', client_code: '214-MYK', client_name: 'Myka Greek Frozen Yogurt (Food Truck Brickell)',
+    service: 'Pumping', completed_at: '2026-09-25T14:54:13+00:00', lat: 25.7662211, lng: -80.1889717, truck: 'David', truck_samsara_id: '281474998706264',
+    property_place_id: '4000001823124', client_place_ids: ['4000001823124'],
+    closest: { truck: 'David', truck_samsara_id: '281474998706264', meters: 47, at: '2026-09-25T14:29:28+00:00' },
+    stays: [{ truck: 'David', truck_samsara_id: '281474998706264', first: '2026-09-25T14:29:17+00:00', last: '2026-09-25T14:30:10+00:00', minutes: 1 }],
+    stop_at_completion: { truck: 'David', truck_samsara_id: '281474998706264', assigned: true, arrived: '2026-09-25T14:29:11+00:00',
+      departed: '2026-09-25T15:02:59+00:00', minutes: 34, meters: 164, lat: 25.766279, lng: -80.190609 } };
+  const MYK = { id: '4000001823124', name: '214-MYK MYKA Brickell', latitude: 25.7664344, longitude: -80.1898861,
+    geofence: { circle: { latitude: 25.7664344, longitude: -80.1898861, radiusMeters: 100 } } };
+  const myDay = (v) => ({ date: '2026-09-25', older_count: 0, visits: [v] });
+  const mk = await run(myDay(myka), { samsara: [MYK], code });
+  const ml = bodyText(mk.posts[0]).split('\n')[1];
+  assert.ok(ml.endsWith('|David> was parked 164 m from our map point, 10:29 AM to 11:02 AM (34 min), when it was marked complete: it was inside its Samsara place, so our map point is probably off'), ml);
+  assert.ok(!ml.includes('drove past'), 'a 34-minute stop is never a drive-by: ' + ml);
+  assert.ok(mk.posts[0].text.includes('\n• visit 6509 · 214-MYK Myka Greek Frozen Yogurt (Food Truck Brickell) · David: David was parked 164 m'), 'Viktor still reads the visit line: ' + mk.posts[0].text);
+  // the same stop outside a Place drawn elsewhere (a square 1 km east): both are probably off
+  const east = { ...MYK, geofence: { polygon: { vertices: [{ latitude: 25.765, longitude: -80.180 }, { latitude: 25.765, longitude: -80.170 },
+    { latitude: 25.775, longitude: -80.170 }, { latitude: 25.775, longitude: -80.180 }] } } };
+  const out = bodyText((await run(myDay(myka), { samsara: [east], code })).posts[0]).split('\n')[1];
+  assert.ok(out.endsWith('when it was marked complete: it was outside its Samsara place too, so both are probably off'), out);
+  // inside a polygon that does hold the stop
+  const lot = { ...MYK, geofence: { polygon: { vertices: [{ latitude: 25.7655, longitude: -80.1915 }, { latitude: 25.7655, longitude: -80.1895 },
+    { latitude: 25.7670, longitude: -80.1895 }, { latitude: 25.7670, longitude: -80.1915 }] } } };
+  assert.ok(bodyText((await run(myDay(myka), { samsara: [lot], code })).posts[0]).includes('it was inside its Samsara place'), 'polygon containment');
+  // no Place at all, and Samsara unreadable: never guessed
+  const nopl = bodyText((await run(myDay({ ...myka, client_code: '999-ZZZ', property_place_id: null, client_place_ids: [] }), { samsara: [MYK], code })).posts[0]).split('\n')[1];
+  assert.ok(nopl.endsWith('our map point is probably off, and this client has no Samsara place'), nopl);
+  const dn = bodyText((await run(myDay(myka), { samsara: 'FAIL', code })).posts[0]).split('\n')[1];
+  assert.ok(dn.endsWith('when it was marked complete: our map point is probably off'), dn);
+  // a stop inside 150 m that holds the completion: the time was simply not saved
+  const near = { ...myka, stop_at_completion: { ...myka.stop_at_completion, meters: 120 } };
+  const nl = bodyText((await run(myDay(near), { samsara: [MYK], code })).posts[0]).split('\n')[1];
+  assert.ok(nl.endsWith('|David> was parked here 10:29 AM to 11:02 AM (34 min) when it was marked complete, but the time was not saved'), nl);
+  // another truck parked there than the one on the visit (6194: Cloggy there, David on the visit)
+  const wrong = { ...myka, stop_at_completion: { ...myka.stop_at_completion, truck: 'Cloggy', truck_samsara_id: '281474998706263', assigned: false } };
+  const wl = bodyText((await run(myDay(wrong), { samsara: [MYK], code })).posts[0]).split('\n')[1];
+  assert.ok(wl.endsWith('so our map point is probably off; the visit is set to David'), wl);
+  const wn = bodyText((await run(myDay({ ...wrong, stop_at_completion: { ...wrong.stop_at_completion, meters: 87 } }), { samsara: [MYK], code })).posts[0]).split('\n')[1];
+  assert.ok(wn.endsWith('|Cloggy> was parked here 10:29 AM to 11:02 AM (34 min) when it was marked complete, but the visit is set to David'), wn);
+  // the dry run hands the report the same lines
+  const dl6 = await run(myDay(myka), { body: { dry_run: true }, samsara: [MYK], code });
+  assert.strictEqual(dl6.body.lines[0].visit_id, 6509);
+  assert.ok(dl6.body.lines[0].line.startsWith('214-MYK Myka Greek Frozen Yogurt (Food Truck Brickell) · David: David was parked 164 m'), dl6.body.lines[0].line);
+  assert.ok(Array.isArray(dl6.body.gaps) && dl6.body.gaps[0].stop_at_completion.minutes === 34);
+
   // 7. dry run: no post, no log; 8. not service_role: refused
   const dry = await run(day([granada]), { body: { dry_run: true }, code });
   assert.strictEqual(dry.posts.length + dry.logs.length, 0, 'a dry run neither posts nor logs');
@@ -153,6 +200,11 @@ if (MUTATE) {
     ['guess when Samsara is down', src.replace('else if (checked && !place)', 'else if (!place)')],
     ['print 0 older', src.replace('if (older != null && older > 0)', 'if (true)')],
     ['post when empty', src.replace('if (!gaps.length) {', 'if (false) {')],
+    ['ignore the stop at completion', src.replace('else if (s) {', 'else if (false) {')],
+    ['circle containment inverted', src.replace('<= p.geo.circle.r', '> p.geo.circle.r')],
+    ['polygon containment dropped', src.replace('inside = !inside;', 'inside = false;')],
+    ['near and far stops swapped', src.replace('if (s.meters > NEAR_M) {', 'if (s.meters <= NEAR_M) {')],
+    ['other truck not named', src.replace('const other = !s.assigned && g.truck ?', 'const other = false ?')],
   ];
   for (const [name, code] of mutants) {
     assert.notStrictEqual(code, src, `mutant "${name}" did not change the source`);

@@ -5282,6 +5282,14 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   level sensor, so their stops carry no tank rows.
 - **Time on site** stays `fn_compute_time_on_site` (window to 10:00 ET next morning since `2026-10-12_1530`); it keeps
   the LONGEST stay near the property, a known limit on dense blocks. `webhook-samsara` v40 never writes visit times.
+  🛑 **Every time-on-site writer measures 150 m from OUR map point, and that misses trucks that park further away**
+  (Fred, 2026-10-13, visit 6509: David parked 164 m from 214-MYK's point for 34 min, inside its Samsara Place, and the
+  report said "only drove past"). The fix plan (outside the repos, it names clients):
+  `samsara-checks/time_on_site_fix_plan_2026-10-13.md`, defaults approved by Fred. **Step 1 shipped
+  (`2026-10-13_1935`)**: `public.fn_gps_stays` (the stop builder's walk, read-only, any date) and
+  `fn_time_on_site_gaps.stop_at_completion` (the stop holding the completion, within 250 m), read by the 11 AM alert
+  (`time-on-site-reminder` v7) and by `scripts/checks/time_on_site_report.mjs`. Describing only: no writer changed yet
+  (steps 2 to 8 are the writers, the saved-value audit and monitoring).
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL

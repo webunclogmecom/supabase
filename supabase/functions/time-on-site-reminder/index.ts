@@ -12,6 +12,11 @@
 // Reads public.fn_time_on_site_gaps(date): the visits (completed, live, customers, duration_minutes NULL) and the GPS
 // facts behind each. Samsara Place geometry is not in our database, so it is read here from Samsara (/addresses);
 // if that read fails, the place-based reasons are left out, never guessed (guide rule 5).
+// Since 2026-10-13_1935 (Fred, on visit 6509: a 34-minute stop 164 m from our map point was reported as a drive-by)
+// the first reason after "no map point" is the truck stop that holds the completion time (stop_at_completion, within
+// 250 m): parked here but the time was not saved, or parked N m from our map point, inside or outside its Samsara
+// place. "Only drove past" is therefore said only when no stop holds the completion. A dry run also returns `lines`
+// (each visit's line, no links) and `gaps`, which scripts/checks/time_on_site_report.mjs turns into the HTML report.
 // Posts NOTHING when yesterday has no such visit. Every run (not a dry run, not check_bot) writes ONE public.sync_log
 // row: sync_source 'time_on_site_reminder' ('time_on_site_reminder_test' for a [TEST] run), status 'success' (posted,
 // or nothing to post) or 'error'. Diego is tagged on the first body line, never on a [TEST] post, never in `text`.
@@ -38,8 +43,12 @@ type Gap = {
   property_place_id: string | null; client_place_ids: string[];
   closest: { truck: string; truck_samsara_id: string | null; meters: number; at: string } | null;
   stays: Stay[];
+  // the truck stop that holds the completion time, within 250 m of our map point (2026-10-13_1935), or null
+  stop_at_completion: { truck: string; truck_samsara_id: string | null; assigned: boolean; arrived: string; departed: string;
+                        minutes: number; meters: number; lat: number; lng: number } | null;
 };
-type Place = { id: string; name: string; lat: number; lng: number };
+type Geo = { circle: { lat: number; lng: number; r: number } } | { polygon: { lat: number; lng: number }[] } | null;
+type Place = { id: string; name: string; lat: number; lng: number; geo: Geo };
 type Outcome = { code: number; reply: Record<string, unknown>; log: Record<string, unknown> };
 
 const json = (p: unknown, status = 200) =>
@@ -84,7 +93,12 @@ async function samsaraPlaces(): Promise<Place[] | null> {
       if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return null;
       const j = await r.json();
       for (const a of j.data ?? []) {
-        if (a?.id && Number.isFinite(a.latitude) && Number.isFinite(a.longitude)) out.push({ id: String(a.id), name: String(a.name ?? ""), lat: a.latitude, lng: a.longitude });
+        if (!(a?.id && Number.isFinite(a.latitude) && Number.isFinite(a.longitude))) continue;
+        const c = a.geofence?.circle, v = a.geofence?.polygon?.vertices;
+        const geo: Geo = c && Number.isFinite(c.latitude) && Number.isFinite(c.longitude) && Number.isFinite(c.radiusMeters)
+          ? { circle: { lat: c.latitude, lng: c.longitude, r: c.radiusMeters } }
+          : Array.isArray(v) && v.length >= 3 ? { polygon: v.map((x: any) => ({ lat: Number(x.latitude), lng: Number(x.longitude) })) } : null;
+        out.push({ id: String(a.id), name: String(a.name ?? ""), lat: a.latitude, lng: a.longitude, geo });
       }
       if (!j.pagination?.hasNextPage) return out;
       after = j.pagination.endCursor;
@@ -111,6 +125,19 @@ function findPlace(g: Gap, places: Place[] | null): { checked: boolean; place: P
   return { checked: true, place, meters };
 }
 
+// Is a point inside the Place's geofence? null when its shape is unknown (never guessed).
+function insidePlace(p: Place, lat: number, lng: number): boolean | null {
+  if (!p.geo) return null;
+  if ("circle" in p.geo) return metersApart(p.geo.circle.lat, p.geo.circle.lng, lat, lng) <= p.geo.circle.r;
+  let inside = false;   // ray casting; a geofence is a few hundred metres, so flat coordinates are fine
+  const v = p.geo.polygon;
+  for (let i = 0, j = v.length - 1; i < v.length; j = i++) {
+    if ((v[i].lat > lat) !== (v[j].lat > lat) &&
+        lng < (v[j].lng - v[i].lng) * (lat - v[i].lat) / (v[j].lat - v[i].lat) + v[i].lng) inside = !inside;
+  }
+  return inside;
+}
+
 function line(g: Gap, places: Place[] | null): string {
   const { checked, place, meters } = findPlace(g, places);
   const name = esc(g.client_name ?? "Unnamed client");
@@ -125,7 +152,28 @@ function line(g: Gap, places: Place[] | null): string {
   const prefix = g.truck ? link(g.truck, g.truck_samsara_id, done - 3 * 3600e3, done + 3 * 3600e3) : "no truck assigned";
   let reason: string;
   const longest = g.stays[0];
+  const s = g.stop_at_completion;
   if (g.lat == null || g.lng == null) reason = "the property has no map point";
+  else if (s) {
+    // a truck was parked within 250 m when the job was marked complete (visit 6509: 164 m, 34 min): say so first,
+    // so a real stop is never reported as a drive-by
+    const a = Date.parse(s.arrived), b = Date.parse(s.departed);
+    const t = link(s.truck, s.truck_samsara_id, a - 3600e3, b + 3600e3);
+    const on = etDay(s.arrived) === g.visit_date ? "" : `on ${shortDay(s.arrived)}, `;
+    const span = `${on}${clock(s.arrived)} to ${clock(s.departed)} (${s.minutes} min)`;
+    // another truck than the visit's: the truck on the visit is the likely fix (Viktor can change it)
+    const other = !s.assigned && g.truck ? `the visit is set to ${esc(g.truck)}` : null;
+    if (s.meters > NEAR_M) {
+      const inside = place ? insidePlace(place, s.lat, s.lng) : null;
+      reason = `${t} was parked ${dist(s.meters)} from our map point, ${span}, when it was marked complete: ` +
+        (inside === true ? "it was inside its Samsara place, so our map point is probably off"
+          : inside === false ? "it was outside its Samsara place too, so both are probably off"
+          : checked && !place ? "our map point is probably off, and this client has no Samsara place"
+          : "our map point is probably off") + (other ? `; ${other}` : "");
+    } else {
+      reason = `${t} was parked here ${span} when it was marked complete, but ${other ?? "the time was not saved"}`;
+    }
+  }
   else if (checked && !place) reason = "this client has no Samsara place";
   else if (place && meters != null && meters > NEAR_M) reason = `the Samsara place is ${dist(meters)} from our address`;
   else if (longest && longest.minutes >= 3) {
@@ -216,7 +264,10 @@ async function run(dryRun: boolean, test: boolean, date: string | null, token: s
   const places = await samsaraPlaces();
   const message = buildMessage(gaps, ymd, older, places, test);
   const text = buildText(gaps, ymd, places, test);
-  if (dryRun) return { code: 200, reply: { posted: false, dry_run: true, count: gaps.length, date: ymd, places_read: places != null, channel: CHANNEL, text, message }, log: {} };
+  if (dryRun) {
+    const lines = gaps.map((g) => ({ visit_id: g.visit_id, line: unlink(line(g, places)).replace(/^• /, "") }));
+    return { code: 200, reply: { posted: false, dry_run: true, count: gaps.length, date: ymd, places_read: places != null, channel: CHANNEL, text, message, lines, gaps }, log: {} };
+  }
 
   if (!token) return fail(500, "no Slack token", "SLACK_BOT_TOKEN is not set", listed);
   const as = await slackIdentity(token, "Visit Calendar", "visit-calendar");
