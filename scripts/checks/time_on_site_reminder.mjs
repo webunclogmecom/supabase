@@ -81,7 +81,9 @@ async function checks(code) {
   assert.strictEqual(p.username, 'Visit Calendar', 'posts as Visit Calendar when the bot may');
   assert.ok(b.startsWith(':stopwatch: <@U0AL9JZ4V7C> *2 visits on Fri, Oct 9 have no time on site*'), 'first line tags Diego: ' + b.split('\n')[0]);
   assert.ok(!p.text.includes('<@'), 'the phone line never tags');
-  assert.strictEqual(p.text, ':stopwatch: 2 visits on Fri, Oct 9 have no time on site');
+  assert.strictEqual(p.text.split('\n')[0], ':stopwatch: 2 visits on Fri, Oct 9 have no time on site', 'the phone line is the summary');
+  assert.ok(p.text.includes('\n• visit 8765 · 009-CN Casa Neos · no truck assigned: David only drove past (under 3 min, 2 times)'), 'Viktor reads the visit numbers in text: ' + p.text);
+  assert.ok(!/<https?:/.test(p.text), 'no Slack link markup in text');
   const lines = b.split('\n');
   const cn = lines.find((l) => l.includes('009-CN'));
   assert.ok(cn.includes('<https://cloud.samsara.com/o/6009037/fleet/places/322485280?duration=2678399.999&end_ms='), 'the name opens the Samsara Place WITH its params');
@@ -100,7 +102,7 @@ async function checks(code) {
   const t = await run(day([granada]), { body: { test: true }, code });
   assert.ok(bodyText(t.posts[0]).startsWith(':stopwatch: [TEST] *1 visit on Fri, Oct 9 has no time on site*'), bodyText(t.posts[0]).split('\n')[0]);
   assert.ok(!JSON.stringify(t.posts[0]).includes('<@'), 'a test never tags anyone');
-  assert.strictEqual(t.posts[0].text, ':stopwatch: [TEST] 1 visit on Fri, Oct 9 has no time on site');
+  assert.strictEqual(t.posts[0].text.split('\n')[0], ':stopwatch: [TEST] 1 visit on Fri, Oct 9 has no time on site');
   assert.strictEqual(t.logs[0].sync_source, 'time_on_site_reminder_test');
 
   // 4. place reasons: no place, far place

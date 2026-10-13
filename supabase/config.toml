@@ -906,6 +906,12 @@ verify_jwt = true
 [functions.time-on-site-reminder]
 verify_jwt = true
 
+# viktor-visit-update: the one write Viktor (Slack AI coworker) has: set the truck on a COMPLETED visit, with who
+# asked and why in the visit's Activity History (2026-10-13). Viktor has no Supabase JWT, so verify_jwt MUST be false;
+# the handler requires header x-viktor-key = VIKTOR_API_KEY, and every rule lives in public.viktor_set_visit_truck.
+[functions.viktor-visit-update]
+verify_jwt = false
+
 # measure-page-reference: measures the printed lines of one Stamp Studio page in the background
 # (2026-10-05), so a page a person stamps has a machine reference for save_page_bands. Called by
 # pg_cron (public.fn_request_page_reference_measure) with the vault service_role key; the handler

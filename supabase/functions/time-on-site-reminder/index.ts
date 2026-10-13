@@ -144,6 +144,15 @@ function line(g: Gap, places: Place[] | null): string {
   return `• ${esc(g.client_code ?? "")} ${who} · ${prefix}: ${reason}`;
 }
 
+// Viktor reads a post's `text`, never its blocks (slack-notifications.md 7), and acts on replies like "@Viktor add
+// Moises to Casa Neos" through viktor-visit-update, which needs the VISIT NUMBER. So `text` is the summary line, then
+// every visit as plain words with its number (the phone still shows only the first line). Links become their labels.
+const unlink = (s: string) => s.replace(/<[^|>]+\|([^>]+)>/g, "$1");
+function buildText(gaps: Gap[], ymd: string, places: Place[] | null, test = false): string {
+  return [buildSummary(gaps.length, ymd, test),
+          ...gaps.map((g) => "• visit " + g.visit_id + " · " + unlink(line(g, places)).replace(/^• /, ""))].join("\n");
+}
+
 function buildSummary(n: number, ymd: string, test = false): string {
   return `:stopwatch: ${test ? "[TEST] " : ""}${n} ${n === 1 ? "visit" : "visits"} on ${longDay(ymd)} ${n === 1 ? "has" : "have"} no time on site`;
 }
@@ -206,7 +215,7 @@ async function run(dryRun: boolean, test: boolean, date: string | null, token: s
 
   const places = await samsaraPlaces();
   const message = buildMessage(gaps, ymd, older, places, test);
-  const text = buildSummary(gaps.length, ymd, test);
+  const text = buildText(gaps, ymd, places, test);
   if (dryRun) return { code: 200, reply: { posted: false, dry_run: true, count: gaps.length, date: ymd, places_read: places != null, channel: CHANNEL, text, message }, log: {} };
 
   if (!token) return fail(500, "no Slack token", "SLACK_BOT_TOKEN is not set", listed);

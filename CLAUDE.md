@@ -5277,6 +5277,23 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
   rows, then `fn_refresh_stop_facts(vehicle_id, install_date)`.
 
+### 🛑 VIKTOR'S ONE WRITE: THE TRUCK ON A COMPLETED VISIT (2026-10-13)
+
+Fred, 2026-10-12: Diego says "@Viktor add Moises to the visit" and Viktor does it; *"if the visit isn't complete then
+don't ... let him make changes to the visits, and only visits ... a way to know why he did it, like who was it who
+ordered him to do it ... saved in the Activity History of that visit."*
+- **The only path:** edge fn `viktor-visit-update` (verify_jwt false, header `x-viktor-key` = secret `VIKTOR_API_KEY`,
+  also in `Supabase/.env`) -> `public.viktor_set_visit_truck(visit, truck, requested_by, reason, dry_run)`. Every rule
+  is in the function: live COMPLETED visit only, ACTIVE truck by name, requester and reason required, `vehicle_id`
+  and nothing else (not in the Jobber push list), then time on site measured. Refusals are plain sentences (ok=false).
+- **Attribution is set INSIDE the function** (`request.headers` for the write: `x-app-source: viktor`,
+  `x-actor-name`, `x-change-reason`), so a caller cannot leave it out. `audit.log_change` stores the reason as
+  `request_context.change_reason`; `get_record_history` shows `Viktor, asked by <name>: "<reason>"`.
+- 🛑 **Widening Viktor's reach (another field, another table, a visit that is not completed) is Fred's decision.**
+  Do not add a second Viktor write path; extend this function and its VERIFY.
+- Migration `docs/migrations/2026-10-13_0300_viktor_visit_truck.sql`; Viktor's instructions were posted in
+  `#viktor-supabase`.
+
 ## Documentation map
 
 | Doc | When to read |
