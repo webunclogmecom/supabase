@@ -62,8 +62,7 @@ Thread: `https://unclogme.slack.com/archives/C0AQY6E704Q/p1791859377342339`. Sum
   unknown truck; one real change on visit 8742 (Sep 14) whose history reads
   `Viktor, asked by Fred: "[TEST] add Moises to the visit"` (Moises left on that test visit as the example).
 - 🟡 **Waiting on Fred:** (1) send Viktor the key privately (a Claude session must not type an API key into Slack);
-  then Viktor runs the dry run on visit 8742 and posts the result in the thread. (2) Answer Viktor's question: the
-  instruction said "the ONLY change you may make to our data", and he asked whether his existing tasks stop (adding
-  Jobber notes, onboarding new clients in Jobber, creating Trello cards through `/task`). Suggested answer, not yet
-  given: those continue; the "only" rule covers our database, where this door is his one write.
+  then Viktor runs the dry run on visit 8742 and posts the result in the thread. (2) ✅ Answered 2026-10-13 (Fred: "yes, his
+  Jobber and Trello tasks continue"): his Jobber notes, Jobber client onboarding and Trello `/task` cards continue; the
+  "only change" rule covers our database, where this door is his one write.
 - A draft of the same instructions was left in Fred's Slack drafts for #viktor-supabase; Fred can delete it.
