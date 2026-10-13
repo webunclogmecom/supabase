@@ -5193,6 +5193,15 @@ Nine things that will bite someone who does not know them:
    `max_photos`. 🛑 The question list is version 3 since 22:34 ET 2026-09-30 (`2026-09-30_2234_intake_form_v3`: `photo_note_required`, the section `lift_station_photos`, the water tank capacity photos; `intake-submit` v22 refuses an unexplained photo on such a form and has the `remove` op; reference rules 16, 17, 22), and since version 2 **Gallons is TEXT under the same key**:
    `public.fn_intake_whole_gallons` is the one reading and `get_intake_compare` answers `not_savable` for prose. Never
    move that key.
+   ✅ **Since 2026-10-13 the task closes itself** (`2026-10-13_1235_intake_task_close`, edge fn `intake-task-sync`, cron
+   `intake-task-sync` every 5 minutes; Fred: cancel = "Delete", any submit = tick it done). `public.v_intake_task_actions`
+   is the ONE list (submitted -> complete, cancelled -> delete; OPEN tasks only); the sweeper writes Jobber first, reads it
+   back, then records through `ops.fn_record_calendar_task` (`completed_source = 'intake'`, new CHECK value) or
+   `ops.fn_delete_calendar_task`, audit label `intake-task-sync`. 🛑 `public.intake_task_closures.done_at` makes it act
+   ONCE per form: a task a person reopens stays reopened; do not drop that check. A cancelled form whose task was already
+   ticked is left alone. Expired forms are NOT handled (Fred asked whether they expire; 60 days, open). Watched by
+   `log_jobber_sync_health` (source `intake_task_sync`, 25 minutes). It reuses the verified Jobber helpers re-exported
+   from `_shared/day-marker-task.ts`.
 
 ### 🛑 "HAS THIS VISIT'S CITY EMAIL GONE?" HAS ONE ANSWER: `public.v_visit_city_email_state` (2026-10-12)
 

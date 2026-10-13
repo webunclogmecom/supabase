@@ -1,6 +1,15 @@
 # Close the intake task when the form is submitted or cancelled (plan)
 
-*2026-10-13 · plan only, nothing built · Trello `QzHJYuNZ`*
+*2026-10-13 · Trello `QzHJYuNZ`*
+
+> ✅ **SHIPPED 2026-10-13 ~12:38 ET.** Fred's answers: D1 delete, D2 yes, D4 yes; D3 (expiry) still open, so expired
+> forms are not handled. Migration `docs/migrations/2026-10-13_1235_intake_task_close.sql` (rollback beside it), edge fn
+> `intake-task-sync` v1. Two changes from the plan: the closure marker is its own table
+> (`public.intake_task_closures`) instead of a column on `property_intakes`, and the health check is one line in
+> `log_jobber_sync_health`'s watched list with a 25-minute window (the sweeper runs every 5 minutes and logs every run),
+> instead of a new item kind. Verified: tasks 292 and 326 ticked in Jobber and in the Calendar on the first run; the
+> delete path on a [TEST] form and task on 112-YA (Jobber task gone, our row gone, ledger and audit say so); the health
+> watch reports nothing while it runs and "stalled" when its runs are hidden (rolled back).
 
 ## The ask
 

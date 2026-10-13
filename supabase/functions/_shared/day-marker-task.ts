@@ -908,3 +908,8 @@ export async function syncMarkerTask(op: "upsert" | "delete", markerId: number):
   await release(token, dirty, [markerId]);
   return out;
 }
+
+// Re-exported for intake-task-sync (2026-10-13), which closes a site survey form's task with these same verified
+// helpers instead of a fourth copy. Exported HERE, not on the declarations, so scripts/probes/
+// calendar_task_helpers_verbatim.mjs (which matches lines starting `function <name>(`) still finds them.
+export { getJobberToken, gql, errsOf, answered, deleteAndVerify };

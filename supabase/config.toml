@@ -834,6 +834,11 @@ verify_jwt = false
 [functions.poll-calendar-tasks]
 verify_jwt = true
 
+# intake-task-sync (2026-10-13_1235): closes a site survey form's Jobber task when the form is submitted
+# (tick it done) or cancelled (delete it). pg_cron only; the handler also asserts role=service_role.
+[functions.intake-task-sync]
+verify_jwt = true
+
 # rotate-photo: Admin Review's photo rotate button. Proxies to unclogme-pdf-service,
 # which does the pixel rotation (NOT Deno: ImageScript scrambles non-square images on
 # rotate(90)/rotate(270), and a 12MP decode alone is ~190MB against a 256MB cap).
