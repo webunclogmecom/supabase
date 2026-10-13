@@ -5291,8 +5291,8 @@ ordered him to do it ... saved in the Activity History of that visit."*
   `request_context.change_reason`; `get_record_history` shows `Viktor, asked by <name>: "<reason>"`.
 - 🛑 **Widening Viktor's reach (another field, another table, a visit that is not completed) is Fred's decision.**
   Do not add a second Viktor write path; extend this function and its VERIFY.
-- Migration `docs/migrations/2026-10-13_0300_viktor_visit_truck.sql`; Viktor's instructions were posted in
-  `#viktor-supabase`.
+- Migration `docs/migrations/2026-10-13_0300_viktor_visit_truck.sql`. Full reference, Viktor's instructions (posted in
+  `#viktor-training`, saved by him as skill `visit_truck_update`) and the open items: `docs/reference/viktor-visit-truck.md`.
 
 ## Documentation map
 
