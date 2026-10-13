@@ -900,6 +900,12 @@ verify_jwt = true
 [functions.admin-review-reminder]
 verify_jwt = true
 
+# time-on-site-reminder: daily 11 AM Eastern Slack post of yesterday's client visits with no time on site
+# (2026-10-13). Called by pg_cron (fn_request_time_on_site_reminder) with the vault service_role key; the handler
+# requires role=service_role, only trustworthy behind verify_jwt.
+[functions.time-on-site-reminder]
+verify_jwt = true
+
 # measure-page-reference: measures the printed lines of one Stamp Studio page in the background
 # (2026-10-05), so a page a person stamps has a machine reference for save_page_bands. Called by
 # pg_cron (public.fn_request_page_reference_measure) with the vault service_role key; the handler
