@@ -5,7 +5,8 @@
 // (save-calendar-task, property_intakes.calendar_task_id). Until now nothing closed it. Fred's decisions:
 //   submitted form (any, even Incomplete)  -> tick the task done
 //   cancelled form                          -> delete the task
-//   expired form                            -> NOT handled yet (Fred asked whether forms expire; open)
+//   expired form (never submitted)          -> delete the task, like a cancel (Fred: "yes treat expired forms like
+//                                              cancelled", 2026-10-13_1250; links last 30 days since then)
 // Plan: docs/superpowers/specs/2026-10-13-intake-task-close-on-submit-and-cancel-plan.md
 // Migration: docs/migrations/2026-10-13_1235_intake_task_close.sql
 //

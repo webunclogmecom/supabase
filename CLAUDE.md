@@ -5199,7 +5199,8 @@ Nine things that will bite someone who does not know them:
    back, then records through `ops.fn_record_calendar_task` (`completed_source = 'intake'`, new CHECK value) or
    `ops.fn_delete_calendar_task`, audit label `intake-task-sync`. 🛑 `public.intake_task_closures.done_at` makes it act
    ONCE per form: a task a person reopens stays reopened; do not drop that check. A cancelled form whose task was already
-   ticked is left alone. Expired forms are NOT handled (Fred asked whether they expire; 60 days, open). Watched by
+   ticked is left alone. Since `2026-10-13_1250` a never-submitted form whose link EXPIRED is deleted like a cancel, and
+   links last **30 days** (`expires_at` default; was 60; Fred: "make it 30 days instead of 60"). Watched by
    `log_jobber_sync_health` (source `intake_task_sync`, 25 minutes). It reuses the verified Jobber helpers re-exported
    from `_shared/day-marker-task.ts`.
 

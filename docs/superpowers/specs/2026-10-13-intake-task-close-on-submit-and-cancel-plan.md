@@ -10,6 +10,10 @@
 > instead of a new item kind. Verified: tasks 292 and 326 ticked in Jobber and in the Calendar on the first run; the
 > delete path on a [TEST] form and task on 112-YA (Jobber task gone, our row gone, ledger and audit say so); the health
 > watch reports nothing while it runs and "stalled" when its runs are hidden (rolled back).
+>
+> ✅ **D3 answered the same day:** "yes treat expired forms like cancelled", and "make it 30 days instead of 60".
+> `2026-10-13_1250_intake_expiry_30_days_and_expired_tasks.sql`: links last 30 days (new links only), and a
+> never-submitted expired form's task is deleted.
 
 ## The ask
 
