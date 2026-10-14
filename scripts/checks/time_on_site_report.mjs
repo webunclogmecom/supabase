@@ -1,9 +1,8 @@
 // time_on_site_report.mjs - the "Visits Missing Time on Site" HTML report, built from the daily alert itself.
 //   node scripts/checks/time_on_site_report.mjs <out.html> [from YYYY-MM-DD, default 2026-01-01]
-// Every reason is the line the 11 AM alert (edge fn time-on-site-reminder) would post for that visit: the report
-// calls its dry run once per date ({dry_run:true, date}), which neither posts nor logs, and takes `lines` (the
-// reasons) and `gaps` (public.fn_time_on_site_gaps) from it. So the report and the alert cannot disagree, which is
-// what went wrong with the 2026-10-12 report (its own 150 m rule called visit 6509's 34-minute stop a drive-by).
+// WHICH visits are listed comes from the 11 AM alert (edge fn time-on-site-reminder, its dry run per date: the gaps of
+// public.fn_time_on_site_gaps). Since 2026-10-15 the ISSUE of each visit is read from Samsara itself (trips + GPS over
+// the visit's date window), because the alert's reasons hid trucks Samsara shows at the place; see the block below.
 // Client visits only (the function leaves out dump sites and test clients). The output names clients: write it
 // OUTSIDE the repos (the workspace's samsara-checks/ folder), never here.
 import fs from 'node:fs';
@@ -48,116 +47,223 @@ for (let i = 0; i < ids.length; i += 100) {
 const noProp = [...addr.values()].filter((a) => !a.property_id && a.client_id);
 const clientProps = new Map();
 if (noProp.length) {
-  const pr = await fetch(`${BASE}/rest/v1/properties?select=client_id,address,city&deleted_at=is.null&client_id=in.(${[...new Set(noProp.map((a) => a.client_id))].join(',')})`, { headers: H });
+  const pr = await fetch(`${BASE}/rest/v1/properties?select=client_id,address,city,latitude,longitude&deleted_at=is.null&client_id=in.(${[...new Set(noProp.map((a) => a.client_id))].join(',')})`, { headers: H });
   if (!pr.ok) throw new Error(`client properties: HTTP ${pr.status}`);
   for (const p of await pr.json()) clientProps.set(p.client_id, [...(clientProps.get(p.client_id) ?? []), p]);
 }
 
 const et = (t) => t ? new Date(t).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
-// the reason as the alert words it, after "<client> · <truck>: "; its kind only groups and filters the table
-const KINDS = [
-  ['othertruck', /was parked .*the visit is set to /, 'Another truck was there'],
-  ['offpoint', /was parked [\d.,]+ (m|km) from our map point/, 'Parked near, map point off'],
-  ['notsaved', /was parked here .* but the time was not saved/, 'Parked here, time not saved'],
-  ['nopoint', /the property has no map point/, 'No map point'],
-  ['noplace', /this client has no Samsara place$/, 'No Samsara place'],
-  ['placefar', /the Samsara place is .* from our address/, 'Samsara place far from our address'],
-  ['stay', / was there .* but /, 'Truck there, not at completion'],
-  ['passed', /only drove past/, 'Only drove past'],
-  ['never', /no truck came within/, 'No truck within 150 m'],
-  ['nogps', /no truck GPS was found/, 'No truck GPS that day'],
-];
-// Fred, 2026-10-14: "Issue" instead of "Why it's blank", one bullet per problem, wording that says what is wrong, and
-// a "Suggestion" column with the fix. The alert's reason stays the source; this only splits and rewords it.
-const MAP_POINT = 'the map point we have for this address (in Jobber) is probably in the wrong spot: we only count a truck parked within 150 m of it';
-function explain(kind, reason, g) {
-  const issues = [], fix = [];
-  let other = null;
-  const r = reason.replace(/;? the visit is set to (.+)$/, (_, t) => { other = t; return ''; })
-                  .replace(/, but the visit is set to (.+)$/, (_, t) => { other = t; return ''; });
-  const parkedBy = (r.match(/^(\S+) was parked/) ?? [])[1];
-  const old = g.visit_date < '2026-08-19';
-  if (/ from our map point/.test(r)) {
-    const head = r.slice(0, r.indexOf(': ')) + '.';
-    if (/inside its Samsara place/.test(r)) {
-      issues.push(head + " The truck was inside the client's Samsara place, so " + MAP_POINT + '.');
-      fix.push('Move the map point in Jobber to where the truck parks (inside the Samsara place).');
-    } else if (/outside its Samsara place too/.test(r)) {
-      issues.push(head + " The truck was outside the client's Samsara place too, so both our map point (in Jobber) and the Samsara place are probably in the wrong spot.");
-      fix.push('Check the address, then move the map point in Jobber and the Samsara place to where the truck parks.');
-    } else if (/no Samsara place/.test(r)) {
-      issues.push(head + ' The client has no Samsara place, and ' + MAP_POINT + '.');
-      fix.push('Move the map point in Jobber to where the truck parks, and create a Samsara place for the client.');
-    } else {
-      issues.push(head + ' ' + MAP_POINT[0].toUpperCase() + MAP_POINT.slice(1) + '.');
-      fix.push('Move the map point in Jobber to where the truck parks.');
-    }
-  } else if (/ was parked here /.test(r)) {
-    issues.push(r.replace(/ when it was marked complete.*$/, ' when the job was marked complete') + (/time was not saved/.test(r) ? ', but no time on site was saved.' : '.'));
-    if (!other) fix.push(old ? "Save Samsara's stay for this visit: it is older than our truck stop records (Aug 20), so it does not fill by itself."
-                             : 'Nothing to do by hand: the time fills automatically overnight.');
-  } else if (kind === 'nopoint' && g.noProperty) {
-    issues.push('The visit has no property set, so we cannot tell whether a truck was there.');
-    fix.push(g.clientAddress ? 'Set the property on the visit (the client has one: ' + g.clientAddress + ').' : 'Set the property on the visit.');
-  } else if (kind === 'nopoint') {
-    issues.push('The property has no map point, so we cannot tell whether a truck was there.');
-    fix.push('Check the address in Jobber so the property gets a map point.');
-  } else if (kind === 'noplace') {
-    issues.push('The client has no place in Samsara, and no truck was parked at our map point when the job was marked complete.');
-    fix.push('Create a Samsara place for the client at its address, then check the truck on the visit and the completion time.');
-  } else if (kind === 'placefar') {
-    issues.push(r[0].toUpperCase() + r.slice(1).replace('our address', 'our map point for the address') + ', so one of the two is in the wrong spot.');
-    fix.push('Check which one is right, then move the Samsara place or the map point in Jobber.');
-  } else if (kind === 'stay') {
-    issues.push(r.replace(/, but it was marked complete (.*)$/, ', but the job was marked complete $1, so that stay does not match the job.')
-                 .replace(/, but it has no completion time$/, ', but the job has no completion time.'));
-    fix.push('The job was marked complete away from the site. If that stay was the service, enter the time on site in Admin Review, and ask the driver to mark jobs complete on site.');
-  } else if (kind === 'passed') {
-    issues.push(r.replace('only drove past', 'only drove past the address') + ': no stop long enough to be the service.');
-    fix.push('Check with the driver whether the service was done. If it was, the truck parked out of range: check the map point and the truck on the visit.');
-  } else if (kind === 'never') {
-    issues.push(r.replace('no truck came within', 'No truck came within').replace(/\)$/, ') of our map point.'));
-    fix.push('Check the truck on the visit and the address. If the service was done, enter the time on site in Admin Review.');
-  } else if (kind === 'nogps') {
-    issues.push('No truck GPS was found near the address that day.');
-    fix.push('Check the visit date. If the service was done, enter the time on site in Admin Review.');
-  } else issues.push(r);
-  if (other) {
-    issues.push('The visit is set to ' + other + (parkedBy ? ', but ' + parkedBy + ' was the truck parked there.' : '.'));
-    fix.unshift('Change the truck on the visit to ' + (parkedBy ?? 'the truck that was there') + ' (Viktor can do it).' +
-      (old ? " The visit is older than our truck stop records (Aug 20), so also save Samsara's stay for it." : ' The time then fills overnight.'));
+// 2026-10-15 (Fred: "check the html list to make sure the data is correct, i can't see in samsara the trucks routes
+// to be as you say ... at the Datetime of the visit ... the links of the truck routes should be in accordance to the
+// date of the visit not the date of completion"). The alert's reasons looked only at our map point and at the moment
+// the job was marked complete, so they hid trucks Samsara shows at the place that day (5084: Cloggy inside the place
+// 35 min, listed as "no truck within 150 m"). Every issue below is read from SAMSARA for the visit's date window
+// (visit date -4 h to 10 AM next day, ET): its trips give each stop and the place it ended at, exactly what Samsara
+// shows; its GPS history gives the closest approach when no truck stopped. The alert's line is only a fallback.
+const SAM = { Authorization: `Bearer ${env.SAMSARA_API_TOKEN}`, Accept: 'application/json' };
+const TRUCKS = { '281474998706262': 'Moises', '281474998706263': 'Cloggy', '281474998706264': 'David' };
+const NEAR = 250, MIN_STAY = 3 * 60e3, REPARK = 15 * 60e3;
+const R = 6371000, rad = (x) => x * Math.PI / 180;
+const meters = (a, b, c, d) => { const x = rad(c - a), y = rad(d - b); const h = Math.sin(x / 2) ** 2 + Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(y / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+const dist = (m) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+const clock = (t) => new Date(t).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
+const etDay = (t) => new Date(t).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+const at = (t, day) => etDay(t) === day ? clock(t) : `${new Date(t).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' })}, ${clock(t)}`;
+const etMidnight = (d) => { const noon = Date.parse(d + 'T12:00:00Z'); const off = new Date(noon).toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'shortOffset' }).match(/GMT([+-]\d+)/)[1]; return Date.parse(`${d}T00:00:00${off.startsWith('-') ? '-' : '+'}${String(Math.abs(off)).padStart(2, '0')}:00`); };
+const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
+
+const tripCache = new Map();
+async function trips(truck, a, b) {
+  const k = `${truck}|${a}|${b}`;
+  if (!tripCache.has(k)) {
+    const r = await fetch(`https://api.samsara.com/v1/fleet/trips?vehicleId=${truck}&startMs=${a}&endMs=${b}`, { headers: SAM });
+    if (!r.ok) throw new Error(`samsara trips ${r.status}`);
+    tripCache.set(k, ((await r.json()).trips ?? []).sort((x, y) => x.startMs - y.startMs));
+    await sleep(150);
   }
-  return { issues, suggestion: fix.join(' ') };
+  return tripCache.get(k);
 }
-// no service type (Service Call labor, custom items: Fred 2026-10-14): the visit's own line items, else the job title
+const placeCache = new Map();
+async function place(id) {
+  if (!placeCache.has(id)) {
+    const r = await fetch(`https://api.samsara.com/addresses/${id}`, { headers: SAM });
+    const a = r.ok ? (await r.json()).data : null;
+    placeCache.set(id, a ? { id: String(a.id), name: a.name, lat: a.geofence?.circle?.latitude ?? a.latitude, lng: a.geofence?.circle?.longitude ?? a.longitude } : null);
+    await sleep(150);
+  }
+  return placeCache.get(id);
+}
+// When Samsara's trips show no stop there, the GPS points still can: a truck idling with the engine on never ends a
+// trip (7741: Cloggy 11 min within 48 m). Targets are our map point AND each Samsara place (8009: Moises 41 m from the
+// place, 816 m from our map point). A dwell = consecutive points near a target with no gap over 5 min.
+async function gpsLook(w0, w1, targets) {
+  let after = '', best = null;
+  const near = {};
+  do {
+    const r = await fetch(`https://api.samsara.com/fleet/vehicles/stats/history?types=gps&vehicleIds=${Object.keys(TRUCKS).join(',')}` +
+      `&startTime=${new Date(w0).toISOString()}&endTime=${new Date(w1).toISOString()}${after ? '&after=' + after : ''}`, { headers: SAM });
+    if (!r.ok) throw new Error(`samsara gps ${r.status}`);
+    const j = await r.json();
+    for (const v of j.data ?? []) for (const q of v.gps ?? []) {
+      for (const tg of targets) {
+        const m = meters(tg.lat, tg.lng, q.latitude, q.longitude);
+        if (!best || m < best.m) best = { m, t: q.time, truck: TRUCKS[v.id], id: v.id, target: tg };
+        if (m <= NEAR) { (near[v.id] ??= []).push({ t: Date.parse(q.time), tg, m }); break; }
+      }
+    }
+    after = j.pagination?.hasNextPage ? j.pagination.endCursor : '';
+    await sleep(150);
+  } while (after);
+  const dwells = [];
+  for (const [id, pts] of Object.entries(near)) {
+    pts.sort((x, y) => x.t - y.t);
+    let cur = null;
+    for (const p of pts) {
+      if (cur && p.t - cur.s1 <= 5 * 60e3) { cur.s1 = p.t; continue; }
+      if (cur) dwells.push(cur);
+      cur = { id, truck: TRUCKS[id], s0: p.t, s1: p.t, gps: true, viaPlace: p.tg.kind === 'place', placeName: p.tg.name, fromMap: p.tg.kind === 'map' ? p.m : null, parts: 1 };
+    }
+    if (cur) dwells.push(cur);
+  }
+  return { best, dwells: dwells.filter((d) => d.s1 - d.s0 >= MIN_STAY).sort((x, y) => x.s0 - y.s0) };
+}
+
+const KINDS = [
+  ['atdone', 'Parked there when marked complete'],
+  ['once', 'Parked there once, marked complete at another time'],
+  ['several', 'Parked there more than once'],
+  ['passed', 'Only drove past'],
+  ['never', 'No truck at the address'],
+  ['nowhere', 'No map point and no Samsara place'],
+];
 const svcFallback = (a) => [...new Set((a?.line_items ?? []).map((l) => String(l.name ?? '').replace(/^\s*\d+\s*-\s*/, '').trim()).filter(Boolean))].join(', ')
   || String(a?.jobs?.title ?? '').replace(/\s*\[OLD\]\s*$/i, '').trim();
-const data = rows.map(({ g: g0, line }) => {
-  const a0 = addr.get(g0.visit_id);
-  const only = a0 && !a0.property_id ? (clientProps.get(a0.client_id) ?? []) : [];
-  const clientAddress = only.length === 1 ? [only[0].address, only[0].city].filter(Boolean).join(', ') : '';
-  const g = { ...g0, noProperty: !!a0 && !a0.property_id, clientAddress };
-  const reason = line.includes(': ') ? line.slice(line.indexOf(': ') + 2) : line;
-  const kind = KINDS.find(([, re]) => re.test(reason)) ?? ['other', null, 'Other'];
-  const s = g.stop_at_completion;
-  const truckFor = s ?? (g.truck ? { truck: g.truck, truck_samsara_id: g.truck_samsara_id } : g.closest) ?? null;
-  const anchor = g.completed_at ? Date.parse(g.completed_at) : Date.parse(g.visit_date + 'T12:00:00-04:00');
+
+const data = [];
+for (const { g } of rows) {
   const a = addr.get(g.visit_id);
-  return {
+  g.noProperty = !!a && !a.property_id;
+  const only = a && !a.property_id ? (clientProps.get(a.client_id) ?? []) : [];
+  const fallback = only.length === 1 ? only[0] : null;
+  const lat = g.lat ?? fallback?.latitude ?? null, lng = g.lng ?? fallback?.longitude ?? null;
+  const placeIds = [...new Set([g.property_place_id, ...(g.client_place_ids ?? [])].filter(Boolean).map(String))];
+  const places = (await Promise.all(placeIds.map(place))).filter(Boolean);
+  const w0 = etMidnight(g.visit_date) - 4 * 3600e3;
+  const next = new Date(Date.parse(g.visit_date + 'T12:00:00Z') + 86400e3).toISOString().slice(0, 10);
+  const w1 = etMidnight(next) + 10 * 3600e3;
+  const done = g.completed_at ? Date.parse(g.completed_at) : null;
+  const issues = [], fix = [];
+
+  // every truck's stops at the address in the window: the gap after a trip that ended at the client's Samsara place,
+  // or within 250 m of our map point; stops of one truck less than 15 min apart are one visit (a re-park)
+  const visits = [];
+  if (lat != null || places.length) {
+    for (const [id, name] of Object.entries(TRUCKS)) {
+      const ts = await trips(id, w0 - 12 * 3600e3, w1 + 12 * 3600e3);
+      const here = [];
+      for (let i = 0; i < ts.length - 1; i++) {
+        const s0 = ts[i].endMs, s1 = ts[i + 1].startMs;
+        if (s1 - s0 < MIN_STAY || s1 <= w0 || s0 >= w1) continue;
+        const c = ts[i].endCoordinates ?? {};
+        const placeHit = places.find((p) => String(ts[i].endAddress?.id ?? '') === p.id);
+        const fromMap = lat != null && c.latitude != null ? meters(lat, lng, c.latitude, c.longitude) : null;
+        if (placeHit || (fromMap != null && fromMap <= NEAR)) here.push({ s0, s1, fromMap, placeName: placeHit?.name ?? ts[i].endAddress?.name ?? null, viaPlace: !!placeHit });
+      }
+      for (const h of here) {
+        const last = visits.at(-1);
+        if (last && last.id === id && h.s0 - last.s1 <= REPARK) { last.s1 = h.s1; last.parts++; last.viaPlace ||= h.viaPlace; }
+        else visits.push({ id, truck: name, parts: 1, ...h });
+      }
+    }
+  }
+  visits.sort((x, y) => x.s0 - y.s0);
+  const targets = [...(lat != null ? [{ kind: 'map', lat, lng }] : []), ...places.map((p) => ({ kind: 'place', lat: p.lat, lng: p.lng, name: p.name }))];
+  let look = null;
+  if (!visits.length && targets.length) { look = await gpsLook(w0, w1, targets); visits.push(...look.dwells); }
+  const holds = done != null ? visits.filter((v) => done >= v.s0 - 5 * 60e3 && done <= v.s1 + 15 * 60e3) : [];
+  const old = g.visit_date < '2026-08-19';
+  const span = (v) => `${at(v.s0, g.visit_date)} to ${at(v.s1, g.visit_date)} (${Math.round((v.s1 - v.s0) / 60e3)} min)`;
+  const where = (v) => (v.viaPlace && (v.fromMap == null || v.fromMap > 150)
+    ? `at the address (Samsara place "${v.placeName}"${v.fromMap != null ? `, ${dist(v.fromMap)} from our map point` : ''})` : 'at the address')
+    + (v.gps ? ' with the engine running (Samsara GPS, no trip stop)' : '');
+  const doneTxt = done != null ? `the job was marked complete ${etDay(done) === g.visit_date ? 'at ' + clock(done) : 'on ' + at(done, '')}` : 'the job has no completion time';
+  let kind;
+  if (lat == null && !places.length) {
+    kind = 'nowhere';
+    issues.push(g.noProperty ? 'The visit has no property set, so we cannot tell whether a truck was there.' : 'The property has no map point and the client has no Samsara place, so we cannot tell whether a truck was there.');
+    fix.push(g.noProperty ? 'Set the property on the visit.' : 'Check the address in Jobber so the property gets a map point.');
+  } else if (holds.length) {
+    kind = 'atdone';
+    const v = holds[0];
+    const rel = done > v.s1 ? `, ${Math.round((done - v.s1) / 60e3)} min after the truck left` : done < v.s0 ? `, ${Math.round((v.s0 - done) / 60e3)} min before the truck arrived` : `, during that stop`;
+    issues.push(`${v.truck} was parked ${where(v)} ${span(v)}, and ${doneTxt}${rel}${v.parts > 1 ? ' (the truck moved once while there)' : ''}.`);
+    if (v.truck !== g.truck) {
+      issues.push(g.truck ? `The visit is set to ${g.truck}, but ${v.truck} was the truck parked there.` : `The visit has no truck set; ${v.truck} was the truck parked there.`);
+      fix.push(`Set the truck on the visit to ${v.truck} (Viktor can do it).`);
+    }
+    fix.push(old ? "Save Samsara's stay as the time on site: the visit is older than our truck stop records (Aug 20), so it does not fill by itself."
+                 : 'The time then fills overnight.');
+  } else if (visits.length === 1) {
+    kind = 'once';
+    const v = visits[0];
+    issues.push(`${v.truck} was parked ${where(v)} ${span(v)}, the only time a truck stopped there that day, but ${doneTxt}.`);
+    if (v.truck !== g.truck) {
+      issues.push(g.truck ? `The visit is set to ${g.truck}, but ${v.truck} was the truck parked there.` : `The visit has no truck set; ${v.truck} was the truck parked there.`);
+      fix.push(`Set the truck on the visit to ${v.truck} (Viktor can do it).`);
+    }
+    fix.push(old ? "Save Samsara's stay as the time on site (one visit there that day)." : v.truck !== g.truck ? "The nightly check then saves Samsara's stay for it." : "The nightly check saves Samsara's stay for it.");
+  } else if (visits.length > 1) {
+    kind = 'several';
+    issues.push(`Trucks stopped at the address ${visits.length} times that day: ${visits.map((v) => `${v.truck} ${span(v)}`).join('; ')}. ${doneTxt[0].toUpperCase() + doneTxt.slice(1)}, not during any of them.`);
+    fix.push('Check which stop was this job, then enter its time on site in Admin Review.');
+  } else {
+    const c = look?.best ?? null;
+    if (c && c.m <= NEAR) {
+      kind = 'passed';
+      issues.push(`${c.truck} only drove past the address (closest ${dist(c.m)} from ${c.target.kind === 'map' ? 'our map point' : 'the Samsara place'} at ${at(c.t, g.visit_date)}) and was not near it for 3 minutes.`);
+      fix.push('Check with the driver whether the service was done that day. If it was, enter the time on site in Admin Review.');
+    } else {
+      kind = 'never';
+      issues.push(c ? `No truck stopped at the address that day (closest: ${c.truck}, ${dist(c.m)} from ${c.target.kind === 'map' ? 'our map point' : 'the Samsara place'} at ${at(c.t, g.visit_date)}).` : 'No truck stopped at the address that day.');
+      fix.push('Check the visit date and the truck with the office. If the service was done, enter the time on site in Admin Review.');
+    }
+    if (c) g.closestTruck = c;
+  }
+  // the two places we compare against
+  if (g.noProperty && kind !== 'nowhere') {
+    issues.push(`The visit has no property set${fallback ? `; the client's only property was used (${[fallback.address, fallback.city].filter(Boolean).join(', ')})` : ''}.`);
+    fix.push('Set the property on the visit.');
+  }
+  if (!places.length) { issues.push('The client has no place in Samsara.'); fix.push('Create a Samsara place for the client at its address.'); }
+  else if (lat != null) {
+    const far = places.map((p) => ({ p, m: meters(lat, lng, p.lat, p.lng) })).sort((x, y) => x.m - y.m)[0];
+    if (far.m > NEAR) {
+      const viaPlace = visits.some((v) => v.viaPlace && (v.fromMap ?? 0) > NEAR), viaMap = visits.some((v) => !v.viaPlace);
+      issues.push(`The client's Samsara place "${far.p.name}" is ${dist(far.m)} from our map point` +
+        (viaPlace ? ', and the truck stopped at the Samsara place, so our map point (in Jobber) is in the wrong spot.'
+                  : viaMap ? ', and the truck stopped at our map point, so the Samsara place is in the wrong spot.' : ', so one of the two is in the wrong spot.'));
+      fix.push(viaPlace ? 'Move the map point in Jobber to the Samsara place.' : viaMap ? 'Move the Samsara place to the address.' : 'Check which one is right and move the other.');
+    }
+  }
+  const link = visits.length ? { truck: visits[0].truck, id: visits[0].id } : g.truck ? { truck: g.truck, id: g.truck_samsara_id }
+    : g.closestTruck ? { truck: g.closestTruck.truck, id: g.closestTruck.id } : null;
+  data.push({
     id: g.visit_id, date: g.visit_date, client: g.client_code ?? '', name: g.client_name ?? '',
-    address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', ') || g.clientAddress, service: g.service ?? svcFallback(a),
-    truck: g.truck ?? '', completed: et(g.completed_at), rk: kind[0], rl: kind[2],
-    ...(({ issues, suggestion }) => ({ issues, reason: issues.join(' '), suggestion }))(explain(kind[0], reason, g)),
-    // Samsara's stay when the alert could read it (the times Samsara shows), else our GPS stop (2026-10-14)
+    address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', ') || (fallback ? [fallback.address, fallback.city].filter(Boolean).join(', ') : ''),
+    service: g.service ?? svcFallback(a), truck: g.truck ?? '', completed: et(g.completed_at),
+    rk: kind, rl: KINDS.find(([k]) => k === kind)[1], issues, reason: issues.join(' '), suggestion: [...new Set(fix)].join(' '),
     placeId: g.property_place_id || (g.client_place_ids ?? [])[0] || '',
-    placeEndMs: Date.parse(g.visit_date + 'T23:59:59.999-04:00'), month: g.visit_date.slice(0, 7),
-    truckAny: truckFor?.truck ?? '', samsaraVehicle: truckFor?.truck_samsara_id ?? '',
-    endMs: anchor + 3 * 3600e3, durSec: 6 * 3600,
-  };
-});
+    placeEndMs: w1, month: g.visit_date.slice(0, 7),
+    truckAny: link?.truck ?? '', samsaraVehicle: link?.id ?? '',
+    // the truck's route over the VISIT's date window (Fred, 2026-10-15), not around the completion time
+    endMs: w1, durSec: Math.round((w1 - w0) / 1000),
+  });
+  process.stdout.write('.');
+}
+
 const counts = data.reduce((m, d) => (m[d.rk] = (m[d.rk] || 0) + 1, m), {});
 const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric', year: 'numeric' });
-const chips = KINDS.filter(([k]) => counts[k]).map(([k, , l]) => `<span class="chip">${l} <b>${counts[k]}</b></span>`).join('\n');
+const chips = KINDS.filter(([k]) => counts[k]).map(([k, l]) => `<span class="chip">${l} <b>${counts[k]}</b></span>`).join('\n');
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -179,7 +285,7 @@ th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;verti
 th{background:var(--head);position:sticky;top:0;font-weight:600;cursor:pointer;white-space:nowrap}
 td.n{white-space:nowrap}.muted{color:var(--muted)}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.k-offpoint,.k-notsaved,.k-othertruck{color:#2471a3}.k-never,.k-nogps{color:#c0392b}.k-passed{color:#b9770e}.k-nopoint,.k-noplace,.k-placefar{color:#7d3c98}
+.k-atdone,.k-once{color:#2471a3}.k-several{color:#7d3c98}.k-never{color:#c0392b}.k-passed{color:#b9770e}.k-nowhere{color:#7d3c98}
 .note{color:var(--muted);font-size:13px;margin-top:14px}
 button{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--head);color:var(--fg);cursor:pointer}
 tr.g td{background:var(--head);font-weight:600;cursor:pointer}
@@ -187,13 +293,13 @@ ul.iss{margin:0;padding-left:18px}ul.iss li+li{margin-top:4px}
 tr.g .gc{color:var(--muted);font-weight:400;margin-left:8px}
 </style></head><body><div class="wrap">
 <h1>Visits Missing Time on Site</h1>
-<p class="sub">Completed client visits since ${from} with no time on site, as of ${today} (Eastern time). Each issue comes from the 11 AM Slack alert for that visit, with a suggested fix.${placesUnread ? ` Samsara places could not be read for ${placesUnread} of the dates, so their place reasons are left out.` : ''}</p>
+<p class="sub">Completed client visits since ${from} with no time on site, as of ${today} (Eastern time). Every issue is read from Samsara (its trips and GPS) for the visit's date, 4 hours before it to 10 AM the next day, with a suggested fix. "At the address" means Samsara says the truck stopped at the client's Samsara place, or within 250 m of our map point.${placesUnread ? ` Samsara places could not be read for ${placesUnread} of the dates, so their place reasons are left out.` : ''}</p>
 <div class="chips"><span class="chip"><b>${data.length}</b> visits</span>
 ${chips}</div>
 <div class="bar">
 <input type="search" id="q" placeholder="Search client, address, truck, visit #">
 <select id="group"><option value="">No grouping</option><option value="client" selected>Group by client</option><option value="rl">Group by issue</option><option value="truckAny">Group by truck</option><option value="month">Group by month</option></select>
-<select id="reason"><option value="">All issues</option>${KINDS.filter(([k]) => counts[k]).map(([k, , l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+<select id="reason"><option value="">All issues</option>${KINDS.filter(([k]) => counts[k]).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
 <select id="truck"><option value="">Any truck</option></select>
 <select id="month"><option value="">Any month</option></select>
 <button id="clear" type="button">Clear filters</button>
@@ -205,7 +311,7 @@ ${chips}</div>
 <th data-k="truck">Assigned truck</th><th data-k="completed">Completed</th><th data-k="reason">Issue</th><th data-k="suggestion">Suggestion</th>
 <th>Truck in Samsara</th>
 </tr></thead><tbody id="tb"></tbody></table></div>
-<p class="note">The property opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
+<p class="note">The property opens the client's Place in Samsara. The truck link opens the truck that stopped there (else the truck on the visit) in Samsara over the visit's date, the same window (Samsara shows times in your computer's time zone).</p>
 </div>
 <script>
 const ORG = '${ORG}';
