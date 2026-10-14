@@ -131,7 +131,6 @@ const data = rows.map(({ g, line }) => {
     truck: g.truck ?? '', completed: et(g.completed_at), rk: kind[0], rl: kind[2],
     ...(({ issues, suggestion }) => ({ issues, reason: issues.join(' '), suggestion }))(explain(kind[0], reason, g)),
     // Samsara's stay when the alert could read it (the times Samsara shows), else our GPS stop (2026-10-14)
-    stop: s ? (({ arrived, departed, minutes }) => `${s.truck}, ${et(arrived)} to ${et(departed).replace(/^[A-Z][a-z]{2} \d+, /, '')} (${minutes} min), ${s.meters} m${g.samsara_stay ? '' : ', our GPS'}`)(g.samsara_stay ?? s) : '',
     placeId: g.property_place_id || (g.client_place_ids ?? [])[0] || '',
     placeEndMs: Date.parse(g.visit_date + 'T23:59:59.999-04:00'), month: g.visit_date.slice(0, 7),
     truckAny: truckFor?.truck ?? '', samsaraVehicle: truckFor?.truck_samsara_id ?? '',
@@ -186,9 +185,9 @@ ${chips}</div>
 <div class="tw"><table><thead><tr>
 <th data-k="date">Date</th><th data-k="client">Client</th><th data-k="address">Address</th><th data-k="service">Service</th>
 <th data-k="truck">Assigned truck</th><th data-k="completed">Completed</th><th data-k="reason">Issue</th><th data-k="suggestion">Suggestion</th>
-<th data-k="stop">Truck stop when completed</th><th>Truck in Samsara</th>
+<th>Truck in Samsara</th>
 </tr></thead><tbody id="tb"></tbody></table></div>
-<p class="note">"Truck stop when completed" is a stop of 3 minutes or more, within 250 m of our map point, that holds the time the job was marked complete. Its times are Samsara's own stay (between the trip that ends there and the next trip), so they match the trip list in Samsara; "our GPS" marks the few where Samsara shows no stop there or could not be read. When it is more than 150 m away, our map point for the client is probably in the wrong place. The address opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
+<p class="note">The address opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
 </div>
 <script>
 const ORG = '${ORG}';
@@ -217,7 +216,6 @@ function row(d) {
     '<td>' + esc(d.service) + '</td><td>' + (esc(d.truck) || '<span class="muted">None</span>') + '</td>' +
     '<td class="n">' + esc(d.completed) + '</td><td class="k-' + d.rk + '"><ul class="iss">' + d.issues.map((i) => '<li>' + esc(i) + '</li>').join('') + '</ul></td>' +
     '<td>' + esc(d.suggestion) + '</td>' +
-    '<td>' + (esc(d.stop) || '<span class="muted">None</span>') + '</td>' +
     '<td>' + (vehicleUrl(d) ? '<a href="' + vehicleUrl(d) + '" target="_blank" rel="noopener">' + esc(d.truckAny) + ' location history</a>' : '<span class="muted">No truck</span>') + '</td></tr>';
 }
 function render() {
@@ -227,7 +225,7 @@ function render() {
   const groups = new Map();
   for (const d of list) { const k = groupLabel(g, d); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
   $('tb').innerHTML = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]))).map(([k, rs]) =>
-    '<tr class="g" data-g="' + esc(k) + '"><td colspan="10">' + (collapsed.has(k) ? '▸ ' : '▾ ') + esc(k) + '<span class="gc">' + rs.length + ' visit' + (rs.length === 1 ? '' : 's') + '</span></td></tr>' +
+    '<tr class="g" data-g="' + esc(k) + '"><td colspan="9">' + (collapsed.has(k) ? '▸ ' : '▾ ') + esc(k) + '<span class="gc">' + rs.length + ' visit' + (rs.length === 1 ? '' : 's') + '</span></td></tr>' +
     (collapsed.has(k) ? '' : rs.map(row).join(''))).join('');
   document.querySelectorAll('tr.g').forEach((tr) => tr.onclick = () => { const k = tr.dataset.g; collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); render(); });
 }
@@ -236,7 +234,7 @@ document.querySelectorAll('th[data-k]').forEach((th) => th.onclick = () => { con
 $('clear').onclick = () => { ['q', 'reason', 'truck', 'month'].forEach((id) => $(id).value = ''); collapsed.clear(); render(); };
 $('csv').onclick = () => {
   const cols = [['Visit #', 'id'], ['Date', 'date'], ['Client code', 'client'], ['Client', 'name'], ['Address', 'address'], ['Service', 'service'],
-    ['Assigned truck', 'truck'], ['Completed (ET)', 'completed'], ['Issue', 'reason'], ['Suggestion', 'suggestion'], ['Truck stop when completed', 'stop']];
+    ['Assigned truck', 'truck'], ['Completed (ET)', 'completed'], ['Issue', 'reason'], ['Suggestion', 'suggestion']];
   const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const lines = [cols.map((c) => q(c[0])).concat(q('Samsara place link'), q('Truck history link')).join(',')]
     .concat(current.map((d) => cols.map((c) => q(d[c[1]])).concat(q(placeUrl(d)), q(vehicleUrl(d))).join(',')));
