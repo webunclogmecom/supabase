@@ -183,11 +183,11 @@ ${chips}</div>
 <span class="muted" id="shown"></span>
 </div>
 <div class="tw"><table><thead><tr>
-<th data-k="date">Date</th><th data-k="client">Client</th><th data-k="address">Address</th><th data-k="service">Service</th>
+<th data-k="date">Date</th><th data-k="client">Client</th><th data-k="address">Property</th><th data-k="service">Service</th>
 <th data-k="truck">Assigned truck</th><th data-k="completed">Completed</th><th data-k="reason">Issue</th><th data-k="suggestion">Suggestion</th>
 <th>Truck in Samsara</th>
 </tr></thead><tbody id="tb"></tbody></table></div>
-<p class="note">The address opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
+<p class="note">The property opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
 </div>
 <script>
 const ORG = '${ORG}';
@@ -233,7 +233,7 @@ document.querySelectorAll('th[data-k]').forEach((th) => th.onclick = () => { con
 ['q', 'reason', 'truck', 'month', 'group'].forEach((id) => $(id).addEventListener('input', () => { collapsed.clear(); render(); }));
 $('clear').onclick = () => { ['q', 'reason', 'truck', 'month'].forEach((id) => $(id).value = ''); collapsed.clear(); render(); };
 $('csv').onclick = () => {
-  const cols = [['Visit #', 'id'], ['Date', 'date'], ['Client code', 'client'], ['Client', 'name'], ['Address', 'address'], ['Service', 'service'],
+  const cols = [['Visit #', 'id'], ['Date', 'date'], ['Client code', 'client'], ['Client', 'name'], ['Property', 'address'], ['Service', 'service'],
     ['Assigned truck', 'truck'], ['Completed (ET)', 'completed'], ['Issue', 'reason'], ['Suggestion', 'suggestion']];
   const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const lines = [cols.map((c) => q(c[0])).concat(q('Samsara place link'), q('Truck history link')).join(',')]
