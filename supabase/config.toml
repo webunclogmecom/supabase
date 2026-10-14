@@ -923,3 +923,9 @@ verify_jwt = false
 # decodes the role claim, which is only trustworthy behind the gateway check.
 [functions.measure-page-reference]
 verify_jwt = true
+
+# webhook-resend (2026-10-14_1505): stores what Resend reports about every email we send (delivered, opened,
+# bounced ...) in public.email_events. verify_jwt = false because Resend cannot send a Supabase token: the Svix
+# signature (RESEND_WEBHOOK_SECRET, svix.ts) is the gate, and the backfill door needs the exact service key.
+[functions.webhook-resend]
+verify_jwt = false
