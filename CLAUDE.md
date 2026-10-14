@@ -5253,7 +5253,11 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   images, so "opened" is a hint, never proof. ⚠ The "overdue" email the client got was an automatic **FOG BMP**
   (`mg.fogbmp.com`) reminder, the city's tracking portal: our email to the inspectors does not enter the cleaning
   there, so those reminders can fire even when our send was delivered. Who enters it (hauler login or the city) is
-  open with Hallandale Beach.
+  open with Hallandale Beach. Proven 2026-10-14: the A La Carte send (`derm_email_sends` 190, Resend
+  `01a12144-...`) reads **Delivered** for jbrown@, jtuszynski@ and the derm@ayache.com BCC; smoke test
+  (`scripts/probes/derm_email_smoke.js 2017 381 city nophotos`, 112-YA, test_recipient only) carried the
+  `links.unclogme.com` pixel, links not rewritten, and read Sent, Delivered, then **Opened** 2 minutes after Gmail
+  displayed it. The Resend dashboard shows times in the browser's zone (CEST here), not ET.
 - **Run records:** both 11 AM reminders write one `sync_log` row per run (`admin_review_reminder`,
   `stamp_sheets_reminder`, `<source>_test`), and their wrappers call the edge function every day (`2026-10-12_1310`).
 - **Photos:** `v_visit_photo_counts` counts only `before`/`after`/`internal`/`extra` as sorted since `2026-10-12_1335`
