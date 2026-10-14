@@ -59,6 +59,65 @@ const KINDS = [
   ['never', /no truck came within/, 'No truck within 150 m'],
   ['nogps', /no truck GPS was found/, 'No truck GPS that day'],
 ];
+// Fred, 2026-10-14: "Issue" instead of "Why it's blank", one bullet per problem, wording that says what is wrong, and
+// a "Suggestion" column with the fix. The alert's reason stays the source; this only splits and rewords it.
+const MAP_POINT = 'the map point we have for this address (in Jobber) is probably in the wrong spot: we only count a truck parked within 150 m of it';
+function explain(kind, reason, g) {
+  const issues = [], fix = [];
+  let other = null;
+  const r = reason.replace(/;? the visit is set to (.+)$/, (_, t) => { other = t; return ''; })
+                  .replace(/, but the visit is set to (.+)$/, (_, t) => { other = t; return ''; });
+  const parkedBy = (r.match(/^(\S+) was parked/) ?? [])[1];
+  const old = g.visit_date < '2026-08-19';
+  if (/ from our map point/.test(r)) {
+    const head = r.slice(0, r.indexOf(': ')) + '.';
+    if (/inside its Samsara place/.test(r)) {
+      issues.push(head + " The truck was inside the client's Samsara place, so " + MAP_POINT + '.');
+      fix.push('Move the map point in Jobber to where the truck parks (inside the Samsara place).');
+    } else if (/outside its Samsara place too/.test(r)) {
+      issues.push(head + " The truck was outside the client's Samsara place too, so both our map point (in Jobber) and the Samsara place are probably in the wrong spot.");
+      fix.push('Check the address, then move the map point in Jobber and the Samsara place to where the truck parks.');
+    } else if (/no Samsara place/.test(r)) {
+      issues.push(head + ' The client has no Samsara place, and ' + MAP_POINT + '.');
+      fix.push('Move the map point in Jobber to where the truck parks, and create a Samsara place for the client.');
+    } else {
+      issues.push(head + ' ' + MAP_POINT[0].toUpperCase() + MAP_POINT.slice(1) + '.');
+      fix.push('Move the map point in Jobber to where the truck parks.');
+    }
+  } else if (/ was parked here /.test(r)) {
+    issues.push(r.replace(/ when it was marked complete.*$/, ' when the job was marked complete') + (/time was not saved/.test(r) ? ', but no time on site was saved.' : '.'));
+    if (!other) fix.push(old ? "Save Samsara's stay for this visit: it is older than our truck stop records (Aug 20), so it does not fill by itself."
+                             : 'Nothing to do by hand: the time fills automatically overnight.');
+  } else if (kind === 'nopoint') {
+    issues.push('The property has no map point, so we cannot tell whether a truck was there.');
+    fix.push('Check the address in Jobber so the property gets a map point.');
+  } else if (kind === 'noplace') {
+    issues.push('The client has no place in Samsara, and no truck was parked at our map point when the job was marked complete.');
+    fix.push('Create a Samsara place for the client at its address, then check the truck on the visit and the completion time.');
+  } else if (kind === 'placefar') {
+    issues.push(r[0].toUpperCase() + r.slice(1).replace('our address', 'our map point for the address') + ', so one of the two is in the wrong spot.');
+    fix.push('Check which one is right, then move the Samsara place or the map point in Jobber.');
+  } else if (kind === 'stay') {
+    issues.push(r.replace(/, but it was marked complete (.*)$/, ', but the job was marked complete $1, so that stay does not match the job.')
+                 .replace(/, but it has no completion time$/, ', but the job has no completion time.'));
+    fix.push('The job was marked complete away from the site. If that stay was the service, enter the time on site in Admin Review, and ask the driver to mark jobs complete on site.');
+  } else if (kind === 'passed') {
+    issues.push(r.replace('only drove past', 'only drove past the address') + ': no stop long enough to be the service.');
+    fix.push('Check with the driver whether the service was done. If it was, the truck parked out of range: check the map point and the truck on the visit.');
+  } else if (kind === 'never') {
+    issues.push(r.replace('no truck came within', 'No truck came within').replace(/\)$/, ') of our map point.'));
+    fix.push('Check the truck on the visit and the address. If the service was done, enter the time on site in Admin Review.');
+  } else if (kind === 'nogps') {
+    issues.push('No truck GPS was found near the address that day.');
+    fix.push('Check the visit date. If the service was done, enter the time on site in Admin Review.');
+  } else issues.push(r);
+  if (other) {
+    issues.push('The visit is set to ' + other + (parkedBy ? ', but ' + parkedBy + ' was the truck parked there.' : '.'));
+    fix.unshift('Change the truck on the visit to ' + (parkedBy ?? 'the truck that was there') + ' (Viktor can do it).' +
+      (old ? " The visit is older than our truck stop records (Aug 20), so also save Samsara's stay for it." : ' The time then fills overnight.'));
+  }
+  return { issues, suggestion: fix.join(' ') };
+}
 const data = rows.map(({ g, line }) => {
   const reason = line.includes(': ') ? line.slice(line.indexOf(': ') + 2) : line;
   const kind = KINDS.find(([, re]) => re.test(reason)) ?? ['other', null, 'Other'];
@@ -69,11 +128,10 @@ const data = rows.map(({ g, line }) => {
   return {
     id: g.visit_id, date: g.visit_date, client: g.client_code ?? '', name: g.client_name ?? '',
     address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', '), service: g.service ?? '',
-    truck: g.truck ?? '', completed: et(g.completed_at), reason, rk: kind[0], rl: kind[2],
+    truck: g.truck ?? '', completed: et(g.completed_at), rk: kind[0], rl: kind[2],
+    ...(({ issues, suggestion }) => ({ issues, reason: issues.join(' '), suggestion }))(explain(kind[0], reason, g)),
     // Samsara's stay when the alert could read it (the times Samsara shows), else our GPS stop (2026-10-14)
     stop: s ? (({ arrived, departed, minutes }) => `${s.truck}, ${et(arrived)} to ${et(departed).replace(/^[A-Z][a-z]{2} \d+, /, '')} (${minutes} min), ${s.meters} m${g.samsara_stay ? '' : ', our GPS'}`)(g.samsara_stay ?? s) : '',
-    closest: g.closest ? `${g.closest.truck}, ${Number(g.closest.meters).toLocaleString('en-US')} m, ${et(g.closest.at)}` : 'No GPS nearby',
-    inside: (g.stays ?? []).map((x) => `${x.truck} ${et(x.first)} to ${et(x.last)} (${x.minutes} min)`).join('; '),
     placeId: g.property_place_id || (g.client_place_ids ?? [])[0] || '',
     placeEndMs: Date.parse(g.visit_date + 'T23:59:59.999-04:00'), month: g.visit_date.slice(0, 7),
     truckAny: truckFor?.truck ?? '', samsaraVehicle: truckFor?.truck_samsara_id ?? '',
@@ -108,16 +166,17 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .note{color:var(--muted);font-size:13px;margin-top:14px}
 button{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--head);color:var(--fg);cursor:pointer}
 tr.g td{background:var(--head);font-weight:600;cursor:pointer}
+ul.iss{margin:0;padding-left:18px}ul.iss li+li{margin-top:4px}
 tr.g .gc{color:var(--muted);font-weight:400;margin-left:8px}
 </style></head><body><div class="wrap">
 <h1>Visits Missing Time on Site</h1>
-<p class="sub">Completed client visits since ${from} with no time on site, as of ${today} (Eastern time). Each reason is the one the 11 AM Slack alert gives for that visit.${placesUnread ? ` Samsara places could not be read for ${placesUnread} of the dates, so their place reasons are left out.` : ''}</p>
+<p class="sub">Completed client visits since ${from} with no time on site, as of ${today} (Eastern time). Each issue comes from the 11 AM Slack alert for that visit, with a suggested fix.${placesUnread ? ` Samsara places could not be read for ${placesUnread} of the dates, so their place reasons are left out.` : ''}</p>
 <div class="chips"><span class="chip"><b>${data.length}</b> visits</span>
 ${chips}</div>
 <div class="bar">
 <input type="search" id="q" placeholder="Search client, address, truck, visit #">
-<select id="group"><option value="">No grouping</option><option value="client" selected>Group by client</option><option value="rl">Group by reason</option><option value="truckAny">Group by truck</option><option value="month">Group by month</option></select>
-<select id="reason"><option value="">All reasons</option>${KINDS.filter(([k]) => counts[k]).map(([k, , l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+<select id="group"><option value="">No grouping</option><option value="client" selected>Group by client</option><option value="rl">Group by issue</option><option value="truckAny">Group by truck</option><option value="month">Group by month</option></select>
+<select id="reason"><option value="">All issues</option>${KINDS.filter(([k]) => counts[k]).map(([k, , l]) => `<option value="${k}">${l}</option>`).join('')}</select>
 <select id="truck"><option value="">Any truck</option></select>
 <select id="month"><option value="">Any month</option></select>
 <button id="clear" type="button">Clear filters</button>
@@ -126,10 +185,10 @@ ${chips}</div>
 </div>
 <div class="tw"><table><thead><tr>
 <th data-k="date">Date</th><th data-k="client">Client</th><th data-k="address">Address</th><th data-k="service">Service</th>
-<th data-k="truck">Assigned truck</th><th data-k="completed">Completed</th><th data-k="reason">Why it's blank</th>
-<th data-k="stop">Truck stop when completed</th><th data-k="closest">Closest truck</th><th data-k="inside">Within 150 m</th><th>Truck in Samsara</th>
+<th data-k="truck">Assigned truck</th><th data-k="completed">Completed</th><th data-k="reason">Issue</th><th data-k="suggestion">Suggestion</th>
+<th data-k="stop">Truck stop when completed</th><th>Truck in Samsara</th>
 </tr></thead><tbody id="tb"></tbody></table></div>
-<p class="note">"Truck stop when completed" is a stop of 3 minutes or more, within 250 m of our map point, that holds the time the job was marked complete. Its times are Samsara's own stay (between the trip that ends there and the next trip), so they match the trip list in Samsara; "our GPS" marks the few where Samsara shows no stop there or could not be read. When it is more than 150 m away, our map point for the client is probably in the wrong place. "Closest truck" is the nearest GPS point of any truck from 8 PM the evening before to 10 AM the morning after. The address opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
+<p class="note">"Truck stop when completed" is a stop of 3 minutes or more, within 250 m of our map point, that holds the time the job was marked complete. Its times are Samsara's own stay (between the trip that ends there and the next trip), so they match the trip list in Samsara; "our GPS" marks the few where Samsara shows no stop there or could not be read. When it is more than 150 m away, our map point for the client is probably in the wrong place. The address opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
 </div>
 <script>
 const ORG = '${ORG}';
@@ -156,9 +215,9 @@ function row(d) {
     '<td><b>' + esc(d.client) + '</b><div class="muted">' + esc(d.name) + '</div></td>' +
     '<td>' + (placeUrl(d) ? '<a href="' + placeUrl(d) + '" target="_blank" rel="noopener">' + esc(d.address || 'Samsara place') + '</a>' : esc(d.address)) + '</td>' +
     '<td>' + esc(d.service) + '</td><td>' + (esc(d.truck) || '<span class="muted">None</span>') + '</td>' +
-    '<td class="n">' + esc(d.completed) + '</td><td class="k-' + d.rk + '">' + esc(d.reason) + '</td>' +
-    '<td>' + (esc(d.stop) || '<span class="muted">None</span>') + '</td><td>' + esc(d.closest) + '</td>' +
-    '<td>' + (esc(d.inside) || '<span class="muted">None</span>') + '</td>' +
+    '<td class="n">' + esc(d.completed) + '</td><td class="k-' + d.rk + '"><ul class="iss">' + d.issues.map((i) => '<li>' + esc(i) + '</li>').join('') + '</ul></td>' +
+    '<td>' + esc(d.suggestion) + '</td>' +
+    '<td>' + (esc(d.stop) || '<span class="muted">None</span>') + '</td>' +
     '<td>' + (vehicleUrl(d) ? '<a href="' + vehicleUrl(d) + '" target="_blank" rel="noopener">' + esc(d.truckAny) + ' location history</a>' : '<span class="muted">No truck</span>') + '</td></tr>';
 }
 function render() {
@@ -168,7 +227,7 @@ function render() {
   const groups = new Map();
   for (const d of list) { const k = groupLabel(g, d); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
   $('tb').innerHTML = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]))).map(([k, rs]) =>
-    '<tr class="g" data-g="' + esc(k) + '"><td colspan="11">' + (collapsed.has(k) ? '▸ ' : '▾ ') + esc(k) + '<span class="gc">' + rs.length + ' visit' + (rs.length === 1 ? '' : 's') + '</span></td></tr>' +
+    '<tr class="g" data-g="' + esc(k) + '"><td colspan="10">' + (collapsed.has(k) ? '▸ ' : '▾ ') + esc(k) + '<span class="gc">' + rs.length + ' visit' + (rs.length === 1 ? '' : 's') + '</span></td></tr>' +
     (collapsed.has(k) ? '' : rs.map(row).join(''))).join('');
   document.querySelectorAll('tr.g').forEach((tr) => tr.onclick = () => { const k = tr.dataset.g; collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); render(); });
 }
@@ -177,7 +236,7 @@ document.querySelectorAll('th[data-k]').forEach((th) => th.onclick = () => { con
 $('clear').onclick = () => { ['q', 'reason', 'truck', 'month'].forEach((id) => $(id).value = ''); collapsed.clear(); render(); };
 $('csv').onclick = () => {
   const cols = [['Visit #', 'id'], ['Date', 'date'], ['Client code', 'client'], ['Client', 'name'], ['Address', 'address'], ['Service', 'service'],
-    ['Assigned truck', 'truck'], ['Completed (ET)', 'completed'], ['Why blank', 'reason'], ['Truck stop when completed', 'stop'], ['Closest truck', 'closest'], ['Within 150 m', 'inside']];
+    ['Assigned truck', 'truck'], ['Completed (ET)', 'completed'], ['Issue', 'reason'], ['Suggestion', 'suggestion'], ['Truck stop when completed', 'stop']];
   const q = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const lines = [cols.map((c) => q(c[0])).concat(q('Samsara place link'), q('Truck history link')).join(',')]
     .concat(current.map((d) => cols.map((c) => q(d[c[1]])).concat(q(placeUrl(d)), q(vehicleUrl(d))).join(',')));
