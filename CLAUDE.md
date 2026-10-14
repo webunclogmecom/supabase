@@ -5335,6 +5335,15 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   on visit 6498: Samsara showed 34 min 12 s, the report said 28. Our 100 m walk and a 250 m chain cannot reproduce
   Samsara (it counts some parked minutes as trip time), so do not try to rebuild it in SQL; the saved
   `duration_minutes` is unchanged. Proven: 12 of 12 report lines equal Samsara's trip gap to the second.
+  🛑 **SINCE 2026-10-14 (Fred: "yes do both, use Samsara's time for the old ones") Samsara's stay IS saved, source
+  `samsara_stay`** (label time-on-site-samsara; no other writer overwrites it). `2026-10-14_1600`: 9 old blanks
+  (6498 = 34 min). `_1610`: `fn_infer_visit_vehicle` replaces the truck when exactly ONE truck's stay within 250 m
+  holds the completion (no 150 m longest-stay test; never on a DERM-filed visit; one-time run fixed 10 trucks).
+  `_1620`: the linker's late tap (step 3c): no stop holds the tap, so the truck's last stop within 250 m in the visit
+  window anchors it (fills blanks only). `_1630`/`_1640` + edge fn `time-on-site-samsara-recheck` (cron 03:50 ET,
+  last 10 days): saves Samsara's stay when blank or 2+ min off, skipping a job where Samsara shows the truck MOVING
+  (two stays over the job window: 27 visits, Fred to decide whether they count in full), shared stays and late taps.
+  One-time run over Aug 19+: 176 saved, then 0 left. Test: `node scripts/checks/time_on_site_samsara_recheck.mjs`.
   **Step 2 shipped (`2026-10-13_2020` + `_2025`)**: `visits.time_on_site_source` records which rule wrote the time
   (NULL = before 2026-10-13); the three writers label their writes (`time-on-site-measure` / `-any-truck` /
   `-from-stops`, with a reason) and `fn_compute_time_on_site` only replaces NULL-source or its own values; a reopened

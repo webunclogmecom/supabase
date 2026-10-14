@@ -929,3 +929,9 @@ verify_jwt = true
 # signature (RESEND_WEBHOOK_SECRET, svix.ts) is the gate, and the backfill door needs the exact service key.
 [functions.webhook-resend]
 verify_jwt = false
+
+# time-on-site-samsara-recheck: nightly 03:50 ET recheck of saved time on site against Samsara's own stay
+# (2026-10-14_1630). Called by pg_cron (fn_request_time_on_site_samsara_recheck) with the vault service_role key; the
+# handler requires role=service_role, only trustworthy behind verify_jwt.
+[functions.time-on-site-samsara-recheck]
+verify_jwt = true
