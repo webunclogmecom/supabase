@@ -5244,6 +5244,16 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   and `no_manifest_after_14_days` into Fred's health email. `city_email_duplicate` was REMOVED by `2026-10-12_1950`
   (Fred: multiple emails do not matter); do not add it back. The first run had flagged 6138, 6247 and property 1113
   (324-BIB, Surfside, no inbox: fixed by `2026-10-12_1530`); the run kept by 1950 reads ok with 0 items.
+- **Did the city get it? Resend open tracking ON since 2026-10-14** (Fred, after Diego reported Hallandale Beach
+  "never received" A La Carte's Oct 9 send): tracking subdomain `links.unclogme.com` (CNAME in GoDaddy, verified),
+  open tracking on, click tracking left OFF on purpose (it reroutes every report/photo link through Resend, which city
+  mail filters distrust). Emails sent before that day have NO open record; "delivered"/"bounced" exists for every send.
+  Opens live in the Resend dashboard only (our logs stop at `resend_email_id` + `status=sent` = accepted by Resend);
+  storing delivered/bounced/opened needs a Resend webhook, not built. Government mail systems block or pre-fetch
+  images, so "opened" is a hint, never proof. ⚠ The "overdue" email the client got was an automatic **FOG BMP**
+  (`mg.fogbmp.com`) reminder, the city's tracking portal: our email to the inspectors does not enter the cleaning
+  there, so those reminders can fire even when our send was delivered. Who enters it (hauler login or the city) is
+  open with Hallandale Beach.
 - **Run records:** both 11 AM reminders write one `sync_log` row per run (`admin_review_reminder`,
   `stamp_sheets_reminder`, `<source>_test`), and their wrappers call the edge function every day (`2026-10-12_1310`).
 - **Photos:** `v_visit_photo_counts` counts only `before`/`after`/`internal`/`extra` as sorted since `2026-10-12_1335`
