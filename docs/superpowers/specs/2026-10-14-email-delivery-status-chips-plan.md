@@ -2,6 +2,11 @@
 
 *2026-10-14 · after Diego's A La Carte report ("they never received it")*
 
+> ⚠ **AUDITED 2026-10-14: read `2026-10-14-email-delivery-status-audit.md` first.** It supersedes this file where they
+> differ: city emails never show Opened in phase 1 (archive Bcc), D5 waits for a 4-week gate, the unique key is
+> `(svix_id, recipient)`, `email_events` is audited, the backfill covers 21 sends (Resend keeps 30 days), and the
+> back end ships before the mockups (deadline 2026-10-21).
+
 ## The ask
 
 Fred, 2026-10-14: *"design a plan about how to use that information + our db, about how to display that in the
