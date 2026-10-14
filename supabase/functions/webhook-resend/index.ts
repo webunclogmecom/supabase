@@ -26,7 +26,9 @@ import { verifySvix } from "./svix.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const WEBHOOK_SECRET = Deno.env.get("RESEND_WEBHOOK_SECRET") ?? "";
+// Trimmed and unquoted: a secret pasted into the dashboard with a trailing newline or quotes failed to decode
+// (2026-10-14, every forged AND real call read bad_secret).
+const WEBHOOK_SECRET = (Deno.env.get("RESEND_WEBHOOK_SECRET") ?? "").trim().replace(/^["']|["']$/g, "").trim();
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
 const KEPT = new Set(["delivered", "opened", "bounced", "delivery_delayed", "complained", "failed", "suppressed"]);
@@ -171,6 +173,18 @@ Deno.serve(async (req) => {
     let body: { backfill?: unknown };
     try { body = JSON.parse(raw || "{}"); } catch { return json({ error: "bad_json" }, 400); }
     if (body.backfill === true) return await handleBackfill(body as Record<string, unknown>);
+    if ((body as { secret_shape?: unknown }).secret_shape === true) {
+      // the SHAPE of the configured secret, never its value: enough to tell a paste problem from a wrong secret
+      const raw0 = Deno.env.get("RESEND_WEBHOOK_SECRET") ?? "";
+      const core = WEBHOOK_SECRET.startsWith("whsec_") ? WEBHOOK_SECRET.slice(6) : WEBHOOK_SECRET;
+      let decodes = false;
+      try { atob(core); decodes = core.length > 0; } catch { /* stays false */ }
+      return json({
+        set: raw0.length > 0, raw_length: raw0.length, trimmed_length: WEBHOOK_SECRET.length,
+        had_outer_whitespace_or_quotes: raw0 !== WEBHOOK_SECRET, starts_whsec: WEBHOOK_SECRET.startsWith("whsec_"),
+        base64_chars_only: /^[A-Za-z0-9+/=]*$/.test(core), decodes,
+      });
+    }
     return json({ error: "unknown_service_call" }, 400);
   }
   return await handleWebhook(req, raw);
