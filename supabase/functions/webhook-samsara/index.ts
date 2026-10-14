@@ -84,113 +84,14 @@ async function handleAddress(
   address: any,
   action: 'created' | 'updated' | 'deleted'
 ): Promise<{ entity_type: string; entity_id: number | null }> {
-  const samsaraId = String(address.id)
-  const name = address.name ?? address.formattedAddress ?? ''
-
-  if (action === 'deleted') {
-    // Don't hard-delete — just clear GPS data from the property
-    const clientId = await findEntityBySourceId('client', 'samsara', samsaraId)
-    if (clientId) {
-      // Clear geofence from primary property
-      const { data: props } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('client_id', clientId)
-        .eq('is_primary', true)
-        .limit(1)
-
-      if (props?.length) {
-        await supabase.from('properties').update({
-          latitude: null,
-          longitude: null,
-          geofence_radius_meters: null,
-          geofence_type: null,
-        }).eq('id', props[0].id)
-      }
-    }
-    return { entity_type: 'client', entity_id: clientId }
-  }
-
-  // Find existing client linked to this Samsara address
-  let clientId = await findEntityBySourceId('client', 'samsara', samsaraId)
-
-  // If no existing link, try fuzzy name match
-  if (!clientId) {
-    const { data: candidates } = await supabase
-      .from('clients')
-      .select('id, name')
-      .ilike('name', `%${name.replace(/[%_]/g, '')}%`)
-      .limit(5)
-
-    if (candidates?.length === 1) {
-      clientId = candidates[0].id
-    } else {
-      console.warn(`Samsara address "${name}" (${samsaraId}) has no client match — skipping`)
-      return { entity_type: 'client', entity_id: null }
-    }
-  }
-
-  // Extract geofence data
-  const lat = address.latitude ?? address.geofence?.circle?.latitude ?? null
-  const lng = address.longitude ?? address.geofence?.circle?.longitude ?? null
-  const radius = address.geofence?.circle?.radiusMeters ?? null
-  const geoType = address.geofence?.polygon ? 'polygon' : address.geofence?.circle ? 'circle' : null
-
-  // v2: GPS + geofence lives on properties, not clients
-  // Find or create primary property for this client
-  const { data: props } = await supabase
-    .from('properties')
-    .select('id')
-    .eq('client_id', clientId)
-    .eq('is_primary', true)
-    .limit(1)
-
-  const propUpdate: Record<string, unknown> = {}
-  if (lat !== null) propUpdate.latitude = lat
-  if (lng !== null) propUpdate.longitude = lng
-  if (radius !== null) propUpdate.geofence_radius_meters = radius
-  if (geoType) propUpdate.geofence_type = geoType
-  if (address.formattedAddress) propUpdate.address = address.formattedAddress
-
-  if (Object.keys(propUpdate).length) {
-    if (props?.length) {
-      await supabase.from('properties').update(propUpdate).eq('id', props[0].id)
-    } else {
-      // Create primary property with GPS data
-      const { data: newProp } = await supabase
-        .from('properties')
-        .insert({
-          client_id: clientId,
-          is_primary: true,
-          name: name,
-          ...propUpdate,
-        })
-        .select('id')
-        .single()
-
-      if (newProp) {
-        await upsertEntityLink({
-          entity_type: 'property',
-          entity_id: newProp.id,
-          source_system: 'samsara',
-          source_id: `addr_${samsaraId}`,
-          source_name: name,
-          match_method: 'webhook_new',
-        })
-      }
-    }
-  }
-
-  await upsertEntityLink({
-    entity_type: 'client',
-    entity_id: clientId,
-    source_system: 'samsara',
-    source_id: samsaraId,
-    source_name: name,
-    match_method: action === 'created' ? 'webhook_new' : 'webhook_update',
-  })
-
-  return { entity_type: 'client', entity_id: clientId }
+  // 2026-10-14 (time on site plan step 7, migration 2026-10-14_1100): a Samsara Place edit RECORDS the difference and
+  // never writes properties or links. Addresses and map points are Jobber's; until now this handler overwrote the
+  // client's primary property from every Place edit (property 210 moved 13.4 km) and guessed unlinked Places by a
+  // fuzzy client name. public.fn_record_samsara_place resolves the Place and writes one samsara_place_observations row;
+  // public.v_samsara_place_review lists what needs a person, and fn_link_samsara_place is the explicit linking step.
+  const { data, error } = await supabase.rpc('fn_record_samsara_place', { p_address: address, p_action: action })
+  if (error) throw new Error(`fn_record_samsara_place: ${error.message}`)
+  return { entity_type: 'property', entity_id: data?.property_id ?? null }
 }
 
 // ============================================================================

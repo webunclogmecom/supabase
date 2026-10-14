@@ -259,6 +259,11 @@ that way.
 
 ## Phase 4 — Demote the inbound webhook to a reconciler
 
+✅ **Shipped 2026-10-14** (`docs/migrations/2026-10-14_1100_samsara_place_reconciler.sql`, webhook-samsara v42):
+`fn_record_samsara_place` writes `samsara_place_observations` and never touches `properties`; `v_samsara_place_review`
+lists what needs a person; `fn_link_samsara_place` is the explicit linking step. Phases 0 to 3 (grain, link namespace,
+polygons, the editor) are still not built.
+
 Keep it. Turning it off loses visibility of Samsara-UI edits; last-writer-wins recreates the
 `frequency_days` trap pointing the other way. Copy the shape that exists twice already (the Gate #4
 drift watchdog, and `save-client-job`'s 30-minute reconcile): **record divergence, surface it, let a

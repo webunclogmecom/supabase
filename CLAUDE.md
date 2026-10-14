@@ -5325,7 +5325,15 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   (`fn_gps_stays`, algorithm 2 matching), validated against the stop table on Aug 20 to Oct 13 (every unshared visit
   within 5 min). The script reads it per date before Aug 20 (`... 2026-01-01 2026-08-19`) and adds one gate: a wrong
   stay is never corrected onto a stop under 15 min. 970 saved values: 106 corrected (snapshot-guarded, backup in
-  `backups/`), 550 agree, 314 on the review list. Steps 7 and 8 (map points, monitoring) are open.
+  `backups/`), 550 agree, 314 on the review list.
+  **Step 7 shipped (`2026-10-14_1100`, webhook-samsara v42)**: 🛑 **a Samsara Place edit no longer writes
+  `properties` or links.** `handleAddress` calls `public.fn_record_samsara_place`, which resolves the Place (its
+  property link, its client link, or a client-code name prefix, proposed only) and writes one
+  `public.samsara_place_observations` row (verdict same / moved / unlinked / deleted); `public.v_samsara_place_review`
+  is the latest per Place; `public.fn_link_samsara_place(place_id, property_id)` is the explicit linking step. Our
+  address and map point are Jobber's. It had overwritten property 210 (13.4 km) and 91, 102, put back to Jobber's.
+  33 Samsara links on deleted rows repointed, 31 duplicates removed (backup in `backups/`). Baseline of 256 Places:
+  239 same, 6 moved, 11 unlinked; Yannick's worklist is outside the repos. Step 8 (monitoring) is open.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
