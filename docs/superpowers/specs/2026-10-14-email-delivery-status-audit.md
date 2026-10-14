@@ -313,6 +313,22 @@ rows are excluded.
 8. **Watch until about 2026-11-18, then read the gate (5.6).** Write a dated note with the numbers here, and Fred
    decides phase 2.
 
+## 7a. Fred's answers (2026-10-14)
+
+1. **D5 later, behind the gate: yes.**
+2. **Diego writes to the cities: no.** Fred: *"we checked on derm@ayache.com and the email was sent, but it might've
+   arrived in the spam folder, that's why we did the uncheck the click on Sender"* (click tracking was left off for
+   inbox placement). Step 1's "Diego writes to the 2 cities" is dropped.
+3. **Open tracking stays on during the watch: yes.**
+4. **Backfill: "Mark them all as Delivered".** All 77 past real sends read Delivered. For the 54 that Resend no
+   longer holds, the row is written as `backfill_summary` with `detail.basis = 'assumed_before_reports'` (not a
+   Resend answer), so the data stays honest. The chip is the D2 "Delivered, open unknown" look, and the tooltip says
+   "Delivered Jul 9. Sent before we tracked opens, so we can't tell if it was opened." A send Resend reports as
+   bounced or failed still reads Not delivered.
+5. **Keeping data longer than Resend's 30 days:** `public.email_events` IS the long-term store. It is never purged,
+   and from the day the webhook is live every event is ours forever, whatever Resend keeps. Longer retention at
+   Resend itself is not a documented plan option; it can only be asked of Resend support.
+
 ## 7. Decisions for Fred
 
 1. **D5 later, behind the 4-week gate?** Recommended: **yes, later.**
