@@ -370,5 +370,9 @@ excludes 112-YA through `v_non_customer_clients`.
   can't tell if opened" (bg #f1f5f9, text #475569, border #cbd5e1); **fast opens show as Opened** with the sentence
   "Opened N seconds after it arrived, most likely automatically by their email app, so we can't tell if a person read
   it." (apps decide it from `delivery_detail.open_gap_seconds` under 60, no DB change); **wording as mocked**.
-- **Not started:** the chips in Admin Review and the DERM Tracker (Lovable).
+- **Chips LIVE 2026-10-14 ~16:30 ET.** Admin Review chunk `App-CqALVG3J.js` (CityEmailHistory + the dialog's amber
+  box); DERM Tracker 27 chunks (visit City and Client rows, Manifests lines; `EmailDeliveryChip.tsx`). Both verified in
+  the live bundles: the three columns selected, every sentence present, exact colours in the stylesheets, no
+  "Not opened" / "Unread". No package change in either. Visual check on a signed-in screen still to do (the browser
+  pane had no staff session). Changelogs: Admin Review 2026-10-14 (c), DERM Tracker 2026-10-14 (b).
 
