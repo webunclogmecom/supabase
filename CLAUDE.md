@@ -5280,8 +5280,10 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   is `medium` (the true offload may be higher).
 - **Moises's PTO is dead:** RPM of 900 or more is the pump stand-in. David's PTO works. Cloggy and David have no
   level sensor, so their stops carry no tank rows.
-- **Time on site** stays `fn_compute_time_on_site` (window to 10:00 ET next morning since `2026-10-12_1530`); it keeps
-  the LONGEST stay near the property, a known limit on dense blocks. `webhook-samsara` v40 never writes visit times.
+- **Time on site** comes first from the truck stop that holds the completion (`fn_fill_time_on_site_from_stops`, rule
+  in `public.v_visit_stop_reference`, since `2026-10-13_2210`); `fn_compute_time_on_site` (the longest 150 m stay, window
+  to 10:00 ET next morning) and `fn_fill_blank_time_on_site` (any truck) are fallbacks for what the stops do not give.
+  `webhook-samsara` never writes visit times.
   🛑 **Every time-on-site writer measures 150 m from OUR map point, and that misses trucks that park further away**
   (Fred, 2026-10-13, visit 6509: David parked 164 m from 214-MYK's point for 34 min, inside its Samsara Place, and the
   report said "only drove past"). The fix plan (outside the repos, it names clients):
@@ -5333,7 +5335,14 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   is the latest per Place; `public.fn_link_samsara_place(place_id, property_id)` is the explicit linking step. Our
   address and map point are Jobber's. It had overwritten property 210 (13.4 km) and 91, 102, put back to Jobber's.
   33 Samsara links on deleted rows repointed, 31 duplicates removed (backup in `backups/`). Baseline of 256 Places:
-  239 same, 6 moved, 11 unlinked; Yannick's worklist is outside the repos. Step 8 (monitoring) is open.
+  239 same, 6 moved, 11 unlinked; Yannick's worklist is outside the repos.
+  **Step 8 shipped (`2026-10-14_1110`)**: `public.fn_time_on_site_checks()` T1..T6 (a recent visit whose stop holds the
+  completion has no or a far-too-short time; the 6509 positive control; a time written without source or reason; a
+  stop-based or reviewed time overwritten by a fallback; the 11 AM alert's instrument missing a stop; a non-completed
+  visit with a time), each must be 0, merged into `fn_stop_facts_checks`' integrity set, so the hourly refresh writes
+  `stop_facts_integrity` as error and the health email picks it up. Monthly: run `scripts/checks/time_on_site_audit.mjs`
+  over the previous month (not scheduled: GitHub timed jobs are unreliable). The whole plan (steps 1 to 8) is shipped;
+  what is left is people work: the review lists and Yannick's Place worklist in `samsara-checks/`.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL

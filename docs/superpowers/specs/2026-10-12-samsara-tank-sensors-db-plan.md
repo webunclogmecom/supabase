@@ -374,6 +374,8 @@ create table public.visit_vehicle_stops (
 create unique index visit_vehicle_stops_live on public.visit_vehicle_stops (visit_id, vehicle_stop_id) where deleted_at is null;
 create unique index visit_vehicle_stops_one_dump_visit on public.visit_vehicle_stops (vehicle_stop_id)
   where deleted_at is null and match_basis in ('dump_completion','dump_window');
+-- 2026-10-13_2210 (time on site plan step 3): match_basis also takes 'completion_chain' (the truck's earlier adjacent
+-- stops joined to the completion stop), and the completion match reaches 250 m. Chain stops count in the tank volumes.
 create index visit_vehicle_stops_visit_idx on public.visit_vehicle_stops (visit_id);
 create index visit_vehicle_stops_stop_idx  on public.visit_vehicle_stops (vehicle_stop_id);
 -- guard('deleted_at'); audit_visit_vehicle_stops
