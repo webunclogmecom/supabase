@@ -35,8 +35,10 @@ Reply: `{ ok, changed, message, ... }`; Viktor posts `message` as it is.
   reaches Jobber. The driver is left alone because the Jobber sync owns the crew.
 - Attribution (`x-app-source: viktor`, `x-actor-name`, `x-change-reason`) is set inside the function for the write and
   put back right after, so a caller cannot leave it out and the time-on-site recompute is not labelled as Viktor's.
-- Right after the change it runs `fn_compute_time_on_site` and `fn_fill_blank_time_on_site` for that date (they never
-  clear a value) and says the time on site, or that the truck's GPS did not stop within 150 m that day.
+- Right after the change it relinks the stops (`fn_link_visit_vehicle_stops`, under the hourly refresh's lock), then
+  runs `fn_fill_time_on_site_from_stops`, `fn_compute_time_on_site` and `fn_fill_blank_time_on_site` for that date
+  (they never clear a value; 2026-10-13_2210), and says the time on site, or that the truck's GPS shows no stop near
+  the property when the visit was marked complete, nor a stay within 150 m of it that day.
 - 🛑 Widening Viktor's reach (another field, another table, a visit that is not completed) is Fred's decision. Extend
   this function and its VERIFY; never add a second Viktor write path.
 

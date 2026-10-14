@@ -5296,8 +5296,20 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   to yesterday only. 🛑 `fn_infer_visit_vehicle` (cron 27) still fills an EMPTY truck from the longest stay but
   REPLACES a truck only when the GPS truck has a stop (within 250 m) holding the completion time and the one on the
   visit has none, never on a visit filed on a DERM manifest; writes labelled `truck-from-gps`. Do not loosen it: the
-  old rule was wrong on 12 of 26 replacements. Steps 3 to 8 (the new rule, backfills, the saved-value audit,
-  monitoring) are open.
+  old rule was wrong on 12 of 26 replacements.
+  **Step 3 shipped (`2026-10-13_2210`)**: `fn_link_visit_vehicle_stops` algorithm 2 matches the truck's stop holding
+  the completion time up to **250 m** (a stop within 150 m still wins; window and same_site_earlier stay at 150 m for
+  the tank volumes), joins the truck's earlier adjacent stops (gap 15 min or less) as **`completion_chain`** links
+  (walking back only, never past another visit's completion stop), refuses a tap more than 2 min after the truck left on
+  a stop holding another visit's completion, and excludes test clients. `fn_fill_time_on_site_from_stops` v2 times a
+  visit from its completion stop plus chain, splits a shared stop at the completion times only when every piece is
+  10 min or more, fills blanks and replaces only LABELLED `gps_150m_cluster` values inside the 10-day window (source
+  NULL values wait for step 5). `fn_compute_time_on_site` drops a stay starting more than 15 min after the completion.
+  Order everywhere (cron 26, the 11 AM reminder, Viktor): stops first, then the 150 m measurement, then the any-truck
+  fill; Viktor relinks under the hourly refresh's lock. Z4 allows 250 m for completion links. 6509 reads 34 min.
+  🛑 The linker reconciles the WHOLE era every hour, so any change to its rule rewrites old links (and tank volumes):
+  dry-run it first (`fn_link_visit_vehicle_stops(false)->'changes'` lists every add and retire). Steps 4 to 8
+  (backfills, the saved-value audit, monitoring) are open.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
