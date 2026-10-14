@@ -376,5 +376,8 @@ excludes 112-YA through `v_non_customer_clients`.
   "Not opened" / "Unread". No package change in either. Visual check DONE ~16:45 ET signed in: Admin Review 6284 (Slate Delivered, hover "Delivered Oct 9,
   11:24 AM. Sent before we tracked opens, ..."), DERM Tracker visit 6284 City row (same chip and sentence; the app's
   own tooltip is orange, Admin Review's white; client row "Not sent" has no chip, correct) and the Manifests page
-  (a chip under each "Sent to city" line; "Not emailed" client lines have none, correct). Changelogs: Admin Review 2026-10-14 (c), DERM Tracker 2026-10-14 (b).
+  (a chip under each "Sent to city" line; "Not emailed" client lines have none, correct).
+- **Follow-up 2026-10-14 ~17:10 ET (Fred: "the hover should look the others, with a white background"):** the DERM
+  Tracker's chip tooltip now copies Admin Review's white tooltip (one line in `EmailDeliveryChip.tsx`; DERM changelog
+  2026-10-14 (c)); the app's other tooltips stay orange. Canonical chip spec: `Building Apps/CLAUDE.md` rule 1e. Changelogs: Admin Review 2026-10-14 (c), DERM Tracker 2026-10-14 (b).
 

@@ -5278,8 +5278,8 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
     answered 404, older than its 30 days). Test sends are not backfilled.
   - **Apps:** `v_visit_city_email_sends` gained `delivery_status`, `delivery_at`, `delivery_detail` (appended; old
     columns asserted unchanged); new `public.v_client_email_sends` (authenticated, no addresses) for DERM Tracker
-    client sends. The chips are NOT built yet (mockups first). When `delivery_detail.summary_only` is true, show no
-    "N of M" count: a summary is one value per email.
+    client sends. The chips are LIVE in Admin Review and the DERM Tracker since 2026-10-14 (spec: `Building Apps/CLAUDE.md`
+    rule 1e). When `delivery_detail.summary_only` is true, show no "N of M" count: a summary is one value per email.
   - **Health (Fred's daily email):** `email_not_delivered`, `email_status_missing` (a send after
     `app_config.email_events_live_since` = 2026-10-14 19:31:54 UTC, `2026-10-14_1531`, with no Resend event after 2
     hours), `email_delivery_incomplete`.

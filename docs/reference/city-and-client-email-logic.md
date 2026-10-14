@@ -36,6 +36,23 @@ dialog and the DERM Tracker visit page and /manifests show it. Fred, 2026-10-12:
 nothing blocks a re-send. A daily check (`notification-health`) compares the 11 AM post with the raw send logs.
 ⚠ A city email sent from someone's own mailbox, outside both apps, is recorded nowhere and still reads as not sent.
 
+## "Did it arrive?": what Resend reported (2026-10-14)
+
+Asked after Hallandale Beach told Diego they "never received" A La Carte's Oct 9 email. Resend showed it Delivered to
+both inboxes; the "overdue" notice was the city's own FOG BMP portal reminder, which our email does not clear.
+- **Store:** `public.email_events` (edge fn `webhook-resend`, Svix-signed; never purged; Resend itself keeps 30 days).
+  **Status:** `public.v_email_delivery`, one row per Resend email, counted on the To line. Both send-history views
+  carry `delivery_status`, `delivery_at`, `delivery_detail`; client sends have `public.v_client_email_sends`.
+- **Open tracking ON since 2026-10-14** (`links.unclogme.com`); click tracking OFF on purpose (spam filters).
+- 🛑 **A city email never reads Opened:** every one Bccs the archive `derm@ayache.com`, and Resend credits one open
+  to every recipient (measured). City opens are stored for the D5 decision (a separate archive email) around
+  2026-11-18, never shown.
+- **An "open" can be a machine:** a test read Opened 8 s after delivery while still unread in Gmail.
+- **Every past send (77) reads Delivered** (Fred): 22 confirmed by Resend, 55 assumed (older than 30 days).
+- **Bounces, missing reports and partial delivery** reach Fred's daily health email.
+- Apps: Admin Review and the DERM Tracker show a chip on every email line (`Building Apps/CLAUDE.md` rule 1e).
+Full design, research and decisions: `docs/superpowers/specs/2026-10-14-email-delivery-status-audit.md`.
+
 ---
 
 ## Which cities get the email, and the Broward cities we cannot reach (2026-10-12)
