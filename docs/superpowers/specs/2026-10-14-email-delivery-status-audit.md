@@ -364,5 +364,11 @@ excludes 112-YA through `v_non_customer_clients`.
   (an automatic open). Proposal for Fred at the mockup step: an open within about a minute of delivery shows as
   "Delivered" with the tooltip "Opened seconds after it arrived, most likely automatically by their email app, so we
   can't tell if a person read it", in the D2 colour, instead of "Opened".
-- **Not started:** mockups, then the chips in Admin Review and the DERM Tracker.
+- **Mockups picked 2026-10-14** (https://claude.ai/artifact/QkhAid659HVZgBTZfbjEj4, "Picked"): one chip at the END of
+  every email line (Admin Review card, its "Show all" list and the dialog's amber box; DERM Tracker visit City and
+  Client rows and the Manifests client lines; the ticket chips stay as they are). Fred: **1 Slate** for "Delivered,
+  can't tell if opened" (bg #f1f5f9, text #475569, border #cbd5e1); **fast opens show as Opened** with the sentence
+  "Opened N seconds after it arrived, most likely automatically by their email app, so we can't tell if a person read
+  it." (apps decide it from `delivery_detail.open_gap_seconds` under 60, no DB change); **wording as mocked**.
+- **Not started:** the chips in Admin Review and the DERM Tracker (Lovable).
 
