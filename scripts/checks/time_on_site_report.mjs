@@ -40,9 +40,17 @@ for (const date of dates) {
 const ids = rows.map((x) => x.g.visit_id);
 const addr = new Map();
 for (let i = 0; i < ids.length; i += 100) {
-  const ar = await fetch(`${BASE}/rest/v1/visits?select=id,property_id,properties(address,city)&id=in.(${ids.slice(i, i + 100).join(',')})`, { headers: H });
+  const ar = await fetch(`${BASE}/rest/v1/visits?select=id,client_id,property_id,properties(address,city)&id=in.(${ids.slice(i, i + 100).join(',')})`, { headers: H });
   if (!ar.ok) throw new Error(`addresses: HTTP ${ar.status}`);
   for (const a of await ar.json()) addr.set(a.id, a);
+}
+// a visit with no property set (5078, 5043, 3921): show the client's live property as plain text when it has exactly one
+const noProp = [...addr.values()].filter((a) => !a.property_id && a.client_id);
+const clientProps = new Map();
+if (noProp.length) {
+  const pr = await fetch(`${BASE}/rest/v1/properties?select=client_id,address,city&deleted_at=is.null&client_id=in.(${[...new Set(noProp.map((a) => a.client_id))].join(',')})`, { headers: H });
+  if (!pr.ok) throw new Error(`client properties: HTTP ${pr.status}`);
+  for (const p of await pr.json()) clientProps.set(p.client_id, [...(clientProps.get(p.client_id) ?? []), p]);
 }
 
 const et = (t) => t ? new Date(t).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
@@ -88,6 +96,9 @@ function explain(kind, reason, g) {
     issues.push(r.replace(/ when it was marked complete.*$/, ' when the job was marked complete') + (/time was not saved/.test(r) ? ', but no time on site was saved.' : '.'));
     if (!other) fix.push(old ? "Save Samsara's stay for this visit: it is older than our truck stop records (Aug 20), so it does not fill by itself."
                              : 'Nothing to do by hand: the time fills automatically overnight.');
+  } else if (kind === 'nopoint' && g.noProperty) {
+    issues.push('The visit has no property set, so we cannot tell whether a truck was there.');
+    fix.push(g.clientAddress ? 'Set the property on the visit (the client has one: ' + g.clientAddress + ').' : 'Set the property on the visit.');
   } else if (kind === 'nopoint') {
     issues.push('The property has no map point, so we cannot tell whether a truck was there.');
     fix.push('Check the address in Jobber so the property gets a map point.');
@@ -118,7 +129,11 @@ function explain(kind, reason, g) {
   }
   return { issues, suggestion: fix.join(' ') };
 }
-const data = rows.map(({ g, line }) => {
+const data = rows.map(({ g: g0, line }) => {
+  const a0 = addr.get(g0.visit_id);
+  const only = a0 && !a0.property_id ? (clientProps.get(a0.client_id) ?? []) : [];
+  const clientAddress = only.length === 1 ? [only[0].address, only[0].city].filter(Boolean).join(', ') : '';
+  const g = { ...g0, noProperty: !!a0 && !a0.property_id, clientAddress };
   const reason = line.includes(': ') ? line.slice(line.indexOf(': ') + 2) : line;
   const kind = KINDS.find(([, re]) => re.test(reason)) ?? ['other', null, 'Other'];
   const s = g.stop_at_completion;
@@ -127,7 +142,7 @@ const data = rows.map(({ g, line }) => {
   const a = addr.get(g.visit_id);
   return {
     id: g.visit_id, date: g.visit_date, client: g.client_code ?? '', name: g.client_name ?? '',
-    address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', '), service: g.service ?? '',
+    address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', ') || g.clientAddress, service: g.service ?? '',
     truck: g.truck ?? '', completed: et(g.completed_at), rk: kind[0], rl: kind[2],
     ...(({ issues, suggestion }) => ({ issues, reason: issues.join(' '), suggestion }))(explain(kind[0], reason, g)),
     // Samsara's stay when the alert could read it (the times Samsara shows), else our GPS stop (2026-10-14)
