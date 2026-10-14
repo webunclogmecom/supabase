@@ -373,6 +373,8 @@ excludes 112-YA through `v_non_customer_clients`.
 - **Chips LIVE 2026-10-14 ~16:30 ET.** Admin Review chunk `App-CqALVG3J.js` (CityEmailHistory + the dialog's amber
   box); DERM Tracker 27 chunks (visit City and Client rows, Manifests lines; `EmailDeliveryChip.tsx`). Both verified in
   the live bundles: the three columns selected, every sentence present, exact colours in the stylesheets, no
-  "Not opened" / "Unread". No package change in either. Visual check on a signed-in screen still to do (the browser
-  pane had no staff session). Changelogs: Admin Review 2026-10-14 (c), DERM Tracker 2026-10-14 (b).
+  "Not opened" / "Unread". No package change in either. Visual check DONE ~16:45 ET signed in: Admin Review 6284 (Slate Delivered, hover "Delivered Oct 9,
+  11:24 AM. Sent before we tracked opens, ..."), DERM Tracker visit 6284 City row (same chip and sentence; the app's
+  own tooltip is orange, Admin Review's white; client row "Not sent" has no chip, correct) and the Manifests page
+  (a chip under each "Sent to city" line; "Not emailed" client lines have none, correct). Changelogs: Admin Review 2026-10-14 (c), DERM Tracker 2026-10-14 (b).
 
