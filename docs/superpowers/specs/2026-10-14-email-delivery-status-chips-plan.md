@@ -146,7 +146,38 @@ Size: one migration, one ~150 line edge fn, one backfill run, two small app chan
 - An unsigned or badly signed request writes nothing.
 - No change to the senders, the sweep, or when emails go out.
 
-## Decisions for Fred
+## Step 0 result (measured 2026-10-14 14:11 ET): Resend CANNOT tell who opened
+
+Test city email `01a13b9c-7826-7375-b4f5-ac0515169fd5` (112-YA, manifest 2017, `test_recipient` fred@ayache.com,
+`bcc` derm@ayache.com, the real archive shape). Before any open, Resend listed both recipients as Delivered.
+Then ONLY the fred@ayache.com copy was opened in Gmail (one pixel loaded, verified in the page; derm@ayache.com is
+not in that mailbox). Within seconds Resend marked **both** recipients **Opened**. One email = one pixel = one open,
+credited to every recipient. Delivered IS per recipient.
+
+Consequence: every real city email carries the archive BCC (`derm@ayache.com`), so under D2 as answered every
+city chip would read "Delivered, open unknown" and "Opened" would never appear. The way out is to send the
+archive copy (and any internal Cc/Bcc a person adds) as a **separate email** with its own Resend id; the city
+email then has only city recipients, and an open on it is the city's. Decision D5 below.
+
+## Fred's answers (2026-10-14)
+
+- **D1 yes:** client emails get the chip too, same build.
+- **D2:** *"If it can't tell, keep them as Delivered, and when hovered it states in a semantic short message that it
+  can't know if it was opened, also make it so the chip has a different color for this cases."* So a fourth look:
+  **Delivered, open unknown**, its own colour, tooltip in plain words. Used for every email whose opens cannot be
+  known: one where Resend cannot say which recipient opened (if step 0 shows that), and one sent before open
+  tracking started (it can never have an open). Plain **Delivered** then always means "tracked, not opened yet".
+- **D3 yes:** backfill the 77 past sends.
+- **D4:** bounces go to the daily health email only.
+
+## D5 (open, asked after step 0)
+
+Send the archive copy and internal Cc/Bcc copies as their own email, so opens on the real email belong to the
+real recipients? Touches `send-derm-email` and `send-visit-photos-email` (one extra Resend call per send, same
+content, logged on the same row as `archive_resend_email_id`). Recommended: **yes**. Without it, D2 applies to
+every city email.
+
+## Decisions for Fred (as asked)
 
 - **D1. Client emails too?** The DERM Tracker "Send to client" emails (37, the restaurant) can get the same chip
   on the visit page client line and the Manifests "Emailed" chip. Recommended: **yes, in the same build**; the
