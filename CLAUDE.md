@@ -5319,7 +5319,13 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   gate: unshared reference, no other completion inside, no truck question, not stale, Samsara within 5 min at both
   ends, flagged; neighbours all or none) and writes the review list (outside the repos, it names clients). 18 values
   corrected (labelled `time-on-site-audit`, snapshot-guarded, backup in `backups/`); 207 of 313 now agree, 106 on the
-  review list. Steps 6 to 8 (before Aug 20, map points, monitoring) are open.
+  review list.
+  **Step 6 shipped (`2026-10-14_1020` + `2026-10-14_1021`)**: `public.fn_time_on_site_verdicts` holds the verdict rules once;
+  `public.fn_time_on_site_audit_gps(p_date)` is the same audit with the reference rebuilt from the raw GPS
+  (`fn_gps_stays`, algorithm 2 matching), validated against the stop table on Aug 20 to Oct 13 (every unshared visit
+  within 5 min). The script reads it per date before Aug 20 (`... 2026-01-01 2026-08-19`) and adds one gate: a wrong
+  stay is never corrected onto a stop under 15 min. 970 saved values: 106 corrected (snapshot-guarded, backup in
+  `backups/`), 550 agree, 314 on the review list. Steps 7 and 8 (map points, monitoring) are open.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL

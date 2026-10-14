@@ -1,5 +1,7 @@
 // time_on_site_audit.mjs - audit the saved time on site (time on site plan step 5). Read-only, re-runnable.
-//   node scripts/checks/time_on_site_audit.mjs <out.html> <out.json> [from YYYY-MM-DD, default 2026-08-20]
+//   node scripts/checks/time_on_site_audit.mjs <out.html> <out.json> [from YYYY-MM-DD, default 2026-08-20] [to YYYY-MM-DD]
+// Dates before 2026-08-20 (no stop table yet) are read day by day from public.fn_time_on_site_audit_gps, the same audit
+// with the reference rebuilt from the raw GPS (time on site plan step 6); later dates from fn_time_on_site_audit.
 // For every saved time on site of a completed client visit since `from` it puts three things side by side:
 //   the saved value, our reference (public.fn_time_on_site_audit: the truck's stop holding the completion, with the
 //   step 3 chain and split rules), and Samsara's own stop (the gap between the trip that ends before and the trip that
@@ -7,22 +9,32 @@
 // A visit is AUTO (safe to correct to the reference) only when all hold: the reference exists and is not a shared or
 // unsplittable stop; no other visit of that truck was completed inside it; no truck question; not stale; Samsara agrees
 // within 5 min at BOTH ends; the saved value is flagged (wrong stay, too short, too long, closed before arrival, window
-// cut); it is not a reviewed value. Visits that saved the same window on the same truck (neighbours) are AUTO only as
+// cut); it is not a reviewed value; it is not a wrong stay onto a stop under 15 min. Visits that saved the same window on the same truck (neighbours) are AUTO only as
 // a whole set. Everything else is review. The outputs name clients: write them OUTSIDE the repos.
 import fs from 'node:fs';
 
 const env = Object.fromEntries(fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8').split(/\r?\n/)
   .filter((l) => l.includes('=') && !l.startsWith('#'))
   .map((l) => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, '')]; }));
-const [, , outHtml, outJson, from = '2026-08-20'] = process.argv;
+const [, , outHtml, outJson, from = '2026-08-20', to = '9999-12-31'] = process.argv;
+const STOPS_FROM = '2026-08-20';
 if (!outHtml || !outJson) { console.error('usage: node scripts/checks/time_on_site_audit.mjs <out.html> <out.json> [from]'); process.exit(1); }
 const BASE = `https://${env.SUPABASE_PROJECT_ID}.supabase.co`;
 const H = { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' };
 const get = async (path) => { const r = await fetch(`${BASE}/rest/v1/${path}`, { headers: H }); if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`); return r.json(); };
 
-const rr = await fetch(`${BASE}/rest/v1/rpc/fn_time_on_site_audit`, { method: 'POST', headers: H, body: JSON.stringify({ p_from: from }) });
-if (!rr.ok) throw new Error(`fn_time_on_site_audit: HTTP ${rr.status} ${await rr.text()}`);
-const rows = await rr.json();
+const rpc = async (fn, body) => { const r = await fetch(`${BASE}/rest/v1/rpc/${fn}`, { method: 'POST', headers: H, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`${fn}: HTTP ${r.status} ${await r.text()}`); return r.json(); };
+let rows = [];
+if (from < STOPS_FROM) {
+  const last = to < STOPS_FROM ? to : '2026-08-19';
+  for (let d = new Date(from + 'T12:00:00Z'); d.toISOString().slice(0, 10) <= last; d.setUTCDate(d.getUTCDate() + 1)) {
+    for (const r of await rpc('fn_time_on_site_audit_gps', { p_date: d.toISOString().slice(0, 10) })) rows.push({ ...r, reference: 'gps' });
+  }
+}
+if (to >= STOPS_FROM) {
+  for (const r of await rpc('fn_time_on_site_audit', { p_from: from > STOPS_FROM ? from : STOPS_FROM })) if (r.visit_date <= to) rows.push({ ...r, reference: 'stops' });
+}
 if (!rows.length) throw new Error('the audit returned no rows: refusing to report a clean result from an empty instrument');
 
 const links = await get('entity_source_links?select=entity_id,source_id&entity_type=eq.vehicle&source_system=eq.samsara');
@@ -69,7 +81,9 @@ for (const r of rows) {
   }
   const flagged = r.verdicts.some((v) => FLAGS.includes(v));
   const auto = !!(r.ref_arrival && r.ref_split_ok && r.ref_sharing === 1 && !r.other_completion_inside && !r.truck_question
-    && !r.stale && agree && flagged && !['review', 'reviewed_blank'].includes(r.saved_source));
+    && !r.stale && agree && flagged && !['review', 'reviewed_blank'].includes(r.saved_source)
+    // a long saved stay replaced by a short stop at the completion is the truck dropping by to close the job (step 6)
+    && !(r.verdicts.includes('wrong_stay') && r.ref_minutes < 15));
   const v = info.get(r.visit_id);
   out.push({ ...r, samsara: gap, samsara_agrees: agree, samsara_disagrees: disagree, samsara_read: t !== null, auto,
     client_code: v?.clients?.client_code ?? '', client_name: v?.clients?.name ?? '', truck: v?.vehicles?.name ?? '',
