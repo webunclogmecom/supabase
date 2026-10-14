@@ -166,7 +166,8 @@ No change in phase 1: not to `send-derm-email`, `send-visit-photos-email`, the h
     NULL DEFAULT '', lower-cased; '' for a summary row), `occurred_at`, `received_at`, `detail` jsonb (the
     bounce/failure reason only, never the body).
   - **Plain `UNIQUE (svix_id, recipient)`.** An expression key would break the upsert (42P10).
-  - Audit trigger (it is compliance evidence and the volume is tiny), plus a trigger that refuses UPDATE and DELETE.
+  - A trigger that refuses UPDATE and DELETE. (Built as a rule 8 OPT-OUT of audit.logs, the sync-only append default:
+    rows are written once and can never change, so an audit row would only duplicate them.)
     Never purged.
   - service_role only: revoke by name from `public`, `anon` and `authenticated`, then assert `relacl`.
 - **`app_config` keys:**
@@ -347,3 +348,15 @@ rows are excluded.
 
 Also found, no decision needed: 112-YA property 162 holds an internal address in `city_emails` (2.11). Every new view
 excludes 112-YA through `v_non_customer_clients`.
+
+## 8. Build status
+
+- **2026-10-14, back end SHIPPED** (Fred: "yes, build the back end now"). Migration `2026-10-14_1505_email_delivery_events`
+  (rollback beside it, rehearsed both ways), edge fn `webhook-resend`, fixtures `scripts/probes/email_delivery_fixtures.sql`
+  (16 fixture emails, every state, health items, address masking: all pass), `scripts/checks/svix_verify_check.mjs`
+  (8 of 8 against Svix's published vector).
+- **Backfill done:** all 77 real sends read Delivered (22 confirmed by Resend, 55 assumed, Resend answered 404).
+- **Waiting on Fred:** add the webhook in Resend and the secret `RESEND_WEBHOOK_SECRET` in Supabase. Then: a 112-YA
+  smoke send must land `delivered` rows, a forged call must get 401, and `app_config.email_events_live_since` is set.
+- **Not started:** mockups, then the chips in Admin Review and the DERM Tracker.
+

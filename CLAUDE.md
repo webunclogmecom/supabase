@@ -5248,8 +5248,7 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   "never received" A La Carte's Oct 9 send): tracking subdomain `links.unclogme.com` (CNAME in GoDaddy, verified),
   open tracking on, click tracking left OFF on purpose (it reroutes every report/photo link through Resend, which city
   mail filters distrust). Emails sent before that day have NO open record; "delivered"/"bounced" exists for every send.
-  Opens live in the Resend dashboard only (our logs stop at `resend_email_id` + `status=sent` = accepted by Resend);
-  storing delivered/bounced/opened needs a Resend webhook, not built. Government mail systems block or pre-fetch
+  Since `2026-10-14_1505` we store what Resend reports (next bullet). Government mail systems block or pre-fetch
   images, so "opened" is a hint, never proof. ⚠ The "overdue" email the client got was an automatic **FOG BMP**
   (`mg.fogbmp.com`) reminder, the city's tracking portal: our email to the inspectors does not enter the cleaning
   there, so those reminders can fire even when our send was delivered. Who enters it (hauler login or the city) is
@@ -5258,6 +5257,32 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   (`scripts/probes/derm_email_smoke.js 2017 381 city nophotos`, 112-YA, test_recipient only) carried the
   `links.unclogme.com` pixel, links not rewritten, and read Sent, Delivered, then **Opened** 2 minutes after Gmail
   displayed it. The Resend dashboard shows times in the browser's zone (CEST here), not ET.
+- 🛑 **"WAS IT DELIVERED / OPENED?" HAS ONE ANSWER: `public.v_email_delivery` (`2026-10-14_1505`).** Plan + audit (read
+  it before changing anything here): `docs/superpowers/specs/2026-10-14-email-delivery-status-audit.md`.
+  - **Store:** `public.email_events`, one row per Resend event per recipient, written by edge fn **`webhook-resend`**
+    (Svix-signed webhook, secret `RESEND_WEBHOOK_SECRET`; `verify_jwt = false`, the signature is the gate, checked by
+    `svix.ts` + `scripts/checks/svix_verify_check.mjs` against Svix's published vector) and by its **backfill**
+    (`{"backfill": true}` with the service key; one `backfill_summary` row per email, recipient `''`). Key
+    `(svix_id, recipient)`. **Append only** (trigger refuses UPDATE/DELETE), never purged: Resend keeps emails 30 days,
+    this is the long-term record. Rule 8 opt-out (sync-only append table). service_role only.
+  - **Status, per `resend_email_id`, To line only:** `not_delivered`, `partly_bounced`, `spam`, `opened`, `delivered`,
+    `delivered_open_unknown`, `partly_delivered`, `delayed`, `sending`, `no_status`, `no_record`. 🛑 **A city email is
+    NEVER `opened`:** the archive Bcc `derm@ayache.com` rides on every one and Resend credits one open to every
+    recipient (step 0, measured). City opens ARE stored (`opened_at`, `open_gap_seconds`, for the D5 gate around
+    2026-11-18) but `delivery_detail`, which the apps read, carries `opened_at` only when the open is creditable.
+    Also never creditable: before `app_config.email_open_tracking_since` (2026-10-14 17:54 UTC), after
+    `email_open_tracking_until` (set it in the same minute tracking is ever switched off), summary-only rows, or a
+    client email with a logged Cc/Bcc.
+  - **Backfill done 2026-10-14 (Fred: "Mark them all as Delivered"):** all 77 real sends read `delivered_open_unknown`:
+    22 confirmed by Resend's `last_event` (Sep 22 to Oct 9), 55 `summary_basis = 'assumed_before_reports'` (Resend
+    answered 404, older than its 30 days). Test sends are not backfilled.
+  - **Apps:** `v_visit_city_email_sends` gained `delivery_status`, `delivery_at`, `delivery_detail` (appended; old
+    columns asserted unchanged); new `public.v_client_email_sends` (authenticated, no addresses) for DERM Tracker
+    client sends. The chips are NOT built yet (mockups first). When `delivery_detail.summary_only` is true, show no
+    "N of M" count: a summary is one value per email.
+  - **Health (Fred's daily email):** `email_not_delivered`, `email_status_missing` (only after
+    `app_config.email_events_live_since` is set, i.e. once the webhook is proven), `email_delivery_incomplete`.
+  - **Fixtures:** `scripts/probes/email_delivery_fixtures.sql` (16 fixture emails, every state, rolls back).
 - **Run records:** both 11 AM reminders write one `sync_log` row per run (`admin_review_reminder`,
   `stamp_sheets_reminder`, `<source>_test`), and their wrappers call the edge function every day (`2026-10-12_1310`).
 - **Photos:** `v_visit_photo_counts` counts only `before`/`after`/`internal`/`extra` as sorted since `2026-10-12_1335`
