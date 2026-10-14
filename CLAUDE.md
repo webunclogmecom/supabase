@@ -5312,8 +5312,14 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   **Step 4 shipped (`2026-10-13_2320`)**: 12 blanks from before the stop table filled from `fn_gps_stays` at the
   completion, each confirmed by Samsara's trip gap (`/v1/fleet/trips`) within 5 min at both ends, labelled
   `time-on-site-backfill`; 6 drive-bys marked `reviewed_blank`, which `fn_time_on_site_gaps` (the 11 AM alert, the
-  report) now leaves out. The other 70 blanks are on a review list outside the repos. Steps 5 to 8 (the saved-value
-  audit, before Aug 20, map points, monitoring) are open.
+  report) now leaves out. The other 70 blanks are on a review list outside the repos.
+  **Step 5 shipped (`2026-10-13_2350` + `2026-10-14_0955`)**: `public.v_visit_stop_reference` is the ONE stop rule
+  (the fill reads it, `split_ok` rows only); `public.fn_time_on_site_audit(p_from)` is the read-only verdict list, and
+  `scripts/checks/time_on_site_audit.mjs <html> <json>` adds Samsara's trip gap, picks what is safe to correct (strict
+  gate: unshared reference, no other completion inside, no truck question, not stale, Samsara within 5 min at both
+  ends, flagged; neighbours all or none) and writes the review list (outside the repos, it names clients). 18 values
+  corrected (labelled `time-on-site-audit`, snapshot-guarded, backup in `backups/`); 207 of 313 now agree, 106 on the
+  review list. Steps 6 to 8 (before Aug 20, map points, monitoring) are open.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
