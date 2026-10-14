@@ -5288,8 +5288,16 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `samsara-checks/time_on_site_fix_plan_2026-10-13.md`, defaults approved by Fred. **Step 1 shipped
   (`2026-10-13_1935`)**: `public.fn_gps_stays` (the stop builder's walk, read-only, any date) and
   `fn_time_on_site_gaps.stop_at_completion` (the stop holding the completion, within 250 m), read by the 11 AM alert
-  (`time-on-site-reminder` v7) and by `scripts/checks/time_on_site_report.mjs`. Describing only: no writer changed yet
-  (steps 2 to 8 are the writers, the saved-value audit and monitoring).
+  (`time-on-site-reminder` v7) and by `scripts/checks/time_on_site_report.mjs`. Describing only.
+  **Step 2 shipped (`2026-10-13_2020` + `_2025`)**: `visits.time_on_site_source` records which rule wrote the time
+  (NULL = before 2026-10-13); the three writers label their writes (`time-on-site-measure` / `-any-truck` /
+  `-from-stops`, with a reason) and `fn_compute_time_on_site` only replaces NULL-source or its own values; a reopened
+  visit loses its automatic time (`trg_zz_clear_time_on_site_on_reopen`; review values kept); the 11 AM run measures up
+  to yesterday only. 🛑 `fn_infer_visit_vehicle` (cron 27) still fills an EMPTY truck from the longest stay but
+  REPLACES a truck only when the GPS truck has a stop (within 250 m) holding the completion time and the one on the
+  visit has none, never on a visit filed on a DERM manifest; writes labelled `truck-from-gps`. Do not loosen it: the
+  old rule was wrong on 12 of 26 replacements. Steps 3 to 8 (the new rule, backfills, the saved-value audit,
+  monitoring) are open.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL

@@ -286,13 +286,14 @@ Grease tank and fuel tank are independent physical tanks on vacuum trucks. Greas
 | vehicle_id | BIGINT FK → vehicles | Nullable; 1505 of 2208 visits resolved |
 | visit_date | DATE | |
 | start_at / end_at / completed_at | TIMESTAMPTZ | |
-| duration_minutes | INTEGER | |
+| duration_minutes | INTEGER | MEASURED time on site (GPS), not the scheduled length. Written by the time on site functions; see time_on_site_source |
+| time_on_site_source | TEXT | Which rule wrote the time: `gps_150m_cluster`, `gps_150m_any_truck`, `stop_at_completion`, `dump_site_dwell`, `review`, `reviewed_blank` (CHECK `visits_time_on_site_source_chk`); NULL = written before 2026-10-13_2020. Cleared with the time when a visit is reopened (trigger `trg_zz_clear_time_on_site_on_reopen`), except review / reviewed_blank |
 | title | TEXT | |
 | service_type | TEXT | Nullable. The catalogue taxonomy: `Pumping`, `Cleaning`, `Warranty of Drainage`, `Unclogging`, `Camera Inspection`, `Dye Test`, `Assessment`, `Labor`, `Parts`, `Labor BUS`, `Dump Offload`. Enforced by `visits_service_type_chk`. **NULL is legal and honest** (206 rows) — it means not derivable, never "default to Pumping". ⚠ Was `GT`/`CL`/`WD`/`LS` until 2026-08-03; `AUX`/`HYDROJET`/`CAMERA`/`EMERGENCY` were documented here but never existed in the data. See [reference/service-type-vocabulary.md](reference/service-type-vocabulary.md). |
 | visit_status | TEXT | CHECK domain = `scheduled`, `completed`, `cancelled`, `skipped` (2026-07-03). `skipped` = deliberately not serviced this cycle (e.g. client temporarily closed) but kept for the record + removed from Jobber — set via `skip_visit()`/`unskip_visit()`; see migration `2026-07-03c_skip_visit_status.sql`. |
 | skip_reason | TEXT | Why a visit was skipped (only when `visit_status='skipped'`). Set by `skip_visit()`, cleared by `unskip_visit()`. NOT pushed to Jobber. |
 | actual_arrival_at / actual_departure_at | TIMESTAMPTZ | GPS enrichment from Samsara |
-| is_gps_confirmed | BOOLEAN | TRUE when GPS matches |
+| is_gps_confirmed | BOOLEAN | DEAD: no writer, false on every row (2026-10-13). Exposed in 5 views; reuse or drop is open |
 | invoice_id | BIGINT FK → invoices | |
 | truck | TEXT | **Intentional denorm** — historical truck name (see ADR 004) |
 | completed_by | TEXT | **Intentional denorm** — historical attribution |
