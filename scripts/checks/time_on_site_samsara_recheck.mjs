@@ -29,8 +29,17 @@ const CANDS = [
   cand({ visit_id: 7, arrived: T('12:01'), departed: T('12:29'), ref_arrived: T('11:05'), duration_minutes: 80, truck_samsara_id: 'Z' }), // moved during the job
 ];
 
+// second pass, went once (2026-10-14_1800): 21 blank -> 30 (shares the 12:00 stay with 22: allowed), 22 agrees,
+// 23 moved during the job, 1 already changed by the first pass (left to it)
+const ONCE = [
+  cand({ visit_id: 21, arrived: T('12:01'), departed: T('12:29') }),
+  cand({ visit_id: 22, arrived: T('12:01'), departed: T('12:29'), duration_minutes: 30, source: null }),
+  cand({ visit_id: 23, arrived: T('11:05'), departed: T('12:29'), duration_minutes: 80 }),
+  cand({ visit_id: 1, arrived: T('10:02'), departed: T('10:33') }),
+];
+
 async function run({ body = {}, role = 'service_role', code = src } = {}) {
-  const saves = [], logs = [];
+  const saves = [], onceSaves = [], logs = [];
   let handler;
   const ctx = {
     Deno: { env: { get: (k) => ({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc', SAMSARA_API_TOKEN: 'sam' })[k] },
@@ -38,6 +47,8 @@ async function run({ body = {}, role = 'service_role', code = src } = {}) {
     fetch: async (url, opts = {}) => {
       url = String(url);
       if (url.endsWith('/rpc/fn_time_on_site_samsara_candidates')) return Response.json(CANDS);
+      if (url.endsWith('/rpc/fn_time_on_site_went_once')) return Response.json(ONCE);
+      if (url.endsWith('/rpc/fn_save_samsara_stay_went_once')) { onceSaves.push(JSON.parse(opts.body)); return Response.json(true); }
       if (url.endsWith('/rpc/fn_save_samsara_stay')) { saves.push(JSON.parse(opts.body)); return Response.json(true); }
       if (url.startsWith('https://api.samsara.com/v1/fleet/trips')) {
         const id = new URL(url).searchParams.get('vehicleId');
@@ -50,7 +61,7 @@ async function run({ body = {}, role = 'service_role', code = src } = {}) {
   };
   vm.runInNewContext(stripTypeScriptTypes(code), ctx);
   const res = await handler(new Request('https://f', { method: 'POST', headers: { authorization: `Bearer ${jwt(role)}` }, body: JSON.stringify(body) }));
-  return { status: res.status, body: await res.json(), saves, logs };
+  return { status: res.status, body: await res.json(), saves, onceSaves, logs };
 }
 
 const r = await run({ body: { from: '2026-10-01', to: '2026-10-02' } });
@@ -62,10 +73,15 @@ assert.strictEqual(byId[1].p_departure, T('10:34').replace(':00Z', ':00.000Z'));
 assert.strictEqual(byId[4].p_expected_minutes, 50, 'passes the value it read (no clobber)');
 const c = r.body.counts;
 assert.deepStrictEqual([c.candidates, c.saved, c.agree, c.shared_stay, c.late_tap_kept, c.no_gap, c.moved_during_job], [7, 2, 0, 2, 1, 1, 1], JSON.stringify(c));
-assert.strictEqual(r.logs.length, 1); assert.strictEqual(r.logs[0].sync_source, 'time_on_site_samsara_recheck'); assert.strictEqual(r.logs[0].rows_updated, 2);
+assert.strictEqual(r.logs.length, 1); assert.strictEqual(r.logs[0].sync_source, 'time_on_site_samsara_recheck'); assert.strictEqual(r.logs[0].rows_updated, 3);
+const o = c.went_once;
+assert.deepStrictEqual([o.candidates, o.saved, o.agree, o.moved_during_job], [4, 1, 1, 1], JSON.stringify(o));
+assert.deepStrictEqual(r.onceSaves.map((x) => x.p_visit_id), [21], 'went-once saves only 21');
+assert.strictEqual(r.onceSaves[0].p_arrival, T('12:00').replace(':00Z', ':00.000Z'));
+assert.strictEqual(r.onceSaves[0].p_departure, T('12:30').replace(':00Z', ':00.000Z'));
 
 const d = await run({ body: { from: '2026-10-01', dry_run: true } });
-assert.strictEqual(d.saves.length, 0); assert.strictEqual(d.logs.length, 0); assert.strictEqual(d.body.changes.length, 2);
+assert.strictEqual(d.saves.length, 0); assert.strictEqual(d.logs.length, 0); assert.strictEqual(d.body.changes.length, 3); assert.strictEqual(d.onceSaves.length, 0);
 
 assert.strictEqual((await run({ role: 'authenticated' })).status, 403);
 
@@ -74,4 +90,6 @@ const m = await run({ body: { from: '2026-10-01' }, code: src.replace('!f.c.hold
 assert.ok(m.saves.some((s) => s.p_visit_id === 5), 'the mutation should save the late-tap visit');
 const m2 = await run({ body: { from: '2026-10-01' }, code: src.replace('if (stays > 1)', 'if (false)') });
 assert.ok(m2.saves.some((s) => s.p_visit_id === 7), 'the mutation should save the moved-during-job visit');
-console.log('time_on_site_samsara_recheck: all checks passed (both mutations caught)');
+const m3 = await run({ body: { from: '2026-10-01' }, code: src.replace('if (done.has(c.visit_id)) continue;', '') });
+assert.ok(m3.onceSaves.some((s) => s.p_visit_id === 1), 'the mutation should let the second pass redo a first-pass visit');
+console.log('time_on_site_samsara_recheck: all checks passed (three mutations caught)');

@@ -5353,6 +5353,10 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   last 10 days): saves Samsara's stay when blank or 2+ min off, skipping a job where Samsara shows the truck MOVING
   (two stays over the job window: 27 visits, Fred to decide whether they count in full), shared stays and late taps.
   One-time run over Aug 19+: 176 saved, then 0 left. Test: `node scripts/checks/time_on_site_samsara_recheck.mjs`.
+  `_1800` (Fred: "add the went-once rule to the nightly recheck"): a SECOND pass, `fn_time_on_site_went_once` +
+  `fn_save_samsara_stay_went_once` (re-checks the rule server-side): the truck was not parked there at the tap, but
+  went to the address ONCE in the visit window (stays under 15 min apart joined, so a re-park is one visit); two visits
+  of one client may share that stay (8013/8017, 3942/5078). Same Samsara reading, same 2-min / moved-during-job rules.
   **Step 2 shipped (`2026-10-13_2020` + `_2025`)**: `visits.time_on_site_source` records which rule wrote the time
   (NULL = before 2026-10-13); the three writers label their writes (`time-on-site-measure` / `-any-truck` /
   `-from-stops`, with a reason) and `fn_compute_time_on_site` only replaces NULL-source or its own values; a reopened

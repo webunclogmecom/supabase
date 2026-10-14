@@ -103,7 +103,36 @@ async function recheck(from: string, to: string, dryRun: boolean, token: string)
     }
     changes.push(change);
   }
-  return { from, to, dry_run: dryRun, counts, changes };
+
+  // second pass (2026-10-14_1800, Fred: "add the went-once rule to the nightly recheck"): the truck was not parked
+  // there when the job was marked complete, but went to the address once that date (8017, 3942). Read AFTER the
+  // first pass so its saves are seen; a visit the first pass changed (or would, on a dry run) is left to it. Two
+  // visits of one client may share the stay (two services, one stop), so there is no shared-stay skip here.
+  const once = await rpc("fn_time_on_site_went_once", { p_from: from, p_to: to }) as Cand[];
+  const went_once = { candidates: once.length, moved_during_job: 0, no_gap: 0, read_failed: 0, agree: 0, saved: 0, refused: 0 };
+  const done = new Set(changes.map((c) => c.visit_id));
+  for (const c of once) {
+    if (done.has(c.visit_id)) continue;
+    const a = Date.parse(c.arrived), b = Date.parse(c.departed);
+    let ts: Trip[];
+    try { ts = await trips(c.truck_samsara_id, etDate(a), token); } catch { went_once.read_failed++; continue; }
+    const stays = ts.slice(0, -1).filter((t, i) => Math.min(ts[i + 1].startMs, b) - Math.max(t.endMs, a) >= 60e3).length;
+    if (stays > 1) { went_once.moved_during_job++; continue; }
+    const g = bestGap(ts, a, b);
+    if (!g) { went_once.no_gap++; continue; }
+    const mins = Math.round((g.g1 - g.g0) / 60e3);
+    if (c.duration_minutes != null && Math.abs(c.duration_minutes - mins) < MIN_DIFF) { went_once.agree++; continue; }
+    const change = { visit_id: c.visit_id, rule: "went_once", from: c.duration_minutes, from_source: c.source, to: mins,
+                     arrived: new Date(g.g0).toISOString(), departed: new Date(g.g1).toISOString() };
+    if (!dryRun) {
+      const ok = await rpc("fn_save_samsara_stay_went_once", { p_visit_id: c.visit_id, p_arrival: change.arrived, p_departure: change.departed,
+                                                               p_expected_minutes: c.duration_minutes, p_expected_source: c.source });
+      if (ok !== true) { went_once.refused++; continue; }
+      went_once.saved++;
+    }
+    changes.push(change);
+  }
+  return { from, to, dry_run: dryRun, counts: { ...counts, went_once }, changes };
 }
 
 async function logRun(startedAt: string, ok: boolean, details: Record<string, unknown>) {
@@ -113,7 +142,7 @@ async function logRun(startedAt: string, ok: boolean, details: Record<string, un
       body: JSON.stringify({
         sync_source: SOURCE, started_at: startedAt, finished_at: new Date().toISOString(),
         duration_seconds: (Date.now() - Date.parse(startedAt)) / 1000,
-        status: ok ? "success" : "error", rows_updated: ok ? (details.counts as { saved: number }).saved : 0, rows_errored: ok ? 0 : 1,
+        status: ok ? "success" : "error", rows_updated: ok ? ((details.counts as { saved: number; went_once?: { saved: number } }).saved + ((details.counts as { went_once?: { saved: number } }).went_once?.saved ?? 0)) : 0, rows_errored: ok ? 0 : 1,
         error_details: ok ? null : { message: `The nightly time on site check against Samsara failed: ${details.error}` },
         details,
       }),
