@@ -5280,8 +5280,17 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
     columns asserted unchanged); new `public.v_client_email_sends` (authenticated, no addresses) for DERM Tracker
     client sends. The chips are NOT built yet (mockups first). When `delivery_detail.summary_only` is true, show no
     "N of M" count: a summary is one value per email.
-  - **Health (Fred's daily email):** `email_not_delivered`, `email_status_missing` (only after
-    `app_config.email_events_live_since` is set, i.e. once the webhook is proven), `email_delivery_incomplete`.
+  - **Health (Fred's daily email):** `email_not_delivered`, `email_status_missing` (a send after
+    `app_config.email_events_live_since` = 2026-10-14 19:31:54 UTC, `2026-10-14_1531`, with no Resend event after 2
+    hours), `email_delivery_incomplete`.
+  - **Live since 2026-10-14 15:31 ET.** Resend's webhook ALSO sends `email.sent` and `email.clicked` (Fred ticked them):
+    the function answers them 200 "ignored" and stores nothing. Events arrive about 1.5 s after Resend's own time, one
+    svix message per address (so the Bcc archive gets its own rows). Diagnose a bad secret with
+    `{"secret_shape": true}` + the service key (shape only, never the value).
+  - 🛑 **AN "OPENED" CAN BE A MACHINE, MEASURED:** the 112-YA client test (`01a13be4-a8dc-...`) read `opened` 8 seconds
+    after delivery while the email was still UNREAD in Gmail and nobody had opened it (a mail app or Google fetched
+    the pixel). So a client "Opened" is a hint, and a very fast open is probably automatic: the chip wording for it
+    is decided at the mockup step. `open_gap_seconds` is in the view for exactly this.
   - **Fixtures:** `scripts/probes/email_delivery_fixtures.sql` (16 fixture emails, every state, rolls back).
 - **Run records:** both 11 AM reminders write one `sync_log` row per run (`admin_review_reminder`,
   `stamp_sheets_reminder`, `<source>_test`), and their wrappers call the edge function every day (`2026-10-12_1310`).

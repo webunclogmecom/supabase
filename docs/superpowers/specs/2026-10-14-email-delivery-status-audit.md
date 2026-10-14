@@ -356,7 +356,13 @@ excludes 112-YA through `v_non_customer_clients`.
   (16 fixture emails, every state, health items, address masking: all pass), `scripts/checks/svix_verify_check.mjs`
   (8 of 8 against Svix's published vector).
 - **Backfill done:** all 77 real sends read Delivered (22 confirmed by Resend, 55 assumed, Resend answered 404).
-- **Waiting on Fred:** add the webhook in Resend and the secret `RESEND_WEBHOOK_SECRET` in Supabase. Then: a 112-YA
-  smoke send must land `delivered` rows, a forged call must get 401, and `app_config.email_events_live_since` is set.
+- **Webhook LIVE 2026-10-14 15:31 ET** (`2026-10-14_1531`): Fred added it in Resend (also ticked sent + clicked, which
+  the function ignores) and the secret (first paste held the secret's name, caught by `secret_shape`). Smoke on
+  112-YA: city test delivered for both addresses, a real open credited to both, status stays open unknown; forged,
+  unsigned and stale calls get 401 and write nothing.
+- **New finding for the mockups:** the client test read Opened 8 seconds after delivery while still UNREAD in Gmail
+  (an automatic open). Proposal for Fred at the mockup step: an open within about a minute of delivery shows as
+  "Delivered" with the tooltip "Opened seconds after it arrived, most likely automatically by their email app, so we
+  can't tell if a person read it", in the D2 colour, instead of "Opened".
 - **Not started:** mockups, then the chips in Admin Review and the DERM Tracker.
 

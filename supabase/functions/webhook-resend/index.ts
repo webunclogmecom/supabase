@@ -12,6 +12,8 @@
 //      For every logged send that has no event yet, asks Resend for the email's last_event and stores ONE
 //      backfill_summary row. Resend keeps emails 30 days; an older one answers 404 and is stored as
 //      basis 'assumed_before_reports' (Fred, 2026-10-14: "Mark them all as Delivered").
+//      Same door, {secret_shape: true}: reports the SHAPE of RESEND_WEBHOOK_SECRET (length, whsec_ prefix, decodes),
+//      never its value. It caught the first paste on 2026-10-14 (the secret's NAME had gone into its value field).
 //
 // RULES (do not regress):
 // - Only our own mail: an event whose `from` address is not exactly @unclogme.com is answered 200 and dropped.
