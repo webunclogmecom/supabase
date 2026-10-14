@@ -5308,8 +5308,12 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   Order everywhere (cron 26, the 11 AM reminder, Viktor): stops first, then the 150 m measurement, then the any-truck
   fill; Viktor relinks under the hourly refresh's lock. Z4 allows 250 m for completion links. 6509 reads 34 min.
   🛑 The linker reconciles the WHOLE era every hour, so any change to its rule rewrites old links (and tank volumes):
-  dry-run it first (`fn_link_visit_vehicle_stops(false)->'changes'` lists every add and retire). Steps 4 to 8
-  (backfills, the saved-value audit, monitoring) are open.
+  dry-run it first (`fn_link_visit_vehicle_stops(false)->'changes'` lists every add and retire).
+  **Step 4 shipped (`2026-10-13_2320`)**: 12 blanks from before the stop table filled from `fn_gps_stays` at the
+  completion, each confirmed by Samsara's trip gap (`/v1/fleet/trips`) within 5 min at both ends, labelled
+  `time-on-site-backfill`; 6 drive-bys marked `reviewed_blank`, which `fn_time_on_site_gaps` (the 11 AM alert, the
+  report) now leaves out. The other 70 blanks are on a review list outside the repos. Steps 5 to 8 (the saved-value
+  audit, before Aug 20, map points, monitoring) are open.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
