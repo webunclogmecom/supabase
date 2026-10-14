@@ -36,7 +36,7 @@ const PLACES = [
   { id: '4000001014044', name: '119-ME Mosche Elghrissi', latitude: 25.84, longitude: -80.12 },
 ];
 
-async function run(list, { body = {}, role = 'service_role', samsara = PLACES, slack = { ok: true, ts: '1.2' }, code = src, env = {} } = {}) {
+async function run(list, { body = {}, role = 'service_role', samsara = PLACES, trips = null, slack = { ok: true, ts: '1.2' }, code = src, env = {} } = {}) {
   const posts = [], logs = [];
   let handler;
   const ctx = {
@@ -48,6 +48,10 @@ async function run(list, { body = {}, role = 'service_role', samsara = PLACES, s
       if (url.startsWith('https://api.samsara.com/addresses')) {
         if (samsara === 'FAIL') return new Response('nope', { status: 500 });
         return Response.json({ data: samsara, pagination: { hasNextPage: false } });
+      }
+      if (url.startsWith('https://api.samsara.com/v1/fleet/trips') && trips) {
+        if (trips === 'FAIL') return new Response('nope', { status: 500 });
+        return Response.json({ trips });
       }
       if (url === 'https://x.supabase.co/rest/v1/sync_log') { logs.push(JSON.parse(opts.body)); return new Response(null, { status: 201 }); }
       if (url === 'https://slack.com/api/chat.postMessage') { posts.push(JSON.parse(opts.body)); return Response.json(slack); }
@@ -170,6 +174,22 @@ async function checks(code) {
   assert.ok(wl.endsWith('so our map point is probably off; the visit is set to David'), wl);
   const wn = bodyText((await run(myDay({ ...wrong, stop_at_completion: { ...wrong.stop_at_completion, meters: 87 } }), { samsara: [MYK], code })).posts[0]).split('\n')[1];
   assert.ok(wn.endsWith('|Cloggy> was parked here 10:29 AM to 11:02 AM (34 min) when it was marked complete, but the visit is set to David'), wn);
+  // 6c. Samsara's own stay replaces our GPS times (visit 6498: ours 3:47 to 4:15, 28 min; Samsara 3:40 to 4:14, 34):
+  // trips ending 10:20 and starting 11:00 around the 10:29 to 11:02 stop give 10:20 AM to 11:00 AM (40 min)
+  const TRIPS = [{ startMs: Date.parse('2026-09-25T13:50:00Z'), endMs: Date.parse('2026-09-25T14:20:00Z') },
+                 { startMs: Date.parse('2026-09-25T15:00:00Z'), endMs: Date.parse('2026-09-25T15:20:00Z') }];
+  const sm = bodyText((await run(myDay(near), { samsara: [MYK], trips: TRIPS, code })).posts[0]).split('\n')[1];
+  assert.ok(sm.endsWith('|David> was parked here 10:20 AM to 11:00 AM (40 min) when it was marked complete, but the time was not saved'), sm);
+  const sd = await run(myDay(near), { body: { dry_run: true }, samsara: [MYK], trips: TRIPS, code });
+  assert.strictEqual(sd.body.gaps[0].samsara_stay.minutes, 40, "the dry run hands the report Samsara's stay");
+  // trips unreadable, or no gap overlapping the stop: our GPS stop, never a guess
+  const sf = bodyText((await run(myDay(near), { samsara: [MYK], trips: 'FAIL', code })).posts[0]).split('\n')[1];
+  assert.ok(sf.includes('parked here 10:29 AM to 11:02 AM (34 min)'), sf);
+  const away = [{ startMs: Date.parse('2026-09-25T10:00:00Z'), endMs: Date.parse('2026-09-25T10:10:00Z') },
+                { startMs: Date.parse('2026-09-25T11:00:00Z'), endMs: Date.parse('2026-09-25T11:10:00Z') }];
+  const sa = bodyText((await run(myDay(near), { samsara: [MYK], trips: away, code })).posts[0]).split('\n')[1];
+  assert.ok(sa.includes('parked here 10:29 AM to 11:02 AM (34 min)'), sa);
+
   // the dry run hands the report the same lines
   const dl6 = await run(myDay(myka), { body: { dry_run: true }, samsara: [MYK], code });
   assert.strictEqual(dl6.body.lines[0].visit_id, 6509);

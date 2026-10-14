@@ -5305,6 +5305,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   (`2026-10-13_1935`)**: `public.fn_gps_stays` (the stop builder's walk, read-only, any date) and
   `fn_time_on_site_gaps.stop_at_completion` (the stop holding the completion, within 250 m), read by the 11 AM alert
   (`time-on-site-reminder` v7) and by `scripts/checks/time_on_site_report.mjs`. Describing only.
+  🛑 **The times they SHOW are Samsara's own stay since v8 (2026-10-14)**, the gap between two Samsara trips that
+  overlaps our stop the most (`gaps[].samsara_stay`), falling back to our GPS stop (the report says "our GPS"). Fred,
+  on visit 6498: Samsara showed 34 min 12 s, the report said 28. Our 100 m walk and a 250 m chain cannot reproduce
+  Samsara (it counts some parked minutes as trip time), so do not try to rebuild it in SQL; the saved
+  `duration_minutes` is unchanged. Proven: 12 of 12 report lines equal Samsara's trip gap to the second.
   **Step 2 shipped (`2026-10-13_2020` + `_2025`)**: `visits.time_on_site_source` records which rule wrote the time
   (NULL = before 2026-10-13); the three writers label their writes (`time-on-site-measure` / `-any-truck` /
   `-from-stops`, with a reason) and `fn_compute_time_on_site` only replaces NULL-source or its own values; a reopened

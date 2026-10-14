@@ -46,6 +46,10 @@ type Gap = {
   // the truck stop that holds the completion time, within 250 m of our map point (2026-10-13_1935), or null
   stop_at_completion: { truck: string; truck_samsara_id: string | null; assigned: boolean; arrived: string; departed: string;
                         minutes: number; meters: number; lat: number; lng: number } | null;
+  // Samsara's own stay for that stop: the gap between the truck's trip that ends there and its next trip, the times
+  // Samsara shows (2026-10-14, Fred: "Samsara showed me a different time that the HTML"). Added here, null when the
+  // trips could not be read or no gap overlaps the stop; the line then falls back to our GPS stop.
+  samsara_stay?: { arrived: string; departed: string; minutes: number } | null;
 };
 type Geo = { circle: { lat: number; lng: number; r: number } } | { polygon: { lat: number; lng: number }[] } | null;
 type Place = { id: string; name: string; lat: number; lng: number; geo: Geo };
@@ -107,6 +111,30 @@ async function samsaraPlaces(): Promise<Place[] | null> {
   } catch { return null; }
 }
 
+// Samsara's stay for a truck stop: of the gaps between two consecutive trips, the one that overlaps the stop most.
+// Our GPS walk and Samsara do not cut a stay at the same moment (a truck that pulls in and re-parks inside a lot is two
+// stops for us and one stay for Samsara: visit 6498, ours 28 min, Samsara 34), so the times shown are Samsara's.
+async function samsaraStay(truckId: string, arrived: string, departed: string): Promise<Gap["samsara_stay"]> {
+  const token = Deno.env.get("SAMSARA_API_TOKEN");
+  if (!token) return null;
+  try {
+    const a = Date.parse(arrived), b = Date.parse(departed);
+    const r = await fetch(`https://api.samsara.com/v1/fleet/trips?vehicleId=${encodeURIComponent(truckId)}&startMs=${a - 8 * 3600e3}&endMs=${b + 8 * 3600e3}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return null;
+    const trips = ((await r.json()).trips ?? []).filter((t: any) => Number.isFinite(t?.startMs) && Number.isFinite(t?.endMs))
+      .sort((x: any, y: any) => x.startMs - y.startMs);
+    let best: { g0: number; g1: number; ov: number } | null = null;
+    for (let i = 0; i + 1 < trips.length; i++) {
+      const g0 = trips[i].endMs, g1 = trips[i + 1].startMs;
+      const ov = Math.min(g1, b) - Math.max(g0, a);
+      if (g1 > g0 && ov > 0 && (!best || ov > best.ov)) best = { g0, g1, ov };
+    }
+    return best ? { arrived: new Date(best.g0).toISOString(), departed: new Date(best.g1).toISOString(),
+                    minutes: Math.round((best.g1 - best.g0) / 60e3) } : null;
+  } catch { return null; }
+}
+
 // The client's Samsara Place: the property's own link, else the client's links, else a place named after the client
 // code; among several, the nearest to the property point. null when places could not be read (unknown, not "none").
 function findPlace(g: Gap, places: Place[] | null): { checked: boolean; place: Place | null; meters: number | null } {
@@ -157,10 +185,12 @@ function line(g: Gap, places: Place[] | null): string {
   else if (s) {
     // a truck was parked within 250 m when the job was marked complete (visit 6509: 164 m, 34 min): say so first,
     // so a real stop is never reported as a drive-by
-    const a = Date.parse(s.arrived), b = Date.parse(s.departed);
+    // the times are Samsara's stay when it could be read (what the office sees in Samsara), else our GPS stop
+    const w = g.samsara_stay ?? { arrived: s.arrived, departed: s.departed, minutes: s.minutes };
+    const a = Date.parse(w.arrived), b = Date.parse(w.departed);
     const t = link(s.truck, s.truck_samsara_id, a - 3600e3, b + 3600e3);
-    const on = etDay(s.arrived) === g.visit_date ? "" : `on ${shortDay(s.arrived)}, `;
-    const span = `${on}${clock(s.arrived)} to ${clock(s.departed)} (${s.minutes} min)`;
+    const on = etDay(w.arrived) === g.visit_date ? "" : `on ${shortDay(w.arrived)}, `;
+    const span = `${on}${clock(w.arrived)} to ${clock(w.departed)} (${w.minutes} min)`;
     // another truck than the visit's: the truck on the visit is the likely fix (Viktor can change it)
     const other = !s.assigned && g.truck ? `the visit is set to ${esc(g.truck)}` : null;
     if (s.meters > NEAR_M) {
@@ -262,6 +292,10 @@ async function run(dryRun: boolean, test: boolean, date: string | null, token: s
   }
 
   const places = await samsaraPlaces();
+  for (const g of gaps) {
+    const s = g.stop_at_completion;
+    g.samsara_stay = s?.truck_samsara_id ? await samsaraStay(s.truck_samsara_id, s.arrived, s.departed) : null;
+  }
   const message = buildMessage(gaps, ymd, older, places, test);
   const text = buildText(gaps, ymd, places, test);
   if (dryRun) {

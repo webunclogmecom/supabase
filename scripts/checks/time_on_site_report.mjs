@@ -70,7 +70,8 @@ const data = rows.map(({ g, line }) => {
     id: g.visit_id, date: g.visit_date, client: g.client_code ?? '', name: g.client_name ?? '',
     address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', '), service: g.service ?? '',
     truck: g.truck ?? '', completed: et(g.completed_at), reason, rk: kind[0], rl: kind[2],
-    stop: s ? `${s.truck}, ${et(s.arrived)} to ${et(s.departed).replace(/^[A-Z][a-z]{2} \d+, /, '')} (${s.minutes} min), ${s.meters} m` : '',
+    // Samsara's stay when the alert could read it (the times Samsara shows), else our GPS stop (2026-10-14)
+    stop: s ? (({ arrived, departed, minutes }) => `${s.truck}, ${et(arrived)} to ${et(departed).replace(/^[A-Z][a-z]{2} \d+, /, '')} (${minutes} min), ${s.meters} m${g.samsara_stay ? '' : ', our GPS'}`)(g.samsara_stay ?? s) : '',
     closest: g.closest ? `${g.closest.truck}, ${Number(g.closest.meters).toLocaleString('en-US')} m, ${et(g.closest.at)}` : 'No GPS nearby',
     inside: (g.stays ?? []).map((x) => `${x.truck} ${et(x.first)} to ${et(x.last)} (${x.minutes} min)`).join('; '),
     placeId: g.property_place_id || (g.client_place_ids ?? [])[0] || '',
@@ -128,7 +129,7 @@ ${chips}</div>
 <th data-k="truck">Assigned truck</th><th data-k="completed">Completed</th><th data-k="reason">Why it's blank</th>
 <th data-k="stop">Truck stop when completed</th><th data-k="closest">Closest truck</th><th data-k="inside">Within 150 m</th><th>Truck in Samsara</th>
 </tr></thead><tbody id="tb"></tbody></table></div>
-<p class="note">"Truck stop when completed" is a stop of 3 minutes or more, within 250 m of our map point, that holds the time the job was marked complete. When it is more than 150 m away, our map point for the client is probably in the wrong place. "Closest truck" is the nearest GPS point of any truck from 8 PM the evening before to 10 AM the morning after. The address opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
+<p class="note">"Truck stop when completed" is a stop of 3 minutes or more, within 250 m of our map point, that holds the time the job was marked complete. Its times are Samsara's own stay (between the trip that ends there and the next trip), so they match the trip list in Samsara; "our GPS" marks the few where Samsara shows no stop there or could not be read. When it is more than 150 m away, our map point for the client is probably in the wrong place. "Closest truck" is the nearest GPS point of any truck from 8 PM the evening before to 10 AM the morning after. The address opens the client's Place in Samsara. The truck link opens that truck in Samsara for the 6 hours around the completion time (Samsara shows times in your computer's time zone).</p>
 </div>
 <script>
 const ORG = '${ORG}';
