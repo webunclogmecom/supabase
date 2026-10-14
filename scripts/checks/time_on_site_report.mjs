@@ -40,7 +40,7 @@ for (const date of dates) {
 const ids = rows.map((x) => x.g.visit_id);
 const addr = new Map();
 for (let i = 0; i < ids.length; i += 100) {
-  const ar = await fetch(`${BASE}/rest/v1/visits?select=id,client_id,property_id,properties(address,city)&id=in.(${ids.slice(i, i + 100).join(',')})`, { headers: H });
+  const ar = await fetch(`${BASE}/rest/v1/visits?select=id,client_id,property_id,properties(address,city),jobs(title),line_items(name)&id=in.(${ids.slice(i, i + 100).join(',')})`, { headers: H });
   if (!ar.ok) throw new Error(`addresses: HTTP ${ar.status}`);
   for (const a of await ar.json()) addr.set(a.id, a);
 }
@@ -129,6 +129,9 @@ function explain(kind, reason, g) {
   }
   return { issues, suggestion: fix.join(' ') };
 }
+// no service type (Service Call labor, custom items: Fred 2026-10-14): the visit's own line items, else the job title
+const svcFallback = (a) => [...new Set((a?.line_items ?? []).map((l) => String(l.name ?? '').replace(/^\s*\d+\s*-\s*/, '').trim()).filter(Boolean))].join(', ')
+  || String(a?.jobs?.title ?? '').replace(/\s*\[OLD\]\s*$/i, '').trim();
 const data = rows.map(({ g: g0, line }) => {
   const a0 = addr.get(g0.visit_id);
   const only = a0 && !a0.property_id ? (clientProps.get(a0.client_id) ?? []) : [];
@@ -142,7 +145,7 @@ const data = rows.map(({ g: g0, line }) => {
   const a = addr.get(g.visit_id);
   return {
     id: g.visit_id, date: g.visit_date, client: g.client_code ?? '', name: g.client_name ?? '',
-    address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', ') || g.clientAddress, service: g.service ?? '',
+    address: [a?.properties?.address, a?.properties?.city].filter(Boolean).join(', ') || g.clientAddress, service: g.service ?? svcFallback(a),
     truck: g.truck ?? '', completed: et(g.completed_at), rk: kind[0], rl: kind[2],
     ...(({ issues, suggestion }) => ({ issues, reason: issues.join(' '), suggestion }))(explain(kind[0], reason, g)),
     // Samsara's stay when the alert could read it (the times Samsara shows), else our GPS stop (2026-10-14)
