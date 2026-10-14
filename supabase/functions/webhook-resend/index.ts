@@ -6,8 +6,9 @@
 //   1. Resend's webhook (POST, Svix-signed). verify_jwt = false in config.toml because Resend cannot send a Supabase
 //      token; the Svix signature (RESEND_WEBHOOK_SECRET, see svix.ts) IS the gate. Unsigned or badly signed: 401,
 //      nothing written. Secret not set yet: 503, nothing written.
-//   2. Backfill (POST {backfill: true}) with `Authorization: Bearer <service role key>`, matched EXACTLY against this
-//      function's own SUPABASE_SERVICE_ROLE_KEY (no JWT parsing: with verify_jwt off a claim proves nothing).
+//   2. Backfill (POST {backfill: true}) with `Authorization: Bearer <service role key>`: the exact key, or a token
+//      that PostgREST accepts for the service_role-only v_email_delivery (isServiceCaller; no JWT parsing here,
+//      with verify_jwt off a claim proves nothing on its own).
 //      For every logged send that has no event yet, asks Resend for the email's last_event and stores ONE
 //      backfill_summary row. Resend keeps emails 30 days; an older one answers 404 and is stored as
 //      basis 'assumed_before_reports' (Fred, 2026-10-14: "Mark them all as Delivered").
@@ -141,10 +142,32 @@ async function handleBackfill(body: { limit?: unknown; include_test?: unknown })
   return json({ ok: true, ...out });
 }
 
+// The backfill door. verify_jwt is off (Resend has no token), so a role claim in the bearer proves nothing on its
+// own. Accept the exact key, or a token PostgREST itself accepts for v_email_delivery, which only service_role may
+// read (measured 2026-10-14: the repo .env service key is a valid service_role JWT but not byte-equal to this
+// function's SUPABASE_SERVICE_ROLE_KEY, so exact match alone locked the door).
+async function isServiceCaller(req: Request): Promise<boolean> {
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!auth.startsWith("Bearer ")) return false;
+  const token = auth.slice(7).trim();
+  if (!token) return false;
+  if (token === SERVICE_KEY) return true;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/v_email_delivery?select=resend_email_id&limit=1`, {
+      headers: { apikey: token, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000),
+    });
+    await r.body?.cancel();
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const raw = await req.text();
-  if ((req.headers.get("Authorization") ?? "") === `Bearer ${SERVICE_KEY}`) {
+  // Resend's calls carry svix headers and no bearer; only a bearer-carrying call is checked as a service caller.
+  if (!req.headers.get("svix-id") && await isServiceCaller(req)) {
     let body: { backfill?: unknown };
     try { body = JSON.parse(raw || "{}"); } catch { return json({ error: "bad_json" }, 400); }
     if (body.backfill === true) return await handleBackfill(body as Record<string, unknown>);
