@@ -1140,8 +1140,9 @@ cases + 12 mutation controls, all rolled back) in `scripts/client-app/tests/clie
   as postgres. Do not grant it back.
 - New audited tables that belong to a client are NOT picked up automatically: the source list is explicit on purpose
   (`webhook_tokens` also has a `client_id`).
-- 2026-10-15: each recurring job gets a "Starting frequency" entry (`start:job:<id>`, the earliest value we hold, plus
-  "Changes recorded from: Jul 30, 2026" on jobs older than job history; `_1257`, `_1343`), and **visits joined**
+- 2026-10-15: every client, property, job, contact, visit and invoice older than its own history gets an "on record"
+  entry (`start:<table>:<id>`, at its created_at, the earliest state we hold, "Changes recorded from: <date>"; old visits
+  and invoices are background; `_1535`, replacing the job-only "Starting frequency" of `_1257`/`_1343`), and **visits joined**
   (`_1409`, Fred: "each app has their own activity history, but add it"): area `visit`, the Calendar's own
   `entity_render_config` rows for visits (never edit them for this reader), found BY VISIT ID. 🛑 Do not filter visit
   rows by `client_id` in jsonb: `audit.logs` has no index for it and the full scan made the reader 2 to 3 times slower.
