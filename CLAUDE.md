@@ -5393,7 +5393,7 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   went several separate times keep their values (review list in the audit folder). (e) `_0110`:
   **`public.visit_audit_flags`** (one open row per visit, audited, service_role only) holds questions the data cannot
   settle; the report lists them. (f) `_0300`: 6592's date put back (automated writes had moved a completed visit;
-  Jobber still shows Jul 2). The audit script reads Samsara with no re-park join, GPS idling only at 3 mph or less, and
+  Jobber pushed to Jun 30 the same day, schedule only, read back). The audit script reads Samsara with no re-park join, GPS idling only at 3 mph or less, and
   a trip within 150 m of a client place centre counts.
   **Step 2 shipped (`2026-10-13_2020` + `_2025`)**: `visits.time_on_site_source` records which rule wrote the time
   (NULL = before 2026-10-13); the three writers label their writes (`time-on-site-measure` / `-any-truck` /
