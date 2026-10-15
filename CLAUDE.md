@@ -5318,7 +5318,7 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 | configuration (audited, migrations only) | `vehicle_tanks`, `vehicle_tank_configurations` (sludge 3,840 gal; water 1,200 gal, offset 0.3048 m), `tank_sensors`, `tank_sensor_installations`; ESL `tank_sensor` | migrations `2026-10-12_1501` / `_1502` |
 | raw, append-only | `tank_sensor_distance_readings`, `tank_sensor_fill_percent_readings`, `vehicle_engine_rpm_readings`, `vehicle_pto_readings`, `vehicle_site_events` | collector `scripts/sync/cron_samsara_tank_readings.js`, Railway service `samsara-readings` (every 5 min, source `railway_samsara_readings`) |
 | derived | `vehicle_stops`, `vehicle_stop_tank_levels`, `visit_vehicle_stops` (retired links are soft-deleted, `deleted_at`) | `public.fn_refresh_stop_facts()` (pg_cron `vehicle-stop-facts`, :35 hourly) |
-| read | `v_tank_levels`, `v_vehicle_stop_facts`, `v_vehicle_stop_tank_changes`, `v_visit_tank_service`, `v_vehicle_dumps`, `v_tank_data_quality_issues`, `v_vehicle_site_addresses` | views (`2026-10-12_2300`), service_role only |
+| read | `v_tank_levels`, `v_vehicle_stop_facts`, `v_vehicle_stop_tank_changes`, `v_visit_tank_service`, `v_vehicle_dumps`, `v_tank_data_quality_issues`, `v_vehicle_site_addresses`, `v_visit_water_balance`, `v_vehicle_water_ledger` | views (`2026-10-12_2300`, the water two `2026-10-15_1950`), service_role only |
 
 - 🛑 **Everything is service_role only. No app reads these objects** (Fred: DB first); the one app-facing number
   derived from them is the Calendar's Grease pumped tile, through its own RPC (see the bullet after Health). Exposing them is plan step M9, after
@@ -5348,6 +5348,26 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   2,819.5 gal on a 30 gal trap had read `below_resolution`). Thresholds are constants in the function body (the
   signature is unchanged); a change to them bumps `c_version`, which re-measures every row (Z3). Known limit: a sensor
   excursion inside a stop can still be an edge (6008), a filter for it is a follow-up.
+- 🛑 **Since `2026-10-15_1950` (algorithm v3, Fred: "go ahead with the sensor fix and water balance"), rule (1) has two
+  deliberate exceptions. Do not "restore" v2 because a v3 edge was read moving.** (a) A client stop of 10 min or more
+  with no parked edge (its parked candidate was a ghost, or a reading taken before another client's stop: 082-TFC took
+  182-PAL's water) takes the level the sensor reported at arrival, else the first inside the stop; its departure is the
+  last accepted level in the stop, never before the arrival edge. (b) `departure_basis = 'after_leaving'`: the first
+  accepted reading after leaving becomes the departure level when the readings that follow confirm it (the end of the
+  pumping shows only after the truck left: 7029 read 0 for about 207 gal); otherwise the change is kept as a flag
+  (`late_change_*`, in the visit view as `*_change_after_leaving_gallons`).
+  **Ghost readings** (rejection code 3): `public.fn_tank_ghost_distance_listed` lists the sensors' false distances
+  (water 1.13-1.15 m and 2.40 m or more; sludge 1.35 m and 1.71-1.73 m; the sludge false FULL is deliberately not listed,
+  a full truck reads the same), and `public.fn_tank_reading_ghosts` flags a listed distance more than 15 cm outside its
+  real neighbours. 🛑 **A change to either function must bump `c_version`** (use 5 or more after the v3 rollback),
+  or rows older than the 35-day horizon keep the old decisions. A new distance that repeats shows as F9 in
+  `v_tank_data_quality_issues` (a remount or a new sensor needs a new list). Known limit: the near-empty echo right
+  after an offload is not caught when no empty follows it (dump 1091 reads about 540 gal low).
+  **The water balance** (Fred's model: start + separated = peak, peak - put back = end) is
+  `public.v_visit_water_balance` (per visit, `water_balance_closes`; a visit split or sharing its stop does not close)
+  and `public.v_vehicle_water_ledger` (per stop: separated / put back at a client, refilled / pumped out at the yard,
+  pumped out at a dump), both service_role only. Design: `docs/superpowers/specs/2026-10-15-moises-water-balance-design.md`.
+  Rollback: `docs/migrations/2026-10-15_rollback_tank_pipeline_v3.sql` (v2 as version 4, rehearsed).
 - **Moises's PTO is dead:** RPM of 900 or more is the pump stand-in. David's PTO works. Cloggy and David have no
   level sensor, so their stops carry no tank rows.
 - **Time on site** comes first from the truck stop that holds the completion (`fn_fill_time_on_site_from_stops`, rule

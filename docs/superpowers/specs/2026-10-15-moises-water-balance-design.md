@@ -1,7 +1,9 @@
 # Moises water balance: design (2026-10-15, measured 2026-10-16)
 
-Status: design, measured on live data and checked by adversarial reviewers. Nothing built yet. No app shows water
-(Fred: "we don't have an icon for water, but we need to have that logic").
+Status: BUILT 2026-10-15 19:42 ET (Fred: "go ahead with the sensor fix and water balance"), migration
+`docs/migrations/2026-10-15_1950_tank_pipeline_v3_water_balance.sql`, rollback rehearsed
+(`2026-10-15_rollback_tank_pipeline_v3.sql`). See "What was built" at the end. No app shows water (Fred: "we don't
+have an icon for water, but we need to have that logic"); the Calendar's Grease pumped averages moved (below).
 
 ## The ask and Fred's answers
 
@@ -96,7 +98,7 @@ rules. Measured: removes 168 readings (61 the pipeline accepts today), about 2 t
    rule above still misses (its neighbour search crosses a dump).
 5. The end of a visit is never read after departure (finding 2).
 
-## Proposed build (waiting for Fred's go-ahead)
+## Proposed build (approved 2026-10-15, built: see the last section)
 
 1. **Pipeline v3:** the ghost rule above, no arrival edge before an intervening stop, held values timed when first seen,
    and the end-of-visit correction (take the first reading after departure when it comes before the next stop's
@@ -115,3 +117,29 @@ rules. Measured: removes 168 readings (61 the pipeline accepts today), about 2 t
 2. What happens at the office yard? The truck empties grease there (about 870 to 1,340 gal on Oct 8, 12, 14) and loads
    grease there (about 1,560 on Oct 9 and Oct 13), and the water tank was emptied there on Oct 7 and Oct 8.
 3. When was the water tank last filled with clean water? No refill shows since Oct 2.
+
+## What was built (2026-10-15 19:42 ET)
+
+The migration header is the full record (rules, measured before and after, known limits). In short:
+
+- **Pipeline v3** (`fn_measure_vehicle_stop_tank_levels`, `c_version` 3, every stop re-measured): ghost readings
+  rejected; the spike rule compares with the nearest readings that are not ghosts (a real reading between two echoes
+  was being rejected: 8134, 5901, 6975); an arrival reading taken before another stop's work is stale; a client stop
+  without a parked edge takes the level the sensor reported at arrival; the change after leaving is recorded, and
+  becomes the departure level only when the following readings confirm it (sludge over 100 gal, water over 60 gal);
+  peak and low per stop.
+- **Ghost list** (`fn_tank_ghost_distance_listed`): water 1.13-1.15 m and 2.40 m or more; sludge 1.35 m and
+  1.71-1.73 m. The 2.12-2.14 m water band was dropped after review (3 readings, the one it removed looked real).
+  `fn_tank_reading_ghosts` treats only a dump or yard ARRIVAL as a barrier, which keeps the real post-offload level of
+  the Oct 12 yard stop (6419 stays 796.1).
+- **Water views**: `public.v_visit_water_balance` and `public.v_vehicle_water_ledger`, service_role only.
+- **Results** (rehearsed, then confirmed live): 5901 2,746 > 3,287 gal; 7029 0 > 207; 7872 0 > 273; 8134 -265 > 257;
+  6569 957 > 1,438; 6975 water separated 1,912 > 1,618 (balance closes); 6619 712 > 492; 082-TFC no longer counts
+  182-PAL's water; 5922 put back 491 > 749. Dumps 1130 and 1253 now read their full offload.
+- **Calendar**: 22 future estimates move (6570 and its later visits 1,182 > 1,342; 7874 and later 453 > 363; 233-AH
+  7030 and later trap size 300 > measured 207; 010-CS 5902 and later 2,746 > 3,287); 10 client averages change.
+  Frozen past days do not move.
+
+Still open: questions 1 and 2 above (where dump water goes, what happens at the yard). Question 3 is answered by the
+ledger: refills show as `refilled_gallons` at the yard.
+
