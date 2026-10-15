@@ -40,10 +40,13 @@ begin
     select c.table_name, c.column_name,
            -- the Calendar's clients labels stay as they are for get_record_history; this reader says it in full
            case when c.table_name = 'clients' and c.column_name = 'client_code' then 'Client code' else c.label end,
-           c.render_type, c.fk_table, c.fk_label_col, c.sort_order, c.is_system
+           case when c.table_name = 'visits' and c.column_name = 'visit_status' then 'enum' else c.render_type end,
+           c.fk_table, c.fk_label_col, c.sort_order, c.is_system
       from __CFG__ c
+     -- visits since 2026-10-15 (Fred: "I said to not put the Visits there in the history because each app has their own
+     -- activity history, but add it"): the Calendar's visit fields, the Calendar's own labels
      where c.table_name in ('clients','properties','jobs','gdos','client_contacts','client_jobber_contacts',
-                            'client_locations','invoices','line_items')
+                            'client_locations','invoices','line_items','visits')
     union all
     -- rendered by the function, never a config row: get_record_history('clients') renders every clients row
     select 'clients', 'primary_contact_ref', 'Primary contact', 'contact_ref', null, null, 70, false
@@ -61,6 +64,13 @@ begin
        and l.table_name in ('properties','jobs','gdos','client_contacts','client_jobber_contacts','client_locations',
                             'client_communication_prefs','invoices')
        and (l.new_row ->> 'client_id' = v_cid or l.old_row ->> 'client_id' = v_cid)
+    union all
+    -- visits by id (logs_table_record_changed_idx): a client_id filter over every visit row costs a full scan
+    select l.id, l.table_name, l.operation, l.old_row, l.new_row, l.changed_at, l.txid, l.app_source, l.request_context, l.jwt_claims
+      from audit.logs l
+     where l.table_schema = 'public' and l.table_name = 'visits'
+       and l.record_pk ->> 'id' in (select vi.id::text from public.visits vi where vi.client_id = p_client_id)
+       and coalesce(l.new_row, l.old_row) ->> 'client_id' = v_cid
     union all
     select l.id, l.table_name, l.operation, l.old_row, l.new_row, l.changed_at, l.txid, l.app_source, l.request_context, l.jwt_claims
       from audit.logs l
@@ -284,8 +294,9 @@ begin
                 when m.tbl in ('jobs','line_items','job_frequency_changes') then 'job'
                 when m.tbl = 'gdos' then 'gdo'
                 when m.tbl = 'invoices' then 'invoice'
+                when m.tbl = 'visits' then 'visit'
                 else 'contacts' end as area,
-           case m.tbl when 'client_status_changes' then 1 when 'jobs' then 2 when 'line_items' then 2
+           case m.tbl when 'client_status_changes' then 1 when 'jobs' then 2 when 'line_items' then 2 when 'visits' then 2
                       when 'job_frequency_changes' then 2 when 'properties' then 3 when 'client_contacts' then 4
                       when 'client_jobber_contacts' then 4 when 'client_communication_prefs' then 4
                       when 'client_locations' then 4 when 'gdos' then 5 when 'invoices' then 6 else 7 end as rank,
@@ -304,6 +315,8 @@ begin
                       from public.jobs jj where jj.id = (m.rec ->> 'job_id')::bigint)
              when m.tbl = 'gdos' then coalesce(nullif(btrim(m.rec ->> 'gdo_number'), ''), 'GDO permit #' || (m.rec ->> 'id'))
              when m.tbl = 'invoices' then 'Invoice #' || coalesce(m.rec ->> 'invoice_number', m.rec ->> 'id')
+             when m.tbl = 'visits' then 'Visit ' || coalesce(to_char((m.rec ->> 'visit_date')::date, 'Mon FMDD, YYYY'), 'with no date')
+                                        || ' (#' || (m.rec ->> 'id') || ')'
              when m.tbl in ('client_contacts','client_jobber_contacts') then coalesce(nullif(btrim(m.rec ->> 'name'), ''), m.rec ->> 'email', 'Contact #' || (m.rec ->> 'id'))
              when m.tbl = 'client_locations' then coalesce(nullif(btrim(m.rec ->> 'name'), ''), 'Location #' || (m.rec ->> 'id'))
              when m.tbl = 'client_communication_prefs' then coalesce(
@@ -320,11 +333,13 @@ begin
              when m.op = 'INSERT' then
                case m.tbl when 'clients' then 'Client created' when 'properties' then 'Property added' when 'jobs' then 'Job added'
                           when 'gdos' then 'GDO permit added' when 'client_locations' then 'Location added'
-                          when 'line_items' then 'Line item added' when 'invoices' then 'Invoice created' else 'Contact added' end
+                          when 'line_items' then 'Line item added' when 'invoices' then 'Invoice created'
+                          when 'visits' then 'Visit added' else 'Contact added' end
              when m.op = 'DELETE' then
                case m.tbl when 'clients' then 'Client removed' when 'properties' then 'Property removed' when 'jobs' then 'Job removed'
                           when 'gdos' then 'GDO permit removed' when 'client_locations' then 'Location removed'
-                          when 'line_items' then 'Line item removed' when 'invoices' then 'Invoice removed' else 'Contact removed' end
+                          when 'line_items' then 'Line item removed' when 'invoices' then 'Invoice removed'
+                          when 'visits' then 'Visit removed' else 'Contact removed' end
              when r.mid is not null then
                case m.tbl when 'properties' then 'Property' when 'client_jobber_contacts' then 'Contact' else 'Record' end
                || case when r.removed_now then ' removed' else ' restored' end
@@ -343,11 +358,20 @@ begin
                     when a.js_old in ('archived','closed','destroyed') then 'Reopened'
                     else 'Status changed' end
              when m.tbl = 'line_items' and m.op = 'UPDATE' then 'Line item changed'
+             -- a visit's key moves get their own title (the change lines still say every field)
+             when m.tbl = 'visits' and m.o ->> 'deleted_at' is null and m.n ->> 'deleted_at' is not null then 'Visit deleted'
+             when m.tbl = 'visits' and m.o ->> 'deleted_at' is not null and m.n ->> 'deleted_at' is null then 'Visit restored'
+             when m.tbl = 'visits' and (m.o ->> 'visit_status') is distinct from (m.n ->> 'visit_status') then
+               case when m.n ->> 'visit_status' = 'completed' then 'Visit completed'
+                    when m.n ->> 'visit_status' = 'cancelled' then 'Visit cancelled'
+                    when m.n ->> 'visit_status' = 'skipped' then 'Visit skipped'
+                    when m.o ->> 'visit_status' in ('completed','cancelled','skipped') then 'Visit reopened'
+                    else 'Visit status changed' end
              when a.n_ch = 1 and a.first_type = 'changed' then a.first_label || case when a.first_col = 'permit_document_path' then ' replaced' else ' changed' end
              when a.n_ch = 1 then a.first_label || case when a.first_long then ' edited' when a.first_old_empty then ' set' else ' changed' end
              else case m.tbl when 'clients' then 'Client' when 'properties' then 'Property' when 'jobs' then 'Job'
                              when 'gdos' then 'GDO permit' when 'client_locations' then 'Location' when 'invoices' then 'Invoice'
-                             else 'Contact' end || ' details changed'
+                             when 'visits' then 'Visit' else 'Contact' end || ' details changed'
            end as title,
            -- bookkeeping at the record level
            case
@@ -412,13 +436,13 @@ begin
            case when mr.tbl = 'client_communication_prefs' then case mr.op when 'INSERT' then 'Now receives' else 'No longer receives' end
                 else case mr.tbl when 'clients' then 'Client' when 'properties' then 'Property' when 'jobs' then 'Job'
                                  when 'gdos' then 'GDO permit' when 'client_locations' then 'Location' when 'line_items' then 'Line item'
-                                 when 'invoices' then 'Invoice' else 'Contact' end end,
+                                 when 'invoices' then 'Invoice' when 'visits' then 'Visit' else 'Contact' end end,
            mr.subject,
            jsonb_build_object('subject', mr.subject,
              'label', case when mr.tbl = 'client_communication_prefs' then case mr.op when 'INSERT' then 'Now receives' else 'No longer receives' end
                            else case mr.tbl when 'clients' then 'Client' when 'properties' then 'Property' when 'jobs' then 'Job'
                                             when 'gdos' then 'GDO permit' when 'client_locations' then 'Location' when 'line_items' then 'Line item'
-                                            when 'invoices' then 'Invoice' else 'Contact' end end,
+                                            when 'invoices' then 'Invoice' when 'visits' then 'Visit' else 'Contact' end end,
              'old', case when mr.op = 'DELETE' then sm.summary end,
              'new', case when mr.op = 'INSERT' then sm.summary end,
              'is_system', mr.member_sys, 'long', false),
@@ -441,6 +465,7 @@ begin
                    || coalesce(' (' || (select coalesce(nullif(btrim(pp.address), ''), pp.name) from public.properties pp
                                          where pp.id = (m.rec ->> 'property_id')::bigint) || ')', '')
                  when 'invoices' then concat_ws(' ', 'Invoice #' || (m.rec ->> 'invoice_number'))
+                 when 'visits' then concat_ws(' · ', to_char((m.rec ->> 'visit_date')::date, 'Mon FMDD, YYYY'), nullif(btrim(m.rec ->> 'title'), ''))
                  else concat_ws(' · ', nullif(btrim(m.rec ->> 'name'), ''), nullif(btrim(m.rec ->> 'email'), ''), nullif(btrim(m.rec ->> 'phone'), ''))
                end as summary) sm
      where mr.op in ('INSERT','DELETE')

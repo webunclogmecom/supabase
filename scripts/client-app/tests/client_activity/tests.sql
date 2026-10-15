@@ -261,6 +261,34 @@ begin
                       and e -> 'changes' -> 0 ->> 'new' = '45 days' and e -> 'changes' -> 1 ->> 'new' = 'Jul 30, 2026'), 'got', v);
   end;
 
+  -- C24 visits (2026-10-15): a person's visit change shows in area "visit", titled by its key move, with the Calendar's
+  --     labels; a visit's soft delete reads "Visit deleted"; a person-less nightly-style burst stays background
+  declare vv bigint;
+  begin
+    select id into vv from public.visits where client_id = 381 order by id desc limit 1;
+    perform pg_temp.t_log('visits', 'UPDATE', jsonb_build_object('id', vv, 'client_id', 381, 'visit_date', '2026-10-01', 'visit_status', 'scheduled'),
+                          jsonb_build_object('id', vv, 'client_id', 381, 'visit_date', '2026-10-01', 'visit_status', 'completed'),
+                          t0 + interval '240 minutes', tx + 240, 'visit-calendar', '/rpc/set_visit_status', 'fred@ayache.com');
+    v := pg_temp.t_win(381, false, t0 + interval '240 minutes');
+    res := res || jsonb_build_object('case', 'C24 a visit completed by a person: area visit, "Visit completed", Status Scheduled -> Completed',
+      'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'area' = 'visit' and v -> 0 ->> 'title' = 'Visit completed'
+            and v -> 0 ->> 'subject' = 'Visit Oct 1, 2026 (#' || vv || ')'
+            and v -> 0 -> 'changes' -> 0 ->> 'label' = 'Status' and v -> 0 -> 'changes' -> 0 ->> 'new' = 'Completed', 'got', v);
+    perform pg_temp.t_log('visits', 'UPDATE', jsonb_build_object('id', vv, 'client_id', 381, 'visit_date', '2026-10-01', 'deleted_at', null),
+                          jsonb_build_object('id', vv, 'client_id', 381, 'visit_date', '2026-10-01', 'deleted_at', t0),
+                          t0 + interval '250 minutes', tx + 250, 'visit-calendar', '/rpc/delete_calendar_visit', 'fred@ayache.com');
+    v := pg_temp.t_win(381, false, t0 + interval '250 minutes');
+    res := res || jsonb_build_object('case', 'C25 a visit soft-deleted by a person reads "Visit deleted"',
+      'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'title' = 'Visit deleted', 'got', v);
+    perform pg_temp.t_log('visits', 'UPDATE', jsonb_build_object('id', vv, 'client_id', 381, 'visit_date', '2026-10-01', 'title', 'a'),
+                          jsonb_build_object('id', vv, 'client_id', 381, 'visit_date', '2026-10-01', 'title', '[TEST] b'),
+                          t0 + interval '260 minutes', tx + 260, 'sql', null, null, 'service_role');
+    v := pg_temp.t_win(381, false, t0 + interval '260 minutes');
+    w := pg_temp.t_win(381, true, t0 + interval '260 minutes');
+    res := res || jsonb_build_object('case', 'C26 a direct SQL visit write is background (hidden with the switch off, shown with it on)',
+      'ok', jsonb_array_length(v) = 0 and jsonb_array_length(w) = 1 and w -> 0 ->> 'area' = 'visit', 'got', jsonb_build_array(v, w));
+  end;
+
   -- C18 no cap: every entry comes back when p_limit is null
   select count(*) into function_win from __FN__(381, true, null, null);
   res := res || jsonb_build_object('case', 'C18 p_limit null returns more than 50 entries', 'ok', function_win > 50, 'got', function_win);
