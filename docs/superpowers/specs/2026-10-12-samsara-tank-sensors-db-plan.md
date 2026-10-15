@@ -599,6 +599,8 @@ write nothing. **A pair is ready** when `now() >= departed_at + p_lookahead` (th
 `arrived_at` (live rows only); next = the vehicle's next live stop.
 
 **Steps:**
+
+> **Changed 2026-10-15 (algorithm v2, migration `2026-10-15_1300`):** steps 6 and 7 accept only readings taken with the truck stationary within 100 m of the stop (or a value held 11 min inside the stop), never after the next stop's arrival; dump and yard stops keep these v1 steps. Reference doc section 11.
 1. **Raw series:** I's sensor distance rows in `[arrived_at - 3 h, departed_at + p_lookahead]`, dropping `distance <= 0`
    ("no echo").
 2. **Measurements:** collapse consecutive equal values; each measurement = (first-seen time, distance). This is what the
@@ -709,6 +711,8 @@ minutes from its neighbour's cluster; its own stops total about 68 [O].
   a second truck relies on RPM.
 
 **Confidence (first failing check wins):**
+
+> **Changed 2026-10-15:** check 8 (`exceeds_trap_size`) now runs right after check 4, and a linked stop under 10 min is left out of the figures when the visit has a linked stop of 10 min or more (`short_stops_left_out`). Reference doc section 11.
 
 | # | Condition | Confidence / reason |
 |---|---|---|

@@ -422,8 +422,9 @@ The two yard events (a drop while parked, and a +1,538 gal rise while parked) ar
    One egress hour showed 2,953 gal at a client stop 43 km from the dump, during a dropout [O].
 7. **Ghost echo on the water sensor at 1.14 m** (63.712%), and 0 m "no echo" during setup. Filter isolated measurements;
    drop 0 m.
-8. **Sloshing:** percent swings 0 to 96% while driving. Only use measurements taken while parked at a stop, plus the
-   first new measurement within one period after leaving.
+8. **Sloshing:** percent swings 0 to 96% while driving. Only use measurements taken while parked at a stop. *(Until
+   2026-10-15 this trap also allowed "the first new measurement within one period after leaving"; the audit of
+   2026-10-15 found those readings taken at up to 48 mph, and one taken parked at the next client. Section 11.)*
 9. **Capacity edits in Samsara are silent:** the sludge capacity flipped 5 times between 18:38 and 18:58Z on 08-20.
 10. **`/readings/history` takes one `readingId`** (sending `readingIds` returns 400). `/readings/latest` accepts up to 5
     (the docs say 3; 6 returns 400). Batches can return HTTP 500 for one bad id: re-probe singly before concluding.
@@ -504,3 +505,34 @@ SELECTs, and adversarial review of every number used in the plan. The raw pulls 
 codes, so they are kept outside the repo (workspace `backups/`, local only). To see what the fleet reports now:
 `node scripts/probes/samsara_level_sensors.mjs` (discovers level sensors by `remoteSensingDistance`, so a sensor
 without a volume profile still shows).
+
+---
+
+## 11. Correction 2026-10-15: edges are parked readings at the stop
+
+A read-only audit on 2026-10-15 (files outside the repo, they name clients) re-measured 13 Moises visits straight from
+Samsara and reproduced our 50 stop rows exactly with a port of the v1 algorithm, then found four defects. Fixed by
+migration `docs/migrations/2026-10-15_1300_tank_edges_parked_at_stop.sql` (algorithm version 2, every row re-measured):
+
+| Defect (v1) | Example [O] | Rule since 2026-10-15 |
+|---|---|---|
+| Edge readings taken while driving: 5 sludge arrivals and 6 departures across 13 visits, up to 48 mph | 7019 read net 0 from a departure at 10.6 mph; its parked readings rose about 183 gal | An edge of a client stop is a reading taken with the truck stationary: every GPS fix from the last one 10 s or more before the reading to the first one at or after it within 15 m. Our GPS rows carry no speed (0 of 156,649), so displacement stands in. Checked against Samsara's own speed on 143 readings: 135 agree with "under 2 mph" |
+| A reading taken parked at the next client became the previous stop's departure edge | 04:23:12Z on 10-13, 3 s after the truck stopped at the next client and 195 m from the stop; about 112 gal moved between 7873 and 6261 | That GPS fix must be within 100 m of the stop's centre, and no edge comes after the next stop's arrival |
+| A completion_chain stop under 10 min made the visit `too_short` and blanked its water | 7873, 6666, 6721 | A linked stop under 10 min is left out of the visit's sludge and water when the visit has a linked stop of 10 min or more (`short_stops_left_out`) |
+| `below_resolution` was checked before `exceeds_trap_size` | 6252: 2,819.5 gal on a 30 gal trap read `below_resolution`; 12 such visits | `exceeds_trap_size` is checked right after `edge_missing` |
+
+Notes on the rule:
+- **A value held for a full period (11 min) inside the stop also counts**, because the sensor measured it again while
+  parked there (section 3.6: one measurement about every 10 minutes, a repeat is invisible). Without this a flat level
+  would have no edge at all. Such an edge keeps its first-seen time, which can be on the road: 6419's water arrival
+  02:33:13Z (taken at 64.6 mph) held until 02:53:13Z, 11.4 min into the stop.
+- **Dump and yard stops keep the v1 edges.** Their extent is a geofence up to 1.4 km across and the level before tipping
+  is only seen on the way in; the rule applied to them turned 10 of 26 Moises dumps `edge_missing` or implausible.
+- **What it costs:** pumping before the first parked reading at a stop, or after the last one, is no longer seen (6002:
+  343.4 to 251.8 gal, its arrival edge moved from a 42 mph reading to the first parked one 7 min into the stop). A last
+  in-stop reading taken while the truck already moved 15 m or more in 10 s no longer counts (6488, 7872 now read
+  `pumped_no_rise`). Short stops (under about 10 min) usually have no parked reading and get no edge.
+- **Open:** an isolated sensor excursion inside a stop can still be an edge, because the spike rule needs both neighbours
+  to agree. 6008 now reads 1,861.3 gal on a 1,250 gal trap from a 1,234.7 gal reading between 2,743.7 and 3,154.8 near
+  full (35 stops had an edge on such an excursion under v1, 33 under v2). A same-side excursion filter for the sludge
+  sensor is the follow-up.
