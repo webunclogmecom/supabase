@@ -5470,6 +5470,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   the stored row of a past day, else, for a visit now on Moises, the stored MEASURED average it had on another date
   (`carried`), else live; the freezer stores pump kinds too, and the guard keeps them immutable. A correction of the
   sensor math moves only today's and later numbers. Still NOT for LWT or DERM filings, and no other app reads it.
+- 🛑 **A trap size of 0 means NO SIZE ON FILE, everywhere a number is derived from it (`2026-10-15_1648`).** 0 is
+  Jobber's empty. `v_visit_tank_service` reads `NULLIF(trap, 0)` (else every reading on a 0 trap is
+  `exceeds_trap_size` and leaves the trusted set, which zeroed 057-BAY's average), `fn_grease_estimates_live` reads
+  `NULLIF(cap, 0)`, and `customer.clients.trap_capacity` never shows a customer "0 gal" (each source guarded, a sibling
+  only when > 0). Staff views still print 0. Ten properties hold 0 as a placeholder until the team measures them.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
   rows, then `fn_refresh_stop_facts(vehicle_id, install_date)`.
 
