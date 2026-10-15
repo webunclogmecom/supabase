@@ -4,9 +4,9 @@
 // completion stop (public.fn_time_on_site_samsara_candidates), read the truck's Samsara trips and take the gap between
 // two trips that overlaps that stop the most: the stay Samsara shows. Save it (public.fn_save_samsara_stay, source
 // samsara_stay) when the visit is blank or its saved time differs by 2 min or more. Left alone: no gap over the stop;
-// one Samsara stay overlapping two visits' stops (adjacent sites); a saved time on a late-tap anchor (the save refuses);
-// a job where Samsara shows the truck MOVING (two or more stays over the job window: re-parked, or a short trip inside
-// our stop). Whether such a job counts in full is Fred's call (2026-10-14_1640), so it is counted, not saved.
+// a saved time on a late-tap anchor (the save refuses). Fred, 2026-10-15 (2026-10-15_0140): one stop serving several
+// visits gives each the WHOLE stay ("that should be get the whole stop"), and when Samsara shows the truck MOVING during
+// the job (two or more stays over the job window) the longest stay is saved ("the stay that most likely is the service").
 //
 // AUTH: verify_jwt=true (pinned in config.toml) plus a service_role gate. Called nightly by pg_cron
 // (fn_request_time_on_site_samsara_recheck, 03:50 ET) with the vault service_role key.
@@ -70,26 +70,34 @@ function bestGap(ts: Trip[], a: number, b: number): { g0: number; g1: number } |
   return best ? { g0: best.g0, g1: best.g1 } : null;
 }
 
+// Samsara's stays (gaps between two trips) that are part of the job [a, b]: at least a minute AND at least half of the
+// stay inside it. A stay that only touches the job's edge is the truck parked elsewhere before or after (visit 6087:
+// a 77 min park ending 1.5 min into our stop), not a part of the job. And the longest of them.
+function stays(ts: Trip[], a: number, b: number): { g0: number; g1: number }[] {
+  return ts.slice(0, -1).map((t, i) => ({ g0: t.endMs, g1: ts[i + 1].startMs }))
+    .filter((p) => { const ov = Math.min(p.g1, b) - Math.max(p.g0, a); return p.g1 > p.g0 && ov >= 60e3 && ov >= 0.5 * (p.g1 - p.g0); });
+}
+const longest = (ps: { g0: number; g1: number }[]) => ps.reduce((x, y) => (y.g1 - y.g0 > x.g1 - x.g0 ? y : x));
+
 async function recheck(from: string, to: string, dryRun: boolean, token: string) {
   const cands = await rpc("fn_time_on_site_samsara_candidates", { p_from: from, p_to: to }) as Cand[];
   const found: { c: Cand; g0: number; g1: number }[] = [];
-  const counts = { candidates: cands.length, moved_during_job: 0, no_gap: 0, read_failed: 0, shared_stay: 0, agree: 0, late_tap_kept: 0,
+  const counts = { candidates: cands.length, moved_during_job: 0, no_gap: 0, read_failed: 0, agree: 0, late_tap_kept: 0,
                    saved: 0, refused: 0 };
   for (const c of cands) {
     const a = Date.parse(c.arrived), b = Date.parse(c.departed);
     let ts: Trip[];
     try { ts = await trips(c.truck_samsara_id, etDate(a), token); } catch { counts.read_failed++; continue; }
     const ra = Date.parse(c.ref_arrived), rb = Date.parse(c.ref_departed);
-    const stays = ts.slice(0, -1).filter((t, i) => Math.min(ts[i + 1].startMs, rb) - Math.max(t.endMs, ra) >= 60e3).length;
-    if (stays > 1) { counts.moved_during_job++; continue; }
-    const g = bestGap(ts, a, b);
+    const parts = stays(ts, ra, rb);
+    let g: { g0: number; g1: number } | null;
+    if (parts.length > 1) { counts.moved_during_job++; g = longest(parts); }   // the truck moved: the longest stay
+    else g = bestGap(ts, a, b);
     if (!g) { counts.no_gap++; continue; }
     found.push({ c, ...g });
   }
   const changes: Record<string, unknown>[] = [];
   for (const f of found) {
-    // one Samsara stay over two visits' stops (adjacent sites): which part is whose is not Samsara's to say
-    if (found.some((o) => o !== f && o.c.truck_samsara_id === f.c.truck_samsara_id && o.g0 === f.g0)) { counts.shared_stay++; continue; }
     const mins = Math.round((f.g1 - f.g0) / 60e3);
     if (f.c.duration_minutes != null && Math.abs(f.c.duration_minutes - mins) < MIN_DIFF) { counts.agree++; continue; }
     if (f.c.duration_minutes != null && !f.c.holds_tap) { counts.late_tap_kept++; continue; }
@@ -116,9 +124,10 @@ async function recheck(from: string, to: string, dryRun: boolean, token: string)
     const a = Date.parse(c.arrived), b = Date.parse(c.departed);
     let ts: Trip[];
     try { ts = await trips(c.truck_samsara_id, etDate(a), token); } catch { went_once.read_failed++; continue; }
-    const stays = ts.slice(0, -1).filter((t, i) => Math.min(ts[i + 1].startMs, b) - Math.max(t.endMs, a) >= 60e3).length;
-    if (stays > 1) { went_once.moved_during_job++; continue; }
-    const g = bestGap(ts, a, b);
+    const parts = stays(ts, a, b);
+    let g: { g0: number; g1: number } | null;
+    if (parts.length > 1) { went_once.moved_during_job++; g = longest(parts); }
+    else g = bestGap(ts, a, b);
     if (!g) { went_once.no_gap++; continue; }
     const mins = Math.round((g.g1 - g.g0) / 60e3);
     if (c.duration_minutes != null && Math.abs(c.duration_minutes - mins) < MIN_DIFF) { went_once.agree++; continue; }

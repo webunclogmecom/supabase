@@ -52,6 +52,13 @@ if (noProp.length) {
   for (const p of await pr.json()) clientProps.set(p.client_id, [...(clientProps.get(p.client_id) ?? []), p]);
 }
 
+// visits an audit could not settle (public.visit_audit_flags, Fred 2026-10-15: "flag them"), listed at the top
+const fr = await fetch(`${BASE}/rest/v1/visit_audit_flags?select=visit_id,reason,visits(visit_date,clients(client_code,name))&resolved_at=is.null&order=visit_id`, { headers: H });
+if (!fr.ok) throw new Error(`flags: HTTP ${fr.status}`);
+const flags = await fr.json();
+const flagged = new Map(flags.map((f) => [f.visit_id, f.reason]));
+const hesc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
 const et = (t) => t ? new Date(t).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
 // 2026-10-15 (Fred: "check the html list to make sure the data is correct, i can't see in samsara the trucks routes
 // to be as you say ... at the Datetime of the visit ... the links of the truck routes should be in accordance to the
@@ -62,7 +69,10 @@ const et = (t) => t ? new Date(t).toLocaleString('en-US', { timeZone: 'America/N
 // shows; its GPS history gives the closest approach when no truck stopped. The alert's line is only a fallback.
 const SAM = { Authorization: `Bearer ${env.SAMSARA_API_TOKEN}`, Accept: 'application/json' };
 const TRUCKS = { '281474998706262': 'Moises', '281474998706263': 'Cloggy', '281474998706264': 'David' };
-const NEAR = 250, MIN_STAY = 3 * 60e3, REPARK = 15 * 60e3;
+const NEAR = 250, PLACE_NEAR = 150, MIN_STAY = 3 * 60e3, STILL_MPH = 3;
+// 2026-10-15 (Samsara audit, Fred: "Go ahead ... 10"), same rules as samsara_visit_audit.mjs: no re-park join (it
+// merged a neighbour's job into one stop), a trip within 150 m of a client place centre counts, and GPS idling counts
+// only while the truck is stationary (Samsara GPS speed <= 3 mph), so a drive-through is not a stop.
 const R = 6371000, rad = (x) => x * Math.PI / 180;
 const meters = (a, b, c, d) => { const x = rad(c - a), y = rad(d - b); const h = Math.sin(x / 2) ** 2 + Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(y / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 const dist = (m) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
@@ -95,7 +105,7 @@ async function place(id) {
 }
 // When Samsara's trips show no stop there, the GPS points still can: a truck idling with the engine on never ends a
 // trip (7741: Cloggy 11 min within 48 m). Targets are our map point AND each Samsara place (8009: Moises 41 m from the
-// place, 816 m from our map point). A dwell = consecutive points near a target with no gap over 5 min.
+// place, 816 m from our map point). A dwell = consecutive STATIONARY points near a target with no gap over 5 min.
 async function gpsLook(w0, w1, targets) {
   let after = '', best = null;
   const near = {};
@@ -105,11 +115,13 @@ async function gpsLook(w0, w1, targets) {
     if (!r.ok) throw new Error(`samsara gps ${r.status}`);
     const j = await r.json();
     for (const v of j.data ?? []) for (const q of v.gps ?? []) {
+      let hit = null;
       for (const tg of targets) {
         const m = meters(tg.lat, tg.lng, q.latitude, q.longitude);
         if (!best || m < best.m) best = { m, t: q.time, truck: TRUCKS[v.id], id: v.id, target: tg };
-        if (m <= NEAR) { (near[v.id] ??= []).push({ t: Date.parse(q.time), tg, m }); break; }
+        if (m <= NEAR) { hit = { tg, m }; break; }
       }
+      (near[v.id] ??= []).push({ t: Date.parse(q.time), ...hit, hit: !!hit, still: q.speedMilesPerHour == null || q.speedMilesPerHour <= STILL_MPH });
     }
     after = j.pagination?.hasNextPage ? j.pagination.endCursor : '';
     await sleep(150);
@@ -119,6 +131,7 @@ async function gpsLook(w0, w1, targets) {
     pts.sort((x, y) => x.t - y.t);
     let cur = null;
     for (const p of pts) {
+      if (!p.hit || !p.still) { if (cur) dwells.push(cur); cur = null; continue; }
       if (cur && p.t - cur.s1 <= 5 * 60e3) { cur.s1 = p.t; continue; }
       if (cur) dwells.push(cur);
       cur = { id, truck: TRUCKS[id], s0: p.t, s1: p.t, gps: true, viaPlace: p.tg.kind === 'place', placeName: p.tg.name, fromMap: p.tg.kind === 'map' ? p.m : null, parts: 1 };
@@ -155,7 +168,7 @@ for (const { g } of rows) {
   const issues = [], fix = [];
 
   // every truck's stops at the address in the window: the gap after a trip that ended at the client's Samsara place,
-  // or within 250 m of our map point; stops of one truck less than 15 min apart are one visit (a re-park)
+  // or within 150 m of one of its place centres, or within 250 m of our map point; every stay is its own stop
   const visits = [];
   if (lat != null || places.length) {
     for (const [id, name] of Object.entries(TRUCKS)) {
@@ -165,15 +178,12 @@ for (const { g } of rows) {
         const s0 = ts[i].endMs, s1 = ts[i + 1].startMs;
         if (s1 - s0 < MIN_STAY || s1 <= w0 || s0 >= w1) continue;
         const c = ts[i].endCoordinates ?? {};
-        const placeHit = places.find((p) => String(ts[i].endAddress?.id ?? '') === p.id);
+        const placeHit = places.find((p) => String(ts[i].endAddress?.id ?? '') === p.id)
+          ?? (c.latitude != null ? places.find((p) => meters(p.lat, p.lng, c.latitude, c.longitude) <= PLACE_NEAR) : undefined);
         const fromMap = lat != null && c.latitude != null ? meters(lat, lng, c.latitude, c.longitude) : null;
         if (placeHit || (fromMap != null && fromMap <= NEAR)) here.push({ s0, s1, fromMap, placeName: placeHit?.name ?? ts[i].endAddress?.name ?? null, viaPlace: !!placeHit });
       }
-      for (const h of here) {
-        const last = visits.at(-1);
-        if (last && last.id === id && h.s0 - last.s1 <= REPARK) { last.s1 = h.s1; last.parts++; last.viaPlace ||= h.viaPlace; }
-        else visits.push({ id, truck: name, parts: 1, ...h });
-      }
+      for (const h of here) visits.push({ id, truck: name, parts: 1, ...h });
     }
   }
   visits.sort((x, y) => x.s0 - y.s0);
@@ -196,7 +206,7 @@ for (const { g } of rows) {
     kind = 'atdone';
     const v = holds[0];
     const rel = done > v.s1 ? `, ${Math.round((done - v.s1) / 60e3)} min after the truck left` : done < v.s0 ? `, ${Math.round((v.s0 - done) / 60e3)} min before the truck arrived` : `, during that stop`;
-    issues.push(`${v.truck} was parked ${where(v)} ${span(v)}, and ${doneTxt}${rel}${v.parts > 1 ? ' (the truck moved once while there)' : ''}.`);
+    issues.push(`${v.truck} was parked ${where(v)} ${span(v)}, and ${doneTxt}${rel}.`);
     if (v.truck !== g.truck) {
       issues.push(g.truck ? `The visit is set to ${g.truck}, but ${v.truck} was the truck parked there.` : `The visit has no truck set; ${v.truck} was the truck parked there.`);
       fix.push(`Set the truck on the visit to ${v.truck} (Viktor can do it).`);
@@ -215,7 +225,10 @@ for (const { g } of rows) {
   } else if (visits.length > 1) {
     kind = 'several';
     issues.push(`Trucks stopped at the address ${visits.length} times that day: ${visits.map((v) => `${v.truck} ${span(v)}`).join('; ')}. ${doneTxt[0].toUpperCase() + doneTxt.slice(1)}, not during any of them.`);
-    fix.push('Check which stop was this job, then enter its time on site in Admin Review.');
+    // Fred (decision 7): when the truck moved, the stay most likely to be the service is the longest one on its truck
+    const mine = visits.filter((v) => v.truck === g.truck);
+    const likely = (mine.length ? mine : visits).reduce((a, b) => (b.s1 - b.s0 > a.s1 - a.s0 ? b : a));
+    fix.push(`Most likely the service: ${likely.truck} ${span(likely)}, the longest stop${mine.length ? ' of the truck on the visit' : ''}. Check with the driver if unsure, then save it as the time on site.`);
   } else {
     const c = look?.best ?? null;
     if (c && c.m <= NEAR) {
@@ -245,6 +258,7 @@ for (const { g } of rows) {
       fix.push(viaPlace ? 'Move the map point in Jobber to the Samsara place.' : viaMap ? 'Move the Samsara place to the address.' : 'Check which one is right and move the other.');
     }
   }
+  if (flagged.has(g.visit_id)) issues.unshift(`Flagged for review: ${flagged.get(g.visit_id)}`);
   const link = visits.length ? { truck: visits[0].truck, id: visits[0].id } : g.truck ? { truck: g.truck, id: g.truck_samsara_id }
     : g.closestTruck ? { truck: g.closestTruck.truck, id: g.closestTruck.id } : null;
   data.push({
@@ -291,11 +305,15 @@ button{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:
 tr.g td{background:var(--head);font-weight:600;cursor:pointer}
 ul.iss{margin:0;padding-left:18px}ul.iss li+li{margin-top:4px}
 tr.g .gc{color:var(--muted);font-weight:400;margin-left:8px}
+details.flags{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:10px 14px;margin:0 0 14px}
+details.flags summary{cursor:pointer}details.flags ul{margin:8px 0 0;padding-left:18px}details.flags li+li{margin-top:6px}
 </style></head><body><div class="wrap">
 <h1>Visits Missing Time on Site</h1>
 <p class="sub">Completed client visits since ${from} with no time on site, as of ${today} (Eastern time). Every issue is read from Samsara (its trips and GPS) for the visit's date, 4 hours before it to 10 AM the next day, with a suggested fix. "At the address" means Samsara says the truck stopped at the client's Samsara place, or within 250 m of our map point.${placesUnread ? ` Samsara places could not be read for ${placesUnread} of the dates, so their place reasons are left out.` : ''}</p>
 <div class="chips"><span class="chip"><b>${data.length}</b> visits</span>
 ${chips}</div>
+${flags.length ? `<details class="flags" open><summary><b>Flagged for review</b>: ${flags.length} visits the audit could not settle, waiting for a person</summary><ul>${flags.map((f) =>
+  `<li><b>#${f.visit_id}</b> ${hesc(f.visits?.visit_date)} <b>${hesc(f.visits?.clients?.client_code)}</b> ${hesc(f.visits?.clients?.name)}: ${hesc(f.reason)}</li>`).join('')}</ul></details>` : ''}
 <div class="bar">
 <input type="search" id="q" placeholder="Search client, address, truck, visit #">
 <select id="group"><option value="">No grouping</option><option value="client" selected>Group by client</option><option value="rl">Group by issue</option><option value="truckAny">Group by truck</option><option value="month">Group by month</option></select>
