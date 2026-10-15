@@ -579,11 +579,13 @@ begin
   --     showed no frequency at all. The value is the earliest one we hold: the job's first audit row (the new row of an
   --     INSERT, the old row of a first UPDATE), else the job as it is now (no row: never changed). Recurring jobs only
   --     (above 0). A job older than the history says so on a second line, so the entry never claims more than we know.
+  --     Fred's mockup C (2026-10-15): titled "Starting frequency", shown as a change from "none on record", and the
+  --     Client App draws "Start of this job's record. Nothing earlier." under any entry whose key starts with 'start:'.
   start_entries as (
     select 'start:job:' || j.id as key, j.created_at as at, 'job' as area,
            '#' || coalesce(j.job_number::text, j.id::text) || coalesce(' ' || nullif(btrim(j.title), ''), '') as subject,
-           'Frequency on record' as title, 'System' as actor_label, 'system' as actor_kind, false as is_system,
-           jsonb_build_array(jsonb_build_object('subject', null, 'label', 'Frequency', 'old', null,
+           'Starting frequency' as title, 'System' as actor_label, 'system' as actor_kind, false as is_system,
+           jsonb_build_array(jsonb_build_object('subject', null, 'label', 'Frequency', 'old', 'none on record',
              'new', __S__.fn_activity_value(to_jsonb(fs.f), 'days', null, null), 'is_system', false, 'long', false))
            || case when j.created_at < timestamptz '2026-07-30 15:44:47+00' then
                 jsonb_build_array(jsonb_build_object('subject', null, 'label', 'Changes recorded from', 'old', null,

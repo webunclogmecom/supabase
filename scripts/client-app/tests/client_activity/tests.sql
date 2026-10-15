@@ -249,9 +249,9 @@ begin
     insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] one-off', 0, t0 + interval '220 minutes') returning id into jz;
     insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] old', 45, timestamptz '2026-07-01 07:17:00+00') returning id into jo;
     v := pg_temp.t_win(381, false, t0 + interval '200 minutes');
-    res := res || jsonb_build_object('case', 'C21 a recurring job shows its frequency on record at its creation',
-      'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'key' = 'start:job:' || jr and v -> 0 ->> 'title' = 'Frequency on record'
-            and v -> 0 -> 'changes' -> 0 ->> 'new' = '30 days' and jsonb_array_length(v -> 0 -> 'changes') = 1, 'got', v);
+    res := res || jsonb_build_object('case', 'C21 a recurring job shows its starting frequency (none on record -> 30 days) at its creation',
+      'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'key' = 'start:job:' || jr and v -> 0 ->> 'title' = 'Starting frequency'
+            and v -> 0 -> 'changes' -> 0 ->> 'old' = 'none on record' and v -> 0 -> 'changes' -> 0 ->> 'new' = '30 days' and jsonb_array_length(v -> 0 -> 'changes') = 1, 'got', v);
     v := pg_temp.t_win(381, true, t0 + interval '220 minutes');
     res := res || jsonb_build_object('case', 'C22 a one-off job (frequency 0) has no frequency entry',
       'ok', not exists (select 1 from jsonb_array_elements(v) e where e ->> 'key' = 'start:job:' || jz), 'got', v);
