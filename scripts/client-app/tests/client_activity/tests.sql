@@ -241,24 +241,30 @@ begin
     'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'actor_label' = 'Staff (no name on file)'
           and position('nobody-test' in v::text) = 0, 'got', v);
 
-  -- C21 the starting frequency of a recurring job (2026-10-15): one entry at the job's creation, none for a one-off job,
-  --     and a job older than the job history says when changes started being recorded
-  declare jr bigint; jz bigint; jo bigint;
+  -- C21-C23 "on record" entries (2026-10-15): a record with no INSERT audit row gets one at its created_at, with the
+  --     earliest state we hold and "Changes recorded from" when it predates its history; a record that has its INSERT
+  --     row gets none; old visits are background
+  declare jr bigint; jz bigint; vr bigint; e jsonb;
   begin
-    insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] recurring', 30, t0 + interval '200 minutes') returning id into jr;
-    insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] one-off', 0, t0 + interval '220 minutes') returning id into jz;
-    insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] old', 45, timestamptz '2026-07-01 07:17:00+00') returning id into jo;
-    v := pg_temp.t_win(381, false, t0 + interval '200 minutes');
-    res := res || jsonb_build_object('case', 'C21 a recurring job shows its starting frequency (none on record -> 30 days) at its creation',
-      'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'key' = 'start:job:' || jr and v -> 0 ->> 'title' = 'Starting frequency'
-            and v -> 0 -> 'changes' -> 0 ->> 'old' = 'none on record' and v -> 0 -> 'changes' -> 0 ->> 'new' = '30 days' and jsonb_array_length(v -> 0 -> 'changes') = 1, 'got', v);
-    v := pg_temp.t_win(381, true, t0 + interval '220 minutes');
-    res := res || jsonb_build_object('case', 'C22 a one-off job (frequency 0) has no frequency entry',
-      'ok', not exists (select 1 from jsonb_array_elements(v) e where e ->> 'key' = 'start:job:' || jz), 'got', v);
-    v := pg_temp.t_win(381, false, timestamptz '2026-07-01 07:17:00+00');
-    res := res || jsonb_build_object('case', 'C23 a job older than the job history says changes are recorded from Jul 30',
-      'ok', exists (select 1 from jsonb_array_elements(v) e where e ->> 'key' = 'start:job:' || jo
-                      and e -> 'changes' -> 0 ->> 'new' = '45 days' and e -> 'changes' -> 1 ->> 'new' = 'Jul 30, 2026'), 'got', v);
+    select j.id into jr from public.jobs j where j.client_id = 381 and coalesce(j.frequency_days, 0) > 0
+       and j.created_at < timestamptz '2026-07-30 15:44:47+00'
+       and not exists (select 1 from audit.logs l where l.table_schema = 'public' and l.table_name = 'jobs' and l.record_pk ->> 'id' = j.id::text and l.operation = 'INSERT')
+     order by j.id limit 1;
+    insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] has its INSERT row', 30, t0 + interval '220 minutes') returning id into jz;
+    select v.id into vr from public.visits v where v.client_id = 381 and v.created_at < timestamptz '2026-05-18 12:00+00'
+       and not exists (select 1 from audit.logs l where l.table_schema = 'public' and l.table_name = 'visits' and l.record_pk ->> 'id' = v.id::text and l.operation = 'INSERT')
+     order by v.id limit 1;
+    select to_jsonb(x) into e from __FN__(381, false, null, null) x where x.key = 'start:jobs:' || jr;
+    res := res || jsonb_build_object('case', 'C21 a job older than its history: "Job on record", Frequency, Changes recorded from',
+      'ok', jr is not null and e ->> 'title' = 'Job on record' and e ->> 'area' = 'job' and not (e ->> 'is_system')::boolean
+            and exists (select 1 from jsonb_array_elements(e -> 'changes') c where c ->> 'label' = 'Frequency' and c ->> 'new' like '% days')
+            and exists (select 1 from jsonb_array_elements(e -> 'changes') c where c ->> 'label' = 'Changes recorded from'), 'got', e);
+    res := res || jsonb_build_object('case', 'C22 a job with its INSERT audit row gets no "on record" entry',
+      'ok', not exists (select 1 from __FN__(381, true, null, null) x where x.key = 'start:jobs:' || jz), 'got', jz);
+    res := res || jsonb_build_object('case', 'C23 an old visit is background: hidden with the switch off, "Visit on record" with it on',
+      'ok', vr is not null
+            and not exists (select 1 from __FN__(381, false, null, null) x where x.key = 'start:visits:' || vr)
+            and exists (select 1 from __FN__(381, true, null, null) x where x.key = 'start:visits:' || vr and x.title = 'Visit on record'), 'got', vr);
   end;
 
   -- C24 visits (2026-10-15): a person's visit change shows in area "visit", titled by its key move, with the Calendar's

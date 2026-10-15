@@ -599,31 +599,78 @@ begin
       from public.notes nt
      where nt.client_id = p_client_id and nt.visit_id is null
   ),
-  -- 11. the frequency each recurring job had when it reached our records (Fred, 2026-10-15: "add the starting
-  --     state entry"). Job history is recorded only from 2026-07-30 15:44 UTC, so a job whose frequency never changed
-  --     showed no frequency at all. The value is the earliest one we hold: the job's first audit row (the new row of an
-  --     INSERT, the old row of a first UPDATE), else the job as it is now (no row: never changed). Recurring jobs only
-  --     (above 0). A job older than the history says so on a second line, so the entry never claims more than we know.
-  --     Fred's mockup C (2026-10-15): titled "Starting frequency", shown as a change from "none on record", and the
-  --     Client App draws "Start of this job's record. Nothing earlier." under any entry whose key starts with 'start:'.
+  -- 11. one "on record" entry per record that existed before its own history began (Fred, 2026-10-15: "did you also
+  --     added when a job was created since early entry? and so on with other data from the client too?" then "yes
+  --     build it that way"). A record whose FIRST audit row is not its INSERT (or that has none) has no "added" entry, so
+  --     its story would start mid-way. The entry sits at the record's created_at (when it reached our database) and shows
+  --     the EARLIEST state we hold: the old row of its first audit row, else the row as it is now (no row: never changed).
+  --     A record created before its table's history began adds "Changes recorded from: <date>", so the entry never
+  --     claims more than we know. Old visits and invoices are background (about 3,200 across all clients would bury the
+  --     rest); clients, properties, jobs and contacts show. The Client App draws "Start of this record. Nothing earlier."
+  --     under any entry whose key starts with 'start:'. Replaces the frequency-only "Starting frequency" entry
+  --     (2026-10-15_1257 / _1343): a job's entry carries its frequency. Lines never repeat the subject.
+  start_recs as (
+    select 'clients'::text as tbl, c.id, c.created_at, to_jsonb(c) as cur from public.clients c where c.id = p_client_id
+    union all select 'properties', p.id, p.created_at, to_jsonb(p) from public.properties p where p.client_id = p_client_id
+    union all select 'jobs', j.id, j.created_at, to_jsonb(j) from public.jobs j where j.client_id = p_client_id
+    union all select 'client_contacts', cc.id, cc.created_at, to_jsonb(cc) from public.client_contacts cc where cc.client_id = p_client_id
+    union all select 'visits', vi.id, vi.created_at, to_jsonb(vi) from public.visits vi where vi.client_id = p_client_id
+    union all select 'invoices', i.id, i.created_at, to_jsonb(i) from public.invoices i where i.client_id = p_client_id
+  ),
+  start_hist as (
+    select t.tbl, (select min(l.changed_at) from audit.logs l where l.table_schema = 'public' and l.table_name = t.tbl) as since
+      from (values ('clients'), ('properties'), ('jobs'), ('client_contacts'), ('visits'), ('invoices')) t(tbl)
+  ),
+  start_snap as (
+    select r.tbl, r.id, r.created_at, coalesce(fa.old_row, r.cur) as s, h.since
+      from start_recs r
+      join start_hist h on h.tbl = r.tbl
+      left join lateral (
+        select l.operation as op, l.old_row from audit.logs l
+         where l.table_schema = 'public' and l.table_name = r.tbl and l.record_pk ->> 'id' = r.id::text
+         order by l.changed_at, l.id limit 1) fa on true
+     where fa.op is distinct from 'INSERT' and r.created_at is not null
+  ),
   start_entries as (
-    select 'start:job:' || j.id as key, j.created_at as at, 'job' as area,
-           '#' || coalesce(j.job_number::text, j.id::text) || coalesce(' ' || nullif(btrim(j.title), ''), '') as subject,
-           'Starting frequency' as title, 'System' as actor_label, 'system' as actor_kind, false as is_system,
-           jsonb_build_array(jsonb_build_object('subject', null, 'label', 'Frequency', 'old', 'none on record',
-             'new', __S__.fn_activity_value(to_jsonb(fs.f), 'days', null, null), 'is_system', false, 'long', false))
-           || case when j.created_at < timestamptz '2026-07-30 15:44:47+00' then
-                jsonb_build_array(jsonb_build_object('subject', null, 'label', 'Changes recorded from', 'old', null,
-                  'new', 'Jul 30, 2026', 'is_system', false, 'long', false)) else '[]'::jsonb end as changes,
-           null::jsonb as status_card, null::jsonb as cadence_card
-      from public.jobs j
+    select 'start:' || ss.tbl || ':' || ss.id as key, ss.created_at as at,
+           case ss.tbl when 'clients' then 'client' when 'properties' then 'property' when 'jobs' then 'job'
+                       when 'visits' then 'visit' when 'invoices' then 'invoice' else 'contacts' end as area,
+           case ss.tbl
+             when 'clients' then null
+             when 'properties' then coalesce(nullif(btrim(ss.s ->> 'address'), ''), nullif(btrim(ss.s ->> 'name'), ''), 'Property #' || ss.id)
+                                    || coalesce(' (' || nullif(btrim(ss.s ->> 'name'), '') || ')', '')
+             when 'jobs' then '#' || coalesce(ss.s ->> 'job_number', ss.id::text) || coalesce(' ' || nullif(btrim(ss.s ->> 'title'), ''), '')
+             when 'visits' then 'Visit ' || coalesce(to_char((ss.s ->> 'visit_date')::date, 'Mon FMDD, YYYY'), 'with no date') || ' (#' || ss.id || ')'
+             when 'invoices' then 'Invoice #' || coalesce(ss.s ->> 'invoice_number', ss.id::text)
+             else coalesce(nullif(btrim(ss.s ->> 'name'), ''), ss.s ->> 'email', 'Contact #' || ss.id)
+           end as subject,
+           case ss.tbl when 'clients' then 'Client on record' when 'properties' then 'Property on record' when 'jobs' then 'Job on record'
+                       when 'visits' then 'Visit on record' when 'invoices' then 'Invoice on record' else 'Contact on record' end as title,
+           'System' as actor_label, 'system' as actor_kind, ss.tbl in ('visits','invoices') as is_system,
+           coalesce(ln.lines, '[]'::jsonb) as changes, null::jsonb as status_card, null::jsonb as cadence_card
+      from start_snap ss
       cross join lateral (
-        select coalesce((select (case when l.operation = 'INSERT' then l.new_row else l.old_row end ->> 'frequency_days')::int
-                           from audit.logs l
-                          where l.table_schema = 'public' and l.table_name = 'jobs' and l.record_pk ->> 'id' = j.id::text
-                          order by l.changed_at, l.id limit 1),
-                        j.frequency_days) as f) fs
-     where j.client_id = p_client_id and fs.f > 0
+        select jsonb_agg(jsonb_build_object('subject', null, 'label', x.l, 'old', null, 'new', x.v,
+                                            'is_system', ss.tbl in ('visits','invoices'), 'long', false) order by x.o) as lines
+          from (values
+            (1,  'Client code', case when ss.tbl = 'clients' then ss.s ->> 'client_code' end),
+            (2,  'Name', case when ss.tbl = 'clients' then ss.s ->> 'name' end),
+            (3,  'Address', case when ss.tbl = 'properties' then concat_ws(', ', nullif(btrim(ss.s ->> 'address'), ''), nullif(btrim(ss.s ->> 'city'), '')) end),
+            (4,  'Email', case when ss.tbl = 'client_contacts' then ss.s ->> 'email' end),
+            (5,  'Phone', case when ss.tbl = 'client_contacts' then ss.s ->> 'phone' end),
+            (8,  'Date', case when ss.tbl = 'visits' then to_char((ss.s ->> 'visit_date')::date, 'Mon FMDD, YYYY') end),
+            (10, 'Status', case ss.tbl when 'clients' then __S__.fn_activity_sentence(ss.s ->> 'status')
+                                       when 'jobs' then __S__.fn_activity_sentence(ss.s ->> 'job_status')
+                                       when 'visits' then __S__.fn_activity_sentence(ss.s ->> 'visit_status')
+                                       when 'invoices' then __S__.fn_activity_sentence(ss.s ->> 'invoice_status') end),
+            (11, 'Frequency', case when ss.tbl = 'jobs' and coalesce((ss.s ->> 'frequency_days')::int, 0) > 0
+                                   then __S__.fn_activity_value(ss.s -> 'frequency_days', 'days', null, null) end),
+            (12, 'Truck', case when ss.tbl = 'visits' then (select ve.name from public.vehicles ve where ve.id = (ss.s ->> 'vehicle_id')::bigint) end),
+            (13, 'Total', case when ss.tbl = 'invoices' and ss.s ? 'total' then audit.render_value(ss.s -> 'total', 'money', null, null) end),
+            (14, 'Changes recorded from', case when ss.since is not null and ss.created_at < ss.since
+                                               then to_char(ss.since at time zone 'America/New_York', 'Mon FMDD, YYYY') end)
+          ) x(o, l, v)
+         where nullif(btrim(x.v), '') is not null) ln
   ),
   all_entries as (
     select ae.key, ae.at, ae.area, ae.subject, ae.title, ae.actor_label, ae.actor_kind, ae.is_system, ae.changes, ae.status_card, ae.cadence_card
