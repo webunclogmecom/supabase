@@ -5326,6 +5326,20 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   geofence events are counted, not stored. Past Broward dumps are found from GPS coordinates.
 - **Dump rating:** an offload under 10% of capacity, or leaving 90% full or more, is `low`; arriving 97% full or more
   is `medium` (the true offload may be higher).
+- **Since `2026-10-15_1300` (measurement algorithm v2; audit of 2026-10-15, Fred: "Go ahead"), four rules. Do not loosen
+  them without a new A/B:** (1) an edge of a client stop is a reading taken with the truck STATIONARY: every GPS fix
+  from the last one 10 s or more before the reading to the first one at or after it within 15 m (the GPS writer stores
+  no speed); v1 took edges at up to 48 mph, and 7019 read net 0 from a 10.6 mph departure. (2) That fix is within
+  100 m of the stop's centre, and no edge comes after the next stop's arrival: a reading taken at the NEXT client had
+  moved 112 gal from 7873 to 6261. A value held a full period (11 min) inside the stop also counts (the sensor
+  re-measured it there), so a flat level keeps its first-seen time even if that was on the road. Dump and yard stops keep
+  the v1 edges (a 1.4 km geofence; the level before tipping is only seen on the way in). (3) `v_visit_tank_service`
+  leaves a linked stop under 10 min out of the sludge and water when the visit has a linked stop of 10 min or more
+  (`short_stops_left_out` counts them): a 4-minute chain stop no longer makes the visit `too_short` or blanks its water.
+  (4) `exceeds_trap_size` is checked right after `edge_missing`, so no later reason hides an impossible gain (6252:
+  2,819.5 gal on a 30 gal trap had read `below_resolution`). Thresholds are constants in the function body (the
+  signature is unchanged); a change to them bumps `c_version`, which re-measures every row (Z3). Known limit: a sensor
+  excursion inside a stop can still be an edge (6008), a filter for it is a follow-up.
 - **Moises's PTO is dead:** RPM of 900 or more is the pump stand-in. David's PTO works. Cloggy and David have no
   level sensor, so their stops carry no tank rows.
 - **Time on site** comes first from the truck stop that holds the completion (`fn_fill_time_on_site_from_stops`, rule
@@ -5357,6 +5371,22 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `fn_save_samsara_stay_went_once` (re-checks the rule server-side): the truck was not parked there at the tap, but
   went to the address ONCE in the visit window (stays under 15 min apart joined, so a re-park is one visit); two visits
   of one client may share that stay (8013/8017, 3942/5078). Same Samsara reading, same 2-min / moved-during-job rules.
+  🛑 **2026-10-15, the Samsara audit of 1,374 visits (Fred's decisions; `scripts/checks/samsara_visit_audit.mjs`, output
+  outside the repos in `samsara-checks/audit_2026-10-15/`)**: (a) `_0045` put the Samsara truck on 34 visits; 22 had been
+  overwritten by the OLD longest-stay truck automation (Aug 19 run + nightly before `_1610`). Fix the truck BEFORE the
+  time: every time writer trusts the truck on the visit. (b) `_0140`: a stop several visits share gives each the WHOLE
+  stop ("that should be get the whole stop"); `v_visit_stop_reference` no longer splits (split_ok is always true, kept
+  for its readers) and the recheck no longer skips shared stays. When Samsara shows the truck MOVING during the job (two
+  or more stays over the job window) the recheck saves the LONGEST stay ("the stay that most likely is the service").
+  A Samsara stay counts as part of the job only if half of it lies inside the job (edge fn v6), else a park ending a
+  minute into our stop counts (6087). (c) `_0210`: a completion stop arriving outside the visit's window (date -4 h to
+  10 AM next day ET) is not a recheck candidate; a late batch tap days later otherwise replaces the real stay (8017).
+  (d) `_0230`: 625 visits before Aug 20 got Samsara's stay where the truck went to the address once; the 101 where it
+  went several separate times keep their values (review list in the audit folder). (e) `_0110`:
+  **`public.visit_audit_flags`** (one open row per visit, audited, service_role only) holds questions the data cannot
+  settle; the report lists them. (f) `_0300`: 6592's date put back (automated writes had moved a completed visit;
+  Jobber still shows Jul 2). The audit script reads Samsara with no re-park join, GPS idling only at 3 mph or less, and
+  a trip within 150 m of a client place centre counts.
   **Step 2 shipped (`2026-10-13_2020` + `_2025`)**: `visits.time_on_site_source` records which rule wrote the time
   (NULL = before 2026-10-13); the three writers label their writes (`time-on-site-measure` / `-any-truck` /
   `-from-stops`, with a reason) and `fn_compute_time_on_site` only replaces NULL-source or its own values; a reopened
