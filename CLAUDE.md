@@ -5457,11 +5457,19 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   to those columns or to the measurement rules changes the Calendar's numbers for today and later**; past days are
   frozen in `ops.visit_grease_frozen` (append-only, guard trigger, unique per (visit, date) while not superseded) by
   `ops.fn_freeze_grease_estimates()` (cron `calendar-grease-freeze`, `5 * * * *`, sync_log source
-  `calendar_grease_freeze`, watched 3 h by `log_jobber_sync_health`). Rule: grease trap visit on a truck listed in
-  `app_config.grease_separating_vehicle_ids` (`1` = Moises) with at least one earlier reading at the property = the
-  rounded average of the last 4; otherwise the trap size; no trap size = `unknown`. Pump kind (`ops.fn_visit_pump_kind`):
-  catalogue codes 01/02/09 grease trap, 03/10 grey water, 04/11 lift station, from the visit's own lines, else the
-  job's open lines, else old uncoded text. Still NOT for LWT or DERM filings, and no other app reads it.
+  `calendar_grease_freeze`, watched 3 h by `log_jobber_sync_health`). **Rule since v2 (`2026-10-15_1540`, Fred's voice
+  note + picks):** every pumping visit counts (grease trap, grey water, lift station; SA and SC). On a truck listed in
+  `app_config.grease_separating_vehicle_ids` (`1` = Moises) with at least one earlier reading at the property: the
+  client's average, i.e. the rounded mean of the LAST 6 trusted readings (40 to 3,840 gal) of its pumping visits dated
+  before that day (`ops.fn_client_sludge_averages`, the one definition; `ops.v_client_sludge_average` shows each
+  client place's current average). Otherwise the trap size on file (the grease trap size, also for grey water and lift
+  stations: accepted); no size = `unknown`. Pump kinds (`ops.fn_visit_pump_kinds`, `ops.fn_visit_pump_kind` = its
+  first): catalogue codes 01/02/09 grease trap, 03/10 grey water, 04/11 lift station, from the visit's own lines, else
+  the job's open lines, else old uncoded text. 🛑 **A past day stays the same** (Fred: *"unless like a visit is moved
+  from that date or into that date ... recalculate with that same average"*): `ops.fn_grease_estimates_resolved` returns
+  the stored row of a past day, else, for a visit now on Moises, the stored MEASURED average it had on another date
+  (`carried`), else live; the freezer stores pump kinds too, and the guard keeps them immutable. A correction of the
+  sensor math moves only today's and later numbers. Still NOT for LWT or DERM filings, and no other app reads it.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
   rows, then `fn_refresh_stop_facts(vehicle_id, install_date)`.
 
