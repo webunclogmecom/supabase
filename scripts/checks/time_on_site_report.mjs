@@ -258,7 +258,11 @@ for (const { g } of rows) {
       fix.push(viaPlace ? 'Move the map point in Jobber to the Samsara place.' : viaMap ? 'Move the Samsara place to the address.' : 'Check which one is right and move the other.');
     }
   }
-  if (flagged.has(g.visit_id)) issues.unshift(`Flagged for review: ${flagged.get(g.visit_id)}`);
+  if (flagged.has(g.visit_id)) {   // a flag is a question for a person: the suggestion waits for the answer
+    issues.unshift(`Flagged for review: ${flagged.get(g.visit_id)}`);
+    fix.length = 0;
+    fix.push('Answer the flagged question first (with the driver or the office); the truck and the time follow from the answer.');
+  }
   const link = visits.length ? { truck: visits[0].truck, id: visits[0].id } : g.truck ? { truck: g.truck, id: g.truck_samsara_id }
     : g.closestTruck ? { truck: g.closestTruck.truck, id: g.closestTruck.id } : null;
   data.push({
