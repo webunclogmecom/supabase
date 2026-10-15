@@ -15,7 +15,11 @@ const env = Object.fromEntries(fs.readFileSync(new URL('../../.env', import.meta
   .filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim().replace(/^["']|["']$/g, '')]));
 const SAM = { Authorization: `Bearer ${env.SAMSARA_API_TOKEN}`, Accept: 'application/json' };
 const TRUCKS = { '281474998706262': 'Moises', '281474998706263': 'Cloggy', '281474998706264': 'David' };
-const NEAR = 250, MIN_STAY = 3 * 60e3, REPARK = 15 * 60e3, GPS_GAP = 5 * 60e3;
+const NEAR = 250, PLACE_NEAR = 150, MIN_STAY = 3 * 60e3, GPS_GAP = 5 * 60e3, STILL_MPH = 3;
+// 2026-10-15 (audit critic, Fred: "Go ahead ... 10"): no re-park join (it merged neighbours' jobs into one stop; each
+// Samsara stay is now its own stop and the caller picks the most likely one); a trip also counts when it ends within
+// 150 m of a client place centre (Samsara may label it with an overlapping place); engine-on idling counts only while
+// the truck is stationary (Samsara GPS speed <= 3 mph), so a drive-through is not a stop.
 const sleep = (ms) => new Promise((s) => setTimeout(s, ms));
 const R = 6371000, rad = (x) => x * Math.PI / 180;
 const meters = (a, b, c, d) => { const x = rad(c - a), y = rad(d - b); const h = Math.sin(x / 2) ** 2 + Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(y / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
@@ -77,7 +81,7 @@ async function gps(date, w0, w1) {
     let after = '';
     do {
       const j = await sam(`/fleet/vehicles/stats/history?types=gps&vehicleIds=${Object.keys(TRUCKS).join(',')}&startTime=${new Date(w0).toISOString()}&endTime=${new Date(w1).toISOString()}${after ? '&after=' + after : ''}`);
-      for (const v of j.data ?? []) (out[v.id] ??= []).push(...(v.gps ?? []).map((q) => ({ t: Date.parse(q.time), lat: q.latitude, lng: q.longitude })));
+      for (const v of j.data ?? []) (out[v.id] ??= []).push(...(v.gps ?? []).map((q) => ({ t: Date.parse(q.time), lat: q.latitude, lng: q.longitude, mph: q.speedMilesPerHour ?? null })));
       after = j.pagination?.hasNextPage ? j.pagination.endCursor : '';
     } while (after);
     gpsCache.set(date, out);
@@ -102,15 +106,12 @@ for (const v of visits) {
         const s0 = ts[i].endMs, s1 = ts[i + 1].startMs;
         if (s1 - s0 < MIN_STAY || s1 <= w0 || s0 >= w1) continue;
         const c = ts[i].endCoordinates ?? {};
-        const placeHit = pls.find((p) => String(ts[i].endAddress?.id ?? '') === p.id);
+        const placeHit = pls.find((p) => String(ts[i].endAddress?.id ?? '') === p.id)
+          ?? (c.latitude != null ? pls.find((p) => meters(p.lat, p.lng, c.latitude, c.longitude) <= PLACE_NEAR) : undefined);
         const fromMap = v.lat != null && c.latitude != null ? meters(v.lat, v.lng, c.latitude, c.longitude) : null;
         if (placeHit || (fromMap != null && fromMap <= NEAR)) here.push({ s0, s1, fromMap: fromMap && Math.round(fromMap), samsaraPlace: ts[i].endAddress?.name ?? null, viaPlace: !!placeHit });
       }
-      for (const h of here) {
-        const last = stays.at(-1);
-        if (last && last.truck_samsara_id === id && h.s0 - last.s1 <= REPARK) { last.s1 = h.s1; last.parts++; last.viaPlace ||= h.viaPlace; }
-        else stays.push({ truck: name, truck_samsara_id: id, parts: 1, source: 'trip', ...h });
-      }
+      for (const h of here) stays.push({ truck: name, truck_samsara_id: id, parts: 1, source: 'trip', ...h });
     }
   }
   // GPS: idling there with the engine on (no trip stop), and the closest approach to our map point / the place
@@ -127,7 +128,9 @@ for (const v of visits) {
           if (!closest || m < closest.m) closest = { m: Math.round(m), t: new Date(q.t).toISOString(), truck: TRUCKS[id], to: tg.kind };
           if (m <= NEAR && !nearT) nearT = tg;
         }
-        if (nearT) { if (cur && q.t - cur.s1 <= GPS_GAP) cur.s1 = q.t; else { if (cur) idles.push(cur); cur = { truck: TRUCKS[id], truck_samsara_id: id, s0: q.t, s1: q.t }; } }
+        const still = q.mph == null || q.mph <= STILL_MPH;
+        if (nearT && still) { if (cur && q.t - cur.s1 <= GPS_GAP) cur.s1 = q.t; else { if (cur) idles.push(cur); cur = { truck: TRUCKS[id], truck_samsara_id: id, s0: q.t, s1: q.t }; } }
+        else if (cur && (!nearT || !still)) { idles.push(cur); cur = null; }
       }
       if (cur) idles.push(cur);
     }
