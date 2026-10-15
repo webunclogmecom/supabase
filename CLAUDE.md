@@ -5313,7 +5313,8 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 | derived | `vehicle_stops`, `vehicle_stop_tank_levels`, `visit_vehicle_stops` (retired links are soft-deleted, `deleted_at`) | `public.fn_refresh_stop_facts()` (pg_cron `vehicle-stop-facts`, :35 hourly) |
 | read | `v_tank_levels`, `v_vehicle_stop_facts`, `v_vehicle_stop_tank_changes`, `v_visit_tank_service`, `v_vehicle_dumps`, `v_tank_data_quality_issues`, `v_vehicle_site_addresses` | views (`2026-10-12_2300`), service_role only |
 
-- 🛑 **Everything is service_role only. No app reads it yet** (Fred: DB first). Exposing it is plan step M9, after
+- 🛑 **Everything is service_role only. No app reads these objects** (Fred: DB first); the one app-facing number
+  derived from them is the Calendar's Grease pumped tile, through its own RPC (see the bullet after Health). Exposing them is plan step M9, after
   mockups of the real page. Nothing in `derm`, `customer` or `client` may read these (check Z8, hourly); measured
   gallons are NOT for LWT or DERM filings (owner decision D8 default) without the month-close snapshot of plan M12.
 - 🛑 **A new level value arrives only about every 10 minutes**; rows every ~30 s repeat it. **Ingress/egress are hourly
@@ -5441,6 +5442,19 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   what is left is people work: the review lists and Yannick's Place worklist in `samsara-checks/`.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
+- 🛑 **ONE APP NOW SHOWS A NUMBER DERIVED FROM THESE: the Visit Calendar's "Grease pumped" tile (2026-10-15,
+  `2026-10-15_1150_calendar_grease_estimates`; Fred said yes to D6 for the Calendar only).** It reads only the SECDEF
+  RPC `ops.calendar_grease_estimates(p_from, p_to)` (authenticated, max 45 days), never the tank views. Live days come
+  from `ops.fn_grease_estimates_live`, which reads `public.v_visit_tank_service` (`visit_kind = 'volume'`, confidence
+  high/medium, `gallons`, `visit_date`) and `ops.v_calendar_visit` (effective `vehicle_id`, trap size). ⇒ **A change
+  to those columns or to the measurement rules changes the Calendar's numbers for today and later**; past days are
+  frozen in `ops.visit_grease_frozen` (append-only, guard trigger, unique per (visit, date) while not superseded) by
+  `ops.fn_freeze_grease_estimates()` (cron `calendar-grease-freeze`, `5 * * * *`, sync_log source
+  `calendar_grease_freeze`, watched 3 h by `log_jobber_sync_health`). Rule: grease trap visit on a truck listed in
+  `app_config.grease_separating_vehicle_ids` (`1` = Moises) with at least one earlier reading at the property = the
+  rounded average of the last 4; otherwise the trap size; no trap size = `unknown`. Pump kind (`ops.fn_visit_pump_kind`):
+  catalogue codes 01/02/09 grease trap, 03/10 grey water, 04/11 lift station, from the visit's own lines, else the
+  job's open lines, else old uncoded text. Still NOT for LWT or DERM filings, and no other app reads it.
 - A sensor on another truck is DATA, not schema: one tank, one configuration, one sensor, one installation, two ESL
   rows, then `fn_refresh_stop_facts(vehicle_id, install_date)`.
 
