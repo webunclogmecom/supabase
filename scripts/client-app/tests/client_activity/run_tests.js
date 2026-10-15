@@ -16,6 +16,8 @@ const MUTATIONS = {
   person:    ["when m.person is not null then false\n             -- never background", "when false then false\n             -- never background", ['C12 ']],
   invshell:  ["when m.is_inv_created then 'Invoice created'", "when false then 'Invoice created'", ['C11 ']],
   cardline:  ["and mr.tbl not in ('client_status_changes','job_frequency_changes')\n  ),", "\n  ),", ['C4 ']],
+  startpos:  ["where j.client_id = p_client_id and fs.f > 0", "where j.client_id = p_client_id and fs.f >= 0", ['C22 ']],
+  starthist: ["when j.created_at < timestamptz '2026-07-30 15:44:47+00' then", "when false then", ['C23 ']],
   intake:    ["when m.tbl = 'properties' and pa.intake_id is not null then", "when false then", ['C9 ']],
 };
 let fn = fs.readFileSync(path.join(B, 'function.sql'), 'utf8');

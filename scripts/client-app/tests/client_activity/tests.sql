@@ -241,6 +241,26 @@ begin
     'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'actor_label' = 'Staff (no name on file)'
           and position('nobody-test' in v::text) = 0, 'got', v);
 
+  -- C21 the starting frequency of a recurring job (2026-10-15): one entry at the job's creation, none for a one-off job,
+  --     and a job older than the job history says when changes started being recorded
+  declare jr bigint; jz bigint; jo bigint;
+  begin
+    insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] recurring', 30, t0 + interval '200 minutes') returning id into jr;
+    insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] one-off', 0, t0 + interval '220 minutes') returning id into jz;
+    insert into public.jobs (client_id, title, frequency_days, created_at) values (381, '[TEST] old', 45, timestamptz '2026-07-01 07:17:00+00') returning id into jo;
+    v := pg_temp.t_win(381, false, t0 + interval '200 minutes');
+    res := res || jsonb_build_object('case', 'C21 a recurring job shows its frequency on record at its creation',
+      'ok', jsonb_array_length(v) = 1 and v -> 0 ->> 'key' = 'start:job:' || jr and v -> 0 ->> 'title' = 'Frequency on record'
+            and v -> 0 -> 'changes' -> 0 ->> 'new' = '30 days' and jsonb_array_length(v -> 0 -> 'changes') = 1, 'got', v);
+    v := pg_temp.t_win(381, true, t0 + interval '220 minutes');
+    res := res || jsonb_build_object('case', 'C22 a one-off job (frequency 0) has no frequency entry',
+      'ok', not exists (select 1 from jsonb_array_elements(v) e where e ->> 'key' = 'start:job:' || jz), 'got', v);
+    v := pg_temp.t_win(381, false, timestamptz '2026-07-01 07:17:00+00');
+    res := res || jsonb_build_object('case', 'C23 a job older than the job history says changes are recorded from Jul 30',
+      'ok', exists (select 1 from jsonb_array_elements(v) e where e ->> 'key' = 'start:job:' || jo
+                      and e -> 'changes' -> 0 ->> 'new' = '45 days' and e -> 'changes' -> 1 ->> 'new' = 'Jul 30, 2026'), 'got', v);
+  end;
+
   -- C18 no cap: every entry comes back when p_limit is null
   select count(*) into function_win from __FN__(381, true, null, null);
   res := res || jsonb_build_object('case', 'C18 p_limit null returns more than 50 entries', 'ok', function_win > 50, 'got', function_win);

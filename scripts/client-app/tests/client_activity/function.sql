@@ -574,6 +574,30 @@ begin
       from public.notes nt
      where nt.client_id = p_client_id and nt.visit_id is null
   ),
+  -- 11. the frequency each recurring job had when it reached our records (Fred, 2026-10-15: "add the starting
+  --     state entry"). Job history is recorded only from 2026-07-30 15:44 UTC, so a job whose frequency never changed
+  --     showed no frequency at all. The value is the earliest one we hold: the job's first audit row (the new row of an
+  --     INSERT, the old row of a first UPDATE), else the job as it is now (no row: never changed). Recurring jobs only
+  --     (above 0). A job older than the history says so on a second line, so the entry never claims more than we know.
+  start_entries as (
+    select 'start:job:' || j.id as key, j.created_at as at, 'job' as area,
+           '#' || coalesce(j.job_number::text, j.id::text) || coalesce(' ' || nullif(btrim(j.title), ''), '') as subject,
+           'Frequency on record' as title, 'System' as actor_label, 'system' as actor_kind, false as is_system,
+           jsonb_build_array(jsonb_build_object('subject', null, 'label', 'Frequency', 'old', null,
+             'new', __S__.fn_activity_value(to_jsonb(fs.f), 'days', null, null), 'is_system', false, 'long', false))
+           || case when j.created_at < timestamptz '2026-07-30 15:44:47+00' then
+                jsonb_build_array(jsonb_build_object('subject', null, 'label', 'Changes recorded from', 'old', null,
+                  'new', 'Jul 30, 2026', 'is_system', false, 'long', false)) else '[]'::jsonb end as changes,
+           null::jsonb as status_card, null::jsonb as cadence_card
+      from public.jobs j
+      cross join lateral (
+        select coalesce((select (case when l.operation = 'INSERT' then l.new_row else l.old_row end ->> 'frequency_days')::int
+                           from audit.logs l
+                          where l.table_schema = 'public' and l.table_name = 'jobs' and l.record_pk ->> 'id' = j.id::text
+                          order by l.changed_at, l.id limit 1),
+                        j.frequency_days) as f) fs
+     where j.client_id = p_client_id and fs.f > 0
+  ),
   all_entries as (
     select ae.key, ae.at, ae.area, ae.subject, ae.title, ae.actor_label, ae.actor_kind, ae.is_system, ae.changes, ae.status_card, ae.cadence_card
       from audit_entries ae
@@ -583,6 +607,9 @@ begin
     union all
     select ne.key, ne.at, ne.area, ne.subject, ne.title, ne.actor_label, ne.actor_kind, ne.is_system, ne.changes, ne.status_card, ne.cadence_card
       from note_entries ne
+    union all
+    select se.key, se.at, se.area, se.subject, se.title, se.actor_label, se.actor_kind, se.is_system, se.changes, se.status_card, se.cadence_card
+      from start_entries se
   )
   select x.key, x.at, x.area,
          case x.area when 'client' then 'Client' when 'property' then 'Property' when 'job' then 'Job' when 'contacts' then 'Contacts'
