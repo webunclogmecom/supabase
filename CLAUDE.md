@@ -4543,6 +4543,20 @@ minutes. **If `blackout-health` moves, move `health-escalation` too**, or it rep
 blackout verdict and says nothing changed.
 
 
+### ✅ CALENDAR "HOURS WORKED" = `ops.calendar_hours_estimates`, ONE ROW PER VISIT, READ LIVE (2026-10-16)
+
+Fred's picks 1A 2A 3A 4A on the mockup (Visit Calendar rule 17; migration `2026-10-16_1125`). One row per live, not
+cancelled, not skipped visit in range: `measured` = a completed visit's `visits.duration_minutes` (1 to 719);
+`average` = the rounded mean of the last 6 measured visits at the same property (the client's primary one when the
+visit has none) and the same `service_type`, dated strictly before it by `visit_date` (not `completed_at`);
+`one_hour` = 60 when there are none or the visit has no service type. SECURITY INVOKER (it reads only what staff can
+already read), EXECUTE authenticated + service_role, `p_to - p_from` at most 45. No table, no freeze, no cron.
+- 🛑 **A change to `visits.duration_minutes`, `service_type`, `property_id` or `visit_status` moves the Calendar's
+  hours for every later visit at that place, past days included** (pick 3A). A re-run of the time-on-site rules is
+  therefore a Calendar-visible change: on 2026-10-15 one moved 170 past days.
+- 🛑 The VERIFY's independent implementation is swept over every 46-day slice from 2026-01-01: the cases that tell
+  `<` from `<=` (two dumps at one site on one day) are 3 rows in the whole year. Keep the sweep wide if you change it.
+
 ### ✅ CALENDAR "HOURS DRIVEN" IS A GOOGLE-TIMED ROUTE PER TRUCK PER DAY, BUILT LIVE IN SQL (2026-09-17)
 
 Fred: *"the logic for it, is to use the Google API to have a time it takes coming out of the YARD, up to
@@ -5365,9 +5379,17 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   after an offload is not caught when no empty follows it (dump 1091 reads about 540 gal low).
   **The water balance** (Fred's model: start + separated = peak, peak - put back = end) is
   `public.v_visit_water_balance` (per visit, `water_balance_closes`; a visit split or sharing its stop does not close)
-  and `public.v_vehicle_water_ledger` (per stop: separated / put back at a client, refilled / pumped out at the yard,
-  pumped out at a dump), both service_role only. Design: `docs/superpowers/specs/2026-10-15-moises-water-balance-design.md`.
-  Rollback: `docs/migrations/2026-10-15_rollback_tank_pipeline_v3.sql` (v2 as version 4, rehearsed).
+  and `public.v_vehicle_water_ledger` (per stop: separated / put back at a client, refilled at the yard, and at a
+  dump or the yard `moved_to_sludge_tank_gallons`: Fred 2026-10-16, "At the dump we can transfer the water to the
+  sludge compartment. We can use the water to clean the filter and it ultimately goes to the sludge"; the yard part is
+  inferred from 2 stops; renamed from `pumped_out_gallons` by `2026-10-16_1126`), both service_role only. A big
+  sludge change at the yard is normally a transfer with David (Fred, same day; David's pump on at 5 of them since
+  10-02), not a dump and not a fault, but it is not a rule: 7 such changes before 10-02 had no David pump reading.
+  Design: `docs/superpowers/specs/2026-10-15-moises-water-balance-design.md`.
+  Rollback: `docs/migrations/2026-10-15_rollback_tank_pipeline_v3.sql` (v2 as version 4, rehearsed). 🛑 Run
+  `2026-10-16_rollback_water_views_moved_to_sludge_labels.sql` FIRST (the v3 rollback's md5 guard refuses while the
+  renamed columns are live), and the CREATE text of the two water views in `2026-10-15_1950` no longer replays: take
+  `pg_get_viewdef` as the source.
 - **Moises's PTO is dead:** RPM of 900 or more is the pump stand-in. David's PTO works. Cloggy and David have no
   level sensor, so their stops carry no tank rows.
 - **Time on site** comes first from the truck stop that holds the completion (`fn_fill_time_on_site_from_stops`, rule

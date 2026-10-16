@@ -58,10 +58,21 @@ Measured by four read-only investigations, each re-measured independently by a r
 5. **Water leaves the truck at the dump and at the yard.** The water tank fell at 4 of 9 dumps, exactly the 4 where it
    arrived with 840 gal or more (falls of about 121 to 863 gal), and the falls are permanent (not a sensor effect). At the
    yard it fell on Oct 7 (about 300 gal) and Oct 8 (900 to 69). In 4 of the 6 falls the engine ran at about 1,200 rpm,
-   the setting that at client stops goes with pumping water back into a trap. Where the water went is not in the data.
+   the setting that at client stops goes with pumping water back into a trap. **Answered by Fred 2026-10-16:** "At the
+   dump we can transfer the water to the sludge compartment. We can use the water to clean the filter and it
+   ultimately goes to the sludge. Once the water is in the sludge, we can dispose of it at the tank." Seen in the
+   sludge tank at 1 of the 4 dumps (1221, +286.8 of 556.1); at 1237 and 1253 it fell while the sludge tank was
+   emptying, at 1213 after it read empty. At the yard (inferred from 1252 and 1264, Fred spoke of the dump) it is the
+   same move; at 1252 it stayed in Moises and was dumped at 1253. Where visible, the sludge tank shows about half of the
+   fall: why the rest does not show is open.
 6. **The yard moves grease both ways.** Grease emptied at the yard on Oct 8 (about 870 gal), Oct 12 (about 1,340) and
    Oct 14 (about 1,290); loaded at the yard on Oct 9 (+1,560) and Oct 13 (+1,588), each time with the vacuum engine
-   setting and followed by a dump at 000-DH. `v_vehicle_dumps` does not see the yard.
+   setting and followed by a dump at 000-DH. `v_vehicle_dumps` does not see the yard. **Answered by Fred 2026-10-16:**
+   "if David is full and Moises needs to go to the dump, we transfer David to Moises so Moises is full when we go to
+   the dump. If David is empty and we need space in Moises to do the rat (route?) tonight, we transfer from Moises to
+   David." From 10-02 to 10-15 every yard change of 1,000 gal or more (1272, 1714, 1733, 1759), and the 872 and 419
+   gal falls at 1264, came with David's pump on at the yard 0 to 9 m away; 1215 (+975.8) had none; before 10-02 seven
+   such changes had none, so it is not a rule.
 7. **Moises's engine is a second signal** (his PTO is dead; rpm sampled every 2 minutes): idle about 600, dump offload
    about 1,000, water pump-back about 1,200 (in 20 of 32 client water falls, 2 of 67 flat intervals), vacuum about 1,525
    (in 29 of 29 client water rises).
@@ -107,15 +118,16 @@ rules. Measured: removes 168 readings (61 the pipeline accepts today), about 2 t
 2. **`public.v_visit_water_balance`** (service_role only, Moises, from 2026-10-02): start, peak, end, separated (sum of
    rises), put back (sum of falls), counted at the visit whose trap the water went into, with a separate labelled line
    for water brought in from earlier stops (bounds only, never a split that depends on a bookkeeping rule). Water that
-   leaves at a dump or the yard is "pumped out at the dump / yard", never "put back". A rise at the yard is a refill.
+   leaves at a dump or the yard is water "moved to the sludge tank" (renamed 2026-10-16 from "pumped out"), never "put
+   back". A rise at the yard is a refill.
 3. **Health:** the per-distance excess check goes into `v_tank_data_quality_issues`, so a sensor remount shows up.
 
 ## Questions for Fred
 
-1. At the dump, when the water tank is fuller than about 840 gal, it loses 120 to 860 gal while the engine runs at the
-   pump-back setting. Where does that water go: into the grease side, into the dump, or somewhere else?
-2. What happens at the office yard? The truck empties grease there (about 870 to 1,340 gal on Oct 8, 12, 14) and loads
-   grease there (about 1,560 on Oct 9 and Oct 13), and the water tank was emptied there on Oct 7 and Oct 8.
+1. ~~Where does the water lost at the dump go?~~ Answered 2026-10-16: into the sludge compartment (filter cleaning),
+   then dumped with the sludge (finding 5).
+2. ~~What happens at the office yard?~~ Answered 2026-10-16: grease is transferred between David and Moises
+   (finding 6).
 3. When was the water tank last filled with clean water? No refill shows since Oct 2.
 
 ## What was built (2026-10-15 19:42 ET)
@@ -140,6 +152,9 @@ The migration header is the full record (rules, measured before and after, known
   7030 and later trap size 300 > measured 207; 010-CS 5902 and later 2,746 > 3,287); 10 client averages change.
   Frozen past days do not move.
 
-Still open: questions 1 and 2 above (where dump water goes, what happens at the yard). Question 3 is answered by the
-ledger: refills show as `refilled_gallons` at the yard.
+Questions 1 and 2 were answered by Fred on 2026-10-16 (findings 5 and 6). Migration `2026-10-16_1126` renamed the
+water views' "pumped out" columns to `moved_to_sludge_tank_gallons` (ledger) and `water_moved_to_sludge_at_dump_gallons`
+(visit balance) and recorded what `v_vehicle_dumps` leaves out (water moved in during a dump; any yard load in
+`collected_since_previous_dump_gallons`). Question 3 is answered by the ledger: refills show as `refilled_gallons` at
+the yard. Still open: why the sludge tank shows only about half of the water moved into it.
 
