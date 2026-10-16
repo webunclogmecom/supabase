@@ -543,3 +543,41 @@ Notes on the rule:
   to agree. 6008 now reads 1,861.3 gal on a 1,250 gal trap from a 1,234.7 gal reading between 2,743.7 and 3,154.8 near
   full (35 stops had an edge on such an excursion under v1, 33 under v2). A same-side excursion filter for the sludge
   sensor is the follow-up.
+
+
+## 12. Correction 2026-10-16: sludge cannot drop before a client's pumping (algorithm v5), and a check of every visit
+
+Closes the open item of section 11. Migration `docs/migrations/2026-10-16_1510_tank_levels_v5_sludge_cannot_drop_before_pumping.sql`
+(rollback `2026-10-16_rollback_tank_levels_v5.sql`, rehearsed).
+
+**What 6008 was.** The truck left the previous client at 71% (0.70 m), drove 20 minutes, and 35 s after parking the
+sludge radar read 1.37 m (32%) for 10 minutes, then 82% once pumping started. The 1.37 m reading was the arrival edge.
+It is visible in the Samsara dashboard only in the **Readings** view (Sensor distance measurement 53.9 in at 9:19:57 AM
+UTC+2 on Sep 23); the default Fill % chart shows a flat 71%, because it is smoothed. The same holds for the Oct 2
+false empties (checked 2026-10-16): to see a sensor error in Samsara, use Readings, never Fill %.
+
+**The rule (Fred / Yan 2026-10-16: sludge only leaves the truck at a dump or the yard).** On a client stop, the sludge
+level carried in is the last accepted measurement before arrival (within 3 h, after the last dump or yard stop, never a
+false-full 0.11 m or less). The accepted measurements from there up to the first one back within 100 gal of it are
+impossible and rejected (code 4); when any was, the arrival edge is the carried-in measurement. The ghost list's sludge
+weak echo is 1.35 to 1.37 m. It needs no list of false values: any reading that would make sludge vanish on the road
+is caught. Water is not covered: Moises pushes water back at a client.
+
+**Effect (578 stop rows re-measured):** 6008 1,861.3 -> 352.3 gal; 6174 -2,898 -> 0 and 6544 -861.2 -> 0 (both
+`pumped_no_rise`); dump stop 1147 ratio 0.669 -> 0.991. Nothing else moved. The Calendar's Grease pumped average for
+6008's property went from 1,437 to 682 gal.
+
+**The check of every Moises visit with a sludge figure (191: 108 high, 17 medium, 66 low confidence).**
+
+| What was checked | Found | Verdict |
+|---|---|---|
+| An edge on a listed false distance (1.35-1.37 m, 1.71-1.73 m) | 16 edges in 14 visits | 14 sit within a few percent of the readings around them: real levels at that distance. 6347 is a false 32% between a false 98% and a false 0% (low confidence, not used). 6419's 13% follows 48% because Moises unloaded into David at the yard before the route |
+| Visits below -40 gal | 2 (6247 -2,639; 6466 -784) | both low confidence (`pumped_no_rise`): never in the Calendar |
+| More than the trap can hold | 17 | all low confidence; most are traps recorded as 10 to 65 gal, so the trap size on record is the likelier error |
+| Dumps outside a 0.8 to 1.25 ratio | 6 of 27 | `collected_since_previous_dump_gallons` leaves out yard transfers and water moved into the sludge tank at the dump: with them, Oct 3 reads about 0.83 and Oct 7 (morning) about 1.22; Sep 5 is before the water sensor; Sep 3 to 4 are the days the sensor jumped all day at the yard; Oct 7 (evening) stays about 480 gal over, unexplained |
+
+The Calendar's Grease pumped reads only high and medium visits between 40 and 3,840 gal, so none of the low-confidence
+figures above reach it. 6008 did (it was `ok` / high), which is what this fix was for.
+
+**Known limits.** A false HIGH arrival (a ghost above the real level) is not caught and under-reads the visit. Near a
+full tank (0.11 m or less) the sensor cannot tell a real full from a false one.

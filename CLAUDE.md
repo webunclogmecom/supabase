@@ -5364,7 +5364,7 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   (4) `exceeds_trap_size` is checked right after `edge_missing`, so no later reason hides an impossible gain (6252:
   2,819.5 gal on a 30 gal trap had read `below_resolution`). Thresholds are constants in the function body (the
   signature is unchanged); a change to them bumps `c_version`, which re-measures every row (Z3). Known limit: a sensor
-  excursion inside a stop can still be an edge (6008), a filter for it is a follow-up.
+  excursion inside a stop can still be an edge (6008); closed for sludge by v5 below.
 - 🛑 **Since `2026-10-15_1950` (algorithm v3, Fred: "go ahead with the sensor fix and water balance"), rule (1) has two
   deliberate exceptions. Do not "restore" v2 because a v3 edge was read moving.** (a) A client stop of 10 min or more
   with no parked edge (its parked candidate was a ghost, or a reading taken before another client's stop: 082-TFC took
@@ -5374,7 +5374,7 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   pumping shows only after the truck left: 7029 read 0 for about 207 gal); otherwise the change is kept as a flag
   (`late_change_*`, in the visit view as `*_change_after_leaving_gallons`).
   **Ghost readings** (rejection code 3): `public.fn_tank_ghost_distance_listed` lists the sensors' false distances
-  (water 1.13-1.15 m and 2.40 m or more; sludge 1.35 m and 1.71-1.73 m; the sludge false FULL is deliberately not listed,
+  (water 1.13-1.15 m and 2.40 m or more; sludge 1.35-1.37 m since v5 and 1.71-1.73 m; the sludge false FULL is deliberately not listed,
   a full truck reads the same), and `public.fn_tank_reading_ghosts` flags a listed distance more than 15 cm outside its
   real neighbours. 🛑 **A change to either function must bump `c_version`** (use 5 or more after the v3 rollback),
   or rows older than the 35-day horizon keep the old decisions. A new distance that repeats shows as F9 in
@@ -5393,6 +5393,19 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `2026-10-16_rollback_water_views_moved_to_sludge_labels.sql` FIRST (the v3 rollback's md5 guard refuses while the
   renamed columns are live), and the CREATE text of the two water views in `2026-10-15_1950` no longer replays: take
   `pg_get_viewdef` as the source.
+- 🛑 **Since `2026-10-16_1510` (algorithm v5, `c_version` 5; 4 is the v3 rollback's), SLUDGE CANNOT DROP BEFORE A
+  CLIENT'S PUMPING.** Sludge only leaves Moises at a dump or the yard (Fred / Yan 2026-10-16). Step 5c: on a client stop,
+  the level carried in is the last accepted sludge measurement before arrival (within 3 h, after the last dump or yard
+  stop, never a false-full 0.11 m or less); the accepted measurements from there up to the first one back within 100 gal
+  of it are rejected (code 4), and when any was, the arrival edge IS the carried-in measurement (6c), even though it was
+  read moving. The sludge ghost list is now 1.35 to 1.37 m. Visit 6008 (034-LG) 1,861 -> 352 gal, 6174 and 6544 from
+  negative to 0, dump 1147 ratio 0.669 -> 0.991; nothing else moved. 🛑 **Do not drop the 0.11 m guard:** without it a
+  false 98.3% became the carried-in level and wiped real visits (168-AVA 8041 40 -> 0, 148-MOR 6347 564 -> 2,540 in the
+  rehearsal). Water is deliberately not covered (water is pushed back at a client). Known limit: a false HIGH arrival
+  (a ghost above the real level) is not caught and under-reads the visit. Rollback:
+  `2026-10-16_rollback_tank_levels_v5.sql` (v3 as version 6, rehearsed: 6008 back to 1,861.3); run it BEFORE the v3
+  rollback, whose md5 guard pins the v3 body. The Calendar's Grease pumped reads only high/medium visits between 40 and
+  3,840 gal, so low-confidence nonsense (negatives, `exceeds_trap_size`) never reaches it; 6008 was `ok`/high.
 - **Moises's PTO is dead:** RPM of 900 or more is the pump stand-in. David's PTO works. Cloggy and David have no
   level sensor, so their stops carry no tank rows.
 - **Time on site** comes first from the truck stop that holds the completion (`fn_fill_time_on_site_from_stops`, rule
