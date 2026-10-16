@@ -59,8 +59,19 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
      `github_samsara_readings`.
    Running one while Railway also runs is safe (every target table ignores duplicates). Their own sync_log sources mean
    the watchdog keeps reporting a dead Railway service, while the guards below accept their data.
-   ⏳ Automatic re-triggering (the watchdog pressing Railway's Run now, or dispatching the workflow) needs a Railway
-   project token or a GitHub token stored in the database; not built, Fred's call.
+   **Automatic restart (2026-10-16, Fred: "yes set up the auto restart"; migration `2026-10-16_0945`).** When a Railway
+   service has not RUN at all for 15 minutes, the watchdog presses Railway's "Run now" for it
+   (`public.fn_request_samsara_job_run`, GraphQL `deploymentInstanceExecutionCreate`), at most once every 30 minutes and
+   6 times in 24 hours per service, and the email says what happened (pressed, Railway accepted or refused it). It does
+   not press when the job runs but fails (another run would not help) or skips a reading. The token is a Railway
+   PROJECT token (UnclogMe Timed Jobs, production only) in the Supabase vault secret `railway_timed_jobs_token`;
+   `public.fn_check_railway_token` checks it once a day (hourly after a failure) and a refused token raises
+   `restart_token_invalid`. Each press is a sync_log row `samsara-job-restart`, each check `samsara-job-restart-check`;
+   Railway's answer is in `net._http_response` under the row's `request_id` (kept about 6 hours).
+   To press it by hand: `select public.fn_request_samsara_job_run('samsara-gps', 'by hand');`.
+   Without the secret nothing is sent and the email says "not set up". The session's Railway login may not create
+   project tokens ("Not Authorized"), so a person creates it in Railway (Settings, Tokens) and puts it in the vault.
+   The GitHub fallback stays manual (dispatching it needs a GitHub token in the database).
 5. **The jobs that write once wait for complete data.** One answer, `public.fn_samsara_data_complete_through('gps' |
    'readings')`: 'infinity' while the feed is live (a good run in the last 20 min), else the start of the newest good
    run (Railway or fallback), NULL if it never ran; for GPS never later than an open hole's start. The guards act only

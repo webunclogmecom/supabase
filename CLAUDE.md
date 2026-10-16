@@ -5478,7 +5478,9 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `log_samsara_feed_health()` every 10 min emails at once when a feed stops (`feed_stale:*`), a GPS span was never
   fetched (`gps_dropped_span:*`, open until a manual run covers it) or a running truck has no GPS (`gps_silent:*`);
   GitHub "Samsara GPS (fallback)" / "Samsara tank readings (fallback)" are manual runners under their own sync_log
-  sources (`github_samsara_*`). 🛑 **"Is this feed stored up to T" has ONE answer:
+  sources (`github_samsara_*`). Since `2026-10-16_0945` the watchdog also presses Railway "Run now" by itself for a
+  service that has not run for 15 min (`fn_request_samsara_job_run`, max every 30 min and 6 a day, project token in
+  vault `railway_timed_jobs_token`, checked daily by `fn_check_railway_token`). 🛑 **"Is this feed stored up to T" has ONE answer:
   `public.fn_samsara_data_complete_through('gps'|'readings')`** ('infinity' while live; GPS capped at an open hole).
   The stop builder, the grease freeze (a day only after a nightly truck run on a later day saw live GPS), the 11 AM time on
   site reminder (`fn_time_on_site_reminder_hold`, 11 AM to 2 PM ET, one `time_on_site_reminder_request` marker a

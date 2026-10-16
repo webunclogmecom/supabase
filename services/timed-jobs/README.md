@@ -20,7 +20,9 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
 - **Health:** each service's source is added to the watched list in `log_jobber_sync_health` at its own
   cut-over, not before (an empty source would read stale on day one). The two Samsara services also have their own
   watchdog every 10 minutes (`public.log_samsara_feed_health`, `2026-10-15_2230`) that emails Fred at once when one
-  stops storing data. Retry, catch-up, fallback and the guards on the jobs that use the data:
+  stops storing data, and since `2026-10-16_0945` presses Railway "Run now" by itself when one has not run for 15
+  minutes (a Railway PROJECT token for this project's production environment, in the Supabase vault secret
+  `railway_timed_jobs_token`; a person creates it, the session's Railway login may not). Retry, catch-up, fallback and the guards on the jobs that use the data:
   `docs/reference/samsara-feeds-resilience.md`.
 - **"Deploy Crashed" email from Railway** = one cron RUN exited non-zero (the deployment itself stays COMPLETED; the
   run is red in Cron Runs, times in CEST). Read that run's `sync_log` row before touching the deploy.
