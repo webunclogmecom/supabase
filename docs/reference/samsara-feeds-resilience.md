@@ -71,6 +71,9 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    To press it by hand: `select public.fn_request_samsara_job_run('samsara-gps', 'by hand');`.
    Without the secret nothing is sent and the email says "not set up". The session's Railway login may not create
    project tokens ("Not Authorized"), so a person creates it in Railway (Settings, Tokens) and puts it in the vault.
+   ✅ Set up and proven 2026-10-16: Fred created the token (`supabase-samsara-watchdog`) and saved it in the vault; the
+   check answered project UnclogMe Timed Jobs / production (HTTP 200), and a press at 10:12:16 ET was accepted
+   (`deploymentInstanceExecutionCreate: true`) and started an extra samsara-readings run at 10:12:17 (success).
    The GitHub fallback stays manual (dispatching it needs a GitHub token in the database).
 5. **The jobs that write once wait for complete data.** One answer, `public.fn_samsara_data_complete_through('gps' |
    'readings')`: 'infinity' while the feed is live (a good run in the last 20 min), else the start of the newest good
