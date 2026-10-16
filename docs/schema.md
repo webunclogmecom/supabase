@@ -122,6 +122,7 @@ webhook_tokens                — system/ops tables
 | access_days | TEXT[] | |
 | location_photo_url | TEXT | |
 | notes | TEXT | |
+| grease_trap_location | TEXT | `Inside` / `Outside`, NULL = not known (CHECK). DB-only, Jobber has no such field. Written by `client.update_property_operational` (Client App Edit property); backfilled from the site survey question `access_entry.equipment_where`. Not the photo role of the same name. `2026-10-16_1530` |
 | created_at, updated_at | TIMESTAMPTZ | |
 
 ### `client_locations` — 404 rows · the service unit (universalized 2026-06-08)
