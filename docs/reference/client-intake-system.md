@@ -75,6 +75,9 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | a far pin is a warning, not a refusal (rule 18) | `blocker=pin_far` removed from `client.submit_property_page` | `2026-09-29_2133_page_pin_far_warning.sql` (Supabase `59984f4`) |
 | Lift station and Water tank page sections (rule 18) | `public.fn_page_content_problem` accepts `lift_station`, `water_tank` (md5 `e1374f5b...`) | `2026-09-30_2027_page_sections_lift_station_water_tank.sql` (Supabase `594a731`) |
 | question list version 3 (rules 16, 17, 22) | `fn_intake_form_current()`: `photo_note_required`, `short`, `info`, section `lift_station_photos`, the water tank capacity photos (39 questions, 7 sections; md5 `08fa7306...`) | `2026-09-30_2234_intake_form_v3.sql` (Supabase `c1b20b2`) |
+| show_if value list `key=A\|B` (rule 13) | `public.fn_intake_applicable` and `visible()` in `form-page.ts`; collector page live copy sha256 `b1047c34...` | `2026-10-16_1730_intake_show_if_value_list.sql` (Supabase `bd5e83a`) |
+| question list version 4: equipment location "Inside and Outside" | `access_entry.equipment_where` options Inside / Outside / Inside and Outside (Fred and Yan, 2026-10-16: the last asks both follow-ups); `where_inside` shows for `Inside\|Inside and Outside`, `where_outside` for `Outside\|Inside and Outside`; the four follow-ups moved right under it (same 39 keys); `properties.grease_trap_location` and `update_property_operational` take the third value | `2026-10-16_1745_equipment_location_third_answer.sql` (Supabase `a15ef85`) |
+| the equipment location reaches the property record | `fn_intake_accept_map` six keys (+ `access_entry.equipment_where` -> `grease_trap_location`); `get_intake_compare` reads the property's value; `accept_intake_answers` refuses anything but the three values (`blocker=location_shape`); no Jobber push | `2026-10-16_1815_intake_accept_equipment_location.sql` |
 
 Office surface in the Client App (Lovable `dbf2133c-539c-48ff-864a-68eb284a569d`): the Clients-list
 `Intake status` column (step 5.1) and the `Intake Form` button plus Schedule intake checklist on the
@@ -256,9 +259,11 @@ does not exist). The fix was conditions in the tree, not a looser rule.
 2. `visible()` in `supabase/functions/intake-submit/form-page.ts` (what the collector is shown).
 3. The Client App's Schedule dialog helpers (which questions it ticks together as follow-ups).
 
-The grammar: `key=value` (shown when the parent's trimmed answer equals `value`), `key=` with an
-EMPTY value (shown when the parent was left blank), `key>N` (shown when the parent's answer is a number
-above N). The operator is the FIRST `=` or `>`, both sides trimmed, and the parent chain is walked
+The grammar: `key=value` (shown when the parent's trimmed answer equals `value`), `key=A|B` (since
+2026-10-16, `1730`: shown when it equals any item, each trimmed; a value with no `|` reads exactly as before),
+`key=` with an EMPTY value (shown when the parent was left blank), `key>N` (shown when the parent's answer is a
+number above N). Only the database and the collector form evaluate values; the Client App reads the parent key only,
+so a value list needed no Client App change. The operator is the FIRST `=` or `>`, both sides trimmed, and the parent chain is walked
 (a hidden parent hides its children; depth capped at 10, a cycle ends as shown). **Change it reader
 first, writer second**: the dialog shipped first (2026-09-24 02:35 ET), then SQL, then the form, so no
 consumer ever met a condition it could not read.

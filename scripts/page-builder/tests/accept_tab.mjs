@@ -22,8 +22,11 @@ if (!row || !row.c715 || !('can_accept' in row.c715)) { console.log('FAIL the mi
 const clone = (x) => JSON.parse(JSON.stringify(x))
 const KEYS = ['access_entry.lock_box_code', 'access_hours.schedule', 'grease_trap.capacity_gallons', 'grease_trap.manhole_count', 'grease_trap.sample_ports']
 const NAMES = ['Lock box code', 'When we can come', 'Grease trap gallons', 'Manholes', 'Sample ports']
+// 2026-10-16: the sixth row, the equipment location (Supabase 2026-10-16_1815). The A to F checks keep it "same" so their
+// counts are the five rows' counts; G checks it on its own.
+const K6 = 'access_entry.equipment_where', ALL = [...KEYS, K6]
 const F = Object.fromEntries(row.c715.fields.map((f) => [f.key, f]))
-if (!KEYS.every((k) => F[k] && F[k].theirs != null) || String(row.newest) === '715') { console.log('FAIL fixture: form 715 must answer all five, and a newer submitted form must exist on 1164'); process.exit(1) }
+if (!ALL.every((k) => F[k] && F[k].theirs != null) || String(row.newest) === '715') { console.log('FAIL fixture: form 715 must answer all five, and a newer submitted form must exist on 1164'); process.exit(1) }
 const LOCK = String(F[KEYS[0]].theirs), HOURS = F[KEYS[1]].theirs, GAL = F[KEYS[2]].theirs, NEW = Number(row.newest)
 let pass = 0, fail = 0
 const mask = (v) => JSON.stringify(v === undefined ? null : v).split(LOCK).join('<lock>')
@@ -36,7 +39,7 @@ const t12 = (s) => { const [h, m] = s.split(':').map(Number); return `${h % 12 |
 const dayLine = (s, i) => { const d = s && s[DAYS[i]]; return !d ? `${DN[i]} No hours` : `${DN[i]} ${d.open === d.close ? 'Any time' : t12(d.open) + ' to ' + t12(d.close)}` }
 const summary = (s) => { const out = []; for (let i = 0; i < 7;) { const d = s[DAYS[i]]; if (!d) { i++; continue } let j = i; while (j < 6 && s[DAYS[j + 1]] && s[DAYS[j + 1]].open === d.open && s[DAYS[j + 1]].close === d.close) j++; out.push(`${i === j ? DN[i] : DN[i] + ' to ' + DN[j]} ${d.open === d.close ? 'any time' : t12(d.open) + ' to ' + t12(d.close)}`); i = j + 1 } return out.join(', ') }
 // replies
-const blank = () => { const c = clone(row.c715); c.can_accept = true; c.accept_blocker = null; for (const f of c.fields) if (KEYS.includes(f.key)) { f.ours = null; f.state = 'blank' } return c }
+const blank = () => { const c = clone(row.c715); c.can_accept = true; c.accept_blocker = null; for (const f of c.fields) { if (KEYS.includes(f.key)) { f.ours = null; f.state = 'blank' } if (f.key === K6) { f.ours = f.theirs; f.state = 'same' } } return c }
 const saved = () => { const c = blank(); for (const f of c.fields) if (KEYS.includes(f.key)) { f.ours = f.theirs; f.state = 'same' } return c }
 const I715 = clone(row.i715); I715.accepted = []
 const INEW = clone(row.inew); INEW.accepted = []
@@ -90,7 +93,7 @@ const count = (st, n) => st.calls.filter((c) => c === n).length
 const T = (p) => p.evaluate(() => document.body.textContent.replace(/\s+/g, ' '))
 const tabs = (p) => p.evaluate(() => [...document.querySelectorAll('[role="tab"]')].map((t) => ({ name: t.textContent.trim(), sel: t.getAttribute('aria-selected') })))
 const clickTab = async (p, name) => { await p.getByRole('tab', { name }).click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(400) }
-const openRecord = async (p) => { await clickTab(p, 'Property record'); await p.waitForFunction(() => document.querySelectorAll('[data-accept-row]').length === 5, null, { timeout: 15000 }).catch(() => {}); await p.waitForTimeout(400) }
+const openRecord = async (p) => { await clickTab(p, 'Property record'); await p.waitForFunction(() => document.querySelectorAll('[data-accept-row]').length === 6, null, { timeout: 15000 }).catch(() => {}); await p.waitForTimeout(400) }
 const rows = (p) => p.evaluate(() => [...document.querySelectorAll('[data-accept-row]')].map((el) => { const cb = el.querySelector('[role="checkbox"]'); const rc = cb && cb.getBoundingClientRect(); const tx = (s) => ((el.querySelector(s) || {}).textContent || '').replace(/\s+/g, ' ').trim(); return { key: el.getAttribute('data-accept-row'), all: el.textContent.replace(/\s+/g, ' ').trim(), prop: tx('[data-side="property"]'), form: tx('[data-side="form"]'), cb: cb ? cb.getAttribute('aria-checked') : null, h: rc ? Math.round(rc.height) : 0, w: rc ? Math.round(rc.width) : 0 } }))
 const tick = (p, k) => p.locator(`[data-accept-row="${k}"] [role="checkbox"]`).click({ timeout: 5000 }).catch(() => {})
 const saveBtn = (p) => p.getByRole('button', { name: /^Save \d+ changes? to the property$/ })
@@ -114,14 +117,14 @@ for (const w of [390, 1280]) {
   const tr = await T(p)
   ok(tr.includes('Add to the property record') && !tr.includes('Lift station'), `${w}: the card replaces the section cards`)
   const R = await rows(p)
-  ok(R.length === 5 && R.map((x) => x.key).join() === KEYS.join() && NAMES.every((nm, i) => R[i].all.startsWith(nm)), `${w}: five rows in the spec's order`, R.map((x) => x.key))
+  ok(R.length === 6 && R.map((x) => x.key).join() === ALL.join() && [...NAMES, 'Grease trap location'].every((nm, i) => R[i].all.startsWith(nm)), `${w}: six rows in the spec's order`, R.map((x) => x.key))
   ok(R.filter((x) => x.all.includes('Also goes to Jobber')).map((x) => x.key).join() === [KEYS[0], KEYS[2]].join(), `${w}: "Also goes to Jobber" only under the lock box code and the gallons`)
-  ok(R.length === 5 && R.every((x) => x.prop.includes('Not on file') && x.cb === 'true'), `${w}: blank rows read Not on file and come ticked`, R.map((x) => [x.key, x.cb]))
-  ok(R.length === 5 && R[0].form.includes(LOCK) && R[2].form.includes(String(GAL)) && DAYS.every((d, i) => R[1].form.includes(dayLine(HOURS, i))), `${w}: the form side shows the form's values and the week Mon to Sun`, R[1] && R[1].form)
-  ok(R.length === 5 && (w < 768 ? R.every((x) => x.h >= 44 && x.w >= 44) : R.every((x) => x.h >= 32 && x.h <= 40)), `${w}: tick size (44px on a phone, the laptop size from 768px)`, R.map((x) => [x.h, x.w]))
+  ok(R.length === 6 && R.slice(0, 5).every((x) => x.prop.includes('Not on file') && x.cb === 'true') && R[5].cb === null, `${w}: blank rows read Not on file and come ticked`, R.map((x) => [x.key, x.cb]))
+  ok(R.length === 6 && R[0].form.includes(LOCK) && R[2].form.includes(String(GAL)) && DAYS.every((d, i) => R[1].form.includes(dayLine(HOURS, i))), `${w}: the form side shows the form's values and the week Mon to Sun`, R[1] && R[1].form)
+  ok(R.length === 6 && (w < 768 ? R.slice(0, 5).every((x) => x.h >= 44 && x.w >= 44) : R.slice(0, 5).every((x) => x.h >= 32 && x.h <= 40)), `${w}: tick size (44px on a phone, the laptop size from 768px)`, R.map((x) => [x.h, x.w]))
   const hb = await p.evaluate(() => { const r = document.querySelector('[data-accept-row="access_hours.schedule"]'); if (!r) return null; const f = r.querySelector('[data-side="form"]'); const cb = r.querySelector('[role="checkbox"]'); const fr = f.getBoundingClientRect(); const right = Math.max(fr.right, ...[...f.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right)); return { h: Math.round(fr.height), right: Math.round(right), formRight: Math.round(fr.right), cbLeft: cb ? Math.round(cb.getBoundingClientRect().left) : null } })
   ok(hb && hb.h >= 100 && hb.right <= hb.formRight + 1 && (w < 768 || hb.cbLeft === null || hb.right <= hb.cbLeft), `${w}: the week stacks Mon to Sun inside the form column`, hb)
-  if (w < 768) { const tp = await p.evaluate(() => [...document.querySelectorAll('[data-accept-row]')].map((r) => { const c = r.querySelector('[role="checkbox"]'); if (!c) return null; const a = r.getBoundingClientRect(), b = c.getBoundingClientRect(); return [Math.round(b.top - a.top), Math.round(a.right - b.right)] })); ok(tp.length === 5 && tp.every((x) => x && x[0] <= 20 && x[1] <= 20), `${w}: each tick sits at the top right of its row`, tp) }
+  if (w < 768) { const tp = await p.evaluate(() => [...document.querySelectorAll('[data-accept-row]')].map((r) => { const c = r.querySelector('[role="checkbox"]'); if (!c) return null; const a = r.getBoundingClientRect(), b = c.getBoundingClientRect(); return [Math.round(b.top - a.top), Math.round(a.right - b.right)] })); ok(tp.length === 6 && tp.slice(0, 5).every((x) => x && x[0] <= 20 && x[1] <= 20), `${w}: each tick sits at the top right of its row`, tp) }
   ok(!(await sideways(p)), `${w}: no sideways scroll`)
   ok(await label(saveBtn(p)) === 'Save 5 changes to the property', `${w}: Save counts the five pre-ticked rows`)
   await tick(p, KEYS[3]); await tick(p, KEYS[4])
@@ -152,7 +155,7 @@ for (const w of [390, 1280]) {
   ok(!/Jobber (has|now has|got)/.test(ts), `${w}: nothing claims Jobber has the value`)
   ok(count(st, 'get_intake_compare') > c0 && count(st, 'get_intake') > i0, `${w}: the compare and the form are read again`)
   const R2 = await rows(p)
-  ok(R2.length === 5 && R2.every((x) => x.all.includes('Already the same') && x.cb === null), `${w}: after the save all five read Already the same, no ticks`, R2.map((x) => [x.key, x.cb]))
+  ok(R2.length === 6 && R2.every((x) => x.all.includes('Already the same') && x.cb === null), `${w}: after the save all six read Already the same, no ticks`, R2.map((x) => [x.key, x.cb]))
   ok(ts.includes('Accepted into the property'), `${w}: the Accepted into the property block is on this tab`)
   ok(!(await sideways(p)), `${w}: no sideways scroll after the save`)
   await p.screenshot({ path: `${out}/A_saved_${w}.png`, fullPage: true })
@@ -230,7 +233,7 @@ for (const w of [1280, 390]) {
   await p.getByRole('button', { name: /^Reload$/ }).click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(1500)
   ok(count(st, 'get_intake_compare') > c0 && !(await alertText(p)).includes(STALE.message), 'stale: Reload reads the compare again and clears the error')
   const R = await rows(p)
-  ok(R.length === 5 && R.every((x) => x.cb === 'true'), 'stale: Reload ticks the blank rows again', R.map((x) => x.cb))
+  ok(R.length === 6 && R.slice(0, 5).every((x) => x.cb === 'true'), 'stale: Reload ticks the blank rows again', R.map((x) => x.cb))
   await ctx.close()
 }
 
@@ -243,15 +246,32 @@ for (const w of [1280, 390]) {
   await ctx.close()
 }
 
+// G. The sixth row on its own (2026-10-16): blank comes ticked, its confirm line, no Jobber sentence, the save body
+{
+  const c = blank(); for (const x of c.fields) { if (KEYS.includes(x.key)) { x.ours = x.theirs; x.state = 'same' } if (x.key === K6) { x.ours = null; x.state = 'blank' } }
+  const { ctx, p, st } = await open(1280, 715, DATA(c))
+  await openRecord(p)
+  const by = Object.fromEntries((await rows(p)).map((x) => [x.key, x]))
+  ok(by[K6] && by[K6].all.startsWith('Grease trap location') && !by[K6].all.includes('Also goes to Jobber') && by[K6].prop.includes('Not on file') && by[K6].form.includes(String(F[K6].theirs)) && by[K6].cb === 'true', 'location row: blank comes ticked, no Jobber line', by[K6])
+  ok(await label(saveBtn(p)) === 'Save 1 change to the property', 'location row: Save 1 change')
+  await openConfirm(p)
+  const tc = await T(p)
+  ok(tc.includes(`Grease trap location: Not on file → ${F[K6].theirs}`) && !/also goes? to Jobber/.test(tc), 'location row: the confirm line and no Jobber sentence', (tc.match(/Grease trap location:[^\n]{0,60}/) || [])[0])
+  await confirmSave(p)
+  ok(st.bodies.length === 1 && same(st.bodies[0], { p_intake_id: 715, p_keys: [K6], p_expected: { [K6]: null } }), 'location row: the save body', st.bodies)
+  await p.screenshot({ path: `${out}/G_location_1280.png`, fullPage: true })
+  await ctx.close()
+}
+
 // F. A staff login that is not a page approver: read-only
 {
   const c = blank(); c.can_accept = false; c.accept_blocker = RO
   const { ctx, p, st } = await open(390, 715, DATA(c))
   await openRecord(p)
   const R = await rows(p)
-  ok(R.length === 5 && R.every((x) => x.cb === null), 'read-only (390): five rows, no ticks', R.map((x) => x.cb))
+  ok(R.length === 6 && R.every((x) => x.cb === null), 'read-only (390): six rows, no ticks', R.map((x) => x.cb))
   ok((await saveBtn(p).count()) === 0 && (await T(p)).includes(RO), 'read-only (390): no Save, the approvers sentence instead', RO)
-  ok(R.length === 5 && R.every((x) => x.prop.includes('Not on file')), 'read-only (390): the values still show')
+  ok(R.length === 6 && R.slice(0, 5).every((x) => x.prop.includes('Not on file')) && R[5].prop.includes(String(F[K6].theirs)), 'read-only (390): the values still show')
   ok(count(st, 'accept_intake_answers') === 0, 'read-only (390): nothing sent')
   const orange = await p.evaluate(() => [...document.querySelectorAll('[data-accept-row]')].filter((el) => getComputedStyle(el).borderTopColor === 'rgb(241, 71, 20)').length)
   ok(orange === 0, 'read-only (390): no row has the ticked orange border', orange)
@@ -296,7 +316,7 @@ for (const w of [1280, 390]) {
   await p.locator('select[data-accept-picker]').selectOption(String(NEW)).catch(() => {}); await p.waitForTimeout(2500)
   const u = new URL(p.url())
   ok(u.pathname === `/forms/${NEW}` && /record/.test(decodeURIComponent(u.search)), 'picker: picking the newer form opens it on its Property record tab', u.pathname + u.search)
-  ok((await tabs(p)).some((t) => t.name === 'Property record' && t.sel === 'true') && (await rows(p)).length === 5 && !(await T(p)).includes('A newer form exists'), "picker: the newer form's rows show, with no newer-form line")
+  ok((await tabs(p)).some((t) => t.name === 'Property record' && t.sel === 'true') && (await rows(p)).length === 6 && !(await T(p)).includes('A newer form exists'), "picker: the newer form's rows show, with no newer-form line")
   await ctx.close()
 }
 
