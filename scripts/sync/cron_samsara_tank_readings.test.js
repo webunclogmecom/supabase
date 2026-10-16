@@ -101,6 +101,9 @@ function stub(sc = {}) {
       if (u.pathname === '/readings/history') {
         const rid = u.searchParams.get('readingId');
         if (sc.histFail === rid) return json(500, { message: 'x' });
+        const seen = calls.filter(c => c.rid === rid).length;   // this call included
+        if (sc.hist504Once === rid && seen === 1) return json(504, { message: 'Gateway Timeout' });
+        if (sc.netFailOnce === rid && seen === 1) throw new TypeError('fetch failed');
         const t = new Date(Date.parse(u.searchParams.get('endTime')) - 60e3).toISOString();
         const v = { remoteSensingDistance: 1.5, fillPercent: 40, engineRpm: 800, ecuPowerTakeoff: 'on',
           addressEntry: { addressEntries: [{ id: 322485232 }] }, addressExit: { addressEntries: [{ id: 4000000737885 }] } }[rid];
@@ -128,12 +131,12 @@ function stub(sc = {}) {
 }
 async function run(args, sc) {
   Object.assign(process.env, { SUPABASE_URL: 'http://stub.local', SUPABASE_SERVICE_ROLE_KEY: 'k', SAMSARA_API_TOKEN: 't' });
-  const st = stub(sc), out = [], err = [];
+  const st = stub(sc), out = [], err = [], sleeps = [];
   let code, thrown = null;
-  try { code = await main(args, { fetch: st.f, now: NOW, log: l => out.push(l), error: l => err.push(l) }); } catch (e) { thrown = e; }
+  try { code = await main(args, { fetch: st.f, sleep: async ms => { sleeps.push(ms); }, now: NOW, log: l => out.push(l), error: l => err.push(l) }); } catch (e) { thrown = e; }
   const line = pre => out.find(l => l.startsWith(pre + ' '));
   const summary = (line('RUN_SUMMARY') || line('DRY_RUN_SUMMARY') || '').replace(/^\w+ /, '');
-  return { code, thrown, out, err, calls: st.calls, s: summary ? JSON.parse(summary) : null,
+  return { code, thrown, out, err, sleeps, calls: st.calls, s: summary ? JSON.parse(summary) : null,
            posts: st.calls.filter(c => c.method === 'POST').length,
            hist: st.calls.filter(c => c.path === '/readings/history'), has: pre => !!line(pre) };
 }
@@ -162,7 +165,11 @@ async function run(args, sc) {
   ok(!r.hist.some(c => c.rid === 'remoteSensingDistance'), 'a skipped stream is not pulled');
 
   r = await run([], { last, recentDeep: true, histFail: 'engineRpm' });
-  eq(r.code, 1, 'failed history call: exit 1');
+  eq([r.code, r.hist.filter(c => c.rid === 'engineRpm').length], [1, 3], 'a 5xx on every attempt: 3 attempts, then exit 1');
+  r = await run([], { last, recentDeep: true, hist504Once: 'remoteSensingDistance' });
+  eq([r.code, r.s.errors, r.hist.length, r.sleeps.includes(5000)], [0, 0, 7, true], 'one 504 then 200: retried after 5 s, exit 0, no error');
+  r = await run([], { last, recentDeep: true, netFailOnce: 'fillPercent' });
+  eq([r.code, r.s.errors, r.hist.length], [0, 0, 7], 'one network error then 200: retried, exit 0');
   r = await run([], { last, recentDeep: true, insertFail: true });
   eq(r.code, 1, 'failed insert: exit 1');
 

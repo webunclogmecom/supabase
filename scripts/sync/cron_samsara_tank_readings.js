@@ -132,15 +132,24 @@ function parseArgs(argv) {
 }
 
 // ---------- I/O ----------
-// `io.fetch` is the global fetch unless main() is handed a stub (the end-to-end test does that).
-const io = { fetch: (...a) => fetch(...a) };
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+// `io.fetch` / `io.sleep` are the real ones unless main() is handed stubs (the end-to-end test does that).
+const io = { fetch: (...a) => fetch(...a), sleep: ms => new Promise(r => setTimeout(r, ms)) };
+const sleep = ms => io.sleep(ms);
 
+// Retries 429, any 5xx and a network error or timeout, 3 attempts in all. Samsara's gateway answers 504 now and
+// then: on 2026-10-13/14 one 504 on /readings/history failed three runs, and Railway mailed "Deploy Crashed".
 async function samsara(path) {
   for (let attempt = 1; ; attempt++) {
-    const r = await io.fetch('https://api.samsara.com' + path, { signal: AbortSignal.timeout(60000),
-      headers: { Authorization: 'Bearer ' + process.env.SAMSARA_API_TOKEN, Accept: 'application/json' } });
+    let r;
+    try {
+      r = await io.fetch('https://api.samsara.com' + path, { signal: AbortSignal.timeout(60000),
+        headers: { Authorization: 'Bearer ' + process.env.SAMSARA_API_TOKEN, Accept: 'application/json' } });
+    } catch (e) {
+      if (attempt < 3) { await sleep(5000 * attempt); continue; }
+      throw e;
+    }
     if (r.status === 429 && attempt < 3) { await sleep((Number(r.headers.get('retry-after')) || 2) * 1000); continue; }
+    if (r.status >= 500 && attempt < 3) { await sleep(5000 * attempt); continue; }
     const body = await r.text();
     if (!r.ok) throw new Error(`Samsara HTTP ${r.status} on ${path.split('?')[0]}: ${body.slice(0, 200)}`);
     return JSON.parse(body);
@@ -197,6 +206,7 @@ async function siteAddressMap() {
 async function main(argv = process.argv.slice(2), deps = {}) {
   const opt = parseArgs(argv);
   if (deps.fetch) io.fetch = deps.fetch;
+  if (deps.sleep) io.sleep = deps.sleep;
   const log = deps.log || console.log, logErr = deps.error || console.error;
   for (const k of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SAMSARA_API_TOKEN'])
     if (!process.env[k]) throw new Error('missing ' + k);
