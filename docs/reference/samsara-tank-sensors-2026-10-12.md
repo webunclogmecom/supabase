@@ -373,7 +373,7 @@ Wed 10-08 into Thu 10-09
 17:40-18:10  30m dump site                  sludge 3,733 -> 19 (-3,714)
 ```
 
-The two yard events (a drop while parked, and a +1,538 gal rise while parked) are unexplained (open question 5).
+The two yard events (a drop while parked, and a +1,538 gal rise while parked) were truck-to-truck transfers (open question 5, answered 2026-10-16).
 
 ### 5.4 What replaying a naive algorithm showed (review, 2026-10-12)
 
@@ -457,6 +457,13 @@ The two yard events (a drop while parked, and a +1,538 gal rise while parked) ar
    pumped out (the collected-against-dumped check)?
 5. **The two yard events** (10-08 09:02 to 09:47: sludge 914 to about 33 gal and water 74 to 6% while parked; 10-09
    11:10 to 13:42: sludge +1,538 gal while parked): a washout, a truck-to-truck transfer, or a sensor artefact?
+   **Answered 2026-10-16 (field answer relayed by the owner): truck-to-truck transfers.** When the other vacuum truck is
+   full and Moises is going to the dump, its load is moved into Moises; when Moises needs space for the night route, its
+   load is moved into the other truck. Measured: on all 11 yard level changes from 2026-08-26 to 10-13 the other truck
+   was at the yard and Moises's engine was running, and each gain was followed by a dump the same day. So a large
+   change at the yard with the engine running is a transfer; a jump with the engine OFF is a sensor error.
+   **Also answered: water falling at a dump** (4 of 9 dumps since 10-02, 130 to 860 gal): at the dump the water is moved
+   into the sludge compartment, used to clean the filter, and dumped with the sludge. It is not water used at a client.
 6. **Low-water alert in Samsara?** None is set; it reads "normal" at 0.04%.
 7. **Sludge sensor mounting:** 45 false-empty episodes near full; should Samsara support check the mounting and the
    offset (0 in today)? Samsara's guide says not to mount within 12 in of a sidewall or above internal bracing.
