@@ -178,7 +178,10 @@ function haversineM(lat1, lng1, lat2, lng2) {
       FROM properties
       WHERE latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY client_id, is_primary DESC NULLS LAST, id ASC
-    )
+    ),
+    -- 2026-10-15_2230: 'infinity' while the GPS feed is live; otherwise a visit whose widest GPS window (+30 min) is not
+    -- fully stored waits for a later run (a gap in one truck's GPS could hand the visit to a truck that drove by).
+    gps AS (SELECT COALESCE(public.fn_samsara_data_complete_through('gps'), '-infinity'::timestamptz) AS through)
     SELECT v.id AS visit_id,
       v.start_at::text AS start_at,
       v.completed_at::text AS completed_at,
@@ -194,8 +197,10 @@ function haversineM(lat1, lng1, lat2, lng2) {
                                       AND p_direct.latitude IS NOT NULL
     LEFT JOIN primary_prop p_fallback ON p_fallback.client_id = v.client_id
     LEFT JOIN clients c ON c.id = v.client_id
+    CROSS JOIN gps
     WHERE v.vehicle_id IS NULL
       AND v.start_at IS NOT NULL
+      AND COALESCE(v.completed_at, v.start_at + interval '1 hour') + interval '30 minutes' <= gps.through
       AND COALESCE(p_direct.latitude,  p_fallback.latitude)  IS NOT NULL
       AND COALESCE(p_direct.longitude, p_fallback.longitude) IS NOT NULL
       ${sinceFilter}

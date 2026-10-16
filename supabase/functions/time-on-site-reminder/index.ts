@@ -7,8 +7,9 @@
 // docs/reference/slack-notifications.md. Migration: docs/migrations/2026-10-13_0130_time_on_site_reminder.sql.
 //
 // AUTH: verify_jwt=true (pinned in config.toml) PLUS an in-handler service_role gate. Invoked by
-// public.fn_request_time_on_site_reminder() from pg_cron `time-on-site-reminder` (15:00 and 16:00 UTC; the wrapper
-// lets through only the run that is 11 AM in New York, and re-runs the time-on-site fills first).
+// public.fn_request_time_on_site_reminder() from pg_cron `time-on-site-reminder` (hourly 15:00-19:00 UTC since
+// 2026-10-15_2230; public.fn_time_on_site_reminder_hold lets ONE run a day through, the first from 11 AM to 2 PM
+// New York time when both Samsara feeds are stored up to 10 AM, and the wrapper re-runs the time-on-site fills first).
 // Reads public.fn_time_on_site_gaps(date): the visits (completed, live, customers, duration_minutes NULL) and the GPS
 // facts behind each. Samsara Place geometry is not in our database, so it is read here from Samsara (/addresses);
 // if that read fails, the place-based reasons are left out, never guessed (guide rule 5).

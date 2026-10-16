@@ -5469,6 +5469,22 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   what is left is people work: the review lists and Yannick's Place worklist in `samsara-checks/`.
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
+- 🛑 **BOTH SAMSARA FEEDS (GPS + readings) HAVE A WATCHDOG, FALLBACK RUNNERS AND GUARDS (`2026-10-15_2230`; Fred: "a
+  fallback or restart system for this cases, because we also use this data").** Read
+  [docs/reference/samsara-feeds-resilience.md](docs/reference/samsara-feeds-resilience.md) before touching either
+  collector or a job that reads their data. In short: both call Samsara through `scripts/lib/samsara_client.js` (retry
+  429/5xx/network, 60 s timeout); every 5-minute run resumes from the last good one (GPS: newest point minus 30 min,
+  48 h deep pass daily, 7 days back, stops at the first failed batch; readings: last resume point minus 30 min);
+  `log_samsara_feed_health()` every 10 min emails at once when a feed stops (`feed_stale:*`), a GPS span was never
+  fetched (`gps_dropped_span:*`, open until a manual run covers it) or a running truck has no GPS (`gps_silent:*`);
+  GitHub "Samsara GPS (fallback)" / "Samsara tank readings (fallback)" are manual runners under their own sync_log
+  sources (`github_samsara_*`). 🛑 **"Is this feed stored up to T" has ONE answer:
+  `public.fn_samsara_data_complete_through('gps'|'readings')`** ('infinity' while live; GPS capped at an open hole).
+  The stop builder, the grease freeze (a day only after a nightly truck run on a later day saw live GPS), the 11 AM time on
+  site reminder (`fn_time_on_site_reminder_hold`, 11 AM to 2 PM ET, one `time_on_site_reminder_request` marker a
+  day), `fn_fill_blank_time_on_site`, `fn_infer_visit_vehicle` and `derive_visit_vehicle_id.js` call it, and act only
+  while a feed is stale or a hole is open; a new job that writes once from Samsara data must call it too. A collector change redeploys BOTH Railway services (shared watch paths): run
+  `scripts/lib/samsara_client.test.js` and both collectors' tests first.
 - 🛑 **ONE APP NOW SHOWS A NUMBER DERIVED FROM THESE: the Visit Calendar's "Grease pumped" tile (2026-10-15,
   `2026-10-15_1150_calendar_grease_estimates`; Fred said yes to D6 for the Calendar only).** It reads only the SECDEF
   RPC `ops.calendar_grease_estimates(p_from, p_to)` (authenticated, max 45 days), never the tank views. Live days come

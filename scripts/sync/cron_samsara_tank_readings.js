@@ -31,6 +31,7 @@
 // and run_logged.js refuses --dry-run outright (a sync_log row of any kind reads as a fresh run).
 // Check: scripts/sync/cron_samsara_tank_readings.test.js (pure parts AND main() end to end on a stub fetch).
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'), quiet: true });
+const { samsaraClient } = require('../lib/samsara_client');
 
 const BACKFILL_START = '2026-08-20T14:00:00Z';
 const SOURCE = 'railway_samsara_readings';
@@ -134,39 +135,9 @@ function parseArgs(argv) {
 // ---------- I/O ----------
 // `io.fetch` / `io.sleep` are the real ones unless main() is handed stubs (the end-to-end test does that).
 const io = { fetch: (...a) => fetch(...a), sleep: ms => new Promise(r => setTimeout(r, ms)) };
-const sleep = ms => io.sleep(ms);
-
-// Retries 429, any 5xx and a network error or timeout, 3 attempts in all. Samsara's gateway answers 504 now and
-// then: on 2026-10-13/14 one 504 on /readings/history failed three runs, and Railway mailed "Deploy Crashed".
-async function samsara(path) {
-  for (let attempt = 1; ; attempt++) {
-    let r;
-    try {
-      r = await io.fetch('https://api.samsara.com' + path, { signal: AbortSignal.timeout(60000),
-        headers: { Authorization: 'Bearer ' + process.env.SAMSARA_API_TOKEN, Accept: 'application/json' } });
-    } catch (e) {
-      if (attempt < 3) { await sleep(5000 * attempt); continue; }
-      throw e;
-    }
-    if (r.status === 429 && attempt < 3) { await sleep((Number(r.headers.get('retry-after')) || 2) * 1000); continue; }
-    if (r.status >= 500 && attempt < 3) { await sleep(5000 * attempt); continue; }
-    const body = await r.text();
-    if (!r.ok) throw new Error(`Samsara HTTP ${r.status} on ${path.split('?')[0]}: ${body.slice(0, 200)}`);
-    return JSON.parse(body);
-  }
-}
-async function samsaraPaged(path, pauseMs) {
-  const out = [];
-  let after = '', pages = 0;
-  do {
-    if (pauseMs) await sleep(pauseMs);
-    const j = await samsara(path + (after ? '&after=' + encodeURIComponent(after) : ''));
-    out.push(...(j.data || []));
-    after = j.pagination?.hasNextPage ? j.pagination.endCursor : '';
-    if (++pages > 1000) throw new Error('page cap hit on ' + path.split('?')[0]);
-  } while (after);
-  return out;
-}
+// Retries 429, any 5xx and a network error or timeout (scripts/lib/samsara_client.js).
+const client = samsaraClient({ fetch: (...a) => io.fetch(...a), sleep: ms => io.sleep(ms), token: () => process.env.SAMSARA_API_TOKEN });
+const samsaraPaged = (path, pauseMs) => client.paged(path, { pauseMs });
 
 async function rest(path, { method = 'GET', body, prefer, profile } = {}) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

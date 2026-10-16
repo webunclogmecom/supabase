@@ -64,7 +64,8 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | pg_cron | start-flags-sweep | `0 8 * * *` | 04:00 EDT / 03:00 EST | `ops.fn_judge_starts` | `cron.job_run_details` jobid 62 |
 | pg_cron | start-push-retry | `1-59/5 * * * *` | interval, same in ET | `ops.retry_marker_pushes` | `cron.job_run_details` jobid 111 |
 | pg_cron | time-on-site-nightly | `20 7 * * *` | 03:20 EDT / 02:20 EST | `public.fn_fill_time_on_site_from_stops` | `cron.job_run_details` jobid 26 |
-| pg_cron | time-on-site-reminder | `0 15,16 * * *` | 11:00, 12:00 EDT / 10:00, 11:00 EST | `public.fn_request_time_on_site_reminder`, edge fn `time-on-site-reminder` | `cron.job_run_details` jobid 146 |
+| pg_cron | time-on-site-reminder | `0 15-19 * * *` | hourly 11:00-15:00 EDT / 10:00-14:00 EST; `public.fn_time_on_site_reminder_hold` posts once, 11 AM-2 PM ET, when the Samsara feeds reach 10 AM (since `2026-10-15_2230`) | `public.fn_request_time_on_site_reminder`, edge fn `time-on-site-reminder` | `cron.job_run_details` jobid 146; `sync_log` source `time_on_site_reminder_request` (one per day) |
+| pg_cron | samsara-feed-health | `3-59/10 * * * *` | every 10 minutes, same in ET | `public.log_samsara_feed_health` (emails at once on a new item; `docs/reference/samsara-feeds-resilience.md`) | `public.sync_log` source `samsara-feed-health` |
 | pg_cron | vehicle-gps-reconcile-nightly | `5 7 * * *` | 03:05 EDT / 02:05 EST | `public.fn_infer_visit_vehicle` | `cron.job_run_details` jobid 27 |
 | pg_cron | vehicle-stop-facts | `35 * * * *` | hourly at :35, same in ET | `public.fn_refresh_stop_facts` | `cron.job_run_details` jobid 141 |
 | Railway | samsara-gps | `*/5 * * * *` | interval, same in ET | `scripts/sync/cron_samsara_locations_history.js` | `public.sync_log` source `railway_samsara_gps` |

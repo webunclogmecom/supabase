@@ -1,29 +1,23 @@
-name: Samsara locations history (high-frequency GPS)
+name: Samsara GPS (fallback)
 
-# Pulls GPS history from Samsara at ~30-second resolution into
-# vehicle_telemetry_readings. Complements samsara-poll.yml (which polls
-# /stats every 10 min for engine/fuel/odometer snapshots). This one is
-# GPS-only and gives us the per-second precision needed for accurate
-# visit→truck attribution.
-#
-# Schedule: every 15 minutes, pulls last 90 minutes (50% overlap; the
-# DB's ON CONFLICT (vehicle_id, recorded_at) makes overlaps cheap).
-#
-# Manual one-shot backfills: use workflow_dispatch with start_time +
-# end_time inputs (ISO 8601 UTC).
-
-# RETIRED 2026-10-08 (timed-jobs move step 3): Railway service samsara-gps (UnclogMe Timed Jobs) runs this
-# script every 5 minutes. The schedule is gone; the manual button stays for backfills and as the rollback
-# until 2026-10-22.
+# The GPS job's FALLBACK RUNNER (2026-10-16, Fred: "a fallback or restart system for this cases, because we also use
+# this data"). The real runner is the Railway service samsara-gps (UnclogMe Timed Jobs, every 5 minutes, sync_log
+# source railway_samsara_gps). Press "Run workflow" here when the samsara-feed-health alert says that service is not
+# storing GPS and Railway cannot be fixed quickly: the job catches up from the newest stored GPS point (up to 7 days
+# back), and duplicates are skipped, so running it while Railway also runs is safe.
+# It logs under sync_log source github_samsara_gps, so it never hides a dead Railway service from the watchdog, but
+# the jobs that wait for complete GPS (stop builder, time on site, the grease freeze) accept its runs.
+# Manual backfill: fill start_time (and end_time) to re-pull an exact window (a dropped span, a hole).
+# No schedule on purpose: GitHub schedules here run every 4 to 8 hours whatever the cron says (measured since 2026-08-27).
 on:
   workflow_dispatch:
     inputs:
       start_time:
-        description: 'Start time (ISO 8601, UTC). E.g. 2026-05-01T00:00:00Z. Leave blank for last 90 min.'
+        description: 'Backfill only: start (ISO 8601 UTC, e.g. 2026-10-01T00:00:00Z), at or before the start of the gap. Leave both blank to catch up from the last stored point.'
         required: false
         type: string
       end_time:
-        description: 'End time (ISO 8601, UTC). Leave blank for now.'
+        description: 'Backfill only, needs start_time: end (ISO 8601 UTC). Leave blank for now.'
         required: false
         type: string
 
@@ -40,11 +34,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - run: npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
-      - name: Run sync
+      - name: Run the GPS job
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SAMSARA_API_TOKEN: ${{ secrets.SAMSARA_API_TOKEN }}
           START_TIME: ${{ inputs.start_time }}
           END_TIME: ${{ inputs.end_time }}
-        run: node scripts/sync/cron_samsara_locations_history.js
+          RUN_TIMEOUT_MIN: '25'
+        run: node scripts/sync/run_logged.js github_samsara_gps scripts/sync/cron_samsara_locations_history.js

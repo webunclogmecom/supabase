@@ -50,7 +50,7 @@ child.on('close', async (code, signal) => {
     body: JSON.stringify({
       sync_source: source, started_at: started, finished_at: finished,
       duration_seconds: (finished - started) / 1000, status: ok ? 'success' : 'error',
-      details: { host: process.env.RAILWAY_SERVICE_NAME ? 'railway' : 'local', cmd: cmd.join(' '),
+      details: { host: process.env.RAILWAY_SERVICE_NAME ? 'railway' : process.env.GITHUB_ACTIONS ? 'github' : 'local', cmd: cmd.join(' '),
                  exit_code: code, signal, timed_out: timedOut, limit_min: limitMin, ...(summary && { summary }) },
       error_details: ok ? null : { stderr_tail: tail },
       ...(Number.isInteger(summary?.rows_inserted) && { rows_inserted: summary.rows_inserted }),
