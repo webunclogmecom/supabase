@@ -4549,7 +4549,9 @@ Fred's picks 1A 2A 3A 4A on the mockup (Visit Calendar rule 17; migration `2026-
 cancelled, not skipped visit in range: `measured` = a completed visit's `visits.duration_minutes` (1 to 719);
 `average` = the rounded mean of the last 6 measured visits at the same property (the client's primary one when the
 visit has none) and the same `service_type`, dated strictly before it by `visit_date` (not `completed_at`);
-`one_hour` = 60 when there are none or the visit has no service type. SECURITY INVOKER (it reads only what staff can
+`one_hour` = 60 when there are none or the visit has no service type. A completed `reviewed_blank` drive-by has no
+row at all (Fred: "if they didn't perform a service then they shouldn't count"; `2026-10-16_1447`). Past days stay
+live (Fred, 2026-10-16: "keep that"). SECURITY INVOKER (it reads only what staff can
 already read), EXECUTE authenticated + service_role, `p_to - p_from` at most 45. No table, no freeze, no cron.
 - 🛑 **A change to `visits.duration_minutes`, `service_type`, `property_id` or `visit_status` moves the Calendar's
   hours for every later visit at that place, past days included** (pick 3A). A re-run of the time-on-site rules is
