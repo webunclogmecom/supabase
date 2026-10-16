@@ -460,7 +460,7 @@ The two yard events (a drop while parked, and a +1,538 gal rise while parked) we
    **Answered 2026-10-16 (field answer relayed by the owner): truck-to-truck transfers.** When the other vacuum truck is
    full and Moises is going to the dump, its load is moved into Moises; when Moises needs space for the night route, its
    load is moved into the other truck. Measured: on all 11 yard level changes from 2026-08-26 to 10-13 the other truck
-   was at the yard and Moises's engine was running, and each gain was followed by a dump the same day. So a large
+   was at the yard and Moises's engine was running, and the three large gains (about 1,500 gal or more) were each followed by a dump the same day. So a large
    change at the yard with the engine running is a transfer; a jump with the engine OFF is a sensor error.
    **Also answered: water falling at a dump** (4 of 9 dumps since 10-02, 130 to 860 gal): at the dump the water is moved
    into the sludge compartment, used to clean the filter, and dumped with the sludge. It is not water used at a client.
