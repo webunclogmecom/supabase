@@ -87,6 +87,10 @@ const S = [
   { 'lift_station.count': '\u00a02', 'water_tank.count': '\u30001\u2028' }, { 'grease_trap.capacity_gallons': '\u00a0' },
   { 'lift_station.count': '\u200b2' }, { 'grease_trap.systems_count': 0 }, { 'grease_trap.systems_count': 1 },
   { 'grease_trap.systems_count': 1, 'grease_trap.capacity_gallons': '\t' },
+  // 2026-10-16: a show_if value list ("Inside|Inside and Outside"), question list version 4
+  { 'access_entry.equipment_where': 'Inside and Outside', 'access_entry.where_inside': 'Other', 'access_entry.where_outside': 'Other' },
+  { 'access_entry.equipment_where': ' Inside and Outside ', 'access_entry.where_outside': 'Other' },
+  { 'access_entry.equipment_where': 'Inside and', 'access_entry.where_inside': 'Other' },
 ]
 const wrap = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { value: v }]))
 const values = S.map((ans, si) => `(${si}, '${JSON.stringify(wrap(ans)).replace(/'/g, "''")}'::jsonb)`).join(',')
@@ -106,6 +110,13 @@ const on = form.visible(qs.find((x) => x.key === 'lift_station.photos'))
 A = { 'lift_station.count': 0 }
 const off = form.visible(qs.find((x) => x.key === 'lift_station.photos'))
 if (!(on === true && off === false)) { bad++; console.log('  CONTROL FAILED: the form did not flip lift_station.photos on the count') }
+// and a value list: since version 4 "Where is it outside?" shows for Outside and for Inside and Outside, not for Inside
+const wo = qs.find((x) => x.key === 'access_entry.where_outside')
+if (wo && (wo.show_if || '').includes('|')) {
+  A = { 'access_entry.equipment_where': 'Inside and Outside' }; const both = form.visible(wo)
+  A = { 'access_entry.equipment_where': 'Inside' }; const ins = form.visible(wo)
+  if (!(both === true && ins === false)) { bad++; console.log('  CONTROL FAILED: the value list did not show where_outside for Inside and Outside only') }
+}
 
 console.log(`${qs.filter((x) => x.show_if).length} conditions parsed three ways, ${cells} visibility cells compared: ${bad ? bad + ' DISAGREE' : 'all agree'}`)
 process.exit(bad ? 1 : 0)

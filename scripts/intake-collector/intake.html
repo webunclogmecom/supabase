@@ -257,7 +257,8 @@ function errBox(msg,onClose){var d=el('div','err');d.setAttribute('role','alert'
 function show(m){CF=null;WAIT=null;NT=null;var box=document.getElementById('fmsg');if(!box||document.getElementById('foot').classList.contains('hide')){var e0=errBox(m);document.getElementById('main').prepend(e0);return e0}box.innerHTML='';var e1=errBox(m,function(){box.innerHTML='';WAIT=null});box.appendChild(e1);return e1}
 function waitText(gb){ return (busy>0||RMV>0)?(gb?'Wait for the photos and the location to finish, then submit.':(busy>0?'Wait for the photos to finish sending, then submit.':'Wait for the photo to be removed, then submit.')):'Wait for the location to finish, then submit.' }
 
-// show_if is "<key>=<value>" (the value may be empty: the parent was left blank) or "<key>>N" (the
+// show_if is "<key>=<value>" (the value may be empty: the parent was left blank; since question list version 4 it may
+// be a list "A|B": shown when the parent is any of them, each trimmed) or "<key>>N" (the
 // parent is a number above N). The operator is the FIRST "=" or ">", both sides trimmed, and a
 // follow-up is shown only if its parent was itself shown. public.fn_intake_applicable and the Client
 // App's Schedule dialog read it exactly the same way: change all three together.
@@ -279,7 +280,7 @@ function visible(q, depth){
   if(depth>=10) return true;                       // a cycle in an authored tree: stay visible
   var c=cond(q&&q.show_if); if(!c) return true;
   var raw=A[c.k], got=(raw==null)?'':String(raw);
-  if(c.op==='='){ if(got.trim()!==c.v) return false; }
+  if(c.op==='='){ if((c.v.indexOf('|')<0?[c.v]:c.v.split('|').map(function(x){return x.trim()})).indexOf(got.trim())<0) return false; }
   else { if(!(NUM.test(got)&&THRESHOLD.test(c.v)&&Number(got)>Number(c.v))) return false; }
   var parent=findQ(c.k);
   return parent ? visible(parent, depth+1) : true;
