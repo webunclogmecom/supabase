@@ -90,6 +90,16 @@ assert.ok(body(two.posts[0]).includes('Manifest 1> · dumped Sep 20 · 0 of 9 st
 assert.ok(body(two.posts[0]).split('\n')[2].endsWith('In progress'), 'no "waiting" on the day of the dump');
 assert.ok(!/\u2014/.test(body(two.posts[0]) + two.posts[0].text), 'no em dash in the message');
 
+// 2026-10-17: each line ends with what the sheet waits for (derm.fn_stamp_sheet_wait_reason), escaped for Slack;
+// no reason (only stamps missing) adds nothing
+const why = await run([sheet('838681', { placed: 8, total: 8, days_waiting: 4, reason: 'page 1: a client on this page is printed on several rows' }),
+                       sheet('900001', { reason: 'a <b> & c' }), sheet('900002', { reason: null })]);
+const whyLines = body(why.posts[0]).split('\n');
+assert.ok(whyLines[1].endsWith('8 of 8 stamped · In progress · waiting 4 days · page 1: a client on this page is printed on several rows'), whyLines[1]);
+assert.ok(whyLines[2].endsWith('waiting 14 days · a &lt;b&gt; &amp; c'), whyLines[2]);
+assert.ok(whyLines[3].endsWith('In progress · waiting 14 days'), whyLines[3]);
+assert.ok(!why.posts[0].text.includes('several rows'), 'the phone line stays one summary line');
+
 // the header (Option A) comes first, and the sections rebuild the exact message
 const blocksOf = (p) => p.blocks;
 const sectionsText = (p) => p.blocks.slice(1).map((b) => { assert.strictEqual(b.type, 'section'); assert.strictEqual(b.text.type, 'mrkdwn'); return b.text.text; }).join('\n');

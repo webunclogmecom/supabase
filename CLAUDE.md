@@ -2424,6 +2424,11 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   edge fn `stamp-sheets-reminder` -> #apps-notifications (C0BJYHQKZM1) via the shared bot, listing
   `derm.fn_stamp_open_sheets()` (the Studio list, not completed). Posts NOTHING when every sheet is
   completed (Fred). `{dry_run:true}` returns the text. Check: `node scripts/checks/stamp_sheets_reminder.mjs`.
+  **Since 2026-10-17 (`2026-10-17_1330`, v12) each line ends with what the sheet waits for** (Fred: "the system
+  should say when it gives up"): `derm.fn_stamp_sheet_wait_reason` = the finisher's last refusal per page, else the
+  blocker's `fn_publishable_hint`, first sentence only, read from the Studio's own answers (never re-derived);
+  "ready: press Mark completed" when nothing blocks; nothing when only stamps are missing. A new refusal reason
+  or hint needs no change here: it shows up in the post by itself.
   The bot (v5): the ONE shared notification bot, `SLACK_BOT_TOKEN`, the Slack app "UnclogMe Apps" (renamed from
   "Dump Notification" on 2026-10-05; Fred: one bot for every app, each post labelled with its app). It holds
   `chat:write.customize` since 2026-10-05, so its posts show as "Stamp Studio" and start with the header

@@ -30,6 +30,7 @@
 // Body: { dry_run?: boolean, test?: boolean, check_bot?: boolean }  dry_run returns the message without
 // posting it; test posts it with a "[TEST]" prefix; check_bot asks Slack who the bot is and which scopes it
 // holds (auth.test), and posts nothing.
+// Each sheet line ends with what it waits for (`reason`, since 2026-10-17, migration 2026-10-17_1330).
 // Check: node scripts/checks/stamp_sheets_reminder.mjs (runs this file against stubs).
 
 import { slackHeader, slackIdentity, slackScopes, slackSections } from "../_shared/slack-notify.ts";
@@ -41,10 +42,17 @@ const STUDIO = "https://stamp.unclogme.app";
 const MAX_LINES = 40;
 const SOURCE = "stamp_sheets_reminder";
 
+// reason (since 2026-10-17, Fred: "the system should say when it gives up"): what the sheet waits for, one short plain
+// sentence from derm.fn_stamp_sheet_wait_reason (the Studio's own "Cannot complete yet" answer, first sentence), e.g.
+// "page 1: a client on this page is printed on several rows". NULL when only stamps are missing (the count says it).
 type Sheet = {
   manifest: string; service_date: string | null; dump_date: string | null;
   placed: number; total: number; pages: number; status: string; days_waiting: number | null;
+  reason?: string | null;
 };
+
+// the guide's rule 9: text from records goes into Slack with &, < and > escaped
+const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 type Outcome = { code: number; reply: Record<string, unknown>; log: Record<string, unknown> };
 
 const json = (p: unknown, status = 200) =>
@@ -78,6 +86,7 @@ function buildMessage(sheets: Sheet[], test = false): string {
       `${s.placed} of ${s.total} stamped`,
       s.status,
       s.days_waiting != null && s.days_waiting > 0 ? `waiting ${s.days_waiting} day${s.days_waiting === 1 ? "" : "s"}` : null,
+      s.reason ? esc(s.reason) : null,
     ].filter(Boolean);
     return "• " + parts.join(" · ");
   });
