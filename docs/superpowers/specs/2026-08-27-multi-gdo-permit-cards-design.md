@@ -3,6 +3,16 @@
 *Design spec, 2026-08-27. Written after ticket-312433 was found marked complete by AI with all eight
 stamps on the wrong scan, and Casa Neos holding one card against three printed rows.*
 
+> ✅ **BUILT 2026-10-17** (`docs/migrations/2026-10-17_0050_stamp_one_card_per_gdo_permit.sql`), seven weeks
+> late: nothing below had been implemented, and ticket-838681 (242-WYN, 3 permits, 1 card) is what showed it.
+> Differences from this spec: the call site is the `generated-sheet-finisher` cron's step 0b (every 10
+> minutes, before measuring), not the link trigger or a scan-read trigger; when the page order is not
+> confirmed it creates NOTHING (rather than unstamped cards that freeze the folder) and retries next run, which
+> is equally fail-closed because the completion blocker refuses a client whose cards differ from its printed
+> rows; and `v_undercarded_clients` was not built (an open sheet shows the reason in the Studio banner and in
+> `derm.v_generated_complete_backlog.blocker`). The finisher's page check learned the permit grain through
+> `derm.fn_card_printed_row`. Supabase `CLAUDE.md`, "A GENERATED SHEET PRINTS ONE ROW PER PERMIT", has the rules.
+
 ---
 
 ## The problem

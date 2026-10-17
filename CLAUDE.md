@@ -2657,6 +2657,35 @@ on they do"*, paraphrased only to drop an apostrophe). Older sheets printed one 
 multi-permit client, so a second card there would have no printed row to sit on. Design:
 `docs/superpowers/specs/2026-08-27-multi-gdo-permit-cards-design.md`.
 
+✅ **BUILT 2026-10-17 (`2026-10-17_0050`): THE EXTRA CARDS ARE NOW MADE AUTOMATICALLY.** The 2026-08-27
+design's `fn_ensure_permit_cards` had never been written, so every multi-permit sheet since was a hand
+migration, and ticket-838681 (242-WYN, 3 permits, 1 card) sat unmeasured with stamps over the wrong rows
+until Fred asked (*"if it has multiple GDO why are you not applying the measurement of putting multiple
+stamps with the respective nickname?"*). Now:
+- `derm.fn_ensure_permit_cards(folder | NULL)` runs as step 0b of `public.fn_request_generated_measure`
+  (the `generated-sheet-finisher` cron), before anything is measured. For an OPEN generated folder it
+  binds the machine's stamp on the client's first printed row to the first permit (`gdo_number` order)
+  and inserts one card per other permit ALREADY STAMPED on its row, copying page, image and manifest from
+  the client's card (the three traps below, honoured in code). It writes nothing and returns the reason
+  when: today's permit count is not the frozen `rows_printed`; the client has cards for two manifests, a
+  foreign permit or two unbound cards; any image lacks a `high` sheet-number read of THIS sheet on THAT
+  image (`address_sheet_scan_reads.image_url` = the current image); a person moved the stamp; a row has no
+  scan; the row OCR names another client there. Completed, reopened and handwritten folders are never read.
+- `derm.fn_card_printed_row(row id)` is the card-grain row (= `fn_generated_sheet_slot` for a one-row
+  client, the bound permit's row otherwise, NULL when unknowable), and `fn_generated_page_cards` reads it,
+  so a permit-carded page is measured like any other. Its VERIFY proved every one-row page returns the same
+  refusal and cards as before, and the pages whose answer changed are exactly 838681 p1 plus three pages
+  of COMPLETED sheets that used to be refused although their permit cards were right (312433 p1, 832194 p1
+  and p2: 043-MIL's second permit is page 2 row 1). Rehearsed gates: no reads, moved stamp, permit count,
+  reopened, completed (838130), row OCR, handwritten; rollback rehearsed.
+- ⚠ Still per MANIFEST, and so still wrong for a permit card: `trg_autoplace_generated`, the resolver's
+  placement leg and `v_stamp_rows.guess_y_pct` all use `fn_generated_sheet_slot` (the client's first row).
+  They only touch an UNPLACED card, so they matter only if a person clears a permit card's stamp; the
+  finisher then refuses the page (the stamp is outside its row) rather than publishing it. Re-drop by hand.
+- Not touched on purpose: ticket-838130 (completed by a person 2026-10-08 with one card each for 043-MIL,
+  2 rows, and 009-CN, 3 rows, so their other permit rows are blacked out of their own documents) and the
+  documented exception ticket-833395. Adding a card to a completed sheet reopens it: Fred's call.
+
 🛑 **THE THREE TRAPS, all of which bit while the cards were being added by hand.** Read these
 before creating a card:
 - **`page` STAYS THE SAME ON EVERY CARD IN A FOLDER. ONLY `stamp_page` VARIES.**
