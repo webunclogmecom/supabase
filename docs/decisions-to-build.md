@@ -74,13 +74,13 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Email D5 (separate archive email): after the ~2026-11-18 numbers.
 - Visit duration: Q3 (a short errand in the middle of a job: sum the parts or keep) was not chosen on 2026-10-18; those visits keep their value.
 - HR pay: who may see pay (default: admins only, Fred and Yannick; office sees bonuses but not rates)? Two-person crew visit bonus (default: each person gets it; Yan's open question since 2026-10-06)? Shift 2026-10-05 (Michael) was approved in Admin Review with a form issue, so it counts $0 as the app showed: confirm. Per-person bonus amounts (need Admin Review to read them first)?
-- Stamp: redo ticket-838130 (043-MIL 2 rows, 009-CN 3 rows on one card each; reopens a completed sheet).
 
 ## 4. Built (recent, with evidence)
 
 | date | plan | evidence |
 |---|---|---|
 | 2026-10-17 | Grease trap location on the property (Inside / Outside / Inside and Outside): Client App field, site survey third answer, Planner accept row, Viktor's Jobber-notes list (59 of 82 loaded) | Supabase `2026-10-16_1530`, `_1730`, `_1745`, `_1815`, `2026-10-17_0034`; open: 168-AVA, 222-SPE, 067-TCE wait on Fred (section 3) |
+| 2026-10-18 | ticket-838130 redone with one stamp per permit (043-MIL 2, 009-CN 3), completed again | Supabase `2026-10-18_1240`, 17d2b5a |
 | 2026-10-18 | Stamp chips stay inside the sheet (view + Export PNG), published with Fred's OK and Lovable's unasked TanStack bump | Stamp Studio changelog 2026-10-18; live `index-QfyMBtNI.js`; guard/flock/module checks PASS |
 | 2026-10-18 | Call before scheduling (decided 2026-08-17): policy kept by hand, Call first requests 3 days ahead, Not now, permit warning, 11 AM post | Supabase `2026-10-18_0245`, `call-first-reminder`, c8992f0; Calendar chip + Not now (see Visit Calendar changelog 2026-10-18) |
 | 2026-10-18 | No stamp on a page without a scan; completed sheets with an unpublished copy reach the health email | Supabase `2026-10-18_0230`, 95b1516 |
