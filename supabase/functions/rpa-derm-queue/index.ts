@@ -20,6 +20,8 @@
 //     ticket_number, jurisdiction, white_manifest_number, disposal_facility,
 //     documents: { address: [urls], receipt: [urls] }   // signed, 4h TTL
 // }]}
+// documents.address (2026-10-18) = the shared Miami-Dade address sheet when the manifest has one, otherwise the
+// visit's own sheet (a Broward-dump visit's FDEP sheet). A visit with neither is not served (held: no_sheet).
 // ticket_number (2026-07-24) = the dump-ticket number to file, regardless of
 // county: Miami-Dade loads carry it as the white manifest #, Broward/PBC loads
 // as the yellow Septage Receiving #. USE THIS, not white_manifest_number, which
@@ -177,7 +179,12 @@ Deno.serve(async (req: Request) => {
   // One row per code-27 VISIT to report online (its linked manifest gives docs).
   const reports = []
   for (const r of rows ?? []) {
-    const addressDocs = [r.derm_address_url, ...(r.derm_address_extra_urls ?? [])].filter(Boolean)
+    // 2026-10-18 (migration 2026-10-18_0220): a Broward-dump visit has no shared Miami-Dade address sheet; its
+    // sheet is the per-visit FDEP sheet, which the view hands over as visit_sheet_urls (derm.fn_fog_documents).
+    // Three filings (visits 6218, 8089, 6721) went out with an empty address list before this. The view no
+    // longer serves a visit with no sheet at all (held_by 'no_sheet').
+    const sharedSheet = [r.derm_address_url, ...(r.derm_address_extra_urls ?? [])].filter(Boolean)
+    const addressDocs = sharedSheet.length ? sharedSheet : (r.visit_sheet_urls ?? []).filter(Boolean)
     const receiptDocs = [r.derm_manifest_url, ...(r.derm_manifest_extra_urls ?? [])].filter(Boolean)
     reports.push({
       visit_id: r.visit_id,
@@ -279,6 +286,8 @@ Deno.serve(async (req: Request) => {
         'non-retryable failure is holding the row until something about it changes - if you ' +
         'fixed the cause OUTSIDE our database (a county portal credential, a permit ' +
         'registration) tell us and we will re-open it; we cannot see that from here. ' +
+        '`no_sheet` means the visit has no manifest sheet on file yet (no Miami-Dade address sheet and no ' +
+        'per-visit Broward sheet); it is served as soon as the sheet is uploaded in the DERM Tracker. ' +
         '`not_held` entries are not problems: a sibling permit simply won this pass, or the ' +
         'visit predates the launch cutoff.',
     }

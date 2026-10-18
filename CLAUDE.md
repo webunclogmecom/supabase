@@ -4352,6 +4352,15 @@ permits**, so a backlog read off it was understated by up to 37%. That understat
 `2026-08-31_0914`. ⚠ The metric's MEANING changed without its name changing, so any threshold or
 dashboard calibrated against the old numbers now reads high for a good reason.
 
+🛑 **A GDO REPORT NEVER GOES WITHOUT ITS SHEET (2026-10-18, `2026-10-18_0220`, Fred: "go ahead").** The queue
+attached only `derm_address_url`, so a Broward-dump visit (whose sheet is a per-visit FDEP sheet in
+`derm.manifest_visit_sheets`) was filed with an empty address list: 3 of 40 real SUCCESS filings (visits 6218,
+8089, 6721). `v_derm_portal_fields` now carries `visit_sheet_urls` (from `derm.fn_fog_documents`, read only when
+the manifest has no address sheet) and `has_sheet`; the queue serves only `has_sheet` rows, the held view says
+`no_sheet`, `v_rpa_derm_health.held_no_sheet` raises `rpa_held_no_sheet` (plain issue + what to do) into the
+health email, and `rpa-derm-queue` v30 sends the visit sheet as `documents.address`. The 3 past filings went
+without a sheet; correcting them at the county is Fred's and Jonathan's call.
+
 ✅ **THE OTHER HALF OF "EMPTY OR STUCK": `public.v_rpa_derm_stale_leases` (2026-09-01).**
 Gate 4 hides a dispensed (visit, permit) for 20 hours, so a bot that TAKES the work and never posts
 a result makes the queue read SMALLER, which is exactly what a healthy drain looks like. The

@@ -152,7 +152,7 @@ capped, leased.
 | `jurisdiction` | string | `dade` \| `broward` \| `unknown`, from which ticket number the manifest carries (served since 2026-07-24, documented here 2026-09-18). |
 | `white_manifest_number` | string \| null | Miami-Dade WWTP/dump receipt number. **`null` on a Broward load**; kept for back-compat, read `ticket_number`. |
 | `disposal_facility` | string \| null | `South District WWTP` (Miami-Dade) or `Water and Wastewater Services` (Broward). |
-| `documents.address` | string[] | **Signed URLs** to the DERM Address / Manifest Form sheet(s). |
+| `documents.address` | string[] | **Signed URLs** to the DERM Address / Manifest Form sheet(s). 🛑 **Since 2026-10-18:** when the dump has no shared Miami-Dade address sheet (a load dumped in Broward), this is the **visit's own sheet** (the one-page FDEP sheet for that visit). Before that date it was an empty list for those visits, and 3 reports were filed without a sheet (visits 6218, 8089, 6721). It is never empty any more: a visit with no sheet at all is not served (held `no_sheet`). |
 | `documents.receipt` | string[] | **Signed URLs** to the Transporter Manifest / WWTP receipt(s). |
 
 **Signed URLs are valid ~4 hours** and are minted fresh on every fetch. Download everything at the
@@ -207,6 +207,7 @@ file" and "a filing is stuck and nobody can see it". Every response now carries 
 | `cooldown_20h` | an attempt landed in the last 20h | no, it serves after |
 | `data_error` | a **non-retryable** failure holds it until something about the row **changes** | **maybe — see below** |
 | `leased` | we handed the manifest out and are holding it 20h | no |
+| `no_sheet` (2026-10-18) | the visit has no manifest sheet on file yet (no Miami-Dade address sheet and no per-visit Broward sheet); it is served as soon as one is uploaded in the DERM Tracker, and our daily health check reports it | no, the office uploads it |
 
 ⚠ **`data_error` is the one to watch, and it is the one that bit us.** Its freshness anchor is a
 timestamp **in our database**. If you fix the cause on the **county side** — a portal credential, a
