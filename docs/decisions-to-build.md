@@ -68,6 +68,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Older window folders: read their page numbers (17 folders, 157 served documents)?
 - 2026-09-02 phase flip: "A + B now, C later?" never answered.
 - Audit history is deleted after 24 months; DERM may need 3 years.
+- Grease trap location: 168-AVA (parking garage basement), 222-SPE (hose inside the garage), 067-TCE ("2 manholes inside the gate"): Inside or Outside?
 - Casa Neos manifests not linked to their permit (12 of 12).
 - Field Portal: a client code alone opens that client's history (per-location token = reprint about 321 QR signs); the "Pending" wording on the report was replaced by "separate email" with no recorded decision; evidence on the same page as the data.
 - Reason photos: move the 13 frequency-change proof images to the new setup?
@@ -80,6 +81,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 | date | plan | evidence |
 |---|---|---|
+| 2026-10-17 | Grease trap location on the property (Inside / Outside / Inside and Outside): Client App field, site survey third answer, Planner accept row, Viktor's Jobber-notes list (59 of 82 loaded) | Supabase `2026-10-16_1530`, `_1730`, `_1745`, `_1815`, `2026-10-17_0034`; open: 168-AVA, 222-SPE, 067-TCE wait on Fred (section 3) |
 | 2026-10-17 | 11 AM Stamp post says why each sheet waits | Supabase `2026-10-17_1330`, `stamp-sheets-reminder` v12, b9acb00 |
 | 2026-10-17 | One stamp per GDO permit, automatic (decided 2026-08-27) | Supabase `2026-10-17_0050`, 9a9472e |
 | 2026-10-13 | Intake task closes on submit / cancel / expiry | `2026-10-13_1235`, `intake-task-sync` |
