@@ -1,6 +1,6 @@
 # HR App: editable employee record, pay rates and a pay and bonus history
 
-*2026-10-18 ET. Status: planned, building. Supersedes the "current value only" pay decision of
+*2026-10-18 ET. Status: BUILT and live 2026-10-18 (Supabase `2026-10-18_0320`, `_0400`; HR App build published). The review the same night changed the plan: see the two migration headers, which are the record of what shipped (rights rules on email and status, per-source bonus decisions under a lock, Admin Review's $0 rule for a shift with a form issue, company-only bonus amounts until Admin Review reads them). Supersedes the "current value only" pay decision of
 `2026-08-31-hr-app-employee-management-design.md` (decision 4) on Fred's word below.*
 
 ## 1. The ask
@@ -56,6 +56,8 @@ Privileges tabs, Add employee, invites, equipment, onboarding, training.
   `other:hr.unclogme.app`.
 
 ## 3. Defaults taken (each one is a single place to change)
+
+Fred confirmed on 2026-10-18: pay rates admins only; each person on a two-person crew gets the visit bonus; the Oct 5 shift approved with a form issue stays $0.
 
 | question | default | why |
 |---|---|---|

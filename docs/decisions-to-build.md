@@ -44,7 +44,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 **Sign-in / apps**
 - 2026-08-26 auth gate: the recovery marker as a shared cookie (a reset link opened in one app can sign you in to the others); live sign-in checks done on DERM Tracker only; the gate rules are not in each app's CLAUDE.md (Stamp's still says the round-trip cut is not shipped).
-- HR app: record edit, pay rates and the pay and bonus history are being built (2026-10-18, Fred: "the page where we can see each client data and that we can edit ... pay rate, bonuses ... a history of that, linked to where it comes from"; spec `docs/superpowers/specs/2026-10-18-hr-app-record-pay-bonus-history-design.md`). DB live (`2026-10-18_0320`, `_0400`, fillout-inspection v14); app build in Lovable. Still not built: documents bucket and upload link, emergency contact, invites, Add employee, privileges enforcement in other apps; the `hr-bonus-health` item in the daily email (waits for the other session to release `ops.v_health_items`); Admin Review reading the bonus amount from HR (until then the bonus amounts stay $10 / $25 for everyone).
+- HR app, still not built: documents bucket and upload link, emergency contact, invites, Add employee, privileges enforcement in other apps; the `hr-bonus-health` item in the daily email (waits for the other session to release `ops.v_health_items`); Admin Review reading the bonus amount from HR (until then the bonus amounts stay $10 / $25 for everyone); hourly earnings (needs the Jobber time sheet sync); the Privileges banner heading wording.
 - Activity history (2026-06-25): the company-wide "recent activity" page and the redaction ADR were never done.
 - 2026-08-21 loading states: `03-brand-and-design-system.md` is still titled "UnclogMe Sales App" while Building Apps rule 1 cites it.
 
@@ -73,7 +73,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Loading states spec: approve the remaining three screens, the delay gate, and the two cheap accessibility fixes?
 - Email D5 (separate archive email): after the ~2026-11-18 numbers.
 - Visit duration: Q3 (a short errand in the middle of a job: sum the parts or keep) was not chosen on 2026-10-18; those visits keep their value.
-- HR pay: who may see pay (default: admins only, Fred and Yannick; office sees bonuses but not rates)? Two-person crew visit bonus (default: each person gets it; Yan's open question since 2026-10-06)? Shift 2026-10-05 (Michael) was approved in Admin Review with a form issue, so it counts $0 as the app showed: confirm. Per-person bonus amounts (need Admin Review to read them first)?
+- HR pay: per-person bonus amounts (need Admin Review to read the amount from HR first)? (Answered 2026-10-18: pay rates admins only; each person on a two-person crew gets the visit bonus; the Oct 5 shift stays $0.)
 
 ## 4. Built (recent, with evidence)
 
@@ -84,6 +84,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 | 2026-10-18 | Stamp chips stay inside the sheet (view + Export PNG), published with Fred's OK and Lovable's unasked TanStack bump | Stamp Studio changelog 2026-10-18; live `index-QfyMBtNI.js`; guard/flock/module checks PASS |
 | 2026-10-18 | Call before scheduling (decided 2026-08-17): policy kept by hand, Call first requests 3 days ahead, Not now, permit warning, 11 AM post | Supabase `2026-10-18_0245`, `call-first-reminder`, c8992f0; Calendar chip + Not now (see Visit Calendar changelog 2026-10-18) |
 | 2026-10-18 | No stamp on a page without a scan; completed sheets with an unpublished copy reach the health email | Supabase `2026-10-18_0230`, 95b1516 |
+| 2026-10-18 | HR App: editable employee record, pay rates (admins only), pay and bonus history linked to Admin Review approvals; renames safe for the shift inspection form | Supabase `2026-10-18_0320`, `_0400`, fillout-inspection v14, `scripts/checks/hr_app/run.js` (38 checks); HR App live chunk `employees._id-CfBT9n92.js`; Building Apps f19e325 |
 | 2026-10-18 | GDO online reports carry the visit's own sheet; never filed without one | Supabase `2026-10-18_0220`, `rpa-derm-queue` v30, 70bafb3 |
 | 2026-10-17 | 11 AM Stamp post says why each sheet waits | Supabase `2026-10-17_1330`, `stamp-sheets-reminder` v12, b9acb00 |
 | 2026-10-17 | One stamp per GDO permit, automatic (decided 2026-08-27) | Supabase `2026-10-17_0050`, 9a9472e |
