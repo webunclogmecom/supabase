@@ -227,20 +227,42 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 - `next_visit` = `last_visit + (frequency_days days)` — in `clients_due_service`, `client_services_flat`, `ops.v_service_due`
 - `status` / `due_status` = `CASE` based on computed `next_visit` vs `CURRENT_DATE` — same views
 
-### `employees` — 34 rows
+### `employees` (21 rows, 9 ACTIVE on 2026-10-18)
 
 | Column | Type | Notes |
 |---|---|---|
-| id | BIGSERIAL PK | |
-| full_name | TEXT NOT NULL UNIQUE | |
-| role | TEXT | `Owner`, `Manager`, `Technician`, … |
-| status | TEXT | `ACTIVE`, `INACTIVE`, `DEACTIVATED` |
-| shift | TEXT | `Day`, `Night`, `Both` |
-| email / phone | TEXT | |
+| id | BIGINT identity PK | |
+| full_name | TEXT NOT NULL UNIQUE | also unique ignoring case and spaces (`employees_full_name_ci_uniq`, 2026-10-18_0320). A display name: first names for most staff, on purpose |
+| role | TEXT | `Owner`, `Admin`, `Office`, `Technician`; no CHECK; the HR App does not read or edit it |
+| status | TEXT | `ACTIVE` or `INACTIVE` (`employees_status_chk`). Inactive is the only "delete": visit_team, visit_assignments and shift_reviews cascade on a hard delete |
+| shift | TEXT | `day`, `night` or NULL (the HR App writes lower case; empty on every row today) |
+| email | TEXT | lower case when written by the HR App; unique ignoring case and spaces (`employees_email_lower_uniq`). It is the SIGN-IN email: the HR gate and every "who did it" name label match on it |
+| phone | TEXT | |
 | hire_date | DATE | |
-| access_level | TEXT | `admin`, `office`, `field`, or NULL (CHECK `employees_access_level_chk`; `dev` RETIRED 2026-08-31_1330, now rejected 23514; gates the HR app: admin+office). Live: office 11 / field 8 / admin 2. |
-| notes | TEXT | |
+| access_level | TEXT | `admin`, `office`, `field`, or NULL (CHECK `employees_access_level_chk`; `dev` RETIRED 2026-08-31_1330). Gates the HR App's functions since 2026-10-18 (`hr.fn_require_level`): admin and office edit records and see bonuses, admin only sees and sets pay rates. No other app reads it. |
+| color_hex | TEXT | the person's colour in every app (Building Apps rule 4b); not editable in the HR App |
+| notes | TEXT | readable by every staff account through `client.employees`: not for HR notes |
 | created_at, updated_at | TIMESTAMPTZ | |
+
+**Writes:** the only app write path is `hr.update_employee(p_id, p_patch)` (HR App, 2026-10-18): full_name, status, shift,
+email, phone, hire_date. Nobody changes their own email or status; office cannot change the email or status of an office or
+admin person; one active admin must remain; Active needs a Jobber link. `webhook-samsara` only fills a BLANK name, email or
+phone on a linked driver. Never written to Jobber.
+
+### `hr` schema: pay rates and the bonus history (2026-10-18_0400)
+
+Exposed to PostgREST, but no table or view is granted to anon, authenticated or service_role (RLS forced, no policies). The
+app reaches it only through four SECURITY DEFINER functions: `hr.update_employee`, `hr.get_employee_record`,
+`hr.get_pay_summary`, `hr.set_pay_rates`. Spec: `docs/superpowers/specs/2026-10-18-hr-app-record-pay-bonus-history-design.md`.
+
+| object | what it is |
+|---|---|
+| `hr.pay_rates` | insert only (its own history): employee_id (NULL = company amount, bonus kinds only), kind (`hourly`, `salary_weekly`, `salary_yearly`, `per_visit_bonus`, `per_shift_bonus`), amount numeric(12,2) (NULL = not paid this way from that date), effective_from, reason, created_by_email. Rate on a day = `hr.fn_rate_on` (newest row with effective_from <= day). Seeded: $10 per approved visit, $25 per approved shift. Per-person bonus amounts are refused until Admin Review reads them |
+| `hr.bonus_events` | insert only: one row per person per Admin Review decision. Grant >= 0; a reversal (negative, `reverses_id` UNIQUE) when the decision no longer stands. Source = visit_id, or (employee_id, work_date) for a shift. Filled by triggers `zz_hr_bonus_sync` on `public.visit_reviews` and `public.shift_reviews` and by the hourly sweep `hr.fn_sync_all_bonuses` (pg_cron `hr-bonus-sweep`, :41). `filled_by` = trigger / sweep / backfill |
+| `hr.v_bonus_drift` | what needs a person, no amounts: missing_grant, grant_not_expected (both empty after the sweep), approved_no_crew, shift_forms_issue, decider_unknown, decider_is_earner |
+
+Both tables opt OUT of audit.logs on purpose (append-only, own who/when/why; audit.logs is readable by every signed-in
+database role).
 
 ### `vehicles` — 4 rows
 
