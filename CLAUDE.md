@@ -1228,6 +1228,31 @@ longer has their job), so do not read them as live examples — the same suppres
 deliberately left cancelled, because a standalone `VISIT_DESTROY` with no cascade and zero photos/manifest/invoice
 means a person deleted a mis-completed duplicate. Do not restore a batch because they share a symptom.
 
+### ✅ CALL BEFORE SCHEDULING: a DATELESS "call first" request + an 11 AM Slack post (2026-10-18, `2026-10-18_0245`)
+
+Built from the approved 2026-08-17 design (`docs/superpowers/specs/2026-08-17-call-before-scheduling-clients-design.md`,
+Fred 2026-10-18: "go ahead"), after 226-JER Jerusalem Pizza reached 61 days on a 60-day permit with nothing booked: its
+Service Agreement, which Diego had made as a reminder, was archived on 2026-10-05 with nothing in its place.
+- **`ops.client_call_policy`** (audited, kept BY HAND: spec question 2): client, Service Call `job_id`, services, `cadence_days`,
+  `next_call_at`, `paused`, `notes`. One row today: 226-JER, 60 days, job 1623, service 09.
+- **`ops.fn_file_due_call_requests()`** (service_role): moves `next_call_at` to the latest LIVE visit + cadence (however that visit
+  was booked: the Schedule flow, a New Visit, Jobber), closes an open call request that a later booking answered
+  ("Booked: visit N"), and files ONE request through `ops.create_visit_request` (its own checks) **3 days before** the due date,
+  title "Call for approval", plain notes (due date, cadence, permit, last service), `call_required = true`.
+  🛑 **A request is not a visit: nothing reaches Jobber, no truck, no lateness, no DERM expectation.** That is the whole fix (an SA
+  was a commitment used as a reminder). The VERIFY counts `public.visits` and `entity_source_links` before and after.
+- **`ops.snooze_call_request(request, date)`** (staff, the Calendar's "Not now"): the date the client gave; the request leaves the
+  queue and comes back 3 days before it. Plain messages; dates after today and within a year.
+- **`ops.v_client_call_policy`**: the permit ceiling (`permit_max_days`, `cadence_exceeds_permit`) is a WARNING only; it drives
+  nothing, and `ops.v_service_due` stays retired (Fred 2026-07-30).
+- **The post** (`call-first-reminder` edge fn, cron `call-first-reminder` 15,16 UTC gated to 11 AM ET by
+  `public.fn_request_call_first_reminder`, header "📞 Calls before scheduling", as "Visit Calendar", tags Diego, never on a
+  test): it calls `ops.fn_call_first_run`, which files what is due, lists the open call requests not announced yet (every open one
+  on Mondays, as a digest) and marks them announced. **A pointer, never a task list**: the queue is the truth. A dry run and a
+  test change nothing. One `sync_log` row per run (`call_first_reminder`). Check `scripts/checks/call_first_reminder.mjs`.
+- To add a client: insert a policy row by hand (its active Service Call job, Service Call services, cadence, the next call date).
+  Stop calling: `paused = true` (the row and its notes stay).
+
 ### ✅ "UNSCHEDULE" A CALENDAR VISIT = `ops.unschedule_calendar_visit(p_visit_id)`, a request plus a soft delete in one transaction (2026-09-21)
 
 Fred (voice note): the visit drawer's Date & time section gets the same "Unschedule" button the task

@@ -5,8 +5,16 @@
 whether Diego creating a Service Agreement for client 226 is the correct flow. Fred, same thread:
 "Mm it's not the correct flow."*
 
-**Status: DESIGN APPROVED, NOT BUILT.** No implementation has started. The 226 cleanup is
-deliberately deferred (see § Deferred cleanup).
+**Status: BUILT 2026-10-18** (`docs/migrations/2026-10-18_0245_call_before_scheduling.sql`, edge fn
+`call-first-reminder`, the Calendar chip and Not now; Fred: "go ahead"). It had sat approved and unbuilt for two months:
+the 226 SA was archived on 2026-10-05 with no replacement, and 226-JER reached 61 days on its 60-day permit. Defaults
+taken for the open questions: policy kept by hand, 3 days of lead, #apps-notifications at 11 AM ET tagging Diego.
+Differences from the plan: no trigger on scheduling (the daily filer moves the date forward from the latest live visit
+however it was booked, and closes a request a booking answered); one RPC for the post (`ops.fn_call_first_run`). The
+deferred cleanup below was done on 2026-10-05 (job 1622 archived, its scheduled visits removed).
+
+~~**Status: DESIGN APPROVED, NOT BUILT.** No implementation has started. The 226 cleanup is
+deliberately deferred (see § Deferred cleanup).~~
 
 ---
 

@@ -19,9 +19,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 | what | evidence | who |
 |---|---|---|
-| **226-JER Jerusalem Pizza is past its permit limit.** GDO-03256 allows 60 days; last service 2026-08-17 (61 days on 10-17); nothing booked, no To Be Scheduled item. Its agreement was closed 2026-10-05 and the call-first reminder that should replace it (spec 2026-08-17) was never built. | visits, gdos, ops.visit_requests | office (Diego) |
-| **The GDO bot filed 3 Broward-dump visits with Miami-Dade without their manifest sheet.** `rpa-derm-queue` attaches only `derm_address_url` (+ the receipt); a Broward-dump visit's sheet lives in `derm.manifest_visit_sheets`, so it was never sent. Visits 6218 (Oct 8), 8089 and 6721 (Oct 16), all SUCCESS. | `derm_portal_submissions` 2008, 2015, 2016 | Fred / Jonathan |
-| **ticket-836361 has been completed since 2026-10-01 and one client's document was never published.** `derm.v_blackout_completed_unpublished` shows it; nothing reads that view. | the view | Supabase session |
+| **226-JER Jerusalem Pizza is past its permit limit.** GDO-03256 allows 60 days; last service 2026-08-17 (61 days on 10-17); nothing booked. ✅ 2026-10-18: the call-first reminder is built and request 81 "Call for approval" is in To Be Scheduled (Call first chip); the 11 AM post names it. **Still needs the call and a booking.** | visits, gdos, ops.visit_requests 81 | office (Diego) |
+| **The GDO bot filed 3 Broward-dump visits with Miami-Dade without their manifest sheet.** Visits 6218 (Oct 8), 8089 and 6721 (Oct 16), all SUCCESS. ✅ 2026-10-18 fixed for the future (`2026-10-18_0220`, `rpa-derm-queue` v30: the visit sheet is attached; a visit with no sheet is held `no_sheet` and reaches the health email). **Open: whether to correct the 3 filings at the county.** | `derm_portal_submissions` 2008, 2015, 2016 | Fred / Jonathan |
+| **ticket-836361 has been completed since 2026-10-01 and 288-PER's copy was never made.** Cause: page 2 of the paper was never uploaded and the stamp was placed on it anyway. ✅ 2026-10-18 the rule is fixed (`2026-10-18_0230`: no stamp on a page without a scan; the health email names such sheets). **Still needs page 2 uploaded in the DERM Tracker.** | the view, card 3001 | office |
 | **3,106 DERM documents are still in public storage, and the number grows** (2026-09-27 plan: only Stage 0 was approved; Stages 1-11 wait on 13 decisions). | storage census by the audit | Fred |
 
 ## 2. Agreed, not built (or only partly)
@@ -37,7 +37,6 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Stamp chip clamp (2026-10-17): built in Lovable 6e8ed79d, NOT published (unasked TanStack bump + new sheet tab title; Fred's call).
 
 **Clients / calls / scheduling**
-- 2026-08-17 call before scheduling: nothing built (call policy table, "call first" flag, daily job, Slack pointer, outcomes, permit warning). See 226-JER above.
 - 2026-05-31 client locations: no tenant name on the DERM Tracker lists, no pick/search by tenant; Wynd 28 tenants Presidente and CU4 have no permit; 148-MOR GDO-11226 has no location.
 - 2026-06-25 SA line items: New Visit cannot add fee or custom lines; the two drawer layout mockups were never shown; nobody proved an SA edit reaches the Jobber invoice cleanly.
 - 2026-07-29 retry push: the live test (Retry on a likely duplicate, checked in Jobber) was never done.
@@ -82,6 +81,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 | date | plan | evidence |
 |---|---|---|
 | 2026-10-17 | Grease trap location on the property (Inside / Outside / Inside and Outside): Client App field, site survey third answer, Planner accept row, Viktor's Jobber-notes list (59 of 82 loaded) | Supabase `2026-10-16_1530`, `_1730`, `_1745`, `_1815`, `2026-10-17_0034`; open: 168-AVA, 222-SPE, 067-TCE wait on Fred (section 3) |
+| 2026-10-18 | Call before scheduling (decided 2026-08-17): policy kept by hand, Call first requests 3 days ahead, Not now, permit warning, 11 AM post | Supabase `2026-10-18_0245`, `call-first-reminder`, c8992f0; Calendar chip + Not now (see Visit Calendar changelog 2026-10-18) |
+| 2026-10-18 | No stamp on a page without a scan; completed sheets with an unpublished copy reach the health email | Supabase `2026-10-18_0230`, 95b1516 |
+| 2026-10-18 | GDO online reports carry the visit's own sheet; never filed without one | Supabase `2026-10-18_0220`, `rpa-derm-queue` v30, 70bafb3 |
 | 2026-10-17 | 11 AM Stamp post says why each sheet waits | Supabase `2026-10-17_1330`, `stamp-sheets-reminder` v12, b9acb00 |
 | 2026-10-17 | One stamp per GDO permit, automatic (decided 2026-08-27) | Supabase `2026-10-17_0050`, 9a9472e |
 | 2026-10-13 | Intake task closes on submit / cancel / expiry | `2026-10-13_1235`, `intake-task-sync` |
