@@ -34,7 +34,6 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - 2026-09-03 sheet-number read: the 10-minute job still calls the reader on every run (only the upload trigger checks first).
 - Broward spec (2026-09-07): no county warning on Move/Add visit; `fn_sheet_publishable` has no Broward exit; /upload wording changes; no health count for Broward visits missing their sheet; two docs still describe the County dropdown (DERM Tracker CLAUDE.md rule 8, Stamp 02-architecture.md:52); the GDO bot item above.
 - 2026-08-28 in-app detection: ticket-312024 p2 was saved by the machine without the person check the plan asked for.
-- Stamp chip clamp (2026-10-17): built in Lovable 6e8ed79d, NOT published (unasked TanStack bump + new sheet tab title; Fred's call).
 
 **Clients / calls / scheduling**
 - 2026-05-31 client locations: no tenant name on the DERM Tracker lists, no pick/search by tenant; Wynd 28 tenants Presidente and CU4 have no permit; 148-MOR GDO-11226 has no location.
@@ -74,13 +73,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Loading states spec: approve the remaining three screens, the delay gate, and the two cheap accessibility fixes?
 - Email D5 (separate archive email): after the ~2026-11-18 numbers.
 - Visit duration: Q3 (a short errand in the middle of a job: sum the parts or keep) was not chosen on 2026-10-18; those visits keep their value.
-- Stamp: publish the chip clamp; redo ticket-838130 (043-MIL 2 rows, 009-CN 3 rows on one card each; reopens a completed sheet).
+- Stamp: redo ticket-838130 (043-MIL 2 rows, 009-CN 3 rows on one card each; reopens a completed sheet).
 
 ## 4. Built (recent, with evidence)
 
 | date | plan | evidence |
 |---|---|---|
 | 2026-10-17 | Grease trap location on the property (Inside / Outside / Inside and Outside): Client App field, site survey third answer, Planner accept row, Viktor's Jobber-notes list (59 of 82 loaded) | Supabase `2026-10-16_1530`, `_1730`, `_1745`, `_1815`, `2026-10-17_0034`; open: 168-AVA, 222-SPE, 067-TCE wait on Fred (section 3) |
+| 2026-10-18 | Stamp chips stay inside the sheet (view + Export PNG), published with Fred's OK and Lovable's unasked TanStack bump | Stamp Studio changelog 2026-10-18; live `index-QfyMBtNI.js`; guard/flock/module checks PASS |
 | 2026-10-18 | Call before scheduling (decided 2026-08-17): policy kept by hand, Call first requests 3 days ahead, Not now, permit warning, 11 AM post | Supabase `2026-10-18_0245`, `call-first-reminder`, c8992f0; Calendar chip + Not now (see Visit Calendar changelog 2026-10-18) |
 | 2026-10-18 | No stamp on a page without a scan; completed sheets with an unpublished copy reach the health email | Supabase `2026-10-18_0230`, 95b1516 |
 | 2026-10-18 | GDO online reports carry the visit's own sheet; never filed without one | Supabase `2026-10-18_0220`, `rpa-derm-queue` v30, 70bafb3 |
