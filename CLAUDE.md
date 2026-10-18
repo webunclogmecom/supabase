@@ -2707,6 +2707,19 @@ before creating a card:
 one card against three printed rows on sheet 1102, so rows 8 and 9 were printed-but-unrowed: exactly
 what turned `ticket-310590` p2 into a real exposure on 2026-08-19.
 
+### 🛑 NO STAMP ON A PAGE THAT HAS NO SCAN (2026-10-18, `2026-10-18_0230`, Fred: "go ahead")
+
+`derm.fn_sheet_image_position`'s identity fallback now returns NULL when the image position it would answer is past
+the end of `derm.ticket_page_images()`. ticket-836361 is why: one scan of a two-page generated sheet, 288-PER
+(printed row 6) auto-placed at `stamp_page` 2 on 2026-09-22 with no witness, the publish gate skips stamps on a
+missing page, a person completed the sheet on 10-01 and 288-PER's copy was never made. Every caller already refuses
+on NULL, so such a card now stays unplaced until the page is uploaded. ⚠ The bound is on the IMAGE answered, not the
+printed page: ticket-831220's only scan reads "1063-2", so printed page 2 is image 1 and still answers. The ticket
+comes from the folder's cards or the folder name (the BEFORE INSERT placement trigger asks before its row exists).
+`log_blackout_health` also turns each `derm.v_blackout_completed_unpublished` folder into a named health item
+(blocker `completed_not_published`, the clients, and "page N was never uploaded" when that is the cause): before,
+836361 was only a number inside `customer_impact`. 836361 itself waits for page 2 of the paper (the office uploads it).
+
 ### 🛑 `stamp_page` IS AN ORDINAL INTO A LIST THAT MOVES. THE WITNESS IS WHAT MAKES IT SAFE (2026-08-24)
 
 Fred deleted one address image of ticket-833395 in the DERM Tracker. The Stamp Studio then showed
