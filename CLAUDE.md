@@ -5586,6 +5586,29 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `stop_facts_integrity` as error and the health email picks it up. Monthly: run `scripts/checks/time_on_site_audit.mjs`
   over the previous month (not scheduled: GitHub timed jobs are unreliable). The whole plan (steps 1 to 8) is shipped;
   what is left is people work: the review lists and Yannick's Place worklist in `samsara-checks/`.
+- 🛑 **ONE-TIME 2026 DURATION FIX APPLIED 2026-10-18 (`2026-10-18_0217` Stage 0, `_1300` trucks, `_1301` times high,
+  `_1302` times medium, `_1340` split touch; each with a rollback; Fred: "run all these"). Read before touching any
+  2026 time or a time-on-site writer.**
+  - **`time_on_site_source = 'review'` now means LOCKED by this fix** (or a decision of Fred's). Every 2026 client
+    visit dated to 10-07 that the fix changed, kept as verified, or locked carries `review`; `reviewed_blank` = proven
+    no service. The fillers (`fn_fill_time_on_site_from_stops`, `fn_fill_blank_time_on_site`) now fill ONLY a visit
+    whose source is NULL; the Samsara recheck and the reopen trigger already leave `review` / `reviewed_blank` alone.
+  - **The record:** `public.visit_time_on_site_corrections` (service_role only, audited): one row per visit with old
+    and new times, truck, method, confidence, stage and status. 1,230 applied, 103 cards (`stage = '4'`, Fred's
+    decisions, not written), 61 catch-up rows (visits dated 10-08 to 10-17, `proposed`: re-measure from 2026-10-28,
+    then write them the same way). Per-visit evidence is local: `samsara-checks/duration_fix_run_2026-10-18/`.
+  - **Drift alarms:** `fn_time_on_site_checks` gained T7 (an applied row whose visit no longer holds the ledger's
+    times) and T8 (truck, date or completion moved under an applied row, or the visit deleted); both are in
+    `fn_refresh_stop_facts`' key list, so they reach the health email. To change a corrected visit on purpose, update
+    its ledger row in the same transaction, or T7 fires.
+  - **Rules the fix applied (Fred 2026-10-18):** a re-park on site counts the whole visit (decision 7 "longest single
+    stay" reversed for 2026 history); loads in one shift are summed, with the main load's times kept as arrival and
+    departure (so `duration_minutes` can exceed departure minus arrival on those rows, on purpose); a Samsara stay
+    holding two parkings is split at the physical move; a shared stop is split only at an independent boundary
+    (timer, pump quiet gap with a tap, a move), else whole to each; a visit takes a stay only on its own evidence;
+    a parked GPS stop of 3 min or more inside a Samsara trip counts; pumping goes to the truck whose pump ran.
+    Q3 (errands) was not chosen. The NIGHTLY writers still use the old rules for visits from 10-08 on: that is the
+    capture plan (`docs/decisions-to-build.md`, visit duration).
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
   (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
 - 🛑 **BOTH SAMSARA FEEDS (GPS + readings) HAVE A WATCHDOG, FALLBACK RUNNERS AND GUARDS (`2026-10-15_2230`; Fred: "a
