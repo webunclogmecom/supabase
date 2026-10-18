@@ -41,21 +41,25 @@ const PHOTO_BUCKET = 'GT - Visits Images'
 // Fred, 2026-09-23 on the (OLD) prefix: "It's the same one, it says OLD on some of them because
 // they don't do it anymore, it's a drivers job and diego is no driver." So (OLD) is a statement
 // about the person's CURRENT role, not a different person. Map it to the same employee.
-const DRIVER_ALIASES: Record<string, string> = {
-  'anthony': 'Anthony',
-  'marc': 'Mark',
-  'mark': 'Mark',
-  'grecia': 'Grecia',
-  'michael e': 'Michael Escobar',
-  'michael escobar': 'Michael Escobar',
-  'steven': 'Steven',
-  'jeffry': 'Jeffry',
-  'aaron': 'Aaron',
-  '(old) ray': 'Raymond Lee',
-  '(old) diego': 'Diego',
-  '(old) ishad': 'Ishad Knight',
-  '(old) yan': 'Yannick',
-  '(old) kevis': 'Kevis Bell',
+//
+// 🛑 The values are public.employees.id, NOT names (2026-10-18). The HR App now edits full_name
+// (hr.update_employee), and a name match would silently detach every new inspection of a renamed
+// person. Checked against Prod 2026-10-18: each id below is the person named in the comment.
+const DRIVER_ALIASES: Record<string, number> = {
+  'anthony': 37,           // Anthony
+  'marc': 35,              // Mark
+  'mark': 35,              // Mark
+  'grecia': 1,             // Grecia
+  'michael e': 40,         // Michael Escobar
+  'michael escobar': 40,   // Michael Escobar
+  'steven': 24,            // Steven
+  'jeffry': 25,            // Jeffry
+  'aaron': 26,             // Aaron
+  '(old) ray': 22,         // Raymond Lee
+  '(old) diego': 28,       // Diego
+  '(old) ishad': 8,        // Ishad Knight
+  '(old) yan': 27,         // Yannick
+  '(old) kevis': 23,       // Kevis Bell
 }
 
 // ⚠ The number in the Fillout label is a NICKNAME, not a capacity, and it disagrees with the fleet
@@ -324,7 +328,7 @@ Deno.serve(async (req) => {
         unresolved.push(`driver:${driverRaw}`)
       } else {
         const { data } = await supabase
-          .from('employees').select('id').eq('full_name', target).maybeSingle()
+          .from('employees').select('id').eq('id', target).maybeSingle()
         if (data) employeeId = data.id
         else unresolved.push(`driver:${driverRaw}->${target}`)
       }
