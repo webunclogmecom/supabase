@@ -50,6 +50,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Activity history (2026-06-25): the company-wide "recent activity" page and the redaction ADR were never done.
 - 2026-08-21 loading states: `03-brand-and-design-system.md` is still titled "UnclogMe Sales App" while Building Apps rule 1 cites it.
 
+**Visit duration (time on site)**
+- 2026-10-18 one-time fix of the saved 2026 durations (Fred: "run all these Almost certain to help" plus Q2 loads, Q4, Q1 and Q8 of the plan; Q11, reading the photo stamps, after the rest). Spec: the local plan `samsara-checks/duration_fix_plan_2026-10-18/PLAN.md` (names clients, outside the repo). Answers: Q2 re-park = whole visit (reverses the 2026-10-15 "longest single stay"), Q2 loads = sum within one shift, Q5 = split a Samsara stay at the physical move, Q6 = a visit takes a stay only on its own evidence (reverses the 2026-10-14 decision on 8017), Q7 = a parked GPS stop of 3 min or more counts, Q9 = blanks with no Samsara truck stay blank (drive-bys `reviewed_blank`), Q10 = lock the other-day visits, Q4 = pumping goes to the truck whose pump ran (Fred's 10-15 trucks change only on his card), Q1 = split a shared stop only at an independent boundary, Q8 = per-property measuring overrides. Building now.
+- The same answers for visits dated from 2026-10-18 (the capture plan, not designed yet): until then the 03:50 Samsara recheck still keeps the longest part of a re-parked visit and gives a shared stop whole to each visit.
+
 **Email / tank sensors**
 - 2026-10-14 email delivery: Admin Review `11-city-email.md:90` and DERM Tracker `06-features-and-routes.md` not updated; `derm_email_smoke.js` has no bcc option; nothing reminds anyone to read the city-open numbers around 2026-11-18 (gate for D5).
 - 2026-10-12 tank sensors: docs (no ADR, schema.md, the plan header still says "Nothing applied"); app views beyond the Calendar tiles (M9).
@@ -69,6 +73,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Reason photos: move the 13 frequency-change proof images to the new setup?
 - Loading states spec: approve the remaining three screens, the delay gate, and the two cheap accessibility fixes?
 - Email D5 (separate archive email): after the ~2026-11-18 numbers.
+- Visit duration: Q3 (a short errand in the middle of a job: sum the parts or keep) was not chosen on 2026-10-18; those visits keep their value.
 - Stamp: publish the chip clamp; redo ticket-838130 (043-MIL 2 rows, 009-CN 3 rows on one card each; reopens a completed sheet).
 
 ## 4. Built (recent, with evidence)
