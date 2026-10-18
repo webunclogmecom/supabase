@@ -1,6 +1,6 @@
 # HR App: editable employee record, pay rates and a pay and bonus history
 
-*2026-10-18 ET. Status: BUILT and live 2026-10-18 (Supabase `2026-10-18_0320`, `_0400`; HR App build published). The review the same night changed the plan: see the two migration headers, which are the record of what shipped (rights rules on email and status, per-source bonus decisions under a lock, Admin Review's $0 rule for a shift with a form issue, company-only bonus amounts until Admin Review reads them). Supersedes the "current value only" pay decision of
+*2026-10-18 ET. Status: BUILT and live 2026-10-18 (Supabase `2026-10-18_0320`, `_0400`, the health check `_1626`; HR App build published). The review the same night changed the plan: see the two migration headers, which are the record of what shipped (rights rules on email and status, per-source bonus decisions under a lock, Admin Review's $0 rule for a shift with a form issue, company-only bonus amounts until Admin Review reads them). Supersedes the "current value only" pay decision of
 `2026-08-31-hr-app-employee-management-design.md` (decision 4) on Fred's word below.*
 
 ## 1. The ask
