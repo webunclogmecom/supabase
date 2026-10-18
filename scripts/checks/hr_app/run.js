@@ -20,7 +20,7 @@ function query(sql) {
   });
 }
 (async () => {
-  const files = process.argv.slice(2).length ? process.argv.slice(2) : ['probe_edit.sql', 'probe_pay_bonus.sql'];
+  const files = process.argv.slice(2).length ? process.argv.slice(2) : ['probe_edit.sql', 'probe_pay_bonus.sql', 'probe_bonus_amounts.sql'];
   let failed = 0;
   for (const f of files) {
     const sql = 'BEGIN;\n' + fs.readFileSync(path.resolve(__dirname, f), 'utf8') + '\nROLLBACK;\n';
