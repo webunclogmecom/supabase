@@ -44,7 +44,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 **Sign-in / apps**
 - 2026-08-26 auth gate: the recovery marker as a shared cookie (a reset link opened in one app can sign you in to the others); live sign-in checks done on DERM Tracker only; the gate rules are not in each app's CLAUDE.md (Stamp's still says the round-trip cut is not shipped).
-- HR app, still not built: documents bucket and upload link, emergency contact, invites, Add employee, privileges enforcement in other apps; the `hr-bonus-health` item in the daily email (waits for the other session to release `ops.v_health_items`); Admin Review reading the bonus amount from HR (until then the bonus amounts stay $10 / $25 for everyone); hourly earnings (needs the Jobber time sheet sync); the Privileges banner heading wording.
+- HR app, still not built: documents bucket and upload link, emergency contact, invites, Add employee, privileges enforcement in other apps; the `hr-bonus-health` item in the daily email (waits for the other session to release `ops.v_health_items`); Admin Review reading the bonus amount from HR (until then the bonus amounts stay $10 / $25 for everyone); hourly earnings (needs the Jobber time sheet sync).
 - Activity history (2026-06-25): the company-wide "recent activity" page and the redaction ADR were never done.
 - 2026-08-21 loading states: `03-brand-and-design-system.md` is still titled "UnclogMe Sales App" while Building Apps rule 1 cites it.
 
