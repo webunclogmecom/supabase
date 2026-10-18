@@ -44,7 +44,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 **Sign-in / apps**
 - 2026-08-26 auth gate: the recovery marker as a shared cookie (a reset link opened in one app can sign you in to the others); live sign-in checks done on DERM Tracker only; the gate rules are not in each app's CLAUDE.md (Stamp's still says the round-trip cut is not shipped).
-- HR app (2026-08-31; phase 1 deferred by Fred 2026-09-01): read-only; any signed-in staff member can open it (no admin/office gate); no HR tables, documents bucket, upload link, invites.
+- HR app: record edit, pay rates and the pay and bonus history are being built (2026-10-18, Fred: "the page where we can see each client data and that we can edit ... pay rate, bonuses ... a history of that, linked to where it comes from"; spec `docs/superpowers/specs/2026-10-18-hr-app-record-pay-bonus-history-design.md`). DB live (`2026-10-18_0320`, `_0400`, fillout-inspection v14); app build in Lovable. Still not built: documents bucket and upload link, emergency contact, invites, Add employee, privileges enforcement in other apps; the `hr-bonus-health` item in the daily email (waits for the other session to release `ops.v_health_items`); Admin Review reading the bonus amount from HR (until then the bonus amounts stay $10 / $25 for everyone).
 - Activity history (2026-06-25): the company-wide "recent activity" page and the redaction ADR were never done.
 - 2026-08-21 loading states: `03-brand-and-design-system.md` is still titled "UnclogMe Sales App" while Building Apps rule 1 cites it.
 
@@ -73,6 +73,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Loading states spec: approve the remaining three screens, the delay gate, and the two cheap accessibility fixes?
 - Email D5 (separate archive email): after the ~2026-11-18 numbers.
 - Visit duration: Q3 (a short errand in the middle of a job: sum the parts or keep) was not chosen on 2026-10-18; those visits keep their value.
+- HR pay: who may see pay (default: admins only, Fred and Yannick; office sees bonuses but not rates)? Two-person crew visit bonus (default: each person gets it; Yan's open question since 2026-10-06)? Shift 2026-10-05 (Michael) was approved in Admin Review with a form issue, so it counts $0 as the app showed: confirm. Per-person bonus amounts (need Admin Review to read them first)?
 - Stamp: redo ticket-838130 (043-MIL 2 rows, 009-CN 3 rows on one card each; reopens a completed sheet).
 
 ## 4. Built (recent, with evidence)
