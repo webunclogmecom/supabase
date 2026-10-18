@@ -935,3 +935,9 @@ verify_jwt = false
 # handler requires role=service_role, only trustworthy behind verify_jwt.
 [functions.time-on-site-samsara-recheck]
 verify_jwt = true
+
+# call-first-reminder: daily 11 AM Eastern Slack post of the clients to phone for approval before scheduling (2026-10-18,
+# design 2026-08-17). Called by pg_cron (fn_request_call_first_reminder) with the vault service_role key; the handler
+# requires role=service_role, only trustworthy behind verify_jwt.
+[functions.call-first-reminder]
+verify_jwt = true
