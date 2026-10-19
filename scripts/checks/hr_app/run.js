@@ -1,6 +1,6 @@
 // Runs the HR App probes against Prod inside a transaction that always rolls back (each probe ends by
 // RAISE-ing its results), and prints PASS / FAIL per probe. Nothing is ever committed.
-// usage: node scripts/checks/hr_app/run.js            (both files)
+// usage: node scripts/checks/hr_app/run.js            (every probe file)
 //        node scripts/checks/hr_app/run.js probe_edit.sql
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +20,7 @@ function query(sql) {
   });
 }
 (async () => {
-  const files = process.argv.slice(2).length ? process.argv.slice(2) : ['probe_edit.sql', 'probe_pay_bonus.sql', 'probe_bonus_amounts.sql', 'probe_health.sql'];
+  const files = process.argv.slice(2).length ? process.argv.slice(2) : ['probe_edit.sql', 'probe_pay_bonus.sql', 'probe_bonus_amounts.sql', 'probe_health.sql', 'probe_history_fields.sql'];
   let failed = 0;
   for (const f of files) {
     const sql = 'BEGIN;\n' + fs.readFileSync(path.resolve(__dirname, f), 'utf8') + '\nROLLBACK;\n';
