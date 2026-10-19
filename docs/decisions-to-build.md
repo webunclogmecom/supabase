@@ -83,6 +83,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 | date | plan | evidence |
 |---|---|---|
+| 2026-10-19 | Corner radius like the Visit Calendar in every app (Fred: "the same across all apps"; Building Apps rule 1f): `--radius` .625rem in Admin Review, Client App, DERM Tracker, Field Portal (the other six already matched) | each app's `docs/08-changelog.md` 2026-10-19; BA c5f4ee0, 4be382f, 63eba22, rule 1f 0229bec; DERM + FP shipped with a vite-tanstack-config bump to 2.26.5, Fred OK |
 | 2026-10-17 | Grease trap location on the property (Inside / Outside / Inside and Outside): Client App field, site survey third answer, Planner accept row, Viktor's Jobber-notes list (59 of 82 loaded) | Supabase `2026-10-16_1530`, `_1730`, `_1745`, `_1815`, `2026-10-17_0034`; open: 168-AVA, 222-SPE, 067-TCE wait on Fred (section 3) |
 | 2026-10-18 | ticket-838130 redone with one stamp per permit (043-MIL 2, 009-CN 3), completed again | Supabase `2026-10-18_1240`, 17d2b5a |
 | 2026-10-18 | Stamp chips stay inside the sheet (view + Export PNG), published with Fred's OK and Lovable's unasked TanStack bump | Stamp Studio changelog 2026-10-18; live `index-QfyMBtNI.js`; guard/flock/module checks PASS |
