@@ -4390,14 +4390,24 @@ permits**, so a backlog read off it was understated by up to 37%. That understat
 `2026-08-31_0914`. ⚠ The metric's MEANING changed without its name changing, so any threshold or
 dashboard calibrated against the old numbers now reads high for a good reason.
 
-🛑 **A GDO REPORT NEVER GOES WITHOUT ITS SHEET (2026-10-18, `2026-10-18_0220`, Fred: "go ahead").** The queue
-attached only `derm_address_url`, so a Broward-dump visit (whose sheet is a per-visit FDEP sheet in
-`derm.manifest_visit_sheets`) was filed with an empty address list: 3 of 40 real SUCCESS filings (visits 6218,
-8089, 6721). `v_derm_portal_fields` now carries `visit_sheet_urls` (from `derm.fn_fog_documents`, read only when
-the manifest has no address sheet) and `has_sheet`; the queue serves only `has_sheet` rows, the held view says
-`no_sheet`, `v_rpa_derm_health.held_no_sheet` raises `rpa_held_no_sheet` (plain issue + what to do) into the
-health email, and `rpa-derm-queue` v30 sends the visit sheet as `documents.address`. The 3 past filings went
-without a sheet; correcting them at the county is Fred's and Jonathan's call.
+🛑 **A GDO ONLINE REPORT TAKES NO DOCUMENT, SO NOTHING IS EVER HELD FOR A SHEET (2026-10-18, `2026-10-18_2100`,
+Fred: "go ahead").** The county form is permit, hauler, date pumped and a certification checkbox, with no attachment;
+the bot (`webunclogmecom/unclogme-gdo-report-bot`) never downloads `documents.*` (its code and its docs, read
+2026-10-18). `2026-10-18_0220` had held a report until a sheet was on file, on the strength of our own contract note
+"county submission needs the real document", which was marked pending and never confirmed: it could only delay a
+filing. `_2100` puts the queue, held view, health view and logger back to their pre-10-18 bodies (`v_derm_portal_fields`
+keeps the unused `visit_sheet_urls` / `has_sheet` columns) and `rpa-derm-queue` v31 sends `documents` as empty lists,
+so no signed URL of a multi-client sheet leaves the database. The 3 Broward-dump filings that note called incomplete
+(visits 6218, 8089, 6721) were accepted by DERM and need nothing. 🛑 Before building on what a bot or portal "needs",
+read the bot's own docs and code, not our side's description of it.
+
+✅ **A PICKUP IN MIAMI-DADE OWES ITS DERM GDO REPORT WHEREVER IT WAS DUMPED (Fred, 2026-10-18: "Yes they still owe
+the DERM GDO report").** The queue has never filtered on the dump county, so this needed no change: swept 2026-10-18,
+every GDO-reporting visit picked up in Dade and dumped in Broward since the 2026-07-21 launch was served (8 of 9
+filed; 8095 / 246-LOUI waits on the permit's county login, a `data_error`, not the dump). The one before launch is
+6616 / 043-MIL (2026-07-08, 2 permits), like all 51 pre-launch GDO visits with no filing in our records. The four Dade
+pickups on Broward manifest 306859 that the bot's `OPEN_QUESTIONS.md` #4 asked about (226-JER, 034-LG, 056-STM,
+182-PAL) are not GDO-reporting clients (no Line Item 27), so no online report is filed for them wherever they dump.
 
 ✅ **THE OTHER HALF OF "EMPTY OR STUCK": `public.v_rpa_derm_stale_leases` (2026-09-01).**
 Gate 4 hides a dispensed (visit, permit) for 20 hours, so a bot that TAKES the work and never posts

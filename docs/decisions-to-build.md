@@ -20,7 +20,6 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 | what | evidence | who |
 |---|---|---|
 | **226-JER Jerusalem Pizza is past its permit limit.** GDO-03256 allows 60 days; last service 2026-08-17 (61 days on 10-17); nothing booked. ✅ 2026-10-18: the call-first reminder is built and request 81 "Call for approval" is in To Be Scheduled (Call first chip); the 11 AM post names it. **Still needs the call and a booking.** | visits, gdos, ops.visit_requests 81 | office (Diego) |
-| **The GDO bot filed 3 Broward-dump visits with Miami-Dade without their manifest sheet.** Visits 6218 (Oct 8), 8089 and 6721 (Oct 16), all SUCCESS. ✅ 2026-10-18 fixed for the future (`2026-10-18_0220`, `rpa-derm-queue` v30: the visit sheet is attached; a visit with no sheet is held `no_sheet` and reaches the health email). **Open: whether to correct the 3 filings at the county.** | `derm_portal_submissions` 2008, 2015, 2016 | Fred / Jonathan |
 | **ticket-836361 has been completed since 2026-10-01 and 288-PER's copy was never made.** Cause: page 2 of the paper was never uploaded and the stamp was placed on it anyway. ✅ 2026-10-18 the rule is fixed (`2026-10-18_0230`: no stamp on a page without a scan; the health email names such sheets). **Still needs page 2 uploaded in the DERM Tracker.** | the view, card 3001 | office |
 | **3,106 DERM documents are still in public storage, and the number grows** (2026-09-27 plan: only Stage 0 was approved; Stages 1-11 wait on 13 decisions). | storage census by the audit | Fred |
 
@@ -32,7 +31,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - 2026-09-02 printed-rule phase flip: A (one phase test for app and server) and C (trim short end bars, re-check measured pages) not built.
 - Completion-gated publish: one client page per 5-minute tick (a 10-client sheet takes about 50 min); the claim-lock + bigger batch was never built.
 - 2026-09-03 sheet-number read: the 10-minute job still calls the reader on every run (only the upload trigger checks first).
-- Broward spec (2026-09-07): no county warning on Move/Add visit; `fn_sheet_publishable` has no Broward exit; /upload wording changes; no health count for Broward visits missing their sheet; two docs still describe the County dropdown (DERM Tracker CLAUDE.md rule 8, Stamp 02-architecture.md:52); the GDO bot item above.
+- Broward spec (2026-09-07): no county warning on Move/Add visit; `fn_sheet_publishable` has no Broward exit; /upload wording changes; no health count for Broward visits missing their sheet; two docs still describe the County dropdown (DERM Tracker CLAUDE.md rule 8, Stamp 02-architecture.md:52); the GDO bot item is closed (2026-10-18, the county form takes no sheet).
 - 2026-08-28 in-app detection: ticket-312024 p2 was saved by the machine without the person check the plan asked for.
 
 **Clients / calls / scheduling**
@@ -86,7 +85,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 | 2026-10-18 | No stamp on a page without a scan; completed sheets with an unpublished copy reach the health email | Supabase `2026-10-18_0230`, 95b1516 |
 | 2026-10-18 | HR App: editable employee record, pay rates (admins only), pay and bonus history linked to Admin Review approvals; renames safe for the shift inspection form | Supabase `2026-10-18_0320`, `_0400`, fillout-inspection v14, `scripts/checks/hr_app/run.js` (38 checks); HR App live chunk `employees._id-CfBT9n92.js`; Building Apps f19e325 |
 | 2026-10-18 | Admin Review reads the bonus amounts from HR; admins change the company amounts in the HR App (from today or later) | Supabase `2026-10-18_1410` (`hr.get_bonus_amounts`, `hr.set_company_bonus`, 7 probes); Admin Review live chunk `App-BPJEw14Q.js`; HR App company bonus edit live; Building Apps eaa9dc1 |
-| 2026-10-18 | GDO online reports carry the visit's own sheet; never filed without one | Supabase `2026-10-18_0220`, `rpa-derm-queue` v30, 70bafb3 |
+| 2026-10-18 | GDO reports are never held for a sheet (the county form takes none); `documents` sent empty. Reverses `_0220` | Supabase `2026-10-18_2100`, `rpa-derm-queue` v31, fd28840 |
+| 2026-10-18 | A Dade pickup dumped in Broward still owes its DERM GDO report (Fred). Already true in the queue; swept: 8 of 9 filed, 8095 waits on its county login | sweep in Supabase CLAUDE.md |
+| 2026-10-18 | ~~GDO online reports carry the visit's own sheet; never filed without one~~ (reversed the same day by `_2100`) | Supabase `2026-10-18_0220`, `rpa-derm-queue` v30, 70bafb3 |
 | 2026-10-17 | 11 AM Stamp post says why each sheet waits | Supabase `2026-10-17_1330`, `stamp-sheets-reminder` v12, b9acb00 |
 | 2026-10-17 | One stamp per GDO permit, automatic (decided 2026-08-27) | Supabase `2026-10-17_0050`, 9a9472e |
 | 2026-10-13 | Intake task closes on submit / cancel / expiry | `2026-10-13_1235`, `intake-task-sync` |
