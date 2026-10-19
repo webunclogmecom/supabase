@@ -10,6 +10,7 @@ BEGIN
   select v.id, vt.employee_id, lower(btrim(e.email)) into v_vis, v_emp, v_email
     from public.visits v join public.visit_team vt on vt.visit_id = v.id join public.employees e on e.id = vt.employee_id
    where v.visit_status = 'completed' and v.deleted_at is null and e.email is not null
+     and coalesce(e.access_level, '') not in ('admin', 'office')   -- decider_unknown needs an earner who cannot approve
      and not exists (select 1 from public.visit_reviews vr where vr.visit_id = v.id and vr.bonus_status = 'approved')
    order by v.id desc limit 1;
   set local session_replication_role = replica;

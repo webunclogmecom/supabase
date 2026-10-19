@@ -181,7 +181,8 @@ BEGIN
   PERFORM set_config('role', 'authenticated', true);
   v_res := hr.get_pay_summary();
   PERFORM set_config('role', 'none', true);
-  r := r || jsonb_build_object('t','12b office pay summary hidden','ok', (v_res->>'can_see_pay') = 'false' AND jsonb_array_length(v_res->'rows') = 0);
+  r := r || jsonb_build_object('t','12b office sees bonus amounts, never pay','ok', (v_res->>'can_see_pay') = 'false' AND jsonb_array_length(v_res->'rows') > 0
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_res->'rows') x WHERE x ? 'hourly' OR x ? 'salary_weekly' OR x ? 'salary_yearly'));
 
   -- 13 drift after all this (the soft-deleted visit is handled; the test shift rows are granted)
   SELECT count(*) INTO n FROM hr.v_bonus_drift WHERE problem IN ('missing_grant', 'grant_not_expected');
