@@ -18,10 +18,11 @@
 //     visit_id, manifest_id, dry_run, client_code, client_name, client_email,
 //     address, city, zip, county, gdo_number, service_date, dump_ticket_date,
 //     ticket_number, jurisdiction, white_manifest_number, disposal_facility,
-//     documents: { address: [urls], receipt: [urls] }   // signed, 4h TTL
+//     documents: { address: [], receipt: [] }   // always empty since 2026-10-18 (v31)
 // }]}
-// documents.address (2026-10-18) = the shared Miami-Dade address sheet when the manifest has one, otherwise the
-// visit's own sheet (a Broward-dump visit's FDEP sheet). A visit with neither is not served (held: no_sheet).
+// documents (2026-10-18_2100): sent EMPTY, key kept so the shape does not change. The county's GDO online report
+// form takes no attachment and the bot never downloaded these (read in its code and docs), so signing the raw
+// multi-client sheet only exposed other clients' rows. A report is never held for a sheet.
 // ticket_number (2026-07-24) = the dump-ticket number to file, regardless of
 // county: Miami-Dade loads carry it as the white manifest #, Broward/PBC loads
 // as the yellow Septage Receiving #. USE THIS, not white_manifest_number, which
@@ -30,12 +31,11 @@
 //
 // Lifecycle gates (SUCCESS permanent, 20h attempt cooldown, data-errors held
 // until the manifest changes) live in public.v_derm_portal_queue — the DB is
-// the single source of queue truth, this fn only signs URLs and shapes JSON.
+// the single source of queue truth, this fn only shapes JSON.
 // ============================================================================
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
-const SIGNED_URL_TTL_SECONDS = 4 * 60 * 60 // 4 hours, sized to one bot run
 const BATCH_CAP = 25
 // Dry-run only: how many rows of v_derm_portal_dryrun to read before sampling.
 // The view holds 49 rows (2026-09-18) and only grows if the launch cutoff moves;
@@ -75,24 +75,6 @@ function json(body: Record<string, unknown>, status: number): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
-}
-
-// Storage values are stored as full public-object URLs. Extract {bucket, path}
-// so we can mint signed URLs (works today on the public bucket and keeps
-// working when DERM storage goes private).
-function parseStorageUrl(url: string): { bucket: string; path: string } | null {
-  // new URL().pathname drops query strings/fragments for free; the alternation
-  // also handles stored sign/authenticated-shaped URLs (review finding 6).
-  // Any throw (malformed URL, stray % breaking decodeURIComponent) returns
-  // null so one bad row degrades one link, never the whole queue response.
-  try {
-    const pathname = new URL(url).pathname
-    const m = pathname.match(/\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/)
-    if (!m) return null
-    return { bucket: decodeURIComponent(m[1]), path: decodeURIComponent(m[2]) }
-  } catch {
-    return null
-  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -155,37 +137,9 @@ Deno.serve(async (req: Request) => {
     rows = interleaveByJurisdiction(data ?? [], BATCH_CAP)
   }
 
-  const sign = async (raw: string | null): Promise<string | null> => {
-    if (!raw) return null
-    try {
-      const parsed = parseStorageUrl(raw)
-      if (!parsed) return raw // non-storage URL: pass through untouched
-      const { data, error: signErr } = await sb.storage
-        .from(parsed.bucket)
-        .createSignedUrl(parsed.path, SIGNED_URL_TTL_SECONDS)
-      if (signErr || !data?.signedUrl) {
-        console.error(`sign failed for ${parsed.path}: ${signErr?.message}`)
-        return raw // TODO when DERM storage goes PRIVATE: fail closed instead
-        // (drop the manifest from the batch) — a raw URL will 400 by then and
-        // the bot would submit without its documents.
-      }
-      return data.signedUrl
-    } catch (e) {
-      console.error(`sign threw for a stored URL: ${e}`)
-      return raw
-    }
-  }
-
-  // One row per code-27 VISIT to report online (its linked manifest gives docs).
+  // One row per code-27 VISIT to report online.
   const reports = []
   for (const r of rows ?? []) {
-    // 2026-10-18 (migration 2026-10-18_0220): a Broward-dump visit has no shared Miami-Dade address sheet; its
-    // sheet is the per-visit FDEP sheet, which the view hands over as visit_sheet_urls (derm.fn_fog_documents).
-    // Three filings (visits 6218, 8089, 6721) went out with an empty address list before this. The view no
-    // longer serves a visit with no sheet at all (held_by 'no_sheet').
-    const sharedSheet = [r.derm_address_url, ...(r.derm_address_extra_urls ?? [])].filter(Boolean)
-    const addressDocs = sharedSheet.length ? sharedSheet : (r.visit_sheet_urls ?? []).filter(Boolean)
-    const receiptDocs = [r.derm_manifest_url, ...(r.derm_manifest_extra_urls ?? [])].filter(Boolean)
     reports.push({
       visit_id: r.visit_id,
       manifest_id: r.manifest_id,
@@ -212,10 +166,8 @@ Deno.serve(async (req: Request) => {
       jurisdiction: r.jurisdiction, // 'dade' | 'broward' | 'unknown'
       white_manifest_number: r.white_manifest_number, // back-compat; NULL for Broward
       disposal_facility: r.disposal_facility,
-      documents: {
-        address: await Promise.all(addressDocs.map(sign)),
-        receipt: await Promise.all(receiptDocs.map(sign)),
-      },
+      // 2026-10-18_2100: the county form takes no attachment and the bot never read these. Key kept, lists empty.
+      documents: { address: [], receipt: [] },
     })
   }
 
@@ -286,8 +238,6 @@ Deno.serve(async (req: Request) => {
         'non-retryable failure is holding the row until something about it changes - if you ' +
         'fixed the cause OUTSIDE our database (a county portal credential, a permit ' +
         'registration) tell us and we will re-open it; we cannot see that from here. ' +
-        '`no_sheet` means the visit has no manifest sheet on file yet (no Miami-Dade address sheet and no ' +
-        'per-visit Broward sheet); it is served as soon as the sheet is uploaded in the DERM Tracker. ' +
         '`not_held` entries are not problems: a sibling permit simply won this pass, or the ' +
         'visit predates the launch cutoff.',
     }
