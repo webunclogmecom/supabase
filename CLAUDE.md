@@ -4408,6 +4408,7 @@ filed; 8095 / 246-LOUI waits on the permit's county login, a `data_error`, not t
 6616 / 043-MIL (2026-07-08, 2 permits), like all 51 pre-launch GDO visits with no filing in our records. The four Dade
 pickups on Broward manifest 306859 that the bot's `OPEN_QUESTIONS.md` #4 asked about (226-JER, 034-LG, 056-STM,
 182-PAL) are not GDO-reporting clients (no Line Item 27), so no online report is filed for them wherever they dump.
+Full record (the sweep table, the 8095 login failure, proof): `docs/audits/2026-10-18_gdo_sheet_hold_reversal_and_mixed_route_sweep.md`.
 
 ✅ **THE OTHER HALF OF "EMPTY OR STUCK": `public.v_rpa_derm_stale_leases` (2026-09-01).**
 Gate 4 hides a dispensed (visit, permit) for 20 hours, so a bot that TAKES the work and never posts
