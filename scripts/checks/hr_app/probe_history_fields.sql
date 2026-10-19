@@ -32,12 +32,18 @@ BEGIN
   r := r || jsonb_build_object('t','1 an 11:30 PM ET approval is dated that ET day','ok', it->>'decided_on' = '2026-10-07' AND it->>'decided_time' = '23:30', 'v', it->>'decided_on');
   r := r || jsonb_build_object('t','2 the grant knows it was taken back after its week','ok', (it->>'reversed')::boolean AND (it->>'after_week_ended')::boolean, 'v', it->'after_week_ended');
   r := r || jsonb_build_object('t','3 the link is absolute','ok', it->>'admin_review_url' = 'https://admin.unclogme.app/review/' || v_visit);
-  SELECT h INTO it FROM jsonb_array_elements(j->'history') h WHERE (h->>'id')::bigint = v_rate AND h->>'type' = 'rate_change';
-  r := r || jsonb_build_object('t','4 a pay change carries the previous amount','ok', (it->>'previous_amount')::numeric = 18 AND NOT (it->>'first_rate')::boolean AND NOT (it->>'counts_in_total')::boolean);
+  -- since 2026-10-19_1815 a pay change is in Activity, never in the history
+  SELECT a INTO it FROM jsonb_array_elements(j->'activity') a WHERE (a->>'id')::bigint = -v_rate AND a->>'operation' = 'RATE';
+  r := r || jsonb_build_object('t','4 a pay change is in Activity with the previous amount, not in the history','ok',
+        it->'changes'->0->>'field' = 'Hourly rate' AND it->'changes'->0->>'old' = '$18.00' AND it->'changes'->0->>'new' = '$20.00 from Oct 1, 2026'
+        AND it->'changes'->1->>'new' = 'probe raise'
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(j->'history') h WHERE h->>'type' = 'rate_change'), 'v', it);
 
   PERFORM set_config('request.jwt.claims', c_office, true);
   j := hr.get_employee_record(40);
-  r := r || jsonb_build_object('t','5 office never receives pay rate rows','ok', NOT EXISTS (SELECT 1 FROM jsonb_array_elements(j->'history') h WHERE h->>'type' = 'rate_change'));
+  r := r || jsonb_build_object('t','5 office never receives an hourly change','ok',
+        NOT EXISTS (SELECT 1 FROM jsonb_array_elements(j->'activity') a WHERE (a->>'id')::bigint = -v_rate)
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(j->'history') h WHERE h->>'type' = 'rate_change'));
 
   -- a deleted visit gives no button
   SET LOCAL session_replication_role = replica;

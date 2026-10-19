@@ -149,7 +149,7 @@ BEGIN
   PERFORM set_config('role', 'none', true);
   r := r || jsonb_build_object('t','11b admin sets hourly and sees it','ok',
         (v_res->'viewer'->>'can_see_pay') = 'true' AND (v_res->'rates'->0->>'amount')::numeric = 21.50
-        AND exists (SELECT 1 FROM jsonb_array_elements(v_res->'history') h WHERE h->>'type' = 'rate_change'),
+        AND exists (SELECT 1 FROM jsonb_array_elements(v_res->'activity') a WHERE a->>'operation' = 'RATE' AND a->'changes'->0->>'field' = 'Hourly rate'),
         'rates', v_res->'rates');
   BEGIN
     PERFORM set_config('role', 'authenticated', true);
