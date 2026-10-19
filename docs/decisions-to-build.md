@@ -34,6 +34,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Broward spec (2026-09-07): no county warning on Move/Add visit; `fn_sheet_publishable` has no Broward exit; /upload wording changes; no health count for Broward visits missing their sheet; two docs still describe the County dropdown (DERM Tracker CLAUDE.md rule 8, Stamp 02-architecture.md:52); the GDO bot item is closed (2026-10-18, the county form takes no sheet).
 - 2026-08-28 in-app detection: ticket-312024 p2 was saved by the machine without the person check the plan asked for.
 
+**HR App redesign** (plan: Building Apps/HR App/docs/specs/2026-10-19-hr-app-redesign-plan.md; Fred 2026-10-19: "go with the real data, and go as recommended")
+- Release 1, the pay and bonus history: 20 per page in a box that scrolls on a laptop; the full white "Open in Admin Review" button on every row; Excel with write-excel-file 4.1.1; office may export (bonus rows only), plus a "By payroll week" sheet; a late take-back stays in the week of the work, with a health email and an "after that week ended" tag; opens on All time and keeps the period from person to person; mockups with real data. Needs the history fields migration first.
+- Release 2 (after Fred uses release 1): Bonus amounts page, top bar, staff list, person page tabs; pay changes stay in the history table, editing of company amounts moves to the Bonus amounts page, unbuilt parts hidden (Send invite note kept), simple Status/Access chips on the staff list. Open: Staff vs Employees, level chip colors, radius pair, past-changes list, empty columns, one or several pay types.
+- Watched ceiling: server paging (hr.get_pay_history) once one person passes 800 history entries; cleanup migration removing detail and link once no live chunk reads them.
+
 **Clients / calls / scheduling**
 - 2026-05-31 client locations: no tenant name on the DERM Tracker lists, no pick/search by tenant; Wynd 28 tenants Presidente and CU4 have no permit; 148-MOR GDO-11226 has no location.
 - 2026-06-25 SA line items: New Visit cannot add fee or custom lines; the two drawer layout mockups were never shown; nobody proved an SA edit reaches the Jobber invoice cleanly.
