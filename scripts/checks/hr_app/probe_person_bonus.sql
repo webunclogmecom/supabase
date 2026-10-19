@@ -22,9 +22,9 @@ BEGIN
   -- 4. never backdated
   v_ok := false; BEGIN PERFORM hr.set_person_bonus(1, 'per_shift_bonus', 30, v_tomorrow - 2, 'probe'); EXCEPTION WHEN others THEN v_ok := SQLERRM LIKE 'The new amount can start today or later%'; END;
   r := r || jsonb_build_object('t','4 a past start date is refused','ok', v_ok);
-  -- 5. the company amount is retired with a plain sentence
-  v_ok := false; BEGIN PERFORM hr.set_company_bonus('per_visit_bonus', 12, v_tomorrow, 'probe'); EXCEPTION WHEN others THEN v_ok := SQLERRM LIKE 'Bonuses are set per person now.%'; END;
-  r := r || jsonb_build_object('t','5 company amount refuses in words','ok', v_ok);
+  -- 5. the company amount functions are gone (2026-10-19_1240)
+  r := r || jsonb_build_object('t','5 company amount functions removed','ok',
+        to_regprocedure('hr.get_bonus_amounts()') IS NULL AND to_regprocedure('hr.set_company_bonus(text,numeric,date,text)') IS NULL);
 
   PERFORM set_config('request.jwt.claims', c_office, true);
   -- 6. office cannot change an amount
