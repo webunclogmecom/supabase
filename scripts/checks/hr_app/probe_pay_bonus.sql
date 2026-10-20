@@ -134,7 +134,7 @@ BEGIN
   -- 11 rates: office refused, admin sets hourly, bonus kind refused
   BEGIN
     PERFORM set_config('role', 'authenticated', true);
-    v_res := hr.set_pay_rates(40, '{"hourly": 20}', current_date, 'probe');
+    v_res := hr.set_pay_rates(40, '{"hourly": 20}', (now() AT TIME ZONE 'America/New_York')::date, 'probe');
     PERFORM set_config('role', 'none', true);
     r := r || jsonb_build_object('t','11a office cannot set pay','ok', false);
   EXCEPTION WHEN others THEN
@@ -144,7 +144,7 @@ BEGIN
   END;
   PERFORM set_config('request.jwt.claims', v_claims_admin, true);
   PERFORM set_config('role', 'authenticated', true);
-  v_res := hr.set_pay_rates(40, '{"hourly": "21.50", "salary_weekly": null}', current_date, 'probe raise');
+  v_res := hr.set_pay_rates(40, '{"hourly": "21.50", "salary_weekly": null}', (now() AT TIME ZONE 'America/New_York')::date, 'probe raise');
   v_res := hr.get_employee_record(40);
   PERFORM set_config('role', 'none', true);
   r := r || jsonb_build_object('t','11b admin sets hourly and sees it','ok',
@@ -153,7 +153,7 @@ BEGIN
         'rates', v_res->'rates');
   BEGIN
     PERFORM set_config('role', 'authenticated', true);
-    v_res := hr.set_pay_rates(40, '{"per_visit_bonus": 12}', current_date, 'probe');
+    v_res := hr.set_pay_rates(40, '{"per_visit_bonus": 12}', (now() AT TIME ZONE 'America/New_York')::date, 'probe');
     PERFORM set_config('role', 'none', true);
     r := r || jsonb_build_object('t','11c bonus amount per person refused','ok', false);
   EXCEPTION WHEN others THEN
@@ -163,7 +163,7 @@ BEGIN
   END;
   BEGIN
     PERFORM set_config('role', 'authenticated', true);
-    v_res := hr.set_pay_rates(40, '{"hourly": "abc"}', current_date, 'probe');
+    v_res := hr.set_pay_rates(40, '{"hourly": "abc"}', (now() AT TIME ZONE 'America/New_York')::date, 'probe');
     PERFORM set_config('role', 'none', true);
     r := r || jsonb_build_object('t','11d bad amount refused','ok', false);
   EXCEPTION WHEN others THEN
