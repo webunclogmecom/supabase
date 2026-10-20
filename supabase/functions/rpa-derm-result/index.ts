@@ -256,8 +256,9 @@ Deno.serve(async (req: Request) => {
   // Unchanged and still load-bearing: resolved BEFORE the insert, because our own
   // row would otherwise change the answer; and a failure here is LOGGED AND
   // SWALLOWED, because a real county filing must never be rejected over the permit
-  // field. NULL stays the safe value, since the queue reads a null-permit
-  // submission as retiring the whole ticket (under-serve, never re-file).
+  // field. A NULL SUCCESS still retires every permit of the ticket (gate 1: under-serve, never re-file). A NULL
+  // FAILURE no longer holds a permitted row past the 20h cooldown (gate 3 is exact-pair since 2026-10-20_1345);
+  // the retry-loop health count catches it if it repeats (2026-10-20_1405).
   let gdoId: number | null = null
   {
     const claimed = typeof body.gdo_id === 'number' && Number.isInteger(body.gdo_id)
@@ -280,20 +281,28 @@ Deno.serve(async (req: Request) => {
         // then recorded THIS filing against a DIFFERENT permit, which gate 1 retires unfiled: the exact case the
         // bot's echo exists to close. Keep the bot's permit when it is one of this visit's client's permits, in
         // any status. Only a permit of another client falls back to inference.
-        const { data: own, error: oErr } = await sb
-          .from('gdos')
-          .select('id')
-          .eq('id', claimed)
-          .eq('client_id', visit.client_id)
-          .limit(1)
-        if (!oErr && own && own.length > 0) {
-          gdoId = claimed
-          console.info(`gdo_id ${claimed} is no longer in the queue's fields for visit ${visitId}; kept (same client)`)
+        // (Visible since 2026-10-20_1405: log_rpa_derm_health raises gdo_filed_permit_changed when the visit then
+        // has another permit, so a person sees the second report.)
+        if (visit.client_id == null) {
+          console.error(`visit ${visitId} has no client, so gdo_id ${claimed} cannot be checked; falling back to inference`)
         } else {
-          console.error(
-            `bot reported gdo_id ${claimed} which is not a permit of visit ${visitId}'s client; ` +
-            'falling back to inference',
-          )
+          const { data: own, error: oErr } = await sb
+            .from('gdos')
+            .select('id')
+            .eq('id', claimed)
+            .eq('client_id', visit.client_id)
+            .limit(1)
+          if (oErr) {
+            console.error(`permit ownership check failed for gdo_id ${claimed}, falling back to inference:`, oErr.message)
+          } else if (own && own.length > 0) {
+            gdoId = claimed
+            console.info(`gdo_id ${claimed} is no longer in the queue's fields for visit ${visitId}; kept (same client)`)
+          } else {
+            console.error(
+              `bot reported gdo_id ${claimed} which is not a permit of visit ${visitId}'s client; ` +
+              'falling back to inference',
+            )
+          }
         }
       }
     }

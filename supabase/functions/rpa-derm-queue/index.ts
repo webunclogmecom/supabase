@@ -94,6 +94,12 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
   // 2026-10-20 (v33): an unknown mode is REFUSED, never read as live. Live is the one mode that leases, so a typo
   // ('Peek', 'peeek') used to hold every waiting visit for 20h while looking like a harmless read.
+  // v34: a mistyped KEY ('?Mode=peek') was ignored, so the call was live and leased; any query key other than one
+  // `mode` is refused too.
+  const keys = [...url.searchParams.keys()]
+  if (keys.some((k) => k !== 'mode') || keys.length > 1) {
+    return json({ error: 'unknown_query', allowed: ['mode'], note: 'omit mode for the live queue' }, 400)
+  }
   const rawMode = url.searchParams.get('mode')
   if (rawMode !== null && rawMode !== 'dryrun' && rawMode !== 'peek') {
     return json({ error: 'unknown_mode', allowed: ['dryrun', 'peek'], note: 'omit mode for the live queue' }, 400)
@@ -229,9 +235,9 @@ Deno.serve(async (req: Request) => {
     for (const r of (heldRows ?? []) as { held_by: string }[]) {
       by[r.held_by] = (by[r.held_by] ?? 0) + 1
     }
-    // sibling_won_this_pass is NOT a hold - the queue serves one permit per manifest
-    // per pass and it comes up next time. Counting it as held would send someone
-    // hunting a problem that does not exist.
+    // sibling_won_this_pass is NOT a hold: another visit of the same client on the same dump holds that permit's
+    // slot (the view keeps the visit closest to the dump), and its filing covers this one. Counting it as held would
+    // send someone hunting a problem that does not exist.
     const { sibling_won_this_pass: siblings = 0, before_launch_cutoff: preCutoff = 0, ...gates } = by
     const gateTotal = Object.values(gates).reduce((n, v) => n + v, 0)
     held = {
@@ -244,12 +250,14 @@ Deno.serve(async (req: Request) => {
       },
       note:
         'Rows this pass is NOT serving, and why. `total`/`by_reason` are real holds. ' +
-        '`already_filed` is the healthy steady state, not a problem. `data_error` means a ' +
+        '`already_filed` is the healthy steady state, not a problem. `no_permit` means the client has no ' +
+        'GDO permit on file: never served to you, our health email names it, and it serves by itself once ' +
+        'the permit is entered. `data_error` means a ' +
         'non-retryable failure is holding the row until something about it changes - if you ' +
         'fixed the cause OUTSIDE our database (a county portal credential, a permit ' +
         'registration) tell us and we will re-open it; we cannot see that from here. ' +
-        '`not_held` entries are not problems: a sibling permit simply won this pass, or the ' +
-        'visit predates the launch cutoff.',
+        '`not_held` entries are not problems: another visit on the same dump holds that permit (its ' +
+        'filing covers this one), or the visit predates the launch cutoff.',
     }
   } catch (e) {
     console.error('held summary failed (serving anyway):', e instanceof Error ? e.message : String(e))

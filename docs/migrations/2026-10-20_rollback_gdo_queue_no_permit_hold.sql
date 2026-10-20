@@ -3,7 +3,12 @@
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 DO $g$ BEGIN
-  IF md5(rtrim(regexp_replace(pg_get_viewdef('public.v_derm_portal_queue'::regclass, true), '^[[:space:]]+|[[:space:]]+$', '', 'g'), ';')) <> '28987ab073fd690275ab06a20328633a' THEN RAISE EXCEPTION 'rollback guard: queue is not the 2026-10-20 body'; END IF;
+  -- every object this file replaces, so a later change to any of them is never silently undone (post-check 2026-10-20)
+  IF md5(rtrim(regexp_replace(pg_get_viewdef('public.v_derm_portal_queue'::regclass, true), '^[[:space:]]+|[[:space:]]+$', '', 'g'), ';')) <> '28987ab073fd690275ab06a20328633a' THEN RAISE EXCEPTION 'rollback guard: queue is not the _1345 body'; END IF;
+  IF md5(rtrim(regexp_replace(pg_get_viewdef('public.v_derm_portal_queue_held'::regclass, true), '^[[:space:]]+|[[:space:]]+$', '', 'g'), ';')) <> '323384bb8ae56bc950ac7166f16e4d34' THEN RAISE EXCEPTION 'rollback guard: held view is not the _1345 body'; END IF;
+  IF md5(rtrim(regexp_replace(pg_get_viewdef('public.v_rpa_derm_health'::regclass, true), '^[[:space:]]+|[[:space:]]+$', '', 'g'), ';')) <> '889bb6d73ef90575d880aeb2322eca48' THEN RAISE EXCEPTION 'rollback guard: v_rpa_derm_health is not the _1345 body (roll _1405 back first)'; END IF;
+  IF md5(regexp_replace(pg_get_functiondef('public.log_rpa_derm_health()'::regprocedure), '^[[:space:]]+|[[:space:]]+$', '', 'g')) <> '3cfc3d9245dcd72ff32e074005c2de56' THEN RAISE EXCEPTION 'rollback guard: log_rpa_derm_health is not the _1345 body (roll _1405 back first)'; END IF;
+  IF md5(regexp_replace(pg_get_functiondef('public.fn_requeue_derm_portal(bigint,bigint,text,text)'::regprocedure), '^[[:space:]]+|[[:space:]]+$', '', 'g')) <> '0070dfd63b093cad7d7572cd3fab00e7' THEN RAISE EXCEPTION 'rollback guard: fn_requeue_derm_portal is not the _1345 body (roll _1405 back first)'; END IF;
 END $g$;
 CREATE OR REPLACE VIEW public.v_derm_portal_queue AS
 SELECT DISTINCT ON (manifest_id, gdo_id) visit_id,
