@@ -45,6 +45,7 @@
 // ============================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 // ⚠ x-app-source IS REQUIRED, and its absence was a real regression (found by @Building Apps).
 // audit.log_change() derives app_source from the request Origin, and this function is server-to-server
@@ -257,6 +258,9 @@ Deno.serve(async (req) => {
       status: 403, headers: hdrs(),
     });
   }
+  // Access phase 5 (2026-10-21_0900): Edit in the Visit Calendar, as the caller (the server key always passes).
+  const denied = await checkAppAction((req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, ''), 'save_calendar_visit')
+  if (denied) return fail('no_access', denied.message)
 
   let body: any;
   try { body = await req.json(); } catch { return fail("bad_request", "Malformed request."); }

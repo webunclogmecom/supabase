@@ -34,6 +34,7 @@
 // ============================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const GQL_VERSION = "2026-04-16";
 // CustomFieldConfigurationText "Client Code", appliesTo ALL_CLIENTS.
@@ -183,6 +184,9 @@ Deno.serve(async (req) => {
       (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail("forbidden", "Staff account required.");
   }
+  // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.
+  const denied = await checkAppAction(m[1], 'save_client_fields')
+  if (denied) return fail("no_access", denied.message);
 
   let body: any;
   try { body = await req.json(); } catch { return fail("bad_request", "Invalid JSON body."); }

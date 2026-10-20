@@ -28,6 +28,7 @@
 //   config.toml is deliberate — same pattern as save-client-job.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const GQL_VERSION = "2026-04-16";
 const CORS = {
@@ -106,6 +107,9 @@ Deno.serve(async (req) => {
   if (userErr || !email || (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return json({ error: "not a staff account" }, 403);
   }
+  // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.
+  const denied = await checkAppAction(m[1], 'adopt_visit_from_jobber')
+  if (denied) return json({ error: "no_access", message: denied.message }, denied.status);
 
   let body: { visit_id?: number };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }

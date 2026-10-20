@@ -71,6 +71,7 @@
 //    scripts/probes/build_archive_client.mjs. Do not hand-edit it here; edit the source and re-run,
 //    or the two copies drift and the content-type guard is exactly the kind of thing that gets lost.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const GQL_VERSION = "2026-04-16";
 
@@ -199,6 +200,9 @@ Deno.serve(async (req) => {
       (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail("forbidden", "Staff account required.");
   }
+  // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.
+  const denied = await checkAppAction(m[1], 'archive_client')
+  if (denied) return fail("no_access", denied.message);
 
   const body = await req.json().catch(() => null);
   const clientId = Number(body?.client_id);

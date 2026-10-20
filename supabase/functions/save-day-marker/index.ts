@@ -40,6 +40,7 @@
 // ============================================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { saveMarker, CREATE_KEYS } from "../_shared/day-marker-task.ts";
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -70,6 +71,9 @@ Deno.serve(async (req) => {
   if (userErr || !email || (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail(403, "forbidden", "Not a staff account.");
   }
+  // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.
+  const denied = await checkAppAction(m[1], 'save_day_marker')
+  if (denied) return fail(denied.status, "no_access", denied.message);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return fail(400, "bad_request", "Malformed JSON."); }

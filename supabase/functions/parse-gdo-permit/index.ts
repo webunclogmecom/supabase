@@ -1,3 +1,4 @@
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 // ============================================================================
 // parse-gdo-permit — read a Miami-Dade DERM GDO operating-permit PDF and return
 // the fields, so the Client App can pre-fill an Add/Edit Permit form instead of
@@ -220,6 +221,9 @@ Deno.serve(async (req: Request) => {
 
   // verify_jwt = true in config.toml, so the gateway has already rejected an
   // unauthenticated caller. This is staff-only tooling.
+  // Access phase 5 (2026-10-21_0900): Edit in the Client App, as the caller (hr.check_app_action).
+  const denied = await checkAppAction((req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, ''), 'parse_gdo_permit')
+  if (denied) return json({ error: 'no_access', message: denied.message }, denied.status, req)
   try {
     const ct = req.headers.get('content-type') ?? ''
     let pdf: Uint8Array | null = null

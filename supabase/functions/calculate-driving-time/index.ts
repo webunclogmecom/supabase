@@ -31,6 +31,7 @@
 // ============================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -230,6 +231,9 @@ Deno.serve(async (req) => {
   if (role !== "authenticated" && role !== "service_role") {
     return json(req, { ok: false, error: "forbidden" }, 403);
   }
+  // Access phase 5 (2026-10-21_0900): View in the Visit Calendar, as the caller (the server key always passes).
+  const denied = await checkAppAction((req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, ''), 'calculate_driving_time')
+  if (denied) return json(req, { ok: false, error: 'no_access', message: denied.message }, denied.status)
 
   let body: { legs?: Array<{ from?: Endpoint; to?: Endpoint }>; traffic?: unknown };
   try { body = await req.json(); } catch { return json(req, { ok: false, error: "invalid json" }, 400); }

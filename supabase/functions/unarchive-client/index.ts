@@ -31,6 +31,7 @@
 //    by scripts/probes/build_archive_client.mjs). Keep it byte-consistent with archive-client; the
 //    content-type guard in gql() is the Jobber-waiting-room fix and must not be lost.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const GQL_VERSION = "2026-04-16";
 
@@ -154,6 +155,9 @@ Deno.serve(async (req) => {
       (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail("forbidden", "Staff account required.");
   }
+  // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.
+  const denied = await checkAppAction(m[1], 'unarchive_client')
+  if (denied) return fail("no_access", denied.message);
 
   const body = await req.json().catch(() => null);
   const clientId = Number(body?.client_id);
