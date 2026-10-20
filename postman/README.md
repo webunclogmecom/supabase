@@ -111,8 +111,8 @@ integer matching can never merge one client's own permits.
 | Param | Values | Meaning |
 |---|---|---|
 | `mode` | `dryrun` | Serve a **sample of historical** visits for testing, no lease. Omit for the live queue. |
-| `mode` | anything else | Refused with **400 `{"error":"unknown_mode"}`** since 2026-10-20 (it used to be read as live, the one mode that leases). |
 | `mode` | `peek` | The **live queue, read only** (added 2026-10-20): the same rows and order as live, `"mode": "peek"` in the response, and **no lease**. For counting what is waiting (the bot's 08:00 digest). Never file a peeked row: it is not leased, so the next live pull serves it too. |
+| `mode` | anything else | Refused with **400 `{"error":"unknown_mode"}`** since 2026-10-20 (it used to be read as live, the one mode that leases). Any other query key, or `mode` twice, is refused with **400 `{"error":"unknown_query"}`** (a mistyped `?Mode=peek` used to lease). |
 
 🛑 **The dry-run sample covers EVERY jurisdiction (changed 2026-09-18).** Until then dry-run served
 the 25 **oldest** historical rows, which were all Miami-Dade (January to April 2026); the Broward
@@ -147,7 +147,7 @@ capped, leased.
 | `client_name` | string | |
 | `client_email` | string \| null | |
 | `address`, `city`, `zip`, `county` | string | Service location. |
-| `gdo_number` | string \| null | The GDO permit number. |
+| `gdo_number` | string | The GDO permit number. Never null since 2026-10-20: a visit whose client has no permit is held as `no_permit` and not served. |
 | `service_date` | date | When the visit was serviced. |
 | `dump_ticket_date` | date | Date on the disposal receipt. |
 | `ticket_number` | string | **The dump-ticket number to file, whatever the county** (served since 2026-07-24, documented here 2026-09-18): the Miami-Dade white manifest # or the Broward yellow Septage Receiving #. Use this, not `white_manifest_number`. |
@@ -171,10 +171,11 @@ start of a run; **never log or persist the URLs**.
 - A dump stays in the live queue **until it is successfully reported** — so nothing is dropped if the
   bot is down for a while.
 - It leaves the queue **permanently** once the county confirms it (a `SUCCESS` result with a
-  `portal_confirmation`, section 4). This is **manifest-scoped**: reporting *any* visit of a dump clears
-  the whole dump, so a sibling visit can never re-surface an already-filed report.
-- After any attempt — or the moment we hand it to you — the dump is **held for 20 hours** (a dispense
-  *lease*, also manifest-scoped) so a crash between filing and the result POST can never cause a
+  `portal_confirmation`, section 4). This is scoped to the **(dump, permit)**: reporting *any* visit of a
+  dump for that permit clears that permit on the whole dump, so a sibling visit can never re-surface an
+  already-filed report.
+- After any attempt, or the moment we hand it to you, the **(dump, permit)** is **held for 20 hours** (a
+  dispense *lease* per (visit, permit)) so a crash between filing and the result POST can never cause a
   re-dispense and a double-file.
 - The live queue only contains visits with a `dump_ticket_date` on/after a **launch cutoff** (currently
   `2026-07-21`). This exists so the bot's first live run cannot re-submit the entire historical backlog
@@ -208,7 +209,7 @@ file" and "a filing is stuck and nobody can see it". Every response now carries 
 | `already_filed` | the county confirmed it. The healthy steady state | no |
 | `cooldown_20h` | an attempt landed in the last 20h | no, it serves after |
 | `no_permit` (2026-10-20) | the client has no ACTIVE GDO permit on file, so there is nothing to file against. **Never served to you**; our daily health email names it, and it serves by itself once the permit is entered | no, the office enters the permit |
-| `data_error` | a **non-retryable** failure **for that permit** holds it until the visit or manifest row is next written | **maybe — see below** |
+| `data_error` | a **non-retryable** failure **for that permit** holds it until the visit or manifest row is next written | **maybe, see below** |
 | `leased` | we handed that (visit, permit) out and are holding it 20h | no |
 
 ⚠ **`data_error` is the one to watch, and it is the one that bit us.** Its freshness anchor is a
@@ -216,8 +217,9 @@ timestamp **in our database**. If you fix the cause on the **county side** — a
 permit registration — that fix is structurally invisible to the gate and the row will never come
 back on its own, no matter how long you poll. **Tell us and we re-open it in one call.**
 
-⚠ **`not_held` entries are not problems.** `sibling_won_this_pass` means the row exists and no gate holds it, but
-this pass did not serve it (the 25-row cap); it comes up next pass.
+⚠ **`not_held` entries are not problems.** `sibling_won_this_pass` means another visit of the same client on the same
+dump holds that permit's slot (the queue keeps the visit closest to the dump); that visit's filing covers this one,
+which then reads `already_filed`. (Rows past the 25-row cap read as not held at all.)
 `before_launch_cutoff` is the historical backlog we deliberately do not file.
 
 ⚠ **`available: false` means the summary itself could not be computed** — the queue is still valid,

@@ -153,7 +153,8 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
   - **failed** = timeout, unhandled or crash;
   - **needs review** = every other live error, VALIDATION included.
   - **"in queue"** is counted with `rpa-derm-queue?mode=peek` (since 2026-10-20), which leases nothing. Before that it
-    was a live fetch that leased every waiting visit for 20 h, so a visit waiting at 08:00 was filed about 20 h late.
+    was a live fetch that leased every waiting visit for 20 h, which would have delayed a visit waiting at 08:00 by
+    about 20 h (never observed).
   - **"Last run"** is the newest ledger time, shown with no date.
 - **Immediate alerts:** failures at the end of a run, the login guard, the circuit breaker, a discarded cached
   result, an aborted harvest, and county emails that matched no filing.
@@ -174,9 +175,10 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 - **Open items:**
   - SSO C1 to C5, our side, is not built;
   - brief D (discard a draft) is not started;
-  - the September report: planned filing 2026-10-20 (`public.lwt_filings` had no September row on 10-20 at 14:00 ET).
-  - `87b24a2` ("Monthly C") has been live since 2026-10-18 21:27 ET despite its "push held until 2026-10-20" note,
-    so the 10-19 close ran on it, not on `7fb15e0` as the bot's HANDOFF.md says. Who pushed it is not known.
+  - the September report: planned filing 2026-10-20 (`public.lwt_filings` had no September row on 10-20 at 13:50 ET).
+  - `87b24a2` ("Monthly C") was live from 2026-10-18 21:27 ET despite its "push held until 2026-10-20" note, so the
+    10-19 close ran on it, not on `7fb15e0` as the bot's HANDOFF.md says (who pushed it is not known), until
+    `7681388` replaced it at 2026-10-20 12:54 ET.
 
 ## 8. Reading a "No readable GDO permit in ''" warning
 
@@ -184,7 +186,7 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 `GDO-<digits>` permit. Before `7681388` preflight let the null through, the split left no permit, and the guard
 printed the empty quotes. **Since 2026-10-20 the same case reads "No GDO permit on this visit"**, and since
 `2026-10-20_1345` our queue no longer serves such a row at all, so the warning should not appear again: the visit is
-held as `no_permit` and the daily health email names it instead. Either way:
+held as `no_permit` and Fred's health email names it instead, the day it appears (then at 3 days, then weekly). Either way:
 - the bot refuses before opening the portal;
 - nothing is filed;
 - it posts `ERROR_VALIDATION`, not retryable.
@@ -226,9 +228,16 @@ The refusal is right; only the sentence is misleading.
 - **Fixed by `2026-10-20_1345` (Fred: "design the plan and execute it"; Jonathan's 2026-09-03 ask):** the queue never
   serves a no-permit row, the held view names it `no_permit`, and `log_rpa_derm_health` emails one `gdo_no_permit` item
   per visit plus one item per client whose open job bills line 27 with no permit (249-LOU today). Gate 3 is exact-pair,
-  so **entering the permit releases the held visits on the next bot pass with no requeue**, even when late: 7859's
-  DERM deadline (the 15th of the next month) passed on 10-15, 7860's is 11-15. Before this, adding a permit did not
-  release anything (on 09-03 the Skinny Louie visits filed only because an unrelated manifest write moved the anchor).
+  so **entering the permit releases the held visits on the first bot pass after any 20h cooldown or lease, with no
+  requeue**, even when late: 7859's DERM deadline (the 15th of the next month) passed on 10-15, 7860's is 11-15. It
+  releases every visit after the launch cutoff not yet filed for that permit (gate 1 is per permit), including any
+  filed under the client's other permit. Before this, adding a permit did not release anything: the two Skinny
+  Louie visits flagged on 09-03 (308-LOU 7852, 247-LOU 7872) filed on 09-04 09:36 only because an unrelated manifest
+  write moved the anchor.
+- **Follow-up `2026-10-20_1405`** (from an independent post-check): the retry loop counts a NULL-permit failure on a
+  visit that has a permit again; `gdo_filed_permit_changed` names a visit filed under a permit that has since left
+  the client's ACTIVE permits while it has another (the queue files that one too); `rpa-derm-queue` v34 refuses any
+  query key but one `mode`; `rpa-derm-result` v32 logs an ownership-check error as such.
 - **Still people's calls:** approve GDO-14738 (Diego or Yan; Fred enters it in the Client App with the county PDF,
   client 499, property 973); Capas (is GDO-14098 / SIR FOOD LLC its permit, or none?); the $105 billed for unfiled
   reports; correcting Viktor's sentinel.
@@ -257,7 +266,8 @@ after 10-20) and the first result carrying `gdo_id`.
    - "one permit per ticket per pass" and "gdo_id accepted and ignored" (README, API_CONTRACT);
    - "re-queues every 20 h forever" (`reporter.py:574`, RUNBOOK);
    - the digest at "12:00 UTC" (RUNBOOK; that holds in summer only);
-   - `MIGRATE_ANY_EMAIL` "deployed OFF" (HANDOFF; it is ON). Still open: a bot-repo edit is a deploy, so it waits until
-     the September LWT report is filed.
+   - `MIGRATE_ANY_EMAIL` "deployed OFF" (HANDOFF; it is ON). Still open. `7681388` was pushed at 12:49 ET on 10-20
+     (Fred: "go ahead with 4") before the LWT push hold came to light; further bot-repo pushes (each one is a deploy
+     and a restart of Diego's `/monthly` page) wait until the September LWT report is filed.
    - Before `7681388` no test fed a null permit or checked the DST sleep (`tests/test_digest_scheduler.py` exists since
      2026-09-03).

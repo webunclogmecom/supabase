@@ -64,8 +64,8 @@ permissive and safe to land alone; widening the queue first is not.
 `gdo_id` is nullable on both tables, and **524 of 542** existing submission rows have a NULL one
 (dry-runs, and everything before the column existed). A plain `UNIQUE` treats every NULL as distinct,
 so it would silently stop deduplicating all of them. Prod is PG 17.6, so the clause is available.
-A NULL permit still deliberately blocks **every** permit on the ticket, in the leases table and in all
-four queue gates: that is the under-serve direction, which is the correct way to be wrong here.
+A NULL permit still deliberately blocks **every** permit on the ticket, in the leases table and in queue gates 1, 2 and 4 (gate 3 is exact-pair since `2026-10-20_1345`, and the queue no
+longer serves a row with no permit at all; see the four-gates section of `CLAUDE.md`): that is the under-serve direction, which is the correct way to be wrong here.
 
 ## The result endpoint no longer infers the permit alone
 
