@@ -33,6 +33,7 @@
 // a day; negligible next to the sync sweeps.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { checkAppAction } from '../_shared/access-check.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -108,6 +109,9 @@ Deno.serve(async (req: Request) => {
     if (!email.endsWith('@ayache.com') && !email.endsWith('@unclogme.com')) {
       return json({ error: 'staff_only' }, 403, cors)
     }
+    // Access phase 2 (2026-10-20_1430): View in Admin Review (watch: logged, on: refused)
+    const denied = await checkAppAction(authHeader.replace(/^Bearer\s+/i, ''), 'visit_client_note_photos')
+    if (denied) return json({ error: 'no_access', detail: denied.message }, denied.status, cors)
 
     let body: Record<string, unknown>
     try { body = await req.json() } catch { return json({ error: 'bad_json' }, 400, cors) }

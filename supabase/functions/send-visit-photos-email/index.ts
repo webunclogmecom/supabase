@@ -42,6 +42,7 @@
 // ⇒ The whole ImageScript resize path is GONE, and with it the memory ceiling that capped
 // attachments at 10 photos. One PDF carries every photo.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { checkAppAction } from '../_shared/access-check.ts'
 
 // 🛑 DO NOT PUT `encodeBase64` FROM std/encoding/base64.ts BACK HERE. It is what killed
 // this function on every report over roughly 5MB, and it failed INVISIBLY (2026-08-25).
@@ -551,6 +552,9 @@ Deno.serve(async (req: Request) => {
   }
   const actorEmail = user.email ?? null
   const actorUserId = user.id
+  // Access phase 2 (2026-10-20_1430): Edit in Admin Review (watch: logged, on: refused)
+  const denied = await checkAppAction(bearer, 'send_visit_photos_email')
+  if (denied) return json({ error: 'no_access', detail: denied.message }, denied.status, cors)
 
   let body: Record<string, unknown>
   try { body = await req.json() } catch { return json({ error: 'bad_json' }, 400, cors) }

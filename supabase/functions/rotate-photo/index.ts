@@ -31,6 +31,7 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { checkAppAction } from '../_shared/access-check.ts'
 
 const PDF_SERVICE_URL = Deno.env.get('PDF_SERVICE_URL')
 const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
@@ -87,6 +88,9 @@ Deno.serve(async (req: Request) => {
       (!email.endsWith('@ayache.com') && !email.endsWith('@unclogme.com'))) {
     return json({ error: 'forbidden', detail: 'Staff account required.' }, 403, h)
   }
+  // Access phase 2 (2026-10-20_1430): Edit in Admin Review (watch: logged, on: refused)
+  const denied = await checkAppAction(m[1], 'rotate_photo')
+  if (denied) return json({ error: 'no_access', detail: denied.message }, denied.status, h)
 
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') return json({ error: 'invalid_body' }, 400, h)
