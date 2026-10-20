@@ -381,3 +381,12 @@ excludes 112-YA through `v_non_customer_clients`.
   Tracker's chip tooltip now copies Admin Review's white tooltip (one line in `EmailDeliveryChip.tsx`; DERM changelog
   2026-10-14 (c)); the app's other tooltips stay orange. Canonical chip spec: `Building Apps/CLAUDE.md` rule 1e. Changelogs: Admin Review 2026-10-14 (c), DERM Tracker 2026-10-14 (b).
 
+- **D5 BUILT 2026-10-20, ahead of the gate (Fred: "Build D5 first").** Yan asked for a Slack alert on delivered but
+  unopened emails (Trello xMtqH9Xw); on the alert's mockup Fred chose to make city opens countable first, accepting the
+  scanner risk stated on the option. Built as 5.8 describes: `2026-10-20_1900` (`hidden_copies_separate`,
+  `archive_resend_email_id`, `archive_error` on both logs; the city rule in `v_email_delivery`; health item
+  `city_email_archive_missing`), `_shared/archive-copy.ts`, `send-derm-email` v66, `send-visit-photos-email` v45
+  (3fae14d, dcc3a29). Live proof on 112-YA (derm_email_sends 436): opening the archive copy left the city email
+  Delivered; opening the city email made it Opened (137 s). The alert: `2026-10-20_1930`, edge fn
+  `unopened-email-reminder` (Mon/Wed/Fri 11 AM ET; an open under 60 s counts as not opened). The 11-18 numbers are still
+  worth reading: they now say whether city opens are people or scanners.

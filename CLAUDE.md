@@ -5401,10 +5401,22 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
     `(svix_id, recipient)`. **Append only** (trigger refuses UPDATE/DELETE), never purged: Resend keeps emails 30 days,
     this is the long-term record. Rule 8 opt-out (sync-only append table). service_role only.
   - **Status, per `resend_email_id`, To line only:** `not_delivered`, `partly_bounced`, `spam`, `opened`, `delivered`,
-    `delivered_open_unknown`, `partly_delivered`, `delayed`, `sending`, `no_status`, `no_record`. 🛑 **A city email is
-    NEVER `opened`:** the archive Bcc `derm@ayache.com` rides on every one and Resend credits one open to every
-    recipient (step 0, measured). City opens ARE stored (`opened_at`, `open_gap_seconds`, for the D5 gate around
-    2026-11-18) but `delivery_detail`, which the apps read, carries `opened_at` only when the open is creditable.
+    `delivered_open_unknown`, `partly_delivered`, `delayed`, `sending`, `no_status`, `no_record`. 🛑 **A city email sent
+    BEFORE D5 is never `opened`:** the archive Bcc `derm@ayache.com` rode on every one and Resend credits one open to
+    every recipient (step 0, measured). ✅ **D5 SHIPPED 2026-10-20 ~19:03 ET** (Fred picked "Build D5 first" for Yan's
+    unopened-email alert, ahead of the 11-18 gate; he accepted that a Microsoft 365 scanner can open an email by itself):
+    `2026-10-20_1900` + `send-derm-email` v66 / `send-visit-photos-email` v45 + `_shared/archive-copy.ts`. A city email
+    now carries ONLY its To and Cc; the archive and any Bcc / test_cc go as a SEPARATE email right after it (same subject,
+    html, text, attachments; a first line "Archive copy of the email sent to the city (...) on <ET>"; Idempotency-Key
+    `archive:<city id>`; one retry; it never throws), recorded on the SAME row: `hidden_copies_separate` (TRUE),
+    `archive_resend_email_id`, `archive_error`. `bcc_emails` still lists who got a hidden copy. `v_email_delivery` gives
+    `archive_copy` only to a city send whose hidden copies were NOT separate, so a D5 city email follows the client
+    rules (opened / delivered; a Cc still makes it `other_recipients`), and the apps' chips show Opened on it with no
+    app change. Health item `city_email_archive_missing` (a real D5 send with no archive id, 15 min to 7 days). Proven
+    live on 112-YA (derm_email_sends 436): opening the archive copy left the city email `delivered`; opening the city
+    email made it `opened` (creditable, 137 s). 🛑 **Nothing after the city send may throw** in either sender (the
+    outer catch would log a delivered city email as an error). Check `scripts/checks/archive_copy.mjs`.
+    `delivery_detail`, which the apps read, carries `opened_at` only when the open is creditable.
     Also never creditable: before `app_config.email_open_tracking_since` (2026-10-14 17:54 UTC), after
     `email_open_tracking_until` (set it in the same minute tracking is ever switched off), summary-only rows, or a
     client email with a logged Cc/Bcc.
@@ -5415,6 +5427,12 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
     columns asserted unchanged); new `public.v_client_email_sends` (authenticated, no addresses) for DERM Tracker
     client sends. The chips are LIVE in Admin Review and the DERM Tracker since 2026-10-14 (spec: `Building Apps/CLAUDE.md`
     rule 1e). When `delivery_detail.summary_only` is true, show no "N of M" count: a summary is one value per email.
+  - **The unopened email alert (Yan, Trello xMtqH9Xw, LIVE 2026-10-20):** edge fn `unopened-email-reminder`, cron
+    `unopened-email-reminder` (11 AM ET via `fn_request_unopened_email_reminder`), posts Mon / Wed / Fri to
+    #apps-notifications as "DERM Tracker", tags Diego, Layout 1 by city. The ONE list is
+    `public.fn_unopened_emails(p_as_of)` (`2026-10-20_1930`): real emails sent after open tracking began, 1 to 7 days
+    old, not delivered, or not opened (an open under 60 s counts as not opened). Catalogue row and every rule:
+    `docs/reference/slack-notifications.md`.
   - **Health (Fred's daily email):** `email_not_delivered`, `email_status_missing` (a send after
     `app_config.email_events_live_since` = 2026-10-14 19:31:54 UTC, `2026-10-14_1531`, with no Resend event after 2
     hours), `email_delivery_incomplete`.
@@ -5426,7 +5444,7 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
     after delivery while the email was still UNREAD in Gmail and nobody had opened it (a mail app or Google fetched
     the pixel). So a client "Opened" is a hint, and a very fast open is probably automatic: the chip wording for it
     is decided at the mockup step. `open_gap_seconds` is in the view for exactly this.
-  - **Fixtures:** `scripts/probes/email_delivery_fixtures.sql` (16 fixture emails, every state, rolls back).
+  - **Fixtures:** `scripts/probes/email_delivery_fixtures.sql` (21 fixture emails since D5, every state, rolls back).
 - **Run records:** both 11 AM reminders write one `sync_log` row per run (`admin_review_reminder`,
   `stamp_sheets_reminder`, `<source>_test`), and their wrappers call the edge function every day (`2026-10-12_1310`).
 - **Photos:** `v_visit_photo_counts` counts only `before`/`after`/`internal`/`extra` as sorted since `2026-10-12_1335`
