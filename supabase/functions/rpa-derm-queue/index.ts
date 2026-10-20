@@ -18,7 +18,7 @@
 // JWT; this header IS the auth. Server-to-server only, no CORS surface.
 //
 // Response shape (documented for Jonathan in the repo README):
-// { generated_at, mode: 'live'|'dryrun', count, reports: [{
+// { generated_at, mode: 'live'|'dryrun'|'peek', count, reports: [{
 //     visit_id, manifest_id, dry_run, client_code, client_name, client_email,
 //     address, city, zip, county, gdo_number, service_date, dump_ticket_date,
 //     ticket_number, jurisdiction, white_manifest_number, disposal_facility,
@@ -92,7 +92,12 @@ Deno.serve(async (req: Request) => {
   if (!KEYS.includes(presented)) return json({ error: 'unauthorized' }, 401)
 
   const url = new URL(req.url)
+  // 2026-10-20 (v33): an unknown mode is REFUSED, never read as live. Live is the one mode that leases, so a typo
+  // ('Peek', 'peeek') used to hold every waiting visit for 20h while looking like a harmless read.
   const rawMode = url.searchParams.get('mode')
+  if (rawMode !== null && rawMode !== 'dryrun' && rawMode !== 'peek') {
+    return json({ error: 'unknown_mode', allowed: ['dryrun', 'peek'], note: 'omit mode for the live queue' }, 400)
+  }
   const mode = rawMode === 'dryrun' ? 'dryrun' : rawMode === 'peek' ? 'peek' : 'live'
   const view = mode === 'dryrun' ? 'v_derm_portal_dryrun' : 'v_derm_portal_queue'
 

@@ -16,7 +16,7 @@
 // - idempotent on (visit_id, run_id): a retried POST returns 200
 //   {deduped:true} and changes nothing — first write wins;
 // - status must be a short uppercase code; failure_reason capped; manifest
-//   must exist and be live; unknown fields rejected;
+//   is stored as sent (not looked up); unknown fields rejected;
 // - every result carries a screenshot OR an explicit
 //   screenshot_missing_reason (evidence-or-reason, DB CHECK backs this up);
 // - screenshots go to the PRIVATE 'rpa-evidence' bucket; only the storage
@@ -194,7 +194,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: visit, error: vErr } = await sb
     .from('visits')
-    .select('id, deleted_at, visit_date')
+    .select('id, deleted_at, visit_date, client_id')
     .eq('id', visitId)
     .maybeSingle()
   if (vErr) {
@@ -275,10 +275,26 @@ Deno.serve(async (req: Request) => {
       } else if (ok && ok.length > 0) {
         gdoId = claimed
       } else {
-        console.error(
-          `bot reported gdo_id ${claimed} which is not a permit of visit ${visitId}; ` +
-          'falling back to inference',
-        )
+        // 2026-10-20: the claimed permit can leave v_derm_portal_fields between the serve and this
+        // POST (demoted, renumbered, line 27 removed; the bot's pending cache re-posts up to 72h later). Inferring
+        // then recorded THIS filing against a DIFFERENT permit, which gate 1 retires unfiled: the exact case the
+        // bot's echo exists to close. Keep the bot's permit when it is one of this visit's client's permits, in
+        // any status. Only a permit of another client falls back to inference.
+        const { data: own, error: oErr } = await sb
+          .from('gdos')
+          .select('id')
+          .eq('id', claimed)
+          .eq('client_id', visit.client_id)
+          .limit(1)
+        if (!oErr && own && own.length > 0) {
+          gdoId = claimed
+          console.info(`gdo_id ${claimed} is no longer in the queue's fields for visit ${visitId}; kept (same client)`)
+        } else {
+          console.error(
+            `bot reported gdo_id ${claimed} which is not a permit of visit ${visitId}'s client; ` +
+            'falling back to inference',
+          )
+        }
       }
     }
     if (gdoId === null) {
