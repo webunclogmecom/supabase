@@ -7,8 +7,8 @@ DECLARE
   c_admin text; c_office text;
   v_visit bigint; v_grant bigint; v_rev bigint; v_rate bigint;
 BEGIN
-  c_admin := json_build_object('sub','00000000-0000-0000-0000-000000000002','email',(select email from public.employees where id = 2),'role','authenticated')::text;
-  c_office := json_build_object('sub','00000000-0000-0000-0000-000000000042','email',(select email from public.employees where id = 42),'role','authenticated')::text;
+  c_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 2))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 2),'role','authenticated')::text;
+  c_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 42))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 42),'role','authenticated')::text;
   SELECT id INTO v_visit FROM public.visits WHERE deleted_at IS NULL AND visit_status = 'completed' ORDER BY id DESC LIMIT 1;
 
   SET LOCAL session_replication_role = replica;

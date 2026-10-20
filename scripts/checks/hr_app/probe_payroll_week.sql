@@ -5,8 +5,8 @@ DECLARE
   r jsonb := '[]'::jsonb; j jsonb; x jsonb; v_msg text; v_det text; v_before numeric; v_after numeric; v_n int;
   c_admin text; c_office text;
 BEGIN
-  c_admin := json_build_object('sub','00000000-0000-0000-0000-000000000002','email',(select email from public.employees where id = 2),'role','authenticated')::text;
-  c_office := json_build_object('sub','00000000-0000-0000-0000-000000000042','email',(select email from public.employees where id = 42),'role','authenticated')::text;
+  c_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 2))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 2),'role','authenticated')::text;
+  c_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 42))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 42),'role','authenticated')::text;
 
   -- 1. every start day gives a 7-day week that starts on that day and holds the date
   SELECT count(*) INTO v_n FROM generate_series(0, 6) s, generate_series(date '2026-01-01', date '2026-01-31', interval '1 day') g(d)
@@ -21,7 +21,7 @@ BEGIN
     r := r || jsonb_build_object('t','2 office cannot change a payroll week','ok', false);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT, v_det = PG_EXCEPTION_DETAIL;
-    r := r || jsonb_build_object('t','2 office cannot change a payroll week','ok', v_det LIKE 'blocker=level%', 'msg', v_msg);
+    r := r || jsonb_build_object('t','2 office cannot change a payroll week','ok', v_det LIKE 'blocker=level%' OR v_det LIKE 'blocker=no_access app=hr_pay%', 'msg', v_msg);
   END;
   PERFORM set_config('request.jwt.claims', c_admin, true);
   BEGIN

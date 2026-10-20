@@ -9,8 +9,8 @@ BEGIN
   v_g_today := (select x.amount from hr.fn_rate_on(1, 'per_visit_bonus', (now() at time zone 'America/New_York')::date) x);
   v_m_tomorrow := (select x.amount from hr.fn_rate_on(40, 'per_visit_bonus', (now() at time zone 'America/New_York')::date + 1) x);
   v_m_shift := (select x.amount from hr.fn_rate_on(40, 'per_shift_bonus', (now() at time zone 'America/New_York')::date) x);
-  c_admin := json_build_object('sub','00000000-0000-0000-0000-000000000002','email',(select email from public.employees where id = 2),'role','authenticated')::text;
-  c_office := json_build_object('sub','00000000-0000-0000-0000-000000000042','email',(select email from public.employees where id = 42),'role','authenticated')::text;
+  c_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 2))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 2),'role','authenticated')::text;
+  c_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 42))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 42),'role','authenticated')::text;
 
   PERFORM set_config('request.jwt.claims', c_admin, true);
   -- 1. an admin schedules Grecia's own amount: today stays $10, the next change reads $15

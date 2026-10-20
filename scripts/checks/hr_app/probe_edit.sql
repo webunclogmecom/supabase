@@ -14,7 +14,7 @@ BEGIN
   -- helper pattern: set role + claims, call, catch, reset role
   -- 1 office edits a field person's hire date (allowed), from the HR origin
   BEGIN
-    PERFORM set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-000000000042','email',em_office,'role','authenticated')::text, true);
+    PERFORM set_config('request.jwt.claims', json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_office)), '00000000-0000-0000-0000-000000000001'),'email',em_office,'role','authenticated')::text, true);
     PERFORM set_config('request.headers', '{"origin":"https://hr.unclogme.app"}', true);
     PERFORM set_config('role', 'authenticated', true);
     v_res := hr.update_employee(id_field, '{"hire_date":"2026-07-04"}');
@@ -50,7 +50,7 @@ BEGIN
         IF c.em IS NULL THEN
           PERFORM set_config('request.jwt.claims', '', true);
         ELSE
-          PERFORM set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-000000000001','email',c.em,'role','authenticated')::text, true);
+          PERFORM set_config('request.jwt.claims', json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(c.em)), '00000000-0000-0000-0000-000000000001'),'email',c.em,'role','authenticated')::text, true);
         END IF;
         PERFORM set_config('role', 'authenticated', true);
         v_res := hr.update_employee(c.target, c.patch);
@@ -66,7 +66,7 @@ BEGIN
 
   -- 14 admin makes office person Inactive and back is refused at Active? (has jobber link -> allowed both ways)
   BEGIN
-    PERFORM set_config('request.jwt.claims', json_build_object('sub','00000000-0000-0000-0000-000000000002','email',em_admin,'role','authenticated')::text, true);
+    PERFORM set_config('request.jwt.claims', json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_admin)), '00000000-0000-0000-0000-000000000001'),'email',em_admin,'role','authenticated')::text, true);
     PERFORM set_config('role', 'authenticated', true);
     v_res := hr.update_employee(id_field, '{"status":"INACTIVE"}');
     r := r || jsonb_build_object('t','14a admin sets field Inactive','ok', v_res->'impact' ? 'upcoming_visits', 'impact', v_res->'impact');

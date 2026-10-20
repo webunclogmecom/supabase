@@ -8,8 +8,8 @@ DECLARE
 BEGIN
   SELECT email INTO em_admin FROM public.employees WHERE id = 2;
   SELECT email INTO em_office FROM public.employees WHERE id = 42;
-  v_claims_office := json_build_object('sub','00000000-0000-0000-0000-000000000042','email',em_office,'role','authenticated')::text;
-  v_claims_admin := json_build_object('sub','00000000-0000-0000-0000-000000000002','email',em_admin,'role','authenticated')::text;
+  v_claims_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_office)), '00000000-0000-0000-0000-000000000001'),'email',em_office,'role','authenticated')::text;
+  v_claims_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_admin)), '00000000-0000-0000-0000-000000000001'),'email',em_admin,'role','authenticated')::text;
 
   -- a completed, unreviewed, real-client visit with a one-person crew
   SELECT v.id, min(vt.employee_id) INTO v_visit, v_crew FROM public.visits v
@@ -140,7 +140,7 @@ BEGIN
   EXCEPTION WHEN others THEN
     PERFORM set_config('role', 'none', true);
     GET STACKED DIAGNOSTICS v_det = PG_EXCEPTION_DETAIL, v_msg = MESSAGE_TEXT;
-    r := r || jsonb_build_object('t','11a office cannot set pay','ok', v_det LIKE 'blocker=level%', 'msg', v_msg);
+    r := r || jsonb_build_object('t','11a office cannot set pay','ok', v_det LIKE 'blocker=level%' OR v_det LIKE 'blocker=no_access app=hr_pay%', 'msg', v_msg);
   END;
   PERFORM set_config('request.jwt.claims', v_claims_admin, true);
   PERFORM set_config('role', 'authenticated', true);
