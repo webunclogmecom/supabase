@@ -34,9 +34,9 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   `web@unclogme.com` Railway login.
 - **Volume:** mounted at `/data`. It holds the SQLite ledger (the double-filing memory), logs, emails, screenshots and
   monthly files, plus 7 daily ledger backups on the **same** volume.
-- **Deploys:** every push to `main` deploys, and there is no staging. Running now: deployment `9ef62d4a` =
-  **`87b24a2`**, live since 2026-10-18 21:27 ET. That commit is monthly-only, and its own note said "push held until
-  2026-10-20", but it is live.
+- **Deploys:** every push to `main` deploys, and there is no staging. Running now: deployment `789c211a` =
+  **`7681388`** (the four fixes of section 9), live since 2026-10-20 12:54 ET. Before it, `87b24a2` (monthly-only,
+  its note said "push held until 2026-10-20") had been live since 2026-10-18 21:27 ET.
 - **One replica, one worker.** A second replica would break the double-filing guard silently.
 - **No Railway cron.** Three threads inside `server.py` sleep first, then run:
   - **poll:** hourly, currently at about :29 each hour since the 01:29 UTC restart;
@@ -62,8 +62,8 @@ failures, login guard after 2, files purged after 60 days.
 ## 3. How one filing works (`reporter.py`)
 
 1. GET the queue: live, up to 25 rows. Our side leases each row it serves for 20 h, per (visit, permit).
-2. **Preflight:** permit, ticket number and service date must not be empty. ⚠ The check is
-   `str(item.get(k, '')).strip()`, so a JSON **null becomes the text "None" and passes** (line 221). See section 8.
+2. **Preflight:** permit, ticket number and service date must not be empty or null. Until `7681388` (2026-10-20)
+   the check was `str(item.get(k, ''))`, so a JSON null became the text "None" and passed. See section 8.
 3. The date must parse, or the item is our `ERROR_VALIDATION`. A date is never typed in that cannot be read.
 4. The permit string is split on commas. If no permit is left, the bot refuses with
    `No readable GDO permit in '...'` (lines 577-590).
@@ -121,10 +121,10 @@ therefore re-served, and re-refused, whenever something unrelated edits it. Sect
   - `visit_id`, `manifest_id`, `run_id` (a new uuid per attempt), `status`, `retryable`, `attempted_at`, `dry_run`;
   - either a screenshot or `screenshot_missing_reason`;
   - `failure_reason`, and `portal_confirmation` only on a real filing.
-- ⚠ **The bot never sends `gdo_id`.** So `rpa-derm-result` infers the permit (`fn_resolve_rpa_permit`, "lowest
-  unfiled ACTIVE permit"). Our own comment there names the case this gets wrong: on a manifest with several permits,
-  if the bot files A and C and A fails, C's SUCCESS is recorded against A. The fix on the bot side is one line in
-  `build_result_payload`: echo `item["gdo_id"]`. Our endpoint already validates it.
+- **The bot echoes `gdo_id` since `7681388` (2026-10-20)**, when the row's `gdo_number` holds exactly one permit.
+  `rpa-derm-result` validates it and otherwise infers one (`fn_resolve_rpa_permit`, "lowest unfiled ACTIVE permit"),
+  which on a multi-permit manifest could record one permit's SUCCESS against another. Results before that date were
+  all inferred.
 
 ## 5. Evidence
 
@@ -142,8 +142,8 @@ therefore re-served, and re-refused, whenever something unrelated edits it. Sect
   - **filed** = SUCCESS;
   - **failed** = timeout, unhandled or crash;
   - **needs review** = every other live error, VALIDATION included.
-  - **"in queue"** is a **live** queue fetch made at send time. ⚠ That fetch leases whatever it returns for 20 h, so a
-    visit waiting at 08:00 is not filed by the next hourly poll but about 20 h later (`server.py:2895-2903`).
+  - **"in queue"** is counted with `rpa-derm-queue?mode=peek` (since 2026-10-20), which leases nothing. Before that it
+    was a live fetch that leased every waiting visit for 20 h, so a visit waiting at 08:00 was filed about 20 h late.
   - **"Last run"** is the newest ledger time, shown with no date.
 - **Immediate alerts:** failures at the end of a run, the login guard, the circuit breaker, a discarded cached
   result, an aborted harvest, and county emails that matched no filing.
@@ -169,10 +169,8 @@ therefore re-served, and re-refused, whenever something unrelated edits it. Sect
 ## 8. Reading a "No readable GDO permit in ''" warning
 
 **What it means:** our queue sent a row whose `gdo_number` was **null**, which happens when the client has no ACTIVE
-`GDO-<digits>` permit. Step 2 of section 3 lets the null through. Line 518 turns it into `''`, the split leaves no
-permit, and the guard prints the empty quotes.
-
-An empty string would instead have read "No GDO permit on this visit". Either way:
+`GDO-<digits>` permit. Before `7681388` preflight let the null through, the split left no permit, and the guard
+printed the empty quotes. **Since 2026-10-20 the same case reads "No GDO permit on this visit".** Either way:
 - the bot refuses before opening the portal;
 - nothing is filed;
 - it posts `ERROR_VALIDATION`, not retryable.
@@ -212,7 +210,9 @@ The refusal is right; only the sentence is misleading.
 
 ## 9. Risks the inspection found in the bot
 
-Each was checked against the code. They are not fixed.
+Each was checked against the code. **1 to 4 are FIXED in `7681388` (2026-10-20, Fred: "go ahead with 4")**, with
+`tests/test_queue_nulls_and_digest.py` (11 mutants, all red on revert) and our `rpa-derm-queue` v32 (`?mode=peek`,
+`da11756`). The manual digest (`send_digest_now`) had the same lease and is fixed too. 5 to 7 are open.
 
 1. **No `gdo_id` on results** (section 4): a mis-attributed SUCCESS on a multi-permit manifest.
 2. **Preflight passes null:**
