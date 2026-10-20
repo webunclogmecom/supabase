@@ -47,6 +47,7 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-20_1700 access phase 4
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -130,6 +131,9 @@ Deno.serve(async (req) => {
   if (!email.endsWith('@ayache.com') && !email.endsWith('@unclogme.com')) {
     return json({ error: 'forbidden', message: 'Staff account required.' }, 403, cors)
   }
+  // Access phase 4 (2026-10-20_1700): Edit in DERM Tracker. Watch logs, on refuses (hr.check_app_action as the caller).
+  const denied = await checkAppAction(authHeader.replace(/^Bearer\s+/i, ''), 'record_manual_gdo_report')
+  if (denied) return json({ error: 'no_access', message: denied.message }, denied.status, cors)
 
   // ---- input ----------------------------------------------------------------------------------
   let body: Record<string, unknown>

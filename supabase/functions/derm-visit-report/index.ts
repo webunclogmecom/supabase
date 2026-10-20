@@ -30,6 +30,7 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-20_1700 access phase 4
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -78,6 +79,9 @@ Deno.serve(async (req: Request) => {
   if (userErr || !userData?.user?.id || !(email.endsWith('@ayache.com') || email.endsWith('@unclogme.com'))) {
     return fail('unauthorized', 'Sign in with your UnclogMe account to download the report.', 401, cors)
   }
+  // Access phase 4 (2026-10-20_1700): View in DERM Tracker. On refuses (hr.check_app_action as the caller).
+  const denied = await checkAppAction(bearer, 'derm_visit_report')
+  if (denied) return fail('no_access', denied.message, denied.status, cors)
 
   if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
     console.error('[derm-visit-report] PDF_SERVICE_URL or PDF_SERVICE_API_KEY not set')

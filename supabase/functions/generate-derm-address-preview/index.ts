@@ -1,3 +1,4 @@
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-20_1700 access phase 4
 // ============================================================================
 // generate-derm-address-preview/index.ts — Edge Function
 // ============================================================================
@@ -81,6 +82,9 @@ Deno.serve(async (req: Request) => {
   if (!callerAllowed(req)) {
     return jsonResponse({ error: 'unauthorized', detail: 'Sign in with your UnclogMe staff account.' }, 401, cors)
   }
+  // Access phase 4 (2026-10-20_1700): DERM Tracker access, as the caller (the server key always passes).
+  const denied = await checkAppAction((req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, ''), 'generate_derm_address_preview')
+  if (denied) return jsonResponse({ error: 'no_access', detail: denied.message }, denied.status, cors)
 
   if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
     console.error('Edge function missing PDF_SERVICE_URL or PDF_SERVICE_API_KEY')
