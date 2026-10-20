@@ -2,6 +2,12 @@
 -- Backup first if any own setting was made after the release: select * from hr.access_overrides; select * from hr.access_group_defaults;
 BEGIN;
 SET LOCAL lock_timeout = '3s';
+DO $order$ BEGIN
+  -- 2026-10-19_2230 (review): roll back in reverse order only
+  IF md5(pg_get_functiondef('hr.get_employee_record(bigint)'::regprocedure)) <> '0f9d4e1471834ce6ab2240e59f0c0598' THEN
+    RAISE EXCEPTION 'hr.get_employee_record is not the body this migration produced; run 2026-10-19_rollback_hr_access_checked_in_hr_app.sql first';
+  END IF;
+END $order$;
 CREATE OR REPLACE FUNCTION hr.get_employee_record(p_id bigint)
  RETURNS jsonb
  LANGUAGE plpgsql

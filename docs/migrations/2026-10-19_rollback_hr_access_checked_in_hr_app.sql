@@ -1,6 +1,12 @@
 -- Rollback of 2026-10-19_2200_hr_access_checked_in_hr_app: previous bodies (verbatim), modes off, the approver row back.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
+DO $order$ BEGIN
+  -- 2026-10-19_2230 (review): roll back in reverse order only
+  IF md5(pg_get_functiondef('hr.get_employee_record(bigint)'::regprocedure)) <> 'c1c1bdbcce0b3a1c6662e05d00dbef97' THEN
+    RAISE EXCEPTION 'hr.get_employee_record is not the body this migration produced; run 2026-10-19_rollback_hr_access_review_fixes.sql first';
+  END IF;
+END $order$;
 INSERT INTO public.app_config (key, value)
 SELECT 'page_approvers', 'cb6ae560-ebd5-4b6e-b654-f3d9bb3662e8,5c5df96c-1924-410a-a996-e3e58c44e3c2,71e294b9-9898-4c21-a48d-d970e32d829c,5ca25eb1-4abe-4aa0-b0d6-b7ca4a47562b'
  WHERE NOT EXISTS (SELECT 1 FROM public.app_config WHERE key = 'page_approvers');

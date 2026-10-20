@@ -1,6 +1,12 @@
 -- Rollback of 2026-10-19_2130_hr_payroll_week_per_person: the previous bodies (verbatim), the new functions and the column dropped.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
+DO $order$ BEGIN
+  -- 2026-10-19_2230 (review): roll back in reverse order only
+  IF md5(pg_get_functiondef('hr.get_employee_record(bigint)'::regprocedure)) <> 'f1b101a4c85e3bd1a7300cbc3294a165' THEN
+    RAISE EXCEPTION 'hr.get_employee_record is not the body this migration produced; run 2026-10-19_rollback_hr_access_settings.sql first';
+  END IF;
+END $order$;
 CREATE OR REPLACE FUNCTION hr.fn_payroll_week_start(d date)
  RETURNS date
  LANGUAGE sql
