@@ -58,6 +58,8 @@ const APPS = {
   // ⚠ Zero RPCs and zero table reads is the CORRECT answer for this app - its only backend contact
   // is Supabase Auth. Same shape as `dump` below: do not read an empty result as a broken scan.
   hub:      { label: 'Apps Hub',          url: 'https://radiant-start-board.lovable.app' },
+  // Picture Planner, added 2026-10-20 for access phase 3 (it had a domain since 2026-09-24 and was missing).
+  planner:  { label: 'Picture Planner',   url: 'https://planner.unclogme.app' },
 };
 
 async function sql(query) {
