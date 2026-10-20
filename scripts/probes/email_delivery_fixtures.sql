@@ -29,6 +29,18 @@ VALUES
   (2037, 330, 'a@example.gov, b@example.gov', 'fx-h', 'sent', false, timestamptz '2026-07-01 15:00+00', 'city', '{}'),
   (2037, 330, 'a@example.gov, b@example.gov', 'fx-i', 'sent', false, timestamptz '2026-07-02 15:00+00', 'city', '{}');
 
+-- D5 city sends (2026-10-20_1900): the archive and any Bcc went as their own email; bcc_emails still records them
+INSERT INTO public.derm_email_sends (manifest_id, client_id, recipient_email, resend_email_id, status, is_test, sent_at,
+                                     recipient_type, cc_emails, bcc_emails, hidden_copies_separate, archive_resend_email_id, archive_error)
+VALUES
+  (2037, 330, 'a@example.gov, b@example.gov', 'fx-r', 'sent', false, now() - interval '3 hours', 'city', '{}', '{derm@ayache.com}', true, 'fx-r-archive', NULL),
+  (2037, 330, 'a@example.gov, b@example.gov', 'fx-s', 'sent', false, now() - interval '3 hours', 'city', '{}', '{derm@ayache.com}', true, 'fx-s-archive', NULL),
+  (2037, 330, 'a@example.gov, b@example.gov', 'fx-t', 'sent', false, now() - interval '3 hours', 'city', '{ops@unclogme.com}', '{derm@ayache.com}', true, 'fx-t-archive', NULL),
+  (2037, 330, 'a@example.gov, b@example.gov', 'fx-u', 'sent', false, now() - interval '2 hours', 'city', '{}', '{derm@ayache.com}', true, NULL, 'resend 500: internal error');
+INSERT INTO public.visit_photo_email_sends (visit_id, recipient_email, status, is_test, photo_count, bytes_sent, resend_email_id,
+                                            sent_at, cc_emails, bcc_emails, hidden_copies_separate, archive_resend_email_id)
+VALUES (6284, 'a@example.gov', 'sent', false, 0, 0, 'fx-v', now() - interval '3 hours', '{}', '{derm@ayache.com}', true, 'fx-v-archive');
+
 INSERT INTO public.email_events (svix_id, resend_email_id, event_type, recipient, occurred_at, detail) VALUES
   -- A: both city inboxes delivered, archive copy delivered, an open credited to everyone -> open unknown
   ('a1', 'fx-a', 'delivered', 'a@example.gov', now() - interval '170 minutes', NULL),
@@ -61,6 +73,26 @@ INSERT INTO public.email_events (svix_id, resend_email_id, event_type, recipient
   ('backfill:fx-h', 'fx-h', 'backfill_summary', '', timestamptz '2026-07-01 15:00+00', '{"basis": "assumed_before_reports", "last_event": null}'),
   -- I: summary, Resend says bounced -> not delivered
   ('backfill:fx-i', 'fx-i', 'backfill_summary', '', timestamptz '2026-07-02 15:00+00', '{"basis": "resend_last_event", "last_event": "bounced"}'),
+  -- D5 (2026-10-20_1900): city emails whose hidden copies went as a separate email
+  -- R: both delivered, opened 5 minutes later -> opened (credited to the city)
+  ('r1', 'fx-r', 'delivered', 'a@example.gov', now() - interval '170 minutes', NULL),
+  ('r2', 'fx-r', 'delivered', 'b@example.gov', now() - interval '170 minutes', NULL),
+  ('r3', 'fx-r', 'opened', 'a@example.gov', now() - interval '165 minutes', NULL),
+  ('r3', 'fx-r', 'opened', 'b@example.gov', now() - interval '165 minutes', NULL),
+  -- S: both delivered, no open -> delivered
+  ('s1', 'fx-s', 'delivered', 'a@example.gov', now() - interval '170 minutes', NULL),
+  ('s2', 'fx-s', 'delivered', 'b@example.gov', now() - interval '170 minutes', NULL),
+  -- T: a visible Cc on the city email, opened -> open unknown (other_recipients)
+  ('t1', 'fx-t', 'delivered', 'a@example.gov', now() - interval '170 minutes', NULL),
+  ('t2', 'fx-t', 'delivered', 'b@example.gov', now() - interval '170 minutes', NULL),
+  ('t3', 'fx-t', 'delivered', 'ops@unclogme.com', now() - interval '170 minutes', NULL),
+  ('t4', 'fx-t', 'opened', 'a@example.gov', now() - interval '160 minutes', NULL),
+  -- U: delivered, the archive copy failed -> delivered + health city_email_archive_missing
+  ('u1', 'fx-u', 'delivered', 'a@example.gov', now() - interval '110 minutes', NULL),
+  ('u2', 'fx-u', 'delivered', 'b@example.gov', now() - interval '110 minutes', NULL),
+  -- V: Admin Review log, delivered, opened 30 s later -> opened, gap 30
+  ('v1', 'fx-v', 'delivered', 'a@example.gov', now() - interval '170 minutes', NULL),
+  ('v2', 'fx-v', 'opened', 'a@example.gov', now() - interval '170 minutes' + interval '30 seconds', NULL),
   -- L: 1 of 2 delivered, 30 hours old -> partly_delivered + health incomplete
   ('l1', 'fx-l', 'delivered', 'a@example.gov', now() - interval '29 hours', NULL),
   -- M: delayed only, 30 hours old -> delayed + health incomplete
@@ -83,14 +115,15 @@ DECLARE r record; n int; h jsonb;
     "fx-a": "delivered_open_unknown", "fx-b": "partly_bounced", "fx-c": "not_delivered", "fx-d": "opened",
     "fx-e": "delivered", "fx-f": "delivered_open_unknown", "fx-g": "delivered_open_unknown",
     "fx-h": "delivered_open_unknown", "fx-i": "not_delivered", "fx-j": "sending", "fx-k": "no_status",
-    "fx-l": "partly_delivered", "fx-m": "delayed", "fx-n": "opened", "fx-o": "delivered", "fx-q": "spam"}';
+    "fx-l": "partly_delivered", "fx-m": "delayed", "fx-n": "opened", "fx-o": "delivered", "fx-q": "spam",
+    "fx-r": "opened", "fx-s": "delivered", "fx-t": "delivered_open_unknown", "fx-u": "delivered", "fx-v": "opened"}';
 BEGIN
   FOR r IN SELECT * FROM public.v_email_delivery WHERE resend_email_id LIKE 'fx-%' LOOP
     IF r.delivery_status IS DISTINCT FROM expect->>r.resend_email_id THEN
       RAISE EXCEPTION 'T1 % reads %, expected %', r.resend_email_id, r.delivery_status, expect->>r.resend_email_id; END IF;
   END LOOP;
   SELECT count(*) INTO n FROM public.v_email_delivery WHERE resend_email_id LIKE 'fx-%';
-  IF n <> 16 THEN RAISE EXCEPTION 'T1 expected 16 fixture emails, found %', n; END IF;
+  IF n <> 21 THEN RAISE EXCEPTION 'T1 expected 21 fixture emails, found %', n; END IF;
 
   SELECT * INTO r FROM public.v_email_delivery WHERE resend_email_id = 'fx-a';
   -- the comma list is split (mutation control: counting the raw string as one address would give 1 of 1)
@@ -125,7 +158,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'v_client_email_sends'
               AND column_name ILIKE '%recipient%') THEN RAISE EXCEPTION 'T6 v_client_email_sends exposes recipients'; END IF;
   SELECT count(*) INTO n FROM public.v_visit_city_email_sends WHERE send_id IN (SELECT send_id FROM public.v_email_delivery WHERE resend_email_id LIKE 'fx-%' AND target = 'city') AND source_table = 'derm_email_sends' AND visit_id = 6284;
-  IF n <> 10 THEN RAISE EXCEPTION 'T6 visit 6284 shows % fixture city sends, expected 10', n; END IF;
+  IF n <> 14 THEN RAISE EXCEPTION 'T6 visit 6284 shows % fixture city sends, expected 14', n; END IF;
 
   -- T7 the health email: B, C (not delivered), Q (spam), K (missing), L + M (incomplete); none for A, D, E ...
   h := public.fn_notification_health_items('[]'::jsonb);
@@ -135,6 +168,26 @@ BEGIN
     (SELECT jsonb_agg(i->>'kind') FROM jsonb_array_elements(h) i WHERE i->>'issue' LIKE 'email%'); END IF;
   IF EXISTS (SELECT 1 FROM jsonb_array_elements(h) i WHERE i->>'issue' LIKE 'email%' AND (i->>'reason') LIKE '%@%') THEN
     RAISE EXCEPTION 'T7 an address reached the health email'; END IF;
+
+  -- T8 D5: a city open counts when the hidden copies went separately (and only then); a Cc still blocks it
+  SELECT * INTO r FROM public.v_email_delivery WHERE resend_email_id = 'fx-r';
+  IF NOT r.open_creditable OR NOT (r.delivery_detail ? 'opened_at') OR r.open_gap_seconds <> 300 THEN
+    RAISE EXCEPTION 'T8 fx-r creditable % detail % gap %', r.open_creditable, r.delivery_detail, r.open_gap_seconds; END IF;
+  SELECT * INTO r FROM public.v_email_delivery WHERE resend_email_id = 'fx-t';
+  IF r.open_unknown_reason <> 'other_recipients' THEN RAISE EXCEPTION 'T8 fx-t reason %', r.open_unknown_reason; END IF;
+  SELECT * INTO r FROM public.v_email_delivery WHERE resend_email_id = 'fx-v';
+  IF r.open_gap_seconds <> 30 OR r.source_table <> 'visit_photo_email_sends' THEN RAISE EXCEPTION 'T8 fx-v gap % src %', r.open_gap_seconds, r.source_table; END IF;
+  -- the app view carries the open for the Admin Review chip
+  IF NOT EXISTS (SELECT 1 FROM public.v_visit_city_email_sends WHERE source_table = 'visit_photo_email_sends' AND visit_id = 6284
+                   AND delivery_status = 'opened' AND delivery_detail ? 'opened_at') THEN
+    RAISE EXCEPTION 'T8 v_visit_city_email_sends does not show fx-v as opened'; END IF;
+  -- an old-style city email (fx-a) is still archive_copy (asserted in T2)
+  -- T9 the health email names the missing archive copy once (fx-u), not the ones that went
+  SELECT count(*) INTO n FROM jsonb_array_elements(h) i WHERE i->>'issue' = 'city_email_archive_missing';
+  IF n <> 1 THEN RAISE EXCEPTION 'T9 expected 1 city_email_archive_missing, got %', n; END IF;
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(h) i WHERE i->>'issue' = 'city_email_archive_missing'
+                   AND i->>'reason' LIKE '%resend 500%' AND i->>'reason' NOT LIKE '%example.gov%') THEN
+    RAISE EXCEPTION 'T9 the archive item lacks the error or shows an address'; END IF;
 
   RAISE NOTICE 'email_delivery_fixtures: all pass';
 END $t$;
