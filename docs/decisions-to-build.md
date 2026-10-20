@@ -83,12 +83,15 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Loading states spec: approve the remaining three screens, the delay gate, and the two cheap accessibility fixes?
 - Email D5 (separate archive email): after the ~2026-11-18 numbers.
 - Visit duration: Q3 (a short errand in the middle of a job: sum the parts or keep) was not chosen on 2026-10-18; those visits keep their value.
+- GDO online reports (2026-10-20, `docs/reference/gdo-report-bot.md` section 8): approve GDO-14738 for 249-LOU (Diego or Yan; the county PDF is in Slack since 08-17); entering it files 7859 late (deadline was 10-15) and 7860 on time, by itself. Capas 315-CAP: is GDO-14098 (SIR FOOD LLC, same address, expired 2024-12-31) its permit, or none? Never GDO-09083 (Viktor's sentinel names it; it is Delicious Bites'). The $105 billed for unfiled reports (#3067, #3186, #3391). A Slack post for no-permit items (today only Fred's health email names them)? Gate 3 still lifts on any write (8095's county login keeps being retried that way).
 - HR pay: per-person bonus amounts? (Admin Review reads the company amounts from HR since 2026-10-18 (b); a per-person amount would show one person's pay to office reviewers there, so still refused.) (Answered 2026-10-18: pay rates admins only; each person on a two-person crew gets the visit bonus; the Oct 5 shift stays $0.)
 
 ## 4. Built (recent, with evidence)
 
 | date | plan | evidence |
 |---|---|---|
+| 2026-10-20 | GDO queue never serves a visit with no permit: held `no_permit`, one health-email item per visit and per client whose open job bills line 27 with no permit; gate 3 exact-pair so entering the permit releases the visit (Fred: "design the plan and execute it"; Jonathan's 09-03 ask, Yan's 09-04 list). `rpa-derm-queue` v33 refuses an unknown mode; `rpa-derm-result` v31 keeps the bot's permit | Supabase `2026-10-20_1345`, 1e50856; `docs/reference/gdo-report-bot.md` section 8 |
+| 2026-10-20 | GDO bot fixes: preflight refuses null, `gdo_id` echoed on results, digest counts with `?mode=peek` (no lease), digest sleep right across DST (Fred: "go ahead with 4") | bot `7681388` (Railway 789c211a), `rpa-derm-queue` v32 da11756 |
 | 2026-10-19 | Corner radius like the Visit Calendar in every app (Fred: "the same across all apps"; Building Apps rule 1f): `--radius` .625rem in Admin Review, Client App, DERM Tracker, Field Portal (the other six already matched) | each app's `docs/08-changelog.md` 2026-10-19; BA c5f4ee0, 4be382f, 63eba22, rule 1f 0229bec; DERM + FP shipped with a vite-tanstack-config bump to 2.26.5, Fred OK |
 | 2026-10-17 | Grease trap location on the property (Inside / Outside / Inside and Outside): Client App field, site survey third answer, Planner accept row, Viktor's Jobber-notes list (59 of 82 loaded) | Supabase `2026-10-16_1530`, `_1730`, `_1745`, `_1815`, `2026-10-17_0034`; open: 168-AVA, 222-SPE, 067-TCE wait on Fred (section 3) |
 | 2026-10-18 | ticket-838130 redone with one stamp per permit (043-MIL 2, 009-CN 3), completed again | Supabase `2026-10-18_1240`, 17d2b5a |

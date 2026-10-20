@@ -39,10 +39,10 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   its note said "push held until 2026-10-20") had been live since 2026-10-18 21:27 ET.
 - **One replica, one worker.** A second replica would break the double-filing guard silently.
 - **No Railway cron.** Three threads inside `server.py` sleep first, then run:
-  - **poll:** hourly, currently at about :29 each hour since the 01:29 UTC restart;
+  - **poll:** hourly, timed from the last restart (since 2026-10-20 12:54 ET, about :54 each hour);
   - **harvest:** hourly;
   - **digest:** 08:00 New York time. It backs up the ledger, then posts yesterday's Slack digest.
-  - A restart resets the clocks, and a restart after 08:00 skips that day's digest.
+  - A restart resets the clocks. A restart after 08:00 sends no digest that day, unless the old process already had.
 
 **Live switches**, read from Railway. Code defaults are in brackets.
 
@@ -50,7 +50,7 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
 |---|---|---|
 | `SHADOW_MODE` | **false** [true] | live filing; the logs show `mode=live` |
 | `MIGRATE_LEGACY_EMAIL` | **true** [false] | moves a permit's portal email from contact@ to fog@ |
-| `MIGRATE_ANY_EMAIL` | **true** [false] | moves **whatever** email a permit holds on the county portal to fog@ (Yan's 2026-10-08 rule). `docs/HANDOFF.md` says this was deployed OFF; it is ON |
+| `MIGRATE_ANY_EMAIL` | **true** [false] | moves **whatever** email a permit holds on the county portal to fog@ (Yan's 2026-10-07 rule, `docs/DOMAIN_RULES.md`). `docs/HANDOFF.md` says this was deployed OFF; it is ON |
 | `INLINE_EMAIL_EVIDENCE` | **true** [false] | after a submit, waits up to 120 s for the county email and uses it as the evidence image |
 | `LATE_EVIDENCE_LIVE` | **true** [false] | a filing whose email was missed posts no image and gets the email later through `rpa-derm-evidence` |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | 120 | lets an in-flight filing finish on a deploy |
@@ -66,7 +66,7 @@ failures, login guard after 2, files purged after 60 days.
    the check was `str(item.get(k, ''))`, so a JSON null became the text "None" and passed. See section 8.
 3. The date must parse, or the item is our `ERROR_VALIDATION`. A date is never typed in that cannot be read.
 4. The permit string is split on commas. If no permit is left, the bot refuses with
-   `No readable GDO permit in '...'` (lines 577-590).
+   `No readable GDO permit in '...'` (`run_reporter`, after the comma split).
 5. Per permit:
    - in-batch dedup;
    - a ledger check: a permit already filed is re-asserted to us under its original `run_id`, without touching the
@@ -97,13 +97,17 @@ Which rows it holds is decided by `v_derm_portal_queue`.
 | status the bot posts | retryable | our queue then |
 |---|---|---|
 | `SUCCESS` (or any non-null `portal_confirmation`) | no | never serves that (manifest, permit) again |
-| `ERROR_VALIDATION`, `ERROR_EMAIL_MISMATCH`, `ERROR_LOGIN_FAILED` | **no** | 20 h cooldown, then **held as `data_error`** until the visit or manifest row changes, or someone runs `fn_requeue_derm_portal` |
+| `ERROR_VALIDATION`, `ERROR_EMAIL_MISMATCH`, `ERROR_LOGIN_FAILED` | **no** | 20 h cooldown, then **held as `data_error`** for that same permit (exact pair since `2026-10-20_1345`) until the visit or manifest row is next written, or someone runs `fn_requeue_derm_portal` |
 | `ERROR_PORTAL_TIMEOUT`, `ERROR_UNHANDLED` | yes | serves it again after 20 h |
 | `DRY_RUN_COMPLETE` | | stored as a dry run, gates nothing |
 
-⚠ **The `data_error` hold lifts on ANY write to the visit row.** That includes the time-on-site jobs, an invoice sync,
-or a truck change: `v_derm_portal_fields.updated_at` is the visit's or manifest's `updated_at`. A held visit is
-therefore re-served, and re-refused, whenever something unrelated edits it. Section 8 is the worked example.
+⚠ **The `data_error` hold lifts on ANY write to the visit or manifest row**, even one that changes nothing:
+`public.set_updated_at` stamps `updated_at` on every UPDATE and `audit.log_change` drops a no-op one, so a re-serve can
+have no audited cause (7849 on 09-03 and 10-06). The time-on-site jobs, an invoice sync and a truck change all do it.
+Section 8 is the worked example.
+
+🛑 **A visit with no permit is never served since `2026-10-20_1345`.** The queue skips `gdo_id IS NULL`, the held
+view names it `no_permit`, and the health email lists it per visit (section 8).
 
 ## 4. The contract with us
 
@@ -116,21 +120,27 @@ therefore re-served, and re-refused, whenever something unrelated edits it. Sect
   - POST `rpa-derm-monthly-filed`.
 - **What the bot reads from a queue row:** `gdo_number`, `ticket_number` (as the manifest number), `service_date`,
   `visit_id`, `manifest_id`, `dump_ticket_date`, `dry_run`, `client_name`, `client_code`.
-  It ignores `held`, `count`, `gdo_id` and `documents`. `documents` has been sent empty since `2026-10-18_2100`.
+  Since `7681388` it also reads `gdo_id`, to echo it. It ignores `documents` (sent empty since `2026-10-18_2100`) and
+  the row's `jurisdiction`; `held` and `count` are response-level and unused.
 - **The result body:**
   - `visit_id`, `manifest_id`, `run_id` (a new uuid per attempt), `status`, `retryable`, `attempted_at`, `dry_run`;
   - either a screenshot or `screenshot_missing_reason`;
   - `failure_reason`, and `portal_confirmation` only on a real filing.
 - **The bot echoes `gdo_id` since `7681388` (2026-10-20)**, when the row's `gdo_number` holds exactly one permit.
-  `rpa-derm-result` validates it and otherwise infers one (`fn_resolve_rpa_permit`, "lowest unfiled ACTIVE permit"),
-  which on a multi-permit manifest could record one permit's SUCCESS against another. Results before that date were
-  all inferred.
+  `rpa-derm-result` (validation since 2026-08-31) uses it when it is one of the visit's permits in the queue's fields;
+  since v31 (2026-10-20) it also keeps it when it is any permit of the visit's client (it may have left the fields
+  between the serve and the POST); only then does it infer (`fn_resolve_rpa_permit`, "lowest unfiled ACTIVE permit").
+  Results before 2026-10-20 were all inferred. ⚠ The first real result carrying `gdo_id` is the first proof.
+- **`?mode=`** is `dryrun` (a 25-row historical sample, no lease), `peek` (the live queue, no lease, since v32) or
+  absent (live, leased). Anything else is refused with 400 `unknown_mode` since v33 (it used to read as live).
 
 ## 5. Evidence
 
 - The county emails the permit's portal address. The email carries no manifest and no confirmation number, so it
   matches a ledger row by (permit as an integer, date pumped).
-- **Transport:** IMAP with an app password on the fog@ group member is the main path; Gmail OAuth is the fallback.
+- **Transport:** IMAP with an app password on the fog@ group member. The code falls back to Gmail OAuth when no app
+  password is set, but Railway has no `GMAIL_*` variables, so in production there is no fallback: a failing app
+  password aborts the harvest with an alert.
 - **The evidence image is redrawn** from the parsed email, not screenshotted.
 - With both evidence switches on (section 2): a caught email becomes the image at once; a missed one is attached
   later by the hourly drain.
@@ -164,13 +174,17 @@ therefore re-served, and re-refused, whenever something unrelated edits it. Sect
 - **Open items:**
   - SSO C1 to C5, our side, is not built;
   - brief D (discard a draft) is not started;
-  - the September report is due 2026-10-20.
+  - the September report: planned filing 2026-10-20 (`public.lwt_filings` had no September row on 10-20 at 14:00 ET).
+  - `87b24a2` ("Monthly C") has been live since 2026-10-18 21:27 ET despite its "push held until 2026-10-20" note,
+    so the 10-19 close ran on it, not on `7fb15e0` as the bot's HANDOFF.md says. Who pushed it is not known.
 
 ## 8. Reading a "No readable GDO permit in ''" warning
 
 **What it means:** our queue sent a row whose `gdo_number` was **null**, which happens when the client has no ACTIVE
 `GDO-<digits>` permit. Before `7681388` preflight let the null through, the split left no permit, and the guard
-printed the empty quotes. **Since 2026-10-20 the same case reads "No GDO permit on this visit".** Either way:
+printed the empty quotes. **Since 2026-10-20 the same case reads "No GDO permit on this visit"**, and since
+`2026-10-20_1345` our queue no longer serves such a row at all, so the warning should not appear again: the visit is
+held as `no_permit` and the daily health email names it instead. Either way:
 - the bot refuses before opening the portal;
 - nothing is filed;
 - it posts `ERROR_VALIDATION`, not retryable.
@@ -195,24 +209,37 @@ The refusal is right; only the sentence is misleading.
   - 2026-09-03: Jonathan flagged Capas plus two Skinny Louie locations. Fred: "They currently don't have GDO's", then
     "Skinnie louie both locations are done, Capa is under revision".
   - The same day, the GDO Slack bot scanned 3 permit PDFs at 21000 W Dixie Hwy and found **no permit for Capas**.
-  - 2026-09-18: the GDO Slack bot found **GDO-14738** for FLIP A BURGER LLC DBA SKINNY LOUIE at 322 NW 24th St (active
-    through 2026-12-31, every 90 days), the Wynwood address. Fred: "it needs Diego or Yan approval first". It was
-    never entered.
-- **Reach:** these are the only 2 visits after the launch cutoff that have no permit. 249-LOU is the only client with
-  an open Line Item 27 job and no ACTIVE permit. Capas's line 27 came from its invoice, not its job, so its future
-  visits are not GDO-reporting. 249-LOU's 2026-10-18 visit (7860) will be served the same way once its manifest is
-  filed.
-- **Adding a permit alone does not release a held visit:** `gdos` is not part of `updated_at`. Add the permit (ACTIVE,
-  `GDO-<digits>`, with its PDF), then run `public.fn_requeue_derm_portal(visit_id, <new gdo_id>, reason, by)`.
-- **Open since 2026-09-03:** Jonathan asked that the queue stop serving visits with no permit, or flag them as "no
-  permit yet" rather than bad data. It was not built. He also asked whether past visits must be filed retroactively
-  once the permit exists.
+  - 2026-08-17: Yan asked the GDO Slack bot about 322 NW 24th St and it returned **GDO-14738** (FLIP A BURGER LLC DBA
+    SKINNY LOUIE, active through 2026-12-31, every 90 days) with the county's PDF. The bot gets permits from the
+    Miami-Dade DERM documents search and parses the county's own PDF.
+  - 2026-09-18: Fred found it again. Fred: "it needs Diego or Yan approval first". Nobody approved or rejected it in
+    Slack, and it was never entered (0 rows in `gdos`, no stored PDF).
+  - Capas lead nobody followed: SIR FOOD LLC held **GDO-14098** (expired 2024-12-31) at 21000 W Dixie Hwy, Capas
+    Aventura's address, and SIR FOOD paid a Capas invoice. ⚠ Viktor's GDO Compliance Sentinel names GDO-09083 for
+    315-CAP ("pending Fred's insert"); that permit belongs to PLAYCHEF K LLC / Delicious Bites and was ruled out on
+    09-03. Never enter it for Capas.
+- **Reach (2026-10-20):** 3 completed visits after the launch cutoff have no permit: 7849, 7859 and 7860 (refused
+  10-20 11:29 ET). 249-LOU is the only client with an open Line Item 27 job (job 1856, Jobber #99901073) and no ACTIVE
+  permit, so its 6 scheduled visits (7861 on 11-17, 7862, 7863, 7864, 7982, 8704 on 2027-04-16) would each join them.
+  Capas's line 27 is on its invoice #3067 only, not its job, so its future visits are not GDO-reporting.
+  Line 27 has been billed $35 on #3067 (paid), #3186 (past due) and #3391 (paid) for reports never filed.
+- **Fixed by `2026-10-20_1345` (Fred: "design the plan and execute it"; Jonathan's 2026-09-03 ask):** the queue never
+  serves a no-permit row, the held view names it `no_permit`, and `log_rpa_derm_health` emails one `gdo_no_permit` item
+  per visit plus one item per client whose open job bills line 27 with no permit (249-LOU today). Gate 3 is exact-pair,
+  so **entering the permit releases the held visits on the next bot pass with no requeue**, even when late: 7859's
+  DERM deadline (the 15th of the next month) passed on 10-15, 7860's is 11-15. Before this, adding a permit did not
+  release anything (on 09-03 the Skinny Louie visits filed only because an unrelated manifest write moved the anchor).
+- **Still people's calls:** approve GDO-14738 (Diego or Yan; Fred enters it in the Client App with the county PDF,
+  client 499, property 973); Capas (is GDO-14098 / SIR FOOD LLC its permit, or none?); the $105 billed for unfiled
+  reports; correcting Viktor's sentinel.
 
 ## 9. Risks the inspection found in the bot
 
 Each was checked against the code. **1 to 4 are FIXED in `7681388` (2026-10-20, Fred: "go ahead with 4")**, with
 `tests/test_queue_nulls_and_digest.py` (11 mutants, all red on revert) and our `rpa-derm-queue` v32 (`?mode=peek`,
-`da11756`). The manual digest (`send_digest_now`) had the same lease and is fixed too. 5 to 7 are open.
+`da11756`). The manual digest (`send_digest_now`) had the same lease and is fixed too. 7 is fixed except the HANDOFF
+line. 5 and 6 are open. ⚠ Not yet seen on real traffic: peek against a non-empty queue (the first 08:00 digest
+after 10-20) and the first result carrying `gdo_id`.
 
 1. **No `gdo_id` on results** (section 4): a mis-attributed SUCCESS on a multi-permit manifest.
 2. **Preflight passes null:**
@@ -230,5 +257,7 @@ Each was checked against the code. **1 to 4 are FIXED in `7681388` (2026-10-20, 
    - "one permit per ticket per pass" and "gdo_id accepted and ignored" (README, API_CONTRACT);
    - "re-queues every 20 h forever" (`reporter.py:574`, RUNBOOK);
    - the digest at "12:00 UTC" (RUNBOOK; that holds in summer only);
-   - `MIGRATE_ANY_EMAIL` "deployed OFF" (HANDOFF; it is ON).
-   - The repo's tests do not cover a null permit, and the digest has no test at all.
+   - `MIGRATE_ANY_EMAIL` "deployed OFF" (HANDOFF; it is ON). Still open: a bot-repo edit is a deploy, so it waits until
+     the September LWT report is filed.
+   - Before `7681388` no test fed a null permit or checked the DST sleep (`tests/test_digest_scheduler.py` exists since
+     2026-09-03).

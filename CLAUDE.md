@@ -118,7 +118,7 @@ Every audit row now carries `app_source` and `request_context`. To find "who wro
   - ⚠ **HISTORICAL GAP 2026-07-03 → 2026-07-29: these writes landed as `other:review.unclogme.app`, NOT `admin-review`.** The app moved to its custom domain but the trigger's CASE still matched only `%grease-buddy-dash%`, so 232 rows across 4 tables fell through to the `other:` branch. Fixed forward in `2026-07-29c`; **the historical rows were deliberately NOT relabelled** (an audit trail is a record of what was observed, and rewriting it needs Fred's explicit OK). **When running the §5.5(b) "is this grant still used" check over historical data, query `app_source IN ('admin-review','other:review.unclogme.app')` or you will conclude the app went dead on 2026-07-08 when it is writing today.** This is the §5.5(b) detector failing in exactly the way §5.5(b) exists to prevent — see also the `X-App-Source` caveat below.
 - `app_source = 'visit-calendar'` — Visit Calendar Lovable preview
 - `app_source = 'send-derm-email'` — the DERM email edge fn ("Send DERM to city/clients"); the row also carries `sent_by_email`/`sent_by_user_id` (the human who clicked, from the app-forwarded JWT — 2026-07-21h)
-- `app_source = 'gdo-report-bot'` — the Automated GDO Reporting bot (rpa-derm-queue/result edge fns; 2026-07-21i). Machine actor, not a person. **⚠ Before answering anything about how/when this bot RUNS, read [docs/reference/gdo-rpa-bot-triggers.md](docs/reference/gdo-rpa-bot-triggers.md)** — John's own doc, verbatim. It runs on HIS Railway deployment, not ours. Three traps that catch people: it has **3 triggers, not 1** (webhook, a **60-minute poll that uses the LIVE queue**, and an 8 AM EST Slack digest), `SHADOW_MODE=true` **forces every run to dry-run regardless of the URL**, and `?dry_run=true` hits a **separate 25-item QA queue** rather than production. ✅ **Since the 2026-10-08 handoff the bot and its Railway project (`unclogme-gdo-report-bot`) are OURS (Fred owns it, Diego operates it).** The full map, the live Railway switches and how to read its Slack warnings: [docs/reference/gdo-report-bot.md](docs/reference/gdo-report-bot.md) (2026-10-19). Its poll runs live (`SHADOW_MODE=false`) and has no webhook: `/run` is a manual button.
+- `app_source = 'gdo-report-bot'` — the Automated GDO Reporting bot (rpa-derm-queue/result edge fns; 2026-07-21i). Machine actor, not a person. ✅ **Since the 2026-10-08 handoff the bot and its Railway project (`unclogme-gdo-report-bot`) are OURS (Fred owns it, Diego operates it). Before answering anything about how or when it runs, read [docs/reference/gdo-report-bot.md](docs/reference/gdo-report-bot.md)** (the full map, the live Railway switches, how to read its Slack warnings). [docs/reference/gdo-rpa-bot-triggers.md](docs/reference/gdo-rpa-bot-triggers.md) is Jonathan's July copy, history only. Traps: it runs on **2 timers plus a manual button**, not a webhook (a **60-minute poll of the LIVE queue**, an 08:00 New York time Slack digest, and `/run` on its own dashboard); `SHADOW_MODE=true` forces every run to a dry run and then fetches `rpa-derm-queue?mode=dryrun`, a **separate 25-row historical sample** that never leases; production runs `SHADOW_MODE=false`.
 - `app_source = 'picture-planner'`: Picture Planner (`planner.unclogme.app`, its `unclogme-pics-organizer` Lovable hosts and project id `d9464151`). Pinned 2026-09-24 BEFORE the DNS change (`2026-09-24_0301`), when the app wrote nothing yet. It has written since 2026-09-25 (first row: a `property_pages` INSERT at 14:36 ET), always through SECURITY DEFINER RPCs called with a staff JWT: `client.submit_property_page` (`property_pages`, and can also insert into `property_page_links`), `client.approve_property_page` (`property_pages`, `properties.site_map`), `client.rotate_driver_link` (`property_page_links`) and `client.cancel_intake` (`property_intakes.cancelled_at`). It also writes through `client.get_intake_link`, which logs every reveal in `public.property_intake_link_reveals`; that table has NO audit trigger, so those writes never show under this label. Since 2026-09-28 also `client.accept_intake_answers` (the form page's Property record tab, page approvers only): `properties` (operational columns and gallons), `property_intake_accepts`, `property_intakes.accepted`, and `sync.outbound_queue` through `trg_properties_enqueue_outbound`.
 - `app_source = 'intake-collector'`: the public site-survey collector, i.e. the `intake-submit` edge function. Its own service-role client sends the header `x-app-source: intake-collector` (v19, since about 06:40 ET 2026-09-27), so it is a header label, not an Origin CASE arm: do not add one. It covers the submit PATCH on `property_intakes` (answers, collector, submitted_at), the `photo_links` INSERTs, and since v21/v22 (2026-09-29/30) the `photo_links` UPDATEs (the caption written at submit, and the `remove` op's soft delete). Collector writes before v19 landed as `sql` (service_role, paths `/property_intakes` and `/photo_links`), so for history before 2026-09-27 query both labels
 - `app_source = 'client-app'`: the Client App (`clients.unclogme.app`; Origin CASE since `2026-07-29c`, and the `x-app-source: client-app` header its edge functions send). For the intake it is the label on `property_intakes` INSERTs (`client.schedule_property_intake`), and since 2026-09-29 on the intake task: `ops.calendar_tasks`, `calendar_task_assignees` and the `property_intakes.calendar_task_id` UPDATE, written by `save-calendar-task` when the Client App sends `app: "client-app"`
@@ -4323,8 +4323,22 @@ one you are fighting before you touch anything:
 |---|---|---|
 | 1 | a non-dry-run `SUCCESS` or a `portal_confirmation` exists | never re-file a filed report |
 | 2 | any non-dry-run attempt in the last **20h** | never hammer the county portal |
-| 3 | a **non-retryable** non-SUCCESS attempt **newer than `f.updated_at`** | a data error holds until the row changes |
+| 3 | a **non-retryable** non-SUCCESS attempt **for that same permit** (exact pair since `2026-10-20_1345`) **newer than `f.updated_at`** | a data error holds until the row is next WRITTEN |
 | 4 | a dispense lease on that **(visit, permit)** in the last **20h** | never double-serve a permit |
+
+🛑 **AND A ROW WITH NO PERMIT IS NEVER SERVED (`2026-10-20_1345`).** A GDO-reporting visit whose client has no
+ACTIVE `GDO-<digits>` permit has `gdo_id IS NULL` in `v_derm_portal_fields`; the queue skips it and
+`v_derm_portal_queue_held` names it **`no_permit`**, and `log_rpa_derm_health` raises one `gdo_no_permit` item per visit
+(plus one item per client whose open job bills line 27 with no permit) into the health email. Until then the bot
+refused such a visit every time something wrote to it: 7849 (315-CAP) 5 times, 7859 (249-LOU) 4, 7860 once, each a
+Slack alert and a digest "needs review" line. **Gate 3 is exact-pair since the same migration**: a failure holds only
+its own permit's row, and a NULL-permit failure holds only a NULL-permit row, so entering (or reactivating) the
+missing permit releases the visit on the next pass with no requeue, even if its DERM deadline has passed. Gates 1, 2
+and 4 still match NULL (a NULL SUCCESS retires every permit). ⚠ **"Until the row is WRITTEN", not "changes"**:
+`set_updated_at` stamps `updated_at` on every UPDATE, even one that changes nothing, and `audit.log_change` drops
+such UPDATEs, so a held visit can be re-served with no audited cause (7849 on 09-03 and 10-06). Separate decision, not
+changed. `rpa-derm-queue` refuses an unknown `mode` with 400 since v33 (it read it as live, the one mode that
+leases); `?mode=peek` (v32) reads the live queue without a lease. The bot itself: `docs/reference/gdo-report-bot.md`.
 
 🛑 **CHANGED 2026-08-31: IT IS NOW `DISTINCT ON (manifest_id, gdo_id)`, SO EVERY PERMIT ON A
 TICKET IS SERVED IN ONE PASS.** This paragraph used to read *"only ONE permit per manifest is served
@@ -4431,10 +4445,10 @@ ours by up to 123 seconds on real rows.
 ⚠ **The 3-hour threshold is measured, not chosen:** lease-to-result latency is **14s to 48s** across
 all 11 leases, against a 60-minute poll interval, so a flagged row has missed at least two chances
 to report.
-⚠ **One legitimate way to set it off, and it is a FINDING not a false positive:** `SHADOW_MODE=true`
-makes every bot run a dry run while the 60-minute poll still reads the PRODUCTION queue, which
-leases. A shadow-mode poll that finds work therefore drains the queue for 20h and files nothing.
-Never seen (0 orphan leases in the estate's history). If it starts, do not "fix" the detector.
+⚠ **Corrected 2026-10-20 (read in the bot's code):** `SHADOW_MODE=true` does NOT lease the production queue: the
+bot then fetches `?mode=dryrun` (`api_client.fetch_queue`), which never leases. What did lease from inside the bot was
+its 08:00 digest's live fetch, fixed in bot `7681388` (`?mode=peek`). Never seen to orphan a lease (0 in the estate's
+history). If one appears, do not "fix" the detector.
 ⚠ **The first apply was REFUSED by its own grant assertion**: `authenticated` held `arwdDxtm` on a
 view seconds old, because Supabase's default privileges grant BY NAME and `REVOKE ... FROM public`
 cannot remove that. The fourth occurrence of the trap this file already documents.

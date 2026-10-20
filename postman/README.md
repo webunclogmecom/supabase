@@ -2,7 +2,7 @@
 
 **Audience:** the integrator of the GDO Online Reporting RPA bot (Jonathan / "John").
 **Status:** LIVE, filing real reports to Miami-Dade. 7 confirmed filings since 2026-07-24.
-**Last updated:** 2026-10-20 (`rpa-derm-queue?mode=peek`: the live queue read without a lease, for the bot's digest count, see the `mode` table in §3). Previously 2026-09-18, second change (🛑 **`gallons` is no longer always null: on a ticket offloaded OUTSIDE Miami-Dade every row carries the client's grease trap CAPACITY, with `gallons_source` and a ticket-level `dade_pickup_gallons` block; white tickets stay null. Yan's decision, see §4c**). Earlier the same day (the dry-run queue now serves a mixed sample across jurisdictions so a Broward yellow ticket is always in it, and the served-but-undocumented `ticket_number` / `jurisdiction` fields are in the report-object table, see §3). Previously 2026-08-31 (🛑 **the queue now serves EVERY permit on a ticket in one batch, so `visit_id` is no longer unique within a batch and the work key is the pair `(visit_id, gdo_id)`; the result POST is idempotent on `(visit_id, gdo_id, run_id)` and `gdo_id` is now USED rather than ignored**, see §3 and §4). Previously 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
+**Last updated:** 2026-10-20, second change (`no_permit` hold reason: a visit whose client has no permit is never served; an unknown `mode` is refused with 400). Earlier the same day (`rpa-derm-queue?mode=peek`: the live queue read without a lease, for the bot's digest count, see the `mode` table in §3). Previously 2026-09-18, second change (🛑 **`gallons` is no longer always null: on a ticket offloaded OUTSIDE Miami-Dade every row carries the client's grease trap CAPACITY, with `gallons_source` and a ticket-level `dade_pickup_gallons` block; white tickets stay null. Yan's decision, see §4c**). Earlier the same day (the dry-run queue now serves a mixed sample across jurisdictions so a Broward yellow ticket is always in it, and the served-but-undocumented `ticket_number` / `jurisdiction` fields are in the report-object table, see §3). Previously 2026-08-31 (🛑 **the queue now serves EVERY permit on a ticket in one batch, so `visit_id` is no longer unique within a batch and the work key is the pair `(visit_id, gdo_id)`; the result POST is idempotent on `(visit_id, gdo_id, run_id)` and `gdo_id` is now USED rather than ignored**, see §3 and §4). Previously 2026-08-26 (added `truck_decal`, the `?unreported=1` mode and the mark-as-reported endpoint §4d; corrected the quantity/fee claim in §4c; documented that `truck_decals` is manifest-grained, not filing-grained, and that the address fields are null together on the no-property case, in §4c. **Post-ship audit the same day corrected four things: the `dry_run` example defaulted to a REAL filing, the append-only claim in §4d rule 2 was not implemented at the grant level until `2026-08-26_1815`, the wrong-key test was sending the valid key, and the row-cap guard was unreachable.**)
 
 > This is both the **API reference** and the doc for the Postman collection in this folder. It
 > documents the **current** contract of the two endpoints your bot talks to, plus the surrounding
@@ -111,6 +111,7 @@ integer matching can never merge one client's own permits.
 | Param | Values | Meaning |
 |---|---|---|
 | `mode` | `dryrun` | Serve a **sample of historical** visits for testing, no lease. Omit for the live queue. |
+| `mode` | anything else | Refused with **400 `{"error":"unknown_mode"}`** since 2026-10-20 (it used to be read as live, the one mode that leases). |
 | `mode` | `peek` | The **live queue, read only** (added 2026-10-20): the same rows and order as live, `"mode": "peek"` in the response, and **no lease**. For counting what is waiting (the bot's 08:00 digest). Never file a peeked row: it is not leased, so the next live pull serves it too. |
 
 🛑 **The dry-run sample covers EVERY jurisdiction (changed 2026-09-18).** Until then dry-run served
@@ -206,16 +207,17 @@ file" and "a filing is stuck and nobody can see it". Every response now carries 
 |---|---|---|
 | `already_filed` | the county confirmed it. The healthy steady state | no |
 | `cooldown_20h` | an attempt landed in the last 20h | no, it serves after |
-| `data_error` | a **non-retryable** failure holds it until something about the row **changes** | **maybe — see below** |
-| `leased` | we handed the manifest out and are holding it 20h | no |
+| `no_permit` (2026-10-20) | the client has no ACTIVE GDO permit on file, so there is nothing to file against. **Never served to you**; our daily health email names it, and it serves by itself once the permit is entered | no, the office enters the permit |
+| `data_error` | a **non-retryable** failure **for that permit** holds it until the visit or manifest row is next written | **maybe — see below** |
+| `leased` | we handed that (visit, permit) out and are holding it 20h | no |
 
 ⚠ **`data_error` is the one to watch, and it is the one that bit us.** Its freshness anchor is a
 timestamp **in our database**. If you fix the cause on the **county side** — a portal credential, a
 permit registration — that fix is structurally invisible to the gate and the row will never come
 back on its own, no matter how long you poll. **Tell us and we re-open it in one call.**
 
-⚠ **`not_held` entries are not problems.** `sibling_won_this_pass` means the queue serves one permit
-per manifest per pass and another permit won this one; it comes up next pass.
+⚠ **`not_held` entries are not problems.** `sibling_won_this_pass` means the row exists and no gate holds it, but
+this pass did not serve it (the 25-row cap); it comes up next pass.
 `before_launch_cutoff` is the historical backlog we deliberately do not file.
 
 ⚠ **`available: false` means the summary itself could not be computed** — the queue is still valid,
