@@ -237,6 +237,7 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 | status | TEXT | `ACTIVE` or `INACTIVE` (`employees_status_chk`). Inactive is the only "delete": visit_team, visit_assignments and shift_reviews cascade on a hard delete |
 | shift | TEXT | `day`, `night` or NULL (the HR App writes lower case; empty on every row today). The HR App stops showing it once Payroll week replaces it (Fred, 2026-10-19); `ops.v_calendar_driver` and `ops.v_driver_kpi` still read it |
 | payroll_week_start_day | SMALLINT NOT NULL DEFAULT 5 | The day this person's 7-day payroll week starts (0 Sunday .. 6 Saturday; CHECK `employees_payroll_week_start_day_chk`). `2026-10-19_2130`, Fred: "A for all". Grecia 0 (Sunday), Michael Escobar 4 (Thursday), everyone else 5 (Friday). Set by admins through `hr.set_payroll_week`; it decides how the HR history groups and totals weeks, never an amount |
+| photo_path | TEXT NULL | The person's photo: a path in the PRIVATE storage bucket `employee-photos` (`<id>/<file>`, CHECK `employees_photo_path_chk`). `2026-10-20_0100`. Written only by `hr.set_employee_photo` (Edit in the HR App, or the person themselves). NULL = initial on `color_hex`. Shown through a signed URL |
 | email | TEXT | lower case when written by the HR App; unique ignoring case and spaces (`employees_email_lower_uniq`). It is the SIGN-IN email: the HR gate and every "who did it" name label match on it |
 | phone | TEXT | |
 | hire_date | DATE | |
