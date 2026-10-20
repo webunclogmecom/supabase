@@ -941,3 +941,6 @@ verify_jwt = true
 # requires role=service_role, only trustworthy behind verify_jwt.
 [functions.call-first-reminder]
 verify_jwt = true
+
+[functions.hr-sign-in]
+verify_jwt = true

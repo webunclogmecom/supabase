@@ -200,7 +200,8 @@ async function handleDriver(
     const patch: Record<string, unknown> = {}
     const blank = (v: unknown) => v === null || v === undefined || String(v).trim() === ''
     if (blank(cur?.full_name) && !blank(name)) patch.full_name = name
-    if (blank(cur?.email) && !blank(driver.email)) patch.email = driver.email
+    // 2026-10-19 (HR access plan, decision 10): never fill an email. The email is a person's sign-in and decides their
+    // access in every app, so only an admin sets it, in the HR App.
     if (blank(cur?.phone) && !blank(driver.phone)) patch.phone = driver.phone
     if (Object.keys(patch).length === 0) return
     const { error } = await supabase.from('employees').update(patch).eq('id', id)
