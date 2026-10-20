@@ -182,6 +182,9 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 
 ## 8. Reading a "No readable GDO permit in ''" warning
 
+The full history of the 10-19 / 10-20 work (inspection, fixes, full check, post-check, open items):
+[`docs/audits/2026-10-20_gdo_bot_full_check_and_no_permit_hold.md`](../audits/2026-10-20_gdo_bot_full_check_and_no_permit_hold.md).
+
 **What it means:** our queue sent a row whose `gdo_number` was **null**, which happens when the client has no ACTIVE
 `GDO-<digits>` permit. Before `7681388` preflight let the null through, the split left no permit, and the guard
 printed the empty quotes. **Since 2026-10-20 the same case reads "No GDO permit on this visit"**, and since
