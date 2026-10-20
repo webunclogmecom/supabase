@@ -28,7 +28,10 @@
 --    photo section stays the app's rule (it writes bonus_status = approved only when all three sections say Approved). Only
 --    the move to approved is checked: bonuses approved before today stay. Measured 2026-10-20 19:30 ET: 2 approved bonuses
 --    have photos not sorted (visits 8591 and 8860, both approved 2026-10-20 ~12:00 ET); they are left as they are ("from
---    now on"). A Missed visit or Not eligible save writes denied and is never blocked.
+--    now on"). Measured after: both were fully sorted when approved, the photos arrived afterwards (8860: 1 photo 2 min
+--    later; 8591: 3 photos 1.5 h later), so no bonus was approved against this rule. The review page already shows the
+--    Bonus sections only once every photo is confirmed; this trigger covers a photo that arrives while the page is open
+--    and every other writer. A Missed visit or Not eligible save writes denied and is never blocked.
 --
 -- Rule 8: tables touched: NEW hr.visit_bonus_overrides; hr.bonus_events gains one NULL column (append-only table, no row
 -- rewritten); public.visit_reviews gains one trigger. Rehearsed in BEGIN ... ROLLBACK with
