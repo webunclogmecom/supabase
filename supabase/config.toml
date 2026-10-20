@@ -944,3 +944,9 @@ verify_jwt = true
 
 [functions.hr-sign-in]
 verify_jwt = true
+
+# 2026-10-20 (Trello xMtqH9Xw): the unopened email Slack reminder, called by pg_cron through
+# public.fn_request_unopened_email_reminder() with the service_role key; the handler requires role=service_role,
+# only trustworthy behind verify_jwt.
+[functions.unopened-email-reminder]
+verify_jwt = true
