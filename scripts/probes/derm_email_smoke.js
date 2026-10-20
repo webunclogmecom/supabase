@@ -3,9 +3,10 @@
 // 🛑 TEST-ONLY BY CONSTRUCTION. It always sends `test_recipient`, and the function's own
 // code makes that decisive (verified by reading it, 2026-08-25):
 //     line 395  const toList = testRecipient ? [testRecipient] : cityEmails
-//     line 497  const cityBcc = [...(!testRecipient ? [CITY_BCC] : []), ...]
-// so with test_recipient set the ONLY recipient is the address below and CITY_BCC is
-// dropped. A municipality cannot receive anything from this script.
+//     cityHidden = hiddenCopies([...], !testRecipient)   (since D5, 2026-10-20)
+// so with test_recipient set the ONLY recipient is the address below and the derm@ayache.com
+// archive is not among the hidden copies (no archive email at all unless a bcc is passed).
+// A municipality cannot receive anything from this script.
 //
 // Called server-side because the function is origin-restricted to derm.unclogme.app and a
 // browser call from anywhere else dies at the preflight. CORS is browser-enforced only.

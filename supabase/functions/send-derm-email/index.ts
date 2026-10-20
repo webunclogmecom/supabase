@@ -5,7 +5,9 @@
 //   target:'client' — "Send DERM to client": the FP Service Report to the client's own
 //     email, friendly branded copy.
 //   target:'city'   — "Send DERM to City": the FP Service Report to the municipal
-//     FOG-program email(s) of the served location, formal copy, BCC derm@ayache.com.
+//     FOG-program email(s) of the served location, formal copy. Since D5 (2026-10-20) the archive
+//     copy to derm@ayache.com (and any Bcc) is a SEPARATE email sent right after it, so an open on
+//     the city email is the city's (_shared/archive-copy.ts, migration 2026-10-20_1900).
 // 🛑 NEITHER SENDS THE RAW MANIFEST IMAGES OR THE RECEIPT ANY MORE (Fred, 2026-08-26).
 //   The Service Report embeds the redacted FOG eManifest and the WWTP receipt, so attaching
 //   them alongside it would deliver the same two documents twice.
@@ -153,6 +155,7 @@ const PDF_TIMEOUT_MS = 65_000
 // NO catch and NO finally, so derm_email_sends would record nothing at all and the operator
 // would see a network error instead of results[]. This bounds the whole invocation.
 import { buildCityLetterHtml, buildCityLetterText, buildClientLetterHtml, buildClientLetterText } from '../_shared/city-letter.ts'
+import { hiddenCopies, sendArchiveCopy } from '../_shared/archive-copy.ts'
 
 const RENDER_DEADLINE_MS = 120_000
 // 8 MiB, deliberately NOT the sibling's 25 MiB: that function sends one email per
@@ -172,7 +175,8 @@ const MAX_REPORT_BYTES = 8 * 1024 * 1024
 // attached, which is a real branch Fred chose on 2026-08-26. Recorded in the API result and
 // in derm_email_sends, and it selects the attachment card in the shared letter.
 type CityAttachMode = 'report' | 'none'
-const CITY_BCC = 'derm@ayache.com'
+// The compliance archive inbox (derm@ayache.com) is ARCHIVE_INBOX in _shared/archive-copy.ts; hiddenCopies() adds it
+// on every non-test city send. Since D5 it is a separate email, never a Bcc on the city email.
 
 const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
 
@@ -728,17 +732,20 @@ Deno.serve(async (req: Request) => {
     resendEmailId: string | null, status: string, reason: string | null, recipientType = 'client',
     // 🛑 THE DEFAULTS ARE TODAY'S BEHAVIOUR, SO EVERY skipped/error CALL SITE IS UNTOUCHED.
     // They exist because the columns were closing over the INVOCATION-scoped ccList/bccList,
-    // which are the CALLER's lists. The real city bcc is `cityBcc`, which adds CITY_BCC
-    // ('derm@ayache.com') on every non-test send, so the standing compliance BCC had NEVER been
+    // which are the CALLER's lists. The real city hidden copies are `cityHidden` (was `cityBcc`), which
+    // adds derm@ayache.com on every non-test send (since D5 as a separate archive email), so the standing compliance BCC had NEVER been
     // logged: rows 176 and 177 on 112-YA are real city sends and both record bcc []. This file's
     // own comment calls that column "The ONLY record a Bcc ever leaves" and it was wrong about
     // the one BCC that goes on every real city send. The three sites that follow an actual
     // Resend call now pass what was really sent.
     cc: string[] = ccList, bcc: string[] = bccList,
-  ): Promise<void> => {
-    if (clientId == null) { console.warn(`[send-derm-email] log skipped (no client_id) manifest=${manifestId} status=${status}`); return }
+    // D5 (2026-10-20): extra columns for the one call that needs them (the city 'sent' row:
+    // hidden_copies_separate). Returns the new row's id so the archive result lands on the SAME row.
+    extra: Record<string, unknown> = {},
+  ): Promise<number | null> => {
+    if (clientId == null) { console.warn(`[send-derm-email] log skipped (no client_id) manifest=${manifestId} status=${status}`); return null }
     try {
-      const { error } = await sb.from('derm_email_sends').insert({
+      const { data, error } = await sb.from('derm_email_sends').insert({
         manifest_id: manifestId, client_id: clientId, recipient_email: recipientEmail,
         resend_email_id: resendEmailId, status, reason, is_test: isTest, recipient_type: recipientType,
         // 🛑 The ONLY record a Bcc ever leaves. Nobody on the thread can see it.
@@ -750,10 +757,13 @@ Deno.serve(async (req: Request) => {
         // true/false here always describes a report the recipient actually got.
         include_photos: status === 'sent' && !(reason ?? '').startsWith('attachment:manifest_images') ? recIncludePhotos : null,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
-      })
+        ...extra,
+      }).select('id').maybeSingle()
       if (error) console.error(`[send-derm-email] log insert failed: ${error.message}`)
+      return (data as { id?: number } | null)?.id ?? null
     } catch (e) {
       console.error(`[send-derm-email] log insert threw: ${String((e as Error)?.message ?? e)}`)
+      return null
     }
   }
 
@@ -1115,15 +1125,11 @@ Deno.serve(async (req: Request) => {
           text: buildCityLetterText(cityLetter),
           attachments,
         }
-        // BCC = compliance copy on real sends (CITY_BCC) + the test_cc "send-to-both" copy
-        // + whatever the sender blind-copied. Deduped: CITY_BCC must not appear twice if a sender
-        // types it by hand.
-        const cityBcc = [...new Set([
-          ...(!testRecipient ? [CITY_BCC] : []),
-          ...(testCc ? [testCc] : []),
-          ...bccList,
-        ].map((e) => e.trim()).filter(Boolean))]
-        if (cityBcc.length) payload.bcc = cityBcc
+        // HIDDEN COPIES = the compliance archive on real sends (derm@ayache.com) + the test_cc
+        // "send-to-both" copy + whatever the sender blind-copied, deduped. 🛑 D5 (2026-10-20): they are
+        // NOT a Bcc on this email any more; they get a separate archive email right after it (below), so
+        // an open on the city email is the city's (Resend counts one open for everyone on an email).
+        const cityHidden = hiddenCopies([...(testCc ? [testCc] : []), ...bccList], !testRecipient)
 
         // 🛑 THE CITY REPORT CC: the people we tell that we emailed the city.
         // Fred: "when we send an email to the city we need to send a notification to the person
@@ -1189,7 +1195,9 @@ Deno.serve(async (req: Request) => {
         if (!emailRes.ok) { results.push({ manifest_id: id, status: 'error', reason: 'resend_failed', detail: er, client: clientName }); await logSend(id, logClientId, logEmail, null, 'error', 'resend_failed', 'city'); continue }
 
         const sentEmailId = (er as { id?: string })?.id ?? null
-        results.push({ manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toList.join(', ')} (TEST)` : toList.join(', '), municipality, number, email_id: sentEmailId, attachment: attachMode, attachment_reason: attachReason || null })
+        const sentAt = new Date()
+        const sentResult: Record<string, unknown> = { manifest_id: id, client_id: clientId, status: 'sent', to: testRecipient ? `${toList.join(', ')} (TEST)` : toList.join(', '), municipality, number, email_id: sentEmailId, attachment: attachMode, attachment_reason: attachReason || null }
+        results.push(sentResult)
         // 🛑 THE BRANCH IS WRITTEN ON EVERY SUCCESS ROW, AND THAT IS MANDATORY, NOT POLISH.
         // The fallback is fail-OPEN: 85-90% of pairs already take it, so the report path could
         // stop firing entirely and look identical to normal operation. That is the
@@ -1198,9 +1206,34 @@ Deno.serve(async (req: Request) => {
         // ⚠ `reason` has meant "why this did NOT happen" until now. The `attachment:` prefix
         // disambiguates, and `status='sent' AND reason IS NOT NULL` is unambiguous, but a
         // reader needs telling. Query with `reason LIKE 'attachment:%'`.
-        await logSend(id, logClientId, logEmail, sentEmailId, 'sent',
+        const sentRowId = await logSend(id, logClientId, logEmail, sentEmailId, 'sent',
           attachMode === 'report' ? 'attachment:report' : `attachment:manifest_images:${attachReason || 'unknown'}`, 'city',
-          ccAll, cityBcc)
+          ccAll, cityHidden, { hidden_copies_separate: true })
+
+        // 🛑 D5: the archive copy (and any Bcc / test_cc), as its own email. It never throws, and nothing after the
+        // Resend success above may throw either: the outer catch would log a DELIVERED city email as an error. Its
+        // result goes on the SAME row; a missing archive id on a real send reaches the health email.
+        const archive = sentEmailId
+          ? await sendArchiveCopy({
+              apiKey: RESEND_API_KEY ?? '', cityEmailId: sentEmailId, from: RESEND_FROM, to: cityHidden,
+              cityTo: toList, cityCc: ccAll, sentAt, subject: String(payload.subject), html: String(payload.html),
+              text: String(payload.text), attachments,
+            })
+          : { id: null, error: cityHidden.length ? 'the city email came back without a Resend id, so no archive copy was sent' : null }
+        sentResult.archive_email_id = archive.id
+        if (archive.error) {
+          sentResult.archive_error = archive.error
+          console.error(`[send-derm-email] archive copy failed for manifest ${id}: ${archive.error}`)
+        }
+        if (sentRowId != null && (archive.id || archive.error)) {
+          try {
+            const { error: aErr } = await sb.from('derm_email_sends')
+              .update({ archive_resend_email_id: archive.id, archive_error: archive.error }).eq('id', sentRowId)
+            if (aErr) console.error(`[send-derm-email] archive result not saved on row ${sentRowId}: ${aErr.message}`)
+          } catch (e2) {
+            console.error(`[send-derm-email] archive result not saved on row ${sentRowId}: ${String((e2 as Error)?.message ?? e2)}`)
+          }
+        }
       } catch (e) {
         const msg = String((e as Error)?.message ?? e)
         results.push({ manifest_id: id, status: 'error', reason: msg })

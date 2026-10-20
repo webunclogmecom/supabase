@@ -20,7 +20,8 @@
 // shows the operator in the dialog, 2026-09-15_0925). A body `test_recipient` is refused with 400
 // test_recipient_retired, so a stale bundle can never send for real while claiming a test. Cc and
 // Bcc remain caller-supplied and stay domain-locked to the internal allowlist below.
-// A compliance copy of every real send goes to CITY_BCC, as send-derm-email does for its city sends.
+// A compliance copy of every real send goes to derm@ayache.com, as send-derm-email does for its city sends;
+// since D5 (2026-10-20) as a separate archive email, not a Bcc (see _shared/archive-copy.ts).
 //
 // 🛑 AND UNLIKE send-derm-email, THIS FUNCTION ACTUALLY CHECKS WHO IS CALLING.
 // send-derm-email is deployed verify_jwt=true but asserts no role, and the public
@@ -43,6 +44,7 @@
 // attachments at 10 photos. One PDF carries every photo.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { checkAppAction } from '../_shared/access-check.ts'
+import { hiddenCopies, sendArchiveCopy } from '../_shared/archive-copy.ts'
 
 // 🛑 DO NOT PUT `encodeBase64` FROM std/encoding/base64.ts BACK HERE. It is what killed
 // this function on every report over roughly 5MB, and it failed INVISIBLY (2026-08-25).
@@ -100,9 +102,10 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
-// 🛑 The compliance archive copy on every real send (same address send-derm-email BCCs on its city
-// sends). Deduped against any caller Bcc; never shown to the recipient.
-const CITY_BCC = 'derm@ayache.com'
+// 🛑 The compliance archive copy on every real send goes to derm@ayache.com (ARCHIVE_INBOX in
+// _shared/archive-copy.ts). Since D5 (2026-10-20) it is its OWN email, sent right after the city email
+// together with any caller Bcc, so the city email carries only its To and Cc and an open on it is the
+// city's (migration 2026-10-20_1900). Never shown to the recipient.
 
 // 🛑 THE 48 HOURS IS THE CREW'S POSTING DEADLINE, NOT A SEND DELAY (Fred, 2026-08-18).
 // This constant used to drive a hard time gate: no send until completed_at + 48h, always.
@@ -601,12 +604,14 @@ Deno.serve(async (req: Request) => {
   // The letter note below treats NULL like false (keep the "will be sent separately" note).
   let hasDermDocs: boolean | null = null
 
+  // Returns the new row's id (null when the insert failed), so the D5 archive result can be written on
+  // the SAME row. `extra` overrides columns on the one call that needs it (the sent row).
   const logSend = async (
     status: string, reason: string | null, photoCount: number, bytes: number,
-    resendId: string | null, subject: string | null,
-  ) => {
+    resendId: string | null, subject: string | null, extra: Record<string, unknown> = {},
+  ): Promise<number | null> => {
     try {
-      const { error } = await sb.from('visit_photo_email_sends').insert({
+      const { data, error } = await sb.from('visit_photo_email_sends').insert({
         // recipient_email is NOT NULL: skip paths that fire before the property is resolved log an
         // empty string, never a placeholder address (the testing era logged the test inbox here).
         visit_id: visitId, recipient_email: recipientEmail ?? '', status, reason,
@@ -626,10 +631,13 @@ Deno.serve(async (req: Request) => {
         // 🛑 The ONLY record a Bcc ever leaves. Nobody on the thread can see it.
         cc_emails: ccList, bcc_emails: bccList,
         sent_by_email: actorEmail, sent_by_user_id: actorUserId,
-      })
+        ...extra,
+      }).select('id').maybeSingle()
       if (error) console.error(`[send-visit-photos-email] log insert failed: ${error.message}`)
+      return (data as { id?: number } | null)?.id ?? null
     } catch (e) {
       console.error(`[send-visit-photos-email] log insert threw: ${String((e as Error)?.message ?? e)}`)
+      return null
     }
   }
 
@@ -975,8 +983,13 @@ Deno.serve(async (req: Request) => {
     // Fred's subject line, verbatim: "Grease Trap Service Completed — [Client Name],
     // [Address] ([Date])".
     const subject = buildSubject(visitRow)
-    // Compliance archive copy, deduped against whatever the sender blind-copied.
-    const bccAll = [...new Set([CITY_BCC, ...bccList].map((e) => e.toLowerCase()))]
+    const html = buildHtml(visitRow, phaseCounts, includePhotos, hasDermDocs === true)
+    const text = buildText(visitRow, phaseCounts, includePhotos, hasDermDocs === true)
+    const attachments = prepared.map((p) => ({ filename: p.filename, content: p.content, content_type: p.content_type }))
+    // 🛑 D5 (2026-10-20): NO Bcc on the city email. The archive inbox and every caller Bcc get their copy as a
+    // separate email below, so an open on this one belongs to the city (Resend counts one open for everyone on
+    // an email). bcc_emails on the row still records who got a hidden copy; hidden_copies_separate says how.
+    const hidden = hiddenCopies(bccList, true)
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -984,12 +997,8 @@ Deno.serve(async (req: Request) => {
         from: RESEND_FROM,
         to: cityEmails,
         ...(ccList.length ? { cc: ccList } : {}),
-        bcc: bccAll,
         reply_to: CONTACT_EMAIL,
-        subject,
-        html: buildHtml(visitRow, phaseCounts, includePhotos, hasDermDocs === true),
-        text: buildText(visitRow, phaseCounts, includePhotos, hasDermDocs === true),
-        attachments: prepared.map((p) => ({ filename: p.filename, content: p.content, content_type: p.content_type })),
+        subject, html, text, attachments,
       }),
     })
     const er = await res.json().catch(() => ({}))
@@ -999,12 +1008,34 @@ Deno.serve(async (req: Request) => {
     }
 
     const resendId = (er as { id?: string })?.id ?? null
-    await logSend('sent', null, prepared.length, total, resendId, subject)
+    const sentAt = new Date()
+    const rowId = await logSend('sent', null, prepared.length, total, resendId, subject,
+      { bcc_emails: hidden, hidden_copies_separate: true })
+
+    // The archive copy. It never throws and never changes the row's status: the city email has gone. Its result
+    // goes on the SAME row; a missing archive id reaches the health email (city_email_archive_missing).
+    const archive = resendId
+      ? await sendArchiveCopy({
+          apiKey: RESEND_API_KEY ?? '', cityEmailId: resendId, from: RESEND_FROM, to: hidden,
+          cityTo: cityEmails, cityCc: ccList, sentAt, subject, html, text, attachments, replyTo: CONTACT_EMAIL,
+        })
+      : { id: null, error: 'the city email came back without a Resend id, so no archive copy was sent' }
+    if (archive.error) console.error(`[send-visit-photos-email] archive copy failed for visit ${visitId}: ${archive.error}`)
+    if (rowId != null) {
+      try {
+        const { error } = await sb.from('visit_photo_email_sends')
+          .update({ archive_resend_email_id: archive.id, archive_error: archive.error }).eq('id', rowId)
+        if (error) console.error(`[send-visit-photos-email] archive result not saved on row ${rowId}: ${error.message}`)
+      } catch (e) {
+        console.error(`[send-visit-photos-email] archive result not saved on row ${rowId}: ${String((e as Error)?.message ?? e)}`)
+      }
+    }
     return json({
       ok: true, is_test: false, sent_to: cityEmails, visit_id: visitId,
       attached: prepared.length, bytes: total,
       by_phase: prepared.reduce((a, p) => { a[p.phase] = (a[p.phase] ?? 0) + 1; return a }, {} as Record<string, number>),
       skipped, resend_email_id: resendId, subject,
+      archive_email_id: archive.id, archive_error: archive.error,
     }, 200, cors)
   } catch (e) {
     const msg = String((e as Error)?.message ?? e)
