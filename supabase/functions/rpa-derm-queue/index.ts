@@ -7,6 +7,10 @@
 //
 // GET /functions/v1/rpa-derm-queue            → up to 25 live-queue manifests
 // GET /functions/v1/rpa-derm-queue?mode=dryrun → historical sample (testing)
+// GET /functions/v1/rpa-derm-queue?mode=peek   → the live queue, READ ONLY: same rows
+//     and order as live, NO lease (2026-10-20). For the bot's 08:00 digest "in queue"
+//     count: its live fetch leased every waiting row for 20h, so a visit waiting at
+//     08:00 was filed about 20h late. Never file a peeked row: it is not leased.
 //
 // Auth: header `x-rpa-key` matched against the RPA_BOT_KEYS secret
 // (comma-separated list so a key rotation is add-new, swap, remove-old with
@@ -88,7 +92,8 @@ Deno.serve(async (req: Request) => {
   if (!KEYS.includes(presented)) return json({ error: 'unauthorized' }, 401)
 
   const url = new URL(req.url)
-  const mode = url.searchParams.get('mode') === 'dryrun' ? 'dryrun' : 'live'
+  const rawMode = url.searchParams.get('mode')
+  const mode = rawMode === 'dryrun' ? 'dryrun' : rawMode === 'peek' ? 'peek' : 'live'
   const view = mode === 'dryrun' ? 'v_derm_portal_dryrun' : 'v_derm_portal_queue'
 
   // x-app-source tags the lease writes as 'gdo-report-bot' for the activity
@@ -110,7 +115,7 @@ Deno.serve(async (req: Request) => {
   // ...), so every kind lands inside the cap whatever the counts. It is a
   // SAMPLE, not a queue: no lease, no ordering contract, capped at the same 25.
   let rows: Row[] | null
-  if (mode === 'live') {
+  if (mode !== 'dryrun') {
     const { data, error } = await sb
       .from(view)
       .select('*')
