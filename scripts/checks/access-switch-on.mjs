@@ -80,7 +80,7 @@ const APPS = {
     extra: [],
   },
   client_app: {
-    host: 'https://clients.unclogme.app', control: 'client.update_client_fields',
+    host: 'https://clients.unclogme.app', control: 'client.update_property_operational',
     gateReaders: ['client.global_search', 'client.recurring_eligibility'],
     edgeAllow: { 'emergency-session': 'leftover, returns 404' },
     revokes: [], extra: [],
@@ -127,12 +127,17 @@ function extract(src) {
   for (const m of src.matchAll(EDGE_RE)) edge.add(m[1] || m[3]);
   for (const m of src.matchAll(WRITE_RE)) writes.add(m[2] + ':' + m[3]);
   const indirect = (src.match(/\.rpc\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*[,)]/g) || []).length;
-  return { rpc, edge, writes, indirect };
+  // calls through a wrapper (the Client App's Ct("name", {...}) / ct("name", {...})): any call whose first argument is a
+  // literal name and second an object. Only names that are real functions in the exposed schemas are kept (see below).
+  const helperCalls = new Set();
+  for (const m of src.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*\(\s*(["'`])([a-z][a-z0-9_]{3,})\1\s*,\s*\{/g)) helperCalls.add(m[2]);
+  return { rpc, edge, writes, indirect, helperCalls };
 }
 {
-  const fx = 'a.rpc("one",{}) b.rpc(\'two\') c.rpc(`three`,x) d.rpc("bad`) e.rpc(fnName,{}) fetch(u+"/functions/v1/edge-a") s.functions.invoke(`edge-b`) x.from("t1").update({}) y.from(`t2`).delete()';
+  const fx = 'a.rpc("one",{}) b.rpc(\'two\') c.rpc(`three`,x) d.rpc("bad`) e.rpc(fnName,{}) fetch(u+"/functions/v1/edge-a") s.functions.invoke(`edge-b`) x.from("t1").update({}) y.from(`t2`).delete()'
+    + ' async function C$t(e,t){let n;try{n=await ae.rpc(e,t)}catch{}} C$t("four",{}) xC$t("notme")';
   const e = extract(fx);
-  const want = ['one', 'two', 'three'].every(n => e.rpc.has(n)) && !e.rpc.has('bad') && e.indirect === 1
+  const want = ['one', 'two', 'three'].every(n => e.rpc.has(n)) && e.helperCalls.has('four') && !e.rpc.has('bad') && !e.helperCalls.has('notme') && e.indirect === 2
     && e.edge.has('edge-a') && e.edge.has('edge-b') && e.writes.has('t1:update') && e.writes.has('t2:delete');
   if (!want) { console.log('FAIL extractor self-test', JSON.stringify({ rpc: [...e.rpc], edge: [...e.edge], w: [...e.writes], i: e.indirect })); process.exit(2); }
 }
@@ -224,12 +229,12 @@ end $probe$;`;
   // ---------- bundle ----------
   const { chunks, src } = await walk(cfg.host);
   const ex = extract(src);
-  console.log(`bundle: ${chunks} chunks, ${src.length} bytes, ${ex.rpc.size} rpc names, ${ex.edge.size} edge fns, ${ex.writes.size} direct writes, ${ex.indirect} indirect .rpc(var)`);
+  console.log(`bundle: ${chunks} chunks, ${src.length} bytes, ${ex.rpc.size} rpc names (+${ex.helperCalls.size} wrapper-call candidates), ${ex.edge.size} edge fns, ${ex.writes.size} direct writes, ${ex.indirect} indirect .rpc(var)`);
   if (!src.includes('get_my_access')) fail('bundle does not call get_my_access (the access screen is missing)'); else ok('bundle calls get_my_access');
   if (chunks < 2) fail('bundle walk found no chunks (instrument broken)');
 
   // ---------- resolve functions ----------
-  const names = [...ex.rpc];
+  const names = [...new Set([...ex.rpc, ...ex.helperCalls])];
   const fq = await sql(`select n.nspname||'.'||p.proname as fn, p.oid::regprocedure::text as sig, p.pronargs, p.pronargdefaults, p.prokind,
      array(select format_type(t, null) from unnest(p.proargtypes) t) as types, pg_get_functiondef(p.oid) as def
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -237,7 +242,7 @@ end $probe$;`;
   if (fq.status > 299) { console.log(fq.text); process.exit(2); }
   const fns = fq.json;
   const found = new Set(fns.map(f => f.fn.split('.')[1]));
-  for (const n of names) if (!found.has(n)) warn(`rpc "${n}" matches no function in ${EXPOSED.join('/')} (dead call or another project)`);
+  for (const n of ex.rpc) if (!found.has(n)) warn(`rpc "${n}" matches no function in ${EXPOSED.join('/')} (dead call or another project)`);
   const levelFor = def => {
     const m = [...def.matchAll(new RegExp(`fn_(?:check|require)_app\\(\\s*'${app}'\\s*,\\s*'(view|edit)'`, 'g'))].map(x => x[1]);
     const a = [...def.matchAll(/fn_(?:check|require)_any_app\(\s*(?:array|ARRAY)\[([^\]]*)\]\s*,\s*'(view|edit)'/g)].filter(x => x[1].includes(`'${app}'`)).map(x => x[2]);
