@@ -702,6 +702,7 @@ documented here; enumerate the rest from `pg_class` rather than trusting this ta
 | View | Purpose |
 |---|---|
 | `derm.v_lwt_monthly_rows` | **One row per PICKUP ACTIVITY**, for Jonathan's Miami-Dade Liquid Waste Transporter monthly filing, served by `rpa-derm-monthly`. Added `2026-08-24_1730`. |
+| `derm.visits` | The DERM Tracker's visit list and visit page. 🛑 `gdo_number` is EVERY ACTIVE `GDO-<number>` permit of the client, sorted, joined ", " (NULL when none), the same rule as `public.dump_visit_gdo_numbers` and `ops.v_calendar_visit.gdo_permits`; it was the first permit by id until `2026-10-21_1715` (Trello YAAcQNtJ). Check: `scripts/checks/gdo_permit_sets_agree.sql`. |
 | `derm.v_manifest_link_date_conflicts` | Manifest links that assert something physically impossible: the pickup is dated after its own offload, or the visit backing it is not marked completed. `conflict_kind` distinguishes them. Added `2026-08-24_1510`. |
 
 **`v_lwt_monthly_rows`, the three things that will bite you:**
