@@ -1,5 +1,6 @@
 -- Probes for "an amount change can update approved bonuses since its start date" (2026-10-21, Fred). Everything is undone:
--- the block ends by RAISE-ing its results. Run with scripts/checks/hr_app/run.js probe_bonus_reprice.sql.
+-- the block ends by RAISE-ing its results. Since 2026-10-21 ("since" replaces later amounts) the window is every date
+-- from the start date on. Run with scripts/checks/hr_app/run.js probe_bonus_reprice.sql.
 -- Expected counts are computed here independently of hr.fn_bonus_reprice_rows, so the probe checks the rule, not itself.
 DO $p$
 DECLARE
@@ -22,7 +23,7 @@ BEGIN
   -- one visit in the window gets its own custom amount first: it must keep it
   SELECT g.visit_id INTO v_vx FROM hr.bonus_events g JOIN public.visit_team t ON t.visit_id = g.visit_id AND t.employee_id = g.employee_id
    WHERE g.employee_id = v_e AND g.kind = 'visit_bonus' AND g.rule = 'approved' AND g.reverses_id IS NULL
-     AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id) AND g.work_date >= v_d AND (v_nxt IS NULL OR g.work_date < v_nxt)
+     AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id) AND g.work_date >= v_d
    ORDER BY g.work_date DESC LIMIT 1;
   r := r || jsonb_build_object('t','0 fixtures found','ok', v_e IS NOT NULL AND v_vx IS NOT NULL, 'person', v_e, 'from', v_d, 'next', v_nxt, 'r0', v_r0, 'custom_visit', v_vx);
 
@@ -36,7 +37,7 @@ BEGIN
   v_exp := (SELECT count(*) FROM hr.bonus_events g
              WHERE g.employee_id = v_e AND g.kind = 'visit_bonus' AND g.rule = 'approved' AND g.reverses_id IS NULL
                AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id)
-               AND g.work_date >= v_d AND (v_nxt IS NULL OR g.work_date < v_nxt) AND g.amount <> v_new AND g.visit_id <> v_vx);
+               AND g.work_date >= v_d AND g.amount <> v_new AND g.visit_id <> v_vx);
   -- 2. the preview counts exactly those
   j := hr.preview_person_bonus(v_e, 'per_visit_bonus', v_new, v_d);
   r := r || jsonb_build_object('t','2 preview counts the approved visits that would change','ok', (j->>'approved_count')::int = v_exp AND v_exp > 0 AND j->>'unit' = 'visit', 'v', j, 'expected', v_exp);
@@ -56,14 +57,19 @@ BEGIN
         NOT (j->>'noop')::boolean AND (j->>'updated_approved')::int = v_exp
         AND NOT EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.employee_id = v_e AND g.kind = 'visit_bonus' AND g.rule = 'approved'
                           AND g.reverses_id IS NULL AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id)
-                          AND g.work_date >= v_d AND (v_nxt IS NULL OR g.work_date < v_nxt) AND g.visit_id <> v_vx AND g.amount <> v_new)
+                          AND g.work_date >= v_d AND g.visit_id <> v_vx AND g.amount <> v_new)
         AND (SELECT count(*) FROM hr.bonus_events g WHERE g.reprice_rate_id = v_rate AND g.reverses_id IS NULL AND g.filled_by = 'rate_change'
                AND g.note LIKE 'Amount changed to % from % by %: probe apply') = v_exp, 'v', j);
   r := r || jsonb_build_object('t','4b the visit with its own custom amount keeps it','ok',
         (SELECT g.amount FROM hr.bonus_events g WHERE g.visit_id = v_vx AND g.employee_id = v_e AND g.reverses_id IS NULL
            AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id)) = 33);
-  r := r || jsonb_build_object('t','4c bonuses after the next later amount do not move','ok', v_nxt IS NULL OR NOT EXISTS (
-        SELECT 1 FROM hr.bonus_events g WHERE g.employee_id = v_e AND g.kind = 'visit_bonus' AND g.work_date >= v_nxt AND g.reprice_rate_id IS NOT NULL));
+  -- 2026-10-21 (Fred: "make since replace later amounts too"): the later dated amount is replaced, for pending and approved
+  r := r || jsonb_build_object('t','4c later dated amounts are replaced','ok', v_nxt IS NULL OR (
+        (SELECT x.amount FROM hr.fn_rate_on(v_e, 'per_visit_bonus', v_nxt) x) = v_new
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(hr.get_person_bonus_amounts(array[v_e])->(v_e::text)->'per_visit_bonus') a
+                         WHERE (a->>'effective_from')::date > v_d)
+        AND EXISTS (SELECT 1 FROM jsonb_array_elements(hr.get_employee_record(v_e)->'activity') a, jsonb_array_elements(a->'changes') c
+                     WHERE c->>'field' = 'Replaces later amounts')), 'next', v_nxt);
   r := r || jsonb_build_object('t','4d nothing left to change: preview 0','ok', (hr.preview_person_bonus(v_e, 'per_visit_bonus', v_new, v_d)->>'approved_count')::int = 0);
   -- 5. Activity says how many
   j := hr.get_employee_record(v_e);
@@ -91,7 +97,7 @@ BEGIN
     v_sr0 := coalesce((SELECT x.amount FROM hr.fn_rate_on(v_e, 'per_shift_bonus', v_ds) x), 0) + 3;
     v_nxt := (SELECT min(p.effective_from) FROM hr.pay_rates p WHERE p.employee_id = v_e AND p.kind = 'per_shift_bonus' AND p.effective_from > v_ds);
     v_sexp := (SELECT count(*) FROM hr.bonus_events g WHERE g.employee_id = v_e AND g.kind = 'shift_bonus' AND g.rule = 'approved' AND g.reverses_id IS NULL
-                 AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id) AND g.work_date >= v_ds AND (v_nxt IS NULL OR g.work_date < v_nxt) AND g.amount <> v_sr0);
+                 AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id) AND g.work_date >= v_ds AND g.amount <> v_sr0);
     SELECT jsonb_agg(g.id ORDER BY g.id) INTO v_fi FROM hr.bonus_events g WHERE g.employee_id = v_e AND g.kind = 'shift_bonus' AND g.rule = 'forms_issue'
        AND g.reverses_id IS NULL AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id);
     j := hr.set_person_bonus(v_e, 'per_shift_bonus', v_sr0, v_ds, 'probe shift', true);
