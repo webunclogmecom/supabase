@@ -606,3 +606,9 @@ judges a reading by the trap size on file:
 - Effect: trusted readings 132 -> 150; the Calendar's estimates for 10-21..12-04 move on 27 visits, 57,193 -> 63,421 gal.
   Past days are frozen and did not move. 061-TCE (trap 10) now estimates 203 from its one reading.
 - Rollbacks beside both migrations (the vetoes come back; the appended column stays).
+
+**Trap size list (`docs/migrations/2026-10-21_0530_trap_size_health.sql`).** `public.log_trap_size_health()` (cron
+`trap-size-health`, 13:23 UTC, in the daily health email) lists every property with a trusted Moises reading in the last
+90 days flagged `sludge_above_trap_size` (item kind `trap_size:too_small:p<property id>`; it clears itself once the size
+is corrected in Jobber or the Client App), and any visit from 2026-01-01 to 3 days ago without a stored Grease pumped row
+(`trap_size:grease_freeze_missing`). First run: 11 places, 0 missing rows. Low-confidence-only readings are left out.
