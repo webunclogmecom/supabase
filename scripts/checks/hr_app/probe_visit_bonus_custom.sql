@@ -121,6 +121,17 @@ BEGIN
         AND NOT has_function_privilege('authenticated', 'hr.fn_visit_rate_on(bigint,bigint,date)', 'EXECUTE')
         AND has_function_privilege('authenticated', 'hr.set_visit_bonus(bigint,bigint,numeric,text)', 'EXECUTE')
         AND NOT has_function_privilege('anon', 'hr.set_visit_bonus(bigint,bigint,numeric,text)', 'EXECUTE'));
+  -- 13. a smoke test on a TEST client visit (2026-10-21_0337) stays out of the person's HR Activity and pay
+  PERFORM set_config('request.jwt.claims', c_admin, true);
+  SELECT v.id, min(t.employee_id) INTO v_old, v_e FROM public.visits v JOIN public.visit_team t ON t.visit_id = v.id
+   WHERE v.visit_status = 'completed' AND v.deleted_at IS NULL AND public.fn_is_non_customer(v.client_id)
+   GROUP BY v.id ORDER BY v.id DESC LIMIT 1;
+  PERFORM hr.set_visit_bonus(v_old, v_e, 77, 'probe smoke test');
+  j := hr.get_employee_record(v_e);
+  r := r || jsonb_build_object('t','13 a test-client custom amount stays out of HR','ok', v_old IS NOT NULL
+        AND (hr.get_review_bonuses(array[v_old], '[]'::jsonb)->'visits'->(v_old::text)->'custom'->(v_e::text)->>'amount')::numeric = 77
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(j->'activity') a WHERE a->'changes'->1->>'new' = 'probe smoke test')
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(j->'history') h WHERE (h->>'id')::bigint = -v_old), 'visit', v_old);
   PERFORM set_config('request.jwt.claims', '', true);
   RAISE EXCEPTION 'PROBE_RESULT %', r;
 END $p$;
