@@ -5691,7 +5691,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   client's average, i.e. the rounded mean of the LAST 6 trusted readings (40 to 3,840 gal) of its pumping visits dated
   before that day (`ops.fn_client_sludge_averages`, the one definition; `ops.v_client_sludge_average` shows each
   client place's current average). Otherwise the trap size on file (the grease trap size, also for grey water and lift
-  stations: accepted); no size = `unknown`. Pump kinds (`ops.fn_visit_pump_kinds`, `ops.fn_visit_pump_kind` = its
+  stations: accepted); no size = `unknown`. 🛑 **Since `2026-10-21_1500` (step 7, Fred: "go ahead with step 7") the
+  average is per place AND pump kind** (the visit's first kind; a lift station reading never feeds a grease trap
+  average), and a lift station or grey water visit at a place with an open grease trap job does NOT borrow the trap
+  size: it is `unknown` until Moises has a reading of its own kind; the Calendar RPC's `unknown_reason` says
+  `no_reading_for_kind` (vs `no_size`). Pump kinds (`ops.fn_visit_pump_kinds`, `ops.fn_visit_pump_kind` = its
   first): catalogue codes 01/02/09 grease trap, 03/10 grey water, 04/11 lift station, from the visit's own lines, else
   the job's open lines, else old uncoded text. 🛑 **A past day stays the same** (Fred: *"unless like a visit is moved
   from that date or into that date ... recalculate with that same average"*): `ops.fn_grease_estimates_resolved` returns

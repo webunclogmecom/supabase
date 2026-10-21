@@ -612,3 +612,12 @@ judges a reading by the trap size on file:
 90 days flagged `sludge_above_trap_size` (item kind `trap_size:too_small:p<property id>`; it clears itself once the size
 is corrected in Jobber or the Client App), and any visit from 2026-01-01 to 3 days ago without a stored Grease pumped row
 (`trap_size:grease_freeze_missing`). First run: 11 places, 0 missing rows. Low-confidence-only readings are left out.
+
+**Per pump kind (`docs/migrations/2026-10-21_1500_grease_per_kind_averages.sql`, Fred: "go ahead with step 7").**
+`ops.fn_client_sludge_averages` returns one average per place AND pump kind (new last column `pump_kind`; a reading's
+kind is its visit's first pump kind), and `ops.v_client_sludge_average` carries it. `ops.fn_grease_estimates_live` reads
+the average of the visit's own first kind, and a lift station or grey water visit at a place with an open grease trap job
+(not archived or destroyed) no longer borrows the trap size on file: it is `unknown` until Moises has a reading of its
+kind. `ops.calendar_grease_estimates` gained `unknown_reason` (`no_size` / `no_reading_for_kind`). Reach over 2026:
+17 visits at 031-KRU, 083-SHUL, 168-AVA, 196-PV; 14 are past days and stay frozen; moved 6844 (Oct 28, Cloggy, 375),
+6845 and 6846 (Nov 27, Dec 27, Moises, 292 pooled grease trap average), all now unknown. No grease trap visit moved.
