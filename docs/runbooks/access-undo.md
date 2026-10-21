@@ -63,6 +63,27 @@ create policy visit_assignments_anon_delete_authn on public.visit_assignments fo
 create policy visit_assignments_anon_insert_authn on public.visit_assignments for insert to authenticated with check (true);
 ```
 
+```sql
+-- Admin Review (2026-10-21_0730): direct write grants
+grant update (manhole_count) on public.visits to authenticated;
+grant update (grease_trap_manhole_count, sample_port_count) on public.properties to authenticated;
+create policy properties_anon_update_manhole_authn on public.properties for update to authenticated using (true) with check (true);
+grant insert, update, delete on public.photo_links, public.photos to authenticated;
+create policy "Authenticated insert photo_links" on public.photo_links for insert to authenticated
+  with check (((select auth.uid()) is not null) and (entity_type is distinct from 'job_frequency_change')
+    and (coalesce(role, '') is distinct from 'approval_proof') and (entity_type is distinct from 'client_status_change')
+    and (coalesce(role, '') is distinct from 'reason_photo') and (entity_type is distinct from 'property_intake'));
+create policy "Authenticated insert app-uploaded photos" on public.photos for insert to authenticated
+  with check (((select auth.uid()) is not null) and (source = 'admin_review_upload'));
+-- Admin Review functions closed with its switch-on (2026-10-21_0720)
+grant execute on function public.set_visit_manholes(bigint, bigint[]) to authenticated;
+-- DERM Tracker (2026-10-21_0830)
+grant execute on function public.fn_requeue_derm_portal(bigint, bigint, text, text) to authenticated;
+-- Visit Calendar (2026-10-21_1900)
+grant execute on function public.skip_visit(bigint, text) to authenticated;
+grant execute on function ops.skip_visit(bigint, text) to authenticated;
+```
+
 ## 5. Storage (gate step only)
 
 The policies as they were before the gate step are saved in `backups/2026-10-21_access_switch_on_snapshot.json`
