@@ -100,3 +100,13 @@ grant execute on function ops.skip_visit(bigint, text) to authenticated;
 
 The policies as they were before the gate step are saved in `backups/2026-10-21_access_switch_on_snapshot.json`
 (key `policies`, schema `storage`). Added here as SQL when that step ships.
+
+## 2026-10-21_1920 · Calendar day marker dump link (column grant)
+```sql
+grant update (dump_visit_id) on ops.calendar_day_markers to authenticated;
+```
+
+## 2026-10-21_1910 · Read gate off (same as G3)
+```sql
+alter role authenticator reset pgrst.db_pre_request; notify pgrst, 'reload config';
+```
