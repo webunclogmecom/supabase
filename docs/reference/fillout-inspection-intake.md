@@ -76,7 +76,7 @@ to POST this identical body to this identical endpoint** with no server change.
 |---|---|---|
 | `submission_id` | `entity_source_links.source_id` | **required**, the idempotency key. A Fillout UUID |
 | `pre_post` | `inspections.inspection_type` | **required**, "Pre Inspection" / "Post Inspection" → `PRE`/`POST` |
-| `date` | `submitted_at` + `shift_date` | `shift_date` is the **ET clock date**, never a UTC slice |
+| `date` | `submitted_at` + `shift_date` | `shift_date` is the **ET clock date**, never a UTC slice. 🛑 It is the date the FORM was filed, so a night shift's POST (next morning) carries the next day: which PRE and POST make one shift is `public.v_inspection_shifts` (2026-10-21_1553), never this column |
 | `driver` | `employee_id` | resolved through an explicit alias map, §5 |
 | `truck` | `vehicle_id` | explicit alias map, §5 |
 | `gas_level` | `gas_level` | `1/4` `1/2` `3/4` `Full` pass straight through |
