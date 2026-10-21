@@ -7,7 +7,8 @@ DECLARE
   v_claims_office text; v_claims_admin text;
 BEGIN
   SELECT email INTO em_admin FROM public.employees WHERE id = 2;
-  SELECT email INTO em_office FROM public.employees WHERE id = 42;
+  -- office: an active office person on the group defaults (no access settings of their own), picked live
+  SELECT email INTO em_office FROM public.employees WHERE id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1);
   v_claims_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_office)), '00000000-0000-0000-0000-000000000001'),'email',em_office,'role','authenticated')::text;
   v_claims_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_admin)), '00000000-0000-0000-0000-000000000001'),'email',em_admin,'role','authenticated')::text;
 
@@ -29,7 +30,7 @@ BEGIN
   ON CONFLICT (visit_id) DO UPDATE SET review_status = excluded.review_status, bonus_status = excluded.bonus_status, bonus_decided_at = excluded.bonus_decided_at;
   PERFORM set_config('role', 'none', true);
   SELECT count(*), max(amount) INTO n, v_num FROM hr.bonus_events WHERE visit_id = v_visit AND rule = 'approved' AND filled_by = 'trigger' AND decided_by_email = em_office AND employee_id = v_crew;
-  r := r || jsonb_build_object('t','1 approval grants once via trigger','ok', n = 1 AND v_num = 10, 'n', n, 'amount', v_num, 'visit', v_visit);
+  r := r || jsonb_build_object('t','1 approval grants once via trigger','ok', n = 1 AND v_num = coalesce((SELECT x.amount FROM hr.fn_rate_on(v_crew, 'per_visit_bonus', (SELECT visit_date FROM public.visits WHERE id = v_visit)) x), 0), 'n', n, 'amount', v_num, 'visit', v_visit);
 
   -- 2 same save again -> nothing new
   PERFORM set_config('role', 'authenticated', true);
@@ -55,12 +56,12 @@ BEGIN
   SELECT count(*), sum(amount) INTO n, v_num FROM hr.bonus_events WHERE visit_id = v_visit;
   r := r || jsonb_build_object('t','4 back to pending reverses','ok', n = 2 AND v_num = 0, 'n', n, 'net', v_num);
 
-  -- 5 approve again -> new grant to the crew now (2 people), net 20
+  -- 5 approve again -> new grant to the crew now (2 people), net = each person's own amount (per person since 2026-10-19_1200)
   PERFORM set_config('role', 'authenticated', true);
   UPDATE public.visit_reviews SET bonus_status = 'approved', bonus_decided_at = now() WHERE visit_id = v_visit;
   PERFORM set_config('role', 'none', true);
   SELECT count(*), sum(amount) INTO n, v_num FROM hr.bonus_events WHERE visit_id = v_visit;
-  r := r || jsonb_build_object('t','5 approve again grants the crew now','ok', n = 4 AND v_num = 20, 'n', n, 'net', v_num);
+  r := r || jsonb_build_object('t','5 approve again grants the crew now','ok', n = 4 AND v_num = coalesce((SELECT x.amount FROM hr.fn_rate_on(v_crew, 'per_visit_bonus', (SELECT visit_date FROM public.visits WHERE id = v_visit)) x), 0) + coalesce((SELECT x.amount FROM hr.fn_rate_on(v_other, 'per_visit_bonus', (SELECT visit_date FROM public.visits WHERE id = v_visit)) x), 0), 'n', n, 'net', v_num);
 
   -- 6 the visit is soft-deleted -> the sweep reverses both
   PERFORM set_config('app.suppress_jobber_push', 'on', true);
@@ -100,7 +101,7 @@ BEGIN
   END IF;
   PERFORM set_config('role', 'none', true);
   SELECT amount INTO v_num FROM hr.bonus_events WHERE kind = 'shift_bonus' AND employee_id = v_semp AND work_date = v_sdate;
-  r := r || jsonb_build_object('t','8a clean shift pays 25','ok', v_num = 25, 'amount', v_num, 'emp', v_semp, 'date', v_sdate);
+  r := r || jsonb_build_object('t','8a clean shift pays the person''s shift amount','ok', v_num = coalesce((SELECT x.amount FROM hr.fn_rate_on(v_semp, 'per_shift_bonus', v_sdate) x), 0), 'amount', v_num, 'emp', v_semp, 'date', v_sdate);
   IF v_iemp IS NOT NULL THEN
     SELECT amount INTO v_num FROM hr.bonus_events WHERE kind = 'shift_bonus' AND employee_id = v_iemp AND work_date = v_idate AND rule = 'forms_issue';
     r := r || jsonb_build_object('t','8b shift with an issue pays 0','ok', v_num = 0, 'amount', v_num);

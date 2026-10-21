@@ -4,7 +4,7 @@ DECLARE
   r jsonb := '[]'::jsonb;
   v_res jsonb; v_msg text; v_det text; v_state text;
   em_admin text; em_office text; em_admin2 text;
-  id_admin bigint := 2; id_admin2 bigint := 27; id_office bigint := 42; id_field bigint := 37; id_retired bigint := 41;
+  id_admin bigint := 2; id_admin2 bigint := 27; id_office bigint := (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1); id_field bigint := 37; id_retired bigint := 41;
   v_label text; v_who text;
 BEGIN
   SELECT email INTO em_admin FROM public.employees WHERE id = id_admin;

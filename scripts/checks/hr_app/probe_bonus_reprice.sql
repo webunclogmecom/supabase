@@ -9,7 +9,7 @@ DECLARE
   v_ds date; v_sr0 numeric; v_sexp int; v_fi jsonb; v_rate bigint;
 BEGIN
   c_admin := json_build_object('sub',(select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 2))),'email',(select email from public.employees where id = 2),'role','authenticated')::text;
-  c_office := json_build_object('sub',(select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 42))),'email',(select email from public.employees where id = 42),'role','authenticated')::text;
+  c_office := json_build_object('sub',(select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)))),'email',(select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)),'role','authenticated')::text;
 
   -- fixture: the person with the most open approved visit bonuses; window = from their earliest one to their next later amount
   SELECT g.employee_id INTO v_e FROM hr.bonus_events g
