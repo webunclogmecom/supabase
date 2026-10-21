@@ -79,6 +79,18 @@ create policy "Authenticated insert app-uploaded photos" on public.photos for in
 grant execute on function public.set_visit_manholes(bigint, bigint[]) to authenticated;
 -- DERM Tracker (2026-10-21_0830)
 grant execute on function public.fn_requeue_derm_portal(bigint, bigint, text, text) to authenticated;
+-- DERM Tracker direct writes (2026-10-21_1000)
+grant insert, delete on public.manifest_visits to authenticated;
+create policy anon_insert_manifest_visits_authn on public.manifest_visits for insert to authenticated with check (true);
+create policy anon_delete_manifest_visits_authn on public.manifest_visits for delete to authenticated using (true);
+grant insert, update on public.derm_manifests to authenticated;
+grant update (gdo_id) on public.derm_manifests to authenticated;
+create policy anon_insert_derm_manifests_authn on public.derm_manifests for insert to authenticated with check (true);
+create policy anon_update_derm_manifests_authn on public.derm_manifests for update to authenticated using (true) with check (true);
+grant update (derm_required) on public.visits to authenticated;
+create policy visits_calendar_update on public.visits for update to authenticated using (source = 'visit-calendar') with check (source = 'visit-calendar');
+create policy visits_authenticated_update_derm_required on public.visits for update to authenticated using (visit_status = 'completed') with check (visit_status = 'completed');
+create policy visits_app_update_authn on public.visits for update to authenticated using (deleted_at is null) with check (deleted_at is null);
 -- Visit Calendar (2026-10-21_1900)
 grant execute on function public.skip_visit(bigint, text) to authenticated;
 grant execute on function ops.skip_visit(bigint, text) to authenticated;
