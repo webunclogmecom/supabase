@@ -25,6 +25,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Visit Calendar Grease pumped (audit + plan `Building Apps/Visit Calendar/docs/specs/2026-10-21-grease-pumped-data-audit-and-plan.md`)**
+- 2026-10-21, Fred: *"go ahead with full trap, fix 241-WYN, sensor wins"*. Plan step 1 (70% fallback) REJECTED: a Moises stop with no reading keeps the full trap size. To build: step 2 (link a two-trip job: `fn_link_visit_vehicle_stops` same-site lookback over the visit window; re-carry 6969 on 10-23) and step 4 (a reading above the trap size, or on a trap of 75 gal or less, is no longer thrown out: `v_visit_tank_service` flags it instead). Steps 3, 5 to 9 not decided.
+
 **Stamp Studio / DERM sheets**
 - 2026-09-03 page integrity plan: four watchers never built (`PAGE_CARRIES_NO_SCAN` health arm, `v_sheet_page_map_gaps`, the suffix-collision check H3 while `fn_sheet_image_position` still ignores the sheet number, and "is the sheet-number sweep offering anything").
 - 2026-09-07 page slots phase 3: guessed (derived) bands are still a fallback; 2 served documents on ticket-831325 rest on them. `v_unclaimed_slots` (63 rows) is read by nothing.
