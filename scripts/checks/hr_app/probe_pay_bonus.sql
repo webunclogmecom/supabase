@@ -79,19 +79,16 @@ BEGIN
     r := r || jsonb_build_object('t','7 ledger refuses UPDATE','ok', v_state = '55000');
   END;
 
-  -- 8 a shift with both forms and no issue -> $25; with an issue -> $0 forms_issue
-  SELECT i.employee_id, i.shift_date INTO v_semp, v_sdate FROM public.inspections i
-   WHERE i.employee_id IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews s WHERE s.employee_id = i.employee_id AND s.shift_date = i.shift_date)
-   GROUP BY i.employee_id, i.shift_date
-  HAVING bool_or(i.inspection_type = 'PRE') AND bool_or(i.inspection_type = 'POST') AND NOT bool_or(coalesce(i.has_issue, false))
-   ORDER BY i.shift_date DESC LIMIT 1;
-  SELECT i.employee_id, i.shift_date INTO v_iemp, v_idate FROM public.inspections i
-   WHERE i.employee_id IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews s WHERE s.employee_id = i.employee_id AND s.shift_date = i.shift_date)
-   GROUP BY i.employee_id, i.shift_date
-  HAVING bool_or(i.inspection_type = 'PRE') AND bool_or(i.inspection_type = 'POST') AND bool_or(coalesce(i.has_issue, false))
-   ORDER BY i.shift_date DESC LIMIT 1;
+  -- 8 an approved shift pays the person's shift amount, also when a form reports an issue (since 2026-10-21, Trello
+  --   ZEYkT63t; it was $0 forms_issue before). Shifts come from public.v_inspection_shifts.
+  SELECT s.employee_id, s.shift_date INTO v_semp, v_sdate FROM public.v_inspection_shifts s
+   WHERE s.kind = 'pair' AND NOT s.has_issue
+     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews r2 WHERE r2.employee_id = s.employee_id AND r2.shift_date = s.shift_date)
+   ORDER BY s.shift_date DESC LIMIT 1;
+  SELECT s.employee_id, s.shift_date INTO v_iemp, v_idate FROM public.v_inspection_shifts s
+   WHERE s.kind = 'pair' AND s.has_issue
+     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews r2 WHERE r2.employee_id = s.employee_id AND r2.shift_date = s.shift_date)
+   ORDER BY s.shift_date DESC LIMIT 1;
   PERFORM set_config('role', 'authenticated', true);
   INSERT INTO public.shift_reviews (employee_id, shift_date, review_status, bonus_status, bonus_decided_at)
   VALUES (v_semp, v_sdate, 'approved', 'approved', now()) ON CONFLICT (employee_id, shift_date) DO UPDATE SET bonus_status = excluded.bonus_status;
@@ -103,10 +100,10 @@ BEGIN
   SELECT amount INTO v_num FROM hr.bonus_events WHERE kind = 'shift_bonus' AND employee_id = v_semp AND work_date = v_sdate;
   r := r || jsonb_build_object('t','8a clean shift pays the person''s shift amount','ok', v_num = coalesce((SELECT x.amount FROM hr.fn_rate_on(v_semp, 'per_shift_bonus', v_sdate) x), 0), 'amount', v_num, 'emp', v_semp, 'date', v_sdate);
   IF v_iemp IS NOT NULL THEN
-    SELECT amount INTO v_num FROM hr.bonus_events WHERE kind = 'shift_bonus' AND employee_id = v_iemp AND work_date = v_idate AND rule = 'forms_issue';
-    r := r || jsonb_build_object('t','8b shift with an issue pays 0','ok', v_num = 0, 'amount', v_num);
+    SELECT amount INTO v_num FROM hr.bonus_events WHERE kind = 'shift_bonus' AND employee_id = v_iemp AND work_date = v_idate AND rule = 'approved';
+    r := r || jsonb_build_object('t','8b an approved shift with an issue pays the shift amount','ok', v_num = coalesce((SELECT x.amount FROM hr.fn_rate_on(v_iemp, 'per_shift_bonus', v_idate) x), 0), 'amount', v_num);
   ELSE
-    r := r || jsonb_build_object('t','8b shift with an issue pays 0','ok', true, 'note', 'no unreviewed issue shift to test');
+    r := r || jsonb_build_object('t','8b an approved shift with an issue pays the shift amount','ok', true, 'note', 'no unreviewed issue shift to test');
   END IF;
 
   -- 9 authenticated cannot read the ledger or the rates directly
@@ -189,7 +186,7 @@ BEGIN
   SELECT count(*) INTO n FROM hr.v_bonus_drift WHERE problem IN ('missing_grant', 'grant_not_expected');
   r := r || jsonb_build_object('t','13 no drift','ok', n = 0, 'n', n);
   SELECT count(*) INTO n FROM hr.v_bonus_drift WHERE problem = 'shift_forms_issue';
-  r := r || jsonb_build_object('t','13b forms issue listed','ok', n >= 1, 'n', n);
+  r := r || jsonb_build_object('t','13b no approved shift is held at $0 for its forms','ok', n = 0, 'n', n);
 
   RAISE EXCEPTION 'PROBE_RESULT %', r::text;
 END $p$;

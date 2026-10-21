@@ -10,20 +10,17 @@ BEGIN
   c_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 2))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 2),'role','authenticated')::text;
   c_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)),'role','authenticated')::text;
 
-  SELECT i.employee_id, i.shift_date INTO v_e, v_d FROM public.inspections i
-   WHERE i.shift_date >= v_today - 28 AND i.shift_date <= v_today AND i.employee_id IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews sr WHERE sr.employee_id = i.employee_id AND sr.shift_date = i.shift_date)
-     AND NOT EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.kind = 'shift_bonus' AND g.employee_id = i.employee_id AND g.work_date = i.shift_date)
-   GROUP BY 1, 2
-  HAVING bool_or(i.inspection_type = 'PRE') AND bool_or(i.inspection_type = 'POST') AND NOT bool_or(coalesce(i.has_issue, false))
-   ORDER BY 2 DESC LIMIT 1;
-  SELECT i.employee_id, i.shift_date INTO v_ie, v_id FROM public.inspections i
-   WHERE i.employee_id IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews sr WHERE sr.employee_id = i.employee_id AND sr.shift_date = i.shift_date)
-     AND NOT EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.kind = 'shift_bonus' AND g.employee_id = i.employee_id AND g.work_date = i.shift_date)
-   GROUP BY 1, 2
-  HAVING bool_or(i.inspection_type = 'PRE') AND bool_or(i.inspection_type = 'POST') AND bool_or(coalesce(i.has_issue, false))
-   ORDER BY 2 DESC LIMIT 1;
+  -- shifts come from public.v_inspection_shifts since 2026-10-21 (Trello ZEYkT63t)
+  SELECT s.employee_id, s.shift_date INTO v_e, v_d FROM public.v_inspection_shifts s
+   WHERE s.kind = 'pair' AND NOT s.has_issue AND s.shift_date >= v_today - 28 AND s.shift_date <= v_today
+     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews sr WHERE sr.employee_id = s.employee_id AND sr.shift_date = s.shift_date)
+     AND NOT EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.kind = 'shift_bonus' AND g.employee_id = s.employee_id AND g.work_date = s.shift_date)
+   ORDER BY s.shift_date DESC LIMIT 1;
+  SELECT s.employee_id, s.shift_date INTO v_ie, v_id FROM public.v_inspection_shifts s
+   WHERE s.kind = 'pair' AND s.has_issue AND s.shift_date >= date '2026-09-01'
+     AND NOT EXISTS (SELECT 1 FROM public.shift_reviews sr WHERE sr.employee_id = s.employee_id AND sr.shift_date = s.shift_date)
+     AND NOT EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.kind = 'shift_bonus' AND g.employee_id = s.employee_id AND g.work_date = s.shift_date)
+   ORDER BY s.shift_date DESC LIMIT 1;
   v_normal := coalesce((SELECT x.amount FROM hr.fn_rate_on(v_e, 'per_shift_bonus', v_d) x), 0);
   v_key := v_e || '|' || to_char(v_d, 'YYYY-MM-DD');
   r := r || jsonb_build_object('t','0 fixtures found','ok', v_e IS NOT NULL AND v_ie IS NOT NULL AND c_office::jsonb->>'email' IS NOT NULL, 'shift', v_key, 'issue_shift', v_ie || '|' || v_id, 'normal', v_normal);
@@ -84,13 +81,14 @@ BEGIN
   -- 9. the sweep moves nothing
   j := hr.fn_sync_all_bonuses('sweep');
   r := r || jsonb_build_object('t','9 the sweep writes nothing','ok', (j->>'visit_rows')::int = 0 AND (j->>'shift_rows')::int = 0, 'v', j);
-  -- 10. a shift whose form reports an issue stays $0 even with a custom amount
+  -- 10. a shift whose form reports an issue is paid at its custom amount once approved (since 2026-10-21, ZEYkT63t)
   PERFORM hr.set_shift_bonus(v_ie, v_id, 50, 'probe issue');
   INSERT INTO public.shift_reviews (employee_id, shift_date, review_status, bonus_status, bonus_decided_at)
   VALUES (v_ie, v_id, 'approved', 'approved', now());
   SELECT sum(g.amount) INTO v_sum FROM hr.bonus_events g WHERE g.kind = 'shift_bonus' AND g.employee_id = v_ie AND g.work_date = v_id;
-  r := r || jsonb_build_object('t','10 a forms-issue shift stays $0','ok', v_sum = 0
-        AND EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.kind = 'shift_bonus' AND g.employee_id = v_ie AND g.work_date = v_id AND g.rule = 'forms_issue'), 'sum', v_sum);
+  r := r || jsonb_build_object('t','10 an approved shift with an issue is paid at its custom amount','ok', v_sum = 50
+        AND EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.kind = 'shift_bonus' AND g.employee_id = v_ie AND g.work_date = v_id AND g.rule = 'approved'
+                      AND g.note LIKE 'Custom amount for this shift%reports an issue%'), 'sum', v_sum);
   -- 11. append-only and privileges
   v_ok := false; BEGIN UPDATE hr.shift_bonus_overrides SET amount = 1; EXCEPTION WHEN others THEN v_ok := SQLERRM LIKE 'blocker=append_only%'; END;
   r := r || jsonb_build_object('t','11 custom shift amounts cannot be edited in place','ok', v_ok
