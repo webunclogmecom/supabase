@@ -748,13 +748,17 @@ Deno.serve(async (req) => {
       (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
     return fail("forbidden", "Staff account required.");
   }
-  // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.
-  const denied = await checkAppAction(m[1], 'save_client_job')
-  if (denied) return fail("no_access", denied.message);
-
   let body: any;
   try { body = await req.json(); } catch { return fail("bad_request", "Invalid JSON body."); }
   const action = String(body.action ?? "");
+
+  // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.
+  // 2026-10-21_0640 (D6): creating the Service Call job is its own action, allowed with Client App OR Visit Calendar
+  // Edit, because create-client and save-client-property make it with the person's own token (a client created from
+  // the Calendar). Every other job action needs Client App Edit.
+  const accessAction = action === "create" && body?.patch?.kind === "SC" ? "create_service_call_job" : "save_client_job";
+  const denied = await checkAppAction(m[1], accessAction)
+  if (denied) return fail("no_access", denied.message);
   const clientId = Number(body.client_id);
   if (!["create", "edit", "close", "reopen", "attach_proof", "remove_proof"].includes(action)) return fail("bad_request", "Unknown action.");
   if (!Number.isFinite(clientId)) return fail("bad_request", "client_id is required.");
