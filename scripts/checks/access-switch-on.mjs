@@ -60,6 +60,13 @@ const APPS = {
       { kind: 'table', obj: 'public.photo_links', priv: 'INSERT' },
     ],
     extra: [{ name: 'trigger visit_reviews (visit 8742)', sql: "update public.visit_reviews set updated_at = updated_at where visit_id = 8742" }],
+    // a dummy id writes no row, so the review_scope_inclusions trigger would never fire: use a real visit
+    args: { 'public.include_visits_in_review': "array[1468]::bigint[], 'live check'",
+            'public.remove_visits_from_review': "array[1468]::bigint[], 'live check'" },
+    // refusals by a permission switch, not by the app level: custom visit amounts need "Pay rates and bonus settings"
+    staffSwitchRefusals: { 'hr.set_visit_bonus': 'hr_pay' },
+    // run as the owner, inside the same rolled-back step, just before that call (so the call has a row to change)
+    pre: { 'public.remove_visits_from_review': "select public.include_visits_in_review(array[1468]::bigint[], 'live check setup')" },
   },
   derm_tracker: {
     host: 'https://derm.unclogme.app', control: 'public.derm_unlink_visit',
@@ -187,8 +194,12 @@ begin
     if who.lvl is not null then
       insert into hr.access_overrides (employee_id, app, level, set_by_email) values (${PEOPLE.aaron.emp}, ${lit(app)}, who.lvl, 'access-switch-on probe');
     end if;
-    for c in select * from jsonb_to_recordset(${lit(JSON.stringify(calls))}::jsonb) as x(key text, sql text) loop
+    for c in select * from jsonb_to_recordset(${lit(JSON.stringify(calls))}::jsonb) as x(key text, sql text, pre text) loop
       begin
+        if c.pre is not null then
+          perform set_config('request.jwt.claims', '', true);
+          execute c.pre;
+        end if;
         perform set_config('request.jwt.claims', json_build_object('sub', who.sub, 'role', 'authenticated', 'email', who.email, 'aud', 'authenticated')::text, true);
         perform set_config('request.headers', '{}', true);
         perform set_config('role', 'authenticated', true);
@@ -233,16 +244,20 @@ end $probe$;`;
     const all = [...m, ...a];
     return all.length ? (all.includes('view') && !all.includes('edit') ? 'view' : all.includes('edit') && !all.includes('view') ? 'edit' : 'mixed') : null;
   };
+  // other apps named in a shared (any-app) check of this function, e.g. ['client_app']
+  const sharedWith = def => [...def.matchAll(/fn_(?:check|require)_any_app\(\s*(?:array|ARRAY)\[([^\]]*)\]/g)]
+    .filter(x => x[1].includes(`'${app}'`)).flatMap(x => [...x[1].matchAll(/'([a-z_]+)'/g)].map(y => y[1])).filter(a => a !== app);
   const calls = [];
   for (const f of fns) {
     const req = f.pronargs - f.pronargdefaults;
-    const argList = f.types.slice(0, req).map(dummy).join(', ');
-    calls.push({ key: f.sig, sql: `select count(*) from (select ${f.fn}(${argList}) as r) s`, fn: f.fn, level: levelFor(f.def) });
+    const argList = (cfg.args || {})[f.fn] ?? f.types.slice(0, req).map(dummy).join(', ');
+    // a plain call: wrapping it in count(*) lets the planner skip a STABLE function entirely (measured 2026-10-21)
+    calls.push({ key: f.sig, sql: `select ${f.fn}(${argList})`, pre: (cfg.pre || {})[f.fn] || null, fn: f.fn, level: levelFor(f.def), shared: sharedWith(f.def) });
   }
   // edge actions of this app
   const cq = await sql(`select pg_get_functiondef('hr.check_app_action'::regproc) d`);
   const actions = [...cq.json[0].d.matchAll(/\('([a-z_]+)',\s*array\[([^\]]*)\],\s*'(view|edit)'\)/g)].filter(m => m[2].includes(`'${app}'`));
-  for (const m of actions) calls.push({ key: 'action:' + m[1], sql: `select hr.check_app_action(${lit(m[1])})`, fn: 'action:' + m[1], level: m[3], shared: m[2].includes(',') });
+  for (const m of actions) calls.push({ key: 'action:' + m[1], sql: `select hr.check_app_action(${lit(m[1])})`, fn: 'action:' + m[1], level: m[3], shared: [...m[2].matchAll(/'([a-z_]+)'/g)].map(y => y[1]).filter(a => a !== app) });
   for (const e of cfg.extra) calls.push({ key: 'extra:' + e.name, sql: e.sql, fn: 'extra:' + e.name, level: 'edit' });
   calls.push({ key: 'control:copy-without-check', sql: null, fn: 'control', level: null });
   // the control copy: same args as the control
@@ -250,12 +265,12 @@ end $probe$;`;
   if (!ctlF) { fail(`control ${cfg.control} is not called by the bundle (pick another control)`); }
   else {
     const c = calls.find(x => x.key === 'control:copy-without-check');
-    c.sql = `select count(*) from (select pg_temp.probe_ctl(${ctlF.types.slice(0, ctlF.pronargs - ctlF.pronargdefaults).map(dummy).join(', ')}) as r) s`;
+    c.sql = `select pg_temp.probe_ctl(${ctlF.types.slice(0, ctlF.pronargs - ctlF.pronargdefaults).map(dummy).join(', ')})`;
   }
 
   // ---------- run the probe ----------
   const mode = flag('--as-is') ? 'as-is' : flag('--all-on') ? 'all-on' : 'this';
-  const pr = await sql(buildProbe({ calls: calls.map(c => ({ key: c.key, sql: c.sql })), mode }));
+  const pr = await sql(buildProbe({ calls: calls.map(c => ({ key: c.key, sql: c.sql, pre: c.pre || null })), mode }));
   const mm = String(pr.json?.message || '').match(/PROBE_RESULT:(\[.*\])/s);
   if (!mm) { console.log('probe did not return a result:', pr.text.slice(0, 800)); process.exit(2); }
   const res = JSON.parse(mm[1]);
@@ -269,6 +284,8 @@ end $probe$;`;
   // modes as seen now, to mark shared actions PENDING
   const mq = await sql(`select app, mode, on_since from hr.access_apps where parent is null`);
   const modes = Object.fromEntries(mq.json.map(r => [r.app, r]));
+  // apps 'on' in the probe's state (this app is on inside the rollback unless --as-is)
+  const onNow = Object.fromEntries(mq.json.filter(r => r.mode === 'on' || (mode === 'this' && r.app === app) || mode === 'all-on').map(r => [r.app, 1]));
 
   console.log(`\nprobe: ${calls.length} calls x 5 sign-ins, control check statements removed: ${ctlRemoved} chars`);
   const table = [];
@@ -281,14 +298,18 @@ end $probe$;`;
       else if (accessRefused(j)) { verdict = 'FAIL'; why = 'control: the copy WITHOUT its check still refused jon.v (instrument broken)'; }
       table.push({ c, f, d, j, av, an, verdict, why }); continue;
     }
-    for (const [who, x] of [['fred', f], ['diego', d]]) if (accessRefused(x) || x.s === '28000') { verdict = 'FAIL'; why += `${who} refused (${x.s} ${x.d}); `; }
+    const sw = (cfg.staffSwitchRefusals || {})[c.fn];
+    for (const [who, x] of [['fred', f], ['diego', d]]) {
+      if (sw && accessRefused(x) && (x.d || '').includes(`app=${sw} `)) { why += `${who} refused by the ${sw} switch (by design); `; continue; }
+      if (accessRefused(x) || x.s === '28000') { verdict = 'FAIL'; why += `${who} refused (${x.s} ${x.d}); `; }
+    }
     if (allowed) {
       if (accessRefused(j)) why += 'allowed reader refuses jon.v (fine, it has a check); ';
     } else {
       for (const [who, x] of [['jon.v', j], ['aaron None', an]]) {
         if (refusedByApp(x)) continue;
         if (refusedByOther(x)) { verdict = 'FAIL'; why += `${who} refused by ANOTHER app's check (${x.d}); `; }
-        else if (mode !== 'all-on' && c.shared) { if (verdict === 'ok') verdict = 'PENDING'; why += `${who} passes: shared action, partner app not on; `; }
+        else if (mode !== 'all-on' && (c.shared || []).some(p => !(p in onNow))) { if (verdict === 'ok') verdict = 'PENDING'; why += `${who} passes: shared action, partner app not on; `; }
         else { verdict = 'FAIL'; why += `${who} NOT refused (${x.s}${x.d ? ' ' + x.d : ''}); `; }
       }
       if (c.level === 'view' && accessRefused(av)) { verdict = 'FAIL'; why += `aaron View refused on a View call (${av.d}); `; }
@@ -325,7 +346,19 @@ end $probe$;`;
   }
 
   // ---------- direct table writes ----------
-  if (ex.writes.size) console.log(`\ndirect table writes in the bundle: ${[...ex.writes].join(', ')}`);
+  if (ex.writes.size) {
+    console.log(`\ndirect table writes in the bundle: ${[...ex.writes].join(', ')}`);
+    const tabs = [...new Set([...ex.writes].map(w => w.split(':')[0]))];
+    const tq = await sql(`select c.relname, n.nspname, exists (select 1 from pg_trigger t where t.tgrelid = c.oid and t.tgname like 'aa_access_%') trg
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind = 'r' and c.relname = any(array[${tabs.map(lit).join(',')}])`);
+    for (const t of tabs) {
+      const rows = tq.json.filter(r => r.relname === t);
+      if (t === 'saved_views') { ok(`${t}: direct write allowed (a person's own saved views)`); continue; }
+      if (!rows.length) warn(`${t}: no such table found`);
+      else if (rows.some(r => r.trg)) ok(`${t}: direct write, access trigger present (${rows.filter(r => r.trg).map(r => r.nspname).join(',')})`);
+      else fail(`${t}: direct write with no aa_access_ trigger`);
+    }
+  }
 
   // ---------- step 0 (after the real switch) ----------
   if (flag('--as-is')) {

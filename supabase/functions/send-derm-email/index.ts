@@ -156,6 +156,7 @@ const PDF_TIMEOUT_MS = 65_000
 // would see a network error instead of results[]. This bounds the whole invocation.
 import { buildCityLetterHtml, buildCityLetterText, buildClientLetterHtml, buildClientLetterText } from '../_shared/city-letter.ts'
 import { hiddenCopies, sendArchiveCopy } from '../_shared/archive-copy.ts'
+import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21 access switch-on (F1b)
 
 const RENDER_DEADLINE_MS = 120_000
 // 8 MiB, deliberately NOT the sibling's 25 MiB: that function sends one email per
@@ -546,6 +547,15 @@ Deno.serve(async (req: Request) => {
 
   let body: { manifest_ids?: unknown; recipients?: unknown; test_recipient?: unknown; test_cc?: unknown; target?: unknown; cc?: unknown; bcc?: unknown; include_photos?: unknown; preview?: unknown }
   try { body = await req.json() } catch { return jsonResponse({ error: 'bad_json' }, 400, cors) }
+
+  // 2026-10-21 access switch-on (F1b): a person needs DERM Tracker View to preview and Edit to send. The automatic
+  // city sweep (service key) is not a person and is never checked. Both checks run here, before the preview branch
+  // and before anything is rendered, sent or logged. The actions must exist in hr.check_app_action first (F1a,
+  // 2026-10-21_0700): an unknown action is a 503 for everyone.
+  if (!isMachineCaller) {
+    const denied = await checkAppAction(bearer, body?.preview === true ? 'preview_derm_email' : 'send_derm_email')
+    if (denied) return jsonResponse({ error: 'no_access', message: denied.message, detail: denied.message }, denied.status, cors)
+  }
 
   // `property_id` is OPTIONAL and NARROWS the city recipient to that one property.
   // 🛑 Why it exists: without it this function unions city_emails across EVERY property the
