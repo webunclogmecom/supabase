@@ -175,6 +175,10 @@ function buildProbe({ calls, mode }) {
     ? `update hr.access_apps set mode = 'on', on_since = coalesce(on_since, now()) where parent is null;`
     : mode === 'as-is' ? '' : `update hr.access_apps set mode = 'on', on_since = coalesce(on_since, now()) where app = ${lit(app)};`;
   const ctl = cfg.control;
+  // partner apps of every shared check: the *_all copies of Aaron lower these too, so a shared action is judged with no
+  // access in ANY of its apps (Aaron is Office, so his own default in a partner app would otherwise let it pass)
+  const partners = [...new Set(calls.flatMap(c => c.shared || []))];
+  const lowered = [app, ...partners].map(lit).join(', ');
   return `do $probe$
 declare r jsonb := '[]'::jsonb; v_state text; v_msg text; v_det text; c record; who record; v_def text; v_ctl text; v_cnt int;
 begin
@@ -193,11 +197,15 @@ begin
       ('diego', ${lit(PEOPLE.diego.sub)}, ${lit(PEOPLE.diego.email)}, null),
       ('jonv', ${lit(PEOPLE.jonv.sub)}, ${lit(PEOPLE.jonv.email)}, null),
       ('aaron_view', ${lit(PEOPLE.aaron.sub)}, ${lit(PEOPLE.aaron.email)}, 'view'),
-      ('aaron_none', ${lit(PEOPLE.aaron.sub)}, ${lit(PEOPLE.aaron.email)}, 'none')) w(name, sub, email, lvl)
+      ('aaron_none', ${lit(PEOPLE.aaron.sub)}, ${lit(PEOPLE.aaron.email)}, 'none'),
+      ('aaron_view_all', ${lit(PEOPLE.aaron.sub)}, ${lit(PEOPLE.aaron.email)}, 'view'),
+      ('aaron_none_all', ${lit(PEOPLE.aaron.sub)}, ${lit(PEOPLE.aaron.email)}, 'none')) w(name, sub, email, lvl)
   loop
-    delete from hr.access_overrides where employee_id = ${PEOPLE.aaron.emp} and app = ${lit(app)};
+    delete from hr.access_overrides where employee_id = ${PEOPLE.aaron.emp} and app in (${lowered});
     if who.lvl is not null then
-      insert into hr.access_overrides (employee_id, app, level, set_by_email) values (${PEOPLE.aaron.emp}, ${lit(app)}, who.lvl, 'access-switch-on probe');
+      insert into hr.access_overrides (employee_id, app, level, set_by_email)
+        select ${PEOPLE.aaron.emp}, a, who.lvl, 'access-switch-on probe'
+          from unnest(case when who.name like '%_all' then array[${lowered}] else array[${lit(app)}] end) a;
     end if;
     for c in select * from jsonb_to_recordset(${lit(JSON.stringify(calls))}::jsonb) as x(key text, sql text, pre text) loop
       begin
@@ -257,7 +265,13 @@ end $probe$;`;
     const req = f.pronargs - f.pronargdefaults;
     const argList = (cfg.args || {})[f.fn] ?? f.types.slice(0, req).map(dummy).join(', ');
     // a plain call: wrapping it in count(*) lets the planner skip a STABLE function entirely (measured 2026-10-21)
-    calls.push({ key: f.sig, sql: `select ${f.fn}(${argList})`, pre: (cfg.pre || {})[f.fn] || null, fn: f.fn, level: levelFor(f.def), shared: sharedWith(f.def) });
+    calls.push({ key: f.sig, sql: `select ${f.fn}(${argList})`, pre: (cfg.pre || {})[f.fn] || null, fn: f.fn, level: levelFor(f.def), shared: sharedWith(f.def), def: f.def });
+  }
+  // a thin wrapper (ops.get_record_history -> public.get_record_history) carries no check of its own: give it the
+  // partner apps of a probed function it calls by name
+  for (const c of calls) if (!c.shared.length && c.level === null) {
+    const inner = calls.find(o => o !== c && o.shared.length && c.def.includes(o.fn.split('.').pop() + '('));
+    if (inner) c.shared = inner.shared;
   }
   // edge actions of this app
   const cq = await sql(`select pg_get_functiondef('hr.check_app_action'::regproc) d`);
@@ -275,7 +289,7 @@ end $probe$;`;
 
   // ---------- run the probe ----------
   const mode = flag('--as-is') ? 'as-is' : flag('--all-on') ? 'all-on' : 'this';
-  const pr = await sql(buildProbe({ calls: calls.map(c => ({ key: c.key, sql: c.sql, pre: c.pre || null })), mode }));
+  const pr = await sql(buildProbe({ calls: calls.map(c => ({ key: c.key, sql: c.sql, pre: c.pre || null, shared: c.shared || [] })), mode }));
   const mm = String(pr.json?.message || '').match(/PROBE_RESULT:(\[.*\])/s);
   if (!mm) { console.log('probe did not return a result:', pr.text.slice(0, 800)); process.exit(2); }
   const res = JSON.parse(mm[1]);
@@ -292,10 +306,11 @@ end $probe$;`;
   // apps 'on' in the probe's state (this app is on inside the rollback unless --as-is)
   const onNow = Object.fromEntries(mq.json.filter(r => r.mode === 'on' || (mode === 'this' && r.app === app) || mode === 'all-on').map(r => [r.app, 1]));
 
-  console.log(`\nprobe: ${calls.length} calls x 5 sign-ins, control check statements removed: ${ctlRemoved} chars`);
+  console.log(`\nprobe: ${calls.length} calls x 5 sign-ins (+2 for shared actions: Aaron lowered in every partner app too), control check statements removed: ${ctlRemoved} chars`);
   const table = [];
   for (const c of calls) {
-    const f = get(c.key, 'fred'), d = get(c.key, 'diego'), j = get(c.key, 'jonv'), av = get(c.key, 'aaron_view'), an = get(c.key, 'aaron_none');
+    const f = get(c.key, 'fred'), d = get(c.key, 'diego'), j = get(c.key, 'jonv'), sh = (c.shared || []).length > 0,
+      av = get(c.key, sh ? 'aaron_view_all' : 'aaron_view'), an = get(c.key, sh ? 'aaron_none_all' : 'aaron_none');
     const allowed = ALWAYS_ALLOWED.includes(c.fn) || cfg.gateReaders.includes(c.fn);
     let verdict = 'ok', why = '';
     if (c.key === 'control:copy-without-check') {
