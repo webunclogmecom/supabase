@@ -57,9 +57,11 @@ function callerAllowed(req: Request): boolean {
     let part = (tok.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')
     while (part.length % 4) part += '='
     const c = JSON.parse(atob(part))
-    if (c?.role === 'service_role') return true
-    const email = String(c?.email ?? '').toLowerCase()
-    return c?.role === 'authenticated' && (email.endsWith('@ayache.com') || email.endsWith('@unclogme.com'))
+    // 2026-10-21 access switch-on (F5): our own server only. A signed-in person was allowed with nothing but a staff
+    // email, so anyone signed in could rewrite derm_manifests.fog_manifest_url and its file, whatever their access.
+    // Measured before closing: 0 calls in the 7 days to 2026-10-21 (function_edge_logs, control sync-jobber-poll
+    // ~250 a day); no app bundle calls it; its timer was retired on 2026-10-07.
+    return c?.role === 'service_role'
   } catch {
     return false
   }
@@ -76,7 +78,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!callerAllowed(req)) {
-    return jsonResponse({ error: 'unauthorized', detail: 'Sign in with your UnclogMe staff account.' }, 401, cors)
+    return jsonResponse({ error: 'unauthorized', detail: 'Only the UnclogMe server can make this document.' }, 401, cors)
   }
   if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
     console.error('Edge function missing PDF_SERVICE_URL or PDF_SERVICE_API_KEY')
