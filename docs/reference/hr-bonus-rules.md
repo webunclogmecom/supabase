@@ -31,8 +31,9 @@ apps only show them. Before changing anything here, read the function named in e
 
 - **Per person** (`2026-10-19_1200`): each person's own dated amounts in `hr.pay_rates` (`per_visit_bonus`,
   `per_shift_bonus`). No amount = $0. Set in the HR App (Pay rates card) through `hr.set_person_bonus`.
-- **The amount on a day** is `hr.fn_rate_on(person, kind, day)`. A shift with a missing form or a form reporting an issue
-  is recorded at $0 (rule `forms_issue`).
+- **The amount on a day** is `hr.fn_rate_on(person, kind, day)`. Since `2026-10-21_1553` (Trello ZEYkT63t, Fred) an
+  approved shift is paid also when a form is missing or reports an issue, with a note saying so; only a shift with no form
+  at all records $0 (rule `forms_issue`). Before that, a missing form or an issue meant $0.
 - **"Since" a date replaces every later dated amount** (`2026-10-21_0511`, Fred: "make since replace later amounts
   too"). Rows written by `set_person_bonus` carry `replaces_later`; `hr.fn_rate_superseded(id, person, kind, from)` is the
   ONE rule (an older row stops counting once a newer `replaces_later` row starts on or before its date). Every reader of
@@ -48,8 +49,21 @@ apps only show them. Before changing anything here, read the function named in e
   Bonus at the Visits reviews, let's do it for the Shift bonus"): set in Admin Review (pencil on the green "Shift Bonus"
   amount) through `hr.set_shift_bonus(person, shift date, amount | null, reason)`; the shift must have a form. Kept in
   `hr.shift_bonus_overrides` (append-only, newest row per person and shift date wins), read through `hr.fn_shift_rate_on`.
-  🛑 A shift with a missing form or a form reporting an issue stays /usr/bin/bash whatever the custom amount (rule `forms_issue`).
-  The shift is (person, `shift_date`), as `shift_reviews` keys it.
+  The shift is (person, shift date) of `public.v_inspection_shifts`, as `shift_reviews` keys it.
+
+## 3b. Which forms make one shift (`2026-10-21_1553`, Trello ZEYkT63t)
+
+Fred: *"the night shift is split across two calendar days ... We need to merge them into one shift."*
+- **`public.v_inspection_shifts` is the ONE rule** (one row per person per shift). A POST closes the latest PRE of the
+  same person filed before it within 24 hours, with no other POST in between. The shift is dated by its PRE's ET clock
+  date; a POST with no PRE filed before noon ET belongs to the night before. Every reader of a shift's forms uses it:
+  `fn_sync_shift_bonus`, `fn_pending_bonus`, `get_employee_record`, `set_shift_bonus`, `fn_admin_review_url`, and
+  Admin Review's queue and Shift Form Review. 🛑 Never group `inspections` by `shift_date` again: a night POST carries the
+  next day's date, which is how a night driver's "complete" shifts were halves of two different nights.
+- (person, date) is unique from 2026-09-01; 13 Airtable-era shifts before it collide. A new collision is the health item
+  `shift_pairing_collision` (`hr.v_bonus_drift`).
+- **Pending** counts undecided PAIRED shifts (an issue no longer blocks); a one-form shift is paid only once a person
+  approves it in Admin Review, after the app's "The PRE form is missing" confirmation.
 
 ## 4. Pending versus approved
 
@@ -91,10 +105,11 @@ apps only show them. Before changing anything here, read the function named in e
 
 ## 7. How to test
 
-- Probes (rolled back, nothing kept): `node scripts/checks/hr_app/run.js` (all HR checks, 121 on 2026-10-21), in
+- Probes (rolled back, nothing kept): `node scripts/checks/hr_app/run.js` (all HR checks, 135 on 2026-10-21), in
   particular `probe_visit_bonus_custom.sql` (custom amount, sorted photos, test client), `probe_shift_bonus_custom.sql`
-  (custom shift amount, forms-issue stays $0, the checkbox leaves it alone) and `probe_bonus_reprice.sql` (the checkbox,
-  replacing later amounts, health item). The probes pick their office fixture live (an active office person with no
+  (custom shift amount, an approved issue shift is paid, the checkbox leaves it alone), `probe_shift_pairing.sql` (night
+  shifts paired, a morning POST to the night before, one-form and issue shifts paid once approved, the repair) and
+  `probe_bonus_reprice.sql` (the checkbox, replacing later amounts, health item). The probes pick their office fixture live (an active office person with no
   access settings of their own) and read each person's own amounts: never hardcode a person or a $10 / $25 amount.
 - In the app, ONLY on the test client: Admin Review `docs/07-smoke-tests.md` (112-YA visit 8113). Never save a test on a
   real person: every row is append-only and lands in their pay record.
@@ -104,5 +119,6 @@ apps only show them. Before changing anything here, read the function named in e
 `2026-10-18_0400` (bonus events, triggers, sweep) · `2026-10-18_1626` (health) · `2026-10-19_1200` (per person) ·
 `2026-10-19_1815` (any start date, pending only, `get_review_bonuses`) · `2026-10-19_2130` (payroll week per person) ·
 `2026-10-20_1935` (custom visit amount, sorted photos) · `2026-10-21_0337` (test client out of HR) · `2026-10-21_0359`
-(update approved since a date) · `2026-10-21_0511` ("since" replaces later amounts) · `2026-10-21_1250` (custom shift amount). App docs: Building Apps
+(update approved since a date) · `2026-10-21_0511` ("since" replaces later amounts) · `2026-10-21_1250` (custom shift amount) · `2026-10-21_1553` (shift pairing, approved shifts paid, Michael's 5
+  reviews repaired). App docs: Building Apps
 `HR App/CLAUDE.md` section 4 and `Admin Review/CLAUDE.md` rule 6.
