@@ -2188,9 +2188,15 @@ tenant-level adjudication: `GDO-07147` (212-TRUE + 213-TRUE), `GDO-08422` (209-T
 built for it -- Section B reads "GDO #", "Facility Name **(if no GDO#)**", "Complete Facility
 Address **(if no GDO#)**" -- and the generator renders `greatest(1, permit_count)` = one row.
 
-**🛑 "WHICH GDOs DOES THIS CLIENT PRINT" HAS FOUR IMPLEMENTATIONS NOW, AND THEY MUST STAY IDENTICAL (2026-09-28).**
+**🛑 "WHICH GDOs DOES THIS CLIENT PRINT" HAS FIVE IMPLEMENTATIONS NOW, AND THEY MUST STAY IDENTICAL (2026-09-28, the fifth 2026-10-21).**
 The fourth is `ops.v_calendar_visit.gdo_permits` (+ the five legacy `gdo_*` columns, now its first element),
 `2026-09-28_1515`, whose VERIFY proves it equals `dump_visit_gdo_numbers` on every row.
+The fifth is `derm.visits.gdo_number` (the DERM Tracker's Visits row and visit Details): every permit joined `", "`
+since `2026-10-21_1715` (Trello YAAcQNtJ). Until then it took the first ACTIVE permit by id with no format check, so
+Casa Neos read 1 of its 3 permits after the Oct 20 dump and 057-BAY showed its PSO sewer permit as a GDO (81 rows).
+**Standing check: `scripts/checks/gdo_permit_sets_agree.sql`** (derm.visits and the Calendar against
+`dump_visit_gdo_numbers` on every live visit, Casa Neos as the positive control; healthy = one row `ok`). Run it after
+changing any of the five.
 The Manifest Generator's renderer (`unclogme-pdf-service` `pdf_service/app.py` `_active_gdos`: the
 client's permits, `status='ACTIVE'`, strict `^GDO-\d+$` after `strip()`, sorted by number as a STRING),
 the row count it records (`derm.record_generated_sheet_preview` -> `address_sheet_clients.rows_printed`,
