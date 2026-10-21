@@ -581,3 +581,28 @@ figures above reach it. 6008 did (it was `ok` / high), which is what this fix wa
 
 **Known limits.** A false HIGH arrival (a ghost above the real level) is not caught and under-reads the visit. Near a
 full tank (0.11 m or less) the sensor cannot tell a real full from a false one.
+
+
+## 13. Correction 2026-10-21: two-trip jobs, and the sensor wins over the trap size on file
+
+From the Grease pumped data audit (`Building Apps/Visit Calendar/docs/specs/2026-10-21-grease-pumped-data-audit-and-plan.md`).
+Fred: *"go ahead with full trap, fix 241-WYN, sensor wins"*.
+
+**Two-trip jobs (linker algorithm 3, `docs/migrations/2026-10-21_0515_link_two_trip_jobs.sql`).** An earlier stop at the
+same place (same truck, within 150 m, not claimed by another visit) now joins a volume visit when it is within 12 hours of
+the completion anchor OR inside the visit's own window (visit date minus 4 h to 10:00 the next morning ET). On 2026-09-01
+Moises pumped 241-WYN at 03:22 (stop 944, +752.9 gal) and again at 21:14 (stop 948, +418.5): visit 6968 now reads 1,171.4
+(was 418.5), and 6969 (2026-10-23) reads 1,171 (its frozen row 3094 was superseded). The only other link added was 6347 <-
+stop 935 (148-MOR), which stays low confidence (`tank_at_ceiling`). 0 links retired.
+
+**The sensor wins (`docs/migrations/2026-10-21_0545_sensor_wins_over_trap_size.sql`).** `v_visit_tank_service` no longer
+judges a reading by the trap size on file:
+- `exceeds_trap_size` is gone as a reason; such a reading goes on to the sensor checks (too short, tank at ceiling, pumped
+  with no rise, rise without pump), which still decide its confidence. This REPLACES rule (4) of section 11.
+- `below_resolution` applies only when the trap on file is 75 gal or less AND the reading is under 100 gal (noise).
+- New last column `sludge_above_trap_size` (true when the reading is above 1.5 x trap + 40) keeps the disagreement visible:
+  those trap sizes are the ones to correct in Jobber (17 rows on 2026-10-21, e.g. 022-GRO 250 vs 1,231, 024-GRO 500 vs
+  1,811, 012-DKC 1,200 vs 2,407, 111-YC 30 vs 363/396, 104-PV 302 vs 538).
+- Effect: trusted readings 132 -> 150; the Calendar's estimates for 10-21..12-04 move on 27 visits, 57,193 -> 63,421 gal.
+  Past days are frozen and did not move. 061-TCE (trap 10) now estimates 203 from its one reading.
+- Rollbacks beside both migrations (the vetoes come back; the appended column stays).
