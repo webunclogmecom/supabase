@@ -167,6 +167,15 @@ cover the PUBLIC storage buckets (`gdo-permits`, `manifests`, `GT - Visits Image
 reasoning from client-side code without knowing about the auth gate, but **"the DB does not leak it"
 is not the same claim as "nothing leaks it"**.
 
+✅ **Since `2026-10-21_1624` anon holds NOTHING on any table or view in `public`, `ops`, `client`, `derm`,
+`customer`, `hr`** (aclexplode over all 336 objects: 0 anon entries, 0 PUBLIC entries). The last 34 objects, all in
+`public`, still held `x`, `t` and `m`. 🛑 **On Postgres 17 the ACL letter `m` is MAINTAIN, not TRUNCATE (`D`)**:
+`anon=xtm` is REFERENCES, TRIGGER, MAINTAIN. They survived because every earlier revoke NAMED its privileges
+(`2026-07-12` INSERT/UPDATE/DELETE, `2026-07-28y` SELECT, and lists like `2026-06-10_batch_a`'s "INSERT, UPDATE,
+DELETE, TRUNCATE, TRIGGER, REFERENCES", which was all of ALL before PG17 and misses MAINTAIN since).
+⇒ **To take a role off an object, write `REVOKE ALL`, never a list.** Re-check with `aclexplode(relacl)` (or
+`has_table_privilege(..., 'MAINTAIN')`), never by reading the letters by eye.
+
 #### 🛑 `audit.logs.changed_by` HAS NEVER BEEN POPULATED. Read `jwt_claims->>'email'` instead (2026-08-07)
 
 Measured across the whole table, with a control: **54,756 rows, `changed_by` non-null in 0 of them**,
