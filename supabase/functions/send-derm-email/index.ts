@@ -554,7 +554,7 @@ Deno.serve(async (req: Request) => {
   // 2026-10-21_0700): an unknown action is a 503 for everyone.
   if (!isMachineCaller) {
     const denied = await checkAppAction(bearer, body?.preview === true ? 'preview_derm_email' : 'send_derm_email')
-    if (denied) return jsonResponse({ error: 'no_access', message: denied.message, detail: denied.message }, denied.status, cors)
+    if (denied) return jsonResponse({ error: denied.message, code: 'no_access', message: denied.message, detail: denied.message }, denied.status, cors)
   }
 
   // `property_id` is OPTIONAL and NARROWS the city recipient to that one property.

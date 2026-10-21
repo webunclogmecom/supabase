@@ -91,7 +91,7 @@ Deno.serve(async (req: Request) => {
   }
   // Access phase 4 (2026-10-20_1700): DERM Tracker access, as the caller (the server key always passes).
   const denied = await checkAppAction((req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, ''), 'generate_derm_address_pdf')
-  if (denied) return jsonResponse({ error: 'no_access', detail: denied.message }, denied.status, cors)
+  if (denied) return jsonResponse({ error: denied.message, code: 'no_access', detail: denied.message }, denied.status, cors)   // 2026-10-21 (F2): the DERM Tracker shows `error` first
 
   if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
     console.error('Edge function missing PDF_SERVICE_URL or PDF_SERVICE_API_KEY')
