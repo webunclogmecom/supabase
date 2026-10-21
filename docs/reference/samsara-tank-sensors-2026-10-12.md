@@ -621,3 +621,10 @@ the average of the visit's own first kind, and a lift station or grey water visi
 kind. `ops.calendar_grease_estimates` gained `unknown_reason` (`no_size` / `no_reading_for_kind`). Reach over 2026:
 17 visits at 031-KRU, 083-SHUL, 168-AVA, 196-PV; 14 are past days and stay frozen; moved 6844 (Oct 28, Cloggy, 375),
 6845 and 6846 (Nov 27, Dec 27, Moises, 292 pooled grease trap average), all now unknown. No grease trap visit moved.
+
+**A stored past day follows a truck correction (`docs/migrations/2026-10-21_1625_grease_freeze_truck_correction.sql`,
+Fred: "go ahead with step 8").** `ops.fn_freeze_grease_estimates` first supersedes every stored row whose truck and the
+visit's effective truck today sit on different sides of the separating line, then stores it again in the same run
+(`sync_log.details.truck_corrected`). In the freezer rather than a trigger on `visits.vehicle_id`, because a changed job
+default truck moves the effective truck with no visit write. First run: 4 rows (1350 Feb 4, 1467 Mar 9, 1600 Apr 9,
+3927 May 6), truck corrected, gallons unchanged (no reading existed then); 1311 and 6989 (David <-> Cloggy) kept.

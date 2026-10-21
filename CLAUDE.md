@@ -5694,7 +5694,10 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   to those columns or to the measurement rules changes the Calendar's numbers for today and later**; past days are
   frozen in `ops.visit_grease_frozen` (append-only, guard trigger, unique per (visit, date) while not superseded) by
   `ops.fn_freeze_grease_estimates()` (cron `calendar-grease-freeze`, `5 * * * *`, sync_log source
-  `calendar_grease_freeze`, watched 3 h by `log_jobber_sync_health`). **Rule since v2 (`2026-10-15_1540`, Fred's voice
+  `calendar_grease_freeze`, watched 3 h by `log_jobber_sync_health`). Since `2026-10-21_1625` (step 8) each run first
+  supersedes a stored row whose truck and the visit's effective truck today sit on different sides of the separating
+  line (Moises vs David / Cloggy) and stores it again in the same run (`details.truck_corrected`); a same-side change
+  keeps the row on purpose (a re-store could pick up a later trap size edit). **Rule since v2 (`2026-10-15_1540`, Fred's voice
   note + picks):** every pumping visit counts (grease trap, grey water, lift station; SA and SC). On a truck listed in
   `app_config.grease_separating_vehicle_ids` (`1` = Moises) with at least one earlier reading at the property: the
   client's average, i.e. the rounded mean of the LAST 6 trusted readings (40 to 3,840 gal) of its pumping visits dated
