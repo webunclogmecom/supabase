@@ -430,12 +430,39 @@ groups in Airtable hold 2 or more records, 38 of 444, about 4% of shifts.** Ever
 have hit the same 23505 in the webhook, thrown, returned 500, and been retried into the same 500 for
 ever.
 
-### 9b. A second submission for the same shift now MERGES (edge fn v7)
+### 9b. A second submission MERGES only when it is a real redo (edge fn v15, 2026-10-21)
 
-`insert` -> on `23505` -> find the row for that (shift_date, vehicle, driver, type) -> `update` it
-with the new answers -> return 200 with `merged_into_shift: true`. **Later submission wins, whole
-row**, because a redo is the driver correcting themselves and both forms require the fields that
-matter.
+🛑 **SUPERSEDES the v7 rule, which merged on the ET date alone and was wrong.** On 2026-10-20 Michael
+filed a POST at 07:30 ET (closing his night shift, PRE 544) and another at 19:00 ET, after Steven had
+filed a PRE on the same truck at 12:45. Same (ET date, truck, driver, type), so v7 hit 23505 and
+merged: the 19:00 answers overwrote 545 (sludge 2,000 / water 450 became 0 / 0) and its 13 photos
+were queued onto 545 next to the 13 it had. Fred saw each photo role twice on Shift Form Review.
+It was not a retry (the submission-id key held) and not a double import. Repaired and fixed by
+`2026-10-21_1630_inspection_merge_only_a_redo`: 545 holds the 07:30 form again, the 19:00 form is
+inspection **552** (Michael's POST-only shift of Oct 20), and its 13 links moved there.
+
+The rule now:
+- **`public.fn_inspection_redo_of(truck, driver, type, submitted_at)`** returns the held form this
+  one redoes: same truck, driver, type and ET date, AND nothing filed in between by that driver or
+  on that truck, nearest first. Anything else is its own inspection. ⚠ No time cap: two same-type
+  forms on one date with nothing between them still merge.
+- `idx_inspections_shift_unique` is **gone**. `idx_inspections_submission_unique` (truck, driver,
+  type, `submitted_at`) only stops a concurrent re-delivery of one form making two rows; its 23505
+  merges into the held row.
+- **Later submission wins, whole row, photos included.** On a merge
+  `public.fn_supersede_inbound_files` soft-deletes the earlier form's links and skips its unfetched
+  files (`superseded: ...`), and `fn_settle_inbound_file` takes back a link a worker made for a file
+  superseded mid-fetch. Before this a real redo would also have left every role twice.
+- Shifts are `public.v_inspection_shifts`, never `shift_date`; the merge key is not a shift key.
+- ⚠ `scripts/migrate/airtable_inspection_backfill.js` relied on the old index to refuse the 9 redos
+  in §9a. It reads Airtable, which is retired: do not run it.
+
+Proven: rehearsal in a rolled-back transaction (the old settle body kept as a control, and it
+showed the stray link), then both logged payloads replayed through the live function after deploy:
+545 and 552 each `replayed: true`, 0 new queue rows, answers unchanged.
+
+v7's text, kept for the link rule that still holds: `insert` -> on `23505` -> find the row ->
+`update` it -> return 200 with `merged_into_shift: true`.
 
 🛑 **THE LINK CANNOT BE DUPLICATED, AND THE FIRST ATTEMPT AT THIS SHIPPED THAT BUG.** `idx_esl_entity_source`
 is UNIQUE on `(entity_type, entity_id, source_system)` with **zero exceptions anywhere in the table**,
@@ -465,8 +492,9 @@ every row that has a `submitted_at`:
 
 100% and 100%, so this is not a guess about the old code, it is what the old code did. **75 legacy
 rows sit on the day after the shift.** Re-dating them is a data correction with real consequences: it
-is not audited (`public.inspections` carries no audit trigger), and **6 shift groups would collide on
-the unique index** once moved, so it needs a backup and a decision about those 6 first. Not done.
+is not audited (`public.inspections` carries no audit trigger), so it needs a backup first. Not done.
+(The "6 shift groups would collide on the unique index" blocker is gone: that index was replaced on
+2026-10-21, §9b.)
 
 ⚠ One pair created by this backfill is a genuine double submission spanning ET midnight (ids 407 and
 433, Aaron on Goliath, submitted 2 hours apart at 22:00 and 00:00 ET). The unique index cannot catch

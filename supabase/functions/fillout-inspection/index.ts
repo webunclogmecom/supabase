@@ -388,50 +388,58 @@ Deno.serve(async (req) => {
       const { error } = await supabase.from('inspections').update(row).eq('id', inspectionId)
       if (error) throw new Error(`update inspection ${inspectionId}: ${error.message}`)
     } else {
-      const { data: ins, error } = await supabase
-        .from('inspections').insert(row).select('id').single()
-
-      if (ins) {
-        inspectionId = ins.id
-      } else if (error?.code === '23505') {
-        // 🛑 A SECOND SUBMISSION FOR A SHIFT WE ALREADY HOLD. THIS IS NOT RARE AND IT USED TO LOSE
-        // THE INSPECTION. `idx_inspections_shift_unique` is a PARTIAL unique index on
-        // (shift_date, vehicle_id, employee_id, inspection_type) WHERE both ids are non-null, so a
-        // driver who fills the Post form twice on one shift hits 23505 on the second one. Before
-        // 2026-09-23 that threw, returned 500, and Fillout retried it into the same 500 for ever:
-        // the raw payload survived in webhook_events_log and nothing else did.
-        //
-        // ⚠ It is invisible to the submission_id idempotency check above, because a redo is a NEW
-        // Fillout submission with its own id. Measured in Airtable the same day: 19 shift groups
-        // hold 2+ records, 38 records of 444, about 4% of shifts. It happens every few days.
-        //
-        // LATER SUBMISSION WINS, whole row. A redo is the driver correcting themselves, and both
-        // forms require the fields that matter, so a partial redo is not a shape the form can
-        // produce. Both Fillout submission ids end up linked to the one inspection, which is what
-        // `entity_source_links` is for.
-        //
-        // ⚠ The index is PARTIAL, so this cannot fire when the driver or truck did not resolve. In
-        // that case two rows for one shift is the correct outcome: we do not know they are the same
-        // shift, and guessing is how an inspection gets overwritten by a stranger's.
-        const { data: existing, error: findErr } = await supabase
-          .from('inspections').select('id')
-          .eq('shift_date', row.shift_date)
-          .eq('inspection_type', row.inspection_type)
-          .eq('vehicle_id', row.vehicle_id as number)
-          .eq('employee_id', row.employee_id as number)
-          .maybeSingle()
-        // Fail loudly rather than inventing a row: a 23505 with nothing behind it means the index
-        // and this predicate disagree, and a second INSERT attempt would just 23505 again.
-        if (findErr || !existing) {
-          throw new Error(`shift conflict with no matching row: ${findErr?.message ?? 'not found'}`)
-        }
-        inspectionId = existing.id
-        mergedIntoShift = true
-        const { error: updErr } = await supabase.from('inspections').update(row).eq('id', inspectionId)
-        if (updErr) throw new Error(`update inspection ${inspectionId} on shift merge: ${updErr.message}`)
-      } else {
-        throw new Error(`insert inspection: ${error?.message ?? 'no row'}`)
+      // 🛑 A SECOND FORM FOR THE SAME DRIVER, TRUCK, TYPE AND ET DATE IS A REDO ONLY IF NOTHING WAS
+      // FILED IN BETWEEN. A redo is a NEW Fillout submission with its own id, so the idempotency check
+      // above cannot see it; LATER SUBMISSION WINS, whole row, photos included. Until 2026-10-21 the
+      // merge keyed on the ET date alone (`idx_inspections_shift_unique` -> 23505 -> merge), and it
+      // folded Michael's 19:00 POST into his 07:30 POST (inspection 545) although Steven had filed a
+      // PRE on the same truck at 12:45: two shifts, one row, each photo role twice. The rule is now
+      // `public.fn_inspection_redo_of`, which also refuses to merge across anything filed in between.
+      // ⚠ Unresolved driver or truck never merges: we do not know it is the same shift.
+      let target: number | null = null
+      if (row.vehicle_id !== null && row.employee_id !== null) {
+        const { data, error } = await supabase.rpc('fn_inspection_redo_of', {
+          p_vehicle_id: row.vehicle_id,
+          p_employee_id: row.employee_id,
+          p_type: row.inspection_type,
+          p_submitted_at: row.submitted_at,
+        })
+        if (error) throw new Error(`redo lookup: ${error.message}`)
+        target = data ?? null
       }
+
+      let insertedId: number | null = null
+      if (target === null) {
+        const { data: ins, error } = await supabase
+          .from('inspections').insert(row).select('id').single()
+        if (ins) {
+          insertedId = ins.id
+        } else if (error?.code === '23505') {
+          // `idx_inspections_submission_unique` (vehicle, driver, type, submitted_at): a concurrent
+          // re-delivery of this same form, or a redo filed for the very same time. Either way the
+          // held row is the one to update. Fail loudly if it is not there.
+          const { data: existing, error: findErr } = await supabase
+            .from('inspections').select('id')
+            .eq('vehicle_id', row.vehicle_id as number)
+            .eq('employee_id', row.employee_id as number)
+            .eq('inspection_type', row.inspection_type)
+            .eq('submitted_at', row.submitted_at)
+            .maybeSingle()
+          if (findErr || !existing) {
+            throw new Error(`submission conflict with no matching row: ${findErr?.message ?? 'not found'}`)
+          }
+          target = existing.id
+        } else {
+          throw new Error(`insert inspection: ${error?.message ?? 'no row'}`)
+        }
+      }
+
+      if (target !== null) {
+        mergedIntoShift = true
+        const { error: updErr } = await supabase.from('inspections').update(row).eq('id', target)
+        if (updErr) throw new Error(`update inspection ${target} on redo: ${updErr.message}`)
+      }
+      inspectionId = target ?? insertedId!
 
       // 🛑 ONE LINK PER ENTITY PER SOURCE SYSTEM, ESTATE-WIDE. `idx_esl_entity_source` is UNIQUE on
       // (entity_type, entity_id, source_system) and there are ZERO exceptions to it in the whole
@@ -442,8 +450,8 @@ Deno.serve(async (req) => {
       //
       // ⇒ On a merge, the FIRST submission's id stays the canonical link and this one is recorded in
       // `webhook_events_log` instead, which holds its raw payload under its own event_id. A retry of
-      // the second submission simply re-runs insert -> 23505 -> merge -> update -> skip -> 200, which
-      // is convergent.
+      // the second submission simply re-runs redo lookup -> merge -> update -> skip -> 200, which is
+      // convergent.
       let linkedAs: string | null = submissionId
       if (mergedIntoShift) {
         const { data: owner } = await supabase.from('entity_source_links')
@@ -486,6 +494,18 @@ Deno.serve(async (req) => {
     // public, graphql_public, customer, derm, ops, client, hr), so a direct .from() would fail at
     // runtime with a schema-not-found. public.fn_enqueue_inbound_file is the service_role-only
     // wrapper, and it is idempotent, so a replay re-queues nothing.
+    // A redo replaces the earlier form's photos too: its links are soft-deleted and its unfetched files
+    // skipped, so each role shows the redo's photos only. Throw on failure: a retry re-runs the merge.
+    if (mergedIntoShift) {
+      const { error } = await supabase.rpc('fn_supersede_inbound_files', {
+        p_entity_type: 'inspection',
+        p_entity_id: inspectionId,
+        p_keep_urls: queued.map((q) => q.source_url),
+        p_reason: `Fillout submission ${submissionId} redid this form`,
+      })
+      if (error) throw new Error(`supersede earlier photos of ${inspectionId}: ${error.message}`)
+    }
+
     let queuedOk = 0
     for (const q of queued) {
       const { error } = await supabase.rpc('fn_enqueue_inbound_file', {
