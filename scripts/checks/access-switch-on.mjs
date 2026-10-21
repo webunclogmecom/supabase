@@ -90,7 +90,7 @@ const APPS = {
     gateReaders: ['ops.calendar_hours_estimates', 'public.dump_site_status', 'ops.start_first_visit'],
     edgeAllow: {},
     revokes: [{ kind: 'column', obj: 'ops.calendar_day_markers', col: 'dump_visit_id', priv: 'UPDATE' }],
-    extra: [{ name: 'trigger zones (lowest id)', sql: "update public.zones set name = name where id = (select min(id) from public.zones)" }],
+    extra: [{ name: 'trigger zones (lowest id)', sql: "update public.zones set color_hex = color_hex where id = (select min(id) from public.zones)" }],
   },
 };
 // Everywhere: the no-access card must load.

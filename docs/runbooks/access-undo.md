@@ -50,6 +50,19 @@ grant execute on function derm.fn_resolve_generated_sheet_for_ticket(text) to au
 grant execute on function public.fn_resolve_generated_sheet_for_ticket(text) to authenticated;
 ```
 
+```sql
+-- Gate step G0a (2026-10-21_0650): five tables closed to direct writes by signed-in users
+grant insert, update, delete on public.dump_sites, public.derm_required_backfill_snapshot_2026_06_24,
+  public.visit_locations, public.derm_manifest_number_proposals to authenticated;
+grant insert, delete on public.visit_assignments to authenticated;
+drop policy if exists visit_locations_auth_select on public.visit_locations;
+create policy visit_locations_auth_all on public.visit_locations for all to authenticated using (true) with check (true);
+drop policy if exists dmnp_auth_select on public.derm_manifest_number_proposals;
+create policy authenticated_write_dmnp on public.derm_manifest_number_proposals for all to authenticated using (true) with check (true);
+create policy visit_assignments_anon_delete_authn on public.visit_assignments for delete to authenticated using (true);
+create policy visit_assignments_anon_insert_authn on public.visit_assignments for insert to authenticated with check (true);
+```
+
 ## 5. Storage (gate step only)
 
 The policies as they were before the gate step are saved in `backups/2026-10-21_access_switch_on_snapshot.json`
