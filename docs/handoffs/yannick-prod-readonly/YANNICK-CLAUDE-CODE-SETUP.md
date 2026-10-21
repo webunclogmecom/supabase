@@ -184,7 +184,7 @@ Jobber and Airtable are sunsetting May 2026. Odoo.sh takes over CRM. Samsara is 
 |---|---|
 | `visits_with_status` | visits + `vehicle_name`, `client_name`, `frequency_days`, `is_complete`, `computed_late_status`. |
 | `visits_with_review` | visits + review/bonus columns from `app_visit_reviews`. |
-| `inspections_with_review` | inspections + shift review/bonus from `app_shift_reviews`. |
+| ~~`inspections_with_review`~~ | Dropped 2026-10-21 (`2026-10-21_1641`): nothing read it. Shifts (a PRE and its POST) are `v_inspection_shifts`. |
 | `clients_due_service` | Clients computed as needing service now (per their freq + last visit). |
 | `manifest_detail` | DERM manifests joined to client + visit. |
 | `v_vehicle_telemetry_latest` | Most-recent telemetry per vehicle (one row per truck). |

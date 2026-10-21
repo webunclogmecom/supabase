@@ -212,7 +212,7 @@ sanity-check the new sensor when it lands. Measured shape, so nobody has to re-d
 | range excluding those 6 | **60 to 3,200 gal**, median **500**, p90 **1,000**, mean 584 (n=68) |
 | by truck | Moises 64, David 4 |
 | distinct values | 28 |
-| readers | **`public.inspections_with_review`** only. Zero functions. |
+| readers | **None in the database since 2026-10-21.** Its only reader was the view `public.inspections_with_review`, which nothing used and which was dropped by `2026-10-21_1641_drop_inspections_with_review.sql` (rollback beside it). Zero functions. |
 
 🛑 **THE FINDING THAT MATTERS FOR THE SECOND SENSOR: `sludge + water` EXCEEDS THE GREASE TANK
 CAPACITY IN 23 OF 66 ROWS, PEAKING AT 6,200 GAL AGAINST A 3,840 GAL VESSEL.** If the two were
