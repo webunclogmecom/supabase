@@ -5690,7 +5690,7 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `2026-10-15_1150_calendar_grease_estimates`; Fred said yes to D6 for the Calendar only).** It reads only the SECDEF
   RPC `ops.calendar_grease_estimates(p_from, p_to)` (authenticated, max 45 days), never the tank views. Live days come
   from `ops.fn_grease_estimates_live`, which reads `public.v_visit_tank_service` (`visit_kind = 'volume'`, confidence
-  high/medium, `gallons`, `visit_date`) and `ops.v_calendar_visit` (effective `vehicle_id`, trap size). ⇒ **A change
+  high/medium, `sludge_collected_gallons` 40 to 3,840, `visit_date`) and `ops.v_calendar_visit` (effective `vehicle_id`, trap size). ⇒ **A change
   to those columns or to the measurement rules changes the Calendar's numbers for today and later**; past days are
   frozen in `ops.visit_grease_frozen` (append-only, guard trigger, unique per (visit, date) while not superseded) by
   `ops.fn_freeze_grease_estimates()` (cron `calendar-grease-freeze`, `5 * * * *`, sync_log source
@@ -5714,6 +5714,13 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   the stored row of a past day, else, for a visit now on Moises, the stored MEASURED average it had on another date
   (`carried`), else live; the freezer stores pump kinds too, and the guard keeps them immutable. A correction of the
   sensor math moves only today's and later numbers. Still NOT for LWT or DERM filings, and no other app reads it.
+  Four facts a reader of the numbers needs (step 9, 2026-10-21): (1) the truck is the EFFECTIVE truck, so a visit with
+  no truck assigned takes its service's default (Moises for most): 80 of the next 30 days' 123 pumping stops on
+  2026-10-21, shown dashed in the Calendar hover (`vehicle_source`); (2) the RPC's `frozen` is `source <> 'live'`, so
+  it is TRUE on a `carried` row that is not stored for that date; (3) the RPC starts with
+  `hr.fn_require_app('visit_calendar','view')`: once the Calendar's access is on, a person without View gets a refusal
+  and the tile shows a dash; (4) most averages are thin: 79 of 112 place averages rest on 1 reading and 30 on 2
+  (2026-10-21), so one odd reading moves a place's number a lot.
 - 🛑 **A trap size of 0 means NO SIZE ON FILE, everywhere a number is derived from it (`2026-10-15_1648`).** 0 is
   Jobber's empty. `v_visit_tank_service` reads `NULLIF(trap, 0)` (else every reading on a 0 trap is
   `exceeds_trap_size` and leaves the trusted set, which zeroed 057-BAY's average), `fn_grease_estimates_live` reads

@@ -582,6 +582,12 @@ figures above reach it. 6008 did (it was `ok` / high), which is what this fix wa
 **Known limits.** A false HIGH arrival (a ghost above the real level) is not caught and under-reads the visit. Near a
 full tank (0.11 m or less) the sensor cannot tell a real full from a false one.
 
+**Snapshot 2026-10-21 (the numbers above are dated 2026-10-16 and stay as they were).** Moises visits with a sludge
+figure: 199 (130 high, 20 medium, 49 low). Trusted readings used by the Calendar averages (high or medium, 40 to
+3,840 gal): 150 (132 before the 2026-10-21 "sensor wins" change, section 13). Place averages: 112 (107 grease trap,
+2 grey water, 3 lift station, per kind since `2026-10-21_1500`); 79 rest on one reading, 30 on two, 3 on three or
+four, so most are thin.
+
 
 ## 13. Correction 2026-10-21: two-trip jobs, and the sensor wins over the trap size on file
 
