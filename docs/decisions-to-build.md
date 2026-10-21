@@ -26,7 +26,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 ## 2. Agreed, not built (or only partly)
 
 **Visit Calendar Grease pumped (audit + plan `Building Apps/Visit Calendar/docs/specs/2026-10-21-grease-pumped-data-audit-and-plan.md`)**
-- 2026-10-21, Fred: *"go ahead with full trap, fix 241-WYN, sensor wins"*. Steps 2, 3 and 4 BUILT (section 4); step 1 (70% fallback) REJECTED, a Moises stop with no reading keeps the full trap size. Step 5 BUILT (option C, no count lines, GT/GW/LS chips). Steps 6 to 9 not decided (hover counts, lift station sizes, frozen rows following truck corrections, docs).
+- 2026-10-21, Fred: *"go ahead with full trap, fix 241-WYN, sensor wins"*. Steps 2, 3 and 4 BUILT (section 4); step 1 (70% fallback) REJECTED, a Moises stop with no reading keeps the full trap size. Step 5 BUILT (option C, no count lines, GT/GW/LS chips). Step 6 (Fred: "go ahead with step 6"): DB part BUILT (`2026-10-21_0700`: RPC returns vehicle_source, truck_capacity_gallons, over_truck_capacity; nothing capped); the hover wording WAITS for Fred's pick (mockup D plain lines / E info box + dot, same artifact) and his answer on flag vs cap. Steps 7 to 9 not decided (hover counts, lift station sizes, frozen rows following truck corrections, docs).
 
 **Stamp Studio / DERM sheets**
 - 2026-09-03 page integrity plan: four watchers never built (`PAGE_CARRIES_NO_SCAN` health arm, `v_sheet_page_map_gaps`, the suffix-collision check H3 while `fn_sheet_image_position` still ignores the sheet number, and "is the sheet-number sweep offering anything").
