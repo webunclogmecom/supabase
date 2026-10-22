@@ -5483,11 +5483,13 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 
 - 🛑 **Everything is service_role only. No app reads these objects** (Fred: DB first); two app-facing reads derive from
   them, each through its own SECDEF RPC: the Calendar's Grease pumped tile (see the bullet after Health) and, since
-  2026-10-22, the water per Moises visit (`public.get_water_visits(p_from, p_to, p_visit_id)`, `2026-10-21_2045`,
+  2026-10-21, the water per Moises visit (`public.get_water_visits(p_from, p_to, p_visit_id)`, `2026-10-21_2045`,
   `_2100`, `_2120`; Trello dGJ5aFrh). One visit needs View in the Calendar or Admin Review; a period (at most 93 days)
   View in Admin Review. It returns whole gallons from `v_visit_water_balance` (pumped = every rise, returned = every
-  fall), `several_fills`, `water_tank_capacity_gallons` and `counts_in_totals` (a shared truck stop counts once, lower
-  visit id); grease kept only for high / medium confidence. The apps never compute a water figure. Exposing them is plan step M9, after
+  fall), `several_fills`, `water_tank_capacity_gallons` and `counts_in_totals` (true on every row since `2026-10-21_2130`:
+  on a shared truck stop pumped, returned and grease kept are already each visit's equal share, while arrived / highest /
+  left are the whole stop's levels; `2120` had kept one half and undercounted the driver totals); grease kept only for
+  high / medium confidence. Checked against the raw readings for Yan: https://claude.ai/artifact/7QCYyFSqQrzg9mECKoRv2w. The apps never compute a water figure. Exposing them is plan step M9, after
   mockups of the real page. Nothing in `derm`, `customer` or `client` may read these (check Z8, hourly); measured
   gallons are NOT for LWT or DERM filings (owner decision D8 default) without the month-close snapshot of plan M12.
 - 🛑 **A new level value arrives only about every 10 minutes**; rows every ~30 s repeat it. **Ingress/egress are hourly
