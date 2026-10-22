@@ -1,4 +1,4 @@
--- ROLLBACK of 2026-10-22_1345: put back algorithm 4 (copied from the live definition before 1430), then relink.
+-- ROLLBACK of 2026-10-22_1345: put back algorithm 4 (copied from the live definition before 1345), then relink.
 BEGIN;
 CREATE OR REPLACE FUNCTION public.fn_link_visit_vehicle_stops(p_execute boolean, p_radius_m integer DEFAULT 150, p_earlier_hours integer DEFAULT 12, p_volume_service_types text[] DEFAULT '{Pumping}'::text[])
  RETURNS jsonb
