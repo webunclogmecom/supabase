@@ -75,6 +75,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - 2026-10-12 tank sensors: docs (no ADR, schema.md, the plan header still says "Nothing applied"); app views beyond the Calendar tiles (M9).
 - 2026-09-18 LWT Broward: properties 651, 978, 1084 still have no trap size, so their Broward tickets cannot be filed.
 
+**Intake form measurements + Picture Planner fixes (Trello 6t3RDVkE, 1Mej1zDX; plan `Building Apps/Picture Planner/docs/specs/2026-10-21-cards-130-131-plan.md`)**
+- 2026-10-21, Fred's picks. Measurements: a Yes/No "Does the grease trap have a capacity label?"; if No a tank table, 1 to 4 tanks, L, W, H (to the outlet invert) and h in inches, each tank's gallons (L x W x H / 231) and the total shown live and saved; the Gallons answer stays typed ("Same, without auto Gallons"); the free-text Measurements question leaves the list.
+- Planner: Reject with a required reason next to Approve on the version review (same people as approve; the site file unchanged; the next draft from the last approved version); Approve inside the Activity dialog; version 1 lists what was filled in; counts bar lock icon, centered, an up arrow that scrolls to it with a glow; collector map: Use my location next to the search box, the instruction above it in red.
+  - Reject, database part LIVE 2026-10-21 20:30 ET: `2026-10-21_2030_planner_reject_version` (`client.reject_property_page`, the reject columns and CHECKs, status `rejected` in `get_page_versions`, a `page_rejected` Activity event). The Planner button is still to build.
+- Not built, on purpose: "So Far" kept as is (Fred: "Keep it as is"); the manholes pre-tick skipped ("it was office human error then, skip").
+
 ## 3. Waiting on Fred
 
 - DERM storage private: decisions 2-14 before Stage 1 (scope, archive, receipts, soak lengths ...). FDEP sheets: keep public or move.
