@@ -217,4 +217,6 @@ token answers the right project; the GDO Slack bot connected on the new Slack to
   2026-10-22 20:58 UTC, after the last scheduled "Samsara telemetry polling" run (20:46 UTC, still the old token), so
   the session started that workflow by hand at 23:06 UTC: success, 3 vehicle records pulled from Samsara.
 - The new Samsara token in the edge secret: the nightly `time-on-site-samsara-recheck`, 2026-10-23 03:50 ET.
-- The GDO Slack bot end to end (the "railway" key, Anthropic, Places): the first @GDO answer after the re-invite.
+- ✅ Proven: the GDO Slack bot end to end (the "railway" key, Anthropic, Places). Fred re-invited it to #gdo-permit
+  at 19:11 ET and asked "bibis"; it answered in the thread 29 s later with permit GDO-13940 (the same answer as
+  Diego's 2026-10-14 test) and a second reply carrying the file. The section 4 #gdo-permit item is closed.
