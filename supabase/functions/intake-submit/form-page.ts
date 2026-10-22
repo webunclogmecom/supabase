@@ -44,7 +44,9 @@
 //   rule 17): #ttl #sub #main #foot #who #send #cnt; one .q per question with its
 //   <label> as a direct child; Yes / No buttons; per photos question two input[type=file] (the camera one
 //   has capture=environment, so pick the other with :not([capture])), a textarea.pcm per photo and a .note
-//   "N photo(s) attached"; "Use my location" and a .pin "Pinned at <lat>, <lng>";
+//   "N photo(s) attached"; "Use my location" and a .pin "Pinned at <lat>, <lng>" (with a map, since 2026-10-21: the .pin
+//   is ABOVE the address box, red .pin.ask until a pin is placed, and the button sits in .aslot beside the box; below
+//   480px only its pin icon shows, the words stay as its accessible name);
 //   version 3 (photo_note_required): the (i) is a .ib button beside the label and its hint the .qi under it; each photo has
 //   a Remove (.prm) that asks first in the card (.rmq, Keep / Remove); after Submit an empty explanation box is
 //   .pcm.bad and #fmsg holds the .nt panel with "Show me".
@@ -106,6 +108,12 @@ input::placeholder,textarea::placeholder{color:#a1a1aa}
 .pin{margin-top:10px;font-size:14px;color:var(--mut)}
 .pin.set{color:var(--ok);font-weight:600}
 .gst{margin-top:4px;font-size:14px;color:var(--mut)}
+.pin.top{margin:0 0 10px}
+.pin.ask{color:var(--bad);font-weight:600}
+.arow{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px}
+.arow .asr{flex:1;min-width:0;margin-bottom:0}
+.aslot .act{width:auto;min-height:52px;padding:0 14px;white-space:nowrap}
+@media (max-width:479px){.aslot .act{width:52px;padding:0}.aslot .act span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 .map{height:280px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#e4e4e7;margin-bottom:10px}
 .map.wait{display:grid;place-items:center;color:var(--mut);font-size:14px;font-weight:600}
 /* The address suggestions are ONE dropdown hanging from the box (Fred, 2026-09-29, variant A): absolute, so it lies
@@ -234,6 +242,7 @@ textarea{min-height:84px}
 .act{width:fit-content;min-height:38px;padding:8px 14px;gap:8px;font-size:14px;font-weight:600}
 .act svg{width:18px;height:18px}
 .act.cam{display:none}
+.aslot .act{min-height:40px;padding:0 12px}
 .ph textarea.pcm{min-height:52px}
 .asug{min-height:44px;padding:4px 12px;font-size:14px;line-height:1.2}
 .asug .s{font-size:13px}
@@ -524,7 +533,10 @@ function mapFor(q,v){
     inp.setAttribute('role','combobox'); inp.setAttribute('aria-autocomplete','list'); inp.setAttribute('aria-expanded','false'); inp.setAttribute('aria-controls',lid);
     list.id=lid; list.setAttribute('role','listbox'); list.setAttribute('aria-label','Address suggestions');
     hint.setAttribute('role','status'); sr.appendChild(inp); sr.appendChild(list); sr.appendChild(hint);
-    wrap.appendChild(sr); wrap.appendChild(box);
+    // "Use my location" sits next to the box (Fred, 2026-10-21, Trello 1Mej1zDX). The button is rebuilt on every render
+    // and dropped into this slot; the box and the map stay the ones built here.
+    var arow=el('div','arow'), slot=el('div','aslot'); arow.appendChild(sr); arow.appendChild(slot);
+    wrap.appendChild(arow); wrap.appendChild(box);
     // S.seq: only the newest search or pick may act. S.for: the text the list on screen was found for. S.hi: the highlighted row.
     var S={tok:null,t:0,seq:0,for:null,hi:-1}, say=function(t){ hint.textContent=t };
     var shut=function(){ list.textContent=''; S.hi=-1; inp.setAttribute('aria-expanded','false'); inp.removeAttribute('aria-activedescendant') };
@@ -594,7 +606,7 @@ function mapFor(q,v){
     // The list lies over the map, so leaving the box (a tap outside, Tab) closes it like Escape; a lookup already
     // running is left to finish. Checked a tick later: render() moves this box into the new card and gives the focus back.
     inp.onblur=function(){ setTimeout(function(){ if(document.activeElement===inp) return; if(M&&M.picking) shut(); else { bump(); shut(); S.for=null } },0) };
-    M=MAPS[q.key]={box:box,wrap:wrap,map:map,mk:mk,at:at,cancel:cancel,picking:false};
+    M=MAPS[q.key]={box:box,wrap:wrap,slot:slot,map:map,mk:mk,at:at,cancel:cancel,picking:false};
   }
   // A pin set another way (Use my location, a restored draft) moves the marker and brings it into view.
   if(at!==M.at){ M.at=at; if(pos){ M.mk.setPosition(pos); M.mk.setMap(M.map); M.map.panTo(pos); if(M.map.getZoom()<19) M.map.setZoom(20) } else M.mk.setMap(null) }
@@ -710,10 +722,10 @@ function field(q){
   } else if(t==='gps_pin'){
     var pinned=v&&v.lat!=null, G=GEO[q.key]||{};
     if(G.err) d.appendChild(errBox(G.err,function(){ delete GEO[q.key].err; render() }));
-    var mw=mapFor(q,v); if(mw) d.appendChild(mw);
+    var mw=mapFor(q,v), MM=(mw&&MAPS[q.key]&&MAPS[q.key].wrap===mw)?MAPS[q.key]:null;
     var b3=el('button','act'); b3.type='button'; b3.setAttribute('data-f',q.key+':gps'); b3.setAttribute('aria-describedby',lab.id); b3.innerHTML=IC.pin;
     b3.appendChild(el('span','',G.busy?'Finding your spot...':(pinned?'Use my location again':'Use my location'))); b3.disabled=!!G.busy;
-    var out=el('div','pin'+(pinned&&!G.busy?' set':'')); out.setAttribute('role','status');
+    var out=el('div','pin'+(pinned&&!G.busy?' set':(G.busy||!MM?'':' ask'))); out.setAttribute('role','status');
     out.textContent=G.busy?'Finding your spot...':(pinned?('Pinned at '+Number(v.lat).toFixed(6)+', '+Number(v.lng).toFixed(6)):(mw?'Tap the map where it is, then drag the pin to the exact spot. Or stand next to it and use your location.':'Stand next to it, then tap.'));
     var gst=el('div','gst');
     gst.textContent=G.busy?(G.acc!=null?'Accurate to about '+G.acc+' m so far.':''):((pinned&&v.accuracy_m)?'Accurate to about '+v.accuracy_m+' m.':'');
@@ -745,7 +757,10 @@ function field(q){
       tm=setTimeout(finish,20000);
       render();
     };
-    d.appendChild(b3); d.appendChild(out); d.appendChild(gst);
+    // With a map: the instruction above the address box, in red until the pin is placed, and the button beside the box
+    // (Fred, 2026-10-21). Without one (no key, a refused key): the button and the line as before.
+    if(MM){ out.classList.add('top'); d.appendChild(out); MM.slot.textContent=''; MM.slot.appendChild(b3); d.appendChild(mw); d.appendChild(gst) }
+    else { if(mw) d.appendChild(mw); d.appendChild(b3); d.appendChild(out); d.appendChild(gst) }
   } else if(t==='photos'){
     var list=Array.isArray(v)?v:[];
     var pend=PEND[q.key]||0;
