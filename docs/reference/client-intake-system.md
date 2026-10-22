@@ -814,6 +814,40 @@ too, and we can take even advantage of that to prefill the name field"*; alarm p
   ([TEST] forms, tasks of 112-YA only; `--smoke` right after a deploy, `--linked` read only on a real linked form),
   `scripts/client-app/tests/schedule_assign.mjs`, and both migrations' VERIFY blocks.
 
+**23. THE GREASE TRAP'S MODEL OR ITS MEASUREMENTS, AND THE AI LOOKUP OF ITS GALLONS (2026-10-22, Trello 6t3RDVkE;
+`2026-10-22_1229_intake_size_lookup`, `_1302_intake_size_lookup_trigger`, `_1306_intake_form_v5`, edge fn
+`intake-size-lookup`).** Yan: *"if we know the model of the grease trap we don't need to measure it ... have the AI fill it
+out including the total number of gallon. Or if we have the measurement we could have the AI calculate he total number as
+well"*; Fred: *"either to have a free text where we can put the measurements ourselves, or we can put the grease trap model
+so we can do this lookup using AI"*. His picks: pick one first, the lookup on submit, the gallons OFFERED and saved by a
+person, the measurements too. Spec: `Building Apps/Picture Planner/docs/specs/2026-10-22-grease-trap-model-lookup-design.md`.
+- **Question list version 5:** `grease_trap.size_from` (choice "How can you give us its size?": Model on the plate /
+  Measurements, optional, shown when `systems_count > 0`), NEW `grease_trap.model` (text, one line, 100 characters, shown for
+  "Model on the plate"), `grease_trap.capacity_measure` (same key, shown for "Measurements"), then Gallons as before. No
+  file change: the collector form and the Client App read the list generically.
+- **`public.grease_trap_size_lookups`** (audited, service_role only): one row per (kind, `fn_size_lookup_key(text)`), so a
+  model typed on ten forms is looked up once; `found` (gallons 1 to 20,000), `not_found` (the reason in `summary`) or
+  `error` (retried after 20 minutes, 3 tries, then `failed` on screen and in the health email). Written ONLY by edge fn
+  `intake-size-lookup` (`verify_jwt` pinned + a service_role gate). The card's "model -> capacity reference table".
+- **What runs it:** trigger `zz_size_lookup_on_submit` (AFTER UPDATE OF submitted_at, per statement, errors swallowed so a
+  submit is never blocked) and cron `intake-size-lookup` (:17 hourly), both through `public.fn_request_size_lookup()`,
+  which makes no HTTP call when `public.v_size_lookup_backlog` is empty. The backlog is a form's SHOWN, non-blank model or
+  measurements answer (`public.fn_intake_size_inputs`) with no finished row.
+- 🛑 **A model's gallons are kept only with a source page the web search or fetch actually returned**, and only a LIQUID
+  capacity (never a flow rate in GPM, never a grease capacity in lbs, never a neighbouring model). 🛑 **For measurements the
+  AI only READS the numbers; the function works out the gallons** (sum of L x W x D / 231). A reply without the result
+  tool, cut off or refused is an `error`, never a `not_found`. Test: `scripts/checks/intake_size_lookup_guard.mjs`.
+- 🛑 **ONE rule decides the gallons a form offers: `public.fn_intake_gallons_offer(intake)`.** Nothing when the collector's
+  own Gallons (shown) is a whole number 1 to 20,000 (they read the plate); else the found lookup of the shown model, then of
+  the measurements. `get_intake_compare` puts it on the Gallons row (`theirs` = the AI number, `offer` = where it came from)
+  and `accept_intake_answers` saves the SAME number (the client never sends it) and records `property_intake_accepts
+  .size_lookup_id`; Activity says "(AI lookup of <model / the measurements>)". `get_intake.size_lookups` lists each lookup
+  under its answer. Nothing writes `grease_trap_size_gallons` but a person's Save (then Jobber, as before).
+- Health: `log_trap_size_health` items `trap_size:lookup_failed:<kind>:<id>` and `trap_size:lookup_waiting` (over 3 hours).
+- Tests: `scripts/page-builder/tests/size_lookup.mjs` (the Planner display, stubbed, 44 checks),
+  `scripts/intake-collector/tests/v5-live.mjs <id>` (a [TEST] form through the live form and the real server, 14 checks;
+  remove the fixture with 11.3's per-id recipe), and the three migrations' VERIFY blocks (each with skip controls).
+
 ## Traps paid for while building this
 
 **A jsonpath CHECK was wrong twice.** Lax mode auto-unwraps the step before a filter, so v1 rejected

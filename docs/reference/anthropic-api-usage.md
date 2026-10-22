@@ -10,6 +10,7 @@ reads documents with Claude stops working.
 | edge fn `gdo-permit-label` | reads "Permit Issued To" from a GDO permit PDF into `gdos.location_label` | `claude-opus-5-5`, effort low | on upload (triggers) + daily retry | Supabase secret `ANTHROPIC_API_KEY` (ends `rwAA`) |
 | edge fn `ocr-address-sheet-number` | reads the printed sheet number (top right) of a scanned DERM address sheet | `claude-sonnet-5-5`, effort low | cron `sheet-number-ocr-sweep` + trigger on `derm_manifests` | same |
 | edge fn `ocr-address-sheet-rows` | reads every Section B row (client code + facility name) of an address sheet | `claude-sonnet-5-5`, effort medium | cron `sheet-row-ocr-sweep` | same |
+| edge fn `intake-size-lookup` (since 2026-10-22) | the gallons of a grease trap from the model (web search + web fetch, `web_search_20260209` / `web_fetch_20260209`, a strict `report_result` tool) or the measurements (reads the numbers only; the function computes L x W x D / 231) a collector typed on a site survey form | `claude-opus-5-5`, effort medium (model) / low (measurements) | trigger on submit + cron `intake-size-lookup` (hourly), only when `public.v_size_lookup_backlog` has a text; one call per text, ever (3 tries on errors) | same |
 | `scripts/sync/*ocr*.js`, `scripts/checks/*` | hand-run backfills and checks (sheet numbers, receipts) | per script (`ocr_address_sheet_numbers.js` mirrors the edge fn) | only when someone runs them | `Supabase/.env` `ANTHROPIC_API_KEY` (same `rwAA` key) |
 | Slack GDO Bot (`webunclogmecom/unclogme-gdo-bot`, Railway) | the GDO lookup agent in Slack, up to 15 tool rounds | `claude-sonnet-5-5` | per Slack question (~30/week) | Railway variable `ANTHROPIC_API_KEY`; the local `.env` holds a DIFFERENT key (ends `JgAA`) |
 
@@ -32,6 +33,10 @@ What each caller does with a failed call, so nothing is lost:
 - `ocr-address-sheet-number`: a non-`end_turn` reply writes nothing, so the page stays in the backlog and is
   retried within `derm.sheet_number_ocr_attempts`.
 - `ocr-address-sheet-rows`: attempts are bounded by `derm.row_ocr_attempts` (3 per image set).
+- `intake-size-lookup`: records `status='error'` in `public.grease_trap_size_lookups`, retried after 20 minutes up to 3
+  tries; then the form page says "failed" and `log_trap_size_health` puts it in the health email. Measured 2026-10-22: a model
+  lookup with web search reads about 7k to 86k input tokens (about $0.03 to $0.35 at $4 per million), a measurement read
+  about 800 tokens. Each text is looked up once.
 
 Rough cost at today's volumes: a few dollars a month in total. 30 days before the change: 17 sheet-number
 reads, 68 sheet-row page reads; the permit reader runs only when a permit PDF changes.

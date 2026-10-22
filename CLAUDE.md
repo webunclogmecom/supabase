@@ -5357,6 +5357,14 @@ Nine things that will bite someone who does not know them:
    links last **30 days** (`expires_at` default; was 60; Fred: "make it 30 days instead of 60"). Watched by
    `log_jobber_sync_health` (source `intake_task_sync`, 25 minutes). It reuses the verified Jobber helpers re-exported
    from `_shared/day-marker-task.ts`.
+10. **The grease trap's model or measurements, and the AI lookup of its gallons (2026-10-22, rule 23 of the reference,
+   Trello 6t3RDVkE).** Question list **version 5** since 13:06 ET (`2026-10-22_1306_intake_form_v5`): "How can you give us
+   its size?" (Model on the plate / Measurements) shows the NEW `grease_trap.model` box or the measurements box. Edge fn
+   `intake-size-lookup` (claude-opus-5-5 with web search; for measurements it reads the numbers and works out L x W x D /
+   231 itself) writes `public.grease_trap_size_lookups`, one row per text, on submit (trigger) and hourly (cron).
+   🛑 `public.fn_intake_gallons_offer` is the ONE rule: the collector's own whole Gallons wins; otherwise the found lookup is
+   OFFERED on the Planner's Property record tab and saved only by a person's Save (`accept_intake_answers`, recorded in
+   `property_intake_accepts.size_lookup_id`). A model's number is kept only with a source page the search really returned.
 
 ### 🛑 "HAS THIS VISIT'S CITY EMAIL GONE?" HAS ONE ANSWER: `public.v_visit_city_email_state` (2026-10-12)
 
