@@ -652,6 +652,12 @@ verify_jwt = false
 [functions.sync-jobber-job-drift]
 verify_jwt = true
 
+# sync-jobber-timesheets: Jobber's time sheet into hr.time_entries (2026-10-22, Trello KqGyoiKQ). pg_cron every 30 min
+# (entries updated in the last 2 days) and nightly ?mode=window&days=35 (removals), via fn_request_jobber_sync, vault
+# bearer. Handler requires role=service_role - verify_jwt alone also admits the public anon key. Reads Jobber only.
+[functions.sync-jobber-timesheets]
+verify_jwt = true
+
 # sync-jobber-invoice-drift: the invoice reconcile (pg_cron 25 */6 * * * via
 # fn_request_jobber_sync('invoice-drift'), vault bearer). Handler requires
 # role=service_role - verify_jwt alone also admits the public anon key.

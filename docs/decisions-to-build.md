@@ -50,7 +50,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   Rates already live in the HR App (hourly, visit bonus, shift bonus per person).
 - 2026-10-22, Fred's picks: Mark (no clock-in) falls back to his shift forms ("Fall back to his shift forms"); count every entry and
   show Approved / Not approved; flag mismatches (no work behind a shift, high hours, still clocked in, half a shift). Plan:
-  `Building Apps/HR App/docs/specs/2026-10-22-hours-worked-from-jobber-timesheet.md` (6 steps). NOT BUILT.
+  `Building Apps/HR App/docs/specs/2026-10-22-hours-worked-from-jobber-timesheet.md` (6 steps). Steps 1-3 BUILT 2026-10-22
+  (Fred: "go ahead"): `2026-10-22_1940` (hr.time_entries, hr.sync_time_entries, hr.fn_hours_worked, the two readers; 29
+  rehearsal checks with the real 955 entries, a broken copy of the rule failing as it must, rollback rehearsed), `_2000`
+  (crons + health watch), edge fn sync-jobber-timesheets v1; stored week totals = Jobber's Week view. OPEN: step 4 (the
+  screen, mockup first), step 5 (standing check), step 6 (docs + card).
 
 **HR App redesign** (plan: Building Apps/HR App/docs/specs/2026-10-19-hr-app-redesign-plan.md; Fred 2026-10-19: "go with the real data, and go as recommended")
 - Release 1, the pay and bonus history: 20 per page in a box that scrolls on a laptop; the full white "Open in Admin Review" button on every row; Excel with write-excel-file 4.1.1; office may export (bonus rows only), plus a "By payroll week" sheet; a late take-back stays in the week of the work, with a health email and an "after that week ended" tag; opens on All time and keeps the period from person to person; mockups with real data. History fields migration BUILT (`2026-10-19_0215`, 31a9302). Mockup approved by Fred 2026-10-19 ("go ahead": https://claude.ai/artifact/2EaHeFnE75eQ1DXK7kGs64). Release 1 BUILT and live 2026-10-19 (theme pass + PayHistory + Excel export; Building Apps HR App changelog 2026-10-19 (b)). Open: a real download from the live app and one office user's check.
