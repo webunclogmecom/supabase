@@ -15,6 +15,12 @@
 -- silently. auth.uid() reads both forms. The server key never reaches this policy (it is for `authenticated` only),
 -- and anon upload paths (the collector form, through edge functions with the server key) are unaffected.
 -- While any app is not on, the policy changes nothing.
+-- 🛑 The check is wrapped in a sub-select ON PURPOSE (applied 2026-10-22 ~11:00 ET). Rehearsed first as a bare
+-- hr.fn_storage_open() call: Postgres ran it once PER FILE and counting the 33,146 'GT - Visits Images' objects hit the
+-- 8 s statement timeout, so every staff photo list would have failed. As (select hr.fn_storage_open()) it is evaluated
+-- once per statement: rehearsed (rolled back) as Fred, Diego, Serena, Aaron, Yannick and jon.v over the 7 buckets, staff
+-- counts identical to before the policy (1152 / 33146 / 4 / 4 / 89 / 92 / 14) at the same speed (~80 ms on the
+-- largest), jon.v 0 in every bucket. Never unwrap it.
 -- Undo: drop policy storage_access_gate on storage.objects;  (docs/runbooks/access-undo.md section 5)
 
 BEGIN;
@@ -35,7 +41,7 @@ revoke all on function hr.fn_storage_open() from public, anon;
 grant execute on function hr.fn_storage_open() to authenticated, service_role;
 
 create policy storage_access_gate on storage.objects as restrictive for all to authenticated
-  using (hr.fn_storage_open()) with check (hr.fn_storage_open());
+  using ((select hr.fn_storage_open())) with check ((select hr.fn_storage_open()));
 
 do $verify$
 declare n_fred int; n_jon int; v text;
