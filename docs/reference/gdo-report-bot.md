@@ -36,7 +36,14 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   monthly files, plus 7 daily ledger backups on the **same** volume.
 - **Deploys:** every push to `main` deploys, and there is no staging. Running now: deployment `789c211a` =
   **`7681388`** (the four fixes of section 9), live since 2026-10-20 12:54 ET. Before it, `87b24a2` (monthly-only,
-  its note said "push held until 2026-10-20") had been live since 2026-10-18 21:27 ET.
+  its note said "push held until 2026-10-20") had been live since 2026-10-18 21:27 ET. Railway's audit log shows that
+  deploy was triggered by Jonathan's account (read 2026-10-22).
+- **Keys rotated 2026-10-22 (Railway breach, `docs/audits/2026-10-22_railway_breach_rotation.md`):** `RPA_BOT_KEY`
+  (edge `RPA_BOT_KEYS` holds only the new one), `RUN_KEY`, `RUN_KEYS` (now `yan` and `diego`; Jonathan's key
+  removed), `SLACK_WEBHOOK_URL` (a new hook of the Slack app "GDO Online Report", #new-app-issues). Jonathan is no
+  longer a member of this Railway project (Fred: keep his GitHub write). **Not yet rotated:** `GDO_PASSWORD` (county
+  portal, the office changes it) and `FOG_IMAP_APP_PASSWORD` (the mailbox owner). The redeploys restarted the bot's
+  timers: the poll now runs about :27 each hour.
 - **One replica, one worker.** A second replica would break the double-filing guard silently.
 - **No Railway cron.** Three threads inside `server.py` sleep first, then run:
   - **poll:** hourly, timed from the last restart (since 2026-10-20 12:54 ET, about :54 each hour);

@@ -76,6 +76,10 @@ A new table that holds a secret must be revoked from this role and added to `EXC
    same password when it asks (it is hidden), and paste the `ALTER ROLE ...` line it prints into the Supabase SQL
    editor. (Measured 2026-10-06: Supabase masks the password of a logged `ALTER ROLE` statement, so a plain
    `ALTER ROLE ... PASSWORD '...'` does not leak it to the logs either; the verifier is the belt-and-braces habit.)
+   **Rotated 2026-10-22 (Railway breach):** a script generated the password, set the verifier through the
+   Management API right after the 14:17 ET copy and the same value on Railway, then redeployed; the 16:17 ET copy
+   reported `success`. Do a rotation between slots (HH:17 UTC, even hours). Record:
+   `docs/audits/2026-10-22_railway_breach_rotation.md`.
 7. Deploy. The first run starts at once (a daily copy). Tell the session; it checks the heartbeat and runs a
    restore drill. If you forget, the health email reports "never ran" after the next 13:30 UTC run.
 Troubleshooting: the service writes nothing to `sync_log` when it cannot sign in, so look at the pooler log

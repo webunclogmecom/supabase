@@ -43,6 +43,13 @@ a person (the Claude sessions do not type secrets), with `node services/timed-jo
 run from the `Supabase` folder (works in PowerShell; values go to the Railway CLI on stdin and are never printed).
 Give each service only the variables in its row.
 
+🛑 **Since 2026-10-22 (Railway breach rotation) Railway's `SUPABASE_SERVICE_ROLE_KEY` is NOT the legacy service-role
+JWT.** It is the Supabase secret key named "railway" (`sb_secret_`), kept in `Supabase/.env` as
+`SUPABASE_RAILWAY_SECRET_KEY`, so set it with
+`node services/timed-jobs/set-secrets.js <service> SUPABASE_SERVICE_ROLE_KEY=SUPABASE_RAILWAY_SECRET_KEY`.
+A plain `SUPABASE_SERVICE_ROLE_KEY` would copy the legacy key back. `SAMSARA_API_TOKEN` was replaced the same day.
+Record: `docs/audits/2026-10-22_railway_breach_rotation.md`.
+
 ## Rollback and fallback
 
 For 2 weeks after a cut-over the old GitHub workflow keeps its manual button (`workflow_dispatch`) with the

@@ -74,6 +74,10 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    ✅ Set up and proven 2026-10-16: Fred created the token (`supabase-samsara-watchdog`) and saved it in the vault; the
    check answered project UnclogMe Timed Jobs / production (HTTP 200), and a press at 10:12:16 ET was accepted
    (`deploymentInstanceExecutionCreate: true`) and started an extra samsara-readings run at 10:12:17 (success).
+   🛑 2026-10-22: Railway cancelled every project token after its breach, so the check read "Project Token not found"
+   from about 08:00 ET and no restart could be pressed. Replaced by `supabase-samsara-watchdog-2026-10-22` (Fred made
+   it after his 2FA prompt; the value went from his Copy click into the vault); the check answered HTTP 200 again.
+   The old row still shows in Railway and is dead. Record: `docs/audits/2026-10-22_railway_breach_rotation.md`.
    The GitHub fallback stays manual (dispatching it needs a GitHub token in the database).
 5. **The jobs that write once wait for complete data.** One answer, `public.fn_samsara_data_complete_through('gps' |
    'readings')`: 'infinity' while the feed is live (a good run in the last 20 min), else the start of the newest good

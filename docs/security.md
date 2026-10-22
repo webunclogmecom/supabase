@@ -23,7 +23,7 @@ Every secret the project uses, where it lives, and how to rotate.
 
 | Secret | Purpose | Stored in | Rotation |
 |---|---|---|---|
-| `SUPABASE_SERVICE_ROLE_KEY` | Full DB access for scripts + Edge Functions | `.env` (local) + Edge Function secrets (deploy) | Dashboard → Settings → API → Rotate service_role |
+| `SUPABASE_SERVICE_ROLE_KEY` | Full DB access for scripts + Edge Functions | `.env` (local) + Edge Function secrets (deploy) | 🛑 **Cannot be rotated** since the project moved to JWT signing keys: the legacy anon and service_role keys can only be DISABLED, both together (Settings, API Keys), after every consumer has moved to the publishable / secret keys (SECURITY-16). New consumers get their own secret key (`sb_secret_`, revocable alone): Railway's is "railway" since 2026-10-22 (`docs/audits/2026-10-22_railway_breach_rotation.md`) |
 | `SUPABASE_PAT` | Management plane (CLI, Edge Function deploy) | `.env` (local only) | https://supabase.com/dashboard/account/tokens — regenerate |
 | `JOBBER_CLIENT_ID` + `JOBBER_CLIENT_SECRET` | OAuth app identity | `.env` | Jobber Developer Center — regenerate OAuth app |
 | `JOBBER_ACCESS_TOKEN` + `JOBBER_REFRESH_TOKEN` | Jobber API auth (refreshed ~every 60 min) | `webhook_tokens` row `source_system='jobber'` | Run `node scripts/jobber_auth.js` → paste new tokens → UPDATE `webhook_tokens` |
@@ -64,11 +64,13 @@ Every secret the project uses, where it lives, and how to rotate.
 |---|---|---|
 | 2026-04-28 | `AIRTABLE_WEBHOOK_TOKEN` | Repo moving to public; previous value was hardcoded in `docs/airtable-automation-setup.md` and (briefly) in `scripts/sync/airtable_replay.js`. Old value is no longer accepted by `webhook-airtable`. |
 | 2026-07-29 | `SYNC_TRIGGER_KEY` / `x-sync-key` | **Retired, not reissued.** The value sat as a plaintext literal in `cron.job.command` for jobs 4/5/8, so it was unmasked in every query result, log line and session transcript touching the table, with both repos public. It reached a transcript, which is how it surfaced. Retiring beat rotating because the gate was also **fail-open**: `if (TRIGGER_KEY && header !== TRIGGER_KEY)` skipped auth entirely when the env var was empty, on three `verify_jwt=false` functions. Now: pg_cron calls `public.fn_request_jobber_sync(target)`, which reads a service_role key from Vault and sends it as a bearer; `verify_jwt=true` so the gateway verifies the signature; and each handler additionally requires `role=service_role` (the anon key is a public, valid JWT, so the gateway alone is not enough). Verified via `net._http_response`, never `cron.job_run_details`. Unauthenticated calls to all three now return 401. |
+| 2026-10-22 | Every Railway secret | Railway disclosed that customer environment variables were read and some decrypted (2026-10-21). Rotated: RPA_BOT_KEY, RUN_KEY, RUN_KEYS, PDF_SERVICE_API_KEY, the db_backup_reader password, SAMSARA_API_TOKEN, the GDO Slack bot's Anthropic key and both Slack tokens, the report bot's Slack webhook, the vault Railway project token; Railway moved off the legacy service-role JWT to its own secret key "railway" (except the PDF service). Not yet: the legacy keys themselves, GDO_PASSWORD, FOG_IMAP_APP_PASSWORD, GOOGLE_PLACES_API_KEY. Record: `docs/audits/2026-10-22_railway_breach_rotation.md`. |
 
 ### Routine (quarterly)
 
 Every 90 days, rotate:
-- `SUPABASE_SERVICE_ROLE_KEY` (Dashboard → Settings → API → Rotate)
+- The Supabase secret keys (`sb_secret_`, Settings, API Keys: create a new one, switch its consumers, delete the
+  old). The legacy `SUPABASE_SERVICE_ROLE_KEY` cannot be rotated, only disabled (see the inventory row above)
 - `SUPABASE_PAT` (https://supabase.com/dashboard/account/tokens)
 - `SAMSARA_API_TOKEN` (Samsara dashboard → API tokens)
 - `AIRTABLE_PAT` (https://airtable.com/create/tokens)
