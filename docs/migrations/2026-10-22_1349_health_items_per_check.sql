@@ -1,4 +1,4 @@
--- 2026-10-22_1415_health_items_per_check · health items per check for the two hourly data-check sources (water audit 2, M1/M2)
+-- 2026-10-22_1349_health_items_per_check · health items per check for the two hourly data-check sources (water audit 2, M1/M2)
 --
 -- Audit: Building Apps/Visit Calendar/docs/specs/2026-10-22-water-audit-since-oct-19.md section 4; Fred picked "Alarms".
 -- log_jobber_sync_health raised one item per SOURCE (sync_failed:<src>, sync_stuck:<src>), and the health email alerts
@@ -270,7 +270,7 @@ begin
        -- a weekly source reports through its own items; one 'attention' run is not a streak (2026-09-18)
        and c.sync_source not in ('jobber-client-state-sweep',
                                  'samsara-feed-health',   -- 2026-10-15_2230: a long outage is a legitimate 'attention' streak
-                                 'stop_facts_integrity', 'tank_feed_freshness')   -- 2026-10-22_1415_health_items_per_check: per check, below
+                                 'stop_facts_integrity', 'tank_feed_freshness')   -- 2026-10-22_1349_health_items_per_check: per check, below
   ),
   findings as (
     select jsonb_build_object(
@@ -281,7 +281,7 @@ begin
                        'reconcile anything, so whatever drifted during them is still drifted.') as item
       from agg a
      where a.runs_24h > 0 and a.fails_24h >= 2 and a.fails_24h::numeric >= 0.02 * a.runs_24h
-       and a.src not in ('stop_facts_integrity', 'tank_feed_freshness')   -- 2026-10-22_1415_health_items_per_check: per check, below
+       and a.src not in ('stop_facts_integrity', 'tank_feed_freshness')   -- 2026-10-22_1349_health_items_per_check: per check, below
     union all
     select jsonb_build_object(
              'kind',   'sync_stalled:' || a.src, 'issue', 'sync_stalled', 'source', a.src,
@@ -312,7 +312,7 @@ begin
                        'nobody sees, because sync_log has no dedup. Resolve the item or it repeats forever.')
       from stuck s
     union all
-    -- 2026-10-22_1415_health_items_per_check (water audit 2, M1/M2; Fred: "Alarms"): the two hourly data-check sources raise one item PER
+    -- 2026-10-22_1349_health_items_per_check (water audit 2, M1/M2; Fred: "Alarms"): the two hourly data-check sources raise one item PER
     -- CHECK CODE from their newest run, so one long-open check cannot mute a new one. Measured: T1 on visit 8854 kept
     -- sync_failed:stop_facts_integrity open from 10/20, so a new Z2 (a stop not measured) or Z4 (a bad link) would have
     -- raised no email; T5 (the deep pass request) kept tank_feed_freshness red since 10/14, so both sensors going silent

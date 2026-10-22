@@ -1,4 +1,4 @@
--- ROLLBACK of 2026-10-22_1415_health_items_per_check: put back the per-source items (copied from the live definition before).
+-- ROLLBACK of 2026-10-22_1349_health_items_per_check: put back the per-source items (copied from the live definition before).
 BEGIN;
 CREATE OR REPLACE FUNCTION public.log_jobber_sync_health()
  RETURNS integer
