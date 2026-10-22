@@ -64,7 +64,7 @@ const APPS = {
     args: { 'public.include_visits_in_review': "array[1468]::bigint[], 'live check'",
             'public.remove_visits_from_review': "array[1468]::bigint[], 'live check'" },
     // refusals by a permission switch, not by the app level: custom visit amounts need "Pay rates and bonus settings"
-    staffSwitchRefusals: { 'hr.set_visit_bonus': 'hr_pay' },
+    staffSwitchRefusals: { 'hr.set_visit_bonus': 'hr_pay', 'hr.set_shift_bonus': 'hr_pay' },
     // run as the owner, inside the same rolled-back step, just before that call (so the call has a row to change)
     pre: { 'public.remove_visits_from_review': "select public.include_visits_in_review(array[1468]::bigint[], 'live check setup')" },
   },
@@ -90,6 +90,8 @@ const APPS = {
     gateReaders: ['ops.calendar_hours_estimates', 'public.dump_site_status', 'ops.start_first_visit'],
     edgeAllow: {},
     revokes: [{ kind: 'column', obj: 'ops.calendar_day_markers', col: 'dump_visit_id', priv: 'UPDATE' }],
+    // the drawer asks for ONE visit's water (needs Calendar or Admin Review View); dummy args take the period branch (Admin Review only)
+    args: { 'public.get_water_visits': 'null, null, 8871' },
     extra: [{ name: 'trigger zones (lowest id)', sql: "update public.zones set color_hex = color_hex where id = (select min(id) from public.zones)" }],
   },
 };
