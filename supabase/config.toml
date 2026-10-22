@@ -893,6 +893,12 @@ verify_jwt = true
 [functions.gdo-permit-label]
 verify_jwt = true
 
+# intake-size-lookup: the AI lookup of a grease trap's gallons from the model or measurements typed on a site survey
+# form (2026-10-22, Trello 6t3RDVkE). Called by public.fn_request_size_lookup() with the vault service_role key; the
+# handler also requires role=service_role, which is only trustworthy behind verify_jwt.
+[functions.intake-size-lookup]
+verify_jwt = true
+
 # stamp-sheets-reminder: daily 11 AM Eastern (10 AM until 2026-10-07) Slack post of the Stamp Studio sheets not completed
 # (2026-10-05). Called by pg_cron (fn_request_stamp_sheets_reminder) with the vault service_role key;
 # the handler also requires role=service_role, which is only trustworthy behind verify_jwt.
