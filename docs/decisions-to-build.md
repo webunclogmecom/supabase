@@ -46,8 +46,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   minute for Oct 5 to 25: Michael and Grecia clock in a shift and match the shift forms and visits (exception: Michael Mon Oct 12
   22:00 to 07:06, 9h 6m, no visit, form or truck behind it); Mark never clocks in, only visit timers, one left running 51h 38m
   (Fri Oct 9, counted in Jobber's own week total); Anthony no entries since August; no entry approved in Jobber since about September;
-  a running entry has no duration until clocked out. Open: how Mark's hours count, and whether only approved entries are paid.
+  a running entry has no duration until clocked out.
   Rates already live in the HR App (hourly, visit bonus, shift bonus per person).
+- 2026-10-22, Fred's picks: Mark (no clock-in) falls back to his shift forms ("Fall back to his shift forms"); count every entry and
+  show Approved / Not approved; flag mismatches (no work behind a shift, high hours, still clocked in, half a shift). Plan:
+  `Building Apps/HR App/docs/specs/2026-10-22-hours-worked-from-jobber-timesheet.md` (6 steps). NOT BUILT.
 
 **HR App redesign** (plan: Building Apps/HR App/docs/specs/2026-10-19-hr-app-redesign-plan.md; Fred 2026-10-19: "go with the real data, and go as recommended")
 - Release 1, the pay and bonus history: 20 per page in a box that scrolls on a laptop; the full white "Open in Admin Review" button on every row; Excel with write-excel-file 4.1.1; office may export (bonus rows only), plus a "By payroll week" sheet; a late take-back stays in the week of the work, with a health email and an "after that week ended" tag; opens on All time and keeps the period from person to person; mockups with real data. History fields migration BUILT (`2026-10-19_0215`, 31a9302). Mockup approved by Fred 2026-10-19 ("go ahead": https://claude.ai/artifact/2EaHeFnE75eQ1DXK7kGs64). Release 1 BUILT and live 2026-10-19 (theme pass + PayHistory + Excel export; Building Apps HR App changelog 2026-10-19 (b)). Open: a real download from the live app and one office user's check.
