@@ -59,6 +59,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 // whose city email is not sent, Hallandale Beach and Surfside together "and just call it Broward"; drop the summary
 // line (the photos line at the bottom already says it). Visits with photos not sorted (or none) stay out of the list:
 // the photos line counts them. No @-mention on a [TEST] post (it would ping them).
+// Fred, 2026-10-22 (Trello mR4Oy8X7): the header drops "photos sorted" (every listed visit is sorted anyway):
+// "Broward: city email not sent yet (N):". The phone line (buildSummary) keeps its wording (Fred, 2026-10-23).
 const TAGS = "<@U0AL9JZ4V7C> <@U0BKM57UPSS>"; // Diego, Serena
 const GROUP = "Broward";
 const sorted = (v: CityVisit) => v.photos_total > 0 && v.photos_sorted >= v.photos_total;
@@ -75,7 +77,7 @@ function buildMessage(ready: CityVisit[], p: Pending, test = false): string {
   const lead = test ? "[TEST] " : `${TAGS} `;
   const out: string[] = [];
   if (ready.length) {
-    out.push(`🏙 ${lead}*${GROUP}: photos sorted, city email not sent yet (${ready.length}):*`);
+    out.push(`🏙 ${lead}*${GROUP}: city email not sent yet (${ready.length}):*`);
     for (const v of ready.slice(0, MAX_LINES)) {
       const who = `${(v.client_code ?? "").trim()} ${(v.client_name ?? "").trim()}`.trim();
       out.push(`• <${ADMIN}/review/${v.visit_id}|${esc(who)}> · ${day(v.visit_date)} · ${esc(v.driver ?? "driver not recorded")}`);

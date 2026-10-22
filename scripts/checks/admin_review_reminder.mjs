@@ -81,7 +81,7 @@ assert.ok(p0.text.startsWith('📸 Admin Review: 2 visits with photos sorted sti
 assert.ok(p0.text.endsWith(body(p0)), 'text carries the whole list (Viktor reads only text)');
 const b = body(p0);
 assert.strictEqual(b, [
-  '🏙 <@U0AL9JZ4V7C> <@U0BKM57UPSS> *Broward: photos sorted, city email not sent yet (2):*',
+  '🏙 <@U0AL9JZ4V7C> <@U0BKM57UPSS> *Broward: city email not sent yet (2):*',
   '• <https://admin.unclogme.app/review/6275|103-BWC Barrel Wine &amp; Cheese> · Sep 15 · Michael Escobar',
   '• <https://admin.unclogme.app/review/8133|306-16 16 Handles> · Sep 18 · Michael Escobar',
   '',
@@ -121,7 +121,7 @@ const many = await run({ city: Array.from({ length: 45 }, (_, i) => v(1000 + i, 
 const mb = body(many.posts[0]);
 assert.strictEqual((mb.match(/^• /gm) || []).length, 40);
 assert.ok(mb.includes('…and 5 more in <https://admin.unclogme.app|Admin Review>.'));
-assert.ok(mb.includes('*Broward: photos sorted, city email not sent yet (45):*'));
+assert.ok(mb.includes('*Broward: city email not sent yet (45):*'));
 for (const blk of many.posts[0].blocks) if (blk.type === 'section') assert.ok(blk.text.text.length <= 3000);
 
 // dry run: the text, no post; test: [TEST] on both lines and nobody tagged
