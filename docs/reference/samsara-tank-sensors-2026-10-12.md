@@ -601,6 +601,13 @@ Moises pumped 241-WYN at 03:22 (stop 944, +752.9 gal) and again at 21:14 (stop 9
 (was 418.5), and 6969 (2026-10-23) reads 1,171 (its frozen row 3094 was superseded). The only other link added was 6347 <-
 stop 935 (148-MOR), which stays low confidence (`tank_at_ceiling`). 0 links retired.
 
+**A chain does not take a nearer unanchored visit's stop (linker algorithm 4, `docs/migrations/2026-10-21_2300_link_chain_nearer_unanchored.sql`,
+water audit A1).** Visit 6243 (089-COW, Mark, Oct 18) was tapped complete just after the truck left 249-LOU's stop 1827,
+so it had no completion anchor, and 7860's chain walked back onto stop 1826 (13 m from 089-COW, 134 m from 249-LOU). The
+chain now skips a stop that is nearer another completed volume visit with no anchor whose window holds it; that visit
+takes it by window. 6243 reads 431 / 608 / 608, pumped 178, grease about 103; 7860 its own stop, 608 / 806 / 515, pumped
+198, returned 291, grease about 450. Mark's October count 7 -> 8, his gallon totals unchanged.
+
 **The sensor wins (`docs/migrations/2026-10-21_0545_sensor_wins_over_trap_size.sql`).** `v_visit_tank_service` no longer
 judges a reading by the trap size on file:
 - `exceeds_trap_size` is gone as a reason; such a reading goes on to the sensor checks (too short, tank at ceiling, pumped
@@ -636,17 +643,22 @@ default truck moves the effective truck with no visit write. First run: 4 rows (
 3927 May 6), truck corrected, gallons unchanged (no reading existed then); 1311 and 6989 (David <-> Cloggy) kept.
 
 **The water per Moises visit reaches two apps (2026-10-21, Trello dGJ5aFrh; `docs/migrations/2026-10-21_2045_water_visits_read.sql`,
-`_2100_water_visits_tank_capacity.sql`, `_2120_water_visits_counts_in_totals.sql`).** `public.get_water_visits(p_from,
+`_2100_water_visits_tank_capacity.sql`, `_2120_water_visits_counts_in_totals.sql`, `_2130_water_visits_shared_stop_split.sql`,
+`_2310_water_sentences.sql`).** `public.get_water_visits(p_from,
 p_to, p_visit_id)` is the only app read of `v_visit_water_balance`: SECURITY DEFINER, authenticated + service_role,
 revoked by name from PUBLIC and anon. Rows only for pumping visits with all five water figures; whole gallons.
 `several_fills` = pumped > highest minus arrived + 10 gal (9 visits Oct 1-21; it also fires on one fill preceded by a push-back,
-6619, see the audit); `counts_in_totals` is true on
+6619, see the audit; the apps word it "the water level went up and down more than once"); `levels_span_other_stop`
+(`_2310`) = the truck parked somewhere else between the visit's own stops and arrived + pumped - returned is not left
+(Oct 1-21: 6218 082-TFC, 182-PAL in between; 5922 015-FLA, a dump trip in between); `no_water_separated` needs highest
+minus arrived under 25 gal too since `_2310` (5918 and 6608 had risen 48 and 57 gal); `counts_in_totals` is true on
 every row since `2026-10-21_2130` (on a shared stop pumped / returned are already each visit's equal share, `water_share`,
 and grease kept its trap-size share, `sludge_share`; `2120` had kept one half and undercounted);
 `water_tank_capacity_gallons` = the fresh_water configuration in force that day (1,200, owner_confirmed). Every row is
 still `water_confidence = 'low'` (`unvalidated`): no reading checked against a measured fill. Readers: the Visit
 Calendar drawer (Calendar CLAUDE.md rule 19) and the Admin Review visit card and Water by driver page. October to the
-21st: Michael Escobar 52 visits, 20,032 gal pumped / 17,203 returned; Mark 7, 1,558 / 1,677 (the driver page, rows summed).
+21st: Michael Escobar 52 visits, 20,032 gal pumped / 17,203 returned; Mark 8 (7 before `2026-10-21_2300` gave 6243 its
+own stop), 1,558 / 1,677 (the driver page, rows summed).
 Seven visits recomputed from the raw readings with the same zig-zag rule (60 gal threshold) all match to within 1 gal (Highest, Pumped and Returned recomputed; Arrived and Left are the stored edges). Full logic
 audit: `Building Apps/Visit Calendar/docs/specs/2026-10-21-water-logic-audit.md`:
 https://claude.ai/artifact/7QCYyFSqQrzg9mECKoRv2w (the check for Yan).

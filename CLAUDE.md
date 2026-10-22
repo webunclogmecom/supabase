@@ -5484,9 +5484,12 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 - 🛑 **Everything is service_role only. No app reads these objects** (Fred: DB first); two app-facing reads derive from
   them, each through its own SECDEF RPC: the Calendar's Grease pumped tile (see the bullet after Health) and, since
   2026-10-21, the water per Moises visit (`public.get_water_visits(p_from, p_to, p_visit_id)`, `2026-10-21_2045`,
-  `_2100`, `_2120`; Trello dGJ5aFrh). One visit needs View in the Calendar or Admin Review; a period (at most 93 days)
+  `_2100`, `_2120`, `_2130`, `_2310`; Trello dGJ5aFrh). One visit needs View in the Calendar or Admin Review; a period (at most 93 days)
   View in Admin Review. It returns whole gallons from `v_visit_water_balance` (pumped = every rise, returned = every
-  fall), `several_fills`, `water_tank_capacity_gallons` and `counts_in_totals` (true on every row since `2026-10-21_2130`:
+  fall), `several_fills` (the level went up and down more than once), `levels_span_other_stop` (`_2310`: the truck
+  parked somewhere else between the visit's own stops AND the levels do not add up, so arrived / left include water
+  that moved there), `no_water_separated` (refilled under 25 gal AND, since `_2310`, highest minus arrived under 25),
+  `water_tank_capacity_gallons` and `counts_in_totals` (true on every row since `2026-10-21_2130`:
   on a shared truck stop pumped and returned are already each visit's equal share and grease kept its trap-size share,
   while arrived / highest / left are the whole stop's levels; `2120` had kept one half and undercounted the driver totals); grease kept only for
   high / medium confidence. Checked against the raw readings for Yan: https://claude.ai/artifact/7QCYyFSqQrzg9mECKoRv2w. Full logic audit (what
@@ -5625,6 +5628,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   fill; Viktor relinks under the hourly refresh's lock. Z4 allows 250 m for completion links. 6509 reads 34 min.
   🛑 The linker reconciles the WHOLE era every hour, so any change to its rule rewrites old links (and tank volumes):
   dry-run it first (`fn_link_visit_vehicle_stops(false)->'changes'` lists every add and retire).
+  **Algorithm 4 (`2026-10-21_2300`, water audit A1)**: the chain walk-back (step ch) never takes a stop that sits
+  within `p_radius_m` of another completed volume visit with no completion anchor of its own, whose property is nearer
+  than the chain's and whose window holds the stop; that visit takes it in step w (window). The one case since Oct 2:
+  6243 (089-COW, tapped after the truck left) gets stop 1826 (13 m away) back from 7860 (249-LOU, 134 m away); time on
+  site for 7860 no longer includes 1826. Dry run before applying: exactly one retire and one add.
   **Step 4 shipped (`2026-10-13_2320`)**: 12 blanks from before the stop table filled from `fn_gps_stays` at the
   completion, each confirmed by Samsara's trip gap (`/v1/fleet/trips`) within 5 min at both ends, labelled
   `time-on-site-backfill`; 6 drive-bys marked `reviewed_blank`, which `fn_time_on_site_gaps` (the 11 AM alert, the
