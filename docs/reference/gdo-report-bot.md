@@ -43,7 +43,12 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   removed), `SLACK_WEBHOOK_URL` (a new hook of the Slack app "GDO Online Report", #new-app-issues). Jonathan is no
   longer a member of this Railway project (Fred: keep his GitHub write). **Not yet rotated:** `GDO_PASSWORD` (county
   portal, the office changes it) and `FOG_IMAP_APP_PASSWORD` (the mailbox owner). The redeploys restarted the bot's
-  timers: the poll now runs about :27 each hour.
+  timers: the poll now runs about :27 each hour. The new webhook's first real use is the 2026-10-23 08:00 ET digest
+  (bot log "Daily Slack digest sent", or the post in #new-app-issues).
+  ⚠ The verification found the OLD `RPA_BOT_KEY` used from OUTSIDE Railway before the breach: 22
+  `rpa-derm-queue?mode=dryrun` calls on 2026-10-18 and 2026-10-20 with the bot's own HTTP client, most likely a local
+  copy of this bot (inferred, not verified). Such a copy also needs the two passwords above, which is one more reason
+  to rotate them. The old key now answers 401.
 - **One replica, one worker.** A second replica would break the double-filing guard silently.
 - **No Railway cron.** Three threads inside `server.py` sleep first, then run:
   - **poll:** hourly, timed from the last restart (since 2026-10-20 12:54 ET, about :54 each hour);

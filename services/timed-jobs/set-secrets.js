@@ -11,6 +11,9 @@ if (!svc || !keys.length) { console.error('usage: node services/timed-jobs/set-s
 const lines = fs.readFileSync(path.join(__dirname, '..', '..', '.env'), 'utf8').split(/\r?\n/);
 for (const arg of keys) {
   const [k, src = k] = arg.split('=');
+  if (k === 'SUPABASE_SERVICE_ROLE_KEY' && src === k) {   // the .env line of that name is the LEGACY JWT, leaked 2026-10-21
+    console.log('SUPABASE_SERVICE_ROLE_KEY: refused; use SUPABASE_SERVICE_ROLE_KEY=SUPABASE_RAILWAY_SECRET_KEY'); continue;
+  }
   const line = lines.find(l => l.startsWith(src + '='));
   const v = line && line.slice(src.length + 1).trim();
   if (!v) { console.log(`${src}: not found in .env, skipped`); continue; }

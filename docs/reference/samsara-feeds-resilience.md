@@ -75,9 +75,16 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    check answered project UnclogMe Timed Jobs / production (HTTP 200), and a press at 10:12:16 ET was accepted
    (`deploymentInstanceExecutionCreate: true`) and started an extra samsara-readings run at 10:12:17 (success).
    🛑 2026-10-22: Railway cancelled every project token after its breach, so the check read "Project Token not found"
-   from about 08:00 ET and no restart could be pressed. Replaced by `supabase-samsara-watchdog-2026-10-22` (Fred made
-   it after his 2FA prompt; the value went from his Copy click into the vault); the check answered HTTP 200 again.
+   from 2026-10-21 (between 01:03 and 07:13 ET) and no restart could be pressed. Replaced by
+   `supabase-samsara-watchdog-2026-10-22` (Fred made it after his 2FA prompt; the value went from his Copy click into
+   the vault); the check answered HTTP 200 again at 17:24 ET on 2026-10-22, so the token was dead at least 34 hours.
    The old row still shows in Railway and is dead. Record: `docs/audits/2026-10-22_railway_breach_rotation.md`.
+   🛑 **And `restart_token_invalid` never fired in those 34 hours.** Railway answers a dead token with HTTP 200 and
+   `{"errors":[...],"data":null}`, so `status = 200 AND projectId = '<Timed Jobs>'` came out NULL, not false, and the
+   item fires only on false. Fixed by `2026-10-22_1855_samsara_watchdog_dead_token_item.sql`: an ANSWER that is not a
+   clean match is a refusal (false); no answer at all (timeout, network error) stays unknown and is checked again
+   within the hour. Its VERIFY replays the real dead answer (36587) and a real good one (36742) against the new body
+   and the old one, which must stay silent.
    The GitHub fallback stays manual (dispatching it needs a GitHub token in the database).
 5. **The jobs that write once wait for complete data.** One answer, `public.fn_samsara_data_complete_through('gps' |
    'readings')`: 'infinity' while the feed is live (a good run in the last 20 min), else the start of the newest good
