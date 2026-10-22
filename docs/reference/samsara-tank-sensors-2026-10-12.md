@@ -634,3 +634,14 @@ visit's effective truck today sit on different sides of the separating line, the
 (`sync_log.details.truck_corrected`). In the freezer rather than a trigger on `visits.vehicle_id`, because a changed job
 default truck moves the effective truck with no visit write. First run: 4 rows (1350 Feb 4, 1467 Mar 9, 1600 Apr 9,
 3927 May 6), truck corrected, gallons unchanged (no reading existed then); 1311 and 6989 (David <-> Cloggy) kept.
+
+**The water per Moises visit reaches two apps (2026-10-22, Trello dGJ5aFrh; `docs/migrations/2026-10-21_2045_water_visits_read.sql`,
+`_2100_water_visits_tank_capacity.sql`, `_2120_water_visits_counts_in_totals.sql`).** `public.get_water_visits(p_from,
+p_to, p_visit_id)` is the only app read of `v_visit_water_balance`: SECURITY DEFINER, authenticated + service_role,
+revoked by name from PUBLIC and anon. Rows only for pumping visits with all five water figures; whole gallons.
+`several_fills` = pumped > highest minus arrived + 10 gal (13 visits on 2026-10-22); `counts_in_totals` false on the
+higher visit id of a truck stop two visits share (215-G7 6523, 025-GRO 6582), so per-driver totals count the stop once;
+`water_tank_capacity_gallons` = the fresh_water configuration in force that day (1,200, owner_confirmed). Every row is
+still `water_confidence = 'low'` (`unvalidated`): no reading checked against a measured fill. Readers: the Visit
+Calendar drawer (Calendar CLAUDE.md rule 19) and the Admin Review visit card and Water by driver page. October to the
+21st: Michael Escobar 52 visits, 20,028 gal pumped / 17,200 returned; Mark 7, 1,558 / 1,676.

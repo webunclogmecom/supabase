@@ -5481,8 +5481,13 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 | derived | `vehicle_stops`, `vehicle_stop_tank_levels`, `visit_vehicle_stops` (retired links are soft-deleted, `deleted_at`) | `public.fn_refresh_stop_facts()` (pg_cron `vehicle-stop-facts`, :35 hourly) |
 | read | `v_tank_levels`, `v_vehicle_stop_facts`, `v_vehicle_stop_tank_changes`, `v_visit_tank_service`, `v_vehicle_dumps`, `v_tank_data_quality_issues`, `v_vehicle_site_addresses`, `v_visit_water_balance`, `v_vehicle_water_ledger` | views (`2026-10-12_2300`, the water two `2026-10-15_1950`), service_role only |
 
-- 🛑 **Everything is service_role only. No app reads these objects** (Fred: DB first); the one app-facing number
-  derived from them is the Calendar's Grease pumped tile, through its own RPC (see the bullet after Health). Exposing them is plan step M9, after
+- 🛑 **Everything is service_role only. No app reads these objects** (Fred: DB first); two app-facing reads derive from
+  them, each through its own SECDEF RPC: the Calendar's Grease pumped tile (see the bullet after Health) and, since
+  2026-10-22, the water per Moises visit (`public.get_water_visits(p_from, p_to, p_visit_id)`, `2026-10-21_2045`,
+  `_2100`, `_2120`; Trello dGJ5aFrh). One visit needs View in the Calendar or Admin Review; a period (at most 93 days)
+  View in Admin Review. It returns whole gallons from `v_visit_water_balance` (pumped = every rise, returned = every
+  fall), `several_fills`, `water_tank_capacity_gallons` and `counts_in_totals` (a shared truck stop counts once, lower
+  visit id); grease kept only for high / medium confidence. The apps never compute a water figure. Exposing them is plan step M9, after
   mockups of the real page. Nothing in `derm`, `customer` or `client` may read these (check Z8, hourly); measured
   gallons are NOT for LWT or DERM filings (owner decision D8 default) without the month-close snapshot of plan M12.
 - 🛑 **A new level value arrives only about every 10 minutes**; rows every ~30 s repeat it. **Ingress/egress are hourly
