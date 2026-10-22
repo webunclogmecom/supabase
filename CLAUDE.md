@@ -5496,7 +5496,12 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 - 🛑 **Everything is service_role only. No app reads these objects** (Fred: DB first); two app-facing reads derive from
   them, each through its own SECDEF RPC: the Calendar's Grease pumped tile (see the bullet after Health) and, since
   2026-10-21, the water per Moises visit (`public.get_water_visits(p_from, p_to, p_visit_id)`, `2026-10-21_2045`,
-  `_2100`, `_2120`, `_2130`, `_2310`; Trello dGJ5aFrh). One visit needs View in the Calendar or Admin Review; a period (at most 93 days)
+  `_2100`, `_2120`, `_2130`, `_2310`, `2026-10-22_1352`; Trello dGJ5aFrh). Since `_1352` it also returns a Moises visit
+  that is NOT a pumping when it moved water (6623, 047-PAM Cleaning: 314 in, 506 back; grease kept empty), with a new
+  last column `service_type`, and `no_water_separated` on a shared stop tests the stop's grease, not the visit's share.
+  A figure appears 3 to 4 h after the truck leaves (a stop is measured 3 h after departure, on the next :35 run) and
+  can still be corrected for 35 days when a late Samsara reading arrives (the hourly measuring re-decides every stop
+  of the last 35 days; usually the 17:30 ET deep pass). One visit needs View in the Calendar or Admin Review; a period (at most 93 days)
   View in Admin Review. It returns whole gallons from `v_visit_water_balance` (pumped = every rise, returned = every
   fall), `several_fills` (the level went up and down more than once), `levels_span_other_stop` (`_2310`: the truck
   parked somewhere else between the visit's own stops AND the levels do not add up, so arrived / left include water
@@ -5645,6 +5650,14 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   than the chain's and whose window holds the stop; that visit takes it in step w (window). The one case since Oct 2:
   6243 (089-COW, tapped after the truck left) gets stop 1826 (13 m away) back from 7860 (249-LOU, 134 m away); time on
   site for 7860 no longer includes 1826. Dry run before applying: exactly one retire and one add.
+  **Algorithm 5 (`2026-10-22_1345`, water audit 2 W1/W2)**: (1) an EARLY tap (the job marked done up to 30 min before
+  the truck reached the client, from the previous stop) takes, in step w, the first stop the truck reached after the
+  tap within 150 m of the property, even when it is another visit's completion anchor (never another visit's chain
+  stop); the stop is then shared (6096 061-TCE on 001-VIN's stop 1858). (2) A visit tapped after its truck's last
+  BUILT stop, with no built stop holding the tap, WAITS up to 3 h (no late-tap, no window link): the hourly build
+  stops 30 min before the run and never emits a stay in progress, so it used to borrow an older stop at the same
+  place for an hour (8860 carried the previous night's 089-COW water on Oct 20). Dump visits keep their rules. Time on
+  site reads completion links only (`v_visit_stop_reference`), so neither change moves a time.
   **Step 4 shipped (`2026-10-13_2320`)**: 12 blanks from before the stop table filled from `fn_gps_stays` at the
   completion, each confirmed by Samsara's trip gap (`/v1/fleet/trips`) within 5 min at both ends, labelled
   `time-on-site-backfill`; 6 drive-bys marked `reviewed_blank`, which `fn_time_on_site_gaps` (the 11 AM alert, the
@@ -5701,7 +5714,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
     Q3 (errands) was not chosen. The NIGHTLY writers still use the old rules for visits from 10-08 on: that is the
     capture plan (`docs/decisions-to-build.md`, visit duration).
 - **Health:** `log_jobber_sync_health` watches `railway_samsara_readings` (30 min) and the four stop-facts sources
-  (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts.
+  (2 h); `fn_stop_facts_checks()` returns integrity Z1 to Z9 (must be 0) and flag counts. Since `2026-10-22_1349`
+  `stop_facts_integrity` and `tank_feed_freshness` raise one health item PER CHECK CODE from their newest run
+  (`check_failed:<source>:<code>`, the code's meaning in words, the visits from T_detail), not one per source: one
+  long-open check (T1 on 8854, the feed=true request T5) muted every new one. `sync_stalled` stays per source.
+  (The live function body names the migration `2026-10-22_1415`; the file was renamed to the ET time it ran.)
 - 🛑 **BOTH SAMSARA FEEDS (GPS + readings) HAVE A WATCHDOG, FALLBACK RUNNERS AND GUARDS (`2026-10-15_2230`; Fred: "a
   fallback or restart system for this cases, because we also use this data").** Read
   [docs/reference/samsara-feeds-resilience.md](docs/reference/samsara-feeds-resilience.md) before touching either

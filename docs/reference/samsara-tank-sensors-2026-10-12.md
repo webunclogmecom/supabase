@@ -608,6 +608,13 @@ chain now skips a stop that is nearer another completed volume visit with no anc
 takes it by window. 6243 reads 431 / 608 / 608, pumped 178, grease about 103; 7860 its own stop, 608 / 806 / 515, pumped
 198, returned 291, grease about 450. Mark's October count 7 -> 8, his gallon totals unchanged.
 
+**An early tap shares the stop the truck reached; a visit tapped before its stop is built waits (linker algorithm 5,
+`docs/migrations/2026-10-22_1345_link_early_tap_and_wait.sql`, water audit 2 W1/W2).** 6096 (061-TCE, Oct 21) was
+marked done 12 min before the truck reached it (from 324-BIB's stop, 3.2 km away); its stop 1858 was 001-VIN's completion
+stop, so it had no link and no water row. It now shares 1858 (water flat at 315). And a visit tapped while its truck is
+still parked no longer borrows an older stop for an hour (the build is 30 min behind and never emits a stay in
+progress): it waits up to 3 h for its own stop. Audit: `Building Apps/Visit Calendar/docs/specs/2026-10-22-water-audit-since-oct-19.md`.
+
 **The sensor wins (`docs/migrations/2026-10-21_0545_sensor_wins_over_trap_size.sql`).** `v_visit_tank_service` no longer
 judges a reading by the trap size on file:
 - `exceeds_trap_size` is gone as a reason; such a reading goes on to the sensor checks (too short, tank at ceiling, pumped
@@ -658,7 +665,10 @@ and grease kept its trap-size share, `sludge_share`; `2120` had kept one half an
 still `water_confidence = 'low'` (`unvalidated`): no reading checked against a measured fill. Readers: the Visit
 Calendar drawer (Calendar CLAUDE.md rule 19) and the Admin Review visit card and Water by driver page. October to the
 21st: Michael Escobar 52 visits, 20,032 gal pumped / 17,203 returned; Mark 8 (7 before `2026-10-21_2300` gave 6243 its
-own stop), 1,558 / 1,677 (the driver page, rows summed).
+own stop), 1,558 / 1,677 (the driver page, rows summed). Read again 2026-10-22 14:00 ET after the Oct 21 route was
+measured and `2026-10-22_1345` / `_1352`: Michael 59, 23,033 / 20,108; Mark 8, 1,558 / 1,677. Since `_1352` a Moises
+visit that is not a pumping but moved water has a row (`service_type`; 6623 only so far) and `no_water_separated` on a
+shared stop tests the stop's grease (8127, 8871).
 Seven visits recomputed from the raw readings with the same zig-zag rule (60 gal threshold) all match to within 1 gal (Highest, Pumped and Returned recomputed; Arrived and Left are the stored edges). Full logic
 audit: `Building Apps/Visit Calendar/docs/specs/2026-10-21-water-logic-audit.md`:
 https://claude.ai/artifact/7QCYyFSqQrzg9mECKoRv2w (the check for Yan).

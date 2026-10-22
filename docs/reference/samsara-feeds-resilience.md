@@ -112,11 +112,15 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
 
 - A readings row Samsara publishes more than 48 h late is never fetched (deep pass is 48 h, once a day). Observed max
   lateness 28 h.
-- A tank level measured before a late reading arrived inside its window is not re-measured (33 such levels found on
-  2026-10-15; the v3 re-measure happened to rebuild them).
-- `tank_feed_freshness` (hourly) stays red on check T5 (late rows recovered by the deep pass, which is normal), so a new
-  T1/T2/T4 condition on that source raises no new email: a dead tank sensor while the readings job stays green is not
-  emailed. The watchdog covers failed or missing runs only.
+- ~~A tank level measured before a late reading arrived inside its window is not re-measured~~ WRONG, corrected
+  2026-10-22 (water audit 2): it never matched the code. `fn_measure_vehicle_stop_tank_levels` re-decides every stop
+  that arrived in the last 35 days on every hourly run (condition (a)) and replaces a level when any field differs, so
+  a late reading recovered by the daily deep pass (17:15 to 17:35 ET) corrects a figure already shown. A water or grease
+  figure is therefore provisional for 35 days. Nothing has moved since 2026-10-16 15:09 ET.
+- ~~`tank_feed_freshness` (hourly) stays red on check T5 ... a dead tank sensor ... is not emailed.~~ FIXED
+  `2026-10-22_1349`: the health items of `tank_feed_freshness` and `stop_facts_integrity` are keyed per check code
+  (`check_failed:tank_feed_freshness:T1` is its own item), so T5 staying open no longer mutes T1/T2/T4. T5 itself stays
+  open until the collector is switched to feed=true.
 - A 30-day acknowledgement (`fn_health_ack`) of a `feed_stale` item also silences the next outage of the same feed in
   those 30 days (the shared scan keeps the acknowledgement when an item comes back). Do not acknowledge these items.
 - If the nightly truck run has not seen live GPS for 7 days, the freeze falls back to freezing the day before
