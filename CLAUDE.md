@@ -5565,6 +5565,18 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `2026-10-16_rollback_water_views_moved_to_sludge_labels.sql` FIRST (the v3 rollback's md5 guard refuses while the
   renamed columns are live), and the CREATE text of the two water views in `2026-10-15_1950` no longer replays: take
   `pg_get_viewdef` as the source.
+- 🛑 **Since `2026-10-22_1432` (algorithm v7, `c_version` 7; 6 is the v5 rollback's, 8 the v7 rollback's, so the next
+  change uses 9+), FALSE-FULL SLUDGE READINGS ARE JUDGED OVER THE WHOLE STREAM, AND THE CARRIED-IN LEVEL MUST BE READ
+  STANDING STILL** (water audit 2, Fred: "Grease readings at the edges"). Step 3b+: a run of 0.11 m or less is false
+  when the level "rose" to it with no client or yard stop in between, or "fell" from it with no dump or yard stop in
+  between; it joins the ghost intervals (code 3); an empty neighbour gives no verdict. Step 5c takes the carried-in
+  level only from a reading that passes 5b's GPS stillness test. Step 7c: a dump or yard stop whose departure fell back
+  to a false full takes the first accepted reading before the next stop. 15 sludge rows changed, exactly the set a full
+  replay of v5 (632/632 rows reproduced) predicted; no water row moved. 6139 grease -3,561 (hidden) -> 214, 6564 68 ->
+  182 for the stop (175 its share), 6347 (148-MOR) low -> 3,765 (two trips; the Calendar estimate for 6348 on Oct 29 is
+  no longer unknown), dump 1841 offload -380 -> 3,394. Known limits are listed in the 3b+ comment (Oct 1 false fulls
+  at 0.16 / 0.19 m, the Aug 25 setup-day readings, a false low at the end of a client stop). Rollback:
+  `2026-10-22_rollback_tank_levels_v7.sql` (v5 as version 8, rehearsed).
 - 🛑 **Since `2026-10-16_1510` (algorithm v5, `c_version` 5; 4 is the v3 rollback's), SLUDGE CANNOT DROP BEFORE A
   CLIENT'S PUMPING.** Sludge only leaves Moises at a dump or the yard (Fred / Yan 2026-10-16). Step 5c: on a client stop,
   the level carried in is the last accepted sludge measurement before arrival (within 3 h, after the last dump or yard

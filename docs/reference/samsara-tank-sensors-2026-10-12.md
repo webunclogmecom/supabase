@@ -580,7 +580,14 @@ The Calendar's Grease pumped reads only high and medium visits between 40 and 3,
 figures above reach it. 6008 did (it was `ok` / high), which is what this fix was for.
 
 **Known limits.** A false HIGH arrival (a ghost above the real level) is not caught and under-reads the visit. Near a
-full tank (0.11 m or less) the sensor cannot tell a real full from a false one.
+full tank (0.11 m or less) the sensor cannot tell a real full from a false one. **Partly closed by v7
+(`2026-10-22_1432`)**: a 0.11 m-or-less run is now judged by the sequence around it (a rise with no client or yard stop
+in between, or a fall with no dump or yard stop in between, is impossible, so it is a false full), and the carried-in
+level of 5c must be read standing still (GPS). Cases: 6139 (067-TCE, Oct 19, after the dump 1841 alternation) -3,561
+-> 214; 6564 (001-VIN, Oct 21, a road reading as the carried-in level) 68 -> 182 for the stop; 6347 (148-MOR, Aug 31)
+-> 3,765; dump 1841 -380 -> 3,394. Designed on a full replay of v5 (632/632 rows reproduced), three candidate rules
+judged on every stop since Aug 20; the DB rehearsal matched the replay exactly (15 sludge rows, no water row). Still
+open: false fulls read at 0.16 / 0.19 m (Oct 1), the Aug 25 setup day, a false LOW at the end of a client stop (1012).
 
 **Snapshot 2026-10-21 (the numbers above are dated 2026-10-16 and stay as they were).** Moises visits with a sludge
 figure: 199 (130 high, 20 medium, 49 low). Trusted readings used by the Calendar averages (high or medium, 40 to
