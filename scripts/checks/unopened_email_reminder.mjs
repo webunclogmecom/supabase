@@ -113,11 +113,15 @@ assert.strictEqual(real.logs[0].details.emails.length, 5);
 assert.strictEqual(real.logs[0].details.day, 'Wed');
 ok('one success run record with every listed email');
 
-// 2. only unopened: Diego moves to the unopened line; singular wording
+// 2. only unopened city emails (Fred, 2026-10-22, Trello 5RpYsa98: 12 real city deliveries, 0 opens ever recorded, so
+//    the list is a call list and says so): Diego moves to the unopened line; singular and plural wording
 const one = await run({ emails: [e({})] });
-assert.ok(body(one.posts[0]).startsWith('📭 <@U0AL9JZ4V7C> *1 email was delivered and nobody is confirmed to have opened it*'), body(one.posts[0]));
-assert.ok(one.posts[0].text.startsWith('📭 DERM Tracker: 1 email delivered but not confirmed opened\n'));
-ok('only unopened: tag on the first line, singular wording');
+assert.ok(body(one.posts[0]).startsWith('📭 <@U0AL9JZ4V7C> *1 city email delivered, the city\'s email system does not report when it is read*\nℹ️ Call to confirm they have it.\n'), body(one.posts[0]));
+assert.ok(one.posts[0].text.startsWith('📭 DERM Tracker: 1 city email delivered, call to confirm\n'), one.posts[0].text);
+const two = await run({ emails: [e({}), e({ send_id: 9, city: 'Surfside' })] });
+assert.ok(body(two.posts[0]).startsWith('📭 <@U0AL9JZ4V7C> *2 city emails delivered, the cities\' email systems do not report when they are read*\nℹ️ Call to confirm they have them.\n'), body(two.posts[0]));
+assert.ok(two.posts[0].text.startsWith('📭 DERM Tracker: 2 city emails delivered, call to confirm\n'), two.posts[0].text);
+ok('only city emails: a call list, tag on the first line, singular and plural wording');
 
 // 3. nothing listed: no post, a success record
 const none = await run({ emails: [] });

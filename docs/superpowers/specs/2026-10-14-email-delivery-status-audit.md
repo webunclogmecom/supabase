@@ -390,3 +390,16 @@ excludes 112-YA through `v_non_customer_clients`.
   Delivered; opening the city email made it Opened (137 s). The alert: `2026-10-20_1930`, edge fn
   `unopened-email-reminder` (Mon/Wed/Fri 11 AM ET; an open under 60 s counts as not opened). The 11-18 numbers are still
   worth reading: they now say whether city opens are people or scanners.
+- **2026-10-22, open tracking checked on the real city emails (Trello 5RpYsa98, Fred: "make sure the opened/delivered
+  status are working correctly for the city emails").** The mechanism works: all 5 real city emails since D5 (Admin
+  Review 408-411, DERM Tracker 461) went out with no hidden copy, their archive copy separate and delivered,
+  `archive_error` empty, every city inbox `delivered`, and `open_creditable` true, so an open by the city would read
+  Opened. Control: the pre-D5 email 403 shows the archive address under its own Resend id; the D5 ones show only the
+  city inboxes. The signal is empty: 6 real city emails since Oct 14 (12 deliveries to the Microsoft 365 inboxes of
+  Hallandale Beach and Surfside) have recorded 0 opens in 1 to 3 days, not even an automatic one. So for these two
+  cities "Delivered" means "no open recorded", never "unread": either nobody opened them or Outlook blocks the image
+  (classic Outlook's default for outside senders); the data cannot tell which. On our own Google mailboxes an open
+  lands 6 to 9 s after delivery even when nobody reads the email (Oct 14, 20, 21, 22, including two different
+  emails 'opened' in the same second), so the 60 s rule stays. Fred: keep the Mon/Wed/Fri alert listing city emails as
+  a call list (its wording now says so), and no Outlook test (the 12 real deliveries answer it). The 11-18 read stays:
+  any city open by then is the first one.

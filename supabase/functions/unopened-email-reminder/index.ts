@@ -94,9 +94,11 @@ function refusal(e: Email): string {
 }
 
 // `text` = this line, then the whole message: Viktor reads only `text`. The first line is the phone notification.
-function buildSummary(notOpened: number, notDelivered: number, test = false): string {
+function buildSummary(notOpened: number, notDelivered: number, test = false, cityOnly = false): string {
   const parts: string[] = [];
-  if (notOpened) parts.push(`${plural(notOpened, "email", "emails")} delivered but not confirmed opened`);
+  if (notOpened) parts.push(cityOnly
+    ? `${plural(notOpened, "city email", "city emails")} delivered, call to confirm`
+    : `${plural(notOpened, "email", "emails")} delivered but not confirmed opened`);
   if (notDelivered) parts.push(`${plural(notDelivered, "email", "emails")} not delivered`);
   return `📭 ${test ? "[TEST] " : ""}DERM Tracker: ${parts.join(", ")}`;
 }
@@ -118,8 +120,17 @@ function buildMessage(list: Email[], test = false): string {
   }
   if (unopened.length) {
     if (out.length) out.push("");
-    out.push(`📭 ${failed.length ? (test ? "[TEST] " : "") : lead}*${plural(unopened.length, "email was", "emails were")} delivered and nobody is confirmed to have opened ${unopened.length === 1 ? "it" : "them"}*`);
-    out.push("ℹ️ No open recorded is not proof it was unread (many email systems block the picture that records an open), so call to confirm they have it.");
+    // Fred, 2026-10-22 (Trello 5RpYsa98): no city email has ever recorded an open (12 deliveries to the Microsoft 365
+    // inboxes of Hallandale Beach and Surfside since Oct 14), so a list of only city emails is a call list and says so.
+    const cityOnly = unopened.every((x) => x.target !== "client");
+    const one = unopened.length === 1;
+    const manyCities = new Set(unopened.map((x) => x.city)).size > 1;
+    out.push(`📭 ${failed.length ? (test ? "[TEST] " : "") : lead}*${cityOnly
+      ? `${plural(unopened.length, "city email", "city emails")} delivered, ${manyCities ? "the cities' email systems do" : "the city's email system does"} not report when ${one ? "it is" : "they are"} read`
+      : `${plural(unopened.length, "email was", "emails were")} delivered and nobody is confirmed to have opened ${one ? "it" : "them"}`}*`);
+    out.push(cityOnly
+      ? `ℹ️ Call to confirm they have ${one ? "it" : "them"}.`
+      : "ℹ️ No open recorded is not proof it was unread (many email systems block the picture that records an open), so call to confirm they have it.");
     // Layout 1 (Fred's pick): one group per city, so one call covers a group; client emails last. Oldest first.
     const cities = new Map<string, Email[]>();
     for (const e of unopened.filter((x) => x.target !== "client")) {
@@ -194,7 +205,8 @@ async function run(dryRun: boolean, test: boolean, asOf: Date): Promise<Outcome>
   }
 
   const message = buildMessage(list, test);
-  const text = `${buildSummary(notOpened, notDelivered, test)}\n\n${message}`;
+  const cityOnly = list.every((e) => e.section !== "not_opened" || e.target !== "client");
+  const text = `${buildSummary(notOpened, notDelivered, test, cityOnly)}\n\n${message}`;
   if (dryRun) return { code: 200, reply: { posted: false, dry_run: true, channel: CHANNEL, text, message }, log: {} };
 
   const token = Deno.env.get("SLACK_BOT_TOKEN") ?? null;
