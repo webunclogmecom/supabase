@@ -163,7 +163,7 @@ for (const w of [390, 1280]) {
   const tb = await T(p)
   ok(tb.includes('Access & entry') && !tb.includes('Accepted into the property') && !tb.includes('Add to the property record'), `${w}: back on Answers, no card and no Accepted block`)
   ok(st.errors.length === 0, `${w}: no page errors`, st.errors)
-  ok([...new Set(st.calls)].every((c) => ['get_intake', 'get_intake_compare', 'v_intake_submissions', 'accept_intake_answers'].includes(c)), `${w}: no other call`, [...new Set(st.calls)])
+  ok([...new Set(st.calls)].every((c) => ['get_intake', 'get_intake_compare', 'v_intake_submissions', 'accept_intake_answers', 'get_my_access'].includes(c)), `${w}: no other call`, [...new Set(st.calls)])
   await ctx.close()
 }
 

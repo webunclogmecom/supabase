@@ -217,7 +217,7 @@ const NOTICE_H = (n) => `Changed in the Client App's property data since version
   B = await builder(p); Dr = await draft(p)
   ok(!!s && Dr === null && !B.banner, '1440: after Submit the browser draft and the banner are gone', { draft: !!Dr, banner: B.banner })
   ok(st.errors.length === 0, '1440: no page errors', st.errors)
-  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions', 'submit_property_page'].includes(n)) && !st.calls.includes('approve_property_page'), '1440: guard, only the builder reads and the stubbed submit, never approve', [...new Set(st.calls)])
+  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions', 'submit_property_page', 'get_my_access'].includes(n)) && !st.calls.includes('approve_property_page'), '1440: guard, only the builder reads and the stubbed submit, never approve', [...new Set(st.calls)])
   await ctx.close()
 }
 

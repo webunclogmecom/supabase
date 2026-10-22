@@ -5321,6 +5321,10 @@ Nine things that will bite someone who does not know them:
    (CHECK, FK), `submit_property_page(..., p_restored_from_version)` refuses anything but a Replaced version
    (`blocker=not_restorable`), `get_page_versions` returns it and `source`, `get_page_builder.referenced` lists every
    version's photos; REF rule 18, Picture Planner rule 22.
+   Since `2026-10-21_2030_planner_reject_version` a waiting version can be REJECTED with a reason (`client.reject_property_page`,
+   the same people as approve, own version allowed; four reject columns, the trigger allows that one more UPDATE, a rejected
+   version is never approved), and since `2026-10-22_0005_planner_pending_after_live` every version above the live one waits
+   and can be approved or rejected, not only the newest (Fred, Trello 1Mej1zDX); REF rule 18.
    Since `2026-09-29_2126_page_photo_collector_comment` `public.fn_page_photo_ids` passes the collector's photo comment
    (builder only, never the Site file), since `2026-09-29_2133_page_pin_far_warning` `submit_property_page` no longer
    refuses a far pin (the builder warns), and since `2026-09-30_2027_page_sections_lift_station_water_tank` a page photo

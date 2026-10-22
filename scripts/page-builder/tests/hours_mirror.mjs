@@ -142,7 +142,7 @@ for (const w of [1440, 1280]) {
     ok(usedOk && back[0] === '22:00' && back[1] === '22:00' && back[2] === null && /Differs/.test(R3.head), "1440: Undo puts the page's days back and the panel says Differs again", [back, R3.head])
   }
   ok(st.errors.length === 0, `${w}: no page errors`, st.errors)
-  ok([...new Set(st.calls)].every((c) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity'].includes(c)), `${w}: no other call`, [...new Set(st.calls)])
+  ok([...new Set(st.calls)].every((c) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_my_access'].includes(c)), `${w}: no other call`, [...new Set(st.calls)])
   await ctx.close()
 }
 

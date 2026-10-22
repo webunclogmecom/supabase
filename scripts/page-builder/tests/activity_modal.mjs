@@ -108,7 +108,7 @@ const dialog = (p) => p.evaluate(() => {
   const det = d.querySelector('[data-version-detail]')
   const nav = d.querySelector('nav[aria-label="Versions"]')
   const rows = det ? Object.fromEntries([...det.querySelectorAll('[data-row]')].map((x) => [x.getAttribute('data-row'), x.textContent.replace(/\s+/g, ' ').trim()])) : {}
-  const labels = det ? [...det.querySelectorAll('p')].map((x) => x.textContent.trim()).filter((t) => /^(What changed since version \d+|First version|Before it went live|While it is live|While it was live|So far|Since version \d+ went live)$/i.test(t)) : []
+  const labels = det ? [...det.querySelectorAll('p')].map((x) => x.textContent.trim()).filter((t) => /^(What changed since version \d+|What version \d+ filled in|First version|Before it went live|While it is live|While it was live|So far|Since version \d+ went live)$/i.test(t)) : []
   const events = (k) => { const g = det && det.querySelector(`[data-events="${k}"]`); return g ? [...g.querySelectorAll('li')].map((li) => ({ text: li.textContent.replace(/\s+/g, ' ').trim(), links: [...li.querySelectorAll('a')].map((a) => [a.textContent.trim(), a.getAttribute('href')]) })) : null }
   const back = d.querySelector('[data-activity-back]')
   const b = d.getBoundingClientRect()
@@ -130,7 +130,7 @@ const expectRows = (v) => {
   return { made, checked, replaced: v.approved_at ? (pl ? `Version ${pl.version}` : 'Nothing, it was the first live version') : undefined, 'replaced-by': v.status === 'replaced' ? `Version ${v.replaced_by_version} on ${fmt(v.replaced_at)}` : undefined }
 }
 const detailOk = (D, v) => { const e = expectRows(v); return Object.entries(e).every(([k, want]) => (want === undefined ? !(k in D.rows) : D.rows[k] === want)) }
-const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) return D.labels.includes('First version') && D.changes === null; const want = diff(v.content, prev.content); return D.labels.includes(`What changed since version ${prev.version}`) && (want.length ? JSON.stringify(D.changes) === JSON.stringify(want) : D.changes === null && D.text.includes(`No differences from version ${prev.version}.`)) }
+const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) return D.labels.includes(`What version ${v.version} filled in`) && !D.labels.includes('First version'); const want = diff(v.content, prev.content); return D.labels.includes(`What changed since version ${prev.version}`) && (want.length ? JSON.stringify(D.changes) === JSON.stringify(want) : D.changes === null && D.text.includes(`No differences from version ${prev.version}.`)) }
 
 // A. Laptop 1440: button, no call before opening, no old card, the modal
 {
@@ -178,7 +178,7 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   const first = VERSIONS[VERSIONS.length - 1]
   await choose(p, first.version)
   const D3 = await dialog(p)
-  ok(!!D3 && D3.detail === String(first.version) && changesOk(D3, first), `1440: version ${first.version} reads First version`, D3 && D3.labels)
+  ok(!!D3 && D3.detail === String(first.version) && changesOk(D3, first), `1440: version ${first.version} reads What version ${first.version} filled in`, D3 && D3.labels)
   await choose(p, 'other')
   const D4 = await dialog(p)
   ok(!!D4 && D4.detail === 'other' && OTHER.every((e) => D4.text.includes(e.text)), '1440: Other activity lists the driver link events', D4 && D4.detail)
@@ -192,7 +192,7 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   const pc = await afterClose(p)
   ok(pv.open && /Preview/.test(pv.title || '') && pv.locked && !pc.open && pc.focus === 'View site file' && pc.inert === 0, '1440: the site file preview still opens, locks, closes on Esc and returns focus', [pv, pc])
   ok(st.errors.length === 0, '1440: no page errors', st.errors)
-  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions'].includes(n)), '1440: no other call', [...new Set(st.calls)])
+  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions', 'get_my_access'].includes(n)), '1440: no other call', [...new Set(st.calls)])
   await ctx.close()
 }
 

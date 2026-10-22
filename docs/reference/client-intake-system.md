@@ -621,10 +621,26 @@ stayed `intake-submit?t=`.) Why each piece:
       `get_record_history` refuses `property_pages`, so no staff screen could read them before; the modal's "What
       changed" prints them as the review does (mockup C showed it). Hiding them for non-live versions is Fred's call.
     - 🛑 **Live = the highest APPROVED version**, the one `fn_driver_page` serves; an approved version is replaced when
-      the next approval happens. Approve takes only the NEWEST version (`blocker=not_newest`), so a version submitted
-      while another was waiting leaves the older one unapproved for ever: it was never live and it does not wait
-      (`superseded`, naming the next version and when it was submitted). Only the newest version, when unapproved, is
-      `waiting`; a `replaced` version names the next APPROVED version and when it was approved.
+      the next approval happens. **Since `2026-10-22_0005_planner_pending_after_live`** (Fred on the Activity mockup,
+      2026-10-21: *"all that are pending can be waiting for approval, but only the ones that were submitted after an
+      approved version"*) EVERY version that is not approved, not rejected and above the live one is `waiting`, and
+      approve and reject take any of them; a version below the live one was passed over (`superseded`, refused both
+      ways with `blocker=superseded`). Approvals therefore still only move the live version UP. Both `replaced` and
+      `superseded` name the next APPROVED version and when it was approved. Until that migration only the newest
+      unapproved version waited (`blocker=not_newest`). Each element also carries `can_approve`, `approve_blocker`
+      (the reason this caller cannot approve a waiting version: not an approver, own version without developer
+      approval, or `fn_page_blocker`) and `can_reject` (an approver; one's own version included).
+    - 🛑 **REJECT (2026-10-21, `2026-10-21_2030_planner_reject_version`; Fred: "Reason required").** `property_pages`
+      gains `rejected_at`, `rejected_by`, `rejected_by_email`, `reject_reason` (CHECKs: who and when together; never
+      approved AND rejected; a reason of 3 to 500 characters exactly when rejected). The append-only trigger allows one
+      more UPDATE: a rejection, once, on a version neither approved nor rejected, nothing else changing; an INSERT may
+      not arrive rejected and a rejected version can never be approved. `client.reject_property_page(p_page_id,
+      p_reason)`: staff sign-in, Picture Planner Edit, a page approver, a waiting version (see above), the reason trimmed
+      3 to 500 characters, the same advisory lock as submit and approve; one's own version may be rejected (a
+      withdraw). Status `rejected` with `rejected_at`, `rejected_by_name`, `reject_reason`; `get_property_activity` adds
+      `page_rejected` ("Version N of the site file rejected by <name>: <reason>"). The site file and the property are
+      unchanged; `get_page_builder.pending` becomes the newest version still waiting, else the builder starts from the
+      live version (or the property record).
     - 🛑 **A version has no link to the forms it came from** (`property_pages` has no intake column, its photos keep only
       `photo_id`, and the builder's fills are browser state). So the modal groups `get_property_activity` events by time
       around each version; never show a "made from form N" claim without first storing that link.
