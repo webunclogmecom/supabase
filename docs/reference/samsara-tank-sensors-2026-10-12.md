@@ -639,12 +639,14 @@ default truck moves the effective truck with no visit write. First run: 4 rows (
 `_2100_water_visits_tank_capacity.sql`, `_2120_water_visits_counts_in_totals.sql`).** `public.get_water_visits(p_from,
 p_to, p_visit_id)` is the only app read of `v_visit_water_balance`: SECURITY DEFINER, authenticated + service_role,
 revoked by name from PUBLIC and anon. Rows only for pumping visits with all five water figures; whole gallons.
-`several_fills` = pumped > highest minus arrived + 10 gal (13 visits on 2026-10-21); `counts_in_totals` is true on
-every row since `2026-10-21_2130` (on a shared stop pumped / returned / grease kept are already each visit's equal
-share, `water_share`; `2120` had kept one half and undercounted);
+`several_fills` = pumped > highest minus arrived + 10 gal (9 visits Oct 1-21; it also fires on one fill preceded by a push-back,
+6619, see the audit); `counts_in_totals` is true on
+every row since `2026-10-21_2130` (on a shared stop pumped / returned are already each visit's equal share, `water_share`,
+and grease kept its trap-size share, `sludge_share`; `2120` had kept one half and undercounted);
 `water_tank_capacity_gallons` = the fresh_water configuration in force that day (1,200, owner_confirmed). Every row is
 still `water_confidence = 'low'` (`unvalidated`): no reading checked against a measured fill. Readers: the Visit
 Calendar drawer (Calendar CLAUDE.md rule 19) and the Admin Review visit card and Water by driver page. October to the
 21st: Michael Escobar 52 visits, 20,032 gal pumped / 17,203 returned; Mark 7, 1,558 / 1,677 (the driver page, rows summed).
-Seven visits recomputed from the raw readings with the same zig-zag rule (60 gal threshold) all match to within 1 gal:
+Seven visits recomputed from the raw readings with the same zig-zag rule (60 gal threshold) all match to within 1 gal (Highest, Pumped and Returned recomputed; Arrived and Left are the stored edges). Full logic
+audit: `Building Apps/Visit Calendar/docs/specs/2026-10-21-water-logic-audit.md`:
 https://claude.ai/artifact/7QCYyFSqQrzg9mECKoRv2w (the check for Yan).
