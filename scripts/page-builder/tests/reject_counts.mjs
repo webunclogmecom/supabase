@@ -1,6 +1,6 @@
 // LIVE Page Builder /property/1208 (354-TBS, two waiting versions): Reject with a reason on the review screen and in
 // Activity, Approve in Activity, the Rejected badge and rows, what version 1 filled in, the review box when nothing is live,
-// and the counts bar (filled lock icon with its tooltip, centered row, the up arrow and its glow). Trello 1Mej1zDX, Fred's
+// and the counts bar (an outlined black lock icon with its tooltip (filled until Fred changed it 2026-10-22), centered row, the up arrow and its glow). Trello 1Mej1zDX, Fred's
 // picks on the mockups of 2026-10-21. Real replies read as Fred (get_page_builder, forms, activity, versions); sign-in
 // faked; EVERY write is stubbed and recorded (reject_property_page, approve_property_page): nothing is written.
 //   node scripts/page-builder/tests/reject_counts.mjs <outdir>
@@ -72,7 +72,8 @@ const btnBy = (p, re) => p.evaluate((src) => { const re = new RegExp(src); const
     return { text: b.textContent.trim(), w: Math.round(r.width), h: Math.round(r.height), filled: fills.some((f) => f && f !== 'none' && !/rgba\(0, 0, 0, 0\)/.test(f)), color: getComputedStyle(b).color, jc: row ? getComputedStyle(row).justifyContent : null,
       gapL: rr ? Math.round(left - rr.left) : null, gapR: rr ? Math.round(rr.right - right) : null } })
   ok(lock && lock.text === '' || (lock && !/Unlock/.test(lock.text)), 'counts bar: "Unlock to change for this page" is an icon button, no words', lock && lock.text)
-  ok(lock && lock.filled && /rgb\(24, 24, 27\)/.test(lock.color), 'counts bar: the lock icon is filled black (#18181b)', lock && { filled: lock.filled, color: lock.color })
+  // Fred changed it in Lovable about 11:50 ET 2026-10-22: "a normal black icon not full filled, outlined" (was filled)
+  ok(lock && !lock.filled && /rgb\(24, 24, 27\)/.test(lock.color), 'counts bar: the lock icon is an outlined black lock (#18181b)', lock && { filled: lock.filled, color: lock.color })
   ok(lock && lock.w === lock.h && lock.h >= 34 && lock.h <= 42, 'counts bar: the button is square, 36 to 40px', lock && { w: lock.w, h: lock.h })
   ok(lock && lock.jc === 'center' && Math.abs(lock.gapL - lock.gapR) <= 4, 'counts bar: the row is centered', lock && { jc: lock.jc, gapL: lock.gapL, gapR: lock.gapR })
   await p.locator('button[aria-label="Unlock to change for this page"]').first().hover(); await p.waitForTimeout(700)
