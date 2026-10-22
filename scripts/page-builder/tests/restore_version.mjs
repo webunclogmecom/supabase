@@ -25,6 +25,12 @@ const PB = row.pb, T = PB.property.source
 const FILLED = row.versions.some((v) => !('source' in v))
 const VERSIONS = row.versions.map((v) => ({ restored_from_version: null, ...v, source: 'source' in v ? v.source : (row.sources.find((s) => s.version === v.version) || {}).source ?? null }))
 console.log(`get_page_versions stub: ${VERSIONS.length} versions of 1164, read as Fred${FILLED ? ' (no source yet: the page_restore migration is not applied; filled from property_pages)' : ''}`)
+// photos the property no longer holds (owned false in the real reply) are left out of the fixture's versions: photo 27404
+// was deleted with test intake 167 on 2026-10-22 (cleanup.mjs, before its fix). Section D tests a gone photo with its own.
+const HELD = new Set([...(PB.pool || []), ...(PB.referenced || [])].filter((x) => x.owned !== false).map((x) => String(x.photo_id)))
+const REAL_GONE = new Set()
+for (const c of [...VERSIONS.map((v) => v.content), PB.live && PB.live.content, PB.pending && PB.pending.content]) if (c && Array.isArray(c.photos)) c.photos = c.photos.filter((ph) => HELD.has(String(ph.photo_id)) || (REAL_GONE.add(String(ph.photo_id)), false))
+if (REAL_GONE.size) console.log(`fixture: left out photos no longer on 1164: ${[...REAL_GONE].join(', ')}`)
 // every value that looks like a code, in every reply, is masked wherever this script prints
 const SECRETS = new Set()
 const collect = (v, k = '') => { if (v && typeof v === 'object') { for (const [kk, vv] of Object.entries(v)) collect(vv, kk) } else if (v != null && /code|key_tag|public_id|lock_box|token/i.test(k) && String(v).trim().length >= 3) SECRETS.add(String(v)) }

@@ -32,6 +32,14 @@ const clone = (x) => JSON.parse(JSON.stringify(x))
 const D = clone({ pb: row.pb, forms: row.forms })
 D.pb.property.source = clone(D.pb.live.source)  // no "Changed in the Client App's property data" notice
 D.pb.pending = null
+// photos the property no longer holds (owned false) are left out of the live version: photo 27404 was deleted with test
+// intake 167 on 2026-10-22 (cleanup.mjs, before its fix), and its card ("no longer available") has no note box
+{
+  const held = new Set([...(D.pb.pool || []), ...(D.pb.referenced || [])].filter((x) => x.owned !== false).map((x) => String(x.photo_id)))
+  const gone = (D.pb.live.content.photos || []).filter((ph) => !held.has(String(ph.photo_id))).map((ph) => ph.photo_id)
+  D.pb.live.content.photos = (D.pb.live.content.photos || []).filter((ph) => held.has(String(ph.photo_id)))
+  if (gone.length) console.log(`fixture: left out photos no longer on 1164: ${gone.join(', ')}`)
+}
 for (const x of [...(D.pb.pool || []), ...(D.pb.referenced || [])]) if (x.kind === 'intake') x.caption = null
 // two form photos of the live version whose source label is unique on the page get a fixture comment
 const byId = new Map([...(D.pb.pool || []), ...(D.pb.referenced || [])].map((x) => [String(x.photo_id), x]))
