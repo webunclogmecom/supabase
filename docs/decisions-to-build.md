@@ -60,7 +60,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `Building Apps/HR App/docs/specs/2026-10-22-hours-worked-from-jobber-timesheet.md` (6 steps). Steps 1-3 BUILT 2026-10-22
   (Fred: "go ahead"): `2026-10-22_1940` (hr.time_entries, hr.sync_time_entries, hr.fn_hours_worked, the two readers; 29
   rehearsal checks with the real 955 entries, a broken copy of the rule failing as it must, rollback rehearsed), `_2000`
-  (crons + health watch), edge fn sync-jobber-timesheets v1; stored week totals = Jobber's Week view. OPEN: step 4 (the
+  (crons + health watch), edge fn sync-jobber-timesheets v1; stored week totals = Jobber's Week view. Fred 2026-10-22:
+  hours visible with See bonus amounts too ("both"; pay only with Pay rates, BUILT `2026-10-22_2100`), and the Employees
+  table gets Hours this week + Hourly pay this week ("yes"; NOT BUILT, app). Mockups: https://claude.ai/artifact/LhL7wuzDvg8R52gbB3gmaK.
+  OPEN: step 4 (the
   screen, mockup first), step 5 (standing check), step 6 (docs + card).
 
 **HR App redesign** (plan: Building Apps/HR App/docs/specs/2026-10-19-hr-app-redesign-plan.md; Fred 2026-10-19: "go with the real data, and go as recommended")
