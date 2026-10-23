@@ -867,6 +867,8 @@ asked once); Fred: *"if there are more Grease Traps then it should ask for each 
   migration's check skips).
 - Tests: the migration's VERIFY (V1 to V9, incl. nothing else moved), the rolled-back rehearsal (10 checks, old bodies as the
   control), and `scripts/intake-collector/tests/v6-live.mjs <id>` (an OPEN version 6 [TEST] form on 1164/162; 17 checks).
+- Order since `2026-10-23_1130_sample_ports_order` (Fred): "How many sample ports?" right after "How many manholes?", before
+  the photos and the traps' maps; still version 6, same questions byte for byte.
 
 ## Traps paid for while building this
 
