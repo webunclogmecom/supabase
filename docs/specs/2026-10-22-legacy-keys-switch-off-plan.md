@@ -74,6 +74,16 @@ Steps 1 to 3 and 7 are invisible to staff. Step 6 touches each app. Steps 9 and 
 Rollback: steps 1 to 8 keep the old path working; step 9 is undone by re-enabling the legacy keys; step 10 has none,
 which is why it waits.
 
+## 3b. Progress
+
+| step | state | evidence |
+|---|---|---|
+| 1. shared caller check | ✅ 2026-10-23 13:20 ET | `aab4ac0`. `isSecretKeyCaller` in `_shared/service-caller.ts`, rolled into 31 functions (all `verify_jwt = true`), each deployed body read back. Before deploying, each function's live body was compared with git (dates and distinctive lines): only comment changes were undeployed. Canary `stamp-sheets-reminder` dry run: new secret key 200, old JWT 200, fake key 401, no key 401. The database's calls after the deploys all 200/202. Standing check `scripts/checks/service_caller_gateway.mjs` (31 importers pinned and live, 4 gateway cases), with a mutation control that makes it fail. The helper trusts the `sb_secret_` prefix only behind the gateway: measured, the gateway refuses a made-up secret key ("Invalid API key") and a bearer that differs from the apikey header ("Conflicting API keys"). |
+| 2. vault | ✅ 2026-10-23 13:28 ET | `edge_invoke_service_key` and `jobber_push_service_key` now hold the `default` secret key (fingerprint `46cfa6ab8b`, the edge functions' own key), were `5dbfb3f552` (the legacy JWT). Script `scratchpad/rw/vault_step2.cjs` (fingerprints only). Rollback: the same update with the legacy JWT from `Supabase/.env`. |
+| 3 to 10 | not started | |
+
+Found on the way, not part of this plan: `inbound-file-drain` has no caller check of its own, so any valid project key or staff sign-in reaches it (the gateway is its only gate).
+
 ## 4. Then
 
 Mark SECURITY-16 done in `system-audit-2026-10-05/REPORT.md`, update `docs/security.md`, the root handbook
