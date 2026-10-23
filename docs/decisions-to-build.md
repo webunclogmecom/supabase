@@ -65,7 +65,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   table gets Hours this week + Hourly pay this week ("yes"). Mockups: https://claude.ai/artifact/LhL7wuzDvg8R52gbB3gmaK; Fred picked
   "option A". Steps 4-6 BUILT and live 2026-10-22/23: the Hours worked card and the two Employees columns (HR App changelog (ac)),
   `2026-10-22_2230` (day_start / day_end for the Clocked time of a shift-forms day), standing check
-  `scripts/checks/hr_app/timesheets_vs_jobber.mjs`. Open (card KqGyoiKQ stays In Progress): the walk-through with Yan (Review). Fred
+  `scripts/checks/hr_app/timesheets_vs_jobber.mjs`. Card KqGyoiKQ in Testing / QA 2026-10-23 (Fred: "yes sure"); Yan has not walked through it yet. Fred
   2026-10-23: rates for the others do not matter (test on Michael), and checking as admin is enough for the office view.
 
 **HR App redesign** (plan: Building Apps/HR App/docs/specs/2026-10-19-hr-app-redesign-plan.md; Fred 2026-10-19: "go with the real data, and go as recommended")
