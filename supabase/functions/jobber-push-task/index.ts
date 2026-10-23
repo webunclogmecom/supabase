@@ -32,8 +32,10 @@
 // alone is half a gate.
 // ============================================================================
 import { syncMarkerTask } from "../_shared/day-marker-task.ts";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   const p = tok.split(".");
   if (p.length !== 3) return null;

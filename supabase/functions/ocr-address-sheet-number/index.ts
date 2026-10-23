@@ -1,3 +1,4 @@
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 // ocr-address-sheet-number — reads the sheet number DERM prints in the top-right corner of a
 // scanned FOG address sheet, so the Stamp auto-place can tell whether the paper the driver
 // actually filled in is the sheet WE generated.
@@ -39,6 +40,7 @@ function json(payload: unknown, status = 200): Response {
 }
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   try {
     const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     return JSON.parse(atob(tok.split(".")[1] ?? ""))?.role ?? null;

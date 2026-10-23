@@ -59,6 +59,7 @@
 //   curl -H "Authorization: Bearer $SERVICE_ROLE" -H 'x-sync-wait: 1' -H 'x-no-heal: 1' <url>
 // ============================================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -78,6 +79,7 @@ const supabaseJobber = createClient(SUPABASE_URL, SERVICE_KEY, { global: { heade
 // Decode-only. The GATEWAY verifies the signature (verify_jwt=true in config.toml); this just reads
 // the role claim so the public anon key cannot invoke the function. Identical to jobber-push-visit.
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   const m = (req.headers.get('authorization') || '').match(/^Bearer (.+)$/)
   if (!m) return null
   try { return JSON.parse(atob(m[1].split('.')[1])).role ?? null } catch { return null }

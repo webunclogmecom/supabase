@@ -45,6 +45,7 @@
 // ============================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 // ⚠ x-app-source IS REQUIRED, and its absence was a real regression (found by @Building Apps).
@@ -250,7 +251,7 @@ Deno.serve(async (req) => {
 
   // ONE decode: the role gate and the actor both come from the same verified token.
   const claims = bearerClaims(req);
-  const role = (claims?.role as string) ?? null;
+  const role = isSecretKeyCaller(req) ? "service_role" : ((claims?.role as string) ?? null); // a secret key (2026-10-23, legacy-keys plan)
   // A service_role caller (scripts, our curl tests) has no email and must yield no actor.
   const actorEmail = typeof claims?.email === "string" && claims.email.trim() ? claims.email.trim() : null;
   if (role !== "authenticated" && role !== "service_role") {

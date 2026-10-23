@@ -13,6 +13,7 @@
 // Invoked by pg_cron (*/10, limit 3 — edge CPU cap ~2s/request => small batches) and the backlog driver.
 
 import { decode, Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -27,6 +28,7 @@ function json(payload: unknown, status = 200): Response {
 }
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   try {
     const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const payload = JSON.parse(atob(tok.split(".")[1] ?? ""));

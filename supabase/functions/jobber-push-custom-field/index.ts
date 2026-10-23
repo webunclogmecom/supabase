@@ -47,6 +47,7 @@
 // every later poll see a change that never happened, on all 477 grease-trap rows.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -252,7 +253,7 @@ Deno.serve(async (req) => {
   try {
     const auth = req.headers.get("Authorization") || "";
     const tok = auth.replace(/^Bearer\s+/i, "");
-    const role = JSON.parse(atob(tok.split(".")[1] || "")).role;
+    const role = isSecretKeyCaller(req) ? "service_role" : JSON.parse(atob(tok.split(".")[1] || "")).role; // a secret key (2026-10-23, legacy-keys plan)
     if (role !== "service_role") return new Response("forbidden", { status: 403 });
   } catch {
     return new Response("forbidden", { status: 403 });

@@ -31,6 +31,7 @@
 // ============================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -65,6 +66,7 @@ function json(req: Request, body: Record<string, unknown>, status = 200) {
 // Read the role out of the presented JWT without verifying the signature — the platform already did
 // that (verify_jwt = true). We only need to know WHICH key was used.
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   const raw = req.headers.get("authorization") ?? "";
   const tok = raw.replace(/^Bearer\s+/i, "").trim();
   const parts = tok.split(".");

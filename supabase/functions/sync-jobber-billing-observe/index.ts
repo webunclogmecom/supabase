@@ -36,6 +36,7 @@
 // ============================================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 const GRAPHQL_VERSION = '2026-04-16'
 // Same budget discipline as sync-jobber-poll v26. This runs alone at 02:00 ET so contention is
@@ -66,6 +67,7 @@ const db = createClient(
 );
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   const m = (req.headers.get("authorization") || "").match(/^Bearer (.+)$/);
   if (!m) return null;
   try { return JSON.parse(atob(m[1].split(".")[1])).role ?? null; } catch { return null; }

@@ -1,3 +1,4 @@
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 // ============================================================================
 // health-escalate — email Fred when a health problem is NEW or has festered
 // ============================================================================
@@ -50,6 +51,7 @@ function json(payload: unknown, status = 200): Response {
 }
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   try {
     const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     const payload = JSON.parse(atob(tok.split(".")[1] ?? ""));

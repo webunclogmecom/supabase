@@ -20,6 +20,7 @@
 // dedups it (no loop).
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -710,6 +711,7 @@ async function handle(op: string, visitId: number, payloadGid?: string, changed?
 }
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   const m = (req.headers.get("authorization") || "").match(/^Bearer (.+)$/);
   if (!m) return null;
   try { return JSON.parse(atob(m[1].split(".")[1])).role ?? null; } catch { return null; }

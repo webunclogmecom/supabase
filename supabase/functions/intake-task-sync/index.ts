@@ -35,6 +35,7 @@
 // ============================================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { answered, deleteAndVerify, errsOf, getJobberToken, gql } from "../_shared/day-marker-task.ts";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -109,6 +110,7 @@ Deno.serve(async (req) => {
       role = JSON.parse(atob(pad + "=".repeat((4 - (pad.length % 4)) % 4)))?.role ?? null;
     }
   } catch { role = null; }
+  if (isSecretKeyCaller(req)) role = "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   if (role !== "service_role") return json({ ok: false, error: "forbidden" }, 403);
 
   const body = await req.json().catch(() => ({}));

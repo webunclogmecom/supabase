@@ -1,3 +1,4 @@
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 // intake-size-lookup: the AI lookup of a grease trap's gallons from what a collector typed on a site survey form.
 //
 // Yan (2026-10-21): "if we know the model of the grease trap we don't need to measure it ... have the AI fill it out
@@ -32,6 +33,7 @@ const json = (p: unknown, status = 200) =>
   new Response(JSON.stringify(p), { status, headers: { "Content-Type": "application/json" } });
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   try {
     const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     return JSON.parse(atob(tok.split(".")[1] ?? ""))?.role ?? null;

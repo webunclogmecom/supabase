@@ -1,3 +1,4 @@
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 // time-on-site-samsara-recheck: rechecks saved time on site against Samsara's own stay (2026-10-14_1630).
 //
 // Fred, 2026-10-14: "yes do both" (recheck old times; Samsara is the reference). For each customer visit with a
@@ -30,6 +31,7 @@ const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Conten
 const etDate = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   try {
     const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     return JSON.parse(atob(tok.split(".")[1] ?? ""))?.role ?? null;

@@ -34,6 +34,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { computeRoutesLeg } from "../_shared/google-routes.ts";
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -47,6 +48,7 @@ const MAX_SPAN_DAYS = 45;
 const MAX_TRANSIENT_IN_A_ROW = 3;
 
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   const raw = req.headers.get("authorization") ?? "";
   const tok = raw.replace(/^Bearer\s+/i, "").trim();
   const parts = tok.split(".");

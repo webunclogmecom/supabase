@@ -1,3 +1,4 @@
+import { isSecretKeyCaller } from "../_shared/service-caller.ts";
 // ocr-address-sheet-rows — reads the ORDERED Section B roster off a scanned DERM address sheet, so
 // the Stamp auto-place can MEASURE which printed row belongs to which client instead of inferring it.
 //
@@ -43,6 +44,7 @@ function json(p: unknown, status = 200): Response {
   return new Response(JSON.stringify(p), { status, headers: { "Content-Type": "application/json" } });
 }
 function bearerRole(req: Request): string | null {
+  if (isSecretKeyCaller(req)) return "service_role"; // a secret key (2026-10-23, legacy-keys plan)
   try {
     const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     return JSON.parse(atob(tok.split(".")[1] ?? ""))?.role ?? null;
