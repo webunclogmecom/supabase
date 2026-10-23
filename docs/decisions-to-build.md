@@ -62,9 +62,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   rehearsal checks with the real 955 entries, a broken copy of the rule failing as it must, rollback rehearsed), `_2000`
   (crons + health watch), edge fn sync-jobber-timesheets v1; stored week totals = Jobber's Week view. Fred 2026-10-22:
   hours visible with See bonus amounts too ("both"; pay only with Pay rates, BUILT `2026-10-22_2100`), and the Employees
-  table gets Hours this week + Hourly pay this week ("yes"; NOT BUILT, app). Mockups: https://claude.ai/artifact/LhL7wuzDvg8R52gbB3gmaK.
-  OPEN: step 4 (the
-  screen, mockup first), step 5 (standing check), step 6 (docs + card).
+  table gets Hours this week + Hourly pay this week ("yes"). Mockups: https://claude.ai/artifact/LhL7wuzDvg8R52gbB3gmaK; Fred picked
+  "option A". Steps 4-6 BUILT and live 2026-10-22/23: the Hours worked card and the two Employees columns (HR App changelog (ac)),
+  `2026-10-22_2230` (day_start / day_end for the Clocked time of a shift-forms day), standing check
+  `scripts/checks/hr_app/timesheets_vs_jobber.mjs`. Open (card KqGyoiKQ stays In Progress): hourly rates for everyone but Michael
+  (Scope), the walk-through with Yan (Review); the office view is checked in the database only.
 
 **HR App redesign** (plan: Building Apps/HR App/docs/specs/2026-10-19-hr-app-redesign-plan.md; Fred 2026-10-19: "go with the real data, and go as recommended")
 - Release 1, the pay and bonus history: 20 per page in a box that scrolls on a laptop; the full white "Open in Admin Review" button on every row; Excel with write-excel-file 4.1.1; office may export (bonus rows only), plus a "By payroll week" sheet; a late take-back stays in the week of the work, with a health email and an "after that week ended" tag; opens on All time and keeps the period from person to person; mockups with real data. History fields migration BUILT (`2026-10-19_0215`, 31a9302). Mockup approved by Fred 2026-10-19 ("go ahead": https://claude.ai/artifact/2EaHeFnE75eQ1DXK7kGs64). Release 1 BUILT and live 2026-10-19 (theme pass + PayHistory + Excel export; Building Apps HR App changelog 2026-10-19 (b)). Open: a real download from the live app and one office user's check.
