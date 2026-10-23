@@ -5365,6 +5365,12 @@ Nine things that will bite someone who does not know them:
    🛑 `public.fn_intake_gallons_offer` is the ONE rule: the collector's own whole Gallons wins; otherwise the found lookup is
    OFFERED on the Planner's Property record tab and saved only by a person's Save (`accept_intake_answers`, recorded in
    `property_intake_accepts.size_lookup_id`). A model's number is kept only with a source page the search really returned.
+11. **Several grease traps, and up to 9 GT / 3 truck pins (2026-10-23, rule 24 of the reference,
+   `2026-10-23_0130_several_grease_traps`).** Question list **version 6**: traps 2 to 9 get their own
+   `grease_trap.t<N>.location / .size_from / .model / .capacity_measure / .capacity_gallons` (shown when
+   `systems_count > N-1`, max 9). 🛑 With several traps `fn_intake_gallons_offer` offers the TOTAL (`kind: 'traps'`, per-trap
+   list) and NULL when any trap has no number; `accept_intake_answers` saves only that total (`blocker=traps_incomplete`),
+   never trap 1's answer. 🛑 `fn_site_map_problem` accepts pin keys `gt`..`gt9` and `truck`..`truck3` only.
 
 ### 🛑 "HAS THIS VISIT'S CITY EMAIL GONE?" HAS ONE ANSWER: `public.v_visit_city_email_state` (2026-10-12)
 

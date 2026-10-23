@@ -387,7 +387,7 @@ const NOTICE_H = (n) => `Changed in the Client App's property data since version
   await restore(p, FROM.version)
   ok(await inView(p, [FARMAP.pins.gt, FARMAP.pins.truck]), `1440 map: restoring version ${FROM.version} (its pins 9.2 km away, edited stub) fits the map to them`, await mapView(p))
   const w = await p.evaluate(() => { const u = document.querySelector('[data-pin-warning]'); return u ? u.textContent.replace(/\s+/g, ' ').trim() : null })
-  ok(!!w && /^The GT Location and Truck Parking pins are about \d+\.\d km from this property's address\. Check the map is on the right property\.$/.test(w), '1440 map: the restored far pins are warned about under the map', w)
+  ok(!!w && /^Some pins are about \d+\.\d km from this property's address\. Check the map is on the right property\.$/.test(w), '1440 map: the restored far pins are warned about under the map', w)
   await p.screenshot({ path: `${out}/F_map_1440.png` }).catch(() => {})
   const away1 = !(await inView(p, back, 1000))
   await click(p, '[data-restore-undo]')

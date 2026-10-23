@@ -848,6 +848,26 @@ person, the measurements too. Spec: `Building Apps/Picture Planner/docs/specs/20
   `scripts/intake-collector/tests/v5-live.mjs <id>` (a [TEST] form through the live form and the real server, 14 checks;
   remove the fixture with 11.3's per-id recipe), and the three migrations' VERIFY blocks (each with skip controls).
 
+**24. SEVERAL GREASE TRAPS: EACH ONE ASKED FOR, THE GALLONS ARE THEIR TOTAL; THE MAP HOLDS 9 GT AND 3 TRUCK PINS (2026-10-23,
+`2026-10-23_0130_several_grease_traps.sql`).** Yan asked whether three traps get three model / measurement questions (version 5
+asked once); Fred: *"if there are more Grease Traps then it should ask for each of them ... up to 3 trucks and 9 GT"*. Flow doc
+5.6e has the whole change; the rules:
+- Question list **version 6**: `grease_trap.systems_count` max 9; NEW keys `grease_trap.t<N>.location / .size_from / .model /
+  .capacity_measure / .capacity_gallons` for N = 2..9, shown when `systems_count > N-1`. Trap 1 keeps its keys (append-only).
+- 🛑 `public.fn_intake_gallons_offer` stays THE rule. With several traps (the form's `requested` holds
+  `grease_trap.t2.capacity_gallons` and it was shown) it returns `kind: 'traps'`: the SUM of each shown trap's gallons (its own
+  whole Gallons, else its found model lookup, else its measurements lookup; the trap of a lookup is read off its question key,
+  `^grease_trap[.]t([2-9])[.]`, else 1), or `gallons: null` when any trap has none. Never a part total.
+- 🛑 `accept_intake_answers` saves a `traps` offer's total or refuses `blocker=traps_incomplete`; it never falls back to the
+  trap 1 Gallons answer (the old `coalesce` did, and the rehearsal's control proved it saved 1,000 for three traps).
+- `public.fn_intake_size_inputs` lists the model and measurements of traps 2 to 9 (same signature, so `v_size_lookup_backlog`
+  and `intake-size-lookup` needed nothing).
+- 🛑 `public.fn_site_map_problem` accepts pin keys `gt`, `gt2`..`gt9`, `truck`, `truck2`, `truck3` only (it accepted any key
+  before). Every stored map passed at apply (3 pages hold a JSON-null map, which the function already refused before and the
+  migration's check skips).
+- Tests: the migration's VERIFY (V1 to V9, incl. nothing else moved), the rolled-back rehearsal (10 checks, old bodies as the
+  control), and `scripts/intake-collector/tests/v6-live.mjs <id>` (an OPEN version 6 [TEST] form on 1164/162; 17 checks).
+
 ## Traps paid for while building this
 
 **A jsonpath CHECK was wrong twice.** Lax mode auto-unwraps the step before a filter, so v1 rejected

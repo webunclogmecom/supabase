@@ -170,8 +170,9 @@ for (const f of FP.forms) f.answers = { ...(f.answers || {}), 'site_map.gt_locat
   // refit on a pin change (control c7) must move the view; a click inside the pins' area refits to the same view (2026-09-30)
   if (mb) { await p.waitForTimeout(600); await p.mouse.click(mb.x + mb.w - 25, mb.y + 25); await p.waitForTimeout(2500) }
   const v1 = await view(p), dm = await draftMap(p)
-  const moved = !!(dm && dm.pins && dm.pins.gt && (Math.abs(dm.pins.gt.lat - FAR_GT.lat) > 1e-7 || Math.abs(dm.pins.gt.lng - FAR_GT.lng) > 1e-7))
-  ok(!!v0 && !!v1 && moved && Math.abs(v0.lat - v1.lat) < 1e-9 && Math.abs(v0.lng - v1.lng) < 1e-9 && v0.zoom === v1.zoom, 'F3 1440: placing the G pin by a click moves the pin, never the view', { v0, v1, pinMoved: moved, gt: dm && dm.pins && dm.pins.gt })
+  // 2026-10-23: a click in GT mode ADDS the next pin (gt2) and leaves gt where it was (up to 9 GT pins)
+  const moved = !!(dm && dm.pins && dm.pins.gt2 && dm.pins.gt && Math.abs(dm.pins.gt.lat - FAR_GT.lat) < 1e-7)
+  ok(!!v0 && !!v1 && moved && Math.abs(v0.lat - v1.lat) < 1e-9 && Math.abs(v0.lng - v1.lng) < 1e-9 && v0.zoom === v1.zoom, 'F3 1440: a click in GT mode adds a pin (gt2), never moves the view', { v0, v1, pinMoved: moved, gt: dm && dm.pins && dm.pins.gt })
   // F4: the draft bar's Discard puts the live version back, so the map fits back to its pins; it counts only when the view
   // had moved off them first (a build that never moves the map cannot pass it)
   const away = !(await inView(p, pts(LIVEMAP), 1000))

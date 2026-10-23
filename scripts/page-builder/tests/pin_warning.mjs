@@ -31,7 +31,8 @@ const FAR_GT = { lat: rnd(L - 0.056468), lng: rnd(G - 0.067718) }, FAR_T = { lat
 const NEAR_T = { lat: rnd(L + 0.0002), lng: rnd(G - 0.0001) }
 const ARROW = { points: [{ lat: rnd(L + 0.00025), lng: rnd(G - 0.00025) }, { lat: rnd(L + 0.0001), lng: rnd(G - 0.0002) }] }
 const TAIL = " from this property's address. Check the map is on the right property."
-const SENT = (pins) => { const far = pins.filter(([, p]) => p && km(HOME, p) > 5); if (!far.length) return null; const d = Math.max(...far.map(([, p]) => km(HOME, p))).toFixed(1); return far.length === 2 ? `The GT Location and Truck Parking pins are about ${d} km${TAIL}` : `The ${far[0][0]} pin is about ${d} km${TAIL}` }
+const SENT = (pins) => { const far = pins.filter(([, p]) => p && km(HOME, p) > 5); if (!far.length) return null; const d = Math.max(...far.map(([, p]) => km(HOME, p))).toFixed(1); // 2026-10-23 (9 GT / 3 truck pins): several far pins read "Some pins are ..."; one keeps its own sentence
+  return far.length >= 2 ? `Some pins are about ${d} km${TAIL}` : `The ${far[0][0]} pin is about ${d} km${TAIL}` }
 const WANT_BOTH = SENT([['GT Location', FAR_GT], ['Truck Parking', FAR_T]]), WANT_T = SENT([['Truck Parking', FAR_T]]), WANT_GT = SENT([['GT Location', FAR_GT]])
 if (!WANT_BOTH || !WANT_T || !WANT_GT || km(HOME, NEAR_T) > 1 || km(HOME, { lat: L - 0.0001, lng: G + 0.0001 }) > 1) { console.log('FAIL fixture: the far pins are not far'); process.exit(1) }
 console.log(`fixture: 1164 live v${row.pb.live.version}; far GT ${km(HOME, FAR_GT).toFixed(3)} km, far T ${km(HOME, FAR_T).toFixed(3)} km, near T ${(km(HOME, NEAR_T) * 1000).toFixed(0)} m`)
