@@ -775,8 +775,20 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // Pre-2026 cutoff (Fred 2026-05-01): we don't track visits before 2026-01-01.
   // Skip the upsert entirely; if it already exists in our DB, the cleanup
   // migration will eventually catch it. Don't error — just no-op.
+  // Named exceptions: a pre-2026 visit enters only when Fred asks for that one visit. Add its Jobber
+  // visit GID here, never a date range. 2026-10-26: 041-MB Nov 16 2025, Job #4101 (Fred: "make the
+  // visit ... to be shown in the Calendar, and added to the DERM App"; no manifest linked), then the
+  // same day "we have in 2025, 5 visits of Grease trap pumping for 041-MB ... add all of those". Only
+  // the Job #4101 pumping visits; its 2025 Hydrojet visits (Job 10000112) are deliberately left out.
+  const PRE_2026_ALLOWED_VISIT_GIDS = new Set<string>([
+    'Z2lkOi8vSm9iYmVyL1Zpc2l0LzE2MTczMDQzMTI=', // 041-MB 2025-03-25
+    'Z2lkOi8vSm9iYmVyL1Zpc2l0LzE3MzA5NDYzNTY=', // 041-MB 2025-05-29
+    'Z2lkOi8vSm9iYmVyL1Zpc2l0LzE4Mjc1NDI3NDI=', // 041-MB 2025-07-28
+    'Z2lkOi8vSm9iYmVyL1Zpc2l0LzE4OTAxNTI1NDI=', // 041-MB 2025-10-16
+    'Z2lkOi8vSm9iYmVyL1Zpc2l0LzE5NTM0Njc0NTU=', // 041-MB 2025-11-16
+  ])
   const dateForCutoff = (v.startAt ?? v.endAt ?? v.completedAt)?.slice(0, 10)
-  if (dateForCutoff && dateForCutoff < '2026-01-01') {
+  if (dateForCutoff && dateForCutoff < '2026-01-01' && !PRE_2026_ALLOWED_VISIT_GIDS.has(gid)) {
     console.log(`[handleVisit] visit ${numericId} dated ${dateForCutoff} — pre-2026, skipping`)
     return { entity_id: 0 }
   }
