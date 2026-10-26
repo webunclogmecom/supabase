@@ -145,6 +145,55 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
   Results before 2026-10-20 were all inferred. ⚠ The first real result carrying `gdo_id` is the first proof.
 - **`?mode=`** is `dryrun` (a 25-row historical sample, no lease), `peek` (the live queue, no lease, since v32) or
   absent (live, leased). Anything else is refused with 400 `unknown_mode` since v33 (it used to read as live).
+- **A dashboard manual entry posts `manual_entry` and no `visit_id` (accepted since `rpa-derm-result` v40,
+  2026-10-26).** Section 10.
+
+## 10. Dashboard manual entries ("Add a report by hand", 2026-10-26)
+
+Fred, 2026-10-26: *"what data means is that someone used [the bot] dashboard to file it manually ... so at the end of
+the day it was a manual filing, so we can just accept that new data as a criteria and we can classify it as a manual
+filing in our apps"*.
+
+**What happened first.** Yan filed 041-MB visit 8888 (permit 14965, manifest 808783, service date 2025-11-16) from the
+dashboard at 12:00 ET. The county accepted it. The bot then POSTed a body carrying `manual_entry: {created_by, why}`
+with `visit_id` and `manifest_id` null, and `rpa-derm-result` answered 400 `unknown_field_manual_entry`, every hour.
+Two bot facts behind it (bot repo at `7681388`):
+- the bot's design says a manual entry never posts (R7 in `docs/REQUIREMENTS_TRACKER_SSO.md`), but the guard lives
+  only in `reporter._post_and_cache`; the crash-insurance seed (`reporter.py:963`, `db.cache_failed_result`) and the
+  final POST after the email (`reporter.py:1060`) skip it, so every SUCCESS of a manual entry reaches us;
+- the body carries nothing that says which visit it is (no permit, manifest or date), and the hourly retry resends the
+  SEED, written before the county email arrived, so it has no image either (`INSERT OR IGNORE`, `db.py:428`). The
+  bot drops a cached result after 11 failed retries and posts "Result discarded without delivery to Supabase".
+
+**What `rpa-derm-result` does now (`recordManualEntry`, v40):**
+
+| step | rule |
+|---|---|
+| shape | `manual_entry` keys allowed: `created_by`, `why`, `gdo_number`, `ticket_number`, `service_date`, `dump_date`; anything else is 400. A body with `manual_entry` AND a `visit_id` / `manifest_id` / `gdo_id` is 400 |
+| dedupe | first, on the stored run_id `manual-bot-<bot run_id>` alone |
+| only a filing | status `SUCCESS`, `dry_run` not true and a `portal_confirmation`, else 200 `recorded:false` and nothing written |
+| the visit | `v_derm_portal_fields` rows on that `visit_date` (YYYY-MM-DD or MM/DD/YYYY), permit compared as digits without zeros, ticket without leading zeros; exactly one visit and one permit, and the manifest covers no other visit (a typed dump date can be the OTHER visit's service date: ticket 815951, visits 1353/1360) |
+| the image | a JPEG or PNG in `screenshot` is required (`fn_record_manual_gdo_report` needs it in storage first) |
+| the record | uploaded to `rpa-evidence/<visit>/manual-bot-<run>.<ext>`, then `fn_record_manual_gdo_report` with the matched `gdo_id`, so the row is exactly a DERM App manual filing: Manual chip and "Filed by" in the DERM Tracker, "Filed manually, DERM portal confirmed (no tracking number)" in the Field Portal |
+| filed by | `yan` = yannick@ayache.com, `fred` = fred@ayache.com, `diego` = contact@unclogme.com (Fred, 2026-10-26); anyone else `GDO bot dashboard (<name>)` |
+| refusal | 🛑 **200 + a Slack post to #apps-notifications, never a 4xx** ("GDO report not recorded", what was sent, "record it in the DERM App ... do not file it again"). A 4xx makes the bot retry for ~11 hours and then tell people to check whether the county has it, which is the wrong question. If the post fails, 500, so the bot keeps retrying and the refusal cannot go silent |
+
+`manual-bot-` keeps the run_id under `manual-%` (is_manual, the dry-run guard's exemption, the
+`actor_markers_agree` CHECK) and tells a bot-dashboard filing apart from a DERM App one (`manual-<uuid>`).
+
+**Visit 8888 (the first case) was recorded by hand on 2026-10-26 at 18:00 ET**, exactly as the endpoint would have:
+the county confirmation email from the bot's `/evidence-export` (DERM message
+`<7471d93e-b51c-4119-9e41-abf9cf3176f3@s0146923.miamidade.gov>`) at `rpa-evidence/8888/manual-bot-882d2b19-aa06-4db8-9d43-136d1451bebb.jpg`,
+submission 2027, filed by yannick@ayache.com, attempted 16:00:58 UTC. The bot's hourly retry of the identifier-less
+seed now gets 200 `deduped`, which clears it. Checked in the DERM Tracker visit page and the Field Portal report.
+
+**Still needed on the bot side (Jon's repo, not done; pushes wait for the September LWT filing, section 9):**
+1. put `gdo_number`, `ticket_number`, `service_date` (ISO) and `dump_date` inside `manual_entry`
+   (`build_result_payload`);
+2. when the final POST fails, replace the cached seed with the final payload (it carries the county email), or the
+   retry has no image and is refused;
+3. update R7 and the "manual entries never post" comments. Until then every manual entry lands in the refusal path,
+   with a Slack post, and is recorded by a person in the DERM App.
 
 ## 5. Evidence
 

@@ -10,6 +10,9 @@
 //         attempted_at (ISO 8601), portal_confirmation?,
 //         screenshot? (base64 JPEG, max 5MB decoded),
 //         screenshot_missing_reason?, dry_run? }
+//   or, for a filing made on the bot dashboard ("Add a report by hand"), no visit_id and
+//   manual_entry: { created_by, gdo_number, ticket_number, service_date, dump_date?, why? }
+//   -> recordManualEntry (2026-10-26), see docs/reference/gdo-report-bot.md section 10.
 //
 // Rules enforced HERE (not trusted to the bot):
 // - auth: x-rpa-key against RPA_BOT_KEYS (comma-separated, rotation-friendly);
@@ -26,6 +29,7 @@
 // ============================================================================
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { slackHeader, slackIdentity, slackSections } from '../_shared/slack-notify.ts'
 
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 
@@ -48,7 +52,266 @@ const ALLOWED_FIELDS = new Set([
   'attempted_at', 'portal_confirmation', 'screenshot',
   'screenshot_missing_reason', 'dry_run',
   'gdo_id', 'gdo_number',
+  'manual_entry', // 2026-10-26: a filing made on the bot dashboard ("Add a report by hand"), see recordManualEntry
 ])
+
+// ============================================================================
+// BOT DASHBOARD MANUAL ENTRIES (2026-10-26)
+// ----------------------------------------------------------------------------
+// Fred, 2026-10-26: "what data means is that someone used [the bot] dashboard to file it manually ... so at the
+// end of the day it was a manual filing, so we can just accept that new data as a criteria and we can classify it
+// as a manual filing in our apps". First case: Yan filed 041-MB visit 8888 (2025-11-16, permit 14965, manifest
+// 808783) that way at 12:00 ET; the bot posted it with `manual_entry` and got 400 unknown_field_manual_entry.
+//
+// A manual entry has NO visit_id: a person typed permit + manifest + service date on the bot's page. So:
+//   1. the visit is FOUND from those three values inside v_derm_portal_fields, and only an exact, single answer
+//      is used (one visit, one permit, a manifest that covers no other visit); anything else is refused;
+//   2. it is recorded through public.fn_record_manual_gdo_report, the SAME function the DERM App's "Record a
+//      manual filing" uses, so it gets the Manual chip and "Filed by" in the DERM Tracker and the client reads
+//      Fred's 2026-08-20 sentence in the Field Portal. 🛑 Never insert a 'manual-' row directly: that function is
+//      the one writer of manual rows (it checks the image exists, the permit, and "already filed"), and the
+//      dry-run guard trusts 'manual-' rows because of it (2026-08-19_1558 migration header);
+//   3. run_id is stored as 'manual-bot-<bot run_id>': is_manual reads run_id LIKE 'manual-%', the prefix keeps a
+//      bot-dashboard filing distinguishable from a DERM App one, and it is deterministic so retries dedupe;
+//   4. only a SUCCESS with a portal confirmation and an image is recorded. A test or failed manual entry writes
+//      nothing: a stored failure row would hold the bot's queue for that permit (gates 2-3);
+//   5. 🛑 A REFUSAL IS A 200 + A SLACK POST, NEVER A 4xx. The county already has the report; what is missing is our
+//      record. A 4xx makes the bot retry hourly for ~11 hours and then post "Manually verify if the permit was
+//      submitted to DERM", which is the wrong instruction. If the Slack post itself fails we return 500, so the
+//      bot keeps retrying and the refusal cannot go silent (root CLAUDE.md s7.1).
+// The bot side (Jon's repo) must send gdo_number, ticket_number and service_date inside manual_entry; until it
+// does, every manual entry lands in the refusal path with "no permit, manifest or date".
+// ============================================================================
+
+// The bot sends the NAME of the dashboard key that filed it, never an email (its server.py _operator_name).
+// filed_by_email is required on every 'manual-' row (CHECK actor_markers_agree). Names from Fred, 2026-10-26.
+const OPERATOR_EMAILS: Record<string, string> = {
+  yan: 'yannick@ayache.com',
+  fred: 'fred@ayache.com',
+  diego: 'contact@unclogme.com',
+}
+const MANUAL_ENTRY_FIELDS = new Set(['created_by', 'why', 'gdo_number', 'ticket_number', 'service_date', 'dump_date'])
+const SLACK_CHANNEL = 'C0BJYHQKZM1' // #apps-notifications
+
+// The bot strips "GDO-" but keeps whatever zeros were typed; we store GDO-09853. Compare digits without zeros.
+const permitKey = (s: string) => s.trim().toUpperCase().replace(/^GDO-/, '').replace(/^0+/, '')
+const ticketKey = (s: string) => s.trim().toUpperCase().replace(/^0+(?=.)/, '')
+
+// YYYY-MM-DD or MM/DD/YYYY (the bot accepts both on its page) -> YYYY-MM-DD, or null when it is not a real date.
+function isoDate(raw: string): string | null {
+  const t = raw.trim()
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t)
+  let iso = m ? `${m[1]}-${m[2]}-${m[3]}` : null
+  if (!iso) {
+    m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t)
+    if (m) iso = `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`
+  }
+  if (!iso) return null
+  const d = new Date(`${iso}T00:00:00Z`)
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null
+}
+
+function decodeImage(b64raw: string): { bytes: Uint8Array; ext: 'jpg' | 'png'; mime: string } | null {
+  const b64 = b64raw.replace(/^data:image\/[a-z]+;base64,/, '').replace(/\s/g, '')
+  if (!b64 || b64.length > (MAX_SCREENSHOT_BYTES * 4) / 3 + 16) return null
+  try {
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const kind = bytes.length <= MAX_SCREENSHOT_BYTES ? sniffImage(bytes) : null
+    return kind ? { bytes, ...kind } : null
+  } catch {
+    return null
+  }
+}
+
+async function postRefusal(detail: string[], reason: string): Promise<boolean> {
+  const token = Deno.env.get('SLACK_BOT_TOKEN') ?? ''
+  if (!token) {
+    console.error('SLACK_BOT_TOKEN not set: manual entry refusal not posted')
+    return false
+  }
+  const main = '🧾 *GDO report filed by hand on the bot, not recorded in our apps:* ' + reason
+  const body = [main, ...detail,
+    'The county already has this report. Record it in the DERM App on the visit (Record a manual filing) with the ' +
+    'county confirmation email from fog@. Do not file it again.'].join('\n')
+  try {
+    const as = await slackIdentity(token, 'DERM Tracker', 'derm-tracker')
+    const res = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({
+        channel: SLACK_CHANNEL,
+        text: `GDO report filed by hand on the bot, not recorded: ${reason}`,
+        blocks: [slackHeader('🧾 GDO report not recorded'), ...slackSections(body)],
+        ...as,
+      }),
+    })
+    const out = await res.json().catch(() => ({}))
+    if (!out.ok) console.error('manual entry refusal post failed:', out.error ?? res.status)
+    return !!out.ok
+  } catch (e) {
+    console.error('manual entry refusal post failed:', (e as Error).message)
+    return false
+  }
+}
+
+async function recordManualEntry(body: Record<string, unknown>): Promise<Response> {
+  const me = body.manual_entry
+  if (me === null || typeof me !== 'object' || Array.isArray(me)) {
+    return json({ error: 'manual_entry_must_be_an_object' }, 400)
+  }
+  const entry = me as Record<string, unknown>
+  for (const k of Object.keys(entry)) {
+    if (!MANUAL_ENTRY_FIELDS.has(k)) return json({ error: `unknown_field_manual_entry.${k}` }, 400)
+  }
+  // Never trust a visit, manifest or permit id on a hand entry: the person typed none of them.
+  if (body.visit_id != null || body.manifest_id != null || body.gdo_id != null) {
+    return json({ error: 'manual_entry_must_not_carry_visit_manifest_or_gdo_id' }, 400)
+  }
+  const botRunId = typeof body.run_id === 'string' ? body.run_id.trim() : ''
+  if (!/^[A-Za-z0-9_.-]{1,86}$/.test(botRunId)) {
+    // 86 so 'manual-bot-' + it fits fn_record_manual_gdo_report's ^manual-[A-Za-z0-9_.-]{1,90}$
+    return json({ error: 'run_id_must_be_alnum_dot_dash_underscore_max86' }, 400)
+  }
+  const runId = `manual-bot-${botRunId}`
+  const status = typeof body.status === 'string' ? body.status.trim() : ''
+  const confirmation = body.portal_confirmation == null ? '' : String(body.portal_confirmation).trim()
+  const attemptedAt = typeof body.attempted_at === 'string' ? new Date(body.attempted_at) : null
+  if (!attemptedAt || isNaN(attemptedAt.getTime())) return json({ error: 'attempted_at_must_be_iso8601' }, 400)
+
+  const sb = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    { global: { headers: { 'x-app-source': 'gdo-report-bot' } } },
+  )
+
+  // Dedupe FIRST, on the stored run_id alone: a retry after a lost 201 must get the same answer even if the
+  // visit match would now come out differently.
+  const { data: prior, error: priorErr } = await sb
+    .from('derm_portal_submissions')
+    .select('id, visit_id, gdo_id, screenshot_path')
+    .eq('run_id', runId)
+    .limit(1)
+  if (priorErr) {
+    console.error('manual entry dedupe lookup failed:', priorErr.message)
+    return json({ error: 'result_lookup_failed_retry' }, 500)
+  }
+  if (prior && prior.length > 0) {
+    return json({ recorded: true, deduped: true, manual_entry: true, id: prior[0].id, visit_id: prior[0].visit_id,
+      gdo_id: prior[0].gdo_id, run_id: runId, screenshot_stored: prior[0].screenshot_path !== null }, 200)
+  }
+
+  // A test run or a failed filing is not a filing: nothing to record, nobody to tell.
+  if (status !== 'SUCCESS' || body.dry_run === true || !confirmation) {
+    return json({ recorded: false, manual_entry: true, reason: 'only_a_successful_filing_is_recorded' }, 200)
+  }
+
+  const by = String(entry.created_by ?? '').trim()
+  const permit = String(entry.gdo_number ?? '').trim()
+  const ticket = String(entry.ticket_number ?? '').trim()
+  const rawDate = String(entry.service_date ?? '').trim()
+  const when = attemptedAt.toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })
+  const detail = [
+    `*Permit:* ${permit || 'not sent'}`,
+    `*Manifest:* ${ticket || 'not sent'}`,
+    `*Service date:* ${rawDate || 'not sent'}`,
+    `*Filed by:* ${by || 'unknown'} on ${when} ET`,
+    `*Bot run:* ${botRunId}`,
+  ]
+  const refuse = async (reason: string, code: string) => {
+    if (!(await postRefusal(detail, reason))) return json({ error: 'refusal_not_announced_retry', reason: code }, 500)
+    return json({ recorded: false, manual_entry: true, reason: code, announced: true }, 200)
+  }
+
+  if (!permit || !ticket || !rawDate) {
+    return await refuse('the bot did not send the permit, manifest and service date, so we cannot tell which visit it is.',
+      'manual_entry_missing_permit_manifest_or_date')
+  }
+  const serviceDate = isoDate(rawDate)
+  if (!serviceDate) return await refuse(`"${rawDate}" is not a date we can read.`, 'manual_entry_bad_service_date')
+
+  // Exact match only, inside v_derm_portal_fields (the GDO-report visits, one row per ACTIVE permit). The same
+  // view is what fn_record_manual_gdo_report checks the permit against, so a match here is a permit it accepts.
+  const { data: rows, error: fErr } = await sb
+    .from('v_derm_portal_fields')
+    .select('visit_id, gdo_id, gdo_number, ticket_number, manifest_id')
+    .eq('visit_date', serviceDate)
+  if (fErr) {
+    console.error('manual entry visit lookup failed:', fErr.message)
+    return json({ error: 'visit_lookup_failed_retry' }, 500)
+  }
+  const hits = (rows ?? []).filter((r) =>
+    r.gdo_id != null && permitKey(String(r.gdo_number ?? '')) === permitKey(permit) &&
+    ticketKey(String(r.ticket_number ?? '')) === ticketKey(ticket))
+  const visits = [...new Set(hits.map((h) => h.visit_id))]
+  const permits = [...new Set(hits.map((h) => h.gdo_id))]
+  if (visits.length === 0) {
+    return await refuse('no GDO-report visit on that service date has that permit and manifest.', 'manual_entry_no_matching_visit')
+  }
+  if (visits.length > 1 || permits.length > 1) {
+    return await refuse(`it matches ${visits.length} visits and ${permits.length} permits, so we cannot tell which one.`,
+      'manual_entry_ambiguous')
+  }
+  const visitId = visits[0] as number
+  const gdoId = permits[0] as number
+  // A manifest that covers two visits can turn a typed DUMP date into the OTHER visit's service date (measured:
+  // ticket 815951, visits 1353/1360). Never guess there: a person picks the visit.
+  const { data: siblings, error: sErr } = await sb
+    .from('manifest_visits')
+    .select('visit_id')
+    .eq('manifest_id', hits[0].manifest_id)
+  if (sErr) {
+    console.error('manual entry manifest check failed:', sErr.message)
+    return json({ error: 'visit_lookup_failed_retry' }, 500)
+  }
+  if ((siblings ?? []).length > 1) {
+    return await refuse(`manifest ${ticket} covers ${(siblings ?? []).length} visits, so a person has to pick visit ${visitId} or the other.`,
+      'manual_entry_manifest_covers_several_visits')
+  }
+  detail.unshift(`*Visit:* ${visitId}`)
+
+  const img = body.screenshot == null ? null : decodeImage(String(body.screenshot))
+  if (!img) {
+    return await refuse('it came without a readable image (JPEG or PNG), and a manual filing needs one.', 'manual_entry_no_image')
+  }
+
+  const filedBy = OPERATOR_EMAILS[by.toLowerCase()] ?? `GDO bot dashboard (${by || 'unknown'})`
+  const path = `${visitId}/${runId}.${img.ext}`
+  const { error: upErr } = await sb.storage
+    .from('rpa-evidence')
+    .upload(path, img.bytes, { contentType: img.mime, upsert: true })
+  if (upErr) {
+    console.error('manual entry evidence upload failed:', upErr.message)
+    return json({ error: 'evidence_store_failed_retry' }, 500)
+  }
+  const { data: row, error: rpcErr } = await sb.rpc('fn_record_manual_gdo_report', {
+    p_visit_id: visitId,
+    p_attempted_at: attemptedAt.toISOString(),
+    p_run_id: runId,
+    p_screenshot_path: path,
+    p_filed_by_email: filedBy,
+    p_gdo_id: gdoId,
+  })
+  if (rpcErr) {
+    // Same run_id = same object, so nothing else can reference it; remove it so no orphan image stays.
+    await sb.storage.from('rpa-evidence').remove([path])
+    if (rpcErr.code === '23505') {
+      // "already has a filing on record for that GDO permit": maybe recorded in the DERM App, maybe a SECOND county
+      // filing. Either way a person looks; retrying cannot help.
+      return await refuse(`visit ${visitId} already has a filing on record for this permit. Check whether the county now has it twice.`,
+        'manual_entry_already_filed')
+    }
+    if (rpcErr.code === '22023') {
+      return await refuse(`our manual-filing check refused it: ${rpcErr.message}`, 'manual_entry_refused_by_check')
+    }
+    console.error('manual entry record failed:', rpcErr.message)
+    return json({ error: 'result_store_failed_retry' }, 500)
+  }
+  const rec = row as { id?: number } | null
+  return json({ recorded: true, deduped: false, manual_entry: true, id: rec?.id ?? null, visit_id: visitId,
+    gdo_id: gdoId, run_id: runId, filed_by: filedBy, screenshot_stored: true }, 201)
+}
 
 function json(body: Record<string, unknown>, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -101,6 +364,7 @@ Deno.serve(async (req: Request) => {
   for (const k of Object.keys(body)) {
     if (!ALLOWED_FIELDS.has(k)) return json({ error: `unknown_field_${k}` }, 400)
   }
+  if (body.manual_entry != null) return await recordManualEntry(body)
 
   const visitId = Number(body.visit_id)
   if (!Number.isInteger(visitId) || visitId <= 0) {
