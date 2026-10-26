@@ -14,7 +14,7 @@ const TEST = fileURLToPath(new URL('./analytics-token-guard.test.mjs', import.me
 const GUARD = execFileSync(process.execPath, [TEST, '--print'], { encoding: 'utf8' }).replace(/\n$/, '')
 const fixture = (process.argv.find((a) => a.startsWith('--fixture=')) || '').split('=')[1]
 const PAGES = {
-  hub: ['/', '/reset-password'], admin: ['/'], clients: ['/', '/reset-password'], stamp: ['/'],
+  hub: ['/', '/reset-password', '/reset-password/invite'], admin: ['/'], clients: ['/', '/reset-password'], stamp: ['/'],
   derm: ['/'], calendar: ['/'], hr: ['/employees'], planner: ['/', '/reset-password'],
 }
 const FLOCK = /<script\b[^>]*\bsrc="\/~flock\.js"[^>]*>/i
