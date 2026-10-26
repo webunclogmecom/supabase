@@ -50,7 +50,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   its three findings fixed: `2026-10-26_1800` (History names the address an invite went to), `hr-sign-in` v11
   (hub.unclogme.app an explicit link), the Security tab's "separate task" sentence only when the email is locked.
   Measured: generate_link runs the sign-up rule. NOT BUILT: personal addresses (the 8 app logins, sequenced with
-  legacy-keys step 6, then the sign-up rule). Not yet seen live: the 60-second countdown (needs a pending invite).
+  legacy-keys step 6, then the sign-up rule). The second live test found the countdown could never show (the wait
+  hid the button); fixed by `2026-10-26_1830`, not yet seen live.
 
 **Switch off the legacy Supabase keys (Trello 8IBiZL5Z last step, SECURITY-16)**
 - 2026-10-22, Fred (after the Railway breach rotation): *"let's change it as the last step we have to do."* Plan:
