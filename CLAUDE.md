@@ -5370,7 +5370,9 @@ Nine things that will bite someone who does not know them:
    `grease_trap.t<N>.location / .size_from / .model / .capacity_measure / .capacity_gallons` (shown when
    `systems_count > N-1`, max 9). 🛑 With several traps `fn_intake_gallons_offer` offers the TOTAL (`kind: 'traps'`, per-trap
    list) and NULL when any trap has no number; `accept_intake_answers` saves only that total (`blocker=traps_incomplete`),
-   never trap 1's answer. 🛑 `fn_site_map_problem` accepts pin keys `gt`..`gt9` and `truck`..`truck3` only.
+   never trap 1's answer. 🛑 `fn_site_map_problem` accepts pin keys `gt`..`gt9` and `truck`..`truck3` only. Since
+   `2026-10-23_1130_sample_ports_order` (Fred) "How many sample ports?" comes right after "How many manholes?" (order only,
+   still version 6).
 
 ### 🛑 "HAS THIS VISIT'S CITY EMAIL GONE?" HAS ONE ANSWER: `public.v_visit_city_email_state` (2026-10-12)
 
