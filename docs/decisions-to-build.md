@@ -68,7 +68,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   BUILT 2026-10-23: steps 1 (edge functions accept a secret key, `aab4ac0`), 2 (vault), 3 (GitHub Actions key
   "github_actions") and 4 (PDF service on supabase-py 2.18.1 with the "railway" key, pdf-service `97e4216`). Step 5
   BUILT 2026-10-25 (Field Portal login server on the "field_portal" secret key, proven live by a login and the edge
-  log). Step 6 under way: Admin Review, the Apps Hub, the Client App, Stamp Studio, the DERM Tracker, the Visit Calendar, the HR App and the Picture Planner on the publishable key 2026-10-26 (Fred pastes the key in each Lovable project); the other 8 apps next; 7 to 10 not built (the plan's section 3b tracks
+  log). Step 6 BUILT 2026-10-26: all 9 apps on the publishable key (Fred pasted it in each Lovable project, the session published and checked each live); 7 to 10 not built (the plan's section 3b tracks
   them).
 
 **Water tracking per Moises visit (Trello dGJ5aFrh, Yan's Oct 13 ask)**
