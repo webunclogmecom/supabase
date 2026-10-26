@@ -25,6 +25,23 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**HR App Send invite, implementation plan (Trello HhuFXLlt)**
+- 2026-10-26, Fred: *"why is that we're still missing the invite link for new drivers?"*, then *"design a plan for it
+  ... phase by phase, smoke test it, and visually check"*, then *"Once the plan has been devised, execute it"*: the
+  plan's 7 recommended answers are taken as decided. Plan:
+  `Building Apps/HR App/docs/specs/2026-10-26-send-invite-implementation-plan.md` (replaces Part B of the 10-21 plan as
+  the build plan). Decided: (1) phases 1-2 now, HR App screens before legacy-keys step 6 reaches the HR App, Hub page
+  after step 6 releases the Hub; (2) the test uses ONE database exception (`fn_restrict_signup_domains`) for
+  webunclogme@gmail.com, never per-app exceptions (this replaces the D12 wording below), proves no-access by direct
+  calls with the test person's token (Node only), and runs Turn off / Turn on live once; (3) invite email subject "Set
+  Up Your UnclogMe Account", 1 hour; (4) the screen wording in the plan; (5) test window a weekday 06:30-08:30 ET;
+  (6) invites stay ON after the test; (7) a first Google sign-in after D16 shows no message: known issue, a login
+  message later. D16's real effect (Supabase source): it blocks new self sign-ups and new Google accounts, never sets
+  a password on an invited address. New, from the plan review: invites get their own switch
+  (`app_config.hr_invites_on`, missing = off); a no-access sign-in stays refused even when an app is in watch; D17 is
+  enforced in `hr.set_access` / `set_group_access`; `get-derm-doc` needs DERM View. NOT BUILT yet (phase by phase,
+  each marked here when it lands). Decision 22 (re-authentication before a password change) is untouched and open.
+
 **Switch off the legacy Supabase keys (Trello 8IBiZL5Z last step, SECURITY-16)**
 - 2026-10-22, Fred (after the Railway breach rotation): *"let's change it as the last step we have to do."* Plan:
   `docs/specs/2026-10-22-legacy-keys-switch-off-plan.md` (move every user to the new keys, watch a day, disable the
