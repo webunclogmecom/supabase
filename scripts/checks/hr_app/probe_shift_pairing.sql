@@ -63,7 +63,10 @@ BEGIN
   r := r || jsonb_build_object('t','8 a shift with no form at all records $0','ok', v_sum = 0 AND v_note = 'forms_issue');
   -- 9. the repair of Michael's reviews
   r := r || jsonb_build_object('t','9 the two orphan denials are gone and Oct 5 is paid','ok',
-        NOT EXISTS (SELECT 1 FROM public.shift_reviews WHERE employee_id = 40 AND shift_date IN (date '2026-10-03', date '2026-10-20'))
+        -- an ORPHAN is a review on a date with no shift. Oct 20 became a real shift (POST 552, split from 545 on 10-21)
+        -- and Serena reviewed it on 10-23, which is legitimate; the rule is "no review without a shift", not "no review".
+        NOT EXISTS (SELECT 1 FROM public.shift_reviews r WHERE r.employee_id = 40 AND r.shift_date IN (date '2026-10-03', date '2026-10-20')
+                     AND NOT EXISTS (SELECT 1 FROM public.v_inspection_shifts s WHERE s.employee_id = r.employee_id AND s.shift_date = r.shift_date))
         AND (SELECT sum(amount) FROM hr.bonus_events WHERE kind = 'shift_bonus' AND employee_id = 40 AND work_date = date '2026-10-05')
             = (SELECT x.amount FROM hr.fn_shift_rate_on(40, date '2026-10-05') x));
   -- 10. the sweep writes nothing; privileges

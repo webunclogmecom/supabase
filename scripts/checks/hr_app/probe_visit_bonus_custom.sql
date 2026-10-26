@@ -10,6 +10,10 @@ DECLARE
 BEGIN
   c_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 2))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = 2),'role','authenticated')::text;
   c_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)))), '00000000-0000-0000-0000-000000000001'),'email',(select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)),'role','authenticated')::text;
+  -- The office fixture must NOT hold Pay rates and bonus settings: that is the premise of every 'office cannot ...'
+  -- check. Office defaults can change (Fred set Office hr_pay = yes on 2026-10-23), so pin it here; the run's
+  -- ROLLBACK undoes it.
+  INSERT INTO hr.access_overrides (employee_id, app, level, set_by_email) SELECT e.id, 'hr_pay', 'no', 'probe' FROM public.employees e WHERE lower(e.email) = lower(c_office::jsonb->>'email');
 
   -- fixtures (one crew member, a real customer, in the review queue, bonus not decided)
   SELECT v.id, min(t.employee_id) INTO v_sorted, v_e

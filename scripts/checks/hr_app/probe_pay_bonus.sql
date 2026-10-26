@@ -10,6 +10,10 @@ BEGIN
   -- office: an active office person on the group defaults (no access settings of their own), picked live
   SELECT email INTO em_office FROM public.employees WHERE id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1);
   v_claims_office := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_office)), '00000000-0000-0000-0000-000000000001'),'email',em_office,'role','authenticated')::text;
+  -- The office fixture must NOT hold Pay rates and bonus settings: that is the premise of every 'office cannot ...'
+  -- check. Office defaults can change (Fred set Office hr_pay = yes on 2026-10-23), so pin it here; the run's
+  -- ROLLBACK undoes it.
+  INSERT INTO hr.access_overrides (employee_id, app, level, set_by_email) SELECT e.id, 'hr_pay', 'no', 'probe' FROM public.employees e WHERE lower(e.email) = lower(em_office);
   v_claims_admin := json_build_object('sub',coalesce((select u.id::text from auth.users u where lower(u.email) = lower(em_admin)), '00000000-0000-0000-0000-000000000001'),'email',em_admin,'role','authenticated')::text;
 
   -- a completed, unreviewed, real-client visit with a one-person crew
@@ -18,6 +22,8 @@ BEGIN
    WHERE v.visit_status = 'completed' AND v.deleted_at IS NULL AND NOT public.fn_is_non_customer(v.client_id)
      AND v.visit_date >= current_date - 30
      AND NOT EXISTS (SELECT 1 FROM public.visit_reviews vr WHERE vr.visit_id = v.id AND vr.bonus_status <> 'pending')
+     -- every photo sorted: since 2026-10-20_1935 a bonus cannot be approved otherwise (hr.trg_visit_bonus_needs_sorted_photos)
+     AND coalesce((SELECT c.total_images - c.classified_images FROM public.v_visit_photo_counts c WHERE c.visit_id = v.id), 0) <= 0
    GROUP BY v.id HAVING count(*) = 1 ORDER BY v.id DESC LIMIT 1;
   SELECT id INTO v_other FROM public.employees WHERE status = 'ACTIVE' AND id <> v_crew AND id IN (1, 35, 40) LIMIT 1;
 

@@ -10,6 +10,10 @@ DECLARE
 BEGIN
   c_admin := json_build_object('sub',(select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = 2))),'email',(select email from public.employees where id = 2),'role','authenticated')::text;
   c_office := json_build_object('sub',(select u.id::text from auth.users u where lower(u.email) = lower((select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)))),'email',(select email from public.employees where id = (select e.id from public.employees e join auth.users u on lower(u.email) = lower(e.email) where e.status = 'ACTIVE' and e.access_level = 'office' and u.email_confirmed_at is not null and u.banned_until is null and not exists (select 1 from hr.access_overrides o where o.employee_id = e.id) order by e.id limit 1)),'role','authenticated')::text;
+  -- The office fixture must NOT hold Pay rates and bonus settings: that is the premise of every 'office cannot ...'
+  -- check. Office defaults can change (Fred set Office hr_pay = yes on 2026-10-23), so pin it here; the run's
+  -- ROLLBACK undoes it.
+  INSERT INTO hr.access_overrides (employee_id, app, level, set_by_email) SELECT e.id, 'hr_pay', 'no', 'probe' FROM public.employees e WHERE lower(e.email) = lower(c_office::jsonb->>'email');
 
   -- fixture: the person with the most open approved visit bonuses; window = from their earliest one to their next later amount
   SELECT g.employee_id INTO v_e FROM hr.bonus_events g
@@ -37,7 +41,10 @@ BEGIN
   v_exp := (SELECT count(*) FROM hr.bonus_events g
              WHERE g.employee_id = v_e AND g.kind = 'visit_bonus' AND g.rule = 'approved' AND g.reverses_id IS NULL
                AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id)
-               AND g.work_date >= v_d AND g.amount <> v_new AND g.visit_id <> v_vx);
+               AND g.work_date >= v_d AND g.amount <> v_new
+               -- every visit with its own live custom amount keeps it (v_vx, and real ones: Fred set 7866 on 2026-10-23)
+               AND NOT coalesce((SELECT o.amount IS NOT NULL FROM hr.visit_bonus_overrides o
+                                  WHERE o.visit_id = g.visit_id AND o.employee_id = g.employee_id ORDER BY o.id DESC LIMIT 1), false));
   -- 2. the preview counts exactly those
   j := hr.preview_person_bonus(v_e, 'per_visit_bonus', v_new, v_d);
   r := r || jsonb_build_object('t','2 preview counts the approved visits that would change','ok', (j->>'approved_count')::int = v_exp AND v_exp > 0 AND j->>'unit' = 'visit', 'v', j, 'expected', v_exp);
@@ -57,7 +64,9 @@ BEGIN
         NOT (j->>'noop')::boolean AND (j->>'updated_approved')::int = v_exp
         AND NOT EXISTS (SELECT 1 FROM hr.bonus_events g WHERE g.employee_id = v_e AND g.kind = 'visit_bonus' AND g.rule = 'approved'
                           AND g.reverses_id IS NULL AND NOT EXISTS (SELECT 1 FROM hr.bonus_events x WHERE x.reverses_id = g.id)
-                          AND g.work_date >= v_d AND g.visit_id <> v_vx AND g.amount <> v_new)
+                          AND g.work_date >= v_d AND g.amount <> v_new
+                          AND NOT coalesce((SELECT o.amount IS NOT NULL FROM hr.visit_bonus_overrides o
+                                             WHERE o.visit_id = g.visit_id AND o.employee_id = g.employee_id ORDER BY o.id DESC LIMIT 1), false))
         AND (SELECT count(*) FROM hr.bonus_events g WHERE g.reprice_rate_id = v_rate AND g.reverses_id IS NULL AND g.filled_by = 'rate_change'
                AND g.note LIKE 'Amount changed to % from % by %: probe apply') = v_exp, 'v', j);
   r := r || jsonb_build_object('t','4b the visit with its own custom amount keeps it','ok',

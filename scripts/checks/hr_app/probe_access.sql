@@ -7,6 +7,10 @@ DECLARE
   c_diego text := json_build_object('sub','cb6ae560-ebd5-4b6e-b654-f3d9bb3662e8','email','contact@unclogme.com','role','authenticated')::text;
   j jsonb; v_ok boolean; v_det text; v_n int;
 BEGIN
+  -- The office cases assume Office holds neither "Pay rates and bonus settings" nor "Approve site files". Fred set both
+  -- Office defaults to yes on 2026-10-23 (HR App), so pin them back here; the run's ROLLBACK undoes it. Pinned on the
+  -- GROUP, not on Aaron, because check 6b asserts Aaron holds no own setting.
+  UPDATE hr.access_group_defaults SET level = 'no' WHERE grp = 'office' AND app IN ('hr_pay', 'pp_approve');
   -- 3. Fred (admin): everything as before
   PERFORM set_config('request.jwt.claims', c_fred, true);
   j := hr.get_employee_record(40);
