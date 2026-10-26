@@ -45,9 +45,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   user's status or set a pay rate (only `userEdit(name)`), so the HR App reads Jobber and shows what to do there.
   BUILT 2026-10-26: `2026-10-26_1700` (hr.jobber_users mirror, email linker, Jobber line, health lines; edge fn
   `sync-jobber-users`, cron */15), `2026-10-26_1730` (`hr.create_employee`, 60-second / 5-a-day invite wait, unaccepted
-  address change, record timing + Jobber block), `hr-sign-in` v10 (email B sent through Resend). HR App screens: sent to
-  Lovable 2026-10-26. NOT BUILT: personal addresses (the 8 app logins, sequenced with legacy-keys step 6, then the
-  sign-up rule); the live test of email B (Fred presses Send invite on a test person).
+  address change, record timing + Jobber block), `hr-sign-in` v10 (email B sent through Resend). HR App screens live
+  2026-10-26. Fred's live test the same day (person 58): email B delivered in 1 s, the unaccepted address change worked;
+  its three findings fixed: `2026-10-26_1800` (History names the address an invite went to), `hr-sign-in` v11
+  (hub.unclogme.app an explicit link), the Security tab's "separate task" sentence only when the email is locked.
+  Measured: generate_link runs the sign-up rule. NOT BUILT: personal addresses (the 8 app logins, sequenced with
+  legacy-keys step 6, then the sign-up rule). Not yet seen live: the 60-second countdown (needs a pending invite).
 
 **Switch off the legacy Supabase keys (Trello 8IBiZL5Z last step, SECURITY-16)**
 - 2026-10-22, Fred (after the Railway breach rotation): *"let's change it as the last step we have to do."* Plan:
