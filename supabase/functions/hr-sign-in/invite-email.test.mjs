@@ -22,6 +22,9 @@ assert.ok(m.text.includes(link), "the text version carries the raw link");
 assert.ok(!/\{\{|\}\}/.test(m.html), "no template placeholders");
 assert.ok(!/[–—]/.test(m.html + m.text), "no dashes");
 assert.ok(!m.html.includes("SiteURL"));
+// hub.unclogme.app is always an explicit link, never bare text Gmail would auto-link in its own blue
+assert.ok(!m.html.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, "").includes("hub.unclogme.app"), "bare hub.unclogme.app outside a link");
+assert.equal(m.html.split('>hub.unclogme.app</a>').length - 1, 2);
 
 // names are escaped
 const x = inviteEmail({ firstName: "<b>Eve</b>", inviterName: "Tom & \"Co\"", link, expiresAt: new Date("2026-10-26T19:42:00Z") });

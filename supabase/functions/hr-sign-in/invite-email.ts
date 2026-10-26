@@ -20,6 +20,8 @@ export function expiresLabel(expiresAt: Date): string {
 }
 
 const FONT = "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+// An explicit link: left as plain text, Gmail auto-links the domain in its own blue (seen in the 2026-10-26 live test).
+const HUB = `<a href="https://hub.unclogme.app" style="color:#c93a0f;text-decoration:none;">hub.unclogme.app</a>`;
 
 function step(n: number, active: boolean, title: string, body: string, extra = "", last = false): string {
   const badge = active
@@ -57,8 +59,8 @@ export function inviteEmail(p: InviteEmailInput): InviteEmail {
 <p style="margin:0 0 26px 0;font-size:16px;line-height:1.6;color:#3f3f46;">Hi ${first}, ${inviter} invited you to UnclogMe. Here is how to get in.</p>
 </td></tr>
 <tr><td style="padding:0 32px 8px 32px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-${step(1, true, "Choose your password", "The button opens a page on hub.unclogme.app. The link works once.", button)}
-${step(2, false, "Sign in at hub.unclogme.app", "Use this email address and your new password. On your own phone, leave Remember me ticked.")}
+${step(1, true, "Choose your password", `The button opens a page on ${HUB}. The link works once.`, button)}
+${step(2, false, `Sign in at ${HUB}`, "Use this email address and your new password. On your own phone, leave Remember me ticked.")}
 ${step(3, false, "Open your apps", `The apps you can use are on the Hub. If one you need is missing, ask ${inviter}.`, "", true)}
 </table></td></tr>
 <tr><td style="padding:22px 32px 28px 32px;font-family:${FONT};">
