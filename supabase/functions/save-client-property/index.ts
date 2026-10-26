@@ -34,6 +34,7 @@
 //    array, which without the guard reads as a successful empty answer). A retyped body silently
 //    drops whatever you fail to reproduce.
 import { ensureServiceCallJob } from "../_shared/service-call-job.ts";
+import { isStaffEmail } from "../_shared/staff.ts";   // 2026-10-26: the staff-email rule (personal addresses)
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
@@ -180,7 +181,7 @@ Deno.serve(async (req) => {
   const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
   const email = String(userData?.user?.email ?? "").toLowerCase();
   if (userErr || !userData?.user?.id ||
-      (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
+      !(await isStaffEmail(m[1], email))) {
     return fail("forbidden", "Staff account required.");
   }
   // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.

@@ -47,6 +47,7 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { isStaffEmail } from '../_shared/staff.ts'   // 2026-10-26: the staff-email rule (personal addresses)
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-20_1700 access phase 4
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
@@ -128,7 +129,7 @@ Deno.serve(async (req) => {
   const { data: userData, error: userErr } = await userClient.auth.getUser()
   const email = userData?.user?.email ?? ''
   if (userErr || !email) return json({ error: 'unauthorized', message: 'Sign in first.' }, 401, cors)
-  if (!email.endsWith('@ayache.com') && !email.endsWith('@unclogme.com')) {
+  if (!(await isStaffEmail(authHeader.replace(/^Bearer\s+/i, ''), email))) {
     return json({ error: 'forbidden', message: 'Staff account required.' }, 403, cors)
   }
   // Access phase 4 (2026-10-20_1700): Edit in DERM Tracker. Watch logs, on refuses (hr.check_app_action as the caller).

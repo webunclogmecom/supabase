@@ -33,6 +33,7 @@
 // a day; negligible next to the sync sweeps.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { isStaffEmail } from '../_shared/staff.ts'   // 2026-10-26: the staff-email rule (personal addresses)
 import { checkAppAction } from '../_shared/access-check.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
@@ -106,7 +107,7 @@ Deno.serve(async (req: Request) => {
     const { data: userData, error: uErr } = await userClient.auth.getUser()
     const email = userData?.user?.email?.toLowerCase() ?? ''
     if (uErr || !email) { console.log(`[cnp] auth_required uErr=${uErr?.message ?? '-'}`); return json({ error: 'auth_required' }, 401, cors) }
-    if (!email.endsWith('@ayache.com') && !email.endsWith('@unclogme.com')) {
+    if (!(await isStaffEmail(authHeader.replace(/^Bearer\s+/i, ''), email))) {
       return json({ error: 'staff_only' }, 403, cors)
     }
     // Access phase 2 (2026-10-20_1430): View in Admin Review (watch: logged, on: refused)

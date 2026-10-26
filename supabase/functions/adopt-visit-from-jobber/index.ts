@@ -28,6 +28,7 @@
 //   config.toml is deliberate — same pattern as save-client-job.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { isStaffEmail } from "../_shared/staff.ts"   // 2026-10-26: the staff-email rule (personal addresses)
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const GQL_VERSION = "2026-04-16";
@@ -104,7 +105,7 @@ Deno.serve(async (req) => {
   if (!m) return json({ error: "unauthorized" }, 401);
   const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
   const email = (userData?.user?.email ?? "").toLowerCase();
-  if (userErr || !email || (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
+  if (userErr || !email || !(await isStaffEmail(m[1], email))) {
     return json({ error: "not a staff account" }, 403);
   }
   // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.

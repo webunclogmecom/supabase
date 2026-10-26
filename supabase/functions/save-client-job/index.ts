@@ -37,6 +37,7 @@
 // ============================================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isStaffEmail } from "../_shared/staff.ts";   // 2026-10-26: the staff-email rule (personal addresses)
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
 const GQL_VERSION = "2026-04-16";
@@ -745,7 +746,7 @@ Deno.serve(async (req) => {
   const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
   const email = String(userData?.user?.email ?? "").toLowerCase();
   if (userErr || !userData?.user?.id ||
-      (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
+      !(await isStaffEmail(m[1], email))) {
     return fail("forbidden", "Staff account required.");
   }
   let body: any;

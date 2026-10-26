@@ -1,4 +1,5 @@
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-20_1700 access phase 4
+import { isStaffEmail } from '../_shared/staff.ts'   // 2026-10-26: the staff-email rule (personal addresses)
 // ============================================================================
 // generate-derm-address-preview/index.ts — Edge Function
 // ============================================================================
@@ -54,7 +55,7 @@ function jsonResponse(
 // here ONLY because the gateway verifies the signature first (verify_jwt = true, pinned in
 // config.toml). NEVER deploy this function with --no-verify-jwt, or a hand-made token would pass
 // (that exact bypass was found and closed in get-derm-doc the same day).
-function callerAllowed(req: Request): boolean {
+async function callerAllowed(req: Request): Promise<boolean> {
   try {
     const tok = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
     let part = (tok.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')
@@ -62,7 +63,7 @@ function callerAllowed(req: Request): boolean {
     const c = JSON.parse(atob(part))
     if (c?.role === 'service_role') return true
     const email = String(c?.email ?? '').toLowerCase()
-    return c?.role === 'authenticated' && (email.endsWith('@ayache.com') || email.endsWith('@unclogme.com'))
+    return c?.role === 'authenticated' && await isStaffEmail(tok, email)   // 2026-10-26: personal addresses (_shared/staff.ts)
   } catch {
     return false
   }
@@ -79,7 +80,7 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: 'method_not_allowed' }, 405, cors)
   }
 
-  if (!callerAllowed(req)) {
+  if (!(await callerAllowed(req))) {
     return jsonResponse({ error: 'unauthorized', detail: 'Sign in with your UnclogMe staff account.' }, 401, cors)
   }
   // Access phase 4 (2026-10-20_1700): DERM Tracker access, as the caller (the server key always passes).

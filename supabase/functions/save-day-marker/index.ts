@@ -39,6 +39,7 @@
 // and is refused 403: the healer calls the shared saga directly, never this door.
 // ============================================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { isStaffEmail } from "../_shared/staff.ts"   // 2026-10-26: the staff-email rule (personal addresses)
 import { saveMarker, CREATE_KEYS } from "../_shared/day-marker-task.ts";
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 
@@ -68,7 +69,7 @@ Deno.serve(async (req) => {
   if (!m) return fail(401, "unauthorized", "Sign in again.");
   const { data: userData, error: userErr } = await db.auth.getUser(m[1]);
   const email = (userData?.user?.email ?? "").toLowerCase();
-  if (userErr || !email || (!email.endsWith("@ayache.com") && !email.endsWith("@unclogme.com"))) {
+  if (userErr || !email || !(await isStaffEmail(m[1], email))) {
     return fail(403, "forbidden", "Not a staff account.");
   }
   // Access phase 5 (2026-10-21_0900): hr.check_app_action as the caller. Watch logs, on refuses.

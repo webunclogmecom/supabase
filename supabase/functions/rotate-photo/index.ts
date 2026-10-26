@@ -31,6 +31,7 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { isStaffEmail } from '../_shared/staff.ts'   // 2026-10-26: the staff-email rule (personal addresses)
 import { checkAppAction } from '../_shared/access-check.ts'
 
 const PDF_SERVICE_URL = Deno.env.get('PDF_SERVICE_URL')
@@ -85,7 +86,7 @@ Deno.serve(async (req: Request) => {
   const { data: userData, error: userErr } = await db.auth.getUser(m[1])
   const email = String(userData?.user?.email ?? '').toLowerCase()
   if (userErr || !userData?.user?.id ||
-      (!email.endsWith('@ayache.com') && !email.endsWith('@unclogme.com'))) {
+      !(await isStaffEmail(m[1], email))) {
     return json({ error: 'forbidden', detail: 'Staff account required.' }, 403, h)
   }
   // Access phase 2 (2026-10-20_1430): Edit in Admin Review (watch: logged, on: refused)

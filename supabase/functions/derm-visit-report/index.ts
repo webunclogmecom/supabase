@@ -30,6 +30,7 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { isStaffEmail } from '../_shared/staff.ts'   // 2026-10-26: the staff-email rule (personal addresses)
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-20_1700 access phase 4
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -76,7 +77,7 @@ Deno.serve(async (req: Request) => {
   const { data: userData, error: userErr } = await createClient(SUPABASE_URL, ANON_KEY || SERVICE_KEY)
     .auth.getUser(bearer)
   const email = String(userData?.user?.email ?? '').toLowerCase()
-  if (userErr || !userData?.user?.id || !(email.endsWith('@ayache.com') || email.endsWith('@unclogme.com'))) {
+  if (userErr || !userData?.user?.id || !(await isStaffEmail(bearer, email))) {
     return fail('unauthorized', 'Sign in with your UnclogMe account to download the report.', 401, cors)
   }
   // Access phase 4 (2026-10-20_1700): View in DERM Tracker. On refuses (hr.check_app_action as the caller).
