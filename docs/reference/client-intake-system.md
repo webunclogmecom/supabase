@@ -869,6 +869,10 @@ asked once); Fred: *"if there are more Grease Traps then it should ask for each 
   control), and `scripts/intake-collector/tests/v6-live.mjs <id>` (an OPEN version 6 [TEST] form on 1164/162; 17 checks).
 - Order since `2026-10-23_1130_sample_ports_order` (Fred): "How many sample ports?" right after "How many manholes?", before
   the photos and the traps' maps; still version 6, same questions byte for byte.
+- One-time, 2026-10-26 (`2026-10-26_0950_open_intakes_to_current_form`, Fred): the 7 OPEN forms on version 3 or 4 were moved
+  to the current list; requested kept the office's choices and added only keys the old list lacked under an asked top-level
+  question (42 each). Allowed by the immutability trigger, which freezes only a submitted form. Forms sent before a list
+  change otherwise keep their own snapshot; this is not a standing rule.
 
 ## Traps paid for while building this
 
