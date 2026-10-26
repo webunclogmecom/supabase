@@ -23,7 +23,7 @@ One Railway service, one Python process (FastAPI + Playwright + SQLite), holding
 |---|---|---|
 | **GDO bot** | Every hour it reads our queue (`rpa-derm-queue`). It files one GDO online report per (permit, manifest) on the Miami-Dade DERM portal, then posts the result to `rpa-derm-result`. It also harvests the county's confirmation emails from the fog@ mailbox as evidence. | yes, on the county portal |
 | **Monthly LWT report** (county form ST) | Builds the county's own .xlsx from `rpa-derm-monthly` plus the paper W&S invoice. Diego previews and approves it, a person emails it to DERM, and it is recorded back through `rpa-derm-monthly-filed`. | no, a person sends it |
-| **Dashboard** | Pages `/`, `/dashboard/bot`, `/dashboard/monthly` and `/monthly`. Every data route needs `x-run-key`; there are personal keys in `RUN_KEYS` (Diego has his own). | no |
+| **Dashboard** | Pages `/`, `/dashboard/bot`, `/dashboard/monthly` and `/monthly`. Every data route needs `x-run-key`; there are personal keys in `RUN_KEYS` (`yan`, `diego`, and `fred` since 2026-10-26). The dashboard pages ask for the key in their key box. Address: https://unclogmerpabot-production.up.railway.app. | no |
 
 Prime directives, in Jonathan's order: never file twice, never lose a visit silently, never let a machine file what no
 human could trace (`docs/PROJECT_GDO_BOT.md`).
