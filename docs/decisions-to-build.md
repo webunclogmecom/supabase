@@ -25,24 +25,17 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
-**HR App Send invite, implementation plan (Trello HhuFXLlt)**
-- 2026-10-26, Fred: *"why is that we're still missing the invite link for new drivers?"*, then *"design a plan for it
-  ... phase by phase, smoke test it, and visually check"*, then *"Once the plan has been devised, execute it"*: the
-  plan's 7 recommended answers are taken as decided. Plan:
-  `Building Apps/HR App/docs/specs/2026-10-26-send-invite-implementation-plan.md` (replaces Part B of the 10-21 plan as
-  the build plan). Decided: (1) phases 1-2 now, HR App screens before legacy-keys step 6 reaches the HR App, Hub page
-  after step 6 releases the Hub; (2) the test uses ONE database exception (`fn_restrict_signup_domains`) for
-  webunclogme@gmail.com, never per-app exceptions (this replaces the D12 wording below), proves no-access by direct
-  calls with the test person's token (Node only), and runs Turn off / Turn on live once; (3) invite email subject "Set
-  Up Your UnclogMe Account", 1 hour; (4) the screen wording in the plan; (5) test window a weekday 06:30-08:30 ET;
-  (6) invites stay ON after the test; (7) a first Google sign-in after D16 shows no message: known issue, a login
-  message later. D16's real effect (Supabase source): it blocks new self sign-ups and new Google accounts, never sets
-  a password on an invited address. New, from the plan review: invites get their own switch
-  (`app_config.hr_invites_on`, missing = off); a no-access sign-in stays refused even when an app is in watch; D17 is
-  enforced in `hr.set_access` / `set_group_access`; `get-derm-doc` needs DERM View. BUILT 2026-10-26: phase 1
-  (`2026-10-26_1030_access_no_access_signins_stay_closed`, `get-derm-doc` v37; D17 is now enforced) and phase 2
-  (`2026-10-26_1000_hr_send_invite`, invites OFF). Not built: phases 3-8 (HR App screens, invite email, Hub page,
-  `hr-sign-in`, the test, go live). Decision 22 (re-authentication before a password change) is untouched and open.
+**HR App invite follow-ups (own Trello card; Send invite HhuFXLlt closed 2026-10-26, see section 4)**
+- 2026-10-26, Fred after the live test: *"remember we can also use personal emails too, some user `@yahoo` or `@hotmail`
+  even not just `@gmail`"* (this reverses the 2026-10-21 company-only decision and D13), *"if i change the email, why
+  can't i send the invite?"*, the 15-minute wait *"is this the best practice?"*, and the email *"with a better style"*.
+  Plan `Building Apps/HR App/docs/specs/2026-10-26-invite-followups-plan.md`. Decided (*"B, send it ourselves, keep 1
+  hour, close the card."*): email design B, Three steps (mockups https://claude.ai/artifact/JEjBA6vekyjEmzZzUMLsxA); we send
+  it through Resend from `hr-sign-in` with `generate_link` (measure first: `invited_at`, the sign-up hook, the landing
+  page); the link stays 1 hour. Recommended, not yet agreed: personal addresses (the 8 app logins first, then
+  `fn_restrict_signup_domains`, then the `access:outside_domain_sign_in` health line); a 60-second resend wait with a
+  countdown and 5 a day; changing the email of an unaccepted invite. NOT BUILT. Decision 22 (re-authentication before a
+  password change) is still open from the Send invite plan.
 
 **Switch off the legacy Supabase keys (Trello 8IBiZL5Z last step, SECURITY-16)**
 - 2026-10-22, Fred (after the Railway breach rotation): *"let's change it as the last step we have to do."* Plan:
@@ -139,6 +132,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 3. Waiting on Fred
 
+- HR invites (2026-10-26): what should a Field person's sign-in open (D17: no View today; Mark, Michael Escobar and Jerald are Field)? And a go-ahead for the follow-up plan's parts A to C (personal addresses, the 60-second resend wait, fixing an unaccepted address).
 - DERM storage private: decisions 2-14 before Stage 1 (scope, archive, receipts, soak lengths ...). FDEP sheets: keep public or move.
 - LWT Broward (2026-09-18): which month a Broward ticket belongs to; tell Yan the gallons are trap capacity; ticket 310590 / Cloggy decal; FDEP sheet size fallback; confirm Jonathan's generator change (0 Broward tickets ever filed).
 - Broward spec: 6 Broward manifests with no visit; Boca Raton printed as Broward (15 properties); FDEP form questions (contact name, mark styles, hauler date); the dead "Generate address sheet" button.
@@ -160,6 +154,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 | date | plan | evidence |
 |---|---|---|
+| 2026-10-26 | HR App Send invite (Trello HhuFXLlt; Fred: "design a plan for it ... phase by phase", "Once the plan has been devised, execute it", "Now, this afternoon" for the test, "close the card") | Supabase `2026-10-26_1030` (phase 1: no-access sign-ins stay refused, `get-derm-doc` v37, D17 enforced), `_1000` (invite rules), `hr-sign-in` v9 (`297f5a3`), Hub `/reset-password/invite` (BA `f73c1a7`), Auth invite template (`940523a`); self sign-up off 14:21 ET and invites on 14:24 ET (`docs/reference/auth-settings-changes.md`); live test on ZZ Invite Test (`_1425`; exception `_1430` reverted): invite sent by Fred, accepted, password set, the Hub turned the account away, every direct call with its token refused, re-invite 409, Inactive turned it off; HR changelog (af)-(aj), onboarding `HR App/docs/10-onboarding-a-new-person.md`. Not done: Turn off / Turn on live (Fred: no test emails to Yannick and Serena). The test email arrived as Supabase's default (template fetch 502), which the follow-ups row fixes |
 | 2026-10-23 | Several grease traps on the intake form and up to 9 GT / 3 truck pins on the map (Yan's question in Serena's intake thread; Fred: "if there are more Grease Traps then it should ask for each of them ... up to 3 trucks and 9 GT", "build it too, and test it"; spec `Building Apps/Picture Planner/docs/specs/2026-10-23-several-grease-traps-and-map-pins-design.md`) | DB LIVE: Supabase `2026-10-23_0130` (7bf31d8; question list v6, per-trap lookups, the total offer, accept refuses a part total, pin keys); rehearsal 10/10 with the old bodies failing 8; `v6-live.mjs` on [TEST] form 1119 (3 traps, offer 1,200). App LIVE ~03:30 ET (Picture Planner rule 29; chunks `_staff.property._id--el6eUCi.js`, `_staff.forms._id-BBVR-Rs_.js`, `DriverPage-BcsnlI5P.js`, `site-map-pins-BfPEsSw-.js`): `map_pins.mjs` 18/18 (control fails 6), `several_traps.mjs` 32/32 (control fails 2), builder / form page / Site file checked at 1440 and 375. Follow-up the same day (Fred: "How many sample ports?" sat below the trap maps): `2026-10-23_1130_sample_ports_order` (8a3e3ea), sample ports right after manholes, order only, checked on the live form at 390 |
 | 2026-10-22 | Admin Review: open and edit completed reviews (Trello hnKCI96P; Fred's picks: edit in place, the same people as reviewing, a full change list on the page, a bonus change stays in the visit's week) | Supabase `2026-10-22_2055` (`public.get_review_history`, VERIFY inside, 0f1236b); Admin Review published (live chunk `App-CyNVwiuE.js`): Open on all 45 completed cards, saved decisions filled on 6223 / 8742 / shift-40-2026-10-21, History on both pages, 0 writes on open, a real re-save on 112-YA 8742 logged "nothing changed" with no bonus event, 375 px checked |
 | 2026-10-22 | Water audit 2 fixes (Fred's picks on the audit of every reading since Oct 19): an early tap shares the stop the truck reached and a visit tapped before its stop is built waits; false-full sludge readings judged over the whole stream and the carried-in level read standing still (v7); health items per check code; water rows for non-pumping Moises visits; no-water test on the whole stop | Supabase `2026-10-22_1345` (dry run one add: 6096), `_1349` (check_failed T1 + T5 only), `_1352` (6623 the only new row, 8127 / 8871 the only flag changes), `_1432` (15 sludge rows, the replay's exact prediction; 6139 214, 6564 175, 6347 3,765, dump 1841 3,394), rollbacks rehearsed; Calendar + Admin Review published and checked live (Building Apps d223719) |

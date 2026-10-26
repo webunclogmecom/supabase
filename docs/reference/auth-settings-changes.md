@@ -57,7 +57,7 @@ subject "Set Up Your UnclogMe Account", the drafted text, 1 hour as today). Appl
 - 🛑 **Not changed: the link lifetime, `mailer_otp_exp` = 3600 (1 hour).** It is one setting shared by invite and reset links,
   and both emails say "1 hour". Change it and both texts become false.
 - Who sends an invite: only the edge function `hr-sign-in` (`inviteUserByEmail`, return page
-  `https://hub.unclogme.app/reset-password/invite`), and only while `public.app_config` `hr_invites_on` is `true` (missing today).
+  `https://hub.unclogme.app/reset-password/invite`), and only while `public.app_config` `hr_invites_on` is `true` (true since 2026-10-26 14:24 ET).
 - Checked: 243 settings before and after, only these two differ (SMTP and Google secret digests identical); Auth health 200,
   GoTrue v2.197.0; a fake invite link with `redirect_to` the invite page answers 303 to exactly
   `hub.unclogme.app/reset-password/invite#error=...otp_expired`, and a host not on the allow-list falls back to the Calendar
