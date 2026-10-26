@@ -204,6 +204,27 @@ Two consequences worth carrying:
 
 ---
 
+## 🛑 WHO IS STAFF: ONE RULE, `public.fn_is_staff_email`, NEVER AN EMAIL DOMAIN (2026-10-26)
+
+Fred: *"remember we can also use personal emails too, some user @yahoo or @hotmail even not just @gmail"*, then *"go
+ahead with personal addresses"*. Staff = a company address (@ayache.com / @unclogme.com) OR the email of exactly ONE
+Active employee. Before this, the domain test was copied in ~60 places and a personal-address hire would have been
+refused everywhere as "not staff".
+- **Database:** `public.fn_is_staff_email(email)` (`2026-10-26_2000`; NULL in, NULL out so every caller keeps its old
+  behaviour for a missing email; EXECUTE authenticated, service_role, supabase_auth_admin). 42 functions call it.
+- **Edge functions:** `_shared/staff.ts` `isStaffEmail(token, email)` (17 functions): answers the company domains itself,
+  asks the rule as the caller for anything else, fails closed.
+- **Apps:** all 8 staff logins decide from `hr.get_my_access()` (`employee_id` not null), never a domain list
+  (Building Apps CLAUDE.md rule 0b).
+- **Sign-up rule** (`public.fn_restrict_signup_domains`, the before-user-created hook, `2026-10-26_2100`): calls the same
+  rule, so an invite can create a sign-in at an Active person's own address. Self sign-up stays OFF (D16).
+  `log_access_health` pins its fingerprint (497d2f8a) and flags a sign-in only when it is not staff.
+- 🛑 **A new staff check calls the rule; it never re-types the two domains.** Two domain checks stay ON PURPOSE because they
+  are about where an email GOES, not who signs in: `send-derm-email` / `send-visit-photos-email` test and recipient
+  domains, and the matching address fields in Admin Review and the DERM Tracker.
+- Rollbacks, newest first: `2026-10-26_rollback_personal_addresses_signup_rule.sql`, then
+  `2026-10-26_rollback_staff_email_rule.sql` (the 42 previous bodies, verbatim, md5-pinned).
+
 ## 🛑 This repo is PUBLIC: no secrets, codes or client files in it (2026-10-05)
 
 - Never commit a password, token, connection string with a password, real lock box / gate / access code, or a
