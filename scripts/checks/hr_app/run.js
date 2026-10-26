@@ -20,7 +20,7 @@ function query(sql) {
   });
 }
 (async () => {
-  const files = process.argv.slice(2).length ? process.argv.slice(2) : ['probe_edit.sql', 'probe_pay_bonus.sql', 'probe_health.sql', 'probe_history_fields.sql', 'probe_person_bonus.sql', 'probe_payroll_week.sql', 'probe_access.sql', 'probe_visit_bonus_custom.sql', 'probe_bonus_reprice.sql', 'probe_shift_bonus_custom.sql', 'probe_shift_pairing.sql'];
+  const files = process.argv.slice(2).length ? process.argv.slice(2) : ['probe_edit.sql', 'probe_pay_bonus.sql', 'probe_health.sql', 'probe_history_fields.sql', 'probe_person_bonus.sql', 'probe_payroll_week.sql', 'probe_access.sql', 'probe_visit_bonus_custom.sql', 'probe_bonus_reprice.sql', 'probe_shift_bonus_custom.sql', 'probe_shift_pairing.sql', 'probe_sign_in.sql', 'probe_no_access_signin.sql'];
   let failed = 0;
   for (const f of files) {
     const sql = 'BEGIN;\n' + fs.readFileSync(path.resolve(__dirname, f), 'utf8') + '\nROLLBACK;\n';

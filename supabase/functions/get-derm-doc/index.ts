@@ -26,6 +26,7 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { checkAppAction } from '../_shared/access-check.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -111,12 +112,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // unaffected — its client carries the session, confirmed header-level
   // (`role: authenticated`, `is_anonymous: false`).
   //
-  // Accepts a real user JWT, or service_role for server-side callers. The anon
-  // publishable key is rejected in both its JWT and its newer opaque form,
-  // because neither resolves to a user and neither carries role=service_role.
-  // "A real user" means staff: sign-up is restricted to ayache.com / unclogme.com
-  // by the auth hook public.fn_restrict_signup_domains (measured 2026-09-27: 8 of 8
-  // accounts are staff).
+  // Accepts a real user JWT with DERM Tracker View, or service_role for server-side
+  // callers. The anon publishable key is rejected in both its JWT and its newer opaque
+  // form, because neither resolves to a user and neither carries role=service_role.
+  // ⚠ 2026-10-26: "a real user" NO LONGER means staff. Until then sign-up was limited to
+  // ayache.com / unclogme.com (public.fn_restrict_signup_domains) and every account was
+  // staff (8 of 8, 2026-09-27), so a signed-in check was enough. Send invite lets a person
+  // with no access to any app hold an @unclogme.com sign-in, so a user now also needs
+  // checkAppAction 'view_derm_doc' (DERM Tracker View). Service role: exact key match only.
   //
   // 2026-09-27 (DERM storage plan, Stage 0.2): kind 'fog' is gated too. The note
   // above called it "Field Portal, anon BY DESIGN"; that is no longer true. The
@@ -140,7 +143,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (!allowed) {
         // getUser() asks the auth server, which verifies the signature and the session.
         const { data } = await db.auth.getUser(token)
-        if (data?.user) allowed = true
+        if (data?.user) {
+          // 2026-10-26 (Send invite phase 1, migration 2026-10-26_1030): SIGNED IN IS NO LONGER STAFF. An invited
+          // driver has a real @unclogme.com sign-in and may have no access to any app, so a real user must also hold
+          // DERM Tracker View, asked of the database AS THE CALLER (hr.check_app_action 'view_derm_doc'). A refusal
+          // is 403 with the database's sentence; a check that cannot run is 503, never allowed.
+          const denied = await checkAppAction(token, 'view_derm_doc')
+          if (denied) return json({ error: 'access_denied', detail: denied.message }, denied.status, cors)
+          allowed = true
+        }
       }
     }
 

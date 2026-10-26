@@ -14,8 +14,10 @@ update hr.access_apps set mode = 'watch', on_since = null where app = 'stamp_stu
 -- app names: stamp_studio, picture_planner, admin_review, derm_tracker, client_app, visit_calendar
 ```
 
-Putting any one app back to watch also turns the read gate off for everyone (the gate engages only while every
-app is on).
+Putting any one app back to watch also relaxes the read gate, the Storage gate and the edge checks, but since
+`2026-10-26_1030` only for people with View or Edit in at least one app. A sign-in with no access anywhere (for example
+an invited driver) stays refused whatever the modes, so this switch is safe once invites exist.
+🛑 **Never use an app's mode as the invite switch.** Invites have their own switch (section 6).
 
 ## 2. Put every app back to watch
 
@@ -25,6 +27,42 @@ update hr.access_apps set mode = 'watch', on_since = null
 ```
 
 ## 3. Turn the read gate off (a signed-in person with no access can read again)
+
+🛑 **Since invites (2026-10-26), a sign-in can exist that is not staff.** With the gate off, EVERY sign-in with no
+access (an invited driver, a pending invite) can read every shared list again, lock box codes included. So turn those
+sign-ins off FIRST, then the gate.
+
+3a. List them (every sign-in not turned off whose person has no View or Edit in any app, or has no active HR row):
+
+```sql
+select u.id, u.email, u.email_confirmed_at is not null as confirmed, u.last_sign_in_at
+  from auth.users u
+ where u.deleted_at is null and (u.banned_until is null or u.banned_until <= now())
+   and not exists (select 1 from public.employees e
+                    cross join lateral hr.fn_effective_access(e.id) f
+                    where e.status = 'ACTIVE' and lower(btrim(e.email)) = lower(btrim(u.email))
+                      and f.parent is null and f.level in ('view', 'edit'));
+```
+
+3b. Turn them off (100 years, the same as the HR App's Turn off; the HR App's Turn on undoes one) and end their
+sessions. An access token already issued still works for up to an hour.
+
+```sql
+with turned_off as (
+  update auth.users u set banned_until = now() + interval '100 years'
+   where u.deleted_at is null and (u.banned_until is null or u.banned_until <= now())
+     and not exists (select 1 from public.employees e
+                      cross join lateral hr.fn_effective_access(e.id) f
+                      where e.status = 'ACTIVE' and lower(btrim(e.email)) = lower(btrim(u.email))
+                        and f.parent is null and f.level in ('view', 'edit'))
+  returning u.id, u.email)
+delete from auth.sessions s using turned_off t where s.user_id = t.id
+returning t.email;
+```
+
+(The `returning` lists only people who had a session; 3a is the full check.)
+
+Run 3a again: it must return 0 rows. Then the gate:
 
 ```sql
 alter role authenticator reset pgrst.db_pre_request;
@@ -107,6 +145,19 @@ grant update (dump_visit_id) on ops.calendar_day_markers to authenticated;
 ```
 
 ## 2026-10-21_1910 · Read gate off (same as G3)
+🛑 Since 2026-10-26: run section 3a and 3b first (turn off the sign-ins with no access), then:
 ```sql
 alter role authenticator reset pgrst.db_pre_request; notify pgrst, 'reload config';
 ```
+
+## 6. Stop invites (Send invite, 2026-10-26)
+
+One line. A missing key or any value but `true` means invites are off; `public.app_config.value` is text.
+
+```sql
+update public.app_config set value = 'false' where key = 'hr_invites_on';
+```
+
+🛑 Never use an app's mode as the invite switch: putting an app in watch does not stop invites, and the other checks
+are built around every app being on. Second line of defence: a revert commit of the `hr-sign-in` change, deployed and
+read back (never deploy an old version from a modified tree).

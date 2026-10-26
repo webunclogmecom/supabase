@@ -39,8 +39,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   message later. D16's real effect (Supabase source): it blocks new self sign-ups and new Google accounts, never sets
   a password on an invited address. New, from the plan review: invites get their own switch
   (`app_config.hr_invites_on`, missing = off); a no-access sign-in stays refused even when an app is in watch; D17 is
-  enforced in `hr.set_access` / `set_group_access`; `get-derm-doc` needs DERM View. NOT BUILT yet (phase by phase,
-  each marked here when it lands). Decision 22 (re-authentication before a password change) is untouched and open.
+  enforced in `hr.set_access` / `set_group_access`; `get-derm-doc` needs DERM View. BUILT 2026-10-26: phase 1
+  (`2026-10-26_1030_access_no_access_signins_stay_closed`, `get-derm-doc` v37; D17 is now enforced) and phase 2
+  (`2026-10-26_1000_hr_send_invite`, invites OFF). Not built: phases 3-8 (HR App screens, invite email, Hub page,
+  `hr-sign-in`, the test, go live). Decision 22 (re-authentication before a password change) is untouched and open.
 
 **Switch off the legacy Supabase keys (Trello 8IBiZL5Z last step, SECURITY-16)**
 - 2026-10-22, Fred (after the Railway breach rotation): *"let's change it as the last step we have to do."* Plan:
