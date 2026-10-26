@@ -21,12 +21,18 @@
 //                user Supabase returns must have been created during this request; if not (someone created it in
 //                between) it is banned and the attempt recorded as failed. If the finish answers ban (the person went
 //                Inactive while the email was going out) the new sign-in is banned too. Then a Slack post only (D10).
+//                v10 (2026-10-26, new hires, Fred: "B, send it ourselves, keep 1 hour"): the link comes from
+//                auth.admin.generateLink (type invite: it runs the sign-up rule, creates the sign-in and sets invited_at,
+//                read in Supabase Auth's source) and the email is OURS, design B (invite-email.ts), sent through Resend.
+//                No Supabase template is involved, so its silent fallback (502 on 2026-10-26) cannot happen. If Resend
+//                refuses, the attempt is recorded as failed and the next Send invite is a resend (a new link).
 // Which action does what lives in plan.ts (pure, checked by plan.test.mjs); an unknown action never reaches Auth.
 // Nothing here ever reads, logs or returns a password, a link or a token.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { slackHeader, slackIdentity, slackSections } from "../_shared/slack-notify.ts";
 import { inviteMessage, planAction } from "./plan.ts";
+import { inviteEmail } from "./invite-email.ts";
 
 const URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -38,6 +44,9 @@ const CHANNEL = "C0BJYHQKZM1"; // #apps-notifications
 const RESET_PAGE = "https://hub.unclogme.app/reset-password";
 const INVITE_PAGE = "https://hub.unclogme.app/reset-password/invite";
 const TEST_EMAIL = "webunclogme@gmail.com"; // the test person (phase 7): their posts say [TEST]
+const isTestAddress = (e: string) => e === TEST_EMAIL || /^fred\+[^@]*@ayache\.com$/i.test(e); // + the new-hires test (plus address)
+const INVITE_FROM = "UnclogMe <noreply@unclogme.com>";   // the same sender as Supabase Auth's emails (verified in Resend)
+const LINK_LIFETIME_MS = 3600_000;                        // Auth mailer_otp_exp = 3600, shared with reset links
 const CLOCK_MARGIN_MS = 5000;               // a first invite: Auth created the user and invited it within this of each other
 const ORIGINS = new Set(["https://hr.unclogme.app"]);
 const BLOCK = "876000h"; // about 100 years: "turned off" until an admin turns it back on
@@ -135,8 +144,11 @@ Deno.serve(async (req) => {
       message = ok ? (action === "turn_off" ? `${first}'s sign-in is turned off.` : `${first}'s sign-in is on again.`)
         : `Could not turn ${action === "turn_off" ? "off" : "on"}. Nothing changed.`;
     } else if (plan.auth === "invite") {
-      const { data, error } = await service.auth.admin.inviteUserByEmail(String(req1.email), { redirectTo: INVITE_PAGE });
+      const { data, error } = await service.auth.admin.generateLink({
+        type: "invite", email: String(req1.email), options: { redirectTo: INVITE_PAGE },
+      });
       const user = data?.user;
+      const link = data?.properties?.action_link ?? "";
       if (error) {
         reason = `${error.status} ${(error as { code?: string }).code ?? ""}: ${error.message}`;
         message = inviteMessage(error as { name?: string; status?: number; code?: string }, first);
@@ -150,10 +162,38 @@ Deno.serve(async (req) => {
         }
         reason = "a sign-in already existed at this address";
         message = `A sign-in already existed at ${first}'s address, so it was turned off. Ask Fred or Yannick to check it.`;
+      } else if (!link || !RESEND_KEY) {
+        reason = !link ? "generate_link returned no link" : "RESEND_API_KEY missing";
+        message = inviteMessage({ status: 0 }, first);
       } else {
-        ok = true;
-        invitedId = String(user?.id ?? req1.auth_user_id);
-        message = `Invite sent to ${req1.email}.`;
+        // the inviter's name for the email: the caller's own sign-in, then their HR record
+        let inviter = "An admin";
+        try {
+          const { data: who } = await service.auth.getUser(auth.replace(/^Bearer\s+/i, ""));
+          const em = who?.user?.email?.toLowerCase() ?? "";
+          if (em) {
+            const { data: e } = await service.from("employees").select("full_name").eq("email", em).limit(1).maybeSingle();
+            if (e?.full_name) inviter = String(e.full_name).split(" ")[0];
+          }
+        } catch { /* the email still goes, signed "An admin" */ }
+        const expiresAt = new Date((Date.parse(user?.invited_at ?? "") || Date.now()) + LINK_LIFETIME_MS);
+        const mail = inviteEmail({ firstName: first, inviterName: inviter, link, expiresAt });
+        const r = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `hr-invite-${req1.log_id}` },
+          body: JSON.stringify({ from: INVITE_FROM, to: [String(req1.email)], subject: mail.subject, html: mail.html, text: mail.text }),
+        });
+        const rj = await r.json().catch(() => ({}));
+        if (r.ok && rj?.id) {
+          ok = true;
+          reason = `resend ${rj.id}`;
+          invitedId = String(user?.id ?? req1.auth_user_id);
+          message = `Invite sent to ${req1.email}. The link works until ${mail.expiresLabel}.`;
+        } else {
+          // the sign-in exists and is invited; the next Send invite is a resend with a new link
+          reason = `email refused by Resend: ${r.status} ${String(rj?.message ?? rj?.name ?? "").slice(0, 120)}`;
+          message = "The invite email could not be sent. Wait a minute, then send it again.";
+        }
       }
     } else {
       throw new Error(`no branch for ${action}`);
@@ -180,7 +220,7 @@ Deno.serve(async (req) => {
   if (ok && plan.notify !== "none" && fin) {
     try {
       told = await notify(action as "turn_off" | "turn_on" | "invite", plan.notify === "slack+email",
-        plan.auth === "invite" && req1.email === TEST_EMAIL,
+        plan.auth === "invite" && isTestAddress(String(req1.email)),
         fin.person, String(fin.by ?? "An admin"), (fin.other_admins ?? []) as string[]);
     } catch (e) { told = { failed: (e as Error).message }; }
   }
