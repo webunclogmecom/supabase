@@ -10,6 +10,36 @@ newest first. The Auth settings are not in any migration and have no audit trail
 3. PATCH only those keys. Then read every setting again and compare: only the named keys may differ.
 4. Check Auth health (`/v1/projects/{ref}/health?services=auth`), and whatever the change touches.
 
+## 2026-10-26 · Self sign-up off, D16 (Send invite phase 7)
+
+Fred: "Now, this afternoon" (the phase 7 test). Applied 14:21 ET, one key.
+
+| key | before | after |
+|---|---|---|
+| `disable_signup` | `false` | `true` |
+
+- Effect: nobody can create a sign-in on their own any more, by email form or by a first Google sign-in. A sign-in is
+  created only by an HR App invite (or the admin API). Existing sign-ins, Google included, are unaffected.
+- 🛑 **Never undo it while `app_config.hr_invites_on` is `true`** (plan D16). The before-user-created hook
+  (`public.fn_restrict_signup_domains`) stays as the second lock.
+- Checked: control sign-up with a `probe-...@example.com` address before the change answered the hook's 403; after it,
+  422 `signup_disabled` (about 30 s after the PATCH, while Auth restarted); 8 sign-ins before and after; 243 settings
+  compared, only `disable_signup` differs, the 42 secret-like keys identical; Auth health 200 v2.197.0; one reset email to
+  fred@ayache.com arrived 6 s after sending. Measured the same afternoon: a first Google sign-in as the (not yet invited)
+  test mailbox was refused with `422: Signups not allowed for this instance` and created no user.
+- Undo (one key): `backups/2026-10-26_auth_d16_UNDO_body.json`; copies `backups/2026-10-26_auth_config_{before,after}_d16.json`.
+
+## 2026-10-26 · ⚠ Measured: a custom template can silently fall back to Supabase's default
+
+The phase 7 invite (14:42 ET) went out with Supabase's built-in email ("You've been invited", "Accept invitation"), not
+the template below. Auth log: `templatemailer: template type "invite": http: GET
+https://api.supabase.com/platform/auth/<ref>/templates/invite: status code 502` (event
+`templatemailer_template_body_http_error`). Auth fetches each custom template from the Supabase platform at send time and,
+when that fetch fails, sends its default instead, with no error to the caller (the invite answered 200 and the link was
+right). The same address served the template correctly right after (30 of 30 fetches 200), and both reset emails that day
+rendered fine, so it was a passing platform failure, not the template. **A settings read-back cannot catch this; only
+the Auth log or the received email can.**
+
 ## 2026-10-26 · The invite email (Send invite phase 4)
 
 Fred: "Go ahead with phase 4" (plan `Building Apps/HR App/docs/specs/2026-10-26-send-invite-implementation-plan.md`, decision 3:
