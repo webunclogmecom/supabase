@@ -34,8 +34,20 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   it through Resend from `hr-sign-in` with `generate_link` (measure first: `invited_at`, the sign-up hook, the landing
   page); the link stays 1 hour. Recommended, not yet agreed: personal addresses (the 8 app logins first, then
   `fn_restrict_signup_domains`, then the `access:outside_domain_sign_in` health line); a 60-second resend wait with a
-  countdown and 5 a day; changing the email of an unaccepted invite. NOT BUILT. Decision 22 (re-authentication before a
+  countdown and 5 a day; changing the email of an unaccepted invite. Decision 22 (re-authentication before a
   password change) is still open from the Send invite plan.
+- 2026-10-26 later, Fred: *"go ahead"* (the 60-second wait, an unaccepted address, personal addresses); on Field people:
+  *"the idea is to invite new hires, it could also be a new Office member not just Field"* (D17 stays: a Field sign-in
+  opens no app yet, accepted); and *"we need to be able to create new hires ... Keep in mind that also needs to be
+  reflected in jobber, same as when a staff member is inactive or active, their pay rate and any data that can be
+  reflected in jobber. Do a check on both apps, design a plan and build it."* Plan
+  `Building Apps/HR App/docs/specs/2026-10-26-new-hires-plan.md`. Measured: Jobber's API cannot create a user, change a
+  user's status or set a pay rate (only `userEdit(name)`), so the HR App reads Jobber and shows what to do there.
+  BUILT 2026-10-26: `2026-10-26_1700` (hr.jobber_users mirror, email linker, Jobber line, health lines; edge fn
+  `sync-jobber-users`, cron */15), `2026-10-26_1730` (`hr.create_employee`, 60-second / 5-a-day invite wait, unaccepted
+  address change, record timing + Jobber block), `hr-sign-in` v10 (email B sent through Resend). HR App screens: sent to
+  Lovable 2026-10-26. NOT BUILT: personal addresses (the 8 app logins, sequenced with legacy-keys step 6, then the
+  sign-up rule); the live test of email B (Fred presses Send invite on a test person).
 
 **Switch off the legacy Supabase keys (Trello 8IBiZL5Z last step, SECURITY-16)**
 - 2026-10-22, Fred (after the Railway breach rotation): *"let's change it as the last step we have to do."* Plan:
