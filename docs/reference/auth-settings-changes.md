@@ -15,7 +15,7 @@ newest first. The Auth settings are not in any migration and have no audit trail
 Fred (voice note): Change password in the HR App asks for the old password and the new one twice; a forgotten password uses
 Forgot password (*"I think that's better than anything else"*), which replaces decision 22 (the emailed code); then *"go
 ahead with just 8"* and *"Yes, our design"* for the email. Plan `Building Apps/HR App/docs/specs/2026-10-27-change-password-plan.md`.
-Applied about 14:35 ET, AFTER the HR App panel (sends `current_password`) and Picture Planner's reset page (8 characters)
+Applied about 13:50 ET, AFTER the HR App panel (sends `current_password`) and Picture Planner's reset page (8 characters)
 were live; the other six reset pages and the Hub invite page already required 8.
 
 | key | before | after |
