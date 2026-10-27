@@ -1,5 +1,24 @@
 # GDO bot: hand filings recorded upstream. Implementation plan (2026-10-27, reviewed)
 
+## ▶ Where this stands and how to continue (paused 2026-10-27; Trello ObKqzi47)
+
+- **Trello card:** https://trello.com/c/ObKqzi47 (🔨 In Progress). It points here.
+- **Done:** our API accepts `manual_entry` (`rpa-derm-result` v40, 2026-10-26) and no longer loses an image to a
+  duplicate request (Part A, v42, 2026-10-27, Supabase `f7c6b23`, check `scripts/checks/rpa_derm_result_manual_race.mjs`).
+  The five hand filings so far (041-MB visits 8888-8892) were recorded by hand: `docs/reference/gdo-report-bot.md`
+  section 10.
+- **Decided by Fred (section 3):** D1 a missed county email means no image and a person records it; D2 Part A shipped;
+  D4 "Filed by" = who pressed File it. D3 default (no dashboard verdict).
+- **Open:** D5, the push gate. Fred asked why wait for September; the recommended gate is "Diego not on `/monthly`,
+  the bot idle, not 07:30-08:30 ET". Answer it first.
+- **Next:** Part B from Task B0 (claim in `WORKING-NOW.md`, clone outside the workspace root, green baseline in the
+  runtime image). The prototypes in `2026-10-27-gdo-bot-manual-entry-upstream/bot/` save most of B1-B3.
+- **Until Part B ships:** every hand filing on the bot dashboard is refused with a Slack post in #apps-notifications
+  ("GDO report not recorded"). Record it like 8889: the county email from the bot's `/evidence-export` (Railway
+  `RUN_KEYS` key, never printed), matched by its cleaning date, then `fn_record_manual_gdo_report` with run id
+  `manual-bot-<bot run>` and the image at `rpa-evidence/<visit>/manual-bot-<bot run>.jpg`; check it in the DERM Tracker
+  and the Field Portal.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 > The bot repo's own rules bind every bot step: `CLAUDE.md`, `docs/WORKING_AGREEMENTS.md`, `docs/PROJECT_INSTRUCTIONS.md`.
 > Code, comments, docs and commit messages in English.
