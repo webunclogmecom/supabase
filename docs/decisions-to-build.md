@@ -70,7 +70,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   BUILT 2026-10-23: steps 1 (edge functions accept a secret key, `aab4ac0`), 2 (vault), 3 (GitHub Actions key
   "github_actions") and 4 (PDF service on supabase-py 2.18.1 with the "railway" key, pdf-service `97e4216`). Step 5
   BUILT 2026-10-25 (Field Portal login server on the "field_portal" secret key, proven live by a login and the edge
-  log). Step 6 BUILT 2026-10-26: all 9 apps on the publishable key (Fred pasted it in each Lovable project, the session published and checked each live); 7 to 10 not built (the plan's section 3b tracks
+  log). Step 6 BUILT 2026-10-26: all 9 apps on the publishable key (Fred pasted it in each Lovable project, the session published and checked each live); Step 7 BUILT 2026-10-27 (Fred: "go ahead with step 7, keep the default key"): the 4 local `.env` files hold the default secret key, no "office" key; 8 to 10 not built (the plan's section 3b tracks
   them).
 
 **Water tracking per Moises visit (Trello dGJ5aFrh, Yan's Oct 13 ask)**
