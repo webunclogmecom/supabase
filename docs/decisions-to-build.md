@@ -160,7 +160,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 3. Waiting on Fred
 
-- HR invites (2026-10-26): what should a Field person's sign-in open (D17: no View today; Mark, Michael Escobar and Jerald are Field)? And a go-ahead for the follow-up plan's parts A to C (personal addresses, the 60-second resend wait, fixing an unaccepted address).
+- HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Still open from the Send invite plan: decision 22 (re-authentication before a password change), decided but NOT BUILT; it needs a rehearsal on the Hub reset page.
 - DERM storage private: decisions 2-14 before Stage 1 (scope, archive, receipts, soak lengths ...). FDEP sheets: keep public or move.
 - LWT Broward (2026-09-18): which month a Broward ticket belongs to; tell Yan the gallons are trap capacity; ticket 310590 / Cloggy decal; FDEP sheet size fallback; confirm Jonathan's generator change (0 Broward tickets ever filed).
 - Broward spec: 6 Broward manifests with no visit; Boca Raton printed as Broward (15 properties); FDEP form questions (contact name, mark styles, hauler date); the dead "Generate address sheet" button.
