@@ -38,6 +38,17 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   the September hold came from Jon's "push held until 2026-10-20" note for the training close, not a decision of Fred's.
   Recommended instead: push when Diego is not working on `/monthly`, the bot is idle, and not 07:30-08:30 ET.
 
+**DERM Tracker "File it with the bot" button on the visit page (Trello xBCSvP6f, 2026-10-27)**
+- Huddle 2026-10-26: Yan wants the bot dashboard's "process a permit by hand" as a button on the visit page; Jonathan
+  builds the endpoint and sends the request format, Fred builds the button. Fred 2026-10-27: *"this button should be
+  disabled until we have Jon's notification about it ... but we can have our side ready"*; the button on **every
+  unfiled permit** (a newer visit holds the queue 20 h on that permit); *"we do not need to touch the bot files, work
+  on our apps"*; wait for Jonathan's docs, propose no format.
+- Spec `Building Apps/DERM Tracker/docs/specs/2026-10-27-file-with-the-bot-button.md`: edge fn `gdo-bot-file-visit`
+  (off until its two secrets are set) and the button greyed with a note. **Not built yet.**
+- ⚠ A filing made with it shows in our apps only once the bot sends back which visit it filed plus the county email
+  (the BOT half row above): `rpa-derm-result` records a normal result for a visit before the cutoff as a dry run.
+
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
   fields, *"the old password, and then ... the new password and to retype the new password"*; a person who forgot it uses
