@@ -41,6 +41,32 @@ async function fresh() {
   say('S rejection is a plain sentence', /That email and password do not match/.test(text) && !/invalid_credentials|invalid_grant/i.test(text), (text.match(/That email[^.]*\.|Sign-in is not available[^.]*\./) || ['(no sentence)'])[0])
   await ctx.close()
 }
+{ // R (2026-10-27, Trello VXrmwvS3): after a SUCCESSFUL password sign-in the gate checks again and leaves the form.
+  // The token, user and get_my_access replies are canned (a fake session for a person with no employee row), so nothing
+  // reaches Supabase and no password is typed. CONTROL=1 serves the sign-in chunk with the re-check removed: R must FAIL.
+  const ctx = await browser.newContext(); const page = await ctx.newPage(); const order = []
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  const exp = Math.floor(Date.now() / 1000) + 3600, sub = '00000000-0000-4000-8000-000000000001', mail = 'hr-login-check@unclogme.com'
+  const jwt = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub, email: mail, role: 'authenticated', aud: 'authenticated', exp })}.x`
+  const user = { id: sub, aud: 'authenticated', role: 'authenticated', email: mail, app_metadata: { provider: 'email' }, user_metadata: {} }
+  await page.route('**/auth/v1/authorize**', (r) => r.abort())
+  await page.route('**/auth/v1/token**', (r) => { order.push('token'); r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access_token: jwt, token_type: 'bearer', expires_in: 3600, expires_at: exp, refresh_token: 'canned', user }) }) })
+  await page.route('**/auth/v1/user**', (r) => { order.push('user'); r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }) })
+  await page.route('**/auth/v1/logout**', (r) => { order.push('logout'); r.fulfill({ status: 204, body: '' }) })
+  await page.route('**/rest/v1/rpc/get_my_access**', (r) => { order.push('access'); r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ employee_id: null }) }) })
+  if (process.env.CONTROL === '1') await page.route(/\/assets\/TopBar-[^/]+\.js/, async (r) => { const res = await r.fetch(); const js = (await res.text()).replace('(await r(),null)', 'null'); r.fulfill({ response: res, body: js }) })
+  await page.goto(URL0); await page.waitForTimeout(4000)
+  const before = order.length
+  await page.locator('input[type=email], input[name=email], input[autocomplete=email]').first().fill(mail)
+  await page.locator('input[type=password]').first().fill('canned-not-a-password')
+  await page.getByRole('button', { name: /^sign in$/i }).click().catch(() => {})
+  await page.waitForTimeout(4000)
+  const after = order.slice(before), text = await page.evaluate(() => document.body.innerText)
+  const rechecked = after.indexOf('token') >= 0 && after.indexOf('user') > after.indexOf('token') && after.includes('access')
+  const leftForm = /not an UnclogMe staff account/i.test(text)
+  say('R success re-checks without a refresh', rechecked && leftForm, `after sign-in: ${after.join(' > ') || '(nothing)'}; not-staff screen=${leftForm}`)
+  await ctx.close()
+}
 { // F
   const { ctx, page } = await fresh()
   const a = await page.evaluate(() => { const l = [...document.querySelectorAll('a')].find((x) => /forgot password/i.test(x.textContent)); return l ? { href: l.href, title: l.title } : null })
