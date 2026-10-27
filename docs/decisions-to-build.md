@@ -46,7 +46,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   on our apps"*; wait for Jonathan's docs, propose no format.
 - Spec `Building Apps/DERM Tracker/docs/specs/2026-10-27-file-with-the-bot-button.md`: edge fn `gdo-bot-file-visit`
   (off until its two secrets are set) and the button greyed. Mockups: Fred picked **B** (a "Soon" tag inside the
-  button, the reason on hover) and **no warning line** in the confirm dialog. **Not built yet.**
+  button, the reason on hover) and **no warning line** in the confirm dialog. **Our side BUILT 2026-10-27, switched
+  off:** `gdo-bot-file-visit` v1 (Supabase `50f3f1f`, check 22/22) and the DERM Tracker button (live chunk
+  `visits._visitId-B-bYjvGA.js`, Building Apps `1ffbf8f`). **Open:** Jonathan's endpoint + format -> adapt
+  `toBotRequest()`, set `GDO_BOT_FILE_URL` / `GDO_BOT_FILE_KEY`, a dry run, one real visit.
 - ⚠ A filing made with it shows in our apps only once the bot sends back which visit it filed plus the county email
   (the BOT half row above): `rpa-derm-result` records a normal result for a visit before the cutoff as a dry run.
 
