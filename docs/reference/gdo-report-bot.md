@@ -185,15 +185,37 @@ Two bot facts behind it (bot repo at `7681388`):
 the county confirmation email from the bot's `/evidence-export` (DERM message
 `<7471d93e-b51c-4119-9e41-abf9cf3176f3@s0146923.miamidade.gov>`) at `rpa-evidence/8888/manual-bot-882d2b19-aa06-4db8-9d43-136d1451bebb.jpg`,
 submission 2027, filed by yannick@ayache.com, attempted 16:00:58 UTC. The bot's hourly retry of the identifier-less
-seed now gets 200 `deduped`, which clears it. Checked in the DERM Tracker visit page and the Field Portal report.
+seed now gets 200 `deduped`, which clears it (seen in the bot log at 22:57 UTC). Checked in the DERM Tracker visit
+page and the Field Portal report.
 
-**Still needed on the bot side (Jon's repo, not done; pushes wait for the September LWT filing, section 9):**
+**2026-10-27: four more, recorded the same way.** Yan filed the other 2025 visits of 041-MB / GDO-14965 by hand
+between 12:11 and 12:25 ET; `rpa-derm-result` refused all four (`manual_entry_missing_permit_manifest_or_date`, Slack
+posts in #apps-notifications), as designed until the bot sends the identifiers. Each run was matched to its visit
+by the cleaning date on its county email in `/evidence-export` (one completed 041-MB visit on each date):
+
+| bot run | cleaning date | visit | manifest | submission | email received (ET) |
+|---|---|---|---|---|---|
+| `d079deb3-002b-4394-add1-3ddc2b59987d` | 2025-03-25 | 8889 | 487956 | 2030 | 12:24:48 |
+| `ec99167a-5ad5-4d16-960a-2ef065d10eac` | 2025-05-29 | 8890 | 494043 | 2031 | 12:24:04 |
+| `ed513327-a556-4d56-9b92-0bbeccec2182` | 2025-07-28 | 8891 | 499208 | 2032 | 12:18:49 |
+| `521c5130-72c0-496b-a3f4-a5a0763413df` | 2025-10-16 | 8892 | 805660 | 2033 | 12:11:33 |
+
+Each through `fn_record_manual_gdo_report` with run_id `manual-bot-<run>`, image at
+`rpa-evidence/<visit>/manual-bot-<run>.jpg`, filed by yannick@ayache.com, attempted = the email's received time.
+Checked in the DERM Tracker (SUCCESS · Manual, evidence 1000x768) and the Field Portal (REPORTED, Filed manually).
+The export holds exactly five visit-less entries and all five are recorded. Still unfiled in our records for 041-MB /
+GDO-14965: 1291 (2026-01-18), 1529 (2026-03-24), 4740 (2026-05-24), all before the 2026-07-21 launch cutoff.
+
+**Still needed on the bot side (ours since the 2026-10-08 handoff, not done; pushes wait for the September LWT
+filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
+`docs/handoffs/2026-10-26_gdo_bot_manual_entry_for_jon.md`.**
 1. put `gdo_number`, `ticket_number`, `service_date` (ISO) and `dump_date` inside `manual_entry`
    (`build_result_payload`);
-2. when the final POST fails, replace the cached seed with the final payload (it carries the county email), or the
-   retry has no image and is refused;
-3. update R7 and the "manual entries never post" comments. Until then every manual entry lands in the refusal path,
-   with a Slack post, and is recorded by a person in the DERM App.
+2. for a MANUAL entry only, when the final POST fails, replace the cached seed with the final payload (it carries the
+   county email). Queue items keep the seed on purpose (PLAN_INLINE_EVIDENCE: the late-evidence drain fills their
+   image), but the drain requires a visit_id, so it never attaches a manual entry's email;
+3. update R7, DOMAIN_RULES and the "manual entries never post" docs and comments. Until then every manual entry
+   lands in the refusal path, with a Slack post, and is recorded by a person as above.
 
 ## 5. Evidence
 
