@@ -358,3 +358,26 @@ after 10-20) and the first result carrying `gdo_id`.
      and a restart of Diego's `/monthly` page) wait until the September LWT report is filed.
    - Before `7681388` no test fed a null permit or checked the DST sleep (`tests/test_digest_scheduler.py` exists since
      2026-09-03).
+
+## 11. The DERM Tracker's "File it with the bot" button (2026-10-27, OFF until Jonathan's endpoint)
+
+Huddle 2026-10-26: Yan wants the dashboard's "process a permit by hand" as a button on the DERM Tracker visit page;
+Jonathan builds the bot endpoint and sends its request format, we build the button (Trello xBCSvP6f). Fred,
+2026-10-27: *"this button should be disabled until we have Jon's notification about it ... but we can have our side
+ready"*, and *"we do not need to touch the bot files, work on our apps"*.
+
+- **Our side:** edge fn `gdo-bot-file-visit` (verify_jwt; staff + Edit in DERM Tracker). `status` returns, per permit
+  of the visit, `can_send` and the reason; `send` POSTs one permit to the bot. The rule is `permitState()`: the bot
+  connection set, `derm.visit_gdo_our_record.can_record_manual`, a permit, a dump ticket, a cleaning date, and not in
+  the bot's hands (a lease on that permit newer than its last attempt, within 20 h).
+- **OFF switch:** the secrets `GDO_BOT_FILE_URL` and `GDO_BOT_FILE_KEY`. Without them `status` says `enabled:false`
+  and `send` answers 503 and writes nothing. Turning it on = adapt `toBotRequest()` to Jonathan's format (today the
+  queue row the bot already reads, plus `dry_run` and `requested_by`), set both secrets, a dry run, one real visit.
+- **A real send leases `(visit_id, gdo_id)`** for 20 h (as `rpa-derm-queue` does), so the hourly queue cannot also
+  hand that permit over. A dry run does not lease. No answer from the bot still leases (it may be filing).
+- 🛑 **It records no filing.** The result reaches us only through `rpa-derm-result`. A visit before the launch cutoff
+  is recorded as a real filing only as a manual entry (a normal result is stored as a dry run), so until the bot's
+  manual-entry result carries the identifiers and the county email (section 10, the bot half), a button filing is
+  refused there with a Slack post, like a dashboard one.
+- Spec: `Building Apps/DERM Tracker/docs/specs/2026-10-27-file-with-the-bot-button.md`. Check:
+  `node scripts/checks/gdo_bot_file_visit.mjs` (22 cases; a copy with the send guard removed must fail).
