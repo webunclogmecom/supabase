@@ -31,6 +31,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   post and recorded by a person in the DERM App. Brief in Jon's format and the message for him: drafted, not sent.
   Bot pushes wait for the September LWT filing (`docs/reference/gdo-report-bot.md` sections 9 and 10).
 
+**HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
+- Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
+  fields, *"the old password, and then ... the new password and to retype the new password"*; a person who forgot it uses
+  *"the forgot password functionality ... it's gonna send a password reset in your email. I think that's better than
+  anything else."* This REPLACES decision 22 of the Send invite plan (Supabase's emailed re-authentication, with a
+  rehearsal on the Hub reset page). Today the panel asks only for the new password twice (`supabase.auth.updateUser`).
+  NOT BUILT. First step: measure how the current password is checked (Supabase Auth docs plus a probe on a test sign-in).
+
 **HR App invite follow-ups (own Trello card; Send invite HhuFXLlt closed 2026-10-26, see section 4)**
 - 2026-10-26, Fred after the live test: *"remember we can also use personal emails too, some user `@yahoo` or `@hotmail`
   even not just `@gmail`"* (this reverses the 2026-10-21 company-only decision and D13), *"if i change the email, why
@@ -160,7 +168,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 3. Waiting on Fred
 
-- HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Still open from the Send invite plan: decision 22 (re-authentication before a password change), decided but NOT BUILT; it needs a rehearsal on the Hub reset page.
+- HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Decision 22 (emailed re-authentication before a password change) is REPLACED 2026-10-27, see the HR Change password row in section 2.
 - DERM storage private: decisions 2-14 before Stage 1 (scope, archive, receipts, soak lengths ...). FDEP sheets: keep public or move.
 - LWT Broward (2026-09-18): which month a Broward ticket belongs to; tell Yan the gallons are trap capacity; ticket 310590 / Cloggy decal; FDEP sheet size fallback; confirm Jonathan's generator change (0 Broward tickets ever filed).
 - Broward spec: 6 Broward manifests with no visit; Boca Raton printed as Broward (15 properties); FDEP form questions (contact name, mark styles, hauler date); the dead "Generate address sheet" button.
