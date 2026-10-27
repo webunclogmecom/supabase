@@ -60,7 +60,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   hid the button); fixed by `2026-10-26_1830` and seen live in the third test; `2026-10-26_1900`: a withdrawn invite
   reads Off. Personal addresses BUILT 2026-10-26 (`2026-10-26_2000` the staff-email rule in 42 functions, 17 edge functions on
   `_shared/staff.ts`, all 8 app logins on `hr.get_my_access`, `2026-10-26_2100` the sign-up rule). Every follow-up item is
-  built; not yet exercised: a real sign-in at a personal address (needs Fred).
+  built; not yet exercised: a real sign-in at a personal address. 2026-10-27: the live test cannot run (Active needs a
+  Jobber link, `blocker=no_jobber_link`, kept), so the path was proven in a rolled-back probe with the real Gmail sign-in
+  (HR changelog). Trello zRTbWvXn in Testing / QA 2026-10-27, all 8 items ticked; the first new hire with a personal
+  address is the real test.
 
 **Switch off the legacy Supabase keys (Trello 8IBiZL5Z last step, SECURITY-16)**
 - 2026-10-22, Fred (after the Railway breach rotation): *"let's change it as the last step we have to do."* Plan:
