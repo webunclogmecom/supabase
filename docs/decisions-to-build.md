@@ -43,8 +43,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   sign-ins need no password (*"they can use the SSO of Gmail to sign in without needing a password"*), so "Add a
   password" goes; the "password set or changed" email on, in the invite email's look; a "Forgot your current
   password?" button that emails a reset link; minimum **8** characters (*"Instead of 15 go ahead with just 8 is
-  enough."*) and breached passwords blocked, on every screen that sets a password (HR panel, Hub invite page, 7 reset
-  pages). NOT BUILT. Next: mockups on the real Security tab.
+  enough."*) on every screen that sets a password (HR panel, Hub invite page, 7 reset
+  pages); breached passwords NOT blocked (*"don't mind breached password, let them be"*). NOT BUILT. Next: mockups on the real Security tab.
 
 **HR App invite follow-ups (own Trello card; Send invite HhuFXLlt closed 2026-10-26, see section 4)**
 - 2026-10-26, Fred after the live test: *"remember we can also use personal emails too, some user `@yahoo` or `@hotmail`
