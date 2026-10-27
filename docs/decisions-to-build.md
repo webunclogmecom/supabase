@@ -25,15 +25,6 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
-**Admin Review: Approve and Next on the shift inspection photo popup (Trello FtMOqiT9, 2026-10-27)**
-- Fred to Viktor 2026-10-23: *"with button on the preview of the imager of "Approve" and "Next""*. Today each photo on
-  Shift Form Review opens its own popup with only a close button; the green circle on a tile is page state only.
-- Fred's picks 2026-10-27 (mockups https://claude.ai/artifact/Bo7VRVhvRKFnAMKtCk3ufW): **C**, a full-screen viewer with
-  a side list of every angle (PRE and POST thumbnails, green ticks, the open photo outlined); **Approve only ticks** the
-  photo's green circle (the same tick as the tile and "Check all photos") and stays, **Next moves** without ticking;
-  Next follows **the page's order** (angle by angle, PRE then POST, a missing side skipped). App only, no DB change.
-- Spec `Building Apps/Admin Review/docs/specs/2026-10-27-shift-photo-approve-and-next.md`. NOT BUILT.
-
 **GDO bot manual entries, the BOT half (2026-10-26; our side built, section 4)**
 - The bot must send `gdo_number`, `ticket_number`, `service_date` and `dump_date` inside `manual_entry`, and keep the
   final payload (with the county email) when its POST fails. Until then every dashboard entry is refused with a Slack
@@ -229,6 +220,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 | date | plan | evidence |
 |---|---|---|
+| 2026-10-27 | Admin Review: Approve and Next on the shift inspection photo popup (Trello FtMOqiT9; Fred to Viktor: "with button on the preview of the imager of "Approve" and "Next""). Fred's picks on the mockups (https://claude.ai/artifact/Bo7VRVhvRKFnAMKtCk3ufW): C, one viewer with a list of every angle; Approve only ticks the photo's green circle (page state, never saved) and stays; Next follows the page order (PRE then POST per angle). App only | Admin Review live `App-CtYGrgnR.js` (`ShiftPhotoViewer.tsx`, `ShiftFormReview.tsx`; Fix 1 gave each list its own row map so the desktop list scrolls); checked live at 1440 and 375 on Michael Oct 26 (PRE 7 / POST 13), Steven Oct 20 (PRE only), Michael Oct 20 (POST only, reviewed), nothing written (`shift_reviews`, bonus events and audit identical before and after); Building Apps 8d75f9f, spec `Building Apps/Admin Review/docs/specs/2026-10-27-shift-photo-approve-and-next.md` |
 | 2026-10-27 | Stamp Studio: skip a sheet with no scan, never complete it (Trello EizZ2IuY; Fred: "it's for marking them as complete or skipping them, for the AI to check what i mean and think what is the best practice", then "design a plan for it and build it"). Skip only (Complete would claim a published copy, 2026-09-03 rule), a required reason, who/when, Undo, back in the queue by itself when a scan arrives, out of the 11 AM post | Supabase `2026-10-27_1640` (applied 16:38 ET, VERIFY after the commit), ec53f30; live `index-BJlpQga1.js` / `routes--iILpl_6.js`; `scripts/checks/stamp_skip_sheet.mjs` 16/16 (`CONTROL=1` fails 2); smoke test on 487956 skip + undo through the app; plan `Building Apps/DERM Stamp Studio/docs/specs/2026-10-27-skip-a-sheet-with-no-scan.md`. 487956 left NOT skipped: Yannick picks the reason. Yannick briefed by Fred in Slack; card moved to Testing / QA 2026-10-27, all items ticked |
 | 2026-10-27 | GDO bot manual-entry plan, Part A: `rpa-derm-result` never deletes a recorded image on a record error (Fred: "Yes, ship it now") | `rpa-derm-result` v42 (deployed 14:25 ET, body read back); `scripts/checks/rpa_derm_result_manual_race.mjs` 13/13, fails the pre-fix body `4deebe7` on the 3 race cases; Prod smoke: replay 200 deduped 2030, extra key 400, dry run 200 recorded:false, 0 rows and 0 objects written; `docs/reference/gdo-report-bot.md` section 10, `postman/README.md` section 4. Part B (the bot) open, section 2 |
 | 2026-10-26 | GDO bot dashboard manual entries recorded as manual filings, OUR side (Fred: "we can just accept that new data as a criteria and we can classify it as a manual filing in our apps", "yes" build our side; diego = contact@unclogme.com) | `rpa-derm-result` v40 (`recordManualEntry`; refusals = 200 + Slack); visit 8888 recorded with the county email (submission 2027) and checked in the DERM Tracker and Field Portal; `docs/reference/gdo-report-bot.md` section 10. ⚠ The BOT half is not built (section 2 row) |
