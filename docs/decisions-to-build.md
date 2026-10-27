@@ -25,6 +25,15 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Admin Review: Approve and Next on the shift inspection photo popup (Trello FtMOqiT9, 2026-10-27)**
+- Fred to Viktor 2026-10-23: *"with button on the preview of the imager of "Approve" and "Next""*. Today each photo on
+  Shift Form Review opens its own popup with only a close button; the green circle on a tile is page state only.
+- Fred's picks 2026-10-27 (mockups https://claude.ai/artifact/Bo7VRVhvRKFnAMKtCk3ufW): **C**, a full-screen viewer with
+  a side list of every angle (PRE and POST thumbnails, green ticks, the open photo outlined); **Approve only ticks** the
+  photo's green circle (the same tick as the tile and "Check all photos") and stays, **Next moves** without ticking;
+  Next follows **the page's order** (angle by angle, PRE then POST, a missing side skipped). App only, no DB change.
+- Spec `Building Apps/Admin Review/docs/specs/2026-10-27-shift-photo-approve-and-next.md`. NOT BUILT.
+
 **GDO bot manual entries, the BOT half (2026-10-26; our side built, section 4)**
 - The bot must send `gdo_number`, `ticket_number`, `service_date` and `dump_date` inside `manual_entry`, and keep the
   final payload (with the county email) when its POST fails. Until then every dashboard entry is refused with a Slack
