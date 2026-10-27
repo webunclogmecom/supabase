@@ -1,5 +1,9 @@
 # GDO bot: dashboard manual entries reach the Tracker (for Jon, 2026-10-26)
 
+> **SUPERSEDED 2026-10-27** by `docs/superpowers/plans/2026-10-27-gdo-bot-manual-entry-upstream.md` (reviewed). Kept
+> as the record of the first draft. Do not build from it: it uses `INSERT OR REPLACE`, sends `dump_date`, offers a
+> dashboard line D3 declines, and its message to Jon predates 8889-8892 and Part A (B9 rewrites it).
+
 Two parts: the task brief, written the way the bot repo writes them (`docs/TASK_*.md`; it goes in as
 `docs/TASK_MANUAL_ENTRY_UPSTREAM.md`), and the message telling Jon. **Neither is sent or pushed.** Bot-repo pushes are
 deploys and wait until the September LWT report is filed (`Supabase/docs/reference/gdo-report-bot.md` section 9).

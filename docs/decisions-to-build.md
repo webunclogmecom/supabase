@@ -30,6 +30,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   final payload (with the county email) when its POST fails. Until then every dashboard entry is refused with a Slack
   post and recorded by a person in the DERM App. Brief in Jon's format and the message for him: drafted, not sent.
   Bot pushes wait for the September LWT filing (`docs/reference/gdo-report-bot.md` sections 9 and 10).
+- 2026-10-27: reviewed implementation plan, awaiting Fred's answers D1-D5:
+  `docs/superpowers/plans/2026-10-27-gdo-bot-manual-entry-upstream.md` (supersedes the brief above; `dump_date` is
+  dropped, a race fix in `rpa-derm-result` is added as Part A).
 
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three

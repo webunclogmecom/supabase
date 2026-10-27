@@ -1,0 +1,105 @@
+diff --git a/db.py b/db.py
+index a7e0781..b6bda83 100644
+--- a/db.py
++++ b/db.py
+@@ -403,8 +403,7 @@ def get_reported_row(gdo_permit: str, manifest_number: str) -> dict | None:
+     return dict(row) if row else None
+ 
+ 
+-def cache_failed_result(run_id: str, payload: dict,
+-                        reason: str = "POST failed"):
++def cache_failed_result(run_id: str, payload: dict, reason: str = "POST failed", replace: bool = False):
+     """
+     Store a POST payload locally so a later run can retry it. The next run
+     flushes whatever is still cached before fetching new work.
+@@ -420,14 +419,20 @@ def cache_failed_result(run_id: str, payload: dict,
+     159 ms BEFORE its own SUCCESS line. Nothing had failed. A log that
+     reports a failure on a clean run costs the next reader the same minutes
+     it cost this one, so the caller now says why the payload was cached.
++
++    replace=True is for ONE caller, the manual final payload after a failed POST: it overwrites
++    the seed in place (id, created_at and retry_count kept). Everything else stays first-write-wins.
+     """
+     conn = get_connection()
+     c = conn.cursor()
+     try:
+-        c.execute('''
+-            INSERT OR IGNORE INTO pending_api_results (run_id, payload)
+-            VALUES (?, ?)
+-        ''', (run_id, json.dumps(payload)))
++        if replace:
++            c.execute('''INSERT INTO pending_api_results (run_id, payload) VALUES (?, ?)
++                         ON CONFLICT(run_id) DO UPDATE SET payload = excluded.payload''',
++                      (run_id, json.dumps(payload)))
++        else:
++            c.execute('''INSERT OR IGNORE INTO pending_api_results (run_id, payload) VALUES (?, ?)''',
++                      (run_id, json.dumps(payload)))
+         conn.commit()
+         log.info(f"Cached result payload locally [run_id={run_id}]: {reason}")
+     finally:
+diff --git a/reporter.py b/reporter.py
+index a8c0867..d2dc0f3 100644
+--- a/reporter.py
++++ b/reporter.py
+@@ -293,6 +293,16 @@ def parse_portal_date(raw_date: str) -> str | None:
+     return None
+ 
+ 
++def _manual_iso(raw) -> str | None:
++    """A hand-typed date as YYYY-MM-DD, or None. Upstream reads only zero-padded ISO (or M/D/YYYY); strptime here
++    accepts '2025-3-25', so the date always goes through parse_portal_date and is re-printed, never forwarded."""
++    text = str(raw or "").strip()
++    if not text:
++        return None
++    mdY = parse_portal_date(text)
++    return datetime.strptime(mdY, "%m/%d/%Y").strftime("%Y-%m-%d") if mdY else None
++
++
+ def build_result_payload(
+     item: dict,
+     run_id: str,
+@@ -333,17 +343,22 @@ def build_result_payload(
+     if isinstance(gdo_id, int) and not isinstance(gdo_id, bool) and len(permits) == 1:
+         payload["gdo_id"] = gdo_id
+ 
+-    # Provenance of a hand-entered filing. LOCAL field, and by construction
+-    # it never reaches the wire: its presence is exactly what makes
+-    # _post_and_cache refuse to POST, so the one payload that carries a
+-    # field the API contract does not accept is the one payload that is
+-    # never sent. Do not "fix" this by deleting it -- deleting it is what
+-    # would start posting fabricated results for visits that never existed.
++    # Provenance of a hand-entered filing, and since 2026-10-2x the identifiers rpa-derm-result needs to record it
++    # as a manual filing (R7, delivered on the Tracker side 2026-10-26). Exactly the six keys upstream accepts: any
++    # other key is a 400, which the cache would retry for 72 h. Its presence is also what _post_and_cache refuses
++    # on, so it is built on EVERY manual payload, identifiers or not.
+     if item.get("_manual"):
+-        payload["manual_entry"] = {
++        entry = {
+             "created_by": str(item.get("_manual_by") or "unknown"),
+             "why": "entered by hand on the dashboard; no upstream visit",
++            "gdo_number": normalize_permit(item.get("gdo_number")),
++            "ticket_number": str(item.get("ticket_number") or "").strip(),
+         }
++        for key, raw in (("service_date", item.get("service_date")), ("dump_date", item.get("dump_ticket_date"))):
++            iso = _manual_iso(raw)
++            if iso:
++                entry[key] = iso
++        payload["manual_entry"] = entry
+ 
+     # Evidence: screenshot XOR screenshot_missing_reason (both required by API — one of them)
+     if screenshot:
+@@ -1061,6 +1076,14 @@ def run_reporter(dry_run_override: bool = False, items=None):
+                         db.delete_pending_by_run_id(run_id)
+                     else:
+                         log.warning(f"POST failed — seeded payload stays cached for retry [run_id={run_id}]")
++                        if item.get('_manual'):
++                            # PLAN_INLINE_EVIDENCE 5a keeps the SEED on purpose: the late-evidence drain attaches a
++                            # queue item's email later. A hand filing has no visit_id, so the drain never sees it
++                            # (db.get_unposted_email_evidence) and this payload is the only one that will ever carry
++                            # its county email. Replace the seed with it.
++                            db.cache_failed_result(run_id, payload,
++                                                   reason="manual entry: final payload kept after a failed POST",
++                                                   replace=True)
+                     # Reset timeout counter on successful item
+                     consecutive_hard_failures = 0
+                     consecutive_login_failures = 0
