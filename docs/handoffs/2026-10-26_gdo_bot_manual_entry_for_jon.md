@@ -42,10 +42,15 @@ unknown_field_manual_entry. Fred recorded it upstream by hand from /evidence-exp
    (optional), plus the existing `created_by` and `why`. Upstream refuses any other key inside `manual_entry`
    (400 `unknown_field_manual_entry.<key>`), and refuses `manual_entry` together with a `visit_id`, `manifest_id`
    or `gdo_id`.
-2. **A failed final POST replaces the seed with the final payload.** In the else branch at reporter.py:1062, cache
-   the final payload (the one carrying the county email) with a replace, for that call only (e.g.
-   `cache_failed_result(..., replace=True)` -> `INSERT OR REPLACE`). The default stays IGNORE: the re-assert path
-   (reporter.py:641-655) must never overwrite an original seed. Applies to queue items too, harmlessly.
+2. **For a MANUAL entry only, a failed final POST replaces the seed with the final payload.** This deliberately
+   departs from PLAN_INLINE_EVIDENCE step 5a ("INSERT OR IGNORE keeps the seed"), so say so in the commit. That rule
+   is right for a QUEUE item: its seed carries no image by ruling B, and once the result lands the late-evidence
+   drain attaches the email through `/rpa-derm-evidence` under (visit_id, run_id). A manual entry has no visit_id,
+   and `db.get_unposted_email_evidence` requires one, so its email is never drained (silently); the final payload is
+   the only copy that will ever carry it, and upstream refuses a manual entry with no image. So: in the else branch
+   at reporter.py:1062, when the item is `_manual`, cache the final payload with a replace for that call only (e.g.
+   `cache_failed_result(..., replace=True)` -> `INSERT OR REPLACE`). The default stays IGNORE, queue items are
+   unchanged, and the re-assert path (reporter.py:641-655) must never overwrite an original seed.
 3. **Manual entries post on purpose now, SUCCESS only.** Keep the `_post_and_cache` guard for every other manual
    result (dry run, validation, errors stay local: upstream answers them 200 recorded:false anyway, but nothing is
    gained by sending them). Rewrite the comments that say a manual entry never posts.
@@ -64,39 +69,55 @@ unknown_field_manual_entry. Fred recorded it upstream by hand from /evidence-exp
 
 - build_result_payload on a `_manual` item carries the four values in `manual_entry`, ISO date; a queue item is
   unchanged (no `manual_entry` key at all).
-- A failed final POST leaves the FINAL payload (with `screenshot`) in pending_api_results; the re-assert path still
-  cannot overwrite a seed (revert `replace` and the first test fails).
+- For a manual item, a failed final POST leaves the FINAL payload (with `screenshot`) in pending_api_results; for a
+  queue item the seed is still kept (IGNORE); the re-assert path still cannot overwrite a seed (revert `replace`,
+  or drop the `_manual` condition, and a test fails).
 - A manual non-SUCCESS result never reaches api_client.post_result.
-- Full suite green via run_tests.py before commit_msg.
+- Assert behaviour, not source text (WORKING_AGREEMENTS): drive the code, never `"foo" in src`.
+- Full suite green in the runtime image plus node (RUNBOOK section 1: `docker build --target runtime`, then
+  `Dockerfile.test`, exit 0), not only the venv. Then the auditor subagent on the diff, verify-then-apply.
 
 ## Docs in the same change
 
-- REQUIREMENTS_TRACKER_SSO.md R7: DELIVERED 2026-10-26 on the Tracker side, with the shipped shape above.
-- PROJECT_GDO_BOT.md (state + roadmap), HANDOFF.md line 113 ("never POST upstream"), API_CONTRACT.md (the
-  `manual_entry` body), the server.py `_manual_payload` docstring, reporter.py comments at 336-341 and 383-390.
+- REQUIREMENTS_TRACKER_SSO.md R7: DELIVERED 2026-10-26 on the Tracker side, with the shipped shape above (its text
+  "never POST to rpa-derm-queue results" was already untrue: the seed and the final POST skipped the guard).
+- DOMAIN_RULES.md, GDO filings: the new decision with who and when (Fred, 2026-10-26: a dashboard entry filed on the
+  county portal is a manual filing and is recorded upstream as one).
+- PROJECT_GDO_BOT.md (the invariant "its result is never POSTed upstream ... `_post_and_cache` refuses at the one
+  door all its call sites pass through" was false: two call sites skip that door), HANDOFF.md section 4 and line 113,
+  TASK_UI_ACKS_AND_MANUAL_GDO.md (a dated note under "Delivered", never an edit of the record),
+  PLAN_INLINE_EVIDENCE.md step 5a (the manual-item exception), API_CONTRACT.md (the `manual_entry` body and its
+  three answers), the server.py `_manual_payload` docstring, reporter.py comments at 336-341 and 383-390.
 - A "Delivered" section at the end of this brief, naming what was deliberately NOT done.
+- The push is a deploy (HANDOFF section 2): only after the September LWT report is filed, between hourly runs, and
+  check the startup lines and `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=120` afterwards (RUNBOOK section 4, DEPLOYMENT).
 ```
 
 ---
 
 ## Part 2: the message to Jon
 
-> Hi Jon, a heads-up on the GDO bot, nothing urgent.
+In Spanish: the bot repo's rule is "talk to Jon in Spanish" (`docs/PROJECT_INSTRUCTIONS.md`). Since the 2026-10-08
+handoff the bot is ours and Jon is out of the loop unless there is a separate agreement (HANDOFF section 10), so
+this message only lets him know; it asks nothing of him.
+
+> Hola Jon, un aviso sobre el bot de GDO, nada urgente y no necesitamos nada de ti.
 >
-> Today Yan used "Add a report by hand" on the bot dashboard for Marie Blachere (permit 14965, manifest 808783,
-> 11/16/2025). The county accepted it. The bot then posted the result to our API anyway, which we did not expect
-> from R7: the seed and the final POST after the email both skip the `_post_and_cache` guard. Our API refused it
-> (unknown field `manual_entry`) and the bot retried every hour.
+> El 26 de octubre Yan usó "Add a report by hand" en el dashboard para Marie Blachere (permiso 14965, manifiesto
+> 808783, 16/11/2025). El condado lo aceptó. Después el bot envió el resultado a nuestra API, aunque R7 dice que una
+> entrada manual nunca se envía: la copia previa (F1) y el POST final después del correo no pasan por el guard de
+> `_post_and_cache`. Nuestra API lo rechazó (`unknown_field_manual_entry`) y el bot reintentó cada hora.
 >
-> We decided to treat those as manual filings, so our side now accepts `manual_entry` and records it like a manual
-> filing from the DERM app. It needs two things from the bot to work:
-> 1. the permit, manifest number and service date (and dump date if there is one) inside `manual_entry`; today the
->    body has nothing that says which visit it is;
-> 2. when the final POST fails, keep the final payload (with the county email) instead of the seed, which has no
->    image.
+> Decidimos tratar esas entradas como presentaciones manuales: nuestra API ahora acepta `manual_entry` y la registra
+> igual que una presentación manual del DERM App. Así que R7 queda entregado de nuestro lado. En el bot vamos a hacer
+> nosotros dos cambios, siguiendo tus reglas (brief en `docs/TASK_MANUAL_ENTRY_UPSTREAM.md`, tests verificados por
+> mutación, auditor, `commit_msg.txt`):
+> 1. mandar el permiso, el número de manifiesto y la fecha de servicio (y la de descarga si hay) dentro de
+>    `manual_entry`, porque hoy el cuerpo no dice a qué visita corresponde;
+> 2. solo para una entrada manual, si falla el POST final, guardar el payload final (con el correo del condado) en
+>    lugar de la copia previa: el drain de evidencia tardía necesita un visit_id, así que nunca adjuntaría ese correo.
+>    Los items de la cola siguen igual.
 >
-> The brief, written your way, is `docs/TASK_MANUAL_ENTRY_UPSTREAM.md` (attached). Until the bot sends those values,
-> we answer a manual entry with a 200 and a Slack note for someone to record it by hand, so the bot no longer
-> retries it. Yan's entry is already recorded on our side. Pushes wait for the September LWT filing.
+> La entrada de Yan ya está registrada de nuestro lado. El push espera a que se presente el reporte LWT de septiembre.
 >
-> Thanks!
+> ¡Gracias!
