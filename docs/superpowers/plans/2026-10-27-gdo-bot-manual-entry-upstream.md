@@ -79,10 +79,17 @@ pre-cutoff visits); not changed here.
 
 Add a `decisions-to-build.md` row for each answer in the same turn (root CLAUDE.md section 7).
 
+**Fred's answers, 2026-10-27:** D1 no image, a person records it (recommended); D2 yes, ship Part A now (shipped the
+same day, v42); D4 who pressed File it (recommended). D3 was not asked: the recommended default stands. **D5 is open:**
+Fred asked why wait at all. The September hold is not a decision of his: it came from Jon's "push held until
+2026-10-20" note, which froze the bot for the training close, and was copied into our reference afterwards. Nothing in
+this change touches the monthly report, so the recommended gate is now: Diego not working on `/monthly` at that
+minute, the bot idle, not 07:30-08:30 ET (B9 and B10 follow whichever Fred confirms).
+
 ## 4. Part A: our side (`rpa-derm-result`), ships without the bot
 
 ### Task A0: claim
-- [ ] Append to `WORKING-NOW.md` (append only, commit at once): `CLAIMING: edge fn rpa-derm-result,
+- [x] Append to `WORKING-NOW.md` (append only, commit at once): `CLAIMING: edge fn rpa-derm-result,
   docs/reference/gdo-report-bot.md, postman/README.md`. Read the other sessions' claims first.
 
 ### Task A1: the race fix
@@ -95,7 +102,7 @@ removes the image the first row points at, then posts "already has a filing on r
 Reachable when the bot's 30 s client timeout fires during a stall and it resends (`api_client.py:105`, `:152-158`).
 The same branch also deleted the evidence of a row whose RPC committed but whose answer was lost.
 
-- [ ] Replace `:296-298` with the following, and keep the existing `23505` / `22023` / 500 branches after it:
+- [x] Replace `:296-298` with the following, and keep the existing `23505` / `22023` / 500 branches after it:
 
 ```ts
   if (rpcErr) {
@@ -126,7 +133,7 @@ The same branch also deleted the evidence of a row whose RPC committed but whose
 ```
 
 ### Task A2: a standing check that runs the new code (offline)
-- [ ] Add `scripts/checks/rpa_derm_result_manual_race.mjs`, adapted from `edge-harness/` beside this plan: esbuild
+- [x] Add `scripts/checks/rpa_derm_result_manual_race.mjs`, adapted from `edge-harness/` beside this plan: esbuild
   strips the imports, stubs replace `createClient`, `Deno.serve` and `fetch`, and it runs the function body through
   seven scenarios: same-run race won, another run already filed the permit, re-read error, lost RPC answer, transient
   RPC error, 22023, happy path. It must PASS on the working tree and FAIL on the pre-fix body
@@ -134,27 +141,27 @@ The same branch also deleted the evidence of a row whose RPC committed but whose
   scenarios. Run it with `npx --no-install esbuild@0.24.0` (no deno on this machine).
 
 ### Task A3: deploy and read back
-- [ ] Deploy `rpa-derm-result` (the `[functions.rpa-derm-result] verify_jwt = false` line in `config.toml` stays as is).
-- [ ] `node scripts/probes/edge_deployed_body.js rpa-derm-result "recordManualEntry" "wonErr" "!Same run_id = same object"`:
+- [x] Deploy `rpa-derm-result` (the `[functions.rpa-derm-result] verify_jwt = false` line in `config.toml` stays as is).
+- [x] `node scripts/probes/edge_deployed_body.js rpa-derm-result "recordManualEntry" "wonErr" "!Same run_id = same object"`:
   the first needle is the control, the second proves the new body, the third proves the old comment is gone; the
   printed version must be above 41.
 
 ### Task A4: smoke against Prod (no write, no Slack)
-- [ ] Read the bot key into a shell variable without printing it: `KEY=$(grep '^RPA_BOT_KEY=' Supabase/.env | cut -d= -f2-)`
+- [x] Read the bot key into a shell variable without printing it: `KEY=$(grep '^RPA_BOT_KEY=' Supabase/.env | cut -d= -f2-)`
   (rotated 2026-10-22 and updated there; a 401 means it is stale, then read Railway `RPA_BOT_KEY` the same way).
-- [ ] Replay the stored run of visit 8889 (bot run `d079deb3-002b-4394-add1-3ddc2b59987d`) with a well-formed manual
+- [x] Replay the stored run of visit 8889 (bot run `d079deb3-002b-4394-add1-3ddc2b59987d`) with a well-formed manual
   body: expect `200 {recorded:true, deduped:true, id:2030}`. The dedupe runs before matching, upload and Slack, so this
   proves every 400 gate (keys, shape, ids, run id, date) and nothing else.
-- [ ] Controls: an extra `manual_entry.client_name` key answers `400 unknown_field_manual_entry.client_name`; a fresh run
+- [x] Controls: an extra `manual_entry.client_name` key answers `400 unknown_field_manual_entry.client_name`; a fresh run
   id with `dry_run:true` answers `200 {recorded:false, reason:"only_a_successful_filing_is_recorded"}`.
 
 ### Task A5: record and release
-- [ ] Supabase commit (explicit paths, `Co-Authored-By` footer), push.
-- [ ] `docs/reference/gdo-report-bot.md`: the version in sections 4 (line ~148) and 10 (line ~168) set to the version A3
+- [x] Supabase commit (explicit paths, `Co-Authored-By` footer), push.
+- [x] `docs/reference/gdo-report-bot.md`: the version in sections 4 (line ~148) and 10 (line ~168) set to the version A3
   printed; the race fix in section 10. `postman/README.md` section 4 (rpa-derm-result): a `manual_entry` subsection (the
   six keys, ISO date, the 201 / 200 deduped / 200 refused / 500 retry answers); the pre-commit hook regenerates the
   Postman description.
-- [ ] `decisions-to-build.md`: Part A built. Release the claim in `WORKING-NOW.md`.
+- [x] `decisions-to-build.md`: Part A built. Release the claim in `WORKING-NOW.md`.
 
 ## 5. Part B: the bot. Build now, push behind the gate in B9
 

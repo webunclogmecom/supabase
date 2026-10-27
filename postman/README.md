@@ -310,6 +310,32 @@ do. Never treat a report as done before we acknowledge it.
 client data) and record only the path. You never need storage credentials. If images ever exceed the
 5 MB cap routinely we will switch you to a signed upload URL.
 
+### A report filed by hand on your dashboard: `manual_entry` (since 2026-10-26)
+
+A report a person typed on the bot dashboard ("Add a report by hand") and filed on the county portal is recorded on
+our side as a **manual filing** (the same record a DERM App manual filing makes). Send the normal body with
+`visit_id` and `manifest_id` null, **no `gdo_id`**, and a `manual_entry` object:
+
+| key | value |
+|---|---|
+| `created_by` | the dashboard key name of the person who filed it (`yan`, `fred`, `diego` map to their emails) |
+| `why` | free text, ignored |
+| `gdo_number` | the one permit, e.g. `14965` or `GDO-14965` (compared without `GDO-` and leading zeros) |
+| `ticket_number` | the manifest number (compared without leading zeros) |
+| `service_date` | `YYYY-MM-DD` (zero-padded) or `M/D/YYYY` |
+| `dump_date` | accepted, not used |
+
+Any other key inside `manual_entry`, or a `visit_id` / `manifest_id` / `gdo_id` next to it, is a `400`. The `run_id`
+must be `[A-Za-z0-9_.-]{1,86}`; we store it as `manual-bot-<run_id>` and dedupe on that first.
+
+| answer | meaning |
+|---|---|
+| `201 {recorded:true, manual_entry:true, visit_id, gdo_id, run_id, filed_by}` | recorded |
+| `200 {recorded:true, deduped:true}` | already recorded under this run (a retry, or a duplicate request that raced this one) |
+| `200 {recorded:false, reason}` | not a filing (dry run, not `SUCCESS`, no `portal_confirmation`): nothing written |
+| `200 {recorded:false, reason, announced:true}` | refused, and we posted it to Slack for a person: no single matching visit, no image (`screenshot` is required here), or the permit is already filed. **Do not retry it** |
+| `500 {error:"..._retry"}` | our side failed; retry the same POST |
+
 ---
 
 ## 4b. `POST /functions/v1/rpa-derm-evidence`: attach the image LATER

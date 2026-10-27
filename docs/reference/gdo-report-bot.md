@@ -146,7 +146,7 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 - **`?mode=`** is `dryrun` (a 25-row historical sample, no lease), `peek` (the live queue, no lease, since v32) or
   absent (live, leased). Anything else is refused with 400 `unknown_mode` since v33 (it used to read as live).
 - **A dashboard manual entry posts `manual_entry` and no `visit_id` (accepted since `rpa-derm-result` v40,
-  2026-10-26).** Section 10.
+  2026-10-26; race fix v42, 2026-10-27).** Section 10.
 
 ## 10. Dashboard manual entries ("Add a report by hand", 2026-10-26)
 
@@ -165,7 +165,7 @@ Two bot facts behind it (bot repo at `7681388`):
   SEED, written before the county email arrived, so it has no image either (`INSERT OR IGNORE`, `db.py:428`). The
   bot drops a cached result after 11 failed retries and posts "Result discarded without delivery to Supabase".
 
-**What `rpa-derm-result` does now (`recordManualEntry`, v40):**
+**What `rpa-derm-result` does now (`recordManualEntry`, v40; v42 since 2026-10-27 14:25 ET adds the "record error" row):**
 
 | step | rule |
 |---|---|
@@ -175,6 +175,7 @@ Two bot facts behind it (bot repo at `7681388`):
 | the visit | `v_derm_portal_fields` rows on that `visit_date` (YYYY-MM-DD or MM/DD/YYYY), permit compared as digits without zeros, ticket without leading zeros; exactly one visit and one permit, and the manifest covers no other visit (a typed dump date can be the OTHER visit's service date: ticket 815951, visits 1353/1360) |
 | the image | a JPEG or PNG in `screenshot` is required (`fn_record_manual_gdo_report` needs it in storage first) |
 | the record | uploaded to `rpa-evidence/<visit>/manual-bot-<run>.<ext>`, then `fn_record_manual_gdo_report` with the matched `gdo_id`, so the row is exactly a DERM App manual filing: Manual chip and "Filed by" in the DERM Tracker, "Filed manually, DERM portal confirmed (no tracking number)" in the Field Portal |
+| record error (v42) | re-read by run_id BEFORE removing anything: a row for this run means a duplicate request recorded first, or this RPC committed and only its answer was lost, so the image is that row's evidence: 200 `deduped`, nothing removed, no Slack. A failed re-read is 500 `result_lookup_failed_retry` and keeps the image. Only a refusal (23505, 22023) with no row removes the image; any other error keeps it for the retry. Until v41 the branch removed the image first, so a duplicate request deleted the recorded row's evidence and posted a false "already filed". Standing check: `node scripts/checks/rpa_derm_result_manual_race.mjs` (7 scenarios; must fail on the pre-fix body `4deebe7`) |
 | filed by | `yan` = yannick@ayache.com, `fred` = fred@ayache.com, `diego` = contact@unclogme.com (Fred, 2026-10-26); anyone else `GDO bot dashboard (<name>)` |
 | refusal | 🛑 **200 + a Slack post to #apps-notifications, never a 4xx** ("GDO report not recorded", what was sent, "record it in the DERM App ... do not file it again"). A 4xx makes the bot retry for ~11 hours and then tell people to check whether the county has it, which is the wrong question. If the post fails, 500, so the bot keeps retrying and the refusal cannot go silent |
 

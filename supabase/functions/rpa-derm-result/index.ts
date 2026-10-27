@@ -294,8 +294,29 @@ async function recordManualEntry(body: Record<string, unknown>): Promise<Respons
     p_gdo_id: gdoId,
   })
   if (rpcErr) {
-    // Same run_id = same object, so nothing else can reference it; remove it so no orphan image stays.
-    await sb.storage.from('rpa-evidence').remove([path])
+    // Re-read BEFORE removing anything. The image at `path` is a recorded row's evidence when a concurrent duplicate
+    // of THIS run recorded first (the bot resends after its 30 s client timeout while this request still runs), or when
+    // this RPC committed and only its answer was lost. Same read as the dedupe above.
+    const { data: won, error: wonErr } = await sb
+      .from('derm_portal_submissions')
+      .select('id, visit_id, gdo_id, screenshot_path')
+      .eq('run_id', runId)
+      .limit(1)
+    if (wonErr) {
+      // Cannot tell whether a row points at the image: keep it. The bot retries; its retry dedupes or records.
+      console.error('manual entry re-read after a record error failed:', wonErr.message, '| record error:', rpcErr.message)
+      return json({ error: 'result_lookup_failed_retry' }, 500)
+    }
+    if (won && won.length > 0) {
+      return json({ recorded: true, deduped: true, manual_entry: true, id: won[0].id, visit_id: won[0].visit_id,
+        gdo_id: won[0].gdo_id, run_id: runId, screenshot_stored: won[0].screenshot_path !== null }, 200)
+    }
+    if (rpcErr.code === '23505' || rpcErr.code === '22023') {
+      // A refusal, and no row carries this run_id (fn_record_manual_gdo_report pins every manual path to
+      // <visit>/<run_id>.<ext>), so nothing references `path`: remove it so no orphan image stays. Any other error
+      // keeps it: the bot retries and the retry rewrites the same path.
+      await sb.storage.from('rpa-evidence').remove([path])
+    }
     if (rpcErr.code === '23505') {
       // "already has a filing on record for that GDO permit": maybe recorded in the DERM App, maybe a SECOND county
       // filing. Either way a person looks; retrying cannot help.
