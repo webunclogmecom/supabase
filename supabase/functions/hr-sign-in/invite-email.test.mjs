@@ -26,6 +26,12 @@ assert.ok(!m.html.includes("SiteURL"));
 assert.ok(!m.html.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, "").includes("hub.unclogme.app"), "bare hub.unclogme.app outside a link");
 assert.equal(m.html.split('>hub.unclogme.app</a>').length - 1, 2);
 
+// the font: Manrope is loaded where the mail app allows it, Outlook for Windows gets Segoe UI, and nothing is heavier
+// than 700 ('Segoe UI' at 800 is Segoe UI Black, the heading Fred called awful in Gmail on Windows, 2026-10-27)
+assert.ok(m.html.includes("fonts.googleapis.com/css2?family=Manrope"), "Manrope is loaded");
+assert.ok(m.html.includes("<!--[if mso]>"), "Outlook for Windows fallback");
+assert.ok(!/font-weight:\s*(800|900)/.test(m.html), "no weight above 700");
+
 // names are escaped
 const x = inviteEmail({ firstName: "<b>Eve</b>", inviterName: "Tom & \"Co\"", link, expiresAt: new Date("2026-10-26T19:42:00Z") });
 assert.ok(x.html.includes("Hi &lt;b&gt;Eve&lt;/b&gt;, Tom &amp; &quot;Co&quot; invited you"));
