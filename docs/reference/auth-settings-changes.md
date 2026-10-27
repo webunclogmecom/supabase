@@ -10,6 +10,35 @@ newest first. The Auth settings are not in any migration and have no audit trail
 3. PATCH only those keys. Then read every setting again and compare: only the named keys may differ.
 4. Check Auth health (`/v1/projects/{ref}/health?services=auth`), and whatever the change touches.
 
+## 2026-10-27 · Current password to change a password, minimum 8, password-changed email (Trello JlxV47sS)
+
+Fred (voice note): Change password in the HR App asks for the old password and the new one twice; a forgotten password uses
+Forgot password (*"I think that's better than anything else"*), which replaces decision 22 (the emailed code); then *"go
+ahead with just 8"* and *"Yes, our design"* for the email. Plan `Building Apps/HR App/docs/specs/2026-10-27-change-password-plan.md`.
+Applied about 14:35 ET, AFTER the HR App panel (sends `current_password`) and Picture Planner's reset page (8 characters)
+were live; the other six reset pages and the Hub invite page already required 8.
+
+| key | before | after |
+|---|---|---|
+| `security_update_password_require_current_password` | `false` | `true` |
+| `password_min_length` | `6` | `8` |
+| `mailer_notifications_password_changed_enabled` | `false` | `true` |
+| `mailer_subjects_password_changed_notification` | "Your password has been changed" | "Your UnclogMe password was updated" |
+| `mailer_templates_password_changed_notification_content` | Supabase's default | `docs/reference/auth-email-templates/password-changed.html` |
+
+- Read in Supabase Auth's source (`internal/api/user.go`, 2026-10-27): with the switch on, a password change from a normal
+  session needs `current_password` (`current_password_required` / `current_password_invalid`, same message); a reset-link
+  session (`session.IsRecovery()`) and a sign-in with no password yet (`HasPassword()` false: an invite's first password)
+  are exempt; strength is checked BEFORE the current password; any change signs out the user's other sessions. The
+  password-changed email goes out on EVERY password update (change, reset, first password), so its words fit all of them.
+- Unchanged on purpose: `security_update_password_require_reauthentication` stays `false` (decision 22, replaced);
+  `password_hibp_enabled` stays `false` (Fred: *"don't mind breached password, let them be"*). Existing passwords
+  shorter than 8 stay valid until their next change.
+- Checked: PATCH 200; settings read back, only the five keys differ; Auth health 200 (GoTrue v2.197.0);
+  `scripts/checks/auth_password_settings.mjs` all ok (it failed on the four new lines before, its control passing).
+  No server probe was run: any probe that could pass would change a real password, so the live test is Fred's.
+- Undo (five keys): `backups/2026-10-27_auth_password_UNDO_body.json`; copies `backups/2026-10-27_auth_config_{before,after}_password.json`.
+
 ## 2026-10-26 · Self sign-up off, D16 (Send invite phase 7)
 
 Fred: "Now, this afternoon" (the phase 7 test). Applied 14:21 ET, one key.
