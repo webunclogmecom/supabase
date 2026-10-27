@@ -967,3 +967,6 @@ verify_jwt = true
 # only trustworthy behind verify_jwt.
 [functions.unopened-email-reminder]
 verify_jwt = true
+
+[functions.gdo-bot-file-visit]
+verify_jwt = true
