@@ -37,7 +37,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   *"the forgot password functionality ... it's gonna send a password reset in your email. I think that's better than
   anything else."* This REPLACES decision 22 of the Send invite plan (Supabase's emailed re-authentication, with a
   rehearsal on the Hub reset page). Today the panel asks only for the new password twice (`supabase.auth.updateUser`).
-  NOT BUILT. First step: measure how the current password is checked (Supabase Auth docs plus a probe on a test sign-in).
+  Plan `Building Apps/HR App/docs/specs/2026-10-27-change-password-plan.md` (best practice with sources; Supabase's own
+  switch `security_update_password_require_current_password`, read in its source: reset-link sessions and sign-ins
+  with no password are exempt, other devices are signed out on any change). Fred's decisions the same day: Google
+  sign-ins need no password (*"they can use the SSO of Gmail to sign in without needing a password"*), so "Add a
+  password" goes; the "password set or changed" email on, in the invite email's look; a "Forgot your current
+  password?" button that emails a reset link; minimum **8** characters (*"Instead of 15 go ahead with just 8 is
+  enough."*) and breached passwords blocked, on every screen that sets a password (HR panel, Hub invite page, 7 reset
+  pages). NOT BUILT. Next: mockups on the real Security tab.
 
 **HR App invite follow-ups (own Trello card; Send invite HhuFXLlt closed 2026-10-26, see section 4)**
 - 2026-10-26, Fred after the live test: *"remember we can also use personal emails too, some user `@yahoo` or `@hotmail`
