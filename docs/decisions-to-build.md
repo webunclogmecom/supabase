@@ -44,7 +44,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   password" goes; the "password set or changed" email on, in the invite email's look; a "Forgot your current
   password?" button that emails a reset link; minimum **8** characters (*"Instead of 15 go ahead with just 8 is
   enough."*) on every screen that sets a password (HR panel, Hub invite page, 7 reset
-  pages); breached passwords NOT blocked (*"don't mind breached password, let them be"*). NOT BUILT. Next: mockups on the real Security tab.
+  pages); breached passwords NOT blocked (*"don't mind breached password, let them be"*). Mockups picked the same day: layout A (inside the row), the email as shown (files in `HR App/docs/specs/`). NOT BUILT.
 
 **HR App invite follow-ups (own Trello card; Send invite HhuFXLlt closed 2026-10-26, see section 4)**
 - 2026-10-26, Fred after the live test: *"remember we can also use personal emails too, some user `@yahoo` or `@hotmail`
