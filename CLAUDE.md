@@ -2499,6 +2499,27 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   catalogue). Helpers: `supabase/functions/_shared/slack-notify.ts`. Bot setup: `docs/reference/slack-unclogme-apps-bot.md`.
 App-side contract: `Building Apps/DERM Stamp Studio/CLAUDE.md` and its `docs/08-changelog.md`.
 
+### ✅ A STAMP SHEET WITH NO SCAN IS SKIPPED, NEVER COMPLETED (2026-10-27, `2026-10-27_1640`, Trello EizZ2IuY)
+
+Fred: *"it's for marking them as complete or skipping them, for the AI to check what i mean and think what is the best
+practice"* (ticket-487956: 041-MB, filed with no photo, the only open sheet of 163, in the 11 AM post every day).
+- `derm.stamp_sheet_status` + `skipped_at`, `skipped_by` (the signed-in email from `auth.users` by `auth.uid()`),
+  `skip_reason` (CHECK `record_only | no_sheet | sheet_lost | handled_elsewhere | other`), `skip_note` (required for
+  `other`). Written ONLY by **`derm.set_sheet_skipped(folder, skipped, reason, note)`** (Edit access check, then the stamp
+  key; authenticated + service_role). It refuses a sheet with a page or a completed one, in words (DETAIL `blocker=`).
+- 🛑 **A skip never sets `completed`.** Completed means a stamped copy will be blacked out (2026-09-03), so a skip leaves
+  the publish, blackout, Field Portal and city email paths untouched. The completion triggers act only on
+  `completed = true`, so a skip row is inert to them. Never add a complete-without-stamps path.
+- `derm.v_stamp_sheets` gained 6 appended columns: `skipped` (DERIVED: a stored skip counts only while the sheet has no
+  page and is not completed, so a scan uploaded later re-queues it with no trigger), `skipped_at/by`, `skip_reason/note`
+  (shown only while it counts), `missing_scan` (`derm.fn_sheet_missing_scan`: no address photo / manifest photo only /
+  photo recorded but file missing; NULL when the sheet has a page).
+- `derm.fn_stamp_open_sheets` (the 11 AM post) leaves a skipped sheet out; a page-less sheet's reason is the
+  missing-scan sentence. The edge fn's dry-run reply still says "every sheet is completed" when the list is empty.
+- "No scan" is a TICKET state: 65 live manifests lack their own address photo but share a ticket with one that has it.
+- The migration holds the lock for the DDL only: snapshots before, VERIFY after the commit (inside, it measured 16 s,
+  past the 8 s an app read waits). Standing check `scripts/checks/stamp_skip_sheet.mjs` (rolled back; `CONTROL=1` fails).
+
 ### ✅ GENERATED SHEETS FINISH THEMSELVES: measured from the scan, guided by the layout we printed (2026-09-14)
 
 Fred, 2026-09-14, on 835076: *"if it's a generated manifest ... it should be auto-stamped and auto
