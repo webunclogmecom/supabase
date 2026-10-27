@@ -3644,6 +3644,14 @@ Every defect below was therefore latent, and the UI change is what makes it reac
   machine labels and **not one email**. Fixed once in **`derm._actor(text)`**, not copied into
   three functions; it is fail-safe by construction (a parse problem returns the default rather
   than raising, because the callers are save paths).
+  ⚠ **Three writers were missed and kept the singular claim until 2026-10-27**: `set_sheet_completed`
+  (`completed_by`: 143 completions labelled `stamp-studio`, never a person), `fn_stamp_sheet_reopen_pin`
+  (`reopened_by`, which fell back to `postgres`) and `set_row_reviewed` (`reviewed_by`). All three call
+  `derm._actor` since `2026-10-27_1703` (its VERIFY runs as a real sign-in, a machine and plain SQL,
+  with the old bodies as the control). No `derm` function reads the singular claim now. Not backfilled:
+  for 43 of the 143 the person is in `audit.logs.jwt_claims->>'email'` (Fred 30, Yannick 9,
+  contact@ 4); the other 100 have no email anywhere (the anon era and direct SQL). A new writer of a
+  "who" column calls `derm._actor`.
 
 **The invariants are now on the TABLES, because the RPC is not the only way in** -- all 1,183
 historical writes came through bulk migrations:
