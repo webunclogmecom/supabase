@@ -74,8 +74,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `arrived_at`, `left_at`, `completed_at`, `samsara_url`, `samsara_link_kind` (265 of 266 visits get the truck link).
   **BUILT 2026-10-28:** the Admin Review page `/grease` (live `App-HjLCt7eC.js`, Building Apps `39de74c`) and the
   Calendar hover version 2 (live `index-D84nAQKq.js`, Building Apps `c6fe0fc`), both checked live. A spot-check of 5
-  clients against Samsara's own percent readings matched every arrival and departure level. **Open:** Fred's review;
-  the card stays in Approved until he says to move it.
+  clients against Samsara's own percent readings matched every arrival and departure level. ~~**Open:** Fred's review;
+  the card stays in Approved until he says to move it.~~ Done: in Testing / QA since 2026-10-28 (below).
 - **Re-check 2026-10-28** (Fred: *"verify what you did then is all correct across apps"*, and *"click on the links
   that redirects you to samsara"*, *"so it anywhere of the world the links works correctly at the correct time"*):
   the visit bar tooltip sat in the window corner, **BUILT** the fix (portal, live `App-C5E731Q0.js`, BA `3716ca4`).
@@ -86,6 +86,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
     the fix, 0 after).
   - **BUILT 2026-10-28:** the Samsara button's hover gives the window in ET and, when different, in the computer's
     own time (live `App-VaZa22Qr.js`; from Paris: "Oct 26, 12:35 to 1:56 AM ET" / "5:35 to 6:56 AM (GMT+1)").
+- **Card moved to 📝 Testing / QA on 2026-10-28** (Fred: *"move the card to Testing / QA"*): all 8 checklist items
+  ticked, card marked complete. Nobody else has tested it yet.
 
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
