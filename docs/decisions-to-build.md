@@ -53,6 +53,19 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - ⚠ A filing made with it shows in our apps only once the bot sends back which visit it filed plus the county email
   (the BOT half row above): `rpa-derm-result` records a normal result for a visit before the cutoff as a dry run.
 
+**Admin Review "Grease by client" page + Calendar Grease pumped hover titles (Trello 6M9WvSYp, 2026-10-27)**
+- Fred, Slack 2026-10-23: *"a table of the clients with their corresponding pumping readings, and the table should show
+  the average and the listed visits with the correct readings"*; and the Calendar Grease pumped hover titles *"more
+  centered, 'Moises / estimated / measures' are the title"*. Fred's picks 2026-10-27: the page lives in **Admin Review**;
+  **every completed pumping visit since Aug 20** is listed on any truck (David / Cloggy read "No sensor on this truck");
+  the average is **the Calendar's** (`ops.fn_client_sludge_averages`, last 6 counted readings per place and pump kind).
+  The only per-visit reading is the Moises sensor (no driver-entered gallons exist), so that is the source.
+- **DB BUILT 2026-10-27:** `public.get_grease_by_client()` (Supabase `2026-10-27_1925`, `b543b98`): one row per visit,
+  the group's average and readings from the Calendar's function, `in_average`, a plain `note` for each visit left out;
+  View in Admin Review; standing check `scripts/checks/grease_by_client.sql` (ok, 266 visits). **Open:** Fred picks a
+  layout and a hover version on the mockups https://claude.ai/artifact/G7m4d3zPqqwY7pV8P9uT5Q, then the Admin Review
+  page and the Calendar hover change (two Lovable builds).
+
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
   fields, *"the old password, and then ... the new password and to retype the new password"*; a person who forgot it uses
