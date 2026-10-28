@@ -4704,6 +4704,17 @@ function DOES, not by its name: `log_sa_schedule_gaps` writes a watched source a
 ⚠ `ops.v_health_items` and `ops.v_health_status` stay READABLE by `authenticated`. Reading the state
 was not the finding; changing it was.
 
+✅ **A VISIT ON THE WRONG TRUCK NOW REACHES A PERSON: `truck-gps-health` (`2026-10-28_1010`).** The nightly
+`fn_infer_visit_vehicle` corrects a visit's truck only when it is not filed on a DERM manifest and is from its last
+10 days; its refusals were a number nobody read (visit 8893 sat on Cloggy while David's GPS stop held the
+completion, found by opening a Samsara link). `public.log_truck_gps_health()` (cron 13:17 UTC) dry-runs that rule
+and reads its own evidence table (`pg_temp._veh_evidence`, the ONE truck whose stay within 250 m holds the
+completion), so the rule is not copied; it lists what the nightly leaves, minus trucks the 2026-10-18 duration fix
+decided (an applied ledger row whose `new_vehicle_id` is the stored truck). A full run takes ~14 s. 🛑 If
+`fn_infer_visit_vehicle` stops building `_veh_evidence` or renames its columns, this logger raises: the cron run
+fails in `cron.job_run_details` and NO new `sync_log` row is written, so the health views keep showing the last good
+run. Keep the two in step, and re-run it by hand after changing either.
+
 ✅ **THE JOBBER SYNC SURFACES ARE NOW WATCHED (`2026-09-07_0330`), AND THEY WERE NOT BEFORE.**
 The chain covered five sources and **no Jobber sync surface was one of them**, so
 `sync-jobber-job-drift` dying on **30 of its last 671 runs over 14 days** could never have emailed

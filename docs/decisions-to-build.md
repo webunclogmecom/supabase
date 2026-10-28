@@ -76,6 +76,16 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   Calendar hover version 2 (live `index-D84nAQKq.js`, Building Apps `c6fe0fc`), both checked live. A spot-check of 5
   clients against Samsara's own percent readings matched every arrival and departure level. **Open:** Fred's review;
   the card stays in Approved until he says to move it.
+- **Re-check 2026-10-28** (Fred: *"verify what you did then is all correct across apps"*, and *"click on the links
+  that redirects you to samsara"*, *"so it anywhere of the world the links works correctly at the correct time"*):
+  the visit bar tooltip sat in the window corner, **BUILT** the fix (portal, live `App-C5E731Q0.js`, BA `3716ca4`).
+  10 Samsara links opened, every window right. Two decisions, Fred: *"go ahead with both recommended"*, then
+  *"Change it now anyway"* about the vpF5PLQj hold:
+  - **BUILT 2026-10-28:** visit 8893 (166-SPA) set to David (`2026-10-28_0955`, `3e6bf17`), and a daily health line
+    `truck-gps-health` for a filed or older visit whose GPS truck differs (`2026-10-28_1010`; flagged 8893 before
+    the fix, 0 after).
+  - **BUILT 2026-10-28:** the Samsara button's hover gives the window in ET and, when different, in the computer's
+    own time (live `App-VaZa22Qr.js`; from Paris: "Oct 26, 12:35 to 1:56 AM ET" / "5:35 to 6:56 AM (GMT+1)").
 
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
