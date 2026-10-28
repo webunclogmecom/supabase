@@ -257,6 +257,14 @@ visits 7822 / 7027, cleaned up). ⚠ The Slack connector's channel reader can la
 The DUMP messages' own rules (truck resolution, called ahead, which visits count, the removal threading rule) are in
 `Building Apps/DUMP Schedule/CLAUDE.md`. The Stamp reminder's are in the Supabase `CLAUDE.md` Draw-the-bands section.
 
+### Not on this format: the GDO report bot in #apps-notifications (since 2026-10-28)
+
+The GDO Online Report bot (Railway `unclogme-gdo-report-bot`, ours since 2026-10-08, Jonathan builds it) posts its
+08:00 ET digest and its run alerts to #apps-notifications through an incoming webhook of its own Slack app, "GDO Online
+Report" (Yan asked for the move; Trello f23r2DE6). Its messages are the bot's own format, with no header, so they are
+the one non-"UnclogMe Apps" voice in that channel. Changing them is a bot change (`docs/reference/gdo-report-bot.md`
+section 6). Our own refusal post for a hand filing ("GDO report not recorded", `rpa-derm-result`) is on this format.
+
 ### Not on this format yet (a different bot, `Supabase - Notifications`, posting to #viktor-supabase)
 
 Two GitHub Actions jobs in this repo post with their own bot token (GitHub secret `SLACK_BOT_TOKEN`, a different

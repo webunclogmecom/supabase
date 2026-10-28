@@ -85,6 +85,11 @@ session's local log).
 | 10 | `SLACK_WEBHOOK_URL` (report bot digest, app "GDO Online Report", #new-app-issues) | Fred revoked the app's tokens and added a new webhook; Railway set, bot redeployed | new hook answers an empty test body with 400 (live, nothing posted); the revoked hooks answer 404 `no_service` |
 | 11 | Jonathan's Railway access | removed from the project `unclogme-gdo-report-bot` (Fred: "Remove Railway, keep GitHub") | the project now has no project-level member; he keeps GitHub write on the repo, so his pushes still deploy. ⚠ Railway's audit row for the removal (`Member.removed`, 2026-10-22 20:41:31 UTC) shows `by: jon.v@ayache.com`. The session made the removal with Fred's login 17 s earlier, so Railway most likely records the REMOVED member in that field; read it that way, not as Jonathan acting |
 
+⚠ **Item 11 no longer holds (found 2026-10-28):** Jonathan was invited to the whole Railway WORKSPACE "Unclogme" on
+2026-10-27 15:09 ET (from the web@unclogme.com login, browser) and accepted at 16:14 ET, so as a workspace MEMBER he
+reaches all four projects, not only the report bot. Fred, 2026-10-28: intended, keep. Item 10's webhook was replaced
+the same day by the #apps-notifications one (Trello f23r2DE6; `docs/reference/gdo-report-bot.md` section 2).
+
 Redeployed: all six services (the redeploy reuses the built image; no GitHub build was needed). Every latest
 deployment reads SUCCESS.
 

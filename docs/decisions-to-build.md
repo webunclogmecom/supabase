@@ -25,6 +25,13 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**GDO report bot posts to #apps-notifications (Trello f23r2DE6, 2026-10-28)**
+- Yan wants the bot's Slack notifications in #apps-notifications (Jonathan to Fred). Fred's picks: we set the webhook
+  in Railway ourselves (no DM of the link to Jonathan), confirm with the 2026-10-29 08:00 ET digest, then remove the
+  old #new-app-issues hook. **Built 2026-10-28 19:12 ET:** `SLACK_WEBHOOK_URL` = the #apps-notifications hook
+  (fingerprint `4477a8783f`), bot redeployed `0fa1d530`. **Open:** the digest landing in #apps-notifications, then the
+  old hook's removal (Slack has no per-hook remove for this app; see `docs/reference/gdo-report-bot.md` section 2).
+
 **GDO bot manual entries, the BOT half (2026-10-26; our side built, section 4)**
 - The bot must send `gdo_number`, `ticket_number`, `service_date` and `dump_date` inside `manual_entry`, and keep the
   final payload (with the county email) when its POST fails. Until then every dashboard entry is refused with a Slack

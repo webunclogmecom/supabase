@@ -45,6 +45,17 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   portal, the office changes it) and `FOG_IMAP_APP_PASSWORD` (the mailbox owner). The redeploys restarted the bot's
   timers: the poll now runs about :27 each hour. The new webhook's first real use is the 2026-10-23 08:00 ET digest
   (bot log "Daily Slack digest sent", or the post in #new-app-issues).
+- **2026-10-28 (Trello f23r2DE6):** `SLACK_WEBHOOK_URL` now holds the "GDO Online Report" webhook for
+  **#apps-notifications** (Yan asked, Jonathan relayed; Fred added the hook in Slack, the session set it in Railway from
+  Fred's Copy click with `skipDeploys`, fingerprint `4477a8783f`, and redeployed the same image as `0fa1d530` at
+  19:12 ET while the bot was idle). The #new-app-issues hook (`b26527d5b4`) is still live but in nothing; it is removed
+  after the 2026-10-29 08:00 ET digest lands in #apps-notifications. Slack offers no per-webhook remove for this app
+  ("Revoke All OAuth Tokens" kills every hook, so that route needs a fresh #apps-notifications hook set again).
+- **2026-10-28: Jonathan is back in Railway, as a MEMBER of the whole "Unclogme" workspace** (invited 2026-10-27
+  15:09 ET from the web@unclogme.com login, accepted 16:14 ET; Fred 2026-10-28: intended, keep). A workspace member
+  reaches all four projects (this bot, Timed Jobs, Backups, Microservices), so the 10-22 "removed from the project"
+  line above no longer describes his access. His account changed `RUN_KEYS` (17:01 ET) and added `GDO_PASSWORD_2`
+  (18:09 ET) on 2026-10-28, with commits `5222058` and `c533189` deployed the same evening. Leave his variables alone.
   ⚠ The verification found the OLD `RPA_BOT_KEY` used from OUTSIDE Railway before the breach: 22
   `rpa-derm-queue?mode=dryrun` calls on 2026-10-18 and 2026-10-20 with the bot's own HTTP client, most likely a local
   copy of this bot (inferred, not verified). Such a copy also needs the two passwords above, which is one more reason
@@ -231,6 +242,9 @@ filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
 
 ## 6. Slack and the dashboard
 
+- **Channel:** everything below posts through ONE incoming webhook (`SLACK_WEBHOOK_URL`, Slack app "GDO Online
+  Report"), to **#apps-notifications since 2026-10-28** (#new-app-issues before). The format is the bot's own (no
+  header in our Slack format); changing it is a bot change.
 - **Daily digest**, 08:00 New York, covering yesterday. It lists one line per ledger row, with no grouping and no
   acks.
   - **filed** = SUCCESS;
