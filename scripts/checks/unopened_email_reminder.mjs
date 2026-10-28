@@ -10,13 +10,12 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
-import { stripTypeScriptTypes } from 'node:module';
+import { edgeVmSource } from './edge_vm_source.mjs';
 
 const src = fs.readFileSync(new URL('../../supabase/functions/unopened-email-reminder/index.ts', import.meta.url), 'utf8');
-const helper = fs.readFileSync(new URL('../../supabase/functions/_shared/slack-notify.ts', import.meta.url), 'utf8');
 const IMPORT = 'import { slackHeader, slackIdentity, slackSections } from "../_shared/slack-notify.ts";';
 assert.ok(src.includes(IMPORT), 'the function imports the shared helpers');
-const js = [stripTypeScriptTypes(helper).replace(/^export /gm, ''), stripTypeScriptTypes(src.replace(IMPORT, ''))].join('\n');
+const js = edgeVmSource(src);
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 
 // Wed Oct 21 2026, 11:00 ET = 15:00Z; Tue Oct 20 = not a posting day

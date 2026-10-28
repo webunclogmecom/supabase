@@ -7,10 +7,10 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
-import { stripTypeScriptTypes } from 'node:module';
+import { edgeVmSource } from './edge_vm_source.mjs';
 
 const src = fs.readFileSync(process.env.GUARD_SRC || new URL('../../supabase/functions/intake-size-lookup/index.ts', import.meta.url), 'utf8');  // GUARD_SRC: a broken copy, as a control
-const js = stripTypeScriptTypes(src);
+const js = edgeVmSource(src);
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 
 async function run(replies, { backlog, body = {}, role = 'service_role' } = {}) {

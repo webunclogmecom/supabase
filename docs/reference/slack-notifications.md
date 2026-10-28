@@ -181,7 +181,8 @@ Each of these was set by Fred or learned the hard way; the source is in brackets
    exists, make one first and point the app at it too.
 4. **Write a check** that runs the real function against stubs and asserts the message: header first, sections
    rebuild the `text`, limits respected, nothing posted on a dry run. Model:
-   `scripts/checks/stamp_sheets_reminder.mjs` (it inlines the real `slack-notify.ts`). Mutation-test it.
+   `scripts/checks/stamp_sheets_reminder.mjs`. Mutation-test it. A vm stub test of a function that imports a `_shared`
+   helper loads it through `scripts/checks/edge_vm_source.mjs`, which inlines the REAL helper (here `slack-notify.ts`).
    ⚠ A stub check tests the MESSAGE, never the data: it cannot see a query that lists the wrong rows. The daily
    `notification-health` check (`public.log_notification_health`, 9:15 AM ET, `2026-10-12_1400`) compares the Admin
    Review list with the raw send logs and feeds Fred's health email. A new reminder that lists records gets an item

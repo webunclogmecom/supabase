@@ -8,10 +8,10 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
-import { stripTypeScriptTypes } from 'node:module';
+import { edgeVmSource } from './edge_vm_source.mjs';
 
 const src = fs.readFileSync(new URL('../../supabase/functions/ocr-address-sheet-number/index.ts', import.meta.url), 'utf8');
-const js = stripTypeScriptTypes(src);
+const js = edgeVmSource(src);
 
 async function run(reply, writeStatus = 201) {
   const writes = [], calls = [];

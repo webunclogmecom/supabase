@@ -10,19 +10,13 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
-import { stripTypeScriptTypes } from 'node:module';
+import { edgeVmSource } from './edge_vm_source.mjs';
 
 // the source under test: an optional path (a draft outside the repo), default the repo file
 const src = fs.readFileSync(process.argv.slice(2).find((a) => !a.startsWith('--')) ?? new URL('../../supabase/functions/time-on-site-reminder/index.ts', import.meta.url), 'utf8');
 const IMPORT = 'import { slackHeader, slackIdentity, slackScopes, slackSections } from "../_shared/slack-notify.ts";';
 assert.ok(src.includes(IMPORT), 'the function imports the shared Slack helpers');
 const MUTATE = process.argv.includes('--mutate');
-// a vm script cannot import (aab4ac0 added isSecretKeyCaller): each "../_shared/<file>.ts" import line is dropped and that
-// REAL helper, read from this repo (types stripped, exports removed), goes in front. Any other import stays, so vm fails loudly.
-const SHARED_IMPORT = /^import \{[^}]*\} from (["'])\.\.\/_shared\/([\w-]+\.ts)\1;?[ \t]*\r?$/gm;
-const shared = (f) => stripTypeScriptTypes(fs.readFileSync(new URL(`../../supabase/functions/_shared/${f}`, import.meta.url), 'utf8')).replace(/^export /gm, '');
-const build = (code) => [...new Set([...code.matchAll(SHARED_IMPORT)].map((m) => m[2]))].map(shared)
-  .concat(stripTypeScriptTypes(code.replace(SHARED_IMPORT, ''))).join('\n');
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 
 // real data, 2026-10-09 (fn_time_on_site_gaps output, trimmed)
@@ -66,7 +60,7 @@ async function run(list, { body = {}, role = 'service_role', samsara = PLACES, t
     },
     Response, JSON, String, Number, Math, Date, Array, Map, Error, atob, console, encodeURIComponent,
   };
-  vm.runInNewContext(build(code), ctx);
+  vm.runInNewContext(edgeVmSource(code), ctx);
   const res = await handler(new Request('https://fn', { method: 'POST', headers: { authorization: 'Bearer ' + jwt(role) }, body: JSON.stringify(body) }));
   return { status: res.status, body: await res.json(), posts, logs };
 }
@@ -235,7 +229,8 @@ if (MUTATE) {
   for (const [name, code] of mutants) {
     assert.notStrictEqual(code, src, `mutant "${name}" did not change the source`);
     let caught = false;
-    try { await checks(code); } catch { caught = true; }
+    // only a failed assertion counts as caught: a harness error (vm, a stub) must never pass as a caught mutant
+    try { await checks(code); } catch (e) { if (!(e instanceof assert.AssertionError)) throw e; caught = true; }
     assert.ok(caught, `mutant "${name}" survived: the checks cannot see it`);
     console.log(`mutant caught: ${name}`);
   }

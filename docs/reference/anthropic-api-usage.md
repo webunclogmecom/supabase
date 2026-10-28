@@ -51,9 +51,12 @@ Railway when `main` is pushed (watch `gh api repos/webunclogmecom/unclogme-gdo-b
 on 2026-10-05 `claude-opus-5-5` read the row reader's test set 36/37 and, 4 runs of 4, declined the tiny
 printed code "249-LOU" (ticket-836200 page 1 row 3) as not sure, while `claude-sonnet-5-5` read 37/37. A
 declined code is "no opinion" to the placement gate, so the stronger model would have held back a correct
-stamp. The harness that settles it in minutes: load the function's own `index.ts` with Node's
-`stripTypeScriptTypes` into a `vm` context, then call its `askVision` / `parseRows` / `classify` directly
-against images whose stored reads you trust (`derm.address_sheet_scan_reads`,
+stamp. The harness that settles it in minutes: load the function's own `index.ts` through
+`scripts/checks/edge_vm_source.mjs` (types stripped, the real `_shared` helpers it imports inlined; a vm script
+cannot import) into a `vm` context, appending the names you need so the build returns them
+(`vm.runInNewContext(edgeVmSource(src + '\n;({ askVision, parseRows, classify })'), ctx)`: the function body runs
+in a block, so its names never land on `ctx`), then call them directly against images whose stored reads
+you trust (`derm.address_sheet_scan_reads`,
 `derm.address_sheet_row_reads`). That tests the exact request the function sends.
 
 ⚠ **Some request settings depend on the model.** Check them when you change it:

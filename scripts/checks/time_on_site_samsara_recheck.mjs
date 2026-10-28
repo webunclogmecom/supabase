@@ -8,16 +8,10 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
-import { stripTypeScriptTypes } from 'node:module';
+import { edgeVmSource } from './edge_vm_source.mjs';
 
 // the source under test: an optional path (a draft outside the repo), default the repo file
 const src = fs.readFileSync(process.argv.slice(2).find((a) => !a.startsWith('--')) ?? new URL('../../supabase/functions/time-on-site-samsara-recheck/index.ts', import.meta.url), 'utf8');
-// a vm script cannot import (aab4ac0 added one): each "../_shared/<file>.ts" import line is dropped and that REAL helper,
-// read from this repo (types stripped, exports removed), goes in front. Any other import stays, so vm fails loudly.
-const SHARED_IMPORT = /^import \{[^}]*\} from (["'])\.\.\/_shared\/([\w-]+\.ts)\1;?[ \t]*\r?$/gm;
-const shared = (f) => stripTypeScriptTypes(fs.readFileSync(new URL(`../../supabase/functions/_shared/${f}`, import.meta.url), 'utf8')).replace(/^export /gm, '');
-const build = (code) => [...new Set([...code.matchAll(SHARED_IMPORT)].map((m) => m[2]))].map(shared)
-  .concat(stripTypeScriptTypes(code.replace(SHARED_IMPORT, ''))).join('\n');
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 const T = (s) => `2026-10-01T${s}:00Z`, ms = (s) => Date.parse(T(s));
 const MOI = '281474998706262';
@@ -68,7 +62,7 @@ async function run({ body = {}, role = 'service_role', code = src } = {}) {
     },
     Response, Request, URL, JSON, Math, Date, Number, String, Array, Map, Promise, console, atob, encodeURIComponent,
   };
-  vm.runInNewContext(build(code), ctx);
+  vm.runInNewContext(edgeVmSource(code), ctx);
   const res = await handler(new Request('https://f', { method: 'POST', headers: { authorization: `Bearer ${jwt(role)}` }, body: JSON.stringify(body) }));
   return { status: res.status, body: await res.json(), saves, onceSaves, logs };
 }
