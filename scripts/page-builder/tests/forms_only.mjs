@@ -95,23 +95,28 @@ const navText = (p) => p.evaluate(() => [...document.querySelectorAll('nav[aria-
 
 for (const w of [1440, 375]) {
   const tag = w + 'px'
+  // 2026-10-28: a phone (touch + share sheet) shows Share; a computer (it copies) shows the chain Link icon and Copy link
+  const phone = w < 768, CARD = phone ? 'Share link to this form' : 'Copy link to this form', HDR = phone ? 'Share' : 'Copy link'
+  const ICON = phone ? 'M12 2v13' : 'M10 13a5 5 0 0 0 7.54.54'
   // Forms-only: the list
   let { p, ctx, st } = await open(w, 'fo', '/forms')
   ok(JSON.stringify(await navText(p)) === JSON.stringify(['Forms', 'Sign out']), `${tag} FO nav is Forms + Sign out`, await navText(p))
-  const L = await p.evaluate(() => ({
-    share: document.querySelectorAll('button[aria-label="Share link to this form"]').length,
+  const L = await p.evaluate(([CARD, ICON]) => ({
+    share: document.querySelectorAll(`button[aria-label="${CARD}"]`).length,
+    icon: [...document.querySelectorAll(`button[aria-label="${CARD}"] svg path`)].some((e) => (e.getAttribute('d') || '').startsWith(ICON)),
     menus: document.querySelectorAll('button[aria-label^="More actions for"]').length,
     requested: (document.body.textContent.match(/Requested by/g) || []).length,
     expires: (document.body.textContent.match(/Link expires/g) || []).length,
     sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
-  }))
+  }), [CARD, ICON])
   const nSub = F.fo_list.filter((x) => x.state === 'submitted').length, nWait = F.fo_list.filter((x) => x.state === 'awaiting').length
-  ok(L.share === nSub && nSub > 0, `${tag} FO one Share button per submitted card (${nSub})`, L)
+  ok(L.share === nSub && nSub > 0, `${tag} FO one "${CARD}" button per submitted card (${nSub})`, L)
+  ok(L.icon, `${tag} FO card button shows the ${phone ? 'Share' : 'Link'} icon`, L)
   ok(L.menus === 0, `${tag} FO no three-dot menu`, L)
   ok(L.requested === 0 && L.expires === nWait && nWait > 0, `${tag} FO waiting cards show expiry only (${nWait})`, L)
   ok(!L.sideways, `${tag} FO no sideways scroll`)
   await p.screenshot({ path: `${out}/fo_list_${w}.png`, fullPage: false })
-  await p.click('button[aria-label="Share link to this form"]')
+  await p.click(`button[aria-label="${CARD}"]`)
   await p.waitForTimeout(800)
   const S = await p.evaluate(() => ({ clip: window.__clip, shares: window.__shares, toast: document.body.textContent.includes('Link copied') }))
   if (w < 768) ok(S.shares.length === 1 && /\/forms\/\d+$/.test(S.shares[0].url) && /^Intake form · /.test(S.shares[0].title) && S.clip.length === 0, `${tag} FO Share opens the phone share sheet`, S)
@@ -123,16 +128,16 @@ for (const w of [1440, 375]) {
 
   // Forms-only: a submitted form, and ?tab=record
   ;({ p, ctx, st } = await open(w, 'fo', `/forms/${SUB}?tab=record`))
-  const D = await p.evaluate(() => ({
+  const D = await p.evaluate((HDR) => ({
     pb: document.body.textContent.includes('Open the Page Builder'), tabs: document.querySelectorAll('[role="tablist"]').length,
     record: document.body.textContent.includes('Lock box code') && !!document.querySelector('[data-accept-row]'),
-    share: [...document.querySelectorAll('main button')].some((b) => /^Share$/.test(b.textContent.trim())),
+    share: [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === HDR),
     collector: !!document.querySelector('[data-collector-link]'), sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
-  }))
+  }), HDR)
   ok(!D.pb && D.tabs === 0 && !D.record && !D.collector, `${tag} FO form: no Page Builder link, no tabs, no record tab, no collector link`, D)
-  ok(D.share && !D.sideways, `${tag} FO form: Share button, no sideways scroll`, D)
+  ok(D.share && !D.sideways, `${tag} FO form: "${HDR}" button, no sideways scroll`, D)
   await p.screenshot({ path: `${out}/fo_form_${w}.png`, fullPage: false })
-  await p.locator('main button:text-is("Share")').locator('visible=true').first().click()
+  await p.locator(`main button:text-is("${HDR}")`).locator('visible=true').first().click()
   await p.waitForTimeout(600)
   const S2 = await p.evaluate(() => ({ clip: window.__clip, shares: window.__shares, copied: document.body.textContent.includes('Link copied') }))
   if (w < 768) ok(S2.shares.length === 1 && S2.shares[0].url.endsWith('/forms/' + SUB_ID()), `${tag} FO form Share opens the share sheet`, S2)
@@ -143,7 +148,7 @@ for (const w of [1440, 375]) {
 
   // Forms-only: a waiting form and a cancelled one
   ;({ p, ctx, st } = await open(w, 'fo', `/forms/${WAIT}`))
-  const Wt = await p.evaluate(() => ({ t: document.body.textContent.includes('This form is not sent in yet'), e: document.body.textContent.includes('Link expires'), share: [...document.querySelectorAll('main button')].some((b) => /^Share$/.test(b.textContent.trim())) }))
+  const Wt = await p.evaluate(() => ({ t: document.body.textContent.includes('This form is not sent in yet'), e: document.body.textContent.includes('Link expires'), share: [...document.querySelectorAll('main button')].some((b) => /^(Share|Copy link)$/.test(b.textContent.trim())) }))
   ok(Wt.t && Wt.e && !Wt.share, `${tag} FO waiting form: not sent in yet + expiry, no Share`, Wt)
   await p.screenshot({ path: `${out}/fo_waiting_${w}.png`, fullPage: false })
   await ctx.close()
@@ -164,12 +169,12 @@ for (const w of [1440, 375]) {
   await p.click('button[aria-label^="More actions for"]')
   await p.waitForTimeout(500)
   const MI = await p.evaluate(() => [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent.trim().slice(0, 40)))
-  ok(MI.length >= 3 && /^Share link to this form/.test(MI[0]) && MI.some((t) => /^Share form/.test(t)) && MI.some((t) => /^Cancel form/.test(t)), `${tag} staff menu: Share link first, Share form and Cancel form kept`, MI)
+  ok(MI.length >= 3 && MI[0].startsWith(CARD) && MI.some((t) => /^Share form/.test(t)) && MI.some((t) => /^Cancel form/.test(t)), `${tag} staff menu: "${CARD}" first, Share form and Cancel form kept`, MI)
   await p.screenshot({ path: `${out}/st_menu_${w}.png`, fullPage: false })
   await ctx.close()
   ;({ p, ctx, st } = await open(w, 'st', `/forms/${SUB}`))
-  const SD = await p.evaluate(() => ({ pb: document.body.textContent.includes('Open the Page Builder'), tabs: document.querySelectorAll('[role="tablist"]').length, share: [...document.querySelectorAll('main button')].some((b) => /^Share$/.test(b.textContent.trim())) }))
-  ok(SD.pb && SD.tabs === 1 && SD.share, `${tag} staff form: Page Builder link, tabs and Share`, SD)
+  const SD = await p.evaluate((HDR) => ({ pb: document.body.textContent.includes('Open the Page Builder'), tabs: document.querySelectorAll('[role="tablist"]').length, share: [...document.querySelectorAll('main button')].some((b) => b.textContent.trim() === HDR) }), HDR)
+  ok(SD.pb && SD.tabs === 1 && SD.share, `${tag} staff form: Page Builder link, tabs and "${HDR}"`, SD)
   await p.screenshot({ path: `${out}/st_form_${w}.png`, fullPage: false })
   await ctx.close()
 }

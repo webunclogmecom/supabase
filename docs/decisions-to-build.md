@@ -236,7 +236,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   link. D17's stated reason ("a switch grants nothing at None") stops being true: field people read every submitted
   form, codes included. Fred picked the mockups and Share control C. **BUILT and live 2026-10-27/28:** Supabase
   `2026-10-27_2130_pp_forms_see_submitted` (`11298b6`), probe `probe_pp_forms.sql`, test `forms_only.mjs` 38/38; Picture
-  Planner and HR App published by Fred (changelogs 2026-10-27). Open: the card's test with a real field sign-in.
+  Planner and HR App published by Fred (changelogs 2026-10-27). Field test done 2026-10-28 (Fred signed in as employee
+  59); Share shows "Copy link" with a chain icon on a computer (Fred, same day; test 40/40). Card in Testing / QA 2026-10-28.
 - Apps Hub tiles by access (Fred's Q10 above): hide the tiles a person cannot open. Its own card and build after
   AIwCYcmn. Not built.
 
