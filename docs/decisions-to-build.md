@@ -239,7 +239,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   Planner and HR App published by Fred (changelogs 2026-10-27). Field test done 2026-10-28 (Fred signed in as employee
   59); Share shows "Copy link" with a chain icon on a computer (Fred, same day; test 40/40). Card in Testing / QA 2026-10-28.
 - Apps Hub tiles by access (Fred's Q10 above): hide the tiles a person cannot open. Its own card and build after
-  AIwCYcmn. Not built.
+  AIwCYcmn: Trello 7RbkGfON (created 2026-10-28, list Approved; 3 questions for Fred in the card). Not built.
 
 ## 3. Waiting on Fred
 
