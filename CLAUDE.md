@@ -225,6 +225,38 @@ refused everywhere as "not staff".
 - Rollbacks, newest first: `2026-10-26_rollback_personal_addresses_signup_rule.sql`, then
   `2026-10-26_rollback_staff_email_rule.sql` (the 42 previous bodies, verbatim, md5-pinned).
 
+## 🛑 THE FORMS DOOR: "See submitted forms" (`pp_forms`), THE FIRST SWITCH THAT GIVES ACCESS (2026-10-27, Trello AIwCYcmn)
+
+Fred (to Viktor, 2026-10-23): *"... to add in the accordion of the privileges so they can specifically log in in the
+Picture Planner App but just to see the Forms Tab. ex: the field team"*. His answers 2026-10-27: signed-in link only
+(the form's own address), look and share only, submitted AND waiting forms (waiting: status and expiry only), the whole
+Field group by default. Migration `2026-10-27_2130_pp_forms_see_submitted` (applied 23:14 ET), rollback beside it,
+standing probe `scripts/checks/hr_app/probe_pp_forms.sql` (27 cases; the old gate body fails exactly its 3 door cases).
+Spec `Building Apps/Picture Planner/docs/specs/2026-10-27-share-forms-and-forms-only.md`.
+- `hr.access_apps` row `pp_forms` under `picture_planner` with `needs = 'none'` (the CHECK now allows it); defaults
+  office `no`, field `yes`. `fn_access_rank('none') = 0`, so the switch is never turned off by a low parent level.
+- 🛑 **D17's code is unchanged; its stated reason ("a switch grants nothing at None") is no longer true for `pp_forms`.**
+  Field people read every submitted form, gate and lock box codes included. Decided by Fred (Q4).
+- `hr.fn_pp_forms_open()` (switch yes AND row mode on; an OFF row reads CLOSED, the opposite of `fn_require_app`) and
+  `hr.fn_pp_forms_only()` (that AND Picture Planner level below View). "Forms-only" is tested by LEVEL, never through
+  `fn_require_app` / `fn_app_open`, which pass everyone while an app is not on.
+- `public.fn_request_gate`: a door on the REFUSAL branch only, for exactly `/rpc/get_intake` and `/rpc/list_intake_forms`,
+  with the schema header PostgREST uses for the method (GET/HEAD `accept-profile`, else `content-profile`) equal to
+  `client`, no fallback. 🛑 **Never open a view path in this door**: PostgREST embedding (`select=*,properties(*)`) would
+  hand out `properties.lock_box_key`. Never add a `get_intake` or `list_intake_forms` to another exposed schema.
+- `storage_access_gate` is a CASE: staff stop at the first arm exactly as before; a Forms-only caller reaches only
+  `intake-photos` objects `client.fn_intake_photo_shown(name)` allows (live, roled link on a submitted, not cancelled
+  intake), so listing the bucket never shows a waiting or cancelled form's photos.
+- `client.list_intake_forms()` (jsonb, never SETOF) is the Planner's list for everyone; Forms-only callers get waiting rows
+  as status and expiry only. `client.get_intake` Forms-only branch: no accept history (it holds old lock box values), no
+  value of a question that did not apply, a waiting form's status only, cancelled/expired refused (`blocker=not_available`).
+- A `pp_forms` holder is deliberately NOT a health-email line (a decided access, shown in the HR App); `field_with_view`
+  still means top-level View or Edit only.
+- **Undo, in order:** (1) `update hr.access_apps set mode = 'off' where app = 'pp_forms'` (closes the door at the next
+  request; a PAUSE: the HR App hides off rows and the Yes settings come back when it is set on); (2) the rollback file.
+  🛑 NOT `docs/runbooks/access-undo.md` section 3: its step 3b bans every sign-in with no top-level View, which is every
+  Forms-only person.
+
 ## 🛑 This repo is PUBLIC: no secrets, codes or client files in it (2026-10-05)
 
 - Never commit a password, token, connection string with a password, real lock box / gate / access code, or a

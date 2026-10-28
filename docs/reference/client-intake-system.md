@@ -874,6 +874,18 @@ asked once); Fred: *"if there are more Grease Traps then it should ask for each 
   question (42 each). Allowed by the immutability trigger, which freezes only a submitted form. Forms sent before a list
   change otherwise keep their own snapshot; this is not a standing rule.
 
+**25. SEE SUBMITTED FORMS: a Field sign-in reads the Forms tab only (2026-10-27, Trello AIwCYcmn,
+`2026-10-27_2130_pp_forms_see_submitted`).** Fred: *"they can specifically log in in the Picture Planner App but just to see
+the Forms Tab. ex: the field team"*. The HR switch `pp_forms` (Field default Yes) lets a person whose Picture Planner level is
+below View call `client.list_intake_forms()` and `client.get_intake()` through a door in the read gate (those two paths only,
+schema header `client`), and sign the photos `get_intake` shows (`client.fn_intake_photo_shown`, a branch of the RESTRICTIVE
+`storage_access_gate`; the permissive `intake_photos_staff_read` stays function-free, rule 11). For them: submitted forms
+without the accept history and without values of questions that did not apply; waiting forms as status and expiry only (no
+requester, no collector link, no photos); cancelled and expired forms refused. Every other path, the Property record tab,
+the collector link, Cancel and the Page Builder stay refused. The Planner's list reads `list_intake_forms` for everyone.
+Sharing a submitted form is its own address (`/forms/<id>`), signed in: nothing in the link. Undo: Supabase `CLAUDE.md`,
+"THE FORMS DOOR".
+
 ## Traps paid for while building this
 
 **A jsonpath CHECK was wrong twice.** Lax mode auto-unwraps the step before a filter, so v1 rejected

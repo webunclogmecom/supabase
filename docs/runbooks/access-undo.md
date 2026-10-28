@@ -7,6 +7,20 @@ next request; nothing needs a deploy.
 Plan: `Building Apps/HR App/docs/specs/2026-10-21-access-switch-on-and-invite-plan.md`. Kept current with each
 switch-on (the "Re-grants" section grows as grants are revoked).
 
+## 0. Close the Forms door ("See submitted forms", 2026-10-27, Trello AIwCYcmn)
+
+Field people with "See submitted forms" read Picture Planner's submitted forms (gate and lock box codes included) through
+a door in the read gate and the Storage gate (`2026-10-27_2130_pp_forms_see_submitted`). To shut that door for everyone at
+the next request:
+
+```sql
+update hr.access_apps set mode = 'off' where app = 'pp_forms';
+```
+
+This is a PAUSE, not a revocation: the HR App hides a switch whose mode is off, and every Yes setting (the Field default
+included) comes back when it is set to `on` again. To remove it for good, set the people and the Field default to No in the
+HR App first, or run `docs/migrations/2026-10-27_rollback_pp_forms_see_submitted.sql` (rehearsed).
+
 ## 1. Put one app back to watch (nobody is refused by that app any more)
 
 ```sql
@@ -31,6 +45,8 @@ update hr.access_apps set mode = 'watch', on_since = null
 🛑 **Since invites (2026-10-26), a sign-in can exist that is not staff.** With the gate off, EVERY sign-in with no
 access (an invited driver, a pending invite) can read every shared list again, lock box codes included. So turn those
 sign-ins off FIRST, then the gate.
+Since 2026-10-27 that list also holds every Forms-only person ("See submitted forms", section 0): step 3b turns them
+off too, by design. After the gate is back on, turn them back on in the HR App (Turn on).
 
 3a. List them (every sign-in not turned off whose person has no View or Edit in any app, or has no active HR row):
 
