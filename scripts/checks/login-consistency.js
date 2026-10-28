@@ -42,6 +42,10 @@ async function walk(origin, routes) {
     for (const m of b.matchAll(/["'(]([^"'()\s]*\/assets\/[^"'()\s]+\.js)["')]/g)) {
       const n = new URL(m[1], origin).href; if (!seen.has(n)) q.push(n);
     }
+    // relative lazy imports ("./App-x.js"): a split bundle hides its login there (Admin Review, 2026-10-28)
+    for (const m of b.matchAll(/(["'`])\.\/([A-Za-z0-9_.$\-]+\.js)\1/g)) {
+      const n = new URL('./' + m[2], u).href; if (!seen.has(n)) q.push(n);
+    }
   }
   return { chunks: seen.size, all: bodies.join('\n') };
 }
