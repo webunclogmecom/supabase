@@ -110,7 +110,21 @@ If any secret appears in a commit, Slack message, log file, or screenshot:
 
 ## Row-level security (RLS)
 
-**Current posture (since 2026-04-25, commit `7cc73bb`):** RLS is **enabled on all 30 public tables**. The pattern in use is "RLS on with no policies" — service-role bypasses RLS by design, so Edge Functions and our Node scripts continue to work unchanged. anon and authenticated roles are denied because no policies grant them anything. This is the safe default for an operational warehouse with no end-user clients yet.
+**Current posture (since 2026-10-28, `2026-10-28_1804_rls_on_every_app_table`, Trello FFSF71BI):** RLS is ON for
+**every** table in the schemas PostgREST exposes that we own (`public`, `derm`, `ops`, `client`, `customer`, `hr`;
+152 tables), and the event trigger **`rls_auto_enable`** turns it on for every table created there later (Fred:
+"Turn it on automatically"). A table an app reads DIRECTLY therefore needs a policy written in the same migration;
+reads through owner-rights views and SECURITY DEFINER functions are unaffected (their owner `postgres` has
+BYPASSRLS), as are `service_role`, `db_backup_reader`, `supabase_read_only_user` and `supabase_etl_admin`.
+The one direct app read among the tables it switched on is DERM Stamp Studio's `derm.page_slots`
+(`page_slots_staff_read`: SELECT to authenticated USING (true)). Triggered by Supabase's weekly advisor email
+(`rls_disabled_in_public`, 17 tables, 2026-10-20 and 10-27). Check: `scripts/checks/rls_on_app_tables.sql`
+(one row `ok`). Schema list in TWO places (the trigger function and the check): change both if PostgREST ever
+exposes another schema. Not changed by it: TRUNCATE held by `authenticated` on 18 app tables (PostgREST cannot
+issue TRUNCATE), and the advisor's `security_definer_view` ERRORs (the owner-rights views ARE the schema-per-app
+pattern).
+
+**Earlier posture (2026-04-25, commit `7cc73bb`):** RLS is **enabled on all 30 public tables**. The pattern in use is "RLS on with no policies" — service-role bypasses RLS by design, so Edge Functions and our Node scripts continue to work unchanged. anon and authenticated roles are denied because no policies grant them anything. This is the safe default for an operational warehouse with no end-user clients yet.
 
 Triggered by a Supabase security alert (`rls_disabled_in_public` + `sensitive_columns_exposed` on `webhook_tokens`) — the alert is now resolved.
 

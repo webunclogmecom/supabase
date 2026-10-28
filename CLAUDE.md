@@ -374,6 +374,14 @@ The view laundering the table grant makes it look safe right up until the functi
      where n.nspname = 'public' and c.relname = '<new_table>';
     -- must equal the sibling's, and has_table_privilege('authenticated', ..., 'SELECT') must be false
     ```
+  - ✅ **SINCE 2026-10-28 EVERY NEW TABLE IN `public`/`derm`/`ops`/`client`/`customer`/`hr` COMES OUT WITH RLS ON**
+    (event trigger `rls_auto_enable`, `2026-10-28_1804`, Trello FFSF71BI; Fred: "Turn it on automatically"; all 152
+    existing tables there have RLS on). So the default grants above still land, but a signed-in browser reads
+    **0 rows** from a new table until a policy exists. ⇒ A table an app reads DIRECTLY needs its policy in the same
+    migration (`derm.page_slots_staff_read` is the pattern: SELECT to authenticated USING (true); the access gate
+    `fn_request_gate` runs first). Views and SECDEF functions owned by `postgres` are unaffected (BYPASSRLS). Supabase's
+    weekly advisor email (`rls_disabled_in_public`) is the outside alarm; `scripts/checks/rls_on_app_tables.sql` is
+    ours. A new exposed schema must be added to `public.rls_auto_enable()` AND that check.
   - 🛑 **AND A PROBE OVER THE MANAGEMENT API CANNOT SEE THIS AT ALL.** That transport runs as
     `postgres`, which is the table OWNER and holds `rolbypassrls`, and **an owner bypasses the GRANT
     system entirely**. So "a valid row inserts cleanly" is true no matter what the ACL says, and
