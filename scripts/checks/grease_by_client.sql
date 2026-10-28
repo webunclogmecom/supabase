@@ -22,6 +22,12 @@ fails AS (
   UNION ALL
   SELECT 'a reading shown as 0', visit_id::text FROM g WHERE gallons = 0
   UNION ALL
+  -- the Samsara button (2026-10-27_2325): a visit whose truck is in Samsara and has a time must get the truck link
+  SELECT 'no Samsara truck link although the truck is in Samsara', g.visit_id::text FROM g
+   WHERE g.samsara_link_kind IS DISTINCT FROM 'truck' AND coalesce(g.arrived_at, g.completed_at) IS NOT NULL
+     AND EXISTS (SELECT 1 FROM public.entity_source_links l
+                  WHERE l.entity_type = 'vehicle' AND l.source_system = 'samsara' AND l.entity_id = g.vehicle_id)
+  UNION ALL
   -- positive control: the instrument is pointed at real data
   SELECT 'control: fewer than 100 counted Moises readings', NULL
    WHERE (SELECT count(*) FROM g WHERE truck_name = 'Moises' AND in_average) < 100

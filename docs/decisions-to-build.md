@@ -65,8 +65,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   View in Admin Review; standing check `scripts/checks/grease_by_client.sql` (ok, 266 visits). Hover: Fred picked
   **version 2** ("Moises" over the names, "Estimated" and "Measured" over their columns, right-aligned with the numbers).
   First page mockups were rejected as too plain (Fred: "Is that the most advanced good lookings styles you can make");
-  redone the same day. **Open:** Fred picks a page layout on https://claude.ai/artifact/G7m4d3zPqqwY7pV8P9uT5Q, then
-  the Admin Review page and the Calendar hover change (two Lovable builds).
+  redone the same day. Fred's fixes on v3 (2026-10-27): no opening animation ("it moves the whole table"), responsive,
+  pages of 10 / 25 / 50 / 100, and on every visit *"a button good styled to open that visit in Samsara and to include the
+  driver, even if there was none"*; then a tooltip with the percentage on each visit's bar (mockup v5,
+  https://claude.ai/artifact/G7m4d3zPqqwY7pV8P9uT5Q). **Layout picked 2026-10-27: "Go with option A for laptop viewpoint
+  or higher, and option B for less viewpoint"** (A = rows that open in place at 1024 px and wider; B = client list, then
+  the client's panel, below 1024 px). **DB for the Samsara button BUILT 2026-10-27:** `2026-10-27_2325` adds
+  `arrived_at`, `left_at`, `completed_at`, `samsara_url`, `samsara_link_kind` (265 of 266 visits get the truck link).
+  **Open:** the Admin Review page (Lovable 8eec2ff9) and the Calendar hover change (Lovable 6533c3ee).
 
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
