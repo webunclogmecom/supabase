@@ -1,6 +1,7 @@
 // time_on_site_reminder.mjs - runs the REAL supabase/functions/time-on-site-reminder/index.ts (types stripped by
 // Node 22) against a stubbed database, Samsara and Slack, and asserts what is posted.
-//   node scripts/checks/time_on_site_reminder.mjs          (add --mutate to prove the checks can fail)
+//   node scripts/checks/time_on_site_reminder.mjs [path/to/index.ts]   (default: the repo's function; add --mutate to
+//   prove the checks can fail)
 // Rules under test (Fred, 2026-10-12, Option A, "tag Diego"): one line per visit with its reason; the client name
 // opens its Samsara Place (WITH the duration/end_ms params); Diego tagged on the first line, never on a [TEST], never
 // in `text`; nothing posted when the list is empty; a dry run never posts or logs; every other run writes ONE
@@ -11,12 +12,17 @@ import vm from 'node:vm';
 import assert from 'node:assert';
 import { stripTypeScriptTypes } from 'node:module';
 
-const src = fs.readFileSync(new URL('../../supabase/functions/time-on-site-reminder/index.ts', import.meta.url), 'utf8');
-const helper = fs.readFileSync(new URL('../../supabase/functions/_shared/slack-notify.ts', import.meta.url), 'utf8');
+// the source under test: an optional path (a draft outside the repo), default the repo file
+const src = fs.readFileSync(process.argv.slice(2).find((a) => !a.startsWith('--')) ?? new URL('../../supabase/functions/time-on-site-reminder/index.ts', import.meta.url), 'utf8');
 const IMPORT = 'import { slackHeader, slackIdentity, slackScopes, slackSections } from "../_shared/slack-notify.ts";';
 assert.ok(src.includes(IMPORT), 'the function imports the shared Slack helpers');
 const MUTATE = process.argv.includes('--mutate');
-const build = (code) => [stripTypeScriptTypes(helper).replace(/^export /gm, ''), stripTypeScriptTypes(code.replace(IMPORT, ''))].join('\n');
+// a vm script cannot import (aab4ac0 added isSecretKeyCaller): each "../_shared/<file>.ts" import line is dropped and that
+// REAL helper, read from this repo (types stripped, exports removed), goes in front. Any other import stays, so vm fails loudly.
+const SHARED_IMPORT = /^import \{[^}]*\} from (["'])\.\.\/_shared\/([\w-]+\.ts)\1;?[ \t]*\r?$/gm;
+const shared = (f) => stripTypeScriptTypes(fs.readFileSync(new URL(`../../supabase/functions/_shared/${f}`, import.meta.url), 'utf8')).replace(/^export /gm, '');
+const build = (code) => [...new Set([...code.matchAll(SHARED_IMPORT)].map((m) => m[2]))].map(shared)
+  .concat(stripTypeScriptTypes(code.replace(SHARED_IMPORT, ''))).join('\n');
 const jwt = (role) => 'h.' + Buffer.from(JSON.stringify({ role })).toString('base64') + '.s';
 
 // real data, 2026-10-09 (fn_time_on_site_gaps output, trimmed)
