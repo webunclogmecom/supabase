@@ -7,6 +7,12 @@
 > drift (proven: postgres and authenticated hashes equal at the same instant). Found in passing, not changed:
 > `derm.v_band_edge_check`, `v_band_edges_off_rule` and `v_cards_awaiting_page_map` already refuse `authenticated`
 > (42501 on `derm.fn_sheet_image_position`), before and after.
+> **Live check 2026-10-28 with Fred signed in**, 1440 and 375: Stamp Studio sheet 934861 (its `page_slots` request 200
+> with the 6 rows in the DB; a direct `address_row_map` read through the real API 200 with 0 rows), DERM Tracker
+> (Visits, Manifests), Visit Calendar, Admin Review: every request 200, no sideways scroll, counts as in the DB.
+> Not live-checked: HR App, Client App, Picture Planner, Field Portal (they read none of the 17 tables directly, and
+> the 32 other tables grant app roles nothing, so RLS cannot change what they return). Card FFSF71BI in Testing / QA
+> 2026-10-28, every item ticked.
 
 *2026-10-28. Card: "Fix Supabase critical security alert: RLS disabled on public tables". Supabase emailed
 web@unclogme.com on 2026-10-20 and again on 2026-10-27 (issues as of 10-25): `rls_disabled_in_public`,

@@ -10,6 +10,10 @@ Full DDL lives in [`../schema/v2_schema.sql`](../schema/v2_schema.sql). Migratio
 - **Cross-system ID tracking:** `entity_source_links` only. No source-prefixed columns anywhere.
 - **Photos:** unified `photos` + polymorphic `photo_links` (see [ADR 009](decisions/009-unified-photos-architecture.md))
 - **Source-of-truth trust hierarchy:** Jobber + Samsara = 100% canonical. Airtable trusted ONLY for `derm_manifests` + `inspections` (PRE-POST). See [ADR 011](decisions/011-source-of-truth-canonicalization-2026-04-29.md).
+- **Row-level security (2026-10-28):** every table in `public`, `derm`, `ops`, `client`, `customer`, `hr` has RLS on, and
+  the event trigger `rls_auto_enable` turns it on for every table created there (`2026-10-28_1804`, Trello FFSF71BI). A
+  signed-in browser reading a table DIRECTLY gets 0 rows until a policy exists; views and SECURITY DEFINER functions owned
+  by `postgres` are unaffected. See [security.md](security.md#row-level-security-rls).
 - **Telemetry:** `vehicle_telemetry_readings` extended 2026-04-30 with `latitude`, `longitude`, `speed_meters_per_sec`, `heading_degrees` columns + UNIQUE constraint on `(vehicle_id, recorded_at)`. Polling cron writes one row per vehicle per 10 min.
 
 > **Row counts in this doc may be stale.** Full wipe + repop ran 2026-04-29. Current counts: clients=441, properties=451, jobs=518, invoices=1665, line_items=565, quotes=166, visits=3888 (1807 Jobber-canonical, 377 AT-merged, 2081 AT-only historical), visit_assignments=1830, inspections=242, derm_manifests=958, manifest_visits=819, employees=32, vehicles=4, service_configs=204, vehicle_telemetry_readings growing via 10-min cron. Notes/photos re-migrating in background.
@@ -253,7 +257,9 @@ phone on a linked driver. Never written to Jobber.
 
 ### `hr` schema: pay rates and the bonus history (2026-10-18_0400)
 
-Exposed to PostgREST, but no table or view is granted to anon, authenticated or service_role (RLS forced, no policies). The
+Exposed to PostgREST, but no table or view is granted to anon, authenticated or service_role, and no `hr` table has a
+policy. RLS: forced on `hr.pay_rates` and `hr.bonus_events` since 2026-10-18; on (not forced) for every other `hr` table
+since `2026-10-28_1804` (nine of them had RLS off until then, closed only by the missing grants). The
 app reaches it only through four SECURITY DEFINER functions: `hr.update_employee`, `hr.get_employee_record`,
 `hr.get_pay_summary`, `hr.set_pay_rates`. Spec: `docs/superpowers/specs/2026-10-18-hr-app-record-pay-bonus-history-design.md`.
 
