@@ -239,7 +239,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   Planner and HR App published by Fred (changelogs 2026-10-27). Field test done 2026-10-28 (Fred signed in as employee
   59); Share shows "Copy link" with a chain icon on a computer (Fred, same day; test 40/40). Card in Testing / QA 2026-10-28.
 - Apps Hub tiles by access (Fred's Q10 above): hide the tiles a person cannot open. Its own card and build after
-  AIwCYcmn: Trello 7RbkGfON (created 2026-10-28, list Approved; 3 questions for Fred in the card). Not built.
+  AIwCYcmn: Trello 7RbkGfON (created 2026-10-28, list Approved). Fred's answers 2026-10-28: Field Portal and DUMP
+  Schedule for every staff sign-in, field included (widens Q10's "a field person sees only Picture Planner"); Sales App
+  and Coming Soon only for people with View/Edit in some app; a tile a person cannot open is hidden; the page refresh
+  as in the mockups (greeting band, access chip, footer "One sign-in for every UnclogMe app."). Mockups
+  https://claude.ai/artifact/PSMgE485y5HufQynXbGpHi. Rule in the app from the one get_my_access reply (no DB change).
+  Not built.
 
 ## 3. Waiting on Fred
 
