@@ -211,6 +211,24 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   (3fe807d), edge fn `intake-size-lookup` (14cca88), `_1302_intake_size_lookup_trigger` (df8460b), `_1306_intake_form_v5`
   (816529e); Picture Planner display published (chunk `_staff.forms._id-BSZN5T0P.js`). Proven live on a [TEST] form (14/14).
 
+**Picture Planner share link + "See submitted forms" privilege (Trello AIwCYcmn)**
+- 2026-10-27, Fred's ask (Slack to Viktor, 10-23): *"share a link so it can be seen too ... add in the accordion of the
+  privileges so they can specifically log in in the Picture Planner App but just to see the Forms Tab. ex: the field
+  team"*. Spec draft: `planning/AIwCYcmn_2026-10-27/SPEC.md` (local; moves to `Building Apps/Picture Planner/docs/specs/`
+  once the mockups are picked). Fred's answers the same evening: **Q1** the link is the form's own address, signed-in
+  only ("Copy link"), no public link; **Q2** a Forms-only person looks and copies the link, nothing else (no Share,
+  Cancel, Property record tab or Page Builder, no accept history); **Q3** the list shows submitted AND waiting forms,
+  waiting ones with status and expiry only; **Q4** the Field group default is Yes (every field sign-in, new hires
+  included); **Q7** a Google sign-in from a form link comes back to the form; **Q8** test person employee 59; **Q9** no
+  read log; **Q10** the Apps Hub shows a person only the apps they can open, as a SEPARATE Hub build after this card.
+  To build: the switch `pp_forms` "See submitted forms" under Picture Planner (`needs = 'none'`), a door in
+  `public.fn_request_gate` for two `jsonb` RPCs and a per-object `intake-photos` branch in `storage_access_gate`,
+  `client.list_intake_forms`, a Forms-only branch in `client.get_intake`, three HR App edits, the Planner nav and Copy
+  link. D17's stated reason ("a switch grants nothing at None") stops being true: field people read every submitted
+  form, codes included. Not built; mockups next.
+- Apps Hub tiles by access (Fred's Q10 above): hide the tiles a person cannot open. Its own card and build after
+  AIwCYcmn. Not built.
+
 ## 3. Waiting on Fred
 
 - HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Decision 22 (emailed re-authentication before a password change) is REPLACED 2026-10-27, see the HR Change password row in section 2.
