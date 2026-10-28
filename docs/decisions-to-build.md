@@ -72,7 +72,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   or higher, and option B for less viewpoint"** (A = rows that open in place at 1024 px and wider; B = client list, then
   the client's panel, below 1024 px). **DB for the Samsara button BUILT 2026-10-27:** `2026-10-27_2325` adds
   `arrived_at`, `left_at`, `completed_at`, `samsara_url`, `samsara_link_kind` (265 of 266 visits get the truck link).
-  **Open:** the Admin Review page (Lovable 8eec2ff9) and the Calendar hover change (Lovable 6533c3ee).
+  **BUILT 2026-10-28:** the Admin Review page `/grease` (live `App-HjLCt7eC.js`, Building Apps `39de74c`) and the
+  Calendar hover version 2 (live `index-D84nAQKq.js`, Building Apps `c6fe0fc`), both checked live. A spot-check of 5
+  clients against Samsara's own percent readings matched every arrival and departure level. **Open:** Fred's review;
+  the card stays in Approved until he says to move it.
 
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
