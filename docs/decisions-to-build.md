@@ -37,6 +37,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   **D3** (no dashboard verdict) is the recommended default, not asked. **D5 (push gate) open:** Fred asked why wait;
   the September hold came from Jon's "push held until 2026-10-20" note for the training close, not a decision of Fred's.
   Recommended instead: push when Diego is not working on `/monthly`, the bot is idle, and not 07:30-08:30 ET.
+- 2026-10-28 (Fred: *"ok so we're waiting on jon ... let's keep it under that column then until we do the change in
+  the bot"*): Part B waits until Jon's bot side of the "File it with the bot" button (row below) lands, since both
+  change the bot repo. Trello ObKqzi47 stays In Progress until Part B ships.
 
 **DERM Tracker "File it with the bot" button on the visit page (Trello xBCSvP6f, 2026-10-27)**
 - Huddle 2026-10-26: Yan wants the bot dashboard's "process a permit by hand" as a button on the visit page; Jonathan

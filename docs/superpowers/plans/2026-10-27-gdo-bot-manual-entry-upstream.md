@@ -11,6 +11,12 @@
   D4 "Filed by" = who pressed File it. D3 default (no dashboard verdict).
 - **Open:** D5, the push gate. Fred asked why wait for September; the recommended gate is "Diego not on `/monthly`,
   the bot idle, not 07:30-08:30 ET". Answer it first.
+- **Waiting on Jon (Fred, 2026-10-28: *"ok so we're waiting on jon ... let's keep it under that column then until we
+  do the change in the bot"*).** Jon said in the #new-app-issues thread that his bot side of the DERM Tracker "File it
+  with the bot" button (Trello xBCSvP6f) would be ready; that work is in the same bot repo, so Part B starts after it
+  lands, not alongside it. The card stays 🔨 In Progress until Part B ships. Checked 2026-10-28 14:30 ET: bot `main`
+  still `7681388` (no commit since 10-20), no new refusal in #apps-notifications since the four of 10-27, all five
+  hand filings recorded.
 - **Next:** Part B from Task B0 (claim in `WORKING-NOW.md`, clone outside the workspace root, green baseline in the
   runtime image). The prototypes in `2026-10-27-gdo-bot-manual-entry-upstream/bot/` save most of B1-B3.
 - **Until Part B ships:** every hand filing on the bot dashboard is refused with a Slack post in #apps-notifications
