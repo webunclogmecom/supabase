@@ -62,9 +62,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   The only per-visit reading is the Moises sensor (no driver-entered gallons exist), so that is the source.
 - **DB BUILT 2026-10-27:** `public.get_grease_by_client()` (Supabase `2026-10-27_1925`, `b543b98`): one row per visit,
   the group's average and readings from the Calendar's function, `in_average`, a plain `note` for each visit left out;
-  View in Admin Review; standing check `scripts/checks/grease_by_client.sql` (ok, 266 visits). **Open:** Fred picks a
-  layout and a hover version on the mockups https://claude.ai/artifact/G7m4d3zPqqwY7pV8P9uT5Q, then the Admin Review
-  page and the Calendar hover change (two Lovable builds).
+  View in Admin Review; standing check `scripts/checks/grease_by_client.sql` (ok, 266 visits). Hover: Fred picked
+  **version 2** ("Moises" over the names, "Estimated" and "Measured" over their columns, right-aligned with the numbers).
+  First page mockups were rejected as too plain (Fred: "Is that the most advanced good lookings styles you can make");
+  redone the same day. **Open:** Fred picks a page layout on https://claude.ai/artifact/G7m4d3zPqqwY7pV8P9uT5Q, then
+  the Admin Review page and the Calendar hover change (two Lovable builds).
 
 **HR App Change password with the current password (Trello JlxV47sS, Approved 2026-10-27)**
 - Fred, voice note 2026-10-27: a person who knows their password changes it on their own HR App Security tab with three
