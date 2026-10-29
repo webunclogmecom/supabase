@@ -87,6 +87,19 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   reference `docs/reference/gdo-report-bot.md` section 11a. **Open:** Jonathan builds `/gdo/process-one` and returns
   `run_id`; then the two secrets, a dry run, one real visit with Yan.
 
+**Calendar smart default truck for a visit with no truck (Trello alpHmTtL, 2026-10-29)**
+- Fred (Slack DM to Viktor, 2026-10-28): the default truck should be *"the usual truck that goes there, or the average
+  one, because it can be that 2 trucks went there for different reasons"*. Measured first (completed visits with a stored
+  truck, since Aug 20 = Samsara-checked): today's service default 80.1% right, most frequent of the last 6 at the address
+  82.4%, a 75%-guarded rule 86.8% (since Apr: today 78.4%, most frequent 72.6%). Fred's picks 2026-10-29: **the most
+  frequent truck of the last 6 completed visits at that address for that service; a tie goes to the tied truck that went
+  last** ("The most recent truck"); **no history: today's service default (Moises for pumping, Cloggy for the rest), with
+  the reason shown**; **shown, never written** (the effective truck; "Use default" still writes it).
+- **DB built 2026-10-29 17:00 ET**: `2026-10-29_1700_calendar_usual_truck.sql` (`ops.v_calendar_visit`: lateral `ut`,
+  `default_truck_basis`, `default_truck_reason`), standing check `scripts/checks/usual_truck.sql`. Upcoming visits only
+  (scheduled, today ET or later, no stored truck); 120 of 731 changed truck at ship. **Open:** the Calendar drawer and
+  badge tooltip read the new sentence (Lovable Visit Calendar).
+
 **Admin Review "Grease by client" page + Calendar Grease pumped hover titles (Trello 6M9WvSYp, 2026-10-27)**
 - Fred, Slack 2026-10-23: *"a table of the clients with their corresponding pumping readings, and the table should show
   the average and the listed visits with the correct readings"*; and the Calendar Grease pumped hover titles *"more
