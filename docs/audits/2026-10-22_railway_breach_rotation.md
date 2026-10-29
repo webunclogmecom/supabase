@@ -225,3 +225,30 @@ token answers the right project; the GDO Slack bot connected on the new Slack to
 - ✅ Proven: the GDO Slack bot end to end (the "railway" key, Anthropic, Places). Fred re-invited it to #gdo-permit
   at 19:11 ET and asked "bibis"; it answered in the thread 29 s later with permit GDO-13940 (the same answer as
   Diego's 2026-10-14 test) and a second reply carrying the file. The section 4 #gdo-permit item is closed.
+
+## 9. "Nothing old still connects", checked by us (2026-10-29; card closed to Testing / QA)
+
+Fred, 2026-10-29, on the card item "Confirm with Jonathan that his side is done": *"we can check ourselves we have all
+jonathan bots under railway and github, to check on that."* Read-only checks, window 2026-10-22 23:00 UTC to
+2026-10-29 16:00 UTC (scripts and results: session scratchpad `s11/`, names and status codes only):
+
+| what | result |
+|---|---|
+| Legacy Supabase keys, by caller (edge_logs, the section 7 query widened) | server use of the legacy service-role JWT ended with each move: GitHub Actions 10-23 17:33 UTC, pdf-service 10-23 18:14, the Field Portal login 10-25 21:48; after that only this machine's checks. Refused since step 9 (10-27 22:35); signing key revoked 10-29 07:38 (legacy-keys plan, row 10). Legacy anon key: browser tabs only, plus the pdf-service's report renderer before the apps moved. |
+| Old bot key (`RPA_BOT_KEY`) | 0 refusals on `rpa-derm-*` since the rotation. Every bot call: Railway, python-httpx, current key. |
+| Railway variables, all six services (`railway variables`, compared by sha256, never printed) | no variable holds a JWT; every Supabase key equals the "railway" key; `RPA_BOT_KEY` and `SAMSARA_API_TOKEN` equal the current values. |
+| GitHub (`unclogme-gdo-report-bot`, `unclogme-gdo-bot`, `unclogme-pdf-service`) | no Actions secrets, no deploy keys, no webhooks; Jonathan (`jonv-max`) has write on the report bot only, and pushes there daily (intended). |
+| Railway logs (report bot, GDO Slack bot, pdf-service) | no auth failures. |
+
+Seen in passing:
+- Jonathan ran the report bot locally once, from a residential network (Tigo, Guatemala), 2026-10-27 21:03 to 21:25 UTC:
+  14 calls to `rpa-derm-*` with the CURRENT key, two hours after he joined the Railway workspace (section 3, item 11).
+  Development work, not an old credential.
+- 🛑 **Viktor holds the Supabase DEFAULT secret key.** `pipedream-connect-proxy/2.0` (AWS N. Virginia) read our tables
+  with the default secret key on 2026-10-26 12:04 and 22:05 UTC and 2026-10-27 17:10 to 20:08 UTC (clients,
+  properties, gdos, visits, employees, invoices, quotes, derm_portal_submissions and more); Viktor's #gdo-permit post
+  at 22:06 UTC on 10-26 says "Clients come from Supabase". Section 7's "Viktor has no Supabase key" is no longer true.
+  The default key is the edge functions' key and bypasses RLS. Open for Fred: give Viktor its own secret key
+  (revocable alone) and rotate the default one, or keep it as it is.
+- Not checkable from our side: the DERM portal password (Fred: no rotation) and the fog mailbox app password (owner
+  check still open, section 4) were not rotated, so any local copy of them still works.
