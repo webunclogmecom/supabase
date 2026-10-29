@@ -25,13 +25,15 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
-**Light / dark switch in the staff apps (2026-10-29, canvas row G, https://claude.ai/artifact/3B8vciQtdNEStYhC4tQ556)**
+**Light / dark switch in the staff apps (2026-10-29, BUILT, canvas row G, https://claude.ai/artifact/3B8vciQtdNEStYhC4tQ556)**
 - Fred: *"maybe we should have a theme button of light and dark mode for the apps ... for now it could be like white
   halloween and the dark halloween (which is the current we have)"*. Mockups G1 to G5: a two-part pill next to Sign out
   (pumpkin = White Halloween, bat moon = Dark Halloween until Nov 4, then sun / moon), one round button on a phone.
 - Fred's answers: **each app remembers its own choice** (not one choice across apps); **first visit = Dark Halloween
-  now, Light after Nov 4**. Not built: needs a White Halloween stylesheet, a plain Dark stylesheet for after Nov 4
-  (`Building Apps/docs/halloween/gen.mjs`), and one Lovable change per app. DUMP keeps its own switch.
+  now, Light after Nov 4**. **BUILT 2026-10-29 (Fred: "go ahead build it"), live in all eight apps:** app code
+  `scripts/theme-switch/` (ec23187e, downloaded byte for byte by each Lovable project), stylesheets + art + plain Dark in
+  Building Apps `910fd97` (`docs/halloween/` README "Light / dark switch"), files in `app-assets/halloween/` and
+  `app-assets/theme/`. DUMP keeps its own switch. Open: a signed-in look at each top bar (needs a sign-in in the browser).
 
 **GDO report bot posts to #apps-notifications (Trello f23r2DE6, 2026-10-28)**
 - Yan wants the bot's Slack notifications in #apps-notifications (Jonathan to Fred). Fred's picks: we set the webhook
