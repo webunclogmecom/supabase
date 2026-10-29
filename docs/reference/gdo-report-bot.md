@@ -162,6 +162,11 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 
 ## 10. Dashboard manual entries ("Add a report by hand", 2026-10-26)
 
+🛑 **Since 2026-10-29 (Fred, plan A) a visit we hold is filed with the DERM Tracker button, not this form** (section
+11b): the button records the filing on the visit by itself, this form never does. The bot-side fix below (plan Part B)
+is shelved. What follows stays true for any hand entry still made on the bot page: it is refused with a Slack post and
+recorded by a person as described here.
+
 Fred, 2026-10-26: *"what data means is that someone used [the bot] dashboard to file it manually ... so at the end of
 the day it was a manual filing, so we can just accept that new data as a criteria and we can classify it as a manual
 filing in our apps"*.

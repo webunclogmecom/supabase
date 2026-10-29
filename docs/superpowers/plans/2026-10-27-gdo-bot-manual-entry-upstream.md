@@ -2,6 +2,14 @@
 
 ## ▶ Where this stands and how to continue (paused 2026-10-27; Trello ObKqzi47)
 
+- 🛑 **SHELVED 2026-10-29 (Fred picked plan A).** The DERM Tracker "File it with the bot" button went live that day
+  (Trello xBCSvP6f, reference section 11b): it files a visit we hold and records it on the visit by itself, filed by
+  the presser, older visits included. Every hand filing so far was such a visit, so hand filings now go through the
+  button and Part B is built only if bot-page hand filings keep happening. Measured that day: 54 permits fileable by
+  the button (51 before the 2026-07-21 cutoff), no bot hand filing since the four of 2026-10-27, and Jonathan pushing
+  about 20 commits that day to the two files Part B touches. Left on the card: the note to Yan and Diego (Slack draft
+  in the #new-app-issues thread), Jonathan's pointer line on his dashboard, and the first real button filing showing
+  on its visit. Everything below stays as the build plan if the shelf is lifted.
 - **Trello card:** https://trello.com/c/ObKqzi47 (🔨 In Progress). It points here.
 - **Done:** our API accepts `manual_entry` (`rpa-derm-result` v40, 2026-10-26) and no longer loses an image to a
   duplicate request (Part A, v42, 2026-10-27, Supabase `f7c6b23`, check `scripts/checks/rpa_derm_result_manual_race.mjs`).
