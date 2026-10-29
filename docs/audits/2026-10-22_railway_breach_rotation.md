@@ -250,5 +250,10 @@ Seen in passing:
   at 22:06 UTC on 10-26 says "Clients come from Supabase". Section 7's "Viktor has no Supabase key" is no longer true.
   The default key is the edge functions' key and bypasses RLS. Open for Fred: give Viktor its own secret key
   (revocable alone) and rotate the default one, or keep it as it is.
+  **Fred, 2026-10-29: "give it's own key".** Secret key `viktor` created through the Management API the same day
+  (id f6ae75ac..., prefix `sb_secret_UH3n`; the value was never printed or stored on this machine). Fred copies it from
+  the dashboard (Settings, API Keys) into Viktor's Supabase connection; then the edge log should show
+  `pipedream-connect-proxy` with the viktor key and never the default one again. Replacing the default key (so the copy
+  Viktor holds stops working) was not asked for; it is a separate change that touches every edge function.
 - Not checkable from our side: the DERM portal password (Fred: no rotation) and the fog mailbox app password (owner
   check still open, section 4) were not rotated, so any local copy of them still works.
