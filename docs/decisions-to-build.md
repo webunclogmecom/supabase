@@ -86,6 +86,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   checks `gdo_bot_file_visit.mjs` 27/27, `rpa_derm_result_button_press.mjs` 12/12 with the old body failing 7;
   reference `docs/reference/gdo-report-bot.md` section 11a. **Open:** Jonathan builds `/gdo/process-one` and returns
   `run_id`; then the two secrets, a dry run, one real visit with Yan.
+- 2026-10-29 17:03 ET (Fred: "Yes: settings + dry run now"): **switched ON.** Jonathan shipped `/gdo/process-one`
+  (bot `8299174`, contract v2 in the bot's `docs/API_CONTRACT.md` section 13, `dermapp` in `RUN_KEYS`). Secrets set
+  (the key copied Railway to Supabase by script, never printed). Dry run on visit 8096 / GDO-12656 with the exact item
+  our function sends: 202, the bot logged in, reached the county Preview, submitted nothing, posted nothing
+  (`DRY_RUN_COMPLETE`, run 70922b94). **Open:** one real press with Yan (8096 / GDO-12656 is unfiled and is the
+  natural first one), then Testing / QA.
 
 **Calendar smart default truck for a visit with no truck (Trello alpHmTtL, 2026-10-29)**
 - Fred (Slack DM to Viktor, 2026-10-28): the default truck should be *"the usual truck that goes there, or the average

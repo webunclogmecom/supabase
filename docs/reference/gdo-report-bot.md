@@ -426,3 +426,20 @@ presses"). Built and live the same day (migration `2026-10-29_1245`, `rpa-derm-q
   never be posted: `dry_run` is derived, so it would land as a live attempt and hold the permit 20 h.
 - Check: `node scripts/checks/rpa_derm_result_button_press.mjs` (12 cases; the body before the change must fail the 7
   the change exists for).
+
+### 11b. Switched ON (2026-10-29 17:03 ET)
+
+Fred: *"Yes: settings + dry run now"*, after Jonathan shipped `POST /gdo/process-one` (bot `8299174`, contract v2 in the
+bot's `docs/API_CONTRACT.md` section 13) and added a `dermapp` entry to the bot's `RUN_KEYS`.
+- **Secrets:** `GDO_BOT_FILE_URL` = `https://unclogmerpabot-production.up.railway.app/gdo/process-one`;
+  `GDO_BOT_FILE_KEY` = the `dermapp` entry of Railway `RUN_KEYS`, copied by script from `railway variables` to the
+  Management API (never printed; fingerprint check by digest). Off switch: delete either secret (`status` goes back to
+  `enabled:false`, `send` to 503, the app back to the "Soon" button).
+- **Before:** the key was checked with a body missing `visit_id` (400 "visit_id is required -- nothing was started")
+  and an unknown `/gdo/status` (404), so nothing ran.
+- **Dry run:** visit 8096 (246-LOUI), GDO-12656, ticket 839776, with `toQueueItem` from the shared module (a
+  byte-identical copy) under the `dermapp` key: 202 run `70922b94`, the bot logged in (password slot 2), reached the
+  county Preview, skipped the submit, posted nothing upstream; `GET /gdo/status` read `DRY_RUN_COMPLETE` 13 s later.
+  The bot logs one harmless warning: it ignores `white_manifest_number`, which our item carries for back-compat.
+- Not exercised yet: our function's `send` path itself (it needs a signed-in staff session; the app has no dry-run
+  control by design). Its first live use is the first real press, with Yan.
