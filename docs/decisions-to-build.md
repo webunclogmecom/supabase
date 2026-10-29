@@ -71,6 +71,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `toBotRequest()`, set `GDO_BOT_FILE_URL` / `GDO_BOT_FILE_KEY`, a dry run, one real visit.
 - ⚠ A filing made with it shows in our apps only once the bot sends back which visit it filed plus the county email
   (the BOT half row above): `rpa-derm-result` records a normal result for a visit before the cutoff as a dry run.
+- 2026-10-29, Jonathan's contract `API_CONTRACT_process_one.md` (v1, Slack thread C0BD3VDPB9S/p1793048243300509) and
+  his follow-ups. Fred's picks: **the button sends the full row** (the queue item's keys and values, plus `dry_run`
+  and `requested_by`, under the DERM app's own `RUN_KEYS` entry), not a per-visit queue lookup; **an older visit
+  (before 2026-07-21) pressed with the button is recorded as a real filing** (Fred: "Yes, only for button presses"):
+  our side logs each press with the bot's `run_id`, and `rpa-derm-result` records that run's result as live, filed
+  by the person who pressed. The hourly queue keeps the launch cutoff (the 2026-10-26 decision stands).
+  Also (Jonathan, same thread, no decision needed): `rpa-derm-result` resolves the permit from `gdo_number` when
+  `gdo_id` is missing. **Open:** build our side; Jonathan builds `/gdo/process-one`.
 
 **Admin Review "Grease by client" page + Calendar Grease pumped hover titles (Trello 6M9WvSYp, 2026-10-27)**
 - Fred, Slack 2026-10-23: *"a table of the clients with their corresponding pumping readings, and the table should show
