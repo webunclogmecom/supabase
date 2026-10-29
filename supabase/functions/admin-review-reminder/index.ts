@@ -34,7 +34,7 @@ const MAX_LINES = 40;
 const SOURCE = "admin_review_reminder";
 
 type CityVisit = {
-  visit_id: number; client_code: string | null; client_name: string | null; city: string | null;
+  visit_id: number; client_code: string | null; client_name: string | null; city: string | null; area?: string | null;
   visit_date: string; driver: string | null; photos_total: number; photos_sorted: number;
 };
 type Pending = { city: CityVisit[]; photos: { count: number; last_7_days: number; oldest: string | null } };
@@ -63,9 +63,13 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 // the photos line counts them. No @-mention on a [TEST] post (it would ping them).
 // Fred, 2026-10-22 (Trello mR4Oy8X7): the header drops "photos sorted" (every listed visit is sorted anyway):
 // "Broward: city email not sent yet (N):". The phone line (buildSummary) keeps its wording (Fred, 2026-10-23).
+// 2026-10-29 (Diego asked why Surfside sat under "Broward", then to keep Surfside with its own label; Fred's shape):
+// one count line "N city emails not sent yet:", then one heading per AREA from the database
+// (public.fn_admin_review_pending: "Broward" for every Broward client, else the city, e.g. Surfside), in the
+// database's order (Broward first). The visits under a heading keep the date order.
 const TAGS = "<@U0AL9JZ4V7C> <@U0BKM57UPSS>"; // Diego, Serena
-const GROUP = "Broward";
 const sorted = (v: CityVisit) => v.photos_total > 0 && v.photos_sorted >= v.photos_total;
+const areaOf = (v: CityVisit) => (v.area ?? v.city ?? "").trim() || "No city";
 
 // `text` = this line, then the whole message: Viktor reads only `text`. The first line is the phone notification.
 function buildSummary(ready: number, photos: number, test = false): string {
@@ -79,12 +83,21 @@ function buildMessage(ready: CityVisit[], p: Pending, test = false): string {
   const lead = test ? "[TEST] " : `${TAGS} `;
   const out: string[] = [];
   if (ready.length) {
-    out.push(`🏙 ${lead}*${GROUP}: city email not sent yet (${ready.length}):*`);
-    for (const v of ready.slice(0, MAX_LINES)) {
-      const who = `${(v.client_code ?? "").trim()} ${(v.client_name ?? "").trim()}`.trim();
-      out.push(`• <${ADMIN}/review/${v.visit_id}|${esc(who)}> · ${day(v.visit_date)} · ${esc(v.driver ?? "driver not recorded")}`);
+    out.push(`🏙 ${lead}*${plural(ready.length, "city email", "city emails")} not sent yet:*`);
+    // the areas in the database's order (p.city), each with its ready visits in date order
+    const areas = [...new Set(p.city.map(areaOf))].filter((a) => ready.some((v) => areaOf(v) === a));
+    let shown = 0;
+    for (const area of areas) {
+      if (shown >= MAX_LINES) break;
+      out.push(`${shown ? "\n" : ""}*${esc(area)}:*`);
+      for (const v of ready.filter((x) => areaOf(x) === area)) {
+        if (shown >= MAX_LINES) break;
+        const who = `${(v.client_code ?? "").trim()} ${(v.client_name ?? "").trim()}`.trim();
+        out.push(`• <${ADMIN}/review/${v.visit_id}|${esc(who)}> · ${day(v.visit_date)} · ${esc(v.driver ?? "driver not recorded")}`);
+        shown++;
+      }
     }
-    if (ready.length > MAX_LINES) out.push(`…and ${ready.length - MAX_LINES} more in <${ADMIN}|Admin Review>.`);
+    if (ready.length > shown) out.push(`…and ${ready.length - shown} more in <${ADMIN}|Admin Review>.`);
   }
   if (p.photos.count) {
     if (out.length) out.push("");

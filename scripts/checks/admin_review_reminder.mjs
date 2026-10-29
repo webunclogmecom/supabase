@@ -2,7 +2,8 @@
 // Node 22) against a stubbed database and a stubbed Slack, and asserts what is posted.
 //   node scripts/checks/admin_review_reminder.mjs
 // The rules (Fred, 2026-10-07, shortened 2026-10-12): one post a day in #apps-notifications tagging Diego and Serena,
-// listing the visits whose photos are sorted but whose city email is not sent (one "Broward" group, a link to each
+// listing the visits whose photos are sorted but whose city email is not sent (one count line, then a heading per area
+// from the database: "Broward" first, then each other city, e.g. Surfside; since 2026-10-29; a link to each
 // visit in Admin Review) and how many visits have photos not sorted; nothing when nothing is waiting; header first;
 // one-line phone text; names escaped; no em dash; a [TEST] post tags nobody.
 // Since 2026-10-12 (audit): every run that is not a dry run writes ONE public.sync_log row (stubbed here), also when
@@ -57,7 +58,8 @@ async function run(pending, { body = {}, rawBody, role = 'service_role', slack =
   return { status: res.status, body: await res.json(), posts, logs };
 }
 const body = (p) => p.blocks.filter((b) => b.type === 'section').map((b) => b.text.text).join('\n');
-const v = (id, city, o = {}) => ({ visit_id: id, client_code: '103-BWC', client_name: 'Barrel Wine & Cheese', city, visit_date: '2026-09-15', driver: 'Michael Escobar', photos_total: 13, photos_sorted: 13, ...o });
+// area = what public.fn_admin_review_pending returns since 2026-10-29_1500: 'Broward' for a Broward client, else the city
+const v = (id, city, o = {}) => ({ visit_id: id, client_code: '103-BWC', client_name: 'Barrel Wine & Cheese', city, area: city === 'Hallandale Beach' ? 'Broward' : city, visit_date: '2026-09-15', driver: 'Michael Escobar', photos_total: 13, photos_sorted: 13, ...o });
 const photos = (count, last, oldest) => ({ count, last_7_days: last, oldest });
 
 // nothing waiting: no post
@@ -65,7 +67,8 @@ const none = await run({ city: [], photos: photos(0, 0, null) });
 assert.strictEqual(none.posts.length, 0, 'nothing waiting must post nothing');
 assert.strictEqual(none.body.posted, false);
 
-// the real shape: only visits whose photos are all sorted are listed, one "Broward" group (Fred, 2026-10-12)
+// the real shape: only visits whose photos are all sorted are listed, one heading per area in the database's order
+// (Diego and Fred, 2026-10-29: keep Surfside, label the groups)
 const real = await run({ city: [
   v(6275, 'Hallandale Beach'),
   v(9002, 'Hallandale Beach', { client_code: '998-UNS', client_name: 'Unsorted Fixture', visit_date: '2026-09-26', driver: 'Fixture Driver', photos_total: 4, photos_sorted: 0 }),
@@ -80,13 +83,26 @@ assert.ok(p0.text.startsWith('📸 Admin Review: 2 visits with photos sorted sti
 assert.ok(p0.text.endsWith(body(p0)), 'text carries the whole list (Viktor reads only text)');
 const b = body(p0);
 assert.strictEqual(b, [
-  '🏙 <@U0AL9JZ4V7C> <@U0BKM57UPSS> *Broward: city email not sent yet (2):*',
+  '🏙 <@U0AL9JZ4V7C> <@U0BKM57UPSS> *2 city emails not sent yet:*',
+  '*Broward:*',
   '• <https://admin.unclogme.app/review/6275|103-BWC Barrel Wine &amp; Cheese> · Sep 15 · Michael Escobar',
+  '',
+  '*Surfside:*',
   '• <https://admin.unclogme.app/review/8133|306-16 16 Handles> · Sep 18 · Michael Escobar',
   '',
   '🖼 *Photos not sorted: 138 visits* · 18 from the last 7 days · oldest Jul 1',
 ].join('\n'), b);
-assert.ok(!/9002|9001|Hallandale|Surfside|✅|❌/.test(b + p0.text), 'unsorted and photo-less visits, city names and marks are gone');
+assert.ok(!/9002|9001|Hallandale|✅|❌/.test(b + p0.text), 'unsorted and photo-less visits, the Broward city name and marks are gone');
+
+// the headings follow the database's order, the visits under one keep the date order; no area -> the city
+const grouped = await run({ city: [
+  v(11, 'Surfside', { visit_date: '2026-09-20' }), v(12, 'Surfside', { visit_date: '2026-09-10' }), v(13, 'Hallandale Beach'),
+  v(14, 'Miami Beach', { area: undefined }),
+], photos: photos(0, 0, null) });
+const ob = body(grouped.posts[0]);
+assert.ok(ob.startsWith('🏙 <@U0AL9JZ4V7C> <@U0BKM57UPSS> *4 city emails not sent yet:*\n*Surfside:*\n• <https://admin.unclogme.app/review/12|'), ob);
+assert.ok(ob.indexOf('review/12|') < ob.indexOf('review/11|') && ob.indexOf('review/11|') < ob.indexOf('*Broward:*')
+  && ob.indexOf('*Broward:*') < ob.indexOf('*Miami Beach:*'), ob);
 assert.ok(!/⏳|manifest/i.test(b + p0.text), 'no line about manifests: the post is unchanged by the 2026-10-12 audit');
 assert.ok(!/\u2014/.test(b + p0.text), 'no em dash');
 assert.strictEqual((b.match(/<@/g) || []).length, 2, 'Diego and Serena tagged once');
@@ -120,7 +136,7 @@ const many = await run({ city: Array.from({ length: 45 }, (_, i) => v(1000 + i, 
 const mb = body(many.posts[0]);
 assert.strictEqual((mb.match(/^• /gm) || []).length, 40);
 assert.ok(mb.includes('…and 5 more in <https://admin.unclogme.app|Admin Review>.'));
-assert.ok(mb.includes('*Broward: city email not sent yet (45):*'));
+assert.ok(mb.includes('*45 city emails not sent yet:*') && mb.includes('*Broward:*') && mb.includes('*Surfside:*'), mb);
 for (const blk of many.posts[0].blocks) if (blk.type === 'section') assert.ok(blk.text.text.length <= 3000);
 
 // dry run: the text, no post; test: [TEST] on both lines and nobody tagged
@@ -129,7 +145,7 @@ assert.strictEqual(dry.posts.length, 0);
 assert.ok(dry.body.message.includes('review/1|'));
 const tst = await run({ city: [v(1, 'Surfside')], photos: photos(3, 0, '2026-09-01') }, { body: { test: true } });
 assert.ok(tst.posts[0].text.startsWith('📸 [TEST] Admin Review:'), tst.posts[0].text);
-assert.ok(body(tst.posts[0]).startsWith('🏙 [TEST] *Broward'), body(tst.posts[0]));
+assert.ok(body(tst.posts[0]).startsWith('🏙 [TEST] *1 city email not sent yet:*\n*Surfside:*'), body(tst.posts[0]));
 assert.ok(!/<@/.test(tst.posts[0].text + body(tst.posts[0])), 'a [TEST] post tags nobody');
 const tstPhotos = await run({ city: [], photos: photos(3, 0, '2026-09-01') }, { body: { test: true } });
 assert.ok(body(tstPhotos.posts[0]).startsWith('🖼 [TEST] *Photos'), body(tstPhotos.posts[0]));
