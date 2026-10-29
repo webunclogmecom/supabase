@@ -33,19 +33,37 @@ view driver CONTRADICTS a stored assigned_driver_id                       0   <-
 ## Truck: the effective-vehicle chain
 
 ```sql
+LEFT JOIN LATERAL (...) ut ON true                                   -- the usual truck (2026-10-29, below)
 LEFT JOIN LATERAL (
   SELECT COALESCE(v.vehicle_id,                                      -- 1. explicitly assigned
-                  (SELECT min(sli.default_vehicle_id) ...            -- 2. this VISIT's line items
+                  ut.vehicle_id,                                     -- 2. the usual truck at the address
+                  (SELECT min(sli.default_vehicle_id) ...            -- 3. this VISIT's line items
                      WHERE li2.visit_id = v.id),
-                  (SELECT min(sli.default_vehicle_id) ...            -- 3. the JOB's line items
+                  (SELECT min(sli.default_vehicle_id) ...            -- 4. the JOB's line items
                      WHERE li2.job_id = v.job_id AND li2.visit_id IS NULL AND li2.invoice_id IS NULL))
          AS vehicle_id
 ) effv ON true
 LEFT JOIN vehicles veh ON veh.id = effv.vehicle_id     -- veh.name AS truck_name
 ```
 
-Steps 2 and 3 are the `default_vehicle_id` feature
+Steps 3 and 4 are the `default_vehicle_id` feature
 (`docs/migrations/2026-06-27_default_trucks_by_line_item.sql`).
+
+**Step 2, the usual truck (Trello alpHmTtL, `docs/migrations/2026-10-29_1700_calendar_usual_truck.sql`).**
+Fred: *"the usual truck that goes there, or the average one, because it can be that 2 trucks went there for
+different reasons"*. Only for a visit with no stored truck, `visit_status = 'scheduled'`, dated today (ET) or
+later: the most frequent ACTIVE truck among the last 6 completed, not deleted visits at the same `property_id`
+and `service_type`; a tie goes to the tied truck that went last. Past, completed, skipped and cancelled visits
+skip it, so a stored Grease pumped day never moves (the freezer stores days before today only).
+- **It is shown, never written.** `vehicle_source` still reads `default` (nobody assigned it); the Calendar's
+  "Use default" is the one way to store it.
+- **A default is no longer only Moises or Cloggy.** The line-item defaults are (pumping codes Moises, the rest
+  Cloggy, David never), but a usual truck can be David: at ship 89 upcoming visits moved Moises -> David and 31
+  Moises -> Cloggy (120 of 731). A dashed David badge is a usual truck, not an assignment.
+- `default_truck_basis` says which branch gave a non-assigned truck (`usual` | `service`, NULL when assigned or
+  none) and `default_truck_reason` is the sentence the drawer prints ("Usual truck here: David, 5 of the last 6
+  pumping visits."; ties: "(tied 2 to 2 with Moises, David went last)"). The app never computes either.
+- Standing check `scripts/checks/usual_truck.sql` (recomputes the rule; one `ok` row when healthy).
 
 ⚠ **`truck_name` joins `vehicles`, so it can NEVER be a person.** Recorded because the opposite was
 believed, twice, on 2026-07-30: a displayed "Moises" on a NULL-vehicle visit was read as *"the driver is
