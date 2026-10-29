@@ -152,7 +152,8 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 - **The bot echoes `gdo_id` since `7681388` (2026-10-20)**, when the row's `gdo_number` holds exactly one permit.
   `rpa-derm-result` (validation since 2026-08-31) uses it when it is one of the visit's permits in the queue's fields;
   since v31 (2026-10-20) it also keeps it when it is any permit of the visit's client (it may have left the fields
-  between the serve and the POST); only then does it infer (`fn_resolve_rpa_permit`, "lowest unfiled ACTIVE permit").
+  between the serve and the POST); since v44 (2026-10-29) a logged button press's permit, then the `gdo_number` sent
+  (section 11a); only then does it infer (`fn_resolve_rpa_permit`, "lowest unfiled ACTIVE permit").
   Results before 2026-10-20 were all inferred. ⚠ The first real result carrying `gdo_id` is the first proof.
 - **`?mode=`** is `dryrun` (a 25-row historical sample, no lease), `peek` (the live queue, no lease, since v32) or
   absent (live, leased). Anything else is refused with 400 `unknown_mode` since v33 (it used to read as live).
@@ -385,13 +386,43 @@ ready"*, and *"we do not need to touch the bot files, work on our apps"*.
   connection set, `derm.visit_gdo_our_record.can_record_manual`, a permit, a dump ticket, a cleaning date, and not in
   the bot's hands (a lease on that permit newer than its last attempt, within 20 h).
 - **OFF switch:** the secrets `GDO_BOT_FILE_URL` and `GDO_BOT_FILE_KEY`. Without them `status` says `enabled:false`
-  and `send` answers 503 and writes nothing. Turning it on = adapt `toBotRequest()` to Jonathan's format (today the
-  queue row the bot already reads, plus `dry_run` and `requested_by`), set both secrets, a dry run, one real visit.
+  and `send` answers 503 and writes nothing. Turning it on = set both secrets (the bot's `POST /gdo/process-one`
+  address and the DERM app's own `RUN_KEYS` entry, handed over by a person's Copy click, never in chat), a dry run,
+  one real visit.
 - **A real send leases `(visit_id, gdo_id)`** for 20 h (as `rpa-derm-queue` does), so the hourly queue cannot also
   hand that permit over. A dry run does not lease. No answer from the bot still leases (it may be filing).
-- 🛑 **It records no filing.** The result reaches us only through `rpa-derm-result`. A visit before the launch cutoff
-  is recorded as a real filing only as a manual entry (a normal result is stored as a dry run), so until the bot's
-  manual-entry result carries the identifiers and the county email (section 10, the bot half), a button filing is
-  refused there with a Slack post, like a dashboard one.
+- It records no filing itself: the result reaches us only through `rpa-derm-result`.
 - Spec: `Building Apps/DERM Tracker/docs/specs/2026-10-27-file-with-the-bot-button.md`. Check:
-  `node scripts/checks/gdo_bot_file_visit.mjs` (22 cases; a copy with the send guard removed must fail).
+  `node scripts/checks/gdo_bot_file_visit.mjs` (27 cases; a copy with the send guard removed must fail).
+
+### 11a. Jonathan's contract and our side of it (2026-10-29)
+
+Jonathan sent `API_CONTRACT_process_one.md` v1 on 2026-10-28 (Slack thread C0BD3VDPB9S/p1793048243300509): `POST
+/gdo/process-one` under a `RUN_KEYS` entry of the DERM app's own; 202 `{accepted, run_id, ...}` when a run starts, 200
+`{accepted:false, run_id, reason}` when that visit is already being filed, 400/401/404/409 with `{detail}`; the outcome
+arrives through `rpa-derm-result` like every other. Fred's picks, 2026-10-29: **the button sends the full row** (not a
+per-visit queue lookup) and **an older visit pressed with the button is a real filing** ("Yes, only for button
+presses"). Built and live the same day (migration `2026-10-29_1245`, `rpa-derm-queue` v43, `rpa-derm-result` v44,
+`gdo-bot-file-visit` v3):
+
+- **The request** is `toQueueItem(row, dry_run)` from `supabase/functions/_shared/rpa-queue-item.ts`, the ONE item shape,
+  which `rpa-derm-queue` now uses too (its output measured byte-identical before and after), built from the same
+  `public.v_derm_portal_fields` row (visit, permit and manifest the page showed), plus `requested_by` (the presser's
+  email). It always carries `gdo_id` and `gdo_number`: the button is per permit (21 visits carry several).
+- **The press log `public.gdo_bot_file_requests`** (service_role only, audited): one row per run the bot STARTED (its
+  202 `run_id`), with visit, permit, `dry_run` and who pressed. A 200 "already filing" is not logged. A 202 with no
+  usable `run_id`, or a failed insert, is said in the button's answer ("tell Fred before pressing again").
+- **`rpa-derm-result` reads it** (key visit + run): a logged LIVE press is recorded as real whatever the visit date,
+  `filed_by_email` = who pressed, and its `gdo_id` stands in when the bot sends none; a logged DRY press answers 200
+  `{recorded:false, ignored:'dry_run_press'}` and writes nothing; a failed lookup is a 500 (the bot retries) rather than
+  a guess. `trg_rpa_submission_dry_run_guard` gained the matching branch (a live row on an older visit is admitted only
+  with a logged live press). The hourly queue keeps the 2026-07-21 cutoff.
+- **`gdo_number` names the permit when `gdo_id` is missing** (Jonathan's rerun ledger keeps the number, not the id):
+  `permitKey` (no `GDO-`, no leading zeros, any case), first among the visit's queue permits, then the client's permits
+  in any status, exactly one match; otherwise inference as before. `gdo_id` still wins when it is valid.
+- **Unchanged and worth knowing:** a new `run_id` for a visit is never refused (one row per attempt, unique on visit,
+  permit and run); the same `run_id` again is 200 `deduped`. The dedupe looks up visit + run only, which is safe while
+  the bot mints one run per permit (it does: 0 runs ever carried two permits of one visit). A dry-run result must
+  never be posted: `dry_run` is derived, so it would land as a live attempt and hold the permit 20 h.
+- Check: `node scripts/checks/rpa_derm_result_button_press.mjs` (12 cases; the body before the change must fail the 7
+  the change exists for).

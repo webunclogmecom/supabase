@@ -39,6 +39,7 @@
 // ============================================================================
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { toQueueItem } from '../_shared/rpa-queue-item.ts'
 
 const BATCH_CAP = 25
 // Dry-run only: how many rows of v_derm_portal_dryrun to read before sampling.
@@ -153,39 +154,9 @@ Deno.serve(async (req: Request) => {
     rows = interleaveByJurisdiction(data ?? [], BATCH_CAP)
   }
 
-  // One row per code-27 VISIT to report online.
-  const reports = []
-  for (const r of rows ?? []) {
-    reports.push({
-      visit_id: r.visit_id,
-      manifest_id: r.manifest_id,
-      // 🛑 gdo_id is the PERMIT this item is for, and since 2026-08-31 a single
-      // visit can legitimately be served SEVERAL items at once (Casa Neos has
-      // three ACTIVE permits on one manifest, and DERM wants a report per
-      // permit). Echo it back on the result POST: without it, rpa-derm-result
-      // has to INFER the permit from the visit, which is only sound while one
-      // permit is in flight at a time. Additive field; a bot that ignores it
-      // still works, it just attributes by arrival order.
-      gdo_id: r.gdo_id,
-      dry_run: mode === 'dryrun',
-      client_code: r.client_code,
-      client_name: r.client_name,
-      client_email: r.client_email,
-      address: r.address,
-      city: r.city,
-      zip: r.zip,
-      county: r.county,
-      gdo_number: r.gdo_number,
-      service_date: r.visit_date,
-      dump_ticket_date: r.dump_ticket_date,
-      ticket_number: r.ticket_number, // the number to file (white OR yellow), 24d
-      jurisdiction: r.jurisdiction, // 'dade' | 'broward' | 'unknown'
-      white_manifest_number: r.white_manifest_number, // back-compat; NULL for Broward
-      disposal_facility: r.disposal_facility,
-      // 2026-10-18_2100: the county form takes no attachment and the bot never read these. Key kept, lists empty.
-      documents: { address: [], receipt: [] },
-    })
-  }
+  // One row per code-27 VISIT to report online. The item shape lives in _shared/rpa-queue-item.ts (2026-10-29):
+  // the DERM Tracker's "File it with the bot" sends the bot the same item.
+  const reports = (rows ?? []).map((r) => toQueueItem(r, mode === 'dryrun'))
 
   // Dispense lease (hardening 2026-07-21f): hold each LIVE code-27 VISIT we hand
   // out for 20h even before any result lands, so a crash between the portal

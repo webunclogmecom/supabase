@@ -4572,6 +4572,15 @@ cannot remove that. The fourth occurrence of the trap this file already document
 [discards grants](docs/migrations/). **After any edit, assert the queue did not WIDEN** — extra rows
 mean the bot files reports that should not go out.
 
+✅ **A DERM TRACKER "FILE IT WITH THE BOT" PRESS IS LOGGED, AND ITS RESULT IS REAL ON ANY VISIT DATE (2026-10-29,
+`2026-10-29_1245`, Trello xBCSvP6f).** Fred: *"Yes, only for button presses"*. `gdo-bot-file-visit` writes one row in
+`public.gdo_bot_file_requests` per run the bot started (its 202 `run_id`, who pressed, real or dry); `rpa-derm-result`
+records that run's result as LIVE even before `rpa_launch_cutoff()`, `filed_by_email` = the presser, and never records
+a dry press. `trg_rpa_submission_dry_run_guard` admits exactly that (a live row on an older visit needs a logged live
+press), so the bot alone can never make an older visit live, and the hourly queue keeps the cutoff. The bot item shape
+is ONE file, `_shared/rpa-queue-item.ts` (the queue and the button). `rpa-derm-result` also names the permit from
+`gdo_number` when `gdo_id` is missing. Reference: `docs/reference/gdo-report-bot.md` section 11a.
+
 ### 🛑 `customer.permits.our_frequency_days` IS A DISPLAY VALUE AND IS NOT ALWAYS OURS (2026-09-01)
 
 Fred, on 117-BH's Field Portal Service Report: the `GDO Permits & Frequency` card read

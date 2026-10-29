@@ -78,7 +78,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   our side logs each press with the bot's `run_id`, and `rpa-derm-result` records that run's result as live, filed
   by the person who pressed. The hourly queue keeps the launch cutoff (the 2026-10-26 decision stands).
   Also (Jonathan, same thread, no decision needed): `rpa-derm-result` resolves the permit from `gdo_number` when
-  `gdo_id` is missing. **Open:** build our side; Jonathan builds `/gdo/process-one`.
+  `gdo_id` is missing. **Our side BUILT and live 2026-10-29** (still OFF until the secrets): migration
+  `2026-10-29_1245` (press log `public.gdo_bot_file_requests` + the dry-run guard branch, Supabase `f4a81997`),
+  `rpa-derm-queue` v43 (shared item shape, output byte-identical), `rpa-derm-result` v44, `gdo-bot-file-visit` v3;
+  checks `gdo_bot_file_visit.mjs` 27/27, `rpa_derm_result_button_press.mjs` 12/12 with the old body failing 7;
+  reference `docs/reference/gdo-report-bot.md` section 11a. **Open:** Jonathan builds `/gdo/process-one` and returns
+  `run_id`; then the two secrets, a dry run, one real visit with Yan.
 
 **Admin Review "Grease by client" page + Calendar Grease pumped hover titles (Trello 6M9WvSYp, 2026-10-27)**
 - Fred, Slack 2026-10-23: *"a table of the clients with their corresponding pumping readings, and the table should show

@@ -23,7 +23,10 @@
 // - every result carries a screenshot OR an explicit
 //   screenshot_missing_reason (evidence-or-reason, DB CHECK backs this up);
 // - screenshots go to the PRIVATE 'rpa-evidence' bucket; only the storage
-//   path is recorded (never raw bytes in the table).
+//   path is recorded (never raw bytes in the table);
+// - a run logged in gdo_bot_file_requests (a DERM Tracker "File it with the bot"
+//   press, 2026-10-29) is recorded as real when the press was live, whatever the
+//   visit date, with filed_by_email = who pressed; a dry press is never recorded.
 // verify_jwt=false in config.toml — the header is the auth, same model as
 // the webhook receivers. Server-to-server only.
 // ============================================================================
@@ -43,7 +46,7 @@ const KEYS = (Deno.env.get('RPA_BOT_KEYS') ?? '')
 // infer which permit a result was for. It now serves every permit on a ticket at
 // once, so the inference is only right in the happy path and the bot's own value
 // is the authority (validated against the visit's real permit set before it is
-// trusted). gdo_number is still accepted and ignored.
+// trusted). gdo_number names the permit when gdo_id is missing (2026-10-29, see the permit block).
 // Both stay listed here for the original reason, which has not changed: an unknown
 // field is a 400, and a rejected result is a county filing we have no record of,
 // which then gets served and filed AGAIN.
@@ -489,12 +492,32 @@ Deno.serve(async (req: Request) => {
   if (!visit || visit.deleted_at) {
     return json({ error: 'visit_not_found_or_deleted' }, 422)
   }
+  // 2026-10-29 (Trello xBCSvP6f): was this run a "File it with the bot" press? gdo-bot-file-visit logs every
+  // press the bot accepted, with the run_id from its 202. A logged LIVE press is a real filing, also on a visit
+  // before the cutoff (Fred: "Yes, only for button presses"), filed by the person who pressed. A logged DRY press
+  // is never recorded. A failed lookup is a 500 so the bot retries: guessing would store a real filing of an older
+  // visit as a dry run.
+  const { data: press, error: pressErr } = await sb
+    .from('gdo_bot_file_requests')
+    .select('gdo_id, dry_run, requested_by')
+    .eq('visit_id', visitId)
+    .eq('run_id', runId)
+    .maybeSingle()
+  if (pressErr) {
+    console.error('press lookup failed:', pressErr.message)
+    return json({ error: 'result_store_failed_retry' }, 500)
+  }
+  if (press?.dry_run === true) {
+    return json({ recorded: false, ignored: 'dry_run_press', note: 'A dry run of a button press is never recorded.' }, 200)
+  }
+  const livePress = press != null
+
   // Derive dry_run from the visit's service date vs the single-source cutoff
   // (2026-07-21g): store the DERIVED truth, ignore the bot's echoed flag; the
-  // DB trigger is the final backstop.
+  // DB trigger is the final backstop. A logged live press is real whatever the date (2026-10-29_1245).
   const { data: cutoffRow } = await sb.rpc('rpa_launch_cutoff')
   const cutoff = typeof cutoffRow === 'string' ? cutoffRow : '2026-07-21'
-  const dryRun = !!visit.visit_date && visit.visit_date < cutoff
+  const dryRun = !livePress && !!visit.visit_date && visit.visit_date < cutoff
   // No optimistic success: a real SUCCESS must carry a portal confirmation.
   if (status === 'SUCCESS' && !dryRun && !portalConfirmation) {
     return json({ error: 'success_requires_portal_confirmation' }, 400)
@@ -546,9 +569,10 @@ Deno.serve(async (req: Request) => {
   // the retry-loop health count catches it if it repeats (2026-10-20_1405).
   let gdoId: number | null = null
   {
+    // A logged press knows its permit, so it stands in when the bot sends no gdo_id (2026-10-29).
     const claimed = typeof body.gdo_id === 'number' && Number.isInteger(body.gdo_id)
       ? body.gdo_id
-      : null
+      : (typeof press?.gdo_id === 'number' ? press.gdo_id : null)
     if (claimed !== null) {
       const { data: ok, error: vErr } = await sb
         .from('v_derm_portal_fields')
@@ -589,6 +613,37 @@ Deno.serve(async (req: Request) => {
             )
           }
         }
+      }
+    }
+    // 2026-10-29 (Jonathan): with no usable gdo_id, the permit NUMBER names it. Same key as a manual entry
+    // (permitKey: no GDO- prefix, no leading zeros, any case), first among this visit's queue permits, then among
+    // its client's permits in any status. Only one exact match counts; otherwise inference, as before.
+    const number = typeof body.gdo_number === 'string' ? body.gdo_number.trim() : ''
+    if (gdoId === null && permitKey(number) !== '') {
+      const key = permitKey(number)
+      const { data: own, error: nErr } = await sb
+        .from('v_derm_portal_fields')
+        .select('gdo_id, gdo_number')
+        .eq('visit_id', visitId)
+      if (nErr) console.error(`permit number lookup failed for visit ${visitId}:`, nErr.message)
+      let hits = (own ?? [])
+        .filter((r: { gdo_id: number | null, gdo_number: string | null }) => r.gdo_id != null && permitKey(String(r.gdo_number ?? '')) === key)
+        .map((r: { gdo_id: number }) => r.gdo_id)
+      if (hits.length === 0 && visit.client_id != null) {
+        const { data: cg, error: cErr } = await sb
+          .from('gdos')
+          .select('id, gdo_number')
+          .eq('client_id', visit.client_id)
+        if (cErr) console.error(`client permit lookup failed for visit ${visitId}:`, cErr.message)
+        hits = (cg ?? [])
+          .filter((g: { id: number, gdo_number: string | null }) => permitKey(String(g.gdo_number ?? '')) === key)
+          .map((g: { id: number }) => g.id)
+      }
+      const found = [...new Set(hits)]
+      if (found.length === 1) {
+        gdoId = found[0]
+      } else {
+        console.error(`gdo_number ${number} matched ${found.length} permits of visit ${visitId}; falling back to inference`)
       }
     }
     if (gdoId === null) {
@@ -654,6 +709,7 @@ Deno.serve(async (req: Request) => {
       screenshot_path: screenshotPath,
       screenshot_missing_reason: screenshotPath ? null : (evidenceDropReason ?? missingReason),
       dry_run: dryRun,
+      filed_by_email: press?.requested_by ?? null, // who pressed "File it with the bot" (D4); null for the hourly run
     })
     .select('id')
     .single()

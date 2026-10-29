@@ -4,8 +4,10 @@
 //
 // Runs the function offline (esbuild strips the three imports; stubs replace createClient, the staff and access
 // checks, Deno.env/serve and fetch, which plays the bot). Scenarios: off, filed, no permit, no ticket, in the bot's
-// hands, an older lease, no access, happy path, dry run, the bot refusing, no answer, a missing dry_run. A copy with
-// the send guard removed must FAIL: a check that cannot fail proves nothing. Exit 0 = all hold.
+// hands, an older lease, no access, happy path, dry run, the bot refusing, no answer, a missing dry_run; since
+// 2026-10-29 also the request = the queue's own item (the REAL _shared/rpa-queue-item.ts) + requested_by, the press
+// log (gdo_bot_file_requests) and every way it cannot be written. A copy with the send guard removed must FAIL: a
+// check that cannot fail proves nothing. Exit 0 = all hold.
 // Why: Trello xBCSvP6f, spec Building Apps/DERM Tracker/docs/specs/2026-10-27-file-with-the-bot-button.md.
 // Needs node + npx esbuild@0.24.0.
 import fs from 'node:fs'
@@ -29,14 +31,20 @@ const IMPORTS = [
   "import { isStaffEmail } from '../_shared/staff.ts'",
   "import { checkAppAction } from '../_shared/access-check.ts'",
 ]
+// The REAL queue-item helper (2026-10-29): compiled next to the function, so the request shape is the queue's own.
+const SHARED = "import { toQueueItem } from '../_shared/rpa-queue-item.ts'"
+const esbuild = (ts, out) => execFileSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['--no-install', 'esbuild@0.24.0', ts, '--format=esm', `--outfile=${out}`, '--log-level=error'], { shell: process.platform === 'win32' })
+esbuild(path.join(REPO, 'supabase/functions/_shared/rpa-queue-item.ts'), path.join(TMP, 'rpa-queue-item.mjs'))
 function build(name, src) {
   for (const line of IMPORTS) {
     if (!src.includes(line)) throw new Error(`${name}: an import line changed, update this check`)
     src = src.replace(line, line.replace(/from '.*'/, "from './stub.mjs'"))
   }
+  if (!src.includes(SHARED)) throw new Error(`${name}: the queue-item import changed, update this check`)
+  src = src.replace(SHARED, "import { toQueueItem } from './rpa-queue-item.mjs'")
   const ts = path.join(TMP, `${name}.ts`), out = path.join(TMP, `${name}.mjs`)
   fs.writeFileSync(ts, src)
-  execFileSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['--no-install', 'esbuild@0.24.0', ts, '--format=esm', `--outfile=${out}`, '--log-level=error'], { shell: process.platform === 'win32' })
+  esbuild(ts, out)
   return out
 }
 async function load(file, env, tag) {
@@ -51,20 +59,29 @@ const ON = { ...BASE, GDO_BOT_FILE_URL: 'https://bot.example/file', GDO_BOT_FILE
 const ROW = { visit_id: 6215, manifest_id: 1700, gdo_id: 51, gdo_number: 'GDO-09853', ticket_number: '830088',
   visit_date: '2026-07-09', dump_ticket_date: '2026-07-14', client_name: 'The fresh Carrot of Surfside',
   client_code: '082-TFC', jurisdiction: 'dade', can_record_manual: true, blocked_reason: null }
+// A public.v_derm_portal_fields row (what the queue and the button both send from).
+const FIELDS = { visit_id: 6215, manifest_id: 1700, gdo_id: 51, client_code: '082-TFC', client_name: 'The fresh Carrot of Surfside',
+  client_email: 'owner@example.com', address: '9540 Harding Ave', city: 'Surfside', zip: '33154', county: 'Dade',
+  gdo_number: 'GDO-09853', visit_date: '2026-07-09', dump_ticket_date: '2026-07-14', ticket_number: '830088',
+  jurisdiction: 'dade', white_manifest_number: '830088', disposal_facility: 'South District WWTP' }
 const hoursAgo = (h) => new Date(Date.now() - h * 3600e3).toISOString()
 
-function makeSb({ rows = [ROW], leases = [], attempts = [] }) {
+function makeSb({ rows = [ROW], leases = [], attempts = [], fields = [FIELDS], logError = null }) {
   const writes = []
   const table = (name) => {
-    const out = name === 'visit_gdo_our_record' ? rows : name === 'derm_portal_leases' ? leases : attempts
-    const b = { select: () => b, eq: () => b, not: () => b, then: (res, rej) => Promise.resolve({ data: out, error: null }).then(res, rej),
-      upsert: async (v, o) => { writes.push({ table: name, v, o }); return { error: null } } }
+    const out = name === 'visit_gdo_our_record' ? rows : name === 'derm_portal_leases' ? leases
+      : name === 'v_derm_portal_fields' ? fields : attempts
+    const b = { select: () => b, eq: () => b, not: () => b, limit: () => b, then: (res, rej) => Promise.resolve({ data: out, error: null }).then(res, rej),
+      upsert: async (v, o) => { writes.push({ table: name, v, o }); return { error: null } },
+      insert: async (v) => { if (logError) return { error: { message: logError } }; writes.push({ table: name, v }); return { error: null } } }
     return b
   }
   return { sb: { from: table, schema: () => ({ from: table }) }, writes }
 }
+const leaseW = (r) => r.writes.filter((w) => w.table === 'derm_portal_leases')
+const logW = (r) => r.writes.filter((w) => w.table === 'gdo_bot_file_requests')
 
-async function call(handler, body, db = {}, bot = { status: 202, body: { status: 'accepted' } }) {
+async function call(handler, body, db = {}, bot = { status: 202, body: { accepted: true, run_id: 'run-7f3a', state: 'running' } }) {
   const { sb, writes } = makeSb(db)
   globalThis.__sb = sb
   globalThis.__user = { auth: { getUser: async () => ({ data: { user: { email: 'fred@ayache.com' } }, error: null }) } }
@@ -101,19 +118,34 @@ const SCENARIOS = [
   { id: 'no-access-status', denied: { status: 403, message: 'You do not have access to do this.' }, body: status, ok: (r) => P(r).can_send === false && /access/.test(P(r).reason) },
   { id: 'no-access-send', denied: { status: 403, message: 'You do not have access to do this.' }, body: send(), ok: (r) => r.status === 403 && r.fetches.length === 0 },
   { id: 'happy', body: send(), ok: (r) => {
-      const f = r.fetches[0], b = f && JSON.parse(f.init.body)
-      return r.status === 202 && r.out.sent === true && r.fetches.length === 1 && f.url === 'https://bot.example/file'
+      const f = r.fetches[0], b = f && JSON.parse(f.init.body), l = logW(r)[0]?.v
+      return r.status === 202 && r.out.sent === true && r.out.logged === true && r.out.run_id === 'run-7f3a'
+        && r.fetches.length === 1 && f.url === 'https://bot.example/file'
         && f.init.headers['x-run-key'] === 'k-derm' && b.gdo_number === 'GDO-09853' && b.ticket_number === '830088'
         && b.service_date === '2026-07-09' && b.visit_id === 6215 && b.gdo_id === 51 && b.dry_run === false
-        && b.requested_by === 'fred@ayache.com' && r.writes.length === 1 && r.writes[0].v.visit_id === 6215
-        && r.writes[0].v.gdo_id === 51 && r.writes[0].o.onConflict === 'visit_id,gdo_id' } },
-  { id: 'dry-run', body: send({ dry_run: true }), ok: (r) => r.status === 202 && r.out.dry_run === true && JSON.parse(r.fetches[0].init.body).dry_run === true && r.writes.length === 0 },
+        && b.requested_by === 'fred@ayache.com' && b.client_email === 'owner@example.com' && b.white_manifest_number === '830088'
+        && JSON.stringify(Object.keys(b)) === JSON.stringify([...Object.keys(QUEUE_ITEM(FIELDS, false)), 'requested_by'])
+        && leaseW(r).length === 1 && leaseW(r)[0].v.visit_id === 6215 && leaseW(r)[0].v.gdo_id === 51
+        && leaseW(r)[0].o.onConflict === 'visit_id,gdo_id'
+        && logW(r).length === 1 && l.visit_id === 6215 && l.gdo_id === 51 && l.run_id === 'run-7f3a'
+        && l.dry_run === false && l.requested_by === 'fred@ayache.com' } },
+  { id: 'dry-run', body: send({ dry_run: true }), ok: (r) => r.status === 202 && r.out.dry_run === true && JSON.parse(r.fetches[0].init.body).dry_run === true
+      && leaseW(r).length === 0 && logW(r).length === 1 && logW(r)[0].v.dry_run === true },
+  { id: 'already-filing', body: send(), bot: { status: 200, body: { accepted: false, run_id: 'run-old', state: 'running', reason: 'That visit is being filed right now.' } },
+    ok: (r) => r.status === 200 && r.out.sent === false && /already filing/.test(r.out.message) && logW(r).length === 0 },
+  { id: 'no-run-id', body: send(), bot: { status: 202, body: { accepted: true } },
+    ok: (r) => r.status === 202 && r.out.logged === false && /tell Fred/.test(r.out.message) && logW(r).length === 0 },
+  { id: 'bad-run-id', body: send(), bot: { status: 202, body: { accepted: true, run_id: '../etc' } },
+    ok: (r) => r.status === 202 && r.out.logged === false && logW(r).length === 0 },
+  { id: 'log-fails', body: send(), db: { logError: 'boom' }, ok: (r) => r.status === 202 && r.out.logged === false && /tell Fred/.test(r.out.message) },
+  { id: 'fields-gone', body: send(), db: { fields: [] }, ok: (r) => r.status === 404 && r.fetches.length === 0 && r.writes.length === 0 },
   { id: 'bot-refuses', body: send(), bot: { status: 409, body: { detail: 'A run is already in progress' } },
     ok: (r) => r.status === 502 && /A run is already in progress/.test(r.out.message) && r.writes.length === 0 },
-  { id: 'bot-no-answer', body: send(), bot: 'timeout', ok: (r) => r.status === 502 && r.out.error === 'bot_no_answer' && r.writes.length === 1 },
+  { id: 'bot-no-answer', body: send(), bot: 'timeout', ok: (r) => r.status === 502 && r.out.error === 'bot_no_answer' && leaseW(r).length === 1 && logW(r).length === 0 },
   { id: 'dry-run-missing', body: send({ dry_run: undefined }), ok: (r) => r.status === 400 && r.fetches.length === 0 },
 ]
 
+const { toQueueItem: QUEUE_ITEM } = await import(pathToFileURL(path.join(TMP, 'rpa-queue-item.mjs')).href)
 const quiet = console.error
 const src = fs.readFileSync(path.join(REPO, FN), 'utf8')
 const guard = "if (!st.can_send) return json({ error: 'not_sendable', message: st.reason, sent_at: st.sent_at }, 409, cors)"

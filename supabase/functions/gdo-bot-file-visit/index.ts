@@ -8,22 +8,26 @@
 // Fred, 2026-10-27: "this button should be disabled until we have Jon's notification about it ...
 // but we can have our side ready". So it ships OFF: until the secrets GDO_BOT_FILE_URL and
 // GDO_BOT_FILE_KEY are set, `status` says enabled:false and `send` answers 503 and sends nothing.
-// Turning it on = Jonathan's request format in toBotRequest(), the two secrets, a dry run, then one
-// real visit. The app needs no change for that.
+// Turning it on = the two secrets (the bot's POST /gdo/process-one address, and the DERM app's own
+// RUN_KEYS entry), a dry run, then one real visit. The app needs no change for that.
+// Request (Jonathan's contract v1 + Fred 2026-10-29 "Button sends the details"): the queue's own item
+// (_shared/rpa-queue-item.ts) for that visit and permit, plus requested_by.
 //
 // WHY AN EDGE FUNCTION. The bot's keys are personal run keys (RUN_KEYS) and a browser must never
 // hold one; the bot also answers no CORS. And the rule for which permit may be sent lives once,
 // here: the app only renders what `status` returns.
 //
 // THIS FUNCTION RECORDS NO FILING. The bot posts its result to rpa-derm-result like any other, and
-// that is the only way a report reaches derm_portal_submissions. ⚠ A visit before the launch cutoff
-// can only be recorded as a manual filing there (a normal result is stored as a dry run), so a filing
-// made through this button shows in our apps only once the bot sends back which visit it filed plus
-// the county email (Supabase/docs/decisions-to-build.md, "the BOT half").
+// that is the only way a report reaches derm_portal_submissions. What it does write: the 20 h lease
+// (real presses) and, since 2026-10-29, one row in public.gdo_bot_file_requests per run the bot
+// started (its run_id from the 202). rpa-derm-result reads that row to record the run's result as a
+// real filing by the person who pressed, also on a visit before the 2026-07-21 cutoff (Fred: "Yes,
+// only for button presses"); a dry press is never recorded (2026-10-29_1245).
 //
 // Input (POST JSON):
 //   { action: 'status', visit_id }                       -> { enabled, permits: [{ gdo_id, can_send, reason, sent_at }] }
-//   { action: 'send', visit_id, gdo_id, dry_run: bool }  -> 202 { sent, sent_at, message } | 409 | 502 | 503
+//   { action: 'send', visit_id, gdo_id, dry_run: bool }  -> 202 { sent, sent_at, run_id, logged, message }
+//                                                           | 200 { sent:false } already filing | 404 | 409 | 502 | 503
 //
 // Auth: verify_jwt = true, a signed-in staff account, and Edit in DERM Tracker (the same check as
 // Record a manual filing, hr.check_app_action('record_manual_gdo_report')).
@@ -34,6 +38,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { isStaffEmail } from '../_shared/staff.ts'
 import { checkAppAction } from '../_shared/access-check.ts'
+import { toQueueItem } from '../_shared/rpa-queue-item.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -96,15 +101,22 @@ export function permitState(r: Row, leases: Stamp[], attempts: Stamp[], enabled:
   return { gdo_id: r.gdo_id, can_send: reason === null, reason, sent_at: sentAt }
 }
 
-// 🛑 THE ONLY PART THAT CHANGES WHEN JONATHAN'S FORMAT ARRIVES. Until then it is the queue row the
-// bot already reads from rpa-derm-queue, plus who pressed and whether it is a rehearsal.
-export function toBotRequest(r: Row, requestedBy: string, dryRun: boolean) {
-  return {
-    visit_id: r.visit_id, manifest_id: r.manifest_id, gdo_id: r.gdo_id, gdo_number: r.gdo_number,
-    ticket_number: r.ticket_number, service_date: r.visit_date, dump_ticket_date: r.dump_ticket_date,
-    client_name: r.client_name, client_code: r.client_code, jurisdiction: r.jurisdiction,
-    dry_run: dryRun, requested_by: requestedBy,
-  }
+// The request to the bot's POST /gdo/process-one (Jonathan's contract v1, 2026-10-28; Fred, 2026-10-29: "Button
+// sends the details"): exactly the item the hourly queue serves (_shared/rpa-queue-item.ts, built from the same
+// public.v_derm_portal_fields row), plus who pressed. dry_run is the press's own, never defaulted.
+// deno-lint-ignore no-explicit-any
+export function toBotRequest(fields: Record<string, any>, requestedBy: string, dryRun: boolean) {
+  return { ...toQueueItem(fields, dryRun), requested_by: requestedBy }
+}
+
+// The bot's answer to a press: 202 {accepted:true, run_id} started a run; 200 {accepted:false, run_id, reason}
+// means that visit is already being filed. Only a started run is logged (public.gdo_bot_file_requests): its result
+// is then recorded as a real filing by the person who pressed, also on a visit before 2026-07-21 (2026-10-29_1245).
+const RUN_ID_RE = /^[A-Za-z0-9_.-]{1,100}$/
+export function readBotAnswer(status: number, j: Record<string, unknown> | null) {
+  const runId = typeof j?.run_id === 'string' && RUN_ID_RE.test(j.run_id) ? j.run_id : null
+  const started = status === 202 && j?.accepted !== false
+  return { runId, started, alreadyFiling: status === 200 && j?.accepted === false }
 }
 
 Deno.serve(async (req) => {
@@ -169,20 +181,35 @@ Deno.serve(async (req) => {
   const st = permitState(row, leases, attempts, ENABLED)
   if (!st.can_send) return json({ error: 'not_sendable', message: st.reason, sent_at: st.sent_at }, 409, cors)
 
+  // The row the bot files: the queue's own source view, the same visit, permit and manifest as the page showed.
+  let fq = sb.from('v_derm_portal_fields').select('*').eq('visit_id', visitId).eq('gdo_id', gdoId)
+  if (row.manifest_id != null) fq = fq.eq('manifest_id', row.manifest_id)
+  const { data: fieldRows, error: fErr } = await fq.limit(1)
+  if (fErr) {
+    console.error('fields lookup failed:', fErr.message)
+    return json({ error: 'server_error', message: 'Could not read this visit, so nothing was sent.' }, 500, cors)
+  }
+  const fields = fieldRows?.[0]
+  if (!fields) return json({ error: 'not_found', message: 'That permit is not on this visit.' }, 404, cors)
+
   let answered = false
   let botOk = false
+  let botStatus = 0
   let botMessage = ''
+  // deno-lint-ignore no-explicit-any
+  let botJson: Record<string, any> | null = null
   try {
     const r = await fetch(BOT_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-run-key': BOT_KEY },
-      body: JSON.stringify(toBotRequest(row, email, dryRun)),
+      body: JSON.stringify(toBotRequest(fields, email, dryRun)),
       signal: AbortSignal.timeout(BOT_TIMEOUT_MS),
     })
     answered = true
     botOk = r.ok
+    botStatus = r.status
     const text = await r.text().catch(() => '')
-    try { const j = JSON.parse(text); botMessage = String(j.detail ?? j.message ?? '') } catch { botMessage = text.slice(0, 300) }
+    try { botJson = JSON.parse(text); botMessage = String(botJson?.detail ?? botJson?.reason ?? botJson?.message ?? '') } catch { botMessage = text.slice(0, 300) }
     if (!botOk) console.error(`bot refused visit ${visitId} permit ${gdoId}: HTTP ${r.status} ${botMessage}`)
   } catch (e) {
     console.error(`bot did not answer for visit ${visitId} permit ${gdoId}: ${(e as Error).message}`)
@@ -203,10 +230,27 @@ Deno.serve(async (req) => {
   if (!answered) {
     return json({ error: 'bot_no_answer', message: 'The bot did not answer in time. Check the bot dashboard before pressing again.', sent_at: dryRun ? null : sentAt }, 502, cors)
   }
+
+  const ans = readBotAnswer(botStatus, botJson)
+  if (ans.alreadyFiling) {
+    return json({ sent: false, run_id: ans.runId, sent_at: sentAt, message: 'The bot is already filing this permit. Wait for its result.' }, 200, cors)
+  }
+  // Log the run the bot started. Without this row, rpa-derm-result records the result of an older visit as a dry
+  // run and names nobody as the filer, so a failure here is said, not swallowed.
+  let logged = false
+  if (ans.started && ans.runId) {
+    const { error: logErr } = await sb.from('gdo_bot_file_requests')
+      .insert({ visit_id: visitId, gdo_id: gdoId, run_id: ans.runId, dry_run: dryRun, requested_by: email })
+    if (logErr) console.error(`press log failed for visit ${visitId} permit ${gdoId} run ${ans.runId}:`, logErr.message)
+    else logged = true
+  } else {
+    console.error(`bot answered HTTP ${botStatus} for visit ${visitId} permit ${gdoId} without a usable run_id`)
+  }
+  const notLogged = logged ? '' : ' It could not be logged here, so tell Fred before pressing again.'
   return json({
-    sent: true, dry_run: dryRun, sent_at: sentAt,
-    message: dryRun
+    sent: true, dry_run: dryRun, sent_at: sentAt, run_id: ans.runId, logged,
+    message: (dryRun
       ? 'Dry run sent to the bot. It opens the portal and files nothing.'
-      : `Sent to the bot at ${etTime(sentAt)}. The report shows here once the county confirms.`,
+      : `Sent to the bot at ${etTime(sentAt)}. The report shows here once the county confirms.`) + notLogged,
   }, 202, cors)
 })
