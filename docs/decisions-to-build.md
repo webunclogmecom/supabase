@@ -107,8 +107,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   the reason shown**; **shown, never written** (the effective truck; "Use default" still writes it).
 - **DB built 2026-10-29 17:00 ET**: `2026-10-29_1700_calendar_usual_truck.sql` (`ops.v_calendar_visit`: lateral `ut`,
   `default_truck_basis`, `default_truck_reason`), standing check `scripts/checks/usual_truck.sql`. Upcoming visits only
-  (scheduled, today ET or later, no stored truck); 120 of 731 changed truck at ship. **Open:** the Calendar drawer and
-  badge tooltip read the new sentence (Lovable Visit Calendar).
+  (scheduled, today ET or later, no stored truck); 120 of 731 changed truck at ship.
+- **App built 2026-10-29 ~17:15 ET**: Lovable Visit Calendar (`index-8f733pXM.js`) prints the sentence in the drawer and
+  "usual truck here" in the badge tooltip; checked live at 1440 and 375 (Visit Calendar changelog 2026-10-29). **Open:**
+  Fred's confirmation (the card's last item), then Testing / QA.
 
 **Admin Review "Grease by client" page + Calendar Grease pumped hover titles (Trello 6M9WvSYp, 2026-10-27)**
 - Fred, Slack 2026-10-23: *"a table of the clients with their corresponding pumping readings, and the table should show
