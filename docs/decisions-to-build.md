@@ -29,7 +29,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Yan wants the bot's Slack notifications in #apps-notifications (Jonathan to Fred). Fred's picks: we set the webhook
   in Railway ourselves (no DM of the link to Jonathan), confirm with the 2026-10-29 08:00 ET digest, then remove the
   old #new-app-issues hook. **Built 2026-10-28 19:12 ET:** `SLACK_WEBHOOK_URL` = the #apps-notifications hook
-  (fingerprint `4477a8783f`), bot redeployed `0fa1d530`. **Open:** the digest landing in #apps-notifications, then the
+  (fingerprint `4477a8783f`), bot redeployed `0fa1d530`. **Verified 2026-10-29:** the 08:00 ET digest landed in
+  #apps-notifications (Verify item ticked). **Open:** the
   old hook's removal (Slack has no per-hook remove for this app; see `docs/reference/gdo-report-bot.md` section 2).
 
 **GDO bot manual entries, the BOT half (2026-10-26; our side built, section 4)**

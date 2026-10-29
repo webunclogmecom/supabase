@@ -49,7 +49,7 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   **#apps-notifications** (Yan asked, Jonathan relayed; Fred added the hook in Slack, the session set it in Railway from
   Fred's Copy click with `skipDeploys`, fingerprint `4477a8783f`, and redeployed the same image as `0fa1d530` at
   19:12 ET while the bot was idle). The #new-app-issues hook (`b26527d5b4`) is still live but in nothing; it is removed
-  after the 2026-10-29 08:00 ET digest lands in #apps-notifications. Slack offers no per-webhook remove for this app
+  now that the digest landed there (verified 2026-10-29: "Daily digest · Wed, Oct 28" posted 08:00:02 ET in #apps-notifications, bot log "Daily Slack digest sent", nothing new in #new-app-issues; Jonathan redeployed four times overnight to `5fab9599` and the webhook fingerprint stayed `4477a8783f`). Slack offers no per-webhook remove for this app
   ("Revoke All OAuth Tokens" kills every hook, so that route needs a fresh #apps-notifications hook set again).
 - **2026-10-28: Jonathan is back in Railway, as a MEMBER of the whole "Unclogme" workspace** (invited 2026-10-27
   15:09 ET from the web@unclogme.com login, accepted 16:14 ET; Fred 2026-10-28: intended, keep). A workspace member
