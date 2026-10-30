@@ -26,7 +26,9 @@
 //   path is recorded (never raw bytes in the table);
 // - a run logged in gdo_bot_file_requests (a DERM Tracker "File it with the bot"
 //   press, 2026-10-29) is recorded as real when the press was live, whatever the
-//   visit date, with filed_by_email = who pressed; a dry press is never recorded.
+//   visit date; a dry press is never recorded. It is the BOT's filing, so
+//   filed_by_email stays null (CHECK actor_markers_agree: a person's email only on
+//   a 'manual-' run); who pressed is gdo_bot_file_requests.requested_by (2026-10-30).
 // verify_jwt=false in config.toml — the header is the auth, same model as
 // the webhook receivers. Server-to-server only.
 // ============================================================================
@@ -494,12 +496,11 @@ Deno.serve(async (req: Request) => {
   }
   // 2026-10-29 (Trello xBCSvP6f): was this run a "File it with the bot" press? gdo-bot-file-visit logs every
   // press the bot accepted, with the run_id from its 202. A logged LIVE press is a real filing, also on a visit
-  // before the cutoff (Fred: "Yes, only for button presses"), filed by the person who pressed. A logged DRY press
-  // is never recorded. A failed lookup is a 500 so the bot retries: guessing would store a real filing of an older
-  // visit as a dry run.
+  // before the cutoff (Fred: "Yes, only for button presses"). A logged DRY press is never recorded. A failed lookup is
+  // a 500 so the bot retries: guessing would store a real filing of an older visit as a dry run.
   const { data: press, error: pressErr } = await sb
     .from('gdo_bot_file_requests')
-    .select('gdo_id, dry_run, requested_by')
+    .select('gdo_id, dry_run')
     .eq('visit_id', visitId)
     .eq('run_id', runId)
     .maybeSingle()
@@ -709,7 +710,10 @@ Deno.serve(async (req: Request) => {
       screenshot_path: screenshotPath,
       screenshot_missing_reason: screenshotPath ? null : (evidenceDropReason ?? missingReason),
       dry_run: dryRun,
-      filed_by_email: press?.requested_by ?? null, // who pressed "File it with the bot" (D4); null for the hourly run
+      // Always null here: every row this path writes is a bot run, and CHECK actor_markers_agree allows a person's
+      // email only on a 'manual-' run. v44 put the presser here and the first real press (7849, 2026-10-30) was
+      // refused six times with a 500. Who pressed lives in gdo_bot_file_requests.requested_by.
+      filed_by_email: null,
     })
     .select('id')
     .single()

@@ -4575,7 +4575,7 @@ mean the bot files reports that should not go out.
 ✅ **A DERM TRACKER "FILE IT WITH THE BOT" PRESS IS LOGGED, AND ITS RESULT IS REAL ON ANY VISIT DATE (2026-10-29,
 `2026-10-29_1245`, Trello xBCSvP6f).** Fred: *"Yes, only for button presses"*. `gdo-bot-file-visit` writes one row in
 `public.gdo_bot_file_requests` per run the bot started (its 202 `run_id`, who pressed, real or dry); `rpa-derm-result`
-records that run's result as LIVE even before `rpa_launch_cutoff()`, `filed_by_email` = the presser, and never records
+records that run's result as LIVE even before `rpa_launch_cutoff()`, filed by the BOT (`filed_by_email` null; who pressed is `gdo_bot_file_requests.requested_by`; corrected 2026-10-30, `rpa-derm-result` v47), and never records
 a dry press. `trg_rpa_submission_dry_run_guard` admits exactly that (a live row on an older visit needs a logged live
 press), so the bot alone can never make an older visit live, and the hourly queue keeps the cutoff. The bot item shape
 is ONE file, `_shared/rpa-queue-item.ts` (the queue and the button). `rpa-derm-result` also names the permit from

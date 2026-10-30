@@ -81,8 +81,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   his follow-ups. Fred's picks: **the button sends the full row** (the queue item's keys and values, plus `dry_run`
   and `requested_by`, under the DERM app's own `RUN_KEYS` entry), not a per-visit queue lookup; **an older visit
   (before 2026-07-21) pressed with the button is recorded as a real filing** (Fred: "Yes, only for button presses"):
-  our side logs each press with the bot's `run_id`, and `rpa-derm-result` records that run's result as live, filed
-  by the person who pressed. The hourly queue keeps the launch cutoff (the 2026-10-26 decision stands).
+  our side logs each press with the bot's `run_id`, and `rpa-derm-result` records that run's result as live, filed by the BOT (`filed_by_email` null; who pressed is `gdo_bot_file_requests.requested_by`; corrected 2026-10-30, `rpa-derm-result` v47).
+  The hourly queue keeps the launch cutoff (the 2026-10-26 decision stands).
   Also (Jonathan, same thread, no decision needed): `rpa-derm-result` resolves the permit from `gdo_number` when
   `gdo_id` is missing. **Our side BUILT and live 2026-10-29** (still OFF until the secrets): migration
   `2026-10-29_1245` (press log `public.gdo_bot_file_requests` + the dry-run guard branch, Supabase `f4a81997`),

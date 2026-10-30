@@ -96,12 +96,13 @@ const sub = (r) => r.sb.inserts.find((i) => i.table === 'derm_portal_submissions
 const SCENARIOS = [
   { id: 'older visit, no press: stays a dry run (as today)', sc: { visit: OLD, fields: [TWO[0]] }, b: body({ visit_id: 1251, gdo_id: 217 }),
     ok: (r) => r.status === 201 && sub(r)?.dry_run === true && sub(r)?.filed_by_email == null },
-  { id: 'older visit, live press: real filing by the presser', change: true,
+  // 2026-10-30: a press is the BOT's filing, so filed_by_email stays null (DB CHECK actor_markers_agree, see actorOk).
+  { id: 'older visit, live press: real filing, the bot as filer', change: true,
     sc: { visit: OLD, fields: [TWO[0]], press: { gdo_id: 217, dry_run: false, requested_by: 'yannick@ayache.com' } }, b: body({ visit_id: 1251 }),
-    ok: (r) => r.status === 201 && sub(r)?.dry_run === false && sub(r)?.filed_by_email === 'yannick@ayache.com' && sub(r)?.gdo_id === 217 },
-  { id: 'newer visit, live press: filed_by is the presser', change: true,
+    ok: (r) => r.status === 201 && sub(r)?.dry_run === false && sub(r)?.filed_by_email == null && sub(r)?.gdo_id === 217 },
+  { id: 'newer visit, live press: the bot as filer, its permit', change: true,
     sc: { visit: NEW, press: { gdo_id: 217, dry_run: false, requested_by: 'yannick@ayache.com' } }, b: body(),
-    ok: (r) => r.status === 201 && sub(r)?.dry_run === false && sub(r)?.filed_by_email === 'yannick@ayache.com' && sub(r)?.gdo_id === 217 },
+    ok: (r) => r.status === 201 && sub(r)?.dry_run === false && sub(r)?.filed_by_email == null && sub(r)?.gdo_id === 217 },
   { id: 'dry press: never recorded', change: true, sc: { visit: NEW, press: { gdo_id: 217, dry_run: true, requested_by: 'fred@ayache.com' } }, b: body(),
     ok: (r) => r.status === 200 && r.out.ignored === 'dry_run_press' && !sub(r) },
   { id: 'press lookup fails: 500, nothing written', change: true, sc: { visit: OLD, pressErr: true }, b: body({ visit_id: 1251 }),
@@ -140,9 +141,14 @@ const quiet = { error: console.error, info: console.info }
 const check = (label, cond, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? '  ' + extra : ''}`); if (!cond) ok = false }
 const run = async (h, s) => { console.error = () => {}; console.info = () => {}; try { return await call(h, s) } finally { Object.assign(console, quiet) } }
 
+// The DB rules on derm_portal_submissions that a stubbed insert cannot enforce, applied to every row the function
+// tries to write. Missing until 2026-10-30, which is how v44 shipped a row the live table refuses (actor_markers_agree).
+const actorOk = (row) => (row.filed_by_email != null) === /^manual-/.test(String(row.run_id ?? ''))
+const dbOk = (r) => r.sb.inserts.filter((i) => i.table === 'derm_portal_submissions').every((i) => actorOk(i.row))
+
 for (const s of SCENARIOS) {
   const r = await run(H.work, s)
-  check(`${s.id}: working tree`, s.ok(r), `HTTP ${r.status} ${JSON.stringify(sub(r) ?? r.out).slice(0, 140)}`)
+  check(`${s.id}: working tree`, s.ok(r) && dbOk(r), `HTTP ${r.status} ${JSON.stringify(sub(r) ?? r.out).slice(0, 140)}`)
 }
 for (const s of SCENARIOS.filter((x) => x.change)) {
   const r = await run(H.control, s)

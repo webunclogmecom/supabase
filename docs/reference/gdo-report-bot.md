@@ -420,7 +420,7 @@ presses"). Built and live the same day (migration `2026-10-29_1245`, `rpa-derm-q
   202 `run_id`), with visit, permit, `dry_run` and who pressed. A 200 "already filing" is not logged. A 202 with no
   usable `run_id`, or a failed insert, is said in the button's answer ("tell Fred before pressing again").
 - **`rpa-derm-result` reads it** (key visit + run): a logged LIVE press is recorded as real whatever the visit date,
-  `filed_by_email` = who pressed, and its `gdo_id` stands in when the bot sends none; a logged DRY press answers 200
+  filed by the BOT (`filed_by_email` null; who pressed is `gdo_bot_file_requests.requested_by`; corrected 2026-10-30, `rpa-derm-result` v47), and its `gdo_id` stands in when the bot sends none; a logged DRY press answers 200
   `{recorded:false, ignored:'dry_run_press'}` and writes nothing; a failed lookup is a 500 (the bot retries) rather than
   a guess. `trg_rpa_submission_dry_run_guard` gained the matching branch (a live row on an older visit is admitted only
   with a logged live press). The hourly queue keeps the 2026-07-21 cutoff.
@@ -473,3 +473,33 @@ or success)"*. Migration `2026-10-30_1135_derm_portal_fields_expired_permit.sql`
   ⚠ The queue serves one visit per (manifest, permit), so skipping one can let a sibling on the same manifest be served.
 - **Set on apply: `7849`**, for Jonathan's video (he presses Auto file on it himself). 7992 went to the hourly queue at
   once. 🛑 **Clear the skip once 7849 has a result**, or a retryable failure would never be retried by the hourly run.
+
+### 11d. A press result refused by our side (2026-10-30), and Jon's "when a filing is stuck" guide
+
+**Incident.** The first real Auto file press (315-CAP visit 7849, Jonathan, 13:23 ET, run `3ef19a1c`) was filed at the
+county (Jonathan: "the county accepted GDO-14098 at 17:23 UTC"), but `rpa-derm-result` answered 500 six times (17:23
+and 17:26 UTC): `result insert failed: new row for relation "derm_portal_submissions" violates check constraint
+"derm_portal_submissions_actor_markers_agree"`. v44 (2026-10-29) wrote the presser into `filed_by_email` on a bot run,
+and that CHECK (Fred, 2026-08-19: the bot and a person filing by hand are mutually exclusive) allows a person's email
+only on a `manual-` run. Fixed in v47 (15:12 ET): a press result is the bot's filing, `filed_by_email` null; who pressed
+is `gdo_bot_file_requests.requested_by`. The bot keeps an unsent result and resends it on each run (about 10 tries).
+`scripts/checks/rpa_derm_result_button_press.mjs` now also applies the table's actor rule to every row the function
+writes; with v44 as the control both press cases fail, which is how this would have been caught.
+
+**Jon's guide (image in the Slack GDO digest thread, 2026-10-30), in short.** Every hour the bot files what the Tracker
+hands it. When it cannot, the row goes to Pending on its dashboard, grouped by reason, and the 08:00 digest tags Diego.
+A person fixes the cause, then **Mark handled** with one sentence (optionally **Run it again now**). By reason:
+- **Portal rejected the login:** the bot tries the standard password, then the second one. If still stuck, a person
+  resets that permit's password on the county portal (Forgot Password, the permit number, the link goes to fog@) to
+  the standard one; only if the county refuses, Jon or Fred adds it in Railway as a new slot (up to 3). Then Mark
+  handled with Run it again now.
+- **Contact email mismatch:** the bot sets the permit's email to fog@unclogme.com at login; it needs the right password
+  first, so fix the password; then Mark handled with Run it again now.
+- **Data wasn't accepted** (no GDO permit, a dump date before the service date, a manifest already used): fix it in
+  the Tracker, Mark handled with Run it again OFF (a rerun replays the old data); the hourly run or **Auto file** then
+  files the corrected visit.
+- **Portal didn't respond:** retried next hour by itself; the same row every day means a person checks the portal.
+- **Bot's own mailbox / credentials:** it alerts once; Jon or Fred makes a new app password for fog@ and pastes it in
+  Railway. Filings already done are unaffected.
+A row leaves Pending when filed, when someone marks it handled (with a note), or after 30 days; a rerun is a new
+attempt with its own id and its own result in the Tracker.
