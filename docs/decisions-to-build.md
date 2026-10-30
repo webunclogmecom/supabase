@@ -96,6 +96,13 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   our function sends: 202, the bot logged in, reached the county Preview, submitted nothing, posted nothing
   (`DRY_RUN_COMPLETE`, run 70922b94). **Open:** one real press with Yan (8096 / GDO-12656 is unfiled and is the
   natural first one), then Testing / QA.
+- 2026-10-30 (Fred, on 315-CAP whose only permit on file is the 2024 GDO-14098, stored EXPIRED): *"even if it's
+  expired or not that's the one we have so we file it with that expired one ... the bot will deliver the response
+  (error or success)"*. Rule: the filing path uses ACTIVE permits, else EXPIRED ones when the client has no ACTIVE
+  permit; never INACTIVE. One view, `public.v_derm_portal_fields`. **STAGED, not applied:**
+  `2026-10-30_1135_derm_portal_fields_expired_permit_STAGED.sql` (dry run, rollback and control passed). Fred chose
+  "Wait for Jonathan": apply when Jonathan is ready to press Auto file on 7849 for his video; applying queues 7849
+  and 7992 for the hourly bot at once.
 
 **Calendar smart default truck for a visit with no truck (Trello alpHmTtL, 2026-10-29)**
 - Fred (Slack DM to Viktor, 2026-10-28): the default truck should be *"the usual truck that goes there, or the average
