@@ -99,10 +99,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - 2026-10-30 (Fred, on 315-CAP whose only permit on file is the 2024 GDO-14098, stored EXPIRED): *"even if it's
   expired or not that's the one we have so we file it with that expired one ... the bot will deliver the response
   (error or success)"*. Rule: the filing path uses ACTIVE permits, else EXPIRED ones when the client has no ACTIVE
-  permit; never INACTIVE. One view, `public.v_derm_portal_fields`. **STAGED, not applied:**
-  `2026-10-30_1135_derm_portal_fields_expired_permit_STAGED.sql` (dry run, rollback and control passed). Fred chose
-  "Wait for Jonathan": apply when Jonathan is ready to press Auto file on 7849 for his video; applying queues 7849
-  and 7992 for the hourly bot at once.
+  permit; never INACTIVE. One view, `public.v_derm_portal_fields`. **BUILT 2026-10-30 11:40 ET:**
+  `2026-10-30_1135_derm_portal_fields_expired_permit.sql`, with Fred's second ask (*"can't you just skip this one
+  visit from the queue so they auto file it?"*): skip list `app_config` `gdo_queue_skip_visit_ids` = `7849` (the hourly
+  bot skips it, the Auto file button does not; `held_by = 'skipped_by_hand'`). 7992 went to the hourly queue.
+  **Open:** Jonathan presses Auto file on 7849; then clear the skip (reference `gdo-report-bot.md` 11c).
 
 **Calendar smart default truck for a visit with no truck (Trello alpHmTtL, 2026-10-29)**
 - Fred (Slack DM to Viktor, 2026-10-28): the default truck should be *"the usual truck that goes there, or the average

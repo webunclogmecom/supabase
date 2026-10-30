@@ -450,3 +450,21 @@ bot's `docs/API_CONTRACT.md` section 13) and added a `dermapp` entry to the bot'
   The bot logs one harmless warning: it ignores `white_manifest_number`, which our item carries for back-compat.
 - Not exercised yet: our function's `send` path itself (it needs a signed-in staff session; the app has no dry-run
   control by design). Its first live use is the first real press, with Yan.
+
+### 11c. An EXPIRED permit is filed when it is the one we have; a visit can be skipped by hand (2026-10-30)
+
+Case: 315-CAP Capas Burger Aventura (visits 7849 on 8/28 and 7992 on 10/28) sat in the digest as "No GDO permit on the
+visit". Diego then entered GDO-14098 in the Client App, but the PDF is the 2024 permit, so it was stored EXPIRED, the
+queue (ACTIVE only) still had no permit, and Auto file said "No GDO permit on file for this visit." Fred: *"even if it's
+expired or not that's the one we have so we file it with that expired one ... the bot will deliver the response (error
+or success)"*. Migration `2026-10-30_1135_derm_portal_fields_expired_permit.sql`, applied 11:40 ET.
+- **The rule (`public.v_derm_portal_fields`, so every filing path):** the client's ACTIVE permits; if it has none, its
+  EXPIRED ones; never INACTIVE (a permit naming another business, or replaced). Section 8 still holds for a client
+  with no permit at all.
+- **Skip list:** `public.app_config` key `gdo_queue_skip_visit_ids` (comma-separated visit ids, audited). A listed visit
+  is not served to the hourly bot and reads `held_by = 'skipped_by_hand'` in `v_derm_portal_queue_held` (and in the
+  queue reply's held summary). The Auto file button does not read the queue, so it still works on a skipped visit.
+  End a skip with `update public.app_config set value = '' where key = 'gdo_queue_skip_visit_ids';` (no DDL).
+  ⚠ The queue serves one visit per (manifest, permit), so skipping one can let a sibling on the same manifest be served.
+- **Set on apply: `7849`**, for Jonathan's video (he presses Auto file on it himself). 7992 went to the hourly queue at
+  once. 🛑 **Clear the skip once 7849 has a result**, or a retryable failure would never be retried by the hourly run.
