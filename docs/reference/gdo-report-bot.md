@@ -473,6 +473,7 @@ or success)"*. Migration `2026-10-30_1135_derm_portal_fields_expired_permit.sql`
   ⚠ The queue serves one visit per (manifest, permit), so skipping one can let a sibling on the same manifest be served.
 - **Set on apply: `7849`**, for Jonathan's video (he presses Auto file on it himself). 7992 went to the hourly queue at
   once. 🛑 **Clear the skip once 7849 has a result**, or a retryable failure would never be retried by the hourly run.
+- **Outcome (2026-10-30):** 7849 pressed by Jonathan 13:23 ET (run 3ef19a1c), recorded SUCCESS at 15:12 ET once `rpa-derm-result` v47 accepted it; 7992 filed by the hourly run at 11:58 ET (SUCCESS). Skip cleared 15:13 ET (both read already_filed). Both were filed with the EXPIRED permit and the county accepted them.
 
 ### 11d. A press result refused by our side (2026-10-30), and Jon's "when a filing is stuck" guide
 

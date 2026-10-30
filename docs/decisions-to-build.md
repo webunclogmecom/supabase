@@ -105,7 +105,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   bot skips it, the Auto file button does not; `held_by = 'skipped_by_hand'`). 7992 went to the hourly queue.
   Then (Fred: *"include all the GDO's associated in the options even if they're expired"*; "Bot files every permit
   shown"; inactive "Leave them out"): **`2026-10-30_1148`, every ACTIVE and EXPIRED permit, built 11:48 ET.**
-  **Open:** Jonathan presses Auto file on 7849; then clear the skip (reference `gdo-report-bot.md` 11c).
+  **Done 2026-10-30:** 7849 pressed by Jonathan 13:23 ET (run 3ef19a1c), recorded SUCCESS at 15:12 ET once `rpa-derm-result` v47 accepted it; 7992 filed by the hourly run at 11:58 ET (SUCCESS). Skip cleared 15:13 ET (both read already_filed).
 
 **Calendar smart default truck for a visit with no truck (Trello alpHmTtL, 2026-10-29)**
 - Fred (Slack DM to Viktor, 2026-10-28): the default truck should be *"the usual truck that goes there, or the average
