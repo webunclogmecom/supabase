@@ -103,6 +103,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `2026-10-30_1135_derm_portal_fields_expired_permit.sql`, with Fred's second ask (*"can't you just skip this one
   visit from the queue so they auto file it?"*): skip list `app_config` `gdo_queue_skip_visit_ids` = `7849` (the hourly
   bot skips it, the Auto file button does not; `held_by = 'skipped_by_hand'`). 7992 went to the hourly queue.
+  Then (Fred: *"include all the GDO's associated in the options even if they're expired"*; "Bot files every permit
+  shown"; inactive "Leave them out"): **`2026-10-30_1148`, every ACTIVE and EXPIRED permit, built 11:48 ET.**
   **Open:** Jonathan presses Auto file on 7849; then clear the skip (reference `gdo-report-bot.md` 11c).
 
 **Calendar smart default truck for a visit with no truck (Trello alpHmTtL, 2026-10-29)**
