@@ -381,6 +381,8 @@ after 10-20) and the first result carrying `gdo_id`.
 
 ## 11. The DERM Tracker's "File it with the bot" button (2026-10-27, OFF until Jonathan's endpoint)
 
+⚠ On screen the button reads **"Auto file"** since 2026-10-30 (Fred); the feature keeps this name in the docs.
+
 Huddle 2026-10-26: Yan wants the dashboard's "process a permit by hand" as a button on the DERM Tracker visit page;
 Jonathan builds the bot endpoint and sends its request format, we build the button (Trello xBCSvP6f). Fred,
 2026-10-27: *"this button should be disabled until we have Jon's notification about it ... but we can have our side
