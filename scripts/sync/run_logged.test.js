@@ -13,6 +13,7 @@ const failJs = script('fail.js', 'console.error("boom"); process.exit(3)');
 const hangJs = script('hang.js', 'setInterval(() => {}, 1000)');
 const sumJs = script('sum.js', 'console.log("RUN_SUMMARY {\\"rows_inserted\\":1}"); console.log("work"); process.stdout.write("RUN_SUMMARY {\\"rows_inserted\\":42,\\"deep_pass\\":true}")');
 const badJs = script('bad.js', 'console.log("RUN_SUMMARY {not json"); console.log("RUN_SUMMARY [1,2]")');
+const outageJs = script('outage.js', 'console.error("FATAL: Samsara gave no answer"); process.exit(75)');
 
 const rows = [];
 const server = http.createServer((req, res) => {
@@ -38,9 +39,18 @@ const server = http.createServer((req, res) => {
   assert.match(sum.out, /work/, 'child stdout is not passed through');
   assert.match(sum.out, /RUN_SUMMARY \{"rows_inserted":42/, 'summary line is not passed through');
   assert.strictEqual((await run(['t_bad', badJs])).code, 0);
+  assert.strictEqual((await run(['t_outage_rw', outageJs], { RAILWAY_SERVICE_NAME: 'samsara-gps' })).code, 0, 'an outage (75) on Railway exits 0: no crash email');
+  assert.strictEqual((await run(['t_outage_gh', outageJs], { GITHUB_ACTIONS: 'true' })).code, 75, 'an outage elsewhere keeps 75');
+  assert.strictEqual((await run(['t_fail_rw', failJs], { RAILWAY_SERVICE_NAME: 'samsara-gps' })).code, 3, 'any other failure on Railway keeps its code');
 
   const by = Object.fromEntries(rows.map(r => [r.sync_source, r]));
-  assert.strictEqual(rows.length, 5, 'a refused --dry-run must write no row');
+  for (const s of ['t_outage_rw', 't_outage_gh']) {
+    assert.strictEqual(by[s].status, 'error', 'an outage is still an error row (the watchdog reads it)');
+    assert.strictEqual(by[s].details.exit_code, 75);
+    assert.match(by[s].error_details.stderr_tail, /no answer/);
+  }
+  assert.deepStrictEqual([by.t_outage_rw.details.host, by.t_outage_gh.details.host], ['railway', 'github']);
+  assert.strictEqual(rows.length, 8, 'a refused --dry-run must write no row');
   assert.ok(!rows.some(r => r.sync_source === 't_dry'), 'a refused --dry-run must write no row');
   assert.strictEqual(by.t_ok.status, 'success');
   assert.strictEqual(by.t_ok.error_details, null);
@@ -55,6 +65,6 @@ const server = http.createServer((req, res) => {
   assert.strictEqual(by.t_sum.rows_inserted, 42);
   assert.strictEqual(by.t_bad.status, 'success', 'a malformed summary must not fail the run');
   assert.ok(!('summary' in by.t_bad.details) && !('rows_inserted' in by.t_bad), 'a malformed summary must be ignored');
-  console.log('run_logged: 17 checks passed');
+  console.log('run_logged: 27 checks passed');
   server.close();
 });

@@ -28,6 +28,10 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
   run is red in Cron Runs, times in CEST). Read that run's `sync_log` row before touching the deploy. A Samsara
   run that failed after about 195 s with "gave no answer" is three timeouts in a row; the next good run refills the
   gap by itself (2026-11-02, `docs/reference/samsara-feeds-resilience.md`, "When the alert comes" step 2).
+  🛑 **Since 2026-11-02 a Samsara outage sends NO such email** (Fred: "stop the Railway emails for Samsara outages"):
+  the run exits 75, `run_logged.js` logs it as an `error` row and exits 0 on Railway, so Cron Runs show it green and
+  the Samsara watchdog emails instead once a feed is 20 minutes stale. Exit 75 means that for any job run through
+  `run_logged.js`, so use it only for "the source did not answer". Details: the same doc, layer 1.
 
 ## Services
 

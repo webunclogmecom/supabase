@@ -31,7 +31,7 @@
 // and run_logged.js refuses --dry-run outright (a sync_log row of any kind reads as a fresh run).
 // Check: scripts/sync/cron_samsara_tank_readings.test.js (pure parts AND main() end to end on a stub fetch).
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'), quiet: true });
-const { samsaraClient } = require('../lib/samsara_client');
+const { samsaraClient, SAMSARA_OUTAGE_EXIT, exitCodeFor } = require('../lib/samsara_client');
 
 const BACKFILL_START = '2026-08-20T14:00:00Z';
 const SOURCE = 'railway_samsara_readings';
@@ -174,7 +174,8 @@ async function siteAddressMap() {
   return { resolver: 'esl_dump_site_properties', map: new Map(links.map(l => [String(l.source_id).replace(/^addr_/, ''), Number(l.entity_id)])) };
 }
 
-// main(argv, { fetch, now, log, error }) -> exit code (0 or 1). Throws on a setup failure (FATAL, exit 1).
+// main(argv, { fetch, now, log, error }) -> exit code: 0, 1, or 75 when every error was a Samsara outage
+// (scripts/lib/samsara_client.js). Throws on a setup failure (FATAL, exit 1, or 75 for an outage).
 async function main(argv = process.argv.slice(2), deps = {}) {
   const opt = parseArgs(argv);
   if (deps.fetch) io.fetch = deps.fetch;
@@ -184,6 +185,8 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     if (!process.env[k]) throw new Error('missing ' + k);
   const now = deps.now ?? Date.now();
   const errors = [];
+  let outageOnly = true;
+  const fail = (msg, e) => { errors.push(msg); if (!e.samsaraOutage) outageOnly = false; };
   const summary = { dry_run: opt.dryRun || undefined, window_start: null, window_end: new Date(now).toISOString(), chunks: 0,
     deep_pass: false, deep_pass_recovered: 0, streams: {}, skipped_streams: [], unlinked_level_assets: null, site_resolver: null,
     resume_point: false, errors: 0, rows_inserted: 0 };
@@ -221,7 +224,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     try {
       const latest = await samsaraPaged('/readings/latest?readingIds=remoteSensingDistance&entityType=asset');
       summary.unlinked_level_assets = [...new Set(latest.map(r => String(r.entityId)))].filter(id => !entities.sensor.has(id));
-    } catch (e) { errors.push(`discovery: ${e.message}`); }
+    } catch (e) { fail(`discovery: ${e.message}`, e); }
   }
 
   const pauseMs = opt.from ? 500 : 0;
@@ -238,7 +241,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
         try {
           data = await samsaraPaged(`/readings/history?readingId=${s.reading}&entityType=asset&entityIds=${samsaraId}` +
             `&startTime=${encodeURIComponent(new Date(c).toISOString())}&endTime=${encodeURIComponent(new Date(cEnd).toISOString())}`, pauseMs);
-        } catch (e) { errors.push(`${s.key} ${entityId}: ${e.message}`); continue; }
+        } catch (e) { fail(`${s.key} ${entityId}: ${e.message}`, e); continue; }
         st.received += data.length;
         const t = transform(s, data, entityId, { now, siteMap: site.map });
         st.skipped += t.skipped; st.unresolved += t.unresolved;
@@ -252,7 +255,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
               { method: 'POST', body: ch, prefer: 'resolution=ignore-duplicates,return=representation' });
             st.inserted += ins.length;
             if (summary.deep_pass) summary.deep_pass_recovered += ins.filter(r => Date.parse(r.recorded_at) < normalStart).length;
-          } catch (e) { errors.push(`${s.key} ${entityId} insert: ${e.message}`); }
+          } catch (e) { fail(`${s.key} ${entityId} insert: ${e.message}`, e); }
         }
       }
     }
@@ -264,9 +267,9 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     for (const s of STREAMS) log(`${s.key.padEnd(14)} rows by UTC day and internal id: ${JSON.stringify(byDay[s.key])}`);
     log('DRY_RUN_SUMMARY ' + JSON.stringify(summary));
   } else log('RUN_SUMMARY ' + JSON.stringify(summary));
-  return errors.length ? 1 : 0;
+  return !errors.length ? 0 : outageOnly ? SAMSARA_OUTAGE_EXIT : 1;
 }
 
 module.exports = { STREAMS, PINNED, normalizeDefinition, unitsGuard, transform, rowKey, chunks, parseArgs, main };
 
-if (require.main === module) main().then(c => { process.exitCode = c; }, e => { console.error('FATAL: ' + e.message); process.exit(1); });
+if (require.main === module) main().then(c => { process.exitCode = c; }, e => { console.error('FATAL: ' + e.message); process.exit(exitCodeFor(e)); });

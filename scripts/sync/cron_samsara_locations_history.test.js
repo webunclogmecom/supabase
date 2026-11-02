@@ -3,6 +3,7 @@
 //   node scripts/sync/cron_samsara_locations_history.test.js
 const assert = require('assert');
 const { chunkWindow, main } = require('./cron_samsara_locations_history.js');
+const { exitCodeFor } = require('../lib/samsara_client');
 
 let n = 0;
 const ok = (c, m) => { assert.ok(c, m); n++; };
@@ -79,10 +80,12 @@ async function run(sc, env = {}) {
   eq([r.code, r.sam.length, r.sleeps], [0, 2, [5000]], 'one Samsara 504 then 200: retried after 5 s, exit 0');
   r = await run({ last: NOW - 10 * 60e3, recentDeep: true, samsaraDown: true });
   ok(r.thrown && /Samsara HTTP 503/.test(r.thrown.message) && r.sam.length === 3 && r.posts.length === 0, 'Samsara down: 3 attempts, then FATAL before any insert');
+  eq(exitCodeFor(r.thrown), 75, 'Samsara down is an outage: exit 75 (no Railway email)');
 
   // the cursor lookup failing is fatal (it used to fall back to a 90 min window)
   r = await run({ lookupFail: true });
   ok(r.thrown && /PostgREST HTTP 503/.test(r.thrown.message) && r.sam.length === 0, 'cursor lookup failure: FATAL, nothing pulled');
+  eq(exitCodeFor(r.thrown), 1, 'a database failure is not a Samsara outage: exit 1 (Railway still emails)');
 
   // deep pass once a day
   r = await run({ last: NOW - 10 * 60e3 });

@@ -1,7 +1,7 @@
 // samsara_client.test.js: retries, give-up and paging of the shared Samsara GET (no network).
 //   node scripts/lib/samsara_client.test.js
 const assert = require('assert');
-const { samsaraClient } = require('./samsara_client');
+const { samsaraClient, SAMSARA_OUTAGE_EXIT, exitCodeFor } = require('./samsara_client');
 
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 function make(answers) {               // answers: one per call, a Response factory or an Error to throw
@@ -48,6 +48,13 @@ const rejects = async (p, re, m) => { await assert.rejects(p, re, m); n++; };
   t = make([() => json(404, { m: 'nope' })]);
   await rejects(t.c.get('/x'), /Samsara HTTP 404/, 'a 4xx (not 429) is not retried');
   eq(t.calls.length, 1, 'one attempt on a 4xx');
+
+  // outage = exit 75 (no Railway email); everything else = exit 1
+  const exitOf = async answers => exitCodeFor(await make(answers).c.get('/x').then(() => null, e => e));
+  eq([await exitOf([() => json(503, {})]), await exitOf([new Error('timeout')])], [75, 75], 'a 5xx or no answer on every attempt is an outage: 75');
+  eq([await exitOf([() => json(401, {})]), await exitOf([() => json(404, {})]), await exitOf([() => json(429, {})])], [1, 1, 1],
+    'a 401, another 4xx or a 429 on every attempt is not: 1');
+  eq([exitCodeFor(new Error('PostgREST HTTP 503')), SAMSARA_OUTAGE_EXIT], [1, 75], 'any other error is 1');
 
   t = make([() => json(200, { data: [1, 2], pagination: { hasNextPage: true, endCursor: 'c/1' } }),
             () => json(200, { data: [3], pagination: { hasNextPage: false } })]);

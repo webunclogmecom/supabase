@@ -22,6 +22,15 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    So a run that fails after about **195 s** (60 + 5 + 60 + 10 + 60) is three timeouts in a row. Since 2026-11-02 the
    error names who stopped answering: `FATAL: Samsara gave no answer on <path> after 3 attempts: ...` or
    `FATAL: PostgREST gave no answer on <path>: ...` (before, both read only "The operation was aborted due to timeout").
+   🛑 **A Samsara OUTAGE no longer makes Railway mail "Deploy Crashed"** (Fred, 2026-11-02: *"yes, stop the Railway
+   emails for Samsara outages"*). Outage = no answer or a 5xx on all 3 attempts (`err.samsaraOutage`, set only by
+   `samsara_client.js`). Such a run exits **75**: `run_logged.js` still writes it as an `error` row (exit_code 75, the
+   stderr tail), so the watchdog (layer 3) still sees it and emails once the feed is 20 minutes stale. On Railway it
+   then exits 0, so Railway's Cron Runs show that run GREEN. Read `sync_log`, not Railway, for whether a run worked.
+   A readings run exits 75 only when EVERY error in it was an outage; one failed insert makes it 1. Still exit 1, and
+   still emailed by Railway at once: a 401 (token), any other 4xx, a 429 (our call volume), a database (PostgREST)
+   failure, a code error, a GPS `dropped_span` or failed batch. On GitHub (the fallback) and locally 75 stays the exit
+   code, so a fallback run during an outage shows red.
 2. **Every run is a restart.** Railway starts a new run every 5 minutes, and each one begins where the last good one
    stopped, so a failed run or an outage is refilled by the next good run with nothing lost:
    - GPS: from the newest stored GPS-only point minus 30 min (late points are picked up), plus a 48 h deep pass once a
@@ -118,8 +127,10 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    every pg_cron job were fine the whole time, so it was the Samsara calls. The 10:12 runs succeeded and refilled the
    gap (GPS from 09:15 ET, 83 rows; readings from 09:20 ET, 69 rows). The outage was 17 minutes, under the watchdog's
    20, so no health email went out and no restart was pressed. Nothing was lost and nothing was done by hand.
-   The errors were then made to name the call (`34b0f7b2`; first runs on it 15:25 and 15:30 ET, all success). Trello
-   Dev `9PYL5xg7`, in Testing / QA since 2026-11-02 with every item ticked.
+   The errors were then made to name the call (`34b0f7b2`; first runs on it 15:25 and 15:30 ET, all success), and the
+   same evening an outage stopped making Railway mail at all (exit 75, layer 1). Trello Dev `9PYL5xg7`, in Testing /
+   QA since 2026-11-02 with every item ticked. So from now on a "Deploy Crashed" email for these two services means a
+   failure that is NOT a Samsara outage: read the run's `sync_log` row and act.
 3. Railway itself down or stuck: run the GitHub fallback workflow (step 4 above); repeat every hour or so until Railway
    is back, or just once when it is back (both catch up).
 4. A `gps_dropped_span` item: run the GPS fallback with `start_time` = the span's start (in the item) and end blank.

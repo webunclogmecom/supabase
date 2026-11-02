@@ -157,7 +157,7 @@ async function run(args, sc) {
   eq([r.s.deep_pass, r.s.window_start, r.s.unlinked_level_assets], [true, new Date(NOW - HOUR - 48 * HOUR).toISOString(), ['S9']], 'deep pass: 48 h overlap, unlinked sensors listed');
 
   r = await run([], { last, latestFail: true });
-  eq([r.code, r.s.unlinked_level_assets, r.s.errors], [1, null, 1], 'failed discovery: exit 1, unlinked null, one error');
+  eq([r.code, r.s.unlinked_level_assets, r.s.errors], [75, null, 1], 'failed discovery (a 5xx every time = an outage): exit 75, unlinked null, one error');
   ok(r.hist.length === 6 && r.posts > 0, 'failed discovery does not stop ingestion');
 
   r = await run([], { last, recentDeep: true, distUnit: 'centimeter' });
@@ -165,7 +165,9 @@ async function run(args, sc) {
   ok(!r.hist.some(c => c.rid === 'remoteSensingDistance'), 'a skipped stream is not pulled');
 
   r = await run([], { last, recentDeep: true, histFail: 'engineRpm' });
-  eq([r.code, r.hist.filter(c => c.rid === 'engineRpm').length], [1, 3], 'a 5xx on every attempt: 3 attempts, then exit 1');
+  eq([r.code, r.hist.filter(c => c.rid === 'engineRpm').length], [75, 3], 'a 5xx on every attempt: 3 attempts, then exit 75 (an outage, no Railway email)');
+  r = await run([], { last, recentDeep: true, histFail: 'engineRpm', insertFail: true });
+  eq(r.code, 1, 'an outage plus a failed insert: exit 1 (not only an outage)');
   r = await run([], { last, recentDeep: true, hist504Once: 'remoteSensingDistance' });
   eq([r.code, r.s.errors, r.hist.length, r.sleeps.includes(5000)], [0, 0, 7, true], 'one 504 then 200: retried after 5 s, exit 0, no error');
   r = await run([], { last, recentDeep: true, netFailOnce: 'fillPercent' });

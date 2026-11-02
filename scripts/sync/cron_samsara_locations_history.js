@@ -23,7 +23,7 @@
 // that fetched through its window end and stored everything).
 // Check: scripts/sync/cron_samsara_locations_history.test.js (main() end to end on a stub fetch).
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'), quiet: true });
-const { samsaraClient } = require('../lib/samsara_client');
+const { samsaraClient, exitCodeFor } = require('../lib/samsara_client');
 
 const SOURCE = 'railway_samsara_gps';
 const HOUR = 3600e3;
@@ -126,4 +126,4 @@ async function main(deps = {}) {
 
 module.exports = { chunkWindow, main };
 
-if (require.main === module) main().then(c => { process.exitCode = c; }, e => { console.error('FATAL: ' + e.message); process.exit(1); });
+if (require.main === module) main().then(c => { process.exitCode = c; }, e => { console.error('FATAL: ' + e.message); process.exit(exitCodeFor(e)); });

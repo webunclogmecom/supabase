@@ -20,11 +20,13 @@ function samsaraClient({ fetch, sleep, token, attempts = 3, timeoutMs = 60000 })
         if (!((r.status === 429 || r.status >= 500) && attempt < attempts)) body = await r.text();
       } catch (e) {
         if (attempt < attempts) { await sleep(5000 * attempt); continue; }
-        throw new Error(`Samsara gave no answer on ${path.split('?')[0]} after ${attempts} attempts: ${e.message}`, { cause: e });
+        throw Object.assign(new Error(`Samsara gave no answer on ${path.split('?')[0]} after ${attempts} attempts: ${e.message}`,
+          { cause: e }), { samsaraOutage: true });
       }
       if (r.status === 429 && attempt < attempts) { await sleep((Number(r.headers.get('retry-after')) || 2) * 1000); continue; }
       if (r.status >= 500 && attempt < attempts) { await sleep(5000 * attempt); continue; }
-      if (!r.ok) throw new Error(`Samsara HTTP ${r.status} on ${path.split('?')[0]}: ${body.slice(0, 200)}`);
+      if (!r.ok) throw Object.assign(new Error(`Samsara HTTP ${r.status} on ${path.split('?')[0]}: ${body.slice(0, 200)}`),
+        { samsaraOutage: r.status >= 500 });
       return JSON.parse(body);
     }
   }
@@ -43,4 +45,12 @@ function samsaraClient({ fetch, sleep, token, attempts = 3, timeoutMs = 60000 })
   return { get, paged };
 }
 
-module.exports = { samsaraClient };
+// A Samsara OUTAGE = no answer or a 5xx on every attempt (err.samsaraOutage). Not a 401 (token), another 4xx (our
+// request) or a 429 (our call volume): those still exit 1. The collectors exit 75 (EX_TEMPFAIL) for an outage;
+// run_logged.js logs the run as an error as always (the watchdog emails after 20 min) and, on Railway only, exits 0,
+// so Railway does not mail "Deploy Crashed" for a Samsara blip (Fred, 2026-11-02: "stop the Railway emails for
+// Samsara outages").
+const SAMSARA_OUTAGE_EXIT = 75;
+const exitCodeFor = e => (e && e.samsaraOutage ? SAMSARA_OUTAGE_EXIT : 1);
+
+module.exports = { samsaraClient, SAMSARA_OUTAGE_EXIT, exitCodeFor };

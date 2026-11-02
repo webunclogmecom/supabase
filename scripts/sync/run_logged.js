@@ -8,6 +8,11 @@
 // exactly as before; a line that is not a JSON object is ignored. The child's stdout is still passed through.
 // --dry-run is refused (exit 2, no row): any sync_log row, even one without a summary, counts as a fresh run for
 // the staleness check, so a local dry run through this wrapper would hide a dead Railway service.
+// Exit 75 (EX_TEMPFAIL) = the child's source did not answer (a Samsara outage, scripts/lib/samsara_client.js). The row
+// is an error like any other, so the watchdogs see it, but ON RAILWAY the runner then exits 0: Railway mails
+// "Deploy Crashed" for every non-zero run, and a Samsara blip heals itself on the next run (Fred, 2026-11-02: "stop
+// the Railway emails for Samsara outages"). Railway's Cron Runs then show such a run green; sync_log is the truth.
+// On GitHub or locally 75 stays the exit code, so a person running the fallback sees it fail.
 const { spawn } = require('child_process');
 
 const [source, ...cmd] = process.argv.slice(2);
@@ -42,6 +47,7 @@ child.on('close', async (code, signal) => {
   clearTimeout(timer);
   takeLine(partial);
   const ok = code === 0 && !timedOut;
+  const host = process.env.RAILWAY_SERVICE_NAME ? 'railway' : process.env.GITHUB_ACTIONS ? 'github' : 'local';
   const finished = new Date();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/sync_log`, {
@@ -50,12 +56,12 @@ child.on('close', async (code, signal) => {
     body: JSON.stringify({
       sync_source: source, started_at: started, finished_at: finished,
       duration_seconds: (finished - started) / 1000, status: ok ? 'success' : 'error',
-      details: { host: process.env.RAILWAY_SERVICE_NAME ? 'railway' : process.env.GITHUB_ACTIONS ? 'github' : 'local', cmd: cmd.join(' '),
+      details: { host, cmd: cmd.join(' '),
                  exit_code: code, signal, timed_out: timedOut, limit_min: limitMin, ...(summary && { summary }) },
       error_details: ok ? null : { stderr_tail: tail },
       ...(Number.isInteger(summary?.rows_inserted) && { rows_inserted: summary.rows_inserted }),
     }),
   }).catch(e => ({ ok: false, status: String(e) }));
   if (!r.ok) console.error('sync_log insert failed', r.status);
-  process.exit(ok ? 0 : (code || 1));
+  process.exit(ok || (code === 75 && !timedOut && host === 'railway') ? 0 : (code || 1));
 });
