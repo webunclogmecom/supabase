@@ -297,6 +297,12 @@ was put back the same day, so shared and service agree again.
 
 Closed 2026-11-02: his Slack account (deactivated 13:38; his second account already was), Lovable (members are Fred
 and Yan only), Anthropic (Fred only), LastPass (no shared folders). Neither Slack app ever had him as a collaborator.
+Scope set by Fred that evening: he must not see or change our code or services; his accounts in third-party apps
+(Slack, Samsara, Jobber) and his email are Yannick's call. Checked the same evening: GitHub (every repo and the
+organization: only our account, no invitations), the Supabase organizations, the Google Cloud project "GDO Bot",
+Lovable, Railway and Anthropic hold nothing of his; he has no Samsara and no Jobber user. Fred then asked to put him
+back in Slack: his work account was already active again at about 16:20 ET (his second account stays deactivated).
+Every Slack token and webhook he could have seen stays replaced.
 
 Still open: `FOG_IMAP_APP_PASSWORD` and his Google account plus the bot's old OAuth grant on the staff mailbox (the
 Google Workspace admin is Yannick). Trello: he is on no board.
