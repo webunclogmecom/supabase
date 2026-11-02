@@ -5717,6 +5717,14 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   in `public.v_visit_stop_reference`, since `2026-10-13_2210`); `fn_compute_time_on_site` (the longest 150 m stay, window
   to 10:00 ET next morning) and `fn_fill_blank_time_on_site` (any truck) are fallbacks for what the stops do not give.
   `webhook-samsara` never writes visit times.
+  🛑 **Since `2026-11-02_1430` (duration re-check S1, Trello vpF5PLQj) the view keeps a completion stop only when it
+  ARRIVES inside the visit window**: 4 h before the visit date (00:00 ET) to 10:00 ET the next day, the same test as
+  `fn_time_on_site_samsara_candidates`. Before it, 8854 (dated 10-16, completed in the office on 10-19) took a 59-min
+  stop of 10-19 as its completion stop. Alarm **T1** (`fn_time_on_site_checks`) now has no upper age (it stopped
+  looking after 10 days, so a visit the nightly never fixed dropped out of it) and skips a visit with a current
+  `applied` or `proposed` row in `public.visit_time_on_site_corrections` (settled; "locked" = `review` OR such a row,
+  Fred's Q-E, 2026-11-02). T1 can never fire on a test client (it skips `fn_is_non_customer`), so a T1 fixture uses a
+  real visit inside a rolled-back transaction. Rollback `2026-11-02_rollback_time_on_site_s1_completion_window_and_t1.sql`.
   🛑 **Every time-on-site writer measures 150 m from OUR map point, and that misses trucks that park further away**
   (Fred, 2026-10-13, visit 6509: David parked 164 m from 214-MYK's point for 34 min, inside its Samsara Place, and the
   report said "only drove past"). The fix plan (outside the repos, it names clients):

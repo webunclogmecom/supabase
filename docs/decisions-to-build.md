@@ -313,7 +313,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Q-M (c): **there is no monthly sample**, so the T11 alarm and the monthly-sample doc are not built, and the message to Yan drops the "once a month" sentence.
 - Q-J (a): truck questions on visits filed with Miami-Dade and dated after 08-24 are settled before the next LWT filing; that date is not named yet.
 
-Still open: the band A cards (Wed 11-04).
+Still open: the band A cards (Wed 11-04). **Built so far:** S1 on 2026-11-02 at 14:12 ET (`2026-11-02_1430`): a completion stop counts only inside the visit window (3 rows left `v_visit_stop_reference`: 8018, 8053, 8854); T1 has no upper age and skips settled visits; the runbook's dry-run line. No visit written. Next: S2 (Tue 11-03), S3a (Wed 11-04), S3b (Thu 11-05).
 
 **Email / tank sensors**
 - 2026-10-14 email delivery: Admin Review `11-city-email.md:90` and DERM Tracker `06-features-and-routes.md` not updated; `derm_email_smoke.js` has no bcc option; nothing reminds anyone to read the city-open numbers around 2026-11-18 (gate for D5).

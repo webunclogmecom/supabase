@@ -117,6 +117,11 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    (`fn_fill_time_on_site_from_stops(true)`, `fn_compute_time_on_site(from, to, true)`,
    `fn_fill_blank_time_on_site(from, to, true)`, `fn_infer_visit_vehicle(from, to, true)`) and call the edge function
    `time-on-site-samsara-recheck` with `{from, to}`. Check any visit set to `reviewed_blank` during the outage.
+   **Dry run first, every time** (2026-11-02, duration re-check RC5 c; planned on 10-18 and never written):
+   - run each step dry: `false` instead of `true` above, and `{from, to, dry_run: true}` for the edge function;
+   - compare what it would change against `public.visit_time_on_site_corrections`;
+   - a visit with a current `applied` or `proposed` row there is settled and must not move;
+   - the writers skip such a visit by code from stage S3a (Wed 2026-11-04); until then, take those visits out by hand.
 6. GPS is not in the 2-hourly database backup: Samsara is the only other copy, so re-pull rather than restore.
 
 ## Known gaps (not built)
