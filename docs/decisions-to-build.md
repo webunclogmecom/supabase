@@ -38,6 +38,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   adds `permit_type` + lookup `permit_types`, a type filter on the 9 GDO-only readers that have none). Fred 2026-11-02:
   **dialog layout A**; **Field Portal shows every type, card retitled "Permits & Frequency"**; **route and service-due
   list show GDO first, else another type**; other county errors go to Diego and Serena in #new-app-issues first.
+  **BUILT 2026-11-02** (database 15:01 ET, Supabase `6c6dbf2f`: `2026-11-02_1800` / `_1810` / `_1820` / `_1830`; edge
+  rpa-derm-result v57, parse-gdo-permit v41, webhook-jobber v151; Client App published the same afternoon). Diego fixed the
+  six other addresses himself in the Client App (14:53 to 14:55 ET). Field Portal card title, the Slack GDO bot deploy (held
+  by the offboarding claim) and Fred's re-test still open.
 
 **Light / dark switch in the staff apps (2026-10-29, BUILT, canvas row G, https://claude.ai/artifact/3B8vciQtdNEStYhC4tQ556)**
 - Fred: *"maybe we should have a theme button of light and dark mode for the apps ... for now it could be like white

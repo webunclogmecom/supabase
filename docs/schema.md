@@ -166,22 +166,40 @@ Which **manhole(s)** a visit serviced. A visit can cover several manholes (one p
 >
 > **Edited in Admin Review** — `public.visit_manhole_options` (per visit: the client's manholes + `is_assigned`) + `public.set_visit_manholes(p_visit_id, p_location_ids[])` (validated replace-set; SECURITY DEFINER → anon needs only EXECUTE; rejects manholes not belonging to the visit's client; audit captures it). The human-tag that resolves multi-manhole attribution + feeds per-manhole DERM. Migration `2026-06-08f`.
 
-### `gdos` — 166 rows · DERM permits (one per permitted facility = one location)
+### `gdos` — 192 rows · EVERY permit a property holds, by type (GDO, CCN, PSO), since 2026-11-02
+
+🛑 **The table name stayed `gdos` and it now holds every permit type** (Fred, 2026-11-02: "one table for every permit";
+plan `docs/specs/2026-11-02-permits-one-table-plan.md`, migrations `2026-11-02_1800` / `_1810` / `_1820`). A DERM reader
+(filing bot, Stamp Studio, DERM sheets, DUMP, the Calendar's GDO line, the portal's GDO link) must stay GDO-only: either
+`permit_type = 'GDO'` or `gdo_number ~ '^GDO-[0-9]+$'`, which `trg_aa_permit_number_matches_type` keeps equivalent for
+every row that is not INACTIVE. Standing check `scripts/checks/permits_gdo_only.sql`. The name was kept because
+`client.get_client_activity` keys permit history on `table_name = 'gdos'` and the name is literal in the Client App,
+the Slack GDO bot, the pdf-service and the bot contract.
 
 | Column | Type | Notes |
 |---|---|---|
 | id | BIGSERIAL PK | |
 | client_id | BIGINT FK → clients (RESTRICT) | |
 | client_location_id | BIGINT FK → client_locations (SET NULL) | the location this GDO permits — **UNIQUE: 1 GDO per location** (2026-06-08); 108 linked, NULL until ingested |
-| gdo_number | TEXT | Miami-Dade GDO permit number |
-| location_label | TEXT | Free-text facility label (89% NULL; superseded by `client_locations.name`) |
+| gdo_number | TEXT | the permit number, whatever the type (`client.gdos` also exposes it as `permit_number`). UNIQUE per client |
+| permit_type | TEXT NOT NULL DEFAULT 'GDO' FK → permit_types(code) | 2026-11-02. 191 GDO, 1 PSO (row 141, 057-BAY) |
+| permit_effective | DATE | 2026-11-02, the date printed on the permit |
+| location_label | TEXT | the name on the permit ("issued to") |
 | property_id | BIGINT FK → properties (SET NULL) | |
 | permit_expiration | DATE | |
-| permit_document_path | TEXT | |
-| max_frequency_days | INTEGER | DERM-mandated max service interval |
-| status | TEXT | |
+| permit_document_path | TEXT | bucket `gdo-permits`; OPTIONAL for every type since 2026-11-02 (the 2026-09-22 CHECK was dropped). GDO at `gdo/<number>.pdf`, other types at `<type>/<date>-<random>.pdf`, stored unread by `parse-gdo-permit` |
+| max_frequency_days | INTEGER | the permit's maximum service interval |
+| status | TEXT | ACTIVE / EXPIRED / INACTIVE |
 | notes | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
+
+### `permit_types` — 3 rows · kinds of permit (2026-11-02)
+
+`code` TEXT PK (`GDO`, `CCN`, `PSO`), `name`, `issuing_authority` (Miami-Dade DERM, City of Boca Raton), `number_pattern`
+(GDO `^GDO-[0-9]+$`, others NULL: a CCN is "just a number"), `reads_pdf` (true only for GDO: `parse-gdo-permit` and the
+`gdo-permit-label` reader read only those PDFs), `status` ACTIVE / INACTIVE, timestamps. Audited; RLS on; no grant to anon or
+authenticated (the Client App reads `client.permit_types`). A new program (Fort Lauderdale, Hollywood, Broward County) is
+one row.
 
 ### `service_configs` — 202 rows · 3NF
 

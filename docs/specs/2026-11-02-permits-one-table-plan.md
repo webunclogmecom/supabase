@@ -1,6 +1,6 @@
 # Permits for every county and city: one table, the build plan (2026-11-02)
 
-**Status: plan, nothing built.** Fred answered section 8 on 2026-11-02 (layout A, Field Portal every type, route GDO
+**Status: BUILT 2026-11-02** (migrations applied 15:01 ET, `6c6dbf2f`; the rehearsals, controls and live consumer checks are in that commit and the Client App changelog). Was: plan. Fred answered section 8 on 2026-11-02 (layout A, Field Portal every type, route GDO
 first, county errors to Diego and Serena first) and said "yes go ahead, start tonight". Trello (Dev, Approved):
 [sWPaXFZO](https://trello.com/c/sWPaXFZO) City permits, [iiOp4kSp](https://trello.com/c/iiOp4kSp) Counties.
 Brainstorm and options: `2026-11-02-permits-model-brainstorm.md`. Consumer maps (read-only

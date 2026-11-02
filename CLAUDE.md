@@ -257,6 +257,25 @@ Spec `Building Apps/Picture Planner/docs/specs/2026-10-27-share-forms-and-forms-
   🛑 NOT `docs/runbooks/access-undo.md` section 3: its step 3b bans every sign-in with no top-level View, which is every
   Forms-only person.
 
+## 🛑 PERMITS: `public.gdos` HOLDS EVERY PERMIT TYPE; THE DERM READERS STAY GDO-ONLY (2026-11-02)
+
+Fred (Client App, Grove Kosher, Boca Raton): *"One table for every permit now ... the DERM sheets, the filing bot and the
+portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton) is just a number. Trello sWPaXFZO, plan
+`docs/specs/2026-11-02-permits-one-table-plan.md`, migrations `2026-11-02_1800` / `_1810` / `_1820`, rollback beside them.
+- `gdos.permit_type` (FK `public.permit_types.code`: GDO, CCN, PSO) and `gdos.permit_effective`. Names kept on purpose
+  (`client.get_client_activity` keys history on `table_name = 'gdos'`; the names are literal in apps, bots, pdf-service).
+- 🛑 **A reader that means "the Miami-Dade DERM permit" filters `permit_type = 'GDO'` or `gdo_number ~ '^GDO-[0-9]+$'`.**
+  The two are equal for every non-INACTIVE row because `trg_aa_permit_number_matches_type` refuses a GDO-looking number
+  on another type and a non-`GDO-n` number on a GDO. Never write a new DERM reader that filters only on `status`: before
+  `_1810` nine did, and 057-BAY's sewer permit (PSO-00025, row 141) showed as its GDO in the DERM Tracker, the compliance
+  board and the portal link. Standing check `scripts/checks/permits_gdo_only.sql` (run as owner; its control fails without
+  a non-GDO row).
+- Every-type readers: `client.gdos` (+ `client.permit_types`), `customer.permits` (Field Portal "Permits & Frequency"),
+  `ops.v_gdo_expiry`, `ops.v_client_call_policy`; `ops.v_route_today` / `ops.v_service_due` show the GDO first.
+- `parse-gdo-permit` reads only GDO PDFs; with another `permit_type` it stores the PDF unread at `<type>/<date>-<random>.pdf`.
+  `fn_gdo_permit_label_targets` keeps to `permit_types.reads_pdf`, so a CCN PDF never reaches the DERM prompt.
+- Boca Raton is Palm Beach since `2026-11-02_1830` (15 rows) and `webhook-jobber` v151 (`inferCountyFromCity`).
+
 ## 🛑 This repo is PUBLIC: no secrets, codes or client files in it (2026-10-05)
 
 - Never commit a password, token, connection string with a password, real lock box / gate / access code, or a
