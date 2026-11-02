@@ -35,8 +35,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   type, GDO included** (replaces the 2026-09-22 "no GDO number without its file" rule); **move all Boca Raton properties to
   Palm Beach** (and the sync rule) after checking what reads county; **CCN is just a number, no permit document**.
   Not built. Plan with checks: `docs/specs/2026-11-02-permits-one-table-plan.md` (keeps the names `gdos` / `gdo_number`,
-  adds `permit_type` + lookup `permit_types`, a type filter on the 9 GDO-only readers that have none). Dialog mockups
-  A / B / C sent; waiting on Fred's layout pick and the plan's section 8 questions.
+  adds `permit_type` + lookup `permit_types`, a type filter on the 9 GDO-only readers that have none). Fred 2026-11-02:
+  **dialog layout A**; **Field Portal shows every type, card retitled "Permits & Frequency"**; **route and service-due
+  list show GDO first, else another type**; other county errors go to Diego and Serena in #new-app-issues first.
 
 **Light / dark switch in the staff apps (2026-10-29, BUILT, canvas row G, https://claude.ai/artifact/3B8vciQtdNEStYhC4tQ556)**
 - Fred: *"maybe we should have a theme button of light and dark mode for the apps ... for now it could be like white

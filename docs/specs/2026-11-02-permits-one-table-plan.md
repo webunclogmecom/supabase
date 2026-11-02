@@ -1,7 +1,7 @@
 # Permits for every county and city: one table, the build plan (2026-11-02)
 
-**Status: plan, nothing built.** Waiting on Fred for the dialog layout (A / B / C, mockups sent 2026-11-02) and the
-four questions in section 8. Brainstorm and options: `2026-11-02-permits-model-brainstorm.md`. Consumer maps (read-only
+**Status: plan, nothing built.** Fred answered section 8 on 2026-11-02 (layout A, Field Portal every type, route GDO
+first, county errors to Diego and Serena first). Brainstorm and options: `2026-11-02-permits-model-brainstorm.md`. Consumer maps (read-only
 sweeps of the database, 10 live app bundles, every edge function, the pdf-service, both bots, scripts, workflows):
 summarised in section 3.
 
@@ -88,10 +88,16 @@ and `permit_effective`, no PDF requirement, refuses an unknown or INACTIVE type,
 `client.get_client_activity` (unchanged: name kept), `save-client-property` (label "permits"), `get-permit-doc`
 (unchanged).
 
-**Unclear, defaults proposed in section 8:** the Field Portal permits card (`customer.permits`, customer-facing), the
-visit report's permit block (`derm.get_visit_report`), `ops.v_route_today` / `ops.v_service_due` (driver and due-list
-permit number), `public.visit_manhole_options`, and the location seeding in `seed_visit_locations` / `webhook-jobber`
-(a location with any ACTIVE permit counts as served: kept, a permit is a permit).
+**Decided by Fred (section 8):**
+- Field Portal permits card (`customer.permits`, customer-facing, reached by anon through the whole-row
+  `customer.get_client_portal` / `get_work_order`): **every type**, card retitled **"Permits & Frequency"**. The view
+  gains `permit_type` and `type_name`; the hard-coded area "Grease Trap" goes; the frequency comparison and the
+  "compliant" chip are hidden for a permit with no maximum frequency (customer apps hide what we lack). The same rows
+  feed the visit report's permit block (`derm.get_visit_report`), so it follows. `customer.clients.gdo_permit_url`
+  stays GDO only (it is "the GDO permit link").
+- `ops.v_route_today` / `ops.v_service_due`: **GDO first, else another type** (`order by (permit_type = 'GDO') desc, id`).
+- Kept as they are, a permit is a permit: `public.visit_manhole_options` and the location seeding in
+  `seed_visit_locations` / `webhook-jobber` (a location with any ACTIVE permit counts as served).
 
 **PDF storage for other types.** `parse-gdo-permit` is the only uploader (the app has no INSERT policy on the bucket) and
 refuses anything that is not a DERM permit. It gets a store-only branch: for a type with `reads_pdf = false` it checks
@@ -123,6 +129,7 @@ applied outside ET business hours where it touches a view an app reads. WORKING-
 | 2 | `gdos.permit_type` + `permit_effective`, backfill (141 = PSO), FK, index, drop the document CHECK, the type trigger | counts: 191 GDO + 1 PSO; trigger refuses a CCN numbered `GDO-1`, a GDO numbered `12345`; INACTIVE id 29 still updates |
 | 3 | `permit_type = 'GDO'` on the 7 DB objects in the unguarded table | 057-BAY's PSO gone from each; every GDO row identical to step 0 |
 | 4 | `client.gdos` + `client.upsert_gdo_permit` (types, effective date, PDF optional, plain messages) | add / edit / remove a CCN on 112-YA as `authenticated` in a rolled-back probe; old RPC body as the control (must refuse a CCN without PDF) |
+| 4b | `customer.permits` (type columns, no "Grease Trap", no comparison without a maximum), `ops.v_route_today` / `ops.v_service_due` (GDO first) | anon portal JSON for 057-BAY and 112-YA read back key by key (only the intended new keys); a GDO client's route line unchanged |
 | 5 | Edge: `rpa-derm-result` (filter), `parse-gdo-permit` (store-only branch), `save-client-property` (label), `webhook-jobber` (Boca) | `scripts/probes/edge_deployed_body.js` with a control needle; `scripts/checks/rpa_derm_result_*.mjs` re-run |
 | 6 | Slack GDO bot filter; the two scripts' filter | bot "missing GDO" and "expiring" lists identical before and after for real clients |
 | 7 | County data move (15 rows) + `fn_admin_review_pending` arm | backup JSON first; the 11 AM post dry run lists the same visits, Boca under "Palm Beach" |
@@ -156,16 +163,13 @@ between blocks dropping the type column; the rollback refuses and says so rather
 `decisions-to-build.md` row (built + migrations), Client App `docs/08-changelog.md` + `CLAUDE.md` (permit types, PDF
 optional, City permits), DERM Tracker changelog (057-BAY's PSO no longer listed), the Slack bot README, memory.
 
-## 8. Decisions for Fred
+## 8. Decisions (Fred, 2026-11-02)
 
-1. **Dialog layout**: A, B or C (recommended C).
-2. **Field Portal (customers)**: show only GDO permits for now (recommended: the card says "GDO Permits", a CCN has no
-   frequency to compare, and 057-BAY's sewer permit is listed there today as if it were its GDO), or every type with the
-   card retitled "Permits & Frequency".
-3. **Driver route and the service-due list**: show the GDO number first and another type only when the client has no
-   GDO (recommended), or GDO only.
-4. **Other county errors found on the way** (not covered by "move Boca"): 144-LTG North Miami Beach is filed Broward
-   (it is Miami-Dade, so it would start being checked for a GDO and counted on the LWT report); 235-LOU West Palm Beach
-   is filed Broward; 9 live properties have no county (6 in Florida: Coral Springs, Dania Beach, Lauderdale-by-the-Sea,
-   Oakland Park, Palmetto Bay, North Bay Village; 3 outside it). Fix them in the same pass (recommended, one by one with
-   the effect stated), or leave them.
+1. **Dialog layout: A** (typed fields in a bordered card, two columns; the PDF drop area stays full size).
+2. **Field Portal: every type, card retitled "Permits & Frequency"** (section 3).
+3. **Driver route and service-due list: GDO first, else another type.**
+4. **Other county errors** (not covered by "move Boca"): Fred asked for a short message to Diego and Serena in
+   #new-app-issues first (drafted in his Slack 2026-11-02, not sent). The list: 144-LTG North Miami Beach filed Broward
+   (Miami-Dade: it would start being checked for a GDO and counted on the LWT report); 235-LOU West Palm Beach filed
+   Broward (Palm Beach); no county on 310-LOU, 357-LOU, 277-VSS, Flea Market Oakland Park (Broward), 289-PER and North
+   bay villa (Miami-Dade); 3 outside Florida left blank. Fixed only after they confirm, each with its effect stated.
