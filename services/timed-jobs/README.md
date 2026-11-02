@@ -25,7 +25,9 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
   `railway_timed_jobs_token`; a person creates it, the session's Railway login may not). Retry, catch-up, fallback and the guards on the jobs that use the data:
   `docs/reference/samsara-feeds-resilience.md`.
 - **"Deploy Crashed" email from Railway** = one cron RUN exited non-zero (the deployment itself stays COMPLETED; the
-  run is red in Cron Runs, times in CEST). Read that run's `sync_log` row before touching the deploy.
+  run is red in Cron Runs, times in CEST). Read that run's `sync_log` row before touching the deploy. A Samsara
+  run that failed after about 195 s with "gave no answer" is three timeouts in a row; the next good run refills the
+  gap by itself (2026-11-02, `docs/reference/samsara-feeds-resilience.md`, "When the alert comes" step 2).
 
 ## Services
 
@@ -44,11 +46,13 @@ run from the `Supabase` folder (works in PowerShell; values go to the Railway CL
 Give each service only the variables in its row.
 
 🛑 **Since 2026-10-22 (Railway breach rotation) Railway's `SUPABASE_SERVICE_ROLE_KEY` is NOT the legacy service-role
-JWT.** It is the Supabase secret key named "railway" (`sb_secret_`), kept in `Supabase/.env` as
-`SUPABASE_RAILWAY_SECRET_KEY`, so set it with
+JWT.** It is a Supabase secret key (`sb_secret_`) of its own: "railway" from 2026-10-22, and since 2026-11-01 (the
+offboarding rotation) "timed_jobs", used by these two services only ("railway" was split into timed_jobs,
+gdo_slack_bot and pdf_service, then deleted). `Supabase/.env` keeps the timed_jobs value under the old name
+`SUPABASE_RAILWAY_SECRET_KEY`, so the command is unchanged:
 `node services/timed-jobs/set-secrets.js <service> SUPABASE_SERVICE_ROLE_KEY=SUPABASE_RAILWAY_SECRET_KEY`.
-A plain `SUPABASE_SERVICE_ROLE_KEY` would copy the legacy key back. `SAMSARA_API_TOKEN` was replaced the same day.
-Record: `docs/audits/2026-10-22_railway_breach_rotation.md`.
+A plain `SUPABASE_SERVICE_ROLE_KEY` would copy the legacy key back. `SAMSARA_API_TOKEN` was replaced on 2026-10-22
+and again on 2026-11-02. Record: `docs/audits/2026-10-22_railway_breach_rotation.md` (section 10 for November).
 
 ## Rollback and fallback
 

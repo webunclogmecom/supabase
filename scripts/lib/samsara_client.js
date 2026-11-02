@@ -4,7 +4,9 @@
 //   await samsara.paged('/readings/...?...', { pauseMs })     -> every page's data[], in order
 // get(): 60 s timeout per request. Retries 429 (Retry-After, else 2 s), any 5xx, and a network error or timeout,
 // 3 attempts in all (5 s then 10 s back-off). Why: on 2026-10-13/14 one Samsara 504 on /readings/history failed
-// three tank-readings runs and Railway mailed "Deploy Crashed". Anything else, or the 3rd failure, throws.
+// three tank-readings runs and Railway mailed "Deploy Crashed". Anything else, or the 3rd failure, throws. A 3rd
+// network error or timeout throws "Samsara gave no answer on <path> after 3 attempts: ..." (2026-11-02: the bare
+// "The operation was aborted due to timeout" did not say whether Samsara or the database had stopped answering).
 // paged(): follows pagination.endCursor; past pageCap pages it THROWS, never returns a partial window (a partial
 // window would let a data-derived cursor move past the rest).
 // Check: scripts/lib/samsara_client.test.js (and both collectors' tests run through it).
@@ -18,7 +20,7 @@ function samsaraClient({ fetch, sleep, token, attempts = 3, timeoutMs = 60000 })
         if (!((r.status === 429 || r.status >= 500) && attempt < attempts)) body = await r.text();
       } catch (e) {
         if (attempt < attempts) { await sleep(5000 * attempt); continue; }
-        throw e;
+        throw new Error(`Samsara gave no answer on ${path.split('?')[0]} after ${attempts} attempts: ${e.message}`, { cause: e });
       }
       if (r.status === 429 && attempt < attempts) { await sleep((Number(r.headers.get('retry-after')) || 2) * 1000); continue; }
       if (r.status >= 500 && attempt < attempts) { await sleep(5000 * attempt); continue; }

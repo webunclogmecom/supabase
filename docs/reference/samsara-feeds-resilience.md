@@ -19,6 +19,9 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    429 / any 5xx / network error or timeout retried, 3 attempts (5 s then 10 s). A 4xx other than 429 is not retried.
    The GPS job's PostgREST calls have the same 60 s timeout (a hung socket used to block the service until
    run_logged's 30-minute kill, and Railway skips every run due while one is still running).
+   So a run that fails after about **195 s** (60 + 5 + 60 + 10 + 60) is three timeouts in a row. Since 2026-11-02 the
+   error names who stopped answering: `FATAL: Samsara gave no answer on <path> after 3 attempts: ...` or
+   `FATAL: PostgREST gave no answer on <path>: ...` (before, both read only "The operation was aborted due to timeout").
 2. **Every run is a restart.** Railway starts a new run every 5 minutes, and each one begins where the last good one
    stopped, so a failed run or an outage is refilled by the next good run with nothing lost:
    - GPS: from the newest stored GPS-only point minus 30 min (late points are picked up), plus a 48 h deep pass once a
@@ -105,7 +108,16 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
 1. Railway, UnclogMe Timed Jobs, the service named in the alert, Cron Runs: open the latest run's log.
    `sync_log` has the same run (`select * from sync_log where sync_source = 'railway_samsara_gps' order by id desc limit 5`).
 2. A Samsara error that repeats (401 = token, 5xx for long = Samsara down): nothing to do for 5xx, the runs catch up when
-   it is back. A code or config error: fix and push (both services redeploy on `scripts/sync/**`, `scripts/lib/**`).
+   it is back. The same for "Samsara gave no answer" (a run of about 195 s): Samsara, or the network between Railway and
+   Samsara, is not answering. Check that the next good run's `RUN_SUMMARY` `window_start` is before the last good run,
+   and that `fn_samsara_data_complete_through` reads `infinity` for both feeds again. A code or config error: fix and
+   push (both services redeploy on `scripts/sync/**`, `scripts/lib/**`).
+   **2026-11-02, the first time:** Railway mailed "Deploy Crashed" for samsara-gps at 09:58 ET. Both services failed
+   their 09:55 and 10:00 runs (sync_log 120125, 120126, 120134, 120135, each 195.5 s, stderr "The operation was aborted
+   due to timeout"), and the 10:05 runs were skipped because the 10:00 ones were still running. The database and
+   every pg_cron job were fine the whole time, so it was the Samsara calls. The 10:12 runs succeeded and refilled the
+   gap (GPS from 09:15 ET, 83 rows; readings from 09:20 ET, 69 rows). The outage was 17 minutes, under the watchdog's
+   20, so no health email went out and no restart was pressed. Nothing was lost and nothing was done by hand.
 3. Railway itself down or stuck: run the GitHub fallback workflow (step 4 above); repeat every hour or so until Railway
    is back, or just once when it is back (both catch up).
 4. A `gps_dropped_span` item: run the GPS fallback with `start_time` = the span's start (in the item) and end blank.

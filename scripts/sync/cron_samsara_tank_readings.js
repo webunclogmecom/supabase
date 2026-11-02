@@ -144,7 +144,8 @@ async function rest(path, { method = 'GET', body, prefer, profile } = {}) {
   const r = await io.fetch(process.env.SUPABASE_URL + '/rest/v1' + path, { method, signal: AbortSignal.timeout(60000),
     headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', 'X-App-Source': APP_SOURCE,
       ...(prefer && { Prefer: prefer }), ...(profile && { 'Accept-Profile': profile }) },
-    body: body && JSON.stringify(body) });
+    body: body && JSON.stringify(body) })
+    .catch(e => { throw new Error(`PostgREST gave no answer on ${path.split('?')[0]}: ${e.message}`, { cause: e }); });
   return { status: r.status, json: await r.json().catch(() => null) };
 }
 async function restOk(path, opts) {

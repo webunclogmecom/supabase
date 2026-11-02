@@ -42,7 +42,7 @@ const rejects = async (p, re, m) => { await assert.rejects(p, re, m); n++; };
   eq([t.calls.length, t.sleeps], [3, [5000, 10000]], 'back-off 5 s then 10 s');
 
   t = make([new Error('timeout'), new Error('timeout'), new Error('timeout')]);
-  await rejects(t.c.get('/x'), /timeout/, 'a network error on every attempt throws');
+  await rejects(t.c.get('/x?secret=1'), /^Error: Samsara gave no answer on \/x after 3 attempts: timeout$/, 'a network error on every attempt throws, naming the call (not its query)');
   eq(t.calls.length, 3, 'three attempts');
 
   t = make([() => json(404, { m: 'nope' })]);

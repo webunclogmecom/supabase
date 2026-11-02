@@ -39,7 +39,8 @@ async function rest(path, { method = 'GET', body, prefer } = {}) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const r = await io.fetch(process.env.SUPABASE_URL + '/rest/v1' + path, { method, signal: AbortSignal.timeout(60000),
     headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', ...(prefer && { Prefer: prefer }) },
-    body: body && JSON.stringify(body) });
+    body: body && JSON.stringify(body) })
+    .catch(e => { throw new Error(`PostgREST gave no answer on ${path.split('?')[0]}: ${e.message}`, { cause: e }); });
   return { status: r.status, json: await r.json().catch(() => null) };
 }
 async function restOk(path, opts) {
