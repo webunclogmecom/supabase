@@ -33,6 +33,7 @@ import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900
 // ============================================================================
 
 const ALLOW_HEADERS_FALLBACK = 'authorization, x-client-info, apikey, content-type, x-app-source'
+const MAX_STORE_ONLY_BYTES = 15 * 1024 * 1024   // a non-GDO permit PDF stored as it is (2026-11-02)
 
 function corsHeaders(req: Request): Record<string, string> {
   // Echo the requested headers rather than hardcoding a list: a hardcoded list
@@ -228,6 +229,7 @@ Deno.serve(async (req: Request) => {
     const ct = req.headers.get('content-type') ?? ''
     let pdf: Uint8Array | null = null
     let filename = 'upload.pdf'
+    let permitType = 'GDO'
 
     if (ct.includes('multipart/form-data')) {
       const form = await req.formData()
@@ -236,6 +238,8 @@ Deno.serve(async (req: Request) => {
         filename = f.name || filename
         pdf = new Uint8Array(await f.arrayBuffer())
       }
+      const t = form.get('permit_type')
+      if (typeof t === 'string' && t.trim()) permitType = t.trim().toUpperCase()
     } else {
       const body = await req.json().catch(() => ({}))
       if (typeof body.pdf_base64 === 'string') {
@@ -244,6 +248,10 @@ Deno.serve(async (req: Request) => {
         for (let i = 0; i < bin.length; i++) pdf[i] = bin.charCodeAt(i)
       }
       if (typeof body.filename === 'string') filename = body.filename
+      if (typeof body.permit_type === 'string' && body.permit_type.trim()) permitType = body.permit_type.trim().toUpperCase()
+    }
+    if (!/^[A-Z0-9]{2,10}$/.test(permitType)) {
+      return json({ error: 'bad_permit_type', message: 'Pick the permit type before attaching its PDF.' }, 400, req)
     }
 
     if (!pdf || pdf.length === 0) {
@@ -254,6 +262,30 @@ Deno.serve(async (req: Request) => {
         ok: false, isDermPermit: false, reason: 'not_a_pdf',
         message: 'That file is not a PDF. Upload the DERM operating permit PDF.',
       }, 200, req)
+    }
+
+    // 2026-11-02 (permits for every county, Fred: "the PDF is optional" and a CCN is "just a number"): a permit
+    // that is not a Miami-Dade GDO is stored as it is, never read. Its fields are typed in the Client App. The
+    // gdo-permit-label reader skips it too (public.fn_gdo_permit_label_targets keeps to permit_types.reads_pdf).
+    if (permitType !== 'GDO') {
+      if (pdf.length > MAX_STORE_ONLY_BYTES) {
+        return json({ ok: false, reason: 'too_large', message: 'That PDF is over 15 MB. Attach a smaller copy.' }, 200, req)
+      }
+      const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      const url = Deno.env.get('SUPABASE_URL') ?? ''
+      // A fresh name every time (upsert false): an upload never replaces another permit's document.
+      const path = `${permitType.toLowerCase()}/${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.pdf`
+      const r = await fetch(`${url}/storage/v1/object/gdo-permits/${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${svc}`, apikey: svc, 'Content-Type': 'application/pdf', 'x-upsert': 'false' },
+        body: new Blob([pdf], { type: 'application/pdf' }),
+      })
+      if (!r.ok) {
+        console.error('parse-gdo-permit store-only', r.status, (await r.text()).slice(0, 200))
+        return json({ ok: false, reason: 'store_failed', message: 'The PDF could not be stored. Try again.' }, 200, req)
+      }
+      return json({ ok: true, isDermPermit: false, read: false, filename, permit_type: permitType,
+        fields: { permit_document_path: path }, stored: true, store_note: null }, 200, req)
     }
 
     const parsed = await parsePermit(pdf)

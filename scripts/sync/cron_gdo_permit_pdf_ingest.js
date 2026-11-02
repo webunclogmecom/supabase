@@ -108,7 +108,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   console.log(`Mode: ${APPLY ? 'APPLY (download+upload+write)' : 'DRY-RUN (resolve URLs only)'}`);
 
   const urlMap = loadGdoUrlMap();
-  const gdos = (await pg(`SELECT id, gdo_number, permit_document_path FROM public.gdos WHERE status='ACTIVE' AND permit_document_path IS NULL ORDER BY gdo_number`)).body;
+  const gdos = (await pg(`SELECT id, gdo_number, permit_document_path FROM public.gdos WHERE status='ACTIVE' AND permit_type='GDO' AND permit_document_path IS NULL ORDER BY gdo_number /* 2026-11-02: DERM lookups are for GDO permits only */`)).body;
   console.log(`ACTIVE GDOs missing a permit_document_path: ${gdos.length}\n`);
 
   let fromJson = 0, fromDerm = 0, noDoc = 0, uploaded = 0, errors = 0;

@@ -601,6 +601,7 @@ Deno.serve(async (req: Request) => {
             .select('id')
             .eq('id', claimed)
             .eq('client_id', visit.client_id)
+            .eq('permit_type', 'GDO')   // 2026-11-02: a Miami-Dade filing binds only to a GDO permit (never a CCN/PSO)
             .limit(1)
           if (oErr) {
             console.error(`permit ownership check failed for gdo_id ${claimed}, falling back to inference:`, oErr.message)
@@ -635,6 +636,7 @@ Deno.serve(async (req: Request) => {
           .from('gdos')
           .select('id, gdo_number')
           .eq('client_id', visit.client_id)
+          .eq('permit_type', 'GDO')   // 2026-11-02: CCN 12345 and GDO-12345 share a permitKey; only the GDO counts
         if (cErr) console.error(`client permit lookup failed for visit ${visitId}:`, cErr.message)
         hits = (cg ?? [])
           .filter((g: { id: number, gdo_number: string | null }) => permitKey(String(g.gdo_number ?? '')) === key)

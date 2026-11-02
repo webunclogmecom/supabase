@@ -55,10 +55,12 @@ function inferCountyFromCity(city: string | null | undefined): string | null {
     'hollywood','hallandale beach','fort lauderdale','pompano beach',
     'pembroke pines','margate',
   ])
-  // Boca Raton is geographically Palm Beach but ops classifies as Broward.
-  const BROWARD_BY_CONVENTION = new Set(['boca raton'])
+  // 2026-11-02, Fred: "Move all Boca Raton to Palm Beach". Boca Raton used to be filed Broward "by convention";
+  // it is in Palm Beach County, and the City of Boca Raton issues its own permit (CCN). Trello iiOp4kSp.
+  const PALM_BEACH = new Set(['boca raton', 'delray beach', 'jupiter', 'west palm beach'])
   if (DADE.has(c)) return 'Dade'
-  if (BROWARD.has(c) || BROWARD_BY_CONVENTION.has(c)) return 'Broward'
+  if (BROWARD.has(c)) return 'Broward'
+  if (PALM_BEACH.has(c)) return 'Palm Beach'
   return null
 }
 

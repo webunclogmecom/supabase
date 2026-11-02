@@ -28,7 +28,7 @@ const digits = s => { const m = String(s || '').match(/\d+/); return m ? parseIn
 (async () => {
   const rows = await q(`select id, gdo_number, status, permit_expiration::text as exp,
                                max_frequency_days as freq, permit_document_path
-                        from public.gdos where permit_document_path is not null
+                        from public.gdos where permit_document_path is not null and permit_type = 'GDO' /* 2026-11-02: only DERM PDFs are parsed */
                         order by gdo_number`);
 
   const rec = [];

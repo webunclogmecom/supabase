@@ -1,7 +1,9 @@
 # Permits for every county and city: one table, the build plan (2026-11-02)
 
 **Status: plan, nothing built.** Fred answered section 8 on 2026-11-02 (layout A, Field Portal every type, route GDO
-first, county errors to Diego and Serena first). Brainstorm and options: `2026-11-02-permits-model-brainstorm.md`. Consumer maps (read-only
+first, county errors to Diego and Serena first) and said "yes go ahead, start tonight". Trello (Dev, Approved):
+[sWPaXFZO](https://trello.com/c/sWPaXFZO) City permits, [iiOp4kSp](https://trello.com/c/iiOp4kSp) Counties.
+Brainstorm and options: `2026-11-02-permits-model-brainstorm.md`. Consumer maps (read-only
 sweeps of the database, 10 live app bundles, every edge function, the pdf-service, both bots, scripts, workflows):
 summarised in section 3.
 
@@ -115,7 +117,8 @@ nothing, and returns the path. The label reader skips it through the targets fil
     with "Palm Beach" picked lands Palm Beach today. `inferCountyFromCity` still decides for properties created in
     Jobber and for "Not set", so this step is still needed. No conflict: `create-client` does not call it.
 - `public.fn_admin_review_pending` (11 AM Slack): groups `county = 'Broward'` as "Broward" and everything else by city,
-  so Boca visits would move to a "Boca Raton" heading. Default: group Palm Beach as "Palm Beach" (one CASE arm).
+  so Boca visits move to their city heading. Left as it is: that is Diego's 2026-10-29 rule ("every Broward client is
+  Broward; anywhere else, the city that gets the email"), and Boca Raton is the city that issues the CCN.
 - Same behaviour, nothing to do: dump routing and Homestead hiding (`fn_dump_county_bucket` already folds Palm Beach
   into BROWARD), LWT scope (`county = 'Dade'`), the DERM queue. The FDEP sheet's County field will print "Palm Beach",
   which is correct.
@@ -136,7 +139,7 @@ applied outside ET business hours where it touches a view an app reads. WORKING-
 | 4b | `customer.permits` (type columns, no "Grease Trap", no comparison without a maximum), `ops.v_route_today` / `ops.v_service_due` (GDO first) | anon portal JSON for 057-BAY and 112-YA read back key by key (only the intended new keys); a GDO client's route line unchanged |
 | 5 | Edge: `rpa-derm-result` (filter), `parse-gdo-permit` (store-only branch), `save-client-property` (label), `webhook-jobber` (Boca) | `scripts/probes/edge_deployed_body.js` with a control needle; `scripts/checks/rpa_derm_result_*.mjs` re-run |
 | 6 | Slack GDO bot filter; the two scripts' filter | bot "missing GDO" and "expiring" lists identical before and after for real clients |
-| 7 | County data move (15 rows) + `fn_admin_review_pending` arm | backup JSON first; the 11 AM post dry run lists the same visits, Boca under "Palm Beach" |
+| 7 | County data move (15 rows) | backup JSON first; `fn_admin_review_pending()` lists the same visits before and after, Boca under its city |
 | 8 | Client App (Lovable), the layout Fred picks | section 5 below |
 | 9 | Standing check `scripts/checks/permits_gdo_only.sql` | must fail on the step-0 bodies (control), pass after |
 
