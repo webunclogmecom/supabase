@@ -25,6 +25,17 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Permits for every county and city: one permits table, types GDO / CCN / PSO (2026-11-02, Client App, Grove Kosher Boca Raton)**
+- Fred: rename the property section **City Permits**; empty note *"File the permits issued by <county>"*; Add permit without
+  the Property step, order **1. Nickname, 2. Permit PDF**, plus a **File manually** checkbox with typed fields. Brainstorm
+  `docs/specs/2026-11-02-permits-model-brainstorm.md` (7b6644e3).
+- Fred's answers: **one table for every permit now** (turn `public.gdos` into a general permits table with a type, rebuild
+  the 16 views, check the 16 functions and 6 triggers so the DERM sheets, the filing bot and the portal still see only
+  GDO; *"keep in mind on what services, api, bots, cron jobs, etc fetches data from that"*); **the PDF is optional for every
+  type, GDO included** (replaces the 2026-09-22 "no GDO number without its file" rule); **move all Boca Raton properties to
+  Palm Beach** (and the sync rule) after checking what reads county; **CCN is just a number, no permit document**.
+  Not built: consumer map in progress, then a written plan with checks, and mockups of the Client App section and dialog.
+
 **Light / dark switch in the staff apps (2026-10-29, BUILT, canvas row G, https://claude.ai/artifact/3B8vciQtdNEStYhC4tQ556)**
 - Fred: *"maybe we should have a theme button of light and dark mode for the apps ... for now it could be like white
   halloween and the dark halloween (which is the current we have)"*. Mockups G1 to G5: a two-part pill next to Sign out
