@@ -118,6 +118,8 @@ one `public.sync_log` row per run) store the Samsara data everything else is bui
    every pg_cron job were fine the whole time, so it was the Samsara calls. The 10:12 runs succeeded and refilled the
    gap (GPS from 09:15 ET, 83 rows; readings from 09:20 ET, 69 rows). The outage was 17 minutes, under the watchdog's
    20, so no health email went out and no restart was pressed. Nothing was lost and nothing was done by hand.
+   The errors were then made to name the call (`34b0f7b2`; first runs on it 15:25 and 15:30 ET, all success). Trello
+   Dev `9PYL5xg7`, in Testing / QA since 2026-11-02 with every item ticked.
 3. Railway itself down or stuck: run the GitHub fallback workflow (step 4 above); repeat every hour or so until Railway
    is back, or just once when it is back (both catch up).
 4. A `gps_dropped_span` item: run the GPS fallback with `start_time` = the span's start (in the item) and end blank.
