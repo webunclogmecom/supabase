@@ -118,7 +118,7 @@ webhook_tokens                — system/ops tables
 | address / city / state / zip / country | TEXT | |
 | is_billing / is_primary | BOOLEAN | |
 | zone | TEXT | Service zone |
-| county | TEXT | Miami-Dade / Broward / Palm Beach |
+| county | TEXT | `Dade` / `Broward` / `Palm Beach` (never `Miami-Dade`: that is `disposal_facilities.county`); NULL = not set. Writers: `webhook-jobber` `inferCountyFromCity` on INSERT only (a city list; NULL outside it); `create-client` (v54, 2026-11-02) the New Client form's County pick, after the import, on the new client's rows only, never for "Not set"; `client.update_property_operational` (Edit property) |
 | latitude / longitude | NUMERIC | |
 | geofence_radius_meters | NUMERIC | |
 | geofence_type | TEXT | `circle`, `polygon` |

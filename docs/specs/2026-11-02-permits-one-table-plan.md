@@ -110,6 +110,10 @@ nothing, and returns the path. The label reader skips it through the targets fil
   only on trap size and lock box), so the write stays in the DB.
 - `webhook-jobber` `inferCountyFromCity`: drop `BROWARD_BY_CONVENTION`, map `boca raton` to `Palm Beach`, or every new
   Boca property lands Broward again.
+  - Already shipped beside it (2026-11-02, `create-client` v54, a separate fix): a County picked in the New Client form
+    (Calendar or Client App) is now written onto the new property after the import, so a Boca client created there
+    with "Palm Beach" picked lands Palm Beach today. `inferCountyFromCity` still decides for properties created in
+    Jobber and for "Not set", so this step is still needed. No conflict: `create-client` does not call it.
 - `public.fn_admin_review_pending` (11 AM Slack): groups `county = 'Broward'` as "Broward" and everything else by city,
   so Boca visits would move to a "Boca Raton" heading. Default: group Palm Beach as "Palm Beach" (one CASE arm).
 - Same behaviour, nothing to do: dump routing and Homestead hiding (`fn_dump_county_bucket` already folds Palm Beach

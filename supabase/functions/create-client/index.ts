@@ -43,6 +43,8 @@ const GQL_VERSION = "2026-04-16";
 // CustomFieldConfigurationText "Client Code", appliesTo ALL_CLIENTS. Account-stable.
 const CODE_CF_GID = "Z2lkOi8vSm9iYmVyL0N1c3RvbUZpZWxkQ29uZmlndXJhdGlvblRleHQvMzgyNTkyNw==";
 const RESERVED_FLOOR = 700; // 700+ is the vanity band (777-YA). Never auto-assign from it.
+// properties.county vocabulary ('Dade', never 'Miami-Dade'): the three the forms' County dropdown offers.
+const COUNTIES = ["Dade", "Broward", "Palm Beach"];
 
 const db = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -344,8 +346,8 @@ const cfCode = (c: any): string | null => {
 // act on is decoration. propose_only now calls this too, so the form surfaces it
 // while the user is still typing.
 async function computeWarnings(
-  { city, postalCode, email_in, code, supplied }:
-  { city: string; postalCode: string; email_in: string; code: string; supplied: string },
+  { city, postalCode, email_in, code, supplied, county }:
+  { city: string; postalCode: string; email_in: string; code: string; supplied: string; county: string | null },
 ): Promise<{ field: string; message: string }[]> {
   const warnings: { field: string; message: string }[] = [];
   if (!city && !postalCode && !email_in && !code) return warnings;
@@ -365,18 +367,21 @@ async function computeWarnings(
   //    does not know Davie, so a NEW Davie property is still created NULL. The
   //    operative question is "does the importer RESOLVE this city?", and the
   //    observable proxy for that is whether any property in the city was left NULL.
-  if (city) {
+  //    Since 2026-11-02 a County picked in the form is written onto the property, so there is
+  //    nothing to warn about once one is picked.
+  if (city && !county) {
   const { data: cityRows } = await db.from("properties").select("county").ilike("city", city);
   const known = (cityRows ?? []).map((r: any) => r.county).filter(Boolean);
   const anyNull = (cityRows ?? []).some((r: any) => !r.county);
   if (!cityRows || cityRows.length === 0) {
     warnings.push({ field: "city", message:
-      `We have no property in "${city}" yet, so its county will probably be left blank. ` +
-      `County drives DERM routing; set it once the client exists.` });
+      `We have no property in "${city}" yet, so its county will probably be left blank unless you pick one ` +
+      `in the County field. County drives DERM routing.` });
   } else if (anyNull) {
     warnings.push({ field: "city", message:
-      `Our importer does not recognise "${city}", so this property will very likely be created with a blank county` +
-      (known.length ? `. Existing records put ${city} in ${[...new Set(known)].join("/")}, so set that afterwards.` : `. Set it once the client exists.`) });
+      `Our importer does not recognise "${city}", so this property will very likely be created with a blank county ` +
+      `unless you pick one in the County field` +
+      (known.length ? `. Existing records put ${city} in ${[...new Set(known)].join("/")}.` : `.`) });
   }
 
   }
@@ -466,6 +471,7 @@ Deno.serve(async (req) => {
         email_in: norm(body?.email),
         code: norm(body?.client_code).toUpperCase(),
         supplied: norm(body?.client_code).toUpperCase(),
+        county: norm(body?.county) || null,
       }),
     });
   }
@@ -503,6 +509,13 @@ Deno.serve(async (req) => {
 
   const email_in = norm(body?.email);
   const phone_in = norm(body?.phone);
+
+  // The County the person picked. Both New Client forms (Calendar and Client App) send it, null for
+  // "Not set". Checked here, before anything touches Jobber; written at the end (see below).
+  const county = norm(body?.county) || null;
+  if (county && !COUNTIES.includes(county)) {
+    return fail("bad_request", `County must be Dade, Broward or Palm Beach. Got "${county}".`, { field: "county" });
+  }
 
   // ---- client code: proposal, shape, uniqueness ----------------------------
   const proposal = await proposeCode(name);
@@ -675,7 +688,7 @@ Deno.serve(async (req) => {
     possible_duplicate: (dbDupes?.length ?? 0) > 0 || jobberDupes.length > 0,
   };
 
-  const warnings = await computeWarnings({ city, postalCode, email_in, code, supplied });
+  const warnings = await computeWarnings({ city, postalCode, email_in, code, supplied, county });
 
   if (dryRun) {
     return done({
@@ -932,6 +945,27 @@ Deno.serve(async (req) => {
     .update({ job_step: jobStep, job_id: jobId })
     .eq("idempotency_key", idem);
 
+  // ---- the County the person picked (2026-11-02) -----------------------------
+  // Both New Client forms have sent `county` since 2026-08-21 and nothing read it, so the only county
+  // a new property got was webhook-jobber's guess from the city (inferCountyFromCity, on INSERT only),
+  // NULL for any city outside its list (357-SLL, Lauderdale-by-the-Sea, 2026-10-26).
+  // Only this new client's rows: this request created them, so the only county they can carry is that
+  // guess, which the person's pick outranks. "Not set" (null) changes nothing. The row is the address
+  // the pick was made for: the service property in client_address mode, the client's own (billing)
+  // address in separate/none mode, never a property at a different address.
+  // 🛑 Written HERE, after the job step, on purpose: a real Jobber PROPERTY_CREATE that won the insert
+  //    can land its insert-time guess just after our replay returns; by now seconds have passed.
+  // ponytail: a webhook stalled longer than the whole job step would still win; add a guard in
+  //    webhook-jobber's insert branch if that is ever seen.
+  let countyAppliedTo: number[] = [];
+  if (county) {
+    const { data: countyRows, error: countyErr } = await db.from("properties").update({ county })
+      .eq("client_id", clientId).eq("is_billing", property_mode !== "client_address").is("deleted_at", null)
+      .select("id");
+    if (countyErr) console.error(`create-client: county ${county} not applied to client ${clientId}: ${countyErr.message}`);
+    countyAppliedTo = (countyRows ?? []).map((r: any) => Number(r.id));
+  }
+
   // ---- report what LANDED, not what we intended ----------------------------
   // 🛑 THIS RETURNED `client_code: code` -- the value we ASKED for, never re-read.
   // handleClient (webhook-jobber:426) deliberately DROPS the code and imports the
@@ -965,6 +999,8 @@ Deno.serve(async (req) => {
     // The service property (never the billing twin) the client was created with, or null when
     // there is none. The New Client dialog uses it to offer the site-survey intake right away.
     property_id: servicePropertyId,
+    // What the County pick did: an empty list with a pick means it landed nowhere.
+    county: { picked: county, applied_to: countyAppliedTo },
     // The caller needs ONE boolean it can act on. A client with no Service Call job cannot be
     // dispatched from the Calendar, and that is invisible from client_code alone.
     schedulable: jobStep === "created" || jobStep === "existing",
