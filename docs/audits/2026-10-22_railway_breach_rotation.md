@@ -288,12 +288,18 @@ local file that a script read, tested against the vendor, set, and deleted:
 | 11 | GDO Slack app `SLACK_BOT_TOKEN` | old token `auth.revoke`, app reinstalled; both set on unclogme-gdo-bot in one redeploy (13:11) | old token `account_inactive`; bot log "Bolt app is running!"; bot offline about 12:19 to 13:11 ET (waiting for the Copy click). The reinstall took it out of #gdo-permit again: added back 13:35 |
 | 12 | Report bot `SLACK_WEBHOOK_URL` | Slack app "GDO Online Report": all its tokens revoked (both hooks and an unused bot token), new #apps-notifications hook set (13:30) | old hook 404 `no_service`, new one 400 `invalid_payload`; neither the old bot token nor the #new-app-issues hook was found in any Railway variable, edge secret, vault secret or local `.env` (274 values compared by fingerprint) |
 
-Closed 2026-11-02: his Slack account (deactivated 13:38; his second account already was), Lovable (members are Fred
-and Yan only). Neither Slack app ever had him as a collaborator.
+| 13 | `ANTHROPIC_API_KEY` (GDO Slack bot) | new key "gdo-slack-bot-2026-11-02", workspace "GDO Lookup - Dev", not linked to a person, no expiry (14:05) | models list 200; "gdo-slack-bot-railway-2026-10-22" deleted, answers 401; the Anthropic org has one member (Fred) |
+| 14 | `GOOGLE_PLACES_API_KEY` (GDO Slack bot) | new key "GDO bot Places 2026-11-02" in the Google Cloud project "GDO Bot", Places API (New) only (14:21) | Places 200; the old "Maps Platform API Key" deleted, answers 400 `INVALID_ARGUMENT` |
 
-Still to replace: `ANTHROPIC_API_KEY`, `GOOGLE_PLACES_API_KEY` (each needs Fred signed in to the console), and
-`FOG_IMAP_APP_PASSWORD` (the mailbox owner). Still to close (a person): his Google account, LastPass shares, and the
-bot's old OAuth grant on the staff mailbox. Trello: he is on no board.
+All four GDO Slack bot keys are Microservices SHARED variables and the bot holds `${{shared.NAME}}` (the section 3
+model). The first rotation script set literals on the service and left the dead values in the shared variables; that
+was put back the same day, so shared and service agree again.
+
+Closed 2026-11-02: his Slack account (deactivated 13:38; his second account already was), Lovable (members are Fred
+and Yan only), Anthropic (Fred only), LastPass (no shared folders). Neither Slack app ever had him as a collaborator.
+
+Still open: `FOG_IMAP_APP_PASSWORD` and his Google account plus the bot's old OAuth grant on the staff mailbox (the
+Google Workspace admin is Yannick). Trello: he is on no board.
 
 Log markers for section 7 (not secrets): `timed_jobs` = hash prefix `2m8-2gJMNv`; "railway" (`QrqXLDgh4I`) no longer
 exists. `Supabase/.env`: `SUPABASE_RAILWAY_SECRET_KEY` now holds the `timed_jobs` key, so the `set-secrets.js`
