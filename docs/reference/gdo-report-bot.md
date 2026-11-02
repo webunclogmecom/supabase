@@ -69,6 +69,12 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   `rpa-derm-queue?mode=dryrun` calls on 2026-10-18 and 2026-10-20 with the bot's own HTTP client, most likely a local
   copy of this bot (inferred, not verified). Such a copy also needs the two passwords above, which is one more reason
   to rotate them. The old key now answers 401.
+- **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
+  app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
+  now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
+  **#apps-notifications** (fingerprint `cf81d9445c`) was set from Fred's Copy click, redeployed 13:30 ET while the
+  bot was idle, health ok. The app's only collaborator is Fred. Record: `docs/audits/2026-10-22_railway_breach_rotation.md`
+  section 10.
 - **One replica, one worker.** A second replica would break the double-filing guard silently.
 - **No Railway cron.** Three threads inside `server.py` sleep first, then run:
   - **poll:** hourly, timed from the last restart (since 2026-10-20 12:54 ET, about :54 each hour);
