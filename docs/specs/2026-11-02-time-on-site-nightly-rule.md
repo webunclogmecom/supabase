@@ -10,7 +10,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | S1 | completion stop only inside the visit window; alarm T1 without an upper age | BUILT 2026-11-02 (`2026-11-02_1430`, 1b6d14ca) |
 | S2 | band B (visits dated 10-08 to 10-17, plus 8854) closed in the ledger | BUILT 2026-11-03 (`2026-11-03_1300`, e815caa1) |
 | **S3a** | **the lock in the five writers, and the reopen rule (sections 3 to 6)** | **BUILT 2026-11-03 12:28 ET (`2026-11-03_1330`), a day early on Fred's "go ahead with S3a now"; every rehearsal and control below passed** |
-| S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | Thu 11-05 |
+| S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | part 1 BUILT 2026-11-03 12:45 ET (`2026-11-03_1500`): the override table with Fred's 5 Q8 rows, the ledger stage CHECK (`nightly`, `person`), Viktor's door (RC6 + RC8). The v15 code, its read and save functions and the close-out are built and checked first, then deployed Thu 11-05 (Fred: "Build today, deploy Thu") |
 | S4 | band A: Fred's cards only | Fri 11-06 |
 | S5 | the switch on, after Fred reads the comparison | Wed 11-11 |
 | S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | 11-13 / 11-16 / 11-30 |

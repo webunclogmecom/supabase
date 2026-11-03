@@ -5966,6 +5966,14 @@ ordered him to do it ... saved in the Activity History of that visit."*
   also in `Supabase/.env`) -> `public.viktor_set_visit_truck(visit, truck, requested_by, reason, dry_run)`. Every rule
   is in the function: live COMPLETED visit only, ACTIVE truck by name, requester and reason required, `vehicle_id`
   and nothing else (not in the Jobber push list), then time on site measured. Refusals are plain sentences (ok=false).
+  🛑 **Since `2026-11-03_1500` (re-check S3b, RC6 / RC8):**
+  - The door measures the NAMED truck only (the stop fill and the 150 m measure). It no longer runs the any-truck fill:
+    right after a person names the truck, another truck's time is the wrong answer by definition.
+  - A locked time (`fn_time_on_site_is_locked`, since S3a) is never re-measured by the door. The reply now says so:
+    "Time on site stays N min: it is a settled value, so a truck change does not re-measure it." Before, the kept
+    value read as a fresh measure.
+  - A visit of the last 10 days adds "The nightly Samsara check can still correct it."
+  - A truck change on a visit with an `applied` ledger row fires T8, by design.
 - **Attribution is set INSIDE the function** (`request.headers` for the write: `x-app-source: viktor`,
   `x-actor-name`, `x-change-reason`), so a caller cannot leave it out. `audit.log_change` stores the reason as
   `request_context.change_reason`; `get_record_history` shows `Viktor, asked by <name>: "<reason>"`.

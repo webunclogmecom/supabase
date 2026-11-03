@@ -36,9 +36,18 @@ Reply: `{ ok, changed, message, ... }`; Viktor posts `message` as it is.
 - Attribution (`x-app-source: viktor`, `x-actor-name`, `x-change-reason`) is set inside the function for the write and
   put back right after, so a caller cannot leave it out and the time-on-site recompute is not labelled as Viktor's.
 - Right after the change it relinks the stops (`fn_link_visit_vehicle_stops`, under the hourly refresh's lock), then
-  runs `fn_fill_time_on_site_from_stops`, `fn_compute_time_on_site` and `fn_fill_blank_time_on_site` for that date
-  (they never clear a value; 2026-10-13_2210), and says the time on site, or that the truck's GPS shows no stop near
-  the property when the visit was marked complete, nor a stay within 150 m of it that day.
+  runs `fn_fill_time_on_site_from_stops` and `fn_compute_time_on_site` for that date (they never clear a value;
+  2026-10-13_2210), and says the time on site, or that the truck's GPS shows no stop near the property when the visit
+  was marked complete, nor a stay within 150 m of it that day.
+- **Since `2026-11-03_1500` (duration re-check S3b):**
+  - **No any-truck fill.** `fn_fill_blank_time_on_site` is no longer called (RC6). Right after a person names the
+    truck, another truck's time is the wrong answer by definition.
+  - **A settled time is said as settled.** A locked time (`fn_time_on_site_is_locked`: a reviewed label or a settled
+    row in the corrections record) is never re-measured by a truck change (S3a). The reply says "Time on site stays N
+    min: it is a settled value, so a truck change does not re-measure it." (RC8) Before, it read as a fresh measure.
+  - **Recent visits.** A visit of the last 10 days adds "The nightly Samsara check can still correct it."
+  - **Rehearsed** on the real path as service_role, rolled back: a locked visit, a recent unlocked one and an older
+    unlocked one each gave their sentence, and none used another truck's time.
 - 🛑 Widening Viktor's reach (another field, another table, a visit that is not completed) is Fred's decision. Extend
   this function and its VERIFY; never add a second Viktor write path.
 
