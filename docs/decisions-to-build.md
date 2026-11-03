@@ -85,6 +85,16 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   bot" button (live the same day, row below), which records the filing on the visit by itself; Part B is built only if
   bot-page hand filings keep happening. Left on ObKqzi47: the note to Yan and Diego, Jonathan's pointer line on his
   dashboard, the first real button filing showing on its visit; then Testing / QA.
+- 2026-11-03 status check:
+  - **The note** was posted by Fred in the #new-app-issues thread on 10-29.
+  - **Jonathan's pointer line** shipped in bot commit `ead73d4` (10-30), with Fred's wording and a test.
+  - **The first real button filing (7849, 10-30)** showed in the DERM Tracker but NOT in the Field Portal.
+    `customer.gdo_reports` joined ACTIVE permits only, and 7849 was filed on its EXPIRED permit (Fred's 10-30 rule). The
+    same was true of 7992.
+  - **Fred: "Show it when filed": BUILT** by `2026-11-03_1600`: an expired permit appears when a report was filed on
+    it. Checked live at 1440 and 375 (7849 and 7992 REPORTED; 8888 unchanged). Standing check
+    `scripts/checks/fp_gdo_reports_complete.sql`.
+  - No bot-page hand filing since the four of 10-27.
 
 **DERM Tracker "File it with the bot" button on the visit page (Trello xBCSvP6f, 2026-10-27)**
 - Huddle 2026-10-26: Yan wants the bot dashboard's "process a permit by hand" as a button on the visit page; Jonathan

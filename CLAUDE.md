@@ -274,6 +274,12 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
   a non-GDO row).
 - Every-type readers: `client.gdos` (+ `client.permit_types`), `customer.permits` (Field Portal "Permits & Frequency"),
   `ops.v_gdo_expiry`, `ops.v_client_call_policy`; `ops.v_route_today` / `ops.v_service_due` show the GDO first.
+- 🛑 **Permit STATUS differs by reader.**
+  - The bot files ACTIVE and EXPIRED permits (`v_derm_portal_fields`, 2026-10-30).
+  - The Field Portal's GDO report block (`customer.gdo_reports`) shows ACTIVE permits, plus an EXPIRED one only when a
+    report was filed on it (`2026-11-03_1600`, Fred: "Show it when filed").
+  - `customer.permits` and `customer.clients` show ACTIVE only.
+  - A new filing reader must decide expired permits on purpose. Check: `scripts/checks/fp_gdo_reports_complete.sql`.
 - `parse-gdo-permit` reads only GDO PDFs; with another `permit_type` it stores the PDF unread at `<type>/<date>-<random>.pdf`.
   `fn_gdo_permit_label_targets` keeps to `permit_types.reads_pdf`, so a CCN PDF never reaches the DERM prompt.
 - Boca Raton is Palm Beach since `2026-11-02_1830` (15 rows) and `webhook-jobber` v151 (`inferCountyFromCity`).

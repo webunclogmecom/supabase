@@ -504,6 +504,15 @@ or success)"*. Migration `2026-10-30_1135_derm_portal_fields_expired_permit.sql`
   ⚠ The queue serves one visit per (manifest, permit), so skipping one can let a sibling on the same manifest be served.
 - **Set on apply: `7849`**, for Jonathan's video (he presses Auto file on it himself). 7992 went to the hourly queue at
   once. 🛑 **Clear the skip once 7849 has a result**, or a retryable failure would never be retried by the hourly run.
+- 🛑 **The Field Portal shows a filing on an EXPIRED permit since `2026-11-03_1600`** (Trello ObKqzi47; Fred, 2026-11-03:
+  "Show it when filed").
+  - `customer.gdo_reports` lists every ACTIVE permit, plus an EXPIRED permit only when a report was filed on it for
+    that visit. An expired permit with nothing filed stays hidden.
+  - Until then the view joined ACTIVE permits only, so 7849 and 7992 showed in the DERM Tracker but not on the client's
+    visit page.
+  - Standing check: `scripts/checks/fp_gdo_reports_complete.sql` (on the old view it names 7849 and 7992).
+  - `customer.permits` and `customer.clients` still list ACTIVE permits only. That is the portal's "Permits &
+    Frequency", and showing an expired permit there is a separate question.
 - **Outcome (2026-10-30):** 7849 pressed by Jonathan 13:23 ET (run 3ef19a1c), recorded SUCCESS at 15:12 ET once `rpa-derm-result` v47 accepted it; 7992 filed by the hourly run at 11:58 ET (SUCCESS). Skip cleared 15:13 ET (both read already_filed). Both were filed with the EXPIRED permit and the county accepted them.
 
 ### 11d. A press result refused by our side (2026-10-30), and Jon's "when a filing is stuck" guide
