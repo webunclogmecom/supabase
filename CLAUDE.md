@@ -5746,6 +5746,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `applied` or `proposed` row in `public.visit_time_on_site_corrections` (settled; "locked" = `review` OR such a row,
   Fred's Q-E, 2026-11-02). T1 can never fire on a test client (it skips `fn_is_non_customer`), so a T1 fixture uses a
   real visit inside a rolled-back transaction. Rollback `2026-11-02_rollback_time_on_site_s1_completion_window_and_t1.sql`.
+  **Since `2026-11-03_1300` (re-check S2) band B (visits dated 10-08 to 10-17, plus 8854) is closed in the ledger by run
+  `tos-recheck-2026-r2`** (stage `catch_up`): 45 `applied` rows (T7 / T8 watch them) and 17 `proposed` rows held for a
+  person (UNSETTLED, two unanswered cards, and 8752, a blank with a stop of ours 471 m away, so not a decided blank). The
+  61 10-18 catch_up rows are superseded, never edited. A `proposed` row with action `keep_verified` means "proposal: keep",
+  not verified. Rollback `2026-11-03_rollback_time_on_site_s2_band_b.sql` (it refuses unless S2 is applied).
   🛑 **Every time-on-site writer measures 150 m from OUR map point, and that misses trucks that park further away**
   (Fred, 2026-10-13, visit 6509: David parked 164 m from 214-MYK's point for 34 min, inside its Samsara Place, and the
   report said "only drove past"). The fix plan (outside the repos, it names clients):
