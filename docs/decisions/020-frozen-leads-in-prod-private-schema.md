@@ -1,7 +1,8 @@
 # ADR 020 — Frozen leads live in Prod, in a private schema `leads`
 
 **Date:** 2026-11-03
-**Status:** Accepted, built (migrations `2026-11-03_1700`, `_1730`, `_1800`); 431 BSI Boca Raton records loaded
+**Status:** Accepted, built (migrations `2026-11-03_1700`, `_1730`, `_1800`, `_1848_leads_privacy_fixes`); 431 BSI Boca
+Raton records loaded. Facts corrected the same day: see "Corrections" at the end.
 **Supersedes:** `Building Apps/04-supabase-schema.md`'s "prospects live in a separate DB by design" (lines 10-13)
 **Related:** ADR 002 (entity_source_links), ADR 010 (audit trail); plan `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`
 
@@ -45,3 +46,23 @@ separate database. Prod's own `public.leads` (a copy-style lead table) was dropp
 - Google Places content: only the `place_id` may be stored long-term; phone, website and hours are fetched when shown.
 - The Miami-Dade universe lands later through the same `leads.ingest` (a `derm` feed), from a fresh DERM list plus
   Yan's own decision columns; the HR Sandbox stays untouched.
+
+## Corrections (2026-11-03, after an adversarial check of the build; the decision itself is unchanged)
+
+- **Supersedes line.** The sentence superseded in `Building Apps/04-supabase-schema.md` read, at its old lines 12-13,
+  that the Sales App DB is separate by design because sales prospects are leads not yet clients. Building Apps commit
+  `28f2a09` replaced it.
+- **Decision 2, "a new source = one new `source_system` value and one staging view, no new table".** Also needed: allow
+  the value in `leads.ingest` (it refuses anything but `bsi`) and in the views that name `'bsi'`. Still no new table.
+- **Decision 4, "no view anyone can read shows them".** No API role (anon, authenticated, service_role) can read them.
+  `leads.v_src_bsi` shows them to postgres, to `db_backup_reader` (the leads default privileges cover views) and to
+  Supabase's platform roles (`supabase_admin`; `supabase_read_only_user` and `supabase_etl_admin` through
+  `pg_read_all_data`), as for every table; every backup copy holds them.
+- **Three gaps, fixed by `2026-11-03_1848_leads_privacy_fixes`:**
+  - `owner_company` (BSI's mailing name) was a BSI contact person's name on 18 frozen leads. The public views now blank
+    it when it equals a contact name.
+  - `client.entity_source_links` let every signed-in staff user list the 431 BSI links. It now leaves them out.
+  - The loader's dry run wrote the whole payload into the server log once (a failing statement is logged with its
+    text). The loader now calls `leads.ingest_quiet`, whose statement never fails.
+- **"Viktor reads three ... views, SELECT for service_role only".** They are for Viktor, and his first read is not tested
+  yet. `db_backup_reader` also holds SELECT.

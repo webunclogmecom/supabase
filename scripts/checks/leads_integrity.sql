@@ -1,6 +1,8 @@
--- Frozen leads integrity (Trello #166, migrations 2026-11-03_1700 / _1730). Read-only. Healthy = every row 'ok'.
--- Run as owner (Management API). The last row is the control: it must see at least 400 records, or nothing above
--- means anything.
+-- Frozen leads integrity (Trello #166, migrations 2026-11-03_1700 / _1730 / _1848_leads_privacy_fixes). Read-only.
+-- Healthy = every row 'ok'. Run as owner (Management API). The CONTROL rows must be 'ok', or nothing above them means
+-- anything. Values from BSI are compared inside SQL and never printed.
+-- Since _1848 the privacy rows test VALUES: the first version tested only column names and passed while 18 BSI contact
+-- names showed in owner_company.
 with links as (
   select l.entity_id as source_record_id, count(*) as n
     from public.entity_source_links l where l.entity_type = 'source_record' group by 1
@@ -8,6 +10,28 @@ with links as (
   select distinct on (md.source_record_id, md.property_id) md.source_record_id, md.property_id, md.verdict
     from leads.match_decisions md where md.source_record_id is not null
    order by md.source_record_id, md.property_id, md.id desc
+), private as materialized (   -- every CCN, contact email, phone and contact name BSI ever gave us
+  select distinct 'ccn' as kind, upper(btrim(x)) as val
+    from leads.source_versions v
+    cross join lateral (values (v.payload -> 'search_item' ->> 'ccn'), (v.payload -> 'detail' ->> 'ccn')) t(x)
+   where length(btrim(coalesce(x, ''))) >= 3
+  union
+  select 'email', lower(btrim(v.payload -> 'search_item' -> 'contact' ->> 'email')) from leads.source_versions v
+   where v.payload -> 'search_item' -> 'contact' ->> 'email' like '%@%'
+  union
+  select 'phone', regexp_replace(v.payload -> 'search_item' -> 'contact' ->> 'phone', '[^0-9]', '', 'g') from leads.source_versions v
+   where length(regexp_replace(coalesce(v.payload -> 'search_item' -> 'contact' ->> 'phone', ''), '[^0-9]', '', 'g')) >= 7
+  union
+  select 'name', upper(regexp_replace(btrim(v.payload -> 'search_item' -> 'contact' ->> 'name'), '[[:space:]]+', ' ', 'g'))
+    from leads.source_versions v
+   where coalesce(btrim(v.payload -> 'search_item' -> 'contact' ->> 'name'), '') <> ''
+), cells as materialized (     -- every non-null cell of the three views Viktor reads
+  select kv.key as col, kv.value as cell
+    from (select to_jsonb(t) as j from public.v_frozen_leads t
+          union all select to_jsonb(t) from public.v_lead_interceptors t
+          union all select to_jsonb(t) from public.v_lead_review t) r
+    cross join lateral jsonb_each_text(r.j) kv
+   where kv.value is not null
 ), checks as (
   select 'every record has exactly one link' as check_name,
          (select count(*) from leads.source_records r left join links k on k.source_record_id = r.id
@@ -35,16 +59,36 @@ with links as (
              and (column_name ilike '%ccn%' or column_name ilike '%contact%' or column_name ilike '%phone%'
                   or column_name ilike '%email%' or column_name ilike '%mailing%'))
   union all
+  select 'no public leads view cell holds a CCN, a contact email or a contact phone',
+         (select count(*) from cells c
+           where exists (select 1 from private p where p.kind = 'ccn' and position(p.val in upper(c.cell)) > 0)
+              or exists (select 1 from private p where p.kind = 'email' and position(p.val in lower(c.cell)) > 0)
+              or exists (select 1 from private p where p.kind = 'phone' and position(p.val in regexp_replace(c.cell, '[^0-9]', '', 'g')) > 0))
+  union all
+  select 'no owner_company or location in a public leads view is a BSI contact''s name',
+         (select count(*) from cells c
+           where c.col in ('owner_company', 'location')
+             and upper(regexp_replace(btrim(c.cell), '[[:space:]]+', ' ', 'g')) in (select p.val from private p where p.kind = 'name'))
+  union all
+  select 'signed-in staff see no frozen-leads link (client.entity_source_links)',
+         (select count(*) from client.entity_source_links where entity_type = 'source_record')
+  union all
   select 'public leads views: only postgres, service_role and db_backup_reader (SELECT)',
          (select count(*) from pg_class c cross join lateral aclexplode(c.relacl) a
            where c.oid in ('public.v_frozen_leads'::regclass, 'public.v_lead_interceptors'::regclass, 'public.v_lead_review'::regclass)
              and not (pg_get_userbyid(a.grantee) = 'postgres'
                       or (pg_get_userbyid(a.grantee) in ('service_role', 'db_backup_reader') and a.privilege_type = 'SELECT')))
   union all
-  select 'no API role reads a leads table',
+  select 'no API role reads a leads table or view',
          (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
            cross join (values ('anon'), ('authenticated'), ('service_role')) r(role)
-           where n.nspname = 'leads' and c.relkind = 'r' and has_table_privilege(r.role, c.oid, 'SELECT'))
+           where n.nspname = 'leads' and c.relkind in ('r', 'v', 'm') and has_table_privilege(r.role, c.oid, 'SELECT'))
+  union all
+  select 'no API role can run a leads function (service_role: the three pure helpers only)',
+         (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           cross join (values ('anon'), ('authenticated'), ('service_role')) r(role)
+           where n.nspname = 'leads' and has_function_privilege(r.role, p.oid, 'EXECUTE')
+             and not (r.role = 'service_role' and p.proname in ('fn_street_key', 'fn_name_key', 'fn_bsi_date')))
   union all
   select 'every leads table has RLS on',
          (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -53,4 +97,10 @@ with links as (
 select check_name, case when bad = 0 then 'ok' else 'FAIL: ' || bad end as status from checks
 union all
 select 'CONTROL: records visible', case when (select count(*) from leads.source_records) >= 400 then 'ok'
-                                         else 'CONTROL FAILED: ' || (select count(*) from leads.source_records) end;
+                                         else 'CONTROL FAILED: ' || (select count(*) from leads.source_records) end
+union all
+select 'CONTROL: the value test finds the CCNs where they are (leads.v_src_bsi)',
+       case when (select count(*) from leads.v_src_bsi s
+                   where exists (select 1 from private p where p.kind = 'ccn' and position(p.val in upper(to_jsonb(s)::text)) > 0)) >= 400
+              and (select count(*) from cells) >= 1000
+            then 'ok' else 'CONTROL FAILED' end;

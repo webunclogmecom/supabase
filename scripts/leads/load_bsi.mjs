@@ -5,10 +5,13 @@
 // <raw.json> is the output of scripts/leads/bsi_boca_scrape.mjs (kept in the workspace backups/ folder, never a repo).
 // It refuses a file that is not complete, has fewer than 400 properties, or lacks the control (Grove Kosher, BSI 957372,
 // with interceptors 9818 and 9819). It keeps organization 135 (City of Boca Raton Utility Services) and an allow-list of
-// fields, sorts each property's interceptors by id, and calls leads.ingest('bsi', <run start>, records, <file>) once.
-// CCNs and BSI's contact stay in the private payload (Fred 2026-11-03); no granted view shows them.
-// --dry-run runs the same call inside a DO block that always fails at the end, so nothing is kept, and prints what the
-// load would produce (states, review items, view counts).
+// fields, sorts each property's interceptors by id, and calls leads.ingest_quiet('bsi', <run start>, records, <file>,
+// <dry run>) once. CCNs and BSI's contact stay in the private payload (Fred 2026-11-03); no API role can read them.
+// The payload travels as a literal, and Postgres writes the full text of a FAILING statement to its server log, so the
+// statement must never fail: ingest_quiet returns every error as {ok:false, sqlstate, message} (migration
+// 2026-11-03_1848). Never go back to a DO block that raises, and keep a load well under auto_explain's 10 s.
+// --dry-run makes ingest_quiet undo the load inside the database and print what it would produce (states, review
+// items, view counts); nothing is kept.
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -58,40 +61,23 @@ const json = JSON.stringify(records)
 const TAG = '$leadsjson$'
 if (json.includes(TAG)) fail('the data contains the quoting tag')
 const fname = path.basename(file).replace(/'/g, '')
-const call = `leads.ingest('bsi', '${new Date(raw.fetched_at).toISOString()}'::timestamptz, ${TAG}${json}${TAG}::jsonb, '${fname}')`
-const sql = DRY
-  ? `do $dry$ declare r jsonb; begin
-       r := ${call};
-       raise exception 'dryrun_result:%', jsonb_build_object(
-         'ingest', r,
-         'states', (select jsonb_object_agg(lead_state, n) from (select lead_state, count(*) n from leads.v_establishment_state group by 1) s),
-         'frozen_rows', (select count(*) from public.v_frozen_leads),
-         'interceptor_rows', (select count(*) from public.v_lead_interceptors),
-         'review', (select jsonb_agg(jsonb_build_object('kind', kind, 'bsi', source_id, 'name', source_name, 'client', client_code,
-                      'property', property_id, 'on', matched_on, 'score', name_score) order by kind, client_code, source_id)
-                      from public.v_lead_review));
-     end $dry$;`
-  : `select ${call} as result;`
+const sql = `select leads.ingest_quiet('bsi', '${new Date(raw.fetched_at).toISOString()}'::timestamptz, ` +
+  `${TAG}${json}${TAG}::jsonb, '${fname}', ${DRY}) as result;`
 
 console.log(`${DRY ? 'DRY RUN' : 'LIVE LOAD'}: ${records.length} records, run start ${raw.fetched_at}, ` +
   `${records.filter((r) => r.payload.search_item.ccn).length} with a CCN, ` +
   `${records.filter((r) => r.payload.search_item.contact && (r.payload.search_item.contact.name || r.payload.search_item.contact.phone || r.payload.search_item.contact.email)).length} with a contact, ` +
   `${(json.length / 1024).toFixed(0)} KB`)
+const t0 = Date.now()
 const r = await fetch(`https://api.supabase.com/v1/projects/${process.env.SUPABASE_PROJECT_ID}/database/query`, {
   method: 'POST',
   headers: { Authorization: `Bearer ${process.env.SUPABASE_PAT}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({ query: sql }),
 })
 const text = await r.text()
-if (DRY) {
-  let msg = ''
-  try { msg = JSON.parse(text).message ?? '' } catch { msg = text }
-  const at = msg.indexOf('dryrun_result:')
-  if (at < 0) { console.error(`dry run did not report (HTTP ${r.status}): ${text.slice(0, 600)}`); process.exit(3) }
-  const rest = msg.slice(at + 'dryrun_result:'.length)
-  const res = JSON.parse(rest.includes('\n') ? rest.slice(0, rest.indexOf('\n')) : rest)
-  console.log(JSON.stringify(res, null, 1))
-} else {
-  console.log(`HTTP ${r.status}: ${text.slice(0, 600)}`)
-  if (!r.ok) process.exit(3)
-}
+let res = null
+try { res = JSON.parse(text)?.[0]?.result ?? null } catch { /* reported below */ }
+if (!r.ok || !res) { console.error(`no answer (HTTP ${r.status}): ${text.slice(0, 600)}`); process.exit(3) }
+console.log(JSON.stringify(res, null, 1))
+console.log(`${Date.now() - t0} ms`)
+if (res.ok !== true) process.exit(3)

@@ -165,11 +165,13 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 
 ## 4. The contract with us
 
-- 🛑 **Who the queue serves: line-27 visits of Miami-Dade clients only (since `2026-11-03_1830`).** A client with no
-  live GDO and a live Boca Raton property (`public.fn_client_files_with_bsi`) files its reports on BSI Online for the
-  City of Boca Raton (Trello #169), so its visits are kept out of `v_derm_portal_fields`, the queue, the held view and
-  the `gdo_no_permit` / `line27_no_permit_clients` health items. A live GDO always wins. Check
-  `scripts/checks/bsi_routing.sql`.
+- 🛑 **Who the queue skips: clients that file with BSI (since ~16:53 ET 2026-11-03, `2026-11-03_1830`).**
+  `public.fn_client_files_with_bsi`: no live GDO and a live property whose city reads "Boca Raton", or a test client
+  with a live CCN (112-YA). Their line-27 visits are kept out of `v_derm_portal_fields`, the queue, the held view and
+  the `gdo_no_permit` / `line27_no_permit_clients` health items. A live GDO always wins. They are meant for BSI Online
+  (City of Boca Raton, Trello #169), but nothing files them yet: Yan by hand, the BSI bot later (not built). The rule
+  works per client, so a client with a GDO and a Boca Raton property, or a routed client with a property elsewhere, is
+  raised in Fred's health email instead (`bsi_route_*` items, `2026-11-03_1848`). Check `scripts/checks/bsi_routing.sql`.
 - **Authentication:** header `x-rpa-key` against `RPA_BOT_KEYS`.
 - **Endpoints:**
   - GET `rpa-derm-queue`;

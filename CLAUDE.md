@@ -283,33 +283,68 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
 - `parse-gdo-permit` reads only GDO PDFs; with another `permit_type` it stores the PDF unread at `<type>/<date>-<random>.pdf`.
   `fn_gdo_permit_label_targets` keeps to `permit_types.reads_pdf`, so a CCN PDF never reaches the DERM prompt.
 - Boca Raton is Palm Beach since `2026-11-02_1830` (15 rows) and `webhook-jobber` v151 (`inferCountyFromCity`).
-- 🛑 **Line 27 routes by permit type since `2026-11-03_1830` (Trello #169).** `public.fn_client_files_with_bsi(client)`:
-  no live GDO (a live GDO always wins) AND a live Boca Raton property (or a test client with a live CCN: 112-YA). Those
-  clients' line-27 visits are kept out of `v_derm_portal_fields` (so every DERM reader, the bot's queue and the
-  `gdo_no_permit` items), `v_gdo_reporting_derm_mismatch` and the `line27_no_permit_clients` part of
-  `log_rpa_derm_health()`. They are filed on BSI Online (City of Boca Raton) instead. **This had to ship before the
-  office puts line 27 on a Boca job**, or every Boca visit would be held as `no_permit` and emailed as "enter the GDO
-  permit". Standing check `scripts/checks/bsi_routing.sql`; behaviour proof `docs/migrations/2026-11-03_1830_*_PROOF.sql`
-  (ends in ROLLBACK). A new DERM reader that does not go through `v_derm_portal_fields` must apply the rule itself.
+- 🛑 **Line 27 routes by CLIENT since ~16:53 ET 2026-11-03 (`2026-11-03_1830`, Trello #169).**
+  `public.fn_client_files_with_bsi(client)`: no live GDO (a live GDO always wins) AND a live property whose city reads
+  "Boca Raton" (or a test client with a live CCN: 112-YA). The CCN plays no part for a real client. Those clients'
+  line-27 visits are kept out of `v_derm_portal_fields` (so the bot's queue, the held view and the `gdo_no_permit`
+  items), `v_gdo_reporting_derm_mismatch`, `derm.gdo_report_status` (since `2026-11-03_1848`) and the
+  `line27_no_permit_clients` part of `log_rpa_derm_health()`. **This had to ship before the office puts line 27 on a
+  Boca job**, or every Boca visit would be held as `no_permit` and emailed as "enter the GDO permit".
+  - **Where they are filed: nowhere automatic yet.** They are meant for BSI Online (City of Boca Raton): Yan files by
+    hand (plan S5), the BSI bot comes later (S6-S8, not built). Until then nothing files or tracks these visits and no
+    health item lists them.
+  - **The rule keys on the city name, not on BSI.** It routes 10 real clients today. 5 have no BSI record: 081-TCE and
+    319-CAP sit in ZIP 33498, where BSI lists nobody (likely outside the City), and 135-BB, 361-SFG and Olympus are not
+    in the scrape. Line 27 must not go on their jobs until Yan's review settles where they file.
+  - **Two client shapes it cannot route** (per client, not per property): a live GDO plus a Boca Raton property, and a
+    routed client with a property in another city. `log_rpa_derm_health()` raises each in Fred's health email when that
+    client has line 27 on an open job (`bsi_route_gdo_and_boca:<id>`, `bsi_route_other_city:<id>`, since `_1848`).
+  - **Not covered, a decision for Fred:** the DERM Tracker offers "Record a manual filing" (with Miami-Dade) on every
+    visit (Fred 2026-08-19), a Boca one included (`derm.visit_gdo_manual_eligibility`, `fn_record_manual_gdo_report`).
+  - Standing check `scripts/checks/bsi_routing.sql`; behaviour proofs in the VERIFY blocks of `_1830` / `_1848` and
+    `docs/migrations/2026-11-03_1830_*_PROOF.sql` (ends in ROLLBACK). A new DERM reader that does not go through
+    `v_derm_portal_fields` must apply the rule itself.
 
 ## 🛑 FROZEN LEADS: the private schema `leads` (2026-11-03, Trello #165 / #166)
 
 Fred: *"i want a generic leads one with 3NF as well, in case we get like another source of leads too, so they merge,
 including a reference for their source"*; then "Keep all [CCNs], privately" and "Load [BSI contacts] privately now".
 Plan `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`; ADR 020; migrations `2026-11-03_1700` (M1), `_1730`
-(M2), `_1800` (M3), rollbacks beside them.
+(M2), `_1800` (M3), `_1848_leads_privacy_fixes`, rollbacks beside them. (The names `_1700` to `_1830` are later than
+their apply times: 16:33, 16:40, 16:46 and 16:53 ET.)
 - **Shape.** `leads.establishments` (a restaurant; holds ONLY our decision: `property_id` = it IS that property of ours),
   `leads.source_records` (one outside record; its id lives in `entity_source_links`, type `source_record`),
   `leads.source_versions` (what the source said, append-only: a new row only when content changes, else `last_seen_at`
   moves), `leads.match_decisions` (insert-only). **"Frozen" is computed** in `leads.v_establishment_state`, never stored.
-- **Writers.** Only `leads.ingest()` (loader `scripts/leads/load_bsi.mjs`, re-runs change nothing) and
-  `leads.decide_client()` (same / different / absent; refuses a non-staff `p_by` and test clients). Both postgres-only.
-  Never UPDATE the tables by hand; DELETE and TRUNCATE are refused (`fn_append_only_guard`).
-- 🛑 **Private by design.** The schema is NOT exposed to the API and nothing is granted to anon / authenticated /
-  service_role on its tables. Payloads hold CCNs and BSI's personal contacts (Fred's choice). Viktor reads only
-  `public.v_frozen_leads`, `public.v_lead_interceptors` (the #169 bridge) and `public.v_lead_review`: postgres-owned,
-  SELECT for service_role only, **no CCN or contact column** (`scripts/checks/leads_integrity.sql` asserts it).
-  Viktor's REST tools see only `public` (his `ops.v_ar_aging` read returned 404), which is why the views live there.
+- **Writers.** `leads.ingest()` creates records, versions and their source links (re-runs change nothing);
+  `leads.decide_client()` writes decisions and `establishments.property_id`, and moves records between restaurants
+  (same / different / absent; refuses a non-staff `p_by` and test clients). Both postgres-only. The loader
+  `scripts/leads/load_bsi.mjs` calls `leads.ingest_quiet()` (below), never `ingest` directly. Never UPDATE the tables by
+  hand; DELETE and TRUNCATE are refused (`fn_append_only_guard`).
+- 🛑 **Private by design.** The schema is NOT exposed to the API and no API role (anon / authenticated / service_role)
+  reads a leads table or view or runs a leads function (service_role: the three pure helpers only). Payloads hold CCNs
+  and BSI's personal contacts (Fred's choice). Who CAN read them: postgres, `db_backup_reader` (the leads default
+  privileges cover views too, `leads.v_src_bsi` included) and Supabase's platform roles (`supabase_admin`, and
+  `supabase_read_only_user` / `supabase_etl_admin` through `pg_read_all_data`), as for every table; and every backup
+  copy. For Viktor: `public.v_frozen_leads`, `public.v_lead_interceptors` (the #169 bridge) and `public.v_lead_review`:
+  postgres-owned, SELECT for service_role (and `db_backup_reader`), never anon or authenticated, his first read not
+  tested yet. Viktor's REST tools see only `public` (his `ops.v_ar_aging` read returned 404), which is why they live there.
+- 🛑 **No contact value in Viktor's views, checked by VALUE (since `_1848`).** `owner_company` is BSI's mailing name, and
+  for 18 frozen leads it was a BSI contact person's name: the two views blank it when it equals any BSI contact name
+  (`leads.v_bsi_contact_names`). `scripts/checks/leads_integrity.sql` now tests every cell of the three views for a
+  CCN, a contact email or phone, and contact names in `owner_company` / `location` (the first version tested column
+  names only and passed while those 18 names showed). Other owner names stay (the plan keeps the mailing name, not the
+  mailing street).
+- 🛑 **Signed-in staff never see the BSI links.** `client.entity_source_links` (a pass-through `authenticated` reads)
+  leaves out `entity_type = 'source_record'` since `_1848`. Any new generic reader of `entity_source_links` must filter
+  `entity_type`: a reader with no filter never contains the text 'source_record', so a grep for it finds nothing.
+- 🛑 **The payload must never travel in a statement that FAILS.** Postgres writes a failing statement's full text to
+  its server log (`log_min_error_statement = error`). The loader's first dry run (a DO block that raised, 16:41 ET
+  11-03) put every CCN and contact there: readable only by `supabase_admin`, rotated out after about a day, never
+  shipped to Logs Explorer (the line was over the shipper's limit), and impossible to purge. Since `_1848` the loader
+  calls `leads.ingest_quiet(..., dry_run)`, which returns every error as data and undoes a dry run inside the database,
+  so the statement never fails (proven: a real dry run left 0 errors and 0 CCNs in the log). Keep a load under 10 s
+  (`auto_explain` logs slower statements with their text).
 - 🛑 **A new schema needs FOUR edits or it silently misses something:** `public.rls_auto_enable()` (RLS on new tables),
   `scripts/checks/rls_on_app_tables.sql`, `services/db-backup/backup.sh` `SCHEMAS` (`--strict-names`: push it only
   AFTER the schema and `db_backup_reader`'s USAGE exist, or every dump fails), and the backup grants (tables AND

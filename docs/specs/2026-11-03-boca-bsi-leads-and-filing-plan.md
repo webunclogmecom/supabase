@@ -1,28 +1,41 @@
 # Boca Raton on BSI Online: frozen leads, the BSI scrape and the filing bot (plan, 2026-11-03)
 
-Trello cards (all in Approved):
+Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 4 of 6, #166 3 of 6, #169 0 of 6):
 - **#165** `f3Q3Q55i`: scrape BSI Online restaurant data and enrich it with contacts.
 - **#166** `IWJkqTq1`: add the scraped restaurants (frozen leads) and our current clients to the DB.
 - **#169** `0lAWU6Ge`: a BSI Online filing bot that auto-files Boca Raton maintenance reports, like the Online GDO Report bot.
 
-**Status (2026-11-03 ~17:00 ET).**
+**Status (2026-11-03 ~19:00 ET).**
 - **Done, read-only:** all the research; Yan's screen recording, read frame by frame; the BSI scrape (raw data in the
   workspace `backups/` folder, never in a repo).
 - **Built (Fred: "Leads + routing now"):**
+  - **S0:** ADR 020, the scraper's `fetched_at` on resume, `Building Apps/04-supabase-schema.md`, `docs/schema.md`,
+    and the dead `leads` table name taken out of `populate.js`, `dedup_jobber_links.js` and `probe.js`.
   - **S1-S2:** the private schema `leads` and the load of 431 BSI records (`2026-11-03_1700` / `_1730`). M3
-    (`_1800`) made the views fast enough for the API: 25.9 s down to 0.26 s.
-  - **S4:** the line-27 routing (`2026-11-03_1830`).
+    (`_1800`) made the views fast enough for the API: 25.9 s down to 0.26 s. The `disposal_facility` link type of S1
+    is deferred to S6, where the bot needs it.
+  - **S4:** the line-27 routing (`2026-11-03_1830`), plus `2026-11-03_1848_route_line27_followups`: the health scan's
+    `DISTINCT ON` (S4's first step), the rule on `derm.gdo_report_status`, and two health items for the client shapes a
+    per-client rule cannot route. Still to check: the next morning's DERM health run (04:00 ET 11-04) is the same.
+  - **Privacy fixes** (`2026-11-03_1848_leads_privacy_fixes`), found by an adversarial check: `owner_company` was a BSI
+    contact's name on 18 frozen leads (now blank); `client.entity_source_links` showed the 431 BSI links to signed-in
+    staff (now hidden); the loader's dry run had put the payload in the server log once (it now calls
+    `leads.ingest_quiet`, whose statement never fails).
 - **Fred's answers to section 10 (2026-11-03):**
-  - **F1, CCNs:** "Keep all, privately". They stay in the private payload; no view shows them.
+  - **F1, CCNs:** "Keep all, privately". They stay in the private payload; no API role can read them.
   - **F2, BSI contacts:** "Load them privately now". Same.
   - **F3, the bot's login:** the main account, after a check that its daily login does not sign others out.
   - **F4:** not answered; the records request stays a draft.
-- **Two changes from the design as written below:**
+- **Changes from the design as written below:**
   - **The CCN CHECK is gone** (F1).
-  - **The client link sits on our property, not on `client_locations`.** The Boca clients' locations have no
-    `property_id`, and every visit has one.
+  - **Free text reaches Viktor's views,** against the guard in 8.1 ("no contact value, owner street or free text in any
+    view"): `v_lead_interceptors.location` (BSI's note on where a trap is, 176 of 450 rows) and `owner_company` (BSI's
+    mailing name). Both are now tested by value (`scripts/checks/leads_integrity.sql`: no CCN, contact email, phone or
+    contact name), and `owner_company` is blank when it is a contact's name. Viktor's own read-only role (8.1,
+    deferred) is still not built.
 - **Open:** S3 (Yan's review sitting, then the CCNs), S5 (Yan's hand filings, captured), S6-S8 (the bot, after S5 and
-  Fred's go), S9 (the enrichment pilot).
+  Fred's go), S9 (the enrichment pilot). For Fred: whether the DERM Tracker's "Record a manual filing" (with Miami-Dade)
+  should refuse a Boca client's visit (today it is offered on every visit, his 2026-08-19 rule).
 
 **What this document leaves out on purpose:**
 - **CCN values.** BSI's own terms call the CCN a confirmation number that unlocks a customer's records, so it is handled like an access code.
@@ -151,7 +164,8 @@ The matches below are by street number and name. Yan confirms each one before an
 | 081-TCE Carrot West Boca | 68 | none | | ZIP 33498, probably outside the City |
 | 135-BB Bagel Boss | 53 | none | | Nothing at 22107 Powerline |
 | 319-CAP Capas Burger | 1117 | none | | ZIP 33498 |
-| 361-SFG golf carts, Olympus, Alta | | none | | Not restaurants; Olympus and Alta are uncoded Jobber leads |
+| 361-SFG golf carts, Olympus | | none | | Not restaurants; Olympus is an uncoded Jobber lead |
+| Alta (uncoded Jobber lead) | 668 | 957247 THE STANDARD, possibly | | Name match only: our property has no street address; Yan confirms |
 
 **Grove's plaza (22191 Powerline) has five other BSI restaurants:** Kingdom Sushi, Brooklyn Water Bagel, Hong Kong Palace, Jon's Place and Angela's Pizza Kitchen. They are good leads next to an existing stop, and they show why an address alone can never be a match key.
 

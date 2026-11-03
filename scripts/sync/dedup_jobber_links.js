@@ -45,7 +45,6 @@ const FK_MAP = {
       ['visits', 'client_id'],
       ['invoices', 'client_id'],
       ['receivables', 'client_id'],
-      ['leads', 'client_id'],
     ],
   },
   job: {

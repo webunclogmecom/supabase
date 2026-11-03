@@ -42,7 +42,7 @@
 //  15. manifest_visits      (FK→derm_manifests, visits)
 //  16. routes               (FK→clients)
 //  17. receivables          (FK→clients)
-//  18. leads                (FK→clients via converted_client_id)
+//  18. (dropped: the old leads table is gone; "leads" is now the private frozen-leads schema, ADR 020)
 // ============================================================================
 
 const path = require('path');
@@ -118,7 +118,7 @@ async function assertEmptyOrForced() {
 // ----------------------------------------------------------------------------
 const cache = {
   jobber: { clients: [], properties: [], jobs: [], visits: [], invoices: [], quotes: [], users: [], lineItems: [] },
-  airtable: { clients: [], visits: [], derm: [], inspections: [], routeCreation: [], drivers: [], pastDue: [], leads: [] },
+  airtable: { clients: [], visits: [], derm: [], inspections: [], routeCreation: [], drivers: [], pastDue: [] },
   samsara: { vehicles: [], addresses: [], drivers: [] },
   // Fillout source dropped 2026-04-29 — inspections moved to Airtable PRE-POST table.
   maps: {
@@ -1306,9 +1306,9 @@ async function step15_manifest_visits() {
 //   • Step 18 (leads from Airtable):
 //     Lead capture moves to Odoo CRM (May 2026). No interim ingestion.
 //
-// Tables `routes`, `route_stops`, `receivables`, `leads` are wiped by the
-// 2026-04-29 wipe SQL and remain in the schema (drop separately if/when sunset
-// is final, since some legacy ops.* views may still reference them).
+// Tables `routes`, `route_stops`, `receivables` and the old `leads` table were wiped by
+// the 2026-04-29 wipe SQL. The old `leads` table has since been dropped, and `leads` is
+// now the private frozen-leads SCHEMA (2026-11-03, ADR 020): never truncate anything there.
 // ----------------------------------------------------------------------------
 
 // ----------------------------------------------------------------------------
@@ -1413,7 +1413,7 @@ async function fixupPasses() {
         'jobber_oversized_attachments',                           // tracking; rebuilt by jobber_notes_photos.js
         'line_items', 'expenses', 'inspections',
         'visits', 'invoices', 'quotes', 'jobs', 'service_configs', 'derm_manifests',
-        'routes', 'receivables', 'leads', 'client_contacts', 'properties',
+        'routes', 'receivables', 'client_contacts', 'properties',
         'employees', 'vehicles', 'clients', 'entity_source_links',
       ];
       for (const t of order) {

@@ -20,10 +20,16 @@ ADRs are **immutable** once merged. If a decision changes, write a new ADR that 
 | [007](007-samsara-permanent.md) | Samsara integration is permanent (survives Jobber/Airtable sunset) | Accepted |
 | [008](008-photos-normalized-out.md) | Photos live in dedicated tables, not inline URL columns | Superseded by 009 |
 | [009](009-unified-photos-architecture.md) | Unified `photos` + polymorphic `photo_links` (replaces dedicated tables) | Accepted |
+| [009](009-oversized-storage-and-jobber-webhooks.md) | Oversized attachment storage + Jobber webhook delivery path (a second file numbered 009) | Proposed |
 | [010](010-drop-stored-derived-columns.md) | Drop stored derived columns; compute on read (3NF enforcement) | Accepted |
+| [010](010-audit-trail.md) | Audit trail architecture (`audit.logs`; a second file numbered 010) | Accepted |
 | [011](011-source-of-truth-canonicalization-2026-04-29.md) | Source-of-truth trust hierarchy: Jobber + Samsara canonical; Airtable best-effort except DERM/PRE-POST | Accepted |
 | [012](012-visit-vehicle-id-derivation.md) | `visits.vehicle_id` derived from Samsara GPS cross-reference (not user input) | Accepted |
 | [013](013-tiered-property-geocoding.md) | Tiered property geocoding (Jobber → Airtable → Samsara → Google Maps) | Accepted |
 | [014](014-external-system-references-in-state-tables.md) | Source-prefixed columns allowed in private state tables (refines ADR 002) | Accepted |
 | [015](015-supabase-native-recurring-visits.md) | Recurring visit schedule moves from Airtable to Supabase-native cron + `visits.source` + merge promotion | Accepted |
+| [016](016-audit-app-source-attribution.md) | Audit log app-source attribution (`app_source`, `request_context`) | Accepted |
+| [017](017-derm-address-sheet-privacy.md) | DERM "address" sheet privacy gate on `customer.work_orders` | Accepted (option 1 shipped; option 2 deferred) |
+| [018](018-derm-required-from-line-items.md) | DERM-required derived from a visit's line items | Accepted |
+| [019](019-derm-storage-private-signed-urls.md) | DERM storage: private buckets + signed URLs | Accepted (edge function shipped; bucket flip staged) |
 | [020](020-frozen-leads-in-prod-private-schema.md) | Frozen leads live in Prod, in the private schema `leads` (generic, 3NF, any source; link on the property) | Accepted |

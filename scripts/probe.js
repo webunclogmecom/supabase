@@ -65,7 +65,6 @@ function query(sql) {
     UNION ALL SELECT 'line_items', count(*) FROM line_items
     UNION ALL SELECT 'routes', count(*) FROM routes
     UNION ALL SELECT 'receivables', count(*) FROM receivables
-    UNION ALL SELECT 'leads', count(*) FROM leads
     UNION ALL SELECT 'source_map', count(*) FROM source_map
     UNION ALL SELECT 'sync_log', count(*) FROM sync_log
     ORDER BY t

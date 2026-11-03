@@ -32,12 +32,17 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   the first report by hand**; scrape with the **main account**; CCNs **"Keep all, privately"**; BSI contacts **"Load them
   privately now"**; bot login **the main account** (after a check that its login does not sign others out); **"Leads +
   routing now"**.
-- BUILT 2026-11-03: the scrape (431 properties, read-only), the leads schema and load (S1-S2), the line-27 routing (S4);
-  see section 4.
+- BUILT 2026-11-03: the scrape (431 properties, read-only), repo prep (S0), the leads schema and load (S1-S2; the
+  `disposal_facility` link type moves to S6), the line-27 routing (S4: `_1830`, then `_1848_route_line27_followups` with
+  the health scan's `DISTINCT ON`, the rule on `derm.gdo_report_status` and the two `bsi_route_*` health items), and
+  `_1848_leads_privacy_fixes` (contact names out of `owner_company`, BSI links hidden from signed-in staff, a loader
+  whose statement never fails); see section 4.
 - NOT built: Yan's review sitting (16 items in `public.v_lead_review`) and the office typing the 4 matched clients' CCNs
   (S3); Yan's two hand filings captured read-only (S5); the filing bot (S6-S8: `bsi_filings`, queue view, edge function
   `bsi-filing`, Slack, health), which waits on S5 and Fred's go; the enrichment pilot (S9); a Chapter 119 records request
-  to the City (plan decision F4, draft only).
+  to the City (plan decision F4, draft only). Not yet checked: the next morning's DERM health run (S4).
+- WAITING ON FRED: should the DERM Tracker's "Record a manual filing" (with Miami-Dade) refuse a Boca client's visit?
+  Today it shows on every visit (his 2026-08-19 rule), and 112-YA, a test client the rule routes, would lose that test.
 
 **Permits for every county and city: one permits table, types GDO / CCN / PSO (2026-11-02, Client App, Grove Kosher Boca Raton)**
 - Fred: rename the property section **City Permits**; empty note *"File the permits issued by <county>"*; Add permit without
@@ -409,7 +414,8 @@ Still open: the band A cards (Wed 11-04). **Built so far:** S1 on 2026-11-02 at 
 - HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Decision 22 (emailed re-authentication before a password change) is REPLACED 2026-10-27, see the HR Change password row in section 2.
 - DERM storage private: decisions 2-14 before Stage 1 (scope, archive, receipts, soak lengths ...). FDEP sheets: keep public or move.
 - LWT Broward (2026-09-18): which month a Broward ticket belongs to; tell Yan the gallons are trap capacity; ticket 310590 / Cloggy decal; FDEP sheet size fallback; confirm Jonathan's generator change (0 Broward tickets ever filed).
-- Broward spec: 6 Broward manifests with no visit; Boca Raton printed as Broward (15 properties); FDEP form questions (contact name, mark styles, hauler date); the dead "Generate address sheet" button.
+- Broward spec: 6 Broward manifests with no visit; Boca Raton printed as Broward (15 properties: their county reads Palm
+  Beach since `2026-11-02_1830`; check the next FDEP sheet prints it); FDEP form questions (contact name, mark styles, hauler date); the dead "Generate address sheet" button.
 - Tank sensors: Miami-Dade tip point 0.6-0.9 km off (D3a); truck capacity in two places (M10); flag digest (M11); filing snapshot (M12); refill location and shift form (D12); other D's run on defaults.
 - Older window folders: read their page numbers (17 folders, 157 served documents)?
 - 2026-09-02 phase flip: "A + B now, C later?" never answered.
