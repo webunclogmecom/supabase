@@ -10,7 +10,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | S1 | completion stop only inside the visit window; alarm T1 without an upper age | BUILT 2026-11-02 (`2026-11-02_1430`, 1b6d14ca) |
 | S2 | band B (visits dated 10-08 to 10-17, plus 8854) closed in the ledger | BUILT 2026-11-03 (`2026-11-03_1300`, e815caa1) |
 | **S3a** | **the lock in the five writers, and the reopen rule (sections 3 to 6)** | **BUILT 2026-11-03 12:28 ET (`2026-11-03_1330`), a day early on Fred's "go ahead with S3a now"; every rehearsal and control below passed** |
-| S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | part 1 BUILT 2026-11-03 12:45 ET (`2026-11-03_1500`): the override table with Fred's 5 Q8 rows, the ledger stage CHECK (`nightly`, `person`), Viktor's door (RC6 + RC8). The v15 code, its read and save functions and the close-out are built and checked first, then deployed Thu 11-05 (Fred: "Build today, deploy Thu") |
+| S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | part 1 BUILT 2026-11-03 12:45 ET (`2026-11-03_1500`): the override table with Fred's 5 Q8 rows, the ledger stage CHECK (`nightly`, `person`), Viktor's door (RC6 + RC8). The v15 code, its read and save functions and the close-out are built and checked first, then deployed Thu 11-05 (Fred: "Build today, deploy Thu"). Part 2 was built and every offline proof passed on 11-03; **Thursday's step-by-step runbook is section 10** |
 | S4 | band A: Fred's cards only | Fri 11-06 |
 | S5 | the switch on, after Fred reads the comparison | Wed 11-11 |
 | S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | 11-13 / 11-16 / 11-30 |
@@ -297,3 +297,93 @@ These are out of scope, each for a reason given in plan 5.1:
 - counting a shared stop once in Hours worked;
 - errands;
 - a re-measure after a truck change outside the window.
+
+## 10. Thursday 11-05: the S3b part 2 runbook (v15 deploy)
+
+Fred, 2026-11-03: *"Build today, deploy Thu"*, then *"document this, so we know what we need to do on thursday"*.
+
+- **What gets deployed:** edge function `time-on-site-samsara-recheck` v15, plus its four database functions.
+- **Where it is built:** locally, outside the repo, under `samsara-checks/duration_recheck_run_2026-10-28/` (abbreviated
+  RR below):
+  - `RR/v15/`: the edge function code and its checks;
+  - `RR/S3b/part2_functions.sql`: the four functions.
+- **Everything below was proven on 11-03 except the steps marked NEW.** Thursday repeats the proofs on the day, then
+  deploys.
+
+**Rules for the day:**
+- **One moving part.** No other session deploys `time-on-site-samsara-recheck` or `time-on-site-reminder`, rolls out
+  `_shared/service-caller.ts` or `_shared/slack-notify.ts`, or runs legacy-keys steps 9 and 10 (plan G-9).
+- **Write window:** 11:15 to 17:30 ET, clear of :05 to :10, :15 to :20, :30 to :45, and :00 to :05 before 14:05.
+- **Times** come from the DB clock.
+- **Never** a real (non-dry) call of the function by hand.
+- **The switch stays off.** Thursday changes the code. It does not change `fn_request_time_on_site_samsara_recheck`'s
+  body (still `'{}'`, so rules 1). The flip is S5, Wed 11-11, on Fred's word after the shadow comparison.
+
+### 10.1 Before the deploy (morning)
+
+| # | step | command (from RR unless noted) | pass |
+|---|---|---|---|
+| 1 | The morning check, after the nights of 11-03 and 11-04 (the S2 + S3a + S3b part 1 smoke) | `node --env-file=../../Supabase/.env morning.mjs` | PASS. In `sync_log`, cron 26 (02:20) and the nightly (02:50) have their usual counts (43 to 65 candidates), and no time-column write on a locked visit since 11-03 12:28 ET (`audit.logs` joined to `fn_time_on_site_is_locked`). T1 to T8 are 0 |
+| 2 | Claim in `WORKING-NOW.md` (commit with an explicit path): the edge function, the four new functions, cron 151. Read the other sessions' claims and transcripts | file tool + `cat >>` | no open claim on these objects |
+| 3 | v14 has not moved since the build | `sha256sum ../../Supabase/supabase/functions/time-on-site-samsara-recheck/index.ts` | `315e20a4e08310841eb54d6f2fbe12bb8fc5128a39ee6c7d9346ac1fba4b8d4a`. If it differs: rebuild (step 4) and re-run steps 5 to 7 |
+| 4 | Build `v15/index.ts` from today's v14 and the modules | `node v15/build_index.mjs` | it prints the sizes |
+| 5 | The offline proofs, all again | `node v15/equiv_test.mjs`, `node v15/closeout_test.mjs`, `node v15/check_index.mjs`, `node v15/stub_rules2.mjs` | each ends "ALL PASS" or "all checks passed" (0 of 1,452 mismatches; 26 close-out cases; 187 v14 lines kept; rules 2 stub plus its mutation) |
+| 6 | The v14 stub test on v15 (rules 1 = v14) | from `Supabase/scripts/checks`: `node time_on_site_samsara_recheck.mjs <RR>/v15/index.ts` | "all checks passed (five mutations caught)" |
+| 7 | The live-read proofs, rolled back | `node --env-file=../../Supabase/.env v15/site_test.mjs`, `v15/fixes_test.mjs`, `S3b/test_part2.mjs`, `S3b/test_stops500.mjs` | 25 of 25 sites identical; 40 of 40 fixes; every refusal reason right; 8752 lists its 471 m stop |
+| 8 | **NEW: the migration.** `RR/S3b/part2_functions.sql` becomes `Supabase/docs/migrations/2026-11-05_<hhmm>_time_on_site_s3b_v15_functions.sql`, plus `2026-11-05_rollback_time_on_site_s3b_v15_functions.sql`. Contents: the header (the ask, the four functions, G-15); a PIN (none of the four exists yet; `fn_time_on_site_is_locked`, the overrides table and the `nightly` / `person` stage CHECK do exist); VERIFY: SECURITY DEFINER with an empty search_path, `has_function_privilege` false for anon and authenticated and true for service_role, and the read answers for today's window. The rollback drops the four, after a PIN that they exist | write the file, then from `Supabase`: `node scripts/probes/apply_sql_file.mjs <file> rehearse` | (a) as written: HTTP 201; (c) a PIN altered: raises; the rollback on top: the four are gone; the rollback alone: refuses |
+| 9 | **NEW: the live positive cases** (rolled back, a runner like `S3b/test_part2.mjs`) | `fn_save_time_on_site_stay` on a real UNLOCKED completed visit of the window, passing its own saved interval, its own minutes and source, and its site point (r 250, point). Then `fn_close_time_on_site` twice for one visit of the run date | the save returns `{ok: true}` (our GPS at both ends inside the site); the first close-out inserts 1, the second returns `already_closed: 1` |
+| 10 | Apply the migration, in the write window | from `Supabase`: `node scripts/probes/apply_sql_file.mjs <file>` | HTTP 201; then a read-only check that the four exist with the right privileges |
+
+### 10.2 The deploy, with parity (plan 5.2 check a)
+
+| # | step | command | pass |
+|---|---|---|---|
+| 11 | A v14 dry run, the "before" (a dry run writes nothing and logs nothing) | `node --env-file=../../Supabase/.env v15/dryrun.mjs v14_before_1105 '{}'` | HTTP 200 (on 11-03: 9 s, 53 candidates, 0 changes) |
+| 12 | Copy v15 into the repo and deploy, within minutes of step 11. `verify_jwt = true` is pinned in `config.toml`; never pass `--no-verify-jwt` | `cp <RR>/v15/index.ts supabase/functions/time-on-site-samsara-recheck/index.ts`, then from `Supabase`: `SUPABASE_ACCESS_TOKEN=<PAT from .env, never printed> supabase functions deploy time-on-site-samsara-recheck --project-ref wbasvhvvismukaqdnouk` | "Deployed" (not proof on its own, see step 13) |
+| 13 | Read the deployed body back | from `Supabase`: `node scripts/probes/edge_deployed_body.js time-on-site-samsara-recheck "rules must be 1 or 2" "BEGIN rule.mjs" "fn_time_on_site_recheck_visits" "api.samsara.com/v1/fleet/trips"` (the last one is the control: v14 has it too) | every needle present; `updated_at` is new. A new `version` alone proves nothing |
+| 14 | The v15 dry run with the default body (rules 1), right after | `v15/dryrun.mjs v15_rules1_1105 '{}'` | HTTP 200 |
+| 15 | Parity | `node v15/parity.mjs v14_before_1105 v15_rules1_1105` | "PASS parity": the same window, counts and changes. On a FAIL, run steps 11 and 14 once more back to back (a value can move between two runs); a second FAIL goes to rollback 10.4 |
+| 16 | Commit in one breath (Supabase: an explicit pathspec and the Co-Authored-By footer; pull-rebase first): the function's `index.ts`, the migration and its rollback, this spec and `CLAUDE.md` | `git add <paths> && git commit -F <msg> -- <paths> && git push` | pushed. The commit before it is the rollback point: record its hash in the claim |
+| 17 | Re-baseline the morning check's edge pins (the body and `updated_at` moved on purpose) | `node --env-file=../../Supabase/.env edge_pins.mjs` (it must show ONLY time-on-site-samsara-recheck moved), then `edge_pins.mjs --save` | the second run reports nothing moved; `morning.mjs` PASSES |
+
+### 10.3 After the deploy: the new rule, dry (plan 5.2 checks b and f)
+
+| # | step | command | pass |
+|---|---|---|---|
+| 18 | Check (b): the new rule over band B and band C with the ledger lock lifted (dry only), against judge D | `v15/dryrun.mjs v15_rules2_bandBC_1105 '{"rules":2,"from":"2026-10-08","to":"<yesterday>","include_ledger":true}'`, then `node v15/compare_b.mjs v15_rules2_bandBC_1105` | HTTP 200, and no "UNEXPLAINED" line. A difference is expected only where the saved value changed since Phase 1 (S2's 10 visits, band C's nightly writes since 10-28); each one is listed and read. `only_d` is empty |
+| 19 | The new rule, dry, on tonight's window (the first shadow) | `v15/dryrun.mjs v15_rules2_shadow_1105 '{"rules":2}'` | HTTP 200; `places_ok: true`, `trip_reads_failed: 0`; every candidate listed with its decision |
+| 20 | Check (f): no close-out row before the flip | read-only: `select count(*) from public.visit_time_on_site_corrections where stage = 'nightly'` | 0 (and 0 every morning until S5) |
+| 21 | Docs, same cycle | this spec (S3b BUILT and its numbers); `Supabase/CLAUDE.md` time-on-site section (v15, the `rules` switch, `include_ledger` / `place_shapes` dry only, the close-out); `decisions-to-build.md`; the run README; memory; the Trello progress comment; release the claim | committed and pushed |
+
+### 10.4 Rollback (if a check fails after step 12)
+
+1. Redeploy v14 from the commit recorded in step 16:
+   `git show <commit>:supabase/functions/time-on-site-samsara-recheck/index.ts > supabase/functions/time-on-site-samsara-recheck/index.ts`.
+   Deploy it, read the body back (needle "rules must be 1 or 2" absent, "api.samsara.com/v1/fleet/trips" present), and
+   commit. Do not use `aab4ac0`: it would undo later `_shared` work.
+2. Then apply the migration's rollback, which drops the four functions. Nothing calls them under rules 1.
+3. Part 1 (the overrides table, the stage CHECK, Viktor) stays. Its own rollback is
+   `2026-11-03_rollback_time_on_site_s3b_overrides_stages_viktor.sql`, and it refuses while `nightly` or `person` rows
+   exist.
+
+### 10.5 What comes after Thursday
+
+- **Fri 11-06 to Wed 11-11:**
+  - every morning, a `{"rules":2}` dry run (the shadow), compared with what v14 wrote that night. Step 7 is judged on the
+    value standing before 02:50 (plan 5.2 check d);
+  - `stage = 'nightly'` rows stay 0;
+  - Fri 11-06 also: S4, band A cards (Fred's answers are due Wed 11-04), and the dry range over 10-18 to 10-26 for the
+    S6 cards.
+- **Wed 11-11, S5:** Fred reads the comparison and says go. The flip is one line in
+  `fn_request_time_on_site_samsara_recheck` (body `'{}'` to `'{"rules":2}'`), and the rollback is the same line back.
+  The next morning's checks are plan 5.2 check e and the 8.1 row S5.
+
+### 10.6 Known going in
+
+- **Deno has never run v15.** The machine that built it has no Deno, so step 14 is its first Deno run. The file starts
+  with `// @ts-nocheck`, because the inlined rule is untyped JS.
+- **A knife-edge carried over from D.** Visit 8232 flips when the 30 m margin becomes 31 m. That is in D, and kept.
+- **`shared_stay` is D's narrower reading.** The close-out adds the wider test (another visit's tap inside the stay)
+  before it marks anything `nightly_self`.
+- **The close-out's "a truck stayed at the site" tests use a wider site than the rule.** The point counts to 300 m, and
+  a Place to its enclosing circle plus 80 m. So a doubtful blank goes to a person.
