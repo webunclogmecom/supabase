@@ -18,7 +18,8 @@
 //      so the only rows creatable are on the two disposal sites (never a customer);
 //   2. driver_id must match the server-side roster;
 //   3. idempotency is (site + driver) over 90 min => the ENTIRE endpoint's ceiling is
-//      4 drivers x 2 dumps = 8 visits per 90 minutes, no matter who calls it or how often;
+//      one visit per driver per dump site per 90 minutes, no matter who calls it or how often (since
+//      2026-11-03 public.dump_go also reuses the office's dump and a same-truck partner's, never more);
 //   4. every line item is $0, so nothing is billable;
 //   5. anything junk is soft-deletable and the delete propagates back out to Jobber.
 // A `k` in the body/URL is still ACCEPTED and IGNORED so existing QR links keep working unchanged.
@@ -116,11 +117,11 @@ const SERVICE_LINE_ITEM_DUMP = 28; // "28 - Disposal - Dump Offload" (service_li
                                    // line item from service_line_items.title, so this yields exactly
                                    // "28 - Disposal - Dump Offload".
 // create_calendar_visit has NO dedupe; a double-tap would create two DB visits AND two Jobber visits.
-// SCOPE IS (site + DRIVER), never site alone: two drivers legitimately hit the same dump within 90
-// minutes on a normal night, and each needs HIS OWN visit to attach HIS OWN manifest photo to. Keying
-// on the site alone would silently absorb the second driver into the first driver's visit and leave
-// him nowhere to put his manifest — which is the entire reason this app exists.
-const IDEMPOTENCY_MINUTES = 90;
+// The duplicate decision lives in public.dump_go (2026-11-03_1345), one transaction under a lock per site.
+// SCOPE IS STILL NEVER THE SITE ALONE: two drivers in DIFFERENT trucks hit the same dump within 90
+// minutes on a normal night, and each needs HIS OWN visit for HIS OWN manifest. Only a second driver in
+// the SAME, KNOWN truck shares the first one's visit (Fred 2026-11-03: one load, one manifest), and an
+// office dump is reused only for its own driver (assigned or on its team).
 
 // Drivers: ops.v_calendar_driver is NOT a driver list (it returns all 7 active employees incl.
 // Fred/Yannick). Active Technicians auto-appear; DRIVER_EXTRA_IDS covers non-Technician roles who
@@ -1447,6 +1448,34 @@ Deno.serve(async (req) => {
       return json({ ok: true, removed });
     }
 
+    // "receipt": is the dump this phone last logged still on the schedule? (Fred 2026-11-03: "go ahead with the change",
+    // the receipt comes back after a reload for up to 3 hours.) The page keeps its last receipt and asks this before
+    // showing it again, so a dump the office deleted or cancelled never comes back on screen (the reason the old
+    // resume strip was removed on 2026-07-17). Read-only. Answers live:false for anything that is not a live dump visit.
+    if (action === "receipt") {
+      const rVisitId = Number(body.dump_visit_id);
+      if (!rVisitId) return json({ ok: false, error: "missing dump visit" }, 400);
+      const { data: rv, error: rErr } = await db
+        .from("visits")
+        .select("id, public_id, client_id, start_at, visit_status, deleted_at, assigned_driver_id")
+        .eq("id", rVisitId)
+        .maybeSingle();
+      if (rErr) {
+        console.error("[dump] receipt read failed:", rErr.message);
+        return json({ ok: false, error: "could not check the dump" }, 500);
+      }
+      const rKey = (Object.keys(DUMPS) as (keyof typeof DUMPS)[]).find((k) => DUMPS[k].client_id === rv?.client_id);
+      const live = !!rv && !!rKey && rv.deleted_at == null && ["scheduled", "completed"].includes(String(rv.visit_status));
+      if (!live || !rKey) return json({ ok: true, live: false });
+      const rDump = DUMPS[rKey];
+      const rDriver = (await drivers()).find((d) => d.id === rv.assigned_driver_id)?.full_name ?? null;
+      return json({
+        ok: true, live: true, visit_id: rv.id, public_id: rv.public_id, driver: rDriver,
+        dump_key: rKey, dump: rDump.label, county: rDump.county, address: rDump.address,
+        start_at: rv.start_at, maps_url: mapsUrl(rDump),
+      });
+    }
+
     if (action !== "create") return json({ ok: false, error: "unknown action" }, 400);
 
     const dumpKey = String(body.dump ?? "") as keyof typeof DUMPS;
@@ -1485,31 +1514,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // IDEMPOTENCY — THIS driver double-tapping must not create a second Jobber visit. Scoped to
-    // (site + driver): a different driver heading to the same dump gets his own visit (see above).
-    const since = new Date(Date.now() - IDEMPOTENCY_MINUTES * 60_000).toISOString();
-    let dupeQuery = db
-      .from("visits")
-      .select("id, public_id, start_at, assigned_driver_id")
-      .eq("client_id", dump.client_id)
-      .eq("assigned_driver_id", driverId)
-      .eq("visit_status", "scheduled")
-      .is("deleted_at", null)
-      .gte("start_at", since);
-    dupeQuery = testMode ? dupeQuery.ilike("notes", "%[TEST]%") : dupeQuery.not("notes", "ilike", "%[TEST]%");
-    const { data: dupes, error: dupeErr } = await dupeQuery.order("start_at", { ascending: false }).limit(1);
-    if (dupeErr) throw new Error(`dupe check: ${dupeErr.message}`);
-
-    if (dupes?.length) {
-      const v = dupes[0];
-      console.log(`[dump] idempotent hit — returning ${driver.full_name}'s existing visit ${v.id} for ${dumpKey}`);
-      return json({
-        ok: true, already: true, visit_id: v.id, public_id: v.public_id, driver: driver.full_name,
-        dump_key: dumpKey, dump: dump.label, county: dump.county,
-        address: dump.address, start_at: v.start_at, maps_url: mapsUrl(dump),
-      });
-    }
-
     // What the driver actually saw, recorded verbatim on the visit so the office can see the expected
     // arrival (docs/09-eta-design.md section 9). Display text ONLY: it is never parsed or trusted, so it
     // is flattened and clamped before it goes anywhere near the note. This is a snapshot at log time,
@@ -1540,38 +1544,33 @@ Deno.serve(async (req) => {
     // The phone's cached ETA fix is reused, so there is no new location prompt.
     const truck = await resolveTruck(driverId, body.client_lat, body.client_lng);
 
-    const startAt = new Date();
-    const endAt = new Date(startAt.getTime() + 60 * 60_000);
-
-    // create_dump_visit wraps the ONE sanctioned visit-creating path (create_calendar_visit) and adds
-    // the Jobber kill-switch. It keeps all of that RPC's validation and its line_items/visit_team/
-    // visit_locations children; when PUSH_TO_JOBBER is false it additionally suppresses the insert
-    // push and flips the row to source='manual' + sync_state='confirmed' so neither the trigger nor
-    // the */3 retry cron can send it to Jobber. The visit still shows in the Visit Calendar.
-    const { data: visit, error } = await db.rpc("create_dump_visit", {
+    // ONE DUMP VISIT PER DUMP RUN (Fred 2026-11-03, Trello sfD4mhwm; migration 2026-11-03_1345_dump_go_one_dump_per_run).
+    // public.dump_go does the whole decision in ONE transaction under a lock per dump site, so two drivers tapping GO in
+    // the same second cannot both miss each other:
+    //   own     = this driver's own app dump here in the last 90 min (the old double-tap check);
+    //   claimed = an office dump for this driver here within 6 h, moved to now (Fred: "Use the office's dump");
+    //   joined  = a dump here on the same KNOWN truck within 90 min (Fred: "Second joins the first, only when sure");
+    //   created = a new visit through create_dump_visit, exactly as before.
+    // create_dump_visit wraps the ONE sanctioned visit-creating path (create_calendar_visit) and adds the Jobber
+    // kill-switch: with p_push_to_jobber false it suppresses the insert push and flips the row to source='manual' +
+    // sync_state='confirmed'. A [TEST] GO only ever matches [TEST] dumps and never claims or joins a real one.
+    const { data: goRows, error } = await db.rpc("dump_go", {
       p_client_id: dump.client_id,
       p_job_id: dump.job_id,
-      p_service_line_item_ids: [SERVICE_LINE_ITEM_DUMP],
-      p_visit_date: etDate(),           // advisory — the BEFORE trigger re-derives it from start_at in ET
       p_property_id: dump.property_id,
-      p_start_at: startAt.toISOString(),
-      p_end_at: endAt.toISOString(),
-      p_title: "Dump",                  // trg_prefix_visit_title prepends "000-DH Homestead Dump - "
+      p_line_item_id: SERVICE_LINE_ITEM_DUMP,
+      p_driver_id: driverId,
+      // TRUCK (Fred 2026-07-27): NULL unless the resolver is confident; also what lets a second driver in the
+      // same truck join (never joined on a guess). The hourly derive-visit-vehicle-id cron only touches NULLs.
+      p_vehicle_id: truck?.vehicle_id ?? null,
       p_notes: (testMode ? "[TEST] " : "") +
                `Dump run — ${driver.full_name} (via truck QR). Attach the dump manifest photo here.` +
                (etaNote ? ` ${etaNote}` : "") +
                (hoursNote ? ` ${hoursNote}` : "") +
                callNote,
-      p_driver_id: driverId,
-      p_team_ids: [driverId],
-      // TRUCK (Fred 2026-07-27): NULL unless the resolver is confident. See resolveTruck + the migration
-      // header. Passing NULL is the normal, correct outcome for an unresolvable dump — the hourly
-      // derive-visit-vehicle-id cron only ever touches vehicle_id IS NULL, so it stays the safety net and
-      // can never fight this write.
-      p_vehicle_id: truck?.vehicle_id ?? null,
-      // A TEST dump must NEVER reach Jobber and must ALWAYS stay source='manual' so test_cleanup can find
-      // it — even after go-live flips PUSH_TO_JOBBER=true (Fred 2026-07-24, review finding). test_mode is
-      // decoupled from the go-live global on purpose: a preview must never land on the real crew schedule.
+      p_test: testMode,
+      // A TEST dump must NEVER reach Jobber and must ALWAYS stay source='manual' so test_cleanup can find it
+      // (Fred 2026-07-24): test_mode is decoupled from the go-live global on purpose.
       p_push_to_jobber: testMode ? false : PUSH_TO_JOBBER,
     });
 
@@ -1580,32 +1579,41 @@ Deno.serve(async (req) => {
       console.error(`[dump] create failed for ${dumpKey}:`, error.message);
       return json({ ok: false, error: "could not create the visit", detail: error.message }, 500);
     }
+    const go = (Array.isArray(goRows) ? goRows[0] : goRows) as
+      { kind: string; visit_id: number; public_id: string; start_at: string; driver_id: number | null; driver_name: string | null } | null;
+    if (!go?.visit_id) {
+      console.error(`[dump] dump_go returned no visit for ${dumpKey}`);
+      return json({ ok: false, error: "could not create the visit", detail: "no visit returned" }, 500);
+    }
 
-    const v = Array.isArray(visit) ? visit[0] : visit;
-    // Provenance for the truck decision rides in the existing jsonb detail — NOT in a source-prefixed
-    // column (Rule 1). This is what lets us audit "why did it say Moises" after the fact.
-    await logActivity("create", driverId, (v?.id as number) ?? null, {
-      dump_key: dumpKey,
-      truck: truck ? { vehicle_id: truck.vehicle_id, name: truck.vehicle_name, confidence: truck.confidence, candidates: truck.candidates } : null,
-    });
-    console.log(`[dump] created visit ${v?.id} ${dumpKey} driver=${driver.full_name} — trigger will push to Jobber`);
+    if (go.kind === "created") {
+      // Provenance for the truck decision rides in the existing jsonb detail, NOT in a source-prefixed column (Rule 1).
+      await logActivity("create", driverId, go.visit_id, {
+        dump_key: dumpKey,
+        truck: truck ? { vehicle_id: truck.vehicle_id, name: truck.vehicle_name, confidence: truck.confidence, candidates: truck.candidates } : null,
+      });
+    }
+    console.log(`[dump] ${go.kind} visit ${go.visit_id} ${dumpKey} driver=${driver.full_name}`);
 
-    // SPLIT dump alert #1 (Fred 2026-07-23): "dump created" fires HERE on GO, so a dump ALWAYS notifies
-    // #dump-visits even if the driver never opens the crib sheet. (#2 "load reported" fires on confirm.)
-    // Only on a genuine create — the idempotent-hit path above returns early and never reaches here.
-    if (v?.id) {
-      try { await postDumpCreatedAlert(v.id as number, driver.full_name, driverId, { afterHours: isAfterHours, calledAhead, truck }); }
+    // SPLIT dump alert #1 (Fred 2026-07-23): "dump created" fires on GO, so a dump ALWAYS notifies even if the driver
+    // never opens the crib sheet. A claimed office dump never had one, so it gets it now. own / joined post nothing
+    // (the dump already has its message).
+    if (go.kind === "created" || go.kind === "claimed") {
+      try { await postDumpCreatedAlert(go.visit_id, driver.full_name, driverId, { afterHours: isAfterHours, calledAhead, truck }); }
       catch (e) { console.error("[dump] slack created alert failed:", e instanceof Error ? e.message : String(e)); }
     }
 
-    // Every field the receipt renders is echoed here ON PURPOSE — dump_key (drives the wrong-dump
-    // identity colour), county, label, address, driver, time. The page must render the receipt from
-    // THIS body, never from what the thumb tapped: if the server disagrees with his tap, he has to
-    // SEE it rather than drive 45mi to the wrong county behind a confidently-wrong link.
+    // Every field the receipt renders is echoed here ON PURPOSE: dump_key (drives the wrong-dump identity colour),
+    // county, label, address, driver, time. The page renders the receipt from THIS body, never from what the thumb
+    // tapped. `driver` is the visit's own driver: on a joined dump that is the other driver, and `opened_by_other`
+    // tells the page to say so ("Michael Escobar opened this one").
+    const visitDriver = go.driver_name ?? driver.full_name;
     return json({
-      ok: true, already: false, visit_id: v?.id, public_id: v?.public_id, driver: driver.full_name,
+      ok: true, already: go.kind === "own" || go.kind === "joined", kind: go.kind,
+      opened_by_other: go.driver_id != null && go.driver_id !== driverId,
+      visit_id: go.visit_id, public_id: go.public_id, driver: visitDriver,
       dump_key: dumpKey, dump: dump.label, county: dump.county,
-      address: dump.address, start_at: v?.start_at, maps_url: mapsUrl(dump),
+      address: dump.address, start_at: go.start_at, maps_url: mapsUrl(dump),
     });
   } catch (e) {
     console.error("[dump] FATAL:", e instanceof Error ? e.message : String(e));
