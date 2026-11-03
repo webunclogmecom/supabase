@@ -83,7 +83,8 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   `node expire_jon_video_key.mjs --apply` in the local audit folder `security-audit-jonathan-2026-10-30/` (waits for
   an idle bot, keeps the other entries byte for byte, proves the key now gets 401, then prints the report). Without
   a session: Railway, UnclogMe_Reporter_Bot, Variables, `RUN_KEYS`, delete the `jonvideo:` entry and its comma only,
-  save (this redeploys the bot, so not while a filing runs). Removal: (filled in by the task).
+  save (this redeploys the bot, so not while a filing runs). Trello card `4XP6pFGN` (Testing / QA since 11-03; the
+  task adds the result there too). Removal: (filled in by the task).
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
