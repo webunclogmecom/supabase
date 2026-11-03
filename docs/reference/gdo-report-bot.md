@@ -74,8 +74,16 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   Railway or GitHub access, because Railway's audit log records changes but never who viewed a variable. The other
   entries were kept byte for byte. A scheduled task removes the entry at 00:55 ET on 11-04 and reports its use. The bot
   logs `Authenticated operator key: <name>` before each request's access line, so every request made with a key can
-  be attributed to it. The check reads those lines, with our own `fred` requests as the control. Removal: (filled in
-  by the task).
+  be attributed to it. The check reads those lines, with our own `fred` requests as the control. Fred's rule for the
+  outcome: *"if he did [change anything] we need to redo the rotation of keys and if he didn't we just revoke the
+  access afterwards"*. A change is any non-GET request with his key, a monthly report recorded with dry run off, an
+  unexplained bot database write, a Railway event or bot deploy that is not ours, or a commit or collaborator on the
+  bot repo (none at setup: 0 commits since 00:51 ET, collaborators `webunclogmecom` only). The task only reports; a
+  re-rotation is Fred's call. **If the task did not run** (it needs the Claude app open), or to end the key early:
+  `node expire_jon_video_key.mjs --apply` in the local audit folder `security-audit-jonathan-2026-10-30/` (waits for
+  an idle bot, keeps the other entries byte for byte, proves the key now gets 401, then prints the report). Without
+  a session: Railway, UnclogMe_Reporter_Bot, Variables, `RUN_KEYS`, delete the `jonvideo:` entry and its comma only,
+  save (this redeploys the bot, so not while a filing runs). Removal: (filled in by the task).
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
