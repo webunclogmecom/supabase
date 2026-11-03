@@ -9,7 +9,7 @@ paying for PITR (about $100 a month): at most about 2 hours of business rows can
 
 | Copy | When | What is in it | Kept |
 |---|---|---|---|
-| 2-hourly | every 2 hours at HH:17 UTC (even hours) | schemas `public derm ops client sync raw customer hr`, without the data of `vehicle_telemetry_readings` (Samsara can resend it), `webhook_events_log` and `sync_log` (logs) | last 24 (2 days) |
+| 2-hourly | every 2 hours at HH:17 UTC (even hours) | schemas `public derm ops client sync raw customer hr leads` (leads since 2026-11-03), without the data of `vehicle_telemetry_readings` (Samsara can resend it), `webhook_events_log` and `sync_log` (logs) | last 24 (2 days) |
 | daily | the first run after the newest daily is 23 hours old | the same schemas with all their data, plus `audit` (the change history) | last 14 |
 
 Never in any copy: `vault` (secrets), `public.webhook_tokens` (Jobber and Samsara OAuth tokens and the

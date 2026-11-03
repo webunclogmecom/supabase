@@ -1,11 +1,12 @@
 -- Every table in an app schema (the PostgREST-exposed schemas we own) has RLS on, and the guard that
 -- keeps it so is installed. Trello FFSF71BI, migration 2026-10-28_1804_rls_on_every_app_table.
 -- Healthy = one row, status 'ok'. Anything else names what drifted. Read-only.
--- If a schema is ever added to PostgREST's exposed list, add it here AND to public.rls_auto_enable().
+-- Covers every schema we own that holds business data: the PostgREST-exposed ones plus the private `leads`
+-- (2026-11-03_1700). If a schema is added, add it here AND to public.rls_auto_enable() AND to backup.sh SCHEMAS.
 with app_tables as (
   select n.nspname || '.' || c.relname as t, c.relrowsecurity as rls
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
-   where n.nspname in ('public', 'derm', 'ops', 'client', 'customer', 'hr')
+   where n.nspname in ('public', 'derm', 'ops', 'client', 'customer', 'hr', 'leads')
      and c.relkind in ('r', 'p')
 ),
 off as (select count(*) as n, string_agg(t, ', ' order by t) as list from app_tables where not rls)

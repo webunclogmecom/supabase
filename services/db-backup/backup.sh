@@ -35,7 +35,7 @@ done
 if [ "$INTERVAL_HOURS" -lt 1 ] || [ "$KEEP_2H" -lt 1 ] || [ "$KEEP_DAILY" -lt 1 ]; then echo "backup.sh: INTERVAL_HOURS, KEEP_2H and KEEP_DAILY must be at least 1" >&2; exit 2; fi
 
 # Business schemas. Not vault (secrets), auth/storage (Supabase-managed), cron/net/realtime (logs).
-SCHEMAS=(public derm ops client sync raw customer hr)
+SCHEMAS=(public derm ops client sync raw customer hr leads)   # leads: frozen leads, 2026-11-03_1700
 # Never copied: Jobber/Samsara OAuth tokens and the client secret (the login cannot read it anyway).
 EXCLUDE_TABLE=(public.webhook_tokens)
 # Re-creatable bulk, left out of the 2-hour copy only: Samsara telemetry (Samsara keeps months of it)

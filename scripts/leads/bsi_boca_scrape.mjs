@@ -75,7 +75,7 @@ if (profile.hauling_company_name !== 'UNCLOGME LLC') throw new Error(`Signed in 
 
 const state = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : { properties: {} }
 Object.assign(state, {
-  source: 'bsi_online', fetched_at: new Date().toISOString(), done: false,
+  source: 'bsi_online', fetched_at: state.fetched_at ?? new Date().toISOString(), done: false,  // a resume keeps its run's start
   account: { testing_company_id: profile.id, hauling_company_id: profile.hauling_company_id },
   terms: state.terms ?? {},
 })
