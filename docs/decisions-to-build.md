@@ -95,6 +95,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
     it. Checked live at 1440 and 375 (7849 and 7992 REPORTED; 8888 unchanged). Standing check
     `scripts/checks/fp_gdo_reports_complete.sql`.
   - No bot-page hand filing since the four of 10-27.
+  - Fred, 11-03: no reply to Yan in the thread (*"he already knows"*). Left on ObKqzi47: Testing / QA on Fred's word.
 
 **DERM Tracker "File it with the bot" button on the visit page (Trello xBCSvP6f, 2026-10-27)**
 - Huddle 2026-10-26: Yan wants the bot dashboard's "process a permit by hand" as a button on the visit page; Jonathan
