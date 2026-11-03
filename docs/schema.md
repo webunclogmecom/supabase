@@ -28,7 +28,7 @@ These tables are no longer in the database. See [ADR 011](decisions/011-source-o
 |---|---|---|
 | `routes`, `route_stops` | Airtable Route Creation source abandoned | Viktor's routing skill (Slack) |
 | `receivables` | Airtable Past Due was redundant with Jobber `invoices` | `SELECT * FROM invoices WHERE invoice_status IN ('PAST_DUE', 'OVERDUE') OR (due_date < now() AND amount_paid < total_amount)` |
-| `leads` | Airtable Leads pre-CRM tracking | Odoo CRM module (post-May 2026) |
+| `leads` | Airtable Leads pre-CRM tracking | Frozen leads: the private schema `leads` (2026-11-03, ADR 020; section "Schema `leads`" below) |
 | `expenses` | Fillout-derived stubs added no value over Ramp | Ramp (corporate card system) |
 
 ---
@@ -594,7 +594,7 @@ Enforced in app layer; not a DB CHECK constraint (vocabulary may evolve).
 | notes | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | |
 
-### `leads` — 5 rows
+### `leads` — DROPPED 2026-04-30 (history only; the frozen-leads schema `leads` is a different thing, see below)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -656,6 +656,37 @@ WHERE entity_type = 'client' AND entity_id = 42 AND source_system = 'jobber';
 SELECT entity_id FROM entity_source_links
 WHERE entity_type = 'client' AND source_system = 'jobber' AND source_id = 'JOB_123';
 ```
+
+Since `2026-11-03_1700` the entity_type CHECK also allows `source_record` (a `leads.source_records` row; source_system =
+the feed, e.g. `bsi`; source_id = its id there, e.g. a BSI Online property id).
+
+---
+
+## Schema `leads`: frozen leads (2026-11-03, ADR 020, Trello #165 / #166)
+
+Private: not exposed to the API; nothing granted to anon, authenticated or service_role on its tables. Migrations
+`2026-11-03_1700` (tables), `_1730` (functions, views), `_1800` (view speed). Loaded 2026-11-03: 431 BSI Online
+properties of the City of Boca Raton FOG program.
+
+| Table | Grain | Key columns | Audit |
+|---|---|---|---|
+| `leads.establishments` | one restaurant | `property_id` (FK properties; set = it IS that property of ours; one ACTIVE per property), `status` ACTIVE / INACTIVE | yes |
+| `leads.source_records` | one outside record | `establishment_id`; its id in the source lives in `entity_source_links` (`source_record`) | yes |
+| `leads.source_versions` | what the source said, append-only | PK (`source_record_id`, `fetched_at`), `last_seen_at`, `payload` jsonb (private: CCN and contacts) | no (machine landing) |
+| `leads.match_decisions` | one decision, insert-only | `property_id`, `source_record_id` or `absent_from`, `verdict` same / different / absent, `seen_version_at`, `reason`, `decided_by` | no (who / why are columns) |
+
+Functions (postgres-only): `leads.ingest(source, run_started_at, records, file)` (the only writer of records and
+versions; loader `scripts/leads/load_bsi.mjs`), `leads.decide_client(property, verdict, reason, by, record, absent_from)`
+(the only writer of decisions and links). Helpers `fn_street_key`, `fn_name_key`, `fn_bsi_date` (service_role EXECUTE,
+used by the views).
+
+Views: private `leads.v_src_bsi` (newest BSI version, typed), `leads.v_client_candidates` (same city AND same street
+key, or a name score of at least 0.8), `leads.v_establishment_state` (`lead_state`: frozen / needs_review / client /
+warm / former_client). For Viktor, SELECT for service_role only, no CCN or contact column:
+`public.v_frozen_leads` (one row per frozen restaurant: interceptors, external interceptors, overdue, next pump due,
+days overdue, last pumped), `public.v_lead_interceptors` (one row per BSI interceptor, every state; BSI property and
+interceptor ids for the filing bot), `public.v_lead_review` (client_candidate / client_without_source_record /
+client_record_changed). Integrity check: `scripts/checks/leads_integrity.sql`.
 
 ---
 

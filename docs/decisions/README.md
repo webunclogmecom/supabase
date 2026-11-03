@@ -26,3 +26,4 @@ ADRs are **immutable** once merged. If a decision changes, write a new ADR that 
 | [013](013-tiered-property-geocoding.md) | Tiered property geocoding (Jobber → Airtable → Samsara → Google Maps) | Accepted |
 | [014](014-external-system-references-in-state-tables.md) | Source-prefixed columns allowed in private state tables (refines ADR 002) | Accepted |
 | [015](015-supabase-native-recurring-visits.md) | Recurring visit schedule moves from Airtable to Supabase-native cron + `visits.source` + merge promotion | Accepted |
+| [020](020-frozen-leads-in-prod-private-schema.md) | Frozen leads live in Prod, in the private schema `leads` (generic, 3NF, any source; link on the property) | Accepted |

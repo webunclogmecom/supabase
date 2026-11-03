@@ -5,12 +5,24 @@ Trello cards (all in Approved):
 - **#166** `IWJkqTq1`: add the scraped restaurants (frozen leads) and our current clients to the DB.
 - **#169** `0lAWU6Ge`: a BSI Online filing bot that auto-files Boca Raton maintenance reports, like the Online GDO Report bot.
 
-**Status.** This is the plan; nothing in the database has changed.
-- **Done, read-only:**
-  - all the research;
-  - Yan's screen recording, read frame by frame;
-  - the BSI scrape. Its raw data sits in the workspace `backups/` folder, never in a repo.
-- **Waiting on:** the decisions in section 10, before any build step.
+**Status (2026-11-03 ~17:00 ET).**
+- **Done, read-only:** all the research; Yan's screen recording, read frame by frame; the BSI scrape (raw data in the
+  workspace `backups/` folder, never in a repo).
+- **Built (Fred: "Leads + routing now"):**
+  - **S1-S2:** the private schema `leads` and the load of 431 BSI records (`2026-11-03_1700` / `_1730`). M3
+    (`_1800`) made the views fast enough for the API: 25.9 s down to 0.26 s.
+  - **S4:** the line-27 routing (`2026-11-03_1830`).
+- **Fred's answers to section 10 (2026-11-03):**
+  - **F1, CCNs:** "Keep all, privately". They stay in the private payload; no view shows them.
+  - **F2, BSI contacts:** "Load them privately now". Same.
+  - **F3, the bot's login:** the main account, after a check that its daily login does not sign others out.
+  - **F4:** not answered; the records request stays a draft.
+- **Two changes from the design as written below:**
+  - **The CCN CHECK is gone** (F1).
+  - **The client link sits on our property, not on `client_locations`.** The Boca clients' locations have no
+    `property_id`, and every visit has one.
+- **Open:** S3 (Yan's review sitting, then the CCNs), S5 (Yan's hand filings, captured), S6-S8 (the bot, after S5 and
+  Fred's go), S9 (the enrichment pilot).
 
 **What this document leaves out on purpose:**
 - **CCN values.** BSI's own terms call the CCN a confirmation number that unlocks a customer's records, so it is handled like an access code.

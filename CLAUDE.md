@@ -283,6 +283,43 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
 - `parse-gdo-permit` reads only GDO PDFs; with another `permit_type` it stores the PDF unread at `<type>/<date>-<random>.pdf`.
   `fn_gdo_permit_label_targets` keeps to `permit_types.reads_pdf`, so a CCN PDF never reaches the DERM prompt.
 - Boca Raton is Palm Beach since `2026-11-02_1830` (15 rows) and `webhook-jobber` v151 (`inferCountyFromCity`).
+- 🛑 **Line 27 routes by permit type since `2026-11-03_1830` (Trello #169).** `public.fn_client_files_with_bsi(client)`:
+  no live GDO (a live GDO always wins) AND a live Boca Raton property (or a test client with a live CCN: 112-YA). Those
+  clients' line-27 visits are kept out of `v_derm_portal_fields` (so every DERM reader, the bot's queue and the
+  `gdo_no_permit` items), `v_gdo_reporting_derm_mismatch` and the `line27_no_permit_clients` part of
+  `log_rpa_derm_health()`. They are filed on BSI Online (City of Boca Raton) instead. **This had to ship before the
+  office puts line 27 on a Boca job**, or every Boca visit would be held as `no_permit` and emailed as "enter the GDO
+  permit". Standing check `scripts/checks/bsi_routing.sql`; behaviour proof `docs/migrations/2026-11-03_1830_*_PROOF.sql`
+  (ends in ROLLBACK). A new DERM reader that does not go through `v_derm_portal_fields` must apply the rule itself.
+
+## 🛑 FROZEN LEADS: the private schema `leads` (2026-11-03, Trello #165 / #166)
+
+Fred: *"i want a generic leads one with 3NF as well, in case we get like another source of leads too, so they merge,
+including a reference for their source"*; then "Keep all [CCNs], privately" and "Load [BSI contacts] privately now".
+Plan `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`; ADR 020; migrations `2026-11-03_1700` (M1), `_1730`
+(M2), `_1800` (M3), rollbacks beside them.
+- **Shape.** `leads.establishments` (a restaurant; holds ONLY our decision: `property_id` = it IS that property of ours),
+  `leads.source_records` (one outside record; its id lives in `entity_source_links`, type `source_record`),
+  `leads.source_versions` (what the source said, append-only: a new row only when content changes, else `last_seen_at`
+  moves), `leads.match_decisions` (insert-only). **"Frozen" is computed** in `leads.v_establishment_state`, never stored.
+- **Writers.** Only `leads.ingest()` (loader `scripts/leads/load_bsi.mjs`, re-runs change nothing) and
+  `leads.decide_client()` (same / different / absent; refuses a non-staff `p_by` and test clients). Both postgres-only.
+  Never UPDATE the tables by hand; DELETE and TRUNCATE are refused (`fn_append_only_guard`).
+- 🛑 **Private by design.** The schema is NOT exposed to the API and nothing is granted to anon / authenticated /
+  service_role on its tables. Payloads hold CCNs and BSI's personal contacts (Fred's choice). Viktor reads only
+  `public.v_frozen_leads`, `public.v_lead_interceptors` (the #169 bridge) and `public.v_lead_review`: postgres-owned,
+  SELECT for service_role only, **no CCN or contact column** (`scripts/checks/leads_integrity.sql` asserts it).
+  Viktor's REST tools see only `public` (his `ops.v_ar_aging` read returned 404), which is why the views live there.
+- 🛑 **A new schema needs FOUR edits or it silently misses something:** `public.rls_auto_enable()` (RLS on new tables),
+  `scripts/checks/rls_on_app_tables.sql`, `services/db-backup/backup.sh` `SCHEMAS` (`--strict-names`: push it only
+  AFTER the schema and `db_backup_reader`'s USAGE exist, or every dump fails), and the backup grants (tables AND
+  sequences, by default privileges).
+- 🛑 **The link to a client sits on the PROPERTY.** The Boca clients' `client_locations` have no `property_id`, every
+  visit has one, and the filing bot joins visit -> property -> BSI record. One link, set only by `decide_client`.
+- **Speed lesson (M3).** An inlined CTE runs its select-list functions per JOINED row: the candidate view ran five
+  regexp key functions per (record x property) pair, 3.4 s, and the review view re-ran it per property (25.9 s, over
+  PostgREST's 8 s). `MATERIALIZED` CTEs fixed it (0.26 s, rows identical). Time every view as service_role before
+  calling it done.
 
 ## 🛑 This repo is PUBLIC: no secrets, codes or client files in it (2026-10-05)
 
