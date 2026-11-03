@@ -99,7 +99,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
     (Fred: "yes"): Follow-up and Plan A all ticked, card complete; the four Part B items stay open (shelved, not built).
     Yan has not re-tested.
 
-**DERM Tracker "File it with the bot" button on the visit page (Trello xBCSvP6f, 2026-10-27)**
+**DERM Tracker "File it with the bot" button on the visit page (Trello xBCSvP6f, 2026-10-27): BUILT, in Testing / QA since 2026-11-03**
 - Huddle 2026-10-26: Yan wants the bot dashboard's "process a permit by hand" as a button on the visit page; Jonathan
   builds the endpoint and sends the request format, Fred builds the button. Fred 2026-10-27: *"this button should be
   disabled until we have Jon's notification about it ... but we can have our side ready"*; the button on **every
@@ -142,6 +142,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   Then (Fred: *"include all the GDO's associated in the options even if they're expired"*; "Bot files every permit
   shown"; inactive "Leave them out"): **`2026-10-30_1148`, every ACTIVE and EXPIRED permit, built 11:48 ET.**
   **Done 2026-10-30:** 7849 pressed by Jonathan 13:23 ET (run 3ef19a1c), recorded SUCCESS at 15:12 ET once `rpa-derm-result` v47 accepted it; 7992 filed by the hourly run at 11:58 ET (SUCCESS). Skip cleared 15:13 ET (both read already_filed).
+- 2026-11-03 (Fred: "yes"): **Trello xBCSvP6f moved to Testing / QA**, every item ticked, card complete. The real test
+  is 7849 above (pressed by Jonathan, not Yan; still the only press). 8096 / GDO-12656 was filed by the hourly bot on
+  10-30 13:26 ET. Both secrets still set; `GDO_BOT_FILE_KEY` was replaced 11-01 and checked against the bot, no press
+  since. Yan has not pressed it himself.
 
 **Calendar smart default truck for a visit with no truck (Trello alpHmTtL, 2026-10-29)**
 - Fred (Slack DM to Viktor, 2026-10-28): the default truck should be *"the usual truck that goes there, or the average
