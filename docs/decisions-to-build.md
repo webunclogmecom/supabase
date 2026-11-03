@@ -41,7 +41,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   **BUILT 2026-11-02** (database 15:01 ET, Supabase `6c6dbf2f`: `2026-11-02_1800` / `_1810` / `_1820` / `_1830`; edge
   rpa-derm-result v57, parse-gdo-permit v41, webhook-jobber v151; Client App published the same afternoon). Diego fixed the
   six other addresses himself in the Client App (14:53 to 14:55 ET). Field Portal published ~15:59 ET; Slack GDO bot deployed
-  16:22 ET (2b17c6f). Only Fred's re-test is open. Counties card iiOp4kSp in Testing / QA 2026-11-02 (Fred).
+  16:22 ET (2b17c6f). Card sWPaXFZO in Testing / QA 2026-11-02 ~21:00 ET (Fred), every item ticked; only Fred's re-test is
+  open. Counties card iiOp4kSp in Testing / QA 2026-11-02 (Fred). Inactive permits stay listed in the Client App (Fred:
+  "keep the inactive ones").
   Evening 2026-11-02, Fred: *"we don't have a PSO miami remove it"* -> PSO retired, BUILT `2026-11-02_2030` (`91a0aa20`):
   type INACTIVE, 057-BAY's expired PSO-00025 INACTIVE, the trigger refuses a live permit on a retired type. And *"move the
   file manually to the right corner next to Permit PDF"* -> Client App dialog (changelog 2026-11-02 (c)).
