@@ -69,6 +69,13 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   `rpa-derm-queue?mode=dryrun` calls on 2026-10-18 and 2026-10-20 with the bot's own HTTP client, most likely a local
   copy of this bot (inferred, not verified). Such a copy also needs the two passwords above, which is one more reason
   to rotate them. The old key now answers 401.
+- **2026-11-03: a 24-hour key for Jonathan's monthly-report video** (Fred: "have it be available for the next 24 hours").
+  One `RUN_KEYS` entry, `jonvideo`, added 00:51 ET (deploy `d78ce7cf`). It opens the dashboard pages only. He got no
+  Railway or GitHub access, because Railway's audit log records changes but never who viewed a variable. The other
+  entries were kept byte for byte. A scheduled task removes the entry at 00:55 ET on 11-04 and reports its use. The bot
+  logs `Authenticated operator key: <name>` before each request's access line, so every request made with a key can
+  be attributed to it. The check reads those lines, with our own `fred` requests as the control. Removal: (filled in
+  by the task).
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
