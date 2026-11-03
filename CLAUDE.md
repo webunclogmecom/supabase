@@ -5860,14 +5860,24 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
 - 🛑 **ONE-TIME 2026 DURATION FIX APPLIED 2026-10-18 (`2026-10-18_0217` Stage 0, `_1300` trucks, `_1301` times high,
   `_1302` times medium, `_1340` split touch; each with a rollback; Fred: "run all these"). Read before touching any
   2026 time or a time-on-site writer.**
-  - **`time_on_site_source = 'review'` now means LOCKED by this fix** (or a decision of Fred's). Every 2026 client
-    visit dated to 10-07 that the fix changed, kept as verified, or locked carries `review`; `reviewed_blank` = proven
-    no service. The fillers (`fn_fill_time_on_site_from_stops`, `fn_fill_blank_time_on_site`) now fill ONLY a visit
-    whose source is NULL; the Samsara recheck and the reopen trigger already leave `review` / `reviewed_blank` alone.
+  - 🛑 **LOCKED = a `review`, `reviewed_blank` or `dump_site_dwell` label, OR a current `applied` or `proposed` row in
+    the ledger below.** Since `2026-11-03_1330` (re-check S3a, Fred's Q-E) ONE predicate,
+    `public.fn_time_on_site_is_locked(visit)` (definer, service_role only), is tested by all five writers (the three
+    fillers where they pick their rows and in their UPDATE, both Samsara saves in their UPDATE, which then return
+    false = "refused") and by the reopen trigger (a reopened locked visit KEEPS its value; T6 / T8 are red until it is
+    completed again). ⚠ **The label alone is not the lock:** the 10-18 fix's ~820 verified keeps kept their
+    `samsara_stay` / `stop_at_completion` label. An earlier version of this line said every visit dated to 10-07
+    carries `review`; that was short by 813. `reviewed_blank` = proven no service. Spec and rehearsals:
+    `docs/specs/2026-11-02-time-on-site-nightly-rule.md`; rollback `2026-11-03_rollback_time_on_site_s3a_lock_in_writers.sql`.
   - **The record:** `public.visit_time_on_site_corrections` (service_role only, audited): one row per visit with old
-    and new times, truck, method, confidence, stage and status. 1,230 applied, 103 cards (`stage = '4'`, Fred's
-    decisions, not written), 61 catch-up rows (visits dated 10-08 to 10-17, `proposed`: re-measure from 2026-10-28,
-    then write them the same way). Per-visit evidence is local: `samsara-checks/duration_fix_run_2026-10-18/`.
+    and new times, truck, method, confidence, stage and status, superseded (never edited) when a later run decides
+    again. Current rows on 2026-11-03:
+    - run `tos-fix-2026-r1`: 1,332 applied, plus 1 open card (6270, `proposed`);
+    - run `tos-recheck-2026-r2` (band B, visits dated 10-08 to 10-17): 45 applied and 17 proposed for a person.
+
+    The 10-18 "103 cards not written" and the "61 catch-up rows" were closed by `2026-10-18_2023` and
+    `2026-11-03_1300`. Per-visit evidence is local: `samsara-checks/duration_fix_run_2026-10-18/` and
+    `samsara-checks/duration_recheck_run_2026-10-28/`.
   - **Drift alarms:** `fn_time_on_site_checks` gained T7 (an applied row whose visit no longer holds the ledger's
     times) and T8 (truck, date or completion moved under an applied row, or the visit deleted); both are in
     `fn_refresh_stop_facts`' key list, so they reach the health email. To change a corrected visit on purpose, update

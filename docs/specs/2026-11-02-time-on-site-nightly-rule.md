@@ -9,7 +9,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 |---|---|---|
 | S1 | completion stop only inside the visit window; alarm T1 without an upper age | BUILT 2026-11-02 (`2026-11-02_1430`, 1b6d14ca) |
 | S2 | band B (visits dated 10-08 to 10-17, plus 8854) closed in the ledger | BUILT 2026-11-03 (`2026-11-03_1300`, e815caa1) |
-| **S3a** | **the lock in the five writers, and the reopen rule (sections 3 to 6)** | **to build Wed 11-04** |
+| **S3a** | **the lock in the five writers, and the reopen rule (sections 3 to 6)** | **BUILT 2026-11-03 12:28 ET (`2026-11-03_1330`), a day early on Fred's "go ahead with S3a now"; every rehearsal and control below passed** |
 | S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | Thu 11-05 |
 | S4 | band A: Fred's cards only | Fri 11-06 |
 | S5 | the switch on, after Fred reads the comparison | Wed 11-11 |
@@ -127,8 +127,20 @@ them with `perform`. So the clause in the candidate set changes no reader of tho
 - the edited text is EXECUTEd, then read back, and must equal the expected text;
 - the new md5 goes into the migration's VERIFY and into the morning check's re-baseline.
 
-The migration is `2026-11-04_<hhmm>_time_on_site_s3a_lock_in_writers.sql`. Its rollback beside it restores each old body
-by md5 and drops the function last.
+The migration is `2026-11-03_1330_time_on_site_s3a_lock_in_writers.sql`. Its rollback beside it restores each old body
+by md5 and drops the function last. Both files were generated from the live bodies by a script, so no body was retyped.
+
+**As built (2026-11-03):**
+- R2: the three fillers, run as cron 26 and the reminder call them, wrote the same visits old and new (only 9054,
+  unlocked). Their dry candidate sets were identical.
+- R3: on 6512, the old stop fill, 150 m measure and any-truck fill each wrote the locked visit, and the new ones did not.
+  The save on 8588 and the went-once save on 8773 went from `true` to `false`.
+- R4: as `service_role`, a reopened locked visit (8854) was cleared before and is kept now. An unlocked one (9045) is
+  cleared both times, and a `review` one (8851) is kept both times.
+- R5: `authenticated` is refused with 42501.
+- R5b: `viktor_set_visit_truck` on 6512 runs with no error, changes the truck, keeps the time, and T8 names the visit.
+- After the apply: the six md5s are as predicted, no visit time changed anywhere, and T1 to T8 are 0. The morning check
+  re-baselined and passes.
 
 **What does not change.**
 - No visit is written, no edge function is deployed, and no view or check function changes.
