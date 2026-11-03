@@ -262,7 +262,9 @@ Spec `Building Apps/Picture Planner/docs/specs/2026-10-27-share-forms-and-forms-
 Fred (Client App, Grove Kosher, Boca Raton): *"One table for every permit now ... the DERM sheets, the filing bot and the
 portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton) is just a number. Trello sWPaXFZO, plan
 `docs/specs/2026-11-02-permits-one-table-plan.md`, migrations `2026-11-02_1800` / `_1810` / `_1820`, rollback beside them.
-- `gdos.permit_type` (FK `public.permit_types.code`: GDO, CCN, PSO) and `gdos.permit_effective`. Names kept on purpose
+- `gdos.permit_type` (FK `public.permit_types.code`: GDO, CCN; PSO RETIRED 2026-11-02_2030, Fred: *"we don't have a PSO
+  miami remove it"*: type INACTIVE, its one permit, 057-BAY row 141, INACTIVE, and `trg_aa_permit_number_matches_type`
+  refuses a live permit on a retired type, `blocker=permit_type_retired`) and `gdos.permit_effective`. Names kept on purpose
   (`client.get_client_activity` keys history on `table_name = 'gdos'`; the names are literal in apps, bots, pdf-service).
 - 🛑 **A reader that means "the Miami-Dade DERM permit" filters `permit_type = 'GDO'` or `gdo_number ~ '^GDO-[0-9]+$'`.**
   The two are equal for every non-INACTIVE row because `trg_aa_permit_number_matches_type` refuses a GDO-looking number

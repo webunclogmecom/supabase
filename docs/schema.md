@@ -182,7 +182,7 @@ the Slack GDO bot, the pdf-service and the bot contract.
 | client_id | BIGINT FK → clients (RESTRICT) | |
 | client_location_id | BIGINT FK → client_locations (SET NULL) | the location this GDO permits — **UNIQUE: 1 GDO per location** (2026-06-08); 108 linked, NULL until ingested |
 | gdo_number | TEXT | the permit number, whatever the type (`client.gdos` also exposes it as `permit_number`). UNIQUE per client |
-| permit_type | TEXT NOT NULL DEFAULT 'GDO' FK → permit_types(code) | 2026-11-02. 191 GDO, 1 PSO (row 141, 057-BAY) |
+| permit_type | TEXT NOT NULL DEFAULT 'GDO' FK → permit_types(code) | 2026-11-02. 191 GDO, 1 CCN (test, 112-YA), 1 PSO (row 141, 057-BAY, INACTIVE since `2026-11-02_2030`: PSO retired) |
 | permit_effective | DATE | 2026-11-02, the date printed on the permit |
 | location_label | TEXT | the name on the permit ("issued to") |
 | property_id | BIGINT FK → properties (SET NULL) | |
@@ -195,7 +195,9 @@ the Slack GDO bot, the pdf-service and the bot contract.
 
 ### `permit_types` — 3 rows · kinds of permit (2026-11-02)
 
-`code` TEXT PK (`GDO`, `CCN`, `PSO`), `name`, `issuing_authority` (Miami-Dade DERM, City of Boca Raton), `number_pattern`
+`code` TEXT PK (`GDO`, `CCN`, `PSO`; PSO is INACTIVE since `2026-11-02_2030`, Fred: "we don't have a PSO miami remove
+it". A retired type is kept so history keeps its FK; the app's list `client.permit_types` shows ACTIVE only, the save RPC
+refuses a non-ACTIVE type, and the trigger refuses a live permit on one), `name`, `issuing_authority` (Miami-Dade DERM, City of Boca Raton), `number_pattern`
 (GDO `^GDO-[0-9]+$`, others NULL: a CCN is "just a number"), `reads_pdf` (true only for GDO: `parse-gdo-permit` and the
 `gdo-permit-label` reader read only those PDFs), `status` ACTIVE / INACTIVE, timestamps. Audited; RLS on; no grant to anon or
 authenticated (the Client App reads `client.permit_types`). A new program (Fort Lauderdale, Hollywood, Broward County) is

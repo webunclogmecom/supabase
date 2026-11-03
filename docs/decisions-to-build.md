@@ -42,6 +42,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   rpa-derm-result v57, parse-gdo-permit v41, webhook-jobber v151; Client App published the same afternoon). Diego fixed the
   six other addresses himself in the Client App (14:53 to 14:55 ET). Field Portal published ~15:59 ET; Slack GDO bot deployed
   16:22 ET (2b17c6f). Only Fred's re-test is open. Counties card iiOp4kSp in Testing / QA 2026-11-02 (Fred).
+  Evening 2026-11-02, Fred: *"we don't have a PSO miami remove it"* -> PSO retired, BUILT `2026-11-02_2030` (`91a0aa20`):
+  type INACTIVE, 057-BAY's expired PSO-00025 INACTIVE, the trigger refuses a live permit on a retired type. And *"move the
+  file manually to the right corner next to Permit PDF"* -> Client App dialog (changelog 2026-11-02 (c)).
 
 **Light / dark switch in the staff apps (2026-10-29, BUILT, canvas row G, https://claude.ai/artifact/3B8vciQtdNEStYhC4tQ556)**
 - Fred: *"maybe we should have a theme button of light and dark mode for the apps ... for now it could be like white
