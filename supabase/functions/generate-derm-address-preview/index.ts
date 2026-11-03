@@ -3,10 +3,18 @@ import { isStaffEmail } from '../_shared/staff.ts'   // 2026-10-26: the staff-em
 // ============================================================================
 // generate-derm-address-preview/index.ts — Edge Function
 // ============================================================================
-// Download-only preview of the DERM Address PDF. Takes a list of visit_ids and
-// streams the rendered PDF bytes back to the browser. No storage upload, no DB
-// write. The sibling `generate-derm-address-pdf` function still handles the
-// "save as the manifest's canonical address" flow.
+// Download preview of the DERM Address PDF. Takes a list of visit_ids and
+// streams the rendered PDF bytes back to the browser. The sibling
+// `generate-derm-address-pdf` function still handles the "save as the manifest's
+// canonical address" flow.
+// 🛑 NOT READ-ONLY (corrected 2026-11-02; this header said "no DB write" and two
+// smoke tests trusted it). Every call with a REAL visit id makes the pdf-service
+// allocate the next DERM Address number and record the sheet in
+// derm.address_sheets (Miami-Dade path); the Broward path also stores a PDF per
+// sheet. A one-client test sheet can later be bound to a real ticket. To smoke
+// test, send a visit id that does not exist (the pdf-service answers 404 before
+// any number is allocated). Test sheets made by mistake are voided by migration:
+// 2026-10-22_1915 (sheet 1149), 2026-11-02_2020 (sheets 1153, 1154).
 //
 // Flow:
 //   browser (POST /functions/v1/generate-derm-address-preview, body: {visit_ids})
