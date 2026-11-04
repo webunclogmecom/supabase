@@ -46,7 +46,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - NOT built: Yan's review sitting (16 items in `public.v_lead_review`) and the office typing the CCNs of the 4 candidate
   matches once Yan confirms them (S3); Yan's two hand filings captured read-only (S5); the filing bot (S6-S8: `bsi_filings`, queue view, edge function
   `bsi-filing`, Slack, health), which waits on S5 and Fred's go; the enrichment pilot (S9); a Chapter 119 records request
-  to the City (plan decision F4, draft only). Not yet checked: the next morning's DERM health run (S4).
+  to the City (plan decision F4, draft only). Checked: the DERM health run of 04:00 ET 2026-11-04 and the 08:30 ET email show no `bsi_route` item (S4).
+- WAITING ON YAN AND DIEGO since 2026-11-04 11:32 ET: Fred's two questions in #office-team (are 4 clients the same places on BSI; are 4 others in the City's program), under Diego's "We need make the report for grove kosher Boca". S3 and S5 wait on the answers. The disposal plant question and the request for Yan's two hand filings with a video have NOT been asked yet. The pick-up steps are at the top of the plan.
 - WAITING ON FRED: should the DERM Tracker's "Record a manual filing" (with Miami-Dade) refuse a Boca client's visit?
   Today it shows on every visit (his 2026-08-19 rule), and 112-YA, a test client the rule routes, would lose that test.
   On a Boca visit the button comes from the VISIT-level `derm.visit_gdo_manual_eligibility` (the per-permit

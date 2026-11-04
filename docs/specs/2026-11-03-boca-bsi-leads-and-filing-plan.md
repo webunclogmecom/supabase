@@ -5,6 +5,25 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
 - **#166** `IWJkqTq1`: add the scraped restaurants (frozen leads) and our current clients to the DB.
 - **#169** `0lAWU6Ge`: a BSI Online filing bot that auto-files Boca Raton maintenance reports, like the Online GDO Report bot.
 
+**Waiting on Yan and Diego (since 2026-11-04 11:32 ET). Pick up here.** Nothing is running on this, and nothing reminds anyone if they do not answer: the three cards staying In Progress and the row in `docs/decisions-to-build.md` are the only markers.
+- **The thread:** #office-team, [Diego at 11:26 ET](https://unclogme.slack.com/archives/C0AMQ5M7BL6/p1793809609144129): *"We need make the report for grove kosher Boca"*. Fred replied there at 11:32 ET with two questions. No answer yet at 13:15 ET.
+- **Asked:**
+  1. Are these the same places as our clients? Grove Kosher, Carrot Express Boca, Pura Vida, El Turco (the BSI names are in section 5's table).
+  2. Are Bagel Boss, Capas Burger, Carrot Express West Boca or South Florida Golf Carts in the City of Boca Raton program?
+- **Not asked yet, needed for S5:**
+  - Which of the two "Broward County Wastewater Treatment Plant" rows do we pick?
+  - Yan files the two oldest Grove visits by hand, with the video and the heads-up described in S5's capture steps.
+- **Not asked on purpose:**
+  - Alta and Olympus (Fred, 2026-11-04: only clients that are active or recurring). Both read ACTIVE, but every job is archived, with no visit and no code. Ask if line-27 work ever lands on them.
+  - The other 6 items in the review queue: 5 other restaurants in Grove's plaza and BENTO BOCA on Pura Vida's street. They are different businesses at the same address, for Yan to confirm at the sitting.
+- **When the answers come, in this order:**
+  1. Record each one with `leads.decide_client` (same, different or absent). 0 decisions are recorded today.
+  2. The office types the CCNs of the confirmed clients in the Client App (S3). Look at `ops.v_gdo_expiry` then: it will list a CCN as a GDO.
+  3. Line 27 goes on a client's job only after its match is recorded, or `bsi_routing.sql` fails. A client that is not on BSI does not get it until that is settled.
+  4. Ask what was not asked, and write `scripts/probes/bsi_readback.mjs` (it does not exist yet) so its "before" read runs before Yan files.
+- **If someone files Grove first** (Diego's message could lead to that): nothing breaks on our side, but the capture is lost, and the bot's request shape and the 11 open questions depend on it. BSI showed 0 reports filed on 2026-11-03. Ask for the video and the receipt, and read BSI straight after.
+- **Fred's decisions still open** are listed under "Open" below.
+
 **Status (2026-11-04 ~01:45 ET).**
 - **Done, read-only:** all the research; Yan's screen recording, read frame by frame; the BSI scrape (raw data in the
   workspace `backups/` folder, never in a repo).
@@ -16,7 +35,7 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
     is deferred to S6, where the bot needs it.
   - **S4:** the line-27 routing (`2026-11-03_1830`), plus `2026-11-03_1848_route_line27_followups`: the health scan's
     `DISTINCT ON` (S4's first step), the rule on `derm.gdo_report_status`, and two health items for the client shapes a
-    per-client rule cannot route. Still to check: the next morning's DERM health run (04:00 ET 11-04) is the same.
+    per-client rule cannot route. Checked: the DERM health run of 04:00 ET 11-04 (`sync_log` 124443) raised the same two items as before (visit 8887, 315-CAP) and 0 BSI conflicts; `bsi_routing.sql` 18/18; the 08:30 ET email carried no `bsi_route` item.
   - **Privacy fixes** (`2026-11-03_1848_leads_privacy_fixes`), found by an adversarial check: `owner_company` was a BSI
     contact's name on 18 frozen leads (now blank); `client.entity_source_links` showed the 431 BSI links to signed-in
     staff (now hidden); the loader's dry run had put the payload in the server log once (it now calls
