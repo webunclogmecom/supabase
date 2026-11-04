@@ -353,6 +353,9 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
 
 ## 🛑 FROZEN LEADS: the private schema `leads` (2026-11-03, Trello #165 / #166)
 
+**Boca Raton and BSI Online, the whole picture (what exists, who is matched, how to file by hand, what is waiting):
+[docs/reference/bsi-online-filing.md](docs/reference/bsi-online-filing.md).**
+
 Fred: *"i want a generic leads one with 3NF as well, in case we get like another source of leads too, so they merge,
 including a reference for their source"*; then "Keep all [CCNs], privately" and "Load [BSI contacts] privately now".
 Plan `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`; ADR 020; migrations `2026-11-03_1700` (M1), `_1730`

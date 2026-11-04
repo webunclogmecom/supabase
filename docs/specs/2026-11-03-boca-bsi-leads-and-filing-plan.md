@@ -1,5 +1,7 @@
 # Boca Raton on BSI Online: frozen leads, the BSI scrape and the filing bot (plan, 2026-11-03)
 
+**Start at [`docs/reference/bsi-online-filing.md`](../reference/bsi-online-filing.md)** for what exists today. This file holds the next steps, the reasoning and the bot design.
+
 Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 4 of 6, #166 3 of 6, #169 0 of 6):
 - **#165** `f3Q3Q55i`: scrape BSI Online restaurant data and enrich it with contacts.
 - **#166** `IWJkqTq1`: add the scraped restaurants (frozen leads) and our current clients to the DB.
@@ -458,8 +460,8 @@ Three objects get one anchored edit each: `v_derm_portal_fields`, `v_gdo_reporti
 **Yan's first filings, captured read-only:**
 - `scripts/probes/bsi_readback.mjs` saves the property, reports, cart, payment types and plants before and after, to `backups/`.
 - Yan files the two oldest Grove visits by hand, **1384 (Feb 12) then 1721 (Apr 27)**, including the checkout. Optional: a browser network log.
-- Yan records a screen video of the whole filing, from opening the report through the checkout and receipt (Fred, 2026-11-04). His first video stopped before Submit. It starts after the login and goes to Fred directly, never to a Slack channel, because it shows the CCN.
-- Yan says before he starts, so the "before" read-back above can run first.
+- Yan records a screen video of the whole filing, from opening the report through the checkout and receipt (Fred, 2026-11-04: "they will make one"). His first video stopped before Submit. It shows the CCN, and the password if he records the login, so it does not belong in a Slack channel. The thread does not show that anyone has told him so.
+- Nobody has asked Yan for a heads-up, so the "before" read-back may not happen. If it does not, compare against the 2026-11-03 scrape: 0 reports, an empty cart.
 - That capture fixes the request shape and answers the 11 open questions:
   - what Submit returns;
   - how empty fields are sent;
@@ -519,7 +521,7 @@ Each stage is done and checked before the next. **Visual checks are in bold.** E
 - **F3. The bot's BSI login.** Recommended: a separate user with FOG rights only, created by Yan. Then rotate the main password, which was pasted in the huddle thread. Before that, a 3-request test shows whether a new login ends another session (the bot must not sign Yan out every morning).
 - **F4. How BSI data is refreshed.** Recommended: a Chapter 119 records request to the City; no recurring scrape on the account the bot files with.
 
-**For Yan** (asked in #new-app-issues, simple wording, with Fred's OK):
+**For Yan.** Written 2026-11-03. On 2026-11-04 Fred asked the 4 matches in #office-team and Yan confirmed them; the video should settle the Broward row, what to attach and the traps at Grove; the rest has not been asked.
 - Confirm the 4 matches in section 5, and Pura Vida's ZIP.
 - Which traps the drivers pump at Grove, Carrot Express and Pura Vida. BSI lists 2 at Grove; our record has one.
 - Which Broward row is ours (1 or 125). Ask BSI if unsure.
