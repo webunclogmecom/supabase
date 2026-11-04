@@ -440,6 +440,8 @@ Three objects get one anchored edit each: `v_derm_portal_fields`, `v_gdo_reporti
 **Yan's first filings, captured read-only:**
 - `scripts/probes/bsi_readback.mjs` saves the property, reports, cart, payment types and plants before and after, to `backups/`.
 - Yan files the two oldest Grove visits by hand, **1384 (Feb 12) then 1721 (Apr 27)**, including the checkout. Optional: a browser network log.
+- Yan records a screen video of the whole filing, from opening the report through the checkout and receipt (Fred, 2026-11-04). His first video stopped before Submit. It starts after the login and goes to Fred directly, never to a Slack channel, because it shows the CCN.
+- Yan says before he starts, so the "before" read-back above can run first.
 - That capture fixes the request shape and answers the 11 open questions:
   - what Submit returns;
   - how empty fields are sent;
