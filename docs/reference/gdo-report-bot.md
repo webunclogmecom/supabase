@@ -109,6 +109,9 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   ⚠ **The Monthly report needs a person's key, and the opening of Jonathan's tutorial video does not mention it:** its
   first screen already has a key in the "Access key" box. Diego's key still has to be handed over (Fred;
   `HANDOVER_run_keys.txt` in the local audit folder) before the October report, due 2026-11-20.
+  ⚠ **What Yan and Diego hold is older: the keys Fred sent them on 2026-10-22 at about 19:30 ET, from the 10-22 rotation.** Those
+  answer 401 since 2026-11-01 (tested again 2026-11-04) and must not be brought back: Jonathan could read `RUN_KEYS` as a
+  workspace member from 2026-10-27 to 11-01. The 11-01 values are the current ones and are safe to hand over, with no new rotation.
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
