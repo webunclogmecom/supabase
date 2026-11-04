@@ -5,7 +5,8 @@
 --      derm.gdo_report_status; the DERM fields hold exactly the GDO-reporting visits with a live manifest of the
 --      clients that do NOT file with BSI, and derm.gdo_report_status exactly those visits with or without a manifest,
 --      each counted on its own (an inverted rule empties them and fails those rows today; a removed rule changes
---      nothing today and fails the CONTROL text row);
+--      nothing today and fails the CONTROL text row). The mismatch view has no such row: it holds 0 rows today, so no
+--      count could show an inversion there, and the CONTROL text row is its only cover;
 --   2. the two shapes the per-client rule cannot route, as log_rpa_derm_health raises them (bsi_route_gdo_and_boca /
 --      bsi_route_other_city): line-27 WORK at a Boca Raton property of a client with a live GDO, and line-27 work at a
 --      property elsewhere (or none) of a client that files with BSI. Line-27 work is the health items' own test: an
