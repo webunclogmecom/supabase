@@ -23,7 +23,7 @@ One Railway service, one Python process (FastAPI + Playwright + SQLite), holding
 |---|---|---|
 | **GDO bot** | Every hour it reads our queue (`rpa-derm-queue`). It files one GDO online report per (permit, manifest) on the Miami-Dade DERM portal, then posts the result to `rpa-derm-result`. It also harvests the county's confirmation emails from the fog@ mailbox as evidence. | yes, on the county portal |
 | **Monthly LWT report** (county form ST) | Builds the county's own .xlsx from `rpa-derm-monthly` plus the paper W&S invoice. Diego previews and approves it, a person emails it to DERM, and it is recorded back through `rpa-derm-monthly-filed`. | no, a person sends it |
-| **Dashboard** | Pages `/`, `/dashboard/bot`, `/dashboard/monthly` and `/monthly`. Every data route needs `x-run-key`; the only personal key in `RUN_KEYS` is `fred` since 2026-11-04 (section 2). The dashboard pages ask for the key in their key box. Address: https://unclogmerpabot-production.up.railway.app. | no |
+| **Dashboard** | Pages `/`, `/dashboard/bot`, `/dashboard/monthly` and `/monthly`. Every data route needs `x-run-key`; there are personal keys in `RUN_KEYS` (`yan`, `diego`, and `fred` since 2026-10-26). The dashboard pages ask for the key in their key box. Address: https://unclogmerpabot-production.up.railway.app. | no |
 
 Prime directives, in Jonathan's order: never file twice, never lose a visit silently, never let a machine file what no
 human could trace (`docs/PROJECT_GDO_BOT.md`).
@@ -100,12 +100,15 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   its 15 tickets were not compared with what the county received. The discards did not touch our database
   (`lwt_filings` shows that one INSERT and nothing else since 11-02).
   **Decided 2026-11-04: no second rotation** (Fred: "no need for rotate then"). The keys from 2026-11-01 stay in use.
-- **2026-11-04: the `yan` and `diego` run keys removed** (Fred: "we don't need this news rotated keys, we can remove
-  them"). Removed 03:44 ET in one save, deploy `b68591af`: `fred` 200, `yan` 401, `diego` 401, health ok. Neither had been
-  used since the 2026-11-01 rotation. `RUN_KEYS` is now `fred`, `dermapp`, kept byte for byte, so Auto file is untouched.
-  ⚠ **The Monthly report has no other way in, so a person needs a key to run it.** Before the October report, add Diego's
-  back, or run it with `fred`. `HANDOVER_run_keys.txt` in the local audit folder still holds the removed values, so
-  re-adding the line restores the same key.
+- **2026-11-04: the `yan` and `diego` run keys were removed by mistake and put back the same day.** A session removed them
+  at 03:44 ET (deploy `b68591af`) on a misreading: Fred's "we don't need this news rotated keys, we can remove them" meant
+  no NEW rotation, not removing the keys. Back at 13:14 ET with the same values (deploy `be246fcd`): `fred`, `diego` and
+  `yan` 200, a made-up key 401, health ok. Nobody tried a key while they were gone: the only refused requests in the
+  bot's log are that session's own test. The one `yan` and one `diego` request at about 13:15 ET are the test too, not those
+  people. `RUN_KEYS` = `yan`, `diego`, `fred`, `dermapp`; `fred` and `dermapp` never changed, so Auto file was untouched.
+  ⚠ **The Monthly report needs a person's key, and the opening of Jonathan's tutorial video does not mention it:** its
+  first screen already has a key in the "Access key" box. Diego's key still has to be handed over (Fred;
+  `HANDOVER_run_keys.txt` in the local audit folder) before the October report, due 2026-11-20.
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
