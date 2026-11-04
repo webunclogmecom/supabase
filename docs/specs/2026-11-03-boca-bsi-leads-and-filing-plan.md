@@ -11,7 +11,7 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
 - **Recorded (`2026-11-04_1338`):**
   - Same: 022-GRO, 064-TCE, 225-PV, 240-TUR. Line 27 no longer fails `bsi_routing.sql` for these four.
   - Absent: 361-SFG, rain water, not a grease client.
-- **Next, in order:**
+- **On hold for Yan's video (Fred, 2026-11-04: "first let's wait on the video"). Nothing below starts until step 3's video arrives. Then, in order:**
   1. The office types the 4 CCNs in the Client App (S3). Look at `ops.v_gdo_expiry` then: it will list a CCN as a GDO.
   2. The office adds line 27 to those clients' jobs. From then on `bsi_route_unfiled` puts them in Fred's health email until filing is tracked.
   3. Yan's video (S5). Fred, 2026-11-04: *"The video is already known, they will make one"* and *"the video should answer both questions"*, so nothing more gets asked. Read it frame by frame, as the first one was, for: the whole filing through checkout; which of the two "Broward County Wastewater Treatment Plant" rows he picks; which document he uploads; and whether Grove gets one report or two (BSI lists 2 interceptors, our record has one trap).
