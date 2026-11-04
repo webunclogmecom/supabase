@@ -288,7 +288,8 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
   "Boca Raton" (or a test client with a live CCN: 112-YA). "Reads Boca Raton" is ONE test since `2026-11-03_2039`,
   `public.fn_city_is_boca_raton(city)`: its a-z letters, case-blind, START WITH "bocaraton" ("Boca Raton, FL" and a
   non-breaking space count; "Boca" alone, "West Boca Raton" and an accented "Ratón" do not; "Boca Raton West" does). The
-  rule, its health items and the check all call it, never a copy of the expression; service_role may run it since
+  rule, its health items and the check call it, never a copy of the expression (the check's row for a city NEAR Boca
+  Raton repeats its letters-only normalization on purpose, to list the plain spellings); service_role may run it since
   `_2255` (the health logger runs as its caller). The CCN plays no part for a real client. Those clients'
   line-27 visits are kept out of `v_derm_portal_fields` (so the bot's queue, the held view and the `gdo_no_permit`
   items), `v_gdo_reporting_derm_mismatch`, `derm.gdo_report_status` (since `2026-11-03_1848`) and the
@@ -298,11 +299,15 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     hand (plan S5), the BSI bot comes later (S6-S8, not built). Nothing files or tracks these visits; since `_2039` the
     health item `bsi_route_unfiled` puts each routed client with line 27 in Fred's health email ("Yan: file ... on BSI
     Online by hand"), so the parking is not silent. 0 today (no routed client has line 27).
-  - 🛑 **The three `bsi_route_*` items are keyed `<kind>:<client id>:<completed visits>:<newest completed visit>` since
-    `2026-11-03_2255`** (e.g. `bsi_route_unfiled:357:2:5944`; the text names the count and the newest date). Nothing
-    records a BSI filing yet, so a per-client key never resolved: after the first email a client's later line-27 visits
-    raised nothing new, and the email's "silence 30d" hid them all. Now each new completed line-27 visit is a NEW item
-    and the old key is listed under "Resolved"; a silence covers only the visits it was shown.
+  - 🛑 **The three `bsi_route_*` items are keyed `<kind>:<client id>:<completed visits>:<which completed visits>` since
+    `2026-11-04_0042`** (applied 00:40 ET; e.g. `bsi_route_unfiled:44:2:ea924bf8`: the last part is the first 8 hex of
+    the md5 of the completed line-27 visits' ids, sorted as text and joined with commas, `0` when there is none; the
+    text names the count and the newest date). Nothing records a BSI filing yet, so a key that does not change never
+    resolves: keyed on the client alone (`_2039`), or on the count and the highest visit id (`_2255`, which a swap of
+    one visit for another kept), a silence would have hidden the client's later line-27 visits (found in review; no
+    routing item has fired in production yet). Now any change to WHICH completed line-27 visits there are is a NEW item
+    and the old key is listed under "Resolved"; a silence covers only the set it was shown. A newly scheduled line-27
+    visit changes nothing until it is completed.
   - **The rule keys on the city name, not on BSI.** It routes 10 real clients today. 5 have no BSI record: 081-TCE and
     319-CAP sit in ZIP 33498, where BSI lists nobody (likely outside the City), and 135-BB, 361-SFG and Olympus are not
     in the scrape. 🛑 **No routed client is MATCHED yet:** a client counts as matched only once Yan's 'same' decision is
@@ -311,12 +316,13 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     review.
   - **Two client shapes it cannot route** (per client, not per property): line-27 WORK at a Boca Raton property of a
     client with a live GDO (`bsi_route_gdo_and_boca`; its Boca Raton visits are filed with Miami-Dade), and line-27 work
-    at a property elsewhere of a routed client (`bsi_route_other_city`). `log_rpa_derm_health()` raises each in Fred's
+    at a property elsewhere, or with no property, of a routed client (`bsi_route_other_city`). `log_rpa_derm_health()` raises each in Fred's
     health email (since `_1848`). Line-27 work = an open job's own lines (at the job's property) OR a GDO-reporting visit
     since the launch cutoff (2026-07-21), by its visit, invoice or job line (`fn_visit_is_gdo_reporting`, the routing's
-    own test), at the visit's property. Since `_2255` each item looks only at the work it is about, so an address with no
+    own test), at the visit's property, that was not skipped or cancelled (since `2026-11-04_0042`: such a visit never
+    happened, and with the fixed cutoff its item could never resolve). Since `_2255` each item looks only at the work it is about, so an address with no
     work never raises one; before, any live property counted, and client 245's "Beverly Hills" row, which is its BILLING
-    address (no job, no visit), raised other_city. A billing row cannot simply be skipped: 1 of 19 live billing rows has
+    address (no job, no visit), would have raised other_city (seen in a rolled-back fixture). A billing row cannot simply be skipped: 1 of 19 live billing rows has
     visits. Never a test client.
   - **Timing, a decision for Fred:** a GDO + Boca Raton client's line-27 visits enter the Miami-Dade queue at once; the
     item comes from the 09:00 UTC logger run and reaches Fred in the 13:30 UTC email (04:00 / 08:30 ET in winter), so
@@ -326,10 +332,15 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     visit (Fred 2026-08-19), a Boca one included (`derm.visit_gdo_manual_eligibility`, `fn_record_manual_gdo_report`).
     A refusal there must be keyed on `public.fn_client_files_with_bsi(client)`: that visit-level view serves every visit
     with no permit block (about 95% of visit pages, Miami-Dade ones included), not only Boca Raton visits.
-  - Standing check `scripts/checks/bsi_routing.sql` (also: the DERM fields hold exactly the line-27 visits of clients
-    that file with DERM, no line 27 on a routed client not yet matched, and no city near "Boca Raton" that does not read
-    plainly as it); behaviour proofs in the VERIFY blocks of `_1848`, `_2039` (cases 1 to 4; case 5 had none) and
-    `_2255` (cases A to E), each with the old body as a control that must fail; `_1830`'s old-body control is in
+  - Standing check `scripts/checks/bsi_routing.sql` (17 rows since `2026-11-04_0042`; also: the DERM fields hold exactly
+    the line-27 visits WITH A LIVE MANIFEST of clients that file with DERM, `derm.gdo_report_status` exactly those
+    visits with or without one, no line 27 on a routed client not yet matched, no city near "Boca Raton" that does not
+    read plainly as it, and the newest logger run names no routed client as a no-permit client; its CONTROL reads the
+    code with comments removed, so a comment cannot stand in for a call), and
+    `scripts/checks/bsi_routing_mutations.mjs`, which proves every row can fail (17 cases, each undone). Behaviour proofs
+    in the VERIFY blocks of `_1848` (its case c2 had no old-body control), `_2039` (cases 1 to 4; case 5 had none),
+    `_2255` (A, B and D; E's control was the pre-grant 42501; C had none) and `2026-11-04_0042` (A to D, each with the
+    old body as a control that must fail; E a regression check); `_1830`'s old-body control is in
     `docs/migrations/2026-11-03_1830_*_PROOF.sql` (ends in ROLLBACK). The routing rollbacks refuse a wrong order by md5
     guard since `_2255`. A new DERM reader that does not go through `v_derm_portal_fields` must apply the rule itself.
 

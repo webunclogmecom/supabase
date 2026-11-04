@@ -1,8 +1,9 @@
 -- ROLLBACK of 2026-11-03_2255_route_line27_alert_keys. public.log_rpa_derm_health as it was just before it, captured from
 -- pg_get_functiondef on 2026-11-03 (not retyped, md5-checked), and service_role's EXECUTE on
 -- public.fn_city_is_boca_raton taken back, with the helper's previous comment.
--- ORDER: run this FIRST, before 2026-11-03_rollback_route_line27_alerts.sql (whose guard refuses until this file has
--- run), then 2026-11-03_rollback_route_line27_followups.sql, then 2026-11-03_rollback_route_line27_ccn_to_bsi.sql.
+-- ORDER: run 2026-11-04_rollback_route_line27_alert_set_keys.sql first (this file's guard refuses until it has run),
+-- then this, before 2026-11-03_rollback_route_line27_alerts.sql (whose guard refuses until this file has run), then
+-- 2026-11-03_rollback_route_line27_followups.sql, then 2026-11-03_rollback_route_line27_ccn_to_bsi.sql.
 -- Each guard checks that the live body is the one its own migration left, so a wrong order is refused, not applied.
 -- Undoing this brings back routing items keyed on kind and client only (a client's later line-27 visits raise nothing
 -- new, and a silence hides them), items raised by an address with no work (a billing address), and a service_role
@@ -13,7 +14,7 @@ set local search_path = public, extensions;
 do $g$
 begin
   if md5((select prosrc from pg_proc where oid = 'public.log_rpa_derm_health()'::regprocedure)) <> '57a1cad01dac85dc947dfa8a5fb1f462' then
-    raise exception 'rollback: log_rpa_derm_health is not the body 2026-11-03_2255 left; nothing was changed';
+    raise exception 'rollback: log_rpa_derm_health is not the body 2026-11-03_2255 left (run 2026-11-04_rollback_route_line27_alert_set_keys.sql first); nothing was changed';
   end if;
 end $g$;
 CREATE OR REPLACE FUNCTION public.log_rpa_derm_health()

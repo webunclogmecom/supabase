@@ -174,16 +174,20 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
   (City of Boca Raton, Trello #169), but nothing files them yet: Yan by hand, the BSI bot later (not built). Fred's
   health email carries one item per client and kind, never for a test client, and only for line-27 WORK (an open job's
   own lines at the job's property, or a visit since 2026-07-21 that is GDO-reporting by its visit, invoice or job line,
-  at the visit's property); an address with no work, such as a billing address, raises nothing (since `_2255`):
+  at the visit's property, and was not skipped or cancelled); an address with no work, such as a billing address, raises
+  nothing (since `_2255`), and neither does a skipped or cancelled visit (since `2026-11-04_0042`):
   - `bsi_route_unfiled`: a routed client with line-27 work (Yan files it by hand; since `_2039`);
   - `bsi_route_gdo_and_boca`: a client with a GDO and line-27 work at a Boca Raton property, whose Boca visits are
     filed with Miami-Dade (since `_1848`);
-  - `bsi_route_other_city`: a routed client with line-27 work at a property elsewhere, whose visits leave the queue
-    (since `_1848`). Such a client gets this item AND `bsi_route_unfiled`. Client 245's "Beverly Hills" row is its
+  - `bsi_route_other_city`: a routed client with line-27 work at a property elsewhere, or with no property, whose
+    visits leave the queue (since `_1848`). Such a client gets this item AND `bsi_route_unfiled`. Client 245's "Beverly Hills" row is its
     billing address, not work, so it would raise only `bsi_route_unfiled`.
-  Each key is `<kind>:<client id>:<completed line-27 visits>:<newest one>` (since `_2255`), so a new completed visit is
-  a NEW item and the old key shows as resolved: a silence covers only the visits it was shown. 0 of each today. Check
-  `scripts/checks/bsi_routing.sql`.
+  Each key is `<kind>:<client id>:<completed line-27 visits>:<which ones>` (since `2026-11-04_0042`; the last part is
+  the first 8 hex of the md5 of their ids sorted as text and joined with commas, `0` when there is none), so any change
+  to which completed line-27 visits there are, a swap of one for another included, is a NEW item and the old key shows
+  as resolved: a silence covers only the set it was shown. A newly scheduled line-27 visit changes nothing until it is
+  completed. 0 of each today. Check `scripts/checks/bsi_routing.sql` (and `scripts/checks/bsi_routing_mutations.mjs`,
+  which proves each of its rows can fail).
 - **Authentication:** header `x-rpa-key` against `RPA_BOT_KEYS`.
 - **Endpoints:**
   - GET `rpa-derm-queue`;
