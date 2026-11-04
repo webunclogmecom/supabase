@@ -249,7 +249,8 @@ Spec `Building Apps/Picture Planner/docs/specs/2026-10-27-share-forms-and-forms-
 - `hr.fn_pp_forms_open()` (switch yes AND row mode on; an OFF row reads CLOSED, the opposite of `fn_require_app`) and
   `hr.fn_pp_forms_only()` (that AND Picture Planner level below View). "Forms-only" is tested by LEVEL, never through
   `fn_require_app` / `fn_app_open`, which pass everyone while an app is not on.
-- `public.fn_request_gate`: a door on the REFUSAL branch only, for exactly `/rpc/get_intake` and `/rpc/list_intake_forms`,
+- `client.get_intake_link` (since `2026-11-04_1930`, Fred: Open form "sure"): a Forms-only caller gets the link of a form ASSIGNED to them and is refused any other (`blocker=not_assigned`); everyone else still needs Picture Planner Edit. Each call still writes a reveal row.
+- `public.fn_request_gate`: a door on the REFUSAL branch only, for exactly `/rpc/get_intake`, `/rpc/list_intake_forms` and (since `2026-11-04_1930`) `/rpc/get_intake_link`,
   with the schema header PostgREST uses for the method (GET/HEAD `accept-profile`, else `content-profile`) equal to
   `client`, no fallback. 🛑 **Never open a view path in this door**: PostgREST embedding (`select=*,properties(*)`) would
   hand out `properties.lock_box_key`. Never add a `get_intake` or `list_intake_forms` to another exposed schema.
