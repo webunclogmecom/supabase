@@ -84,7 +84,14 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   an idle bot, keeps the other entries byte for byte, proves the key now gets 401, then prints the report). Without
   a session: Railway, UnclogMe_Reporter_Bot, Variables, `RUN_KEYS`, delete the `jonvideo:` entry and its comma only,
   save (this redeploys the bot, so not while a filing runs). Trello card `4XP6pFGN` (Testing / QA since 11-03; the
-  task adds the result there too). Removal: (filled in by the task).
+  task adds the result there too). **Removal: 2026-11-04 00:55 ET** (deploy `d08df6f0`; ours 200, his 401, health ok). What the key did: 22 requests,
+  14 page reads and 8 writes between 10:17 and 10:31 ET on 11-03. Three discard requests on bot filings 2 and 4 (what
+  they held is not known, the bot's archive lists nothing now), an invoice parse, two previews, a generate, and a
+  "Record as filed" that wrote `lwt_filings` 77 (period 2026-08-28 to 2026-09-23, 15 tickets) with dry run OFF, against
+  the ask to keep "Test only" ticked. No commits, no new collaborators, no Railway event or bot deploy that is not
+  ours. The bot's two `derm_portal_submissions` rows that day (08:54 and 09:54 ET) came before his first write.
+  **Verdict under Fred's rule: change found, so the keys need rotating again; Fred decides and starts it. Nothing he
+  did was undone.**
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
