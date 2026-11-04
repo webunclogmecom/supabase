@@ -107,11 +107,15 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   bot's log are that session's own test. The one `yan` and one `diego` request at about 13:15 ET are the test too, not those
   people. `RUN_KEYS` = `yan`, `diego`, `fred`, `dermapp`; `fred` and `dermapp` never changed, so Auto file was untouched.
   ⚠ **The Monthly report needs a person's key, and the opening of Jonathan's tutorial video does not mention it:** its
-  first screen already has a key in the "Access key" box. Diego's key still has to be handed over (Fred;
-  `HANDOVER_run_keys.txt` in the local audit folder) before the October report, due 2026-11-20.
-  ⚠ **What Yan and Diego hold is older: the keys Fred sent them on 2026-10-22 at about 19:30 ET, from the 10-22 rotation.** Those
-  answer 401 since 2026-11-01 (tested again 2026-11-04) and must not be brought back: Jonathan could read `RUN_KEYS` as a
-  workspace member from 2026-10-27 to 11-01. The 11-01 values are the current ones and are safe to hand over, with no new rotation.
+  first screen already has a key in the "Access key" box. The October report is due 2026-11-20.
+- **2026-11-04: `yan` and `diego` returned to their October values** (Fred: "those keys are only to do reports, so just
+  return them the ones from October"). These are the keys he sent them by one-time link on 2026-10-22 at about 19:30 ET.
+  Saved 14:08 ET, deploy `82f52aac`: `fred` and both October keys 200, both 11-01 keys 401, health ok. The one `yan` and one
+  `diego` request at about 14:09 ET are that test. `fred` and `dermapp` keep their 11-01 values, so Auto file is untouched.
+  ⚠ **Accepted risk, Fred's call:** Jonathan could read `RUN_KEYS` as a workspace member from 2026-10-27 to 11-01 and edited
+  it on 10-28, so he may hold those two values. A run key accepts writes: it can send filings to the county and record a
+  Monthly report as filed, and such a use would be logged under `yan` or `diego`. To undo it, the 11-01 values are still in
+  `HANDOVER_run_keys.txt` in the local audit folder.
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
