@@ -192,7 +192,7 @@ The matches below are by street number and name. Yan confirms each one before an
 | 135-BB Bagel Boss | 53 | none | | Nothing at 22107 Powerline |
 | 319-CAP Capas Burger | 1117 | none | | ZIP 33498 |
 | 361-SFG golf carts, Olympus | | none | | Not restaurants; Olympus is an uncoded Jobber lead |
-| Alta (uncoded Jobber lead) | 668 | 957247 THE STANDARD, possibly | | Name match only: our property has no street address; Yan confirms |
+| Alta (uncoded Jobber lead) | 668 | 957247 THE STANDARD, possibly | | Name match only: our property has no street address. Not asked of Yan (Fred, 2026-11-04: only clients that are active or recurring; Alta and Olympus read ACTIVE but every job is archived, with no visit). Ask if line-27 work ever lands on them |
 
 **Grove's plaza (22191 Powerline) has five other BSI restaurants:** Kingdom Sushi, Brooklyn Water Bagel, Hong Kong Palace, Jon's Place and Angela's Pizza Kitchen. They are good leads next to an existing stop, and they show why an address alone can never be a match key.
 
