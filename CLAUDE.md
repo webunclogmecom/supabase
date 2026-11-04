@@ -225,18 +225,27 @@ refused everywhere as "not staff".
 - Rollbacks, newest first: `2026-10-26_rollback_personal_addresses_signup_rule.sql`, then
   `2026-10-26_rollback_staff_email_rule.sql` (the 42 previous bodies, verbatim, md5-pinned).
 
-## 🛑 THE FORMS DOOR: "See submitted forms" (`pp_forms`), THE FIRST SWITCH THAT GIVES ACCESS (2026-10-27, Trello AIwCYcmn)
+## 🛑 THE FORMS DOOR: "See their assigned forms" (`pp_forms`), THE FIRST SWITCH THAT GIVES ACCESS (2026-10-27, Trello AIwCYcmn; named "See submitted forms" until 2026-11-04)
 
 Fred (to Viktor, 2026-10-23): *"... to add in the accordion of the privileges so they can specifically log in in the
 Picture Planner App but just to see the Forms Tab. ex: the field team"*. His answers 2026-10-27: signed-in link only
 (the form's own address), look and share only, submitted AND waiting forms (waiting: status and expiry only), the whole
 Field group by default. Migration `2026-10-27_2130_pp_forms_see_submitted` (applied 23:14 ET), rollback beside it,
-standing probe `scripts/checks/hr_app/probe_pp_forms.sql` (27 cases; the old gate body fails exactly its 3 door cases).
+standing probe `scripts/checks/hr_app/probe_pp_forms.sql` (33 cases since 2026-11-04; the 2026-10-27 bodies fail its 8 assigned-only cases, and the gate body before them its 3 door cases).
 Spec `Building Apps/Picture Planner/docs/specs/2026-10-27-share-forms-and-forms-only.md`.
 - `hr.access_apps` row `pp_forms` under `picture_planner` with `needs = 'none'` (the CHECK now allows it); defaults
   office `no`, field `yes`. `fn_access_rank('none') = 0`, so the switch is never turned off by a low parent level.
 - 🛑 **D17's code is unchanged; its stated reason ("a switch grants nothing at None") is no longer true for `pp_forms`.**
-  Field people read every submitted form, gate and lock box codes included. Decided by Fred (Q4).
+  Field people read the forms assigned to them, gate and lock box codes included. Decided by Fred (Q4, narrowed 2026-11-04, next bullet).
+- 🛑 **A Forms-only person reads ONLY the forms assigned to them (2026-11-04, `2026-11-04_1500_pp_forms_assigned_only`, applied 14:24
+  ET, rollback beside it).** Fred: *"when being an Field members who opens it and shows all the forms for them to only show the
+  ones assigned to them, only office or admin people can see all the forms."* Assigned = an assignee of the form's Calendar task
+  (`property_intakes.calendar_task_id` -> `ops.calendar_task_assignees`, read live, so moving the task moves the form).
+  `client.fn_intake_assigned_to_me(bigint)` is the ONE rule; `list_intake_forms`, `get_intake` (42501, `blocker=not_assigned`,
+  "This form is not assigned to you.") and `fn_intake_photo_shown` all call it. The typed collector name is never used: anyone with
+  the link types what they like. A form with no task has no assignee, so no Forms-only person sees it (measured that day: 356-MAS
+  form 1123, filled by Grecia). The rule is by LEVEL, not group: a person of any group with the switch and Picture Planner below
+  View sees only their own; nobody is in that state outside Field today. A new reader for Forms-only people must call the helper.
 - `hr.fn_pp_forms_open()` (switch yes AND row mode on; an OFF row reads CLOSED, the opposite of `fn_require_app`) and
   `hr.fn_pp_forms_only()` (that AND Picture Planner level below View). "Forms-only" is tested by LEVEL, never through
   `fn_require_app` / `fn_app_open`, which pass everyone while an app is not on.

@@ -1,6 +1,8 @@
 // LIVE Picture Planner, Trello AIwCYcmn (2026-10-27): a Forms-only person ("See submitted forms" Yes, Picture Planner at
 // No access) and the Share control on a submitted form. Real replies of client.list_intake_forms / client.get_intake are
 // read in SQL as a TEMPORARY Field person (rolled back, nothing kept) and as Fred, then played back to the live bundle.
+// Since 2026-11-04 the temporary person is assigned the submitted and the waiting test form (Calendar tasks, rolled back), and
+// the cases "not assigned" and "empty list" check the Planner's two sentences for a Forms-only person.
 // Sign-in faked; every call stubbed; nothing written. Never prints a reply (a form can hold a lock box code).
 // Spec: Building Apps/Picture Planner/docs/specs/2026-10-27-share-forms-and-forms-only.md
 //   node scripts/page-builder/tests/forms_only.mjs <outdir>
@@ -14,7 +16,7 @@ const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbas
 
 // the fixture: one rolled-back block, results carried out in the error message
 const r = await sql(`do $$
-declare v_uid uuid := gen_random_uuid(); v_tag text := substr(md5(random()::text), 1, 8); c_tmp text; c_fred text; v_sub bigint; v_wait bigint; v_can bigint; o jsonb;
+declare v_uid uuid := gen_random_uuid(); v_tag text := substr(md5(random()::text), 1, 8); c_tmp text; c_fred text; v_sub bigint; v_wait bigint; v_can bigint; v_other bigint; o jsonb;
 begin
   select max(i.id) filter (where i.submitted_at is not null and i.cancelled_at is null),
          max(i.id) filter (where i.submitted_at is null and i.cancelled_at is null and i.expires_at > now()),
@@ -26,13 +28,20 @@ begin
   values ('00000000-0000-0000-0000-000000000000', v_uid, 'authenticated', 'authenticated', 'fo-' || v_tag || '@unclogme.com', '', now(), now(), now(), '{"provider":"email","providers":["email"]}', '{}', false, false);
   insert into public.employees (id, full_name, status, email, access_level, notes) overriding system value
   values (990003, 'ZZ FO ' || v_tag, 'ACTIVE', 'fo-' || v_tag || '@unclogme.com', 'field', 'Temporary row of a rolled-back test');
+  select max(i.id) into v_other from public.property_intakes i where i.submitted_at is not null and i.cancelled_at is null and i.id <> v_sub;
+  insert into ops.calendar_tasks (id, title) overriding system value values (990005, 'ZZ FO submitted'), (990006, 'ZZ FO waiting'), (990007, 'ZZ FO cancelled');
+  insert into ops.calendar_task_assignees (task_id, employee_id) values (990005, 990003), (990006, 990003), (990007, 990003);
+  update public.property_intakes set calendar_task_id = 990005 where id = v_sub;
+  update public.property_intakes set calendar_task_id = 990006 where id = v_wait;
+  update public.property_intakes set calendar_task_id = 990007 where id = v_can;
   c_tmp := json_build_object('sub', v_uid, 'email', 'fo-' || v_tag || '@unclogme.com', 'role', 'authenticated')::text;
   c_fred := json_build_object('sub', (select id from auth.users where lower(email) = 'fred@ayache.com'), 'email', 'fred@ayache.com', 'role', 'authenticated')::text;
   perform set_config('request.jwt.claims', c_tmp, true);
-  o := jsonb_build_object('sub', v_sub, 'wait', v_wait, 'can', v_can,
+  o := jsonb_build_object('sub', v_sub, 'wait', v_wait, 'can', v_can, 'other', v_other,
          'fo_access', hr.get_my_access(), 'fo_list', client.list_intake_forms(),
          'fo_sub', client.get_intake(v_sub), 'fo_wait', client.get_intake(v_wait));
   begin perform client.get_intake(v_can); exception when others then o := o || jsonb_build_object('fo_can_msg', sqlerrm, 'fo_can_state', sqlstate); end;
+  begin perform client.get_intake(v_other); exception when others then o := o || jsonb_build_object('fo_other_msg', sqlerrm, 'fo_other_state', sqlstate); end;
   perform set_config('request.jwt.claims', c_fred, true);
   o := o || jsonb_build_object('st_access', hr.get_my_access(), 'st_list', client.list_intake_forms(), 'st_sub', client.get_intake(v_sub));
   raise exception 'FIXTURE%', o::text;
@@ -40,7 +49,7 @@ end $$;`)
 const m = String((r && r.message) || '').match(/FIXTURE(\{.*\})/s)
 if (!m) { console.log('FAIL fixture did not report :: ' + String((r && r.message) || '').slice(0, 300)); process.exit(1) }
 const F = JSON.parse(m[1])
-const SUB = Number(F.sub), WAIT = Number(F.wait), CAN = Number(F.can)
+const SUB = Number(F.sub), WAIT = Number(F.wait), CAN = Number(F.can), OTHER = Number(F.other)
 
 const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -76,12 +85,13 @@ async function open(w, who, path) {
     const n = new URL(x.request().url()).pathname.split('/').pop(); st.calls.push(n)
     let b = {}; try { b = JSON.parse(x.request().postData() || '{}') } catch {}
     const j = (s, body) => x.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(body) })
-    const fo = who === 'fo'
+    const fo = who === 'fo' || who === 'fo_empty'
     if (n === 'get_my_access') return j(200, fo ? F.fo_access : F.st_access)
-    if (n === 'list_intake_forms') return j(200, fo ? F.fo_list : F.st_list)
+    if (n === 'list_intake_forms') return j(200, who === 'fo_empty' ? [] : fo ? F.fo_list : F.st_list)
     if (n === 'get_intake') {
       const id = Number(b.p_intake_id)
       if (fo && id === CAN) return j(400, { code: F.fo_can_state, message: F.fo_can_msg, details: 'blocker=not_available in client.get_intake', hint: null })
+      if (fo && id === OTHER) return j(403, { code: F.fo_other_state, message: F.fo_other_msg, details: 'blocker=not_assigned in client.get_intake', hint: null })
       if (fo && id === WAIT) return j(200, F.fo_wait)
       return j(200, fo ? F.fo_sub : F.st_sub)
     }
@@ -91,7 +101,7 @@ async function open(w, who, path) {
   await p.waitForTimeout(3500)
   return { p, ctx, st }
 }
-const navText = (p) => p.evaluate(() => [...document.querySelectorAll('nav[aria-label="Main"] a, nav[aria-label="Main"] button')].map((e) => e.textContent.trim()))
+const navText = (p) => p.evaluate(() => [...document.querySelectorAll('nav[aria-label="Main"] a, nav[aria-label="Main"] button')].map((e) => e.textContent.trim()).filter(Boolean))   // the light/dark switch's icon buttons have no text
 
 for (const w of [1440, 375]) {
   const tag = w + 'px'
@@ -124,6 +134,19 @@ for (const w of [1440, 375]) {
   await p.screenshot({ path: `${out}/fo_list_shared_${w}.png`, fullPage: false })
   ok(st.calls.every((c) => ['get_my_access', 'list_intake_forms'].includes(c)), `${tag} FO list calls only get_my_access and list_intake_forms`, st.calls)
   ok(st.errors.length === 0, `${tag} FO list no page error`, st.errors)
+  await ctx.close()
+
+  // 2026-11-04: the list holds exactly the assigned forms, the empty list and another person's form each say so
+  ok(JSON.stringify(F.fo_list.map((x) => Number(x.intake_id)).sort((a, b) => a - b)) === JSON.stringify([SUB, WAIT].sort((a, b) => a - b)), `${tag} FO list holds exactly the assigned forms`, F.fo_list.map((x) => x.intake_id))
+  ;({ p, ctx, st } = await open(w, 'fo_empty', '/forms'))
+  const E = await p.evaluate(() => document.querySelector('main')?.textContent || document.body.textContent)
+  ok(E.includes('No forms are assigned to you yet.') && !E.includes('Schedule one from a property'), `${tag} FO empty list says none are assigned, not how to schedule`, E.slice(0, 160))
+  await p.screenshot({ path: `${out}/fo_empty_${w}.png`, fullPage: false })
+  await ctx.close()
+  ;({ p, ctx, st } = await open(w, 'fo', `/forms/${OTHER}`))
+  const N = await p.evaluate(() => ({ t: document.querySelector('main')?.textContent || '', back: [...document.querySelectorAll('main a')].some((a) => a.getAttribute('href') === '/forms') }))
+  ok(F.fo_other_msg === 'This form is not assigned to you.' && N.t.includes('This form is not assigned to you.') && N.back, `${tag} FO another person's form says so, with a way back`, N)
+  await p.screenshot({ path: `${out}/fo_not_assigned_${w}.png`, fullPage: false })
   await ctx.close()
 
   // Forms-only: a submitted form, and ?tab=record

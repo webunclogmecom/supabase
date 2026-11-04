@@ -27,7 +27,7 @@ const CASES = [
   { name: 'admin, edit everywhere', who: 'Fred', group: 'admin', r: reply(2, 'admin', { ...every('edit'), pp_forms: 'yes' }), tiles: ALL, chip: 'Admin', card: false },
   { name: 'office, edit everywhere', who: 'Diego', group: 'office', r: reply(28, 'office', every('edit')), tiles: ALL, chip: 'Office', card: false },
   { name: 'office, HR App none', who: 'Aaron', group: 'office', r: reply(26, 'office', { ...every('edit'), hr: 'none' }), tiles: ALL.filter((t) => t !== 'HR App'), chip: 'Office', card: true },
-  { name: 'field, see submitted forms', who: 'Fred Driver', group: 'field', r: reply(59, 'field', { pp_forms: 'yes' }), tiles: FIELD_FORMS, chip: 'Field', card: true, plannerSub: 'Submitted forms', search: 'calendar' },
+  { name: 'field, see submitted forms', who: 'Fred Driver', group: 'field', r: reply(59, 'field', { pp_forms: 'yes' }), tiles: FIELD_FORMS, chip: 'Field', card: true, plannerSub: 'Your assigned forms', search: 'calendar' },
   { name: 'field, no forms switch', who: 'Grecia', group: 'field', r: reply(1, 'field', {}), tiles: ['Field Portal', 'DUMP Schedule'], chip: 'Field', noApps: true },
   { name: 'field, Planner not switched on', who: 'Mark', group: 'field', r: reply(35, 'field', {}, { picture_planner: 'watch' }), tiles: FIELD_FORMS, chip: 'Field', card: true },
   { name: 'field, reply without DERM Tracker', who: 'Michael', group: 'field', r: reply(40, 'field', { pp_forms: 'yes' }, {}, ['derm_tracker']), tiles: ['DERM Tracker', ...FIELD_FORMS], chip: 'Field', card: true },

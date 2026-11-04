@@ -9,7 +9,7 @@ switch-on (the "Re-grants" section grows as grants are revoked).
 
 ## 0. Close the Forms door ("See submitted forms", 2026-10-27, Trello AIwCYcmn)
 
-Field people with "See submitted forms" read Picture Planner's submitted forms (gate and lock box codes included) through
+Field people with "See their assigned forms" (named "See submitted forms" until 2026-11-04) read the Picture Planner forms assigned to them (gate and lock box codes included) through
 a door in the read gate and the Storage gate (`2026-10-27_2130_pp_forms_see_submitted`). To shut that door for everyone at
 the next request:
 

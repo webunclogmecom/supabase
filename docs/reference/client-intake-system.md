@@ -885,6 +885,11 @@ requester, no collector link, no photos); cancelled and expired forms refused. E
 the collector link, Cancel and the Page Builder stay refused. The Planner's list reads `list_intake_forms` for everyone.
 Sharing a submitted form is its own address (`/forms/<id>`), signed in: nothing in the link. Undo: Supabase `CLAUDE.md`,
 "THE FORMS DOOR".
+**Since 2026-11-04 (`2026-11-04_1500_pp_forms_assigned_only`) all of that holds only for the forms ASSIGNED to the person**, the
+assignees of the form's Calendar task (`client.fn_intake_assigned_to_me`). Fred: *"only show the ones assigned to them, only office
+or admin people can see all the forms."* Another form's address answers 42501 "This form is not assigned to you."
+(`blocker=not_assigned`), its photos are not visible, and the switch is named "See their assigned forms". Planner View or Edit
+(admin, office) is unchanged: every form.
 
 ## Traps paid for while building this
 
