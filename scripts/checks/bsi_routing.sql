@@ -17,7 +17,7 @@
 --   4. no live property whose city is near "Boca Raton" without reading plainly as it: a spelling the one test misses
 --      (an accent, "Boka", "City of Boca Raton", "West Boca Raton"), or one it reads as Boca Raton only by its prefix
 --      ("Boca Raton West", "Boca Raton (Unincorporated)"). A person decides. (A missed Boca Raton client with line 27
---      also shows in the health email as gdo_no_permit: it has no GDO permit.);
+--      also shows in the health email as a no-permit item, line27_no_permit_clients or gdo_no_permit: it has no GDO.);
 --   5. no live CCN sits on a client that files with DERM;
 --   6. CONTROLS: the rule is in the four bodies and uses the one Boca Raton test; the three health items are in
 --      log_rpa_derm_health; the test reads the spellings it should; the rule says Grove Kosher (client 357) files with BSI.
