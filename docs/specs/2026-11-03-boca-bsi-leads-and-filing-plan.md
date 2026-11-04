@@ -5,7 +5,7 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
 - **#166** `IWJkqTq1`: add the scraped restaurants (frozen leads) and our current clients to the DB.
 - **#169** `0lAWU6Ge`: a BSI Online filing bot that auto-files Boca Raton maintenance reports, like the Online GDO Report bot.
 
-**Status (2026-11-04 ~01:00 ET).**
+**Status (2026-11-04 ~01:45 ET).**
 - **Done, read-only:** all the research; Yan's screen recording, read frame by frame; the BSI scrape (raw data in the
   workspace `backups/` folder, never in a repo).
 - **Built (Fred: "Leads + routing now"):**
@@ -37,11 +37,13 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
     about (a billing address would have raised one; no routing item has fired in production yet). The health logger failed for service_role since `_2039` (it runs as its caller):
     service_role may run the Boca Raton test now. The routing rollbacks refuse a wrong order.
   - **Fourth round** (`2026-11-04_0042_route_line27_alert_set_keys`, applied 00:40 ET), found by a fourth adversarial
-    check: the key held the count and the HIGHEST visit id, so swapping one visit for another kept it and a silence hid
-    the change; its last part is now a fingerprint of which completed visits there are. Line 27 on a skipped or
+    check: the key held the count and the HIGHEST visit id, so swapping one visit for another with a lower id than the
+    highest kept it and a silence hid the change; its last part is now a fingerprint of which completed visits there are. Line 27 on a skipped or
     cancelled visit counted as work and could never resolve: it no longer counts. The standing check reads code with
-    comments removed, also tests `derm.gdo_report_status` and the logger's own last run (17 rows), and
-    `scripts/checks/bsi_routing_mutations.mjs` proves each row can fail.
+    comments removed, also tests `derm.gdo_report_status` and the logger's own last run, and
+    `scripts/checks/bsi_routing_mutations.mjs` proves each row can fail. A fifth check found no routing defect, only gaps
+    in that check and wording: it now also pins the md5 of the logger's routing block and the age of its last run (18
+    rows), and the suite (36 cases) fails if any row never failed.
 - **Fred's answers to section 10 (2026-11-03):**
   - **F1, CCNs:** "Keep all, privately". They stay in the private payload; no API role can read them.
   - **F2, BSI contacts:** "Load them privately now". Same.

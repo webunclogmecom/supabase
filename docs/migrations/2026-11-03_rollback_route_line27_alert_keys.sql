@@ -4,7 +4,8 @@
 -- ORDER: run 2026-11-04_rollback_route_line27_alert_set_keys.sql first (this file's guard refuses until it has run),
 -- then this, before 2026-11-03_rollback_route_line27_alerts.sql (whose guard refuses until this file has run), then
 -- 2026-11-03_rollback_route_line27_followups.sql, then 2026-11-03_rollback_route_line27_ccn_to_bsi.sql.
--- Each guard checks that the live body is the one its own migration left, so a wrong order is refused, not applied.
+-- Each guard checks that the live body is the one its own migration left, so a wrong order is refused, not applied
+-- (the _1830 file has no opening guard: its closing VERIFY refuses).
 -- Undoing this brings back routing items keyed on kind and client only (a client's later line-27 visits raise nothing
 -- new, and a silence hides them), items raised by an address with no work (a billing address), and a service_role
 -- call of the logger that fails 42501.

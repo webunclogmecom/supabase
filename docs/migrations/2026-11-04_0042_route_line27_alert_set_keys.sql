@@ -1,5 +1,6 @@
 -- ============================================================================
 -- 2026-11-04_0042_route_line27_alert_set_keys  Line-27 routing alerts: keyed on WHICH visits; skipped and cancelled are not work
+-- (Corrections to this header, added after it was applied, are at the END of this file. Everything else is as applied.)
 -- ============================================================================
 -- THE ASK: Fred 2026-11-03, Trello #169: "Only line item 27 visits ... That are from Boca Raton." Root CLAUDE.md
 --   section 7: "if the system refuses or waits, the reason must reach a person on its own". A fourth read-only
@@ -417,3 +418,25 @@ end $verify$;
 drop function pg_temp._old_log_rpa_derm_health();
 
 commit;
+
+-- ============================================================================
+-- CORRECTIONS added 2026-11-04 ~01:45 ET, after a fifth adversarial check (no later migration exists to carry them, and
+-- this check changed no database object). Nothing below runs. The live logger's behaviour was confirmed correct.
+--   - WHAT, item 2: "28 such visits since 2026-07-21, none of a routed client today" mixed two counts. 28 is ALL live
+--     skipped or cancelled visits since the cutoff (16 skipped, 12 cancelled, one of them dated 2027-01-01), with or
+--     without line 27. 2 of them are GDO-reporting (6742 and 6743 of client 305, not routed, through their job's line).
+--     3 of the 28 are on a routed client: the test client 112-YA (381), which the items skip.
+--   - CORRECTIONS, the _2255 "newly scheduled" sentence: "changed nothing until it was completed (still true)" is true
+--     of an existing item's KEY only. A scheduled line-27 visit of a client with no item of that kind yet raises one,
+--     keyed :0:0 (case B here asserts exactly that).
+--   - CORRECTIONS, billing row 891: "stayed when the job moved to 1018 in August": audit.logs shows job 1308's property_id
+--     NULL as far back as the audit goes (2026-08-01) and NULL to 1018 on 2026-08-12. It was given 1018; no audited row
+--     has it on 891.
+--   - CORRECTIONS, the misfires: the quote "raised other_city" (client 245's billing row) was a sentence in CLAUDE.md, not
+--     in _2255 or _2039 (in _2255 it describes a rolled-back fixture). _2039's own past-tense sentence is its item 1
+--     ("was filed with Miami-Dade and raised nothing"). The fact stands: no routing logger body had run in production.
+--   - ROLLBACK: "each guarded the same way": 2026-11-03_rollback_route_line27_ccn_to_bsi.sql has no opening md5 guard; it
+--     refuses a wrong order through its closing VERIFY, and its transaction aborts all the same.
+--   - The commit message of d2169abf says bsi_routing_mutations.mjs "proves every row can fail": that was false, 7 of its
+--     17 rows never failed in any case. Commit 2026-11-04 (fifth check) made it true and made the suite enforce it.
+-- ============================================================================

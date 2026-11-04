@@ -304,15 +304,17 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     the md5 of the completed line-27 visits' ids, sorted as text and joined with commas, `0` when there is none; the
     text names the count and the newest date). Nothing records a BSI filing yet, so a key that does not change never
     resolves: keyed on the client alone (`_2039`), or on the count and the highest visit id (`_2255`, which a swap of
-    one visit for another kept), a silence would have hidden the client's later line-27 visits (found in review; no
+    one visit for another with a lower id than the highest kept), a silence would have hidden the client's later line-27 visits (found in review; no
     routing item has fired in production yet). Now any change to WHICH completed line-27 visits there are is a NEW item
     and the old key is listed under "Resolved"; a silence covers only the set it was shown. A newly scheduled line-27
-    visit changes nothing until it is completed.
+    visit raises an item (keyed `:0:0`) if the client has none of that kind yet; otherwise it changes no key until it is
+    completed.
   - **The rule keys on the city name, not on BSI.** It routes 10 real clients today. 5 have no BSI record: 081-TCE and
     319-CAP sit in ZIP 33498, where BSI lists nobody (likely outside the City), and 135-BB, 361-SFG and Olympus are not
     in the scrape. 🛑 **No routed client is MATCHED yet:** a client counts as matched only once Yan's 'same' decision is
-    recorded through `leads.decide_client` (0 recorded on 2026-11-03), so `bsi_routing.sql` fails on line 27 on ANY
-    routed client, Grove Kosher included, until then; the 5 with no BSI record can never pass. Line 27 waits for the
+    recorded through `leads.decide_client` (0 recorded on 2026-11-03), so `bsi_routing.sql` fails on line-27 work on ANY
+    routed client (not line 27 on a skipped or cancelled visit, or a visit before the cutoff), Grove Kosher included,
+    until then; the 5 with no BSI record can never pass. Line 27 waits for the
     review.
   - **Two client shapes it cannot route** (per client, not per property): line-27 WORK at a Boca Raton property of a
     client with a live GDO (`bsi_route_gdo_and_boca`; its Boca Raton visits are filed with Miami-Dade), and line-27 work
@@ -332,12 +334,16 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     visit (Fred 2026-08-19), a Boca one included (`derm.visit_gdo_manual_eligibility`, `fn_record_manual_gdo_report`).
     A refusal there must be keyed on `public.fn_client_files_with_bsi(client)`: that visit-level view serves every visit
     with no permit block (about 95% of visit pages, Miami-Dade ones included), not only Boca Raton visits.
-  - Standing check `scripts/checks/bsi_routing.sql` (17 rows since `2026-11-04_0042`; also: the DERM fields hold exactly
+  - Standing check `scripts/checks/bsi_routing.sql` (18 rows since 2026-11-04; also: the DERM fields hold exactly
     the line-27 visits WITH A LIVE MANIFEST of clients that file with DERM, `derm.gdo_report_status` exactly those
     visits with or without one, no line 27 on a routed client not yet matched, no city near "Boca Raton" that does not
-    read plainly as it, and the newest logger run names no routed client as a no-permit client; its CONTROL reads the
-    code with comments removed, so a comment cannot stand in for a call), and
-    `scripts/checks/bsi_routing_mutations.mjs`, which proves every row can fail (17 cases, each undone). Behaviour proofs
+    read plainly as it, and the newest logger run names no routed client as a no-permit client; its CONTROLs read
+    function code with `--` and `/* */` comments removed, so a comment cannot stand in for a call (a string literal still
+    could); one pins the md5 of the logger's routing block, so changing that block on purpose means proving it and
+    updating the pin; one fails when the newest logger run is over 26 hours old), and
+    `scripts/checks/bsi_routing_mutations.mjs`, which proves every row can fail (36 cases, each undone; the suite itself
+    fails if any row never failed). Three of its cases assume no routed client has line 27 on a visit with a live
+    manifest: its header says what to do the day one does. Behaviour proofs
     in the VERIFY blocks of `_1848` (its case c2 had no old-body control), `_2039` (cases 1 to 4; case 5 had none),
     `_2255` (A, B and D; E's control was the pre-grant 42501; C had none) and `2026-11-04_0042` (A to D, each with the
     old body as a control that must fail; E a regression check); `_1830`'s old-body control is in

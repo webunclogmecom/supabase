@@ -199,8 +199,8 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
   Each key is `<kind>:<client id>:<completed line-27 visits>:<which ones>` (since `2026-11-04_0042`; the last part is
   the first 8 hex of the md5 of their ids sorted as text and joined with commas, `0` when there is none), so any change
   to which completed line-27 visits there are, a swap of one for another included, is a NEW item and the old key shows
-  as resolved: a silence covers only the set it was shown. A newly scheduled line-27 visit changes nothing until it is
-  completed. 0 of each today. Check `scripts/checks/bsi_routing.sql` (and `scripts/checks/bsi_routing_mutations.mjs`,
+  as resolved: a silence covers only the set it was shown. A newly scheduled line-27 visit raises an item (keyed `:0:0`) if the
+  client has none of that kind yet; otherwise it changes no key until it is completed. 0 of each today. Check `scripts/checks/bsi_routing.sql` (and `scripts/checks/bsi_routing_mutations.mjs`,
   which proves each of its rows can fail).
 - **Authentication:** header `x-rpa-key` against `RPA_BOT_KEYS`.
 - **Endpoints:**

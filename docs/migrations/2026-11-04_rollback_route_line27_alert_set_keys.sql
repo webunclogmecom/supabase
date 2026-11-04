@@ -3,7 +3,7 @@
 -- ORDER: run this FIRST, before 2026-11-03_rollback_route_line27_alert_keys.sql (whose guard refuses until this file
 -- has run), then 2026-11-03_rollback_route_line27_alerts.sql, 2026-11-03_rollback_route_line27_followups.sql and
 -- 2026-11-03_rollback_route_line27_ccn_to_bsi.sql. Each guard checks that the live body is the one its own migration
--- left, so a wrong order is refused, not applied.
+-- left, so a wrong order is refused, not applied (the _1830 file has no opening guard: its closing VERIFY refuses).
 -- Undoing this brings back routing items keyed on the count and the highest visit id (a swap of which visits carry
 -- line 27 keeps the key, so a silence hides it), items raised by line 27 on a skipped or cancelled visit, and the
 -- other_city text that says "a property in another city" for work with no property.
