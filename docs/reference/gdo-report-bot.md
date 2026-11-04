@@ -70,7 +70,7 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   copy of this bot (inferred, not verified). Such a copy also needs the two passwords above, which is one more reason
   to rotate them. The old key now answers 401.
 - **2026-11-03: a 24-hour key for Jonathan's monthly-report video** (Fred: "have it be available for the next 24 hours").
-  One `RUN_KEYS` entry, `jonvideo`, added 00:51 ET (deploy `d78ce7cf`). It opens the dashboard pages only. He got no
+  One `RUN_KEYS` entry, `jonvideo`, added 00:51 ET (deploy `d78ce7cf`). Like every run key it also accepts writes (measured: his POSTs answered 200), not only page reads. He got no
   Railway or GitHub access, because Railway's audit log records changes but never who viewed a variable. The other
   entries were kept byte for byte. A scheduled task removes the entry at 00:55 ET on 11-04 and reports its use. The bot
   logs `Authenticated operator key: <name>` before each request's access line, so every request made with a key can
@@ -87,11 +87,18 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   task adds the result there too). **Removal: 2026-11-04 00:55 ET** (deploy `d08df6f0`; ours 200, his 401, health ok). What the key did: 22 requests,
   14 page reads and 8 writes between 10:17 and 10:31 ET on 11-03. Three discard requests on bot filings 2 and 4 (what
   they held is not known, the bot's archive lists nothing now), an invoice parse, two previews, a generate, and a
-  "Record as filed" that wrote `lwt_filings` 77 (period 2026-08-28 to 2026-09-23, 15 tickets) with dry run OFF, against
-  the ask to keep "Test only" ticked. No commits, no new collaborators, no Railway event or bot deploy that is not
+  "Record as filed" that wrote `lwt_filings` 77 (period 2026-08-28 to 2026-09-23, 15 tickets) with dry run OFF.
+  No commits, no new collaborators, no Railway event or bot deploy that is not
   ours. The bot's two `derm_portal_submissions` rows that day (08:54 and 09:54 ET) came before his first write.
   **Verdict under Fred's rule: change found, so the keys need rotating again; Fred decides and starts it. Nothing he
   did was undone.**
+  **Corrected 2026-11-04 after a re-test** (ours 200, his 401, `RUN_KEYS` = `yan`, `diego`, `fred`, `dermapp`, his last
+  request 10:31 ET on 11-03). The asks not to press Run and to keep "Test only" ticked were only in a draft: the message
+  Fred sent at 09:30 ET held the key, the page and "24 hours", so he was never told. Filing 77 reads as the real
+  September report, not a video test: on 10-30 he asked Diego in #new-app-issues whether the county had accepted
+  September so he could show marking it filed, Diego said yes, and 77 is the next invoice package after 76. Not proven:
+  its 15 tickets were not compared with what the county received. The discards did not touch our database
+  (`lwt_filings` shows that one INSERT and nothing else since 11-02).
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
@@ -340,7 +347,7 @@ filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
 - **Open items:**
   - SSO C1 to C5, our side, is not built;
   - brief D (discard a draft) is not started;
-  - the September report: planned filing 2026-10-20 (`public.lwt_filings` had no September row on 10-20 at 13:50 ET).
+  - the September report: planned filing 2026-10-20 (`public.lwt_filings` had no September row on 10-20 at 13:50 ET). Its row is 77, recorded 2026-11-03 (section 2).
   - `87b24a2` ("Monthly C") was live from 2026-10-18 21:27 ET despite its "push held until 2026-10-20" note, so the
     10-19 close ran on it, not on `7fb15e0` as the bot's HANDOFF.md says (who pushed it is not known), until
     `7681388` replaced it at 2026-10-20 12:54 ET.
