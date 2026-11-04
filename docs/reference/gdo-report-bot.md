@@ -99,6 +99,7 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   September so he could show marking it filed, Diego said yes, and 77 is the next invoice package after 76. Not proven:
   its 15 tickets were not compared with what the county received. The discards did not touch our database
   (`lwt_filings` shows that one INSERT and nothing else since 11-02).
+  **Decided 2026-11-04: no second rotation** (Fred: "no need for rotate then"). The keys from 2026-11-01 stay in use.
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
