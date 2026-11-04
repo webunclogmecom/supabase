@@ -167,18 +167,23 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 
 - 🛑 **Who the queue skips: clients that file with BSI (since ~16:53 ET 2026-11-03, `2026-11-03_1830`).**
   `public.fn_client_files_with_bsi`: no live GDO and a live property whose city reads "Boca Raton"
-  (`public.fn_city_is_boca_raton`, any spelling of those letters, since `2026-11-03_2039`), or a test client with a live
-  CCN (112-YA). Their line-27 visits are kept out of `v_derm_portal_fields`, the queue, the held view and the
+  (`public.fn_city_is_boca_raton` since `2026-11-03_2039`: its a-z letters, case-blind, start with "bocaraton", so
+  "Boca Raton, FL" counts and "West Boca Raton" or an accented "Ratón" does not), or a test client with a live CCN
+  (112-YA). Their line-27 visits are kept out of `v_derm_portal_fields`, the queue, the held view and the
   `gdo_no_permit` / `line27_no_permit_clients` health items. A live GDO always wins. They are meant for BSI Online
   (City of Boca Raton, Trello #169), but nothing files them yet: Yan by hand, the BSI bot later (not built). Fred's
-  health email carries one item per client, never for a test client, and only when the client has line 27 (on an open
-  job's own lines, or on a visit since 2026-07-21 by its visit, invoice or job line):
-  - `bsi_route_unfiled:<id>`: a routed client with line 27 (Yan files it by hand; since `_2039`);
-  - `bsi_route_gdo_and_boca:<id>`: a client with a GDO and a Boca Raton property, whose Boca visits are filed with
-    Miami-Dade (since `_1848`);
-  - `bsi_route_other_city:<id>`: a routed client with a property elsewhere, whose other visits leave the queue (since
-    `_1848`; client 245 has this shape and lacks only line 27).
-  0 of each today. Check `scripts/checks/bsi_routing.sql`.
+  health email carries one item per client and kind, never for a test client, and only for line-27 WORK (an open job's
+  own lines at the job's property, or a visit since 2026-07-21 that is GDO-reporting by its visit, invoice or job line,
+  at the visit's property); an address with no work, such as a billing address, raises nothing (since `_2255`):
+  - `bsi_route_unfiled`: a routed client with line-27 work (Yan files it by hand; since `_2039`);
+  - `bsi_route_gdo_and_boca`: a client with a GDO and line-27 work at a Boca Raton property, whose Boca visits are
+    filed with Miami-Dade (since `_1848`);
+  - `bsi_route_other_city`: a routed client with line-27 work at a property elsewhere, whose visits leave the queue
+    (since `_1848`). Such a client gets this item AND `bsi_route_unfiled`. Client 245's "Beverly Hills" row is its
+    billing address, not work, so it would raise only `bsi_route_unfiled`.
+  Each key is `<kind>:<client id>:<completed line-27 visits>:<newest one>` (since `_2255`), so a new completed visit is
+  a NEW item and the old key shows as resolved: a silence covers only the visits it was shown. 0 of each today. Check
+  `scripts/checks/bsi_routing.sql`.
 - **Authentication:** header `x-rpa-key` against `RPA_BOT_KEYS`.
 - **Endpoints:**
   - GET `rpa-derm-queue`;

@@ -1,12 +1,21 @@
 -- ROLLBACK of 2026-11-03_2039_route_line27_alerts. public.fn_client_files_with_bsi and public.log_rpa_derm_health as
 -- they were just before it, captured from pg_get_functiondef on 2026-11-03 (not retyped, md5-checked), then drops
 -- public.fn_city_is_boca_raton (after the rule that calls it is back to its own test).
--- ORDER: run this BEFORE 2026-11-03_rollback_route_line27_followups.sql, whose logger pin matches only the body this
--- file puts back.
+-- ORDER: run 2026-11-03_rollback_route_line27_alert_keys.sql FIRST, then this file, then
+-- 2026-11-03_rollback_route_line27_followups.sql. Enforced since 2026-11-03 ~23:10 ET: the guard below refuses unless the
+-- rule and the logger are the bodies 2026-11-03_2039 left, and the follow-ups rollback refuses unless this file has run.
+-- (Until then this line said the follow-ups rollback held a "logger pin"; it held none, so a wrong order went through.)
 -- Undoing this brings back the exact-string Boca Raton test (a "Boca Raton, FL" property no longer routes), the routing
 -- items that see only an open job's line 27, and removes the bsi_route_unfiled item.
 begin;
 set local lock_timeout = '3s';
+do $g$
+begin
+  if md5((select prosrc from pg_proc where oid = 'public.log_rpa_derm_health()'::regprocedure)) <> '8b58a04cb61ed27fa29ee460797b6c12'
+     or md5((select prosrc from pg_proc where oid = 'public.fn_client_files_with_bsi(bigint)'::regprocedure)) <> 'a4ea8dbbaf3c7927b69f8865628005ce' then
+    raise exception 'rollback: the rule or the logger is not the body 2026-11-03_2039 left (run 2026-11-03_rollback_route_line27_alert_keys.sql first); nothing was changed';
+  end if;
+end $g$;
 CREATE OR REPLACE FUNCTION public.fn_client_files_with_bsi(p_client_id bigint)
  RETURNS boolean
  LANGUAGE sql

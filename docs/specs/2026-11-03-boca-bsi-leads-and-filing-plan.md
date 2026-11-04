@@ -5,7 +5,7 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
 - **#166** `IWJkqTq1`: add the scraped restaurants (frozen leads) and our current clients to the DB.
 - **#169** `0lAWU6Ge`: a BSI Online filing bot that auto-files Boca Raton maintenance reports, like the Online GDO Report bot.
 
-**Status (2026-11-03 ~21:00 ET).**
+**Status (2026-11-03 ~23:05 ET).**
 - **Done, read-only:** all the research; Yan's screen recording, read frame by frame; the BSI scrape (raw data in the
   workspace `backups/` folder, never in a repo).
 - **Built (Fred: "Leads + routing now"):**
@@ -29,7 +29,13 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
       takes text, gives up on a lock at 500 ms and catches a cancel (proven live, log clean);
     - the routing items saw line 27 only on an open job (3 of 18 line-27 clients have it on the invoice only), and three
       copies of the Boca Raton test missed any other spelling: one test now (`public.fn_city_is_boca_raton`), and a third
-      item `bsi_route_unfiled:<id>` puts a routed client with line 27 in Fred's health email, since nothing files it.
+      item `bsi_route_unfiled` puts a routed client with line 27 in Fred's health email, since nothing files it.
+  - **Third round** (`2026-11-03_2255_route_line27_alert_keys`), found by a third adversarial check (nothing new on
+    privacy): the routing items were keyed per client and never resolved, so after the first email a client's later
+    line-27 visits raised nothing and the email's "silence 30d" hid them; they are now keyed on the client's completed
+    line-27 visits (a new visit is a new item). They now count only line-27 work at the property they are about (a
+    billing address raised one). The health logger failed for service_role since `_2039` (it runs as its caller):
+    service_role may run the Boca Raton test now. The routing rollbacks refuse a wrong order.
 - **Fred's answers to section 10 (2026-11-03):**
   - **F1, CCNs:** "Keep all, privately". They stay in the private payload; no API role can read them.
   - **F2, BSI contacts:** "Load them privately now". Same.
@@ -41,11 +47,14 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
     view"): `v_lead_interceptors.location` (BSI's note on where a trap is, 176 of 450 rows) and `owner_company` (BSI's
     mailing name), and the BSI label (`name`). Every cell is now tested by value (`scripts/checks/leads_integrity.sql`:
     no CCN, contact email, phone or contact name), and the label and `owner_company` are blank when they are a
-    contact's name. A contact's name inside a longer business name stays (2 labels and 2 mailing names). Viktor's own
+    contact's name. A contact's name inside a longer business name stays (counting contact names of two words or more,
+    2 labels and 2 mailing names; with a one-word name inside its own record's text, 3 and 3). Viktor's own
     read-only role (8.1, deferred) is still not built.
 - **Open:** S3 (Yan's review sitting, then the CCNs), S5 (Yan's hand filings, captured), S6-S8 (the bot, after S5 and
   Fred's go), S9 (the enrichment pilot). For Fred: whether the DERM Tracker's "Record a manual filing" (with Miami-Dade)
-  should refuse a Boca client's visit (today it is offered on every visit, his 2026-08-19 rule).
+  should refuse a Boca client's visit (today it is offered on every visit, his 2026-08-19 rule; a refusal must be keyed
+  on `fn_client_files_with_bsi`); and whether a GDO client's line-27 visit at a Boca Raton property should be held in
+  the bot's queue until a person clears it (today the alert arrives the next morning, after the bot may have filed).
 
 **What this document leaves out on purpose:**
 - **CCN values.** BSI's own terms call the CCN a confirmation number that unlocks a customer's records, so it is handled like an access code.

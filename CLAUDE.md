@@ -286,34 +286,52 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
 - 🛑 **Line 27 routes by CLIENT since ~16:53 ET 2026-11-03 (`2026-11-03_1830`, Trello #169).**
   `public.fn_client_files_with_bsi(client)`: no live GDO (a live GDO always wins) AND a live property whose city reads
   "Boca Raton" (or a test client with a live CCN: 112-YA). "Reads Boca Raton" is ONE test since `2026-11-03_2039`,
-  `public.fn_city_is_boca_raton(city)`: letters only, case-blind ("Boca Raton, FL" and a non-breaking space count, "Boca"
-  alone and "West Boca Raton" do not); the rule, its health items and the check all call it, never a copy of the
-  expression. The CCN plays no part for a real client. Those clients'
+  `public.fn_city_is_boca_raton(city)`: its a-z letters, case-blind, START WITH "bocaraton" ("Boca Raton, FL" and a
+  non-breaking space count; "Boca" alone, "West Boca Raton" and an accented "Ratón" do not; "Boca Raton West" does). The
+  rule, its health items and the check all call it, never a copy of the expression; service_role may run it since
+  `_2255` (the health logger runs as its caller). The CCN plays no part for a real client. Those clients'
   line-27 visits are kept out of `v_derm_portal_fields` (so the bot's queue, the held view and the `gdo_no_permit`
   items), `v_gdo_reporting_derm_mismatch`, `derm.gdo_report_status` (since `2026-11-03_1848`) and the
   `line27_no_permit_clients` part of `log_rpa_derm_health()`. **This had to ship before the office puts line 27 on a
   Boca job**, or every Boca visit would be held as `no_permit` and emailed as "enter the GDO permit".
   - **Where they are filed: nowhere automatic yet.** They are meant for BSI Online (City of Boca Raton): Yan files by
     hand (plan S5), the BSI bot comes later (S6-S8, not built). Nothing files or tracks these visits; since `_2039` the
-    health item `bsi_route_unfiled:<client id>` puts each routed client with line 27 in Fred's health email ("Yan: file
-    ... on BSI Online by hand"), so the parking is not silent. 0 today (no routed client has line 27).
+    health item `bsi_route_unfiled` puts each routed client with line 27 in Fred's health email ("Yan: file ... on BSI
+    Online by hand"), so the parking is not silent. 0 today (no routed client has line 27).
+  - 🛑 **The three `bsi_route_*` items are keyed `<kind>:<client id>:<completed visits>:<newest completed visit>` since
+    `2026-11-03_2255`** (e.g. `bsi_route_unfiled:357:2:5944`; the text names the count and the newest date). Nothing
+    records a BSI filing yet, so a per-client key never resolved: after the first email a client's later line-27 visits
+    raised nothing new, and the email's "silence 30d" hid them all. Now each new completed line-27 visit is a NEW item
+    and the old key is listed under "Resolved"; a silence covers only the visits it was shown.
   - **The rule keys on the city name, not on BSI.** It routes 10 real clients today. 5 have no BSI record: 081-TCE and
     319-CAP sit in ZIP 33498, where BSI lists nobody (likely outside the City), and 135-BB, 361-SFG and Olympus are not
-    in the scrape. Line 27 must not go on their jobs until Yan's review settles where they file.
-  - **Two client shapes it cannot route** (per client, not per property): a live GDO plus a Boca Raton property, and a
-    routed client with a property in another city. `log_rpa_derm_health()` raises each in Fred's health email when that
-    client has line 27 (`bsi_route_gdo_and_boca:<id>`, `bsi_route_other_city:<id>`, since `_1848`). "Has line 27" =
-    an open job's own lines carry it OR a visit since the launch cutoff (2026-07-21) is GDO-reporting, by its visit,
-    invoice or job line (`fn_visit_is_gdo_reporting`, the routing's own test; since `_2039`, before which the items saw
-    the open job only and missed invoice-only line 27, which 3 of 18 line-27 clients have). Never a test client.
-    Client 245 (Boca Raton plus a "Beverly Hills" property marked Dade) is shape 2 and raises the day line 27 reaches it.
+    in the scrape. 🛑 **No routed client is MATCHED yet:** a client counts as matched only once Yan's 'same' decision is
+    recorded through `leads.decide_client` (0 recorded on 2026-11-03), so `bsi_routing.sql` fails on line 27 on ANY
+    routed client, Grove Kosher included, until then; the 5 with no BSI record can never pass. Line 27 waits for the
+    review.
+  - **Two client shapes it cannot route** (per client, not per property): line-27 WORK at a Boca Raton property of a
+    client with a live GDO (`bsi_route_gdo_and_boca`; its Boca Raton visits are filed with Miami-Dade), and line-27 work
+    at a property elsewhere of a routed client (`bsi_route_other_city`). `log_rpa_derm_health()` raises each in Fred's
+    health email (since `_1848`). Line-27 work = an open job's own lines (at the job's property) OR a GDO-reporting visit
+    since the launch cutoff (2026-07-21), by its visit, invoice or job line (`fn_visit_is_gdo_reporting`, the routing's
+    own test), at the visit's property. Since `_2255` each item looks only at the work it is about, so an address with no
+    work never raises one; before, any live property counted, and client 245's "Beverly Hills" row, which is its BILLING
+    address (no job, no visit), raised other_city. A billing row cannot simply be skipped: 1 of 19 live billing rows has
+    visits. Never a test client.
+  - **Timing, a decision for Fred:** a GDO + Boca Raton client's line-27 visits enter the Miami-Dade queue at once; the
+    item comes from the 09:00 UTC logger run and reaches Fred in the 13:30 UTC email (04:00 / 08:30 ET in winter), so
+    the bot, which polls hourly, may file first. Holding
+    such visits in the queue until a person clears them is a change to the bot's queue: not built. 0 such clients today.
   - **Not covered, a decision for Fred:** the DERM Tracker offers "Record a manual filing" (with Miami-Dade) on every
     visit (Fred 2026-08-19), a Boca one included (`derm.visit_gdo_manual_eligibility`, `fn_record_manual_gdo_report`).
-  - Standing check `scripts/checks/bsi_routing.sql` (also: no line 27 on a routed client not yet matched to a BSI
-    record, and no city that mentions Boca but does not read as Boca Raton); behaviour proofs in the VERIFY blocks of
-    `_1830` / `_1848` / `_2039` (each with the old body as a control that must fail) and
-    `docs/migrations/2026-11-03_1830_*_PROOF.sql` (ends in ROLLBACK). A new DERM reader that does not go through
-    `v_derm_portal_fields` must apply the rule itself.
+    A refusal there must be keyed on `public.fn_client_files_with_bsi(client)`: that visit-level view serves every visit
+    with no permit block (about 95% of visit pages, Miami-Dade ones included), not only Boca Raton visits.
+  - Standing check `scripts/checks/bsi_routing.sql` (also: the DERM fields hold exactly the line-27 visits of clients
+    that file with DERM, no line 27 on a routed client not yet matched, and no city near "Boca Raton" that does not read
+    plainly as it); behaviour proofs in the VERIFY blocks of `_1848`, `_2039` (cases 1 to 4; case 5 had none) and
+    `_2255` (cases A to E), each with the old body as a control that must fail; `_1830`'s old-body control is in
+    `docs/migrations/2026-11-03_1830_*_PROOF.sql` (ends in ROLLBACK). The routing rollbacks refuse a wrong order by md5
+    guard since `_2255`. A new DERM reader that does not go through `v_derm_portal_fields` must apply the rule itself.
 
 ## 🛑 FROZEN LEADS: the private schema `leads` (2026-11-03, Trello #165 / #166)
 
@@ -346,8 +364,9 @@ newest first; each header says the order). (The names `_1700` to `_1830` are lat
   records) since `_2039`, compared on `leads.fn_name_key` (`leads.v_bsi_contact_names`). ⚠ `_1848` masked
   `owner_company` only and its check tested `owner_company` / `location` only, so it passed while 3 labels were contact
   names: test every cell, as `scripts/checks/leads_integrity.sql` now does (with a control that finds the names in the
-  private source). Accepted by design and not blanked: a contact's name INSIDE a longer business name (2 labels and 2
-  mailing names, e.g. a company named after its owner), and owner names that look like a person's but are not BSI
+  private source). Accepted by design and not blanked: a contact's name INSIDE a longer business name (a company named
+  after its owner): counting contact names of two words or more, 2 labels and 2 mailing names; with a one-word name
+  inside its own record's label or mailing name too, 3 and 3, and owner names that look like a person's but are not BSI
   contacts (the plan keeps the mailing name, not the mailing street).
 - 🛑 **Signed-in staff never see the BSI links; service_role does.** `client.entity_source_links` (a pass-through
   `authenticated` reads) leaves out `entity_type = 'source_record'` since `_1848`. `service_role` still reads all 431
@@ -359,11 +378,14 @@ newest first; each header says the order). (The names `_1700` to `_1830` are lat
   statement's full text to its server log (`log_min_error_statement = error`), and also a statement that waits over
   1 s for a lock (`log_lock_waits = on`), even one that then succeeds. The loader's first dry run (a DO block that
   raised, 16:41 ET 11-03) put every CCN and contact in the csvlog: readable only by `supabase_admin`, rotated out
-  after about a day, impossible to purge. Its ERROR line reached Logs Explorer WITHOUT its statement (0 CCN or contact
-  values there). The loader now calls `leads.ingest_quiet(text, text, text, text, boolean)` (since `_2039`; `_1848`
+  after about a day, impossible to purge. Its ERROR line reached Logs Explorer with its message (2,487 characters) and
+  838 characters of its statement: the DO block's code without the line that carried the payload (0 CCN- or
+  email-shaped values; re-measured 2026-11-03). Why that line was left out is not known, so a shorter failing statement
+  may be shipped whole: the protection is that the loader's statement never fails, not the log shipper. The loader now calls `leads.ingest_quiet(text, text, text, text, boolean)` (since `_2039`; `_1848`
   made it): the run start and records arrive as TEXT and are cast inside its handler, it runs with `lock_timeout`
   500 ms, it catches a cancel by name, and every error comes back as data (a dry run undoes itself inside); the loader
-  checks the function exists before sending and never prints the API's error text. Proven live: a dry run, a busy
+  checks the function exists before sending and prints only the first line of the API's error message, cut before any
+  `LINE n:` quote of the statement. Proven live: a dry run, a busy
   lock (55P03) and a statement timeout (57014) all came back as HTTP 201 data with 0 errors, 0 lock waits and 0
   private values in the log, and the same scan saw a planted lock wait and a planted failing call. Still logged: a
   statement that runs 10 s or more (`auto_explain`, its text included); a load takes under 1 s.

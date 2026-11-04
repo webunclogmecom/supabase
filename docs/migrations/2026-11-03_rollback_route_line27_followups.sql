@@ -4,10 +4,17 @@
 -- health scan (two items with one key would then stop the whole health email).
 -- ORDER (added 2026-11-03 ~20:50 ET): run 2026-11-03_rollback_route_line27_alerts.sql FIRST (this file puts back a
 -- logger body whose block that migration rewrote); 2026-11-03_rollback_route_line27_ccn_to_bsi.sql, if wanted, comes
--- after this one. Rehearsed as one chain, undone (scratchpad chain_rollbacks.mjs).
+-- after this one. Rehearsed as one chain, undone (scratchpad chain_rollbacks.mjs). Enforced since 2026-11-03 ~23:10 ET:
+-- the guard below refuses unless the logger is the body 2026-11-03_1848 left (md5 21e2025e...).
 begin;
 set local lock_timeout = '3s';
 set local search_path = public, extensions;
+do $g$
+begin
+  if md5((select prosrc from pg_proc where oid = 'public.log_rpa_derm_health()'::regprocedure)) <> '21e2025e707c5db977b5434261c0f276' then
+    raise exception 'rollback: log_rpa_derm_health is not the body 2026-11-03_1848 left (run 2026-11-03_rollback_route_line27_alerts.sql first); nothing was changed';
+  end if;
+end $g$;
 CREATE OR REPLACE FUNCTION public.fn_health_alert_scan(p_stale_days integer DEFAULT 3, p_renotify_days integer DEFAULT 7)
  RETURNS jsonb
  LANGUAGE plpgsql

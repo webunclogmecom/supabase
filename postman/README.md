@@ -872,7 +872,7 @@ second "run" key. Just poll the queue and file whatever it returns:
 
 Your `POST` results drive per-visit "GDO report filed / pending / failed" chips in our apps:
 
-- `derm.visit_gdo_report`: per visit and permit, shown in the internal DERM Tracker's GDO Online Report section
+- `derm.visit_gdo_report`: one row per real filing attempt (`derm_portal_submissions` with `dry_run` false), with that visit's permit fields, shown in the internal DERM Tracker's GDO Online Report section
   (`derm.gdo_report_status` exists too, but no app reads it; checked 2026-11-03).
 - `customer.gdo_reports` — per visit, shown on the customer's Field Portal.
 

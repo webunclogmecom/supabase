@@ -13,7 +13,7 @@
 //     carries no cast, so a bad character in BSI's data comes back as {ok:false, sqlstate} instead of failing it;
 //   - it runs with lock_timeout 500 ms, so a busy lock comes back as 55P03 before log_lock_waits (1 s) would log it;
 //   - this script first checks the function exists (a missing function would fail the statement and log it);
-//   - it never prints the API's error text, which can quote the statement.
+//   - it prints only the first line of the API's error message, cut before any LINE n: quote of the statement.
 // Still logged with its text: a statement that runs 10 s or more (auto_explain); a full load takes under 1 s. Never
 // go back to a DO block that raises, and never run an older copy of this file (fd2eab18's --dry-run is that DO block).
 // --dry-run makes ingest_quiet undo the load inside the database and print what it would produce (states, review

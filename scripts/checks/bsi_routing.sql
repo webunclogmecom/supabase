@@ -1,38 +1,62 @@
--- Line-27 routing standing check (migrations 2026-11-03_1830, _1848_route_line27_followups and _2039_route_line27_alerts,
--- Trello #169). Read-only. Healthy = every row 'ok'.
+-- Line-27 routing standing check (migrations 2026-11-03_1830, _1848_route_line27_followups, _2039_route_line27_alerts
+-- and _2255_route_line27_alert_keys, Trello #169). Read-only, run by hand. Healthy = every row 'ok'.
 --   1. no line-27 visit of a client that files with BSI reaches the DERM fields, held queue, mismatch view or
---      derm.gdo_report_status;
---   2. the two client shapes the per-client rule cannot route (log_rpa_derm_health raises them daily as
---      bsi_route_gdo_and_boca:<id> / bsi_route_other_city:<id>): a live GDO plus a live Boca Raton property, and a
---      client routed to BSI that has line 27 and a property in another city. "Has line 27" is the health items' own
---      test: an open job's own lines, or a GDO-reporting visit since the launch cutoff (its visit, invoice or job line);
---   3. no line 27 on a routed client we have not matched to a BSI record (081-TCE, 319-CAP, 135-BB, 361-SFG and
---      Olympus on 2026-11-03: Yan's review decides where they file first). A matched client WITH line 27 is not a
---      failure: the health item bsi_route_unfiled:<id> reminds Yan to file it on BSI Online by hand until the bot exists;
---   4. no live property whose city mentions Boca but does not read as Boca Raton (public.fn_city_is_boca_raton): a
---      spelling the rule would miss, or a West Boca address a person should look at;
+--      derm.gdo_report_status; and the DERM fields hold exactly the GDO-reporting visits with a live manifest of the
+--      clients that do NOT file with BSI, counted on their own (an inverted rule would empty the Miami-Dade queue and
+--      fails that row today; a removed rule changes nothing today and fails the CONTROL text row);
+--   2. the two shapes the per-client rule cannot route, as log_rpa_derm_health raises them (bsi_route_gdo_and_boca /
+--      bsi_route_other_city): line-27 WORK at a Boca Raton property of a client with a live GDO, and line-27 work at a
+--      property elsewhere of a client that files with BSI. Line-27 work is the health items' own test: an open job's
+--      own lines (at the job's property) or a GDO-reporting visit since the launch cutoff (its visit, invoice or job
+--      line; at the visit's property). An address with no work, such as a billing address, never counts;
+--   3. no line 27 on a routed client that Yan has not matched to its BSI record through leads.decide_client (a 'same'
+--      decision links the record to the property). No decision was recorded on 2026-11-03, so line 27 on ANY routed
+--      client fails this row, Grove Kosher included; the five with no BSI record at all (081-TCE, 319-CAP, 135-BB,
+--      361-SFG and Olympus) can never pass it. A matched client WITH line 27 is not a failure: the health item
+--      bsi_route_unfiled reminds Yan to file it on BSI Online by hand until the bot exists;
+--   4. no live property whose city is near "Boca Raton" without reading plainly as it: a spelling the one test misses
+--      (an accent, "Boka", "City of Boca Raton", "West Boca Raton"), or one it reads as Boca Raton only by its prefix
+--      ("Boca Raton West", "Boca Raton (Unincorporated)"). A person decides. (A missed Boca Raton client with line 27
+--      also shows in the health email as gdo_no_permit: it has no GDO permit.);
 --   5. no live CCN sits on a client that files with DERM;
 --   6. CONTROLS: the rule is in the four bodies and uses the one Boca Raton test; the three health items are in
 --      log_rpa_derm_health; the test reads the spellings it should; the rule says Grove Kosher (client 357) files with BSI.
--- Known, and not a failure: client 245 (no code, jobs archived) has a Boca Raton property and a 'Beverly Hills'
--- property marked Dade; it would raise bsi_route_other_city and bsi_route_unfiled the day line 27 reaches it.
--- The behaviour proofs (old bodies show the visits or miss the shape, new ones do not) are the VERIFY blocks of those
--- migrations and docs/migrations/2026-11-03_1830_route_line27_ccn_to_bsi_PROOF.sql.
+-- Known, and not a failure: client 245 (no code, jobs archived) has a Boca Raton property (668, where its jobs are) and
+-- a BILLING address in Beverly Hills marked Dade (396, no job, no visit). Line 27 on its jobs would raise only
+-- bsi_route_unfiled (and fail row 3); a billing address is not work.
+-- The behaviour proofs (old bodies show the visits or miss the shape, new ones do not) are the VERIFY blocks of
+-- _1848, _2039 (cases 1 to 4; case 5 had no old-body control) and _2255 (cases A to E), and for _1830
+-- docs/migrations/2026-11-03_1830_route_line27_ccn_to_bsi_PROOF.sql.
 with routed as (
   select c.id from public.clients c where public.fn_client_files_with_bsi(c.id)
-), l27 as (   -- the health items' test, kept identical
-  select j.client_id from public.jobs j join public.line_items li on li.job_id = j.id and li.visit_id is null
+), w as (   -- line-27 work: the health items' test, kept identical
+  select j.client_id, j.property_id from public.jobs j join public.line_items li on li.job_id = j.id and li.visit_id is null
    where public.fn_line_item_is_gdo_reporting(li.name) and j.job_status not in ('archived', 'destroyed')
-  union
-  select v.client_id from public.visits v
+  union all
+  select v.client_id, v.property_id from public.visits v
    where v.deleted_at is null and v.visit_date >= public.rpa_launch_cutoff() and public.fn_visit_is_gdo_reporting(v.id)
+), wk as (
+  select w.client_id, coalesce(public.fn_city_is_boca_raton(p.city), false) as at_boca
+    from w left join public.properties p on p.id = w.property_id
+   where not exists (select 1 from public.v_non_customer_clients n where n.client_id = w.client_id)
+), dermable as (   -- the visits the DERM fields should hold, counted on their own
+  select v.id from public.visits v
+   where v.deleted_at is null and public.fn_visit_is_gdo_reporting(v.id) and not public.fn_client_files_with_bsi(v.client_id)
+     and exists (select 1 from public.clients c where c.id = v.client_id)
+     and exists (select 1 from public.manifest_visits mv join public.derm_manifests m on m.id = mv.manifest_id and m.deleted_at is null
+                  where mv.visit_id = v.id)
 ), checks as (
   select 'no routed client in the DERM fields' as check_name,
          (select count(*) from public.v_derm_portal_fields f where f.client_id in (select id from routed)) as bad
   union all
+  select 'the DERM fields hold exactly the line-27 visits with a manifest of clients that file with DERM',
+         (select count(*) from ((select f.visit_id from public.v_derm_portal_fields f except select d.id from dermable d)
+                                union all
+                                (select d.id from dermable d except select f.visit_id from public.v_derm_portal_fields f)) x)
+  union all
   select 'no routed client held in the DERM queue',
-         (select count(*) from public.v_derm_portal_queue_held h join public.clients c on c.client_code = h.client_code
-           where c.id in (select id from routed))
+         (select count(*) from public.v_derm_portal_queue_held h join public.visits v on v.id = h.visit_id
+           where v.client_id in (select id from routed))
   union all
   select 'no routed client in the line-27 / DERM-required mismatch view',
          (select count(*) from public.v_gdo_reporting_derm_mismatch m where m.client_id in (select id from routed))
@@ -40,28 +64,27 @@ with routed as (
   select 'no routed client in derm.gdo_report_status',
          (select count(*) from derm.gdo_report_status s where s.client_id in (select id from routed))
   union all
-  select 'no client with both a live GDO and a live Boca Raton property',
-         (select count(distinct g.client_id) from public.gdos g
-           join public.properties p on p.client_id = g.client_id and p.deleted_at is null and public.fn_city_is_boca_raton(p.city)
-          where g.permit_type = 'GDO' and g.status in ('ACTIVE', 'EXPIRED'))
+  select 'no line-27 work at a Boca Raton property of a client with a live GDO',
+         (select count(distinct wk.client_id) from wk
+           where wk.at_boca
+             and exists (select 1 from public.gdos g
+                          where g.client_id = wk.client_id and g.permit_type = 'GDO' and g.status in ('ACTIVE', 'EXPIRED')))
   union all
-  select 'no routed client with line 27 and a property in another city',
-         (select count(*) from public.clients c
-           where c.id in (select id from routed) and c.id in (select client_id from l27)
-             and not exists (select 1 from public.v_non_customer_clients n where n.client_id = c.id)
-             and exists (select 1 from public.properties p
-                          where p.client_id = c.id and p.deleted_at is null and not public.fn_city_is_boca_raton(p.city)))
+  select 'no line-27 work at a property elsewhere of a client that files with BSI',
+         (select count(distinct wk.client_id) from wk where not wk.at_boca and wk.client_id in (select id from routed))
   union all
   select 'no line 27 on a routed client not matched to a BSI record',
          (select count(*) from public.clients c
-           where c.id in (select id from routed) and c.id in (select client_id from l27)
-             and not exists (select 1 from public.v_non_customer_clients n where n.client_id = c.id)
+           where c.id in (select id from routed) and c.id in (select client_id from wk)
              and not exists (select 1 from leads.establishments e join public.properties p on p.id = e.property_id
                               where p.client_id = c.id and p.deleted_at is null and e.status = 'ACTIVE'))
   union all
-  select 'no live property whose city mentions Boca but does not read as Boca Raton',
+  select 'no live property whose city is near Boca Raton without reading plainly as it',
          (select count(*) from public.properties p
-           where p.deleted_at is null and p.city ~* 'boca' and not public.fn_city_is_boca_raton(p.city))
+           where p.deleted_at is null
+             and (translate(lower(p.city), 'áàâäãåéèêëíìîïóòôöõúùûüñç', 'aaaaaaeeeeiiiiooooouuuunc') ~ 'bo[ck]+a|raton'
+                  or public.fn_city_is_boca_raton(p.city))
+             and regexp_replace(lower(p.city), '[^a-z]+', '', 'g') not in ('bocaraton', 'bocaratonfl', 'bocaratonflorida'))
   union all
   select 'no live CCN on a client that files with DERM',
          (select count(*) from public.gdos g

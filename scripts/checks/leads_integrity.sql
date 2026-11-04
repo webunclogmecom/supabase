@@ -5,8 +5,9 @@
 -- Since _1848 the privacy rows test VALUES: the first version tested only column names and passed while 18 BSI contact
 -- names showed in owner_company. Since _2039 the name test covers EVERY cell, on leads.fn_name_key: the _1848 version
 -- tested owner_company and location only and passed while 3 BSI labels (the name column) were contact names.
--- Accepted by design, so not tested: a contact's name INSIDE a longer business name (2 labels, 2 owner names on
--- 2026-11-03), and owner names that look like a person's but are not BSI contacts (the plan keeps the mailing name).
+-- Accepted by design, so not tested: a contact's name INSIDE a longer business name (counting contact names of two
+-- words or more: 2 labels and 2 owner names on 2026-11-03; with a one-word name inside its own record's text too, 3
+-- and 3), and owner names that look like a person's but are not BSI contacts (the plan keeps the mailing name).
 with links as (
   select l.entity_id as source_record_id, count(*) as n
     from public.entity_source_links l where l.entity_type = 'source_record' group by 1
