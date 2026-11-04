@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * app-rpc-contract.js — assert every RPC a SHIPPED app calls actually resolves
- * in a schema that app's Supabase client is pinned to.
+ * in the schema that call goes to.
  *
  *   node scripts/checks/app-rpc-contract.js            # all apps
  *   node scripts/checks/app-rpc-contract.js calendar   # one app
@@ -18,10 +18,23 @@
  *   Existing rule:  test as the ROLE, not as the owner.
  *   This check is:  TEST THROUGH THE TRANSPORT, NOT THE CATALOGUE.
  *
- * WHAT IT DOES NOT DO. It does not resolve which minified client variable makes each call —
- * that mapping changes every build and is brittle. Instead it asks the weaker, robust question:
- * "is this RPC reachable from EVERY schema this app pins?" An RPC present in only some of them
- * is reported as AT-RISK, which is exactly the shape of the bug above.
+ * HOW A CALL GETS ITS SCHEMA (rewritten 2026-11-04). The first version did not follow the client
+ * and asked "is this RPC in EVERY schema this app pins?". It exited 1 with "27 unreachable, 20 at
+ * risk", all false alarms: it read supabase-js's own {schema:"public"} default and the 'myschema'
+ * example in a supabase-js warning as pins, and it could not see `.schema('hr').rpc(...)`. Now each
+ * call site is judged on the schema it really goes to:
+ *
+ *   X.schema("hr").rpc("a")                    hr
+ *   let s=X.schema("hr"); s.rpc("a")           hr (the nearest earlier assignment of that name)
+ *   Wv=f(u,k,{db:{schema:"ops"}}); Wv.rpc("a") ops, also when another chunk has import{v as ye}
+ *   function F(e){e.rpc("a")}; F(Wv)           ops, when every caller passes the same client
+ *   anything else (a Proxy, say)               unresolved
+ *
+ * A resolved call whose function is not in that schema is a FAIL. That is the bug above, now caught
+ * even in an app with two clients. An unresolved call is ok when the function is in every schema
+ * the app's clients pin, AT-RISK when it is in only some of the schemas the app reaches, and a FAIL
+ * when it is in none of them. A bundler change that breaks the following shows up as a loud FAIL or
+ * a failed control, never as a quiet pass: see the per-app `control` below.
  */
 
 const path = require('path');
@@ -36,30 +49,35 @@ if (!PAT) { console.error('FAIL: SUPABASE_PAT missing from Supabase/.env'); proc
  * DERM Stamp Studio makes TEN RPC calls, eight of which write, and was covered by nothing. It was
  * missed because it is the app nobody logs into (public, obscure-URL gate), which is precisely
  * backwards as a reason to skip a contract check. Add an app here the day it gets a domain.
+ *
+ * `control` = schema.function, a call this app is known to make. The run fails if the instrument
+ * cannot see that call on that schema, or if the verdict does not flip to FAIL when the function is
+ * moved out of that schema. Calendar's is the function of the original bug; DERM's goes through the
+ * client factory and an import alias. DUMP has no client, so it has no control.
  */
 const APPS = {
-  calendar: { label: 'Visit Calendar', url: 'https://calendar.unclogme.app' },
-  clients:  { label: 'Client App',     url: 'https://clients.unclogme.app'  },
-  derm:     { label: 'DERM Tracker',   url: 'https://derm.unclogme.app'     },
+  calendar: { label: 'Visit Calendar', url: 'https://calendar.unclogme.app', control: 'ops.retry_visit_push' },
+  clients:  { label: 'Client App',     url: 'https://clients.unclogme.app',  control: 'hr.get_my_access' },
+  derm:     { label: 'DERM Tracker',   url: 'https://derm.unclogme.app',     control: 'derm.get_visit_report' },
   // Admin Review moved review.unclogme.app -> admin.unclogme.app on 2026-08-04, because Yannick's new
   // "Review Builder" app took reviews.unclogme.app (plural) and the two read alike. Verified that day:
   // admin.* serves 200 and review.* no longer serves at all, so this URL was BROKEN until it was changed.
-  review:   { label: 'Admin Review',   url: 'https://admin.unclogme.app'    },
-  fp:       { label: 'Field Portal',   url: 'https://fp.unclogme.app'       },
+  review:   { label: 'Admin Review',   url: 'https://admin.unclogme.app',    control: 'hr.get_my_access' },
+  fp:       { label: 'Field Portal',   url: 'https://fp.unclogme.app',       control: 'customer.get_client_portal' },
   // Stamp Studio moved studio.unclogme.app -> stamp.unclogme.app on 2026-07-30. The old host still
   // REDIRECTS, which is why this stale URL kept passing and nobody noticed it for three weeks: a
   // check pointed at a redirect measures the right app for the wrong reason, and stops working the
   // day the redirect is retired. Point checks at the canonical host, never at a redirect.
-  studio:   { label: 'DERM Stamp Studio', url: 'https://stamp.unclogme.app'  },
+  studio:   { label: 'DERM Stamp Studio', url: 'https://stamp.unclogme.app',  control: 'hr.get_my_access' },
   dump:     { label: 'DUMP Schedule QR',  url: 'https://dump.unclogme.app'   },
-  // Apps Hub, added 2026-08-18 the day it was built. Uses the Lovable default host because
-  // hub.unclogme.app is not pointed yet (GoDaddy Domain Connect is Fred's click); switch this to
-  // https://hub.unclogme.app once DNS lands.
-  // ⚠ Zero RPCs and zero table reads is the CORRECT answer for this app - its only backend contact
-  // is Supabase Auth. Same shape as `dump` below: do not read an empty result as a broken scan.
-  hub:      { label: 'Apps Hub',          url: 'https://radiant-start-board.lovable.app' },
+  // Apps Hub, added 2026-08-18 on its Lovable default host. Measured 2026-11-04: that host now only
+  // redirects to hub.unclogme.app, so this points at the canonical host (see the Stamp note above).
+  // Its one RPC is hr.get_my_access.
+  hub:      { label: 'Apps Hub',          url: 'https://hub.unclogme.app',     control: 'hr.get_my_access' },
   // Picture Planner, added 2026-10-20 for access phase 3 (it had a domain since 2026-09-24 and was missing).
-  planner:  { label: 'Picture Planner',   url: 'https://planner.unclogme.app' },
+  planner:  { label: 'Picture Planner',   url: 'https://planner.unclogme.app', control: 'hr.get_my_access' },
+  // HR App, added 2026-11-04. It was missing since it went live on 2026-09-01. All its RPCs are in `hr`.
+  hr:       { label: 'HR App',            url: 'https://hr.unclogme.app',      control: 'hr.get_my_access' },
 };
 
 async function sql(query) {
@@ -100,7 +118,7 @@ async function fetchBundle(baseUrl) {
       if (!seen.has(next)) queue.push(next);
     }
   }
-  return { chunks: seen.size, bytes: [...seen.values()].reduce((a, b) => a + b.length, 0), code: [...seen.values()].join('\n') };
+  return { chunks: seen.size, bytes: [...seen.values()].reduce((a, b) => a + b.length, 0), files: seen };
 }
 
 /**
@@ -162,19 +180,105 @@ async function fetchBundle(baseUrl) {
  * Same family as the pass-A/pass-B split below: a regex over call syntax is an instrument, and an
  * instrument that returns 0 has told you nothing until a positive control says it can return >0.
  */
-function extract(code) {
-  // PASS A — the name is a literal at the call site. High confidence: definitely an RPC call.
-  const direct = new Set();
-  for (const m of code.matchAll(/\.rpc\(\s*(["'`])([a-zA-Z0-9_]+)\1/g)) direct.add(m[2]);
+function extract(files) {
+  const code = [...files.values()].join('\n');
 
   // Every identifier-shaped string literal. Intersected against the catalogue by the caller.
   const literals = new Set();
   for (const m of code.matchAll(/(["'`])([a-z][a-z0-9_]{3,60})\1/g)) literals.add(m[2]);
 
+  // A real pin, as a minifier writes it: `db:{schema:"ops"}`, no spaces. A strict `db:` is what skips
+  // supabase-js's own `{schema:"public"}` default and Realtime's `{event:"*",schema:"public"}`, and
+  // no spaces is what skips the example in its warning text, `{ db: { schema: 'myschema' } }`.
+  // If a build ever keeps the spaces, pins go missing and calls FAIL loudly: the safe direction.
+  const pins = new Set();
+  for (const m of code.matchAll(/[{,]db:\{schema:(["'`])([a-zA-Z0-9_]+)\1\}/g)) pins.add(m[2]);
+
+  // A client factory, the DERM Tracker's shape: function R4(t){...db:{schema:t}...}, wrapped by
+  // function j1(t){...R4(t)...}, then ht=j1() (public) and k4=j1("derm").
+  const factories = new Set();
+  for (const m of code.matchAll(/function ([\w$]+)\(([\w$]+)\)\{[^}]{0,200}db:\{schema:\2\}/g)) factories.add(m[1]);
+  for (const f of [...factories]) {
+    const callee = f.replace(/\$/g, '\\$');
+    // The span may not cross another `function`, or R4's own match swallows j1 right after it.
+    for (const m of code.matchAll(new RegExp(`function ([\\w$]+)\\(([\\w$]+)\\)\\{(?:(?!function )[\\s\\S]){0,200}?[^\\w$]${callee}\\(\\2\\)`, 'g'))) factories.add(m[1]);
+  }
+
+  // Per chunk: which local names hold a client bound to a schema. Minified names only mean something
+  // inside their own chunk, which is why this walks chunks and not the joined text.
+  const bound = new Map();
+  for (const [file, body] of files) {
+    const vars = new Map();
+    for (const m of body.matchAll(/([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\([^()]{0,400}?[{,]db:\{schema:(["'`])([a-zA-Z0-9_]+)\2\}/g)) vars.set(m[1], m[3]);
+    for (const f of factories) {
+      const callee = f.replace(/\$/g, '\\$');
+      for (const m of body.matchAll(new RegExp(`([A-Za-z_$][\\w$]*)=${callee}\\((?:(["'\`])([a-zA-Z0-9_]+)\\2)?\\)`, 'g'))) {
+        vars.set(m[1], m[3] || 'public');
+        pins.add(m[3] || 'public');
+      }
+    }
+    bound.set(file, vars);
+  }
+  // ...and those names across chunks: export{Wv as v} in one, import{v as ye}from"./x.js" in another.
+  // Two passes, so a chunk that re-exports what it imported resolves too.
+  const pairs = list => list.split(',').map(p => p.trim().split(/\s+as\s+/)).filter(p => p[0]);
+  const exported = new Map();
+  for (const [file, body] of files) {
+    const names = new Map();
+    for (const m of body.matchAll(/export\s*\{([^}]*)\}/g)) for (const [local, name = local] of pairs(m[1])) names.set(name, local);
+    exported.set(file, names);
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    for (const [file, body] of files) {
+      for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*(["'`])([^"'`]+)\2/g)) {
+        const from = `/assets/${m[3].split('/').pop()}`;
+        for (const [name, local = name] of pairs(m[1])) {
+          const schema = bound.get(from)?.get(exported.get(from)?.get(name));
+          if (schema) bound.get(file).set(local, schema);
+        }
+      }
+    }
+  }
+
+  // Every call site, with the schema it goes to (null = could not tell).
+  const calls = [];
+  const wrappers = [];
+  for (const [file, body] of files) {
+    const aliases = [...body.matchAll(/([A-Za-z_$][\w$]*)=[\w$.()]*?\.schema\(\s*(["'`])([a-zA-Z0-9_]+)\2\s*\)/g)];
+    // A client handed in as the first argument: async function CM(e,t){...e.rpc("x")...} called as CM(ln,id).
+    // Every caller must be in this chunk (not exported) and agree, or it stays unresolved.
+    const viaArgument = (at, receiver) => {
+      const holder = [...body.slice(Math.max(0, at - 400), at).matchAll(/function ([\w$]+)\(([\w$]+)[,)]/g)].pop();
+      if (!holder || holder[2] !== receiver || [...exported.get(file).values()].includes(holder[1])) return null;
+      const callee = holder[1].replace(/\$/g, '\\$');
+      const callers = [...body.matchAll(new RegExp(`(function )?(?<![\\w$.])${callee}\\(\\s*([A-Za-z_$][\\w$]*)?`, 'g'))].filter(c => !c[1]);
+      const schemas = new Set(callers.map(c => bound.get(file).get(c[2]) ?? null));
+      return callers.length && schemas.size === 1 ? [...schemas][0] : null;
+    };
+    const schemaOf = (at, receiver) => {
+      let near = null;
+      for (const a of aliases) {
+        if (a.index >= at) break;
+        if (a[1] === receiver && at - a.index < 4000) near = a; // ponytail: a window, not scope analysis
+      }
+      return near ? near[3] : bound.get(file).get(receiver) ?? viaArgument(at, receiver);
+    };
+    const receiverAt = at => /([A-Za-z_$][\w$]*)(?:\(\))?$/.exec(body.slice(Math.max(0, at - 64), at))?.[1];
+
+    // PASS A: the name is a literal at the call site. High confidence: definitely an RPC call.
+    for (const m of body.matchAll(/(?:\.schema\(\s*(["'`])([a-zA-Z0-9_]+)\1\s*\)\s*)?\.rpc\(\s*(["'`])([a-zA-Z0-9_]+)\3/g)) {
+      calls.push({ name: m[4], schema: m[2] ?? schemaOf(m.index, receiverAt(m.index)) });
+    }
+    // `.rpc(<variable>)`: a wrapper like the Client App's Ct("name",{...}). supabase-js's own
+    // `this.rest.rpc(t,e,s)` is not the app's call and is left out.
+    for (const m of body.matchAll(/(?:\.schema\(\s*(["'`])([a-zA-Z0-9_]+)\1\s*\)\s*)?\.rpc\(\s*[A-Za-z_$][\w$]{0,40}\s*[,)]/g)) {
+      if (body.slice(Math.max(0, m.index - 9), m.index) === 'this.rest') continue;
+      wrappers.push({ schema: m[2] ?? schemaOf(m.index, receiverAt(m.index)) });
+    }
+  }
+
   // COVERAGE TELL. `.rpc(` whose first argument is NOT a literal means pass A is structurally
   // incomplete for this app. Counted so the check can say so out loud instead of implying zero.
-  // The supabase-js library defines its own `rpc(` method, so a small count is expected noise —
-  // what matters is that we STOP treating pass A's total as the app's RPC surface.
   //
   // ⚠ The identifier was capped at 4 chars (`[\w$]{0,3}`) on the assumption that every bundle is
   // aggressively minified. Caught by the extractor self-test 2026-07-31: a bundle that ships a
@@ -182,16 +286,62 @@ function extract(code) {
   // load-bearing false all-clear this file can emit, since it is what licenses reading the literal
   // count as coverage. Widened. A longer identifier is no less indirect than a short one, and the
   // trailing `[,)]` still requires the argument to be exactly one bare identifier.
-  const indirect = (code.match(/\.rpc\(\s*[A-Za-z_$][\w$]{0,40}\s*[,)]/g) || []).length;
+  const indirect = wrappers.length;
 
-  // Which schemas does this app pin its clients to? Default is `public` when unspecified.
-  const schemas = new Set();
-  for (const m of code.matchAll(/schema\s*:\s*(["'`])([a-zA-Z0-9_]+)\1/g)) schemas.add(m[2]);
-  if (!schemas.size) schemas.add('public');
+  // Schemas this app names per call, reached with `.schema("x")` on any client.
+  const perCall = new Set();
+  for (const m of code.matchAll(/\.schema\(\s*(["'`])([a-zA-Z0-9_]+)\1\s*\)/g)) perCall.add(m[2]);
 
-  // Explicit per-call overrides would defeat the whole-app assumption below.
-  const overrides = (code.match(/\.schema\(\s*(["'`])[a-zA-Z0-9_]+\1\s*\)/g) || []).length;
-  return { direct: [...direct].sort(), literals, indirect, schemas: [...schemas].sort(), overrides };
+  return { calls, wrappers, literals, indirect, pins: [...pins].sort(), perCall: [...perCall].sort() };
+}
+
+/**
+ * THE VERDICTS, separate from the fetch and the catalogue query so the self-test can replay them.
+ * `catalogue` is Map(function name -> Set(schemas holding it)).
+ */
+function judge(x, catalogue) {
+  const clientSchemas = x.pins.length ? x.pins : ['public']; // no pin at all = supabase-js's default
+  const reached = [...new Set([...clientSchemas, ...x.perCall])].sort();
+  const rows = [];
+
+  for (const fn of [...new Set(x.calls.map(c => c.name))].sort()) {
+    const has = catalogue.get(fn) || new Set();
+    const sites = x.calls.filter(c => c.name === fn);
+    const on = [...new Set(sites.map(c => c.schema).filter(Boolean))].sort();
+    const dead = on.filter(s => !has.has(s));
+    const unresolved = sites.some(c => !c.schema);
+    let verdict = 'ok', why = `on [${on.join(', ')}]`;
+    if (dead.length) {
+      verdict = 'fail';
+      why = `called on [${dead.join(', ')}], exists in [${[...has].sort().join(', ') || 'no schema'}]`;
+    } else if (unresolved) {
+      const inClient = clientSchemas.filter(s => has.has(s));
+      if (inClient.length === clientSchemas.length) why = `in every client schema [${clientSchemas.join(', ')}]`;
+      else if (!reached.some(s => has.has(s))) {
+        verdict = 'fail';
+        why = `client not resolved, exists in [${[...has].sort().join(', ') || 'no schema'}], app reaches [${reached.join(', ')}]`;
+      } else {
+        verdict = 'risk';
+        why = `client not resolved, exists in [${[...has].sort().join(', ')}], app's clients pin [${clientSchemas.join(', ')}]`;
+      }
+    }
+    rows.push({ fn, via: 'literal  ', verdict, why });
+  }
+
+  // PASS B: the name is a string somewhere else. It only counts as a call if a wrapper exists to
+  // make it, and then it must be in a schema a wrapper goes to.
+  const wrapperSchemas = [...new Set(x.wrappers.flatMap(w => (w.schema ? [w.schema] : clientSchemas)))].sort();
+  const candidates = [...catalogue.keys()]
+    .filter(fn => x.literals.has(fn) && reached.some(s => catalogue.get(fn).has(s)) && !x.calls.some(c => c.name === fn))
+    .sort();
+  if (wrapperSchemas.length) {
+    for (const fn of candidates) {
+      const has = catalogue.get(fn);
+      if (wrapperSchemas.some(s => has.has(s))) rows.push({ fn, via: 'candidate', verdict: 'ok', why: `wrapper reaches it in [${wrapperSchemas.filter(s => has.has(s)).join(', ')}]` });
+      else rows.push({ fn, via: 'candidate', verdict: 'risk', why: `only in [${[...has].sort().join(', ')}], the wrapper goes to [${wrapperSchemas.join(', ')}]` });
+    }
+  }
+  return { clientSchemas, reached, candidates, rows };
 }
 
 /**
@@ -204,25 +354,78 @@ function extract(code) {
  *
  * So: a fixture that exercises every quoting style, asserted at startup. If a future edit narrows
  * a delimiter class again, this fails loudly instead of the check going quietly blind.
+ *
+ * The verdicts get the same treatment (2026-11-04): the fixtures below replay the 2026-07-30 dead
+ * button, and each false alarm of the first version, with a verdict each must reach.
  */
 function selfTest() {
-  const fixture = [
+  const problems = [];
+  const one = (...lines) => new Map([['/assets/a.js', lines.join('\n')]]);
+  const catalogueOf = o => new Map(Object.entries(o).map(([fn, s]) => [fn, new Set(s)]));
+  const expectVerdicts = (label, files, catalogue, want) => {
+    const rows = judge(extract(files), catalogue).rows;
+    for (const [fn, verdict] of Object.entries(want)) {
+      const got = rows.find(r => r.fn === fn)?.verdict ?? 'no row';
+      if (got !== verdict) problems.push(`${label}: ${fn} judged ${got}, expected ${verdict}`);
+    }
+  };
+
+  // Every quoting style.
+  const r = extract(one(
     'a.rpc("dq_name",{});',
     "b.rpc('sq_name',{});",
     'c.rpc(`bt_name`,{});',
     'd.rpc(varName,{});',
     'createClient(u,k,{db:{schema:`bt_schema`}});',
     'e.schema(`bt_override`).from(`t`);',
-  ].join('\n');
-  const r = extract(fixture);
-  const problems = [];
+  ));
   for (const n of ['dq_name', 'sq_name', 'bt_name']) {
-    if (!r.direct.includes(n)) problems.push(`.rpc() missed ${n}`);
+    if (!r.calls.some(c => c.name === n)) problems.push(`.rpc() missed ${n}`);
     if (!r.literals.has(n)) problems.push(`literal pass missed ${n}`);
   }
   if (r.indirect !== 1) problems.push(`indirect count ${r.indirect}, expected 1`);
-  if (!r.schemas.includes('bt_schema')) problems.push('schema pin missed a backtick literal');
-  if (r.overrides !== 1) problems.push(`override count ${r.overrides}, expected 1`);
+  if (!r.pins.includes('bt_schema')) problems.push('schema pin missed a backtick literal');
+  if (!r.perCall.includes('bt_override')) problems.push('.schema() missed a backtick literal');
+
+  // supabase-js's own text is not the app's: no pin, no wrapper.
+  const lib = extract(one(
+    'Lk={schema:"public"},Mk={schema:`public`};',
+    'console.warn(`Use "db", e.g. createClient(url, key, { db: { schema: \'myschema\' } }).`);',
+    'class S{rpc(t,e){return this.rest.rpc(t,e,s)}}',
+    'ch.on("postgres_changes",{event:"*",schema:"public",table:"visits"});',
+  ));
+  if (lib.pins.length) problems.push(`library text read as pins: ${lib.pins.join(', ')}`);
+  if (lib.wrappers.length) problems.push('supabase-js this.rest.rpc read as an app wrapper');
+
+  // The 2026-07-30 dead button, in an app with two clients, across chunks.
+  expectVerdicts('two clients', new Map([
+    ['/assets/index-1.js', 'const Wv=pd(a,b,{db:{schema:"ops"},auth:{}}),Wx=pd(a,b,{db:{schema:"public"},auth:{}});export{Wv as v,Wx as G};'],
+    ['/assets/page-2.js', 'import{v as ye,G as ln}from"./index-1.js";ye.rpc("retry_visit_push");ye.rpc("edit_calendar_visit");ln.rpc("create_dump_visit");p.rpc("one_pin_only");p.rpc("in_both");p.rpc("nowhere");async function CM(e,t){await e.rpc("arg_ok",{})}CM(ln,1);async function BM(e,t){await e.rpc("arg_dead",{})}BM(ye,1);'],
+  ]), catalogueOf({ retry_visit_push: ['public'], edit_calendar_visit: ['ops'], create_dump_visit: ['public'], one_pin_only: ['public'], in_both: ['ops', 'public'], arg_ok: ['public'], arg_dead: ['public'] }), {
+    retry_visit_push: 'fail', edit_calendar_visit: 'ok', create_dump_visit: 'ok', one_pin_only: 'risk', in_both: 'ok', nowhere: 'fail', arg_ok: 'ok', arg_dead: 'fail',
+  });
+  // The same button in an app with one client, which reaches nothing else.
+  expectVerdicts('one client', one('createClient(u,k,{db:{schema:"ops"}});c.rpc("retry_visit_push");'),
+    catalogueOf({ retry_visit_push: ['public'] }), { retry_visit_push: 'fail' });
+
+  // `.schema()` on the call and on a local name, and the factory: each goes to its own schema.
+  const shapes = one(
+    'function R4(t){return c(a,b,{...t?{db:{schema:t}}:{},auth:A})}function j1(t){let e;return new Proxy({},{get(n,s,a){return e||(e=R4(t)),Reflect.get(e,s,a)}})}const ht=j1(),k4=j1("derm");',
+    'k4.rpc("get_visit_report");ht.rpc("file_manifest");X.schema("hr").rpc("get_my_access");',
+    'async function f(){let s=_().schema(`hr`),{data:l}=await s.rpc(`set_pay_rates`,{});}',
+  );
+  expectVerdicts('shapes', shapes, catalogueOf({ get_visit_report: ['derm'], file_manifest: ['public'], get_my_access: ['hr'], set_pay_rates: ['hr'] }), {
+    get_visit_report: 'ok', file_manifest: 'ok', get_my_access: 'ok', set_pay_rates: 'ok',
+  });
+  expectVerdicts('shapes moved', shapes, catalogueOf({ get_visit_report: ['public'], file_manifest: ['derm'], get_my_access: ['public'], set_pay_rates: ['public'] }), {
+    get_visit_report: 'fail', file_manifest: 'fail', get_my_access: 'fail', set_pay_rates: 'fail',
+  });
+
+  // A name that reaches a wrapper as a string: it must be where the wrapper goes.
+  expectVerdicts('wrapper', one(
+    'createClient(u,k,{db:{schema:"client"}});async function Ct(e,t){await ae.rpc(e,t)}Ct("wrapped_name",{});Ct("only_in_hr",{});X.schema("hr").from("t");',
+  ), catalogueOf({ wrapped_name: ['client'], only_in_hr: ['hr'] }), { wrapped_name: 'ok', only_in_hr: 'risk' });
+
   return problems;
 }
 
@@ -237,7 +440,18 @@ function selfTest() {
     for (const p of selfTestProblems) console.error(`   - ${p}`);
     process.exit(2);
   }
-  console.log('extractor self-test: ok (double-quote, single-quote and backtick forms all recovered)');
+  console.log('self-test: ok (every quoting style; library text is no pin; the dead button still fails)');
+
+  // One catalogue query, intersected in JS: cheaper and safer than building a giant IN-list out of
+  // every literal in a megabyte of minified code.
+  const catalogue = new Map();
+  for (const r of await sql(`
+      select distinct n.nspname as schema, p.proname as fn
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname not in ('pg_catalog', 'information_schema')`)) {
+    if (!catalogue.has(r.fn)) catalogue.set(r.fn, new Set());
+    catalogue.get(r.fn).add(r.schema);
+  }
 
   let failures = 0, risks = 0;
 
@@ -259,33 +473,21 @@ function selfTest() {
       failures++; continue;
     }
 
-    const { direct, literals, indirect, schemas, overrides } = extract(bundle.code);
+    const code = [...bundle.files.values()].join('\n');
+    const x = extract(bundle.files);
+    const { clientSchemas, reached, candidates, rows } = judge(x, catalogue);
+    const direct = [...new Set(x.calls.map(c => c.name))];
+    const resolved = x.calls.filter(c => c.schema).length;
     console.log(`  bundle: ${bundle.chunks} chunks, ${bundle.bytes.toLocaleString()} bytes`);
-    console.log(`  client schemas pinned: ${schemas.join(', ')}`);
-    if (overrides) console.log(`  ⚠ ${overrides} per-call .schema() override(s) — verdicts below may be conservative`);
+    console.log(`  client schemas pinned: ${x.pins.join(', ') || '(none, so public)'}; with .schema(): ${x.perCall.join(', ') || '(none)'}`);
 
-    // PASS B — intersect the bundle's string literals with the REAL function names in the pinned
-    // schemas. One catalogue query, intersected in JS: cheaper and safer than building a giant
-    // IN-list out of every literal in a megabyte of minified code.
-    const catalogue = await sql(`
-      select distinct n.nspname as schema, p.proname as fn
-      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname in (${schemas.map(s => `'${s.replace(/'/g, "''")}'`).join(',')})`);
-    const bySchema = new Map();
-    for (const r of catalogue) {
-      if (!bySchema.has(r.fn)) bySchema.set(r.fn, new Set());
-      bySchema.get(r.fn).add(r.schema);
-    }
-    const candidates = [...bySchema.keys()].filter(fn => literals.has(fn) && !direct.includes(fn)).sort();
-    const rpcs = [...new Set([...direct, ...candidates])].sort();
-
-    if (indirect) {
-      console.log(`  ⚠ ${indirect} .rpc(<variable>) call site(s) — the name is NOT a literal at the call site,`);
+    if (x.indirect) {
+      console.log(`  ⚠ ${x.indirect} .rpc(<variable>) call site(s): the name is NOT a literal at the call site,`);
       console.log(`    so the ${direct.length} literal match(es) are a FLOOR, not this app's RPC surface.`);
       console.log(`    This is why pass B exists. Do not read the literal count as coverage.`);
     }
-    console.log(`  rpc names: ${direct.length} literal at call site + ${candidates.length} candidate via string-literal ∩ catalogue`);
-    if (candidates.length) console.log(`    candidates: ${candidates.join(', ')}`);
+    console.log(`  rpc names: ${direct.length} literal at call site (${resolved} of ${x.calls.length} sites resolved to a schema) + ${candidates.length} string-literal ∩ catalogue`);
+    if (candidates.length && !x.indirect) console.log(`    not calls, no wrapper in this app: ${candidates.join(', ')}`);
 
     // POSITIVE CONTROL — and note what it tests. The FIRST version of this check treated "zero
     // RPCs" as a broken extractor and hard-failed. That was wrong: Admin Review legitimately makes
@@ -293,16 +495,16 @@ function selfTest() {
     // healthy app. The control has to prove the INSTRUMENT works, not assume the app must have
     // RPCs. So: assert the supabase client library is present in the bundle. If it is and there
     // are no call sites, zero is a real, correct answer.
-    const libPresent = /createClient|supabase-js|\.rpc\(/.test(bundle.code);
+    const libPresent = /createClient|supabase-js|\.rpc\(/.test(code);
     // ⚠ A THIRD TRANSPORT EXISTS, and treating its absence as a broken check is a FALSE FAIL
     // (found 2026-07-31 the moment DUMP Schedule was added). DUMP ships NO supabase-js: its entire
     // backend surface is one `fetch` to `.../functions/v1/dump-visit-create`. Measured: createClient
     // 0, rest/v1 0, .rpc( 0, and all six `.from(` hits are `Array.from`/`Buffer.from`. So zero RPCs
     // is the CORRECT answer, exactly like Admin Review's legitimate zero above — the control must
     // prove the instrument can see a backend, not demand one particular client library.
-    const edgeOnly = !libPresent && /\/functions\/v1\//.test(bundle.code);
+    const edgeOnly = !libPresent && /\/functions\/v1\//.test(code);
     if (edgeOnly) {
-      const fns = [...new Set([...bundle.code.matchAll(/\/functions\/v1\/([a-zA-Z0-9_-]+)/g)].map(m => m[1]))];
+      const fns = [...new Set([...code.matchAll(/\/functions\/v1\/([a-zA-Z0-9_-]+)/g)].map(m => m[1]))];
       console.log(`  ok — no PostgREST client; this app calls edge function(s) directly: ${fns.join(', ')}`);
       console.log('    RPC contract does not apply. Its contract is the edge function\'s own signature.');
       continue;
@@ -315,21 +517,29 @@ function selfTest() {
     // SECOND POSITIVE CONTROL, for pass B specifically. If the catalogue query came back empty the
     // intersection is guaranteed to be empty too, and "no candidates" would be a property of the
     // broken query rather than of the app. An untested instrument, not an all-clear.
-    if (!catalogue.length) {
-      console.log(`  🛑 FAIL — 0 functions found in [${schemas.join(', ')}]. The catalogue query is broken,`);
+    const held = [...catalogue.values()].filter(s => reached.some(r => s.has(r))).length;
+    if (!held) {
+      console.log(`  🛑 FAIL: 0 functions found in [${reached.join(', ')}]. The catalogue query is broken,`);
       console.log('    so pass B could only ever return zero. BROKEN CHECK, not a clean app.');
       failures++; continue;
     }
-    console.log(`  control: ${catalogue.length} function(s) exist in the pinned schema(s), so the intersection is meaningful`);
+    console.log(`  control: ${held} function(s) exist in [${reached.join(', ')}], so the intersection is meaningful`);
 
-    if (!rpcs.length) {
-      console.log('  ok — no RPC names found by either pass (controls: supabase client present, catalogue non-empty)');
-      continue;
+    // THIRD POSITIVE CONTROL, and the one that speaks for the verdicts on THIS bundle. A call the app
+    // is known to make must be seen on its schema, and moving that function out of the schema must
+    // flip the verdict to FAIL. That second half replays the 2026-07-30 bug on the live bytes.
+    if (app.control) {
+      const [schema, fn] = app.control.split('.');
+      const seen = x.calls.some(c => c.name === fn && (c.schema ? c.schema === schema : clientSchemas.length === 1 && clientSchemas[0] === schema));
+      const moved = new Map(catalogue).set(fn, new Set(['__moved__']));
+      const flips = judge(x, moved).rows.some(r => r.fn === fn && r.verdict === 'fail');
+      if (!seen || !flips || !catalogue.get(fn)?.has(schema)) {
+        console.log(`  🛑 FAIL: control ${app.control}: seen on that schema ${seen}, flips to FAIL when moved ${flips}, in the catalogue ${!!catalogue.get(fn)?.has(schema)}.`);
+        console.log('    BROKEN CHECK or a changed app. Until this holds, the verdicts below prove nothing.');
+        failures++; continue;
+      }
+      console.log(`  control: ${app.control} seen on its schema, and judged FAIL when moved out of it`);
     }
-
-    // Resolution reuses the catalogue already fetched for pass B — no second round trip.
-    const found = new Map();
-    for (const fn of rpcs) if (bySchema.has(fn)) found.set(fn, bySchema.get(fn));
 
     // For the AT-RISK set, look for POSITIVE PROOF the app already reaches them: audit rows whose
     // request path is /rpc/<name>. Such a row can only exist if the call arrived and succeeded.
@@ -340,10 +550,7 @@ function selfTest() {
     // audit.logs records only SUCCESSES, so silence is not evidence of breakage (and plenty of
     // RPCs touch no audited table at all). Positive evidence may downgrade; absence may never
     // upgrade. This is the same rule that let a broken zone rename look healthy for weeks.
-    const atRisk = rpcs.filter(fn => {
-      const has = found.get(fn) || new Set();
-      return has.size && schemas.some(s => !has.has(s));
-    });
+    const atRisk = rows.filter(r => r.verdict === 'risk').map(r => r.fn);
     let proven = new Map();
     if (atRisk.length) {
       const rows = await sql(`
@@ -356,36 +563,33 @@ function selfTest() {
       for (const r of rows) proven.set(r.fn, r);
     }
 
-    for (const fn of rpcs) {
-      const has = found.get(fn) || new Set();
-      const missing = schemas.filter(s => !has.has(s));
+    for (const { fn, via, verdict, why } of rows) {
       // How we know about this name at all. A `candidate` came FROM the catalogue, so it can never
       // hit the FAIL branch — only a literal call site can name something that does not exist,
       // which is precisely the 2026-07-30 dead-button shape.
-      const via = direct.includes(fn) ? 'literal  ' : 'candidate';
-      if (!has.size) {
-        console.log(`  🛑 FAIL      ${fn.padEnd(30)} [${via}] exists in NONE of [${schemas.join(', ')}] — unreachable`);
+      if (verdict === 'fail') {
+        console.log(`  🛑 FAIL      ${fn.padEnd(30)} [${via}] ${why}: unreachable`);
         failures++;
-      } else if (missing.length) {
+      } else if (verdict === 'risk') {
         const ev = proven.get(fn);
         if (ev) {
-          console.log(`  ok (proven) ${fn.padEnd(30)} only in [${[...has].join(', ')}], but ${ev.n} successful call(s) through /rpc/${fn}, last ${ev.last_seen}`);
+          console.log(`  ok (proven) ${fn.padEnd(30)} ${why}, but ${ev.n} successful call(s) through /rpc/${fn}, last ${ev.last_seen}`);
         } else {
-          console.log(`  ⚠ AT-RISK   ${fn.padEnd(30)} only in [${[...has].join(', ')}] — missing from [${missing.join(', ')}], and NO successful call on record`);
+          console.log(`  ⚠ AT-RISK   ${fn.padEnd(30)} [${via}] ${why}, and NO successful call on record`);
           risks++;
         }
       } else {
-        console.log(`  ok          ${fn.padEnd(30)} [${[...has].join(', ')}]`);
+        console.log(`  ok          ${fn.padEnd(30)} [${via}] ${why}`);
       }
     }
   }
 
   console.log('');
   if (failures) {
-    console.log(`🛑 ${failures} unreachable RPC(s). An app is calling something that does not exist.`);
+    console.log(`🛑 ${failures} unreachable RPC(s), or a failed control. An app is calling something it cannot reach, or the instrument is blind.`);
   }
   if (risks) {
-    console.log(`⚠ ${risks} at-risk RPC(s): present in some pinned schemas but not all.`);
+    console.log(`⚠ ${risks} at-risk RPC(s): the call's client could not be resolved, and the function is not in every schema the app's clients pin.`);
     console.log('  This is the exact shape of the 2026-07-30 dead-button bug. For each one, confirm the');
     console.log('  client that calls it is pinned to a schema where it exists — or add the missing wrapper.');
     console.log('');
@@ -394,7 +598,7 @@ function selfTest() {
     console.log('    Absence is not evidence either way — exercise the app surface that calls it instead.');
     console.log('    Only a WRITING rpc with zero calls on record is genuinely suspicious.');
   }
-  if (!failures && !risks) console.log('✅ every RPC resolves in every schema its app pins.');
+  if (!failures && !risks) console.log('✅ every RPC an app calls resolves in the schema the call goes to.');
 
   process.exit(failures ? 1 : risks ? 1 : 0);
 })().catch(e => { console.error('CHECK ERRORED:', e.message); process.exit(2); });
