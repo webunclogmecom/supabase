@@ -424,6 +424,10 @@ Still open: the band A cards (Wed 11-04). **Built so far:** S1 on 2026-11-02 at 
   `src/lib/tile-access.ts`, failed check = retry screen (never a sign-out). Standing check
   `Supabase/scripts/shared-session/live-hub-tiles.mjs` 16/16 (16/16 FAILED on the old build). Record: `Building Apps/Apps
   Hub/docs/08-changelog.md` 2026-10-28.
+- GDO report bot code fixes from the security audit (Fred, 2026-11-04: "yes do steps 1 and 2 and split the code fixes"): Trello
+  N9Zcx04p (#171, Approved), split from W9foAe9k. 13 items, numbered as the local `security-audit-jonathan-2026-10-30/REPORT.md`;
+  steps and checks in its `PLAN.md`, Phase 3. Items 8 and 9 first, because any run key can file a county report and two of them
+  may be known to Jonathan (Fred's accepted risk, `docs/reference/gdo-report-bot.md` section 2). **Not started.**
 
 ## 3. Waiting on Fred
 

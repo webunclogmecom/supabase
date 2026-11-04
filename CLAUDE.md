@@ -431,6 +431,10 @@ newest first; each header says the order). (The names `_1700` to `_1830` are lat
   workspace-level `backups/`. To untrack: check `git diff --cached`, then `git commit` with NO path list (a
   path-list commit re-tracks files still on disk).
 - Record, and what is still open: [docs/audits/2026-10-05_public_repo_security_cleanup.md](docs/audits/2026-10-05_public_repo_security_cleanup.md).
+- 🛑 **GitHub secret scanning and push protection are ON for this repo since 2026-11-04** (Trello W9foAe9k; Dependabot alerts are on
+  for all 8 repos). A push holding something shaped like a secret can be refused: take the value out, never bypass. The first scan's
+  2 alerts were both `scripts/checks/svix_verify_check.mjs` (Svix's published test vector and a made-up wrong secret) and were closed
+  as used in tests.
 
 ---
 
