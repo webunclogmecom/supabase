@@ -25,6 +25,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**DUMP app: ticked stops stop reading "WINDOW CLOSED"; the driver video teaches ADD TO A DUMP (2026-11-04, Trello sfD4mhwm)**
+- Fred's picks (his review of the video, then the question): teach ADD TO A DUMP "fully", as a branch after CONFIRM; and "Fix the app first".
+- To build: `dump-visit-create` `outstanding` sends `confirm_minutes_left` (never selected before); the app shows a fresh tick as plain "SELECTED"; the video's new `addto` scene captured from the fixed app.
+
 **Boca Raton on BSI Online: frozen leads, the BSI scrape, the filing bot (2026-11-03, Trello #165 f3Q3Q55i, #166 IWJkqTq1, #169 0lAWU6Ge)**
 - Plan with checks: `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`. Fred's picks: leads *"generic ... 3NF ...
   in case we get like another source of leads too, so they merge, including a reference for their source"* (researched:

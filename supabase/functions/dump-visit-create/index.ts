@@ -1105,7 +1105,9 @@ Deno.serve(async (req) => {
     if (action === "outstanding") {
       const { data, error } = await db
         .from("dump_outstanding_visits")
-        .select("visit_id, client_code, client_name, address, city, visit_date, completed_at, age_days, truck, gdo_number, needs_office, on_sheet, marked_by, marked_at, county, county_bucket, confirmed_hidden")
+        // confirm_minutes_left: the app prints a saved mark's time left from it (never from the phone's clock). It was
+        // left out of this list from 2026-08-04 to 2026-11-04, so every saved mark read "window closed" (Trello sfD4mhwm).
+        .select("visit_id, client_code, client_name, address, city, visit_date, completed_at, age_days, truck, gdo_number, needs_office, on_sheet, marked_by, marked_at, county, county_bucket, confirmed_hidden, confirm_minutes_left")
         .order("completed_at", { ascending: false, nullsFirst: false });
       if (error) {
         // Loud, never an empty list: "nothing outstanding" and "the request broke" must not look alike.
