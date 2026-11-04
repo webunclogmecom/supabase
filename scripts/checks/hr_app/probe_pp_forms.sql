@@ -5,6 +5,8 @@
 -- Since 2026-11-04_1500 a Forms-only person reads only the forms ASSIGNED to them (an assignee of the form's Calendar task).
 -- The temporary person is assigned one submitted and one waiting 112-YA form; the "not assigned" cases use the others. Control
 -- for that rule: on the 2026-10-27_2130 bodies (git show 11298b6) the list, "not assigned" and storage cases FAIL.
+-- Since 2026-11-04_1930 the same person gets the link of their OWN waiting form (Open form) and of no other. Control: on the
+-- 2026-11-04_1500 bodies the Open form cases and "gate: POST /rpc/get_intake_link pass" FAIL.
 -- Control: with the gate's body before 2026-10-27_2130 the three "gate: ... pass" cases FAIL (they prove the probe reaches
 -- the door); before the migration every Forms-only case fails.
 DO $pf$
@@ -242,7 +244,7 @@ BEGIN
   r := r || jsonb_build_object('t', 'gate: POST /rpc/get_intake_compare', 'expect', 'refused 42501', 'ok', coalesce(v_state = '42501', false),
              'got', coalesce(v_state || ' ' || v_msg || coalesce(' [' || v_det || ']', ''), coalesce(v_note, 'no error')));
 
-  -- case: gate: POST /rpc/get_intake_link
+  -- case: gate: POST /rpc/get_intake_link pass (2026-11-04_1930: the function itself refuses a form not assigned)
   v_state := null; v_msg := null; v_det := null; v_j := null; v_note := null; v_n := null;
   BEGIN
     
@@ -262,7 +264,7 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'pf_case_undo' THEN RAISE; END IF;
   END;
-  r := r || jsonb_build_object('t', 'gate: POST /rpc/get_intake_link', 'expect', 'refused 42501', 'ok', coalesce(v_state = '42501', false),
+  r := r || jsonb_build_object('t', 'gate: POST /rpc/get_intake_link pass', 'expect', 'pass', 'ok', v_state is null,
              'got', coalesce(v_state || ' ' || v_msg || coalesce(' [' || v_det || ']', ''), coalesce(v_note, 'no error')));
 
   -- case: gate: POST /rpc/get_intake with Content-Profile public
@@ -478,10 +480,10 @@ BEGIN
   r := r || jsonb_build_object('t', 'get_intake_compare (Property record) refused', 'expect', 'refused 42501', 'ok', coalesce(v_state = '42501', false),
              'got', coalesce(v_state || ' ' || v_msg || coalesce(' [' || v_det || ']', ''), coalesce(v_note, 'no error')));
 
-  -- case: get_intake_link (collector link) refused
+  -- case: Open form: the link of their own waiting form
   v_state := null; v_msg := null; v_det := null; v_j := null; v_note := null; v_n := null;
   BEGIN
-    
+
     BEGIN
       PERFORM set_config('request.jwt.claims', c_tmp, true);
       PERFORM set_config('request.method', 'POST', true);
@@ -498,8 +500,54 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'pf_case_undo' THEN RAISE; END IF;
   END;
-  r := r || jsonb_build_object('t', 'get_intake_link (collector link) refused', 'expect', 'refused 42501', 'ok', coalesce(v_state = '42501', false),
-             'got', coalesce(v_state || ' ' || v_msg || coalesce(' [' || v_det || ']', ''), coalesce(v_note, 'no error')));
+  r := r || jsonb_build_object('t', 'Open form: the link of their own waiting form', 'expect', 'a link', 'ok', v_state is null and v_note like '%"url"%' and (v_note::jsonb->>'intake_id')::bigint = v_wait,
+             'got', coalesce(v_state || ' ' || v_msg || coalesce(' [' || v_det || ']', ''), case when v_note like '%"url"%' then 'returned a link' else coalesce(v_note, 'no error') end));
+
+  -- case: Open form: a waiting form not assigned is refused
+  v_state := null; v_msg := null; v_det := null; v_j := null; v_note := null; v_n := null;
+  BEGIN
+
+    BEGIN
+      PERFORM set_config('request.jwt.claims', c_tmp, true);
+      PERFORM set_config('request.method', 'POST', true);
+      PERFORM set_config('request.path', '', true);
+      PERFORM set_config('request.headers', '{}', true);
+      SET LOCAL ROLE authenticated;
+      v_note := client.get_intake_link(v_other_wait)::text;
+      RESET ROLE;
+    EXCEPTION WHEN others THEN
+      GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT, v_det = PG_EXCEPTION_DETAIL;
+    END;
+    RESET ROLE;
+    RAISE EXCEPTION 'pf_case_undo';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'pf_case_undo' THEN RAISE; END IF;
+  END;
+  r := r || jsonb_build_object('t', 'Open form: a waiting form not assigned is refused', 'expect', 'refused 42501 not_assigned', 'ok', coalesce(v_state = '42501' and v_det like 'blocker=not_assigned%', false),
+             'got', coalesce(v_state || ' ' || v_msg || coalesce(' [' || v_det || ']', ''), case when v_note like '%"url"%' then 'returned a link' else coalesce(v_note, 'no error') end));
+
+  -- case: Open form: their own submitted form is refused as submitted
+  v_state := null; v_msg := null; v_det := null; v_j := null; v_note := null; v_n := null;
+  BEGIN
+
+    BEGIN
+      PERFORM set_config('request.jwt.claims', c_tmp, true);
+      PERFORM set_config('request.method', 'POST', true);
+      PERFORM set_config('request.path', '', true);
+      PERFORM set_config('request.headers', '{}', true);
+      SET LOCAL ROLE authenticated;
+      v_note := client.get_intake_link(v_sub)::text;
+      RESET ROLE;
+    EXCEPTION WHEN others THEN
+      GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT, v_det = PG_EXCEPTION_DETAIL;
+    END;
+    RESET ROLE;
+    RAISE EXCEPTION 'pf_case_undo';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'pf_case_undo' THEN RAISE; END IF;
+  END;
+  r := r || jsonb_build_object('t', 'Open form: their own submitted form is refused as submitted', 'expect', 'refused blocker=submitted', 'ok', coalesce(v_det like 'blocker=submitted%', false),
+             'got', coalesce(v_state || ' ' || v_msg || coalesce(' [' || v_det || ']', ''), case when v_note like '%"url"%' then 'returned a link' else coalesce(v_note, 'no error') end));
 
   -- case: page_builder_list refused
   v_state := null; v_msg := null; v_det := null; v_j := null; v_note := null; v_n := null;
