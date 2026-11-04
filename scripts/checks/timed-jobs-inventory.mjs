@@ -29,7 +29,8 @@ function etNote(cron) {
   if (h === '*') return 'interval, same in ET';
   if (!/^\d+$/.test(m)) return 'see UTC'; // e.g. */5 9 * * *: a fixed UTC hour, so it does shift
   const step = h.startsWith('*/') ? +h.slice(2) : 0;
-  const hours = step ? Array.from({ length: Math.ceil(24 / step) }, (_, i) => i * step) : h.split(',').map(Number);
+  const hours = step ? Array.from({ length: Math.ceil(24 / step) }, (_, i) => i * step)
+    : h.split(',').flatMap(p => { const [a, b = a] = p.split('-').map(Number); return b >= a ? Array.from({ length: b - a + 1 }, (_, i) => a + i) : [NaN]; });
   if (hours.some(x => !Number.isInteger(x) || x < 0 || x > 23)) return 'see UTC';
   const at = off => hours.map(x => {
     const t = x - off;
@@ -56,6 +57,8 @@ assert.equal(etNote('17 * * * *'), 'hourly at :17, same in ET');
 assert.equal(etNote('15,45 * * * *'), 'hourly at :15, :45, same in ET');
 assert.equal(etNote('30 seconds'), 'interval, same in ET');
 assert.equal(etNote('*/5 9 * * *'), 'see UTC');
+assert.equal(etNote('0 15-17 * * *'), '11:00, 12:00, 13:00 EDT / 10:00, 11:00, 12:00 EST');
+assert.equal(etNote('0 8-20/2 * * *'), 'see UTC');
 assert.deepEqual(cronsOf("  schedule:\n    # - cron: '1 1 * * *'\n    - cron: '0 */6 * * *'   # note\r\n    - cron: \"30 * * * *\"\n    - cron: 5 4 * * *\n"),
   ['0 */6 * * *', '30 * * * *', '5 4 * * *']);
 assert.deepEqual(scriptsOf("run: node scripts/a.js --x\n  node scripts/b/c.js\n  node scripts/a.js"), ['scripts/a.js', 'scripts/b/c.js']);

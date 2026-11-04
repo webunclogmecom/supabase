@@ -1,7 +1,7 @@
 # Scheduled jobs
 
 > **Generated, do not edit by hand.** Written by `node scripts/checks/timed-jobs-inventory.mjs --write`,
-> generated on 2026-10-14 11:01 ET. Re-run it after any schedule change and commit the result.
+> generated on 2026-11-04 16:23 ET. Re-run it after any schedule change and commit the result.
 
 Every timed job in pg_cron (Prod), the Railway project UnclogMe Timed Jobs (read from
 `services/timed-jobs/services.json`; `node services/timed-jobs/apply.js` shows any drift from Railway) and
@@ -21,12 +21,15 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 
 | runtime | name | schedule (UTC) | ET | what it runs | health source |
 |---|---|---|---|---|---|
+| pg_cron | access-health | `21 13 * * *` | 09:21 EDT / 08:21 EST | `public.log_access_health` | `cron.job_run_details` jobid 176 |
 | pg_cron | admin-review-reminder | `0 15,16 * * *` | 11:00, 12:00 EDT / 10:00, 11:00 EST | `public.fn_request_admin_review_reminder`, edge fn `admin-review-reminder` | `cron.job_run_details` jobid 126 |
 | pg_cron | audit-partman-maintenance | `0 */6 * * *` | 20:00, 02:00, 08:00, 14:00 EDT / 19:00, 01:00, 07:00, 13:00 EST | `partman.run_maintenance` | `cron.job_run_details` jobid 1 |
 | pg_cron | blackout-health-check | `0 12 * * *` | 08:00 EDT / 07:00 EST | `public.log_blackout_health` | `cron.job_run_details` jobid 28 |
+| pg_cron | calendar-grease-freeze | `5 * * * *` | hourly at :05, same in ET | `ops.fn_freeze_grease_estimates` | `cron.job_run_details` jobid 153 |
 | pg_cron | calendar-push-auto-retry | `2-59/5 * * * *` | interval, same in ET | `public.fn_calendar_push_auto_retry` | `cron.job_run_details` jobid 17 |
 | pg_cron | calendar-push-health-check | `30 7 * * *` | 03:30 EDT / 02:30 EST | `public.log_calendar_push_health` | `cron.job_run_details` jobid 7 |
 | pg_cron | calendar-task-poll | `1-59/5 * * * *` | interval, same in ET | `public.fn_request_calendar_task_poll`, edge fn `poll-calendar-tasks` | `cron.job_run_details` jobid 31 |
+| pg_cron | call-first-reminder | `0 15,16 * * *` | 11:00, 12:00 EDT / 10:00, 11:00 EST | `public.fn_request_call_first_reminder`, edge fn `call-first-reminder` | `cron.job_run_details` jobid 163 |
 | pg_cron | city-email-sweep | `7 * * * *` | hourly at :07, same in ET | `public.fn_request_city_email_sweep`, edge fn `send-derm-email` | `cron.job_run_details` jobid 33 |
 | pg_cron | daily-cleanup | `0 3 * * *` | 23:00 EDT / 22:00 EST | `public.fn_daily_cleanup` | `cron.job_run_details` jobid 125 |
 | pg_cron | db-backup-health | `25 13 * * *` | 09:25 EDT / 08:25 EST | `public.log_db_backup_health` | `cron.job_run_details` jobid 124 |
@@ -35,7 +38,10 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | pg_cron | gdo-permit-label-sweep | `11 9 * * *` | 05:11 EDT / 04:11 EST | `public.fn_request_gdo_permit_label_sweep`, edge fn `gdo-permit-label` | `cron.job_run_details` jobid 114 |
 | pg_cron | generated-sheet-finisher | `6-59/10 * * * *` | interval, same in ET | `public.fn_request_generated_measure`, edge fn `measure-generated-page` | `cron.job_run_details` jobid 43 |
 | pg_cron | health-escalation | `30 13 * * *` | 09:30 EDT / 08:30 EST | `public.fn_request_health_escalation`, edge fn `health-escalate` | `cron.job_run_details` jobid 30 |
+| pg_cron | hr-bonus-health | `27 13 * * *` | 09:27 EDT / 08:27 EST | `public.log_hr_bonus_health` | `cron.job_run_details` jobid 170 |
+| pg_cron | hr-bonus-sweep | `41 * * * *` | hourly at :41, same in ET | `hr.fn_sync_all_bonuses` | `cron.job_run_details` jobid 167 |
 | pg_cron | inbound-file-drain | `*/5 * * * *` | interval, same in ET | `public.fn_request_inbound_file_drain`, edge fn `inbound-file-drain` | `cron.job_run_details` jobid 48 |
+| pg_cron | intake-size-lookup | `17 * * * *` | hourly at :17, same in ET | `public.fn_request_size_lookup`, edge fn `intake-size-lookup` | `cron.job_run_details` jobid 179 |
 | pg_cron | intake-task-sync | `3-59/5 * * * *` | interval, same in ET | `public.fn_request_intake_task_sync`, edge fn `intake-task-sync` | `cron.job_run_details` jobid 148 |
 | pg_cron | invoice-drift-reconcile | `25 */6 * * *` | 20:25, 02:25, 08:25, 14:25 EDT / 19:25, 01:25, 07:25, 13:25 EST | `public.fn_request_jobber_sync('invoice-drift')` | `cron.job_run_details` jobid 40 |
 | pg_cron | jobber-billing-observe | `0 6 * * *` | 02:00 EDT / 01:00 EST | `public.fn_request_billing_observe`, edge fn `sync-jobber-billing-observe` | `cron.job_run_details` jobid 38 |
@@ -43,6 +49,8 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | pg_cron | jobber-job-drift-reconcile | `15,45 * * * *` | hourly at :15, :45, same in ET | `public.fn_request_jobber_sync('jobs-drift')` | `cron.job_run_details` jobid 21 |
 | pg_cron | jobber-poll-sync | `1-59/5 * * * *` | interval, same in ET | `public.fn_request_jobber_sync('poll')` | `cron.job_run_details` jobid 5 |
 | pg_cron | jobber-sync-health | `13 13 * * *` | 09:13 EDT / 08:13 EST | `public.log_jobber_sync_health` | `cron.job_run_details` jobid 37 |
+| pg_cron | jobber-timesheets-sync | `10,40 * * * *` | hourly at :10, :40, same in ET | `public.fn_request_jobber_sync('timesheets')` | `cron.job_run_details` jobid 182 |
+| pg_cron | jobber-timesheets-window | `20 8 * * *` | 04:20 EDT / 03:20 EST | `public.fn_request_jobber_sync('timesheets-window')` | `cron.job_run_details` jobid 183 |
 | pg_cron | jobber-upcoming-visits-sync | `3-59/15 * * * *` | interval, same in ET | `public.fn_request_jobber_sync('upcoming')` | `cron.job_run_details` jobid 4 |
 | pg_cron | jobber-visit-drift-reconcile | `8-59/30 * * * *` | interval, same in ET | `public.fn_request_jobber_sync('drift')` | `cron.job_run_details` jobid 8 |
 | pg_cron | note-photo-sync-health | `35 */6 * * *` | 20:35, 02:35, 08:35, 14:35 EDT / 19:35, 01:35, 07:35, 13:35 EST | `public.log_jobber_note_photo_health` | `cron.job_run_details` jobid 39 |
@@ -56,6 +64,7 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | pg_cron | sa-schedule-gap-check | `15 10 * * *` | 06:15 EDT / 05:15 EST | `public.log_sa_schedule_gaps` | `cron.job_run_details` jobid 16 |
 | pg_cron | sa-visit-generation | `0 10 * * *` | 06:00 EDT / 05:00 EST | `public.fn_generate_sa_visits` | `cron.job_run_details` jobid 22 |
 | pg_cron | sa-visit-promote | `20 * * * *` | hourly at :20, same in ET | `public.fn_promote_sa_visits_to_jobber` | `cron.job_run_details` jobid 23 |
+| pg_cron | samsara-feed-health | `3-59/10 * * * *` | interval, same in ET | `public.log_samsara_feed_health` | `cron.job_run_details` jobid 159 |
 | pg_cron | sheet-number-ocr-sweep | `2-59/10 * * * *` | interval, same in ET | `public.fn_request_sheet_number_ocr`, edge fn `ocr-address-sheet-number` | `cron.job_run_details` jobid 24 |
 | pg_cron | sheet-row-ocr-sweep | `4-59/10 * * * *` | interval, same in ET | `public.fn_request_sheet_row_ocr`, edge fn `ocr-address-sheet-rows` | `cron.job_run_details` jobid 29 |
 | pg_cron | stamp-sheets-reminder | `0 15,16 * * *` | 11:00, 12:00 EDT / 10:00, 11:00 EST | `public.fn_request_stamp_sheets_reminder`, edge fn `stamp-sheets-reminder` | `cron.job_run_details` jobid 115 |
@@ -63,9 +72,13 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | pg_cron | start-flags-health | `20 13 * * *` | 09:20 EDT / 08:20 EST | `public.log_start_flags_health` | `cron.job_run_details` jobid 112 |
 | pg_cron | start-flags-sweep | `0 8 * * *` | 04:00 EDT / 03:00 EST | `ops.fn_judge_starts` | `cron.job_run_details` jobid 62 |
 | pg_cron | start-push-retry | `1-59/5 * * * *` | interval, same in ET | `ops.retry_marker_pushes` | `cron.job_run_details` jobid 111 |
+| pg_cron | sync-jobber-users | `*/15 * * * *` | interval, same in ET | `public.fn_request_jobber_sync('users')` | `cron.job_run_details` jobid 186 |
 | pg_cron | time-on-site-nightly | `20 7 * * *` | 03:20 EDT / 02:20 EST | `public.fn_fill_time_on_site_from_stops` | `cron.job_run_details` jobid 26 |
-| pg_cron | time-on-site-reminder | `0 15-19 * * *` | hourly 11:00-15:00 EDT / 10:00-14:00 EST; `public.fn_time_on_site_reminder_hold` posts once, 11 AM-2 PM ET, when the Samsara feeds reach 10 AM (since `2026-10-15_2230`) | `public.fn_request_time_on_site_reminder`, edge fn `time-on-site-reminder` | `cron.job_run_details` jobid 146; `sync_log` source `time_on_site_reminder_request` (one per day) |
-| pg_cron | samsara-feed-health | `3-59/10 * * * *` | every 10 minutes, same in ET | `public.log_samsara_feed_health` (emails at once on a new item; `docs/reference/samsara-feeds-resilience.md`) | `public.sync_log` source `samsara-feed-health` |
+| pg_cron | time-on-site-reminder | `0 15-19 * * *` | 11:00, 12:00, 13:00, 14:00, 15:00 EDT / 10:00, 11:00, 12:00, 13:00, 14:00 EST | `public.fn_request_time_on_site_reminder`, edge fn `time-on-site-reminder` | `cron.job_run_details` jobid 146 |
+| pg_cron | time-on-site-samsara-recheck | `50 7 * * *` | 03:50 EDT / 02:50 EST | `public.fn_request_time_on_site_samsara_recheck`, edge fn `time-on-site-samsara-recheck` | `cron.job_run_details` jobid 151 |
+| pg_cron | trap-size-health | `23 13 * * *` | 09:23 EDT / 08:23 EST | `public.log_trap_size_health` | `cron.job_run_details` jobid 174 |
+| pg_cron | truck-gps-health | `17 13 * * *` | 09:17 EDT / 08:17 EST | `public.log_truck_gps_health` | `cron.job_run_details` jobid 189 |
+| pg_cron | unopened-email-reminder | `0 15,16 * * *` | 11:00, 12:00 EDT / 10:00, 11:00 EST | `public.fn_request_unopened_email_reminder`, edge fn `unopened-email-reminder` | `cron.job_run_details` jobid 173 |
 | pg_cron | vehicle-gps-reconcile-nightly | `5 7 * * *` | 03:05 EDT / 02:05 EST | `public.fn_infer_visit_vehicle` | `cron.job_run_details` jobid 27 |
 | pg_cron | vehicle-stop-facts | `35 * * * *` | hourly at :35, same in ET | `public.fn_refresh_stop_facts` | `cron.job_run_details` jobid 141 |
 | Railway | samsara-gps | `*/5 * * * *` | interval, same in ET | `scripts/sync/cron_samsara_locations_history.js` | `public.sync_log` source `railway_samsara_gps` |
@@ -81,4 +94,4 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | GitHub | `samsara-poll.yml` | `*/10 * * * *` | interval, same in ET | `scripts/sync/cron_samsara_telemetry.js` | Actions history (`gh run list -w samsara-poll.yml`) |
 | GitHub | `weekly-dedup-audit.yml` | `0 14 * * 0` | Sun 10:00 EDT / Sun 09:00 EST | `scripts/sync/weekly_dedup_audit.js` | Actions history (`gh run list -w weekly-dedup-audit.yml`) |
 
-Totals: pg_cron 46 (0 paused), Railway 2, GitHub 10 schedules in 9 workflows.
+Totals: pg_cron 60 (0 paused), Railway 2, GitHub 10 schedules in 9 workflows.
