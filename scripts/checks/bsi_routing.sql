@@ -14,10 +14,10 @@
 --      skipped or cancelled (its visit, invoice or job line; at the visit's property). An address with no work, such as
 --      a billing address, never counts;
 --   3. no line 27 on a routed client that Yan has not matched to its BSI record through leads.decide_client (a 'same'
---      decision links the record to the property). No decision was recorded on 2026-11-03, so line-27 WORK on ANY routed
---      client fails this row, Grove Kosher included (line 27 on a skipped or cancelled visit, or on a visit before the
---      cutoff, is not work); the five with no BSI record at all (081-TCE, 319-CAP, 135-BB,
---      361-SFG and Olympus) can never pass it. A matched client WITH line 27 is not a failure: the health item
+--      decision links the record to the property). Matched since 2026-11-04_1338: 022-GRO, 064-TCE, 225-PV and 240-TUR.
+--      Line-27 WORK on any other routed client fails this row (line 27 on a skipped or cancelled visit, or on a visit
+--      before the cutoff, is not work); Alta is unmatched, and the five with no BSI record at all (081-TCE, 319-CAP,
+--      135-BB, 361-SFG and Olympus) can never pass it. A matched client WITH line 27 is not a failure: the health item
 --      bsi_route_unfiled reminds Yan to file it on BSI Online by hand until the bot exists;
 --   4. no live property whose city is near "Boca Raton" without reading plainly as it: a spelling the one test misses
 --      (an accent, "Boka", "City of Boca Raton", "West Boca Raton"), or one it reads as Boca Raton only by its prefix

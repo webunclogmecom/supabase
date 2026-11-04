@@ -130,6 +130,8 @@ const cases = [
   ['client 245: line 27 on its ARCHIVED job 962 (control: not work, nothing fails)', l27job(962), [], []],
   ['client 275 in Boca Raton, line 27 on visit 1258 before the cutoff (control: not work, nothing fails)', `${boca(72, 275)} ${l27visit(1258)}`, [], []],
   ['test client 381: line 27 on its open job 766 (control: never a test client, nothing fails)', l27job(766), [], []],
+  ['Grove (matched by Yan, 2026-11-04_1338): line 27 on its open job 1325 (control: a matched client does not fail, nothing fails)',
+   `if (select client_id from public.jobs where id = 1325) <> 357 then raise exception 'fixture job 1325 is not Grove'; end if; ${l27job(1325)}`, [], []],
 
   // cities
   ['an accented "Bóca Raton" on an idle Miami property', `update public.properties set city = 'Bóca Raton' where id = ${idle};`, [], ['no live property whose city is near Boca Raton']],

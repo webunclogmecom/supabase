@@ -311,11 +311,12 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     completed.
   - **The rule keys on the city name, not on BSI.** It routes 10 real clients today. 5 have no BSI record: 081-TCE and
     319-CAP sit in ZIP 33498, where BSI lists nobody (likely outside the City), and 135-BB, 361-SFG and Olympus are not
-    in the scrape. 🛑 **No routed client is MATCHED yet:** a client counts as matched only once Yan's 'same' decision is
-    recorded through `leads.decide_client` (0 recorded on 2026-11-03), so `bsi_routing.sql` fails on line-27 work on ANY
-    routed client (not line 27 on a skipped or cancelled visit, or a visit before the cutoff), Grove Kosher included,
-    until then; the 5 with no BSI record can never pass. Line 27 waits for the
-    review.
+    in the scrape. 🛑 **A client counts as matched only once Yan's 'same' decision is recorded through
+    `leads.decide_client`.** Matched since `2026-11-04_1338`: 022-GRO, 064-TCE, 225-PV and 240-TUR. 361-SFG is recorded
+    absent (Yan: rain water, not required for compliance). `bsi_routing.sql` fails on line-27 work on any other routed
+    client (not line 27 on a skipped or cancelled visit, or a visit before the cutoff); the 5 with no BSI record can
+    never pass. Yan does not know why 135-BB, 319-CAP and 081-TCE are missing, so that stays open. The next steps are
+    at the top of the plan.
   - **Two client shapes it cannot route** (per client, not per property): line-27 WORK at a Boca Raton property of a
     client with a live GDO (`bsi_route_gdo_and_boca`; its Boca Raton visits are filed with Miami-Dade), and line-27 work
     at a property elsewhere, or with no property, of a routed client (`bsi_route_other_city`). `log_rpa_derm_health()` raises each in Fred's
@@ -341,7 +342,7 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     function code with `--` and `/* */` comments removed, so a comment cannot stand in for a call (a string literal still
     could); one pins the md5 of the logger's routing block, so changing that block on purpose means proving it and
     updating the pin; one fails when the newest logger run is over 26 hours old), and
-    `scripts/checks/bsi_routing_mutations.mjs`, which proves every row can fail (36 cases, each undone; the suite itself
+    `scripts/checks/bsi_routing_mutations.mjs`, which proves every row can fail (37 cases, each undone; the suite itself
     fails if any row never failed). Three of its cases assume no routed client has line 27 on a visit with a live
     manifest: its header says what to do the day one does. Behaviour proofs
     in the VERIFY blocks of `_1848` (its case c2 had no old-body control), `_2039` (cases 1 to 4; case 5 had none),

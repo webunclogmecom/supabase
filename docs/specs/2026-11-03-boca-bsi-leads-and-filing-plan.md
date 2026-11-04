@@ -5,23 +5,22 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
 - **#166** `IWJkqTq1`: add the scraped restaurants (frozen leads) and our current clients to the DB.
 - **#169** `0lAWU6Ge`: a BSI Online filing bot that auto-files Boca Raton maintenance reports, like the Online GDO Report bot.
 
-**Waiting on Yan and Diego (since 2026-11-04 11:32 ET). Pick up here.** Nothing is running on this, and nothing reminds anyone if they do not answer: the three cards staying In Progress and the row in `docs/decisions-to-build.md` are the only markers.
-- **The thread:** #office-team, [Diego at 11:26 ET](https://unclogme.slack.com/archives/C0AMQ5M7BL6/p1793809609144129): *"We need make the report for grove kosher Boca"*. Fred replied there at 11:32 ET with two questions. No answer yet at 13:15 ET.
-- **Asked:**
-  1. Are these the same places as our clients? Grove Kosher, Carrot Express Boca, Pura Vida, El Turco (the BSI names are in section 5's table).
-  2. Are Bagel Boss, Capas Burger, Carrot Express West Boca or South Florida Golf Carts in the City of Boca Raton program?
-- **Not asked yet, needed for S5:**
-  - Which of the two "Broward County Wastewater Treatment Plant" rows do we pick?
-  - Yan files the two oldest Grove visits by hand, with the video and the heads-up described in S5's capture steps.
-- **Not asked on purpose:**
-  - Alta and Olympus (Fred, 2026-11-04: only clients that are active or recurring). Both read ACTIVE, but every job is archived, with no visit and no code. Ask if line-27 work ever lands on them.
-  - The other 6 items in the review queue: 5 other restaurants in Grove's plaza and BENTO BOCA on Pura Vida's street. They are different businesses at the same address, for Yan to confirm at the sitting.
-- **When the answers come, in this order:**
-  1. Record each one with `leads.decide_client` (same, different or absent). 0 decisions are recorded today.
-  2. The office types the CCNs of the confirmed clients in the Client App (S3). Look at `ops.v_gdo_expiry` then: it will list a CCN as a GDO.
-  3. Line 27 goes on a client's job only after its match is recorded, or `bsi_routing.sql` fails. A client that is not on BSI does not get it until that is settled.
-  4. Ask what was not asked, and write `scripts/probes/bsi_readback.mjs` (it does not exist yet) so its "before" read runs before Yan files.
-- **If someone files Grove first** (Diego's message could lead to that): nothing breaks on our side, but the capture is lost, and the bot's request shape and the 11 open questions depend on it. BSI showed 0 reports filed on 2026-11-03. Ask for the video and the receipt, and read BSI straight after.
+**Next steps (updated 2026-11-04 13:45 ET). Pick up here.** Nothing is running on this, and nothing reminds anyone: the three cards staying In Progress and the row in `docs/decisions-to-build.md` are the only markers.
+- **The thread:** #office-team, [Diego at 11:26 ET](https://unclogme.slack.com/archives/C0AMQ5M7BL6/p1793809609144129): *"We need make the report for grove kosher Boca"*. Fred asked two questions there at 11:32 ET.
+- **Yan's answers, 13:29 ET:** *"1yes / 2 south Florida Golf Carts is not required for compliance, (rain water) / the other ones im not sure why we can find them"*.
+- **Recorded (`2026-11-04_1338`):**
+  - Same: 022-GRO, 064-TCE, 225-PV, 240-TUR. Line 27 no longer fails `bsi_routing.sql` for these four.
+  - Absent: 361-SFG, rain water, not a grease client.
+- **Next, in order:**
+  1. The office types the 4 CCNs in the Client App (S3). Look at `ops.v_gdo_expiry` then: it will list a CCN as a GDO.
+  2. The office adds line 27 to those clients' jobs. From then on `bsi_route_unfiled` puts them in Fred's health email until filing is tracked.
+  3. Yan's video (S5). Fred, 2026-11-04: *"The video is already known, they will make one"* and *"the video should answer both questions"*, so nothing more gets asked. Read it frame by frame, as the first one was, for: the whole filing through checkout; which of the two "Broward County Wastewater Treatment Plant" rows he picks; which document he uploads; and whether Grove gets one report or two (BSI lists 2 interceptors, our record has one trap).
+  4. Write `scripts/probes/bsi_readback.mjs` (it does not exist yet). If the filing has already happened, compare against the 2026-11-03 scrape: 0 reports, an empty cart.
+  5. Then S6-S8 (the bot), with Fred's go.
+- **Still open with Yan:** 135-BB, 319-CAP and 081-TCE. He does not know why they are missing from BSI, so nothing is recorded and line 27 stays off them (`bsi_routing.sql` fails). What the scrape shows: BSI lists nobody in ZIP 33498, where 319-CAP and 081-TCE sit, so they are probably outside the City. 135-BB is the odd one: ZIP 33433, on the same road as Grove's plaza, and BSI lists 22161 and 22191 Powerline Rd but nothing at 22107.
+- **Left in the review queue (11 rows):** those 3, plus:
+  - Alta and Olympus, not asked (Fred, 2026-11-04: only clients that are active or recurring). Both read ACTIVE, but every job is archived, with no visit and no code. Ask if line-27 work ever lands on them.
+  - 5 other restaurants in Grove's plaza and BENTO BOCA on Pura Vida's street. Nobody has decided them, and they are not counted as frozen leads until someone records them as different.
 - **Fred's decisions still open** are listed under "Open" below.
 
 **Status (2026-11-04 ~01:45 ET).**
@@ -77,7 +76,7 @@ Trello cards (all In Progress; finished checklist items ticked 2026-11-03: #165 
     contact's name. A contact's name inside a longer business name stays (counting contact names of two words or more,
     2 labels and 2 mailing names; with a one-word name inside its own record's text, 3 and 3). Viktor's own
     read-only role (8.1, deferred) is still not built.
-- **Open:** S3 (Yan's review sitting, then the CCNs), S5 (Yan's hand filings, captured), S6-S8 (the bot, after S5 and
+- **Open:** S3 (the CCNs and the rest of the queue: Next steps above), S5 (Yan's hand filings, captured), S6-S8 (the bot, after S5 and
   Fred's go), S9 (the enrichment pilot). For Fred: whether the DERM Tracker's "Record a manual filing" (with Miami-Dade)
   should refuse a Boca client's visit (today it is offered on every visit, his 2026-08-19 rule; a refusal must be keyed
   on `fn_client_files_with_bsi`); and whether a GDO client's line-27 visit at a Boca Raton property should be held in
@@ -199,7 +198,7 @@ The recording runs 6 min 13 s, from 12:26 to 12:33 PM on 2026-11-02; all 212 fra
 
 ## 5. Our Boca clients against BSI
 
-The matches below are by street number and name. Yan confirms each one before anything links.
+The matches below are by street number and name. Yan confirms each one before anything links. On 2026-11-04 he confirmed the first four and said 361-SFG is rain water, not required for compliance (`2026-11-04_1338`).
 
 | Ours | Property | BSI property | Interceptors | Note |
 |---|---|---|---|---|
