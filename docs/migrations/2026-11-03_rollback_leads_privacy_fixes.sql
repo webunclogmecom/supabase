@@ -2,6 +2,11 @@
 -- captured from pg_get_viewdef / obj_description on 2026-11-03 (not retyped); then drops leads.ingest_quiet and
 -- leads.v_bsi_contact_names. Revert scripts/leads/load_bsi.mjs with it (git), or the loader calls a missing function.
 -- Undoing this shows the 431 BSI links to signed-in staff again and the BSI contact names in owner_company.
+-- ORDER (added 2026-11-03 ~20:50 ET): run 2026-11-03_rollback_leads_label_mask_and_quiet_load.sql FIRST; it puts back the
+-- ingest_quiet signature this file drops. Rehearsed as one chain, undone (scratchpad chain_rollbacks.mjs).
+-- 🛑 THE LOADER: the version this file goes with (fd2eab18) has a --dry-run that is the DO block which wrote every CCN and
+-- contact to the server log at 16:41 ET. After a revert, run live loads only, or keep the current loader and accept
+-- that it refuses to run.
 begin;
 set local lock_timeout = '3s';
 set local search_path = public, extensions;

@@ -872,7 +872,8 @@ second "run" key. Just poll the queue and file whatever it returns:
 
 Your `POST` results drive per-visit "GDO report filed / pending / failed" chips in our apps:
 
-- `derm.gdo_report_status` — per visit, shown in the internal DERM Tracker.
+- `derm.visit_gdo_report`: per visit and permit, shown in the internal DERM Tracker's GDO Online Report section
+  (`derm.gdo_report_status` exists too, but no app reads it; checked 2026-11-03).
 - `customer.gdo_reports` — per visit, shown on the customer's Field Portal.
 
 Every write from the bot is attributed in our audit trail as `app_source = 'gdo-report-bot'`, and every

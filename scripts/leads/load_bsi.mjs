@@ -8,8 +8,14 @@
 // fields, sorts each property's interceptors by id, and calls leads.ingest_quiet('bsi', <run start>, records, <file>,
 // <dry run>) once. CCNs and BSI's contact stay in the private payload (Fred 2026-11-03); no API role can read them.
 // The payload travels as a literal, and Postgres writes the full text of a FAILING statement to its server log, so the
-// statement must never fail: ingest_quiet returns every error as {ok:false, sqlstate, message} (migration
-// 2026-11-03_1848). Never go back to a DO block that raises, and keep a load well under auto_explain's 10 s.
+// statement must not fail (migrations 2026-11-03_1848 and _2039):
+//   - ingest_quiet takes the run start and the records as TEXT and casts them inside its handler; the statement below
+//     carries no cast, so a bad character in BSI's data comes back as {ok:false, sqlstate} instead of failing it;
+//   - it runs with lock_timeout 500 ms, so a busy lock comes back as 55P03 before log_lock_waits (1 s) would log it;
+//   - this script first checks the function exists (a missing function would fail the statement and log it);
+//   - it never prints the API's error text, which can quote the statement.
+// Still logged with its text: a statement that runs 10 s or more (auto_explain); a full load takes under 1 s. Never
+// go back to a DO block that raises, and never run an older copy of this file (fd2eab18's --dry-run is that DO block).
 // --dry-run makes ingest_quiet undo the load inside the database and print what it would produce (states, review
 // items, view counts); nothing is kept.
 import fs from 'node:fs'
@@ -27,6 +33,8 @@ const g = raw.properties['957372']
 const gIds = (g?.detail?.interceptors ?? []).map((i) => String(i.id)).sort()
 if (gIds.join(',') !== '9818,9819') fail('control: Grove Kosher (957372) without interceptors 9818 and 9819')
 if (!raw.fetched_at || Number.isNaN(Date.parse(raw.fetched_at))) fail('no run start (fetched_at) in the file')
+const runStart = new Date(raw.fetched_at)
+if (runStart.getUTCFullYear() < 2026 || runStart.getUTCFullYear() > 2100) fail(`run start ${raw.fetched_at} is not a plausible date`)
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o && o[k] !== undefined).map((k) => [k, o[k]]))
 const ADDR = ['name', 'address', 'address2', 'city', 'zip_code', 'state_code']
@@ -53,31 +61,41 @@ const records = props
         'media_required_for_fog_maintenance_report', 'city_owned']),
       interceptors,
     }
-    return { source_id: String(s.id), source_name: s.label ?? null, payload: { search_item, detail } }
+    return { source_id: String(s.id), payload: { search_item, detail } }
   })
 if (records.length < 400) fail(`only ${records.length} organization-135 properties`)
 
 const json = JSON.stringify(records)
 const TAG = '$leadsjson$'
 if (json.includes(TAG)) fail('the data contains the quoting tag')
-const fname = path.basename(file).replace(/'/g, '')
-const sql = `select leads.ingest_quiet('bsi', '${new Date(raw.fetched_at).toISOString()}'::timestamptz, ` +
-  `${TAG}${json}${TAG}::jsonb, '${fname}', ${DRY}) as result;`
+const fname = path.basename(file).replace(/[^A-Za-z0-9._-]/g, '')
+const sql = `select leads.ingest_quiet('bsi', '${runStart.toISOString()}', ${TAG}${json}${TAG}, '${fname}', ${DRY}) as result;`
+
+const query = (q) => fetch(`https://api.supabase.com/v1/projects/${process.env.SUPABASE_PROJECT_ID}/database/query`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${process.env.SUPABASE_PAT}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ query: q }),
+})
+// the API's error text can quote the statement (LINE 1: ...): print its first line only, cut before any quote of it
+const safe = (t) => { try { return String(JSON.parse(t)?.message ?? '').split('\n')[0].replace(/LINE \d+:.*$/, '').slice(0, 200) } catch { return '(unreadable reply)' } }
+
+// never send the payload to a database that cannot take it: a missing function fails the statement, and is logged
+const pre = await query(`select to_regprocedure('leads.ingest_quiet(text,text,text,text,boolean)') is not null as ok;`)
+const preText = await pre.text()
+let preOk = false
+try { preOk = JSON.parse(preText)?.[0]?.ok === true } catch { /* refused below */ }
+if (!pre.ok || !preOk) fail(`leads.ingest_quiet(text,text,text,text,boolean) is not there (HTTP ${pre.status}: ${safe(preText)})`)
 
 console.log(`${DRY ? 'DRY RUN' : 'LIVE LOAD'}: ${records.length} records, run start ${raw.fetched_at}, ` +
   `${records.filter((r) => r.payload.search_item.ccn).length} with a CCN, ` +
   `${records.filter((r) => r.payload.search_item.contact && (r.payload.search_item.contact.name || r.payload.search_item.contact.phone || r.payload.search_item.contact.email)).length} with a contact, ` +
   `${(json.length / 1024).toFixed(0)} KB`)
 const t0 = Date.now()
-const r = await fetch(`https://api.supabase.com/v1/projects/${process.env.SUPABASE_PROJECT_ID}/database/query`, {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${process.env.SUPABASE_PAT}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ query: sql }),
-})
+const r = await query(sql)
 const text = await r.text()
 let res = null
 try { res = JSON.parse(text)?.[0]?.result ?? null } catch { /* reported below */ }
-if (!r.ok || !res) { console.error(`no answer (HTTP ${r.status}): ${text.slice(0, 600)}`); process.exit(3) }
+if (!r.ok || !res) { console.error(`no answer (HTTP ${r.status}): ${safe(text)}`); process.exit(3) }
 console.log(JSON.stringify(res, null, 1))
 console.log(`${Date.now() - t0} ms`)
 if (res.ok !== true) process.exit(3)

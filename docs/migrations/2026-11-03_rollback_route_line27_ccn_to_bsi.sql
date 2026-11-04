@@ -2,6 +2,9 @@
 -- anchored edits; md5 asserted equal to the pins the migration started from), then the rule is dropped.
 -- ⚠ Once any Boca Raton job carries line 27, undoing this puts those visits back in the DERM queue as no_permit and
 -- back in the daily health email: take line 27 off those jobs first, or accept the noise.
+-- ORDER (added 2026-11-03 ~20:50 ET): this file fails on its own now. Run 2026-11-03_rollback_route_line27_alerts.sql,
+-- then 2026-11-03_rollback_route_line27_followups.sql, then this one: since _1848 derm.gdo_report_status calls the rule
+-- this file drops, and the logger pin below matches only the pre-_1848 body. Rehearsed as one chain, undone.
 begin;
 set local lock_timeout = '3s';
 set local search_path = public, extensions;

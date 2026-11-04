@@ -14,7 +14,8 @@ paying for PITR (about $100 a month): at most about 2 hours of business rows can
 
 Never in any copy: `vault` (secrets), `public.webhook_tokens` (Jobber and Samsara OAuth tokens and the
 client secret), `auth` and `storage` (Supabase-managed), `cron`, `net`, `realtime` (logs).
-🛑 **In every copy since 2026-11-03: `leads.source_versions` holds the CCNs of 431 Boca Raton restaurants (handled like
+🛑 **In every copy made after the first load (16:41 ET 2026-11-03; the first such copy is the 22:17 UTC two-hourly, the
+daily of that day was taken earlier): `leads.source_versions` holds the CCNs of 431 Boca Raton restaurants (handled like
 access codes) and BSI's personal contacts** (Fred: "Keep all, privately"). A copy is as private as the database it
 came from: never hand one out, never restore one into a project other people can read.
 ⚠ **Photos and PDFs are files in Supabase Storage, not database rows. No database copy (ours or

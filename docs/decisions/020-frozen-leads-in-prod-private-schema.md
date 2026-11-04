@@ -1,8 +1,9 @@
 # ADR 020 — Frozen leads live in Prod, in a private schema `leads`
 
 **Date:** 2026-11-03
-**Status:** Accepted, built (migrations `2026-11-03_1700`, `_1730`, `_1800`, `_1848_leads_privacy_fixes`); 431 BSI Boca
-Raton records loaded. Facts corrected the same day: see "Corrections" at the end.
+**Status:** Accepted, built (migrations `2026-11-03_1700`, `_1730`, `_1800`, `_1848_leads_privacy_fixes`,
+`_2039_leads_label_mask_and_quiet_load`); 431 BSI Boca Raton records loaded. Facts corrected the same day, twice: see
+the two "Corrections" sections at the end.
 **Supersedes:** `Building Apps/04-supabase-schema.md`'s "prospects live in a separate DB by design" (lines 10-13)
 **Related:** ADR 002 (entity_source_links), ADR 010 (audit trail); plan `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`
 
@@ -66,3 +67,17 @@ separate database. Prod's own `public.leads` (a copy-style lead table) was dropp
     text). The loader now calls `leads.ingest_quiet`, whose statement never fails.
 - **"Viktor reads three ... views, SELECT for service_role only".** They are for Viktor, and his first read is not tested
   yet. `db_backup_reader` also holds SELECT.
+
+## Corrections (2026-11-03 ~20:50 ET, after a second adversarial check; the decision itself is unchanged)
+
+- **The first Corrections section, "No API role (anon, authenticated, service_role) can read them".** True of the CCN
+  and the contact fields, but on 3 records the BSI label (the restaurant name BSI shows) is a contact's name, and
+  service_role read it in `public.v_frozen_leads.name`, `public.v_lead_interceptors.name` and
+  `public.entity_source_links.source_name`. Fixed by `2026-11-03_2039_leads_label_mask_and_quiet_load`: the views blank
+  the label when it is a contact's name (on `leads.fn_name_key`), `leads.ingest` no longer copies the label into the
+  link, the 431 copies were cleared, and `scripts/checks/leads_integrity.sql` now tests every cell.
+- **The same section, "the loader now calls `leads.ingest_quiet`, whose statement never fails".** It still could, in
+  three ways: the casts of the loader's literals ran before the function, a lock wait over 1 s is logged with the
+  statement, and a cancel is not caught by `WHEN OTHERS`. Fixed by the same migration (text arguments cast inside,
+  `lock_timeout` 500 ms, the cancel caught by name; proven live). Left: `auto_explain` logs a statement of 10 s or
+  more with its text; a load takes under 1 s.

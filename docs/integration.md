@@ -333,8 +333,9 @@ services read Prod directly. **Changing the shape of the tables they read breaks
   `run_id` once the image exists. The fill is guarded `.is(screenshot_path, null)`, so it is monotonic
   and a retry can never overwrite evidence. ⚠ Staff REPLACE evidence in the DERM Tracker
   (`fn_set_gdo_evidence_ext`) and that is a separate, deliberate path. Do not unify them.
-- Status surfaces: `derm.gdo_report_status` (DERM Tracker, per visit) + `customer.gdo_reports`
-  (Field Portal). Full design: migration `2026-07-21g` + the handoff doc.
+- Status surfaces: `derm.visit_gdo_report` (DERM Tracker, per visit and permit) + `customer.gdo_reports`
+  (Field Portal). `derm.gdo_report_status` exists too, but no app reads it (checked 2026-11-03: no bundle names it).
+  Full design: migration `2026-07-21g` + the handoff doc.
 
 ---
 

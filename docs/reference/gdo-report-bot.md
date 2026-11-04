@@ -166,12 +166,19 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 ## 4. The contract with us
 
 - 🛑 **Who the queue skips: clients that file with BSI (since ~16:53 ET 2026-11-03, `2026-11-03_1830`).**
-  `public.fn_client_files_with_bsi`: no live GDO and a live property whose city reads "Boca Raton", or a test client
-  with a live CCN (112-YA). Their line-27 visits are kept out of `v_derm_portal_fields`, the queue, the held view and
-  the `gdo_no_permit` / `line27_no_permit_clients` health items. A live GDO always wins. They are meant for BSI Online
-  (City of Boca Raton, Trello #169), but nothing files them yet: Yan by hand, the BSI bot later (not built). The rule
-  works per client, so a client with a GDO and a Boca Raton property, or a routed client with a property elsewhere, is
-  raised in Fred's health email instead (`bsi_route_*` items, `2026-11-03_1848`). Check `scripts/checks/bsi_routing.sql`.
+  `public.fn_client_files_with_bsi`: no live GDO and a live property whose city reads "Boca Raton"
+  (`public.fn_city_is_boca_raton`, any spelling of those letters, since `2026-11-03_2039`), or a test client with a live
+  CCN (112-YA). Their line-27 visits are kept out of `v_derm_portal_fields`, the queue, the held view and the
+  `gdo_no_permit` / `line27_no_permit_clients` health items. A live GDO always wins. They are meant for BSI Online
+  (City of Boca Raton, Trello #169), but nothing files them yet: Yan by hand, the BSI bot later (not built). Fred's
+  health email carries one item per client, never for a test client, and only when the client has line 27 (on an open
+  job's own lines, or on a visit since 2026-07-21 by its visit, invoice or job line):
+  - `bsi_route_unfiled:<id>`: a routed client with line 27 (Yan files it by hand; since `_2039`);
+  - `bsi_route_gdo_and_boca:<id>`: a client with a GDO and a Boca Raton property, whose Boca visits are filed with
+    Miami-Dade (since `_1848`);
+  - `bsi_route_other_city:<id>`: a routed client with a property elsewhere, whose other visits leave the queue (since
+    `_1848`; client 245 has this shape and lacks only line 27).
+  0 of each today. Check `scripts/checks/bsi_routing.sql`.
 - **Authentication:** header `x-rpa-key` against `RPA_BOT_KEYS`.
 - **Endpoints:**
   - GET `rpa-derm-queue`;

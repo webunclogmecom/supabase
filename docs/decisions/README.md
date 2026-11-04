@@ -8,6 +8,11 @@ An ADR is added when:
 - The decision reverses or supersedes an earlier one (note the supersession in the Status)
 
 ADRs are **immutable** once merged. If a decision changes, write a new ADR that supersedes the old one — don't edit history.
+Two edits are allowed, both dated and neither changing the decision: the Status line (built, superseded), and a
+"Corrections" section appended at the end for facts the ADR got wrong (ADR 020 has two). Rewriting the original text is
+not allowed.
+
+The Title column summarises each ADR in a few words; the file's own heading is its title.
 
 | # | Title | Status |
 |---|---|---|
@@ -32,4 +37,4 @@ ADRs are **immutable** once merged. If a decision changes, write a new ADR that 
 | [017](017-derm-address-sheet-privacy.md) | DERM "address" sheet privacy gate on `customer.work_orders` | Accepted (option 1 shipped; option 2 deferred) |
 | [018](018-derm-required-from-line-items.md) | DERM-required derived from a visit's line items | Accepted |
 | [019](019-derm-storage-private-signed-urls.md) | DERM storage: private buckets + signed URLs | Accepted (edge function shipped; bucket flip staged) |
-| [020](020-frozen-leads-in-prod-private-schema.md) | Frozen leads live in Prod, in the private schema `leads` (generic, 3NF, any source; link on the property) | Accepted |
+| [020](020-frozen-leads-in-prod-private-schema.md) | Frozen leads live in Prod, in the private schema `leads` (one generic 3NF model, no new table per source; link on the property) | Accepted, built |

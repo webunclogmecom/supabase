@@ -1,8 +1,12 @@
--- Frozen leads integrity (Trello #166, migrations 2026-11-03_1700 / _1730 / _1848_leads_privacy_fixes). Read-only.
+-- Frozen leads integrity (Trello #166, migrations 2026-11-03_1700 / _1730 / _1848_leads_privacy_fixes /
+-- _2039_leads_label_mask_and_quiet_load). Read-only.
 -- Healthy = every row 'ok'. Run as owner (Management API). The CONTROL rows must be 'ok', or nothing above them means
 -- anything. Values from BSI are compared inside SQL and never printed.
 -- Since _1848 the privacy rows test VALUES: the first version tested only column names and passed while 18 BSI contact
--- names showed in owner_company.
+-- names showed in owner_company. Since _2039 the name test covers EVERY cell, on leads.fn_name_key: the _1848 version
+-- tested owner_company and location only and passed while 3 BSI labels (the name column) were contact names.
+-- Accepted by design, so not tested: a contact's name INSIDE a longer business name (2 labels, 2 owner names on
+-- 2026-11-03), and owner names that look like a person's but are not BSI contacts (the plan keeps the mailing name).
 with links as (
   select l.entity_id as source_record_id, count(*) as n
     from public.entity_source_links l where l.entity_type = 'source_record' group by 1
@@ -22,9 +26,9 @@ with links as (
   select 'phone', regexp_replace(v.payload -> 'search_item' -> 'contact' ->> 'phone', '[^0-9]', '', 'g') from leads.source_versions v
    where length(regexp_replace(coalesce(v.payload -> 'search_item' -> 'contact' ->> 'phone', ''), '[^0-9]', '', 'g')) >= 7
   union
-  select 'name', upper(regexp_replace(btrim(v.payload -> 'search_item' -> 'contact' ->> 'name'), '[[:space:]]+', ' ', 'g'))
+  select 'name', leads.fn_name_key(v.payload -> 'search_item' -> 'contact' ->> 'name')
     from leads.source_versions v
-   where coalesce(btrim(v.payload -> 'search_item' -> 'contact' ->> 'name'), '') <> ''
+   where leads.fn_name_key(v.payload -> 'search_item' -> 'contact' ->> 'name') is not null
 ), cells as materialized (     -- every non-null cell of the three views Viktor reads
   select kv.key as col, kv.value as cell
     from (select to_jsonb(t) as j from public.v_frozen_leads t
@@ -65,13 +69,22 @@ with links as (
               or exists (select 1 from private p where p.kind = 'email' and position(p.val in lower(c.cell)) > 0)
               or exists (select 1 from private p where p.kind = 'phone' and position(p.val in regexp_replace(c.cell, '[^0-9]', '', 'g')) > 0))
   union all
-  select 'no owner_company or location in a public leads view is a BSI contact''s name',
+  select 'no cell of a public leads view is a BSI contact''s name (any column, leads.fn_name_key)',
          (select count(*) from cells c
-           where c.col in ('owner_company', 'location')
-             and upper(regexp_replace(btrim(c.cell), '[[:space:]]+', ' ', 'g')) in (select p.val from private p where p.kind = 'name'))
+           where leads.fn_name_key(c.cell) in (select p.val from private p where p.kind = 'name'))
   union all
   select 'signed-in staff see no frozen-leads link (client.entity_source_links)',
          (select count(*) from client.entity_source_links where entity_type = 'source_record')
+  union all
+  select 'no frozen-leads link carries the BSI label (entity_source_links.source_name; service_role reads that table)',
+         (select count(*) from public.entity_source_links where entity_type = 'source_record' and source_name is not null)
+  union all
+  select 'the loader''s entry takes text and gives up on a busy lock at 500 ms (leads.ingest_quiet)',
+         (select count(*) from (values
+            (to_regprocedure('leads.ingest_quiet(text,timestamptz,jsonb,text,boolean)') is not null),
+            (not exists (select 1 from pg_proc where oid = to_regprocedure('leads.ingest_quiet(text,text,text,text,boolean)')
+                                                 and proconfig @> array['lock_timeout=500ms']))) t(bad)
+           where bad)
   union all
   select 'public leads views: only postgres, service_role and db_backup_reader (SELECT)',
          (select count(*) from pg_class c cross join lateral aclexplode(c.relacl) a
@@ -103,4 +116,11 @@ select 'CONTROL: the value test finds the CCNs where they are (leads.v_src_bsi)'
        case when (select count(*) from leads.v_src_bsi s
                    where exists (select 1 from private p where p.kind = 'ccn' and position(p.val in upper(to_jsonb(s)::text)) > 0)) >= 400
               and (select count(*) from cells) >= 1000
+            then 'ok' else 'CONTROL FAILED' end
+union all
+select 'CONTROL: the name test finds the contact names where they are (leads.v_src_bsi labels and mailing names)',
+       case when (select count(*) from leads.v_src_bsi s
+                   where leads.fn_name_key(s.name) in (select p.val from private p where p.kind = 'name')) >= 1
+              and (select count(*) from leads.v_src_bsi s
+                   where leads.fn_name_key(s.owner_company) in (select p.val from private p where p.kind = 'name')) >= 10
             then 'ok' else 'CONTROL FAILED' end;

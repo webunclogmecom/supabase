@@ -2,6 +2,9 @@
 -- pg_get_functiondef / pg_get_viewdef on 2026-11-03 (not retyped). Undoing it drops the two bsi_route health items,
 -- lets derm.gdo_report_status list a Boca Raton client's line-27 visits again, and takes DISTINCT ON out of the
 -- health scan (two items with one key would then stop the whole health email).
+-- ORDER (added 2026-11-03 ~20:50 ET): run 2026-11-03_rollback_route_line27_alerts.sql FIRST (this file puts back a
+-- logger body whose block that migration rewrote); 2026-11-03_rollback_route_line27_ccn_to_bsi.sql, if wanted, comes
+-- after this one. Rehearsed as one chain, undone (scratchpad chain_rollbacks.mjs).
 begin;
 set local lock_timeout = '3s';
 set local search_path = public, extensions;

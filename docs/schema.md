@@ -658,9 +658,10 @@ WHERE entity_type = 'client' AND source_system = 'jobber' AND source_id = 'JOB_1
 ```
 
 Since `2026-11-03_1700` the entity_type CHECK also allows `source_record` (a `leads.source_records` row; source_system =
-the feed, e.g. `bsi`; source_id = its id there, e.g. a BSI Online property id). These rows are private: the Client
-App's pass-through `client.entity_source_links` leaves them out since `2026-11-03_1848`, and any new generic reader of
-this table must filter `entity_type`.
+the feed, e.g. `bsi`; source_id = its id there, e.g. a BSI Online property id). Signed-in staff never see these rows:
+the Client App's pass-through `client.entity_source_links` leaves them out since `2026-11-03_1848`. `service_role`
+still reads them in this table, so since `2026-11-03_2039` they carry no label (`source_name` is NULL; the label stays in
+the private payload). Any new generic reader of this table must filter `entity_type`.
 
 ---
 
@@ -669,8 +670,9 @@ this table must filter `entity_type`.
 Private: not exposed to the API; no API role (anon, authenticated, service_role) reads its tables or views or runs its
 functions (service_role: the three pure helpers). postgres, `db_backup_reader` (the backup; its default privileges in
 `leads` cover views too) and Supabase's platform roles read everything, as everywhere. Migrations `2026-11-03_1700`
-(tables), `_1730` (functions, views), `_1800` (view speed), `_1848_leads_privacy_fixes`. Loaded 2026-11-03: 431 BSI
-Online properties of the City of Boca Raton FOG program.
+(tables), `_1730` (functions, views), `_1800` (view speed), `_1848_leads_privacy_fixes`,
+`_2039_leads_label_mask_and_quiet_load`. Loaded 2026-11-03: 431 BSI Online properties of the City of Boca Raton FOG
+program.
 
 | Table | Grain | Key columns | Audit |
 |---|---|---|---|
@@ -680,18 +682,21 @@ Online properties of the City of Boca Raton FOG program.
 | `leads.match_decisions` | one decision, insert-only | `property_id`, `source_record_id` or `absent_from`, `verdict` same / different / absent, `seen_version_at`, `reason`, `decided_by` | no (who / why are columns) |
 
 Functions (postgres-only): `leads.ingest(source, run_started_at, records, file)` (the only creator of records,
-versions and their source links), `leads.ingest_quiet(source, run_started_at, records, file, dry_run default true)`
-(the loader's only entry, `scripts/leads/load_bsi.mjs`: calls `ingest`, returns every error as data so the statement
-carrying the payload never fails and is never logged, and undoes a dry run inside the database),
+versions and their source links; no label copy in the link since `_2039`), `leads.ingest_quiet(source text,
+run_started_at text, records text, file text, dry_run boolean default true)` (the loader's only entry,
+`scripts/leads/load_bsi.mjs`; text arguments since `_2039`, cast inside its handler; `lock_timeout` 500 ms; calls
+`ingest` and returns every error, a cancel included, as data, so the statement carrying the payload does not fail and is
+not logged, except by `auto_explain` when it runs 10 s or more; a dry run undoes itself inside the database),
 `leads.decide_client(property, verdict, reason, by, record, absent_from)` (the only writer of decisions and of
 `establishments.property_id`; it also moves records between restaurants). Helpers `fn_street_key`, `fn_name_key`,
 `fn_bsi_date` (service_role EXECUTE, used by the views).
 
 Views: private `leads.v_src_bsi` (newest BSI version, typed, CCN and contact included), `leads.v_client_candidates`
 (same city AND (same street key OR a name score of at least 0.8)), `leads.v_establishment_state` (`lead_state`: frozen /
-needs_review / client / warm / former_client), `leads.v_bsi_contact_names` (every BSI contact name, for the mask
-below). For Viktor, SELECT for service_role (and `db_backup_reader`), never anon or authenticated, no CCN or contact
-column, and `owner_company` blank when it is a BSI contact's name (`_1848`; his first read is not tested yet):
+needs_review / client / warm / former_client), `leads.v_bsi_contact_names` (every BSI contact name as
+`leads.fn_name_key`, for the mask below). For Viktor, SELECT for service_role (and `db_backup_reader`), never anon or
+authenticated, no CCN, contact email or phone, and a BSI value blank when it is a contact's name: `owner_company`
+(`_1848`) and the BSI label, `name` / `source_name` (`_2039`); his first read is not tested yet:
 `public.v_frozen_leads` (one row per frozen restaurant: interceptors, external interceptors, overdue, next pump due,
 days overdue, last pumped), `public.v_lead_interceptors` (one row per BSI interceptor, every state; BSI property and
 interceptor ids for the filing bot), `public.v_lead_review` (client_candidate / client_without_source_record /
