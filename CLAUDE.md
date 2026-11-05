@@ -102,7 +102,7 @@ After ANY change to Prod schema, re-check this rule before declaring the migrati
 #### App-source attribution (added 2026-05-23 — see [ADR 016](docs/decisions/016-audit-app-source-attribution.md))
 
 Every audit row now carries `app_source` and `request_context`. To find "who wrote this":
-- `app_source = 'derm-tracker'` — DERM Tracker UI (derm.unclogme.app)
+- `app_source = 'derm-tracker'` — DERM Tracker UI (derm.unclogme.app, and `ops.unclogme.app/derm` since 2026-11-05: the same header, so group by `request_context->>'origin'` to tell them apart)
 - `app_source = 'field-portal'` — Field Portal (fp.unclogme.app)
 - `app_source = 'admin-review'` — Admin Review (**`admin.unclogme.app`** since 2026-08-04; previously
   `review.unclogme.app`, and before that `grease-buddy-dash`). ⚠ It moved because Yannick's new **Review

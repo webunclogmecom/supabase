@@ -38,6 +38,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Fred's picks, 2026-11-04: the repo goes in the `unclogme` org; shell B, the sidebar; HR, then Calendar, then DERM; move the code first, restyle after; Lovable instructions for this project only.
 - State: Lovable project `9f6cf384-0f0d-4982-936b-9e39408362b8`, repo `unclogme/ops-portal` (private). Built: the backend pins (`2026-11-04_2141`, the Auth allow-list) and the shell (login, gate, sidebar, home), live at `ops.unclogme.app`, checks in `Building Apps/Ops Portal/docs/08-changelog.md`. HR moved in at `/hr` (`hr-sign-in` v25 accepts the new origin). Not built: Calendar, DERM, one at a time.
 
+**DERM Tracker in the Ops Portal (2026-11-05, Trello #161)**
+- Fred: "Right after #173"; shown the corrected plan, "Go, report stays". Plan `Building Apps/Ops Portal/docs/specs/2026-11-05-derm-move-plan.md`.
+- **BUILT 2026-11-05:** live at `ops.unclogme.app/derm` (portal `79ba545`, seven edge functions `e0b9b7ff`, Monthly setting `c3eee68c`). Open: the report page stays on `derm.unclogme.app` until the PDF service moves, so that host cannot be retired yet. Client App next.
+
 **Ops Portal header and account menu (2026-11-05)**
 - Fred: *"we should have like a global header, where we can put notifactions, dark/light mode"*, *"use one bar"*, and the account row *"make it a menu ... "Profile" and "Sign out""*; the sidebar's width: the collapse button.
 - Built: one bar with page title, Eastern clock, bell (`ops.portal_waiting`, `2026-11-05_0135`) and theme; the collapse button; the account menu; below 1280 the real sidebar as a drawer (Fred: "open the sidebar not just a menu"); search everything (`ops.portal_search`, `2026-11-05_0230`); app commits cb72edd, 91794e2, 065ba61, 9f0a0ac. Record: `Building Apps/Ops Portal/docs/08-changelog.md`. The header keeps scrolling (Fred, same day).

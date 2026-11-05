@@ -11,7 +11,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppDa
 const PORTAL = process.env.PORTAL || 'https://ops.unclogme.app/'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
-const NAV = ['Visit Calendar', 'HR App', 'DERM Tracker', 'Admin Review', 'Client App', 'Stamp Studio', 'Picture Planner']
+const NAV = ['Visit Calendar', 'DERM Tracker', 'HR App', 'Admin Review', 'Client App', 'Stamp Studio', 'Picture Planner']
 const ALL = [...NAV, 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist']
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
@@ -236,6 +236,63 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
     await shot(page, w, 'calendar no access')
     report(w, 'no Calendar access, address', fails)
+    await ctx.close()
+  }
+
+  // The DERM Tracker module: opens from its tile, keeps its own label and look, draws no second theme or sign-out control,
+  // its links stay under /derm, and leaving it gives the look back.
+  {
+    const { ctx, page, seen } = await signedIn(ADMIN, w, h)
+    const fails = []
+    await page.locator('main a[href="/derm"]').click()
+    await page.waitForFunction(() => document.documentElement.dataset.module === 'derm', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForTimeout(2500)
+    const path = new URL(page.url()).pathname
+    if (path !== '/derm') fails.push(`landed on ${path}`)
+    const got = await page.evaluate(() => ({
+      module: document.documentElement.dataset.module, look: document.documentElement.getAttribute('data-hw-app'),
+      darkSheet: document.getElementById('theme-dark-app')?.getAttribute('href') ?? '',
+      title: document.title, mainSignOut: [...document.querySelectorAll('main button')].filter((b) => /^sign out$/i.test(b.textContent.trim())).length,
+      themes: [...document.querySelectorAll('main [aria-label*="dark" i], main [aria-label*="light" i]')].length,
+      overflow: document.documentElement.scrollWidth > window.innerWidth,
+      links: [...document.querySelectorAll('a[href^="/derm"]')].map((a) => a.getAttribute('href')),
+    }))
+    if (got.module !== 'derm') fails.push(`data-module "${got.module}"`)
+    if (got.look !== 'derm') fails.push(`data-hw-app "${got.look}"`)
+    if (process.env.DARK && !/dark-derm/.test(got.darkSheet)) fails.push(`dark sheet "${got.darkSheet}"`)
+    if (!/DERM Tracker/.test(got.title)) fails.push(`title "${got.title}"`)
+    if (got.mainSignOut) fails.push('a second Sign out in the page')
+    if (got.themes) fails.push('a second theme switch in the page')
+    if (got.overflow) fails.push('sideways scroll')
+    for (const want of ['/derm/manifests', '/derm/manifests/health', '/derm/upload', '/derm/monthly']) if (!got.links.includes(want)) fails.push('no link to ' + want)
+    const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_search/.test(k))
+    if (!own.length) fails.push('the module asked for no data')
+    for (const [k, v] of own) if (![...v].every((x) => x === 'derm-tracker')) fails.push(`${k} labelled "${[...v].join(',')}"`)
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
+    await shot(page, w, 'derm module')
+    if (w >= 1280) {
+      await page.locator('nav[aria-label="Apps"] a[data-tile="HR App"]').click()
+      await page.waitForTimeout(1500)
+      const back = await page.evaluate(() => [document.documentElement.dataset.module ?? '', document.documentElement.getAttribute('data-hw-app')])
+      if (back[0]) fails.push(`still data-module "${back[0]}" after leaving`)
+      if (back[1] !== 'hr') fails.push(`data-hw-app "${back[1]}" after leaving`)
+    }
+    report(w, 'DERM opens, labels its own', fails)
+    await ctx.close()
+  }
+
+  // A person with no DERM access who has the address: its own card, and no DERM data asked for.
+  {
+    const { ctx, page, seen } = await signedIn(FIELD, w, h, PORTAL + 'derm')
+    const fails = []
+    await page.waitForTimeout(1500)
+    const text = await page.evaluate(() => document.body.innerText)
+    if (!/You do not have access to DERM Tracker/.test(text)) fails.push('no refusal on screen')
+    if (/Completed visits/.test(text)) fails.push('the visits page showed')
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    await shot(page, w, 'derm no access')
+    report(w, 'no DERM access, address', fails)
     await ctx.close()
   }
 
