@@ -473,6 +473,9 @@ Still open: the band A cards (Wed 11-04). **Built so far:** S1 on 2026-11-02 at 
 
 ## 4. Built (recent, with evidence)
 
+- **Manrope on every staff app (2026-11-05, Fred: "Fix both"):** the DERM Tracker and Picture Planner rendered signed-in pages in the system font. One stylesheet line each, both live. Check `scripts/checks/app-fonts.mjs`. Picture Planner's Site file and collector form stay on system fonts on purpose.
+- **Profile opens the HR App (2026-11-05, Fred: "i want to open the HR App on it's self"):** Ops Portal `b28e858`. Someone HR would refuse keeps the small page, which is where they change their own photo.
+
 | date | plan | evidence |
 |---|---|---|
 | 2026-11-05 | Sales App: a stricter staff address check | Deployed by Viktor; private repo `unclogme-sales`, branch `staff-email-shape`, commit `d4fcce8`. Its standing check passes from outside, and fails on 17 cases with the new line removed (run here). The app still loads for a staff session. Viktor reports no unexpected account. The 46 alerts were then dismissed with Fred's OK. |
