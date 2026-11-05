@@ -116,6 +116,16 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   it on 10-28, so he may hold those two values. A run key accepts writes: it can send filings to the county and record a
   Monthly report as filed, and such a use would be logged under `yan` or `diego`. To undo it, the 11-01 values are still in
   `HANDOVER_run_keys.txt` in the local audit folder.
+- **2026-11-04: three packages upgraded in `requirements.txt`, nothing else** (Trello W9foAe9k; Fred: "yes do steps 1 and 2").
+  `Pillow==13.0.0` (the one that really changes; the old list has advisories), `google-api-python-client==2.201.0` and
+  `pdfminer.six==20260107` (already the versions in use, now pinned). Bot commit `d00636a`, deploy `3b54894c`, running
+  since 19:09 ET; `/data` backed up first (volume backup 00:07 UTC 11-05). `fred` key 200, `/health` ok, Monthly and bot
+  pages 200, first queue read clean (0 items). Tested first with no network and no secrets: old and new lists give the
+  same result, 44 of 49 test files pass and the same 5 fail on both (the output names chromium or node missing for the
+  ones it names). ⚠ **The real proof is still to come:** Pillow and pdfminer run in `evidence_composer.py` and
+  `invoice_parse.py`, so the next real filing and Diego's first Monthly invoice preview are their first live use.
+  Rollback: Railway Redeploy of `82f52aac`, then revert the commit. The rest of the hardening (a hashed lock, base image
+  pins) stays with Trello N9Zcx04p.
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
@@ -124,7 +134,8 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   section 10.
 - **One replica, one worker.** A second replica would break the double-filing guard silently.
 - **No Railway cron.** Three threads inside `server.py` sleep first, then run:
-  - **poll:** hourly, timed from the last restart (since 2026-10-20 12:54 ET, about :54 each hour);
+  - **poll:** once at each start (it does not sleep first: "polls now, then every 60 min" in the log), then hourly, so
+    the minute moves with every restart (about :09 since the 2026-11-04 19:09 ET start);
   - **harvest:** hourly;
   - **digest:** 08:00 New York time. It backs up the ledger, then posts yesterday's Slack digest.
   - A restart resets the clocks. A restart after 08:00 sends no digest that day, unless the old process already had.
