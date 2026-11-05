@@ -5826,7 +5826,9 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   while arrived / highest / left are the whole stop's levels; `2120` had kept one half and undercounted the driver totals); grease kept only for
   high / medium confidence. Checked against the raw readings for Yan: https://claude.ai/artifact/7QCYyFSqQrzg9mECKoRv2w. Full logic audit (what
   holds, the open defects, the decisions): `Building Apps/Visit Calendar/docs/specs/2026-10-21-water-logic-audit.md`. The apps never compute a water figure. Exposing them is plan step M9, after
-  mockups of the real page. Nothing in `derm`, `customer` or `client` may read these (check Z8, hourly); measured
+  mockups of the real page. Nothing in `derm`, `customer` or `client` may read these (check Z8, hourly), with one
+  exception since `2026-11-05_1120` (Fred: "Allow this one function"): `derm.lwt_board` may read `public.v_vehicle_dumps`
+  for one on-screen hint on the Monthly Report page, and nothing it reads there reaches a filing; measured
   gallons are NOT for LWT or DERM filings (owner decision D8 default) without the month-close snapshot of plan M12.
 - 🛑 **A new level value arrives only about every 10 minutes**; rows every ~30 s repeat it. **Ingress/egress are hourly
   net changes, never gallons pumped.** We store distance and percent, never Samsara litres: gallons come from OUR
@@ -5924,6 +5926,17 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   person (UNSETTLED, two unanswered cards, and 8752, a blank with a stop of ours 471 m away, so not a decided blank). The
   61 10-18 catch_up rows are superseded, never edited. A `proposed` row with action `keep_verified` means "proposal: keep",
   not verified. Rollback `2026-11-03_rollback_time_on_site_s2_band_b.sql` (it refuses unless S2 is applied).
+  🛑 **Since 2026-11-05 11:20 ET (`2026-11-05_1125`, f891f36b, S3b part 2) `time-on-site-samsara-recheck` is v15, SWITCHED OFF.**
+  The request body picks the rule: `{}` or `{"rules":1}` is v14 (parity: same 65 candidates, 0 changes), `{"rules":2}` is the
+  new one. Cron 151 (`fn_request_time_on_site_samsara_recheck`) sends `'{}'` until Fred says go (S5, Wed 11-11): that one
+  line is the switch and its rollback. `include_ledger` (lifts the ledger lock, never a label lock) and `place_shapes` work on
+  a dry run only. A dry run writes and logs nothing; never make a real call by hand. Four new functions, service_role only:
+  `fn_time_on_site_recheck_visits(date,date)`, `fn_time_on_site_recheck_fixes(jsonb)`, `fn_save_time_on_site_stay(...)` (our GPS
+  at both ends must be inside the site) and `fn_close_time_on_site(jsonb,date)` (closes a visit into the ledger at day 10 as
+  stage `nightly`; a second close returns `already_closed`). None runs under rules 1, so `stage = 'nightly'` stays 0 until S5.
+  Rollback: redeploy the function file from `e0b9b7ff` (never `aab4ac0`), then
+  `2026-11-05_rollback_time_on_site_s3b_v15_functions.sql`. Runbook and the day's numbers:
+  `docs/specs/2026-11-02-time-on-site-nightly-rule.md` section 10.
   🛑 **Every time-on-site writer measures 150 m from OUR map point, and that misses trucks that park further away**
   (Fred, 2026-10-13, visit 6509: David parked 164 m from 214-MYK's point for 34 min, inside its Samsara Place, and the
   report said "only drove past"). The fix plan (outside the repos, it names clients):

@@ -10,8 +10,8 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | S1 | completion stop only inside the visit window; alarm T1 without an upper age | BUILT 2026-11-02 (`2026-11-02_1430`, 1b6d14ca) |
 | S2 | band B (visits dated 10-08 to 10-17, plus 8854) closed in the ledger | BUILT 2026-11-03 (`2026-11-03_1300`, e815caa1) |
 | **S3a** | **the lock in the five writers, and the reopen rule (sections 3 to 6)** | **BUILT 2026-11-03 12:28 ET (`2026-11-03_1330`), a day early on Fred's "go ahead with S3a now"; every rehearsal and control below passed** |
-| S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | part 1 BUILT 2026-11-03 12:45 ET (`2026-11-03_1500`): the override table with Fred's 5 Q8 rows, the ledger stage CHECK (`nightly`, `person`), Viktor's door (RC6 + RC8). The v15 code, its read and save functions and the close-out are built and checked first, then deployed Thu 11-05 (Fred: "Build today, deploy Thu"). Part 2 was built and every offline proof passed on 11-03; **Thursday's step-by-step runbook is section 10** |
-| S4 | band A: Fred's cards only | Fri 11-06 |
+| S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | part 1 BUILT 2026-11-03 12:45 ET (`2026-11-03_1500`): the override table with Fred's 5 Q8 rows, the ledger stage CHECK (`nightly`, `person`), Viktor's door (RC6 + RC8). **Part 2 BUILT 2026-11-05 11:20 ET (`2026-11-05_1125`, f891f36b): v15 and its four functions, switched off, parity passed. The runbook is section 10 and the day's numbers are 10.7** |
+| S4 | band A: Fred's cards only | Fred approved the one-page list 2026-11-05 ("yes, keep 25 on 6599"). Applied Fri 11-06 |
 | S5 | the switch on, after Fred reads the comparison | Wed 11-11 |
 | S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | 11-13 / 11-16 / 11-30 |
 
@@ -387,3 +387,47 @@ Fred, 2026-11-03: *"Build today, deploy Thu"*, then *"document this, so we know 
   before it marks anything `nightly_self`.
 - **The close-out's "a truck stayed at the site" tests use a wider site than the rule.** The point counts to 300 m, and
   a Place to its enclosing circle plus 80 m. So a doubtful blank goes to a person.
+
+### 10.7 What happened on Thursday 11-05 (measured)
+
+Applied at 11:20 ET, deployed at 11:20:39 ET (edge version 27). Commit f891f36b. **The rollback point is e0b9b7ff**, and its
+function file is v14 (sha starts 315e20a4).
+
+| steps | result |
+|---|---|
+| 1 | **morning.mjs FAILED, on history, and the day went ahead on live values** (below) |
+| 3 to 9 | v14 had not moved. Every proof passed again: equivalence, close-out, index, stub rules 2, v14 stub on v15 (five mutations caught), 25 of 25 sites, 40 of 40 fixes, every refusal reason, 8752's 471 m stop. Rehearsal of both migrations: as written, an altered PIN raises, the rollback on top, the rollback alone refuses. Live positive cases rolled back on visit 9075 |
+| 10 | HTTP 201 for both. The four functions: SECURITY DEFINER, empty search_path, only postgres and service_role can run them. All T and Z checks 0 |
+| 11, 14, 15 | v14 and v15 under rules 1: the same window (10-26 to 11-06), 65 candidates, 0 changes, identical. **PASS parity** |
+| 13 | every needle present, `updated_at` new |
+| 17 | only `time-on-site-samsara-recheck` moved, then saved. Rebaselined in `out/rebaseline.json`: `fn_stop_facts_checks` (`2026-11-05_1120`) and the shared `audit.log_change` (`2026-11-04_2141`) |
+| 18 | rules 2, 10-08 to 11-04, ledger lock lifted: 177 visits, 169 candidates, 5 write, 125 keep, 28 hold, 11 locked, `places_ok`, 0 trip reads failed. Against D: 119 compared, 107 the same, 12 where the saved value moved since D (S2's 10 visits, and 5944 and 8893 by the nightly), **0 unexplained**, `only_d` empty |
+| 19 | the first shadow, 10-26 to 11-06: 71 visits, 67 candidates, 3 write, 48 keep, 16 hold, `places_ok`, 0 trip reads failed |
+| 20 | 0 `nightly` rows; the cron's body is still `'{}'` |
+
+**Why step 1 failed, and why that did not stop the day.** Its check fails if any hourly stop facts run in the last 26 hours
+was not clean, and 11 were:
+- **T5 on 9074, cleared at 02:20 ET, and on 9076, cleared at 11:00 ET.** T5 is a blank from yesterday whose gap has no stop
+  while `v_visit_stop_reference` has one. 9076 closed at 04:33 ET, after the night's fill, so it waited for the 11:00 fill.
+  The T5s are transient, as this one proved.
+- **Z8 from 02:35 ET.** The Monthly Report page's `derm.lwt_board` (`2026-11-05_0245`) reads `public.v_vehicle_dumps` for one
+  on-screen hint. Fred: "Allow this one function". `2026-11-05_1120` allows that view in that function only, and three probes
+  in its VERIFY prove any other stop or tank object, in any `derm` function, still fires.
+
+At 11:06 ET, before anything was applied, the live values were T1 to T8 all 0. The check was not changed: it keeps failing
+on this history until about 12:35 ET on 11-06, so judge those mornings on the live values too.
+
+**A false alarm in the comparison tool, fixed.** `compare_b.mjs` first reported 47 "UNEXPLAINED". It compared v15 with D's
+answer on the value BEFORE the first nightly overwrite (`d.decision`), while v15 reads the live value, so identical keeps read as
+differences (5889: D "write" from 164 to 159, the live value already 159). It now compares with D's answer on live (`on_live`)
+and leaves a label lock locked. A copy of the run with a keep turned to a write, a different number of minutes, or a label
+lock lifted is caught each time.
+
+**What the first shadow would write, for the 11-11 comparison:** 6056 from 93 to 101 (two parts), 8868 from blank to 23, and
+9076 from 4 to 94. On 9076 the saved 4 is the fallback's stop at 02:52, and the truck then parked from 02:59 to 04:33, the
+minute it closed. A fallback's value is not held as a big change (`FALLBACK` in the rule), by design.
+
+**Q-L closed with no Samsara edit** (Fred: "no need to send a message"). Yan's three questions were answered from the truck
+data, and the two doubtful Places are ones the rule already drops. Visits at properties with no Place, last 60 days: 110, of
+which 107 have a linked stop within 250 m of our point, 0 beyond, 3 no linked stop. Caveat: linked stops sit near the property
+by construction, so the shadow runs from 11-06 are the real test. Client detail is local (the run's README).
