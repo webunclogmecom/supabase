@@ -414,8 +414,10 @@ was not clean, and 11 were:
   on-screen hint. Fred: "Allow this one function". `2026-11-05_1120` allows that view in that function only, and three probes
   in its VERIFY prove any other stop or tank object, in any `derm` function, still fires.
 
-At 11:06 ET, before anything was applied, the live values were T1 to T8 all 0. The check was not changed: it keeps failing
-on this history until about 12:35 ET on 11-06, so judge those mornings on the live values too.
+At 11:06 ET, before anything was applied, the live values were T1 to T8 all 0. The 11:35 ET hourly run, the first after the
+deploy, was `success` with every T and Z at 0. The check was not changed: it keeps failing on this history until about 12:35
+ET on 11-06, so judge those mornings on the live values too. The daily shadow of 10.5 is `RR/v15/shadow.mjs` (`--self-test`
+proves its first-night reading); it writes `RR/shadow/<date>.md`, and a trial run today passed.
 
 **A false alarm in the comparison tool, fixed.** `compare_b.mjs` first reported 47 "UNEXPLAINED". It compared v15 with D's
 answer on the value BEFORE the first nightly overwrite (`d.decision`), while v15 reads the live value, so identical keeps read as
