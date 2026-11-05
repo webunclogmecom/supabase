@@ -874,6 +874,9 @@ verify_jwt = true
 # header (body size, photo slots, answer count, note length, token expiry, single-submit
 # compare-and-set). Same posture as dump-visit-create, which is also an unauthenticated
 # field surface on shared phones.
+[functions.intake-slack-post]
+verify_jwt = true
+
 [functions.intake-submit]
 verify_jwt = false
 
