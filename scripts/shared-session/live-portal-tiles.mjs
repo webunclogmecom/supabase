@@ -347,8 +347,17 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await f.ctx.close()
   }
 
-  // The Profile page, for someone with every app and someone with none: their own details, their apps, their own photo.
-  for (const [c, apps, hrButton] of [[ADMIN, ALL.length, true], [FIELD, 3, false]]) {
+  // Profile, typed by address, for someone who can open the HR App: straight to their own record (Fred, 2026-11-05).
+  {
+    const { ctx, page } = await signedIn(ADMIN, w, h, PORTAL + 'profile')
+    await page.waitForTimeout(1500)
+    const path = new URL(page.url()).pathname
+    report(w, 'profile by address, admin', path === '/hr/employees/' + ADMIN.r.employee_id ? [] : [`went to ${path}`])
+    await ctx.close()
+  }
+
+  // The small Profile page, for someone HR would refuse: their own details, their apps, their own photo.
+  for (const [c, apps] of [[FIELD, 3]]) {
     const { ctx, page, seen } = await signedIn(c, w, h, PORTAL + 'profile')
     const fails = []
     const got = await page.evaluate(() => {
@@ -359,7 +368,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (got.name !== c.who) fails.push(`name "${got.name}"`)
     if (!got.text.includes(c.who.toLowerCase().replace(/ /g, '.') + '@unclogme.com')) fails.push('no email')
     if (got.apps !== apps) fails.push(`${got.apps} apps, want ${apps}`)
-    if (got.hr !== hrButton) fails.push(`HR button ${got.hr}`)
+    if (got.hr) fails.push('an HR button on the small page')
     if (!got.camera) fails.push('no camera button')
     if (got.overflow) fails.push('sideways scroll')
     if (got.title !== 'Profile · Ops Portal · UnclogMe') fails.push(`title "${got.title}"`)
@@ -376,7 +385,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await ctx.close()
   }
 
-  // The account menu: Profile and Sign out. Profile is the person's HR record; no HR access, no Profile.
+  // The account menu: Profile and Sign out. Profile is the person's HR record; with no HR access, the small page.
   for (const c of [ADMIN, FIELD]) {
     const { ctx, page, seen } = await signedIn(c, w, h)
     const fails = []
@@ -388,7 +397,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await shot(page, w, `account menu ${c.group}`)
     await page.getByRole('menuitem', { name: 'Profile' }).click()
     await page.waitForTimeout(1500)
-    if (new URL(page.url()).pathname !== '/profile') fails.push(`Profile went to ${new URL(page.url()).pathname}`)
+    const wantPath = c === ADMIN ? '/hr/employees/' + c.r.employee_id : '/profile'
+    if (new URL(page.url()).pathname !== wantPath) fails.push(`Profile went to ${new URL(page.url()).pathname}, want ${wantPath}`)
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
     report(w, `account menu, ${c.group}`, fails)
     await ctx.close()
