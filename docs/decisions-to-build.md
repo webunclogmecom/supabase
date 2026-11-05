@@ -33,8 +33,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 **Ops Portal header and account menu (2026-11-05)**
 - Fred: *"we should have like a global header, where we can put notifactions, dark/light mode"*, *"use one bar"*, and the account row *"make it a menu ... "Profile" and "Sign out""*; the sidebar's width: the collapse button.
-- Built: one bar with page title, Eastern clock, bell (`ops.portal_waiting`, `2026-11-05_0135`) and theme; the collapse button; the account menu; app commits cb72edd, 91794e2. Record: `Building Apps/Ops Portal/docs/08-changelog.md`.
-- Not decided, on the mockup https://claude.ai/artifact/KW6w5fKBtpXXv1N3FRX98w : search everything (recommended next), a create button, help, system status; whether the header stays on screen (it scrolls today); read and unread per person (needs a table); a Profile page for people without HR access.
+- Built: one bar with page title, Eastern clock, bell (`ops.portal_waiting`, `2026-11-05_0135`) and theme; the collapse button; the account menu; below 1280 the real sidebar as a drawer (Fred: "open the sidebar not just a menu"); search everything (`ops.portal_search`, `2026-11-05_0230`); app commits cb72edd, 91794e2, 065ba61, 9f0a0ac. Record: `Building Apps/Ops Portal/docs/08-changelog.md`. The header keeps scrolling (Fred, same day).
+- To build once he picks: a small Profile page for everyone (Fred: "Build a small Profile page"), mockup https://claude.ai/artifact/RMA5YmMRo6xm4Y9R9H7E26 . Field people need a database read for it: the request gate refuses them `public.employees`.
+- Next after search (Fred: "Both, search first"): the DERM Tracker plan, shown to him before anything goes live.
+- Not decided, on the mockup https://claude.ai/artifact/KW6w5fKBtpXXv1N3FRX98w : a create button, help, system status; read and unread per person (needs a table).
 
 **Boca Raton on BSI Online: frozen leads, the BSI scrape, the filing bot (2026-11-03, Trello #165 f3Q3Q55i, #166 IWJkqTq1, #169 0lAWU6Ge)**
 - Plan with checks: `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`. Fred's picks: leads *"generic ... 3NF ...

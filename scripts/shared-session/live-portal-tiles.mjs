@@ -57,6 +57,14 @@ async function signedIn(c, w, h, goto = PORTAL) {
   await page.route('**/auth/v1/logout**', (r) => { seen.signOut.push(new URL(r.request().url()).searchParams.get('scope')); r.fulfill({ status: 204, body: '' }) })
   await page.route('**/rest/v1/**', (r) => {
     const u = r.request().url(), one = /vnd\.pgrst\.object/.test(r.request().headers().accept ?? '')
+    if (/rpc\/portal_search/.test(u)) {
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        clients: [{ id: 450, code: '290-PER', name: 'Canned Client', status: 'ACTIVE' }],
+        visits: [{ id: 9072, client_code: '290-PER', client_name: 'Canned Client', visit_date: '2026-12-01', start_at: null, is_all_day: true, service: 'Pumping', truck: 'Moises', driver: 'Grecia', kind: 'next' }],
+        requests: [{ id: 91, client_code: '290-PER', client_name: 'Canned Client', service: '22 - Service Call - Labor', age_days: 3, call_required: false }],
+        people: [{ id: 2, full_name: 'Fred Zerpa', access_level: 'admin', color_hex: '#3F6212' }],
+      }) })
+    }
     if (/rpc\/portal_waiting/.test(u)) {
       if (c.waitingFails) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.group === 'field' ? {} : { call_first: 1, time_on_site: 6, photos_unsorted: 8, city_emails: 0, stamp_sheets: 0, unopened_emails: 9 }) })
@@ -293,6 +301,41 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
     report(dw, 'sidebar opens as a drawer', fails)
     await ctx.close()
+  }
+
+  // Search everything: Ctrl K from any page, each kind of result goes to the right place, nothing for someone with no such app.
+  if (w >= 768) {
+    const { ctx, page, seen } = await signedIn(ADMIN, w, h)
+    const fails = []
+    await page.keyboard.press('Control+k')
+    await page.waitForTimeout(400)
+    await page.getByPlaceholder(/client code or name/i).fill('290')
+    await page.waitForTimeout(1200)
+    const rows = (await page.getByRole('option').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim())
+    if (rows.length !== 4) fails.push(`${rows.length} results: ${rows.join('|')}`)
+    if (!rows.some((x) => /Next visit: Tue, Dec 1, Pumping/.test(x))) fails.push('no next visit row')
+    const label = [...(seen.labels['rpc/portal_search'] ?? [])].join(',')
+    if (label !== 'ops-portal') fails.push(`search labelled "${label}"`)
+    await shot(page, w, 'search open')
+    await page.getByRole('option', { name: /Next visit/ }).click()
+    await page.waitForFunction(() => document.documentElement.dataset.module === 'calendar', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForTimeout(1500)
+    if (new URL(page.url()).pathname !== '/calendar') fails.push(`visit went to ${new URL(page.url()).pathname}`)
+    if (new URL(page.url()).search) fails.push(`the address kept ${new URL(page.url()).search}`)
+    await page.locator('button[aria-label="Search everything"]').click()
+    await page.waitForTimeout(400)
+    await page.getByPlaceholder(/client code or name/i).fill('fred')
+    await page.waitForTimeout(1200)
+    await page.getByRole('option', { name: /Fred Zerpa/ }).click()
+    await page.waitForTimeout(1500)
+    if (new URL(page.url()).pathname !== '/hr/employees/2') fails.push(`person went to ${new URL(page.url()).pathname}`)
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    report(w, 'search everything', fails)
+    await ctx.close()
+    const f = await signedIn(FIELD, w, h)
+    const n = await f.page.locator('button[aria-label="Search everything"]').count()
+    report(w, 'no search for field', n ? ['field sees the search box'] : [])
+    await f.ctx.close()
   }
 
   // The account menu: Profile and Sign out. Profile is the person's HR record; no HR access, no Profile.
