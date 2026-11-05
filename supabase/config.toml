@@ -970,3 +970,6 @@ verify_jwt = true
 
 [functions.gdo-bot-file-visit]
 verify_jwt = true
+
+[functions.lwt-monthly]
+verify_jwt = true
