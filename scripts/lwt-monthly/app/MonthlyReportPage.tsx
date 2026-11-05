@@ -20,6 +20,7 @@ import type { HistoryView, Show, SortKey } from './history-rows';
 export interface MonthlyReportPageProps {
   functionsUrl: string;                     // https://<project>.supabase.co/functions/v1
   getToken: () => Promise<string | null>;   // the signed-in session's access token
+  manifestsUrl?: string;                    // where "Open in Manifests" goes: this app's own address for that page
 }
 
 interface Truck { id: number; name: string; color: string | null; decal: string | null }
@@ -193,7 +194,7 @@ function buildVM(r: MonthlyRules, ui: Ui, board: BoardData | null) {
 }
 
 // ---- The page ---------------------------------------------------------------------------------------------------------
-export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyReportPageProps) {
+export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl = '/manifests' }: MonthlyReportPageProps) {
   const api = useMemo(() => {
     const url = functionsUrl.replace(/\/+$/, '') + '/lwt-monthly';
     const head = async (type: string) => {
@@ -898,7 +899,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
             {panelHead(sel, warnChip('Not a manifest number'), plain(ruleInfo('manifest_number_shape').explain))}
             {body(<>{facts}{route}</>)}
             {foot(<>
-              <a className="lw-b" href={`/manifests?q=${encodeURIComponent(sel)}`}>Open in Manifests</a>
+              <a className="lw-b" href={`${manifestsUrl}?q=${encodeURIComponent(sel)}`}>Open in Manifests</a>
               <button type="button" className="lw-b p" onClick={() => done(() => { if (i >= 0 && !it?.l?._excluded) { ui.ticks[sel] = false; r.setIncluded(i, false); } ack(d); })}>Leave it off</button>
             </>)}
           </aside>
