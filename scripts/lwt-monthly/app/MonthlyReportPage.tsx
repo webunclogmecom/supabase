@@ -161,8 +161,9 @@ function buildVM(r: MonthlyRules, ui: Ui, board: BoardData | null) {
   const dates = [start, end];
   r.LOADS.forEach(l => { if (billed.has(tOf(l)) && l.offload_date) dates.push(String(l.offload_date)); });
   Object.values(r.INV_DATES).forEach(d => dates.push(String(d)));
-  const lo = Math.max(dayNo(start) - 40, Math.min(...dates.map(dayNo)));
-  const hi = Math.min(dayNo(end) + 40, Math.max(...dates.map(dayNo)));
+  const nums = dates.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).map(dayNo);
+  const lo = Math.max(dayNo(start) - 40, Math.min(...nums));
+  const hi = Math.min(dayNo(end) + 40, Math.max(...nums));
 
   const items: Item[] = r.LOADS.map(l => {
     const t = tOf(l), date = String(l.offload_date || ''), ooc = isOutOfCounty(l), held = isHeld(l);
@@ -459,6 +460,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
   const closeDialog = () => { setDialog(null); setDlgReason(''); setDlgText(''); setDlgErr(''); };
   const record = useCallback(async () => {
     if (!dialog || dialog.kind !== 'record') return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
     setBusy('record'); setDlgErr('');
     try {
       const reply = await api.post('record', { id: dialog.id, expect_tickets: dialog.tickets });
@@ -525,6 +527,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
   }, [pickerT, visits, editing]);
 
   // ---- Small pieces of markup --------------------------------------------------------------------------------------------
+  const errLine = err ? <div className="lw-err" role="alert"><span>{err}</span><button type="button" className="lw-b" onClick={() => setErr('')}>Dismiss</button></div> : null;
   const truckById = (id: number | null) => (id != null && board ? board.trucks.find(t => t.id === id) || null : null);
   const badge = (tr: { name: string; color: string | null } | null, small?: boolean) => (
     <span className={`lw-tr ${small ? 's' : ''}`} style={tr?.color ? { background: tr.color } : undefined} title={tr?.name || 'No truck'}>{tr ? tr.name[0] : '?'}</span>
@@ -580,6 +583,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
         {compact && <button type="button" className="lw-rm x" aria-label="Close" onClick={() => pick(null)}><Ic d={I.x} /></button>}
       </div>
       <p>{lead}</p>
+      {errLine}
     </div>
   );
   const warnChip = (s: string) => <span className="lw-chip warn">{s}</span>;
@@ -1125,8 +1129,6 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
       </>
     );
   }
-  const errLine = err ? <div className="lw-err" role="alert"><span>{err}</span><button type="button" className="lw-b" onClick={() => setErr('')}>Dismiss</button></div> : null;
-
   // ---- The invoice box, before and after ----------------------------------------------------------------------------------------------
   function renderDrop() {
     if (!r) return null;
@@ -1225,7 +1227,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     return (
       <div className="lwt" data-stage={stage}>
         {renderHead(pre ? 1 : 2)}
-        {errLine}
+        {(!sel || pre) && errLine}
         {boardErr && <div className="lw-err"><span>The board could not load: {boardErr}</span><button type="button" className="lw-b" onClick={() => void loadBoard(r)}>Try again</button></div>}
         {pull > 0 && (
           <div className="lw-warnbox" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1411,7 +1413,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
             <div className="lw-acts">
               {filed && filed.report && <button type="button" className="lw-b" onClick={() => void download(filed.id, `LWT_report_${filed.ym}.xlsx`)}><Ic d={I.down} /> Download</button>}
               {draft && canEdit && <button type="button" className="lw-b" onClick={() => setDialog(recordDlg(draft))}>Record as filed</button>}
-              {!filed && canEdit && <button type="button" className={`lw-b ${draft ? '' : 'p'}`} disabled={busy === 'open' || busy === 'home'} onClick={() => void openFiling(ym)}>{busy === 'open' ? 'Opening' : homeWork ? 'Continue filing' : draft ? 'Open the tickets' : 'Start filing'}</button>}
+              {!filed && canEdit && <button type="button" className={`lw-b ${draft ? '' : 'p'}`} disabled={!ym || busy === 'open' || busy === 'home'} onClick={() => void openFiling(ym)}>{busy === 'open' ? 'Opening' : homeWork ? 'Continue filing' : draft ? 'Open the tickets' : 'Start filing'}</button>}
             </div>
             {!canEdit && <span className="lw-hint">You can see the history here. Filing needs Edit in the DERM Tracker.</span>}
             {canEdit && !filed && !draft && <span className="lw-hint">{homeWork ? `Saved ${clock(homeWork.at)}${homeWork.by ? ` by ${homeWork.by}` : ''}.` : 'Everything unreported is already loaded. Have the county’s invoice ready.'}</span>}
@@ -1448,7 +1450,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     if (!dialog) return null;
     if (dialog.kind === 'record') {
       return (
-        <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label="Record as filed">
+        <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label="Record as filed" onKeyDown={e => { if (e.key === 'Escape') closeDialog(); }}>
           <div className="lw-dlg">
             <h3>Record {dialog.label} as filed?</h3>
             <p>Do this once the county has approved it. These tickets then count as reported, and a filing cannot be taken back.</p>
@@ -1468,7 +1470,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     }
     const reasons = [['superseded', 'Replaced by a newer draft'], ['duplicate', 'A duplicate'], ['test', 'Test data'], ['other', 'Other']];
     return (
-      <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label="Discard this draft">
+      <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label="Discard this draft" onKeyDown={e => { if (e.key === 'Escape') closeDialog(); }}>
         <div className="lw-dlg">
           <h3>Discard the {dialog.label} draft?</h3>
           <p>It leaves the list. Nothing is deleted, and Restore brings it back.</p>
