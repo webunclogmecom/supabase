@@ -25,6 +25,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Sales App: staff login on every page and call, deck links included (2026-11-04)**
+- Fred: *"Lock it"*, then picked staff login only and "Message Viktor". Replaces the old "public sales presentations" design.
+- State: written and tested on a branch of the private `unclogme-sales` repo; Viktor deploys it. Not built until it passes a live test from outside. Detail lives in private memory (`project_dependabot_triage_2026_11_04`), not in this public repo.
+
 **Ops Portal: one app, a monolith, no iframes (2026-11-04, Trello #161 rKsUKfQH)**
 - Fred's voice note: *"I want a monolith. I want everything merged."* This replaces his 2026-08-18 iframe plan. The brief, in his words: `Building Apps/Ops Portal/docs/00-fred-brief-2026-11-04.md`.
 - In: Calendar, HR and DERM first, then Admin Review and Clients. Out: Field Portal and DUMP. The other apps keep running until he says stop. Order: understand, big diagram, architecture, mockups, then build one app at a time.
