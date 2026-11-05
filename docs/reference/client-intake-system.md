@@ -875,6 +875,11 @@ asked once); Fred: *"if there are more Grease Traps then it should ask for each 
   to the current list; requested kept the office's choices and added only keys the old list lacked under an asked top-level
   question (42 each). Allowed by the immutability trigger, which freezes only a submitted form. Forms sent before a list
   change otherwise keep their own snapshot; this is not a standing rule.
+- Question list **version 7** (`2026-11-05_0915_intake_hints_ask_the_manager`, Serena's note on the training film, Fred chose the
+  (i)): an `info` on `access_entry.gate_code` and on `access_hours.schedule` saying who to ask, and that the hours are our truck's,
+  not the opening hours. Same 81 questions, 22 hints, no form-page change. Check `scripts/intake-collector/tests/hints-live.mjs`
+  (19 checks, its own [TEST] form). `v6-live.mjs` accepts version 6 or 7. Open with Fred: the form pre-fills 8:00 AM to 5:00 PM on
+  the first day tapped, so identical 8-to-5 hours on a form may be an untouched default.
 
 **25. SEE SUBMITTED FORMS: a Field sign-in reads the Forms tab only (2026-10-27, Trello AIwCYcmn,
 `2026-10-27_2130_pp_forms_see_submitted`).** Fred: *"they can specifically log in in the Picture Planner App but just to see

@@ -15,7 +15,7 @@ const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.m
 const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/database/query', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SUPABASE_PAT, 'content-type': 'application/json' }, body: JSON.stringify({ query: q }) })).json()
 const id = Number(process.argv[2]), MODEL = 'Schier GB-75', MEASURE = '24 x 24 x 30 inches', TYPED = '1,000'
 const [row] = await sql(`select token, property_id, requested_by, submitted_at, cancelled_at, form_snapshot ->> 'version' as v from public.property_intakes where id = ${id}`)
-if (!row || !/^\[TEST\]/.test(row.requested_by || '') || ![1164, 162].includes(Number(row.property_id)) || row.submitted_at || row.cancelled_at || row.v !== '6') throw new Error('needs an OPEN version 6 [TEST] intake on 1164 or 162')
+if (!row || !/^\[TEST\]/.test(row.requested_by || '') || ![1164, 162].includes(Number(row.property_id)) || row.submitted_at || row.cancelled_at || !['6', '7'].includes(row.v)) throw new Error('needs an OPEN version 6 [TEST] intake on 1164 or 162')
 const TOKEN = row.token
 let pass = 0, fail = 0
 const ok = (c, name, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}${c || v === undefined ? '' : ' :: ' + String(JSON.stringify(v)).replaceAll(TOKEN, '<token>').slice(0, 500)}`) }
