@@ -487,6 +487,8 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
   useEffect(() => {
     const el = viewBody.current;
     if (!viewOpen || !el) return;
+    // Measured now as well as on a resize, so the report opens at its fitted size and is not drawn twice.
+    setViewW(el.clientWidth);
     const watch = new ResizeObserver(([e]) => setViewW(e.contentRect.width));
     watch.observe(el);
     return () => watch.disconnect();
@@ -1563,7 +1565,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
   function renderViewer() {
     if (!viewing) return null;
     const { row, page, err: viewErr } = viewing;
-    const said = [row.invoice_id ? `Invoice ${row.invoice_id}` : 'No invoice', count(row.ticket_count, 'ticket'), [row.status_text, row.who && `by ${row.who}`, row.when && `on ${mdy(row.when)}`].filter(Boolean).join(' ')].join(', ');
+    const said = [row.invoice_id ? `Invoice ${row.invoice_id}` : 'No invoice', count(row.ticket_count, 'ticket'), [row.status_text.toLowerCase(), row.who && `by ${row.who}`, row.when && `on ${mdy(row.when)}`].filter(Boolean).join(' ')].join(', ');
     return (
       <div className="lwt lw-scrim lw-vw" role="dialog" aria-modal="true" aria-label={`${row.period} report`} onKeyDown={e => { if (e.key === 'Escape') setViewing(null); }} onClick={e => { if (e.target === e.currentTarget) setViewing(null); }}>
         <div className="lw-vwbox">

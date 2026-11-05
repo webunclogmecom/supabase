@@ -87,7 +87,7 @@
 .lw-vwhead .lw-b{margin-left:auto;flex:none}
 .lw-vwbody{flex:1;min-height:0;background:#e4e4e7;display:grid}.app-dark .lw-vwbody,.dark .lw-vwbody{background:var(--lw-soft)}
 .lw-vwbody iframe{width:100%;height:100%;border:0;display:block}
-@media (max-width:640px){.lw-vw{padding:0}.lw-vwbox{height:100dvh;border-radius:0}}
+@media (max-width:640px){.lw-scrim.lw-vw{padding:0}.lw-vwbox{height:100dvh;border-radius:0}}
 
 /* Filing header */
 .lw-fhead{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
