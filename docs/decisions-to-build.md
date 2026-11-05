@@ -25,6 +25,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Intake form training film, office side (2026-11-05, Trello sfD4mhwm)**
+- Fred's picks on the plan (`video-projects/zoho-training/intake-office-video/PLAN.md`, local): teach the whole path as one film, look Night Window, a Slack post first, Manholes pre-ticked at 0, one real paste on 112-YA with a phone test, the link in one job only (the grease trap job), blanks and second-person check as written, Jobber alerts the collector and the office tells them too.
+- To build, not built: a Slack post when a form comes back and when a Site file version waits for approval (shared bot, mock it up first, `docs/reference/slack-notifications.md`); Manholes pre-ticked when it reads 0 on file, in the Client App's Schedule intake. This reverses his 2026-10-21 "office human error, skip", on new data: 11 of 16 real forms with 0 on file went out without it.
+- Not run yet: the paste and the phone test. Fred is picking which of seven screens get fixed before filming.
+
 **Ops Portal: one app, a monolith, no iframes (2026-11-04, Trello #161 rKsUKfQH)**
 - Fred's voice note: *"I want a monolith. I want everything merged."* This replaces his 2026-08-18 iframe plan. The brief, in his words: `Building Apps/Ops Portal/docs/00-fred-brief-2026-11-04.md`.
 - In: Calendar, HR and DERM first, then Admin Review and Clients. Out: Field Portal and DUMP. The other apps keep running until he says stop. Order: understand, big diagram, architecture, mockups, then build one app at a time.
