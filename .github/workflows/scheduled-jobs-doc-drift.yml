@@ -1,0 +1,46 @@
+name: Scheduled jobs doc drift
+
+# docs/reference/scheduled-jobs.md is generated, and nobody re-generated it for three weeks: on 2026-11-04 it
+# listed 47 pg_cron jobs while cron.job held 60. This job compares runtime, job name and schedule in pg_cron,
+# Railway (services.json) and GitHub with the committed file, and tells a person when they differ
+# (root CLAUDE.md section 7: a red run on a page nobody opens does not count).
+#
+# It posts on EVERY run while they differ, not on the change: a post that fires once and then stays quiet is the
+# hole that retired the Slack digest (Supabase CLAUDE.md, the health watchdog). A check that cannot run posts too.
+#
+# Slack and not the health email: a health item needs a Prod write per run and a migration of ops.v_health_items.
+# Read-only on Prod. The run log is public: it holds job names and schedules, never cron.job.command.
+# Not seen: a schedule edited in the Railway dashboard (services/timed-jobs/apply.js shows that drift).
+#
+# Cron 11:40 UTC: daily GitHub jobs start 3 to 9 hours late (measured 2026-10-05), which lands near Fred's 11 AM ET
+# notification time, and lateness does not matter here.
+
+on:
+  schedule:
+    - cron: '40 11 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: The doc matches the three runtimes
+        shell: bash # pipefail, so tee cannot hide the exit code
+        env:
+          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: node scripts/checks/timed-jobs-inventory.mjs --check 2>&1 | tee check.out
+      - name: Post the failure to #viktor-supabase
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jq -n --arg out "$(head -c 2500 check.out)" --arg run "$RUN_URL" \
+            '{channel: "C0B08S21HHD", text: ":calendar: *Scheduled jobs check failed*\n```\n\($out)\n```\n<\($run)|Run log>"}' \
+            | curl -sS -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H 'Content-Type: application/json; charset=utf-8' -d @- https://slack.com/api/chat.postMessage \
+            | jq -e .ok

@@ -10,6 +10,10 @@
 // nothing else.
 // Run:  node scripts/checks/timed-jobs-inventory.mjs           (Markdown to stdout)
 //       node scripts/checks/timed-jobs-inventory.mjs --write   (also writes docs/reference/scheduled-jobs.md)
+//       node scripts/checks/timed-jobs-inventory.mjs --check [file]
+//         compares runtime + job name + schedule in the three runtimes with the committed doc (or [file]); exit 1 on a
+//         difference. The date and the other columns do not count. Run daily by .github/workflows/scheduled-jobs-doc-drift.yml.
+// Credentials: SUPABASE_PAT and SUPABASE_PROJECT_ID from the environment (GitHub), else from .env (this machine).
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +50,8 @@ function etNote(cron) {
 // Every `- cron:` value in a workflow, quoted or not, trailing comment dropped.
 const cronsOf = text => [...text.matchAll(/^\s*-\s*cron:\s*(['"]?)(.+?)\1\s*(?:#.*)?$/gm)].map(x => x[2].trim());
 const scriptsOf = text => [...new Set([...text.matchAll(/node\s+(scripts\/[^\s"'`]+)/g)].map(x => x[1]))];
+// runtime | name | schedule of every job row in the committed doc.
+const docJobs = text => [...text.matchAll(/^\| (pg_cron|Railway|GitHub) \| (.+?) \| `([^`]+)` \|/gm)].map(x => `${x[1]} | ${x[2]} | ${x[3]}`);
 
 // Positive controls: the parsers must work on known inputs before their output is trusted.
 assert.equal(etNote('15 9 * * *'), '05:15 EDT / 04:15 EST');
@@ -62,12 +68,14 @@ assert.equal(etNote('0 8-20/2 * * *'), 'see UTC');
 assert.deepEqual(cronsOf("  schedule:\n    # - cron: '1 1 * * *'\n    - cron: '0 */6 * * *'   # note\r\n    - cron: \"30 * * * *\"\n    - cron: 5 4 * * *\n"),
   ['0 */6 * * *', '30 * * * *', '5 4 * * *']);
 assert.deepEqual(scriptsOf("run: node scripts/a.js --x\n  node scripts/b/c.js\n  node scripts/a.js"), ['scripts/a.js', 'scripts/b/c.js']);
+assert.deepEqual(docJobs("|---|---|\n| pg_cron | a-job (PAUSED) | `0 1 * * *` | 01:00 | `f` | h |\r\n| Railway | b | `30 seconds` | i | `f` | h |\n| GitHub | `w.yml` | `17 * * * *` | i | `f` | h |\nTotals: pg_cron 1\n"),
+  ['pg_cron | a-job (PAUSED) | 0 1 * * *', 'Railway | b | 30 seconds', 'GitHub | `w.yml` | 17 * * * *']);
 
 async function pgCron() {
-  const env = Object.fromEntries(readFileSync(join(ROOT, '.env'), 'utf8').split(/\r?\n/)
+  const env = process.env.SUPABASE_PAT ? process.env : Object.fromEntries(readFileSync(join(ROOT, '.env'), 'utf8').split(/\r?\n/)
     .filter(l => /^[A-Z_]+=/.test(l))
     .map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^"|"$/g, '').trim()]));
-  if (!env.SUPABASE_PAT || !env.SUPABASE_PROJECT_ID) throw new Error('SUPABASE_PAT / SUPABASE_PROJECT_ID missing from .env');
+  if (!env.SUPABASE_PAT || !env.SUPABASE_PROJECT_ID) throw new Error('SUPABASE_PAT / SUPABASE_PROJECT_ID missing from the environment and .env');
   // POSIX classes and [(] instead of backslash escapes: immune to string-literal mangling (CLAUDE.md 5).
   // mode = a lowercase word literal right after the FIRST paren (fn_request_jobber_sync('poll')); the class
   // has no digits or capitals, so a key or token (which carries them) cannot match it. edge = the one edge fn
@@ -122,6 +130,21 @@ function github() {
 const groups = { pg_cron: await pgCron(), Railway: railway(), GitHub: github() };
 for (const [k, rs] of Object.entries(groups)) if (!rs.length) throw new Error(`${k} returned 0 jobs: suspect the instrument, not the runtime`);
 const rows = Object.values(groups).flat();
+
+const checkAt = process.argv.indexOf('--check');
+if (checkAt > 0) {
+  const doc = new Set(docJobs(readFileSync(process.argv[checkAt + 1] ?? OUT, 'utf8')));
+  if (!doc.size) throw new Error('0 job rows parsed from the doc: suspect the parser, not the doc');
+  const live = new Set(rows.map(r => `${r.runtime} | ${r.name} | ${r.cron}`));
+  const diffs = [...[...live].filter(k => !doc.has(k)).map(k => `  scheduled, not in the doc: ${k}`),
+    ...[...doc].filter(k => !live.has(k)).map(k => `  in the doc, not scheduled: ${k}`)];
+  console.log(diffs.length
+    ? `docs/reference/scheduled-jobs.md is out of date, ${diffs.length} difference(s):\n${diffs.join('\n')}\n` +
+      'Fix: node scripts/checks/timed-jobs-inventory.mjs --write, then commit the file.'
+    : `docs/reference/scheduled-jobs.md matches: ${live.size} jobs in the three runtimes.`);
+  process.exit(diffs.length ? 1 : 0);
+}
+
 const paused = groups.pg_cron.filter(r => r.name.endsWith('(PAUSED)')).length;
 const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
 
@@ -130,6 +153,8 @@ const md = [
   '',
   `> **Generated, do not edit by hand.** Written by \`node scripts/checks/timed-jobs-inventory.mjs --write\`,`,
   `> generated on ${stamp} ET. Re-run it after any schedule change and commit the result.`,
+  `> Enforced by [a daily GitHub job](../../.github/workflows/scheduled-jobs-doc-drift.yml): it runs \`--check\` (runtime, job name`,
+  `> and schedule against this file) and, on every run while they differ, fails and posts the differences to #viktor-supabase.`,
   '',
   'Every timed job in pg_cron (Prod), the Railway project UnclogMe Timed Jobs (read from',
   '`services/timed-jobs/services.json`; `node services/timed-jobs/apply.js` shows any drift from Railway) and',

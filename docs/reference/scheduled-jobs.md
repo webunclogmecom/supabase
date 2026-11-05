@@ -1,7 +1,9 @@
 # Scheduled jobs
 
 > **Generated, do not edit by hand.** Written by `node scripts/checks/timed-jobs-inventory.mjs --write`,
-> generated on 2026-11-04 16:23 ET. Re-run it after any schedule change and commit the result.
+> generated on 2026-11-04 20:35 ET. Re-run it after any schedule change and commit the result.
+> Enforced by [a daily GitHub job](../../.github/workflows/scheduled-jobs-doc-drift.yml): it runs `--check` (runtime, job name
+> and schedule against this file) and, on every run while they differ, fails and posts the differences to #viktor-supabase.
 
 Every timed job in pg_cron (Prod), the Railway project UnclogMe Timed Jobs (read from
 `services/timed-jobs/services.json`; `node services/timed-jobs/apply.js` shows any drift from Railway) and
@@ -92,6 +94,7 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | GitHub | `jobber-note-photo-sync.yml` | `0 */6 * * *` | 20:00, 02:00, 08:00, 14:00 EDT / 19:00, 01:00, 07:00, 13:00 EST | `scripts/sync/sync_jobber_note_photos.js` | Actions history (`gh run list -w jobber-note-photo-sync.yml`) |
 | GitHub | `jobber-note-photo-sync.yml` | `30 * * * *` | hourly at :30, same in ET | `scripts/sync/sync_jobber_note_photos.js` | Actions history (`gh run list -w jobber-note-photo-sync.yml`) |
 | GitHub | `samsara-poll.yml` | `*/10 * * * *` | interval, same in ET | `scripts/sync/cron_samsara_telemetry.js` | Actions history (`gh run list -w samsara-poll.yml`) |
+| GitHub | `scheduled-jobs-doc-drift.yml` | `40 11 * * *` | 07:40 EDT / 06:40 EST | `scripts/checks/timed-jobs-inventory.mjs` | Actions history (`gh run list -w scheduled-jobs-doc-drift.yml`) |
 | GitHub | `weekly-dedup-audit.yml` | `0 14 * * 0` | Sun 10:00 EDT / Sun 09:00 EST | `scripts/sync/weekly_dedup_audit.js` | Actions history (`gh run list -w weekly-dedup-audit.yml`) |
 
-Totals: pg_cron 60 (0 paused), Railway 2, GitHub 10 schedules in 9 workflows.
+Totals: pg_cron 60 (0 paused), Railway 2, GitHub 11 schedules in 10 workflows.

@@ -490,6 +490,11 @@ Yan owns strategy, budget, business rules. Fred owns architecture + implementati
   Postman workspace through the Postman API and reads it back (`scripts/postman/publish_collection.js`,
   repository secret `POSTMAN_API_KEY`, uid pinned in the workflow), so no re-import is needed; a push
   blanks the INITIAL value of `rpaBotKey`, which therefore lives in the `UnclogMe - RPA (Prod)` environment.
+- **Any schedule change (a pg_cron job, `services/timed-jobs/services.json`, a workflow `- cron:`): run
+  `node scripts/checks/timed-jobs-inventory.mjs --write` and commit `docs/reference/scheduled-jobs.md` in the same
+  cycle.** `.github/workflows/scheduled-jobs-doc-drift.yml` runs `--check` daily (runtime, job name, schedule) and
+  posts to #viktor-supabase on every run while they differ or the check cannot run. It reads what the generator reads,
+  so a schedule edited in the Railway dashboard shows only in `services/timed-jobs/apply.js`.
 - **Fred records his asks.** When he types `/speech-to-text`, follow the root `CLAUDE.md`, section 3b
   (the workspace manual every session loads): it has the tool names, the never-call-it-twice rule and
   how to get the transcript. His transcript is the spec: quote it in the migration header and the docs.
