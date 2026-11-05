@@ -43,6 +43,7 @@ const unescape = (s) => s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromC
 const present = (s) => all.includes(s) || all.includes(s.replace(/'/g, "\\'")) || all.includes(JSON.stringify(s).slice(1, -1))
 ok(!present('a sentence no build should ever carry 7f3a'), 'control: a made-up sentence is absent')
 ok(chunks.size > 5, 'walked the live chunks', String(chunks.size))
+ok(all.includes('to:"/monthly"'), 'the menu links to the page')
 const titles = Object.values(RULE_INFO).map((v) => v[0])
 const missing = titles.filter((t) => !present(t))
 ok(missing.length === 0, `the live build carries the rules' ${titles.length} titles`, missing.slice(0, 3).join(' | '))
