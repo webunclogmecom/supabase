@@ -28,7 +28,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 **Sales App: the deck and Email Report say "on schedule" only when we know it (2026-11-05)**
 - Fred said yes to sending this to Viktor. The report says "All locations appear to be on schedule." and $0 in fines, and the deck says "All Clear", whenever nothing is flagged off schedule, even for a location with no data.
 - Agreed: say it only when every location is `on_schedule`, say plainly when data is missing, show no $0 fine for a location with no status. Also greet with "Hello," when no name is given, and fix the band labels that run together in Gmail. Wording and display only, no compliance data changes.
-- State: asked Viktor 2026-11-05, he deploys on both hosts. Not built yet. Check: the live deck and a test email.
+- State: live on both hosts 2026-11-05 (branch `report-no-data-wording`, commit `3cb6788`). Read on the live app: all 11 decks, 10 correct, and a test email correct. One deck still wrong: a location with no status keeps an old stored fine, so its cover shows that fine and says it is not included. Not closed until that is fixed.
 
 **Ops Portal: one app, a monolith, no iframes (2026-11-04, Trello #161 rKsUKfQH)**
 - Fred's voice note: *"I want a monolith. I want everything merged."* This replaces his 2026-08-18 iframe plan. The brief, in his words: `Building Apps/Ops Portal/docs/00-fred-brief-2026-11-04.md`.
