@@ -117,7 +117,7 @@
 .lw-q{display:grid;gap:6px}
 
 /* Panel */
-.lw-panel{border:1px solid var(--lw-line);border-radius:12px;background:var(--lw-bg);display:flex;flex-direction:column;max-height:max(460px,calc(100vh - 340px));overflow:hidden;position:sticky;top:12px}
+.lw-panel{border:1px solid var(--lw-line);border-radius:12px;background:var(--lw-bg);display:flex;flex-direction:column;max-height:max(460px,calc(100vh - 390px));overflow:hidden;position:sticky;top:12px}
 .lw-panel.sheet{position:fixed;inset:0;z-index:60;max-height:none;border-radius:0;border:0}
 .lw-ph{padding:14px 16px 12px;border-bottom:1px solid var(--lw-line);display:grid;gap:6px}
 .lw-pt{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.lw-pt b{font-size:16px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums}

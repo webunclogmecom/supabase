@@ -1245,6 +1245,9 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
             ))}
           </div>
         )}
+        {stage === 'board' && ui.parsed?.source === 'ocr' && (
+          <div className="lw-warnbox"><b>This invoice was a scan, so it was read by OCR.</b> Count the ticket rows on the paper against the {count((vm.invoice || []).length, 'ticket')} read here, and check every digit.</div>
+        )}
         {stage === 'board' && renderInvoiceFold()}
         <div className="lw-work">
           <div className="lw-col">

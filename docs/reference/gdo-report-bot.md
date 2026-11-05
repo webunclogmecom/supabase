@@ -365,6 +365,7 @@ filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
 
 ## 7. The monthly LWT report (in brief)
 
+- **Since 2026-11-05 the DERM Tracker has its own page for this, `/monthly`** (Trello EOnFKqSK): the bot stays the engine, and the page reaches it through the edge function `lwt-monthly` with the `dermapp` key. The name on a filing comes from the sign-in; the `x-acting-user` header carries it, believed only from that key. The bot's `/monthly` and `/dashboard/monthly` pages keep working as the fallback until Fred says otherwise. The rules of the old page are ported in `scripts/lwt-monthly/monthly-rules.ts`: **a change to `static/monthly.js` means re-reading it, updating that file and its `EXPECTED_SHA`, and running the golden run in the no-network container.** App side: DERM Tracker `CLAUDE.md` rule 18.
 - **Pipeline:** our feed, then the invoice (PDF text or OCR), then reconcile, then a signed preview, then the .xlsx
   written onto `templates/DADE_Monthly_Fill_Form.xlsx`, then "Record as filed".
 - **The month is the county's invoice package**, not the calendar.
