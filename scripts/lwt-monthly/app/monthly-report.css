@@ -7,7 +7,11 @@
   --lw-ok:#047857;--lw-ok-t:#ecfdf5;--lw-ok-b:#a7f3d0;--lw-warn:#92400e;--lw-warn-t:#fffbeb;--lw-warn-b:#fde68a;
   --lw-bad:#b91c1c;--lw-bad-t:#fef2f2;--lw-bad-b:#fecaca;--lw-pur:#6b21a8;--lw-pur-t:#f3e8ff;--lw-blue:#1d4ed8;--lw-blue-t:#dbeafe;
   --lw-out:cubic-bezier(.23,1,.32,1);color:var(--lw-ink)}
-.dark .lwt{--lw-brand:#ff6a3d;--lw-brand-d:#ff8a63;--lw-brand-t:#33190f;--lw-on-brand:#1a0d08;
+/* The staff apps' light/dark switch is html.app-dark, not .dark: it leaves the theme tokens light and overrides each app's own
+   classes (Building Apps/docs/halloween/gen.mjs), so this page's classes need their own surface colours, the same ones that
+   stylesheet gives the DERM Tracker. Without this block the page stays white on a dark app. */
+.app-dark .lwt{--lw-bg:rgb(20 23 29);--lw-ink:rgb(213 215 219);--lw-ink2:rgb(162 165 168);--lw-soft:rgb(30 34 40);--lw-line:rgb(45 54 69);--lw-line2:rgb(66 74 88)}
+.dark .lwt,.app-dark .lwt{--lw-brand:#ff6a3d;--lw-brand-d:#ff8a63;--lw-brand-t:#33190f;--lw-on-brand:#1a0d08;
   --lw-ok:#6ee7b7;--lw-ok-t:#0f2a22;--lw-ok-b:#14533f;--lw-warn:#fcd34d;--lw-warn-t:#2b2110;--lw-warn-b:#5a4415;
   --lw-bad:#fca5a5;--lw-bad-t:#2f1416;--lw-bad-b:#5b2125;--lw-pur:#d8b4fe;--lw-pur-t:#26173a;--lw-blue:#93b4ff;--lw-blue-t:#172036}
 .lwt *{box-sizing:border-box}

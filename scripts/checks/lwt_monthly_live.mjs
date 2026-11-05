@@ -47,7 +47,10 @@ const titles = Object.values(RULE_INFO).map((v) => v[0])
 const missing = titles.filter((t) => !present(t))
 ok(missing.length === 0, `the live build carries the rules' ${titles.length} titles`, missing.slice(0, 3).join(' | '))
 const page = readFileSync(new URL('../lwt-monthly/app/MonthlyReportPage.tsx', import.meta.url), 'utf8')
-const words = [...page.matchAll(/'((?:[^'\\\n]|\\.){28,})'/g)].map((m) => unescape(m[1])).filter((s) => !/[{}$<>=/]/.test(s) && /^[A-Z]/.test(s))
+// Quoted strings and the text between JSX tags. Quoted alone could not tell two builds apart when a change touched only JSX text.
+const quoted = [...page.matchAll(/'((?:[^'\\\n]|\\.){28,})'/g)].map((m) => unescape(m[1])).filter((s) => !/[{}$<>=/]/.test(s) && /^[A-Z]/.test(s))
+const jsx = [...page.matchAll(/>([A-Z][^<>{}\n&]{27,})</g)].map((m) => m[1].trim())
+const words = [...new Set([...quoted, ...jsx])]
 const lost = words.filter((s) => !present(s))
 ok(words.length > 15, 'the page has sentences to look for', String(words.length))
 ok(lost.length === 0, 'the live build carries this repo’s page', lost.slice(0, 3).join(' | '))
