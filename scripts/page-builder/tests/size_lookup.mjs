@@ -54,7 +54,7 @@ async function open(w, I, C) {
     if (n === 'get_intake') return send(I)
     if (n === 'get_intake_compare') return send(C)
     if (n === 'v_intake_submissions') return send(row.subs)
-    if (n === 'get_my_access') return send({ ok: true })
+    if (n === 'get_my_access') return send({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] })   // the staff gate (without it every check here fails: it had been, unnoticed, until 2026-11-05)
     return x.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
   })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))

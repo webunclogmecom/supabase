@@ -74,7 +74,7 @@ async function open(w, versions = VERSIONS, act = row.act, failing = []) {
   const p = await ctx.newPage()
   const st = { calls: [], errors: [], failing: new Set(failing) }
   p.on('pageerror', (e) => { if (!/Google Maps/.test(String(e))) st.errors.push(String(e)) })  // Maps is aborted on purpose (no paid tiles)
-  const replies = { get_page_builder: row.pb, get_page_builder_forms: row.forms, get_property_activity: act, get_page_versions: versions }
+  const replies = { get_page_builder: row.pb, get_page_builder_forms: row.forms, get_property_activity: act, get_page_versions: versions, get_my_access: { employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] } }   // the staff gate (without it every check here fails: it had been, unnoticed, until 2026-11-05)
   await p.route(SB + '/auth/v1/**', (x) => x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }))
   await p.route(SB + '/rest/v1/**', (x) => { const n = new URL(x.request().url()).pathname.split('/').pop(); st.calls.push(n)
     if (st.failing.has(n)) return x.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom","code":"XX000"}' })

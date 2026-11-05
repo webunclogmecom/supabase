@@ -1,5 +1,5 @@
 // LIVE Picture Planner /forms/<id>: several grease traps (question list version 6, 2026-10-23). Real replies of a
-// version 6 [TEST] form with 3 traps (default 1119, 112-YA) read as Fred's claims; scenario B edits the offer so one trap
+// version 6 form with 2 traps (default 1129, 112-YA) read as Fred's claims, then edited in memory to 3 traps; scenario B edits the offer so one trap
 // has no number. Sign-in faked; every call stubbed; Save is RECORDED, nothing is written.
 // Spec: Building Apps/Picture Planner/docs/specs/2026-10-23-several-grease-traps-and-map-pins-design.md
 //   node scripts/page-builder/tests/several_traps.mjs <outdir> [intake id]
@@ -10,13 +10,27 @@ const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
 const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/database/query', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SUPABASE_PAT, 'content-type': 'application/json' }, body: JSON.stringify({ query: q }) })).json()
-const ID = Number(process.argv[3] || 1119)
+const ID = Number(process.argv[3] || 1129)
 const r = await sql(`do $$ begin perform set_config('request.jwt.claims', json_build_object('sub', (select id from auth.users where lower(email)='fred@ayache.com'), 'email', 'fred@ayache.com', 'role', 'authenticated')::text, true); end $$;
 select client.get_intake(${ID}) as i, client.get_intake_compare(${ID}) as c,
        (select jsonb_agg(to_jsonb(s)) from client.v_intake_submissions s where s.intake_id = ${ID}) as subs;`)
 const row = Array.isArray(r) ? r[r.length - 1] : null
 const G = row && row.c && row.c.fields.find((f) => f.key === 'grease_trap.capacity_gallons')
-if (!G || !G.offer || G.offer.kind !== 'traps' || G.offer.traps.length !== 3) { console.log('FAIL fixture: form ' + ID + ' must offer a 3-trap total :: ' + JSON.stringify(G).slice(0, 300)); process.exit(1) }
+const [tm, tx] = ['model', 'measurements'].map((k) => G && G.offer && G.offer.kind === 'traps' && G.offer.traps.find((t) => t.from === k))
+const [lm, lx] = ['model', 'measurements'].map((k) => row && row.i && (row.i.size_lookups || []).find((l) => l.kind === k && l.status === 'found'))
+if (!tm || !tx || !lm || !lx) { console.log('FAIL fixture: form ' + ID + ' must be a several-trap form with one model and one measurements lookup :: ' + JSON.stringify(G).slice(0, 300)); process.exit(1) }
+// [TEST] form 1119, which this test was written on, was deleted 27 minutes after it was made (2026-10-23) and no form holds a third trap today.
+// So its three traps are rebuilt here, in memory: its answers as audit.logs kept them, its offer as public.fn_intake_gallons_offer answers them.
+const Q = (k) => row.i.sections.flatMap((s) => s.questions).find((q) => q.key === k)
+const on = (k, value) => Object.assign(Q(k), { value, answered: value !== null, applicable: true })
+const off = (k) => Object.assign(Q(k), { value: null, answered: false, applicable: false })
+on('grease_trap.systems_count', 3); on('grease_trap.size_from', null); off('grease_trap.model'); off('grease_trap.capacity_measure'); on('grease_trap.capacity_gallons', '1,000')
+on('grease_trap.t2.size_from', 'Model on the plate'); on('grease_trap.t2.model', 'Schier GB-75'); off('grease_trap.t2.capacity_measure')
+on('grease_trap.t3.location', null); on('grease_trap.t3.size_from', 'Measurements'); off('grease_trap.t3.model'); on('grease_trap.t3.capacity_measure', '24 x 24 x 30 inches'); on('grease_trap.t3.capacity_gallons', null)
+const M3 = '24 x 24 x 30 in: 75 gallons (length x width x depth / 231).'
+row.i.size_lookups = [{ ...lm, key: 'grease_trap.t2.model', gallons: 125, input_text: 'Schier GB-75' }, { ...lx, key: 'grease_trap.t3.capacity_measure', gallons: 75, dimensions: '24 x 24 x 30 in', input_text: '24 x 24 x 30 inches', summary: M3 }]
+G.offer = { ...G.offer, gallons: 1200, input_text: '3 grease traps', summary: 'Grease trap 1: 1,000 gal, typed on the form. Grease trap 2: 125 gal, AI lookup of Schier GB-75. Grease trap 3: 75 gal, AI lookup of the measurements.', traps: [{ n: 1, gallons: 1000, from: 'typed', lookup_id: null, input_text: '1,000', summary: null, source_url: null }, { ...tm, n: 2, gallons: 125, input_text: 'Schier GB-75' }, { ...tx, n: 3, gallons: 75, input_text: '24 x 24 x 30 inches', summary: M3 }] }
+G.theirs = 1200
 const clone = (x) => JSON.parse(JSON.stringify(x))
 let pass = 0, fail = 0
 const ok = (c, name, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}${v === undefined ? '' : ' :: ' + JSON.stringify(v).slice(0, 400)}`) }
@@ -47,7 +61,7 @@ async function open(w, C) {
     if (n === 'get_intake') { const i = clone(row.i); i.accepted = []; return send(i) }
     if (n === 'get_intake_compare') return send(C)
     if (n === 'v_intake_submissions') return send(row.subs)
-    if (n === 'get_my_access') return send({ ok: true })
+    if (n === 'get_my_access') return send({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] })   // the staff gate (without it every check here fails: it had been, unnoticed, until 2026-11-05)
     return x.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
   })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
