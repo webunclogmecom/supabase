@@ -269,6 +269,32 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await ctx.close()
   }
 
+  // Below 1280 the real sidebar opens as a full-height drawer, and picking an app closes it.
+  for (const dw of w < 1280 ? [w, 900] : []) {
+    const { ctx, page, seen } = await signedIn(ADMIN, dw, h)
+    const fails = []
+    await page.getByRole('button', { name: /open menu/i }).click()
+    await page.waitForTimeout(600)
+    const d = await page.evaluate(() => {
+      const n = document.querySelector('nav[aria-label="Apps drawer"]'), box = n?.closest('[role="dialog"]')?.getBoundingClientRect()
+      return box ? { left: Math.round(box.left), top: Math.round(box.top), w: Math.round(box.width), h: Math.round(box.height), vh: innerHeight, brand: /UnclogMe/.test(n.innerText), tiles: n.querySelectorAll('a[data-tile]').length, account: !!n.querySelector('button[aria-label="Account menu"]') } : null
+    })
+    if (!d) fails.push('no drawer')
+    else {
+      if (d.left !== 0 || d.top !== 0) fails.push(`drawer at ${d.left},${d.top}`)
+      if (d.h !== d.vh) fails.push(`drawer ${d.h} high in ${d.vh}`)
+      if (!d.brand || !d.tiles || !d.account) fails.push('the drawer is not the whole sidebar')
+    }
+    await shot(page, dw, 'sidebar drawer')
+    await page.locator('nav[aria-label="Apps drawer"] a[data-tile="HR App"]').click()
+    await page.waitForTimeout(1500)
+    if (await page.locator('nav[aria-label="Apps drawer"]').count()) fails.push('the drawer stayed open')
+    if (!/^\/hr/.test(new URL(page.url()).pathname)) fails.push(`went to ${new URL(page.url()).pathname}`)
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    report(dw, 'sidebar opens as a drawer', fails)
+    await ctx.close()
+  }
+
   // The account menu: Profile and Sign out. Profile is the person's HR record; no HR access, no Profile.
   for (const [c, wantProfile] of [[ADMIN, true], [FIELD, false]]) {
     const { ctx, page, seen } = await signedIn(c, w, h)
