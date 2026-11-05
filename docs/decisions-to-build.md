@@ -442,6 +442,7 @@ Still open: the band A cards (Wed 11-04). **Built so far:** S1 on 2026-11-02 at 
 
 ## 3. Waiting on Fred
 
+- Monthly Report in the DERM Tracker (Fred, 2026-11-05: "adding the monthly report to the apps ... instead of using the dashboard made by Jon"): Trello EOnFKqSK (#173, Approved). A page in the app, the bot stays the engine, like Auto file. Picks open: layout (A recommended), who can use it, the app keeps the work. Plan `Building Apps/DERM Tracker/docs/specs/2026-11-05-monthly-report-in-the-app.md`, mockups https://claude.ai/artifact/JA1S5cqid8GRwJPTNsMws2. **Not started; not before the October report is filed (due 11-20).**
 - HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Decision 22 (emailed re-authentication before a password change) is REPLACED 2026-10-27, see the HR Change password row in section 2.
 - DERM storage private: decisions 2-14 before Stage 1 (scope, archive, receipts, soak lengths ...). FDEP sheets: keep public or move.
 - LWT Broward (2026-09-18): which month a Broward ticket belongs to; tell Yan the gallons are trap capacity; ticket 310590 / Cloggy decal; FDEP sheet size fallback; confirm Jonathan's generator change (0 Broward tickets ever filed).
