@@ -48,12 +48,12 @@ const isTestAddress = (e: string) => e === TEST_EMAIL || /^fred\+[^@]*@ayache\.c
 const INVITE_FROM = "UnclogMe <noreply@unclogme.com>";   // the same sender as Supabase Auth's emails (verified in Resend)
 const LINK_LIFETIME_MS = 3600_000;                        // Auth mailer_otp_exp = 3600, shared with reset links
 const CLOCK_MARGIN_MS = 5000;               // a first invite: Auth created the user and invited it within this of each other
-const ORIGINS = new Set(["https://hr.unclogme.app"]);
+const ORIGINS = new Set(["https://hr.unclogme.app", "https://ops.unclogme.app"]); // the Ops Portal runs the HR App too (2026-11-04)
 const BLOCK = "876000h"; // about 100 years: "turned off" until an admin turns it back on
 
 const cors = (origin: string | null) => ({
   "Access-Control-Allow-Origin": origin && ORIGINS.has(origin) ? origin : "https://hr.unclogme.app",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version, x-app-source",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Vary": "Origin",
 });
