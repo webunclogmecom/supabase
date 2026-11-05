@@ -126,6 +126,14 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   `invoice_parse.py`, so the next real filing and Diego's first Monthly invoice preview are their first live use.
   Rollback: Railway Redeploy of `82f52aac`, then revert the commit. The rest of the hardening (a hashed lock, base image
   pins) stays with Trello N9Zcx04p.
+- **2026-11-05: who really acted** (Trello EOnFKqSK). Bot commit `c0088db`, deploy `8a48e37b`, running since 10:41:58 ET; `/data`
+  backed up first (volume backup 15:40 UTC). One header, `x-acting-user`, believed only from the `dermapp` key. It went outside
+  the bot window: Fred waived it once, for this change only ("Push now"), with the bot idle and no page request since 09:14 ET.
+  The window still stands for everything else. Proof on live: opening `derm.unclogme.app/monthly` logged `Acting for: Fred` at
+  10:44:52 ET; the control, the `fred` key claiming to act for someone else, got 200 and was not believed (0 lines). `fred` 200,
+  health ok, Monthly and bot pages 200. Tested first with no network: the new test fails on the old server and passes on the new
+  one, whole suite 45 of 50 with the same 5 failing. ⚠ No draft has been made from the page since, because a Generate writes a
+  real row, so the first real draft is the first live "Handled by <name>". Rollback: Railway Redeploy of `3b54894c`, then revert.
 - **2026-11-02: `SLACK_WEBHOOK_URL` replaced, and the Slack app "GDO Online Report" holds one hook only.** All the
   app's OAuth tokens were revoked (its bot token, unused anywhere, and both hooks: #apps-notifications `4477a8783f`
   now answers 404 `no_service`, and the #new-app-issues hook `b26527d5b4` is gone with it). A new hook for
@@ -135,7 +143,7 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
 - **One replica, one worker.** A second replica would break the double-filing guard silently.
 - **No Railway cron.** Three threads inside `server.py` sleep first, then run:
   - **poll:** once at each start (it does not sleep first: "polls now, then every 60 min" in the log), then hourly, so
-    the minute moves with every restart (about :09 since the 2026-11-04 19:09 ET start);
+    the minute moves with every restart (about :42 since the 2026-11-05 10:42 ET start);
   - **harvest:** hourly;
   - **digest:** 08:00 New York time. It backs up the ledger, then posts yesterday's Slack digest.
   - A restart resets the clocks. A restart after 08:00 sends no digest that day, unless the old process already had.
