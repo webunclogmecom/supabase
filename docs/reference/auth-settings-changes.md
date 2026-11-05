@@ -10,6 +10,17 @@ newest first. The Auth settings are not in any migration and have no audit trail
 3. PATCH only those keys. Then read every setting again and compare: only the named keys may differ.
 4. Check Auth health (`/v1/projects/{ref}/health?services=auth`), and whatever the change touches.
 
+## 2026-11-04 · Ops Portal hosts on the redirect allow-list (Trello #161)
+
+Fred: *"I want a monolith. I want everything merged."* Applied about 21:45 ET, before any DNS change. Plan `Building Apps/Ops Portal/docs/specs/2026-11-04-phase-0-1-ground-and-shell.md`. Added both forms, because `/**` does not match a bare origin.
+
+| key | before | after |
+|---|---|---|
+| `uri_allow_list` | 29 entries | the same 29, plus `https://ops.unclogme.app`, `https://ops.unclogme.app/**`, and the same two for `https://id-preview--9f6cf384-0f0d-4982-936b-9e39408362b8.lovable.app` |
+
+- Checked: PATCH 200; settings read back, only `uri_allow_list` differs; every old entry kept; Auth health 200, `ACTIVE_HEALTHY`; the live Visit Calendar loads signed in, with data, right after.
+- Undo: `backups/2026-11-04_auth_undo_ops_portal.json` (local). PATCH that body.
+
 ## 2026-10-27 · Current password to change a password, minimum 8, password-changed email (Trello JlxV47sS)
 
 Fred (voice note): Change password in the HR App asks for the old password and the new one twice; a forgotten password uses
