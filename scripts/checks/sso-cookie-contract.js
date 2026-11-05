@@ -47,6 +47,7 @@ const APPS = [
   { key: 'stamp',    url: 'https://stamp.unclogme.app' },
   { key: 'derm',     url: 'https://derm.unclogme.app' },
   { key: 'calendar', url: 'https://calendar.unclogme.app' },
+  { key: 'ops',      url: 'https://ops.unclogme.app' },
 ];
 
 // Stamp Studio still ships its OLD key as a one-time transfer shim. It is allowed to appear as a

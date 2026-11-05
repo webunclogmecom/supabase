@@ -23,6 +23,7 @@ const APPS = [
   // Apps Hub, added 2026-08-18. Lovable default host because hub.unclogme.app is not pointed yet
   // (GoDaddy Domain Connect is Fred's click); switch to https://hub.unclogme.app once DNS lands.
   { name: 'Apps Hub',        origin: 'https://radiant-start-board.lovable.app', routes: ['/'],               expectSub: 'Sign in to the Apps Hub' },
+  { name: 'Ops Portal',      origin: 'https://ops.unclogme.app',      routes: ['/'],                          expectSub: 'Sign in to the Ops Portal' },
   // Field Portal (fp) and DUMP Schedule are deliberately auth-free: QR access. Not audited here.
 ];
 

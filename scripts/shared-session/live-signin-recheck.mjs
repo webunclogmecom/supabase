@@ -11,7 +11,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppDa
 const APPS = {
   hub: 'https://hub.unclogme.app/', hr: 'https://hr.unclogme.app/employees', admin: 'https://admin.unclogme.app/',
   clients: 'https://clients.unclogme.app/', stamp: 'https://stamp.unclogme.app/', derm: 'https://derm.unclogme.app/',
-  calendar: 'https://calendar.unclogme.app/', planner: 'https://planner.unclogme.app/',
+  calendar: 'https://calendar.unclogme.app/', planner: 'https://planner.unclogme.app/', ops: 'https://ops.unclogme.app/',
 }
 const pick = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(APPS)
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })

@@ -8,7 +8,7 @@
 // A string check cannot prove byte identity (the bundle is minified); live-restart.mjs and
 // live-login-flag.mjs prove the behaviour.
 const APPS = { hub: 'hub.unclogme.app', admin: 'admin.unclogme.app', clients: 'clients.unclogme.app', stamp: 'stamp.unclogme.app',
-  derm: 'derm.unclogme.app', calendar: 'calendar.unclogme.app', hr: 'hr.unclogme.app', planner: 'planner.unclogme.app' }
+  derm: 'derm.unclogme.app', calendar: 'calendar.unclogme.app', hr: 'hr.unclogme.app', planner: 'planner.unclogme.app', ops: 'ops.unclogme.app' }
 const CANON = ['-byte cookie limit: it cannot be stored, so this browser is signed out', 'unclogme-remember-me', '-code-verifier']
 const OLD = ['falling back to localStorage', 'storing in localStorage only', 'refusing to write cookie', 'refusing to write oversized cookie',
   'derm-stamp-studio-auth', 'skipping cookie write', 'Cookies overflow silently']

@@ -76,6 +76,7 @@ const APPS = {
   hub:      { label: 'Apps Hub',          url: 'https://hub.unclogme.app',     control: 'hr.get_my_access' },
   // Picture Planner, added 2026-10-20 for access phase 3 (it had a domain since 2026-09-24 and was missing).
   planner:  { label: 'Picture Planner',   url: 'https://planner.unclogme.app', control: 'hr.get_my_access' },
+  ops:      { label: 'Ops Portal',        url: 'https://ops.unclogme.app',     control: 'hr.get_my_access' },
   // HR App, added 2026-11-04. It was missing since it went live on 2026-09-01. All its RPCs are in `hr`.
   hr:       { label: 'HR App',            url: 'https://hr.unclogme.app',      control: 'hr.get_my_access' },
 };

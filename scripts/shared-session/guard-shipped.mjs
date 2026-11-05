@@ -15,7 +15,7 @@ const GUARD = execFileSync(process.execPath, [TEST, '--print'], { encoding: 'utf
 const fixture = (process.argv.find((a) => a.startsWith('--fixture=')) || '').split('=')[1]
 const PAGES = {
   hub: ['/', '/reset-password', '/reset-password/invite'], admin: ['/'], clients: ['/', '/reset-password'], stamp: ['/'],
-  derm: ['/'], calendar: ['/'], hr: ['/employees'], planner: ['/', '/reset-password'],
+  derm: ['/'], calendar: ['/'], hr: ['/employees'], planner: ['/', '/reset-password'], ops: ['/'],
 }
 const FLOCK = /<script\b[^>]*\bsrc="\/~flock\.js"[^>]*>/i
 let bad = 0

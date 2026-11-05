@@ -13,7 +13,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const APPS = { hub: 'hub.unclogme.app', admin: 'admin.unclogme.app', clients: 'clients.unclogme.app', stamp: 'stamp.unclogme.app',
-  derm: 'derm.unclogme.app', calendar: 'calendar.unclogme.app', hr: 'hr.unclogme.app', planner: 'planner.unclogme.app' }
+  derm: 'derm.unclogme.app', calendar: 'calendar.unclogme.app', hr: 'hr.unclogme.app', planner: 'planner.unclogme.app', ops: 'ops.unclogme.app' }
 
 async function run(browser, host, want) {
   const ctx = await browser.newContext()

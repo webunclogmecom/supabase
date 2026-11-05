@@ -22,7 +22,7 @@ const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const AT = `${b64u({ alg: 'HS256', typ: 'JWT' })}.${b64u({ sub: '00000000-0000-4000-8000-00000000f10c', exp, aud: 'authenticated', marker: 'FLOCKFAKE' })}.FLOCKFAKEsig`
 const frag = (type) => `#access_token=${AT}&expires_at=${exp}&expires_in=3600&refresh_token=FLOCKFAKErefresh&provider_token=FLOCKFAKEgoogle&token_type=bearer${type ? '&type=' + type : ''}`
-const DEFAULT = ['hub:/:', 'hub:/reset-password:recovery', 'admin:/:', 'clients:/reset-password:recovery', 'stamp:/:', 'derm:/:recovery', 'calendar:/:', 'hr:/employees:', 'planner:/reset-password:recovery']
+const DEFAULT = ['hub:/:', 'hub:/reset-password:recovery', 'admin:/:', 'clients:/reset-password:recovery', 'stamp:/:', 'derm:/:recovery', 'calendar:/:', 'hr:/employees:', 'planner:/reset-password:recovery', 'ops:/:']
 const cases = (args.filter((a) => !a.startsWith('--')).length ? args.filter((a) => !a.startsWith('--')) : DEFAULT)
   .map((s) => { const [app, path, type] = s.split(':'); return { host: `${app}.unclogme.app`, path, type } })
 const browser = await chromium.launch({ executablePath: process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--disable-blink-features=AutomationControlled'] })
