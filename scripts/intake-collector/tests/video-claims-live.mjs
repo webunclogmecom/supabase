@@ -272,8 +272,8 @@ await step('progress + draft', async () => {
   info('bottom bar', (await p.textContent('#foot')).replace(/\s+/g, ' ').slice(0, 100)); const c0 = await cnt()
   ok(/\d+ of \d+/.test(c0), 'line 34: the bottom shows how far', c0)
   await ctx.setOffline(true); await pause(1200)
-  // the banner is drawn only when the page LOADS and its first call fails, never when the signal drops mid-form (2026-11-04). body.textContent would match the page's own script.
-  info('no-signal banner on screen', await p.evaluate(() => [...document.querySelectorAll('body *')].some((e) => !e.children.length && /No signal right now/.test(e.textContent) && !['SCRIPT', 'STYLE'].includes(e.tagName) && e.getBoundingClientRect().height > 0))); await p.evaluate(() => scrollTo(0, 0)); await shot('offline')
+  // Since Supabase 980d75b4 the banner shows in the bottom bar when the signal drops. Look at the drawn element: body.textContent would match the page's own script.
+  ok(await p.evaluate(() => [...document.querySelectorAll('body *')].some((e) => !e.children.length && /No signal right now/.test(e.textContent) && !['SCRIPT', 'STYLE'].includes(e.tagName) && e.getBoundingClientRect().height > 0)), 'line 34: the banner shows when the signal drops'); await shot('offline')
   await go(Q(AL)); await F(AL + '=yes').click(); await pause(350); await F(AL + '=no').click(); await pause(350)
   await Q('grease_trap.photos').locator('input[type=file]:not([capture])').first().setInputFiles(DEMO + 'plate.png'); await pause(2500)
   info('photo with no signal says', (await Q('grease_trap.photos').textContent()).replace(/\s+/g, ' ').slice(0, 260))

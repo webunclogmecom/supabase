@@ -515,6 +515,7 @@ Still open: the band A cards (Wed 11-04). **Built so far:** S1 on 2026-11-02 at 
 | 2026-10-18 | ~~GDO online reports carry the visit's own sheet; never filed without one~~ (reversed the same day by `_2100`) | Supabase `2026-10-18_0220`, `rpa-derm-queue` v30, 70bafb3 |
 | 2026-10-17 | 11 AM Stamp post says why each sheet waits | Supabase `2026-10-17_1330`, `stamp-sheets-reminder` v12, b9acb00 |
 | 2026-10-17 | One stamp per GDO permit, automatic (decided 2026-08-27) | Supabase `2026-10-17_0050`, 9a9472e |
+| 2026-11-04 | Collector form: no-signal banner when the signal drops; the video says "Don't refresh until you have signal" (Fred: "go with both recommendations") | Supabase `980d75b4` |
 | 2026-10-13 | Intake task closes on submit / cancel / expiry | `2026-10-13_1235`, `intake-task-sync` |
 | 2026-10-14 | Email Delivered / Opened chips (except the docs and D5 above) | Admin Review + DERM Tracker live |
 | 2026-10-15 | Moises water balance | `2026-10-15_1950`, `2026-10-16_1126` |
