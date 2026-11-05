@@ -25,10 +25,6 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
-**Sales App: staff login on every page and call, deck links included (2026-11-04)**
-- Fred: *"Lock it"*, then picked staff login only and "Message Viktor". Replaces the old "public sales presentations" design.
-- State: written and tested on a branch of the private `unclogme-sales` repo; Viktor deploys it. Not built until it passes a live test from outside. Detail lives in private memory (`project_dependabot_triage_2026_11_04`), not in this public repo.
-
 **Ops Portal: one app, a monolith, no iframes (2026-11-04, Trello #161 rKsUKfQH)**
 - Fred's voice note: *"I want a monolith. I want everything merged."* This replaces his 2026-08-18 iframe plan. The brief, in his words: `Building Apps/Ops Portal/docs/00-fred-brief-2026-11-04.md`.
 - In: Calendar, HR and DERM first, then Admin Review and Clients. Out: Field Portal and DUMP. The other apps keep running until he says stop. Order: understand, big diagram, architecture, mockups, then build one app at a time.
@@ -464,6 +460,7 @@ Still open: the band A cards (Wed 11-04). **Built so far:** S1 on 2026-11-02 at 
 
 | date | plan | evidence |
 |---|---|---|
+| 2026-11-04 | Sales App: staff login on every page and call, deck links included (Fred: *"Lock it"*) | Deployed by Viktor; private repo `unclogme-sales`, branch `lock-staff-only-port`, commit `33254fe`. `scripts/check-lock.mjs --live` passes from outside and every page goes to `/login` with no session. Last check, not done yet: Fred's own staff sign-in, a deck and an Email Report. |
 | 2026-11-04 | A Field person sees only the forms assigned to them; only office and admin see all (Fred: "only show the ones assigned to them, only office or admin people can see all the forms"; narrows Q4 of AIwCYcmn). Assigned = an assignee of the form's Calendar task | Supabase `2026-11-04_1500_pp_forms_assigned_only` (applied 14:24 ET), probe `probe_pp_forms.sql` 33/33, test `forms_only.mjs` 46/46; Picture Planner published 2026-11-04; HR App and Apps Hub wording same day (their changelogs) |
 | 2026-11-04 | Picture Planner: "Open form" on a Field person's own waiting form, and the Share icon clear of the address (Fred: "sure", "yes") | Built 2026-11-04: Supabase `2026-11-04_1930_pp_forms_open_my_form`, Lovable prompt `2026-11-04-open-form-and-share-icon.md` |
 | 2026-11-04 | Yan's first answers on the BSI review queue (Trello #166): 4 matches recorded as same, 361-SFG absent; line 27 no longer fails for those 4 | Supabase `2026-11-04_1338`: queue 16 -> 11, frozen leads still 420, `bsi_routing.sql` and `leads_integrity.sql` 18/18; the suite (now 37 cases) failed on its new Grove case only before the apply (the unmatched row) and passes after |
