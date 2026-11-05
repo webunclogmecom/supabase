@@ -7,6 +7,8 @@
 -- for that rule: on the 2026-10-27_2130 bodies (git show 11298b6) the list, "not assigned" and storage cases FAIL.
 -- Since 2026-11-04_1930 the same person gets the link of their OWN waiting form (Open form) and of no other. Control: on the
 -- 2026-11-04_1500 bodies the Open form cases and "gate: POST /rpc/get_intake_link pass" FAIL.
+-- Since 2026-11-05 the staff case also holds what the office film fixes rest on: names, not logins, on /forms; a going line on every waiting form and
+-- no other; all six Property record rows. Control: on the bodies before 2026-11-05_0510 and _0530 that staff case FAILS.
 -- Control: with the gate's body before 2026-10-27_2130 the three "gate: ... pass" cases FAIL (they prove the probe reaches
 -- the door); before the migration every Forms-only case fails.
 DO $pf$
@@ -442,8 +444,8 @@ BEGIN
       PERFORM set_config('request.jwt.claims', c_fred, true);
       v_staff_n := jsonb_array_length(client.list_intake_forms());
       v_note := jsonb_array_length(v_j) || '/' || (SELECT string_agg(x->>'intake_id', ',' ORDER BY (x->>'intake_id')::bigint) FROM jsonb_array_elements(v_j) x) || '/'
-                || (SELECT count(*) FROM jsonb_array_elements(v_j) x WHERE x->>'state' = 'awaiting' AND (x ? 'requested_by' OR x ? 'collector')) || '/'
-                || (SELECT count(*) FROM jsonb_array_elements(v_j) x WHERE x ? 'accepted_count') || '/'
+                || (SELECT count(*) FROM jsonb_array_elements(v_j) x WHERE x->>'state' = 'awaiting' AND (x ? 'requested_by' OR x ? 'collector' OR x ? 'going')) || '/'
+                || (SELECT count(*) FROM jsonb_array_elements(v_j) x WHERE x ? 'accepted_count' OR x ? 'going') || '/'
                 || (SELECT count(*) FROM jsonb_array_elements(v_j) x WHERE x->>'state' = 'awaiting');
       RESET ROLE;
     EXCEPTION WHEN others THEN
@@ -854,6 +856,14 @@ BEGIN
       PERFORM public.fn_request_gate();
       v_note := (SELECT count(*) FROM jsonb_array_elements(client.list_intake_forms()) x WHERE x->>'state' = 'awaiting' AND x ? 'requested_by')::text;
       IF jsonb_array_length(client.list_intake_forms()) <> (SELECT count(*) FROM client.v_intake_submissions) THEN RAISE EXCEPTION 'staff list is not every form'; END IF;
+      -- 2026-11-05_0530: Requested by is a person, and every waiting form says who is going
+      IF EXISTS (SELECT 1 FROM jsonb_array_elements(client.list_intake_forms()) x JOIN public.employees e ON lower(btrim(e.email)) = lower(btrim(x->>'requested_by'))) THEN RAISE EXCEPTION 'a login where a person belongs'; END IF;
+      IF EXISTS (SELECT 1 FROM jsonb_array_elements(client.list_intake_forms()) x WHERE x->>'state' = 'awaiting' AND coalesce(x->>'going', '') = '') THEN RAISE EXCEPTION 'a waiting form with no going line'; END IF;
+      IF EXISTS (SELECT 1 FROM jsonb_array_elements(client.list_intake_forms()) x WHERE x->>'state' <> 'awaiting' AND x->>'going' IS NOT NULL) THEN RAISE EXCEPTION 'a going line on a form that is not waiting'; END IF;
+      -- 2026-11-05_0510: every submitted form answers all six Property record rows (a missing row used to read "Not on file")
+      IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(client.list_intake_forms()) x WHERE x->>'state' = 'submitted') THEN RAISE EXCEPTION 'no submitted form to check'; END IF;
+      IF EXISTS (SELECT 1 FROM jsonb_array_elements(client.list_intake_forms()) x WHERE x->>'state' = 'submitted'
+                  AND (SELECT count(DISTINCT f->>'key') FROM jsonb_array_elements(client.get_intake_compare((x->>'intake_id')::bigint) -> 'fields') f) <> 6) THEN RAISE EXCEPTION 'a submitted form without all six Property record rows'; END IF;
       PERFORM client.get_intake(v_other_sub);   -- a form with no task on the staff side: still opens
       v_j := client.get_intake(v_sub);
       IF v_j->'forms_only' <> 'false'::jsonb THEN RAISE EXCEPTION 'staff read as forms_only'; END IF;
