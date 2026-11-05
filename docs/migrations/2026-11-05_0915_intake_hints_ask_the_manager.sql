@@ -1,0 +1,768 @@
+-- ============================================================================
+-- 2026-11-05_0915 Site survey question list, version 7: who to ask for the gate code and the hours
+-- ============================================================================
+-- THE ASK: Serena (2026-11-05, on the Collector training film): "I think that we should specify for the gate code or the access
+--   hours that they needs to speak with the GENERAL MANAGER or THE PERSON IN CHARGE (i know it is obvious but the other day
+--   [a collector] entered the business hours not OUR access hours)". Fred: behind the (i) button, and the film shows the taps.
+--   Measured: forms have come back with hours that read as opening hours (every day 8 AM to 5 PM), none of them saved to a
+--   property yet; 175 of 241 pump-outs in the last 60 days ran at night, so opening hours are the wrong answer more often than not.
+-- WHAT CHANGES: public.fn_intake_form_current, version 6 to 7, an "info" on access_entry.gate_code and on access_hours.schedule.
+--   Same 81 questions, same keys, no form-page or app change (the (i) is drawn for any question that has an info since version 3).
+--   Forms already sent keep their own list: no open form gets the hints.
+-- RULE 8: no table. ROLLBACK: 2026-11-05_0915_intake_hints_ask_the_manager_rollback.sql (the previous body).
+-- ============================================================================
+BEGIN;
+SET LOCAL lock_timeout = '3s';
+DO $g$ BEGIN
+  IF md5(pg_get_functiondef('public.fn_intake_form_current'::regproc)) IS DISTINCT FROM 'e96833042f96615056c9d20ae2a3f200' THEN
+    RAISE EXCEPTION 'fn_intake_form_current changed since this file was written: build again';
+  END IF;
+END $g$;
+CREATE TEMP TABLE before_f ON COMMIT DROP AS SELECT public.fn_intake_form_current() AS f,
+  (SELECT proacl::text FROM pg_proc WHERE oid = 'public.fn_intake_form_current'::regproc) AS acl;
+CREATE TEMP TABLE before_q ON COMMIT DROP AS SELECT count(*) AS n FROM client.v_intake_questions;
+
+CREATE OR REPLACE FUNCTION public.fn_intake_form_current()
+ RETURNS jsonb
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO ''
+AS $function$
+  select '{
+  "version": 7,
+  "sections": [
+    {
+      "id": "site_map",
+      "title": "Site map",
+      "questions": [
+        {
+          "key": "site_map.truck_parking",
+          "type": "gps_pin",
+          "label": "Truck parking spot"
+        }
+      ]
+    },
+    {
+      "id": "access_entry",
+      "title": "Access & entry",
+      "questions": [
+        {
+          "key": "access_entry.gate",
+          "type": "yes_no",
+          "label": "Is there a closed gate?"
+        },
+        {
+          "key": "access_entry.gate_code",
+          "type": "text",
+          "label": "What is the gate code or key?",
+          "info": "Ask the general manager or the person in charge.",
+          "show_if": "access_entry.gate=yes"
+        },
+        {
+          "key": "access_entry.gate_photos",
+          "type": "photos",
+          "label": "Photos of the gate or entrance",
+          "show_if": "access_entry.gate=yes"
+        },
+        {
+          "key": "access_entry.equipment_where",
+          "type": "choice",
+          "label": "Where is the equipment located?",
+          "options": [
+            "Inside",
+            "Outside",
+            "Inside and Outside"
+          ]
+        },
+        {
+          "key": "access_entry.where_inside",
+          "type": "choice",
+          "label": "Where is it inside?",
+          "options": [
+            "Kitchen",
+            "Other"
+          ],
+          "show_if": "access_entry.equipment_where=Inside|Inside and Outside"
+        },
+        {
+          "key": "access_entry.where_inside_note",
+          "type": "text",
+          "label": "If other, where inside?",
+          "show_if": "access_entry.where_inside=Other"
+        },
+        {
+          "key": "access_entry.where_outside",
+          "type": "choice",
+          "label": "Where is it outside?",
+          "options": [
+            "Front",
+            "Back",
+            "Other"
+          ],
+          "show_if": "access_entry.equipment_where=Outside|Inside and Outside"
+        },
+        {
+          "key": "access_entry.where_outside_note",
+          "type": "text",
+          "label": "If other, where outside?",
+          "show_if": "access_entry.where_outside=Other"
+        },
+        {
+          "key": "access_entry.access_point",
+          "type": "choice",
+          "label": "What is the best access point for our team?",
+          "options": [
+            "Front door",
+            "Back door",
+            "Side entrance",
+            "Other"
+          ]
+        },
+        {
+          "key": "access_entry.access_point_note",
+          "type": "text",
+          "label": "If other, describe it",
+          "show_if": "access_entry.access_point=Other"
+        },
+        {
+          "key": "access_entry.access_photos",
+          "type": "photos",
+          "label": "Photos of the access point"
+        },
+        {
+          "key": "access_entry.how_access",
+          "type": "choice",
+          "label": "How do we get in?",
+          "options": [
+            "Lock box",
+            "Key",
+            "Open",
+            "Someone lets us in"
+          ]
+        },
+        {
+          "key": "access_entry.lock_box_code",
+          "type": "text",
+          "label": "Lock box code",
+          "show_if": "access_entry.how_access=Lock box",
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "access_entry.lock_box_photos",
+          "type": "photos",
+          "label": "Photo of where the lock box is",
+          "show_if": "access_entry.how_access=Lock box"
+        },
+        {
+          "key": "access_entry.key_instruction",
+          "type": "text",
+          "label": "Key instructions",
+          "show_if": "access_entry.how_access=Key"
+        },
+        {
+          "key": "access_entry.alarm",
+          "type": "yes_no",
+          "label": "Is there an alarm?"
+        },
+        {
+          "key": "access_entry.alarm_instruction",
+          "type": "text",
+          "label": "Alarm instructions",
+          "show_if": "access_entry.alarm=yes"
+        },
+        {
+          "key": "access_entry.alarm_photos",
+          "type": "photos",
+          "label": "Photos of the alarm",
+          "show_if": "access_entry.alarm=yes",
+          "optional": true,
+          "max_photos": 3
+        },
+        {
+          "key": "access_entry.obstacles",
+          "type": "text",
+          "label": "Any obstacles, tight spaces, or anything else to report?",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "access_hours",
+      "title": "Access hours",
+      "questions": [
+        {
+          "key": "access_hours.schedule",
+          "type": "weekly_hours",
+          "label": "When can we come?",
+          "info": "The hours our truck can come, not when the business is open. Ask the general manager or the person in charge."
+        }
+      ]
+    },
+    {
+      "id": "grease_trap",
+      "title": "Grease trap",
+      "questions": [
+        {
+          "key": "grease_trap.systems_count",
+          "max": 9,
+          "type": "number",
+          "label": "How many grease trap systems?"
+        },
+        {
+          "key": "grease_trap.cleanouts_count",
+          "type": "number",
+          "label": "How many clean outs?"
+        },
+        {
+          "key": "grease_trap.manhole_count",
+          "max": 50,
+          "type": "number",
+          "label": "How many manholes?"
+        },
+        {
+          "key": "grease_trap.sample_ports",
+          "type": "number",
+          "label": "How many sample ports?"
+        },
+        {
+          "key": "grease_trap.photos",
+          "type": "photos",
+          "label": "Photos, including the manholes and the clean outs",
+          "show_if": "grease_trap.systems_count>0"
+        },
+        {
+          "key": "grease_trap.capacity_photos",
+          "info": "Take the grease trap''s capacity plate. If there is none, the gallons pumped. Add the measurements too.",
+          "type": "photos",
+          "label": "Photos of the capacity plate or gallons pumped, and measurements",
+          "show_if": "grease_trap.systems_count>0"
+        },
+        {
+          "key": "site_map.gt_location",
+          "info": "If there are several grease traps, pin the first one here. The form then asks for each of the others.",
+          "type": "gps_pin",
+          "label": "Grease trap location",
+          "show_if": "grease_trap.systems_count>0"
+        },
+        {
+          "key": "grease_trap.size_from",
+          "type": "choice",
+          "label": "How can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>0",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap model",
+          "show_if": "grease_trap.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Measurements",
+          "show_if": "grease_trap.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.capacity_gallons",
+          "type": "text",
+          "label": "Gallons",
+          "show_if": "grease_trap.systems_count>0",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t2.location",
+          "type": "gps_pin",
+          "label": "Grease trap 2 location",
+          "show_if": "grease_trap.systems_count>1"
+        },
+        {
+          "key": "grease_trap.t2.size_from",
+          "type": "choice",
+          "label": "Grease trap 2: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>1",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t2.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 2 model",
+          "show_if": "grease_trap.t2.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t2.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 2 measurements",
+          "show_if": "grease_trap.t2.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t2.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 2 gallons",
+          "show_if": "grease_trap.systems_count>1",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t3.location",
+          "type": "gps_pin",
+          "label": "Grease trap 3 location",
+          "show_if": "grease_trap.systems_count>2"
+        },
+        {
+          "key": "grease_trap.t3.size_from",
+          "type": "choice",
+          "label": "Grease trap 3: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>2",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t3.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 3 model",
+          "show_if": "grease_trap.t3.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t3.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 3 measurements",
+          "show_if": "grease_trap.t3.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t3.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 3 gallons",
+          "show_if": "grease_trap.systems_count>2",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t4.location",
+          "type": "gps_pin",
+          "label": "Grease trap 4 location",
+          "show_if": "grease_trap.systems_count>3"
+        },
+        {
+          "key": "grease_trap.t4.size_from",
+          "type": "choice",
+          "label": "Grease trap 4: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>3",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t4.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 4 model",
+          "show_if": "grease_trap.t4.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t4.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 4 measurements",
+          "show_if": "grease_trap.t4.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t4.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 4 gallons",
+          "show_if": "grease_trap.systems_count>3",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t5.location",
+          "type": "gps_pin",
+          "label": "Grease trap 5 location",
+          "show_if": "grease_trap.systems_count>4"
+        },
+        {
+          "key": "grease_trap.t5.size_from",
+          "type": "choice",
+          "label": "Grease trap 5: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>4",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t5.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 5 model",
+          "show_if": "grease_trap.t5.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t5.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 5 measurements",
+          "show_if": "grease_trap.t5.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t5.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 5 gallons",
+          "show_if": "grease_trap.systems_count>4",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t6.location",
+          "type": "gps_pin",
+          "label": "Grease trap 6 location",
+          "show_if": "grease_trap.systems_count>5"
+        },
+        {
+          "key": "grease_trap.t6.size_from",
+          "type": "choice",
+          "label": "Grease trap 6: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>5",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t6.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 6 model",
+          "show_if": "grease_trap.t6.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t6.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 6 measurements",
+          "show_if": "grease_trap.t6.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t6.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 6 gallons",
+          "show_if": "grease_trap.systems_count>5",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t7.location",
+          "type": "gps_pin",
+          "label": "Grease trap 7 location",
+          "show_if": "grease_trap.systems_count>6"
+        },
+        {
+          "key": "grease_trap.t7.size_from",
+          "type": "choice",
+          "label": "Grease trap 7: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>6",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t7.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 7 model",
+          "show_if": "grease_trap.t7.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t7.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 7 measurements",
+          "show_if": "grease_trap.t7.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t7.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 7 gallons",
+          "show_if": "grease_trap.systems_count>6",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t8.location",
+          "type": "gps_pin",
+          "label": "Grease trap 8 location",
+          "show_if": "grease_trap.systems_count>7"
+        },
+        {
+          "key": "grease_trap.t8.size_from",
+          "type": "choice",
+          "label": "Grease trap 8: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>7",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t8.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 8 model",
+          "show_if": "grease_trap.t8.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t8.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 8 measurements",
+          "show_if": "grease_trap.t8.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t8.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 8 gallons",
+          "show_if": "grease_trap.systems_count>7",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t9.location",
+          "type": "gps_pin",
+          "label": "Grease trap 9 location",
+          "show_if": "grease_trap.systems_count>8"
+        },
+        {
+          "key": "grease_trap.t9.size_from",
+          "type": "choice",
+          "label": "Grease trap 9: how can you give us its size?",
+          "options": [
+            "Model on the plate",
+            "Measurements"
+          ],
+          "show_if": "grease_trap.systems_count>8",
+          "optional": true
+        },
+        {
+          "key": "grease_trap.t9.model",
+          "info": "The brand and model on the plate, for example Zurn GT2700-100. We look up its size, so you do not have to measure it.",
+          "type": "text",
+          "label": "Grease trap 9 model",
+          "show_if": "grease_trap.t9.size_from=Model on the plate",
+          "optional": true,
+          "max_chars": 100,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t9.capacity_measure",
+          "info": "Length, width and depth, in inches.",
+          "type": "text",
+          "label": "Grease trap 9 measurements",
+          "show_if": "grease_trap.t9.size_from=Measurements",
+          "optional": true,
+          "max_chars": 200,
+          "single_line": true
+        },
+        {
+          "key": "grease_trap.t9.capacity_gallons",
+          "type": "text",
+          "label": "Grease trap 9 gallons",
+          "show_if": "grease_trap.systems_count>8",
+          "optional": true,
+          "max_chars": 50,
+          "single_line": true
+        }
+      ]
+    },
+    {
+      "id": "lift_station",
+      "title": "Lift station",
+      "questions": [
+        {
+          "key": "lift_station.count",
+          "type": "number",
+          "label": "How many lift stations?"
+        }
+      ]
+    },
+    {
+      "id": "lift_station_photos",
+      "title": "Photos for the lift station",
+      "questions": [
+        {
+          "key": "lift_station.access_photos",
+          "type": "photos",
+          "label": "Lift station access",
+          "short": "Access",
+          "show_if": "lift_station.count>0",
+          "optional": true,
+          "max_photos": 3
+        },
+        {
+          "key": "lift_station.control_panel_photos",
+          "type": "photos",
+          "label": "Lift station control panel",
+          "short": "Control panel",
+          "show_if": "lift_station.count>0",
+          "max_photos": 3
+        },
+        {
+          "key": "lift_station.photos",
+          "type": "photos",
+          "label": "Lift station",
+          "show_if": "lift_station.count>0"
+        }
+      ]
+    },
+    {
+      "id": "water_tank",
+      "title": "Water tank",
+      "questions": [
+        {
+          "key": "water_tank.count",
+          "type": "number",
+          "label": "How many water tanks?"
+        },
+        {
+          "key": "water_tank.manhole_count",
+          "type": "number",
+          "label": "How many manholes?",
+          "show_if": "water_tank.count>0"
+        },
+        {
+          "key": "water_tank.capacity",
+          "type": "text",
+          "label": "Total capacity",
+          "show_if": "water_tank.count>0"
+        },
+        {
+          "key": "water_tank.capacity_photos",
+          "type": "photos",
+          "label": "Water tank capacity",
+          "short": "Capacity",
+          "show_if": "water_tank.count>0",
+          "max_photos": 3
+        },
+        {
+          "key": "water_tank.photos",
+          "type": "photos",
+          "label": "Water tank",
+          "show_if": "water_tank.count>0"
+        }
+      ]
+    }
+  ],
+  "photo_note_required": true
+}'::jsonb;
+$function$;
+
+DO $v$
+DECLARE
+  t jsonb := public.fn_intake_form_current();
+  o jsonb := (SELECT f FROM before_f);
+  e jsonb := (SELECT f FROM before_f);
+  r record;
+BEGIN
+  -- V1 the grants did not move
+  IF (SELECT acl FROM before_f) IS DISTINCT FROM (SELECT proacl::text FROM pg_proc WHERE oid = 'public.fn_intake_form_current'::regproc) THEN RAISE EXCEPTION 'V1: ACL changed'; END IF;
+  -- V2 the new list IS the old list, plus the version and exactly these two hints; nothing else moved
+  FOR r IN
+    SELECT (s.n - 1)::text AS si, (q.m - 1)::text AS qi, q.x ->> 'key' AS k
+      FROM jsonb_array_elements(o -> 'sections') WITH ORDINALITY s(x, n),
+           jsonb_array_elements(s.x -> 'questions') WITH ORDINALITY q(x, m)
+     WHERE q.x ->> 'key' IN ('access_entry.gate_code', 'access_hours.schedule')
+  LOOP
+    e := jsonb_set(e, ARRAY['sections', r.si, 'questions', r.qi, 'info'],
+                   to_jsonb(CASE r.k WHEN 'access_entry.gate_code' THEN 'Ask the general manager or the person in charge.'::text ELSE 'The hours our truck can come, not when the business is open. Ask the general manager or the person in charge.'::text END), true);
+  END LOOP;
+  e := jsonb_set(e, '{version}', '7'::jsonb);
+  IF t IS DISTINCT FROM e THEN RAISE EXCEPTION 'V2: the list is not the old list plus the two hints'; END IF;
+  -- V3 the same 81 questions, and 22 hints where there were 20
+  IF (SELECT count(*) FROM jsonb_array_elements(t -> 'sections') s, jsonb_array_elements(s -> 'questions') q) <> 81 THEN RAISE EXCEPTION 'V3: question count'; END IF;
+  IF (SELECT count(*) FROM jsonb_array_elements(t -> 'sections') s, jsonb_array_elements(s -> 'questions') q WHERE q ? 'info') <> 22 THEN RAISE EXCEPTION 'V3: hint count'; END IF;
+  -- V4 the Client App's list of questions reads the same keys as before
+  IF (SELECT count(*) FROM client.v_intake_questions) IS DISTINCT FROM (SELECT n FROM before_q) THEN RAISE EXCEPTION 'V4: client.v_intake_questions moved'; END IF;
+END $v$;
+
+COMMIT;
