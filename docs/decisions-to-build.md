@@ -32,7 +32,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 **Ops Portal: one app, a monolith, no iframes (2026-11-04, Trello #161 rKsUKfQH)**
 - Fred's voice note: *"I want a monolith. I want everything merged."* This replaces his 2026-08-18 iframe plan. The brief, in his words: `Building Apps/Ops Portal/docs/00-fred-brief-2026-11-04.md`.
 - In: Calendar, HR and DERM first, then Admin Review and Clients. Out: Field Portal and DUMP. The other apps keep running until he says stop. Order: understand, big diagram, architecture, mockups, then build one app at a time.
-- State: planning. Nothing is built, and the Lovable project does not exist yet (Fred will create it and send the link).
+- Fred's picks, 2026-11-04: the repo goes in the `unclogme` org; shell B, the sidebar; HR, then Calendar, then DERM; move the code first, restyle after; Lovable instructions for this project only.
+- State: Lovable project `9f6cf384-0f0d-4982-936b-9e39408362b8` exists, blank. Nothing is built. Git is not connected yet.
 
 **Boca Raton on BSI Online: frozen leads, the BSI scrape, the filing bot (2026-11-03, Trello #165 f3Q3Q55i, #166 IWJkqTq1, #169 0lAWU6Ge)**
 - Plan with checks: `docs/specs/2026-11-03-boca-bsi-leads-and-filing-plan.md`. Fred's picks: leads *"generic ... 3NF ...
