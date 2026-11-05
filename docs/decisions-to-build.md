@@ -25,6 +25,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Sales App: a stricter staff address check (2026-11-05)**
+- Fred said yes to sending this to Viktor, found while re-reading the Dependabot alerts against the live code.
+- State: asked Viktor 2026-11-05, he deploys on both hosts. Not built yet. The 46 alert dismissals wait until this ships, and on Fred's OK.
+
 **Ops Portal: one app, a monolith, no iframes (2026-11-04, Trello #161 rKsUKfQH)**
 - Fred's voice note: *"I want a monolith. I want everything merged."* This replaces his 2026-08-18 iframe plan. The brief, in his words: `Building Apps/Ops Portal/docs/00-fred-brief-2026-11-04.md`.
 - In: Calendar, HR and DERM first, then Admin Review and Clients. Out: Field Portal and DUMP. The other apps keep running until he says stop. Order: understand, big diagram, architecture, mockups, then build one app at a time.
