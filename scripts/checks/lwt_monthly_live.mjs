@@ -44,6 +44,7 @@ const present = (s) => all.includes(s) || all.includes(s.replace(/'/g, "\\'")) |
 ok(!present('a sentence no build should ever carry 7f3a'), 'control: a made-up sentence is absent')
 ok(chunks.size > 5, 'walked the live chunks', String(chunks.size))
 ok(all.includes('to:"/monthly"'), 'the menu links to the page')
+ok(all.includes('This report file could not be read'), 'the live build carries the report viewer')
 const titles = Object.values(RULE_INFO).map((v) => v[0])
 const missing = titles.filter((t) => !present(t))
 ok(missing.length === 0, `the live build carries the rules' ${titles.length} titles`, missing.slice(0, 3).join(' | '))

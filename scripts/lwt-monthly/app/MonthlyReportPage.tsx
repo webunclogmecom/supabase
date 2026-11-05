@@ -12,6 +12,8 @@ import {
   recordOutcome, resolvedGallons, ruleInfo,
 } from './monthly-rules';
 import type { Decision, FetchResponse, Finding, InvoiceParse, Load, SavedFile } from './monthly-rules';
+import { fitted, reportHtml } from './xlsx-view';
+import type { ReportPage } from './xlsx-view';
 
 export interface MonthlyReportPageProps {
   functionsUrl: string;                     // https://<project>.supabase.co/functions/v1
@@ -48,7 +50,7 @@ interface Item {
 }
 type Stage = 'loading' | 'home' | 'start' | 'reading' | 'board' | 'check' | 'wait';
 type DialogState = { kind: 'record'; id: number; tickets: string[]; label: string; invoice: string | null; period: string }
-  | { kind: 'discard'; id: number; label: string } | null;
+  | { kind: 'discard'; id: number; label: string } | { kind: 'startover'; period: string; label: string } | null;
 
 // ---- Small helpers ---------------------------------------------------------------------------------------------------
 const MONTH_KEY = '__month';
@@ -105,7 +107,7 @@ const I = {
   check: 'M20 6 9 17l-5-5', down: 'M12 4v12m0 0 5-5m-5 5-5-5M4 20h16', plus: 'M12 5v14M5 12h14', x: 'M18 6 6 18M6 6l12 12',
   bang: 'M12 5v9m0 4h.01', dash: 'M6 12h12', pin: 'M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   file: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M12 18v-6m0 0-2.5 2.5M12 12l2.5 2.5', back: 'M15 18l-6-6 6-6',
-  redo: 'M21 12a9 9 0 1 1-3-6.7L21 8m0-5v5h-5',
+  redo: 'M21 12a9 9 0 1 1-3-6.7L21 8m0-5v5h-5', eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
 };
 
 // ---- What needs a person ----------------------------------------------------------------------------------------------
@@ -210,6 +212,10 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
   const [busy, setBusy] = useState('');
   const [showDiscarded, setShowDiscarded] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [picked, setPicked] = useState<Set<number>>(() => new Set());
+  const [viewing, setViewing] = useState<{ row: FilingRow; page: ReportPage | null; err: string } | null>(null);
+  const [viewW, setViewW] = useState(0);
+  const viewBody = useRef<HTMLDivElement | null>(null);
   const [dlgReason, setDlgReason] = useState('');
   const [dlgText, setDlgText] = useState('');
   const [dlgErr, setDlgErr] = useState('');
@@ -457,7 +463,45 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     } catch (e) { setErr(msg(e)); } finally { setBusy(''); }
   }, [api]);
 
+  // Fred, 2026-11-05: "a "View" button instead of Download, and on the table header have the download, where the rows of the table are selectable".
+  const downloadPicked = useCallback(async (rows: FilingRow[]) => {
+    setBusy('dlmany'); setErr('');
+    try {
+      for (const x of rows) {
+        const reply = await api.post('download', { id: x.id });
+        if (!reply.ok) throw new Error(`${x.period}: ${await problem(reply)}`);
+        await saveBlob(reply, `LWT_report_${x.ym}.xlsx`);
+      }
+    } catch (e) { setErr(msg(e)); } finally { setBusy(''); }
+  }, [api]);
+  const openReport = useCallback(async (row: FilingRow) => {
+    setViewing({ row, page: null, err: '' });
+    try {
+      const reply = await api.post('download', { id: row.id });
+      if (!reply.ok) throw new Error(await problem(reply));
+      const page = await reportHtml(await reply.arrayBuffer());
+      setViewing(v => (v?.row.id === row.id ? { row, page, err: '' } : v));
+    } catch (e) { setViewing(v => (v?.row.id === row.id ? { row, page: null, err: msg(e) } : v)); }
+  }, [api]);
+  const viewOpen = !!viewing;
+  useEffect(() => {
+    const el = viewBody.current;
+    if (!viewOpen || !el) return;
+    const watch = new ResizeObserver(([e]) => setViewW(e.contentRect.width));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [viewOpen]);
+
   const closeDialog = () => { setDialog(null); setDlgReason(''); setDlgText(''); setDlgErr(''); };
+  const startOver = useCallback(async () => {
+    if (!dialog || dialog.kind !== 'startover') return;
+    setBusy('startover'); setDlgErr('');
+    try {
+      await okJson(await api.post('save_work', { period: dialog.period, work: null }));
+      closeDialog();
+      await loadHome();
+    } catch (e) { setDlgErr(msg(e)); } finally { setBusy(''); }
+  }, [api, dialog, loadHome]);
   const record = useCallback(async () => {
     if (!dialog || dialog.kind !== 'record') return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -1112,7 +1156,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
           <h1>{monthLabel(r.ym)}</h1>
           {stage !== 'wait' && (
             <div className="lw-months" role="group" aria-label="Report month">
-              {months.map(m => <button type="button" key={m} className={m === r.ym ? 'on' : ''} aria-pressed={m === r.ym} onClick={() => act(() => r.applyMonth(m))}>{MONTHS[+m.slice(5, 7) - 1].slice(0, 3)}</button>)}
+              {months.map(m => <button type="button" key={m} className={m === r.ym ? 'on' : ''} aria-pressed={m === r.ym} onClick={() => { r.applyMonth(m); bump(); if (savedAt) scheduleSave(); }}>{MONTHS[+m.slice(5, 7) - 1].slice(0, 3)}</button>)}
             </div>
           )}
           {savedAt && !saveErr && <span className="lw-saved"><Ic d={I.check} /> Saved {clock(savedAt)}{savedBy && savedBy !== ov?.me.name ? ` by ${savedBy}` : ''}</span>}
@@ -1391,11 +1435,15 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     const draft = mine.find(x => !x.filed);
     const visible = ov.rows.filter(x => showDiscarded || !x.discarded);
     const hiddenN = ov.rows.filter(x => x.discarded).length;
+    const choosable = visible.filter(x => x.report);
+    const chosen = choosable.filter(x => picked.has(x.id));
+    const allPicked = choosable.length > 0 && chosen.length === choosable.length;
+    const togglePicked = (id: number) => setPicked(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
     const tone = (t: string) => (t === 'ok' ? 'ok' : t === 'warn' ? 'warn' : 'idle');
     const recordDlg = (x: FilingRow): DialogState => ({ kind: 'record', id: x.id, tickets: x.tickets || [], label: x.period, invoice: x.invoice_id, period: x.ym });
     const actions = (x: FilingRow) => (
       <span className="lw-acts" style={{ justifyContent: 'flex-end' }}>
-        {x.report && <button type="button" className="lw-b" aria-label={`Download ${x.period}`} disabled={busy === `dl${x.id}`} onClick={() => void download(x.id, `LWT_report_${x.ym}.xlsx`)}><Ic d={I.down} /> Download</button>}
+        {x.report && <button type="button" className="lw-b" aria-label={`View ${x.period}`} onClick={() => void openReport(x)}><Ic d={I.eye} /> View</button>}
         {!x.filed && !x.discarded && canEdit && <button type="button" className="lw-b" onClick={() => setDialog(recordDlg(x))}>Record as filed</button>}
         {!x.filed && !x.discarded && canEdit && <button type="button" className="lw-b q" onClick={() => setDialog({ kind: 'discard', id: x.id, label: x.period })}>Discard</button>}
         {!!x.discarded && canEdit && <button type="button" className="lw-b" disabled={busy === `re${x.id}`} onClick={() => void restoreRow(x.id)}>Restore</button>}
@@ -1416,35 +1464,43 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
             <div className="lw-acts">
               {filed && filed.report && <button type="button" className="lw-b" onClick={() => void download(filed.id, `LWT_report_${filed.ym}.xlsx`)}><Ic d={I.down} /> Download</button>}
               {draft && canEdit && <button type="button" className="lw-b" onClick={() => setDialog(recordDlg(draft))}>Record as filed</button>}
+              {homeWork && !filed && !draft && canEdit && <button type="button" className="lw-b q" onClick={() => setDialog({ kind: 'startover', period: ym, label: c.period })}>Start over</button>}
               {!filed && canEdit && <button type="button" className={`lw-b ${draft ? '' : 'p'}`} disabled={!ym || busy === 'open' || busy === 'home'} onClick={() => void openFiling(ym)}>{busy === 'open' ? 'Opening' : homeWork ? 'Continue filing' : draft ? 'Open the tickets' : 'Start filing'}</button>}
             </div>
             {!canEdit && <span className="lw-hint">You can see the history here. Filing needs Edit in the DERM Tracker.</span>}
             {canEdit && !filed && !draft && <span className="lw-hint">{homeWork ? `Saved ${clock(homeWork.at)}${homeWork.by ? ` by ${homeWork.by}` : ''}.` : 'Everything unreported is already loaded. Have the county’s invoice ready.'}</span>}
           </div>
         </div>
-        <div className="lw-card">
-          <h3 className="lw-h3">Filing history {hiddenN > 0 && <button type="button" className="lw-b q" onClick={() => setShowDiscarded(!showDiscarded)}>{showDiscarded ? 'Hide' : 'Show'} {count(hiddenN, 'discarded draft')}</button>}</h3>
-          <div className="lw-tblwrap lw-wrap">
-            <table className="lw-tbl">
-              <thead><tr><th>Period</th><th>Invoice</th><th className="r">Tickets</th><th className="r">Gallons</th><th className="r">Fee</th><th>Status</th><th>Handled by</th><th /></tr></thead>
-              <tbody>{visible.map(x => (
-                <tr key={x.id}>
-                  <td><b>{x.period}</b></td><td>{x.invoice_id || 'None'}</td><td className="r">{x.ticket_count}</td><td className="r">{x.gallons}</td><td className="r">{x.fee}</td>
-                  <td><span className={`lw-chip ${tone(x.tone)}`}>{x.filed && <Ic d={I.check} />}{x.status_text}</span></td>
-                  <td>{x.who}<small>{mdy(x.when)}</small></td><td>{actions(x)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-          <div className="lw-hcards">{visible.map(x => (
-            <div className="lw-hc" key={x.id}>
-              <div className="l1">{x.period}<span className={`lw-chip ${tone(x.tone)}`}>{x.status_text}</span></div>
-              <small>{x.invoice_id || 'No invoice'}, {count(x.ticket_count, 'ticket')}, {x.gallons} gal, {x.fee}</small>
-              <small>{x.who}{x.when ? `, ${mdy(x.when)}` : ''}</small>
-              <div style={{ marginTop: 6 }}>{actions(x)}</div>
+        <div className="lw-hist">
+          <h3 className="lw-histt">Filing history {hiddenN > 0 && <button type="button" className="lw-b q" onClick={() => setShowDiscarded(!showDiscarded)}>{showDiscarded ? 'Hide' : 'Show'} {count(hiddenN, 'discarded draft')}</button>}</h3>
+          <div className="lw-htbl" role="table" aria-label="Filing history">
+            <div className="lw-hrow lw-hhead" role="row">
+              <span className="lw-hck" role="columnheader">{choosable.length > 0 && <label className="lw-cku"><input type="checkbox" className="lw-ck" aria-label="Select all" checked={allPicked} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !allPicked; }} onChange={() => setPicked(new Set(allPicked ? [] : choosable.map(x => x.id)))} /></label>}</span>
+              <span className="lw-hper" role="columnheader">Period</span>
+              <span className="lw-hcount" aria-live="polite">{chosen.length ? `${chosen.length} selected` : 'Select all'}</span>
+              <span className="lw-hinv" role="columnheader">Invoice</span>
+              <span className="lw-hn" role="columnheader">Tickets</span>
+              <span className="lw-hn" role="columnheader">Gallons</span>
+              <span className="lw-hn" role="columnheader">Fee</span>
+              <span className="lw-hst" role="columnheader">Status</span>
+              <span className="lw-hwho" role="columnheader">Handled by</span>
+              <span className="lw-hact" role="columnheader"><button type="button" className={`lw-b ${chosen.length ? 'p' : ''}`} disabled={!chosen.length || busy === 'dlmany'} onClick={() => void downloadPicked(chosen)}><Ic d={I.down} /> {busy === 'dlmany' ? 'Downloading' : `Download${chosen.length ? ` ${chosen.length}` : ''}`}</button></span>
             </div>
-          ))}</div>
-          {!visible.length && <div className="lw-wait">No filings yet.</div>}
+            {visible.map(x => (
+              <div key={x.id} role="row" className={`lw-hrow ${picked.has(x.id) && x.report ? 'on' : ''} ${x.discarded ? 'off' : ''} ${!x.filed && !x.discarded ? 'draft' : ''}`} style={{ '--rail': x.tone === 'ok' ? 'var(--lw-ok)' : x.tone === 'warn' ? 'var(--lw-warn)' : 'var(--lw-line2)' } as CSSProperties}>
+                <span className="lw-hck" role="cell">{x.report && <label className="lw-cku"><input type="checkbox" className="lw-ck" aria-label={`Select ${x.period}`} checked={picked.has(x.id)} onChange={() => togglePicked(x.id)} /></label>}</span>
+                <span className="lw-hper" role="cell"><b>{x.period}</b><small>{x.invoice_id || 'No invoice'}</small></span>
+                <span className="lw-hinv" role="cell">{x.invoice_id || 'None'}</span>
+                <span className="lw-hn t" role="cell" data-l="Tickets">{x.ticket_count}</span>
+                <span className="lw-hn g" role="cell" data-l="Gallons">{x.gallons}</span>
+                <span className="lw-hn f" role="cell" data-l="Fee">{x.fee}</span>
+                <span className="lw-hst" role="cell"><span className={`lw-chip ${tone(x.tone)}`}>{x.filed && <Ic d={I.check} />}{x.status_text}</span></span>
+                <span className="lw-hwho" role="cell">{x.who && <><span className="lw-hav" aria-hidden="true">{x.who[0].toUpperCase()}</span><span><b>{x.who}</b><small>{mdy(x.when)}</small></span></>}</span>
+                <span className="lw-hact" role="cell">{actions(x)}</span>
+              </div>
+            ))}
+            {!visible.length && <div className="lw-wait">No filings yet.</div>}
+          </div>
         </div>
       </div>
     );
@@ -1471,6 +1527,21 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
         </div>
       );
     }
+    if (dialog.kind === 'startover') {
+      return (
+        <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label={`Start ${dialog.label} over`} onKeyDown={e => { if (e.key === 'Escape') closeDialog(); }}>
+          <div className="lw-dlg">
+            <h3>Start {dialog.label} over?</h3>
+            <p>This clears the invoice and the answers saved for this month, and it opens fresh from the live tickets. A trap size saved on a property stays, and so do tickets left off the report.</p>
+            {dlgErr && <div className="lw-warnbox">{dlgErr}</div>}
+            <div className="lw-acts">
+              <button type="button" className="lw-b" autoFocus onClick={closeDialog}>Keep my work</button>
+              <button type="button" className="lw-b p" disabled={busy === 'startover'} onClick={() => void startOver()}>{busy === 'startover' ? 'Clearing' : 'Start over'}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     const reasons = [['superseded', 'Replaced by a newer draft'], ['duplicate', 'A duplicate'], ['test', 'Test data'], ['other', 'Other']];
     return (
       <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label="Discard this draft" onKeyDown={e => { if (e.key === 'Escape') closeDialog(); }}>
@@ -1489,6 +1560,27 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     );
   }
 
+  function renderViewer() {
+    if (!viewing) return null;
+    const { row, page, err: viewErr } = viewing;
+    const said = [row.invoice_id ? `Invoice ${row.invoice_id}` : 'No invoice', count(row.ticket_count, 'ticket'), [row.status_text, row.who && `by ${row.who}`, row.when && `on ${mdy(row.when)}`].filter(Boolean).join(' ')].join(', ');
+    return (
+      <div className="lwt lw-scrim lw-vw" role="dialog" aria-modal="true" aria-label={`${row.period} report`} onKeyDown={e => { if (e.key === 'Escape') setViewing(null); }} onClick={e => { if (e.target === e.currentTarget) setViewing(null); }}>
+        <div className="lw-vwbox">
+          <div className="lw-vwhead">
+            <div><b>{row.period}</b><small>{said}</small></div>
+            <button type="button" className="lw-b" autoFocus onClick={() => setViewing(null)}><Ic d={I.x} /> Close</button>
+          </div>
+          <div className="lw-vwbody" ref={viewBody}>
+            {viewErr ? <div className="lw-err" style={{ margin: 16, alignSelf: 'start' }}><span>{viewErr}</span><button type="button" className="lw-b" onClick={() => void openReport(row)}>Try again</button></div>
+              : !page ? <div className="lw-wait">Opening the report</div>
+                : <iframe title={`${row.period} report`} sandbox="" srcDoc={fitted(page, viewW)} />}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {stage === 'loading' ? <div className="lwt"><div className="lw-head"><h1>Monthly Report</h1></div><div className="lw-wait">Loading</div></div>
@@ -1497,6 +1589,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
             : stage === 'wait' ? renderWait()
               : renderWork()}
       {renderDialog()}
+      {renderViewer()}
     </>
   );
 }

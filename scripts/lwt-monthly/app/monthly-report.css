@@ -6,12 +6,13 @@
   --lw-brand:#f14714;--lw-brand-d:#c93a0f;--lw-brand-t:#fff4ef;--lw-on-brand:#ffffff;
   --lw-ok:#047857;--lw-ok-t:#ecfdf5;--lw-ok-b:#a7f3d0;--lw-warn:#92400e;--lw-warn-t:#fffbeb;--lw-warn-b:#fde68a;
   --lw-bad:#b91c1c;--lw-bad-t:#fef2f2;--lw-bad-b:#fecaca;--lw-pur:#6b21a8;--lw-pur-t:#f3e8ff;--lw-blue:#1d4ed8;--lw-blue-t:#dbeafe;
+  --lw-band:#18181b;--lw-band-ink:#f4f4f5;--lw-band-line:#3f3f46;
   --lw-out:cubic-bezier(.23,1,.32,1);color:var(--lw-ink)}
 /* The staff apps' light/dark switch is html.app-dark, not .dark: it leaves the theme tokens light and overrides each app's own
    classes (Building Apps/docs/halloween/gen.mjs), so this page's classes need their own surface colours, the same ones that
    stylesheet gives the DERM Tracker. Without this block the page stays white on a dark app. */
 .app-dark .lwt{--lw-bg:rgb(20 23 29);--lw-ink:rgb(213 215 219);--lw-ink2:rgb(162 165 168);--lw-soft:rgb(30 34 40);--lw-line:rgb(45 54 69);--lw-line2:rgb(66 74 88)}
-.dark .lwt,.app-dark .lwt{--lw-brand:#ff6a3d;--lw-brand-d:#ff8a63;--lw-brand-t:#33190f;--lw-on-brand:#1a0d08;
+.dark .lwt,.app-dark .lwt{--lw-band:#07090d;--lw-band-ink:#e4e4e7;--lw-band-line:rgb(45 54 69);--lw-brand:#ff6a3d;--lw-brand-d:#ff8a63;--lw-brand-t:#33190f;--lw-on-brand:#1a0d08;
   --lw-ok:#6ee7b7;--lw-ok-t:#0f2a22;--lw-ok-b:#14533f;--lw-warn:#fcd34d;--lw-warn-t:#2b2110;--lw-warn-b:#5a4415;
   --lw-bad:#fca5a5;--lw-bad-t:#2f1416;--lw-bad-b:#5b2125;--lw-pur:#d8b4fe;--lw-pur-t:#26173a;--lw-blue:#93b4ff;--lw-blue-t:#172036}
 .lwt *{box-sizing:border-box}
@@ -47,17 +48,46 @@
 .lw-hint{font-size:12.5px;color:var(--lw-ink2);max-width:36ch;text-align:right}
 .lw-go .lw-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .lw-card{border:1px solid var(--lw-line);border-radius:10px;background:var(--lw-bg)}
-.lw-tbl{width:100%;border-collapse:collapse;font-size:13px}
-.lw-tbl th{text-align:left;font-size:12px;font-weight:600;color:var(--lw-ink2);padding:10px 14px;border-bottom:1px solid var(--lw-line)}
-.lw-tbl td{padding:11px 14px;border-bottom:1px solid var(--lw-line);vertical-align:middle}
-.lw-tbl tr:last-child td{border-bottom:0}.lw-tbl .r{text-align:right;font-variant-numeric:tabular-nums}.lw-tbl td b{font-weight:600}
-.lw-tbl small{display:block;color:var(--lw-ink2);font-size:11.5px}
 .lw-h3{display:flex;gap:10px;align-items:center;font-size:14px;font-weight:700;margin:0;padding:12px 14px;border-bottom:1px solid var(--lw-line)}
 .lw-h3 .lw-b{margin-left:auto}
 .lw-wrap{overflow-x:auto}.lw-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.lw-hcards{display:none}
-.lw-hc{padding:12px 14px;border-bottom:1px solid var(--lw-line);display:grid;gap:3px}.lw-hc:last-child{border-bottom:0}
-.lw-hc .l1{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:600}.lw-hc small{color:var(--lw-ink2);font-size:12px}
+/* The filing history: design C (Fred, 2026-11-05: "go with C, but a better responsive view where it shows who handled it too") */
+.lw-hist{display:grid;gap:8px}
+.lw-histt{display:flex;gap:10px;align-items:center;font-size:14px;font-weight:700;margin:0;min-height:32px}.lw-histt .lw-b{margin-left:auto}
+/* One set of columns for the whole table (subgrid), so a row with more buttons never shifts the others out of line. */
+.lw-htbl{display:grid;grid-template-columns:46px minmax(140px,1.3fr) minmax(92px,1fr) 62px 74px 84px 104px minmax(118px,1fr) minmax(128px,auto);border:1px solid var(--lw-line);border-radius:10px;overflow:hidden;background:var(--lw-bg)}
+.lw-htbl>.lw-wait{grid-column:1/-1}
+.lw-hrow{display:grid;grid-template-columns:subgrid;grid-column:1/-1;align-items:center;min-height:56px;font-size:13px;border-top:1px solid var(--lw-line);box-shadow:inset 3px 0 0 var(--rail,transparent);transition:background-color .12s}
+.lw-hrow:hover{background:var(--lw-soft)}.lw-hrow.on,.lw-hrow.on:hover{background:var(--lw-brand-t)}
+.lw-hrow>*{padding:0 10px;min-width:0}.lw-hrow>.lw-hck{padding:0}
+.lw-hhead,.lw-hhead:hover{min-height:46px;border-top:0;box-shadow:none;background:var(--lw-band);color:var(--lw-band-ink);font-size:12px;font-weight:600}
+.lw-hcount{display:none}
+.lw-hhead .lw-b{height:30px;font-size:12px}
+.lw-hhead .lw-b:not(.p){background:transparent;border-color:var(--lw-band-line);color:var(--lw-band-ink);box-shadow:none}
+.lw-hhead .lw-ck{background:transparent;border-color:#8e8e96}
+.lw-hhead .lw-ck:checked,.lw-hhead .lw-ck:indeterminate{background:#f14714;border-color:#f14714}
+.lw-hper b{font-weight:700}.lw-hper small{display:none;color:var(--lw-ink2);font-size:11.5px}
+.lw-hn{text-align:right;font-variant-numeric:tabular-nums}.lw-hn.f{font-weight:700}
+.lw-hwho{display:flex;align-items:center;gap:8px}.lw-hwho>span:last-child{min-width:0}
+.lw-hwho b{display:block;font-size:12.5px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}.lw-hwho small{display:block;color:var(--lw-ink2);font-size:11.5px;line-height:1.25}
+.lw-hhead .lw-hwho{display:block}
+.lw-hav{width:24px;height:24px;border-radius:50%;background:var(--lw-soft);border:1px solid var(--lw-line2);color:var(--lw-ink2);display:grid;place-items:center;font-size:10.5px;font-weight:700;flex:none}
+.lw-hrow.on .lw-hav{background:var(--lw-bg)}
+.lw-hact{justify-self:end;padding-right:12px!important}.lw-hact .lw-acts{justify-content:flex-end}
+.lw-hrow.off>:not(.lw-hck):not(.lw-hact){opacity:.62}
+.lw-cku{display:grid;place-items:center;width:46px;min-height:44px;padding-left:4px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.lw-ck{appearance:none;-webkit-appearance:none;width:16px;height:16px;margin:0;border:1.5px solid #8e8e96;border-radius:4.5px;background:var(--lw-bg);position:relative;cursor:pointer;transition:background-color .12s,border-color .12s}
+.lw-ck:hover{border-color:var(--lw-brand)}.lw-ck:checked,.lw-ck:indeterminate{background:var(--lw-brand);border-color:var(--lw-brand)}
+.lw-ck:checked::after{content:"";position:absolute;left:4.2px;top:1.2px;width:4.5px;height:8.5px;border:solid var(--lw-on-brand);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.lw-ck:indeterminate::after{content:"";position:absolute;left:2.5px;top:5.6px;width:8px;height:2px;background:var(--lw-on-brand)}
+/* View: the report on the page */
+.lw-vwbox{width:min(1200px,100%);height:calc(100dvh - 32px);background:var(--lw-bg);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px -20px rgba(0,0,0,.5)}
+.lw-vwhead{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--lw-line)}.lw-vwhead>div{min-width:0}
+.lw-vwhead b{display:block;font-size:15px;font-weight:700}.lw-vwhead small{display:block;color:var(--lw-ink2);font-size:12px}
+.lw-vwhead .lw-b{margin-left:auto;flex:none}
+.lw-vwbody{flex:1;min-height:0;background:#e4e4e7;display:grid}.app-dark .lw-vwbody,.dark .lw-vwbody{background:var(--lw-soft)}
+.lw-vwbody iframe{width:100%;height:100%;border:0;display:block}
+@media (max-width:640px){.lw-vw{padding:0}.lw-vwbox{height:100dvh;border-radius:0}}
 
 /* Filing header */
 .lw-fhead{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
@@ -213,11 +243,42 @@
 .lw-dlg h3{margin:0;font-size:16px;font-weight:700}.lw-dlg p{margin:0;color:var(--lw-ink2);font-size:13px}.lw-dlg .lw-acts{justify-content:flex-end}
 
 @container (max-width:980px){.lw-work,.lw-chk{grid-template-columns:minmax(0,1fr)}.lw-panel{position:static;max-height:none}}
+/* Narrower: a row with several buttons puts them on a line of their own, so the numbers stay on the row's first line. */
+@container (min-width:680px) and (max-width:1099px){
+  .lw-hrow.draft .lw-hact{grid-column:2/-1;grid-row:2;padding:0 12px 10px 0!important}
+}
+/* A tablet: the invoice folds under the month, so every other column keeps its place. */
+@container (min-width:680px) and (max-width:899px){
+  .lw-htbl{grid-template-columns:46px minmax(110px,1.2fr) 58px 64px 70px 96px minmax(112px,1fr) minmax(112px,auto)}
+  .lw-hinv{display:none}.lw-hper small{display:block}.lw-hhead .lw-hper small{display:none}
+  .lw-hrow>*{padding:0 7px}
+  .lw-hrow.off .lw-hact{grid-column:2/-1;grid-row:2;padding:0 12px 10px 0!important}
+}
+/* A phone: each filing is a card, with the numbers in one tinted strip and who handled it on the last line. */
+@container (max-width:679px){
+  .lw-htbl{display:block}
+  .lw-hrow{grid-template-columns:42px repeat(3,minmax(0,1fr));grid-template-areas:"ck per per st" ". t g f" ". who who act";gap:8px 0;padding:12px 12px 12px 0}
+  .lw-hinv{display:none}.lw-hper small{display:block}
+  .lw-hrow.draft,.lw-hrow.off{grid-template-areas:"ck per per st" ". t g f" ". who who who" ". act act act"}
+  .lw-hrow>*{padding:0}
+  .lw-hck{grid-area:ck;align-self:start}.lw-cku{width:42px;min-height:24px;align-items:start;padding-top:3px}
+  .lw-hper{grid-area:per}.lw-hper b{font-size:15px;letter-spacing:-.01em}
+  .lw-hst{grid-area:st;justify-self:end;align-self:start}
+  .lw-hn{text-align:left;background:var(--lw-soft);padding:7px 10px!important;font-weight:700;font-size:13.5px}
+  .lw-hn::before{content:attr(data-l);display:block;font-size:11px;font-weight:500;color:var(--lw-ink2)}
+  .lw-hn.t{grid-area:t;border-radius:8px 0 0 8px}.lw-hn.g{grid-area:g}.lw-hn.f{grid-area:f;border-radius:0 8px 8px 0}
+  .lw-hrow.on .lw-hn{background:var(--lw-bg)}
+  .lw-hwho{grid-area:who}.lw-hact{grid-area:act;padding-right:0!important}
+  .lw-hrow.draft .lw-hact,.lw-hrow.off .lw-hact{justify-self:stretch}.lw-hrow.draft .lw-hact .lw-acts,.lw-hrow.off .lw-hact .lw-acts{justify-content:flex-start}
+  .lw-hhead,.lw-hhead:hover{grid-template-columns:42px minmax(0,1fr) auto;grid-template-areas:"ck count act";gap:0;padding:8px 12px 8px 0}
+  .lw-hhead>.lw-hper,.lw-hhead>.lw-hinv,.lw-hhead>.lw-hn,.lw-hhead>.lw-hst,.lw-hhead>.lw-hwho{display:none}
+  .lw-hhead>.lw-hck{align-self:center}.lw-hhead .lw-cku{align-items:center;padding-top:0}
+  .lw-hcount{display:block;grid-area:count;font-size:13px}
+}
 @container (max-width:640px){
   .lw-rt{width:8px;margin:0 3px}.lw-st span{display:none}.lw-st.now span{display:inline}
   .lw-saved{margin-left:0;width:100%}
   .lw-go{margin-left:0;justify-items:start}.lw-hint{text-align:left}.lw-go .lw-acts{justify-content:flex-start}.lw-mo{font-size:32px}
-  .lw-tblwrap{display:none}.lw-hcards{display:grid}
   .lw-inp{height:44px;font-size:16px}
   .lw-inv2{grid-template-columns:minmax(0,1fr)}.lw-addrow{grid-template-columns:minmax(0,1fr)}.lw-addrow .lw-b{height:44px}
   .lw-pf .lw-acts .lw-b{flex:1;height:44px}
