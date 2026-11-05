@@ -28,6 +28,7 @@ const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
 // Origins that may call this function. Add new app subdomains here.
 const ALLOWED_ORIGINS = new Set([
   'https://derm.unclogme.app',
+  'https://ops.unclogme.app',
   // Lovable preview origin pattern is `https://<project-id>--<branch>.lovable.app`
   // — list the DERM Tracker project preview origin if we want to test against
   // the unpublished preview. For now we only allow the production subdomain.

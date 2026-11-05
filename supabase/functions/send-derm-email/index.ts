@@ -179,7 +179,7 @@ type CityAttachMode = 'report' | 'none'
 // The compliance archive inbox (derm@ayache.com) is ARCHIVE_INBOX in _shared/archive-copy.ts; hiddenCopies() adds it
 // on every non-test city send. Since D5 it is a separate email, never a Bcc on the city email.
 
-const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
+const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app', 'https://ops.unclogme.app'])
 
 function corsHeadersFor(origin: string | null): Record<string, string> {
   const allowed = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://derm.unclogme.app'

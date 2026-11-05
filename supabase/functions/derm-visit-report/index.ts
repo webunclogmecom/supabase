@@ -43,7 +43,7 @@ const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
 // Review email path (send-visit-photos-email), which calls the same service.
 const PDF_TIMEOUT_MS = 65_000
 
-const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
+const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app', 'https://ops.unclogme.app'])
 // The Lovable editor preview of the DERM Tracker, so the button can be tried before publishing.
 const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(lovable\.app|lovableproject\.com)$/
 

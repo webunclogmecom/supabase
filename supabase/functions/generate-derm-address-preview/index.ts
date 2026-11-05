@@ -32,6 +32,7 @@ const PDF_SERVICE_API_KEY = Deno.env.get('PDF_SERVICE_API_KEY')
 
 const ALLOWED_ORIGINS = new Set([
   'https://derm.unclogme.app',
+  'https://ops.unclogme.app',
 ])
 
 function corsHeadersFor(origin: string | null): Record<string, string> {

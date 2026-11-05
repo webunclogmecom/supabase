@@ -22,7 +22,7 @@
 //   — same trust as the QR. The "harden later" step is a real per-client token / app auth.
 //
 // Anon-callable (frontends hold no secret) → the fn does its OWN authorization.
-// Deploy: verify_jwt=false; origin-restricted to fp.unclogme.app + derm.unclogme.app.
+// Deploy: verify_jwt=false; origin-restricted to fp.unclogme.app + derm.unclogme.app + ops.unclogme.app.
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -32,7 +32,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const SIGNED_TTL = 3600 // 1 hour
 
-const ALLOWED_ORIGINS = new Set(['https://fp.unclogme.app', 'https://derm.unclogme.app'])
+const ALLOWED_ORIGINS = new Set(['https://fp.unclogme.app', 'https://derm.unclogme.app', 'https://ops.unclogme.app'])
 // 'gdo_report' (2026-08-02) — the Miami-Dade GDO filing confirmation screenshot for the Field
 // Portal's "Online Report" section. Manifest-keyed like the others, so it reuses the entitlement
 // check below unchanged; no validation was loosened to add it.

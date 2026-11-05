@@ -58,7 +58,7 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 // the bot could store but a person could not would be an arbitrary difference.
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 
-const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
+const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app', 'https://ops.unclogme.app'])
 
 function corsHeadersFor(origin: string | null): Record<string, string> {
   const allowed = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://derm.unclogme.app'

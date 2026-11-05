@@ -54,7 +54,7 @@ const BOT_TIMEOUT_MS = 20_000
 
 const SOON = "Coming soon: the bot's connection is not ready yet."
 
-const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app'])
+const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app', 'https://ops.unclogme.app'])
 function corsHeadersFor(origin: string | null): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://derm.unclogme.app',
