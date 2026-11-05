@@ -10,9 +10,9 @@ one, run both checks, then download it again (the `session-storage.ts` pattern).
 
 ## What is in `app/`
 
-`app/MonthlyReportPage.tsx`, `app/monthly-report.css` and `app/xlsx-view.ts` are the page itself, downloaded byte-identical into the DERM Tracker's `src/components/monthly/` beside `monthly-rules.ts` (the app imports `./monthly-rules`, so the three sit together there). All rules about what is filed live in the rules file; the page draws and asks. No client data and no secret in any of them: this repo is public. After changing one: push, wait for raw.githubusercontent to serve it (at most 5 minutes), have Lovable download it again, publish, then `node --experimental-strip-types scripts/checks/lwt_monthly_live.mjs` from the repo root.
+`app/MonthlyReportPage.tsx`, `app/monthly-report.css`, `app/xlsx-view.ts` and `app/history-rows.ts` are the page itself, downloaded byte-identical into the DERM Tracker's `src/components/monthly/` beside `monthly-rules.ts` (the app imports `./monthly-rules`, so the three sit together there). All rules about what is filed live in the rules file; the page draws and asks. No client data and no secret in any of them: this repo is public. After changing one: push, wait for raw.githubusercontent to serve it (at most 5 minutes), have Lovable download it again, publish, then `node --experimental-strip-types scripts/checks/lwt_monthly_live.mjs` from the repo root.
 
-`app/xlsx-view.ts` goes with them: the View button draws a report's .xlsx on the page, with the browser's own DecompressionStream and DOMParser and no library. `node scripts/lwt-monthly/app/xlsx-view.check.mjs` checks it in a real browser on a made-up file (25 checks, 10 mutants).
+`app/xlsx-view.ts` goes with them: the View button draws a report's .xlsx on the page, with the browser's own DecompressionStream and DOMParser and no library. `node scripts/lwt-monthly/app/xlsx-view.check.mjs` checks it in a real browser on a made-up file (25 checks, 10 mutants). `app/history-rows.ts` is the history table's filters and sorts: `node --no-warnings scripts/lwt-monthly/app/history-rows.check.mjs` (27 checks, 13 mutants).
 
 ## The checks
 

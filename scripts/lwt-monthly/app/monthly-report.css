@@ -53,7 +53,30 @@
 .lw-wrap{overflow-x:auto}.lw-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 /* The filing history: design C (Fred, 2026-11-05: "go with C, but a better responsive view where it shows who handled it too") */
 .lw-hist{display:grid;gap:8px}
-.lw-histt{display:flex;gap:10px;align-items:center;font-size:14px;font-weight:700;margin:0;min-height:32px}.lw-histt .lw-b{margin-left:auto}
+.lw-histt{font-size:14px;font-weight:700;margin:0}
+.lw-hbar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;min-height:32px}
+.lw-htools{margin-left:auto;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lw-fq{height:32px;width:240px;max-width:100%;border:1px solid var(--lw-line);border-radius:8px;background:var(--lw-bg);color:var(--lw-ink);font:inherit;font-size:12.5px;font-weight:500;padding:0 10px}
+.lw-fq::placeholder{color:var(--lw-ink2)}
+.lw-fsel{display:none;height:32px;min-width:0;border:1px solid var(--lw-line);border-radius:8px;background:var(--lw-bg);color:var(--lw-ink);font:inherit;font-size:12.5px;font-weight:500;padding:0 6px}
+.lw-popw{position:relative}
+.lw-pop{position:absolute;z-index:30;top:38px;right:0;width:230px;max-height:min(70vh,470px);overflow-y:auto;background:var(--lw-bg);color:var(--lw-ink);border:1px solid var(--lw-line);border-radius:10px;box-shadow:0 18px 40px -16px rgba(0,0,0,.45);padding:6px;display:grid;gap:1px;font-size:13px;font-weight:500}
+.lw-pop h4{margin:6px 8px 3px;font-size:11.5px;font-weight:600;color:var(--lw-ink2)}
+.lw-pop hr{width:100%;border:0;border-top:1px solid var(--lw-line);margin:4px 0}
+.lw-pop button{border:0;background:none;color:inherit;font:inherit;text-align:left;min-height:32px;padding:0 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.lw-pop button:hover{background:var(--lw-soft)}
+.lw-pop button.on{color:var(--lw-brand-d);font-weight:600}
+.lw-pop button.on::after{content:"";flex:none;width:5px;height:9px;border:solid currentColor;border-width:0 2px 2px 0;transform:rotate(45deg);margin:-2px 3px 0 0}
+.lw-pills{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lw-pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 7px 0 10px;border-radius:999px;border:1px solid transparent;background:var(--lw-brand-t);color:var(--lw-brand-d);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.lw-pill svg.lw-i{width:12px;height:12px}
+/* A column title sorts. On a number's column the arrow sits outside the title, so the title stays lined up with its numbers. */
+.lw-hs{position:relative;border:0;background:none;padding:0;margin:0;color:inherit;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;border-radius:4px}
+.lw-hs:hover,.lw-hs.on{color:#fff}
+.lwt .lw-hs svg.lw-i{width:12px;height:12px;stroke-width:2.4;opacity:0;transition:opacity .12s}
+.lwt .lw-hs:hover svg.lw-i,.lwt .lw-hs:focus-visible svg.lw-i{opacity:.55}
+.lwt .lw-hs.on svg.lw-i{opacity:1;color:#ff8a63}
+.lwt .lw-hn .lw-hs svg.lw-i{position:absolute;right:100%;margin-right:2px}
 /* One set of columns for the whole table (subgrid), so a row with more buttons never shifts the others out of line. */
 .lw-htbl{display:grid;grid-template-columns:46px minmax(140px,1.3fr) minmax(92px,1fr) 62px 74px 84px 104px minmax(118px,1fr) minmax(128px,auto);border:1px solid var(--lw-line);border-radius:10px;overflow:hidden;background:var(--lw-bg)}
 .lw-htbl>.lw-wait{grid-column:1/-1}
@@ -274,6 +297,10 @@
   .lw-hhead>.lw-hper,.lw-hhead>.lw-hinv,.lw-hhead>.lw-hn,.lw-hhead>.lw-hst,.lw-hhead>.lw-hwho{display:none}
   .lw-hhead>.lw-hck{align-self:center}.lw-hhead .lw-cku{align-items:center;padding-top:0}
   .lw-hcount{display:block;grid-area:count;font-size:13px}
+  .lw-htools{margin-left:0;width:100%}
+  .lw-fq{flex:1 1 100%;width:100%;height:44px;font-size:16px}
+  .lw-fsel{display:block;flex:1;height:32px}
+  .lw-pop{right:auto;left:0}
 }
 @container (max-width:640px){
   .lw-rt{width:8px;margin:0 3px}.lw-st span{display:none}.lw-st.now span{display:inline}

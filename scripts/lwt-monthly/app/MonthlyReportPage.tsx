@@ -14,6 +14,8 @@ import {
 import type { Decision, FetchResponse, Finding, InvoiceParse, Load, SavedFile } from './monthly-rules';
 import { fitted, reportHtml } from './xlsx-view';
 import type { ReportPage } from './xlsx-view';
+import { DEFAULT_VIEW, filterCount, firstDir, historyRows, showsRow, yearOf } from './history-rows';
+import type { HistoryView, Show, SortKey } from './history-rows';
 
 export interface MonthlyReportPageProps {
   functionsUrl: string;                     // https://<project>.supabase.co/functions/v1
@@ -108,6 +110,7 @@ const I = {
   bang: 'M12 5v9m0 4h.01', dash: 'M6 12h12', pin: 'M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   file: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M12 18v-6m0 0-2.5 2.5M12 12l2.5 2.5', back: 'M15 18l-6-6 6-6',
   redo: 'M21 12a9 9 0 1 1-3-6.7L21 8m0-5v5h-5', eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  up: 'm6 15 6-6 6 6', dn: 'm6 9 6 6 6-6', filter: 'M4 6h16M7 12h10M10 18h4',
 };
 
 // ---- What needs a person ----------------------------------------------------------------------------------------------
@@ -210,7 +213,9 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
   const [stage, setStage] = useState<Stage>('loading');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
-  const [showDiscarded, setShowDiscarded] = useState(false);
+  const [hist, setHist] = useState<HistoryView>(DEFAULT_VIEW);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersBox = useRef<HTMLDivElement | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [picked, setPicked] = useState<Set<number>>(() => new Set());
   const [viewing, setViewing] = useState<{ row: FilingRow; page: ReportPage | null; err: string } | null>(null);
@@ -493,6 +498,14 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     watch.observe(el);
     return () => watch.disconnect();
   }, [viewOpen]);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const away = (e: PointerEvent) => { if (!filtersBox.current?.contains(e.target as Node)) setFiltersOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setFiltersOpen(false); };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
+  }, [filtersOpen]);
 
   const closeDialog = () => { setDialog(null); setDlgReason(''); setDlgText(''); setDlgErr(''); };
   const startOver = useCallback(async () => {
@@ -1435,8 +1448,22 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
     const mine = ov.rows.filter(x => x.ym === ym && !x.discarded);
     const filed = mine.find(x => x.filed);
     const draft = mine.find(x => !x.filed);
-    const visible = ov.rows.filter(x => showDiscarded || !x.discarded);
-    const hiddenN = ov.rows.filter(x => x.discarded).length;
+    const visible = historyRows(ov.rows, hist);
+    const people = [...new Set(ov.rows.map(x => x.who).filter((w): w is string => !!w))].sort((a, b) => a.localeCompare(b));
+    const years = [...new Set(ov.rows.map(yearOf))].sort().reverse();
+    const SHOWS: [Show, string][] = [['live', 'Filed and drafts'], ['filed', 'Filed'], ['draft', 'Drafts'], ['discarded', 'Discarded']];
+    const SORTS: [string, string][] = [['period:desc', 'Newest month'], ['period:asc', 'Oldest month'], ['fee:desc', 'Highest fee'], ['gallons:desc', 'Most gallons'], ['tickets:desc', 'Most tickets'], ['handled:desc', 'Recently handled']];
+    const setView = (patch: Partial<HistoryView>) => setHist(h => ({ ...h, ...patch }));
+    const clearFilters = () => setHist(h => ({ ...DEFAULT_VIEW, sort: h.sort, dir: h.dir }));
+    const filtered = filterCount(hist);
+    const sortNow = `${hist.sort}:${hist.dir}`;
+    const sortAria = (key: SortKey) => (hist.sort !== key ? 'none' : hist.dir === 'asc' ? 'ascending' : 'descending');
+    const sortBtn = (key: SortKey, label: string) => (
+      <button type="button" className={`lw-hs ${hist.sort === key ? 'on' : ''}`} onClick={() => setHist(h => ({ ...h, sort: key, dir: h.sort === key ? (h.dir === 'asc' ? 'desc' : 'asc') : firstDir(key) }))}>
+        {label}<Ic d={hist.sort === key && hist.dir === 'asc' ? I.up : I.dn} />
+      </button>
+    );
+    const choice = (on: boolean, label: string, pick: () => void, key: string) => <button type="button" key={key} className={on ? 'on' : ''} aria-pressed={on} onClick={pick}>{label}</button>;
     const choosable = visible.filter(x => x.report);
     const chosen = choosable.filter(x => picked.has(x.id));
     const allPicked = choosable.length > 0 && chosen.length === choosable.length;
@@ -1474,18 +1501,50 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
           </div>
         </div>
         <div className="lw-hist">
-          <h3 className="lw-histt">Filing history {hiddenN > 0 && <button type="button" className="lw-b q" onClick={() => setShowDiscarded(!showDiscarded)}>{showDiscarded ? 'Hide' : 'Show'} {count(hiddenN, 'discarded draft')}</button>}</h3>
+          <div className="lw-hbar">
+            <h3 className="lw-histt">Filing history</h3>
+            <div className="lw-htools">
+              <input type="search" className="lw-fq" aria-label="Search the filing history" placeholder="Search invoice, month or name" value={hist.q} onChange={e => setView({ q: e.target.value })} />
+              <div className="lw-popw" ref={filtersBox}>
+                <button type="button" className={`lw-b ${filtered ? 'p' : ''}`} aria-expanded={filtersOpen} aria-haspopup="true" onClick={() => setFiltersOpen(!filtersOpen)}><Ic d={I.filter} /> Filters{filtered ? ` (${filtered})` : ''}</button>
+                {filtersOpen && (
+                  <div className="lw-pop" role="group" aria-label="Filters">
+                    <h4>Show</h4>
+                    {SHOWS.map(([k, label]) => choice(hist.show === k, `${label} (${ov.rows.filter(x => showsRow(x, k)).length})`, () => setView({ show: k }), k))}
+                    <hr /><h4>Handled by</h4>
+                    {choice(!hist.who, 'Anyone', () => setView({ who: '' }), 'anyone')}
+                    {people.map(w => choice(hist.who === w, w, () => setView({ who: w }), w))}
+                    <hr /><h4>Year</h4>
+                    {choice(!hist.year, 'Any year', () => setView({ year: '' }), 'any')}
+                    {years.map(y => choice(hist.year === y, y, () => setView({ year: y }), y))}
+                  </div>
+                )}
+              </div>
+              <select className="lw-fsel" aria-label="Sort" value={sortNow} onChange={e => { const [sort, dir] = e.target.value.split(':'); setView({ sort: sort as SortKey, dir: dir as HistoryView['dir'] }); }}>
+                {!SORTS.some(([v]) => v === sortNow) && <option value={sortNow}>Sort: by column</option>}
+                {SORTS.map(([v, label]) => <option key={v} value={v}>Sort: {label}</option>)}
+              </select>
+            </div>
+          </div>
+          {filtered > 0 && (
+            <div className="lw-pills">
+              {hist.show !== 'live' && <button type="button" className="lw-pill" aria-label={`Remove the filter ${SHOWS.find(([k]) => k === hist.show)?.[1]}`} onClick={() => setView({ show: 'live' })}>{SHOWS.find(([k]) => k === hist.show)?.[1]}<Ic d={I.x} /></button>}
+              {hist.who && <button type="button" className="lw-pill" aria-label={`Remove the filter ${hist.who}`} onClick={() => setView({ who: '' })}>{hist.who}<Ic d={I.x} /></button>}
+              {hist.year && <button type="button" className="lw-pill" aria-label={`Remove the filter ${hist.year}`} onClick={() => setView({ year: '' })}>{hist.year}<Ic d={I.x} /></button>}
+              <button type="button" className="lw-b q" onClick={clearFilters}>Clear filters</button>
+            </div>
+          )}
           <div className="lw-htbl" role="table" aria-label="Filing history">
             <div className="lw-hrow lw-hhead" role="row">
               <span className="lw-hck" role="columnheader">{choosable.length > 0 && <label className="lw-cku"><input type="checkbox" className="lw-ck" aria-label="Select all" checked={allPicked} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !allPicked; }} onChange={() => setPicked(new Set(allPicked ? [] : choosable.map(x => x.id)))} /></label>}</span>
-              <span className="lw-hper" role="columnheader">Period</span>
+              <span className="lw-hper" role="columnheader" aria-sort={sortAria('period')}>{sortBtn('period', 'Period')}</span>
               <span className="lw-hcount" aria-live="polite">{chosen.length ? `${chosen.length} selected` : 'Select all'}</span>
-              <span className="lw-hinv" role="columnheader">Invoice</span>
-              <span className="lw-hn" role="columnheader">Tickets</span>
-              <span className="lw-hn" role="columnheader">Gallons</span>
-              <span className="lw-hn" role="columnheader">Fee</span>
-              <span className="lw-hst" role="columnheader">Status</span>
-              <span className="lw-hwho" role="columnheader">Handled by</span>
+              <span className="lw-hinv" role="columnheader" aria-sort={sortAria('invoice')}>{sortBtn('invoice', 'Invoice')}</span>
+              <span className="lw-hn" role="columnheader" aria-sort={sortAria('tickets')}>{sortBtn('tickets', 'Tickets')}</span>
+              <span className="lw-hn" role="columnheader" aria-sort={sortAria('gallons')}>{sortBtn('gallons', 'Gallons')}</span>
+              <span className="lw-hn" role="columnheader" aria-sort={sortAria('fee')}>{sortBtn('fee', 'Fee')}</span>
+              <span className="lw-hst" role="columnheader" aria-sort={sortAria('status')}>{sortBtn('status', 'Status')}</span>
+              <span className="lw-hwho" role="columnheader" aria-sort={sortAria('who')}>{sortBtn('who', 'Handled by')}</span>
               <span className="lw-hact" role="columnheader"><button type="button" className={`lw-b ${chosen.length ? 'p' : ''}`} disabled={!chosen.length || busy === 'dlmany'} onClick={() => void downloadPicked(chosen)}><Ic d={I.down} /> {busy === 'dlmany' ? 'Downloading' : `Download${chosen.length ? ` ${chosen.length}` : ''}`}</button></span>
             </div>
             {visible.map(x => (
@@ -1501,7 +1560,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken }: MonthlyRep
                 <span className="lw-hact" role="cell">{actions(x)}</span>
               </div>
             ))}
-            {!visible.length && <div className="lw-wait">No filings yet.</div>}
+            {!visible.length && <div className="lw-wait">{ov.rows.length ? <>No filings match these filters. <button type="button" className="lw-b q" onClick={clearFilters}>Clear filters</button></> : 'No filings yet.'}</div>}
           </div>
         </div>
       </div>
