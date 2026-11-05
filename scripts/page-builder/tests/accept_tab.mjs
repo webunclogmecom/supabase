@@ -76,6 +76,7 @@ async function open(w, id, data, mode = 'ok') {
       if (st.data.after) st.data = { ...st.data, ...st.data.after, after: null }
       return send(200, { ok: true, intake_id: b.p_intake_id, accepted: b.p_keys, by: 'fred@ayache.com' })
     }
+    if (n === 'get_my_access') return send(200, { employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] })   // the staff gate (without it every check here fails: it had been, unnoticed, until 2026-11-05)
     if (n === 'get_intake' && st.data.intake[b.p_intake_id]) return send(200, st.data.intake[b.p_intake_id])
     if (n === 'get_intake_compare' && st.data.cmp[b.p_intake_id]) return send(200, st.data.cmp[b.p_intake_id])
     if (n === 'v_intake_submissions') return send(200, st.data.subs)
@@ -320,6 +321,61 @@ for (const w of [1280, 390]) {
   await ctx.close()
 }
 
+// I. A question the form did not ask (screen 5, 2026-11-05): state not_asked. What is on file, no tick, never counted or sent.
+//    Control: CHUNK_SUB='Not asked, already on file|||Not on the form' must fail exactly the "on file" check at both widths.
+{
+  const c = blank()
+  Object.assign(c.fields.find((x) => x.key === KEYS[0]), { ours: 'ON-FILE-1', theirs: null, state: 'not_asked' })
+  Object.assign(c.fields.find((x) => x.key === KEYS[1]), { ours: HOURS, theirs: null, state: 'not_asked' })
+  Object.assign(c.fields.find((x) => x.key === KEYS[3]), { ours: null, theirs: null, state: 'not_asked' })   // manholes 0 on file: nothing to show
+  Object.assign(c.fields.find((x) => x.key === KEYS[4]), { ours: 0, theirs: null, state: 'not_asked' })      // sample ports 0 IS on file: a truthy test would miss it
+  for (const w of [1280, 390]) {
+    const { ctx, p, st } = await open(w, 715, DATA(clone(c)))
+    await openRecord(p)
+    const by = Object.fromEntries((await rows(p)).map((x) => [x.key, x]))
+    ok(by[KEYS[0]].prop.includes('ON-FILE-1') && by[KEYS[0]].form === 'Not asked, already on file' && by[KEYS[1]].prop.includes(dayLine(HOURS, 0)) && by[KEYS[1]].form === 'Not asked, already on file', `not asked (${w}): on file, the value and "Not asked, already on file"`)
+    ok(by[KEYS[3]].prop.includes('Not on file') && by[KEYS[3]].form === 'Not on the form', `not asked (${w}): nothing on file keeps Not on file / Not on the form`)
+    ok(by[KEYS[4]].prop.trim() === '0' && by[KEYS[4]].form === 'Not asked, already on file', `not asked (${w}): a 0 that is on file reads as on file`, by[KEYS[4]])
+    ok(by[KEYS[0]].cb === null && by[KEYS[1]].cb === null && by[KEYS[3]].cb === null && by[KEYS[4]].cb === null, `not asked (${w}): no tick on any of them`)
+    ok(await label(saveBtn(p)) === 'Save 1 change to the property', `not asked (${w}): Save counts only the one blank row`)
+    await openConfirm(p)
+    const tc = await T(p)
+    ok(!tc.includes('Lock box code:') && !tc.includes('The lock box code') && tc.includes('The gallons also go to Jobber'), `not asked (${w}): the confirm does not name the lock box code`)
+    await confirmSave(p)
+    ok(st.bodies.length === 1 && same(st.bodies[0].p_keys, [KEYS[2]]) && !(KEYS[0] in st.bodies[0].p_expected) && !(KEYS[1] in st.bodies[0].p_expected) && !(KEYS[4] in st.bodies[0].p_expected), `not asked (${w}): never sent in p_keys or p_expected`, st.bodies)
+    await ctx.close()
+  }
+}
+
+// J. The Answers tab hides what the collector was not shown, and an empty section (screen 6, 2026-11-05); the counts do not move.
+{
+  const fx = clone(I715)
+  const qs = fx.sections.flatMap((s) => s.questions)
+  const hid = qs.filter((q) => q.applicable === false)
+  const kept = qs.filter((q) => q.applicable !== false)
+  const k = qs.filter((q) => q.applicable && !q.optional && q.answered).length
+  // a section with nothing left, and a Still missing that names a hidden question: the label lookup must still read every question
+  fx.sections.push({ id: 'x_hidden', title: 'Nothing left in this section', questions: [{ ...hid[0], key: 'x.hidden', label: 'A hidden question label' }] })
+  fx.missing = ['x.hidden']
+  for (const w of [1280, 390]) {
+    const { ctx, p } = await open(w, 715, DATA(blank(), fx))
+    const t = await T(p)
+    ok(hid.length > 0 && !t.includes('Not shown to the collector'), `answers (${w}): no "Not shown to the collector" row, ${hid.length} questions hidden`)
+    ok(!t.includes('Nothing left in this section') && t.includes('Access & entry'), `answers (${w}): an empty section is gone, the others stay`)
+    ok(t.includes(`${k} of ${fx.applicable_count} answered`), `answers (${w}): "${k} of ${fx.applicable_count} answered" unchanged`)
+    ok(t.includes('Still missing: A hidden question label'), `answers (${w}): Still missing still finds its label`)
+    ok(kept.every((q) => t.includes(q.label)), `answers (${w}): every question that was shown keeps its row`)
+    ok(!(await sideways(p)), `answers (${w}): no sideways scroll`)
+    await ctx.close()
+  }
+  // not submitted: applicable is null, nothing is hidden (a falsy test here would empty the page)
+  const aw = clone(I715); aw.submitted_at = null; aw.state = 'awaiting'; aw.status = null; aw.missing = null; aw.applicable_count = null
+  for (const s of aw.sections) for (const q of s.questions) { q.applicable = null; q.answered = false; q.value = null }
+  const { ctx, p } = await open(1280, 715, DATA(blank(), aw))
+  const n = ((await T(p)).match(/Not collected yet/g) || []).length
+  ok(n === qs.length, `answers: a form not submitted keeps every "Not collected yet" row, ${n} of ${qs.length}`)
+  await ctx.close()
+}
 await browser.close()
 if (process.env.CHUNK_SUB) console.log('CHUNK_SUB edits applied:', [...new Set(subHits)].length, 'of', process.env.CHUNK_SUB.split('@@@').length)
 console.log(`\n${pass} passed, ${fail} failed`)

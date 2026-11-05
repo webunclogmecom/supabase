@@ -232,7 +232,7 @@ Fred (to Viktor, 2026-10-23): *"... to add in the accordion of the privileges so
 Picture Planner App but just to see the Forms Tab. ex: the field team"*. His answers 2026-10-27: signed-in link only
 (the form's own address), look and share only, submitted AND waiting forms (waiting: status and expiry only), the whole
 Field group by default. Migration `2026-10-27_2130_pp_forms_see_submitted` (applied 23:14 ET), rollback beside it,
-standing probe `scripts/checks/hr_app/probe_pp_forms.sql` (33 cases since 2026-11-04; the 2026-10-27 bodies fail its 8 assigned-only cases, and the gate body before them its 3 door cases).
+standing probe `scripts/checks/hr_app/probe_pp_forms.sql` (35 cases since 2026-11-05; the 2026-10-27 bodies fail its 8 assigned-only cases, and the gate body before them its 3 door cases).
 Spec `Building Apps/Picture Planner/docs/specs/2026-10-27-share-forms-and-forms-only.md`.
 - `hr.access_apps` row `pp_forms` under `picture_planner` with `needs = 'none'` (the CHECK now allows it); defaults
   office `no`, field `yes`. `fn_access_rank('none') = 0`, so the switch is never turned off by a low parent level.
@@ -5713,6 +5713,7 @@ already cost duplicates: the Oct 8 post listed visits sent on Sep 25, and Hallan
   `App-CohkTac1.js`, DERM Tracker `visits._visitId-B_T-h1Fj.js` + `manifests-323nnBYq.js`; each app's 08-changelog
   2026-10-12). Each shows the newest send as one line plus "Show all N city emails". The view names the shared login
   contact@unclogme.com "Diego"; a change of who uses that login is fixed in the view, not in the apps.
+- **Intake Slack posts (`2026-11-05_0600`, edge fn `intake-slack-post`, verify_jwt pinned; Fred picked Option B, the short post):** triggers `zz_slack_form_back` (`public.property_intakes`, submitted_at NULL to set) and `zz_slack_version_waiting` (`public.property_pages`, INSERT) queue one pg_net call through `public.trg_slack_event_request`, inside the writer's transaction, errors swallowed, so Slack can never fail a submit and `intake-submit` holds no token. `public.fn_slack_event_claim` returns named facts only (never answers, content or a code) and inserts into `public.slack_event_posts` first, so a post goes out once; a Slack failure is written on the row and never retried. `public.fn_notification_health_items` lists any event with no `posted_at` from 15 minutes on, for 7 days, as `intake_post_missing` (real clients only, a version already decided left out, from `app_config.intake_slack_posts_since`). No backfill. Check `scripts/checks/intake_slack_post.mjs`. Fastest stop: `ALTER TABLE ... DISABLE TRIGGER`; rollback beside the migration.
 - **The daily check:** `public.log_notification_health()` (cron `notification-health`, 13:15 UTC, `2026-10-12_1400`,
   registered in `ops.v_health_items` and `ops.v_health_status`) recomputes the list from the RAW send logs and reports
   `city_list_false_positive`, `city_list_missed`, `manifest_follow_stalled`, `city_inbox_missing`, `reminder_not_run`

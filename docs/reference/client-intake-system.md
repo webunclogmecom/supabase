@@ -24,7 +24,9 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 | answered predicate | `public.fn_intake_answered(jsonb, text)` | same |
 | key to column map | `public.fn_intake_accept_map()` | same, corrected `2026-09-23_0933` |
 | status | `client.v_property_intake` | same |
-| office compare | `client.get_intake_compare(bigint)` | same |
+| office compare | `client.get_intake_compare(bigint)`; since 2026-11-05 all six rows on every form, a key the form did not ask reads state `not_asked` with what is on file (`2026-11-05_0510`) | same |
+| who asked, who is going | `client.fn_intake_who(bigint)`, the ONE rule behind `client.list_intake_forms` and `client.get_intake` (`2026-11-05_0530`): `requested_by` as a person, `going` on a waiting form for office staff. Forms-only people get `{}`. The app colours by the prefix `Going:` | same |
+| a form back, a version waiting | Slack post, `intake-slack-post`, `2026-11-05_0600` | same |
 | schedule | `client.schedule_property_intake(bigint, text[], jsonb, text)` | same, reshaped `2026-09-23_0933` |
 | accept | `client.accept_intake_answers(bigint, text[], jsonb)` (page approvers only, stale guard; since 2026-09-28, rule 21) | `2026-09-28_1015_intake_accept_from_planner.sql` |
 | photos | `photo_links` kind `property_intake`, bucket `intake-photos` | `2026-09-22_2120_property_intake_photos.sql` |

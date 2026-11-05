@@ -56,7 +56,7 @@ async function open(w, data, keepStorage) {
   // every Google map the page builds, captured when the Maps loader calls window.__initAccessMap (the API is ready then)
   await ctx.addInitScript(() => { window.__maps = []; let cb; Object.defineProperty(window, '__initAccessMap', { configurable: true, get() { return cb }, set(f) { cb = function () { const M = window.google.maps.Map; if (!M.__cap) { M.__cap = 1; const al = M.prototype.addListener; M.prototype.addListener = function () { if (!window.__maps.includes(this)) window.__maps.push(this); return al.apply(this, arguments) } } return f.apply(this, arguments) } } }) })
   const p = await ctx.newPage()
-  const replies = { get_page_builder: JSON.stringify(data.pb), get_page_builder_forms: JSON.stringify(data.forms), get_property_activity: '[]' }
+  const replies = { get_page_builder: JSON.stringify(data.pb), get_page_builder_forms: JSON.stringify(data.forms), get_property_activity: '[]', get_my_access: JSON.stringify({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] }) }
   await p.route(SB + '/auth/v1/**', (x) => x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }))
   await p.route(SB + '/rest/v1/**', (x) => {
     const n = new URL(x.request().url()).pathname.split('/').pop(); calls.push(n)
@@ -115,7 +115,7 @@ const draftContent = (p) => p.evaluate(() => { for (let i = 0; i < localStorage.
   const before = submits.length
   const { ctx, p } = await open(1440, B)
   const txt = await p.textContent('body')
-  ok(/New page, filled from the property record\. Take the collector's answers with Use this or Fill empty fields\./.test(txt), 'B: the new-page header line')
+  ok(/New page, filled from the property record\. Take the collector's answers with Fill empty fields, or click an orange answer on the right\./.test(txt), 'B: the new-page header line, side by side on screen')
   const vals = await p.evaluate(() => [...document.querySelectorAll('input, textarea')].map((i) => i.value).filter(Boolean))
   ok(vals.includes('LB-FROM-PROPERTY'), 'B: the lock box code comes from the property record', vals.slice(0, 12))
   ok(!vals.includes('4242-FROM-FORM'), 'B: the gate code from the newest form is NOT pre-filled')
@@ -125,6 +125,35 @@ const draftContent = (p) => p.evaluate(() => { for (let i = 0; i < localStorage.
   ok(submits.length === before, 'B: nothing submitted')
   await p.screenshot({ path: `${out}/B_1440_new.png` })
   await ctx.close()
+}
+{ // ---------------- B2: the header line has three outcomes (Fred's "Fix it" on film screen 7, 2026-11-05). Both named buttons must be on screen when it names them.
+  const OLD = /Take the collector's answers with Use this or Fill empty fields\./, NEW = /Take the collector's answers with Fill empty fields, or click an orange answer on the right\./, SHORT = /New page, filled from the property record\./
+  const words = async (p) => { const t = await p.textContent('body'); return { old: OLD.test(t), neu: NEW.test(t), short: SHORT.test(t) } }
+  const { ctx, p } = await open(1280, B)
+  const w1 = await words(p)
+  ok(w1.neu && !w1.old, 'B2 1280: the new words', w1)
+  await p.setViewportSize({ width: 1279, height: 900 }); await p.waitForTimeout(400)
+  const w2 = await words(p)
+  ok(w2.old && !w2.neu, 'B2 resized to 1279: the old words, with no reload', w2)
+  await ctx.close()
+  const { ctx: c2, p: p2 } = await open(390, B)
+  const w3 = await words(p2)
+  ok(w3.old && !w3.neu, 'B2 390: the old words', w3)
+  await c2.close()
+  // no form at all: neither button exists, at any width
+  const NOFORM = JSON.parse(JSON.stringify(B)); NOFORM.forms = []
+  for (const w of [1280, 390]) {
+    const { ctx: c3, p: p3 } = await open(w, NOFORM)
+    const x = await words(p3)
+    ok(x.short && !x.old && !x.neu, `B2 ${w}: no form: only the first half of the line`, x)
+    await c3.close()
+  }
+  // a form with nothing left to decide: same short line, beside "Nothing left to decide on this form."
+  const NONE = JSON.parse(JSON.stringify(B)); if (NONE.forms[0]) NONE.forms[0].answers = {}
+  const { ctx: c4, p: p4 } = await open(1280, NONE)
+  const y = await words(p4), left = /Nothing left to decide on this form\./.test(await p4.textContent('body'))
+  ok(left && y.short && !y.old && !y.neu, 'B2 1280: nothing left to decide: only the first half of the line', { ...y, left })
+  await c4.close()
 }
 { // ---------------- phone: the map controls fit and Remove last arrow is a tap target
   const { ctx, p } = await open(390, A)
@@ -152,7 +181,11 @@ FD.draft = { base_version: FD.pb.newest_version, source: FD.pb.property.source, 
 // inside the forward fit and the Undo checks could pass on a build whose Undo never refits (code review, 2026-09-29)
 const FP = fbase(); FP.pb.live.content.site_map = { pins: { truck: TRUCK }, arrows: [] }
 const FORM_GT = { lat: rnd(L - 0.0562), lng: rnd(G - 0.0671) }, FORM_T = { lat: rnd(L - 0.0561), lng: rnd(G - 0.0669) }
-for (const f of FP.forms) f.answers = { ...(f.answers || {}), 'site_map.gt_location': FORM_GT, 'site_map.truck_parking': FORM_T }
+for (const f of FP.forms) {
+  f.answers = { ...(f.answers || {}), 'site_map.gt_location': FORM_GT, 'site_map.truck_parking': FORM_T }
+  // since the several-traps form (2026-10-23) a real form can hold more pins near the property; one of them keeps the live truck pin inside the fit, so this fixture holds only the two far ones
+  for (const k of Object.keys(f.answers)) if ((k.startsWith('site_map.') && k !== 'site_map.gt_location' && k !== 'site_map.truck_parking') || (k.startsWith('grease_trap.t') && k.endsWith('.location'))) delete f.answers[k]
+}
 { // F0 guard: no draft, the live version's pins are in view when the builder opens
   const { ctx, p } = await open(1440, fbase())
   ok(await inView(p, pts(LIVEMAP)), "F0 1440: guard, the live version's pins are in the map's view when the builder opens", await view(p))
