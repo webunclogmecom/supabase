@@ -11,7 +11,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppDa
 const PORTAL = process.env.PORTAL || 'https://ops.unclogme.app/'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
-const NAV = ['HR App', 'Visit Calendar', 'DERM Tracker', 'Admin Review', 'Client App', 'Stamp Studio', 'Picture Planner']
+const NAV = ['Visit Calendar', 'HR App', 'DERM Tracker', 'Admin Review', 'Client App', 'Stamp Studio', 'Picture Planner']
 const ALL = [...NAV, 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist']
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
@@ -57,6 +57,10 @@ async function signedIn(c, w, h, goto = PORTAL) {
   await page.route('**/auth/v1/logout**', (r) => { seen.signOut.push(new URL(r.request().url()).searchParams.get('scope')); r.fulfill({ status: 204, body: '' }) })
   await page.route('**/rest/v1/**', (r) => {
     const u = r.request().url(), one = /vnd\.pgrst\.object/.test(r.request().headers().accept ?? '')
+    if (/rpc\/portal_waiting/.test(u)) {
+      if (c.waitingFails) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.group === 'field' ? {} : { call_first: 1, time_on_site: 6, photos_unsorted: 8, city_emails: 0, stamp_sheets: 0, unopened_emails: 9 }) })
+    }
     if (/rpc\/get_my_access/.test(u)) {
       if (c.fail) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.r) })
@@ -157,13 +161,171 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await ctx.close()
   }
 
+  // The Calendar module: opens from its tile, keeps its own label and look, draws no second theme or sign-out control,
+  // the page is its only scroller, and leaving it gives the look back.
+  {
+    const { ctx, page, seen } = await signedIn(ADMIN, w, h)
+    const fails = []
+    await page.locator('main a[href="/calendar"]').click()
+    await page.waitForFunction(() => document.documentElement.dataset.module === 'calendar', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForTimeout(2500)
+    const path = new URL(page.url()).pathname
+    if (path !== '/calendar') fails.push(`landed on ${path}`)
+    const got = await page.evaluate(() => {
+      const scrollers = [...document.querySelectorAll('main *')].filter((el) => {
+        const s = getComputedStyle(el), r = el.getBoundingClientRect()
+        return /auto|scroll/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 1 && r.height > 0
+      }).map((el) => el.className.toString().slice(0, 50))
+      return {
+        module: document.documentElement.dataset.module, look: document.documentElement.getAttribute('data-hw-app'),
+        darkSheet: document.getElementById('theme-dark-app')?.getAttribute('href') ?? '',
+        title: document.title, mainSignOut: [...document.querySelectorAll('main button')].filter((b) => /^sign out$/i.test(b.textContent.trim())).length,
+        themes: [...document.querySelectorAll('main [aria-label*="dark" i], main [aria-label*="light" i]')].length,
+        scrollers, overflow: document.documentElement.scrollWidth > window.innerWidth,
+      }
+    })
+    if (got.module !== 'calendar') fails.push(`data-module "${got.module}"`)
+    if (got.look !== 'calendar') fails.push(`data-hw-app "${got.look}"`)
+    if (process.env.DARK && !/dark-calendar/.test(got.darkSheet)) fails.push(`dark sheet "${got.darkSheet}"`)
+    if (got.title !== 'Visit Calendar · UnclogMe') fails.push(`title "${got.title}"`)
+    if (got.mainSignOut) fails.push('a second Sign out in the page')
+    if (got.themes) fails.push('a second theme switch in the page')
+    if (got.scrollers.length) fails.push('an inner scroller: ' + got.scrollers[0])
+    if (got.overflow) fails.push('sideways scroll')
+    const labels = Object.entries(seen.labels).filter(([k]) => /calendar/.test(k))
+    if (!labels.length) fails.push('the module asked for no calendar data')
+    for (const [k, v] of labels) if ([...v].join(',') !== 'visit-calendar') fails.push(`${k} labelled "${[...v].join(',')}"`)
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
+    await shot(page, w, 'calendar module')
+    if (w >= 1024) {
+      await page.locator('nav[aria-label="Apps"] a[data-tile="HR App"]').click()
+      await page.waitForTimeout(1500)
+      const back = await page.evaluate(() => [document.documentElement.dataset.module ?? '', document.documentElement.getAttribute('data-hw-app'), document.getElementById('theme-dark-app')?.getAttribute('href') ?? ''])
+      if (back[0]) fails.push(`still data-module "${back[0]}" after leaving`)
+      if (back[1] !== 'hr') fails.push(`data-hw-app "${back[1]}" after leaving`)
+      if (process.env.DARK && !/dark-hr/.test(back[2])) fails.push(`dark sheet "${back[2]}" after leaving`)
+    }
+    report(w, 'Calendar opens, labels its own', fails)
+    await ctx.close()
+  }
+
+  // A person with no Calendar access who has the address: the Calendar's own card, and no calendar data asked for.
+  {
+    const { ctx, page, seen } = await signedIn(FIELD, w, h, PORTAL + 'calendar')
+    const fails = []
+    const text = await page.evaluate(() => document.body.innerText)
+    if (!/access/i.test(text)) fails.push('no refusal on screen')
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    await shot(page, w, 'calendar no access')
+    report(w, 'no Calendar access, address', fails)
+    await ctx.close()
+  }
+
+  // The one bar: the bell and the theme at the top right, each app's title in the bar and not again in the page.
+  {
+    const { ctx, page, seen } = await signedIn(ADMIN, w, h)
+    const fails = []
+    const bar = w >= 768 ? 'header.shell-header' : 'div.relative.z-50'
+    if (!(await page.locator(`${bar} button[aria-label^="Notifications, 4 waiting"]`).count())) fails.push('no bell with 4 waiting')
+    if (w >= 768 && !(await page.locator(`${bar} [role="group"][aria-label="Light or dark"]`).count())) fails.push('no theme switch in the bar')
+    if (await page.locator('nav[aria-label="Apps"] [role="group"][aria-label="Light or dark"]').count()) fails.push('the theme is still in the sidebar')
+    await page.locator(`${bar} button[aria-label^="Notifications"]`).click()
+    await page.waitForTimeout(400)
+    const items = (await page.getByRole('menuitem').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim())
+    if (items.length !== 4) fails.push(`bell rows ${items.join('|')}`)
+    if (!items.some((x) => /1 client to phone/.test(x))) fails.push('no call-first row')
+    await shot(page, w, 'bell open')
+    await page.keyboard.press('Escape')
+    if (w >= 768) {
+      const title = await page.locator('header.shell-header').innerText()
+      if (!/Home/.test(title)) fails.push(`home title "${title.slice(0, 40)}"`)
+      await page.locator('main a[href="/calendar"]').click()
+      await page.waitForFunction(() => document.documentElement.dataset.module === 'calendar', null, { timeout: 30000 }).catch(() => {})
+      await page.waitForTimeout(2000)
+      const t2 = await page.locator('header.shell-header').innerText()
+      if (!/Visit Calendar/.test(t2) || !/to schedule/.test(t2)) fails.push(`calendar bar "${t2.slice(0, 60)}"`)
+      const m = await page.evaluate(() => { const r = document.querySelector('main'); return { own: /to schedule/.test(r.innerText.slice(0, 200)), width: document.documentElement.scrollWidth - innerWidth } })
+      if (m.own) fails.push('the Calendar still has its own row')
+      if (m.width > 0 && w >= 1024) fails.push('sideways scroll')
+      await shot(page, w, 'one bar calendar')
+    }
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    report(w, 'one bar, bell, theme', fails)
+    await ctx.close()
+  }
+  // A failed bell read says so, and never reads as nothing waiting.
+  {
+    const { ctx, page } = await signedIn({ ...ADMIN, waitingFails: true }, w, h)
+    const fails = []
+    const bar = w >= 768 ? 'header.shell-header' : 'div.relative.z-50'
+    await page.waitForTimeout(2500)
+    await page.locator(`${bar} button[aria-label^="Notifications"]`).click()
+    await page.waitForTimeout(400)
+    const text = await page.evaluate(() => document.body.innerText)
+    if (!/Couldn't load this/.test(text)) fails.push('no failure message')
+    if (/Nothing waiting/.test(text)) fails.push('a failed read said nothing is waiting')
+    report(w, 'bell read fails', fails)
+    await ctx.close()
+  }
+
+  // The account menu: Profile and Sign out. Profile is the person's HR record; no HR access, no Profile.
+  for (const [c, wantProfile] of [[ADMIN, true], [FIELD, false]]) {
+    const { ctx, page, seen } = await signedIn(c, w, h)
+    const fails = []
+    if (w < 1280) await page.getByRole('button', { name: /open menu/i }).click()
+    await page.getByRole('button', { name: 'Account menu' }).click()
+    const items = (await page.getByRole('menuitem').allInnerTexts()).map((x) => x.trim())
+    const want = wantProfile ? ['Profile', 'Sign out'] : ['Sign out']
+    if (JSON.stringify(items) !== JSON.stringify(want)) fails.push(`menu ${items.join('|')}`)
+    await shot(page, w, `account menu ${c.group}`)
+    if (wantProfile) {
+      await page.getByRole('menuitem', { name: 'Profile' }).click()
+      await page.waitForTimeout(1500)
+      if (new URL(page.url()).pathname !== `/hr/employees/${c.r.employee_id}`) fails.push(`Profile went to ${new URL(page.url()).pathname}`)
+    }
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    report(w, `account menu, ${c.group}`, fails)
+    await ctx.close()
+  }
+
+  // The collapse button: icons only, every app still reachable, theme and sign-out still there, remembered after a reload.
+  if (w >= 1280) {
+    const { ctx, page, seen } = await signedIn(ADMIN, w, h)
+    const fails = []
+    const size = () => page.evaluate(() => {
+      const nav = document.querySelector('nav[aria-label="Apps"]'), main = document.querySelector('main')
+      return { nav: Math.round(nav.getBoundingClientRect().width), main: Math.round(main.getBoundingClientRect().width), tiles: nav.querySelectorAll('a[data-tile]').length, overflow: nav.scrollWidth > nav.clientWidth + 1 }
+    })
+    const open = await size()
+    if (open.nav !== 228) fails.push(`open width ${open.nav}`)
+    await page.getByRole('button', { name: 'Collapse the sidebar' }).click()
+    const shut = await size()
+    if (shut.nav !== 64) fails.push(`collapsed width ${shut.nav}`)
+    if (shut.main !== open.main + 164) fails.push(`main ${open.main} to ${shut.main}`)
+    if (shut.tiles !== open.tiles) fails.push(`${shut.tiles} of ${open.tiles} apps left`)
+    if (shut.overflow) fails.push('the icons do not fit')
+    for (const name of ['Account menu']) if (!(await page.locator(`nav[aria-label="Apps"] button[aria-label="${name}"]`).count())) fails.push(`no ${name}`)
+    await shot(page, w, 'sidebar collapsed')
+    await page.reload(); await page.waitForTimeout(2500)
+    const after = await size()
+    if (after.nav !== 64) fails.push(`after a reload ${after.nav}`)
+    await page.getByRole('button', { name: 'Expand the sidebar' }).click()
+    if ((await size()).nav !== 228) fails.push('did not expand')
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    report(w, 'sidebar collapses, remembered', fails)
+    await ctx.close()
+  }
+
   // Sign out: asks Supabase once, reloads, and comes back to the login with nothing left on screen.
   {
     const { ctx, page, seen } = await signedIn(ADMIN, w, h)
     const fails = []
     const before = seen.navs
-    if (w < 768) await page.getByRole('button', { name: /open menu/i }).click()
-    await page.getByRole('button', { name: /^sign out$/i }).click()
+    if (w < 1280) await page.getByRole('button', { name: /open menu/i }).click()
+    if (await page.getByRole('button', { name: /^sign out$/i }).count()) fails.push('a sign-out button outside the account menu')
+    await page.getByRole('button', { name: 'Account menu' }).click()
+    await page.getByRole('menuitem', { name: /^sign out$/i }).click()
     await page.waitForTimeout(2500)
     if (seen.signOut.length < 1) fails.push('Supabase was not asked to sign out')
     if (seen.navs === before) fails.push('the page did not start clean')
