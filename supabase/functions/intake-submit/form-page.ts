@@ -155,6 +155,7 @@ input::placeholder,textarea::placeholder{color:#a1a1aa}
 .err button{flex:none;min-height:44px;min-width:56px;padding:4px 12px;border:1px solid #fecaca;border-radius:8px;background:#fff;font-size:13px;font-weight:700;color:var(--bad)}
 footer{position:sticky;bottom:0;z-index:5;margin-top:28px;background:#fff;border-top:1px solid var(--line);box-shadow:0 -6px 20px rgba(24,24,27,.06);padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
 #fmsg .err{margin:0 0 10px}
+#net .off{margin:0 0 10px;padding:8px 12px;font-size:14px}
 .bar{display:flex;align-items:center;gap:14px}
 .prog{flex:1;min-width:0;min-height:48px;display:flex;flex-direction:column;justify-content:center;padding:0;border:0;background:none;text-align:left}
 #cnt{font-size:14px;font-weight:700;color:var(--ink2);line-height:1.3;overflow-wrap:normal}
@@ -285,6 +286,7 @@ footer{padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom))}
   <div id="qs"></div>
 </main>
 <footer id="foot" class="hide"><div class="wrap">
+  <div id="net"></div>
   <div id="fmsg"></div>
   <div class="bar"><button class="prog" id="prog" type="button" title="Show the next question to answer"><div id="cnt" aria-live="polite"></div><div class="pb" aria-hidden="true"><i id="pfill"></i></div></button><button id="send" type="button">Submit</button></div>
 </div></footer>
@@ -917,7 +919,12 @@ function start(r,offline){
   var an=(typeof r.assignee_name==='string')?r.assignee_name.trim().slice(0,120):'';
   try{ wEl.value=localStorage.getItem(KEY+'-who')||an }catch(e){ wEl.value=an }
   wEl.oninput=function(){ try{localStorage.setItem(KEY+'-who',wEl.value)}catch(e){} if(wEl.value.trim()){ document.getElementById('whoerr').innerHTML=''; wEl.removeAttribute('aria-invalid') } };
-  if(offline){ var o=el('div','off','No signal right now. Keep answering: your answers stay on this device. Submit when you have signal.'); o.setAttribute('role','status'); document.getElementById('pre').prepend(o) }
+  // Fred, 2026-11-04: say it when the signal drops too, in the bar because the top of the page has scrolled away. Reloading with no signal
+  // gives the browser's error page, hence "keep this page open". onLine only knows "no network": a weak signal still shows up as a failed photo or Submit.
+  var NET='No signal right now. Keep answering: your answers stay on this device. Keep this page open and submit when you have signal.';
+  var net=function(){ var b=document.getElementById('net'); if(navigator.onLine!==false){ b.innerHTML=''; return } if(!b.firstChild){ var n=el('div','off',NET); n.setAttribute('role','status'); b.appendChild(n) } };
+  window.addEventListener('online',net); window.addEventListener('offline',net); net();
+  if(offline&&navigator.onLine!==false){ var o=el('div','off',NET); o.setAttribute('role','status'); document.getElementById('pre').prepend(o) }
   document.getElementById('pre').className='';
   document.getElementById('foot').className='';
   var ft=document.getElementById('foot'), fh=function(){ document.documentElement.style.setProperty('--fh',(getComputedStyle(ft).position==='sticky'?ft.offsetHeight:0)+'px') };

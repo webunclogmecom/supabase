@@ -26,7 +26,7 @@ for (const [name, w, h, dpr, touch] of [['phone360', 360, 740, 2, true], ['phone
   const footBefore = await p.evaluate(() => Math.round(document.getElementById('foot').getBoundingClientRect().height))
   await p.locator('.q', { hasText: 'Truck parking spot' }).getByRole('button', { name: 'Use my location' }).click(); await p.waitForTimeout(800)
   await p.locator('.q', { hasText: 'Is there a closed gate?' }).getByRole('button', { name: 'Yes' }).click()
-  await p.locator('.q', { hasText: 'Where is the equipment located?' }).getByRole('button', { name: 'Inside' }).click()
+  await p.locator('.q', { hasText: 'Where is the equipment located?' }).getByRole('button', { name: 'Inside', exact: true }).click()
   await p.locator('.q', { hasText: 'How do we get in?' }).getByRole('button', { name: 'Lock box' }).click()
   await shot('2access', '.q:has-text("Is there a closed gate?")')
   await shot('3choices', '.q:has-text("How do we get in?")')
