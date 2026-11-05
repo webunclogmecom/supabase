@@ -22,13 +22,13 @@ function reply(id, group, levels, modes = {}) {
 const every = (lvl) => Object.fromEntries(TOP.map((a) => [a, lvl]))
 const control = Boolean(process.env.CONTROL)
 const ADMIN = { who: 'Fred Zerpa', group: 'admin', r: reply(2, 'admin', { ...every('edit'), pp_forms: 'yes' }) }
-const FIELD = { who: 'Mark Test', group: 'field', r: reply(59, 'field', { pp_forms: 'yes' }) }
+const FIELD = { who: 'Mark Test', group: 'field', hello: ', Mark', r: reply(59, 'field', { pp_forms: 'yes' }) }
 const CASES = [
   { name: 'admin, edit everywhere', ...ADMIN, tiles: ALL, hello: ', Fred', role: 'Admin', card: false },
   { name: 'office, edit everywhere', who: 'Diego Test', group: 'office', r: reply(28, 'office', every('edit')), tiles: ALL, hello: ', Diego', role: 'Office', card: false },
   { name: 'office, HR App none', who: 'Aaron Test', group: 'office', r: reply(26, 'office', { ...every('edit'), hr: 'none' }), tiles: ALL.filter((t) => t !== 'HR App'), hello: ', Aaron', role: 'Office', card: true },
   { name: 'field, assigned forms', ...FIELD, tiles: control ? ALL : ['Picture Planner', 'Field Portal', 'DUMP Schedule'], role: 'Field', card: true, text: 'Your assigned forms' },
-  { name: 'field, no forms switch', who: 'Grecia Test', group: 'field', r: reply(1, 'field', {}), tiles: control ? ALL : ['Field Portal', 'DUMP Schedule'], role: 'Field', card: true },
+  { name: 'field, no forms switch', who: 'Grecia Test', group: 'field', hello: ', Grecia', r: reply(1, 'field', {}), tiles: control ? ALL : ['Field Portal', 'DUMP Schedule'], role: 'Field', card: true },
   { name: 'access check fails', who: 'Fred Zerpa', group: 'admin', fail: true, text: "We couldn't load your apps" },
   { name: 'not staff', who: 'Some Stranger', group: 'field', r: { employee_id: null, group: null, apps: [] }, text: 'is not an UnclogMe staff account', login: true },
 ]
@@ -55,8 +55,17 @@ async function signedIn(c, w, h, goto = PORTAL) {
   await page.route('**/auth/v1/token**', (r) => { seen.loggedIn = true; r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access_token: jwt, token_type: 'bearer', expires_in: 3600, expires_at: exp, refresh_token: 'canned', user }) }) })
   await page.route('**/auth/v1/user**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }))
   await page.route('**/auth/v1/logout**', (r) => { seen.signOut.push(new URL(r.request().url()).searchParams.get('scope')); r.fulfill({ status: 204, body: '' }) })
+  await page.route('**/storage/v1/**', (r) => {
+    if (r.request().method() === 'OPTIONS') return r.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } })
+    seen.upload = new URL(r.request().url()).pathname
+    r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ Key: 'employee-photos/x.jpg', Id: 'x', signedURL: '/object/sign/employee-photos/x.jpg?token=canned' }) })
+  })
   await page.route('**/rest/v1/**', (r) => {
     const u = r.request().url(), one = /vnd\.pgrst\.object/.test(r.request().headers().accept ?? '')
+    if (/rpc\/set_employee_photo/.test(u)) {
+      seen.photoCall = r.request().postDataJSON()
+      return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' })
+    }
     if (/rpc\/portal_search/.test(u)) {
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         clients: [{ id: 450, code: '290-PER', name: 'Canned Client', status: 'ACTIVE' }],
@@ -71,7 +80,7 @@ async function signedIn(c, w, h, goto = PORTAL) {
     }
     if (/rpc\/get_my_access/.test(u)) {
       if (c.fail) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
-      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.r) })
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.r?.employee_id ? { ...c.r, me: { full_name: c.who, color_hex: '#14B8A6', photo_path: null } } : c.r) })
     }
     if (/\/employees/.test(u)) {
       if (c.group === 'field') return r.fulfill({ status: 403, contentType: 'application/json', body: '{"code":"42501","message":"You do not have access to any UnclogMe app."}' })
@@ -338,21 +347,48 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await f.ctx.close()
   }
 
+  // The Profile page, for someone with every app and someone with none: their own details, their apps, their own photo.
+  for (const [c, apps, hrButton] of [[ADMIN, ALL.length, true], [FIELD, 3, false]]) {
+    const { ctx, page, seen } = await signedIn(c, w, h, PORTAL + 'profile')
+    const fails = []
+    const got = await page.evaluate(() => {
+      const m = document.querySelector('main')
+      const sections = [...m.querySelectorAll('section')]
+      return { name: m.querySelector('h1')?.textContent ?? '', text: m.innerText, apps: sections[2]?.querySelectorAll('a').length ?? 0, hr: /Open my HR record/.test(m.innerText), overflow: document.documentElement.scrollWidth > innerWidth, camera: !!m.querySelector('button[aria-label="Change your photo"]'), title: document.title }
+    })
+    if (got.name !== c.who) fails.push(`name "${got.name}"`)
+    if (!got.text.includes(c.who.toLowerCase().replace(/ /g, '.') + '@unclogme.com')) fails.push('no email')
+    if (got.apps !== apps) fails.push(`${got.apps} apps, want ${apps}`)
+    if (got.hr !== hrButton) fails.push(`HR button ${got.hr}`)
+    if (!got.camera) fails.push('no camera button')
+    if (got.overflow) fails.push('sideways scroll')
+    if (got.title !== 'Profile · Ops Portal · UnclogMe') fails.push(`title "${got.title}"`)
+    if (/Hourly|Bonus|\$/.test(got.text)) fails.push('pay on the page')
+    await shot(page, w, `profile ${c.group}`)
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+    await page.setInputFiles('main input[type=file]', { name: 'me.png', mimeType: 'image/png', buffer: png })
+    await page.waitForTimeout(1500)
+    if (seen.photoCall?.p_employee_id !== c.r.employee_id) fails.push(`photo call ${JSON.stringify(seen.photoCall)}`)
+    if (!String(seen.photoCall?.p_path).startsWith(c.r.employee_id + '/')) fails.push(`photo path ${seen.photoCall?.p_path}`)
+    if (!/Photo updated/.test(await page.evaluate(() => document.querySelector('main').innerText))) fails.push('no "Photo updated"')
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    report(w, `profile, ${c.group}`, fails)
+    await ctx.close()
+  }
+
   // The account menu: Profile and Sign out. Profile is the person's HR record; no HR access, no Profile.
-  for (const [c, wantProfile] of [[ADMIN, true], [FIELD, false]]) {
+  for (const c of [ADMIN, FIELD]) {
     const { ctx, page, seen } = await signedIn(c, w, h)
     const fails = []
     if (w < 1280) await page.getByRole('button', { name: /open menu/i }).click()
     await page.getByRole('button', { name: 'Account menu' }).click()
     const items = (await page.getByRole('menuitem').allInnerTexts()).map((x) => x.trim())
-    const want = wantProfile ? ['Profile', 'Sign out'] : ['Sign out']
+    const want = ['Profile', 'Sign out']
     if (JSON.stringify(items) !== JSON.stringify(want)) fails.push(`menu ${items.join('|')}`)
     await shot(page, w, `account menu ${c.group}`)
-    if (wantProfile) {
-      await page.getByRole('menuitem', { name: 'Profile' }).click()
-      await page.waitForTimeout(1500)
-      if (new URL(page.url()).pathname !== `/hr/employees/${c.r.employee_id}`) fails.push(`Profile went to ${new URL(page.url()).pathname}`)
-    }
+    await page.getByRole('menuitem', { name: 'Profile' }).click()
+    await page.waitForTimeout(1500)
+    if (new URL(page.url()).pathname !== '/profile') fails.push(`Profile went to ${new URL(page.url()).pathname}`)
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
     report(w, `account menu, ${c.group}`, fails)
     await ctx.close()
