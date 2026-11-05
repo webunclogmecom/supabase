@@ -217,7 +217,7 @@ async function builder(w, pb = row.pb) {
   const p = await ctx.newPage()
   const st = { calls: [], bad: [], errors: [] }
   p.on('pageerror', (e) => { if (!/Google Maps/.test(String(e))) st.errors.push(String(e)) }) // Maps is aborted on purpose
-  const replies = { get_page_builder: pb, get_page_builder_forms: row.forms, get_property_activity: row.act, get_page_versions: row.versions || [] }
+  const replies = { get_page_builder: pb, get_page_builder_forms: row.forms, get_property_activity: row.act, get_page_versions: row.versions || [], get_my_access: { employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] } }   // the staff gate (without it every check here fails: it had been, unnoticed, until 2026-11-05)
   await p.route(SB + '/auth/v1/**', (x) => x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }))
   await p.route(SB + '/rest/v1/**', (x) => { const n = new URL(x.request().url()).pathname.split('/').pop(); st.calls.push(n); return replies[n] !== undefined ? x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(replies[n]) }) : x.fulfill({ status: 404, contentType: 'application/json', body: '{}' }) })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))

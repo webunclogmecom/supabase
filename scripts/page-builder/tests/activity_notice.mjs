@@ -13,7 +13,7 @@ const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.m
 const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/database/query', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SUPABASE_PAT, 'content-type': 'application/json' }, body: JSON.stringify({ query: q }) })).json()
 const r = await sql(`do $$ begin perform set_config('request.jwt.claims', json_build_object('sub', (select id from auth.users where lower(email)='fred@ayache.com'), 'email', 'fred@ayache.com', 'role', 'authenticated')::text, true); end $$;
 select client.get_page_builder(1164) as pb, client.get_page_builder_forms(1164) as forms, client.get_intake(686) as intake, (select jsonb_agg(to_jsonb(l)) from client.page_builder_list() l) as list,
-       (select jsonb_agg(to_jsonb(s)) from client.v_intake_submissions s where s.property_id = 1164) as subs;`)
+       (select jsonb_agg(x) from jsonb_array_elements(client.list_intake_forms()) x where (x->>'property_id')::bigint = 1164) as subs;`)
 const row = r[r.length - 1]
 const ACT = Array.from({ length: 10 }, (_, i) => ({ at: new Date(Date.UTC(2026, 8, 27, 10, 40 - i)).toISOString(), kind: i === 3 ? 'form_filled' : 'page_submitted', who: 'Someone ' + i, intake_id: i === 3 ? 686 : null, version: i === 3 ? null : 10 - i, text: i === 3 ? 'Site survey form #686 filled in by [TEST] Carlos' : `Version ${10 - i} of the driver page submitted for approval by Someone ${i}` }))
 const N = JSON.parse(JSON.stringify({ pb: row.pb, forms: row.forms }))
@@ -40,6 +40,7 @@ async function open(w, path, replies, fail500 = []) {
   await p.route(SB + '/auth/v1/**', (x) => x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }))
   await p.route(SB + '/rest/v1/**', (x) => {
     const n = new URL(x.request().url()).pathname.split('/').pop(); calls.push(n)
+    if (n === 'get_my_access') return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] }) })   // the staff gate (without it every check here fails: it had been, unnoticed, until 2026-11-05)
     if (state.fail500.has(n)) return x.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' })
     if (replies[n] !== undefined) return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(replies[n]) })
     return x.fulfill({ status: 404, body: '{}' })
@@ -79,7 +80,7 @@ const builderReplies = (data, act) => ({ get_page_builder: data.pb, get_page_bui
 }
 { // /forms cards
   const subs = (row.subs || []).map((s) => ({ ...s, photo_count: s.intake_id === 686 ? 1 : s.photo_count, address: '650 Northwest 33rd Street, Miami', city: 'Miami' }))
-  const { ctx, p } = await open(1280, '/forms', { v_intake_submissions: subs })
+  const { ctx, p } = await open(1280, '/forms', { list_intake_forms: subs })   // the list's only read since the 2026-10-28 publish (the view stub answered nothing: no card, so the singular check failed and the next one passed on an empty page)
   const t = await p.evaluate(() => document.body.textContent)
   ok(/answered · 1 photo(?!s)/.test(t), '/forms: "1 photo" singular', (t.match(/answered · \d+ photos?/g) || []).slice(0, 3))
   ok(!/650 Northwest 33rd Street, Miami, Miami/.test(t), '/forms: the city is not repeated')
@@ -102,7 +103,7 @@ const builderReplies = (data, act) => ({ get_page_builder: data.pb, get_page_bui
   await q.ctx.close()
   const d = await open(1280, '/property/1164', builderReplies({ pb: row.pb, forms: row.forms }, []))
   const hd = await d.p.evaluate(() => [...document.querySelectorAll('button')].filter((b) => /^(Place|Move) (GT Location|Truck Parking)|^Draw arrow$/.test(b.textContent.trim())).map((b) => Math.round(b.getBoundingClientRect().height)))
-  ok(hd.length >= 3 && hd.every((h) => h <= 34), 'laptop 1280: map buttons keep their size', hd)
+  ok(hd.length >= 3 && hd.every((h) => h <= 36), 'laptop 1280: map buttons keep their size', hd)   // md:min-h-9, the Planner's 36px from 768px; was <= 34 when this check was written
   await d.ctx.close()
 }
 await browser.close()

@@ -76,6 +76,7 @@ async function open(w, id, sc) {
   await p.route(SB + '/rest/v1/**', async (x) => {
     const n = new URL(x.request().url()).pathname.split('/').pop(); st.calls.push(n)
     let b = {}; try { b = JSON.parse(x.request().postData() || '{}') } catch {}
+    if (n === 'get_my_access') return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'picture_planner', name: 'Picture Planner', parent: null, mode: 'on', level: 'edit' }, { app: 'pp_forms', name: 'See their assigned forms', parent: 'picture_planner', mode: 'on', level: 'yes' }] }) })   // the staff gate (without it every check here fails: it had been, unnoticed, until 2026-11-05)
     if (n === 'get_intake_link') st.bodies.push(b)
     const k = (st.n[n] = (st.n[n] || 0) + 1) - 1
     const list = n === 'get_intake' ? sc.intake : n === 'get_intake_link' ? sc.link : null
