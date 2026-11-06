@@ -27,7 +27,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 **Yan's five changes on the intake form, then the films (2026-11-06, thread C0BKMRL7D4N, Trello sfD4mhwm)**
 - Yan: "perfect", to Fred's five offers. Fred: "I will make the changes on the form and then redo the video". Fred's picks: the light switches are a normal question, the Collector film goes whole on Eleven v4, the Office film goes to Serena after the form changes.
-- Record: `Building Apps/docs/client-intake-flow.md` 5.6g. **Built:** the form, `2026-11-06_1300_intake_form_v8`. **Not built:** the Site file row (sent to Picture Planner 11-06), the Collector film redo, the Office film refresh. Test job #99901148 stays open until the Office film is ready for Serena.
+- Record: `Building Apps/docs/client-intake-flow.md` 5.6g. **Built:** the form, `2026-11-06_1300_intake_form_v8`; the Site file row (Picture Planner, live 11-06, `scripts/page-builder/tests/light_switches.mjs`). **Not built:** the Collector film redo, the Office film refresh. Test job #99901148 stays open until the Office film is ready for Serena.
 
 **Stamp Studio moves into the Ops Portal (2026-11-06, Trello #161)**
 - Fred's picks from mockups of the real page: "Top row option C" (the bar holds Back, number, count, save state, the complete button and Export; the page tabs and legend go in a pill on the sheet, across from the zoom pill), "Sidebar on a sheet option A" (no shell change, the collapse button gives the wider sheet), and Diego stamps "on a big screen like mine or bigger". He also said "put that on the topbar not on the side bar" for the collapse button: BUILT and live 2026-11-06 (portal `75684f1`).
