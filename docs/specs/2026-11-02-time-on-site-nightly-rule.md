@@ -11,7 +11,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | S2 | band B (visits dated 10-08 to 10-17, plus 8854) closed in the ledger | BUILT 2026-11-03 (`2026-11-03_1300`, e815caa1) |
 | **S3a** | **the lock in the five writers, and the reopen rule (sections 3 to 6)** | **BUILT 2026-11-03 12:28 ET (`2026-11-03_1330`), a day early on Fred's "go ahead with S3a now"; every rehearsal and control below passed** |
 | S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | part 1 BUILT 2026-11-03 12:45 ET (`2026-11-03_1500`): the override table with Fred's 5 Q8 rows, the ledger stage CHECK (`nightly`, `person`), Viktor's door (RC6 + RC8). **Part 2 BUILT 2026-11-05 11:20 ET (`2026-11-05_1125`, f891f36b): v15 and its four functions, switched off, parity passed. The runbook is section 10 and the day's numbers are 10.7** |
-| S4 | band A: Fred's cards only | Fred approved the one-page list 2026-11-05 ("yes, keep 25 on 6599"). Applied Fri 11-06 |
+| S4 | band A: Fred's cards only | BUILT 2026-11-06 11:22:59 ET (`2026-11-06_1121`, 186623bb), on Fred's list of 2026-11-05 ("yes, keep 25 on 6599"). See 10.8 |
 | S5 | the switch on, after Fred reads the comparison | Wed 11-11 |
 | S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | 11-13 / 11-16 / 11-30 |
 
@@ -433,3 +433,21 @@ minute it closed. A fallback's value is not held as a big change (`FALLBACK` in 
 data, and the two doubtful Places are ones the rule already drops. Visits at properties with no Place, last 60 days: 110, of
 which 107 have a linked stop within 250 m of our point, 0 beyond, 3 no linked stop. Caveat: linked stops sit near the property
 by construction, so the shadow runs from 11-06 are the real test. Client detail is local (the run's README).
+
+### 10.8 What happened on Friday 11-06 (S4, measured)
+
+Applied at 11:22:59 ET, commit 186623bb, rollback `2026-11-06_rollback_time_on_site_s4_band_a_cards.sql`. 33 ledger rows of run `tos-recheck-2026-r4`, stage `person`, all applied, none skipped. 8 visits written (7 values, 6270's label), 6 audit flags closed, nothing sent to Jobber. Rehearsed first: as written, the consumer diff, a proposed row moved (skipped), an applied row moved (T7 stops the file), four moved (stops), an altered PIN, the rollback on top, the rollback alone (refuses).
+
+| check | predicted | measured |
+|---|---|---|
+| durations | 3903 205 -> 55, 3890 107 -> 178, 1462 29 -> 67, 5802 28 -> 51, 8139 29 -> 50, 1311 99 -> 117, 3927 93 -> 117 | equal, net +45 |
+| Calendar past days, next 45 days | the seven only; the average of 6239 95 -> 70 | equal |
+| `v_visit_tank_service`, F7 | disagreement true -> false on 8139; F7 down by 1 | equal, 106 -> 105 |
+| shared time | 3903 loses 3901, nothing new | equal |
+| tank hash, frozen grease, every other completed visit time, stop reference, control 6509 | unchanged | unchanged |
+| T1 to T8, open flags | 0; 7 -> 1 (7828's truck question stays) | equal |
+| live apps | Admin Review 3903 55m, 3890 2h 58m, 8139 50m, 6270 1h 41m, control 6509 32m; Calendar Sep 16 Grecia 6.2h -> 6.5h | equal |
+
+**The wording that was wrong:** the approved page said the 22 reopened locks "lose the lock". T9 (S7, 11-16) fires on any completed visit over 10 days old with no current applied or proposed row, and a current row IS the lock, so they cannot end with no row. Fred decided them: 5 changed, 17 keep their minutes with a new settled row saying so. Fred was told before the apply.
+
+**Left out on purpose:** every other visit on the page, the 5 blanks (each has a current row), 7828's truck question, band C (S6). **A row moved on an applied visit stops the whole file rather than skipping**, because T7 then stands: the safer answer when a settled value has changed.
