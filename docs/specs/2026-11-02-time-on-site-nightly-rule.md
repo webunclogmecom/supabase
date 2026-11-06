@@ -448,6 +448,6 @@ Applied at 11:22:59 ET, commit 186623bb, rollback `2026-11-06_rollback_time_on_s
 | T1 to T8, open flags | 0; 7 -> 1 (7828's truck question stays) | equal |
 | live apps | Admin Review 3903 55m, 3890 2h 58m, 8139 50m, 6270 1h 41m, control 6509 32m; Calendar Sep 16 Grecia 6.2h -> 6.5h | equal |
 
-**The wording that was wrong:** the approved page said the 22 reopened locks "lose the lock". T9 (S7, 11-16) fires on any completed visit over 10 days old with no current applied or proposed row, and a current row IS the lock, so they cannot end with no row. Fred decided them: 5 changed, 17 keep their minutes with a new settled row saying so. Fred was told before the apply.
+**The wording that was wrong:** the approved page said the 22 reopened locks "lose the lock". T9 (S7, 11-16) fires on any completed visit over 10 days old with no current applied or proposed row, and a current row IS the lock, so they cannot end with no row. On the page Fred approved, 5 change and 17 keep their minutes; each of the 22 got a new settled row. Fred was told this correction twice before the apply (11-05 and the morning of 11-06) and did not object.
 
 **Left out on purpose:** every other visit on the page, the 5 blanks (each has a current row), 7828's truck question, band C (S6). **A row moved on an applied visit stops the whole file rather than skipping**, because T7 then stands: the safer answer when a settled value has changed.
