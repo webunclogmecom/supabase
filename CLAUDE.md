@@ -468,6 +468,7 @@ newest first; each header says the order). (The names `_1700` to `_1830` are lat
 ### With Viktor (AI coworker in Slack) — on-demand only
 - **Contact Viktor ONLY when Fred explicitly asks.** The old "ask Viktor first on every dev change + poll every 3 min for a reply" protocol is **retired (2026-06-09)** — no automatic consults, no auto-scheduled polling crons. Implement dev changes directly (modular, non-breaking, verified); Fred is the reviewer.
 - If Fred DOES tell you to message Viktor: tag him `<@U0AKTMAMWP9>` in `#viktor-supabase` (`C0B08S21HHD`) and reason critically on his replies (he sometimes uses wrong column names — verify against [docs/schema.md](docs/schema.md)).
+- **What he may do in Jobber (Fred, 2026-11-06):** he never creates a client, whoever asks; he may create a job or a visit on an existing client when clearly asked; moves, renames, closes and deletes go to the apps. It is only his word, in his own skills: his connection can still create clients, and a client made through it shows lead source "Field Unclogme Viktor Integration". Before trusting a change made in Jobber to reach us, read [docs/reference/jobber-change-sync-paths.md](docs/reference/jobber-change-sync-paths.md): a date move on a Calendar or generator visit does NOT land by webhook, and a lost delete waits for the daily GitHub job.
 
 ### With Yan (founder)
 Yan owns strategy, budget, business rules. Fred owns architecture + implementation. Route accordingly.
