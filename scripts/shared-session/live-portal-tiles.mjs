@@ -11,7 +11,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppDa
 const PORTAL = process.env.PORTAL || 'https://ops.unclogme.app/'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
-const NAV = ['Visit Calendar', 'DERM Tracker', 'HR App', 'Admin Review', 'Client App', 'Stamp Studio', 'Picture Planner']
+const NAV = ['Visit Calendar', 'DERM Tracker', 'Stamp Studio', 'HR App', 'Admin Review', 'Client App', 'Picture Planner']
 const ALL = [...NAV, 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist']
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
@@ -282,6 +282,70 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await ctx.close()
   }
 
+  // Stamp Studio: opens from its tile in the same tab, keeps its own label and look, sends its key (checked, never printed),
+  // draws no second theme or sign-out control, and leaving it gives the look back.
+  {
+    const { ctx, page, seen } = await signedIn(ADMIN, w, h)
+    const fails = []
+    let keyed = 0, unkeyed = 0
+    page.on('request', (q) => { if (!/\/rest\/v1\/v_stamp/.test(q.url())) return; if (q.headers()['x-stamp-key']) keyed++; else unkeyed++ })
+    const before = ctx.pages().length
+    await page.locator('main a[href="/stamp"]').click()
+    await page.waitForFunction(() => document.documentElement.dataset.module === 'stamp', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForTimeout(2500)
+    if (ctx.pages().length !== before) fails.push('opened a new tab')
+    const path = new URL(page.url()).pathname
+    if (path !== '/stamp') fails.push(`landed on ${path}`)
+    const got = await page.evaluate(() => ({
+      module: document.documentElement.dataset.module, look: document.documentElement.getAttribute('data-hw-app'),
+      darkSheet: document.getElementById('theme-dark-app')?.getAttribute('href') ?? '',
+      title: document.title, mainSignOut: [...document.querySelectorAll('main button')].filter((b) => /^sign out$/i.test(b.textContent.trim())).length,
+      themes: [...document.querySelectorAll('main [aria-label*="dark" i], main [aria-label*="light" i]')].length,
+      overflow: document.documentElement.scrollWidth > window.innerWidth, tall: document.documentElement.scrollHeight > window.innerHeight,
+      heading: /DERM Address Sheets/.test(document.body.innerText),
+    }))
+    if (got.module !== 'stamp') fails.push(`data-module "${got.module}"`)
+    if (got.look !== 'stamp') fails.push(`data-hw-app "${got.look}"`)
+    if (process.env.DARK && !/dark-stamp/.test(got.darkSheet)) fails.push(`dark sheet "${got.darkSheet}"`)
+    if (!/Stamp Studio/.test(got.title)) fails.push(`title "${got.title}"`)
+    if (!got.heading) fails.push('the list did not show')
+    if (got.mainSignOut) fails.push('a second Sign out in the page')
+    if (got.themes) fails.push('a second theme switch in the page')
+    if (got.overflow) fails.push('sideways scroll')
+    if (got.tall) fails.push('the page is taller than the window')
+    const own = Object.entries(seen.labels).filter(([k]) => /v_stamp/.test(k))
+    if (!own.length) fails.push('the module asked for no data')
+    for (const [k, v] of own) if (![...v].every((x) => x === 'derm-stamp-studio')) fails.push(`${k} labelled "${[...v].join(',')}"`)
+    if (!keyed || unkeyed) fails.push(`stamp key on ${keyed} reads, missing on ${unkeyed}`)
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
+    await shot(page, w, 'stamp module')
+    if (w >= 1280) {
+      await page.locator('nav[aria-label="Apps"] a[data-tile="HR App"]').click()
+      await page.waitForTimeout(1500)
+      const back = await page.evaluate(() => [document.documentElement.dataset.module ?? '', document.documentElement.getAttribute('data-hw-app')])
+      if (back[0]) fails.push(`still data-module "${back[0]}" after leaving`)
+      if (back[1] !== 'hr') fails.push(`data-hw-app "${back[1]}" after leaving`)
+    }
+    report(w, 'Stamp opens, labels its own', fails)
+    await ctx.close()
+  }
+
+  // A person with no Stamp access who has the address: the refusal, and the page never mounts, so no sheet is asked for.
+  {
+    const { ctx, page, seen } = await signedIn(FIELD, w, h, PORTAL + 'stamp')
+    const fails = []
+    await page.waitForTimeout(1500)
+    const text = await page.evaluate(() => document.body.innerText)
+    if (!/You do not have access to Stamp Studio/.test(text)) fails.push('no refusal on screen')
+    if (/DERM Address Sheets/.test(text)) fails.push('the list showed')
+    if (Object.keys(seen.labels).some((k) => /v_stamp/.test(k))) fails.push('sheets were asked for')
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    await shot(page, w, 'stamp no access')
+    report(w, 'no Stamp access, address', fails)
+    await ctx.close()
+  }
+
   // A person with no DERM access who has the address: its own card, and no DERM data asked for.
   {
     const { ctx, page, seen } = await signedIn(FIELD, w, h, PORTAL + 'derm')
@@ -501,7 +565,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (await page.getByRole('button', { name: /^sign out$/i }).count()) fails.push('a sign-out button outside the account menu')
     await page.getByRole('button', { name: 'Account menu' }).click()
     await page.getByRole('menuitem', { name: /^sign out$/i }).click()
-    await page.waitForTimeout(2500)
+    // A wait for the login itself: it comes back in 2 to 3 s on a dev server, so a fixed wait failed by chance.
+    await page.locator('input[type=email]').waitFor({ timeout: 15000 }).catch(() => {})
     if (seen.signOut.length < 1) fails.push('Supabase was not asked to sign out')
     if (seen.navs === before) fails.push('the page did not start clean')
     if (!(await page.locator('input[type=email]').count())) fails.push('not on the login')
