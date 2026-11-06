@@ -14,6 +14,8 @@ Every client's work in Jobber (and mirrored in `public.jobs`) is now exactly one
 | **Service Call (SC)** | `= 'Service Call'` | ad-hoc / one-off work | no (`frequency_days` 0/NULL) | none — services chosen at visit time |
 | **Service Agreement (SA)** | `ILIKE 'Service Agreement%'` | recurring agreement | yes (`frequency_days > 0`) | the agreed services, in `line_items` (job scope) |
 
+⚠ **One SA does not recur: Warranty of Drainage alone** (code 08 only, plus a fee line). It is a billing subscription: `frequency_days` 0, fixed price on an invoice schedule, no visits, and the client stays Active. The Client App creates one since 2026-11-06 (`save-client-job`; check `scripts/checks/warranty_jobs.sql`).
+
 - **Archived** jobs (`job_status = 'archived'`) are excluded everywhere.
 - Old pre-restructure jobs were renamed with an **`[OLD]`** suffix (kept open only where they
   still hold a pending visit, so the visit survives) — never treated as SC/SA. Filter

@@ -985,10 +985,8 @@ Deno.serve(async (req) => {
     const propGid = await gidFor("property", propertyId);
     if (!propGid) return fail("property_not_in_jobber", "This property is not in Jobber yet, so a job cannot be created on it.");
 
-    const freq = kind === "SA" ? Number(p.frequency_days) : 0;
-    if (kind === "SA" && (!Number.isFinite(freq) || freq < 1 || freq > 365)) {
-      return fail("bad_request", "A Service Agreement needs a frequency between 1 and 365 days.");
-    }
+    let freq = kind === "SA" ? Number(p.frequency_days) : 0;
+    let warrantyOnly = false;
 
     let lines: { name: string; unitPrice: number; quantity: number }[] = [];
     let title: string;
@@ -996,6 +994,17 @@ Deno.serve(async (req) => {
       const r = await resolveServices(p.services ?? []);
       if (r.err) return fail("bad_request", r.err);
       lines = r.lines!;
+      // WARRANTY OF DRAINAGE ALONE IS A SUBSCRIPTION, NOT A ROUTE (Fred, 2026-11-06: "usually you
+      // don't put like a frequency for it"). Every live one holds frequency 0 and no visits, the
+      // generator never books code 08, and the dialog already greys the field out and sends none,
+      // so this refusal was the only thing stopping the app. resolveServices has already proved
+      // each name carries its own code prefix, and it admits only codes 01 to 08. Warranty next to
+      // a real service still needs a frequency: that one does generate visits.
+      warrantyOnly = lines.every((l) => /^0?8\s*-/.test(l.name));
+      if (warrantyOnly) freq = 0;
+      else if (!Number.isFinite(freq) || freq < 1 || freq > 365) {
+        return fail("bad_request", "A Service Agreement needs a frequency between 1 and 365 days.");
+      }
       // Behaviour-class title: 'Service Agreement%' prefix is load-bearing.
       // Derived from the FULL combination — rule in saTitle(), shared with the UI.
       title = saTitle(lines.map((l) => l.name));
@@ -1051,6 +1060,13 @@ Deno.serve(async (req) => {
     // maps to the old two combinations, so an in-flight old bundle cannot break.
     const bill = resolveBilling(p, kind === "SA", { legacy: true });
     if (bill.err) return fail("bad_request", bill.err);
+    // The dialog opens on "After each visit is completed", and a warranty job has no visits, so
+    // that default would create a subscription that never asks for an invoice, with nothing to show
+    // it. All 23 live ones invoice on a schedule.
+    if (warrantyOnly && bill.invoice_frequency === "per_visit") {
+      return fail("bad_request",
+        "Warranty of Drainage has no visits, so \"After each visit\" would never invoice. Choose Fixed price and how often to invoice, for example Custom schedule, every 2 months.");
+    }
     const invoicing = bill.invoicing!;
     const btype = bill.billing_type!;
 
@@ -1067,6 +1083,13 @@ Deno.serve(async (req) => {
       if (p.end_date && /^\d{4}-\d{2}-\d{2}$/.test(p.end_date)) {
         const days = Math.round((Date.parse(p.end_date) - Date.parse(startDate)) / 86_400_000);
         if (days > 0) input.timeframe = { startAt: startDate, durationUnits: "DAYS", durationValue: days };
+      } else if (warrantyOnly) {
+        // With no duration Jobber ends the job after about 6 months (measured 2026-11-06: 181 days),
+        // and a periodic job stops asking for invoices at its end: the one live warranty job past its
+        // end has not invoiced since, while its siblings did. The dialog has no End date control.
+        // ponytail: 2 years, the length of 20 of the 24 live ones. Nothing renews it at the end;
+        // scripts/checks/warranty_jobs.sql lists one that is close.
+        input.timeframe = { startAt: startDate, durationUnits: "DAYS", durationValue: 730 };
       }
     }
     const instructions = typeof p.instructions === "string" && p.instructions.trim() ? p.instructions.trim() : null;
@@ -1167,7 +1190,8 @@ Deno.serve(async (req) => {
       // date is the other moment visits become schedulable, so it carries the flag too:
       // without it, removing the "Generate visits" button would mean a brand new dated
       // agreement sat unscheduled until the 06:00 ET sweep.
-      start_date_first_set: kind === "SA" && hasStart,
+      // A warranty-only job has nothing to schedule, so it must not start the visit run.
+      start_date_first_set: kind === "SA" && hasStart && !warrantyOnly,
     });
   }
 
