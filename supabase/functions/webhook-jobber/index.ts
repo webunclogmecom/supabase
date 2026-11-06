@@ -870,22 +870,32 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
     return null
   }
 
-  // Derive service_type from the visit's LINE ITEMS (canonical), falling back to the title
-  // guess, then defaulting to 'Pumping' so a registered visit is never left without one (Fred
-  // 2026-06-08). Codes map per public.service_line_items.service_kind. This map is a pure
-  // translation of the old one -- deliberately NOT extended to cover codes 03/04/10/11/15-18
-  // etc., because adding them would change which visits get which value, and this change is a
-  // rename, not a reclassification. Enrich it separately if ever wanted.
-  const CODE_SVC: Record<string, string> = {
-    '01': 'Pumping', '02': 'Pumping', '09': 'Pumping',
-    '05': 'Cleaning', '06': 'Cleaning', '07': 'Cleaning',
-    '12': 'Cleaning', '13': 'Cleaning', '14': 'Cleaning',
-    '08': 'Warranty of Drainage',
+  // Derive service_type from the visit's LINE ITEMS, falling back to the title guess, then defaulting
+  // to 'Pumping' so a registered visit is never left without one (Fred 2026-06-08).
+  //
+  // 🛑 THE LABEL COMES FROM THE CATALOGUE, public.service_line_items (Fred, 2026-11-06, Trello #177:
+  //    "Have a catalogue for this", "All lines now"). Until today this file had its own hand-typed
+  //    map of 10 codes of 28, so a line 21 assessment read Pumping, 18 Unclogging read Cleaning and 28
+  //    Dump read Pumping or Cleaning, while the Calendar's service_label and the Field Portal's work
+  //    orders read the catalogue. A wrong Pumping here is not cosmetic: it moves the agreement's
+  //    schedule (fn_generate_sa_visits last_completed, v_calendar_visit expected_date), takes over a
+  //    pumping placeholder (fn_jobber_resolve_visit), expects tank water and fires the no-GDO alert.
+  //    Same rule as ops.v_calendar_visit.service_label: of the visit's coded lines, schedulable first,
+  //    the LOWEST code that has a label, whatever order Jobber lists them in. So 21 + 01 stays Pumping
+  //    (223-CHA, May 2026), and a fee line (25, 26, 27: no label) never decides.
+  //    A failed read throws: this function is about to do several more reads of the same database, and
+  //    a guess here would be written as if it were real.
+  const { data: catalogue, error: catalogueErr } = await supabase.from('service_line_items').select('code, service_type, schedulable')
+  if (catalogueErr || !catalogue?.length) throw new Error(`service catalogue read failed: ${catalogueErr?.message ?? 'no rows'}`)
+  const catalogueLabel = (names: (string | null | undefined)[]): string | null => {
+    const codes = new Set(names.map((n) => n?.match(/^\s*(\d{1,2})\s*-/)?.[1]?.padStart(2, '0')))
+    const hit = catalogue.filter((c) => c.service_type && codes.has(c.code))
+      .sort((a, b) => Number(!a.schedulable) - Number(!b.schedulable) || a.code.localeCompare(b.code))[0]
+    return hit?.service_type ?? null
   }
+  // A free-text line (no code) still reads by its words.
   const lineItemSvc = (name: string | null): string | null => {
     if (!name) return null
-    const code = name.match(/^\s*(\d{2})\s*-/)?.[1]
-    if (code && CODE_SVC[code]) return CODE_SVC[code]
     const t = name.toLowerCase()
     if (/grease trap/.test(t)) return 'Pumping'
     if (/warranty of drain/.test(t)) return 'Warranty of Drainage'
@@ -913,8 +923,8 @@ async function handleVisit(numericId: string, topic: string): Promise<{ entity_i
   // so the inbound UPDATE path can avoid clobbering a stored value with the default when a Jobber
   // title edit drops the keyword (2026-06-27 clobber-class fix). The default applies only to
   // INSERT/promote.
-  let serviceTypeConcrete: string | null = null
-  for (const li of (v.lineItems?.nodes ?? [])) { const s = lineItemSvc(li?.name ?? null); if (s) { serviceTypeConcrete = s; break } }
+  let serviceTypeConcrete: string | null = catalogueLabel((v.lineItems?.nodes ?? []).map((li: any) => li?.name))
+  if (!serviceTypeConcrete) for (const li of (v.lineItems?.nodes ?? [])) { const s = lineItemSvc(li?.name ?? null); if (s) { serviceTypeConcrete = s; break } }
   if (!serviceTypeConcrete) serviceTypeConcrete = inferServiceType(v.title ?? null)
   const serviceType = serviceTypeConcrete ?? 'Pumping'
 
