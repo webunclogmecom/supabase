@@ -157,7 +157,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     const label = (k) => [...(seen.labels[k] ?? [])].join(',')
     if (label('rpc/get_pay_summary') !== 'hr-app') fails.push(`get_pay_summary labelled "${label('rpc/get_pay_summary')}"`)
     if (!label('rpc/get_my_access').includes('ops-portal')) fails.push(`the shell's get_my_access labelled "${label('rpc/get_my_access')}"`)
-    if (!label('rpc/get_my_access').includes('hr-app')) fails.push(`the module's get_my_access labelled "${label('rpc/get_my_access')}"`)
+    if (label('rpc/get_my_access') !== 'ops-portal') fails.push(`a module asks get_my_access itself: "${label('rpc/get_my_access')}"`)
     if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) fails.push('sideways scroll')
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
     if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
@@ -171,7 +171,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     const { ctx, page, seen } = await signedIn(FIELD, w, h, PORTAL + 'hr/employees')
     const fails = []
     const text = await page.evaluate(() => document.body.innerText)
-    if (!/You don't have access to the HR App/.test(text)) fails.push('no refusal on screen')
+    if (!/You do not have access to HR App/.test(text)) fails.push('no refusal on screen')
     if (seen.labels['rpc/get_pay_summary']) fails.push('the module called get_pay_summary')
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
     report(w, 'no HR access, direct address', fails)
