@@ -155,6 +155,41 @@ inside every median and observed price. Unrelated to this migration, deliberatel
 
 ---
 
+## 9. How a visit gets its label (2026-11-06, Trello #177)
+
+Fred: *"Have a catalogue for this, camera inspection, dye test, labor, parts, labor bus, etc."*, then "Catalogue as it is" and "All lines now".
+
+**The catalogue decides, and every writer reads it.** `public.service_line_items.service_type` per line code:
+
+| Lines | Label |
+|---|---|
+| 01-04, 09-11 | Pumping |
+| 05-07, 12-14 | Cleaning |
+| 08 | Warranty of Drainage |
+| 15-18 | Unclogging |
+| 19 | Camera Inspection |
+| 20 | Dye Test |
+| 21 | Assessment |
+| 22 | Labor |
+| 23 | Parts |
+| 24 | Labor BUS |
+| 28 | Dump Offload |
+| 25, 26, 27 (fees) | none: a fee line never decides |
+
+- **A visit with several lines:** schedulable first, then the LOWEST code with a label, whatever order Jobber lists them in. This is `ops.v_calendar_visit.service_label`'s rule. So 21 + 01 stays Pumping (223-CHA, visit 5125). 🛑 A plain `'21': 'Assessment'` entry in a first-match loop would have labelled that real pumping visit Assessment.
+- **`webhook-jobber` `handleVisit` (v152):** until 2026-11-06 it held its own list of 10 codes of 28. It now reads the table on each visit. A failed or empty read throws: the event lands `failed` rather than writing a guess. A line with no code still reads by its words, then the title guess, then the insert-only `Pumping` default.
+- **`create_calendar_visit` / `edit_calendar_visit`** read the same table, from the first picked line.
+
+**Why a wrong label was not cosmetic.** `service_type = 'Pumping'` feeds: `fn_generate_sa_visits` `last_completed` (moves the agreement's schedule), `ops.v_calendar_visit` `expected_date` and cadence, `fn_jobber_resolve_visit` (takes over a placeholder with the same label), `fn_check_gdo_on_visit` (the no-GDO alert), `v_visit_tank_service` and `fn_stop_facts_checks` (expect tank water), and `customer.scheduled_visits` (customers read it as written). **Not** the DERM verdict (`fn_visit_requires_derm` goes by the line's `requires_derm`) and **not** Calendar colours (`fn_service_group` reads the catalogue, and a Service Call carries no fill).
+
+**Reach measured 2026-11-06, before the fix.** Of 398 live Jobber-made visits with coded lines, 122 carried a label the catalogue disagrees with (119 completed, 2 scheduled, 1 cancelled): 50 Unclogging (read Cleaning or Pumping), 35 Labor (read Cleaning), 25 Dump Offload (read Pumping, Cleaning or blank), 8 Pumping (read Cleaning), 2 Assessment, 1 Camera Inspection, 1 Labor BUS. The 2 scheduled: test visit 9101 and 110-CLA's 6829.
+⚠ **No backfill.** Those rows change only when Jobber sends the visit again (the update path writes a concrete label). So old Jobber-made visits can read the old word for a long time, and labels on completed visits can move without anyone editing them in our apps. A rule 7 audit row (`app_source = 'jobber'`) records each.
+⚠ Separate and not touched: 53 Calendar-made visits hold a label that differs from the catalogue's (mostly NULL on older rows, before `create_calendar_visit` copied it).
+
+**Checks.** `node scripts/checks/webhook_visit_label.mjs`: runs the real block (working tree and pre-fix body) against named line shapes, two mutants, and every live visit with coded lines against the Calendar's own label: 1,217 of 1,217 agree, the pre-fix body 766. Replay on 112-YA, 2026-11-06 11:27 ET, signed VISIT_UPDATE through the deployed v152: 6830 Cleaning to Assessment, 5873 Cleaning to Labor, free-text 1468 stays Pumping, no other column moved (those 3 `webhook_events_log` rows are synthetic: nested payload, `appId` `replay`).
+
+---
+
 ## Migrations
 
 | File | What |

@@ -958,6 +958,16 @@ both, and **requires the pre-fix body to FAIL** the two guard cases (it returns 
 `null`) while still passing a valid payload. A suite that only exercises the fixed body cannot
 tell a real guard from a no-op.
 
+🛑 **JOB DRIFT CLEARS A DATE ONLY ON JOBBER'S REAL "NO DATE" (v45, 2026-11-06, Trello #177).** A job whose last visit went
+and whose webhook was lost kept its old dates, because a date was copied only when Jobber had one. `dateDrift` now treats
+exactly `null` as the answer: it can only reach there on a node returned for its own id in a reply `gql()` validated, and a
+field Jobber could not resolve arrives null WITH an `errors` entry, which throws. A missing key or anything else that is not
+a date string clears nothing. More than 3 clears in one batch of 25 are refused (`date_clears_refused`, run reads `partial`,
+sentence in `error_samples`), because per-row tests cannot catch a whole reply gone quiet. No "no visits" witness: 138 live
+jobs hold visits with no date in Jobber, and 27 hold dates with none. Measured first against live Jobber: 1 job of 529
+differed (test job 2194). `node scripts/checks/job_drift_date_clear.mjs`: runs the real function on stubs, working tree and
+pre-fix body, which must fail exactly the 3 real-answer cases, plus 3 mutants.
+
 🛑 **A REFUSED WRITE WAS COUNTED AS A WRITE, AND A FAILED READ AS AN EMPTY ONE (fixed 2026-09-26, v19).**
 The three writes (the gone arm's archive, the status/title/date/frequency patch, and the
 `rewrite_job_line_items` call) discarded their `error`, so a write PostgREST refused was counted in
@@ -1456,6 +1466,12 @@ chips silently.
 
 **Full spec — read it before touching either name:**
 [docs/reference/service-type-vocabulary.md](docs/reference/service-type-vocabulary.md).
+
+🛑 **A visit's label comes from the catalogue, in every writer (2026-11-06, Trello #177, Fred: "All lines now").**
+`webhook-jobber` v152 reads `public.service_line_items` by the rule `ops.v_calendar_visit.service_label` uses (schedulable
+first, the lowest code with a label; fees never decide) instead of its old list of 10 codes. Never add a hand-typed code
+map back. A new line's label goes in the catalogue row. No backfill: an old Jobber-made visit changes only when Jobber
+sends it again. Section 9 of that spec; check `scripts/checks/webhook_visit_label.mjs`.
 
 ### 🛑 A BY-HAND `visits.visit_status` WRITE PUSHES TO JOBBER — SUPPRESS IT (2026-09-17)
 

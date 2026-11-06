@@ -13,10 +13,10 @@ Measured on the test client 112-YA, 2026-11-06 ET, with Viktor making the writes
 | New job | 2 s | The poll (`jobber-poll-sync`, every 5 min, jobs by `createdAt`) staged it by itself 4 min later. |
 | New visit | 13 s | Read in the code, not rehearsed: `sync-jobber-upcoming-visits` replays every upcoming visit with no link first (cap 50), so the next run, at most 15 min. In 30 days of its log, 2 runs saw a missing visit: each still read `residual_gap` 1 right after its replay, and neither was missing on the next run. |
 | Job title or status | 1 to 2 s, 7 s for a close | Job drift (`:15`, `:45`): 14 min and 12 min here, 30 at worst. |
-| Job dates cleared because its last visit went | 7 s | **Not restored.** Job drift copies dates only when Jobber has some (`sync-jobber-job-drift/index.ts:255-256`), so a lost update leaves the old dates. |
+| Job dates cleared because its last visit went | 7 s | Job drift (`:15`, `:45`), 30 min at worst, since v45 (2026-11-06). Measured on test job 2194: the 11:45 ET run cleared both dates at 11:46:11, the only dates it changed on 533 jobs. Before v45 they were never restored. It clears only on Jobber's real `null`, never on a missing answer. |
 | Visit made in Jobber, moved | 1 to 2 s | Upcoming job's rotation, 25 of about 274 per run: 46 min 41 s here, about 2 h 45 at worst. The daily job below also covers it. Visit drift never does. |
 | Visit owned by the Calendar or the generator, moved | **Ignored on purpose** (loop guard in `handleVisit`, `webhook-jobber/index.ts:1003`: it syncs completion and fills an empty hour, never a date) | Visit drift (`:08`, `:38`) adopts it if we never edited the visit, and otherwise parks it for a person or heals our failed push. |
-| Visit deleted | 7 s: `visit_status='cancelled'`, `deleted_at` stays NULL | **Only the daily job**, `scripts/sync/cron_jobber_reconcile_anomalies.js` branch 1 (orphan), which soft-deletes it. It is a GitHub job due at 09:15 UTC that has really run between 15:20 and 19:30 UTC lately. Until then the visit shows as scheduled on the Calendar. |
+| Visit deleted | 7 s: `visit_status='cancelled'`, `deleted_at` stays NULL | **Only the daily job**, `scripts/sync/cron_jobber_reconcile_anomalies.js` branch 1 (orphan), which soft-deletes it. It is a GitHub job due at 09:15 UTC that has really run between 15:20 and 19:30 UTC lately. Until then the visit shows as scheduled on the Calendar. ⚠ That job reads only visits still holding a Jobber link, so a cancelled visit with no link is never soft-deleted: all 15 live cancelled visits are in that state (read 2026-11-06). |
 
 **875 of the 877 upcoming visits belong to the Calendar or the generator** (`source` in `visit-calendar`, `supabase_cron`, read 2026-11-06). So the row for moving a visit made in Jobber describes almost no real visit, and a fast result on a test visit says nothing about the rest. `calendar_visit_drift_candidates` takes only those two sources, which is why visit drift reads 0 for a visit made in Jobber.
 
@@ -36,9 +36,11 @@ Nothing goes back to Jobber on these paths. A VISIT_DESTROY sets `cancelled`, wh
 
 ⚠ **These rules live in his own skills, so they are only his word.** He passed 8 made-up messages with no correction on 2026-11-06 and pasted his saved lines, which cannot be read from here. Nothing technical stops him: his connection can still create clients. A client made through it shows lead source "Field Unclogme Viktor Integration" (`Client.leadSource`), which is the check from outside. Moving visits on real clients would need its own test on a generator-owned visit.
 
-## Found, not fixed
+## What this test found
 
-1. **Client App:** after a visit is deleted in Jobber, the job still says "Next visit <date>" and lists it under Future visits as cancelled, until the daily job soft-deletes it.
-2. **Job drift** does not clear job dates when Jobber has none (table above).
-3. **`webhook-jobber`** labels a line 21 assessment visit as Pumping: `CODE_SVC` has no `21` (`webhook-jobber/index.ts` lines 874 to 894 and 919). 3 such visits in 180 days, one of them this test.
-4. **A lost delete on any visit waits for the daily GitHub job**, whose hour is unreliable (root `CLAUDE.md`, section 6: GitHub timed jobs run only every 4 to 8 hours). This belongs to anyone deleting in Jobber, not only Viktor.
+**Still open:** a lost delete on any visit waits for the daily GitHub job, whose hour is unreliable (root `CLAUDE.md`, section 6: GitHub timed jobs run only every 4 to 8 hours). This belongs to anyone deleting in Jobber, not only Viktor. It ran at 11:27 ET on 2026-11-06 and soft-deleted test visit 9101.
+
+**Fixed 2026-11-06:**
+1. **Client App:** a cancelled or skipped visit with a future date read as "Next visit" and sat under Future Visits. Now upcoming means `scheduled` with a date of today or later; it shows under Previous Visits with its chip (Fred's pick). 🛑 This was wider than the test suggested: the daily job reads only visits holding a Jobber link, and all 15 live cancelled visits hold none, so such a visit is never soft-deleted. 186-PV read "Next visit 1/1/2027" until this fix. Rules and checks: `Building Apps/Client App/docs/08-changelog.md`, 2026-11-06 (b).
+2. **Job drift** clears a job's dates when Jobber really answers "no date" (v45; table above; `Supabase/CLAUDE.md`, under the load-shedding section). Check: `scripts/checks/job_drift_date_clear.mjs`.
+3. **`webhook-jobber`** reads every visit label from the catalogue (v152), not only line 21. Fred: "Catalogue as it is", "All lines now". [service-type-vocabulary.md](service-type-vocabulary.md), section 9. Check: `scripts/checks/webhook_visit_label.mjs`.
