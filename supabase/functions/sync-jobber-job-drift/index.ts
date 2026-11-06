@@ -56,6 +56,10 @@ const LINE_PAGE = 25;
 const BATCH_PAUSE_MS = 400;
 // Stop a sweep that cannot reach Jobber at all, rather than walking the whole fleet retrying.
 const MAX_CONSECUTIVE_BATCH_FAILURES = 3;
+// More "no date" answers than this in one batch of 25 is not a lost webhook. See dateDrift.
+// Measured 2026-11-06: 1 such job of 529 (a test job we rewound by hand), all the others agree.
+// ponytail: per batch, so a real mass change stays refused until a person reads the sample.
+const MAX_DATE_CLEARS_PER_BATCH = 3;
 
 // x-app-source 'jobber': these DB writes ADOPT Jobber's state (inbound direction),
 // same attribution the visit drift adopt path uses (ADR 016).
@@ -134,6 +138,24 @@ const norm = (s: unknown) => String(s ?? "").trim();
 
 const numEq = (a: unknown, b: unknown) => Math.abs(Number(a ?? 0) - Number(b ?? 0)) < 0.005;
 
+// 🛑 WHAT ONE JOBBER DATE MEANS (2026-11-06, Trello #177). Returns what to write, undefined to leave it.
+//    Until today a date was copied only when Jobber had one, so when a job's last visit went and the
+//    webhook was lost, the job kept its old dates for ever. But "no date" is the half of this field
+//    that a missing answer can imitate, which is how this file nearly archived 25 live jobs (header of
+//    gql), so a clear needs a real answer:
+//    - `null` IS the answer "no date". It reaches here only on a node returned for its own id, in a
+//      reply gql() validated. A field Jobber could not resolve comes back null WITH an `errors` entry,
+//      and gql() throws on that, so a hidden or failed field never gets this far.
+//    - `undefined` (the key never came back) is no answer. So is anything else that is not a date
+//      string. `!j.startAt` could not tell these apart, which is why this tests `=== null`.
+//    The webhook's handleJob already writes `j.startAt ?? null`, so this adds no new state: 313 of 529
+//    live jobs hold no date in Jobber, and only one of them disagreed with us when this shipped.
+const dateDrift = (answer: unknown, ours: string | null): string | null | undefined => {
+  if (answer === null) return ours == null ? undefined : null;
+  if (typeof answer !== "string" || !answer) return undefined;
+  return new Date(answer).getTime() === new Date(ours ?? 0).getTime() ? undefined : answer;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok");
   if (bearerRole(req) !== "service_role") {
@@ -141,7 +163,7 @@ Deno.serve(async (req) => {
   }
 
   const started = new Date().toISOString();
-  const stats = { candidates: 0, checked: 0, updated: 0, gone_archived: 0, line_syncs: 0, errors: 0, write_errors: 0, aborted_after_consecutive_failures: 0, db_only_drift: [] as string[], error_samples: [] as string[] };
+  const stats = { candidates: 0, checked: 0, updated: 0, gone_archived: 0, line_syncs: 0, errors: 0, write_errors: 0, date_clears_refused: 0, aborted_after_consecutive_failures: 0, db_only_drift: [] as string[], error_samples: [] as string[] };
 
   // 🛑 A REFUSED WRITE IS NOT A WRITE (2026-09-26). Until today the three writes below discarded their
   //    `error`, so a write PostgREST refused was counted as `updated` / `gone_archived` / `line_syncs`
@@ -232,6 +254,22 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // A whole batch answering "no date" for jobs we hold dates on is not a lost webhook, it is a reply
+      // that per-row tests cannot catch (a Jobber change, a field gone quiet). Refuse its clears, say so.
+      // Copying a real date is not affected.
+      const dateClears = slice.filter((r) => {
+        const n: any = byGid.get(gidByJob.get(r.id)!);
+        return n && (dateDrift(n.startAt, r.start_at) === null || dateDrift(n.endAt, r.end_at) === null);
+      }).length;
+      const clearsAllowed = dateClears <= MAX_DATE_CLEARS_PER_BATCH;
+      if (!clearsAllowed) {
+        stats.errors++;
+        stats.date_clears_refused += dateClears;
+        const msg = `batch @${i}: ${dateClears} jobs answered "no date" in one batch, left their dates alone`;
+        if (stats.error_samples.length < 3) stats.error_samples.push(msg);
+        console.error(`[jobs-drift] ${msg}`);
+      }
+
       for (const row of slice) {
         try {
           const j: any = byGid.get(gidByJob.get(row.id)!);
@@ -252,9 +290,11 @@ Deno.serve(async (req) => {
           if (norm(j.title) && norm(j.title) !== norm(row.title)) patch.title = j.title;
           const st = String(j.jobStatus ?? "").toLowerCase();
           if (st && st !== row.job_status) patch.job_status = st;
-          if (j.startAt && new Date(j.startAt).getTime() !== new Date(row.start_at ?? 0).getTime()) patch.start_at = j.startAt;
-          if (j.endAt && new Date(j.endAt).getTime() !== new Date(row.end_at ?? 0).getTime()) patch.end_at = j.endAt;
-          const cf = (j.customFields ?? []).find((c: any) => c.label === "Frequency");
+          const startDrift = dateDrift(j.startAt, row.start_at);
+          if (startDrift !== undefined && (startDrift !== null || clearsAllowed)) patch.start_at = startDrift;
+          const endDrift = dateDrift(j.endAt, row.end_at);
+          if (endDrift !== undefined && (endDrift !== null || clearsAllowed)) patch.end_at = endDrift;
+          const cf =(j.customFields ?? []).find((c: any) => c.label === "Frequency");
           if (cf && cf.valueNumeric != null && Number.isFinite(Number(cf.valueNumeric)) &&
               Number(cf.valueNumeric) !== Number(row.frequency_days ?? -1)) {
             patch.frequency_days = Number(cf.valueNumeric);
