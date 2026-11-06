@@ -42,6 +42,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Fred: "Right after #173"; shown the corrected plan, "Go, report stays". Plan `Building Apps/Ops Portal/docs/specs/2026-11-05-derm-move-plan.md`.
 - **BUILT 2026-11-05:** live at `ops.unclogme.app/derm` (portal `79ba545`, seven edge functions `e0b9b7ff`, Monthly setting `c3eee68c`). Open: the report page stays on `derm.unclogme.app` until the PDF service moves, so that host cannot be retired yet. Client App next.
 
+**Ops Portal: an app inside is one click in the same tab (2026-11-06, Trello #161)**
+- Fred: "this is what I need you to see when you create a new app and they have these kind of things to see if we need to remake those buttons." New-tab buttons only for what is outside the portal.
+- Standing rule, built as a check (`src/shell/cross-app-links.test.ts`) and a table in `Building Apps/Ops Portal/CLAUDE.md`. **To build at each move:** Client App (3 buttons), Admin Review (1, its address comes from the database), Stamp Studio. Not built until those apps move.
+
 **Ops Portal header and account menu (2026-11-05)**
 - Fred: *"we should have like a global header, where we can put notifactions, dark/light mode"*, *"use one bar"*, and the account row *"make it a menu ... "Profile" and "Sign out""*; the sidebar's width: the collapse button.
 - Built: one bar with page title, Eastern clock, bell (`ops.portal_waiting`, `2026-11-05_0135`) and theme; the collapse button; the account menu; below 1280 the real sidebar as a drawer (Fred: "open the sidebar not just a menu"); search everything (`ops.portal_search`, `2026-11-05_0230`); app commits cb72edd, 91794e2, 065ba61, 9f0a0ac. Record: `Building Apps/Ops Portal/docs/08-changelog.md`. The header keeps scrolling (Fred, same day).
