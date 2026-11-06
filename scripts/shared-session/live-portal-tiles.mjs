@@ -178,13 +178,13 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await ctx.close()
   }
 
-  // The Calendar module: opens from its tile, keeps its own label and look, draws no second theme or sign-out control,
+  // The Calendar module: opens from its tile, keeps its own label, has no theme of its own, draws no second theme or sign-out control,
   // the page is its only scroller, and leaving it gives the look back.
   {
     const { ctx, page, seen } = await signedIn(ADMIN, w, h)
     const fails = []
     await page.locator('main a[href="/calendar"]').click()
-    await page.waitForFunction(() => document.documentElement.dataset.module === 'calendar', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForFunction(() => location.pathname.startsWith('/calendar'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(2500)
     const path = new URL(page.url()).pathname
     if (path !== '/calendar') fails.push(`landed on ${path}`)
@@ -201,9 +201,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
         scrollers, overflow: document.documentElement.scrollWidth > window.innerWidth,
       }
     })
-    if (got.module !== 'calendar') fails.push(`data-module "${got.module}"`)
-    if (got.look !== 'calendar') fails.push(`data-hw-app "${got.look}"`)
-    if (process.env.DARK && !/dark-calendar/.test(got.darkSheet)) fails.push(`dark sheet "${got.darkSheet}"`)
+    if (got.module) fails.push(`an app set its own theme: data-module "${got.module}"`)
+    if (got.look) fails.push(`an app loaded a hosted theme: data-hw-app "${got.look}"`)
     if (got.title !== 'Visit Calendar · UnclogMe') fails.push(`title "${got.title}"`)
     if (got.mainSignOut) fails.push('a second Sign out in the page')
     if (got.themes) fails.push('a second theme switch in the page')
@@ -220,8 +219,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       await page.waitForTimeout(1500)
       const back = await page.evaluate(() => [document.documentElement.dataset.module ?? '', document.documentElement.getAttribute('data-hw-app'), document.getElementById('theme-dark-app')?.getAttribute('href') ?? ''])
       if (back[0]) fails.push(`still data-module "${back[0]}" after leaving`)
-      if (back[1] !== 'hr') fails.push(`data-hw-app "${back[1]}" after leaving`)
-      if (process.env.DARK && !/dark-hr/.test(back[2])) fails.push(`dark sheet "${back[2]}" after leaving`)
+      if (back[1]) fails.push(`data-hw-app "${back[1]}" after leaving`)
     }
     report(w, 'Calendar opens, labels its own', fails)
     await ctx.close()
@@ -239,13 +237,13 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await ctx.close()
   }
 
-  // The DERM Tracker module: opens from its tile, keeps its own label and look, draws no second theme or sign-out control,
+  // The DERM Tracker module: opens from its tile, keeps its own label, has no theme of its own, draws no second theme or sign-out control,
   // its links stay under /derm, and leaving it gives the look back.
   {
     const { ctx, page, seen } = await signedIn(ADMIN, w, h)
     const fails = []
     await page.locator('main a[href="/derm"]').click()
-    await page.waitForFunction(() => document.documentElement.dataset.module === 'derm', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForFunction(() => location.pathname.startsWith('/derm'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(2500)
     const path = new URL(page.url()).pathname
     if (path !== '/derm') fails.push(`landed on ${path}`)
@@ -257,9 +255,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       overflow: document.documentElement.scrollWidth > window.innerWidth,
       links: [...document.querySelectorAll('a[href^="/derm"]')].map((a) => a.getAttribute('href')),
     }))
-    if (got.module !== 'derm') fails.push(`data-module "${got.module}"`)
-    if (got.look !== 'derm') fails.push(`data-hw-app "${got.look}"`)
-    if (process.env.DARK && !/dark-derm/.test(got.darkSheet)) fails.push(`dark sheet "${got.darkSheet}"`)
+    if (got.module) fails.push(`an app set its own theme: data-module "${got.module}"`)
+    if (got.look) fails.push(`an app loaded a hosted theme: data-hw-app "${got.look}"`)
     if (!/DERM Tracker/.test(got.title)) fails.push(`title "${got.title}"`)
     if (got.mainSignOut) fails.push('a second Sign out in the page')
     if (got.themes) fails.push('a second theme switch in the page')
@@ -276,7 +273,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       await page.waitForTimeout(1500)
       const back = await page.evaluate(() => [document.documentElement.dataset.module ?? '', document.documentElement.getAttribute('data-hw-app')])
       if (back[0]) fails.push(`still data-module "${back[0]}" after leaving`)
-      if (back[1] !== 'hr') fails.push(`data-hw-app "${back[1]}" after leaving`)
+      if (back[1]) fails.push(`data-hw-app "${back[1]}" after leaving`)
     }
     report(w, 'DERM opens, labels its own', fails)
     await ctx.close()
@@ -291,7 +288,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     page.on('request', (q) => { if (!/\/rest\/v1\/v_stamp/.test(q.url())) return; if (q.headers()['x-stamp-key']) keyed++; else unkeyed++ })
     const before = ctx.pages().length
     await page.locator('main a[href="/stamp"]').click()
-    await page.waitForFunction(() => document.documentElement.dataset.module === 'stamp', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForFunction(() => location.pathname.startsWith('/stamp'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(2500)
     if (ctx.pages().length !== before) fails.push('opened a new tab')
     const path = new URL(page.url()).pathname
@@ -304,9 +301,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       overflow: document.documentElement.scrollWidth > window.innerWidth, tall: document.documentElement.scrollHeight > window.innerHeight,
       heading: /DERM Address Sheets/.test(document.body.innerText),
     }))
-    if (got.module !== 'stamp') fails.push(`data-module "${got.module}"`)
-    if (got.look !== 'stamp') fails.push(`data-hw-app "${got.look}"`)
-    if (process.env.DARK && !/dark-stamp/.test(got.darkSheet)) fails.push(`dark sheet "${got.darkSheet}"`)
+    if (got.module) fails.push(`an app set its own theme: data-module "${got.module}"`)
+    if (got.look) fails.push(`an app loaded a hosted theme: data-hw-app "${got.look}"`)
     if (!/Stamp Studio/.test(got.title)) fails.push(`title "${got.title}"`)
     if (!got.heading) fails.push('the list did not show')
     if (got.mainSignOut) fails.push('a second Sign out in the page')
@@ -325,7 +321,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       await page.waitForTimeout(1500)
       const back = await page.evaluate(() => [document.documentElement.dataset.module ?? '', document.documentElement.getAttribute('data-hw-app')])
       if (back[0]) fails.push(`still data-module "${back[0]}" after leaving`)
-      if (back[1] !== 'hr') fails.push(`data-hw-app "${back[1]}" after leaving`)
+      if (back[1]) fails.push(`data-hw-app "${back[1]}" after leaving`)
     }
     report(w, 'Stamp opens, labels its own', fails)
     await ctx.close()
@@ -379,7 +375,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       const title = await page.locator('header.shell-header').innerText()
       if (!/Home/.test(title)) fails.push(`home title "${title.slice(0, 40)}"`)
       await page.locator('main a[href="/calendar"]').click()
-      await page.waitForFunction(() => document.documentElement.dataset.module === 'calendar', null, { timeout: 30000 }).catch(() => {})
+      await page.waitForFunction(() => location.pathname.startsWith('/calendar'), null, { timeout: 30000 }).catch(() => {})
       await page.waitForTimeout(2000)
       const t2 = await page.locator('header.shell-header').innerText()
       if (!/Visit Calendar/.test(t2) || !/to schedule/.test(t2)) fails.push(`calendar bar "${t2.slice(0, 60)}"`)
@@ -448,7 +444,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (label !== 'ops-portal') fails.push(`search labelled "${label}"`)
     await shot(page, w, 'search open')
     await page.getByRole('option', { name: /Next visit/ }).click()
-    await page.waitForFunction(() => document.documentElement.dataset.module === 'calendar', null, { timeout: 30000 }).catch(() => {})
+    await page.waitForFunction(() => location.pathname.startsWith('/calendar'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(1500)
     if (new URL(page.url()).pathname !== '/calendar') fails.push(`visit went to ${new URL(page.url()).pathname}`)
     if (new URL(page.url()).search) fails.push(`the address kept ${new URL(page.url()).search}`)
