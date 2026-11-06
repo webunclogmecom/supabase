@@ -25,6 +25,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Stamp Studio moves into the Ops Portal (2026-11-06, Trello #161)**
+- Fred's picks from mockups of the real page: "Top row option C" (the bar holds Back, number, count, save state, the complete button and Export; the page tabs and legend go in a pill on the sheet, across from the zoom pill), "Sidebar on a sheet option A" (no shell change, the collapse button gives the wider sheet), and Diego stamps "on a big screen like mine or bigger". He also said "put that on the topbar not on the side bar" for the collapse button: BUILT and live 2026-11-06 (portal `75684f1`).
+- Plan: `Building Apps/Ops Portal/docs/specs/2026-11-06-stamp-move-plan.md`. **Not built:** waiting on the code download from Lovable. `stamp.unclogme.app` keeps running, and a fix goes in twice until Fred retires it.
+
 **Intake form training film, office side (2026-11-05, Trello sfD4mhwm)**
 - Fred's picks on the plan (`video-projects/zoho-training/intake-office-video/PLAN.md`, local): teach the whole path as one film, look Night Window, a Slack post first, Manholes pre-ticked at 0, one real paste on 112-YA with a phone test, the link in one job only (the grease trap job), blanks and second-person check as written, Jobber alerts the collector and the office tells them too.
 - BUILT 2026-11-05: a Slack post when a form comes back and when a Site file version waits for approval (`2026-11-05_0600_intake_slack_posts`, edge fn `intake-slack-post`); Manholes pre-ticked when it reads 0 on file, in the Client App's Schedule intake (`CountyBadge-BZEUCEVb.js`). This reverses his 2026-10-21 "office human error, skip", on new data: 11 of 16 real forms with 0 on file went out without it.
