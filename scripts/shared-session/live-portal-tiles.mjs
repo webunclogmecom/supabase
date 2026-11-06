@@ -471,6 +471,9 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     })
     const open = await size()
     if (open.nav !== 228) fails.push(`open width ${open.nav}`)
+    // In the top bar, not on the sidebar (Fred, 2026-11-06).
+    if (!(await page.locator('header.shell-header button[aria-label="Collapse the sidebar"]').count())) fails.push('the collapse button is not in the top bar')
+    if (await page.locator('nav[aria-label="Apps"] button[aria-label$="the sidebar"]').count()) fails.push('the collapse button is still on the sidebar')
     await page.getByRole('button', { name: 'Collapse the sidebar' }).click()
     const shut = await size()
     if (shut.nav !== 64) fails.push(`collapsed width ${shut.nav}`)
