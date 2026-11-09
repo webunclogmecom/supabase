@@ -14,7 +14,7 @@ const control = Boolean(process.env.CONTROL)
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const access = { employee_id: 2, group: 'admin', me: { full_name: 'Test Person', color_hex: '#f14714', photo_path: null }, apps: TOP.map((a) => ({ app: a, parent: null, mode: 'on', level: 'edit' })) }
-const PAGES = [['HR', 'hr/employees'], ['Calendar', 'calendar'], ['DERM', 'derm'], ['DERM upload', 'derm/upload'], ['Stamp', 'stamp']]
+const PAGES = [['HR', 'hr/employees'], ['Calendar', 'calendar'], ['DERM', 'derm'], ['DERM upload', 'derm/upload'], ['Stamp', 'stamp'], ['AR queue', 'review'], ['AR grease', 'review/grease']]
 
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
