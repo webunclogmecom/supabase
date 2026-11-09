@@ -211,6 +211,14 @@ function extract(files) {
   for (const [file, body] of files) {
     const vars = new Map();
     for (const m of body.matchAll(/([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\([^()]{0,400}?[{,]db:\{schema:(["'`])([a-zA-Z0-9_]+)\2\}/g)) vars.set(m[1], m[3]);
+    // The Ops Portal's builder since 2026-11-09, moduleClient(label, { schema }): a minifier writes
+    // dermDb=Xt("derm-tracker",{schema:"derm"}) and publicDb=Xt("derm-tracker"). The builder's own body reads
+    // `db:{schema:t.schema}`, which no pattern above can tie to a schema, so the call site is matched on the
+    // app's audit label. A new app moving into the portal adds its label here, or its calls go unresolved.
+    for (const m of body.matchAll(/([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*\((["'`])(visit-calendar|derm-tracker|hr-app|derm-stamp-studio|admin-review|client-app|picture-planner)\2(?:,\{schema:(["'`])([a-zA-Z0-9_]+)\4[^)]*)?\)/g)) {
+      vars.set(m[1], m[5] || 'public');
+      pins.add(m[5] || 'public');
+    }
     for (const f of factories) {
       const callee = f.replace(/\$/g, '\\$');
       for (const m of body.matchAll(new RegExp(`([A-Za-z_$][\\w$]*)=${callee}\\((?:(["'\`])([a-zA-Z0-9_]+)\\2)?\\)`, 'g'))) {
