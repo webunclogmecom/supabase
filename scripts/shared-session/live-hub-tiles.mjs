@@ -11,7 +11,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppDa
 const HUB = process.env.HUB || 'https://hub.unclogme.app/'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
-const ALL = ['Visit Calendar', 'Admin Review', 'DERM Tracker', 'DERM Stamp Studio', 'Client App', 'Field Portal', 'DUMP Schedule', 'Sales App', 'HR App', 'Picture Planner', 'Ops Portal', 'Review Assist']
+const ALL = ['Visit Calendar', 'Admin Review', 'DERM Tracker', 'DERM Stamp Studio', 'Client App', 'Field Portal', 'DUMP Schedule', 'Sales App', 'HR App', 'Picture Planner', 'Review Assist', 'Ops Portal'] // render order: Review Assist is PRODUCTION since 2026-11-09 (Fred), Ops Portal the only Coming Soon
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
 // levels: { app: level } (top level: none|view|edit; switches: yes|no); modes: { app: mode } (default 'on')
