@@ -75,8 +75,11 @@ async function signedIn(c, w, h, goto = PORTAL) {
       }) })
     }
     if (/rpc\/portal_waiting/.test(u)) {
+      seen.waitingAsked = true
       if (c.waitingFails) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
-      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.group === 'field' ? {} : { call_first: 1, time_on_site: 6, photos_unsorted: 8, city_emails: 0, stamp_sheets: 0, unopened_emails: 9 }) })
+      // As the database answers (public.fn_request_gate, measured 2026-11-09): a Field person with no app open is refused.
+      if (c.group === 'field') return r.fulfill({ status: 403, contentType: 'application/json', body: '{"code":"42501","message":"You do not have access to any UnclogMe app."}' })
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ call_first: 1, time_on_site: 6, photos_unsorted: 8, city_emails: 0, stamp_sheets: 0, unopened_emails: 9 }) })
     }
     if (/rpc\/get_my_access/.test(u)) {
       if (c.fail) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
@@ -116,9 +119,15 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
         text: document.body.innerText,
         overflow: document.documentElement.scrollWidth > window.innerWidth,
         loginShown: Boolean(document.querySelector('input[type=email]')),
+        bells: [...document.querySelectorAll('button[aria-label^="Notifications"]')].filter(vis).length,
       }
     })
     const fails = []
+    // The bell asks only for someone the database lets read: a Field person gets no bell and no refused request; everyone else gets one.
+    if (c.tiles && c.group === 'field') {
+      if (seen.waitingAsked) fails.push('the bell asked portal_waiting, which the database refuses a Field person')
+      if (got.bells) fails.push('a bell for a Field person')
+    } else if (c.tiles && !got.bells) fails.push('no bell')
     if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
     if (seen.navs !== navsBefore) fails.push('the sign-in reloaded the page')
     if (got.overflow) fails.push('sideways scroll')
