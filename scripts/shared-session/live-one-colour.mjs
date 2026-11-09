@@ -1,7 +1,8 @@
 // live-one-colour.mjs: Fred's test, as a standing check (2026-11-06). His words: "If I want that to be changed from gray
 // to blue, I need you to all the apps that has been merged to the secondary color to also be blue."
 // On each app's page in the Ops Portal it changes the primary and the secondary colour ONCE, in the one shared place, and
-// counts the buttons. PASS = every orange main button turned blue and every second-rank button turned purple, in every app.
+// counts the buttons. PASS = every main button, every blue operations action (Fred, 2026-11-09) and every second-rank button
+// follows, in every app.
 // Before the one-app work this was 0 of 7. Canned replies, no password, nothing reaches Supabase.
 // PORTAL=http://localhost:8080/ runs it before a publish. CONTROL=1 makes no change: every page must then FAIL, or this
 // check cannot fail.
@@ -41,7 +42,8 @@ await page.waitForTimeout(2000)
 const count = () => page.evaluate(() => {
   const rgb = (c) => { const m = String(c).match(/(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)/); return m ? m.slice(1, 4).map(Number) : null }
   const near = (a, b) => a && Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < 30
-  const res = { orange: 0, blue: 0, white: 0, purple: 0 }
+  // Today's ranks: orange main, blue operations action, white second rank. The test colours: teal, pink, purple.
+  const res = { orange: 0, blue: 0, white: 0, teal: 0, pink: 0, purple: 0 }
   const paint = document.createElement('div'); document.body.appendChild(paint)
   const solid = (c) => { paint.style.backgroundColor = ''; paint.style.backgroundColor = c; return rgb(getComputedStyle(paint).backgroundColor) }
   // A select is a field you fill in, like an input, so it stays with the card colour.
@@ -51,6 +53,8 @@ const count = () => page.evaluate(() => {
     const bg = rgb(cs.backgroundColor) ?? solid(cs.backgroundColor)
     if (near(bg, [241, 71, 20])) res.orange++
     else if (near(bg, [37, 99, 235])) res.blue++
+    else if (near(bg, [14, 116, 144])) res.teal++
+    else if (near(bg, [190, 24, 93])) res.pink++
     else if (near(bg, [124, 58, 237])) res.purple++
     else if (bg && bg[0] === 255 && bg[1] === 255 && bg[2] === 255 && parseFloat(cs.borderTopWidth) > 0) res.white++
   }
@@ -59,20 +63,22 @@ const count = () => page.evaluate(() => {
 })
 let bad = 0
 for (const [name, addr] of PAGES) {
-  await page.goto(PORTAL + addr, { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(5000)
+  await page.goto(PORTAL + addr, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('main button', { timeout: 30000 }).catch(() => {}); await page.waitForTimeout(2500)
   const before = await count()
-  if (!control) await page.addStyleTag({ content: ':root { --primary: #2563eb; --secondary: #7c3aed; }' })
+  if (!control) await page.addStyleTag({ content: ':root { --primary: #0e7490; --secondary: #7c3aed; --action: #be185d; }' })
   await page.waitForTimeout(400)
   const after = await count()
   const fails = []
   // A page with no button to look at proves nothing, so it fails rather than passes.
   if (before.orange + before.white === 0) fails.push('no main or second-rank button found')
   if (after.orange) fails.push(`${after.orange} of ${before.orange} main buttons stayed orange`)
-  if (after.blue < before.orange) fails.push(`${after.blue} of ${before.orange} main buttons turned blue`)
+  if (after.teal < before.orange) fails.push(`${after.teal} of ${before.orange} main buttons turned teal`)
+  if (after.blue) fails.push(`${after.blue} of ${before.blue} blue action buttons stayed blue`)
+  if (after.pink < before.blue) fails.push(`${after.pink} of ${before.blue} blue action buttons turned pink`)
   if (after.white) fails.push(`${after.white} of ${before.white} second-rank buttons stayed white`)
   if (after.purple < before.white) fails.push(`${after.purple} of ${before.white} second-rank buttons turned purple`)
   if (fails.length) bad++
-  console.log(`${name.padEnd(12)} main ${before.orange} to blue ${after.blue}, second ${before.white} to purple ${after.purple}  ${fails.length ? 'FAIL  ' + fails.join('; ') : 'PASS'}`)
+  console.log(`${name.padEnd(12)} main ${before.orange} to teal ${after.teal}, action ${before.blue} to pink ${after.pink}, second ${before.white} to purple ${after.purple}  ${fails.length ? 'FAIL  ' + fails.join('; ') : 'PASS'}`)
 }
 await browser.close()
 console.log(bad ? `${bad} FAILED` : 'all follow')
