@@ -503,6 +503,10 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 
 ## 4. Built (recent, with evidence)
 
+**Apps Hub: Review Assist to Production, HR App tile colour (2026-11-09, Trello #182 `bVpK3EB8`)**
+- Fred: *"it still shows "coming soon" but it's ready ... go ahead and publish, and that also means to put the tile on production"*, then *"give the HR App tile a colour too"*.
+- **Built 11-09:** Review Assist links to `https://reviews.unclogme.app` in PRODUCTION (blue `#2563EB`), HR App rose `#E11D48`; live `routes-RK6Yg-q_.js`, `scripts/shared-session/live-hub-tiles.mjs` 16/16 (expected order updated, `05b56efa`). Record: `Building Apps/Apps Hub/docs/08-changelog.md` 2026-11-09. Card in Testing / QA.
+
 - **Three findings from the Jobber sync test (2026-11-06, Trello #177; Fred's picks: "Past visits, keep chip", "Catalogue as it is", "All lines now", "Deploy now"):** the Client App's next visit is scheduled visits only (published, `clients._id-JcxrddMW.js`); job drift clears dates on Jobber's real "no date" (`sync-jobber-job-drift` v45, `722ca880`); every Jobber-made visit reads its label from the catalogue (`webhook-jobber` v152, `78b8ad90`). No backfill of old labels, by decision: they change when Jobber sends the visit again. Evidence: `docs/reference/jobber-change-sync-paths.md`, Client App changelog 2026-11-06 (b).
 
 - **Visit duration re-check S4, band A cards (2026-11-06, Trello vpF5PLQj; Fred: "yes, keep 25 on 6599"):** Supabase `2026-11-06_1121` (186623bb), applied 11:22:59 ET: 33 ledger rows, 7 times changed, 1 label, 6 flags closed. Spec `docs/specs/2026-11-02-time-on-site-nightly-rule.md` 10.8. Still ahead: S5 on Fred's word on Wed 11-11, S6, S7, S10.
