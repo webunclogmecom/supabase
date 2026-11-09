@@ -32,7 +32,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 **Admin Review moves into the Ops Portal (2026-11-09, Trello #161)**
 - Fred's answers on the plan (`Building Apps/Ops Portal/docs/specs/2026-11-09-admin-review-move-plan.md`): new names under `/review`; a redesign while moving, mockups of the real pages first; the shift review asks before leaving; and *"we shouldn't unlink the others apps, first we need to build this one, say it's good and then move all those services to this new Ops App"*.
 - Fred picked from the mockups, 2026-11-09: *"go with queue A, review C"* (queue: list with a preview beside it; visit review: one big photo at a time, decision in a rail, a bottom sheet on a phone).
-- Water by driver and Grease by client: options sent 11-09 (round 2) on his ask; waiting on his pick.
+- Water by driver and Grease by client: Fred picked *"go with water B and grease A"* (Water: today's layout in the portal frame; Grease: list and detail, the chart behind a switch). Every page decided 11-09; phone versions in round 3.
 - **Not built.** The links and notifications to every moved app switch only after all apps are migrated and he approves.
 
 **The Ops Portal becomes one app (2026-11-06, Trello #161)**
