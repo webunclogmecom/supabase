@@ -89,3 +89,10 @@ photo 250 m or more away was read by eye, re-geocoded, and checked against the t
 
 Working files (local only, not committed): the session scratchpad `c183/` folder (`notes_classified.json`,
 `photo_audit.json`, `ocr_all.jsonl`).
+
+## 4. Close (2026-11-10)
+
+Fred posted the answer to Serena in her Slack thread on 2026-11-09 (the 111-YC explanation and the map link; not the
+5-week audit paragraph or the 291-PER request). Card moved to Testing / QA on 2026-11-10 on Fred's word, every
+checklist item ticked and the card marked complete. Serena has not replied or re-checked yet. Still open, Fred's
+call: tag photo 31569 (291-PER) Internal, fix 289-PER's property pin, read the 818 unmeasured photos.
