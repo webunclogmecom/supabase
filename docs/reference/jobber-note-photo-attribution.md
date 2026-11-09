@@ -139,3 +139,11 @@ Neither can be resolved by asking Jobber; they need either a human or an accepte
   photo through 13 consecutive sweeps (fixed 2026-08-18; pinned ClientNotes stay excluded).
 - **The sync is add-only.** It can put a photo on the right visit but will never take it off the
   wrong one, so a fix-forward change does not heal history.
+- **The street printed on a driver's photo is the camera app's guess, not where the job was.** The
+  timestamp-camera app turns the phone's GPS into the nearest street address; one visit's own photos
+  carried six labels, one about 4 km off. Jobber strips EXIF, so to check where a photo was taken
+  compare its stamped time with the truck's `fn_gps_stays`. Measured over 2,571 photos in
+  `docs/audits/2026-11-09_visit_photo_address_audit.md` (Trello #183).
+- **A failed first attempt lands on the same visit.** A note posted the night before ("No key in lock
+  box") is inside the 2-day window of the visit that was done the next night, so both notes' photos
+  show on that one visit. That is correct, not a mis-link.
