@@ -46,6 +46,7 @@ const db = createClient(
 const ALLOWED_ORIGINS = new Set([
   'https://admin.unclogme.app',
   'https://grease-buddy-dash.lovable.app',   // the project's default host, still served
+  'https://ops.unclogme.app',                // the Ops Portal's Admin Review (2026-11-09)
 ])
 
 function cors(origin: string | null): Record<string, string> {

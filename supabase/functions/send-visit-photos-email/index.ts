@@ -241,6 +241,7 @@ const MAX_PDF_BYTES = 25 * 1024 * 1024
 const ALLOWED_ORIGINS = new Set([
   'https://admin.unclogme.app',
   'https://audit.unclogme.app',
+  'https://ops.unclogme.app',   // the Ops Portal's Admin Review (2026-11-09)
 ])
 
 function corsHeadersFor(origin: string | null): Record<string, string> {
