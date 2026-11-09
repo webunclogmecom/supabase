@@ -16,6 +16,13 @@ city unattended, and one path sends to the customer. They share one letter templ
 | 3 | **cron `city-email-sweep`**, `7 * * * *` | `send-derm-email` (`target: 'city'`) | municipality | same as 2 |
 | 4 | **DERM Tracker**, "Send to client" | `send-derm-email` (`target: 'client'`) | the customer | same report |
 
+**Where #1 can be called from (2026-11-09, `b47992c4`):** `send-visit-photos-email` and its sibling `rotate-photo` answer a
+browser only from `https://admin.unclogme.app` and, since Admin Review moved into the Ops Portal, `https://ops.unclogme.app`
+(`ALLOWED_ORIGINS` in each). The old host stays: both run until Fred retires it. Proven live from the portal on 112-YA visit
+8113 that day: a send to fred@ayache.com (send 422, delivered) and a rotation to 90 and back. Both functions write with the
+service key, so their own audit rows read `send-visit-photos-email` and `sql` from either host. A third app calling either
+needs its origin added here first, or the browser blocks the call and the app shows a generic error.
+
 🛑 **1 and 2 are DIFFERENT EMAILS ABOUT DIFFERENT MOMENTS, and that is correct.** #1 goes out when
 the service is completed, before the waste has been offloaded, so its letter carries a blue note
 saying the manifests will follow. #2 goes out after the manifest is filed and blacked out, and IS
