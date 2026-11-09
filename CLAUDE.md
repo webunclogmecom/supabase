@@ -5945,8 +5945,10 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   not verified. Rollback `2026-11-03_rollback_time_on_site_s2_band_b.sql` (it refuses unless S2 is applied).
   🛑 **Since 2026-11-05 11:20 ET (`2026-11-05_1125`, f891f36b, S3b part 2) `time-on-site-samsara-recheck` is v15, SWITCHED OFF.**
   The request body picks the rule: `{}` or `{"rules":1}` is v14 (parity: same 65 candidates, 0 changes), `{"rules":2}` is the
-  new one. Cron 151 (`fn_request_time_on_site_samsara_recheck`) sends `'{}'` until Fred says go (S5, Wed 11-11): that one
-  line is the switch and its rollback. `include_ledger` (lifts the ledger lock, never a label lock) and `place_shapes` work on
+  new one. Cron 151 (`fn_request_time_on_site_samsara_recheck`) sends that body: that one line is the switch and its
+  rollback. 🛑 **SWITCHED ON since 2026-11-09 12:00:51 ET (`2026-11-09_1200`, S5, Fred: "switch it on"): the body is
+  `'{"rules":2}'`, first real night 02:50 ET 11-10.** Kill switch: `2026-11-09_rollback_time_on_site_s5_switch_on.sql` (body
+  back to `'{}'`, md5-guarded, takes effect at the next 02:50). `include_ledger` (lifts the ledger lock, never a label lock) and `place_shapes` work on
   a dry run only. A dry run writes and logs nothing; never make a real call by hand. Four new functions, service_role only:
   `fn_time_on_site_recheck_visits(date,date)`, `fn_time_on_site_recheck_fixes(jsonb)`, `fn_save_time_on_site_stay(...)` (our GPS
   at both ends must be inside the site) and `fn_close_time_on_site(jsonb,date)` (closes a visit into the ledger at day 10 as

@@ -12,7 +12,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | **S3a** | **the lock in the five writers, and the reopen rule (sections 3 to 6)** | **BUILT 2026-11-03 12:28 ET (`2026-11-03_1330`), a day early on Fred's "go ahead with S3a now"; every rehearsal and control below passed** |
 | S3b | the new nightly rule deployed switched off, the close-out, the site overrides (section 7) | part 1 BUILT 2026-11-03 12:45 ET (`2026-11-03_1500`): the override table with Fred's 5 Q8 rows, the ledger stage CHECK (`nightly`, `person`), Viktor's door (RC6 + RC8). **Part 2 BUILT 2026-11-05 11:20 ET (`2026-11-05_1125`, f891f36b): v15 and its four functions, switched off, parity passed. The runbook is section 10 and the day's numbers are 10.7** |
 | S4 | band A: Fred's cards only | BUILT 2026-11-06 11:22:59 ET (`2026-11-06_1121`, 186623bb), on Fred's list of 2026-11-05 ("yes, keep 25 on 6599"). See 10.8 |
-| S5 | the switch on, after Fred reads the comparison | Wed 11-11 |
+| S5 | the switch on, after Fred reads the comparison | **ON 2026-11-09 12:00:51 ET (`2026-11-09_1200`)**, two days early on Fred's "switch it on" after three passing shadows. First night 02:50 ET 11-10. See 10.9 |
 | S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | 11-13 / 11-16 / 11-30 |
 
 ## 1. What Fred decided
@@ -455,3 +455,24 @@ Applied at 11:22:59 ET, commit 186623bb, rollback `2026-11-06_rollback_time_on_s
 **The wording that was wrong:** the approved page said the 22 reopened locks "lose the lock". T9 (S7, 11-16) fires on any completed visit over 10 days old with no current applied or proposed row, and a current row IS the lock, so they cannot end with no row. On the page Fred approved, 5 change and 17 keep their minutes; each of the 22 got a new settled row. Fred was told this correction twice before the apply (11-05 and the morning of 11-06) and did not object.
 
 **Left out on purpose:** every other visit on the page, the 5 blanks (each has a current row), 7828's truck question, band C (S6). **A row moved on an applied visit stops the whole file rather than skipping**, because T7 then stands: the safer answer when a settled value has changed.
+
+### 10.9 What happened on Monday 11-09 (S5, the switch on, measured)
+
+Fred, after the three shadows (11-05, 11-06, 11-09, all PASS): *"switch it on"*. Planned for Wed 11-11; moved up on his word.
+Applied at **12:00:51 ET**, migration `2026-11-09_1200_time_on_site_s5_switch_on.sql`, kill switch
+`2026-11-09_rollback_time_on_site_s5_switch_on.sql`.
+
+| check | result |
+|---|---|
+| PIN: the live body before | md5 `10797df5...`, the one read at 11:57 ET; the anchor `body := '{}'::jsonb` once |
+| the new body | equal to the old with that one line replaced (asserted in VERIFY), md5 `b36e494e...`; grants equal (`postgres`, `service_role` EXECUTE); cron 151 still `50 7 * * *` (02:50 ET) |
+| rehearsals, rolled back | as written: HTTP 201; the rollback alone: refuses (live body is not the switched-on one); the migration then the rollback in one transaction: HTTP 201 (restored md5 checked); an altered PIN: refuses |
+| kill switch works | one direct `{"rules":1,"dry_run":true}` call to v15: HTTP 200, 51 candidates, 0 saved (the old rule still answers) |
+| baseline for check (e) | a `{"rules":2}` dry run at 12:00 ET (`RR/v15/dry/s5_baseline_rules2_1109.json`): 62 visits, 54 candidates, 5 write (6056, 7867, 9076, 9085, 9174), 34 keep, 15 hold, `places_ok`, 0 trip reads failed. Same counts as the 08:53 shadow; 9174 completed since, 9116 left the write list |
+| after | the live body sends `'{"rules":2}'`; `stage = 'nightly'` rows 0 |
+
+**Tue 11-10 morning (plan 5.2 check e and the 8.1 row S5):** the night's decisions equal the 12:00 baseline re-derived on the
+value standing before 02:50, visit by visit; visits completed after it read one by one; close-out rows = completed client
+visits dated `from`, each with both vehicle ids; no `nightly_self` row on a visit with another tap in its stay; Admin Review
+and Calendar on 2 visits the nightly wrote and 1 it held. On a failure: the rollback file, then read why.
+**Trello:** "Fix" is ticked when S5 has passed 3 nights (plan section 13), so not before Thu 11-12.
