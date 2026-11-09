@@ -24,6 +24,10 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
   every day, and switched on Wed 11-11 after Fred reads the comparison.
 - 2026-11-02, Q-F (a): there is no decided-bonus guard inside the nightly's 10-day window. One-time stages still turn a
   decided bonus whose value would move into a card.
+- 2026-11-09, the S6 card: *"50, go with your recommendation."* Visit 6243 (10-18, bonus approved 10-20) takes the
+  rule's 50 min (`went_once`) over the saved 57 (`gps_150m_cluster`) in S6; the approved bonus is not re-priced. It was
+  the only decided bonus the 10-18 to 10-26 dry range of 11-06 would move. S6 re-runs that range first and stops if
+  6243's rule value is no longer 50.
 - 2026-11-02, Q-D (a): shapes the rule cannot settle are held for a person, on the Monday page. Q-M (c): there is no
   monthly sample, so T11 is not built.
 
