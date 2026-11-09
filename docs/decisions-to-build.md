@@ -29,6 +29,23 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Yan: "perfect", to Fred's five offers. Fred: "I will make the changes on the form and then redo the video". Fred's picks: the light switches are a normal question, the Collector film goes whole on Eleven v4, the Office film goes to Serena after the form changes.
 - Record: `Building Apps/docs/client-intake-flow.md` 5.6g. **Built:** the form, `2026-11-06_1300_intake_form_v8`; the Site file row (Picture Planner, live 11-06, `scripts/page-builder/tests/light_switches.mjs`). **Built 11-06:** the Collector film redo (5:58) and the Office film (12:59), both with Fred for review, neither on Drive or Zoho yet. Test job #99901148 stays open until the Office film is ready for Serena.
 
+**Picture Planner's staff pages move into the Ops Portal (2026-11-09, Trello #161)**
+- Plan: `Building Apps/Ops Portal/docs/specs/2026-11-09-picture-planner-move-plan.md`. The public pages (`/intake`, `/intake.html`, `/driver`) stay on `planner.unclogme.app` for good.
+- Fred's answers, 2026-11-09:
+  - **Addresses:** `/planner`, `/planner/property/<id>`, `/planner/forms`, `/planner/forms/<id>`.
+  - **Mockups:** *"show me both sides, with multiple mockups, like 3 of these 2 options"*. That is three options with the Page Builder's structure kept and three that redesign it, plus new list and form layouts.
+  - **Buttons:** 32 px, with the ranks in the plan.
+  - **The Site file preview follows the portal's dark mode.**
+  - **The Planner project connects to GitHub,** so the Site file copy can be byte-checked.
+  - **The map key:** one line in the portal's `.env`.
+  - **Until the switch:** Field people and Share form stay on the old address.
+  - **The bell:** it counts Site file versions waiting, for approvers only.
+  - **New Site file facts:** none until the switch.
+  - **The pinned bar:** it goes.
+  - **Real writes on 112-YA:** yes, as planned.
+  - **Aaron:** he keeps approving through the Office default.
+- **Not built.** The no-unlink rule holds: the tile, the Hub tile, the Slack links, the share link and the Client App's wording keep the old host until Fred says switch.
+
 **Admin Review moves into the Ops Portal (2026-11-09, Trello #161)**
 - Fred's answers on the plan (`Building Apps/Ops Portal/docs/specs/2026-11-09-admin-review-move-plan.md`): new names under `/review`; a redesign while moving, mockups of the real pages first; the shift review asks before leaving; and *"we shouldn't unlink the others apps, first we need to build this one, say it's good and then move all those services to this new Ops App"*.
 - Fred picked from the mockups, 2026-11-09: *"go with queue A, review C"* (queue: list with a preview beside it; visit review: one big photo at a time, decision in a rail, a bottom sheet on a phone).
