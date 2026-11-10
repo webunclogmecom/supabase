@@ -15,8 +15,10 @@ const SET = ['DriverPage.tsx', 'MarkedImage.tsx', 'access-pdf-types.ts', 'format
 const PLANNER_PATH = { 'DriverPage.tsx': 'src/components', 'MarkedImage.tsx': 'src/components' }
 
 // Import paths are the only allowed difference: each copy names the set's files from its own folders.
+// Line endings are not content: this repo's checkout may turn LF into CRLF.
 const normal = (text) =>
   text
+    .replace(/\r\n/g, '\n')
     .replace(/"@\/modules\/planner\/site-file\/([\w-]+)"/g, '"<$1>"')
     .replace(/"@\/(?:lib|components)\/([\w-]+)"/g, '"<$1>"')
     .replace(/"\.\/([\w-]+)"/g, '"<$1>"')
