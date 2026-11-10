@@ -25,6 +25,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**GDO bot: clear errors, live Auto file steps, DERM app links, a post when a press files (2026-11-10, Trello #184 xwW0dwj7)**
+- Fred (Slack, 11-10): "Have a better error response ... Show a progression of the `auto file` process ... Change the links ... from the Railway host to the DERM App ... have a callback/message ... including the image we receive from the City." His picks the same day: both hosts (an exception to bug-fixes-only; links to `derm.unclogme.app`), the portal copy by the session named Supabase, real steps from the bot, layout A1 (step list), failed card B, no Mark handled anywhere ("that process is not needed"), the post for Auto file presses only, with the City's image, tagging who pressed.
+- Spec: `Building Apps/DERM Tracker/docs/specs/2026-11-10-gdo-autofile-clear-errors-progress-links-callback.md`. **To build:** bot (error words, steps, links, digest text), `gdo-bot-file-visit` (`progress`, `run`, `last_error`), `rpa-derm-result` (the post), DERM Tracker old host, brief for the portal copy. **Not built yet.**
+
 **Yan's five changes on the intake form, then the films (2026-11-06, thread C0BKMRL7D4N, Trello sfD4mhwm)**
 - Yan: "perfect", to Fred's five offers. Fred: "I will make the changes on the form and then redo the video". Fred's picks: the light switches are a normal question, the Collector film goes whole on Eleven v4, the Office film goes to Serena after the form changes.
 - Record: `Building Apps/docs/client-intake-flow.md` 5.6g. **Built:** the form, `2026-11-06_1300_intake_form_v8`; the Site file row (Picture Planner, live 11-06, `scripts/page-builder/tests/light_switches.mjs`). **Built 11-06:** the Collector film redo (5:58) and the Office film (12:59), both with Fred for review, neither on Drive or Zoho yet. Test job #99901148 stays open until the Office film is ready for Serena.
