@@ -7,7 +7,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { LAPTOP_H, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -139,7 +139,7 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   const h = await header(p)
   ok(h.adjacent && h.hook, '1440: an Activity button sits immediately before View site file', h)
   ok(h.ab && h.vb && Math.abs((h.ab.y + h.ab.height / 2) - (h.vb.y + h.vb.height / 2)) <= 2 && h.ab.x + h.ab.width <= h.vb.x, '1440: on the same line, to its left', [h.ab, h.vb])
-  ok(h.ab && h.ab.height >= 34 && h.ab.height <= 40, '1440: the laptop size (36px)', h.ab && h.ab.height)
+  ok(h.ab && Math.abs(h.ab.height - LAPTOP_H) <= 2, `1440: the laptop size (${LAPTOP_H}px)`, h.ab && h.ab.height)
   ok(count(st, 'get_property_activity') === 0 && count(st, 'get_page_versions') === 0, '1440: no activity or versions call before the modal opens', [...new Set(st.calls)])
   ok(!(await oldCard(p)), '1440: the old Activity card is gone from the builder')
   await openModal(p)

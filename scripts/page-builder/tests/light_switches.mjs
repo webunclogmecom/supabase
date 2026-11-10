@@ -56,8 +56,8 @@ async function open(w, path, replies, ready, driver) {
   await p.route(SB + '/functions/v1/**', (x) => { if (!driver) return x.abort(); if (x.request().method() === 'OPTIONS') return x.fulfill({ status: 204, headers: cors }); return x.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(driver) }) })
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   await p.route('https://places.googleapis.com/**', (x) => x.abort())
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) t = t.split(from).join(to); await x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + R + path)
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await (driver ? (h) => p.route(PUB + '/assets/*.js', h) : (h) => routeCode(p, h))(async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) t = t.split(from).join(to); await x.fulfill({ response: f, body: t }) }) }
+  await p.goto(driver ? PUB + path : H + R + path)   // the public Site file is served by the old host only
   await p.waitForFunction(ready, null, { timeout: 30000 }).catch(() => {})
   await p.waitForTimeout(3000)
   return { ctx, p, st }

@@ -12,7 +12,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { H, R, PUB, PORTAL, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -100,6 +100,9 @@ for (const [name, gal] of [['prose "about 1000"', 'about 1000'], ['a decimal "30
   await ctx.close()
 }
 // G9, G10: from 1280px the side by side's "Not on the form" line names only what the form truly lacks
+// (the old host only: the Ops Portal has no side by side panel since A3a, Fred 2026-11-10, the survey's answer sits under each field)
+if (PORTAL) console.log('SKIP G9 G10: no side by side panel in the Ops Portal (A3a)')
+else {
 const notOnForm = (p) => p.evaluate(() => [...document.querySelectorAll('p')].map((x) => x.textContent.replace(/\s+/g, ' ').trim()).filter((t) => /^Not on the form: /.test(t)))
 {
   const { ctx, p } = await openBuilder(1440, 'about 1000')
@@ -112,6 +115,7 @@ const notOnForm = (p) => p.evaluate(() => [...document.querySelectorAll('p')].ma
   const L = await notOnForm(p)
   ok(L.some((t) => /\bGallons\b/.test(t)), '1440: guard, a form with no gallons answer at all lists Gallons under "Not on the form"', L)
   await ctx.close()
+}
 }
 // T: the Property record tab, form 715, at 390
 {

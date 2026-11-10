@@ -62,7 +62,7 @@ async function open(w, data) {
     setInterval(() => {
       const g = window.google && window.google.maps
       if (!g || !g.importLibrary || g.importLibrary.__stub) return
-      const real = g.importLibrary
+      let real = g.importLibrary
       const CITIES = ['Miami, FL, USA', 'Oakland Park, FL, USA', 'Pompano Beach, FL, USA', 'Doral, FL, USA', 'Hialeah, FL, USA', 'Homestead, FL, USA']
       const lib = { AutocompleteSessionToken: function () {}, AutocompleteSuggestion: { fetchAutocompleteSuggestions(req) {
         window.__places++
@@ -72,7 +72,11 @@ async function open(w, data) {
         return new Promise((r) => setTimeout(() => r({ suggestions }), 150))
       } } }
       const w = function (n) { return n === 'places' ? Promise.resolve(lib) : real.apply(this, arguments) }
-      w.__stub = 1; g.importLibrary = w
+      // Google's loader replaces importLibrary once its main script is in; a setter keeps the stub in front at that
+
+      // moment (a 5 ms re-wrap poll let a search through to Google now and then, 2026-11-10)
+
+      w.__stub = 1; Object.defineProperty(g, 'importLibrary', { configurable: true, enumerable: true, get: () => w, set: (v) => { real = v } })
     }, 5)
   }, SPOTS)
   const p = await ctx.newPage()
@@ -214,10 +218,11 @@ for (const w of [390, 1440]) {
     await b.click(); await b.fill('1745 Cleveland Road Miami Beach'); await outsideClick(); await p.waitForTimeout(1500)
     ok((await dd(p)).rows.length === 0 && (await searches(p)) === s0, `${w}: A: a click outside before the search runs cancels it (no search, nothing reopens)`, { rows: (await dd(p)).rows.length, searches: (await searches(p)) - s0 })
     // the sticky footer stays above the list: push the box down until the list runs under it
+    // (the footer is the sticky element pinned to the bottom; the Ops Portal's sidebar is sticky and full height too)
     await p.setViewportSize({ width: w, height: 560 }); await p.waitForTimeout(300)   // short, so the page can scroll the list under the footer
     await b.click(); await b.fill('650 NW 33rd St Miami'); await p.waitForTimeout(1500)
-    await b.evaluate((e) => { const f = [...document.querySelectorAll('.sticky')].find((x) => getComputedStyle(x).position === 'sticky' && x.getBoundingClientRect().bottom >= innerHeight - 2); if (f) window.scrollBy(0, e.getBoundingClientRect().bottom - (f.getBoundingClientRect().top - 40)) }); await p.waitForTimeout(300)
-    const under = await p.evaluate(() => { const f = [...document.querySelectorAll('.sticky')].find((x) => getComputedStyle(x).position === 'sticky' && x.getBoundingClientRect().bottom >= innerHeight - 2); const inp = document.querySelector('input[placeholder="Type an address to move the map"]'), c = inp.getAttribute('aria-controls'), l = (c && document.getElementById(c)) || (inp.parentElement.querySelector('button') || {}).parentElement; if (!f || !l) return { none: !f ? 'footer' : 'list' }; const fr = f.getBoundingClientRect(), L = l.getBoundingClientRect(); const hit = document.elementFromPoint(L.left + L.width / 2, fr.top + 8); return { listUnder: L.bottom > fr.top + 8, footerOnTop: !!(hit && f.contains(hit)) } })
+    await b.evaluate((e) => { const f = [...document.querySelectorAll('.sticky')].find((x) => getComputedStyle(x).position === 'sticky' && getComputedStyle(x).bottom === '0px' && x.getBoundingClientRect().bottom >= innerHeight - 2); if (f) window.scrollBy(0, e.getBoundingClientRect().bottom - (f.getBoundingClientRect().top - 40)) }); await p.waitForTimeout(300)
+    const under = await p.evaluate(() => { const f = [...document.querySelectorAll('.sticky')].find((x) => getComputedStyle(x).position === 'sticky' && getComputedStyle(x).bottom === '0px' && x.getBoundingClientRect().bottom >= innerHeight - 2); const inp = document.querySelector('input[placeholder="Type an address to move the map"]'), c = inp.getAttribute('aria-controls'), l = (c && document.getElementById(c)) || (inp.parentElement.querySelector('button') || {}).parentElement; if (!f || !l) return { none: !f ? 'footer' : 'list' }; const fr = f.getBoundingClientRect(), L = l.getBoundingClientRect(); const hit = document.elementFromPoint(L.left + L.width / 2, fr.top + 8); return { listUnder: L.bottom > fr.top + 8, footerOnTop: !!(hit && f.contains(hit)) } })
     ok(under.listUnder && under.footerOnTop, `${w}: A: the sticky footer stays above the list`, under)
     await b.press('Escape'); await b.fill(''); await p.waitForTimeout(400)
     await p.setViewportSize({ width: w, height: 900 }); await p.waitForTimeout(300)

@@ -9,7 +9,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { PORTAL, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -82,7 +82,8 @@ async function open(w, data) {
   return { ctx, p, st }
 }
 const t = (s) => (s == null ? null : s.replace(/\s+/g, ' ').trim())
-const NOTICE = ['rounded-2xl', 'border', 'border-dp-orange/40', 'bg-dp-orange/10', 'px-4', 'py-3', 'text-sm', 'text-dp-ink']
+// the property data notice's classes: the old app's dp-* names, the Ops Portal's shared tokens (PageBuilder.tsx, the source decision notice)
+const NOTICE = PORTAL ? ['rounded-2xl', 'border', 'border-primary/40', 'bg-primary/10', 'px-4', 'py-3', 'text-sm', 'text-foreground'] : ['rounded-2xl', 'border', 'border-dp-orange/40', 'bg-dp-orange/10', 'px-4', 'py-3', 'text-sm', 'text-dp-ink']
 // the warning under the map and its neighbours; the confirm row once "Submit for approval" was pressed
 const state = (p) => p.evaluate(() => {
   const t = (s) => (s == null ? null : s.replace(/\s+/g, ' ').trim())

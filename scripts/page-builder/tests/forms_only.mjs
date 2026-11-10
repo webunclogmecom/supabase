@@ -10,7 +10,7 @@
 //   node scripts/page-builder/tests/forms_only.mjs <outdir>
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { LAPTOP_H, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -200,7 +200,7 @@ for (const w of [1440, 375]) {
   ok(OF.n === nWait && nWait > 0 && !OF.inLink, `${tag} FO one Open form per waiting card (${nWait}), outside the card link`, OF)
   ok(OF.overlap.length === 0, `${tag} FO Open form covers no text on its card`, OF.overlap)
   ok(OF.covered.length === 0, `${tag} FO the Share icon covers no text on its card (the address)`, OF.covered)
-  ok(OF.h === (w < 768 ? 44 : 36), `${tag} FO Open form height`, OF.h)
+  ok(OF.h === (w < 768 ? 44 : LAPTOP_H), `${tag} FO Open form height`, OF.h)
   await p.screenshot({ path: `${out}/fo_open_form_${w}.png`, fullPage: false })
   ok(!st.calls.includes('get_intake_link'), `${tag} FO the link is not fetched until the press`, st.calls)
   await p.locator('button:text-is("Open form")').first().click()

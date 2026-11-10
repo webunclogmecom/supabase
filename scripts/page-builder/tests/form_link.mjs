@@ -10,7 +10,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { LAPTOP_H, H, R, PUB, PORTAL, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -120,7 +120,7 @@ const waitUrl = (p, u, ms) => p.waitForFunction((x) => { const b = document.quer
 const leaks = async (p, st) => ({ ...(await p.evaluate((c) => { const all = []; for (const s of [localStorage, sessionStorage]) for (let i = 0; i < s.length; i++) all.push(String(s.getItem(s.key(i)))); return { storage: all.some((v) => v.includes(c)), href: location.href.includes(c) } }, 'FAKE0000FAKE0000')), console: st.logs.filter((l) => l.includes('FAKE0000')).length })
 
 for (const w of [360, 390, 768, 1280]) {
-  const phone = w < 768, HB = phone ? 44 : 36
+  const phone = w < 768, HB = phone ? 44 : LAPTOP_H
   { // A. a waiting form: loading, the link, the buttons, Copy link (then a refused copy), Open form, one call
     const { ctx, p, st } = await open(w, ID, { intake: [{ b: AWAIT }], link: [{ b: OK1, d: 2500 }] })
     await p.waitForFunction(() => { const b = document.querySelector('[data-collector-link-url]'); return !!(b && /Getting the link/.test(b.textContent)) }, null, { timeout: 2000 }).catch(() => {})
@@ -136,8 +136,8 @@ for (const w of [360, 390, 768, 1280]) {
     ok(lb.join('') === URL1 && starts.slice(1).every((i) => i === I1 || i === I2) && (phone ? lb.length <= 2 : lb.length === 1), `${w}: the link ${phone ? 'breaks only after ".app/" or before "#code="' : 'is on one line'}`, lb)
     ok(!!S.box && /mono|consolas|menlo|courier/i.test(S.box.font) && S.box.us === 'all', `${w}: the link is monospace text with select-all`, S.box && { font: S.box.font, us: S.box.us })
     ok(!!S.box && !!L.box && Math.abs(S.box.h - L.box.h) <= 1, `${w}: the link box keeps its loading height (nothing jumps)`, { loading: L.box && L.box.h, loaded: S.box && S.box.h })
-    ok(S.btns.map((b) => b.t).join() === 'Copy link,Open form' && S.btns.every((b) => !b.dis && Math.abs(b.h - HB) <= 1 && b.fs === '14px' && b.fw === '600'), `${w}: Copy link and Open form, ${HB}px, 14px semibold`, S.btns)
-    ok(S.btns.length === 2 && S.btns[0].bg === 'rgb(241, 71, 20)' && S.btns[1].bg === 'rgb(255, 255, 255)', `${w}: Copy link is orange, Open form is white (outlined)`, S.btns.map((b) => b.bg))
+    ok(S.btns.map((b) => b.t).join() === 'Copy link,Open form' && S.btns.every((b) => !b.dis && Math.abs(b.h - HB) <= 1 && b.fs === '14px' && b.fw === (PORTAL ? '500' : '600')), `${w}: Copy link and Open form, ${HB}px, 14px ${PORTAL ? 'medium' : 'semibold'}`, S.btns)
+    ok(S.btns.length === 2 && S.btns[0].bg === (PORTAL ? 'rgb(37, 99, 235)' : 'rgb(241, 71, 20)') && S.btns[1].bg === 'rgb(255, 255, 255)', `${w}: Copy link is ${PORTAL ? 'blue (the operations action)' : 'orange'}, Open form is white (outlined)`, S.btns.map((b) => b.bg))
     // flex-1 on both, and Copy link carries a transparent 1.5px border like Open form's grey one, so the halves are equal
     // (without it flex-1 makes the outlined one wider: 130 and 132 at 360, 145 and 147 at 390, measured on a reference build)
     if (phone) ok(S.btns.length === 2 && Math.abs(S.btns[0].w - S.btns[1].w) <= 1, `${w}: on a phone the two buttons are equal halves`, S.btns.map((b) => b.w))
@@ -169,9 +169,11 @@ for (const w of [360, 390, 768, 1280]) {
     // a tab refocus: auth-js re-reads the session on visibilitychange and tells the staff gate (SIGNED_IN), which re-checks;
     // the page must not remount or refetch, or every refocus would write another reveal row
     // (users0 < st.users proves the refocus reached the gate: its re-check asks /auth/v1/user)
+    // In the Ops Portal the shell re-checks access (get_my_access) at most once a minute, so this refocus reaches no
+    // re-check there; move_check.mjs B moves the clock past the minute and proves one reveal across a real re-check.
     const users0 = st.users
     await p.evaluate(() => { document.dispatchEvent(new Event('visibilitychange', { bubbles: true })); window.dispatchEvent(new Event('focus')) }); await p.waitForTimeout(1500)
-    ok(count(st, 'get_intake_link') === 1 && st.bodies.length === 1 && Number(st.bodies[0].p_intake_id) === ID && count(st, 'get_intake') === 1 && st.users > users0, `${w}: one get_intake_link call for this view (p_intake_id ${ID}), after one get_intake, Copy, Open and a tab refocus included`, { link: count(st, 'get_intake_link'), intake: count(st, 'get_intake'), bodies: st.bodies, gateRechecks: st.users - users0 })
+    ok(count(st, 'get_intake_link') === 1 && st.bodies.length === 1 && Number(st.bodies[0].p_intake_id) === ID && count(st, 'get_intake') === 1 && (PORTAL || st.users > users0), `${w}: one get_intake_link call for this view (p_intake_id ${ID}), after one get_intake, Copy, Open and a tab refocus included`, { link: count(st, 'get_intake_link'), intake: count(st, 'get_intake'), bodies: st.bodies, gateRechecks: st.users - users0 })
     const lk = await leaks(p, st)
     ok(!lk.storage && !lk.href && lk.console === 0, `${w}: the link is in no storage, not in the URL, not in the console`, lk)
     ok(st.errors.length === 0, `${w}: no page errors`, st.errors)

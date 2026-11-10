@@ -14,7 +14,11 @@ const control = Boolean(process.env.CONTROL)
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const access = { employee_id: 2, group: 'admin', me: { full_name: 'Test Person', color_hex: '#f14714', photo_path: null }, apps: TOP.map((a) => ({ app: a, parent: null, mode: 'on', level: 'edit' })) }
-const PAGES = [['HR', 'hr/employees'], ['Calendar', 'calendar'], ['DERM', 'derm'], ['DERM upload', 'derm/upload'], ['Stamp', 'stamp'], ['AR queue', 'review'], ['AR grease', 'review/grease']]
+const PAGES = [['HR', 'hr/employees'], ['Calendar', 'calendar'], ['DERM', 'derm'], ['DERM upload', 'derm/upload'], ['Stamp', 'stamp'], ['AR queue', 'review'], ['AR grease', 'review/grease'], ['Planner', 'planner']]
+// The Planner's list has buttons only for a property, so it gets one made-up property waiting for approval ("Review
+// version 2" main, "Open Page Builder" second rank). Its Forms list is left out: since F3 (2026-11-10) it has no ranked
+// button, only the three-dot menu.
+const PB_ROW = { property_id: 900001, client_id: 900001, client_code: '000-ZZ', client_name: 'Colour Test', property_name: 'Main', address: '1 Test St', city: 'Miami', intake_id: null, live_version: 1, live_approved_at: '2026-01-01T00:00:00Z', live_approved_by_name: 'Test Person', pending_version: 2, pending_submitted_at: '2026-01-02T00:00:00Z', pending_submitted_by_name: 'Test Person', property_changed_since_live: false, photos_no_longer_available: 0, has_link: true, link_blocker: null, last_opened_at: null, last_open_was_staff: null }
 
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
@@ -32,6 +36,8 @@ await page.route('**/rest/v1/**', (r) => {
   const u = r.request().url()
   if (/rpc\/get_my_access/.test(u)) return json(r, access)
   if (/rpc\/portal_waiting/.test(u)) return json(r, {})
+  if (/rpc\/page_builder_list/.test(u)) return json(r, [PB_ROW])
+  if (/rpc\/get_page_builder/.test(u)) return json(r, { property: { id: PB_ROW.property_id }, pool: [] })   // the list's preview panel
   return json(r, (r.request().headers().accept || '').includes('vnd.pgrst.object') ? {} : [])
 })
 await page.goto(PORTAL); await page.waitForSelector('input[type=email]', { timeout: 30000 })
@@ -43,11 +49,12 @@ const count = () => page.evaluate(() => {
   const rgb = (c) => { const m = String(c).match(/(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)/); return m ? m.slice(1, 4).map(Number) : null }
   const near = (a, b) => a && Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < 30
   // Today's ranks: orange main, blue operations action, white second rank. The test colours: teal, pink, purple.
-  const res = { orange: 0, blue: 0, white: 0, teal: 0, pink: 0, purple: 0 }
+  const res = { orange: 0, blue: 0, white: 0, grey: 0, teal: 0, pink: 0, purple: 0 }
   const paint = document.createElement('div'); document.body.appendChild(paint)
   const solid = (c) => { paint.style.backgroundColor = ''; paint.style.backgroundColor = c; return rgb(getComputedStyle(paint).backgroundColor) }
-  // A select is a field you fill in, like an input, so it stays with the card colour.
-  for (const e of document.querySelectorAll('main button:not([role=combobox])')) {
+  // A select is a field you fill in, like an input, so it stays with the card colour. A link drawn as a button counts as
+  // a button (a plain link has no background and is skipped below).
+  for (const e of document.querySelectorAll('main button:not([role=combobox]), main a')) {
     const r = e.getBoundingClientRect(); if (r.width < 8 || r.height < 8) continue
     const cs = getComputedStyle(e); if (/^rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)) continue
     const bg = rgb(cs.backgroundColor) ?? solid(cs.backgroundColor)
@@ -57,6 +64,10 @@ const count = () => page.evaluate(() => {
     else if (near(bg, [190, 24, 93])) res.pink++
     else if (near(bg, [124, 58, 237])) res.purple++
     else if (bg && bg[0] === 255 && bg[1] === 255 && bg[2] === 255 && parseFloat(cs.borderTopWidth) > 0) res.white++
+    // A bordered button in the page colour (--background, #f4f4f5) is a second-rank button that skipped the kit: it is
+    // grey, not white, and it ignores the secondary colour (Planner and shell buttons until 2026-11-10).
+    // Neutral grey only (a pale tinted chip such as HR's Admin / Office / Field group is not one).
+    else if (bg && Math.abs(bg[0] - 244) + Math.abs(bg[1] - 244) + Math.abs(bg[2] - 245) < 8 && parseFloat(cs.borderTopWidth) > 0) res.grey++
   }
   paint.remove()
   return res
@@ -71,10 +82,13 @@ for (const [name, addr] of PAGES) {
   const fails = []
   // A page with no button to look at proves nothing, so it fails rather than passes.
   if (before.orange + before.white === 0) fails.push('no main or second-rank button found')
+  // The portal's error page has its own Try again button, so a crashed page must not pass on it.
+  if (await page.getByRole('button', { name: /^try again$/i }).count()) fails.push('the page crashed into the error page')
   if (after.orange) fails.push(`${after.orange} of ${before.orange} main buttons stayed orange`)
   if (after.teal < before.orange) fails.push(`${after.teal} of ${before.orange} main buttons turned teal`)
   if (after.blue) fails.push(`${after.blue} of ${before.blue} blue action buttons stayed blue`)
   if (after.pink < before.blue) fails.push(`${after.pink} of ${before.blue} blue action buttons turned pink`)
+  if (before.grey) fails.push(`${before.grey} second-rank buttons are in the page colour, not the second rank`)
   if (after.white) fails.push(`${after.white} of ${before.white} second-rank buttons stayed white`)
   if (after.purple < before.white) fails.push(`${after.purple} of ${before.white} second-rank buttons turned purple`)
   if (fails.length) bad++

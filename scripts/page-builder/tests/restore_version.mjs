@@ -10,7 +10,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { LAPTOP_H, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -194,7 +194,7 @@ const NOTICE_H = (n) => `Changed in the Client App's property data since version
   await choose(p, FROM.version)
   P = await pane(p)
   ok(!!P && !!P.btn && P.btn.rowHasH3 && near(P.btn.rect.cy, P.h3.cy, 4) && P.btn.rect.x > P.h3.x && near(P.btn.rect.r, P.paneRight, 2), `1440: R2, the button sits in version ${FROM.version}'s title row, right-aligned`, P && { btn: P.btn, h3: P.h3, paneRight: P.paneRight })
-  ok(!!P && !!P.btn && P.btn.rect.h >= 34 && P.btn.rect.h <= 40, '1440: the button is 36px on a laptop', P && P.btn && P.btn.rect.h)
+  ok(!!P && !!P.btn && Math.abs(P.btn.rect.h - LAPTOP_H) <= 2, `1440: the button is ${LAPTOP_H}px on a laptop`, P && P.btn && P.btn.rect.h)
   ok(!!P && !!P.hint && P.hint.text === HINT && !!P.btn && P.btn.described === P.hint.id, '1440: the hint under the lines names the Live version, and describes the button', P && [P.hint, P.btn && P.btn.described])
   await p.screenshot({ path: `${out}/A_detail_1440.png` })
   await click(p, '[data-restore-version]')

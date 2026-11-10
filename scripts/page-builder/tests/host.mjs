@@ -8,6 +8,8 @@ const base = new URL(process.env.PLANNER_BASE || PUB)
 export const H = base.origin                                   // the origin the staff pages are on
 export const R = base.pathname.replace(/\/+$/, '')             // '' on the old host, '/planner' in the portal
 export const PORTAL = R !== ''
+// a laptop-size button: the portal kit's h-8 (32px, Fred's compact controls), the old app's 36px
+export const LAPTOP_H = PORTAL ? 32 : 36
 const SHARED = /(^|\.)unclogme\.app$/.test(base.hostname)
 
 // Signs the fake session in the way the shared module reads it: the .unclogme.app cookie, or localStorage with Remember me

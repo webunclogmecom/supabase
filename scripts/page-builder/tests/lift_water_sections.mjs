@@ -12,7 +12,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { PORTAL, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -186,7 +186,8 @@ const src = (label) => `From: Site survey · ${label}`
     await c3.close()
   }
 }
-{ // 1440, scenario C2 (both counts on the page): the "On the form" panel beside the photos
+if (PORTAL) console.log('SKIP B9: no side by side panel in the Ops Portal (A3a)')
+else { // 1440, scenario C2 (both counts on the page): the "On the form" panel beside the photos
   const { ctx, p, st } = await open(1440, C2)
   const rowOf = (label) => p.evaluate((label) => { const pn = document.querySelector('section[aria-label="Photos on the form"]'); if (!pn) return null
     const rowEl = [...pn.children].find((d) => [...d.querySelectorAll('p, span')].some((x) => x.textContent.trim() === label)); return rowEl ? rowEl.textContent.replace(/\s+/g, ' ').trim() : null }, label)

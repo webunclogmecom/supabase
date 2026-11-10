@@ -5,7 +5,7 @@
 // Before the publish (2026-11-05) the same checks ran on the old chunks: exactly the 26 line and re-read checks failed.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { PORTAL, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const APP = (app, name, level, parent = null) => ({ app, name, parent, mode: 'on', level })
@@ -100,12 +100,12 @@ for (const mode of [want]) {
     const tag = `${mode} ${w}`
     const { p, ctx, st } = await open(w, 'staff', '/forms', mode)
     // A: the line on the cards
-    const going = await p.evaluate(() => [...document.querySelectorAll('main a[href^="' + (window.__R || '') + '/forms/"] div')].filter((e) => e.children.length === 0 && /^(Going:|No task)/.test(e.textContent.trim())).map((e) => ({ t: e.textContent.trim(), c: getComputedStyle(e).color, w: getComputedStyle(e).fontWeight, h: Math.round(e.getBoundingClientRect().height) })))
+    const going = await p.evaluate(() => [...document.querySelectorAll('main a[href^="' + (window.__R || '') + '/forms/"] div, main a[href^="' + (window.__R || '') + '/forms/"] span')].filter((e) => e.children.length === 0 && /^(Going:|No task[. ])/.test(e.textContent.trim())).map((e) => ({ t: e.textContent.trim(), c: getComputedStyle(e).color, w: getComputedStyle(e).fontWeight, h: Math.round(e.getBoundingClientRect().height) })))
     ok(going.length === 4, `${tag} the line shows on the 4 waiting cards`, going.length)
-    const amber = await p.evaluate(() => { const x = document.createElement('span'); x.className = 'text-amber-800'; document.body.append(x); const c = getComputedStyle(x).color; x.remove(); return c })
-    ok(going.some((g) => g.t === 'No task. It was deleted.' && g.c === amber), `${tag} deleted reads amber`, { amber, going })
-    ok(going.some((g) => g.t === 'No task is linked to this form.' && g.c === amber), `${tag} no task linked reads amber`)
-    ok(going.some((g) => g.t.startsWith('Going: Michael') && g.c === 'rgb(24, 24, 27)' && g.w === '700'), `${tag} Going reads bold ink`)
+    const amber = await p.evaluate((cls) => { const x = document.createElement('span'); x.className = cls; document.body.append(x); const c = getComputedStyle(x).color; x.remove(); return c }, PORTAL ? 'text-warning' : 'text-amber-800')
+    ok(going.some((g) => g.t.replace(/\.$/, '') === 'No task. It was deleted' && g.c === amber), `${tag} deleted reads amber`, { amber, going })
+    ok(going.some((g) => g.t.replace(/\.$/, '') === 'No task is linked to this form' && g.c === amber), `${tag} no task linked reads amber`)
+    ok(going.some((g) => g.t.startsWith('Going: Michael') && g.c === 'rgb(24, 24, 27)' && Number(g.w) >= (PORTAL ? 600 : 700)), `${tag} Going reads bold ink`)
     await p.screenshot({ path: `${out}/forms_cards_${mode}_${w}.png`, clip: { x: 0, y: 0, width: w, height: 560 } })
     // B: the re-read
     ok(st.reads === 1, `${tag} one read at mount`, st.reads)
@@ -122,15 +122,15 @@ for (const mode of [want]) {
     await p.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')) }); await settle(p)
     ok(st.reads === b2 + 1, `${tag} coming back to the tab reads`, st.reads - b2)
     // the card flips by itself, with no reload and no Loading flash
-    const loadingSeen = await p.evaluate(() => { window.__sawLoading = false; const o = new MutationObserver(() => { if (document.body.textContent.includes('Loading intake forms')) window.__sawLoading = true }); o.observe(document.body, { childList: true, subtree: true }); return true })
+    const loadingSeen = await p.evaluate(() => { window.__sawLoading = false; const o = new MutationObserver(() => { if (/Loading (intake )?forms/.test(document.body.textContent)) window.__sawLoading = true }); o.observe(document.body, { childList: true, subtree: true }); return true })
     st.rows = st.rows.map((r) => r.intake_id === 901 ? { ...r, state: 'submitted', status: 'Incomplete', collector: 'Michael Escobar', submitted_at: '2026-11-04T17:20:00Z', going: null, answered_count: 22, photo_count: 5 } : r)
     await tick(p); await settle(p)
     const flipped = await p.evaluate(() => document.querySelector('main a[href="' + (window.__R || '') + '/forms/901"]')?.textContent || '')
-    ok(/Collected by Michael Escobar/.test(flipped) && !/Going:/.test(flipped), `${tag} a form that came back flips by itself`, flipped.slice(0, 80))
+    ok(/Collected by Michael Escobar|Michael Escobar sent in the survey/.test(flipped) && !/Going:/.test(flipped), `${tag} a form that came back flips by itself`, flipped.slice(0, 80))
     ok((await p.evaluate(() => window.__sawLoading)) === false && loadingSeen, `${tag} no Loading flash`)
     // the search, the filter and the scroll stay
     const search = p.locator('input[placeholder^="Search by client code"]')
-    await p.getByRole('button', { name: /^Submitted/ }).first().click()
+    await p.getByRole('button', { name: /^Submitted\b/ }).first().click()
     await search.click(); await search.fill('Demo')
     await settle(p, 200)
     const nFiltered = await cardCount(p)
@@ -142,7 +142,7 @@ for (const mode of [want]) {
     ok(after.btn === true && (await cardCount(p)) === nFiltered, `${tag} the filter stays`, nFiltered)
     ok(y0 > 0 && after.y === y0, `${tag} the scroll stays`, { y0, y: after.y })
     await p.evaluate(() => window.scrollTo(0, 0))
-    await p.getByRole('button', { name: /^All/ }).first().click(); await search.fill(''); await settle(p, 200)
+    await p.getByRole('button', { name: /^All\b/ }).first().click(); await search.fill(''); await settle(p, 200)
     // no read while a menu or a dialog is open; the link is only fetched on the press
     await menu(p, '902-PLZ'); await settle(p, 300)
     const b3 = st.reads; await tick(p); await settle(p)
@@ -174,7 +174,7 @@ for (const mode of [want]) {
     ok(names.every((n) => ['cancel_intake', 'get_intake_link', 'get_my_access', 'list_intake_forms', 'portal_waiting'].includes(n)), `${tag} only the expected calls`, names)
     ok(st.errors.length === 0, `${tag} no page errors`, st.errors.slice(0, 2))
     // leaving the page stops it
-    await p.locator('main a[href="' + R + '/forms/905"]').click(); await settle(p, 1500)
+    await p.locator('main a[href="' + R + '/forms/905"]').first().click(); await settle(p, 1500)
     const b6 = st.reads
     await p.evaluate(() => window.dispatchEvent(new Event('focus'))); await settle(p)
     const gone = await p.evaluate(() => !window.__iv.some((x) => x.ms === 60000))
@@ -198,7 +198,7 @@ for (const mode of [want]) {
     const bgOf = (e) => { let n = e; while (n) { const c = getComputedStyle(n).backgroundColor; if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c; n = n.parentElement } return 'rgb(255,255,255)' }
     const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
     const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100 }
-    return [...document.querySelectorAll('main div, main p')].filter((e) => !e.children.length && /^(Going:|No task)/.test(e.textContent.trim())).map((e) => ({ t: e.textContent.trim().slice(0, 30), r: ratio(px(getComputedStyle(e).color), px(bgOf(e))) }))
+    return [...document.querySelectorAll('main div, main p, main span')].filter((e) => !e.children.length && /^(Going:|No task[. ])/.test(e.textContent.trim())).map((e) => ({ t: e.textContent.trim().slice(0, 30), r: ratio(px(getComputedStyle(e).color), px(bgOf(e))) }))
   })
   if (mode !== 'noseq') for (const w of [1440, 375]) {
     const { p, ctx } = await open(w, 'staff', '/forms', mode, { theme: 'dark' })
@@ -206,7 +206,7 @@ for (const mode of [want]) {
     const list = await readLines(p)
     ok(list.length === 4 && list.every((x) => x.r >= 4.5), `${mode} ${w} Dark: every line on the list is readable`, list)
     await p.screenshot({ path: `${out}/forms_cards_dark_${mode}_${w}.png`, clip: { x: 0, y: 0, width: w, height: 560 } })
-    await p.locator('main a[href="' + R + '/forms/901"]').click(); await settle(p, 1500)
+    await p.locator('main a[href="' + R + '/forms/901"]').first().click(); await settle(p, 1500)
     const page = await readLines(p)
     ok(page.length === 1 && page[0].r >= 4.5, `${mode} ${w} Dark: the line on the form page is readable`, page)
     await p.screenshot({ path: `${out}/forms_page_dark_${mode}_${w}.png`, clip: { x: 0, y: 0, width: w, height: 420 } })
@@ -214,7 +214,7 @@ for (const mode of [want]) {
   }
   // a focus while the first load is out must not strand the page on "Loading" with no Retry, and must not throw away a good reply
   if (mode !== 'noseq') {
-    const main = (p) => p.evaluate(() => { const m = document.querySelector('main')?.textContent || ''; return { loading: m.includes('Loading intake forms'), error: m.includes('Could not load the intake forms'), retry: [...document.querySelectorAll('main button')].some((b) => b.textContent === 'Retry'), cards: document.querySelectorAll('main a[href^="' + (window.__R || '') + '/forms/"]').length } })
+    const main = (p) => p.evaluate(() => { const m = document.querySelector('main')?.textContent || ''; return { loading: /Loading (intake )?forms/.test(m), error: /Could not load the intake forms|Couldn't load the forms/.test(m), retry: [...document.querySelectorAll('main button')].some((b) => b.textContent === 'Retry' || b.textContent === 'Try again'), cards: document.querySelectorAll('main a[href^="' + (window.__R || '') + '/forms/"]').length } })
     const a = await open(1440, 'staff', '/forms', mode, { firstStatus: 500 })
     const ra = await main(a.p)
     ok(!ra.loading && ra.error && ra.retry && a.st.reads === 1, `${mode} first load fails with a focus during it: the error and Retry, no second read`, { ...ra, reads: a.st.reads })

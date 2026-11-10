@@ -6,7 +6,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { PORTAL, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -99,7 +99,7 @@ const rowsOf = (R, d) => R.rows.find((x) => x.d === d) || {}
 const T12 = { '22:00': '10:00 PM', '06:00': '6:00 AM', '21:00': '9:00 PM', '05:00': '5:00 AM', '08:00': '8:00 AM', '17:00': '5:00 PM', '12:00': '12:00 PM', '09:00': '9:00 AM' }
 
 // A. Page Mon to Sat, form differs (Tue and Wed other times, Fri overnight vs the page's day shift, no Sat, an extra Sun)
-for (const w of [1440, 1280]) {
+for (const w of PORTAL ? [] : [1440, 1280]) {   // the side by side panel: the old host only
   const { ctx, p, st } = await open(w, make(PAGE, FORM))
   const R = await read(p)
   ok(R.present, `${w}: the "On the form" hours panel is there`)
@@ -158,7 +158,7 @@ for (const w of [1440, 1280]) {
 }
 
 // C. The page has no day yet: nothing to line up, every form day listed
-for (const w of [1440, 1280]) {
+for (const w of PORTAL ? [] : [1440, 1280]) {   // the side by side panel: the old host only
   const { ctx, p } = await open(w, make({}, FORM))
   const R = await read(p)
   if (w === 1440) {
@@ -187,7 +187,8 @@ for (const w of [1440, 1280]) {
 }
 
 // E. Below 1280px nothing new mounts; the phone card is unchanged
-for (const w of [1279, 390]) {
+if (PORTAL) console.log('SKIP the mirror panel (1280px and up): no side by side panel in the Ops Portal (A3a); survey_under_field.mjs tests the hours there')
+for (const w of PORTAL ? [1440, 1280, 1279, 390] : [1279, 390]) {
   const { ctx, p, st } = await open(w, make(PAGE, FORM))
   const R = await read(p)
   ok(!R.present && R.anyMirror === 0 && R.anyRow === 0, `${w}: no panel, no mirror chip, no mirror row`, [R.present, R.anyMirror, R.anyRow])

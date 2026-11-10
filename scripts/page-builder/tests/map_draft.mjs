@@ -11,7 +11,7 @@
 //      CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with edits.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { H, R, PUB, PORTAL, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
@@ -116,7 +116,8 @@ const draftContent = (p) => p.evaluate(() => { for (let i = 0; i < localStorage.
   const before = submits.length
   const { ctx, p } = await open(1440, B)
   const txt = await p.textContent('body')
-  ok(/New page, filled from the property record\. Take the collector's answers with Fill empty fields, or click an orange answer on the right\./.test(txt), 'B: the new-page header line, side by side on screen')
+  // the portal has no side by side panel at any width, so its header keeps the Use this wording (A3a)
+  ok((PORTAL ? /New page, filled from the property record\. Take the collector's answers with Use this or Fill empty fields\./ : /New page, filled from the property record\. Take the collector's answers with Fill empty fields, or click an orange answer on the right\./).test(txt), PORTAL ? 'B: the new-page header line names Use this and Fill empty fields (no side panel in the portal)' : 'B: the new-page header line, side by side on screen')
   const vals = await p.evaluate(() => [...document.querySelectorAll('input, textarea')].map((i) => i.value).filter(Boolean))
   ok(vals.includes('LB-FROM-PROPERTY'), 'B: the lock box code comes from the property record', vals.slice(0, 12))
   ok(!vals.includes('4242-FROM-FORM'), 'B: the gate code from the newest form is NOT pre-filled')
@@ -132,7 +133,7 @@ const draftContent = (p) => p.evaluate(() => { for (let i = 0; i < localStorage.
   const words = async (p) => { const t = await p.textContent('body'); return { old: OLD.test(t), neu: NEW.test(t), short: SHORT.test(t) } }
   const { ctx, p } = await open(1280, B)
   const w1 = await words(p)
-  ok(w1.neu && !w1.old, 'B2 1280: the new words', w1)
+  ok(PORTAL ? w1.old && !w1.neu : w1.neu && !w1.old, PORTAL ? 'B2 1280: the Use this words (no side panel in the portal)' : 'B2 1280: the new words', w1)
   await p.setViewportSize({ width: 1279, height: 900 }); await p.waitForTimeout(400)
   const w2 = await words(p)
   ok(w2.old && !w2.neu, 'B2 resized to 1279: the old words, with no reload', w2)
@@ -153,7 +154,7 @@ const draftContent = (p) => p.evaluate(() => { for (let i = 0; i < localStorage.
   const NONE = JSON.parse(JSON.stringify(B)); if (NONE.forms[0]) NONE.forms[0].answers = {}
   const { ctx: c4, p: p4 } = await open(1280, NONE)
   const y = await words(p4), left = /Nothing left to decide on this form\./.test(await p4.textContent('body'))
-  ok(left && y.short && !y.old && !y.neu, 'B2 1280: nothing left to decide: only the first half of the line', { ...y, left })
+  ok((PORTAL || left) && y.short && !y.old && !y.neu, 'B2 1280: nothing left to decide: only the first half of the line', { ...y, left })
   await c4.close()
 }
 { // ---------------- phone: the map controls fit and Remove last arrow is a tap target
@@ -215,20 +216,21 @@ for (const f of FP.forms) {
   ok(away && gone && await inView(p, pts(LIVEMAP)), "F4 1440: the draft bar's Discard fits the map back to the live version's pins (the view had moved off them)", { moved_first: away, bar_gone: gone, view: await view(p) })
   await ctx.close()
 }
-{ // F2: "Use this form's pins" fits the map to them; its Undo fits back to the draft's own pins (below 1280px: the card path)
-  const { ctx, p } = await open(1024, FP)
+for (const W of PORTAL ? [1024, 1440] : [1024]) { // F2: "Use this form's pins" fits the map to them; its Undo fits back to the draft's own pins (below 1280px: the card path; in the portal at every width)
+  const { ctx, p } = await open(W, FP)
   await btn(p, /^Use this form's pins \(changes your draft only\)$/).click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(500)
   await btn(p, /^Replace$/).click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(2000)
   const dm = await draftMap(p)
-  ok(!!dm && !!dm.pins && !!dm.pins.gt && Math.abs(dm.pins.gt.lat - FORM_GT.lat) < 1e-6, "F2 1024: guard, the form's pins reached the draft", dm)
-  ok(await inView(p, [FORM_GT, FORM_T]), "F2 1024: after Use this form's pins the map fits to the form's pins", await view(p))
-  await p.screenshot({ path: `${out}/F2_1024.png` }).catch(() => {})
+  ok(!!dm && !!dm.pins && !!dm.pins.gt && Math.abs(dm.pins.gt.lat - FORM_GT.lat) < 1e-6, `F2 ${W}: guard, the form's pins reached the draft`, dm)
+  ok(await inView(p, [FORM_GT, FORM_T]), `F2 ${W}: after Use this form's pins the map fits to the form's pins`, await view(p))
+  await p.screenshot({ path: `${out}/F2_${W}.png` }).catch(() => {})
   const away = !(await inView(p, [TRUCK], 1000))
   await p.locator('button', { hasText: /^Undo$/ }).first().click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(500)
-  ok(away && await inView(p, [TRUCK]), "F2 1024: its Undo fits the map back to the draft's own pins (the view had moved off them)", { moved_first: away, view: await view(p) })
+  ok(away && await inView(p, [TRUCK]), `F2 ${W}: its Undo fits the map back to the draft's own pins (the view had moved off them)`, { moved_first: away, view: await view(p) })
   await ctx.close()
 }
-{ // F2b: from 1280px the side by side's pins chip and its "Use pins" (its own click handler in the chunk) must reach the same fit,
+if (PORTAL) console.log("SKIP F2b: no side by side panel in the Ops Portal (A3a); F2 runs at 1440 there")
+else { // F2b: from 1280px the side by side's pins chip and its "Use pins" (its own click handler in the chunk) must reach the same fit,
   // and the sticky footer's Undo must fit back
   const { ctx, p } = await open(1440, FP)
   await p.getByRole('button', { name: /^Use this form's pins: / }).first().click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(500)

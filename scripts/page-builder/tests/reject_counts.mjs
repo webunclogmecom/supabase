@@ -7,7 +7,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { H, R, PUB, seedSession, routeCode } from './host.mjs'
+import { PORTAL, LAPTOP_H, H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -92,7 +92,7 @@ const btnBy = (p, re) => p.evaluate((src) => { const re = new RegExp(src); const
   ok(await p.locator('button[aria-label="Unlock to change for this page"]').count() >= 1, 'counts bar: pressing it locks again')
   // the arrow beside "Counts at the top of the page" (the side by side panel, 1280px and up)
   const arrow = p.locator('button[aria-label="Go to the counts at the top of the page"]').first()
-  ok(await arrow.count() === 1, 'counts box: the up arrow is there')
+  ok(await arrow.count() === (PORTAL ? 0 : 1), PORTAL ? 'counts box: no up arrow (no side by side panel in the portal, A3a)' : 'counts box: the up arrow is there')
   if (await arrow.count()) {
     const a = await arrow.evaluate((b) => { const r = b.getBoundingClientRect(), cs = getComputedStyle(b); const h = [...document.querySelectorAll('h3')].find((x) => /Counts at the top of the page/i.test(x.textContent)); const hr = h && h.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), bg: cs.backgroundColor, radius: cs.borderRadius, nextToTitle: !!(hr && Math.abs((r.top + r.bottom) / 2 - (hr.top + hr.bottom) / 2) < 12 && r.left >= hr.right - 2 && r.left - hr.right < 40) } })
     ok(a.bg === 'rgb(241, 71, 20)' && a.w === a.h && a.w >= 26 && a.w <= 30 && a.nextToTitle, 'counts box: a 28px orange round button right next to the title', a)
@@ -120,7 +120,7 @@ for (const w of [1440, 390]) {
   ok(!!rej, `${w}: review shows Reject`, bs.map((b) => b.text))
   if (w >= 768) ok(rej && app && rej.x + rej.w <= app.x && Math.abs(rej.y - app.y) < 4, `${w}: Reject sits immediately left of Approve`, { rej, app })
   ok(rej && rej.color === 'rgb(185, 28, 28)' && rej.border === 'rgb(254, 202, 202)' && /255, 255, 255/.test(rej.bg), `${w}: Reject is white with red text and a pale red border`, rej && { color: rej.color, border: rej.border, bg: rej.bg })
-  ok(rej && (w >= 768 ? rej.h === 36 : rej.h >= 44), `${w}: Reject is ${w >= 768 ? '36' : '44'}px high`, rej && rej.h)
+  ok(rej && (w >= 768 ? rej.h === LAPTOP_H : rej.h >= 44), `${w}: Reject is ${w >= 768 ? LAPTOP_H : '44'}px high`, rej && rej.h)
   const box = await p.evaluate(() => { const h = [...document.querySelectorAll('h3')].find((x) => /^What this version fills in$/.test(x.textContent.trim())); const c = h && h.parentElement; return c ? { line: [...c.querySelectorAll('p')].map((x) => x.textContent.trim()), items: [...c.querySelectorAll('li')].map((x) => x.textContent.trim()) } : null })
   const v2 = V.find((v) => v.version === 2)
   ok(box && box.line.some((t) => t === 'Nothing is live yet, so this lists everything on version 2.') && factLines(v2.content).every((l) => box.items.some((i) => i.startsWith(l + ':'))), `${w}: the review box lists what version 2 fills in`, box)
