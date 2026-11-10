@@ -148,7 +148,7 @@ for (const w of PORTAL ? [] : [1440, 1280]) {   // the side by side panel: the o
 }
 
 // B. The same hours on both sides
-{
+if (!PORTAL) {   // the side by side panel: the old host only
   const { ctx, p } = await open(1440, make(SAME, SAME))
   const R = await read(p)
   ok(/All the same/.test(R.head) && !R.buttons.length, 'same: the top line reads All the same, no button', [R.head, R.buttons])
@@ -179,7 +179,7 @@ for (const w of PORTAL ? [] : [1440, 1280]) {   // the side by side panel: the o
 }
 
 // D. The form did not answer the hours
-{
+if (!PORTAL) {   // the side by side panel: the old host only
   const { ctx, p } = await open(1440, make(PAGE, null))
   const R = await read(p)
   ok(R.present && /Not on the form/.test(R.head) && R.chips.length === 0 && R.anyRow === 0 && !R.buttons.length, 'no answer: the panel says Not on the form, no chips, no rows, no button', [R.head, R.chips.length, R.anyRow, R.buttons])

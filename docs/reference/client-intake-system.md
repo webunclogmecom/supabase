@@ -13,6 +13,27 @@ meeting notes hold eight decisions; Fred settled ten more on 2026-09-22.
 - The investigation and the adversarial review of it are beside that file.
 - App-side behaviour: `Building Apps/Client App/docs/08-changelog.md`.
 
+🛑 **Since 2026-11-10 the Planner's staff pages also run in the Ops Portal** (`ops.unclogme.app/planner`, Trello #161; plan
+`Building Apps/Ops Portal/docs/specs/2026-11-09-picture-planner-move-plan.md`). Same functions, same `picture-planner` label;
+`audit.logs` tells the two hosts apart by `request_context->>'origin'`. Everything handed out still opens
+`planner.unclogme.app`, and the public pages stay there for good. What that means for this repo:
+- **The Page Builder tests run against either host.** `scripts/page-builder/tests/host.mjs` reads `PLANNER_BASE`: unset is the
+  old host, `https://ops.unclogme.app/planner` the live portal, `http://localhost:8080/planner` the local one. The public
+  pages (the collector, `/driver`) and the share link stay on `PUB` in both runs. `LAPTOP_H` is a laptop button's height
+  (32 in the portal, 36 on the old host). A check about the old side by side panel skips on the portal and says so; the
+  portal's answer to it, the survey under each field (A3a), is `survey_under_field.mjs` (44 checks; control
+  `CHUNK_SUB='data-survey-says|||data-survey-x'` fails 14). Measured 2026-11-10 on the live portal: the move check 23 of 23,
+  `address_approval` 72 of 72 three runs in a row, `forms_going_reread` 58 of 58, `light_switches` 19 of 19.
+- **`move_check.mjs`** (the move's own check): View and None access, one collector-link reveal across the shell's access
+  re-check, no Forms re-read under an open menu, the builder's leave guard, the Site file preview over the shell. The
+  local dev server counts two reveals (React StrictMode runs effects twice in development); judge B on a built site.
+- **The Site file set** has one source, `scripts/site-file/`, copied into the portal and the Planner;
+  `node scripts/site-file/check.mjs --portal <dir> --planner <dir>` must read "all copies match the source".
+- **Two harness traps fixed that day, worth knowing for any test here:** a JS string literal turned `\b` into a backspace
+  byte, so a regex silently never matched (grep the tests for control bytes after an edit made by a script); and a Places stub
+  that re-wraps `google.maps.importLibrary` on a poll lets a search through to Google now and then. Keep it in front with a
+  property setter.
+
 ---
 
 ## What is SHIPPED
