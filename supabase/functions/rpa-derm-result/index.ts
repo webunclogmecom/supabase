@@ -161,6 +161,94 @@ async function postRefusal(detail: string[], reason: string): Promise<boolean> {
   }
 }
 
+// ---- Trello #184 (Fred, 2026-11-10): a post when an Auto file PRESS files -------------------------------------
+// "have a callback/message automated to be sent once the filing has been completed including the image we receive
+// from the City", then: Auto file presses only, with the image, and it tags the person who pressed. Hourly filings
+// stay in the bot's morning digest. Shape: docs/reference/slack-notifications.md (header, main line, extras).
+// The image goes up as a private file of the bot (files.getUploadURLExternal / completeUploadExternal, no channel)
+// and is shown by an image block (slack_file). That needs the files:write permission on the UnclogMe Apps app;
+// without it, or on any upload error, the post goes out without the image and says so. A failed post never
+// fails the result: the filing is already recorded.
+const SLACK_IDS: Record<string, string> = {
+  'contact@unclogme.com': 'U0AL9JZ4V7C', // Diego
+  'fred@ayache.com': 'U0AN9B9MVHN',
+  'yannick@ayache.com': 'U0AL2N6NMBM',
+}
+const DERM_APP = 'https://derm.unclogme.app'
+const TEST_CLIENT_CODE = '112-YA' // the sanctioned test client: [TEST], and nobody is tagged
+
+export type PressPost = {
+  visitId: number, presser: string | null, presserName: string | null, client: string | null, code: string | null,
+  permit: string | null, manifest: string | null, cleaned: string | null, filedAt: Date, confirmation: string | null,
+}
+// The post's text, in one place (the check reads it). No em dashes (the Slack rule).
+export function pressPostBody(p: PressPost) {
+  const test = p.code === TEST_CLIENT_CODE
+  const id = p.presser ? SLACK_IDS[p.presser.toLowerCase()] : undefined
+  const who = test ? '' : id ? `<@${id}> ` : p.presserName ? `${p.presserName}: ` : ''
+  const name = [p.client, p.code ? `(${p.code})` : ''].filter(Boolean).join(' ') || `Visit ${p.visitId}`
+  const day = (iso: string | null) => {
+    if (!iso) return null
+    const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+    return y && m && d ? `${m}/${d}/${y}` : iso
+  }
+  const time = p.filedAt.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  const lines = [
+    `✅ ${test ? '[TEST] ' : ''}${who}*<${DERM_APP}/visits/${p.visitId}|${name}>*: your Auto file went through.`,
+    `*Permit:* ${p.permit ?? 'not known'}   ·   *Manifest:* ${p.manifest ?? 'not known'}   ·   *Cleaned:* ${day(p.cleaned) ?? 'not known'}`,
+    `*Filed:* ${time} ET${p.confirmation ? `   ·   ${p.confirmation}` : ''}`,
+  ]
+  return { header: '✅ GDO report filed', text: `GDO report filed: ${name}`, body: lines.join('\n') }
+}
+
+async function uploadSlackImage(token: string, bytes: Uint8Array, ext: string, title: string): Promise<string | null> {
+  const name = `gdo-report.${ext}`
+  const u = await fetch('https://slack.com/api/files.getUploadURLExternal', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ filename: name, length: String(bytes.length) }),
+  }).then((r) => r.json()).catch(() => ({}))
+  if (!u?.ok || !u.upload_url || !u.file_id) { console.error('press post: no upload url:', u?.error ?? 'no answer'); return null }
+  const put = await fetch(u.upload_url, { method: 'POST', body: bytes }).catch(() => null)
+  if (!put?.ok) { console.error('press post: image upload failed:', put?.status ?? 'no answer'); return null }
+  const done = await fetch('https://slack.com/api/files.completeUploadExternal', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({ files: [{ id: u.file_id, title }] }),
+  }).then((r) => r.json()).catch(() => ({}))
+  if (!done?.ok) { console.error('press post: upload not completed:', done?.error ?? 'no answer'); return null }
+  return u.file_id as string
+}
+
+async function postPressFiled(p: PressPost, image: { bytes: Uint8Array, ext: string } | null): Promise<boolean> {
+  const token = Deno.env.get('SLACK_BOT_TOKEN') ?? ''
+  if (!token) { console.error('SLACK_BOT_TOKEN not set: Auto file post not sent'); return false }
+  const msg = pressPostBody(p)
+  try {
+    const fileId = image ? await uploadSlackImage(token, image.bytes, image.ext, "The county's confirmation") : null
+    const as = await slackIdentity(token, 'DERM Tracker', 'derm-tracker')
+    const send = async (withImage: boolean) => {
+      const extra = withImage && fileId ? [{ type: 'image', slack_file: { id: fileId }, alt_text: "The county's confirmation" }]
+        : [{ type: 'context', elements: [{ type: 'mrkdwn', text: image ? "The county's image could not be attached here; it is on the visit." : 'No image came with this filing yet; it shows on the visit when it arrives.' }] }]
+      const res = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ channel: SLACK_CHANNEL, text: msg.text, blocks: [slackHeader(msg.header), ...slackSections(msg.body), ...extra], ...as }),
+      })
+      return await res.json().catch(() => ({}))
+    }
+    let out = await send(true)
+    // A just-uploaded file can still be processing; one retry after a short wait, then without the image.
+    if (!out.ok && fileId) { await new Promise((r) => setTimeout(r, 1500)); out = await send(true) }
+    if (!out.ok && fileId) { console.error('press post with image failed:', out.error); out = await send(false) }
+    if (!out.ok) console.error('press post failed:', out.error ?? 'no answer')
+    return !!out.ok
+  } catch (e) {
+    console.error('press post failed:', (e as Error).message)
+    return false
+  }
+}
+
 async function recordManualEntry(body: Record<string, unknown>): Promise<Response> {
   const me = body.manual_entry
   if (me === null || typeof me !== 'object' || Array.isArray(me)) {
@@ -500,7 +588,7 @@ Deno.serve(async (req: Request) => {
   // a 500 so the bot retries: guessing would store a real filing of an older visit as a dry run.
   const { data: press, error: pressErr } = await sb
     .from('gdo_bot_file_requests')
-    .select('gdo_id, dry_run')
+    .select('gdo_id, dry_run, requested_by')
     .eq('visit_id', visitId)
     .eq('run_id', runId)
     .maybeSingle()
@@ -740,10 +828,38 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'result_store_failed_retry' }, 500)
   }
 
+  // Trello #184: an Auto file PRESS that filed gets its post, with the county's image and the presser tagged. Only
+  // here, after the row is recorded for the first time: a dedupe, a failure, a dry run and an hourly run post nothing.
+  let posted: boolean | null = null
+  if (livePress && !dryRun && status === 'SUCCESS') {
+    try {
+      const { data: f } = await sb.from('v_derm_portal_fields')
+        .select('client_name, client_code, gdo_number, ticket_number, visit_date')
+        .eq('visit_id', visitId).eq('gdo_id', gdoId ?? -1).limit(1)
+      const row = (f ?? [])[0] ?? {}
+      const presser = typeof press?.requested_by === 'string' ? press.requested_by : null
+      let presserName: string | null = null
+      if (presser && !SLACK_IDS[presser.toLowerCase()]) {
+        const { data: e } = await sb.from('employees').select('full_name').ilike('email', presser).limit(1)
+        presserName = e?.[0]?.full_name ?? null
+      }
+      const kind = screenshotBytes ? sniffImage(screenshotBytes) : null
+      posted = await postPressFiled({
+        visitId, presser, presserName, client: row.client_name ?? null, code: row.client_code ?? null,
+        permit: row.gdo_number ?? null, manifest: row.ticket_number ?? null, cleaned: row.visit_date ?? visit.visit_date ?? null,
+        filedAt: attemptedAt, confirmation: portalConfirmation ?? null,
+      }, screenshotBytes ? { bytes: screenshotBytes, ext: kind?.ext ?? 'jpg' } : null)
+    } catch (e) {
+      console.error('press post skipped:', (e as Error).message)
+      posted = false
+    }
+  }
+
   // screenshot_stored mirrors EXACTLY what was written to the row above, so the
   // response can never disagree with the record. It stays 201 either way: an image
   // problem must never turn a real county filing into an unrecorded one.
   return json({
+    press_post: posted,
     recorded: true,
     deduped: false,
     id: inserted.id,

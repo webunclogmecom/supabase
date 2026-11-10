@@ -56,7 +56,8 @@ function makeSb(sc) {
   const answer = (table, f, mode) => {
     if (table === 'visits') return { data: sc.visit, error: null }
     if (table === 'gdo_bot_file_requests') return sc.pressErr ? { data: null, error: { message: 'boom' } } : { data: sc.press ?? null, error: null }
-    if (table === 'derm_portal_submissions') return { data: null, error: null }
+    if (table === 'derm_portal_submissions') return { data: sc.existing ?? null, error: null }
+    if (table === 'employees') return { data: [], error: null }
     if (table === 'v_derm_portal_fields') {
       const rows = (sc.fields ?? TWO).filter((r) => f.gdo_id === undefined || r.gdo_id === f.gdo_id)
       return { data: rows, error: null }
@@ -72,7 +73,7 @@ function makeSb(sc) {
     from(table) {
       const f = {}
       const b = {
-        select() { return b }, eq(k, v) { f[k] = v; return b }, limit() { return b },
+        select() { return b }, eq(k, v) { f[k] = v; return b }, limit() { return b }, ilike() { return b },
         maybeSingle: async () => answer(table, f, 'maybeSingle'),
         then(res, rej) { return Promise.resolve(answer(table, f, 'then')).then(res, rej) },
         insert(row) {
@@ -92,6 +93,13 @@ function makeSb(sc) {
 const body = (over = {}) => ({ visit_id: 8096, run_id: 'run-7f3a', status: 'SUCCESS', retryable: false,
   attempted_at: '2026-10-29T16:00:00Z', portal_confirmation: 'Submitted - DERM portal confirmed', screenshot_missing_reason: 'check', ...over })
 const sub = (r) => r.sb.inserts.find((i) => i.table === 'derm_portal_submissions')?.row
+
+// Trello #184: a 1x1 PNG, the county's image in the post.
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+const imgBody = (over = {}) => { const b = body({ screenshot: PNG, ...over }); delete b.screenshot_missing_reason; return b }
+const posts = (r) => r.slack.filter((c) => c.url.endsWith('chat.postMessage')).map((c) => JSON.parse(c.init.body))
+const LIVE = { visit: NEW, press: { gdo_id: 217, dry_run: false, requested_by: 'yannick@ayache.com' },
+  fields: [{ gdo_id: 217, gdo_number: 'GDO-12656', client_name: 'Louie Bossi', client_code: '246-LOUI', ticket_number: '839776', visit_date: '2026-10-22' }] }
 
 const SCENARIOS = [
   { id: 'older visit, no press: stays a dry run (as today)', sc: { visit: OLD, fields: [TWO[0]] }, b: body({ visit_id: 1251, gdo_id: 217 }),
@@ -121,15 +129,50 @@ const SCENARIOS = [
     ok: (r) => r.status === 201 && sub(r)?.gdo_id === 253 },
   { id: 'neither: inference, as today', sc: { visit: NEW }, b: body(), ok: (r) => r.status === 201 && sub(r)?.gdo_id === 253 },
   { id: 'a blank number "GDO-" is no number', sc: { visit: NEW }, b: body({ gdo_number: 'GDO-' }), ok: (r) => r.status === 201 && sub(r)?.gdo_id === 253 },
+  // ---- Trello #184: the post when an Auto file press files ------------------------------------------------
+  { id: 'press filed: one post, presser tagged, visit linked, the image attached', change: true, sc: LIVE, b: imgBody(),
+    ok: (r) => { const m = posts(r)[0], txt = JSON.stringify(m ?? {})
+      return r.status === 201 && posts(r).length === 1 && m.channel === 'C0BJYHQKZM1'
+        && m.blocks[0].text === '✅ GDO report filed' && txt.includes('<@U0AL2N6NMBM>')
+        && txt.includes('https://derm.unclogme.app/visits/8096|Louie Bossi (246-LOUI)') && txt.includes('GDO-12656')
+        && txt.includes('839776') && txt.includes('10/22/2026') && !txt.includes('\u2014')
+        && m.blocks.some((b) => b.type === 'image' && b.slack_file?.id === 'F184') && r.out.press_post === true } },
+  { id: 'press filed with no image: posted, says the image comes later', change: true, sc: LIVE, b: body(),
+    ok: (r) => posts(r).length === 1 && !posts(r)[0].blocks.some((b) => b.type === 'image')
+      && /shows on the visit when it arrives/.test(JSON.stringify(posts(r)[0])) },
+  { id: 'image upload refused: posted without the image', change: true, sc: { ...LIVE, slackUpload: 'missing_scope' }, b: imgBody(),
+    ok: (r) => posts(r).length === 1 && !posts(r)[0].blocks.some((b) => b.type === 'image')
+      && /could not be attached/.test(JSON.stringify(posts(r)[0])) && r.status === 201 },
+  { id: 'hourly filing (no press): no post', sc: { visit: NEW }, b: imgBody(), ok: (r) => r.status === 201 && posts(r).length === 0 },
+  { id: 'press that failed: no post', sc: LIVE, b: body({ status: 'ERROR_LOGIN_FAILED', portal_confirmation: undefined, failure_reason: 'x' }),
+    ok: (r) => r.status === 201 && posts(r).length === 0 },
+  { id: 'dry press: no post', sc: { ...LIVE, press: { gdo_id: 217, dry_run: true, requested_by: 'fred@ayache.com' } }, b: imgBody(),
+    ok: (r) => posts(r).length === 0 },
+  { id: 'a result posted twice: no second post', sc: { ...LIVE, existing: { id: 7, screenshot_path: 'x', screenshot_missing_reason: null } }, b: imgBody(),
+    ok: (r) => r.out?.deduped === true && posts(r).length === 0 },
+  { id: 'Slack down: the filing is still recorded (201)', change: true, sc: { ...LIVE, slackDown: true }, b: imgBody(),
+    ok: (r) => r.status === 201 && sub(r)?.status === 'SUCCESS' && r.out.press_post === false },
 ]
 
 async function call(handler, s) {
   const sb = makeSb(s.sc)
   globalThis.__sb = sb
+  const slack = []
+  globalThis.fetch = async (url, init = {}) => {
+    slack.push({ url: String(url), init })
+    if (s.sc.slackDown) throw new Error('network down')
+    const u = String(url)
+    const j = (o) => ({ ok: true, status: 200, json: async () => o })
+    if (u.endsWith('files.getUploadURLExternal')) return j(s.sc.slackUpload ? { ok: false, error: s.sc.slackUpload } : { ok: true, upload_url: 'https://files.example/up', file_id: 'F184' })
+    if (u === 'https://files.example/up') return { ok: true, status: 200 }
+    if (u.endsWith('files.completeUploadExternal')) return j({ ok: true })
+    if (u.endsWith('chat.postMessage')) return j({ ok: true, ts: '1.2' })
+    return j({ ok: true })
+  }
   const res = await handler(new Request('http://x/', { method: 'POST', headers: { 'x-rpa-key': 'k1', 'content-type': 'application/json' }, body: JSON.stringify(s.b) }))
   let out = null
   try { out = await res.json() } catch { out = null }
-  return { status: res.status, out, sb }
+  return { status: res.status, out, sb, slack }
 }
 
 const work = build('work', fs.readFileSync(path.join(REPO, FN), 'utf8'))

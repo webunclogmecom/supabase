@@ -56,6 +56,8 @@ async function load(file, env, tag) {
 
 const BASE = { SUPABASE_URL: 'http://x', SUPABASE_SERVICE_ROLE_KEY: 'service', SUPABASE_ANON_KEY: 'anon' }
 const ON = { ...BASE, GDO_BOT_FILE_URL: 'https://bot.example/file', GDO_BOT_FILE_KEY: 'k-derm' }
+// Trello #184: the live address shape, so progress can derive /gdo/status/<run> from it.
+const ONP = { ...BASE, GDO_BOT_FILE_URL: 'https://bot.example/gdo/process-one', GDO_BOT_FILE_KEY: 'k-derm' }
 const ROW = { visit_id: 6215, manifest_id: 1700, gdo_id: 51, gdo_number: 'GDO-09853', ticket_number: '830088',
   visit_date: '2026-07-09', dump_ticket_date: '2026-07-14', client_name: 'The fresh Carrot of Surfside',
   client_code: '082-TFC', jurisdiction: 'dade', can_record_manual: true, blocked_reason: null }
@@ -66,11 +68,11 @@ const FIELDS = { visit_id: 6215, manifest_id: 1700, gdo_id: 51, client_code: '08
   jurisdiction: 'dade', white_manifest_number: '830088', disposal_facility: 'South District WWTP' }
 const hoursAgo = (h) => new Date(Date.now() - h * 3600e3).toISOString()
 
-function makeSb({ rows = [ROW], leases = [], attempts = [], fields = [FIELDS], logError = null }) {
+function makeSb({ rows = [ROW], leases = [], attempts = [], fields = [FIELDS], logError = null, presses = [] }) {
   const writes = []
   const table = (name) => {
     const out = name === 'visit_gdo_our_record' ? rows : name === 'derm_portal_leases' ? leases
-      : name === 'v_derm_portal_fields' ? fields : attempts
+      : name === 'v_derm_portal_fields' ? fields : name === 'gdo_bot_file_requests' ? presses : attempts
     const b = { select: () => b, eq: () => b, not: () => b, limit: () => b, then: (res, rej) => Promise.resolve({ data: out, error: null }).then(res, rej),
       upsert: async (v, o) => { writes.push({ table: name, v, o }); return { error: null } },
       insert: async (v) => { if (logError) return { error: { message: logError } }; writes.push({ table: name, v }); return { error: null } } }
@@ -89,6 +91,10 @@ async function call(handler, body, db = {}, bot = { status: 202, body: { accepte
   globalThis.fetch = async (url, init) => {
     fetches.push({ url, init })
     if (bot === 'timeout') throw new Error('The operation was aborted due to timeout')
+    if (String(url).includes('/gdo/status/')) {
+      if (db.botStatus === 'down') throw new Error('The operation was aborted due to timeout')
+      return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => db.botStatus }
+    }
     return { ok: bot.status < 300, status: bot.status, text: async () => JSON.stringify(bot.body) }
   }
   const res = await handler(new Request('http://x/', { method: 'POST',
@@ -143,6 +149,51 @@ const SCENARIOS = [
     ok: (r) => r.status === 502 && /A run is already in progress/.test(r.out.message) && r.writes.length === 0 },
   { id: 'bot-no-answer', body: send(), bot: 'timeout', ok: (r) => r.status === 502 && r.out.error === 'bot_no_answer' && leaseW(r).length === 1 && logW(r).length === 0 },
   { id: 'dry-run-missing', body: send({ dry_run: undefined }), ok: (r) => r.status === 400 && r.fetches.length === 0 },
+  // ---- Trello #184: the press in flight, the plain error, the live steps -------------------------------
+  { id: 'status-run', body: status, db: { leases: [{ gdo_id: 51, leased_at: hoursAgo(0.05) }],
+      presses: [{ run_id: 'run-new', gdo_id: 51, requested_at: hoursAgo(0.04) }, { run_id: 'run-other', gdo_id: 99, requested_at: hoursAgo(0.04) },
+                { run_id: 'run-yesterday', gdo_id: 51, requested_at: hoursAgo(26) }] },
+    ok: (r) => P(r).run?.run_id === 'run-new' && P(r).can_send === false },
+  { id: 'status-no-run-hourly-lease', body: status, db: { leases: [{ gdo_id: 51, leased_at: hoursAgo(1) }] }, ok: (r) => P(r).run === null && !!P(r).sent_at },
+  { id: 'last-error-plain', body: status, db: { attempts: [{ gdo_id: 51, created_at: hoursAgo(1), status: 'ERROR_LOGIN_FAILED',
+      failure_reason: 'The county turned down both passwords we have for permit 9853. What to do: Reset it. Then press Auto file. Details: Login failed' }] },
+    ok: (r) => P(r).last_error?.title === 'The county turned down both passwords we have for permit 9853'
+      && P(r).last_error?.what_to_do === 'Reset it. Then press Auto file.' && P(r).can_send === true },
+  { id: 'last-error-old-text', body: status, db: { attempts: [{ gdo_id: 51, created_at: hoursAgo(1), status: 'ERROR_LOGIN_FAILED',
+      failure_reason: 'Login failed for permit 9853 - portal reported: no' }] },
+    ok: (r) => /^Login failed for permit 9853/.test(P(r).last_error?.title ?? '') && P(r).last_error?.what_to_do === null },
+  { id: 'last-error-cleared', body: status, db: { attempts: [
+      { gdo_id: 51, created_at: hoursAgo(2), status: 'ERROR_LOGIN_FAILED', failure_reason: 'x' },
+      { gdo_id: 51, created_at: hoursAgo(1), status: 'SUCCESS', failure_reason: null, portal_confirmation: 'Submitted' }] },
+    ok: (r) => P(r).last_error === null },
+  { id: 'progress-bad-run', env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: '../x' }, ok: (r) => r.status === 400 },
+  { id: 'progress-not-a-press', env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: 'run-1' }, ok: (r) => r.status === 404 && r.fetches.length === 0 },
+  { id: 'progress-running', env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: 'run-1' },
+    db: { presses: [{ run_id: 'run-1' }], botStatus: { state: 'running', steps: [{ key: 'email' }, { key: 'signin', note: '2nd password' }] } },
+    ok: (r) => { const s = r.out.steps ?? [], cur = s.find((x) => x.current)
+      return r.status === 200 && r.out.state === 'running' && s.length === 7 && s[0].done && s[1].done && s[2].done
+        && s[2].label === 'Signed in (2nd password)' && cur?.key === 'filling' && r.fetches[0]?.url === 'https://bot.example/gdo/status/run-1'
+        && r.fetches[0]?.init.headers['x-run-key'] === 'k-derm' } },
+  { id: 'progress-bot-done-not-ours', ours: true, env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: 'run-1' },
+    db: { presses: [{ run_id: 'run-1' }], botStatus: { state: 'done', steps: ['email', 'signin', 'filling', 'submitting', 'submitted', 'email_wait', 'saving'].map((key) => ({ key })) } },
+    ok: (r) => r.out.state === 'running' && r.out.result === null && r.out.steps.find((x) => x.current)?.key === 'saving'
+      && r.out.steps.find((x) => x.key === 'saving').done === false },
+  { id: 'progress-filed', env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: 'run-1' },
+    db: { presses: [{ run_id: 'run-1' }], attempts: [{ status: 'SUCCESS', failure_reason: null, portal_confirmation: 'Submitted - DERM email confirmed' }],
+      botStatus: { state: 'running', steps: [{ key: 'email' }] } },
+    ok: (r) => r.out.state === 'filed' && r.out.result?.filed === true && r.out.steps.every((x) => x.done && !x.current) },
+  { id: 'progress-failed', env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: 'run-1' },
+    db: { presses: [{ run_id: 'run-1' }], attempts: [{ status: 'ERROR_LOGIN_FAILED', portal_confirmation: null,
+      failure_reason: 'The county turned down both passwords we have for permit 9853. What to do: Reset it. Details: d' }],
+      botStatus: { state: 'done', steps: [{ key: 'email' }] } },
+    ok: (r) => r.out.state === 'failed' && r.out.steps.find((x) => x.failed)?.key === 'signin'
+      && r.out.result?.title === 'The county turned down both passwords we have for permit 9853' && r.out.result?.what_to_do === 'Reset it.' },
+  { id: 'progress-old-bot', env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: 'run-1' },
+    db: { presses: [{ run_id: 'run-1' }], botStatus: { state: 'running' } },
+    ok: (r) => r.out.state === 'running' && r.out.steps.map((x) => x.key).join() === 'sent,working,saving' && r.out.steps[1].current },
+  { id: 'progress-bot-down', env: 'onp', body: { action: 'progress', visit_id: 6215, run_id: 'run-1' },
+    db: { presses: [{ run_id: 'run-1' }], botStatus: 'down' },
+    ok: (r) => r.status === 200 && r.out.bot_answered === false && r.out.steps.length === 3 },
 ]
 
 const { toQueueItem: QUEUE_ITEM } = await import(pathToFileURL(path.join(TMP, 'rpa-queue-item.mjs')).href)
@@ -152,9 +203,14 @@ const guard = "if (!st.can_send) return json({ error: 'not_sendable', message: s
 if (!src.includes(guard)) throw new Error('the send guard line changed, update this check')
 const work = build('work', src)
 const mutant = build('mutant', src.replace(guard, '// guard removed'))
+// Trello #184: "finished" only on OUR row. A copy that also trusts the bot's "done" must FAIL the ours-only case.
+const finishedLine = 'const finished = ours !== null'
+if (!src.includes(finishedLine)) throw new Error('the finished line changed, update this check')
+const oursMutant = build('ours', src.replace(finishedLine, "const finished = ours !== null || bot?.state === 'done'"))
 const handlers = {
-  work: { on: await load(work, ON, 'w-on'), off: await load(work, BASE, 'w-off') },
-  mutant: { on: await load(mutant, ON, 'm-on'), off: await load(mutant, BASE, 'm-off') },
+  work: { on: await load(work, ON, 'w-on'), off: await load(work, BASE, 'w-off'), onp: await load(work, ONP, 'w-onp') },
+  mutant: { on: await load(mutant, ON, 'm-on'), off: await load(mutant, BASE, 'm-off'), onp: await load(mutant, ONP, 'm-onp') },
+  ours: { on: await load(oursMutant, ON, 'o-on'), off: await load(oursMutant, BASE, 'o-off'), onp: await load(oursMutant, ONP, 'o-onp') },
 }
 
 let ok = true
@@ -168,6 +224,12 @@ for (const s of SCENARIOS) {
 for (const s of SCENARIOS.filter((x) => x.guard)) {
   const r = await run(handlers.mutant, s)
   check(`${s.id}: guard removed must FAIL it`, !s.ok(r), `HTTP ${r.status} fetches=${r.fetches.length}`)
+}
+for (const s of SCENARIOS.filter((x) => x.ours)) {
+  // A crash counts as caught: the copy did not pass the case.
+  let r = null
+  try { r = await run(handlers.ours, s) } catch { r = null }
+  check(`${s.id}: trusting the bot's "done" must FAIL it`, r === null || !s.ok(r), r ? `state=${r.out.state}` : 'crashed')
 }
 
 fs.rmSync(TMP, { recursive: true, force: true })

@@ -25,9 +25,16 @@
 // only for button presses"); a dry press is never recorded (2026-10-29_1245).
 //
 // Input (POST JSON):
-//   { action: 'status', visit_id }                       -> { enabled, permits: [{ gdo_id, can_send, reason, sent_at }] }
+//   { action: 'status', visit_id }                       -> { enabled, permits: [{ gdo_id, can_send, reason, sent_at, run, last_error }] }
 //   { action: 'send', visit_id, gdo_id, dry_run: bool }  -> 202 { sent, sent_at, run_id, logged, message }
 //                                                           | 200 { sent:false } already filing | 404 | 409 | 502 | 503
+//   { action: 'progress', visit_id, run_id }             -> { state, steps: [{ key, label, done, current, failed, note }], result }
+//
+// Trello #184 (Fred, 2026-11-10: "Show a progression of the `auto file` process" and "a better error response"):
+// - `run` is the press the bot is working on for that permit ({ run_id, requested_at }), so a reload resumes the list;
+// - `last_error` is the newest attempt when it did not file, in the bot's plain words ({ title, what_to_do, at });
+// - `progress` reads the bot's GET /gdo/status/{run_id} (its recorded steps) and OUR row for that run. The step labels
+//   live here, once (STEP_LABELS). A press is finished only when OUR row exists: the bot's "done" is not a filing.
 //
 // Auth: verify_jwt = true, a signed-in staff account, and Edit in DERM Tracker (the same check as
 // Record a manual filing, hr.check_app_action('record_manual_gdo_report')).
@@ -119,6 +126,71 @@ export function readBotAnswer(status: number, j: Record<string, unknown> | null)
   return { runId, started, alreadyFiling: status === 200 && j?.accepted === false }
 }
 
+// The bot writes every failure as "<what happened>. What to do: <fix>. Details: <technical>" (its plain_words.py,
+// Trello #184). These two markers must match there. An older text has no fix and reads as its title alone.
+const TODO_MARK = ' What to do: '
+const DETAILS_MARK = ' Details: '
+export function plainParts(text: string | null | undefined) {
+  const t = (text ?? '').trim()
+  const i = t.indexOf(TODO_MARK)
+  if (i < 0) return { title: t || null, what_to_do: null as string | null }
+  const rest = t.slice(i + TODO_MARK.length)
+  const j = rest.indexOf(DETAILS_MARK)
+  return { title: t.slice(0, i).replace(/\.$/, '').trim() || null, what_to_do: (j < 0 ? rest : rest.slice(0, j)).trim() || null }
+}
+
+type Attempt = { gdo_id: number | null, created_at: string, status: string | null, failure_reason: string | null, portal_confirmation: string | null }
+// The newest live attempt on this permit, when it did not file. null when it filed or there is none.
+export function lastError(attempts: Attempt[], gdoId: number | null) {
+  const last = attempts.filter((a) => a.gdo_id === null || a.gdo_id === gdoId)
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
+  if (!last || last.status === 'SUCCESS' || last.portal_confirmation) return null
+  const p = plainParts(last.failure_reason)
+  return { title: p.title ?? 'The bot could not file it.', what_to_do: p.what_to_do, at: last.created_at }
+}
+
+// The steps of one press, in order. The bot records email .. saving (its db.RUN_STEP_KEYS); "sent" is ours (the press
+// was logged), and "saving" is done only when OUR row for the run exists. The app adds nothing but "..." to a label.
+export const STEP_LABELS: Record<string, string> = {
+  sent: 'Sent to the bot',
+  email: "Checked the permit's email on the county portal",
+  signin: 'Signed in',
+  filling: 'Filled in the report',
+  submitting: 'Submitting to the county',
+  email_wait: "Waiting for the county's email",
+  saving: 'Saved here',
+}
+type BotStep = { key?: string, note?: string | null }
+type Ours = { status: string | null, failure_reason: string | null, portal_confirmation: string | null }
+export function progressSteps(bot: { state?: string, steps?: BotStep[] } | null, ours: Ours | null) {
+  const finished = ours !== null
+  const filed = finished && (ours?.status === 'SUCCESS' || !!ours?.portal_confirmation)
+  const result = finished ? { status: ours?.status ?? null, filed, ...plainParts(filed ? null : ours?.failure_reason) } : null
+  const state = finished ? (filed ? 'filed' : 'failed') : bot?.state === 'failed' ? 'stopped' : 'running'
+  // A bot from before Trello #184, or one that does not answer: three steps, never a list that pretends to know more.
+  if (!bot || !Array.isArray(bot.steps)) {
+    const keys = ['sent', 'working', 'saving']
+    const label: Record<string, string> = { sent: STEP_LABELS.sent, working: 'Filing on the county portal', saving: STEP_LABELS.saving }
+    const done = (k: string) => k === 'sent' || (k === 'working' && filed) || (k === 'saving' && finished)
+    const firstOpen = keys.find((k) => !done(k)) ?? null
+    return { state, result, steps: keys.map((k) => ({ key: k, label: label[k], done: done(k),
+      current: state === 'running' && k === firstOpen, failed: state === 'failed' && k === firstOpen, note: null })) }
+  }
+  const reached = new Map(bot.steps.filter((s) => typeof s?.key === 'string').map((s) => [s.key as string, s]))
+  const keys = Object.keys(STEP_LABELS)
+  const done = (k: string) => k === 'sent' || filed
+    || (k === 'saving' ? finished : k === 'submitting' ? reached.has('submitted') : reached.has(k))
+  const firstOpen = keys.find((k) => k !== 'saving' && !done(k)) ?? (finished ? null : 'saving')
+  return { state, result, steps: keys.map((k) => {
+    const note = reached.get(k)?.note
+    return { key: k, label: STEP_LABELS[k] + (k === 'signin' && note ? ` (${note})` : ''), done: done(k),
+      current: state === 'running' && k === firstOpen, failed: (state === 'failed' || state === 'stopped') && k === firstOpen,
+      note: typeof note === 'string' ? note : null }
+  }) }
+}
+// The bot's status address, from the send address (…/gdo/process-one -> …/gdo/status/<run>).
+const BOT_STATUS_BASE = /\/gdo\/process-one\/?$/.test(BOT_URL) ? BOT_URL.replace(/\/process-one\/?$/, '/status/') : ''
+
 Deno.serve(async (req) => {
   const cors = corsHeadersFor(req.headers.get('origin'))
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -138,32 +210,73 @@ Deno.serve(async (req) => {
   try { body = await req.json() } catch { return json({ error: 'bad_request', message: 'Invalid JSON body.' }, 400, cors) }
   const action = body.action
   const visitId = Number(body.visit_id)
-  if (action !== 'status' && action !== 'send') return json({ error: 'bad_request', message: "action must be 'status' or 'send'." }, 400, cors)
+  if (action !== 'status' && action !== 'send' && action !== 'progress') return json({ error: 'bad_request', message: "action must be 'status', 'send' or 'progress'." }, 400, cors)
   if (!Number.isInteger(visitId) || visitId <= 0) return json({ error: 'bad_request', message: 'visit_id is required.' }, 400, cors)
+
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'derm-tracker' } } })
+
+  // ---- progress: the live steps of one press (Trello #184). A read, so any staff sign-in. -----
+  if (action === 'progress') {
+    const runId = typeof body.run_id === 'string' && RUN_ID_RE.test(body.run_id) ? body.run_id : null
+    if (!runId) return json({ error: 'bad_request', message: 'run_id is required.' }, 400, cors)
+    const [pressQ, oursQ] = await Promise.all([
+      sb.from('gdo_bot_file_requests').select('run_id').eq('visit_id', visitId).eq('run_id', runId).eq('dry_run', false),
+      sb.from('derm_portal_submissions').select('status, failure_reason, portal_confirmation').eq('visit_id', visitId).eq('run_id', runId),
+    ])
+    if (pressQ.error || oursQ.error) {
+      console.error('progress lookup failed:', pressQ.error?.message, oursQ.error?.message)
+      return json({ error: 'server_error', message: 'Could not read this press.' }, 500, cors)
+    }
+    if (!(pressQ.data ?? []).length) return json({ error: 'not_found', message: 'No Auto file press with that id on this visit.' }, 404, cors)
+    let bot: { state?: string, steps?: BotStep[] } | null = null
+    if (ENABLED && BOT_STATUS_BASE) {
+      try {
+        const r = await fetch(BOT_STATUS_BASE + encodeURIComponent(runId), {
+          headers: { 'x-run-key': BOT_KEY }, signal: AbortSignal.timeout(8_000),
+        })
+        if (r.ok && (r.headers.get('content-type') ?? '').includes('json')) bot = await r.json()
+        else console.error(`bot status for run ${runId}: HTTP ${r.status}`)
+      } catch (e) {
+        console.error(`bot status for run ${runId} did not answer: ${(e as Error).message}`)
+      }
+    }
+    const ours = ((oursQ.data ?? [])[0] ?? null) as Ours | null
+    return json({ run_id: runId, bot_answered: bot !== null, ...progressSteps(bot, ours) }, 200, cors)
+  }
 
   const denied = await checkAppAction(token, 'record_manual_gdo_report')
 
   // ---- what we know about this visit's permits ------------------------------------------------
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY, { global: { headers: { 'x-app-source': 'derm-tracker' } } })
-  const [rowsQ, leasesQ, attemptsQ] = await Promise.all([
+  const [rowsQ, leasesQ, attemptsQ, pressesQ] = await Promise.all([
     sb.schema('derm').from('visit_gdo_our_record')
       .select('visit_id, manifest_id, gdo_id, gdo_number, ticket_number, visit_date, dump_ticket_date, client_name, client_code, jurisdiction, can_record_manual, blocked_reason')
       .eq('visit_id', visitId),
     sb.from('derm_portal_leases').select('gdo_id, leased_at').eq('visit_id', visitId),
-    sb.from('derm_portal_submissions').select('gdo_id, created_at').eq('visit_id', visitId).not('dry_run', 'is', true),
+    sb.from('derm_portal_submissions').select('gdo_id, created_at, status, failure_reason, portal_confirmation').eq('visit_id', visitId).not('dry_run', 'is', true),
+    sb.from('gdo_bot_file_requests').select('run_id, gdo_id, requested_at').eq('visit_id', visitId).eq('dry_run', false),
   ])
-  if (rowsQ.error || leasesQ.error || attemptsQ.error) {
-    console.error('lookup failed:', rowsQ.error?.message, leasesQ.error?.message, attemptsQ.error?.message)
+  if (rowsQ.error || leasesQ.error || attemptsQ.error || pressesQ.error) {
+    console.error('lookup failed:', rowsQ.error?.message, leasesQ.error?.message, attemptsQ.error?.message, pressesQ.error?.message)
     return json({ error: 'server_error', message: 'Could not read this visit, so nothing was sent.' }, 500, cors)
   }
   const rows = (rowsQ.data ?? []) as Row[]
   const leases: Stamp[] = (leasesQ.data ?? []).map((l: { gdo_id: number | null, leased_at: string }) => ({ gdo_id: l.gdo_id, at: l.leased_at }))
-  const attempts: Stamp[] = (attemptsQ.data ?? []).map((s: { gdo_id: number | null, created_at: string }) => ({ gdo_id: s.gdo_id, at: s.created_at }))
+  const attemptRows = (attemptsQ.data ?? []) as Attempt[]
+  const attempts: Stamp[] = attemptRows.map((s) => ({ gdo_id: s.gdo_id, at: s.created_at }))
+  const presses = (pressesQ.data ?? []) as { run_id: string, gdo_id: number | null, requested_at: string }[]
 
   if (action === 'status') {
     const permits = rows.map((r) => {
       const st = permitState(r, leases, attempts, ENABLED)
-      return denied && st.can_send ? { ...st, can_send: false, reason: denied.message } : st
+      // The press the bot is working on: the newest one on this permit made at or after the lease (one minute's slack
+      // for the two clocks). A lease the hourly queue took has no press, so the page keeps "Sent to the bot".
+      const run = st.sent_at
+        ? presses.filter((p) => p.gdo_id === r.gdo_id && Date.parse(p.requested_at) >= Date.parse(st.sent_at as string) - 60_000)
+          .sort((a, b) => Date.parse(b.requested_at) - Date.parse(a.requested_at))
+          .map((p) => ({ run_id: p.run_id, requested_at: p.requested_at }))[0] ?? null
+        : null
+      const out = { ...st, run, last_error: lastError(attemptRows, r.gdo_id) }
+      return denied && out.can_send ? { ...out, can_send: false, reason: denied.message } : out
     })
     return json({ enabled: ENABLED, permits }, 200, cors)
   }
