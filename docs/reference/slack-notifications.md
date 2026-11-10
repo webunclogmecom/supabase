@@ -265,6 +265,20 @@ The GDO Online Report bot (Railway `unclogme-gdo-report-bot`, ours since 2026-10
 Report" (Yan asked for the move; Trello f23r2DE6). Its messages are the bot's own format, with no header, so they are
 the one non-"UnclogMe Apps" voice in that channel. Changing them is a bot change (`docs/reference/gdo-report-bot.md`
 section 6). Our own refusal post for a hand filing ("GDO report not recorded", `rpa-derm-result`) is on this format.
+Since 2026-11-10 (Trello #184) its messages say what happened and what to do in plain words, every link opens the
+visit in the DERM app (`derm.unclogme.app/visits/<id>`, never the bot's server), and nothing mentions "Mark handled".
+
+**Our post when an Auto file press files** (`rpa-derm-result` v58, 2026-11-10, Trello #184; Fred: "Auto file presses
+only, with the image ... And it tags the person who pressed the auto file"): header `✅ GDO report filed`; main line
+`✅ <@presser> *<client (code), linked to the visit in the DERM app>*: your Auto file went through.`, then Permit ·
+Manifest · Cleaned, then Filed <time> ET · the county's confirmation, then the county's image as an image block
+(`slack_file`, uploaded as a private file of the bot; needs `files:write`, added by Fred 2026-11-10). It posts only
+after the row is recorded for the first time for a logged LIVE press: never for an hourly filing, a failure, a dry
+press or a dedupe. A failed post never fails the result. 🛑 **Slack refuses a just-uploaded file in a block** ("invalid
+slack file") until it is processed: the function waits 3 s, retries once after 3 more, then posts without the image
+(measured 2026-11-10: refused at once, accepted at 3 s). The presser's Slack id comes from `SLACK_IDS` in the function
+(Diego, Fred, Yannick); anyone else is named, not tagged. `[TEST]` and no tag on 112-YA. Check:
+`scripts/checks/rpa_derm_result_button_press.mjs`.
 
 ### Not on this format yet (a different bot, `Supabase - Notifications`, posting to #viktor-supabase)
 

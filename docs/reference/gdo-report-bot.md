@@ -355,8 +355,14 @@ filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
 - **Channel:** everything below posts through ONE incoming webhook (`SLACK_WEBHOOK_URL`, Slack app "GDO Online
   Report"), to **#apps-notifications since 2026-10-28** (#new-app-issues before). The format is the bot's own (no
   header in our Slack format); changing it is a bot change.
-- **Daily digest**, 08:00 New York, covering yesterday. It lists one line per ledger row, with no grouping and no
-  acks.
+- 🛑 **Since bot `f7fc2d0` (2026-11-10 13:13 ET, Trello #184, section 11e) every link opens the visit in the DERM app**
+  (`DERM_APP_URL`, default `https://derm.unclogme.app`, `/visits/<visit_id>`), never this server; there is no
+  "Open bot dashboard" and no "mark it handled" any more (Fred: *"we should be able to handle everything using DERM
+  App"*). A pending report leaves the digest only by being filed (or after 30 days). Group titles and their "What to
+  do" line are in the office's words (`server.STATUS_INFO`, `PENDING_GROUPS`). Read the code for the shape: the lines
+  below were written before the digest grouped by status (2026-10-28).
+- **Daily digest**, 08:00 New York, covering yesterday. (Historical, see above: it lists one line per ledger row, with no grouping and no
+  acks.)
   - **filed** = SUCCESS;
   - **failed** = timeout, unhandled or crash;
   - **needs review** = every other live error, VALIDATION included.
@@ -618,3 +624,29 @@ A person fixes the cause, then **Mark handled** with one sentence (optionally **
   Railway. Filings already done are unaffected.
 A row leaves Pending when filed, when someone marks it handled (with a note), or after 30 days; a rerun is a new
 attempt with its own id and its own result in the Tracker.
+
+### 11e. Plain words, live Auto file steps, DERM app links, a post when a press files (2026-11-10, Trello #184)
+
+Fred, after Diego asked again for the video: *"Have a better error response ... Show a progression of the `auto file`
+process ... Change the links ... from the Railway host to the DERM App ... a callback/message ... including the image
+we receive from the City."* Picks and plan: `Building Apps/DERM Tracker/docs/specs/2026-11-10-gdo-autofile-clear-errors-progress-links-callback.md`.
+"Mark handled" is not used any more (Fred: *"that process is not needed"*).
+
+- **Bot `f7fc2d0`** (deploy after `8a48e37b`, running since 13:13 ET; Fred waived the 19:00 window: "Push now"; bot
+  idle, `/data` volume backup `4ceeee29` 18:07 UTC first; startup clean, first poll 0 items, health ok):
+  - `plain_words.explain` writes every failure as `<what happened>. What to do: <fix>. Details: <technical>`, on the
+    ledger (`db.log_execution`) and on the result posted to us (`build_result_payload`), at most 1,000 characters.
+    🛑 `gdo-bot-file-visit` splits on ` What to do: ` and ` Details: `: change both together.
+  - `on_demand_runs.steps` (JSON `{key, at, note}`), recorded at email, signin (note "2nd password"), filling,
+    submitting, submitted, email_wait, saving; `GET /gdo/status/{run_id}` returns `steps`. Hourly runs record none.
+  - Slack links to the DERM app (section 6). Bot doc: its `docs/TASK_CLEAR_ERRORS_STEPS_LINKS.md`.
+  - Tested in the test image with `--network none`: 51/51 suites; the old code 50/50 and the new suite fails on it.
+  - Rollback: Railway Redeploy of `8a48e37b`, then revert `f7fc2d0`.
+- **`gdo-bot-file-visit` v16:** `status` adds `run` (the press in flight) and `last_error` (title + what to do);
+  `progress {visit_id, run_id}` relays the bot's steps; a press is finished only when OUR row for the run exists.
+  Check `scripts/checks/gdo_bot_file_visit.mjs` (41, a copy trusting the bot's "done" must fail).
+- **`rpa-derm-result` v58:** the post when a logged live press files, presser tagged, the county's image
+  (`docs/reference/slack-notifications.md`, catalogue). Check `scripts/checks/rpa_derm_result_button_press.mjs`.
+- **DERM Tracker** (`derm.unclogme.app`): the live step list, the amber error box, Auto file blue. The portal copy
+  (`ops.unclogme.app/derm`) is briefed to the session named Supabase (the spec's last section).
+- 🛑 Attempts recorded before 13:13 ET 11-10 keep the old technical text (no "What to do").
