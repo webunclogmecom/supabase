@@ -237,9 +237,11 @@ async function postPressFiled(p: PressPost, image: { bytes: Uint8Array, ext: str
       })
       return await res.json().catch(() => ({}))
     }
+    // A just-uploaded file is refused in a block until Slack has processed it ("invalid slack file", measured
+    // 2026-11-10: refused at once, accepted after 4 s). So wait 3 s, retry once after 3 more, then post without it.
+    if (fileId) await new Promise((r) => setTimeout(r, 3000))
     let out = await send(true)
-    // A just-uploaded file can still be processing; one retry after a short wait, then without the image.
-    if (!out.ok && fileId) { await new Promise((r) => setTimeout(r, 1500)); out = await send(true) }
+    if (!out.ok && fileId) { await new Promise((r) => setTimeout(r, 3000)); out = await send(true) }
     if (!out.ok && fileId) { console.error('press post with image failed:', out.error); out = await send(false) }
     if (!out.ok) console.error('press post failed:', out.error ?? 'no answer')
     return !!out.ok
