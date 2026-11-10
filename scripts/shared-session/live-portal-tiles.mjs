@@ -11,7 +11,10 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppDa
 const PORTAL = process.env.PORTAL || 'https://ops.unclogme.app/'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
-const NAV = ['Visit Calendar', 'DERM Tracker', 'Stamp Studio', 'HR App', 'Admin Review', 'Client App', 'Picture Planner']
+// Admin Review and Picture Planner open inside since 2026-11-10 (Fred: "Open inside the portal"), under Operations.
+const NAV = ['Visit Calendar', 'DERM Tracker', 'Stamp Studio', 'Admin Review', 'Picture Planner', 'HR App', 'Client App']
+// Where each home tile opens: an app inside opens its route in the same tab, anything else a new tab to its own host.
+const INSIDE = { 'Visit Calendar': '/calendar', 'DERM Tracker': '/derm', 'Stamp Studio': '/stamp', 'Admin Review': '/review', 'Picture Planner': '/planner', 'HR App': '/hr' }
 const ALL = [...NAV, 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist']
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
@@ -114,6 +117,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       const nav = document.querySelector('nav[aria-label="Apps"]')
       return {
         tiles: main ? [...main.querySelectorAll('a[href] b')].filter(vis).map((e) => e.textContent.trim()) : [],
+        targets: main ? [...main.querySelectorAll('a[href] b')].filter(vis).map((e) => { const a = e.closest('a'); return [e.textContent.trim(), a.getAttribute('target') || '', a.getAttribute('href')] }) : [],
         navItems: nav && vis(nav) ? [...nav.querySelectorAll('a[data-tile]')].map((a) => a.dataset.tile) : null,
         h1: document.querySelector('main h1, h1')?.textContent?.trim() ?? '',
         text: document.body.innerText,
@@ -133,6 +137,13 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (got.overflow) fails.push('sideways scroll')
     if (c.tiles) {
       if (JSON.stringify(got.tiles) !== JSON.stringify(c.tiles)) fails.push(`tiles ${got.tiles.join('|')}`)
+      // An app inside opens in the same tab; a Field person's assigned forms stay on the Planner's own host (decision 7).
+      for (const [name, target, href] of got.targets) {
+        const formsOnly = c.text === 'Your assigned forms' && name === 'Picture Planner'
+        if (formsOnly) { if (target !== '_blank' || href !== 'https://planner.unclogme.app') fails.push(`${name} opens "${target} ${href}" for an assigned-forms person`) }
+        else if (INSIDE[name]) { if (target || href !== INSIDE[name]) fails.push(`${name} opens "${target} ${href}", not ${INSIDE[name]} in the same tab`) }
+        else if (target !== '_blank' || !/^https:/.test(href)) fails.push(`${name} opens "${target} ${href}" in the same tab`)
+      }
       if (c.hello ? !got.h1.includes(c.hello) : got.h1.includes(',')) fails.push(`greeting "${got.h1}"`)
       if (/\bfailed|undefined|null\b/i.test(got.h1)) fails.push(`greeting "${got.h1}"`)
       if (Boolean(/Need another app\?/.test(got.text)) !== c.card) fails.push('Need another app card')
