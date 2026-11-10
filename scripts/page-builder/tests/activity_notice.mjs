@@ -7,6 +7,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
@@ -21,7 +22,7 @@ N.pb.live.source = { ...(N.pb.property.source || {}), lock_box_key: 'OLD-LB-1' }
 N.pb.property.source = { ...(N.pb.property.source || {}), lock_box_key: 'NEW-LB-2' }
 N.pb.live.content.facts = { ...N.pb.live.content.facts, lock_box_code: 'OLD-LB-1' }
 N.pb.pending = null
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -33,7 +34,7 @@ const out = process.argv[2] || './act_shots'; fs.mkdirSync(out, { recursive: tru
 const calls = [], subHits = []
 async function open(w, path, replies, fail500 = []) {
   const ctx = await browser.newContext({ viewport: { width: w, height: 900 } })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   const p = await ctx.newPage()
   const state = { fail500: new Set(fail500) }
@@ -48,8 +49,8 @@ async function open(w, path, replies, fail500 = []) {
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   // CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + path)
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + path)
   await p.waitForTimeout(4500)
   return { ctx, p, state }
 }
@@ -82,7 +83,7 @@ const builderReplies = (data, act) => ({ get_page_builder: data.pb, get_page_bui
   const subs = (row.subs || []).map((s) => ({ ...s, photo_count: s.intake_id === 686 ? 1 : s.photo_count, address: '650 Northwest 33rd Street, Miami', city: 'Miami' }))
   const { ctx, p } = await open(1280, '/forms', { list_intake_forms: subs })   // the list's only read since the 2026-10-28 publish (the view stub answered nothing: no card, so the singular check failed and the next one passed on an empty page)
   const t = await p.evaluate(() => document.body.textContent)
-  ok(/answered · 1 photo(?!s)/.test(t), '/forms: "1 photo" singular', (t.match(/answered · \d+ photos?/g) || []).slice(0, 3))
+  ok(/answered(?: ·|,) 1 photo(?!s)/.test(t), '/forms: "1 photo" singular', (t.match(/answered(?: ·|,) \d+ photos?/g) || []).slice(0, 3))
   ok(!/650 Northwest 33rd Street, Miami, Miami/.test(t), '/forms: the city is not repeated')
   await ctx.close()
 }

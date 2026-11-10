@@ -10,6 +10,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -102,7 +103,7 @@ const G = clone(BASE), now = new Date().toISOString()
 const V5 = { ...clone(FROM), page_id: 999998, version: top + 1, status: 'live', submitted_at: now, approved_at: now, restored_from_version: FROM.version, replaced_by_version: null, replaced_at: null, self_approved: true }
 G.versions = [V5, ...G.versions.map((v) => (v.version === LIVE.version ? { ...v, status: 'replaced', replaced_by_version: V5.version, replaced_at: now } : v))]
 
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -113,7 +114,7 @@ const subHits = []
 async function open(w, data = BASE, opts = {}) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   // the builder's Google map, captured when the Maps loader calls window.__initAccessMap (scenario F loads the real map)
   if (opts.maps) await ctx.addInitScript(() => { window.__maps = []; let cb; Object.defineProperty(window, '__initAccessMap', { configurable: true, get() { return cb }, set(f) { cb = function () { const M = window.google.maps.Map; if (!M.__cap) { M.__cap = 1; const al = M.prototype.addListener; M.prototype.addListener = function () { if (!window.__maps.includes(this)) window.__maps.push(this); return al.apply(this, arguments) } } return f.apply(this, arguments) } } }) })
@@ -130,8 +131,8 @@ async function open(w, data = BASE, opts = {}) {
   await p.route(SB + '/functions/v1/**', (x) => x.abort())  // never a real code
   if (!opts.maps) await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   await p.route('https://places.googleapis.com/**', (x) => x.abort())
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + '/property/1164')
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + '/property/1164')
   await ready(p)
   return { ctx, p, st }
 }
@@ -223,7 +224,7 @@ const NOTICE_H = (n) => `Changed in the Client App's property data since version
   B = await builder(p); Dr = await draft(p)
   ok(!!s && Dr === null && !B.banner, '1440: after Submit the browser draft and the banner are gone', { draft: !!Dr, banner: B.banner })
   ok(st.errors.length === 0, '1440: no page errors', st.errors)
-  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions', 'submit_property_page', 'get_my_access'].includes(n)) && !st.calls.includes('approve_property_page'), '1440: guard, only the builder reads and the stubbed submit, never approve', [...new Set(st.calls)])
+  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions', 'submit_property_page', 'get_my_access', 'portal_waiting'].includes(n)) && !st.calls.includes('approve_property_page'), '1440: guard, only the builder reads and the stubbed submit, never approve', [...new Set(st.calls)])
   await ctx.close()
 }
 

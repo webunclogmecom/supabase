@@ -7,6 +7,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
@@ -48,7 +49,7 @@ const withAccepts = () => { const i = clone(I715); const at = new Date().toISOSt
 const DATA = (c715, i715 = I715, after = null) => ({ intake: { 715: i715, [NEW]: INEW }, cmp: { 715: c715, [NEW]: CNEW }, subs: row.subs, after })
 const STALE = { code: '22023', message: 'The property record changed since you opened this form. Reload to see it.', details: 'blocker=stale in client.accept_intake_answers: access_entry.lock_box_code', hint: null }
 const RO = `Only ${row.names} can save these answers to the property record.`
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -59,7 +60,7 @@ const subHits = []
 async function open(w, id, data, mode = 'ok') {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   const p = await ctx.newPage()
   const st = { calls: [], bodies: [], errors: [], data, mode }
@@ -84,8 +85,8 @@ async function open(w, id, data, mode = 'ok') {
   })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + '/forms/' + id)
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + '/forms/' + id)
   await p.waitForFunction(() => /answered|Waiting for the collector|Cancelled/.test(document.body.textContent), null, { timeout: 30000 }).catch(() => {})
   await p.waitForTimeout(2500)
   return { ctx, p, st }
@@ -164,7 +165,7 @@ for (const w of [390, 1280]) {
   const tb = await T(p)
   ok(tb.includes('Access & entry') && !tb.includes('Accepted into the property') && !tb.includes('Add to the property record'), `${w}: back on Answers, no card and no Accepted block`)
   ok(st.errors.length === 0, `${w}: no page errors`, st.errors)
-  ok([...new Set(st.calls)].every((c) => ['get_intake', 'get_intake_compare', 'v_intake_submissions', 'accept_intake_answers', 'get_my_access'].includes(c)), `${w}: no other call`, [...new Set(st.calls)])
+  ok([...new Set(st.calls)].every((c) => ['get_intake', 'get_intake_compare', 'v_intake_submissions', 'accept_intake_answers', 'get_my_access', 'portal_waiting'].includes(c)), `${w}: no other call`, [...new Set(st.calls)])
   await ctx.close()
 }
 
@@ -316,7 +317,7 @@ for (const w of [1280, 390]) {
   ok((await T(p)).includes(newer), 'picker: the newer form is named under it', newer)
   await p.locator('select[data-accept-picker]').selectOption(String(NEW)).catch(() => {}); await p.waitForTimeout(2500)
   const u = new URL(p.url())
-  ok(u.pathname === `/forms/${NEW}` && /record/.test(decodeURIComponent(u.search)), 'picker: picking the newer form opens it on its Property record tab', u.pathname + u.search)
+  ok(u.pathname === `${R}/forms/${NEW}` && /record/.test(decodeURIComponent(u.search)), 'picker: picking the newer form opens it on its Property record tab', u.pathname + u.search)
   ok((await tabs(p)).some((t) => t.name === 'Property record' && t.sel === 'true') && (await rows(p)).length === 6 && !(await T(p)).includes('A newer form exists'), "picker: the newer form's rows show, with no newer-form line")
   await ctx.close()
 }

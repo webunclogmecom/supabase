@@ -6,6 +6,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
@@ -30,7 +31,7 @@ const SRC = 'https://www.schierproducts.com/shop/gb-75'
 const OFFER_M = { gallons: 3142, kind: 'measurements', input_text: MEAS.value, summary: '180 x 48 x 84 in: 3,142 gallons (length x width x depth / 231).', source_url: null, lookup_id: 1 }
 const OFFER_G = { gallons: 125, kind: 'model', input_text: 'Schier GB-75', summary: 'The Schier GB-75 holds 125 gallons.', source_url: SRC, lookup_id: 2 }
 
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -40,7 +41,7 @@ const out = process.argv[2] || './size_lookup_shots'; fs.mkdirSync(out, { recurs
 async function open(w, I, C) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   const p = await ctx.newPage()
   const st = { calls: [], bodies: [], errors: [] }
@@ -59,8 +60,8 @@ async function open(w, I, C) {
   })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [a, c] of pairs) t = t.split(a).join(c); await x.fulfill({ status: 200, contentType: 'application/javascript', body: t }) }) }
-  await p.goto(H + '/forms/1047')
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [a, c] of pairs) t = t.split(a).join(c); await x.fulfill({ status: 200, contentType: 'application/javascript', body: t }) }) }
+  await p.goto(H + R + '/forms/1047')
   await p.waitForFunction(() => /answered/.test(document.body.textContent), null, { timeout: 30000 }).catch(() => {})
   await p.waitForTimeout(2000)
   return { ctx, p, st }

@@ -12,6 +12,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -55,7 +56,7 @@ const HINT5 = 'Drag a photo between Access photos, Grease trap, Lift station, Wa
 const HINT_LS = 'The lift station: its access, its control panel and the station itself.'
 const HINT_WT = 'The water tank: its capacity plate and the tank itself.'
 
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
 const exp = Math.floor(Date.now() / 1000) + 3600
@@ -69,7 +70,7 @@ const subHits = [], calls = [], submits = []
 async function open(w, data, draft) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   if (draft) await ctx.addInitScript(([k, d]) => { try { if (!localStorage.getItem(k)) localStorage.setItem(k, d) } catch {} }, [`pp-draft:${user.id}:1164`, draft])
   const p = await ctx.newPage()
@@ -88,8 +89,8 @@ async function open(w, data, draft) {
   await p.route(SB + '/functions/v1/**', (x) => x.abort())
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   await p.route('https://places.googleapis.com/**', (x) => x.abort())
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + '/property/1164')
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + '/property/1164')
   await p.waitForFunction(() => [...document.querySelectorAll('h3')].some((h) => h.textContent.trim() === 'Contacts'), null, { timeout: 30000 }).catch(() => {})
   await p.waitForTimeout(3000)
   return { ctx, p, st }
@@ -199,7 +200,7 @@ const src = (label) => `From: Site survey · ${label}`
   await p.screenshot({ path: `${out}/b2_1440.png`, fullPage: true }).catch(() => {})
   await ctx.close()
 }
-ok(!calls.some((n) => !/^get_|^submit_property_page$/.test(n)), 'nothing but reads and the stubbed submit was called', [...new Set(calls)])
+ok(!calls.some((n) => !/^get_|^submit_property_page$|^portal_waiting$/.test(n)), 'nothing but reads and the stubbed submit was called', [...new Set(calls)])
 await browser.close()
 if (process.env.CHUNK_SUB) console.log('CHUNK_SUB edits applied:', [...new Set(subHits)].length, 'of', process.env.CHUNK_SUB.split('@@@').length)
 console.log(`\n${pass} passed, ${fail} failed`)

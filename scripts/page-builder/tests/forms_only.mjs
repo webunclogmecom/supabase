@@ -10,6 +10,7 @@
 //   node scripts/page-builder/tests/forms_only.mjs <outdir>
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -53,8 +54,8 @@ if (!m) { console.log('FAIL fixture did not report :: ' + String((r && r.message
 const F = JSON.parse(m[1])
 const SUB = Number(F.sub), WAIT = Number(F.wait), CAN = Number(F.can), OTHER = Number(F.other)
 
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
-const FAKE_LINK = H + '/intake.html#code=FAKE-open-form-test'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const FAKE_LINK = PUB + '/intake.html#code=FAKE-open-form-test'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -68,7 +69,7 @@ const ok = (c, name, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'F
 async function open(w, who, path) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => {
     try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {}
     window.__clip = []; window.__shares = []
@@ -78,7 +79,7 @@ async function open(w, who, path) {
   const p = await ctx.newPage()
   const st = { calls: [], errors: [] }
   p.on('pageerror', (e) => st.errors.push(String(e)))
-  await p.route(H + '/intake.html', (x) => x.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>fake form</title>' }))
+  await p.route(PUB + '/intake.html', (x) => x.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>fake form</title>' }))
   await p.route(SB + '/auth/v1/**', (x) => x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }))
   await p.route(SB + '/storage/v1/**', (x) => {
     const u = new URL(x.request().url())
@@ -105,11 +106,11 @@ async function open(w, who, path) {
     }
     return j(403, { code: '42501', message: 'You do not have access to any UnclogMe app. Ask Fred or Yannick to change it.', details: 'blocker=no_access app=any in public.fn_request_gate', hint: null })
   })
-  await p.goto(H + path, { waitUntil: 'domcontentloaded' })
+  await p.goto(H + R + path, { waitUntil: 'domcontentloaded' })
   await p.waitForTimeout(3500)
   return { p, ctx, st }
 }
-const navText = (p) => p.evaluate(() => [...document.querySelectorAll('nav[aria-label="Main"] a, nav[aria-label="Main"] button')].map((e) => e.textContent.trim()).filter(Boolean))   // the light/dark switch's icon buttons have no text
+const navText = (p) => p.evaluate(() => [...document.querySelectorAll(window.__R ? 'nav[aria-label="Picture Planner"] a' : 'nav[aria-label="Main"] a, nav[aria-label="Main"] button')].filter((e) => e.offsetParent !== null).map((e) => e.textContent.trim()).filter(Boolean))   // the portal: the app's own nav (Sign out is in the account menu)   // the light/dark switch's icon buttons have no text
 
 for (const w of [1440, 375]) {
   const tag = w + 'px'
@@ -118,7 +119,7 @@ for (const w of [1440, 375]) {
   const ICON = phone ? 'M12 2v13' : 'M10 13a5 5 0 0 0 7.54.54'
   // Forms-only: the list
   let { p, ctx, st } = await open(w, 'fo', '/forms')
-  ok(JSON.stringify(await navText(p)) === JSON.stringify(['Forms', 'Sign out']), `${tag} FO nav is Forms + Sign out`, await navText(p))
+  ok(JSON.stringify(await navText(p)) === JSON.stringify(R ? ['Forms'] : ['Forms', 'Sign out']), `${tag} FO nav is Forms + Sign out`, await navText(p))
   const L = await p.evaluate(([CARD, ICON]) => ({
     share: document.querySelectorAll(`button[aria-label="${CARD}"]`).length,
     icon: [...document.querySelectorAll(`button[aria-label="${CARD}"] svg path`)].some((e) => (e.getAttribute('d') || '').startsWith(ICON)),
@@ -152,7 +153,7 @@ for (const w of [1440, 375]) {
   await p.screenshot({ path: `${out}/fo_empty_${w}.png`, fullPage: false })
   await ctx.close()
   ;({ p, ctx, st } = await open(w, 'fo', `/forms/${OTHER}`))
-  const N = await p.evaluate(() => ({ t: document.querySelector('main')?.textContent || '', back: [...document.querySelectorAll('main a')].some((a) => a.getAttribute('href') === '/forms') }))
+  const N = await p.evaluate(() => ({ t: document.querySelector('main')?.textContent || '', back: [...document.querySelectorAll('main a')].some((a) => a.getAttribute('href') === (window.__R || '') + '/forms') }))
   ok(F.fo_other_msg === 'This form is not assigned to you.' && N.t.includes('This form is not assigned to you.') && N.back, `${tag} FO another person's form says so, with a way back`, N)
   await p.screenshot({ path: `${out}/fo_not_assigned_${w}.png`, fullPage: false })
   await ctx.close()
@@ -172,7 +173,7 @@ for (const w of [1440, 375]) {
   await p.waitForTimeout(600)
   const S2 = await p.evaluate(() => ({ clip: window.__clip, shares: window.__shares, copied: document.body.textContent.includes('Link copied') }))
   if (w < 768) ok(S2.shares.length === 1 && S2.shares[0].url.endsWith('/forms/' + SUB_ID()), `${tag} FO form Share opens the share sheet`, S2)
-  else ok(S2.clip[0] === H + '/forms/' + SUB_ID() && S2.copied, `${tag} FO form Share copies and turns to Link copied`, S2)
+  else ok(S2.clip[0] === PUB + '/forms/' + SUB_ID() && S2.copied, `${tag} FO form Share copies and turns to Link copied`, S2)
   if (w >= 768) await p.screenshot({ path: `${out}/fo_form_copied_${w}.png`, fullPage: false })
   ok(st.calls.every((c) => ['get_my_access', 'get_intake'].includes(c)), `${tag} FO form calls only get_my_access and get_intake`, st.calls)
   await ctx.close()
@@ -181,7 +182,7 @@ for (const w of [1440, 375]) {
   ;({ p, ctx, st } = await open(w, 'fo', '/forms'))
   const OF = await p.evaluate(() => {
     const btns = [...document.querySelectorAll('main button, button')].filter((b) => b.textContent.trim() === 'Open form')
-    const cards = [...document.querySelectorAll('div.relative > a[href^="/forms/"]')]
+    const cards = [...document.querySelectorAll('div.relative > a[href^="' + (window.__R || '') + '/forms/"]')]
     const res = { n: btns.length, inLink: btns.some((b) => b.closest('a')), overlap: [], covered: [], h: btns[0] ? Math.round(btns[0].getBoundingClientRect().height) : 0 }
     for (const a of cards) {
       const icon = a.parentElement.querySelector(':scope > button')
@@ -210,7 +211,7 @@ for (const w of [1440, 375]) {
   await p.locator('button:text-is("Open form")').first().click()
   await p.waitForTimeout(800)
   const OR = await p.evaluate(() => ({ t: document.body.textContent.includes('This link has expired.'), path: location.pathname, busy: [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Opening...') }))
-  ok(OR.t && OR.path === '/forms' && !OR.busy, `${tag} FO a refusal shows the database's sentence and stays`, OR)
+  ok(OR.t && OR.path === R + '/forms' && !OR.busy, `${tag} FO a refusal shows the database's sentence and stays`, OR)
   await p.screenshot({ path: `${out}/fo_open_refused_${w}.png`, fullPage: false })
   await ctx.close()
   ;({ p, ctx, st } = await open(w, 'fo', `/forms/${WAIT}`))
@@ -233,7 +234,7 @@ for (const w of [1440, 375]) {
   // Forms-only: the Page Builder routes go to /forms
   for (const path of ['/', '/property/162']) {
     ;({ p, ctx, st } = await open(w, 'fo', path))
-    ok(new URL(p.url()).pathname === '/forms', `${tag} FO ${path} goes to /forms`, p.url())
+    ok(new URL(p.url()).pathname === R + '/forms', `${tag} FO ${path} goes to /forms`, p.url())
     await ctx.close()
   }
 
@@ -241,7 +242,7 @@ for (const w of [1440, 375]) {
   ;({ p, ctx, st } = await open(w, 'st', '/forms'))
   ok((await navText(p)).includes('Page Builder'), `${tag} staff nav keeps Page Builder`)
   ok((await p.locator('button:text-is("Open form")').count()) === 0, `${tag} staff: no Open form button on the list`)
-  const SC = await p.evaluate(() => { const out = []; for (const a of document.querySelectorAll('div.relative > a[href^="/forms/"]')) { const ic = a.parentElement.querySelector(':scope > button'); if (!ic) continue; const ir = ic.getBoundingClientRect(); const w = document.createTreeWalker(a, NodeFilter.SHOW_TEXT); while (w.nextNode()) { const r = document.createRange(); r.selectNodeContents(w.currentNode); for (const c of r.getClientRects()) if (c.width > 0 && c.left < ir.right && c.right > ir.left && c.top < ir.bottom && c.bottom > ir.top) out.push(w.currentNode.textContent.slice(0, 30)) } } return out })
+  const SC = await p.evaluate(() => { const out = []; for (const a of document.querySelectorAll('div.relative > a[href^="' + (window.__R || '') + '/forms/"]')) { const ic = a.parentElement.querySelector(':scope > button'); if (!ic) continue; const ir = ic.getBoundingClientRect(); const w = document.createTreeWalker(a, NodeFilter.SHOW_TEXT); while (w.nextNode()) { const r = document.createRange(); r.selectNodeContents(w.currentNode); for (const c of r.getClientRects()) if (c.width > 0 && c.left < ir.right && c.right > ir.left && c.top < ir.bottom && c.bottom > ir.top) out.push(w.currentNode.textContent.slice(0, 30)) } } return out })
   ok(SC.length === 0, `${tag} staff: the three-dot button covers no text`, SC)
   await p.click('button[aria-label^="More actions for"]')
   await p.waitForTimeout(500)

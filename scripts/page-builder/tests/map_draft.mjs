@@ -11,6 +11,7 @@
 //      CHUNK_SUB='<from>|||<to>@@@...' serves the live chunks with edits.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
@@ -38,7 +39,7 @@ B.pb.live = null; B.pb.pending = null; B.pb.newest_version = 0; B.pb.link = null
 B.pb.property.source = { ...B.pb.property.source, lock_box_key: 'LB-FROM-PROPERTY', access_notes: null }
 if (B.forms[0]) B.forms[0].answers = { ...B.forms[0].answers, 'access_entry.gate': 'yes', 'access_entry.gate_code': '4242-FROM-FORM' }
 
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -50,7 +51,7 @@ const out = process.argv[2] || './map_draft_shots'; fs.mkdirSync(out, { recursiv
 const calls = [], submits = [], subHits = []
 async function open(w, data, keepStorage) {
   const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, ...(keepStorage ? { storageState: keepStorage } : {}) })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   if (data.draft) await ctx.addInitScript(([k, d]) => { try { if (!localStorage.getItem(k)) localStorage.setItem(k, JSON.stringify(d)) } catch {} }, [`pp-draft:${user.id}:1164`, data.draft])
   // every Google map the page builds, captured when the Maps loader calls window.__initAccessMap (the API is ready then)
@@ -65,8 +66,8 @@ async function open(w, data, keepStorage) {
     return x.fulfill({ status: 404, body: '{}' })
   })
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + '/property/1164')
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + '/property/1164')
   await p.waitForFunction(() => [...document.querySelectorAll('h3')].some((h) => h.textContent === 'Contacts'), null, { timeout: 30000 })
   await p.waitForTimeout(3000)
   return { ctx, p }

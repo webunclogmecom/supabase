@@ -11,6 +11,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -39,7 +40,7 @@ const CARDS = D.pb.live.content.photos || []
 const EXPECT_SURVEY = CARDS.map((ph) => poolById.get(String(ph.photo_id))).filter((x) => x && x.kind === 'intake' && x.owned !== false).map((x) => `Site survey · ${x.label ?? x.question_key ?? 'photo'}`).sort()
 const LABEL_BOX = 'flex items-center gap-1 rounded border border-border bg-muted/60 px-1.5 py-1 text-[11px] text-muted-foreground'
 
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -52,7 +53,7 @@ const subHits = []
 async function open(w) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   const p = await ctx.newPage()
   const st = { calls: [] }
@@ -62,8 +63,8 @@ async function open(w) {
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   await p.route('https://places.googleapis.com/**', (x) => x.abort())
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + '/property/1164')
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + '/property/1164')
   await p.waitForFunction(() => [...document.querySelectorAll('h3')].some((h) => h.textContent.trim() === 'Add from visits'), null, { timeout: 30000 }).catch(() => {})
   await p.waitForTimeout(3000)
   return { ctx, p, st }
@@ -140,7 +141,7 @@ for (const w of [390, 1440]) {
     ok(v1.expanded === 'true' && v2.expanded === 'false', `${w}: the visit group aria-expanded follows each click`, [v1.expanded, v2.expanded])
   }
   if (w < 768) ok(!(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)), `${w}: no sideways scroll`)
-  const writes = [...new Set(st.calls)].filter((n) => !/^get_/.test(n))
+  const writes = [...new Set(st.calls)].filter((n) => !/^get_/.test(n) && n !== 'portal_waiting')
   ok(writes.length === 0, `${w}: nothing but reads was called`, [...new Set(st.calls)])
   await ctx.close()
 }

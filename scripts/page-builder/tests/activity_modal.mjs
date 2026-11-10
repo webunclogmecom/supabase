@@ -7,6 +7,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -58,7 +59,7 @@ const around = (v) => { const t = (x) => Date.parse(x), ev = row.act.filter((e) 
   const before = ev.filter((e) => (!pl || t(e.at) >= t(pl.approved_at)) && (!v.approved_at || t(e.at) < t(v.approved_at)))
   const live = v.approved_at ? ev.filter((e) => t(e.at) >= t(v.approved_at) && (!v.replaced_at || t(e.at) < t(v.replaced_at))) : []
   return { before, live } }
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -69,7 +70,7 @@ const subHits = []
 async function open(w, versions = VERSIONS, act = row.act, failing = []) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   const p = await ctx.newPage()
   const st = { calls: [], errors: [], failing: new Set(failing) }
@@ -83,8 +84,8 @@ async function open(w, versions = VERSIONS, act = row.act, failing = []) {
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   await p.route('https://places.googleapis.com/**', (x) => x.abort())
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + '/property/1164')
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + '/property/1164')
   await p.waitForFunction(() => [...document.querySelectorAll('h3')].some((h) => h.textContent === 'Contacts'), null, { timeout: 30000 }).catch(() => {})
   await p.waitForTimeout(3500)
   return { ctx, p, st }
@@ -192,7 +193,7 @@ const changesOk = (D, v) => { const prev = byNum(v.version - 1); if (!prev) retu
   const pc = await afterClose(p)
   ok(pv.open && /Preview/.test(pv.title || '') && pv.locked && !pc.open && pc.focus === 'View site file' && pc.inert === 0, '1440: the site file preview still opens, locks, closes on Esc and returns focus', [pv, pc])
   ok(st.errors.length === 0, '1440: no page errors', st.errors)
-  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions', 'get_my_access'].includes(n)), '1440: no other call', [...new Set(st.calls)])
+  ok([...new Set(st.calls)].every((n) => ['get_page_builder', 'get_page_builder_forms', 'get_property_activity', 'get_page_versions', 'get_my_access', 'portal_waiting'].includes(n)), '1440: no other call', [...new Set(st.calls)])
   await ctx.close()
 }
 

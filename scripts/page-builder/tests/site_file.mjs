@@ -9,6 +9,7 @@
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H as STAFF, R, PUB, seedSession, routeCode } from './host.mjs'   // the public /driver page stays on the old host; the builder follows PLANNER_BASE
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
@@ -43,7 +44,7 @@ const FULL = REPLY
 const GT = clone(REPLY); delete GT.content.site_map.pins.truck
 const NOMAP = clone(REPLY); NOMAP.content.include_map = false; NOMAP.content.site_map = { pins: {}, arrows: [] }
 const TRUCK_NOMAP = clone(REPLY); TRUCK_NOMAP.content.include_map = false
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co', FN = SB + '/functions/v1/'
+const H = PUB, SB = 'https://wbasvhvvismukaqdnouk.supabase.co', FN = SB + '/functions/v1/'
 const FAKE = 'abcdefghijklmnopqrstuv'
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey, x-app-source' }
@@ -52,7 +53,7 @@ const FAKE_MAPS = () => { const noop = () => {}; function Map(el) { const d = do
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const out = process.argv[2] || './site_file_shots'; fs.mkdirSync(out, { recursive: true })
 const subHits = []
-const chunkSub = async (p) => { if (!process.env.CHUNK_SUB) return; const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }) }
+const chunkSub = async (p) => { if (!process.env.CHUNK_SUB) return; const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); const sub = async (x) => { const f = await x.fetch(); let t = await f.text(); for (const [from, to] of pairs) if (t.includes(from)) { subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } return x.fulfill({ response: f, body: t }) }; if (p.__staff) await routeCode(p, sub); else await p.route(PUB + '/assets/*.js', sub) }
 
 // ---------- the public page ----------
 async function pub(w, reply, mode = 'ok') {
@@ -212,7 +213,7 @@ PB_PENDING.newest_version = PB_PENDING.pending.version
 async function builder(w, pb = row.pb) {
   const phone = w < 768
   const ctx = await browser.newContext({ viewport: { width: w, height: phone ? 844 : 900 }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   const p = await ctx.newPage()
   const st = { calls: [], bad: [], errors: [] }
@@ -224,8 +225,8 @@ async function builder(w, pb = row.pb) {
   await p.route(FN + '**', (x) => { st.bad.push(x.request().url().replace(FN, 'functions/v1/')); return x.abort() }) // never a real code
   await p.route('https://maps.googleapis.com/**', (x) => x.abort())
   await p.route('https://places.googleapis.com/**', (x) => x.abort())
-  await chunkSub(p)
-  await p.goto(H + '/property/1164')
+  p.__staff = true; await chunkSub(p)
+  await p.goto(STAFF + R + '/property/1164')
   await p.waitForFunction(() => [...document.querySelectorAll('h3')].some((h) => h.textContent === 'Contacts'), null, { timeout: 30000 }).catch(() => {})
   await p.waitForTimeout(3000)
   return { ctx, p, st }

@@ -7,6 +7,7 @@
 //   node scripts/page-builder/tests/address_approval.mjs <outdir>
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { H, R, PUB, seedSession, routeCode } from './host.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const env = Object.fromEntries(fs.readFileSync(new URL('../../../.env', import.meta.url), 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
@@ -38,7 +39,7 @@ SELF.pb.can_approve = true; SELF.pb.approve_blocker = null; SELF.pb.can_self_app
 // the same page for a viewer who is not a self-approver
 const OTHER = JSON.parse(JSON.stringify(SELF)); OTHER.pb.can_self_approve = false; OTHER.pb.can_approve = false
 OTHER.pb.approve_blocker = 'You submitted this version, so another person has to approve it.'
-const H = 'https://planner.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const exp = Math.floor(Date.now() / 1000) + 3600
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'visual.check@ayache.com', app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }
@@ -50,7 +51,7 @@ const out = process.argv[2] || './addr_shots'; fs.mkdirSync(out, { recursive: tr
 const calls = [], subHits = [], placesReqs = []
 async function open(w, data) {
   const ctx = await browser.newContext({ viewport: { width: w, height: 900 } })
-  await ctx.addCookies([{ name: 'sb-wbasvhvvismukaqdnouk-auth-token', value: encodeURIComponent(JSON.stringify(session)), domain: '.unclogme.app', path: '/', secure: true, sameSite: 'Lax' }])
+  await seedSession(ctx, session, user)
   await ctx.addInitScript((u) => { try { localStorage.setItem('sb-wbasvhvvismukaqdnouk-auth-token-user', JSON.stringify({ user: u })) } catch {} }, user)
   // record every panTo / setZoom on any Google map (the builder does not expose its map object)
   await ctx.addInitScript(() => { window.__pans = []; window.__zooms = []; const iv = setInterval(() => { const M = window.google && window.google.maps && window.google.maps.Map; if (!M || M.__rec) return; M.__rec = 1; const pt = M.prototype.panTo, sz = M.prototype.setZoom; M.prototype.panTo = function (ll) { try { window.__pans.push(typeof ll.lat === 'function' ? { lat: ll.lat(), lng: ll.lng() } : { lat: ll.lat, lng: ll.lng }) } catch {} return pt.apply(this, arguments) }; M.prototype.setZoom = function (z) { window.__zooms.push(z); return sz.apply(this, arguments) }; clearInterval(iv) }, 25) })
@@ -82,8 +83,8 @@ async function open(w, data) {
   await p.route(SB + '/storage/v1/**', (x) => x.fulfill({ status: 400, contentType: 'application/json', body: '{}' }))
   // CHUNK_SUB='<from>|||<to>' serves the live builder chunk with one edit (a control: e.g. a pick that never pans)
   // several edits: 'from1|||to1@@@from2|||to2'; each must be found in the served chunks (see the count printed at the end)
-  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await p.route(H + '/assets/*.js', async (x) => { const f = await x.fetch(); let t = await f.text(); let hit = false; for (const [from, to] of pairs) { if (t.includes(from)) { hit = true; subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } } return x.fulfill({ response: f, body: t }) }) }
-  await p.goto(H + '/property/1164')
+  if (process.env.CHUNK_SUB) { const pairs = process.env.CHUNK_SUB.split('@@@').map((x) => x.split('|||')); await routeCode(p, async (x) => { const f = await x.fetch(); let t = await f.text(); let hit = false; for (const [from, to] of pairs) { if (t.includes(from)) { hit = true; subHits.push(from.slice(0, 30)); t = t.split(from).join(to) } } return x.fulfill({ response: f, body: t }) }) }
+  await p.goto(H + R + '/property/1164')
   await p.waitForFunction(() => [...document.querySelectorAll('h3')].some((h) => h.textContent === 'Contacts'), null, { timeout: 30000 })
   await p.waitForTimeout(3500)
   return { ctx, p }

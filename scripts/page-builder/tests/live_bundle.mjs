@@ -2,12 +2,12 @@
 // with --c, report which Tailwind classes have NO rule in the served stylesheet (a class glued to ${...} is never
 // generated, PP rule 15). Read-only. Exit 1 when a needle is missing or a class has no rule.
 //   node scripts/page-builder/tests/live_bundle.mjs --n accept_intake_answers --n "Add to the property record" --c "aria-selected:bg-[#fff4ef]"
-const H = 'https://planner.unclogme.app'
+import { H, R } from './host.mjs'   // PLANNER_BASE=https://ops.unclogme.app/planner walks the live portal
 const args = process.argv.slice(2), needles = [], classes = []
 for (let i = 0; i < args.length; i += 2) (args[i] === '--c' ? classes : needles).push(args[i + 1])
 const seen = new Set(), queue = [], css = []
 for (const route of ['/', '/forms', '/forms/715', '/property/1164']) {
-  const html = await (await fetch(H + route)).text()
+  const html = await (await fetch(H + R + route)).text()
   for (const m of html.matchAll(/\/assets\/[A-Za-z0-9._$-]+\.(?:js|css)/g)) queue.push(m[0])
 }
 const hits = Object.fromEntries(needles.map((n) => [n, []]))
