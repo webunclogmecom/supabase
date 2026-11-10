@@ -44,6 +44,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   - **The pinned bar:** it goes.
   - **Real writes on 112-YA:** yes, as planned.
   - **Aaron:** he keeps approving through the Office default.
+- Fred's mockup picks, 2026-11-10: L3 (list), F3 with a three-dot menu instead of Share form, P2 (a section click scrolls to it), A3 (the Page Builder), the rest as recommended. Open: A3a (survey answer under each field) or A3b (a compare switch). NOT BUILT.
 - **Not built.** The no-unlink rule holds: the tile, the Hub tile, the Slack links, the share link and the Client App's wording keep the old host until Fred says switch.
 
 **Admin Review moves into the Ops Portal (2026-11-09, Trello #161)**
