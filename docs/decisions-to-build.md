@@ -27,7 +27,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 **GDO bot: clear errors, live Auto file steps, DERM app links, a post when a press files (2026-11-10, Trello #184 xwW0dwj7)**
 - Fred (Slack, 11-10): "Have a better error response ... Show a progression of the `auto file` process ... Change the links ... from the Railway host to the DERM App ... have a callback/message ... including the image we receive from the City." His picks the same day: both hosts (an exception to bug-fixes-only; links to `derm.unclogme.app`), the portal copy by the session named Supabase, real steps from the bot, layout A1 (step list), failed card B, no Mark handled anywhere ("that process is not needed"), the post for Auto file presses only, with the City's image, tagging who pressed.
-- Spec: `Building Apps/DERM Tracker/docs/specs/2026-11-10-gdo-autofile-clear-errors-progress-links-callback.md`. **Built 2026-11-10:** bot `f7fc2d0` (live 13:13 ET, Fred: "Push now"), `gdo-bot-file-visit` v16, `rpa-derm-result` v58 (Slack `files:write` added by Fred), DERM Tracker `derm.unclogme.app` (chunk `visits._visitId-DeXA1odr.js`). Record: `docs/reference/gdo-report-bot.md` 11e. **Not built yet:** the portal copy (`ops.unclogme.app/derm`, briefed to the session named Supabase, the spec's last section). **Not proven yet:** a real press with the live steps and the post (Verify, Diego on 6580 / 6581).
+- Spec: `Building Apps/DERM Tracker/docs/specs/2026-11-10-gdo-autofile-clear-errors-progress-links-callback.md`. **Built 2026-11-10:** bot `f7fc2d0` (live 13:13 ET, Fred: "Push now"), `gdo-bot-file-visit` v16, `rpa-derm-result` v58 (Slack `files:write` added by Fred), DERM Tracker `derm.unclogme.app` (chunk `visits._visitId-DeXA1odr.js`). Record: `docs/reference/gdo-report-bot.md` 11e. The portal copy (`ops.unclogme.app/derm`) **built the same day**, portal `f138e5a`, checked on 6580 and 6581 without a press. **Not proven yet:** a real press with the live steps and the post (Verify, Diego on 6580 / 6581).
 
 **Yan's five changes on the intake form, then the films (2026-11-06, thread C0BKMRL7D4N, Trello sfD4mhwm)**
 - Yan: "perfect", to Fred's five offers. Fred: "I will make the changes on the form and then redo the video". Fred's picks: the light switches are a normal question, the Collector film goes whole on Eleven v4, the Office film goes to Serena after the form changes.
@@ -530,6 +530,10 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 - HR pay: per-person bonus amounts? (Admin Review reads the company amounts from HR since 2026-10-18 (b); a per-person amount would show one person's pay to office reviewers there, so still refused.) (Answered 2026-10-18: pay rates admins only; each person on a two-person crew gets the visit bonus; the Oct 5 shift stays $0.)
 
 ## 4. Built (recent, with evidence)
+
+**DERM visit page: open the visit in the Calendar (2026-11-10)**
+- Fred, after his voice note on cross-app buttons: *"yes, show me mockups for the Open in Calendar button to DERM"*, then on the mockups (https://claude.ai/artifact/MjTNFWFfuw9xm3JN7VXVxH, 112-YA): *"go with option B, but add a tooltip for the button to say it opens the visits on the calendar."*
+- **Built 2026-11-10 in the Ops Portal only** (the old `derm.unclogme.app` takes bug fixes only): portal `4d380ea`. The visit date on the visit page is a pale orange link, `/calendar?visit=<id>&date=<yyyy-mm-dd>` in the same tab (the Calendar opens that week with the drawer), tooltip "Open this visit on the Calendar"; plain text for someone the Calendar refuses. Record: `Building Apps/Ops Portal/docs/08-changelog.md` 2026-11-10.
 
 **Apps Hub: Review Assist to Production, HR App tile colour (2026-11-09, Trello #182 `bVpK3EB8`)**
 - Fred: *"it still shows "coming soon" but it's ready ... go ahead and publish, and that also means to put the tile on production"*, then *"give the HR App tile a colour too"*.
