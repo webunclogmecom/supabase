@@ -648,5 +648,6 @@ we receive from the City."* Picks and plan: `Building Apps/DERM Tracker/docs/spe
 - **`rpa-derm-result` v58:** the post when a logged live press files, presser tagged, the county's image
   (`docs/reference/slack-notifications.md`, catalogue). Check `scripts/checks/rpa_derm_result_button_press.mjs`.
 - **DERM Tracker** (`derm.unclogme.app`): the live step list, the amber error box, Auto file blue. The portal copy
-  (`ops.unclogme.app/derm`) is briefed to the session named Supabase (the spec's last section).
+  (`ops.unclogme.app/derm`) is live since portal `f138e5a` (11-10, same block, same server calls); checked on 6580
+  and 6581 without a press.
 - 🛑 Attempts recorded before 13:13 ET 11-10 keep the old technical text (no "What to do").
