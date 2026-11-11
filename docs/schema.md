@@ -256,7 +256,7 @@ One row per `(client_id, service_type)`. Replaces the flat `gt_*` / `cl_*` / `wd
 | Column | Type | Notes |
 |---|---|---|
 | id | BIGINT identity PK | |
-| full_name | TEXT NOT NULL UNIQUE | also unique ignoring case and spaces (`employees_full_name_ci_uniq`, 2026-10-18_0320). A display name: first names for most staff, on purpose |
+| full_name | TEXT NOT NULL UNIQUE | also unique ignoring case and spaces (`employees_full_name_ci_uniq`, 2026-10-18_0320). A display name: first names for most staff, on purpose. Unique for everyone, active or not (Fred, 2026-11-11): an inactive person's name still shows on their old visits. A merged duplicate gives up the name: `<name> (samsara duplicate, merged <date>)` (36, 38 since `2026-11-11_1600`; 41 since 2026-08-18). `hr.update_employee` / `hr.create_employee` say when the holder is Inactive |
 | role | TEXT | `Owner`, `Admin`, `Office`, `Technician`; no CHECK; the HR App does not read or edit it |
 | status | TEXT | `ACTIVE` or `INACTIVE` (`employees_status_chk`). Inactive is the only "delete": visit_team, visit_assignments and shift_reviews cascade on a hard delete |
 | shift | TEXT | `day`, `night` or NULL (the HR App writes lower case; empty on every row today). The HR App stops showing it once Payroll week replaces it (Fred, 2026-10-19); `ops.v_calendar_driver` and `ops.v_driver_kpi` still read it |
