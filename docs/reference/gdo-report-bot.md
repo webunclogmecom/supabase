@@ -651,3 +651,9 @@ we receive from the City."* Picks and plan: `Building Apps/DERM Tracker/docs/spe
   (`ops.unclogme.app/derm`) is live since portal `f138e5a` (11-10, same block, same server calls); checked on 6580
   and 6581 without a press.
 - 🛑 Attempts recorded before 13:13 ET 11-10 keep the old technical text (no "What to do").
+- **Tested 2026-11-11 03:31 ET, a DRY press on 6580** (GDO-13447, run `24cf86ca`, through `gdo-bot-file-visit` `send`
+  with `dry_run: true`): the bot recorded `email`, `signin` (note "2nd password", +3 s), `filling` (+3 s), then
+  DRY_RUN_COMPLETE, nothing sent to us; no lease, no submission, one `dry_run=true` press row. `progress` answers 404 for
+  a dry press on purpose (it follows live presses only), so the steps were read from the bot's `GET /gdo/status`.
+  Not tested yet: a LIVE press (submit, the county email, "Saved here", the page's list, the Slack post): Fred, 11-11,
+  "Leave both to Diego" (6580, 6581).
