@@ -476,3 +476,19 @@ value standing before 02:50, visit by visit; visits completed after it read one 
 visits dated `from`, each with both vehicle ids; no `nightly_self` row on a visit with another tap in its stay; Admin Review
 and Calendar on 2 visits the nightly wrote and 1 it held. On a failure: the rollback file, then read why.
 **Trello:** "Fix" is ticked when S5 has passed 3 nights (plan section 13), so not before Thu 11-12.
+
+**First two nights, checked 2026-11-11 (both PASS).** The 11-10 morning check did not run (the session job died with a
+session restart), so both nights were checked together.
+- **11-10:** 59 candidates, 6 written, 19 held, 0 refused. The 5 writes in the 11-09 baseline came out at exactly the predicted
+  minutes (6056 101, 7867 51, 9076 94, 9085 94, 9174 46). The sixth, 9178 (130 to 128), was completed after the baseline.
+  No close-out rows: the only completed visit dated 10-31 is a test client.
+- **11-11:** 69 candidates, 5 written, 21 held, 0 refused. There was no baseline that morning, so each write was read on its own:
+  - 6003 37 to 33, 6348 99 to 95, 9081 11 to 9: within 2 minutes of our own GPS stop;
+  - 9047 17 to 82 and 9176 8 to 48: both replace a fallback, through the re-park span.
+
+  5 close-out rows for the 5 completed client visits dated 11-01, each with both vehicle ids: 3 `nightly_self` applied, 2 proposed
+  for a person. None of the `nightly_self` rows has another visit's tap inside its stay.
+- T1 to T8 live: 0. The morning check fails on history only: T5 on 9176 at 00:35 and 01:35 ET, cleared by the fills.
+- Admin Review and the Calendar show the database values on 2 written visits (9085, 9047) and 1 held (5931).
+- Note: a held visit keeps the old fill's fallback until a person decides, and the 11:00 ET fill can still re-measure it
+  (5931: 128 to 167 after more GPS arrived).
