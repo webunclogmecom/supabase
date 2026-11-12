@@ -15,6 +15,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | S5 | the switch on, after Fred reads the comparison | **ON 2026-11-09 12:00:51 ET (`2026-11-09_1200`)**, two days early on Fred's "switch it on" after three passing shadows. First night 02:50 ET 11-10. See 10.9 |
 | S8 (RC7) | the 11 AM post: a "still there at the nightly check" reason and a "Which truck went?" block from the last real nightly run | **BUILT 2026-11-11 23:41 ET**, `time-on-site-reminder` v31 (a7e123aa), on Fred's "go ahead with today's three". It was planned for 11-10, before the switch, and was missed when S5 moved two days early. Check `scripts/checks/time_on_site_reminder.mjs` case 10 (17 mutants; the pre-S8 body fails it). First real post with the block: 11 AM 11-12 |
 | RC6 | the any-truck fill out of cron 26 and the 11 AM wrapper | **BUILT 2026-11-11 23:49 ET** (`2026-11-11_2350`, 715e3627). Control rolled back: a 112-YA fixture (counted as a customer for that transaction only, because the fill skips test clients) was filled `gps_150m_any_truck` 78 min by the old command and left blank by the new one |
+| Late taps | the close-out sees a tap of a visit completed days after its own date (found by S6: 8853, 8886) | **BUILT 2026-11-12 12:23 ET** (`2026-11-12_1330`, edge v28), on Fred's "do the nightly fix"; alarm T12 with S7. See 10.11 |
 | S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | **S6 BUILT 2026-11-12 11:22 ET** (13 real runs, moved up from 11-13 on Fred's word; two close-out rows corrected by `2026-11-12_1140`; see 10.10) / 11-16 / 11-30. **S6 range, computed 2026-11-12: 10-18 to 10-30** (the plan's rule "to the day before the first new night's window start": the first switched-on night, 02:50 ET 11-10, began its window at 10-31; 10-31 has no completed client visit, and the five 11-01 visits already carry close-out rows, so the run skips them). The read-only re-check of 10-28 to 11-01 (two judges, 29 visits) is done: 24 agree with the saved value within 2 min, 3 unsettled (one client's three visits on 10-28: 5995, 6844, 8902), 6400 (11-01) a big move with one witness, already held, and 9046 (11-01) blank with no stay |
 
 ## 1. What Fred decided
@@ -291,6 +292,7 @@ The full design, with its fixtures and numbers, is in plan section 5.2. In short
 | T8 | an `applied` ledger row whose visit changed truck, date or completion, or was deleted or reopened | 10-18 |
 | T9 | a visit 11 or more days old with no `applied` or `proposed` row (a close-out gap) | S7, after band C |
 | T10 | a `proposed` row older than 8 days (waiting on a person) | S7 |
+| T12 | a current `applied` `nightly_self` row whose stay holds another completed visit's completion on the same truck, any date (the shape of 8853 / 8886; today `scripts/checks/time_on_site_shared_tap.sql`, see 10.11) | S7 (added 2026-11-12) |
 
 T11 (a monthly sample) is not built (Fred, Q-M).
 
@@ -552,6 +554,7 @@ passed 3 nights, so the Trello "Fix" item can be ticked with Fred's OK.
   two rows with proposed `shared_tap` rows. No visit is written, and S6's rollback still applies.
 - **Reach:** every current applied `nightly_self` row in the ledger with another tap inside its stay: exactly these 2. No
   row of the switched-on nightly (11-10 on) has it.
+- **FIXED the same day (10.11).** What follows was the state at 11:30 ET.
 - **OPEN, a change to the nightly:** the nightly meets this whenever a visit is completed two or more days after its date,
   inside a stay on the close-out day. The fix is to read the taps by completion time, any visit date, in the read function
   or as a second read. It is not built yet. The S5 morning checks tested "no `nightly_self` row on a visit with another
@@ -592,3 +595,36 @@ passed 3 nights, so the Trello "Fix" item can be ticked with Fred's OK.
 - C3, the band agreement check, still fails on 2 outliers (6352, 9142). So these are per-visit verdicts, not a
   certified band.
 - **Seen on the live sites, 11:50 ET:** Admin Review shows 6428 57m, 6243 50m, 8868 23m. The Calendar's Hours worked tile reads 10.5h on 11-05 (10.0h with 30), 4.1h on 10-18 (4.2h with 57) and 4.3h on 10-26. The database rounds that same 261 minutes to 4.4, because `toFixed` rounds 4.35 down.
+
+### 10.11 The nightly reads every completion by time (Thursday 11-12, Fred: "do the nightly fix")
+
+- **What changed:**
+  - `public.fn_time_on_site_recheck_visits` returns a new key, `taps`: every completed, not deleted visit with a truck,
+    of any client, whose completion falls between the first read window's start and the last one's end, whatever its
+    own date (`2026-11-12_1330_time_on_site_recheck_read_taps`, applied 12:23:10 ET, rollback beside it).
+  - `time-on-site-samsara-recheck` v28 (deployed 12:23:16 ET) adds those taps to the rows' own taps for the close-out's
+    "another visit's tap inside the stay" test.
+- **What it can change:** only that the test sees more taps. So a close-out row can only move from applied
+  `nightly_self` to proposed `shared_tap` (a person checks it), never the other way. The rule's decisions are untouched.
+- **Checked:**
+  - The migration's VERIFY compares the old body (kept as a `pg_temp` copy) with the new one: every other key is byte
+    for byte the same on 4 ranges, and `taps` holds 8854 for 10-19 and 8882 for 10-26.
+  - Rehearsed: the rollback on top restores the old body (md5 `76824f8e`); alone it refuses.
+  - Stub test `v15/stub_late_tap.mjs` (local) runs the real function with stubbed answers:
+    - a late tap inside a kept stay holds it (`shared_tap`);
+    - a tap outside the stay, or of another truck, holds nothing;
+    - a read without `taps` behaves as before;
+    - the code before the change misses the late tap (the control);
+    - dry runs give the same decisions with or without taps.
+  - `v15/stub_rules2.mjs` still passes.
+  - The deployed body holds the new lines and not the old one.
+  - A dry nightly run before and after the deploy: 81 candidates, 0 differences.
+- **Reach today:** no visit still in the nightly's window has a late or yard tap inside its stay, so tonight's close-out
+  should come out as it would have.
+- **Standing check now:** `scripts/checks/time_on_site_shared_tap.sql`. Status `ok` at 12:30 ET: 0 settled rows with a
+  tap. Its control finds superseded rows 2150 and 2188.
+- **Alarm, from S7 (11-16):** T12 (section 8), which reaches the daily health email. It goes in with T9 and T10, because
+  all three change `fn_time_on_site_checks`, whose md5 several pending rollbacks pin.
+- **Pins:** the morning check's edge pin saved at v28 (`out/02c_edge.json`; the 11-05 copy is kept). The local build
+  source `v15/recheck2.part.js` carries the same edit. `build_index.mjs` built v15 from v14 once and must not be re-run
+  on the v15 file.

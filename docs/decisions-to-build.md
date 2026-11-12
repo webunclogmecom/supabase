@@ -558,7 +558,13 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
   - `2026-11-12_1140` held 8853 and 8886 for a person (shared tap).
   - `2026-11-12_1200`, applied 11:45:07 ET, wrote 6428 30 to 57 min and locked it.
   - Spec 10.10.
-  - OPEN, not decided: the nightly's read misses a tap from a visit completed two or more days after its own date.
+  - The nightly's read missed a tap from a visit completed two or more days after its own date. Fred: "do the nightly fix". BUILT 12:23 ET:
+    - `2026-11-12_1330`: the read returns `taps` by completion time;
+    - `time-on-site-samsara-recheck` v28 uses them;
+    - `scripts/checks/time_on_site_shared_tap.sql`;
+    - alarm T12 goes in with S7 on 11-16.
+
+    Spec 10.11.
 
 - **New job creates a Warranty of Drainage subscription (2026-11-06, Trello #179; Fred: "see how can we start making it on the Client's App as well"):** `save-client-job` v69 and one condition in the Client App. Diego made the first real one the same morning (#99901164) and confirmed it; in Testing / QA since 2026-11-06. Evidence and rules: `Building Apps/Client App/docs/08-changelog.md`.
 - **Viktor in Jobber (2026-11-06, Trello #177, Testing / QA; Fred: "train him to do a step by step help to the staff so they do it using our apps", then "Not creating a new client is more critical imo, they can create new jobs, or visits, but then test it"):** he never creates a client; he may create a job or a visit on an existing client when clearly asked; moves, renames, closes and deletes go to the apps. Trained in #viktor-training, 8 of 8 made-up messages with no correction. There is no code behind it: the rules are in his own skills, so they are his word, and his connection can still create clients. Test and findings: `docs/reference/jobber-change-sync-paths.md`.

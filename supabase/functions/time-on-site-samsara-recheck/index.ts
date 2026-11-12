@@ -739,7 +739,12 @@ async function recheck2(from, to, dryRun, token, opts) {
   let closeout = null;
   if (!dryRun) {
     const stays = Object.fromEntries(Object.entries(trips).map(([vid, ts]) => [vid, V15.tripsToStays(Number(vid), ts)]));
-    const taps = rows.map((x) => ({ id: x.id, vehicle_id: x.vehicle_id, ms: Date.parse(x.completed_at) }));
+    // the taps by COMPLETION time (2026-11-12, Trello vpF5PLQj): read.taps holds every completed visit completed inside the
+    // read's windows, whatever its own date; `rows` holds only visits dated from - 1 to to + 1, so a visit completed days
+    // after its date was missed (8854, 8882 in S6). Added to the rows' own taps, never instead of them.
+    const tapsById = new Map(rows.map((x) => [x.id, { id: x.id, vehicle_id: x.vehicle_id, ms: Date.parse(x.completed_at) }]));
+    for (const t of read.taps ?? []) if (!tapsById.has(t.id)) tapsById.set(t.id, { id: t.id, vehicle_id: t.vehicle_id, ms: t.completed_ms });
+    const taps = [...tapsById.values()];
     const ctx0 = { placesOk, tripsOk: counts.trip_reads_failed === 0, trips, stays, taps, places };
     const payload = [];
     for (const v of rows.filter((x) => x.in_range && x.visit_date === from && !x.locked)) {
