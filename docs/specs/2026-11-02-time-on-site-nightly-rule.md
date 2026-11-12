@@ -494,3 +494,23 @@ session restart), so both nights were checked together.
 - Admin Review and the Calendar show the database values on 2 written visits (9085, 9047) and 1 held (5931).
 - Note: a held visit keeps the old fill's fallback until a person decides, and the 11:00 ET fill can still re-measure it
   (5931: 128 to 167 after more GPS arrived).
+
+**Third night, 11-12, checked 05:41 to 05:50 ET (PASS; run early on Fred's word, the 08:45 task disabled).** S5 has now
+passed 3 nights, so the Trello "Fix" item can be ticked with Fred's OK.
+- 77 candidates, 5 written, 49 kept, 23 held, 0 pending, 0 refused, `places_ok`, 0 trip reads failed. Request function
+  md5 `b36e494e`; RC6 still in place (cron 26 `f7bb9ad7`, wrapper `2be5493e`, 0 any-truck writes since).
+- Writes: 6034 63 to 61, 8595 15 to 13, 9081 32 to 28: within 4 minutes of our own GPS stop. 7874 109 to 59 replaces a
+  fallback cluster (our stop 60). 6730 4 to 50: our stop table has no stop for its truck between 21:45 and 23:30 UTC, so
+  the 02:20 fill took the short stop that ended 46 minutes before the tap; the rule's stay contains the tap. A fallback
+  replaced, by design, like 9047 and 9176 on night 2.
+- Against the 11-11 baseline: 6961's predicted write (blank to 37) was made first by the 11:00 ET fill, and the night kept
+  it; 9081 was reopened in Jobber and completed again on 11-11, so it was measured as a new completion. Everything else
+  in the baseline matches or left the window.
+- 5 close-out rows for the 5 completed client visits dated 11-02, each with both vehicle ids: 3 `nightly_self` applied,
+  2 `shared_stay` proposed. None of the `nightly_self` rows has another visit's tap inside its stay.
+- S8: a dry run of the deployed 11 AM post reads tonight's run and lists exactly the two `another_truck` holds (9069, 9073)
+  under "Which truck went?".
+- T1 to T8 live: 0. History only: T1 on 9056 (dated 11-03, marked complete on 11-11, blank until the 02:20 fill; the night
+  holds it `other_day` for a person) and T5 on 6730 before the 02:20 fill, the same transient as 9176. The morning check's
+  PINs were re-baselined for RC6 and S8, which moved them on purpose.
+- Admin Review shows the database values on 6730 (written, 50m) and 9069 (held, 3h 23m).
