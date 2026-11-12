@@ -5928,8 +5928,10 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   level sensor, so their stops carry no tank rows.
 - **Time on site** comes first from the truck stop that holds the completion (`fn_fill_time_on_site_from_stops`, rule
   in `public.v_visit_stop_reference`, since `2026-10-13_2210`); `fn_compute_time_on_site` (the longest 150 m stay, window
-  to 10:00 ET next morning) and `fn_fill_blank_time_on_site` (any truck) are fallbacks for what the stops do not give.
-  `webhook-samsara` never writes visit times.
+  to 10:00 ET next morning) is the fallback for what the stops do not give. `fn_fill_blank_time_on_site` (any truck's
+  GPS) has had NO caller since `2026-11-11_2350` (RC6, Trello vpF5PLQj): since the 02:50 nightly (rules 2) a blank
+  visit where another truck was there is held and asked in the 11 AM post's "Which truck went?" block, never guessed.
+  The function itself goes at S10. `webhook-samsara` never writes visit times.
   🛑 **Since `2026-11-02_1430` (duration re-check S1, Trello vpF5PLQj) the view keeps a completion stop only when it
   ARRIVES inside the visit window**: 4 h before the visit date (00:00 ET) to 10:00 ET the next day, the same test as
   `fn_time_on_site_samsara_candidates`. Before it, 8854 (dated 10-16, completed in the office on 10-19) took a 59-min
@@ -6013,8 +6015,8 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   visit from its completion stop plus chain, splits a shared stop at the completion times only when every piece is
   10 min or more, fills blanks and replaces only LABELLED `gps_150m_cluster` values inside the 10-day window (source
   NULL values wait for step 5). `fn_compute_time_on_site` drops a stay starting more than 15 min after the completion.
-  Order everywhere (cron 26, the 11 AM reminder, Viktor): stops first, then the 150 m measurement, then the any-truck
-  fill; Viktor relinks under the hourly refresh's lock. Z4 allows 250 m for completion links. 6509 reads 34 min.
+  Order everywhere (cron 26, the 11 AM reminder, Viktor): stops first, then the 150 m measurement (the any-truck
+  fill that came third is out since RC6, `2026-11-11_2350`); Viktor relinks under the hourly refresh's lock. Z4 allows 250 m for completion links. 6509 reads 34 min.
   🛑 The linker reconciles the WHOLE era every hour, so any change to its rule rewrites old links (and tank volumes):
   dry-run it first (`fn_link_visit_vehicle_stops(false)->'changes'` lists every add and retire).
   **Algorithm 4 (`2026-10-21_2300`, water audit A1)**: the chain walk-back (step ch) never takes a stop that sits
