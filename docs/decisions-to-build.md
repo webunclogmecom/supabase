@@ -562,7 +562,7 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
     - `2026-11-12_1330`: the read returns `taps` by completion time;
     - `time-on-site-samsara-recheck` v28 uses them;
     - `scripts/checks/time_on_site_shared_tap.sql`;
-    - alarm T12 goes in with S7 on 11-16.
+    - alarm T12 in the health email, BUILT 12:48 ET the same day (`2026-11-12_1430`; Fred: "yes, add it to the health email today").
 
     Spec 10.11.
 

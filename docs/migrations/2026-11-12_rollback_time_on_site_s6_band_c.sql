@@ -29,7 +29,7 @@ BEGIN;
 SET LOCAL lock_timeout = '3s';
 
 DO $pin$ BEGIN
-  IF md5(pg_get_functiondef('public.fn_time_on_site_checks()'::regprocedure)) <> '11e4b8113c609737ea8edd5798faa833' THEN
+  IF md5(pg_get_functiondef('public.fn_time_on_site_checks()'::regprocedure)) NOT IN ('11e4b8113c609737ea8edd5798faa833', '03d6d444ec2f782418ab28c575e149b7') THEN   -- the S1 body, or the same with T12 (2026-11-12_1430)
     RAISE EXCEPTION 'S6 rollback: fn_time_on_site_checks() is not the S1 body'; END IF;
   IF (SELECT count(*) FROM public.visit_time_on_site_corrections
        WHERE run_id BETWEEN 'nightly-20261018' AND 'nightly-20261030' AND stage = 'nightly' AND superseded_at IS NULL) <> 81

@@ -15,7 +15,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | S5 | the switch on, after Fred reads the comparison | **ON 2026-11-09 12:00:51 ET (`2026-11-09_1200`)**, two days early on Fred's "switch it on" after three passing shadows. First night 02:50 ET 11-10. See 10.9 |
 | S8 (RC7) | the 11 AM post: a "still there at the nightly check" reason and a "Which truck went?" block from the last real nightly run | **BUILT 2026-11-11 23:41 ET**, `time-on-site-reminder` v31 (a7e123aa), on Fred's "go ahead with today's three". It was planned for 11-10, before the switch, and was missed when S5 moved two days early. Check `scripts/checks/time_on_site_reminder.mjs` case 10 (17 mutants; the pre-S8 body fails it). First real post with the block: 11 AM 11-12 |
 | RC6 | the any-truck fill out of cron 26 and the 11 AM wrapper | **BUILT 2026-11-11 23:49 ET** (`2026-11-11_2350`, 715e3627). Control rolled back: a 112-YA fixture (counted as a customer for that transaction only, because the fill skips test clients) was filled `gps_150m_any_truck` 78 min by the old command and left blank by the new one |
-| Late taps | the close-out sees a tap of a visit completed days after its own date (found by S6: 8853, 8886) | **BUILT 2026-11-12 12:23 ET** (`2026-11-12_1330`, edge v28), on Fred's "do the nightly fix"; alarm T12 with S7. See 10.11 |
+| Late taps | the close-out sees a tap of a visit completed days after its own date (found by S6: 8853, 8886) | **BUILT 2026-11-12 12:23 ET** (`2026-11-12_1330`, edge v28), on Fred's "do the nightly fix"; alarm T12 in the health email BUILT 12:48 ET (`2026-11-12_1430`). See 10.11 |
 | S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | **S6 BUILT 2026-11-12 11:22 ET** (13 real runs, moved up from 11-13 on Fred's word; two close-out rows corrected by `2026-11-12_1140`; see 10.10) / 11-16 / 11-30. **S6 range, computed 2026-11-12: 10-18 to 10-30** (the plan's rule "to the day before the first new night's window start": the first switched-on night, 02:50 ET 11-10, began its window at 10-31; 10-31 has no completed client visit, and the five 11-01 visits already carry close-out rows, so the run skips them). The read-only re-check of 10-28 to 11-01 (two judges, 29 visits) is done: 24 agree with the saved value within 2 min, 3 unsettled (one client's three visits on 10-28: 5995, 6844, 8902), 6400 (11-01) a big move with one witness, already held, and 9046 (11-01) blank with no stay |
 
 ## 1. What Fred decided
@@ -292,7 +292,7 @@ The full design, with its fixtures and numbers, is in plan section 5.2. In short
 | T8 | an `applied` ledger row whose visit changed truck, date or completion, or was deleted or reopened | 10-18 |
 | T9 | a visit 11 or more days old with no `applied` or `proposed` row (a close-out gap) | S7, after band C |
 | T10 | a `proposed` row older than 8 days (waiting on a person) | S7 |
-| T12 | a current `applied` `nightly_self` row whose stay holds another completed visit's completion on the same truck, any date (the shape of 8853 / 8886; today `scripts/checks/time_on_site_shared_tap.sql`, see 10.11) | S7 (added 2026-11-12) |
+| T12 | a current `applied` `nightly_self` row whose stay holds another completed visit's completion on the same truck, any date (the shape of 8853 / 8886; same test as `scripts/checks/time_on_site_shared_tap.sql`, see 10.11) | **BUILT 2026-11-12 12:48 ET** (`2026-11-12_1430`, Fred: "yes, add it to the health email today") |
 
 T11 (a monthly sample) is not built (Fred, Q-M).
 
@@ -623,8 +623,26 @@ passed 3 nights, so the Trello "Fix" item can be ticked with Fred's OK.
   should come out as it would have.
 - **Standing check now:** `scripts/checks/time_on_site_shared_tap.sql`. Status `ok` at 12:30 ET: 0 settled rows with a
   tap. Its control finds superseded rows 2150 and 2188.
-- **Alarm, from S7 (11-16):** T12 (section 8), which reaches the daily health email. It goes in with T9 and T10, because
-  all three change `fn_time_on_site_checks`, whose md5 several pending rollbacks pin.
+- **Alarm T12, BUILT the same day** (`2026-11-12_1430_time_on_site_t12_shared_tap_alarm`, applied 12:48:11 ET; Fred:
+  "yes, add it to the health email today"). Three bodies change, each by one anchored edit from the live body:
+  - `fn_time_on_site_checks` gains T12 and its visits in `T_detail`;
+  - `fn_refresh_stop_facts` (hourly at :35) counts T12 in the `stop_facts_integrity` verdict. Its key list is explicit,
+    and a missing key never errors;
+  - `log_jobber_sync_health` (13:13 UTC) names T12 in words. It already raised one item per non-zero key; this adds the
+    sentence.
+- **Proven in a rolled-back rehearsal of the whole chain (`t12/rehearse.mjs` e2e, local):**
+  - the fixture (8853's row 2150 current again) gives T12 = 1;
+  - the refresh writes `error`;
+  - `ops.v_health_items` carries `check_failed:stop_facts_integrity:T12`, with the sentence and visit 8853;
+  - on the old bodies, the same fixture shows nothing (the control).
+- **The migration's own VERIFY checks:** T1 to T8 equal the old body's; T12 is 0 today.
+- **Its rollback restores all three md5s, and refuses alone.**
+- **Pending rollbacks that pin `fn_time_on_site_checks`:** S2, S4, the 6428 card and S6 now accept both md5s (`11e4b811`,
+  `03d6d444`). S4, 6428 and S6 rehearse cleanly on top.
+- **The S2 rollback already failed its own VERIFY before T12** (59 current rows, expected 61: S4 superseded two of
+  them), so run S4's rollback first. The S1 rollback still pins the S1 body: run the T12 rollback before it.
+- **Morning check:** `out/rebaseline.json` gives the three new md5s. Its PINs pass; its history fails only on the runs
+  before 02:35 ET 11-12 (T1 on 9056, T5 on 6730, both cleared, as noted for night 3).
 - **Pins:** the morning check's edge pin saved at v28 (`out/02c_edge.json`; the 11-05 copy is kept). The local build
   source `v15/recheck2.part.js` carries the same edit. `build_index.mjs` built v15 from v14 once and must not be re-run
   on the v15 file.
