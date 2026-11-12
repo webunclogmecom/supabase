@@ -17,6 +17,14 @@ Measured 2026-11-12, about 07:00 to 08:00 ET.
 > are kept as the record. Row 6 is NOT covered by that fix: the portal's review page chunk
 > `_shell.review.visit._visitId-C_QeqKWc.js` still reads the pending visits in one request, and so does admin.unclogme.app.
 
+> **Update, 2026-11-12 ~09:18 ET: rows 1, 5, 9, 10, 14, 16 and 22 (the Client App's Clients list) are FIXED and live.**
+> Fred: "Yes, fix it here". Every list read on that page now pages with `fetchAllRows` and `.range()` (Lovable
+> `dbf2133c`, live chunk `index-Ddg_9uxM.js`, Building Apps `8fd38c7`). Checked on the live site with
+> `scripts/client-app/tests/home_list_row_cap.mjs` at 1440 and 375: before the publish 234-PV showed "—" and the
+> completed-visits read returned 1,000 of 1,648; after, 64 of 64 pass (234-PV shows its last visit, 1,648 of 1,648 in
+> 2 requests, every list read equals the database's exact count). The numbers in the table are the record from before.
+> Still open on the Client App: rows 7 and 8 (the client page's Activity tab and photos).
+
 ## Result in one paragraph
 
 **Two reads are already past the cap**, and both are live today: the Client App home list's "Last visit" read (1,648
@@ -37,28 +45,28 @@ is never an error, so even a read that throws on error takes a cut silently, unl
 
 | # | App (host) | Read | Rows today | % of cap | Weeks until 1,000 | Error ignored |
 |---|---|---|---|---|---|---|
-| 1 | Client App (clients) | home list, "Last visit": `client.visits` completed, not deleted, `order(visit_date desc).limit(10000)` | **1,648** | **165%** | **past (since about 2026-08-06)** | no, throws |
+| 1 | Client App (clients) | home list, "Last visit": `client.visits` completed, not deleted, `order(visit_date desc).limit(10000)` | **1,648** | **165%** | **past (since about 2026-08-06)**; **FIXED, Building Apps `8fd38c7`** | no, throws |
 | 2 | Ops Portal `/review` (ops) | queue drivers: `visit_assignments .in('visit_id', <every queue visit>)` | **1,084** | **108%** | **past** (same defect as #186); **FIXED 07:44 ET, `3b5aac1`** | **yes, no error check** |
 | 3 | Ops Portal `/review` (ops) | queue: `visits_with_review` completed, in scope, up to today, `.limit(2000)` | 946 | 95% | about 1 (46 a week); **FIXED, `3b5aac1`** | no, throws; has a `truncated` flag from `count: 'exact'` |
 | 4 | Ops Portal `/review` (ops) | queue photo counts: `v_visit_photo_counts .in(...).limit(5000)` | 867 | 87% | about 3; **FIXED, `3b5aac1`** | no, throws |
-| 5 | Client App (clients) | home list, "Next visit": `client.visits` scheduled, from today, `order(visit_date asc).limit(10000)` | 857 | 86% | 8 to 10 (about 790 four weeks ago) | no, throws |
+| 5 | Client App (clients) | home list, "Next visit": `client.visits` scheduled, from today, `order(visit_date asc).limit(10000)` | 857 | 86% | 8 to 10 (about 790 four weeks ago); **FIXED, `8fd38c7`** | no, throws |
 | 6 | Admin Review (admin) **and** Ops Portal `/review` (ops) | review page Next / Previous: `visits_with_review` completed, pending, in scope, no paging | 829 | 83% | about 9 (184 new in 28 days, 104 reviewed) | no, throws |
 | 7 | Client App (clients) | client page, Activity tab: RPC `client.get_client_activity(p_client_id, p_include_system)`, no `p_limit`, so every row | 437 (biggest real client); 685 (test client 112-YA) | 44%; 69% | about 19; about 16 | no, throws |
 | 8 | Client App (clients) | client page photos: `photo_links .in('entity_id', <the client's 200 newest visits>)`, then `photos .in('id', ...)` | 495 | 50% | about 28 (the client growing fastest: 483 rows, plus 75 in 28 days) | no, throws |
-| 9 | Client App (clients) | home list, monthly value: `line_items .in('job_id', <every recurring job>).limit(20000)` | 375 | 38% | about 45 | no, throws |
-| 10 | Client App (clients) | home list, monthly value: `client.jobs` recurring, not archived, `.limit(5000)` | 535 | 54% | about 64 | no, throws |
+| 9 | Client App (clients) | home list, monthly value: `line_items .in('job_id', <every recurring job>).limit(20000)` | 375 | 38% | about 45; **FIXED, `8fd38c7`** | no, throws |
+| 10 | Client App (clients) | home list, monthly value: `client.jobs` recurring, not archived, `.limit(5000)` | 535 | 54% | about 64; **FIXED, `8fd38c7`** | no, throws |
 | 11 | Ops Portal `/review` (ops) | queue: `jobs .in(...)`, `line_items .in(...)` | 362; 342 | 36%; 34% | about 75 to 80; **FIXED, `3b5aac1`** | **yes, no error check** |
 | 12 | Ops Portal (admin module) | Grease by client: RPC `public.get_grease_by_client()`, no arguments | 345 | 35% | about 90 | no, throws |
 | 13 | Visit Calendar (calendar) and portal `/calendar` | client pickers (task dialog, New Visit): `ops.client_service_options`, whole view | 535 | 54% | about 116 | **yes on the old host and in the portal task dialog (logged, picker stays empty)**; portal New Visit shows a toast |
-| 14 | Client App (clients) | home list: `client.client_services_flat .limit(2000)`; `client.clients .limit(5000)` | 500; 500 | 50% | about 133 | no, throws |
+| 14 | Client App (clients) | home list: `client.client_services_flat .limit(2000)`; `client.clients .limit(5000)` | 500; 500 | 50% | about 133; **FIXED, `8fd38c7`** | no, throws |
 | 15 | Visit Calendar and portal `/calendar` | `ops.clients` ACTIVE or RECURRING (plus 112-YA) | 478 | 48% | about 139 | no, throws |
-| 16 | Client App (clients) | home list: `client.properties .limit(10000)` | 534 | 53% | about 143 | no, throws |
+| 16 | Client App (clients) | home list: `client.properties .limit(10000)` | 534 | 53% | about 143; **FIXED, `8fd38c7`** | no, throws |
 | 17 | Visit Calendar and portal `/calendar` | month grid: `ops.v_calendar_visit` between the grid's first and last day, not cancelled | 287 (the August grid; the November grid 201) | 29% | about 145 | no, throws |
 | 18 | Visit Calendar and portal `/calendar` | month grid RPCs: `ops.calendar_hours_estimates`, `ops.calendar_drive_days`, `ops.calendar_grease_estimates` | 280; 161; 159 | 28%; 16%; 16% | about 145 or more | no, throw (hours also logs) |
 | 19 | Visit Calendar and portal `/calendar` | Team filter: `ops.v_visit_team .in('visit_id', <loaded visits>)` | 339 (the August grid) | 34% | about 110 | no, throws |
 | 20 | DERM Stamp Studio (stamp) and portal `/stamp` | client list: `derm.v_stamp_clients .limit(2000)` | 341 | 34% | about 175 | toast, list stays empty |
 | 21 | Picture Planner (planner) and portal `/planner` | property list: RPC `client.page_builder_list()`, no arguments | 360 | 36% | about 197 | shows the error |
-| 22 | Client App (clients) | home list: `client.gdos .limit(10000)` | 194 | 19% | years | no, throws |
+| 22 | Client App (clients) | home list: `client.gdos .limit(10000)` | 194 | 19% | years; **FIXED, `8fd38c7`** | no, throws |
 | 23 | Ops Portal (admin module) | Water by driver: RPC `public.get_water_visits(p_from, p_to)`, at most 93 days | 143 | 14% | years (a window) | no, throws |
 | 24 | Client App (clients) | job panel: `client.job_activity` for one job | 136 | 14% | years | no, throws |
 
@@ -170,13 +178,14 @@ tasks, DERM duplicate checks). A `.from(<variable>)` is invisible to the extract
 
 ## Not done here
 
-Read-only, as asked: no app, database object, Lovable project or Trello card was changed, and no fix was written.
+The audit itself was read-only: no app, database object, Lovable project or Trello card was changed while measuring.
+The Client App fix came after it, on Fred's go-ahead (second update at the top).
 
-**Who fixes what is still open** (as of the update above):
+**Who fixes what is still open** (as of the updates above):
 
 - **The portal side of row 6** (and any other portal read): the session named Supabase, which alone works on the Ops
   Portal (root CLAUDE.md).
 - **Row 6 on admin.unclogme.app:** a bug fix on the Admin Review Lovable project, which an old host may still take. It
   goes in twice while the old host lives, once there and once in the portal.
-- **Rows 1, 5, 7 and 8, the Client App:** a bug fix on clients.unclogme.app. The Client App has no portal module yet,
-  so this is not the Supabase session's by rule; Fred routes it. Row 1 is the one already cutting.
+- **Rows 7 and 8, the Client App's client page:** a bug fix on clients.unclogme.app. The Client App has no portal module
+  yet, so this is not the Supabase session's by rule; Fred routes it. (Rows 1 and 5 are fixed, see the second update.)
