@@ -12,12 +12,18 @@
 --      that moved since is listed in the NOTICE and left alone (re-measure it instead).
 --   2. Every current row of those 13 runs gets superseded_at and status 'rolled_back' (never deleted). No earlier row
 --      exists for these visits (S6 found none), so nothing is made current again.
--- PIN: fn_time_on_site_checks is the S1 body; the 13 runs hold exactly 81 rows, all current, all stage 'nightly'.
+-- PIN: fn_time_on_site_checks is the S1 body; the 13 runs hold exactly 81 current rows, all stage 'nightly'; the only
+--   superseded rows allowed are 2150 / 2188 (8853 / 8886) and the shared tap rows that replaced them
+--   (2026-11-12_1140_time_on_site_s6_shared_tap_rows.sql). It may run with or without that file applied, and after its
+--   rollback too: it rolls back whatever 81 rows are current.
 -- VERIFY: no current row of the 13 runs; the restored visits hold old_*; only visits and the ledger audited, labelled;
 --   T7 = T8 = 0.
 -- LABEL: x-app-source time-on-site-recheck-2026.
 -- REHEARSED: alone before the runs (refuses: the runs had no rows), and on top of the runs in one rolled-back
---   transaction (S6/rehearse_rollback.mjs, local).
+--   transaction (S6/rehearse_rollback.mjs, local). Again 2026-11-12 ~11:28 ET after the runs (S6/rehearse_shared_tap.mjs):
+--   alone, on top of the shared tap correction, and after that correction's rollback, each ending with 0 current rows,
+--   6243 at 57 (gps_150m_cluster) and 8868 blank; T4 then reads 1 (8868 blank again), T7 = T8 = 0. A superseded row it
+--   does not name refuses.
 -- ============================================================================
 BEGIN;
 SET LOCAL lock_timeout = '3s';
@@ -28,7 +34,11 @@ DO $pin$ BEGIN
   IF (SELECT count(*) FROM public.visit_time_on_site_corrections
        WHERE run_id BETWEEN 'nightly-20261018' AND 'nightly-20261030' AND stage = 'nightly' AND superseded_at IS NULL) <> 81
      OR EXISTS (SELECT 1 FROM public.visit_time_on_site_corrections
-                 WHERE run_id BETWEEN 'nightly-20261018' AND 'nightly-20261030' AND (stage <> 'nightly' OR superseded_at IS NOT NULL)) THEN
+                 WHERE run_id BETWEEN 'nightly-20261018' AND 'nightly-20261030'
+                   AND (stage <> 'nightly' OR (superseded_at IS NOT NULL
+                        -- the only superseded rows allowed: 2150 / 2188 and the shared tap rows that replaced them
+                        -- (2026-11-12_1140_time_on_site_s6_shared_tap_rows.sql, and its rollback)
+                        AND id NOT IN (2150, 2188) AND coalesce(evidence->>'corrects_row', '') NOT IN ('2150', '2188')))) THEN
     RAISE EXCEPTION 'S6 rollback: the runs nightly-20261018 to nightly-20261030 do not hold exactly 81 current nightly rows'; END IF;
 END $pin$;
 
