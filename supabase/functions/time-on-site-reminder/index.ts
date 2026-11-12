@@ -23,6 +23,15 @@
 // or nothing to post) or 'error'. Diego is tagged on the first body line, never on a [TEST] post, never in `text`.
 // Body: { dry_run?: boolean, test?: boolean, check_bot?: boolean, date?: "YYYY-MM-DD" }  date defaults to yesterday ET.
 // Check: node scripts/checks/time_on_site_reminder.mjs (runs this file against stubs).
+//
+// S8 (2026-11-11, Trello vpF5PLQj, plan RC7; Fred: "go ahead with today's three"): two additions read the last REAL
+// nightly check against Samsara (edge fn time-on-site-samsara-recheck, rules 2, cron 151 at 02:50 ET) from its
+// sync_log row, and only when that run is under 20 hours old, so a failed night shows nothing instead of an old list:
+//   - a listed visit the nightly could not measure yet (decision "pending": the truck had not left) says so as its reason;
+//   - a "Which truck went?" block lists the visits the nightly held because the truck is unclear (another truck was
+//     there too, or no truck is set), so Diego can answer through Viktor while the visit is still in the 10-day window.
+//     The block posts even on a day with no visit to list (before S8 such a day posted nothing), and keeps
+//     "visit <number>" in `text` for Viktor. A failed read leaves the block out and is recorded in the run's row.
 
 import { slackHeader, slackIdentity, slackScopes, slackSections } from "../_shared/slack-notify.ts";
 import { isSecretKeyCaller } from "../_shared/service-caller.ts";
@@ -36,6 +45,10 @@ const MAX_LINES = 40;
 const NEAR_M = 150;
 const SOURCE = "time_on_site_reminder";
 const ET = "America/New_York";
+const NIGHTLY = "time_on_site_samsara_recheck";   // the nightly's sync_log source
+const NIGHTLY_MAX_AGE_H = 20;
+const WHICH_TRUCK = new Set(["another_truck", "no_truck"]);
+const STILL_THERE = "the truck was still there at the nightly check; it will be measured tonight";
 
 type Stay = { truck: string; truck_samsara_id: string | null; first: string; last: string; minutes: number };
 type Gap = {
@@ -52,7 +65,12 @@ type Gap = {
   // Samsara shows (2026-10-14, Fred: "Samsara showed me a different time that the HTML"). Added here, null when the
   // trips could not be read or no gap overlaps the stop; the line then falls back to our GPS stop.
   samsara_stay?: { arrived: string; departed: string; minutes: number } | null;
+  still_there?: boolean;   // S8: the last nightly could not measure it yet (its decision "pending")
 };
+// S8: a visit the nightly held because the truck is unclear
+type Held = { visit_id: number; visit_date: string; client_code: string | null; client_name: string | null;
+              truck: string | null; reason: string };
+type Nightly = { run_id: number; pending: number[]; held: Held[] };
 type Geo = { circle: { lat: number; lng: number; r: number } } | { polygon: { lat: number; lng: number }[] } | null;
 type Place = { id: string; name: string; lat: number; lng: number; geo: Geo };
 type Outcome = { code: number; reply: Record<string, unknown>; log: Record<string, unknown> };
@@ -138,6 +156,33 @@ async function samsaraStay(truckId: string, arrived: string, departed: string): 
   } catch { return null; }
 }
 
+// S8: the last real nightly run (rules 2, not a dry run; a dry run writes no row) and what it left for a person.
+// null when there is no such run under NIGHTLY_MAX_AGE_H hours old; throws when it cannot be read.
+async function lastNightly(): Promise<Nightly | null> {
+  const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/sync_log?select=id,started_at,candidates:details->candidates&sync_source=eq.${NIGHTLY}` +
+    `&status=eq.success&details->>rules=eq.2&details->>dry_run=eq.false&order=started_at.desc&limit=1`, { headers: H });
+  if (!r.ok) throw new Error(`nightly run: HTTP ${r.status}`);
+  const runs = await r.json();
+  const run = Array.isArray(runs) ? runs[0] : null;
+  if (!run || !Array.isArray(run.candidates) || Date.now() - Date.parse(run.started_at) > NIGHTLY_MAX_AGE_H * 3600e3) return null;
+  const pending = run.candidates.filter((c: any) => c?.decision === "pending").map((c: any) => Number(c.visit_id));
+  const asks = run.candidates.filter((c: any) => c?.decision === "hold" && WHICH_TRUCK.has(c.hold_reason));
+  if (!asks.length) return { run_id: run.id, pending, held: [] };
+  const v = await fetch(`${SUPABASE_URL}/rest/v1/visits?select=id,visit_date,client:clients(client_code,name),truck:vehicles(name)` +
+    `&id=in.(${asks.map((c: any) => Number(c.visit_id)).join(",")})&deleted_at=is.null&visit_status=eq.completed`, { headers: H });
+  if (!v.ok) throw new Error(`held visits: HTTP ${v.status}`);
+  const rows = await v.json();
+  if (!Array.isArray(rows)) throw new Error("held visits: not a list");
+  const byId = new Map(rows.map((x: any) => [Number(x.id), x]));
+  const held = asks.filter((c: any) => byId.has(Number(c.visit_id))).map((c: any) => {
+    const x = byId.get(Number(c.visit_id));
+    return { visit_id: Number(x.id), visit_date: String(x.visit_date), client_code: x.client?.client_code ?? null,
+             client_name: x.client?.name ?? null, truck: x.truck?.name ?? null, reason: String(c.hold_reason) };
+  }).sort((a: Held, b: Held) => a.visit_date.localeCompare(b.visit_date) || a.visit_id - b.visit_id);
+  return { run_id: run.id, pending, held };
+}
+
 // The client's Samsara Place: the property's own link, else the client's links, else a place named after the client
 // code; among several, the nearest to the property point. null when places could not be read (unknown, not "none").
 function findPlace(g: Gap, places: Place[] | null): { checked: boolean; place: Place | null; meters: number | null } {
@@ -184,7 +229,8 @@ function line(g: Gap, places: Place[] | null): string {
   let reason: string;
   const longest = g.stays[0];
   const s = g.stop_at_completion;
-  if (g.lat == null || g.lng == null) reason = "the property has no map point";
+  if (g.still_there) reason = STILL_THERE;
+  else if (g.lat == null || g.lng == null) reason = "the property has no map point";
   else if (s) {
     // a truck was parked within 250 m when the job was marked complete (visit 6509: 164 m, 34 min): say so first,
     // so a real stop is never reported as a drive-by
@@ -229,25 +275,46 @@ function line(g: Gap, places: Place[] | null): string {
 // Moises to Casa Neos" through viktor-visit-update, which needs the VISIT NUMBER. So `text` is the summary line, then
 // every visit as plain words with its number (the phone still shows only the first line). Links become their labels.
 const unlink = (s: string) => s.replace(/<[^|>]+\|([^>]+)>/g, "$1");
-function buildText(gaps: Gap[], ymd: string, places: Place[] | null, test = false): string {
-  return [buildSummary(gaps.length, ymd, test),
-          ...gaps.map((g) => "• visit " + g.visit_id + " · " + unlink(line(g, places)).replace(/^• /, ""))].join("\n");
+function buildText(gaps: Gap[], ymd: string, places: Place[] | null, test = false, held: Held[] = []): string {
+  const n = held.length;
+  return [gaps.length ? buildSummary(gaps.length, ymd, test)
+            : `:stopwatch: ${test ? "[TEST] " : ""}Which truck went? ${n} ${n === 1 ? "visit needs" : "visits need"} an answer`,
+          ...gaps.map((g) => "• visit " + g.visit_id + " · " + unlink(line(g, places)).replace(/^• /, "")),
+          ...(n ? [(gaps.length ? "Which truck went? " : "") + ASK, ...held.map(heldLine)] : [])].join("\n");
+}
+
+// S8: one held visit, plain words with its number (Viktor needs it), no links
+const ASK = "If you know, tell Viktor the visit number and the truck:";
+function heldLine(h: Held): string {
+  const why = h.reason === "no_truck" ? "no truck is set on the visit"
+    : `set to ${esc(h.truck ?? "no truck")}, but another truck was there too`;
+  return `• visit ${h.visit_id} · ${esc(h.client_code ?? "")} ${esc(h.client_name ?? "Unnamed client")} · ${longDay(h.visit_date)} · ${why}`;
 }
 
 function buildSummary(n: number, ymd: string, test = false): string {
   return `:stopwatch: ${test ? "[TEST] " : ""}${n} ${n === 1 ? "visit" : "visits"} on ${longDay(ymd)} ${n === 1 ? "has" : "have"} no time on site`;
 }
 
-function buildMessage(gaps: Gap[], ymd: string, older: number | null, places: Place[] | null, test = false): string {
+function buildMessage(gaps: Gap[], ymd: string, older: number | null, places: Place[] | null, test = false, held: Held[] = []): string {
   const n = gaps.length;
-  const head = `:stopwatch: ${test ? "[TEST] " : DIEGO + " "}*${n} ${n === 1 ? "visit" : "visits"} on ${longDay(ymd)} ${n === 1 ? "has" : "have"} no time on site*`;
-  const lines = gaps.slice(0, MAX_LINES).map((g) => line(g, places));
-  if (n > MAX_LINES) lines.push(`…and ${n - MAX_LINES} more.`);
-  // an unreadable count is left out, never printed as 0 (guide rule 5); none older needs no line
-  if (older != null && older > 0) {
-    lines.push(`:card_index_dividers: *${older}* older ${older === 1 ? "visit" : "visits"} from the last 30 days still ${older === 1 ? "has" : "have"} no time on site.`);
+  const tag = test ? "[TEST] " : DIEGO + " ";
+  const lines: string[] = [];
+  if (n) {
+    lines.push(`:stopwatch: ${tag}*${n} ${n === 1 ? "visit" : "visits"} on ${longDay(ymd)} ${n === 1 ? "has" : "have"} no time on site*`);
+    lines.push(...gaps.slice(0, MAX_LINES).map((g) => line(g, places)));
+    if (n > MAX_LINES) lines.push(`…and ${n - MAX_LINES} more.`);
+    // an unreadable count is left out, never printed as 0 (guide rule 5); none older needs no line
+    if (older != null && older > 0) {
+      lines.push(`:card_index_dividers: *${older}* older ${older === 1 ? "visit" : "visits"} from the last 30 days still ${older === 1 ? "has" : "have"} no time on site.`);
+    }
   }
-  return [head, ...lines].join("\n");
+  if (held.length) {
+    // S8: on a day with nothing else to list, this block is the post, so it carries the tag
+    lines.push(`${n ? "" : `:stopwatch: ${tag}`}*Which truck went?* ${ASK}`);
+    lines.push(...held.slice(0, MAX_LINES).map(heldLine));
+    if (held.length > MAX_LINES) lines.push(`…and ${held.length - MAX_LINES} more.`);
+  }
+  return lines.join("\n");
 }
 
 async function logRun(source: string, startedAt: string, ok: boolean, details: Record<string, unknown>): Promise<string | null> {
@@ -289,9 +356,17 @@ async function run(dryRun: boolean, test: boolean, date: string | null, token: s
   const ymd = String(res?.date ?? "");
   if (!Array.isArray(gaps) || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return fail(500, "the list could not be read", "gaps: not a list");
   const older = Number.isFinite(res?.older_count) ? Number(res.older_count) : null;
-  const listed = { date: ymd, visits: gaps.map((g) => g.visit_id), counts: { visits: gaps.length, older } };
-  if (!gaps.length) {
-    return { code: 200, reply: { posted: false, reason: "no visit without time on site", date: ymd }, log: { posted: false, reason: "no visit without time on site", ...listed } };
+  // S8: what the last nightly left for a person; a failed read leaves both additions out, never stops the post
+  let nightly: Nightly | null = null, nightlyError: string | null = null;
+  try { nightly = await lastNightly(); } catch (e) { nightlyError = String(e); }
+  const held = nightly?.held ?? [];
+  for (const g of gaps) g.still_there = nightly?.pending.includes(Number(g.visit_id)) ?? false;
+  const listed = { date: ymd, visits: gaps.map((g) => g.visit_id), counts: { visits: gaps.length, older, held: held.length },
+                   held: held.map((h) => h.visit_id), nightly_run: nightly?.run_id ?? null,
+                   ...(nightlyError ? { nightly_read_error: nightlyError } : {}) };
+  if (!gaps.length && !held.length) {
+    return { code: 200, reply: { posted: false, reason: "no visit without time on site", date: ymd, ...(dryRun ? { nightly_run: listed.nightly_run, nightly_read_error: nightlyError } : {}) },
+             log: { posted: false, reason: "no visit without time on site", ...listed } };
   }
 
   const places = await samsaraPlaces();
@@ -299,11 +374,12 @@ async function run(dryRun: boolean, test: boolean, date: string | null, token: s
     const s = g.stop_at_completion;
     g.samsara_stay = s?.truck_samsara_id ? await samsaraStay(s.truck_samsara_id, s.arrived, s.departed) : null;
   }
-  const message = buildMessage(gaps, ymd, older, places, test);
-  const text = buildText(gaps, ymd, places, test);
+  const message = buildMessage(gaps, ymd, older, places, test, held);
+  const text = buildText(gaps, ymd, places, test, held);
   if (dryRun) {
     const lines = gaps.map((g) => ({ visit_id: g.visit_id, line: unlink(line(g, places)).replace(/^• /, "") }));
-    return { code: 200, reply: { posted: false, dry_run: true, count: gaps.length, date: ymd, places_read: places != null, channel: CHANNEL, text, message, lines, gaps }, log: {} };
+    return { code: 200, reply: { posted: false, dry_run: true, count: gaps.length, date: ymd, places_read: places != null, channel: CHANNEL, text, message, lines, gaps,
+                                 held, nightly_run: listed.nightly_run, nightly_read_error: nightlyError }, log: {} };
   }
 
   if (!token) return fail(500, "no Slack token", "SLACK_BOT_TOKEN is not set", listed);
@@ -311,14 +387,14 @@ async function run(dryRun: boolean, test: boolean, date: string | null, token: s
   const post = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ channel: CHANNEL, text, blocks: [slackHeader("⏱️ Visits with no time on site"), ...slackSections(message)],
+    body: JSON.stringify({ channel: CHANNEL, text, blocks: [slackHeader(gaps.length ? "⏱️ Visits with no time on site" : "⏱️ Which truck went?"), ...slackSections(message)],
       unfurl_links: false, unfurl_media: false, ...as }),
   });
   const out = await post.json().catch(() => ({}));
   if (!out.ok) return fail(502, "Slack refused the post", `slack: ${out.error ?? post.status}`, listed);
   return {
     code: 200,
-    reply: { posted: true, count: gaps.length, date: ymd, places_read: places != null, channel: CHANNEL, ts: out.ts },
+    reply: { posted: true, count: gaps.length, held: held.length, date: ymd, places_read: places != null, channel: CHANNEL, ts: out.ts },
     log: { posted: true, reason: "posted", slack_ts: out.ts ?? null, places_read: places != null, ...listed },
   };
 }

@@ -7,6 +7,8 @@
 // in `text`; nothing posted when the list is empty; a dry run never posts or logs; every other run writes ONE
 // public.sync_log row; a failed Samsara read leaves the place reasons out instead of guessing. What the database
 // lists (which visits) is tested by the migration's VERIFY, not here: a stub cannot see a wrong query.
+// S8 (2026-11-11, case 10): the last real nightly run (rules 2, under 20 hours old) gives a "still there" reason and a
+// "Which truck went?" block, which posts even on a day with nothing else to list; a failed read leaves both out.
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert';
@@ -36,8 +38,22 @@ const PLACES = [
   { id: '4000001014044', name: '119-ME Mosche Elghrissi', latitude: 25.84, longitude: -80.12 },
 ];
 
-async function run(list, { body = {}, role = 'service_role', samsara = PLACES, trips = null, slack = { ok: true, ts: '1.2' }, code = src, env = {} } = {}) {
-  const posts = [], logs = [];
+// S8: the last nightly run's sync_log row (rules 2) and the visits it held for a truck question. Invented visits on the
+// test client 112-YA; the candidate shapes are the real ones (sync_log 139308, 2026-11-11).
+const nightRun = (cands, hoursAgo = 8) => ({
+  runs: [{ id: 139308, started_at: new Date(Date.now() - hoursAgo * 3600e3).toISOString(), candidates: cands }],
+  visits: [{ id: 9901, visit_date: '2026-11-03', client: { client_code: '112-YA', name: 'Test Client A' }, truck: { name: 'Moises' } },
+           { id: 9902, visit_date: '2026-11-04', client: { client_code: '112-YA', name: 'Test Client B' }, truck: null }] });
+const CANDS = [{ visit_id: 9902, decision: 'hold', hold_reason: 'no_truck', rule: { status: 'no_truck' } },
+               { visit_id: 9901, decision: 'hold', hold_reason: 'another_truck', rule: { status: 'stay' } },
+               { visit_id: 9903, decision: 'hold', hold_reason: 'another_truck', rule: { status: 'stay' } },   // deleted since: no row
+               { visit_id: 9046, decision: 'hold', hold_reason: 'other_day', rule: { status: 'no_stay' } },
+               { visit_id: 8752, decision: 'pending', hold_reason: null, rule: { status: 'open' } },
+               { visit_id: 5926, decision: 'keep', hold_reason: null, keep_reason: 'within_2', rule: {} }];
+
+async function run(list, { body = {}, role = 'service_role', samsara = PLACES, trips = null, slack = { ok: true, ts: '1.2' }, code = src, env = {},
+                           nightly = { runs: [] } } = {}) {
+  const posts = [], logs = [], gets = [];
   let handler;
   const ctx = {
     Deno: { env: { get: (k) => ({ SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'svc', SLACK_BOT_TOKEN: 'xoxb', SAMSARA_API_TOKEN: 'sam', ...env })[k] },
@@ -54,6 +70,11 @@ async function run(list, { body = {}, role = 'service_role', samsara = PLACES, t
         return Response.json({ trips });
       }
       if (url === 'https://x.supabase.co/rest/v1/sync_log') { logs.push(JSON.parse(opts.body)); return new Response(null, { status: 201 }); }
+      if (url.startsWith('https://x.supabase.co/rest/v1/sync_log?')) {
+        gets.push(url);
+        return nightly === 'FAIL' ? new Response('nope', { status: 500 }) : Response.json(nightly.runs);
+      }
+      if (url.startsWith('https://x.supabase.co/rest/v1/visits?')) { gets.push(url); return Response.json(nightly.visits ?? []); }
       if (url === 'https://slack.com/api/chat.postMessage') { posts.push(JSON.parse(opts.body)); return Response.json(slack); }
       if (url === 'https://slack.com/api/auth.test') return Response.json({ ok: true }, { headers: { 'x-oauth-scopes': 'chat:write,chat:write.customize' } });
       throw new Error('unexpected fetch ' + url);
@@ -62,7 +83,7 @@ async function run(list, { body = {}, role = 'service_role', samsara = PLACES, t
   };
   vm.runInNewContext(edgeVmSource(code), ctx);
   const res = await handler(new Request('https://fn', { method: 'POST', headers: { authorization: 'Bearer ' + jwt(role) }, body: JSON.stringify(body) }));
-  return { status: res.status, body: await res.json(), posts, logs };
+  return { status: res.status, body: await res.json(), posts, logs, gets };
 }
 const bodyText = (p) => p.blocks.slice(1).map((b) => b.text.text).join('\n');
 const day = (visits, older = 7) => ({ date: '2026-10-09', older_count: older, visits });
@@ -208,6 +229,71 @@ async function checks(code) {
   const no = await run(day([granada]), { slack: { ok: false, error: 'channel_not_found' }, code });
   assert.strictEqual(no.status, 502);
   assert.strictEqual(no.logs[0].status, 'error');
+
+  // 10. S8 (plan RC7). The nightly read asks for the last REAL rules-2 run, never a dry run or a failed one.
+  const s8 = await run(day([granada]), { nightly: nightRun(CANDS), code });
+  const nightUrl = s8.gets.find((u) => u.includes('/sync_log?'));
+  assert.ok(nightUrl, 'the last nightly run is read');
+  for (const f of ['sync_source=eq.time_on_site_samsara_recheck', 'status=eq.success', 'details->>rules=eq.2', 'details->>dry_run=eq.false', 'order=started_at.desc', 'limit=1']) {
+    assert.ok(nightUrl.includes(f), `the nightly read filters ${f}: ${nightUrl}`);
+  }
+  assert.ok(s8.gets.some((u) => u.includes('/visits?') && u.includes('id=in.(9902,9901,9903)') && u.includes('deleted_at=is.null')),
+    'only the truck-question visits are read, live ones only: ' + s8.gets.join(' '));
+  // 10a. a listed visit the nightly could not measure yet says so (8752 was "pending" in that run)
+  const b8 = bodyText(s8.posts[0]).split('\n');
+  assert.ok(b8[1].endsWith('|David>: the truck was still there at the nightly check; it will be measured tonight'), b8[1]);
+  assert.ok(s8.posts[0].text.includes('\n• visit 8752 · 021-GRA Granada Condo · David: the truck was still there at the nightly check; it will be measured tonight'), s8.posts[0].text);
+  // 10b. the "Which truck went?" block after the list: another truck and no truck only, dated, oldest first, a visit
+  // deleted since left out, other hold reasons (other_day) left out
+  assert.strictEqual(s8.posts[0].blocks[0].text.text, '⏱️ Visits with no time on site', 'the header is unchanged when visits are listed');
+  const at = b8.indexOf('*Which truck went?* If you know, tell Viktor the visit number and the truck:');
+  assert.ok(at > 1, 'the block follows the list: ' + b8.join(' | '));
+  assert.deepStrictEqual(b8.slice(at + 1), ['• visit 9901 · 112-YA Test Client A · Tue, Nov 3 · set to Moises, but another truck was there too',
+                                           '• visit 9902 · 112-YA Test Client B · Wed, Nov 4 · no truck is set on the visit']);
+  assert.ok(s8.posts[0].text.endsWith('\nWhich truck went? If you know, tell Viktor the visit number and the truck:\n• visit 9901 · 112-YA Test Client A · Tue, Nov 3 · set to Moises, but another truck was there too\n• visit 9902 · 112-YA Test Client B · Wed, Nov 4 · no truck is set on the visit'),
+    'Viktor reads the held visit numbers in text: ' + s8.posts[0].text);
+  assert.ok(!b8.some((l) => l.includes('9046')), 'other hold reasons are not truck questions');
+  assert.deepStrictEqual(s8.logs[0].details.held, [9901, 9902]);
+  assert.strictEqual(s8.logs[0].details.nightly_run, 139308);
+  assert.strictEqual(s8.logs[0].details.counts.held, 2);
+  // 10c. a day with nothing to list still posts the block (before S8 it posted nothing), tagged, its own header
+  const only = await run(day([]), { nightly: nightRun(CANDS), code });
+  assert.strictEqual(only.posts.length, 1, 'the block alone is a post');
+  assert.strictEqual(only.posts[0].blocks[0].text.text, '⏱️ Which truck went?');
+  const ob = bodyText(only.posts[0]).split('\n');
+  assert.strictEqual(ob[0], ':stopwatch: <@U0AL9JZ4V7C> *Which truck went?* If you know, tell Viktor the visit number and the truck:');
+  assert.strictEqual(ob.length, 3, 'no older line and no list on a block-only post: ' + ob.join(' | '));
+  assert.strictEqual(only.posts[0].text.split('\n')[0], ':stopwatch: Which truck went? 2 visits need an answer');
+  assert.ok(only.posts[0].text.includes('\nIf you know, tell Viktor the visit number and the truck:\n• visit 9901 '), only.posts[0].text);
+  assert.ok(!only.posts[0].text.includes('<@'), 'the phone line never tags');
+  assert.strictEqual(only.logs[0].details.reason, 'posted');
+  assert.deepStrictEqual(only.logs[0].details.visits, []);
+  // 10d. a [TEST] block-only post never tags
+  const ot = await run(day([]), { body: { test: true }, nightly: nightRun(CANDS), code });
+  assert.ok(!JSON.stringify(ot.posts[0]).includes('<@'), 'a test never tags anyone');
+  assert.ok(bodyText(ot.posts[0]).startsWith(':stopwatch: [TEST] *Which truck went?*'), bodyText(ot.posts[0]));
+  // 10e. a run over 20 hours old (tonight's failed): no block, no reason from it, nothing posted on an empty day
+  const stale = await run(day([]), { nightly: nightRun(CANDS, 21), code });
+  assert.strictEqual(stale.posts.length, 0, 'an old run is never shown as tonight\'s');
+  assert.strictEqual(stale.logs[0].details.reason, 'no visit without time on site');
+  assert.strictEqual(stale.logs[0].details.nightly_run, null);
+  const staleG = bodyText((await run(day([granada]), { nightly: nightRun(CANDS, 21), code })).posts[0]);
+  assert.ok(!staleG.includes('Which truck') && !staleG.includes('still there'), staleG);
+  // 10f. the nightly read fails: the post goes out as before, the failure is in the run's row
+  const nf = await run(day([granada]), { nightly: 'FAIL', code });
+  assert.strictEqual(nf.posts.length, 1);
+  assert.ok(bodyText(nf.posts[0]).split('\n')[1].endsWith('no truck came within 150 m (closest 291 m)'), bodyText(nf.posts[0]));
+  assert.ok(String(nf.logs[0].details.nightly_read_error).includes('HTTP 500'), JSON.stringify(nf.logs[0].details));
+  assert.strictEqual(nf.logs[0].status, 'success');
+  // 10g. no truck question in the run: the day posts exactly as before S8
+  const quiet = await run(day([]), { nightly: nightRun(CANDS.filter((c) => !['another_truck', 'no_truck'].includes(c.hold_reason))), code });
+  assert.strictEqual(quiet.posts.length, 0);
+  assert.ok(!quiet.gets.some((u) => u.includes('/visits?')), 'no visit read when nothing is held for a truck');
+  // 10h. the dry run shows the block and posts nothing
+  const d8 = await run(day([]), { body: { dry_run: true }, nightly: nightRun(CANDS), code });
+  assert.strictEqual(d8.posts.length + d8.logs.length, 0);
+  assert.deepStrictEqual(d8.body.held.map((h) => h.visit_id), [9901, 9902]);
+  assert.ok(d8.body.message.includes('*Which truck went?*'));
 }
 
 await checks(src);
@@ -219,12 +305,20 @@ if (MUTATE) {
     ['no place params', src.replace('?duration=2678399.999&end_ms=', '?end_ms=')],
     ['guess when Samsara is down', src.replace('else if (checked && !place)', 'else if (!place)')],
     ['print 0 older', src.replace('if (older != null && older > 0)', 'if (true)')],
-    ['post when empty', src.replace('if (!gaps.length) {', 'if (false) {')],
+    ['post when empty', src.replace('if (!gaps.length && !held.length) {', 'if (false) {')],
     ['ignore the stop at completion', src.replace('else if (s) {', 'else if (false) {')],
     ['circle containment inverted', src.replace('<= p.geo.circle.r', '> p.geo.circle.r')],
     ['polygon containment dropped', src.replace('inside = !inside;', 'inside = false;')],
     ['near and far stops swapped', src.replace('if (s.meters > NEAR_M) {', 'if (s.meters <= NEAR_M) {')],
     ['other truck not named', src.replace('const other = !s.assigned && g.truck ?', 'const other = false ?')],
+    // S8
+    ['block skipped on a day with no visit', src.replace('if (!gaps.length && !held.length) {', 'if (!gaps.length) {')],
+    ['an old nightly run used', src.replace('Date.now() - Date.parse(run.started_at) > NIGHTLY_MAX_AGE_H * 3600e3', 'false')],
+    ['still there ignored', src.replace('if (g.still_there) reason = STILL_THERE;', 'if (false) reason = STILL_THERE;')],
+    ['held visits not in text', src.replace('...held.map(heldLine)] : [])', '] : [])')],
+    ['dry runs counted', src.replace('&details->>dry_run=eq.false', '')],
+    ['every hold listed', src.replace('c?.decision === "hold" && WHICH_TRUCK.has(c.hold_reason)', 'c?.decision === "hold"')],
+    ['deleted visits listed', src.replace('&deleted_at=is.null', '')],
   ];
   for (const [name, code] of mutants) {
     assert.notStrictEqual(code, src, `mutant "${name}" did not change the source`);
