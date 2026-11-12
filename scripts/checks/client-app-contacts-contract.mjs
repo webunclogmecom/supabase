@@ -192,6 +192,27 @@ if (mutating) {
   }
   for (const n of missing) fails.push(`MISSING: ${JSON.stringify(n)}`);
   for (const n of leaked) fails.push(`PRESENT BUT MUST NOT BE (the copy would be false): ${JSON.stringify(n)}`);
+
+  // 🛑 EVERY KEY THE JOBBER-CONTACT DIALOG SENDS MUST BE ONE save-client-contact ACCEPTS (2026-11-12).
+  // The dialog sent the Role as `jobber_role` while the function accepted only `role`, so every Role
+  // change was refused before Jobber (Serena, 232-AC). The dialog builds its patch from a list of
+  // [key, typed, saved] triples; its keys are string literals, so they survive minification.
+  // `--fn-source <file>` points at another body (the pre-fix one must FAIL here: that is the control).
+  const fnArg = process.argv.indexOf('--fn-source');
+  const fnPath = fnArg > 0 ? process.argv[fnArg + 1]
+    : new URL('../../supabase/functions/save-client-contact/index.ts', import.meta.url);
+  const fnSrc = (await import('node:fs')).readFileSync(fnPath, 'utf8');
+  const handler = fnSrc.slice(fnSrc.indexOf('async function handleEditJobberContact'));
+  const fields = (fnSrc.match(/PERSON_FIELDS = \[([^\]]*)\]/) || [, ''])[1].match(/\w+/g) || [];
+  const aliases = [...handler.slice(0, handler.indexOf('Object.keys(patch)')).matchAll(/"(\w+)" in patch/g)].map((m) => m[1]);
+  const accepted = new Set([...fields, ...aliases]);
+  const triples = all.match(/\[\[(["'`])first_name\1,[^\]]*\](?:,\[(["'`])\w+\2,[^\]]*\])+\]/);
+  const sent = triples ? [...triples[0].matchAll(/\[(["'`])(\w+)\1,/g)].map((m) => m[2]) : [];
+  if (sent.length < 5) fails.push(`Jobber-contact patch keys found ${sent.length}, want 5 (the reader is broken, conclude nothing)`);
+  if (fields.length < 5) fails.push(`PERSON_FIELDS read ${fields.length} keys from ${fnPath}, want 5`);
+  const refused = sent.filter((k) => !accepted.has(k));
+  if (refused.length) fails.push(`the Jobber-contact dialog sends ${refused.join(', ')}, which save-client-contact refuses (accepts: ${[...accepted].join(', ')})`);
+  else console.log(`  ok  Jobber-contact dialog sends ${sent.join(', ')}; all accepted`);
 }
 
 if (fails.length) { fails.forEach((f) => console.log('  FAIL  ' + f)); process.exit(1); }

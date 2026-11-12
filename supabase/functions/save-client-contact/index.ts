@@ -464,7 +464,14 @@ async function handleEditJobberContact(body: any) {
   if (!Number.isInteger(rowId) || rowId <= 0) {
     return fail("bad_request", "jobber_contact_row_id is required for action:'edit_jobber_contact'.");
   }
-  const patch = body.patch ?? {};
+  // 🛑 The Client App sends the Role as `jobber_role` (the column it reads), not `role`. Until
+  // 2026-11-12 that key was refused here, so EVERY save that changed a Jobber contact's Role failed
+  // before reaching Jobber (Serena, 232-AC, 2026-11-11: three refused saves). Accept both names.
+  const patch = { ...(body.patch ?? {}) };
+  if ("jobber_role" in patch) {
+    if (!("role" in patch)) patch.role = patch.jobber_role;
+    delete patch.jobber_role;
+  }
   const keys = Object.keys(patch);
   if (keys.length === 0 || keys.some((k) => !PERSON_FIELDS.includes(k))) {
     return fail("bad_request", `patch may contain only: ${PERSON_FIELDS.join(", ")}.`);
