@@ -34,7 +34,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - **Decided by Fred on 11-12 at about 4:10 PM ET, to build** (his words: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-12-manifests-and-stamping.md`). None is built.
   - Manifests rows: a state on every row as icons with a tooltip, no words and no button on a row, every action in the three dots; "Needs someone" as a checkbox filter. Waits for pick H (which icons).
   - The stamping screen with floating boxes, handles beside the sheet, a question when closing after a change, and a key for a line exactly under the mouse. Waits for pick J (a photo taken at an angle).
-  - All the copies of a sheet made at once after Mark completed ("if it can be done instantly then go ahead"). A database change that reaches the old address too: to scope on its own.
+  - ✅ **BUILT 2026-11-12 5:20 PM ET** (`redact-manifest-sheet` v47): all the copies of a sheet follow each other in seconds after Mark completed ("if it can be done instantly then go ahead"). It needed no database change: a run that made a copy starts the next one. It serves the old address too. Record: Supabase `CLAUDE.md`, FP Blackout.
   - Picks B, D, E, F as recommended: emailing each client is no longer a to-do on the row; a page can be added from the stamping screen (add only, last page); the nine client rows with no visit are archived once with a reason, and Unlink warns; with a card unstamped at Mark completed, the stamped clients get their copies and the others wait (a database change).
   - The 23 defaults of that page. Round 2 (picks H and J, 11 defaults) went to him at 5:03 PM ET.
 

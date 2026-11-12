@@ -3123,6 +3123,12 @@ classified). ⚠ RULES: NEW stamped pages generate NOTHING until a measurement p
 from banded-card math alone (that was the v2 leak, caught by Fred 2026-07-10 — see
 `docs/audits/2026-07-10_ocr_band_refinement.md` + migrations `2026-07-10_fp_blackout_*.sql`).
 
+✅ **Since 2026-11-12 all the copies of a sheet follow each other in seconds (`redact-manifest-sheet` v47).** Fred: *"if it can be done instantly then go ahead"*. A run still makes ONE copy, because one request has about 2 seconds of CPU. But a run that MADE a copy starts the next run itself (`chain` in the body, kept alive with `EdgeRuntime.waitUntil`, bounded by `MAX_CHAIN` = 60), until a run makes nothing. A run whose copy FAILED starts nothing: that copy waits for its retry and the 5-minute sweep carries on. The request at completion already existed (`derm.fn_publish_on_complete`, trigger `trg_zz_publish_on_complete` on `derm.stamp_sheet_status`), which is why the first copy was always ready in seconds; no migration was needed. Measured before: 73 copies in 30 days, 42 of them five minutes after the one before, and a sheet of 7 clients took 27 minutes. Live test on the test client 112-YA (tickets 111111 and 111112, 2026-11-12 5:21 PM ET): ONE sweep request made the two copies 2 seconds apart, then a run with nothing to do ended it; both files answer 200 and no error was recorded.
+- 🛑 **Do not raise the cron's `limit` above 1 to go faster.** The chain is what gives each copy its own request and its own CPU allowance.
+- 🛑 **The first retry of a failed copy is 5 minutes, then 30, then hours** (doubling, capped at 48). It was 2 hours first: on 2026-11-04 two uploads to storage answered 504 and two clients of #840647 waited 2 hours for their copy.
+- A sweep that starts while a chain is running can make the same copy twice. It is harmless (the same file name, the same ledger row) and it was accepted.
+- To undo: deploy the file as it was before commit of 2026-11-12 (`git log -- supabase/functions/redact-manifest-sheet/index.ts`).
+
 **Update 2026-08-19: IT RECURRED, and there is now a DETECTOR. Read this before the 08-03 note.**
 
 Fred, on client 306-16: *"i can't see the blackedout manifest even though is stamped by AI and then

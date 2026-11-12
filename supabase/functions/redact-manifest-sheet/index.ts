@@ -10,7 +10,14 @@
 //
 // AUTH: verify_jwt=true (config.toml pinned) + an in-handler role gate — the caller's JWT must carry
 // role=service_role (the gateway already verified the signature; same pattern as jobber-push-visit).
-// Invoked by pg_cron (*/10, limit 3 — edge CPU cap ~2s/request => small batches) and the backlog driver.
+// Invoked by pg_cron (redact-manifest-sweep, every 5 minutes, limit 1: the edge CPU cap allows about one copy per
+// request), by the trigger that fires when a sheet is completed (derm.fn_publish_on_complete), and by itself:
+//
+// ALL THE COPIES OF A SHEET, ONE AFTER THE OTHER, IN SECONDS (2026-11-12). Fred: "if it can be done instantly then go
+// ahead". Until this day a sheet's copies came one per 5-minute sweep: 27 minutes for a sheet of 7 clients. Now a run
+// that MADE a copy starts the next run itself (a new request, so a new CPU allowance), until a run makes nothing. A run
+// whose copy FAILED does not start another: the failed copy waits for its retry and the 5-minute sweep carries on from
+// there. MAX_CHAIN bounds it whatever happens. Nothing else about a copy changed.
 
 import { decode, Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
 import { isSecretKeyCaller } from "../_shared/service-caller.ts";
@@ -19,6 +26,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BLACK = 0x000000ff;
 const TIME_BUDGET_MS = 15000;
+const MAX_CHAIN = 60; // runs started one by the other; the largest sheet on record has 19 clients
 
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -82,7 +90,9 @@ const dermHeaders = {
 };
 
 async function recordError(manifestId: number, msg: string) {
-  // read attempts -> exponential backoff (2^n hours, capped 48)
+  // read attempts -> backoff. A first failure is most often a passing fault (on 2026-11-04 two uploads answered 504 and,
+  // with a first retry after 2 hours, two clients waited 2 hours for their copy): so the first retry is at the next
+  // sweep and the second after 30 minutes. From the third on it is hours, doubling, capped at 48.
   let attempts = 1;
   try {
     const g = await fetch(
@@ -92,7 +102,7 @@ async function recordError(manifestId: number, msg: string) {
     const rows = g.ok ? await g.json() : [];
     if (rows.length) attempts = Number(rows[0].attempts) + 1;
   } catch { /* best effort */ }
-  const backoffH = Math.min(Math.pow(2, attempts), 48);
+  const backoffMin = attempts === 1 ? 5 : attempts === 2 ? 30 : Math.min(Math.pow(2, attempts - 1), 48) * 60;
   await fetch(`${SUPABASE_URL}/rest/v1/redacted_manifest_errors?on_conflict=manifest_id`, {
     method: "POST",
     headers: { ...dermHeaders, Prefer: "resolution=merge-duplicates" },
@@ -100,7 +110,7 @@ async function recordError(manifestId: number, msg: string) {
       manifest_id: manifestId,
       attempts,
       last_error: msg.slice(0, 500),
-      next_retry_at: new Date(Date.now() + backoffH * 3600_000).toISOString(),
+      next_retry_at: new Date(Date.now() + backoffMin * 60_000).toISOString(),
     }),
   }).catch(() => {});
 }
@@ -110,11 +120,12 @@ Deno.serve(async (req) => {
     return json({ error: "service_role required" }, 403);
   }
 
-  let body: { limit?: number } = {};
+  let body: { limit?: number; chain?: number } = {};
   try {
     body = await req.json();
   } catch { /* defaults */ }
   const limit = Math.min(Math.max(Number(body.limit ?? 3), 1), 5);
+  const chain = Math.min(Math.max(Math.trunc(Number(body.chain ?? 0)) || 0, 0), MAX_CHAIN);
   const t0 = Date.now();
 
   const tr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_blackout_targets`, {
@@ -259,5 +270,21 @@ Deno.serve(async (req) => {
     }),
   }).catch(() => {});
 
-  return json({ processed: targets.length, generated, errors: errors.map((e) => e.manifest_id) });
+  // The next copy, now. Only after a run that made one, so a failing copy or an empty list ends the chain. The caller's own
+  // credentials are passed on: they already passed the gateway and the role gate above.
+  let chained = false;
+  if (generated > 0 && chain < MAX_CHAIN) {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    for (const h of ["authorization", "apikey"]) { const v = req.headers.get(h); if (v) headers[h] = v; }
+    const next = fetch(`${SUPABASE_URL}/functions/v1/redact-manifest-sheet`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ limit, chain: chain + 1 }),
+    }).then((r) => r.body?.cancel()).catch(() => {});
+    // @ts-ignore: EdgeRuntime is provided by the Supabase Edge runtime. It keeps the request alive after this response.
+    EdgeRuntime.waitUntil(next);
+    chained = true;
+  }
+
+  return json({ processed: targets.length, generated, errors: errors.map((e) => e.manifest_id), chain, chained });
 });
