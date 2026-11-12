@@ -15,7 +15,7 @@ before stage S3a, as the plan requires (its section 11). **Updated with each sta
 | S5 | the switch on, after Fred reads the comparison | **ON 2026-11-09 12:00:51 ET (`2026-11-09_1200`)**, two days early on Fred's "switch it on" after three passing shadows. First night 02:50 ET 11-10. See 10.9 |
 | S8 (RC7) | the 11 AM post: a "still there at the nightly check" reason and a "Which truck went?" block from the last real nightly run | **BUILT 2026-11-11 23:41 ET**, `time-on-site-reminder` v31 (a7e123aa), on Fred's "go ahead with today's three". It was planned for 11-10, before the switch, and was missed when S5 moved two days early. Check `scripts/checks/time_on_site_reminder.mjs` case 10 (17 mutants; the pre-S8 body fails it). First real post with the block: 11 AM 11-12 |
 | RC6 | the any-truck fill out of cron 26 and the 11 AM wrapper | **BUILT 2026-11-11 23:49 ET** (`2026-11-11_2350`, 715e3627). Control rolled back: a 112-YA fixture (counted as a customer for that transaction only, because the fill skips test clients) was filled `gps_150m_any_truck` 78 min by the old command and left blank by the new one |
-| S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | 11-13 / 11-16 / 11-30. **S6 range, computed 2026-11-12: 10-18 to 10-30** (the plan's rule "to the day before the first new night's window start": the first switched-on night, 02:50 ET 11-10, began its window at 10-31; 10-31 has no completed client visit, and the five 11-01 visits already carry close-out rows, so the run skips them). The read-only re-check of 10-28 to 11-01 (two judges, 29 visits) is done: 24 agree with the saved value within 2 min, 3 unsettled (one client's three visits on 10-28: 5995, 6844, 8902), 6400 (11-01) a big move with one witness, already held, and 9046 (11-01) blank with no stay |
+| S6 / S7 / S10 | band C by the rule; alarms T9 and T10; cleanup | **S6 BUILT 2026-11-12 11:22 ET** (13 real runs, moved up from 11-13 on Fred's word; two close-out rows corrected by `2026-11-12_1140`; see 10.10) / 11-16 / 11-30. **S6 range, computed 2026-11-12: 10-18 to 10-30** (the plan's rule "to the day before the first new night's window start": the first switched-on night, 02:50 ET 11-10, began its window at 10-31; 10-31 has no completed client visit, and the five 11-01 visits already carry close-out rows, so the run skips them). The read-only re-check of 10-28 to 11-01 (two judges, 29 visits) is done: 24 agree with the saved value within 2 min, 3 unsettled (one client's three visits on 10-28: 5995, 6844, 8902), 6400 (11-01) a big move with one witness, already held, and 9046 (11-01) blank with no stay |
 
 ## 1. What Fred decided
 
@@ -514,3 +514,81 @@ passed 3 nights, so the Trello "Fix" item can be ticked with Fred's OK.
   holds it `other_day` for a person) and T5 on 6730 before the 02:20 fill, the same transient as 9176. The morning check's
   PINs were re-baselined for RC6 and S8, which moved them on purpose.
 - Admin Review shows the database values on 6730 (written, 50m) and 9069 (held, 3h 23m).
+
+### 10.10 What happened on Thursday 11-12 (S6 band C, the 6428 card, measured)
+
+**S6, band C (visits dated 10-18 to 10-30), moved up from 11-13 on Fred's "run the night-3 check now and S6 today".**
+- **Why 13 runs, not one:** the close-out writes rows only for the visits dated `from`, so S6 ran `{rules: 2, from: d, to: d}`
+  once per date. Per-day dry runs gave the same decisions as the range dry run (0 differences).
+- **Why after 11 AM:** the 11 AM post reads the LATEST real recheck run for its "Which truck went?" list, so a real S6 run
+  before it would have replaced last night's list. The runner (local `S6/run_s6.mjs`) waited for today's post (11:00:04 ET,
+  posted), 11:21 ET and a clear minute, then:
+  - re-ran the range dry run and required it to equal the register visit by visit;
+  - took a before snapshot (backup in the workspace `backups/`);
+  - ran the 13 dates (11:22:11 to 11:22:37 ET).
+- **Result:** 81 completed client visits, 2 written, 0 refused.
+  - 6243: 57 to 50 min, Fred's card of 11-09.
+  - 8868: blank to 23 min. Both judges agree.
+  - 81 close-out rows, one per visit, both vehicle ids: 65 applied `nightly_self` and 16 proposed for a person
+    (shared_stay 5, two_parkings 4, no_free_stay 3, shared_tap 3, other_day 1).
+  - Step 3 (a migration for answered or refused cards) was empty: no `big_change` hold in the range.
+- **Nothing else moved** (local `S6/compare.mjs`, ALL PASS):
+  - every other completed visit's time;
+  - the tank columns, and Grease pumped's frozen days;
+  - the Calendar's past days: only 6243 and 8868;
+  - the Calendar's next 45 days: only the averages of those two clients' visits (6244 51 to 50, 6745 and 6746 67 to 60);
+  - control 6509, and the stop reference (525 rows);
+  - T1 to T8: 0.
+- **Rollback:** `2026-11-12_rollback_time_on_site_s6_band_c.sql`, rehearsed on top. It ends with 0 current rows of the
+  runs, 6243 at 57 and 8868 blank, and T4 then reads 1 (8868 blank again).
+
+**Found by the comparison: two close-out rows the classifier should have held (8853, 8886), corrected.**
+- **What happened:** the classifier gives `nightly_self` only when no other completed visit of the same truck has its
+  completion (tap) inside the stay. The edge function looks for taps only among the visits `fn_time_on_site_recheck_visits`
+  returns, which are those DATED `p_from - 1` to `p_to + 1`.
+- **The two cases:** 8854 (dated 10-16) and 8882 (dated 10-23) were completed three days after their own date, inside the
+  stays of 8853 (10-19) and 8886 (10-26). Neither was in the read, so both rows came out applied.
+- **The fix for these two:** `2026-11-12_1140_time_on_site_s6_shared_tap_rows.sql` (applied 11:29:53 ET) supersedes the
+  two rows with proposed `shared_tap` rows. No visit is written, and S6's rollback still applies.
+- **Reach:** every current applied `nightly_self` row in the ledger with another tap inside its stay: exactly these 2. No
+  row of the switched-on nightly (11-10 on) has it.
+- **OPEN, a change to the nightly:** the nightly meets this whenever a visit is completed two or more days after its date,
+  inside a stay on the close-out day. The fix is to read the taps by completion time, any visit date, in the read function
+  or as a second read. It is not built yet. The S5 morning checks tested "no `nightly_self` row on a visit with another
+  tap in its stay" against the whole visits table on all three nights (0 each time). That was a hand check, and no
+  standing check or alarm covers it after S5, so a new case would stay silent until the fix, or a T-check (S7), lands.
+
+**The 6428 card (Fred, 2026-11-12: "yes change 6428 to 57").**
+- **Why 6428 needed a person:** it is dated 11-05 and saved at 30 min by the old rule. Both independent judges, and the
+  nightly rule itself, give 57 min (re-park, 2 parts). The nightly holds it as `big_change` every night because its bonus
+  is decided (Q-F).
+- **What changed:** `2026-11-12_1200_time_on_site_6428_card.sql`, applied 11:45:07 ET, writes 57 min (samsara_stay, 00:10:46 to 01:08:02 ET 11-06)
+  with one applied row, stage person, run `tos-card-20261112-6428`. That row locks the visit: from tonight the nightly
+  reads it as `locked`, and 11-05's close-out on 11-15 writes no row for it.
+- **Not re-priced:** the approved bonus is a set amount per person.
+- **Rehearsed:** as written; a moved visit refuses; a second run refuses; the rollback on top restores the visit byte for
+  byte; the rollback alone refuses.
+- **Consequences:**
+  - the Calendar's past days: 6428 only, 30 to 57;
+  - the next 45 days: nothing moves;
+  - 6428's `time_on_site_disagreement` goes true to false, and F7 goes down by one;
+  - nothing else.
+
+**The independent test, final (read-only, local `S6/refresh_2026-11-12b_*`, `_12c_*`).**
+- **Method:** judges T and V2 re-run on the 79 completed client visits dated 11-02 to 11-11, after 11-11's windows closed
+  (CAP 10:20 ET).
+- **Scoring:** against the judges' agreed interval, with both ends within 2 min. For each visit, the value saved before the
+  new rule first wrote it is compared with the value saved now.
+
+  | | before | now |
+  |---|---|---|
+  | right | 44 | 54 |
+  | wrong | 10 | 1 (6428, then corrected by the card) |
+  | blank where the truck stayed | 3 | 2 (6420, 9190: completed after the 02:50 run, tonight measures them) |
+  | no agreed interval | 22 | 22 |
+
+- No visit the rule changed went from right to wrong. 9047 (17 to 82) is disputed: V2 has a 65-minute 1 Hz silence.
+- The 69 visits dated 11-02 to 11-10 were identical in both test runs.
+- C3, the band agreement check, still fails on 2 outliers (6352, 9142). So these are per-visit verdicts, not a
+  certified band.
+- **Seen on the live sites, 11:50 ET:** Admin Review shows 6428 57m, 6243 50m, 8868 23m. The Calendar's Hours worked tile reads 10.5h on 11-05 (10.0h with 30), 4.1h on 10-18 (4.2h with 57) and 4.3h on 10-26. The database rounds that same 261 minutes to 4.4, because `toFixed` rounds 4.35 down.
