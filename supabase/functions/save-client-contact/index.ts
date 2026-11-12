@@ -164,7 +164,7 @@ function ue(payload: any): string | null {
 // ---- Jobber query/mutation --------------------------------------------------
 const CONTACT_FIELDS = `id
   emails { id address description primary }
-  phones { id number description primary }`;
+  phones { id number description primary smsAllowed }`;
 const Q_CLIENT = `query($id: EncodedId!) { client(id: $id) { ${CONTACT_FIELDS} } }`;
 const M_EDIT = `mutation($id: EncodedId!, $input: ClientEditInput!) {
   clientEdit(clientId: $id, input: $input) { client { ${CONTACT_FIELDS} } userErrors { message path } } }`;
@@ -197,6 +197,37 @@ function explainJobberRefusal(raw: string, phone: string | null): string {
       `Use a real mobile number, or switch texting off for it in Jobber. Nothing was changed - the email did not move either, because both go in one call.`;
   }
   return `Jobber refused the contact change: ${raw}. Nothing was written on our side.`;
+}
+
+// 🛑 A LANDLINE IS SAVED WITH TEXTING OFF (Fred, 2026-11-12, Trello #189 pick T1: "just say it was saved as normal").
+// Jobber refuses a number it cannot text while the phone's texting switch is on. Make it primary writes the new number
+// onto the client's EXISTING phone, whose switch is usually on, so a landline always failed there (142-57, Ericka Mori).
+// Measured on 112-YA the same day: that exact edit was refused ("Landline numbers cannot receive text messages. Please
+// enter a mobile phone number or turn off the receives text message toggle.") and taken with smsAllowed:false. So on
+// exactly that refusal the SAME input is sent once more with smsAllowed:false on the phones it writes. A number Jobber
+// can text is never touched. A made-up 555 number is not a reliable test of this: use a real landline, on 112-YA only.
+const LANDLINE_REFUSAL = /cannot receive text messages|valid mobile phone/i;
+function withTextingOff(input: Record<string, any>): Record<string, any> | null {
+  let hit = false;
+  const off = (list: unknown) => Array.isArray(list) ? list.map((p) => { hit = true; return { ...p, smsAllowed: false }; }) : list;
+  const phonesOff = (o: Record<string, any>) => { const c = { ...o }; for (const k of ["phonesToAdd", "phonesToEdit"]) if (k in c) c[k] = off(c[k]); return c; };
+  const copy = phonesOff(input);
+  if (Array.isArray(copy.contactsToEdit)) copy.contactsToEdit = copy.contactsToEdit.map(phonesOff);
+  return hit ? copy : null;
+}
+// One clientEdit; on the landline refusal, the same edit once more with texting off. `textingOff` says it happened,
+// so a later rollback can put the switch back.
+async function editWithLandlineRetry(token: string, gid: string, input: Record<string, any>) {
+  let mut = await gql(token, M_EDIT, { id: gid, input });
+  let uerr = mut.ok ? ue(mut.data?.clientEdit) : null;
+  let textingOff = false;
+  const retry = mut.ok && uerr && LANDLINE_REFUSAL.test(uerr) ? withTextingOff(input) : null;
+  if (retry) {
+    mut = await gql(token, M_EDIT, { id: gid, input: retry });
+    uerr = mut.ok ? ue(mut.data?.clientEdit) : null;
+    textingOff = true;
+  }
+  return { mut, uerr, textingOff };
 }
 
 // pick the object Jobber treats as the primary; see the header note on the fallback
@@ -450,7 +481,7 @@ const Q_ONE_CONTACT = `query($id: EncodedId!) {
       nodes {
         id firstName lastName name role title isBillingContact
         emails(first: 3) { nodes { id address description primary } }
-        phones(first: 3) { nodes { id number description primary } }
+        phones(first: 3) { nodes { id number description primary smsAllowed } }
         properties(first: 5) { nodes { id } }
       }
     }
@@ -564,12 +595,11 @@ async function handleEditJobberContact(body: any) {
     return done({ code: "no_changes", message: "Nothing to change.", jobber_contact_row_id: rowId });
   }
 
-  const mut = await gql(token, M_EDIT, { id: link.source_id, input: { contactsToEdit: [attrs] } });
+  const { mut, uerr, textingOff } = await editWithLandlineRetry(token, link.source_id, { contactsToEdit: [attrs] });
   if (!mut.ok) {
     return fail(mut.kind === "rejected" ? "jobber_rejected" : "jobber_unavailable",
       `Jobber did not accept the contact change (${mut.kind}): ${mut.detail}. Nothing was written on our side.`);
   }
-  const uerr = ue(mut.data?.clientEdit);
   if (uerr) return fail("jobber_rejected", explainJobberRefusal(uerr, wantPhone));
 
   // ---- RE-READ and VERIFY, never the mutation echo --------------------------------------------
@@ -603,7 +633,7 @@ async function handleEditJobberContact(body: any) {
     } else if (emailAct === "delete" && curEmail) {
       undo.emailsToAdd = [{ address: curEmail.address, description: enumDesc(curEmail.description, EMAIL_DESCRIPTIONS), primary: curEmail.primary === true }];
     }
-    if (phoneAct === "edit" && curPhone) undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number }];
+    if (phoneAct === "edit" && curPhone) undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number, ...(textingOff ? { smsAllowed: curPhone.smsAllowed === true } : {}) }];
     else if (phoneAct === "add") {
       const born = gotPhones.find((p) => digits(p?.number) === digits(wantPhone));
       if (born?.id) undo.phonesToDelete = [born.id];
@@ -640,7 +670,7 @@ async function handleEditJobberContact(body: any) {
     return fail("db_error_after_jobber",
       `The change is saved in Jobber but could not be written here: ${wErr.message}. Refresh the page to pull it back.`);
   }
-  return done({ action: "edit_jobber_contact", jobber_contact_row_id: rowId, jobber: "updated" });
+  return done({ action: "edit_jobber_contact", jobber_contact_row_id: rowId, jobber: "updated", texting_off: textingOff });
 }
 
 // ============================================================================
@@ -762,13 +792,12 @@ async function editClientRecord(opts: {
     return done({ code: "no_changes", message: "Nothing to change.", contact_id: contactId });
   }
 
-  // ---- MUTATE ----------------------------------------------------------------
-  const mut = await gql(token, M_EDIT, { id: gid, input });
+  // ---- MUTATE (a landline refusal is sent once more with texting off, see withTextingOff) ---------------
+  const { mut, uerr, textingOff } = await editWithLandlineRetry(token, gid, input);
   if (!mut.ok) {
     return fail(mut.kind === "rejected" ? "jobber_rejected" : "jobber_unavailable",
       `Jobber did not accept the contact change (${mut.kind}): ${mut.detail}. Nothing was written on our side.`);
   }
-  const uerr = ue(mut.data?.clientEdit);
   if (uerr) return fail("jobber_rejected", explainJobberRefusal(uerr, wantPhone));
 
   // ---- RE-READ and VERIFY — never trust the mutation echo ---------------------
@@ -815,7 +844,8 @@ async function editClientRecord(opts: {
     if (phoneAct === "star" && curPhone) {
       undo.phonesToEdit = [{ id: curPhone.id, primary: true }];
     } else if (phoneAct === "edit" && curPhone) {
-      undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number, primary: curPhone.primary === true }];
+      // the rollback also puts the texting switch back when the landline retry turned it off
+      undo.phonesToEdit = [{ id: curPhone.id, number: curPhone.number, primary: curPhone.primary === true, ...(textingOff ? { smsAllowed: curPhone.smsAllowed === true } : {}) }];
     } else if (phoneAct === "add") {
       const born = phoneList.find((p) => digits(p?.number) === digits(wantPhone));
       if (born?.id) undo.phonesToDelete = [born.id];
@@ -852,6 +882,7 @@ async function editClientRecord(opts: {
     email: wantEmail === null ? row.email : (wantEmail === "" ? null : wantEmail),
     phone: wantPhone === null ? row.phone : (wantPhone === "" ? null : wantPhone),
     pushed_to_jobber: true,
+    texting_off: textingOff, // additive; the app shows its normal success (Fred: "just say it was saved as normal")
     actor,
   });
 }
