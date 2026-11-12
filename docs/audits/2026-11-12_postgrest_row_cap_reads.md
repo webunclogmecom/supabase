@@ -10,12 +10,20 @@ This audit asks the same question of every other staff app.
 
 Measured 2026-11-12, about 07:00 to 08:00 ET.
 
+> **Update, 2026-11-12 later the same morning: rows 2, 3, 4 and 11 are FIXED and live.** While this audit was measuring,
+> the session named Supabase paged the portal queue (Ops Portal `3b5aac1`, 07:44 ET, `useQueueVisits.ts` only). Checked
+> on ops.unclogme.app afterwards: the live chunk `_shell.review.index-SGW38IzW.js` carries `.range(` on the driver read
+> and no `.limit(2e3)` or `.limit(5e3)`. The numbers below for those rows are what was measured BEFORE that fix; they
+> are kept as the record. Row 6 is NOT covered by that fix: the portal's review page chunk
+> `_shell.review.visit._visitId-C_QeqKWc.js` still reads the pending visits in one request, and so does admin.unclogme.app.
+
 ## Result in one paragraph
 
 **Two reads are already past the cap**, and both are live today: the Client App home list's "Last visit" read (1,648
 rows, 648 dropped, 47 clients show no last visit, since about 2026-08-06) and the portal's `/review` driver read (the
-#186 defect, still unpaged on ops.unclogme.app). **Four more pass it within ten weeks:** the portal queue's visit read
-(about 1 week), the portal queue's photo counts (about 3 weeks), the Admin Review "pending visits" list used for
+#186 defect, unpaged on ops.unclogme.app when measured, fixed since: see the update above). **Four more pass it within
+ten weeks:** the portal queue's visit read (about 1 week; fixed since), the portal queue's photo counts (about 3 weeks;
+fixed since), the Admin Review "pending visits" list used for
 Next / Previous on the review page, on **both** hosts (about 9 weeks; the #186 fix did not cover it), and the Client
 App's "Next visit" read (8 to 10 weeks). Two Client App client-page reads follow at about 16 to 28 weeks. Everything
 else is under 55% of the cap and grows slowly, is scoped to one record, or already pages.
@@ -30,16 +38,16 @@ is never an error, so even a read that throws on error takes a cut silently, unl
 | # | App (host) | Read | Rows today | % of cap | Weeks until 1,000 | Error ignored |
 |---|---|---|---|---|---|---|
 | 1 | Client App (clients) | home list, "Last visit": `client.visits` completed, not deleted, `order(visit_date desc).limit(10000)` | **1,648** | **165%** | **past (since about 2026-08-06)** | no, throws |
-| 2 | Ops Portal `/review` (ops) | queue drivers: `visit_assignments .in('visit_id', <every queue visit>)` | **1,084** | **108%** | **past** (same defect as #186) | **yes, no error check** |
-| 3 | Ops Portal `/review` (ops) | queue: `visits_with_review` completed, in scope, up to today, `.limit(2000)` | 946 | 95% | about 1 (46 a week) | no, throws; has a `truncated` flag from `count: 'exact'` |
-| 4 | Ops Portal `/review` (ops) | queue photo counts: `v_visit_photo_counts .in(...).limit(5000)` | 867 | 87% | about 3 | no, throws |
+| 2 | Ops Portal `/review` (ops) | queue drivers: `visit_assignments .in('visit_id', <every queue visit>)` | **1,084** | **108%** | **past** (same defect as #186); **FIXED 07:44 ET, `3b5aac1`** | **yes, no error check** |
+| 3 | Ops Portal `/review` (ops) | queue: `visits_with_review` completed, in scope, up to today, `.limit(2000)` | 946 | 95% | about 1 (46 a week); **FIXED, `3b5aac1`** | no, throws; has a `truncated` flag from `count: 'exact'` |
+| 4 | Ops Portal `/review` (ops) | queue photo counts: `v_visit_photo_counts .in(...).limit(5000)` | 867 | 87% | about 3; **FIXED, `3b5aac1`** | no, throws |
 | 5 | Client App (clients) | home list, "Next visit": `client.visits` scheduled, from today, `order(visit_date asc).limit(10000)` | 857 | 86% | 8 to 10 (about 790 four weeks ago) | no, throws |
 | 6 | Admin Review (admin) **and** Ops Portal `/review` (ops) | review page Next / Previous: `visits_with_review` completed, pending, in scope, no paging | 829 | 83% | about 9 (184 new in 28 days, 104 reviewed) | no, throws |
 | 7 | Client App (clients) | client page, Activity tab: RPC `client.get_client_activity(p_client_id, p_include_system)`, no `p_limit`, so every row | 437 (biggest real client); 685 (test client 112-YA) | 44%; 69% | about 19; about 16 | no, throws |
 | 8 | Client App (clients) | client page photos: `photo_links .in('entity_id', <the client's 200 newest visits>)`, then `photos .in('id', ...)` | 495 | 50% | about 28 (the client growing fastest: 483 rows, plus 75 in 28 days) | no, throws |
 | 9 | Client App (clients) | home list, monthly value: `line_items .in('job_id', <every recurring job>).limit(20000)` | 375 | 38% | about 45 | no, throws |
 | 10 | Client App (clients) | home list, monthly value: `client.jobs` recurring, not archived, `.limit(5000)` | 535 | 54% | about 64 | no, throws |
-| 11 | Ops Portal `/review` (ops) | queue: `jobs .in(...)`, `line_items .in(...)` | 362; 342 | 36%; 34% | about 75 to 80 | **yes, no error check** |
+| 11 | Ops Portal `/review` (ops) | queue: `jobs .in(...)`, `line_items .in(...)` | 362; 342 | 36%; 34% | about 75 to 80; **FIXED, `3b5aac1`** | **yes, no error check** |
 | 12 | Ops Portal (admin module) | Grease by client: RPC `public.get_grease_by_client()`, no arguments | 345 | 35% | about 90 | no, throws |
 | 13 | Visit Calendar (calendar) and portal `/calendar` | client pickers (task dialog, New Visit): `ops.client_service_options`, whole view | 535 | 54% | about 116 | **yes on the old host and in the portal task dialog (logged, picker stays empty)**; portal New Visit shows a toast |
 | 14 | Client App (clients) | home list: `client.client_services_flat .limit(2000)`; `client.clients .limit(5000)` | 500; 500 | 50% | about 133 | no, throws |
@@ -64,9 +72,10 @@ Every percentage is rows today divided by 1,000.
    `content-range 0-999/1648`; 250 of the 297 clients with a completed visit keep their date, **47 lose it**. About 200
    visits are completed each month, so the cut date moves forward about a month every month and the count of clients
    shown with no last visit only grows. Sorting or filtering the list by last visit is wrong for those clients.
-2. **Portal `/review` drivers (past).** `Building Apps/Ops Portal/app/src/modules/admin/hooks/useQueueVisits.ts:107`
-   is still the pre-fix code, and the live portal chunk `_shell.review.index-D1WmqBef.js` matches it. Replay: 84 rows
-   dropped. This is the portal side of #186, which the spec already gives to the session named Supabase.
+2. **Portal `/review` drivers (past when measured, fixed since).** `Building Apps/Ops Portal/app/src/modules/admin/hooks/useQueueVisits.ts:107`
+   was the pre-fix code at `ee9d22e`, and the live portal chunk `_shell.review.index-D1WmqBef.js` matched it. Replay:
+   84 rows dropped. The session named Supabase fixed it in `3b5aac1` (07:44 ET), live as `_shell.review.index-SGW38IzW.js`.
+   Notes 3 and 4 and row 11 are fixed by the same commit.
 3. **Portal `/review` queue visits (about 1 week).** `useQueueVisits.ts:55`, `.limit(2000)` at line 88. Past 1,000 the
    queue loses visits. It keeps `count: 'exact'` and a `truncated` flag, so this one is not silent where the flag is
    shown. Same fix as the old host (`fetchAllRows`, `.range()`).
@@ -161,6 +170,13 @@ tasks, DERM duplicate checks). A `.from(<variable>)` is invisible to the extract
 
 ## Not done here
 
-Read-only, as asked: no app, database object, Lovable project or Trello card was changed, and no fix was written. By
-the root CLAUDE.md, the Ops Portal rows (2, 3, 4, 11, and the portal side of 6) belong to the session named Supabase,
-and admin.unclogme.app and clients.unclogme.app take bug fixes only, which each of these is.
+Read-only, as asked: no app, database object, Lovable project or Trello card was changed, and no fix was written.
+
+**Who fixes what is still open** (as of the update above):
+
+- **The portal side of row 6** (and any other portal read): the session named Supabase, which alone works on the Ops
+  Portal (root CLAUDE.md).
+- **Row 6 on admin.unclogme.app:** a bug fix on the Admin Review Lovable project, which an old host may still take. It
+  goes in twice while the old host lives, once there and once in the portal.
+- **Rows 1, 5, 7 and 8, the Client App:** a bug fix on clients.unclogme.app. The Client App has no portal module yet,
+  so this is not the Supabase session's by rule; Fred routes it. Row 1 is the one already cutting.
