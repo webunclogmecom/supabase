@@ -2371,6 +2371,11 @@ offer **Mark as bad debt** and **Void** (Void since v17, below). What shipped:
   first: ...", length-checked BEFORE the first write because `update_client_status` refuses over 500.
 - 🛑 **Quotes still cannot be cleared from here**: Jobber has no quote archive/delete/convert mutation at
   any API version (introspected 2026-04-16 and 2026-09-09). Draft invoices must be deleted in Jobber.
+  ⚠ Corrected 2026-11-13: `quoteArchive` IS in the live schema at both versions today. Tried on a DRAFT quote of
+  112-YA it was refused ("This quote cannot be archived"); it was not tried on a quote that is not a draft. So a
+  draft quote still needs a person in Jobber, and whether a sent or approved quote can be archived from here is
+  open. There is still no quote delete, and no way to send, approve or convert one. The whole trial (41 billing
+  mutations on 112-YA): `Building Apps/Ops Portal/docs/specs/2026-11-13-jobber-billing-what-we-can-do.md`.
 - ✅ **Void IS offered since v17 (2026-09-25, `44323ed`)**, after the invoice sync learned to store
   `voided` (below). An unpaid invoice's `actions` are `["bad_debt","void"]`. `void_reason` is one of
   `DUPLICATE_INVOICE | CREATED_IN_ERROR | CLIENT_REQUEST | OTHER` (default OTHER, anything else refused);
