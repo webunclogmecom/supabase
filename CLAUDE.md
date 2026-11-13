@@ -276,6 +276,17 @@ Fred: *"Build a small Profile page"*, and on the camera button *"Yes, keep the b
 - `storage_access_gate`: an arm `WHEN bucket_id = 'employee-photos' THEN hr.fn_can_set_photo_path(name)`, so they read and upload in their own folder only. Staff with an app open stop at the first arm as before.
 🛑 Never widen this door to a view path or another function. Its VERIFY runs as a real field person, with four controls that must fail (no door, no arm, whole bucket open, door open to any path).
 
+## ✅ THE MANIFESTS ROWS READ: `derm.manifest_row_states()` (2026-11-13, Ops Portal Stage C)
+
+Fred, on the Manifests rows: *"make it instead be icons, when hovered it displays a tooltip giving the key info"*, then *"H: I think for the rows with icons,  i want IC1."* (a row in order carries one green tick, a row that needs someone one icon per thing to do). One read function gives every row of the portal's Manifests list its state: papers, stamps, client copies, city, a visit dated after the dump, each with its tooltip words. Migration `2026-11-13_0148_derm_manifest_row_states.sql` (read only, nothing existing changed), rollback beside it, standing check `scripts/checks/manifest_row_states.sql`. About 0.15 s for the whole list, as authenticated.
+- **Shape:** ONE jsonb object keyed by the list's own row key ("Miami-Dade #<number>", "Broward #<number>", "No number"); each entry carries `manifest_ids`, so an app joins by id. Never SETOF: PostgREST cuts a row set at 1,000.
+- **Access:** SECURITY DEFINER, empty `search_path`; first statement `hr.fn_require_app('derm_tracker', 'view')`, then the staff check, as `derm.get_visit_report`. EXECUTE: authenticated and service_role only. It returns ticket numbers, sheet folders, counts, dates and fixed sentences: no client name, email, phone, code or note text.
+- 🛑 **A row finds its address sheets through the stamp cards' own manifest rows, never by the sheet's number** (three sheets sit under a number one digit off their real ticket). Only a sheet no card places on any live row falls back to its number, and says `"via": "number"` (0 on 2026-11-13).
+- 🛑 **Grey never counts as "needs someone":** a noted gap, a ticket before 2026 kept for the record, a skipped sheet, nothing to stamp, not sent to the city before 2026-09-15, no city program, copies being made. A visit dated ONE day after the dump says nothing.
+- **A missing client copy** is a second fact (`copies`), only on a completed sheet. Under 20 minutes after the later of Mark completed and the stamp it reads "Copies being made" (grey); from 20 minutes on it is red. 20 minutes is the line `derm.v_blackout_completed_unpublished` already draws, so the row and the health email turn together. Change one, change the other.
+- **Words that now live twice:** the five skip reasons (also in the portal's `modules/stamp/StampStudio.tsx`) and "Not sent to city (before Sep 15)". The reason a copy was not made comes from `derm.fn_sheet_publishable` and `derm.fn_publishable_hint`, for at most 3 sheets per read (about 0.1 s each); `derm.fn_stamp_sheet_wait_reason` is not called, it cost 0.5 s for one sheet.
+- **Not in it:** an email that did not arrive, a client row with no visit, archive and restore, a live message after stamping.
+
 ## 🛑 PERMITS: `public.gdos` HOLDS EVERY PERMIT TYPE; THE DERM READERS STAY GDO-ONLY (2026-11-02)
 
 Fred (Client App, Grove Kosher, Boca Raton): *"One table for every permit now ... the DERM sheets, the filing bot and the
