@@ -2,7 +2,9 @@
 --
 -- Puts public.record_manifest_visit_sheet back to its 2026-10-20_1700 body (verbatim, md5 4339ddcc46f82cbea933da9097907a1b)
 -- and drops the two triggers and derm.fn_retire_visit_sheets(). Guarded: refuses unless the live body is the one
--- 2026-11-13_1600 applied (md5 b47675311f8b46848c557bf8493a196d).
+-- 2026-11-13_1600 applied (md5 b47675311f8b46848c557bf8493a196d as stored; the guards compare the body with its
+-- carriage returns removed, 8ffc030f... before and bff8d24a... after, because the live body has Windows line breaks
+-- and git changes them in this file, so a byte md5 could never match a checkout).
 --
 -- It does NOT un-retire sheet rows. A retired row sits on a deleted manifest or an unlinked visit, where no reader shows
 -- it, and its number may already be live again on the visit's new manifest (Diego's 317956 sheets 10103, 10104, 10105,
@@ -14,7 +16,7 @@ SET LOCAL lock_timeout = '3s';
 
 do $pin$
 begin
-  if md5(pg_get_functiondef('public.record_manifest_visit_sheet(bigint,bigint,text,text)'::regprocedure)) <> 'b47675311f8b46848c557bf8493a196d' then
+  if md5(replace(pg_get_functiondef('public.record_manifest_visit_sheet(bigint,bigint,text,text)'::regprocedure), chr(13), '')) <> '8ffc030f766b602b9fd0a279a0488571' then
     raise exception 'public.record_manifest_visit_sheet is not the 2026-11-13_1600 body; do not roll back blindly';
   end if;
 end
@@ -114,7 +116,7 @@ $function$
 
 do $verify$
 begin
-  if md5(pg_get_functiondef('public.record_manifest_visit_sheet(bigint,bigint,text,text)'::regprocedure)) <> '4339ddcc46f82cbea933da9097907a1b' then
+  if md5(replace(pg_get_functiondef('public.record_manifest_visit_sheet(bigint,bigint,text,text)'::regprocedure), chr(13), '')) <> 'bff8d24ad9cb3588a518d1fe086aed8e' then
     raise exception 'VERIFY: record_manifest_visit_sheet is not back to the 2026-10-20_1700 body';
   end if;
   if to_regprocedure('derm.fn_retire_visit_sheets()') is not null then
