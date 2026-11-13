@@ -52,6 +52,11 @@ const PRESENT = [
   // already shipped and must not regress
   'contact_role', 'is_primary', 'jobber_contacts', 'edit_jobber_contact', 'promote', 'stale_view',
   'In Jobber', 'Not in Jobber',
+  // Add contact creates the person in Jobber, on the property picked (2026-11-13; Building Apps/Client App/docs/specs/
+  // 2026-11-13-add-contact-in-jobber-plan.md). The old "This contact is ours" sentence is NOT listed as absent: the Edit
+  // contact dialog of one of our own contacts still says it, truthfully.
+  'add_jobber_contact', 'This person is added to the client in Jobber too.', 'Contact added in Jobber.',
+  'That person is already in Jobber, so nothing new was added.',
   // the drift banner INSTRUCTS rather than explains (2026-09-23). The star is deliberately never
   // written to Jobber, so this sentence is the only thing that actually fixes a wrong prefill:
   // a person types the address over it once and Jobber remembers. See
