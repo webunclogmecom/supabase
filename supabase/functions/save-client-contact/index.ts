@@ -211,8 +211,11 @@ function withTextingOff(input: Record<string, any>): Record<string, any> | null 
   let hit = false;
   const off = (list: unknown) => Array.isArray(list) ? list.map((p) => { hit = true; return { ...p, smsAllowed: false }; }) : list;
   const phonesOff = (o: Record<string, any>) => { const c = { ...o }; for (const k of ["phonesToAdd", "phonesToEdit"]) if (k in c) c[k] = off(c[k]); return c; };
+  // a NEW contact (contactsToAdd) carries its phones as `phones`, not phonesToAdd (2026-11-13, Add contact in Jobber)
+  const newContactPhonesOff = (o: Record<string, any>) => Array.isArray(o.phones) ? { ...o, phones: off(o.phones) } : o;
   const copy = phonesOff(input);
   if (Array.isArray(copy.contactsToEdit)) copy.contactsToEdit = copy.contactsToEdit.map(phonesOff);
+  if (Array.isArray(copy.contactsToAdd)) copy.contactsToAdd = copy.contactsToAdd.map(newContactPhonesOff);
   return hit ? copy : null;
 }
 // One clientEdit; on the landline refusal, the same edit once more with texting off. `textingOff` says it happened,
@@ -257,6 +260,35 @@ const pickPrimary = <T extends { primary?: boolean }>(arr: T[] | null | undefine
 // EVERY CONNECTION IS BOUNDED. Measured 2026-09-21: the same shape with the nested connections
 // unbounded costs 81,119 and is THROTTLED outright. Bounded it costs 22 actual / 755 requested.
 const CONTACT_PAGE = 25;
+// 🛑 A CONTACT ON A PROPERTY IS NOT IN client.contacts (measured 2026-11-13 on 112-YA). A contact added with propertyIds,
+// or edited to have one, leaves the client's own list and is listed ONLY under that property's `contacts`. Until then this
+// function read client.contacts alone, so 16 real Jobber contacts on 16 active clients (7 of them Jobber billing contacts,
+// 15 on the billing address) were invisible in the Client App. Every read of "this client's Jobber contacts" now asks for
+// both lists through CONTACT_NODES and flattens them with jobberPeople(), so refresh, edit and add see the same people.
+// Fred, 2026-11-13, picking "On the property": the new contact goes on its property, and the app reads property contacts.
+const PROPERTY_CONTACT_PAGE = 10;
+const CONTACT_NODE = `id firstName lastName name role title isBillingContact
+        emails(first: 3) { nodes { id address description primary } }
+        phones(first: 3) { nodes { id number description primary smsAllowed } }
+        properties(first: 5) { nodes { id } }`;
+const CONTACT_NODES = `contacts(first: ${CONTACT_PAGE}) { totalCount nodes { ${CONTACT_NODE} } }
+    properties { id contacts(first: ${PROPERTY_CONTACT_PAGE}) { totalCount nodes { ${CONTACT_NODE} } } }`;
+// Client.properties is a plain LIST (every property of the client); each property's contacts is a bounded connection.
+// `complete` is false when any list holds more than it returned, and then nobody may be retired on its absence.
+function jobberPeople(client: any): { nodes: any[]; complete: boolean } {
+  const seen = new Map<string, any>();
+  let complete = !!client?.contacts;
+  const take = (conn: any, page: number) => {
+    const nodes = Array.isArray(conn?.nodes) ? conn.nodes : [];
+    const total = Number(conn?.totalCount ?? nodes.length);
+    if (total > page || nodes.length !== total) complete = false;
+    for (const n of nodes) if (n?.id && !seen.has(String(n.id))) seen.set(String(n.id), n);
+  };
+  take(client?.contacts, CONTACT_PAGE);
+  if (!Array.isArray(client?.properties)) complete = false;
+  for (const p of Array.isArray(client?.properties) ? client.properties : []) take(p?.contacts, PROPERTY_CONTACT_PAGE);
+  return { nodes: [...seen.values()], complete };
+}
 const Q_CONTACTS = `query($id: EncodedId!) {
   client(id: $id) {
     id
@@ -274,15 +306,7 @@ const Q_CONTACTS = `query($id: EncodedId!) {
     # the prefill above. Measured 2026-09-24 on 112-YA: Jobber keeps remembering an address only while
     # it is still on the client or on one of its contacts, and falls back to the STAR when none is.
     emails { address primary }
-    contacts(first: ${CONTACT_PAGE}) {
-      totalCount
-      nodes {
-        id firstName lastName name role title isBillingContact
-        emails(first: 3) { nodes { address primary } }
-        phones(first: 3) { nodes { number primary } }
-        properties(first: 5) { nodes { id } }
-      }
-    }
+    ${CONTACT_NODES}
   }
 }`;
 
@@ -292,6 +316,32 @@ const pickNode = (conn: any): any => {
   const a = Array.isArray(conn?.nodes) ? conn.nodes : [];
   return a.find((x: any) => x?.primary === true) ?? a[0] ?? null;
 };
+
+// One mirror row per Jobber contact, shared by refresh and add_jobber_contact so the two can never disagree.
+// 🛑 Every field is `?? null` ON PURPOSE: refresh upserts an ARRAY of these (see the note in handleRefresh).
+function toMirrorRow(clientId: number, n: any, nowIso: string) {
+  const em = pickNode(n.emails), ph = pickNode(n.phones);
+  return {
+    client_id: clientId,
+    jobber_contact_id: String(n.id),
+    first_name: n.firstName ?? null,
+    last_name: n.lastName ?? null,
+    name: n.name ?? null,
+    jobber_role: n.role ?? null,
+    title: n.title ?? null,
+    is_billing_contact: n.isBillingContact ?? null,
+    email: em?.address ?? null,
+    phone: ph?.number ?? null,
+    property_gids: (Array.isArray(n.properties?.nodes) ? n.properties.nodes : [])
+      .map((p: any) => p?.id).filter(Boolean),
+    // 🛑 CLEARING deleted_at IS MANDATORY, not tidiness. Without it a contact that is removed in
+    // Jobber and then added back stays soft-deleted here forever - the re-add-writer failure
+    // this estate has already paid for once.
+    deleted_at: null,
+    synced_at: nowIso,
+    updated_at: nowIso,
+  };
+}
 
 async function handleRefresh(clientId: number) {
   if (!Number.isInteger(clientId) || clientId <= 0) {
@@ -313,7 +363,7 @@ async function handleRefresh(clientId: number) {
     return fail("jobber_unavailable",
       `Could not read this client's contacts from Jobber (${r.kind}): ${r.detail}. Nothing was changed.`);
   }
-  const conn = r.data?.client?.contacts;
+  const cl = r.data?.client;
   // ⚠ Read these from the SAME reply, never a second call. An empty array is a real answer
   // ("Jobber has no remembered address for this client yet"), not a failure.
   const asList = (v: unknown): string[] =>
@@ -322,9 +372,11 @@ async function handleRefresh(clientId: number) {
     invoice: asList((r.data?.client as any)?.invoiceDefault),
     quote: asList((r.data?.client as any)?.quoteDefault),
   };
-  if (!conn) return fail("not_found_jobber", "Jobber has no client at that id - the link is stale.");
+  if (!cl?.contacts) return fail("not_found_jobber", "Jobber has no client at that id - the link is stale.");
 
-  const nodes: any[] = Array.isArray(conn.nodes) ? conn.nodes : [];
+  // the client's own contacts AND every property's contacts (see jobberPeople)
+  const people = jobberPeople(cl);
+  const nodes: any[] = people.nodes;
 
   // Every address Jobber holds for this client, for the Edit dialog's invoice/quote prediction.
   // 🛑 EXACT SPELLINGS, NOT LOWERCASED, unlike jobber_defaults above. Measured 2026-09-24: all 426
@@ -347,7 +399,7 @@ async function handleRefresh(clientId: number) {
     invoice: raw((r.data?.client as any)?.invoiceDefault),
     quote: raw((r.data?.client as any)?.quoteDefault),
   };
-  const total = Number(conn.totalCount ?? nodes.length);
+  const total = nodes.length;
   const nowIso = new Date().toISOString();
 
   // 🛑 THIS PAYLOAD IS AN ARRAY, SO EVERY `?? null` BELOW IS LOAD-BEARING, NOT TIDINESS.
@@ -359,29 +411,7 @@ async function handleRefresh(clientId: number) {
   // exactly those rows, silently. person_role / person_role_other are safe here only because
   // they are in no key at all. See Supabase/CLAUDE.md, "A PostgREST .upsert() WITH AN ARRAY
   // PAYLOAD" for the measurement.
-  const rows = nodes.filter((n) => n?.id).map((n) => {
-    const em = pickNode(n.emails), ph = pickNode(n.phones);
-    return {
-      client_id: clientId,
-      jobber_contact_id: String(n.id),
-      first_name: n.firstName ?? null,
-      last_name: n.lastName ?? null,
-      name: n.name ?? null,
-      jobber_role: n.role ?? null,
-      title: n.title ?? null,
-      is_billing_contact: n.isBillingContact ?? null,
-      email: em?.address ?? null,
-      phone: ph?.number ?? null,
-      property_gids: (Array.isArray(n.properties?.nodes) ? n.properties.nodes : [])
-        .map((p: any) => p?.id).filter(Boolean),
-      // 🛑 CLEARING deleted_at IS MANDATORY, not tidiness. Without it a contact that is removed in
-      // Jobber and then added back stays soft-deleted here forever - the re-add-writer failure
-      // this estate has already paid for once.
-      deleted_at: null,
-      synced_at: nowIso,
-      updated_at: nowIso,
-    };
-  });
+  const rows = nodes.filter((n) => n?.id).map((n) => toMirrorRow(clientId, n, nowIso));
 
   if (rows.length) {
     const { error: upErr } = await db.from("client_jobber_contacts")
@@ -393,7 +423,8 @@ async function handleRefresh(clientId: number) {
   // we asked for, or returned fewer nodes than it counted, we do NOT know who is missing versus
   // merely unread - and retiring on a truncated read would soft-delete live people. Skip it and
   // SAY SO in the response rather than letting a partial read look like a full one.
-  const complete = total <= CONTACT_PAGE && nodes.length === total;
+  // Every list counts: the client's own and each property's (jobberPeople).
+  const complete = people.complete;
   let retired = 0;
   if (complete) {
     const keep = rows.map((x) => x.jobber_contact_id);
@@ -457,7 +488,7 @@ async function handleRefresh(clientId: number) {
     truncated: !complete,
     retired,
     note: complete ? undefined
-      : `Jobber reports ${total} contacts and this read covers ${nodes.length}; removed contacts were NOT retired.`,
+      : `Jobber holds more contacts on this client or one of its properties than this read covers (it read ${nodes.length}); removed contacts were NOT retired.`,
   });
 }
 
@@ -473,18 +504,12 @@ async function handleRefresh(clientId: number) {
 // returns userErrors [] and the write LANDS, edited IN PLACE - the Email keeps its id, no new
 // object is minted. Introspection only proved the field exists; Jobber's docs never define
 // ContactModel at all, so the run was the only way to know.
+// Since 2026-11-13 it reads the properties' contacts too (jobberPeople): a contact on a property is edited through the same
+// clientEdit(contactsToEdit) and stays on its property (measured on 112-YA, a rename and a role change).
 const Q_ONE_CONTACT = `query($id: EncodedId!) {
   client(id: $id) {
     id
-    contacts(first: ${CONTACT_PAGE}) {
-      totalCount
-      nodes {
-        id firstName lastName name role title isBillingContact
-        emails(first: 3) { nodes { id address description primary } }
-        phones(first: 3) { nodes { id number description primary smsAllowed } }
-        properties(first: 5) { nodes { id } }
-      }
-    }
+    ${CONTACT_NODES}
   }
 }`;
 
@@ -543,7 +568,7 @@ async function handleEditJobberContact(body: any) {
   if (!before.ok) {
     return fail("jobber_unavailable", `Could not read the contact from Jobber (${before.kind}): ${before.detail}. Nothing was changed.`);
   }
-  const findIn = (r: any) => (r?.data?.client?.contacts?.nodes ?? [])
+  const findIn = (r: any) => jobberPeople(r?.data?.client).nodes
     .find((n: any) => String(n?.id) === String(row.jobber_contact_id));
   const jc = findIn(before);
   if (!jc) {
@@ -671,6 +696,173 @@ async function handleEditJobberContact(body: any) {
       `The change is saved in Jobber but could not be written here: ${wErr.message}. Refresh the page to pull it back.`);
   }
   return done({ action: "edit_jobber_contact", jobber_contact_row_id: rowId, jobber: "updated", texting_off: textingOff });
+}
+
+// ============================================================================
+// action:"add_jobber_contact" - ADD a contact person IN JOBBER, on the property picked, then mirror it.
+//
+// Fred, 2026-11-13: "can we add contacts to a client on jobber from our apps?", then "go with the recommended, and
+// document", then "On the property". Until now Add contact saved to public.client_contacts only ("This contact is ours.
+// Nothing here reaches Jobber."). This creates a Jobber ContactModel with clientEdit(contactsToAdd) on the property the
+// form picked: read Jobber, write, read back and check, and only then our side.
+// Plan: Building Apps/Client App/docs/specs/2026-11-13-add-contact-in-jobber-plan.md
+//
+// 🛑 WITH propertyIds THE CONTACT LIVES UNDER THE PROPERTY, NOT IN client.contacts (measured 2026-11-13, 112-YA). The add
+//    returns userErrors [] and the client's list does not change, which reads exactly like a silent no-op. So the
+//    read-back looks in that property's contacts (Q_ONE_CONTACT asks for them, jobberPeople flattens them).
+// 🛑 A RETRY NEVER ADDS THE PERSON TWICE. Jobber takes no idempotency key and a reply can be lost after Jobber took the
+//    write, so the read before the write looks for the same person on that property (first and last name, and the same
+//    email and phone digits when given); if Jobber has them, nothing is written there and that contact is mirrored.
+//    ponytail: two saves at the same instant from two tabs can both add; the dialog disables Save while one runs and the
+//    extra one is deletable in Jobber (unlike a client). Add a reservation ledger (create-client's pattern) if it happens.
+// 🛑 isBillingContact is NEVER sent: the Invoice tick is our record, not Jobber's (Client App rule 2g-sexies).
+// 🛑 JOBBER'S OWN AUTOMATIC MESSAGES ARE OFF for the new person (Fred's pick). Measured 2026-11-13: a contact added with
+//    nothing set gets receivesReminders, receivesFollowUps, receivesQuoteFollowUps, receivesInvoiceFollowUps and
+//    canAccessClientHub all TRUE. Our Communication ticks decide what we send; Jobber must not start mailing someone
+//    because we added them. Sent false explicitly, and Jobber stores false (measured the same day).
+const ADD_FIELDS = ["first_name", "last_name", "role", "email", "phone", "property_id"];
+const AUTOMATIC_OFF = { receivesReminders: false, receivesFollowUps: false, receivesQuoteFollowUps: false,
+  receivesInvoiceFollowUps: false, canAccessClientHub: false };
+
+async function handleAddJobberContact(body: any) {
+  const clientId = Number(body.client_id);
+  if (!Number.isInteger(clientId) || clientId <= 0) {
+    return fail("bad_request", "client_id is required for action:'add_jobber_contact'.");
+  }
+  const c = body.contact ?? {};
+  const bad = Object.keys(c).filter((k) => !ADD_FIELDS.includes(k));
+  if (bad.length) return fail("bad_request", `contact may contain only: ${ADD_FIELDS.join(", ")}.`);
+  const first = norm(c.first_name), last = norm(c.last_name), role = norm(c.role);
+  const email = norm(c.email), phone = norm(c.phone);
+  const propertyId = Number(c.property_id);
+  // Fred's required set, the same as client.create_client_contact: a first name, a property, a phone or an email.
+  if (!first) return fail("bad_request", "First name is required.", { field: "first_name" });
+  if (!Number.isInteger(propertyId) || propertyId <= 0) {
+    return fail("bad_request", "A property must be selected for the contact.", { field: "property_id" });
+  }
+  if (!email && !phone) return fail("bad_request", "Enter at least a phone number or an email address.");
+  if (email && !EMAIL_RE.test(email)) {
+    return fail("bad_request", `That does not look like an email address: ${email}`, { field: "email" });
+  }
+  if (phone && digits(phone).length < 7) {
+    return fail("bad_request", "That phone number looks too short.", { field: "phone" });
+  }
+
+  const { data: prop, error: propErr } = await db.from("properties").select("id, client_id, deleted_at")
+    .eq("id", propertyId).maybeSingle();
+  if (propErr) return fail("db_error", `Could not read the property: ${propErr.message}`);
+  if (!prop || Number(prop.client_id) !== clientId || prop.deleted_at) {
+    return fail("bad_request", "That property does not belong to this client.", { field: "property_id" });
+  }
+  // A billing twin's link is the CLIENT gid + "_billing" (Client App rule 2j), not a Jobber property.
+  const { data: plink, error: plErr } = await db.from("entity_source_links").select("source_id")
+    .eq("entity_type", "property").eq("source_system", "jobber").eq("entity_id", propertyId).maybeSingle();
+  if (plErr) return fail("db_error", `Could not read the property's Jobber link: ${plErr.message}`);
+  if (!plink?.source_id || String(plink.source_id).endsWith("_billing")) {
+    return fail("property_not_in_jobber",
+      "That property is not in Jobber, so the contact cannot be attached to it there. Pick another property.",
+      { field: "property_id" });
+  }
+  const propGid = String(plink.source_id);
+  const { data: link, error: linkErr } = await db.from("entity_source_links").select("source_id")
+    .eq("entity_type", "client").eq("source_system", "jobber").eq("entity_id", clientId).maybeSingle();
+  if (linkErr) return fail("db_error", `Could not read the Jobber link: ${linkErr.message}`);
+  if (!link?.source_id) {
+    return fail("not_linked", "This client has no live Jobber link, so a contact cannot be added in Jobber.");
+  }
+
+  let token: string;
+  try { token = await getJobberToken(); }
+  catch (e) { return fail("jobber_unavailable", `Could not get a Jobber token: ${String(e)}`); }
+
+  // ---- READ first: every contact (client and properties), for the duplicate check and to tell the new one apart ----
+  const before = await gql(token, Q_ONE_CONTACT, { id: link.source_id });
+  if (!before.ok) {
+    return fail("jobber_unavailable",
+      `Could not read this client's contacts from Jobber (${before.kind}): ${before.detail}. Nothing was changed.`);
+  }
+  const cl = before.data?.client;
+  if (!cl?.contacts) return fail("not_found_jobber", "Jobber has no client at that id - the link is stale.");
+  const onProperty = (client: any) =>
+    (Array.isArray(client?.properties) ? client.properties : []).find((p: any) => p?.id === propGid) ?? null;
+  const propBefore = onProperty(cl);
+  if (!propBefore) {
+    return fail("property_not_in_jobber",
+      "Jobber does not list that property on this client, so the contact cannot be attached to it. Pick another property.",
+      { field: "property_id" });
+  }
+  const peopleBefore = jobberPeople(cl);
+  const listBefore: any[] = Array.isArray(propBefore.contacts?.nodes) ? propBefore.contacts.nodes : [];
+  // both checks need EVERY contact, and the new one must still fit in its property's page afterwards
+  if (!peopleBefore.complete || listBefore.length + 1 > PROPERTY_CONTACT_PAGE) {
+    return fail("too_many_contacts",
+      "This client has more contacts in Jobber than this check reads at once. Add the person in Jobber; they show here the next time the page opens.");
+  }
+  const lc = (s: unknown) => norm(s).toLowerCase();
+  const samePerson = (n: any) => lc(n?.firstName) === lc(first) && lc(n?.lastName) === lc(last) &&
+    (!email || (n?.emails?.nodes ?? []).some((e: any) => lc(e?.address) === lc(email))) &&
+    (!phone || (n?.phones?.nodes ?? []).some((p: any) => digits(p?.number) === digits(phone)));
+
+  let jc: any = listBefore.find(samePerson) ?? null;
+  const already = jc !== null;
+  let textingOff = false;
+  if (!jc) {
+    const add: Record<string, unknown> = { firstName: first, propertyIds: [propGid], ...AUTOMATIC_OFF };
+    if (last) add.lastName = last;
+    if (role) add.role = role;
+    if (email) add.emails = [{ address: email, description: "MAIN", primary: true }];
+    if (phone) add.phones = [{ number: phone, description: "MAIN", primary: true }];
+    const res = await editWithLandlineRetry(token, link.source_id, { contactsToAdd: [add] });
+    textingOff = res.textingOff;
+    if (!res.mut.ok) {
+      // a lost reply may still have landed in Jobber: never say "nothing was changed" here
+      return res.mut.kind === "rejected"
+        ? fail("jobber_rejected", `Jobber refused the new contact: ${res.mut.detail}. Nothing was written on our side.`)
+        : fail("jobber_unknown", `Jobber did not answer (${res.mut.kind}). The contact may or may not have been added. ` +
+            "Press Save again: it checks Jobber first and never adds the person twice.");
+    }
+    if (res.uerr) return fail("jobber_rejected", `Jobber refused the new contact: ${res.uerr}. Nothing was written on our side.`);
+
+    // ---- READ BACK and check, never the mutation echo ----
+    const after = await gql(token, Q_ONE_CONTACT, { id: link.source_id });
+    if (!after.ok || !after.data?.client?.contacts) {
+      return fail("jobber_unknown", "Jobber took the new contact but could not be read back to confirm it. " +
+        "Press Save again: it checks Jobber first and never adds the person twice.");
+    }
+    const ids0 = new Set(peopleBefore.nodes.map((n) => String(n?.id)));
+    const fresh = jobberPeople(after.data.client).nodes.filter((n: any) => !ids0.has(String(n?.id)));
+    const born = (onProperty(after.data.client)?.contacts?.nodes ?? [])
+      .filter((n: any) => !ids0.has(String(n?.id)) && samePerson(n));
+    if (born.length > 1) {
+      return fail("verify_failed", "Jobber now holds this person more than once, most likely from two saves at the same " +
+        "moment. Open the client in Jobber and delete the extra one. Nothing was written on our side.");
+    }
+    const landed = born.length === 1 && (!role || norm(born[0].role) === role);
+    if (!landed) {
+      // undo only a contact this call can be sure is its own: exactly one new contact appeared anywhere on the client
+      let undone = false;
+      if (fresh.length === 1) {
+        const rb = await gql(token, M_EDIT, { id: link.source_id, input: { contactsToDelete: [fresh[0].id] } });
+        undone = rb.ok && !ue(rb.data?.clientEdit);
+      }
+      return fail("verify_failed", undone
+        ? "Jobber took the contact but the read-back did not match, so it was deleted again in Jobber (confirmed). Nothing was written on our side."
+        : "Jobber took the contact but the read-back did not match, and it could NOT be removed again. Open the client in Jobber to check. Nothing was written on our side.",
+        { rolled_back: undone });
+    }
+    jc = born[0];
+  }
+
+  // ---- only now, our side ----
+  const { data: saved, error: wErr } = await db.from("client_jobber_contacts")
+    .upsert(toMirrorRow(clientId, jc, new Date().toISOString()), { onConflict: "jobber_contact_id" })
+    .select("id").single();
+  if (wErr || !saved) {
+    return fail("db_error_after_jobber",
+      `The contact is saved in Jobber but could not be written here: ${wErr?.message ?? "no row came back"}. Refresh the page to pull it in.`);
+  }
+  return done({ action: "add_jobber_contact", jobber_contact_row_id: saved.id,
+    jobber: already ? "already_there" : "added", texting_off: textingOff });
 }
 
 // ============================================================================
@@ -1100,6 +1292,9 @@ Deno.serve(async (req) => {
   }
   if (String(body?.action ?? "").trim().toLowerCase() === "promote") {
     return await handlePromote(body, actor);
+  }
+  if (String(body?.action ?? "").trim().toLowerCase() === "add_jobber_contact") {
+    return await handleAddJobberContact(body);
   }
 
   const contactId = Number(body.contact_id);
