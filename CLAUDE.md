@@ -319,6 +319,16 @@ before touching any of it.** Migrations `2026-11-14_0620_payments_copy` and `202
   dates and the quote's lines (`public.sync_jobber_invoice_extras` / `sync_jobber_quote_extras`). `public.quotes` is
   audited since then. Its `gql()` throws on a reply that is not JSON or has no `data` (it threw before too, less clearly).
 
+## 🛑 A JOBBER LINK HOLDS THE ENCODED ID; THE DATABASE REFUSES THE BARE NUMBER (2026-11-14)
+
+Fred: *"Merge duplicate quote rows from two Jobber id forms"*. CHECK `entity_source_links_jobber_id_encoded`
+(`2026-11-14_0805`): a `source_system = 'jobber'` link whose `source_id` is digits only raises 23514. Two forms of one
+Jobber record never collide in `idx_esl_source_id` (it compares text), which is how quotes #3158 and #3159 were each
+stored twice before 2026-04-29 (removed 2026-11-14). A double is two rows for ONE decoded Jobber id; the same quote
+NUMBER on two rows can be two different quotes (Jobber reuses a deleted quote's number). Read
+[docs/reference/jobber-client-identity-and-links.md](docs/reference/jobber-client-identity-and-links.md) section 1;
+check `scripts/checks/jobber_links_one_id_form.sql`.
+
 ## 🛑 PERMITS: `public.gdos` HOLDS EVERY PERMIT TYPE; THE DERM READERS STAY GDO-ONLY (2026-11-02)
 
 Fred (Client App, Grove Kosher, Boca Raton): *"One table for every permit now ... the DERM sheets, the filing bot and the
