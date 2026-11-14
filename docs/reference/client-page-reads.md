@@ -204,6 +204,10 @@ with an empty search_path; the VERIFY checks the stored text is the old one plus
 - **Nobody's answer changed:** every active person with a sign-in read the same number of rows before and after (7
   people, measured in the rehearsal); everyone with the Client App also has Picture Planner or the forms switch today.
 
+## A quote's Jobber address (2026-11-14_0721)
+
+`client.quotes` gained a last column, `jobber_url` (`https://secure.getjobber.com/quotes/<Jobber id>`, built as `client.invoices.jobber_url` is, from the stored id in `entity_source_links`; NULL with no id), for a quote's "Open in Jobber" and "Send it in Jobber"; undo `2026-11-14_rollback_client_quotes_jobber_url.sql`.
+
 ## Every read of the Clients pages, as a person with the Client App alone (2026-11-14)
 
 Measured in a rolled-back rehearsal: person 58 (the HR test person) made active with the Client App at View and every other
