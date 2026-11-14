@@ -138,3 +138,31 @@ or null number too). Migration `docs/migrations/2026-11-14_0155_derm_get_manifes
 - 112-YA today, `derm.get_manifest_dialog('111111')`: 1 client, 1 visit (8113, Cloggy, crew Fred), 1 copy, a stamp
   placed, 2 city emails, row state `Miami-Dade #111111`.
 - **Cost:** 0.15 to 0.2 s a ticket (the row states core is most of it).
+
+## B4: the portal's search finds addresses, invoices and quotes (2026-11-14_0203)
+
+`ops.portal_search(p_q text)`, the Ops Portal's "Search everything". Migration
+`docs/migrations/2026-11-14_0203_ops_portal_search_addresses_invoices_quotes.sql` (one anchored edit of the
+`2026-11-05_0230` body: a block before the final RETURN), undo
+`2026-11-14_rollback_ops_portal_search_addresses_invoices_quotes.sql` (the old body verbatim, md5-guarded).
+
+- **Unchanged:** the groups `clients`, `visits`, `requests`, `people`, their rules (a group only for an app the person can
+  open, the bell's rule), its grants (authenticated and service_role) and its 2 to 80 character limit. The migration
+  compared the four groups of the old and the new body for every term of a corpus read from the data and three people;
+  the rehearsal did it for 402 terms and four people (1,608 answers, 0 differ).
+- **New, for a person who has the Client App** (View or Edit), at most 5 each, best first:
+
+  | key | finds | each result |
+  |---|---|---|
+  | `properties` | a live site whose address, name or city holds the words, or whose ZIP starts with them | `id`, `client_id`, `code`, `client_name`, `name`, `address`, `city`, `zip`, `is_billing`, `tab` = `sites`, `rank` |
+  | `invoices` | an invoice whose number holds them | `id`, `client_id`, `code`, `client_name`, `invoice_number`, `status`, `issued` (the day sent, Eastern), `tab` = `billing`, `rank` |
+  | `quotes` | a quote whose number or title holds them | `id`, `client_id`, `code`, `client_name`, `quote_number`, `title`, `status`, `archived` (last), `tab` = `billing`, `rank` |
+
+  A result opens `/clients/<client_id>?tab=<tab>`, with `&site=<id>` for a site (decision 1). Rank: the exact number (0),
+  a number or address that starts with the words (1), the rest. No email, phone, lock box, note or pay; no amount.
+- **The live portal is unchanged until its next publish:** its search (`shell/search.tsx` on `main`, and the published
+  chunk `header-D6xPtvxd.js` walked on 2026-11-14) reads only `clients`, `visits`, `requests` and `people`, three times
+  each, and counts only those for "Nothing found"; the words `properties`, `invoices` and `quotes` appear nowhere in that
+  chunk. So the new keys are ignored there.
+- 112-YA today, as a person with the Client App: `ops.portal_search('112-YA')` returns its client and empty
+  `properties`, `invoices` and `quotes` (none of them holds that text).

@@ -8,6 +8,9 @@
 --      the trust rule with ops.fn_client_sludge_averages() both ways
 --   3. B3, client.get_client_emails(bigint, text) (2026-11-14_0148_client_get_client_emails.sql)
 --   4. B2, derm.get_manifest_dialog(text) (2026-11-14_0155_derm_get_manifest_dialog.sql)
+--   5. B4, ops.portal_search(text) (2026-11-14_0203_ops_portal_search_addresses_invoices_quotes.sql): the new groups only
+--      with the Client App, their keys, and an address, an invoice number and a quote number found (the migration compared
+--      the four old groups with the old body; this block cannot, the old body is gone)
 -- Its controls (each block must FAIL on a copy granted to anon, with its gate removed, with rows left out) were run
 -- in the rehearsals of each migration, 2026-11-14.
 
@@ -473,3 +476,77 @@ begin
 
   raise notice 'manifest dialog ok: % tickets checked', v_n;
 end $dialog$;
+
+do $search$
+declare
+  v_sig constant text := 'ops.portal_search(text)';
+  r record; v_res jsonb; v_bad bigint; v_n int := 0; v_clients boolean; v_seen_without boolean := false;
+  v_addr text; v_pid bigint; v_inv text; v_quo text; v_term text;
+begin
+  if has_function_privilege('anon', v_sig, 'execute') or has_function_privilege('public', v_sig, 'execute') then
+    raise exception 'verify_fail: anon or PUBLIC can execute';
+  end if;
+  if not has_function_privilege('authenticated', v_sig, 'execute') or not has_function_privilege('service_role', v_sig, 'execute') then
+    raise exception 'verify_fail: a grant was lost';
+  end if;
+  if not (select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=""'] from pg_proc p where p.oid = v_sig::regprocedure) then
+    raise exception 'verify_fail: not SECURITY DEFINER, STABLE, with an empty search_path';
+  end if;
+
+  select p.address, p.id into v_addr, v_pid from public.properties p
+   where p.deleted_at is null and length(p.address) between 12 and 80
+     and (select count(*) from public.properties p2 where p2.deleted_at is null and p2.address ilike '%' || p.address || '%') = 1
+   order by p.id desc limit 1;
+  select i.invoice_number into v_inv from public.invoices i where i.invoice_number ~ '^[0-9]+$'
+   and (select count(*) from public.invoices i2 where i2.invoice_number = i.invoice_number) = 1 order by i.id desc limit 1;
+  select q.quote_number into v_quo from public.quotes q where q.quote_number ~ '^[0-9]+$'
+   and (select count(*) from public.quotes q2 where q2.quote_number = q.quote_number) = 1 order by q.id desc limit 1;
+
+  -- Every active person with a working sign-in: the three groups only with the Client App, with the documented keys;
+  -- with it, an address, an invoice number and a quote number each find their record.
+  for r in
+    select e.id as emp, u.id as uid, u.email from public.employees e join auth.users u on lower(btrim(u.email)) = lower(btrim(e.email))
+     where e.status = 'ACTIVE' and u.email_confirmed_at is not null and (u.banned_until is null or u.banned_until <= now())
+  loop
+    perform set_config('request.jwt.claims', json_build_object('sub', r.uid, 'email', r.email, 'role', 'authenticated')::text, true);
+    v_clients := hr.fn_app_level('client_app') in ('view', 'edit');
+    if not v_clients then v_seen_without := true; end if;
+    foreach v_term in array array[v_addr, v_inv, v_quo, 'mi'] loop
+      set local role authenticated;
+      v_res := ops.portal_search(v_term);
+      reset role;
+      v_n := v_n + 1;
+      if (v_res ? 'properties' and v_res ? 'invoices' and v_res ? 'quotes') is distinct from v_clients
+         or (not v_clients and (v_res ? 'properties' or v_res ? 'invoices' or v_res ? 'quotes')) then
+        raise exception 'verify_fail: the new groups show when they must not, or not when they must (person %)', r.emp;
+      end if;
+      if v_clients then
+        select count(*) into v_bad from (
+          select x from jsonb_array_elements(v_res -> 'properties') x
+           where (select array_agg(k order by k) from jsonb_object_keys(x) k)
+                 <> array['address', 'city', 'client_id', 'client_name', 'code', 'id', 'is_billing', 'name', 'rank', 'tab', 'zip'] or x ->> 'tab' <> 'sites'
+          union all
+          select x from jsonb_array_elements(v_res -> 'invoices') x
+           where (select array_agg(k order by k) from jsonb_object_keys(x) k)
+                 <> array['client_id', 'client_name', 'code', 'id', 'invoice_number', 'issued', 'rank', 'status', 'tab'] or x ->> 'tab' <> 'billing'
+          union all
+          select x from jsonb_array_elements(v_res -> 'quotes') x
+           where (select array_agg(k order by k) from jsonb_object_keys(x) k)
+                 <> array['archived', 'client_id', 'client_name', 'code', 'id', 'quote_number', 'rank', 'status', 'tab', 'title'] or x ->> 'tab' <> 'billing') q;
+        if v_bad <> 0 then raise exception 'verify_fail: % new results do not have the documented keys (person %)', v_bad, r.emp; end if;
+        if v_term = v_addr and not (v_res -> 'properties') @> jsonb_build_array(jsonb_build_object('id', v_pid, 'tab', 'sites')) then
+          raise exception 'verify_fail: an address does not find its site (person %)', r.emp;
+        end if;
+        if v_term = v_inv and (v_res -> 'invoices' -> 0 ->> 'invoice_number') is distinct from v_inv then
+          raise exception 'verify_fail: an invoice number does not find its invoice first (person %)', r.emp;
+        end if;
+        if v_term = v_quo and (v_res -> 'quotes' -> 0 ->> 'quote_number') is distinct from v_quo then
+          raise exception 'verify_fail: a quote number does not find its quote first (person %)', r.emp;
+        end if;
+      end if;
+    end loop;
+  end loop;
+  perform set_config('request.jwt.claims', '', true);
+  if not v_seen_without or v_n < 20 then raise exception 'verify_fail: no person without the Client App, or only % searches', v_n; end if;
+  raise notice 'search ok: % searches', v_n;
+end $search$;
