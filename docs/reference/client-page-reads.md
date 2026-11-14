@@ -73,3 +73,31 @@ Migration `docs/migrations/2026-11-14_0140_public_get_pumping_figures.sql`, undo
   "source": "trap_size", "gallons": 30}`.
 - **Cost** (measured 2026-11-14 as the owner, best of 3): 0.40 s with a client (the averages read every trusted reading
   once); 0.10 s for a ticket's visits.
+
+## B3: a client's emails, and the emails to one contact (2026-11-14_0148)
+
+`client.get_client_emails(p_client_id bigint, p_address text default null) returns jsonb` (`{"emails": [...]}`, newest
+first). Migration `docs/migrations/2026-11-14_0148_client_get_client_emails.sql`, undo
+`2026-11-14_rollback_client_get_client_emails.sql`.
+
+- **Gate:** the Client App OR the DERM Tracker, at View. Today the browser cannot read To, Cc and Bcc
+  (`public.derm_email_sends` and `public.visit_photo_email_sends` grant it nothing) nor the client's copies
+  (`derm.redacted_manifest_docs`): this read is the way in.
+- **An email** is a record with status `sent` that is not a test, the rule of `public.v_client_email_sends` and
+  `public.v_visit_city_email_sends`: the DERM emails (to the client or the city) and Admin Review's city emails, which
+  count for the client of their visit.
+- **With `p_address`** (trimmed, any case): only the emails that carried that address in To, Cc or Bcc, each with
+  `matched_as` (`to`, `cc`, `bcc`): a contact's Activity. A blank address raises 22023.
+- **Each email:** `source` (`derm_email_sends` or `visit_photo_email_sends`) and `send_id`; `kind` (`client` or `city`);
+  `sent_at`; `sent_by_email` and `sent_by_name` (the name from `public.employees`; null when nothing was recorded);
+  `via` (`derm_tracker`, `admin_review`, `automatic`, read from `public.v_visit_city_email_sends`, which owns that rule; null
+  for a client email or a city email of an unlinked manifest); `to`, `cc`, `bcc` as recorded (`cc` and `bcc` are null
+  when not recorded, before 2026-08-28, and `[]` when there were none; no email carries a Cc today); `manifest_ids`,
+  `manifest_numbers`, `visit_id`; `with_photos`; `copies` (the client's copies we hold of those manifests: `manifest_id`,
+  `url`, `page`, `made_at`); `resend_email_id`; `delivery_status`, `delivery_at`, `delivery_detail`, straight from
+  `public.v_email_delivery` (never computed here, Building Apps rule 1e).
+- **No text:** we do not keep an email's text (decision 10), so there is none and the opened row says so. A later
+  server function may ask Resend by `resend_email_id`.
+- 112-YA today: 3 city emails (2 from Admin Review, 1 automatic), each with its copy of manifest 111111 and its delivery
+  state (`opened`, `delivered_open_unknown`).
+- **Cost:** 0.06 to 0.12 s for a client (2026-11-14).

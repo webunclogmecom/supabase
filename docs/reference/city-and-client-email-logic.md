@@ -58,6 +58,9 @@ both inboxes; the "overdue" notice was the city's own FOG BMP portal reminder, w
 - **Every past send (77) reads Delivered** (Fred): 22 confirmed by Resend, 55 assumed (older than 30 days).
 - **Bounces, missing reports and partial delivery** reach Fred's daily health email.
 - Apps: Admin Review and the DERM Tracker show a chip on every email line (`Building Apps/CLAUDE.md` rule 1e).
+- The Ops Portal's Clients pages read one client's emails (both kinds, with To, Cc, Bcc, the copy we hold and these
+  three delivery columns as the view gives them) through `client.get_client_emails` (2026-11-14):
+  [client-page-reads.md](client-page-reads.md), B3.
 Full design, research and decisions: `docs/superpowers/specs/2026-10-14-email-delivery-status-audit.md`.
 
 ---
