@@ -4,6 +4,8 @@
 -- body before and after.
 --   1. derm.fn_manifest_row_states_core(), derm.manifest_row_states(), derm.manifest_row_states_for_client(bigint)
 --      (2026-11-14_0135_derm_manifest_row_states_per_client.sql)
+--   2. B1, public.get_pumping_figures(bigint, bigint[]) (2026-11-14_0140_public_get_pumping_figures.sql); it also compares
+--      the trust rule with ops.fn_client_sludge_averages() both ways
 -- Its controls (each block must FAIL on a copy granted to anon, with its gate removed, with rows left out) were run
 -- in the rehearsals of each migration, 2026-11-14.
 
@@ -129,3 +131,108 @@ begin
   raise notice 'row states ok: % entries; % clients checked', (select count(*) from jsonb_object_keys(v_after)), v_n;
 end $rowstates$;
 
+do $pumping$
+declare
+  v_sig constant text := 'public.get_pumping_figures(bigint,bigint[])';
+  v_role text; v_uid uuid; v_email text; v_res jsonb; v_all jsonb; v_state text; v_msg text; v_bad bigint; v_n bigint;
+  r record;
+begin
+  -- 1. Who may run it.
+  foreach v_role in array array['public', 'anon', 'service_role'] loop
+    if has_function_privilege(v_role, v_sig, 'execute') then raise exception 'verify_fail: % can execute', v_role; end if;
+  end loop;
+  if not has_function_privilege('authenticated', v_sig, 'execute') then raise exception 'verify_fail: authenticated cannot execute'; end if;
+  if not (select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=""'] from pg_proc p where p.oid = v_sig::regprocedure) then
+    raise exception 'verify_fail: not SECURITY DEFINER, STABLE, with an empty search_path';
+  end if;
+
+  -- 2. A signed-in person with none of the four apps is refused with the access sentence.
+  for r in
+    select u.id, u.email
+      from public.employees e
+      join auth.users u on lower(btrim(u.email)) = lower(btrim(e.email))
+     where e.status = 'ACTIVE' and u.email_confirmed_at is not null and (u.banned_until is null or u.banned_until <= now())
+     order by (e.access_level = 'field') desc, e.id
+  loop
+    perform set_config('request.jwt.claims', json_build_object('sub', r.id, 'email', r.email, 'role', 'authenticated')::text, true);
+    if hr.fn_app_level('client_app') = 'none' and hr.fn_app_level('derm_tracker') = 'none'
+       and hr.fn_app_level('stamp_studio') = 'none' and hr.fn_app_level('admin_review') = 'none' then
+      v_uid := r.id; v_email := r.email; exit;
+    end if;
+  end loop;
+  if v_uid is null then raise exception 'verify_fail: no signed-in person without the four apps to test the refusal with'; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_uid, 'email', v_email, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  begin
+    v_res := public.get_pumping_figures(381);
+    v_state := 'no error';
+  exception when others then
+    v_state := sqlstate; v_msg := sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  if v_state is distinct from '42501' or v_msg not like 'You do not have access to do this.%' then
+    raise exception 'verify_fail: a person without the four apps was not refused (% %)', v_state, v_msg;
+  end if;
+
+  -- 3. The test client 112-YA, and every visit the tank view measures: one entry per completed live visit, each with
+  --    one of the four sources, gallons exactly when the source has them, the trap size only on a pumping, and
+  --    "not a pumping" only on a visit whose work is known and is not one.
+  v_res := public.get_pumping_figures(381);
+  v_all := public.get_pumping_figures(null, (select array_agg(t.visit_id) from public.v_visit_tank_service t));
+  select count(*) into v_bad
+    from (select x, true as ya from jsonb_array_elements(v_res -> 'visits') x
+          union all select x, false from jsonb_array_elements(v_all -> 'visits') x) y
+    left join public.visits vv on vv.id = (y.x ->> 'visit_id')::bigint
+   where (y.ya and (y.x ->> 'client_id')::bigint <> 381)
+      or y.x ->> 'source' not in ('tank', 'trap_size', 'none', 'not_a_pumping')
+      or ((y.x ->> 'gallons') is null) <> (y.x ->> 'source' in ('none', 'not_a_pumping'))
+      or (y.x ->> 'source' = 'trap_size' and vv.service_type is distinct from 'Pumping')
+      or (y.x ->> 'source' = 'not_a_pumping' and (vv.service_type is null or vv.service_type = 'Pumping'
+                                                   and not exists (select 1 from public.v_visit_tank_service t where t.visit_id = vv.id and t.visit_kind = 'dump')));
+  if v_bad <> 0 then raise exception 'verify_fail: % visits are malformed', v_bad; end if;
+  if jsonb_array_length(v_res -> 'visits') <> (select count(*) from public.visits v where v.client_id = 381 and v.deleted_at is null and v.visit_status = 'completed') then
+    raise exception 'verify_fail: 112-YA does not get one entry per completed visit';
+  end if;
+  if jsonb_array_length(v_all -> 'visits') <> (select count(*) from public.v_visit_tank_service) then
+    raise exception 'verify_fail: the visits of the tank view do not each get one entry';
+  end if;
+
+  -- 4. Both ways against the averages (the other home of the trust rule), over every visit the tank view measures:
+  --    a reading the averages use (any date) is "tank" here with the same whole gallons, and a "tank" reading of a
+  --    visit with a site and a pump kind is one the averages use.
+  with av as (
+    select distinct (rr ->> 'visit_id')::bigint as visit_id, round((rr ->> 'gallons')::numeric)::int as g
+      from ops.fn_client_sludge_averages((select array_agg(distinct t.visit_date + 1) from public.v_visit_tank_service t)) a
+     cross join lateral jsonb_array_elements(a.readings) rr
+  ), b1 as (
+    select (x ->> 'visit_id')::bigint as visit_id, (x ->> 'gallons')::int as g, x ->> 'source' as source, (x ->> 'property_id')::bigint as pid
+      from jsonb_array_elements(v_all -> 'visits') x
+  )
+  select (select count(*) from av left join b1 on b1.visit_id = av.visit_id where b1.source is distinct from 'tank' or b1.g is distinct from av.g)
+       + (select count(*) from b1 join public.visits vv on vv.id = b1.visit_id
+           where b1.source = 'tank' and b1.pid is not null and ops.fn_visit_pump_kind(vv.id, vv.job_id) is not null
+             and not exists (select 1 from av where av.visit_id = b1.visit_id))
+    into v_bad;
+  if v_bad <> 0 then raise exception 'verify_fail: % readings differ between this read and the averages', v_bad; end if;
+  if (select count(*) from jsonb_array_elements(v_all -> 'visits') x where x ->> 'source' = 'tank') = 0 then
+    raise exception 'verify_fail: no tank reading at all';
+  end if;
+
+  -- 5. The site figures are the averages' own, for a client that has some.
+  select a.client_id into v_n from ops.fn_client_sludge_averages(array[(now() at time zone 'America/New_York')::date + 1]) a
+   order by a.readings_n desc, a.property_id limit 1;
+  v_res := public.get_pumping_figures(v_n);
+  select count(*) into v_bad
+    from ops.fn_client_sludge_averages(array[(now() at time zone 'America/New_York')::date + 1]) a
+    join public.properties p on p.id = a.property_id and p.client_id = v_n and p.deleted_at is null
+   where not exists (select 1 from jsonb_array_elements(v_res -> 'sites') s
+                      where (s ->> 'property_id')::bigint = a.property_id and s ->> 'pump_kind' = a.pump_kind
+                        and (s ->> 'average_gallons')::int = round(a.avg_gallons)::int and (s ->> 'readings_in_average')::int = a.readings_n
+                        and (s ->> 'last_date')::date = a.last_reading_date);
+  if v_bad <> 0 or jsonb_array_length(v_res -> 'sites') = 0 then raise exception 'verify_fail: the site figures of client % are not the averages (% differ)', v_n, v_bad; end if;
+
+  raise notice 'pumping figures ok: % visits measured by the tank, % with the trap size, across the tank era',
+    (select count(*) from jsonb_array_elements(v_all -> 'visits') x where x ->> 'source' = 'tank'),
+    (select count(*) from jsonb_array_elements(v_all -> 'visits') x where x ->> 'source' = 'trap_size');
+end $pumping$;

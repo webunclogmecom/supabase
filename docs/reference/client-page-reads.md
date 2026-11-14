@@ -35,3 +35,41 @@ Migration `docs/migrations/2026-11-14_0135_derm_manifest_row_states_per_client.s
 - **Cost:** the core reads every ticket (about 0.15 s), so the per-client read costs the same.
   ponytail: pass the client's keys into the core if a client page read gets slow.
 - **A new reader of the row states calls the core from behind its own gate**; never copy the rows' rules.
+
+## B1: a visit's gallons and a site's pumping figures (2026-11-14_0140)
+
+`public.get_pumping_figures(p_client_id bigint default null, p_visit_ids bigint[] default null) returns jsonb`.
+Migration `docs/migrations/2026-11-14_0140_public_get_pumping_figures.sql`, undo `2026-11-14_rollback_public_get_pumping_figures.sql`.
+
+- **Gate:** the Client App, the DERM Tracker, Stamp Studio OR Admin Review, at View (the manifest dialog opens from the
+  first three; Admin Review's Grease page already shows these figures for every client, so it widens nothing).
+- **Where:** `public`, because Z8 forbids any object in `derm`, `customer` or `client` to read the tank views. The manifest
+  dialog's own read (B2) gives no gallons: the app calls this one with the ticket's visit ids.
+- **Input:** a client (every completed, live visit of it, and its sites' figures), or a list of visit ids (exactly those
+  completed, live visits; no site figures), or both (the client's visits among the ids). Neither raises 22023; more than
+  2,000 ids raises 22023.
+- **`visits`**, newest first: `visit_id`, `client_id`, `property_id`, `visit_date`, `source`, `gallons` (whole gallons).
+
+  | source | gallons | the app shows |
+  |---|---|---|
+  | `tank` | the truck tank's reading, `v_visit_tank_service.sludge_collected_gallons`, trusted as the averages trust it: a volume visit, confidence high or medium, 40 to 3,840 gal | the gallons, measured |
+  | `trap_size` | a pumping with no trusted reading: the trap size on file (0 is none) | the gallons, labelled as the trap size |
+  | `none` | null: a pumping with neither, or a visit whose service type is not known | "Not measured" |
+  | `not_a_pumping` | null: the service type is known and is not Pumping (or the visit is at a dump site) | "No pumping on this visit" |
+
+  A pumping is the tank view's own rule: service type `Pumping`, not at a dump site. It is decided by the service type, not
+  by the line items: on 2026-11-14, 54 completed 2026 Pumping visits had no pumping line and 37 other visits had one.
+- **`sites`** (only with `p_client_id`), per live site and pump kind (`grease_trap`, `grey_water`, `lift_station`):
+  `property_id`, `pump_kind`, `average_gallons`, `low_gallons`, `high_gallons`, `last_date`, `last_gallons`,
+  `readings_in_average`. They are `ops.fn_client_sludge_averages` itself as of tomorrow ET, the Calendar's average and
+  Admin Review's Grease page (the last 6 trusted readings of the place and kind), so low, high and the count are over the
+  same readings as the average. A site with no trusted reading has no entry.
+- **Never** `ops.visit_grease_frozen` (the Calendar's estimate) and never a figure the app works out itself.
+- **The trust rule has three copies** (the averages' pool, `ops.calendar_grease_estimates`, this read). The VERIFY and the
+  standing check compare this read with the averages over every measured visit, both ways: a reading the averages use is
+  `tank` here with the same gallons, and a `tank` reading of a visit with a site and a pump kind is one the averages use.
+- 112-YA today: 8 completed visits, 3 `trap_size` (30 gal, Pumping), 4 `not_a_pumping`, 1 `none` (no service type), no
+  site figure (no tank reading). Example entry: `{"visit_id": 8113, "visit_date": "2026-09-15", "property_id": 162,
+  "source": "trap_size", "gallons": 30}`.
+- **Cost** (measured 2026-11-14 as the owner, best of 3): 0.40 s with a client (the averages read every trusted reading
+  once); 0.10 s for a ticket's visits.
