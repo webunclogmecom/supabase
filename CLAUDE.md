@@ -2828,13 +2828,34 @@ Plan: `Building Apps/Ops Portal/docs/specs/2026-11-14-stamping-screen-build-plan
   machine's lines is unchanged. 🛑 Never send `second_look` without the person's click in the screen's "Save these bands
   anyway?" box. Check: `scripts/checks/stamp_bands_second_look.mjs` (rolled back; `CONTROL=1` puts the old bodies back
   and fails).
-- **Pick F (S2) is NOT applied: stopped on 2026-11-14.** The planned gate ("frozen only while an unstamped card AND a
-  stamped card whose band is not a saved row") passes one stamped card, but a client with cards in two non-adjacent rows
-  is shown everything between them (`fn_blackout_targets` reveals `[min y0, max y1]` per manifest and page), and the
-  unstamped client can be printed in the row between: proved on a rolled-back fixture on #111111 (rows 1 and 3 stamped
-  for one client, row 2 shown). Today 7 groups hold several cards and none has a row between, and 0 folders have both an
-  unstamped and a stamped card, so nothing leaks today; the gate stays as it was until the main session decides.
-- `add_sheet_page` (S3) and `stamp_sheet_facts` (S4) are not built yet (they wait behind S2).
+- **Pick F, partial copies (S2, `2026-11-14_1300`, applied 12:51 ET; Fred: "go ahead with all the recommendations", pick
+  F "the stamped clients get their copies, the others wait").** The whole-folder closed-world gate in
+  `derm.fn_blackout_targets` and arm 2 of `derm.v_blackout_blocked_sheets` (stated twice there: arm 2 and its negation in
+  arm 3) now freeze a folder with an unstamped card ONLY while it also holds an unsafe stamped card: (a) its band is not
+  exactly one saved row (`band_source <> 'slot'` or no band), or (b) its client's shown span on a page holds a saved row
+  (`derm.page_slots`) that is not one of that client's own rows. 🛑 **(b) is the privacy rule, do not drop it:** the copy
+  shows `[min y0, max y1]` per manifest and page and the redactor (`redact-manifest-sheet`) blacks only outside that
+  span, so a client stamped in rows 1 and 3 would be shown row 2, where the unstamped client can be printed. The plan had
+  (a) only; a rolled-back fixture on #111111 proved the leak and the main session approved (b). `frozen_closed_world` and
+  its sentence are unchanged. Reach on the day: 0 (20 folders hold an unstamped card, none a stamped one); with every copy
+  due, 857 targets over 165 tickets and the view identical old against new. Old Stamp host too, by Fred's decision: its
+  "Complete anyway" now gives the safe stamped clients their copies. Check: `scripts/checks/stamp_partial_copies.mjs`
+  (F1 released with the geometry proof, F1b and F2 frozen; `CONTROL=1` puts the old bodies back and fails F1).
+- 🛑 **Without an unstamped card, a client's span over ANOTHER STAMPED client's row is caught only by the FOREIGN-BAND
+  exclusion in `fn_blackout_targets`** (the target is dropped, fail-closed; the health email's `completed_not_published`
+  names the sheet). That exclusion counts only cards with `stamp_placed_at`: a WITHHELD card (a stamp point, no
+  `stamp_placed_at`) inside a client's span would be shown. Measured 2026-11-14: 0 groups in either shape (881 groups, 7
+  with several cards). Open, for a decision.
+- **Add a page (S3, `2026-11-14_1315`, applied 12:55 ET; pick D):** `derm.add_sheet_page(folder, url)`, Stamp Studio Edit
+  then the stamp key. The URL must be a stored `manifests` bucket JPG or PNG that the ticket does not already have; it goes
+  on every live manifest of the ticket (the address photo when empty, else one more extra), the function PROVES it is the
+  last page of `ticket_page_images` with every earlier page unchanged (else nothing is written), and a completed sheet
+  reopens. Check: `scripts/checks/stamp_add_page.mjs` (storage rows made inside the rolled-back transaction, no upload;
+  `CONTROL=1` cuts the order proof out and fails). The screen uploads to `manifests/derm/ticket-<n>/page-<n>-<epoch ms>.<ext>`
+  first; a refused call leaves that file unused.
+- **Sheet facts (S4, `2026-11-14_1305`, applied 13:00 ET):** `derm.stamp_sheet_facts(folder)`, Stamp Studio View plus the
+  staff check of `manifest_row_states()`: completed / reopened who and when, and `copies` = the Manifests row's own fact
+  from `fn_manifest_row_states_core()` (JSON null when no copy is missing). Never re-derive copies in an app.
 
 ### ✅ A STAMP SHEET WITH NO SCAN IS SKIPPED, NEVER COMPLETED (2026-10-27, `2026-10-27_1640`, Trello EizZ2IuY)
 
