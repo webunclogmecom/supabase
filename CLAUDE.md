@@ -2813,6 +2813,29 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
   catalogue). Helpers: `supabase/functions/_shared/slack-notify.ts`. Bot setup: `docs/reference/slack-unclogme-apps-bot.md`.
 App-side contract: `Building Apps/DERM Stamp Studio/CLAUDE.md` and its `docs/08-changelog.md`.
 
+### ✅ STAGE D (the portal's new stamping screen): what changed server side on 2026-11-14
+
+Plan: `Building Apps/Ops Portal/docs/specs/2026-11-14-stamping-screen-build-plan.md`, section 1.
+- **Completion travels live (S5, `2026-11-14_1235`):** `derm.stamp_sheet_status` carries `zzz_broadcast_inval`, so every
+  write there sends a private broadcast on topic `inval:stamp_sheet_status` (payload table, op, at). Seven tables now send
+  `inval:<table>`; the policy `app_inval_read` admits every `inval:%` topic. The old Stamp host does not listen to it.
+- **Pick J, a second look (S1, `2026-11-14_1240`, Fred: "J: yes"):** `derm.fn_validate_page_rules(p_rules, p_max_pitch_dev
+  DEFAULT 0.20)` (the one-argument function is gone). `record_page_rules` asks 0.20 first; only when that refuses, the
+  source is `human-v1-%` and `p_meta->>'second_look' = 'true'`, it asks 0.40, and on a yes it saves with
+  `page_rule_scans.detail` = `saved after a second look by <person>: <the 20 percent refusal>`. **20 percent stays the rule
+  for everything else:** the old Stamp host (it sends `p_meta = {detail}` only), the machine paths (runlen-v2,
+  template-v1), any save without the flag. Only the V4b spacing check can move; the row-crossing refusal against the
+  machine's lines is unchanged. 🛑 Never send `second_look` without the person's click in the screen's "Save these bands
+  anyway?" box. Check: `scripts/checks/stamp_bands_second_look.mjs` (rolled back; `CONTROL=1` puts the old bodies back
+  and fails).
+- **Pick F (S2) is NOT applied: stopped on 2026-11-14.** The planned gate ("frozen only while an unstamped card AND a
+  stamped card whose band is not a saved row") passes one stamped card, but a client with cards in two non-adjacent rows
+  is shown everything between them (`fn_blackout_targets` reveals `[min y0, max y1]` per manifest and page), and the
+  unstamped client can be printed in the row between: proved on a rolled-back fixture on #111111 (rows 1 and 3 stamped
+  for one client, row 2 shown). Today 7 groups hold several cards and none has a row between, and 0 folders have both an
+  unstamped and a stamped card, so nothing leaks today; the gate stays as it was until the main session decides.
+- `add_sheet_page` (S3) and `stamp_sheet_facts` (S4) are not built yet (they wait behind S2).
+
 ### ✅ A STAMP SHEET WITH NO SCAN IS SKIPPED, NEVER COMPLETED (2026-10-27, `2026-10-27_1640`, Trello EizZ2IuY)
 
 Fred: *"it's for marking them as complete or skipping them, for the AI to check what i mean and think what is the best
