@@ -166,3 +166,40 @@ or null number too). Migration `docs/migrations/2026-11-14_0155_derm_get_manifes
   chunk. So the new keys are ignored there.
 - 112-YA today, as a person with the Client App: `ops.portal_search('112-YA')` returns its client and empty
   `properties`, `invoices` and `quotes` (none of them holds that text).
+
+## The forms list opens to the Client App (2026-11-14_0213)
+
+`client.v_intake_submissions` (Picture Planner's list of site survey forms): its gate `(hr.fn_app_open('picture_planner',
+'view') OR hr.fn_pp_forms_open())` gained one arm, `OR hr.fn_app_open('client_app', 'view')`. Migration
+`docs/migrations/2026-11-14_0213_client_v_intake_submissions_client_app_arm.sql` (one anchored edit of the live text, printed
+with an empty search_path; the VERIFY checks the stored text is the old one plus that arm), undo
+`2026-11-14_rollback_client_v_intake_submissions_client_app_arm.sql`.
+
+- **Why:** the Clients pages' Schedule survey dialog (IntakeScheduleDialog) reads a site's waiting forms here. A person
+  with the Client App alone saw 0 forms where Fred saw 32 (11 waiting), with no error: a silent hide, the only read of the
+  Clients pages that failed that person (the sweep below).
+- **Nobody's answer changed:** every active person with a sign-in read the same number of rows before and after (7
+  people, measured in the rehearsal); everyone with the Client App also has Picture Planner or the forms switch today.
+
+## Every read of the Clients pages, as a person with the Client App alone (2026-11-14)
+
+Measured in a rolled-back rehearsal: person 58 (the HR test person) made active with the Client App at View and every other
+app None, against Fred, table by table and function by function (script `mockups/2026-11-14-clients-db/sweep.mjs`, local).
+
+- **Work, the same answer as Fred:** the PostgREST request gate; every `client` view the pages read (clients,
+  client_services_flat, properties, gdos, visits, v_visits_live, jobs, line_items, service_line_items, client_groups,
+  status_changes, v_client_billing, v_client_past_due, visit_team, vehicles, employees, photo_links, photos,
+  reason_photos, manifest_visits, invoices, quotes, client_contacts, jobber_contacts, derm_manifests, zones,
+  permit_types, v_property_intake, v_intake_questions, job_activity, job_frequency_changes); `public.employees`,
+  `public.vehicles`, `public.v_visit_city_email_sends`, `public.v_visit_city_email_state`, `public.v_client_email_sends`,
+  `public.disposal_facilities`; `derm.visit_gdo_report`, `derm.gdo_report_status`, `derm.manifests`;
+  `client.get_client_activity`, `client.get_property_activity`, `public.get_record_history('clients', ...)`,
+  `client.preview_client_status_change`, `client.preview_job_action`, `client.recurring_eligibility`,
+  `client.fn_derm_recipients`; the storage gate (`hr.fn_storage_open()`, signed photo links); the five new reads.
+- **`client.saved_views`:** 3 rows against Fred's 4, by design (a person sees the shared views and their own).
+- **Still refused, replaced by a new read:** `derm.manifest_row_states()` (by `derm.manifest_row_states_for_client`),
+  `public.get_grease_by_client()` (by B1), `derm.redacted_manifest_docs` (by B2 and B3), `public.derm_email_sends` (by B3).
+- **0 rows for everyone, Fred included:** `derm.address_row_map` and `derm.stamp_sheet_status` as `authenticated` (RLS
+  with no policy for that role); the pages do not read them, B2 does.
+- **Actions of another app** (Open on the Calendar, Send to city, Open the stamping screen) stay refused by their own
+  server checks: decision 3 shows them greyed with the reason. Writes need the Client App at Edit.

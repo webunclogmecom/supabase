@@ -11,6 +11,7 @@
 --   5. B4, ops.portal_search(text) (2026-11-14_0203_ops_portal_search_addresses_invoices_quotes.sql): the new groups only
 --      with the Client App, their keys, and an address, an invoice number and a quote number found (the migration compared
 --      the four old groups with the old body; this block cannot, the old body is gone)
+--   6. client.v_intake_submissions opens to the Client App at View (2026-11-14_0213_client_v_intake_submissions_client_app_arm.sql)
 -- Its controls (each block must FAIL on a copy granted to anon, with its gate removed, with rows left out) were run
 -- in the rehearsals of each migration, 2026-11-14.
 
@@ -550,3 +551,14 @@ begin
   if not v_seen_without or v_n < 20 then raise exception 'verify_fail: no person without the Client App, or only % searches', v_n; end if;
   raise notice 'search ok: % searches', v_n;
 end $search$;
+
+do $forms$
+begin
+  if pg_catalog.pg_get_viewdef('client.v_intake_submissions'::regclass, false) not like '%fn_app_open(''client_app''::text, ''view''::text)%' then
+    raise exception 'verify_fail: client.v_intake_submissions lost its Client App arm';
+  end if;
+  if pg_catalog.has_table_privilege('anon', 'client.v_intake_submissions', 'SELECT') then
+    raise exception 'verify_fail: anon can read client.v_intake_submissions';
+  end if;
+  raise notice 'forms list ok';
+end $forms$;
