@@ -2,6 +2,8 @@
 // Both trackers are watched: /~flock.js (until 2026-11-12..14; posted location.href, fragment included, to
 // /~api/analytics, which our guard scrubs) and /__l5e/events.<hash>.js (since; posts to /__l5e/trackevents with
 // fetch and sendBeacon and redacts on its own, measured 2026-11-14 in mockups/2026-11-14-l5e/measure.mjs).
+// Since 2026-11-14 about 05:20 ET "Visitor analytics" is OFF in all nine apps (Fred): the expected state is
+// that NO request goes to either tracker's endpoint or script during the whole run (tracker=NONE).
 //
 //   node flock-race.mjs [--inject] [app:path:type ...]
 //
@@ -11,8 +13,9 @@
 // login field (never submitted), sets a new fake hash (the old tracker posted again on it), and fires pagehide
 // (__l5e flushes by sendBeacon; a real navigation away hides that request from every instrument). Every POST
 // to /~api/analytics or /__l5e/ is read through a context route, the one instrument that sees a sendBeacon
-// body (gunzipped when gzip). PASS = a tracker reported THIS page (a body names its path) AND no fake value is
-// in any tracker body or URL AND the served guard is byte-identical. Not checked: the Referer header, which
+// body (gunzipped when gzip). PASS = (no request at all to /__l5e/, /~flock.js or /~api/analytics, OR a
+// tracker reported THIS page: a body names its path) AND no fake value is in any tracker body or URL AND the
+// served guard is byte-identical. A tracker that loads but reports nothing FAILS. Not checked: the Referer header, which
 // carries the query (never the fragment) on every same-origin request, the page load itself included.
 //   --inject   splice the canonical guard in as the first <head> script of the live page first, to prove
 //              the guard on the real app and the real tracker BEFORE any app ships it (~flock.js only: the
@@ -40,7 +43,7 @@ const EMAIL = 'input[type=email], input[autocomplete~=email], input[autocomplete
 const DEFAULT = ['hub:/:', 'hub:/reset-password:recovery', 'admin:/:', 'clients:/reset-password:recovery', 'stamp:/:', 'derm:/:recovery', 'calendar:/:', 'hr:/employees:', 'planner:/reset-password:recovery', 'ops:/:']
 const cases = (args.filter((a) => !a.startsWith('--')).length ? args.filter((a) => !a.startsWith('--')) : DEFAULT)
   .map((s) => { const [app, path, type] = s.split(':'); return { host: `${app}.unclogme.app`, path, type } })
-const endpoint = (u) => u.pathname.startsWith('/__l5e/') ? 'l5e' : u.pathname.startsWith('/~api/analytics') ? 'flock' : null
+const endpoint = (u) => u.pathname.startsWith('/__l5e/') ? 'l5e' : u.pathname.startsWith('/~api/analytics') || u.pathname.startsWith('/~flock') ? 'flock' : null
 const text = (b) => (b && b[0] === 0x1f && b[1] === 0x8b ? zlib.gunzipSync(b) : b || Buffer.alloc(0)).toString('utf8')
 const ECHO = () => {
   const beacon = navigator.sendBeacon.bind(navigator), post = window.fetch.bind(window)
@@ -63,9 +66,10 @@ async function load(c, control) {
       route.fulfill({ response: r, body: html, headers: { ...r.headers(), 'content-length': String(Buffer.byteLength(html)) } })
     })
   }
-  const posts = []
+  const posts = [], seen = []
   await ctx.route((u) => endpoint(u) !== null, (route) => {
     const r = route.request()
+    seen.push(endpoint(new URL(r.url())))
     if (r.method() !== 'POST') return route.continue()
     posts.push({ to: endpoint(new URL(r.url())), url: r.url(), body: text(r.postDataBuffer()) })
     return control ? route.fulfill({ status: 204 }) : route.continue()
@@ -90,7 +94,7 @@ async function load(c, control) {
   await ctx.close()
   const leakTo = [...new Set(posts.filter((p) => (p.url + p.body).includes('FLOCKFAKE')).map((p) => p.to))]
   const sentView = posts.some((p) => p.body.includes(`"${c.path}"`) || p.body.includes(`\\"${c.path}\\"`))
-  return { posts, leakTo, sentView, hashAt700, guarded, webdriver, typed, trackers: [...new Set(posts.map((p) => p.to))] }
+  return { posts, leakTo, sentView, hashAt700, guarded, webdriver, typed, requests: seen.length, trackers: [...new Set(seen)] }
 }
 
 let bad = 0
@@ -103,9 +107,9 @@ for (const c of cases) {
     const inl = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).filter((s) => s.includes('__unclogmeAnalyticsGuard'))
     served = inl.length === 0 ? 'MISSING' : inl.length > 1 ? `DUPLICATED x${inl.length}` : inl[0].trim() === GUARD ? 'byte-identical' : 'DIFFERS'
   }
-  const ok = r.sentView && !r.leakTo.length && (inject || served === 'byte-identical')
+  const ok = (r.requests === 0 || r.sentView) && !r.leakTo.length && (inject || served === 'byte-identical')
   if (!ok) bad++
-  console.log(`${(c.host + c.path + (c.type ? ' (' + c.type + ')' : '')).padEnd(46)} ${ok ? 'PASS' : 'FAIL'}  tracker=${r.trackers.join('+') || 'NONE'} posts=${r.posts.length} page-view-sent=${r.sentView} leaked=${r.leakTo.length ? r.leakTo.join('+') : false} typed=${r.typed.join('+') || 'none'} redacted=${r.posts.some((p) => p.body.includes('=redacted'))} guard=${r.guarded} served-inline=${served} fragment-still-in-URL-at-700ms=${r.hashAt700} webdriver=${r.webdriver}`)
+  console.log(`${(c.host + c.path + (c.type ? ' (' + c.type + ')' : '')).padEnd(46)} ${ok ? 'PASS' : 'FAIL'}  tracker=${r.trackers.join('+') || 'NONE (no request to either endpoint)'} requests=${r.requests} posts=${r.posts.length} page-view-sent=${r.sentView} leaked=${r.leakTo.length ? r.leakTo.join('+') : false} typed=${r.typed.join('+') || 'none'} redacted=${r.posts.some((p) => p.body.includes('=redacted'))} guard=${r.guarded} served-inline=${served} fragment-still-in-URL-at-700ms=${r.hashAt700} webdriver=${r.webdriver}`)
 }
 const ctl = await load({ host: 'hub.unclogme.app', path: '/', type: '' }, true)
 const caught = ['l5e', 'flock'].every((t) => ctl.leakTo.includes(t))
