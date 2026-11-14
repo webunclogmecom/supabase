@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 const control = process.env.CONTROL === '1'
 const rbFile = fileURLToPath(new URL('../../docs/migrations/2026-11-14_rollback_derm_bands_second_look.sql', import.meta.url))
-const rb = control ? readFileSync(rbFile, 'utf8').split('\nBEGIN;\n')[1].split('\nCOMMIT;')[0] : ''
+const rb = control ? readFileSync(rbFile, 'utf8').replace(/\r\n/g, '\n').split('\nBEGIN;\n')[1].split('\nCOMMIT;')[0] : ''
 if (control && !rb.includes('DROP FUNCTION derm.fn_validate_page_rules(jsonb, numeric);')) {
   console.log('UNKNOWN: could not read the rollback body'); process.exit(2)
 }
