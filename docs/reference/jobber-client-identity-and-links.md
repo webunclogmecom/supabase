@@ -40,6 +40,19 @@ name, so the second index raises `23505` instead. That mismatch is the whole 202
 rows through this table, so an unlinked row can never receive an update, a job, a visit or an
 invoice. It is not a lagging record; it is a dead one.
 
+🛑 **A Jobber link holds the ENCODED id, never the bare number, and the database refuses the bare
+number since 2026-11-14** (CHECK `entity_source_links_jobber_id_encoded`, migration
+`2026-11-14_0805_jobber_links_encoded_ids_only.sql`; Fred: "Merge duplicate quote rows from two Jobber
+id forms"). `idx_esl_source_id` compares the TEXT, so the two forms of one Jobber record never collide:
+before 2026-04-29 the webhook stored bare numbers while the first load stored encoded ids, a lookup in
+one form missed the other, and a second row was made. Two quotes survived every earlier cleanup
+(#3158 and #3159, rows 166 and 167, removed that day with a backup in the workspace `backups/` and
+their DELETE in `audit.logs`). A writer that ever stores a bare number now fails with 23514 instead of
+making a double. Standing check: `scripts/checks/jobber_links_one_id_form.sql` (every row `ok`; its
+controls prove it can see a double). ⚠ **The same quote NUMBER on two rows is NOT always a double:**
+Jobber gives a deleted quote's number to the next quote (#3244, #3276, #3292, #3305 are each two
+different Jobber quotes, different ids). A double is two rows for ONE Jobber id, decoded.
+
 ## 2. The property link has a synthetic form, and it is not a property GID
 
 Every client carries **two** property rows for one Jobber property:
