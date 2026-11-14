@@ -84,6 +84,8 @@ for (const [name, addr] of PAGES) {
   if (before.orange + before.white === 0) fails.push('no main or second-rank button found')
   // The portal's error page has its own Try again button, so a crashed page must not pass on it.
   if (await page.getByRole('button', { name: /^try again$/i }).count()) fails.push('the page crashed into the error page')
+  // An address that no longer exists must not pass on the not-found page's own white button.
+  if (/Page not found/.test(await page.locator('main').innerText().catch(() => ''))) fails.push('the page says Page not found')
   if (after.orange) fails.push(`${after.orange} of ${before.orange} main buttons stayed orange`)
   if (after.teal < before.orange) fails.push(`${after.teal} of ${before.orange} main buttons turned teal`)
   if (after.blue) fails.push(`${after.blue} of ${before.blue} blue action buttons stayed blue`)
