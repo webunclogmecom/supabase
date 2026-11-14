@@ -45,7 +45,7 @@
 -- (reads the view's blocker in code). clear_stamp_position, set_row_band and _page_geometry_violations name the objects
 -- in comments only.
 --
--- REHEARSED (rolled back, 2026-11-14 12:40 to 12:55 ET, test ticket #111111):
+-- APPLIED 2026-11-14 12:51 ET (the name is later than the apply time). REHEARSED (rolled back, 12:40 to 12:50 ET, test ticket #111111):
 --   CONTROL, old bodies, fixture 1 (one unstamped card added for the test client): 'frozen_closed_world', 0 targets,
 --   Mark completed refused by the trigger, no sweep queued.
 --   NEW, fixture 1: 0 blockers, fn_sheet_publishable NULL, Mark completed goes through and queues one sweep kick
