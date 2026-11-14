@@ -286,6 +286,11 @@ Fred, on the Manifests rows: *"make it instead be icons, when hovered it display
 - **A missing client copy** is a second fact (`copies`), only on a completed sheet. Under 20 minutes after the later of Mark completed and the stamp it reads "Copies being made" (grey); from 20 minutes on it is red. 20 minutes is the line `derm.v_blackout_completed_unpublished` already draws, so the row and the health email turn together. Change one, change the other.
 - **Words that now live twice:** the five skip reasons (also in the portal's `modules/stamp/StampStudio.tsx`) and "Not sent to city (before Sep 15)". The reason a copy was not made comes from `derm.fn_sheet_publishable` and `derm.fn_publishable_hint`, for at most 3 sheets per read (about 0.1 s each); `derm.fn_stamp_sheet_wait_reason` is not called, it cost 0.5 s for one sheet.
 - **Not in it:** an email that did not arrive, a client row with no visit, archive and restore, a live message after stamping.
+- **Since `2026-11-14_0135` the rules live in ONE ungated core, `derm.fn_manifest_row_states_core()`** (SECURITY INVOKER, EXECUTE
+  for the owner only). `derm.manifest_row_states()` keeps its gate and calls it (same answer on every row, compared in the migration);
+  `derm.manifest_row_states_for_client(bigint)` reads it for one client's tickets behind the Client App OR DERM Tracker gate (the
+  portal's Clients pages, pick BB). A new reader calls the core from behind its own gate; never copy the rules. Contracts:
+  [docs/reference/client-page-reads.md](docs/reference/client-page-reads.md).
 
 ## 🛑 PERMITS: `public.gdos` HOLDS EVERY PERMIT TYPE; THE DERM READERS STAY GDO-ONLY (2026-11-02)
 
