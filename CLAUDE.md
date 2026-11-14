@@ -2841,11 +2841,8 @@ Plan: `Building Apps/Ops Portal/docs/specs/2026-11-14-stamping-screen-build-plan
   due, 857 targets over 165 tickets and the view identical old against new. Old Stamp host too, by Fred's decision: its
   "Complete anyway" now gives the safe stamped clients their copies. Check: `scripts/checks/stamp_partial_copies.mjs`
   (F1 released with the geometry proof, F1b and F2 frozen; `CONTROL=1` puts the old bodies back and fails F1).
-- 🛑 **Without an unstamped card, a client's span over ANOTHER STAMPED client's row is caught only by the FOREIGN-BAND
-  exclusion in `fn_blackout_targets`** (the target is dropped, fail-closed; the health email's `completed_not_published`
-  names the sheet). That exclusion counts only cards with `stamp_placed_at`: a WITHHELD card (a stamp point, no
-  `stamp_placed_at`) inside a client's span would be shown. Measured 2026-11-14: 0 groups in either shape (881 groups, 7
-  with several cards). Open, for a decision.
+- 🛑 **A client's span over ANOTHER client's row is caught only by the FOREIGN-BAND exclusion in `fn_blackout_targets`**
+  (target dropped, fail-closed; the health email names the sheet): since `2026-11-14_1308` it counts every card with a stamp point, withheld ones too (F3 in the check).
 - **Add a page (S3, `2026-11-14_1315`, applied 12:55 ET; pick D):** `derm.add_sheet_page(folder, url)`, Stamp Studio Edit
   then the stamp key. The URL must be a stored `manifests` bucket JPG or PNG that the ticket does not already have; it goes
   on every live manifest of the ticket (the address photo when empty, else one more extra), the function PROVES it is the

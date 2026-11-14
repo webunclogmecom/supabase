@@ -11,7 +11,11 @@
 //   F1b the same, with the stamped card's band_source set to an older value: frozen ('frozen_closed_world'), 0 targets.
 //   F2  2017 also stamped in row 3, and an unstamped card: frozen, 0 targets (the shown span would hold row 2, where
 //       the unstamped client can be printed).
+//   F3  no unstamped card, 2017 stamped in rows 1 and 3, a WITHHELD card (a stamp point, no placement time) in row 2,
+//       the sheet completed again: 0 targets (migration 2026-11-14_1308: the foreign-band exclusion counts every card
+//       with a stamp point; before it, the copy showed 23.882..47.255 with the withheld row inside).
 //   CITY the automatic city email for the test manifests 2017 and 2020 reads the same before and after.
+// CONTROL=1 restores the bodies before pick F, which also predate 1308, so F1 and F3 must FAIL.
 // Everything runs in ONE request whose last step raises P0099 with the results, so the whole run is rolled back.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -21,9 +25,15 @@ const rbFile = fileURLToPath(new URL('../../docs/migrations/2026-11-14_rollback_
 const rb = control ? readFileSync(rbFile, 'utf8').replace(/\r\n/g, '\n').split('\nBEGIN;\n')[1].split('\nCOMMIT;')[0] : ''
 if (control && !rb.includes('CREATE OR REPLACE VIEW derm.v_blackout_blocked_sheets')) { console.log('UNKNOWN: could not read the rollback body'); process.exit(2) }
 
-const fixture = (extraRow3, olderSource) => `
+const fixture = (extraRow3, olderSource, withheldRow2) => `
+    ${withheldRow2 ? `INSERT INTO derm.address_row_map (dump_folder, white_manifest_number, page, row_index, image_url, assignment_status, source,
+        matched_client_id, stamp_x_pct, stamp_y_pct, stamp_page, stamp_placed_at, band_y0_pct, band_y1_pct, band_source, slot_index)
+      SELECT 'ticket-111111', '111111', 1, 92, 'pending', 'matched', 'derm-link', c.matched_client_id, 9.6, (s.y0_pct + s.y1_pct) / 2, 1, NULL,
+             round(s.y0_pct, 3), round(s.y1_pct, 3), 'slot', 2
+        FROM derm.page_slots s, derm.address_row_map c
+       WHERE s.dump_folder = 'ticket-111111' AND s.effective_page = 1 AND s.slot_index = 2 AND c.id = 3051;` : `
     INSERT INTO derm.address_row_map (dump_folder, white_manifest_number, page, row_index, image_url, assignment_status, source, matched_client_id)
-    VALUES ('ticket-111111', '111111', 1, 90, 'pending', 'unmatched', 'derm-link', (SELECT id FROM public.clients WHERE client_code = '112-YA'));
+    VALUES ('ticket-111111', '111111', 1, 90, 'pending', 'unmatched', 'derm-link', (SELECT id FROM public.clients WHERE client_code = '112-YA'));`}
     ${extraRow3 ? `INSERT INTO derm.address_row_map (dump_folder, white_manifest_number, page, row_index, image_url, assignment_status, source,
         matched_client_id, matched_manifest_id, stamp_x_pct, stamp_y_pct, stamp_page, stamp_placed_at, band_y0_pct, band_y1_pct, band_source, slot_index)
       SELECT 'ticket-111111', '111111', 1, 91, 'pending', 'matched', 'derm-link', c.matched_client_id, 2017, 9.6,
@@ -32,12 +42,12 @@ const fixture = (extraRow3, olderSource) => `
        WHERE s.dump_folder = 'ticket-111111' AND s.effective_page = 1 AND s.slot_index = 3 AND c.id = 3051;` : ''}
     ${olderSource ? `UPDATE derm.address_row_map SET band_source = 'manual' WHERE id = 3051;` : ''}`
 
-const fx = (key, extraRow3, olderSource, expect) => `
+const fx = (key, extraRow3, olderSource, expect, withheldRow2 = false) => `
 DO $f$
 DECLARE c boolean; q0 int; q1 int; blk text; pub text; n int; y0 numeric; y1 numeric; bt numeric; bb numeric; leak int; ok boolean;
 BEGIN
   BEGIN
-    ${fixture(extraRow3, olderSource)}
+    ${fixture(extraRow3, olderSource, withheldRow2)}
     SELECT count(*) INTO q0 FROM net.http_request_queue;
     UPDATE derm.stamp_sheet_status SET completed = false WHERE dump_folder = 'ticket-111111';
     UPDATE derm.stamp_sheet_status SET completed = true WHERE dump_folder = 'ticket-111111';
@@ -57,6 +67,8 @@ BEGIN
     ok := ${expect === 'released'
       ? `c AND q1 - q0 = 1 AND blk IS NULL AND pub IS NULL AND n = 1 AND y0 IS NOT NULL AND leak = 0
          AND (SELECT count(*) FROM derm.page_slots WHERE dump_folder = 'ticket-111111' AND effective_page = 1) >= 3`
+      : expect === 'dropped'
+      ? `c AND n = 0`
       : `NOT c AND q1 = q0 AND blk = 'frozen_closed_world' AND pub = 'frozen_closed_world' AND n = 0`};
     RAISE EXCEPTION USING ERRCODE = 'P0098', MESSAGE = 'undo';
   EXCEPTION WHEN SQLSTATE 'P0098' THEN NULL;
@@ -80,6 +92,7 @@ ${rb}
 ${fx('F1 one unstamped card: the stamped client gets its copy, and only its own row shows', false, false, 'released')}
 ${fx('F1b the stamped card is not in a saved row: frozen', false, true, 'frozen')}
 ${fx('F2 client stamped in rows 1 and 3, unstamped card: frozen (row 2 would show)', true, false, 'frozen')}
+${fx('F3 client stamped in rows 1 and 3, a WITHHELD card in row 2: no copy made (row 2 would show)', true, false, 'dropped', true)}
 ${city('_city_after')}
 DO $z$ BEGIN RAISE EXCEPTION USING ERRCODE = 'P0099', MESSAGE = 'RESULT ' || (SELECT jsonb_object_agg(k, v) FROM _res)::text; END $z$;
 ROLLBACK;`
@@ -103,5 +116,5 @@ for (const [k, v] of Object.entries(r)) {
 const cityOk = JSON.stringify(r._city_before) === JSON.stringify(r._city_after)
 if (!cityOk) bad++
 console.log(`${cityOk ? 'PASS' : 'FAIL'} CITY the city email of the test manifests did not move`)
-console.log(bad ? `${bad} FAILED${control ? ' (CONTROL: expected, the old gate freezes F1)' : ''}` : 'ALL PASS')
+console.log(bad ? `${bad} FAILED${control ? ' (CONTROL: expected, the old gate freezes F1 and the old exclusion shows F3\'s withheld row)' : ''}` : 'ALL PASS')
 process.exit(bad ? 1 : 0)
