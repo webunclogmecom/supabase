@@ -289,7 +289,9 @@ Fred, on the Manifests rows: *"make it instead be icons, when hovered it display
 - **Since `2026-11-14_0135` the rules live in ONE ungated core, `derm.fn_manifest_row_states_core()`** (SECURITY INVOKER, EXECUTE
   for the owner only). `derm.manifest_row_states()` keeps its gate and calls it (same answer on every row, compared in the migration);
   `derm.manifest_row_states_for_client(bigint)` reads it for one client's tickets behind the Client App OR DERM Tracker gate (the
-  portal's Clients pages, pick BB). A new reader calls the core from behind its own gate; never copy the rules. Contracts:
+  portal's Clients pages, pick BB), and `derm.get_manifest_dialog(text)` (`2026-11-14_0155`, the manifest dialog, B2) for one
+  ticket behind the Client App, DERM Tracker or Stamp Studio gate. A new reader calls the core from behind its own gate;
+  never copy the rules. Contracts:
   [docs/reference/client-page-reads.md](docs/reference/client-page-reads.md).
 
 ## 🛑 PERMITS: `public.gdos` HOLDS EVERY PERMIT TYPE; THE DERM READERS STAY GDO-ONLY (2026-11-02)

@@ -101,3 +101,40 @@ first). Migration `docs/migrations/2026-11-14_0148_client_get_client_emails.sql`
 - 112-YA today: 3 city emails (2 from Admin Review, 1 automatic), each with its copy of manifest 111111 and its delivery
   state (`opened`, `delivered_open_unknown`).
 - **Cost:** 0.06 to 0.12 s for a client (2026-11-14).
+
+## B2: the manifest dialog's data for one ticket (2026-11-14_0155)
+
+`derm.get_manifest_dialog(p_number text) returns jsonb`, or null when no live manifest row carries that number (a blank
+or null number too). Migration `docs/migrations/2026-11-14_0155_derm_get_manifest_dialog.sql`, undo
+`2026-11-14_rollback_derm_get_manifest_dialog.sql` (run it before the undo of `2026-11-14_0135`).
+
+- **Gate:** the Client App, the DERM Tracker OR Stamp Studio, at View: the three apps that open the dialog (decision 4,
+  everywhere in one publish).
+- **The ticket** is every live `public.derm_manifests` row whose number (`white_manifest_number`, else
+  `yellow_ticket_number`) is `p_number`, the number every page links.
+- **`number`**, and **`row_states`**: the ticket's entries of the Manifests list, exactly as
+  `derm.fn_manifest_row_states_core()` gives them (the IC1 icons and their tooltips), keyed by the list's row key. A
+  Miami-Dade and a Broward ticket sharing digits would come as two keys (none on 2026-11-14).
+- **`clients`**, one per live row (one client on the ticket), by client code: `manifest_id`, `client_id`, `client_code`,
+  `client_name`, `white_manifest_number`, `yellow_ticket_number`, `service_date`, `dump_ticket_date`, `dump_site`,
+  `sheet_no`;
+  - `papers`: `manifest_urls`, `sheet_urls` (the address sheet pages in order), `receipt_path`, `fog_manifest_url`, as
+    stored on the row (the rows of 5 tickets hold different papers, so each row keeps its own);
+  - `permits`: the client's live GDO permit numbers by the list rule (ACTIVE, type GDO, `GDO-<digits>`), never the frozen
+    `derm_manifests.gdo_id`;
+  - `stamp`: `cards`, `placed`, `last_placed_at` of the row's stamp cards (`derm.address_row_map.matched_manifest_id`);
+  - `copies`: the client's copies (`derm.redacted_manifest_docs`): `url`, `page`, `made_at`;
+  - `client_emails`: from `public.v_client_email_sends`: `sent_at`, `sent_by_name`, `to_count`, `with_photos`,
+    `delivery_status`, `delivery_at`, `delivery_detail` (no address: B3 has them);
+  - `visits`, the live visits linked to the row, by date: `visit_id`, `visit_date`, `visit_status`, `service_type`,
+    `arrived_at`, `duration_minutes`, `property_id`, `site` (name, else address), `city`, `crew` (`name`, `color`),
+    `truck` (`name`, `color`), `job_number`, `invoice_number`, `city_email` (`state` from
+    `public.v_visit_city_email_state`; `sends` from `public.v_visit_city_email_sends`: `sent_at`, `via`, `app_label`,
+    `sent_by_name`, `with_manifest`, `with_photos` and the delivery columns), `county_report` (`needed`: the visit is in
+    `derm.gdo_report_status`; `report_state`; `filed`: `derm.visit_gdo_report` rows with `status`, `gdo_number`,
+    `attempted_at`, `is_manual`, `portal_confirmation`, `screenshot_path`, `screenshot_missing_reason`).
+- **No gallons:** it lives in `derm` and may not read the tank views (Z8). The dialog calls
+  `public.get_pumping_figures(null, <the visit ids>)` (B1). `derm.manifests.gallons` is always null and is not read.
+- 112-YA today, `derm.get_manifest_dialog('111111')`: 1 client, 1 visit (8113, Cloggy, crew Fred), 1 copy, a stamp
+  placed, 2 city emails, row state `Miami-Dade #111111`.
+- **Cost:** 0.15 to 0.2 s a ticket (the row states core is most of it).
