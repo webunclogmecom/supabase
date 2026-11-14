@@ -294,6 +294,31 @@ Fred, on the Manifests rows: *"make it instead be icons, when hovered it display
   never copy the rules. Contracts:
   [docs/reference/client-page-reads.md](docs/reference/client-page-reads.md).
 
+## ✅ THE PAYMENTS COPY: every Jobber payment and bank payout in our database (2026-11-14)
+
+Fred: *"Build the copy now ... see if there is a way to have a good way to have that realtime, like with the webhook but
+if we need to have cronjob then decide the frequency"*. **Read [docs/reference/payments-copy.md](docs/reference/payments-copy.md)
+before touching any of it.** Migrations `2026-11-14_0620_payments_copy` and `2026-11-14_0720_payments_copy_schedule`
+(undo the schedule first).
+- `public.payments`, `payment_allocations`, `payouts`, `payout_lines`: RLS on with NO policy and NO grant to anon,
+  authenticated or service_role. Written only by `public.sync_jobber_payments` / `sync_jobber_payouts` (raw Jobber nodes
+  in; the field mapping lives there and nowhere else); read only by `client.list_payments`, `client.payment_months`,
+  `client.get_payment`, `client.get_invoice_payments` (Client App at View). Links: `entity_source_links` types
+  `payment`, `payout`, which `client.entity_source_links` leaves out.
+- 🛑 **A payment is its NUMBER**: Jobber shows `OtherPaymentRecord/N` in the ledger and `PaymentRecord/N` under an
+  invoice. The stored id is always base64 `gid://Jobber/PaymentRecord/N` (`public.fn_jobber_gid`).
+- Real time: `webhook-jobber` (v154) handles the six `PAYMENT_*` / `PAYOUT_*` topics by re-reading the object by id
+  (null = removed); they fire only once Fred adds them in Jobber's Developer Center. The net: `sync-jobber-payments`
+  every 15 minutes (`jobber-payments-sync`: the 50 records changed last, those entered in 2 days, payouts updated in 2
+  days) and nightly (`jobber-payments-window`, 35 days, the only path that removes; `fn_jobber_payments_unseen`
+  refuses an empty or mass answer, every removal is confirmed by a read by id). Both in `log_jobber_sync_health`.
+- The three callers (the webhook, the net, `scripts/sync/backfill_jobber_payments.mjs`) share
+  `supabase/functions/_shared/jobber-payments.ts`; `scripts/checks/jobber_payments_write_loop.mjs` checks its write loop.
+- Since the same change `webhook-jobber` writes `invoices.paid_at` (Jobber `receivedDate`), tax, discount, the tax rate
+  name, viewed and void details, and the REAL `quotes.sent_at` (it held the creation time), approved and converted
+  dates and the quote's lines (`public.sync_jobber_invoice_extras` / `sync_jobber_quote_extras`). `public.quotes` is
+  audited since then. Its `gql()` throws on a reply that is not JSON or has no `data` (it threw before too, less clearly).
+
 ## 🛑 PERMITS: `public.gdos` HOLDS EVERY PERMIT TYPE; THE DERM READERS STAY GDO-ONLY (2026-11-02)
 
 Fred (Client App, Grove Kosher, Boca Raton): *"One table for every permit now ... the DERM sheets, the filing bot and the

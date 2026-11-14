@@ -96,9 +96,11 @@ Handler then calls Jobber GraphQL with the `itemId` to fetch the full client rec
 | `JOB_CLOSED` / `JOB_DESTROY` | Flip `jobs.job_status` to `closed` / `destroyed` — no hard-delete |
 | `VISIT_CREATE` / `VISIT_UPDATE` / `VISIT_COMPLETE` | Fetch visit with `assignedUsers`; upsert `visits` + `visit_assignments` |
 | `VISIT_DESTROY` | Flip `visits.visit_status = 'destroyed'` |
-| `INVOICE_CREATE` / `INVOICE_UPDATE` | Upsert `invoices` from Jobber amounts |
+| `INVOICE_CREATE` / `INVOICE_UPDATE` | Upsert `invoices` from Jobber amounts; since v153 (2026-11-14) also the paid date, subtotal, tax, discount, tax rate name, viewed and void details through `sync_jobber_invoice_extras` |
+| `PAYMENT_CREATE` / `PAYMENT_UPDATE` / `PAYMENT_DESTROY` | (v153, 2026-11-14; live once Fred adds the topics) Re-read `paymentRecord(id)` by number whatever the topic; write `payments` + `payment_allocations` through `sync_jobber_payments`; a null re-read marks `deleted_at`. [reference/payments-copy.md](reference/payments-copy.md) |
+| `PAYOUT_CREATE` / `PAYOUT_UPDATE` / `PAYOUT_DESTROY` | (v153) Re-read `payoutRecord(id)`; write `payouts` + `payout_lines` through `sync_jobber_payouts`; a null re-read marks `deleted_at` |
 | `INVOICE_DESTROY` | Flip `invoices.invoice_status = 'destroyed'` |
-| `QUOTE_CREATE` / `QUOTE_UPDATE` / `QUOTE_SENT` / `QUOTE_APPROVED` | Upsert `quotes` (status reflects Jobber `quoteStatus`) |
+| `QUOTE_CREATE` / `QUOTE_UPDATE` / `QUOTE_SENT` / `QUOTE_APPROVED` | Upsert `quotes` (status reflects Jobber `quoteStatus`); since v153 the real sent date (not the creation time), approved and converted dates, amounts, viewed and the quote's lines through `sync_jobber_quote_extras` |
 | `QUOTE_DESTROY` | Flip `quotes.quote_status = 'destroyed'` |
 | `PROPERTY_CREATE` / `PROPERTY_UPDATE` | Upsert `properties` (client_id, address, city, state, zip) |
 | `PROPERTY_DESTROY` | Hard delete (properties are leaf nodes; FK children handled via ON DELETE) |
@@ -198,6 +200,10 @@ Webhooks are managed in the Jobber Developer Center → your app → Webhooks. R
   - INVOICE_CREATE, INVOICE_UPDATE, INVOICE_DESTROY
   - QUOTE_CREATE, QUOTE_UPDATE, QUOTE_SENT, QUOTE_APPROVED, QUOTE_DESTROY
   - PROPERTY_CREATE, PROPERTY_UPDATE, PROPERTY_DESTROY
+  - **To add (Fred, his Developer Center login): PAYMENT_CREATE, PAYMENT_UPDATE, PAYMENT_DESTROY, PAYOUT_CREATE,
+    PAYOUT_UPDATE, PAYOUT_DESTROY.** `webhook-jobber` handles them since v153 (2026-11-14, the payments copy); until
+    they are added, `sync-jobber-payments` keeps the copy current (every 15 min, nightly window). Steps and staleness:
+    [reference/payments-copy.md](reference/payments-copy.md).
 - **GraphQL contract notes** (all bugs found via 2026-04-22 replay):
   - IDs are canonical `gid://Jobber/<Type>/<numericId>` form, base64-encoded
   - `X-JOBBER-GRAPHQL-VERSION` header required (currently `2026-04-16`)

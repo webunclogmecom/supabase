@@ -31,3 +31,13 @@ For all *new* visits (post-webhook), populate the proper FKs (`vehicle_id`, `vis
 - Enforced by convention: new inserts must fill the FKs and leave text columns NULL. There is no DB constraint preventing a writer from filling both.
 
 **Never do this again for new columns.** This is a one-time concession to legacy data. Any future denorm must either have a stronger justification or be replaced by a resolvable FK.
+
+## Addendum 2026-11-14: the card fee on a payment AND on its payout line
+
+`public.payments.fee_amount` and `public.payout_lines.fee_amount` (the payments copy, `docs/reference/payments-copy.md`)
+can hold the same number for a Jobber Payments payment. Kept on purpose, with this justification: they are two facts
+Jobber states separately, neither computed from the other here. The payment's fee is what Jobber kept on that payment
+(set when it is taken, also on payments not yet in any payout); the line's fee is what the bank payout deducted (the
+bank statement, including refund-fee lines that belong to no payment). Measured 2026-11-13: payment fees $15,731.51,
+payout line fees $15,602.64, the difference being the payments not paid out yet. Deriving one from the other would make
+the bank reconciliation lie for exactly those payments. Neither is written by hand; both are replaced from Jobber.

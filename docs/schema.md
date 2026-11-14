@@ -385,8 +385,19 @@ Covers 1,398 unique visits and 14 unique employees. Populated by `scripts/popula
 | outstanding_amount / deposit_amount | NUMERIC(12,2) | |
 | invoice_status | TEXT | CHECK `invoices_invoice_status_chk`: `draft`, `awaiting_payment`, `paid`, `past_due`, `bad_debt`, `sent_not_due`, `destroyed`, `voided` (added 2026-09-25; the old `sent` / `void` / `overdue` list here was never the stored vocabulary). Read from Jobber at API 2026-09-09 by `webhook-jobber` and `sync-jobber-invoice-drift`; at 2026-04-16 a voided invoice reads `awaiting_payment`. Table audited (`audit_invoices`) since 2026-09-25 |
 | due_date | DATE | |
-| sent_at / paid_at | TIMESTAMPTZ | `paid_at` = payment received |
+| sent_at / paid_at | TIMESTAMPTZ | `paid_at` = Jobber's `receivedDate` (filled since 2026-11-14 by `sync_jobber_invoice_extras`; empty before) |
+| discount_amount | NUMERIC(12,2) | 2026-11-14 |
+| tax_label | TEXT | 2026-11-14: the tax rate's name; "CC Fees ..." is the card fee, not a sales tax |
+| viewed_at | TIMESTAMPTZ | 2026-11-14: viewed in the client hub |
+| voided_at / void_reason | TIMESTAMPTZ / TEXT | 2026-11-14: the void date and code, lowercased |
 | created_at, updated_at | TIMESTAMPTZ | |
+
+### `payments`, `payment_allocations`, `payouts`, `payout_lines` (2026-11-14, the payments copy)
+
+Every Jobber money event and bank payout, kept current by `webhook-jobber` and `sync-jobber-payments`. RLS on, no
+policy, no grant to anon / authenticated / service_role: read only through `client.list_payments`,
+`client.payment_months`, `client.get_payment`, `client.get_invoice_payments` (Client App at View). Audited. Columns,
+vocabularies and rules: [reference/payments-copy.md](reference/payments-copy.md).
 
 ### `quotes` — 151 rows
 
@@ -399,8 +410,9 @@ Covers 1,398 unique visits and 14 unique employees. Populated by `scripts/popula
 | title | TEXT | |
 | subtotal / tax_amount / total / deposit_amount | NUMERIC(12,2) | |
 | quote_status | TEXT | `draft`, `awaiting_response`, `approved`, `rejected`, `converted` |
-| sent_at / approved_at / converted_to_job_at | TIMESTAMPTZ | |
-| created_at, updated_at | TIMESTAMPTZ | |
+| sent_at / approved_at / converted_to_job_at | TIMESTAMPTZ | since 2026-11-14 from Jobber `sentAt` and `lastTransitioned` (`sent_at` held the CREATION time before) |
+| viewed_at | TIMESTAMPTZ | 2026-11-14: viewed in the client hub |
+| created_at, updated_at | TIMESTAMPTZ | Audited (`audit_quotes`) since 2026-11-14 |
 
 ### `line_items` — 565 rows
 

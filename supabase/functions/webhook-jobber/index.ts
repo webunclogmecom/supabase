@@ -30,6 +30,10 @@ function jobberVisitClient(actorName?: string | null) {
 const supabaseJobber = jobberVisitClient()
 import { upsertEntityLink, findEntityBySourceId } from '../_shared/entity-links.ts'
 import { ok, badRequest, unauthorized, serverError, logWebhookEvent } from '../_shared/responses.ts'
+import {
+  PAY_API_VERSION, PAYMENT_FIELDS, PAYOUT_FIELDS, INVOICE_EXTRA_FIELDS, QUOTE_EXTRA_FIELDS,
+  jobberNumber, paymentGid, payoutGid, writePayments, writePayouts,
+} from '../_shared/jobber-payments.ts'
 
 // ---- Constants ----
 const JOBBER_GQL = 'https://api.getjobber.com/api/graphql'
@@ -196,9 +200,23 @@ async function gql(query: string, variables: Record<string, unknown> = {}, versi
     throw new Error(`Jobber GraphQL ${resp.status}: ${text.slice(0, 300)}`)
   }
 
+  // 2026-11-14 (the payments copy): a reply that is not an answer THROWS here, so no handler can read it as "nothing
+  // there". Jobber sheds load with an HTML waiting room at HTTP 200, and "This account is not active" comes back as a
+  // singular `error` with no `data` key (CLAUDE.md, Jobber's own docs). Before this, every handler already threw on both
+  // (a JSON parse error, or a TypeError on data.x); this only makes the message say what happened.
+  const ctype = resp.headers.get('content-type') ?? ''
+  if (!ctype.includes('json')) {
+    throw new Error(`Jobber returned ${ctype || 'no content-type'} at HTTP ${resp.status} (busy/waiting room)`)
+  }
   const json = await resp.json()
   if (json.errors?.length) {
     throw new Error(`Jobber GraphQL error: ${JSON.stringify(json.errors[0])}`)
+  }
+  if (json.error) {
+    throw new Error(`Jobber error: ${JSON.stringify(json.error).slice(0, 300)}`)
+  }
+  if (json == null || typeof json !== 'object' || !('data' in json) || json.data == null) {
+    throw new Error(`Jobber reply had no data at HTTP ${resp.status}`)
   }
   return json.data
 }
@@ -1196,6 +1214,7 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
         lineItems(first: 50) {
           nodes { name description quantity unitPrice totalPrice taxable }
         }
+        ${INVOICE_EXTRA_FIELDS}
       }
     }`,
     { id: gid },
@@ -1304,7 +1323,14 @@ async function handleInvoice(numericId: string, topic: string): Promise<{ entity
     }
   }
 
+  // 2026-11-14 (the payments copy): the paid date, tax, discount, the tax rate's name, viewed and void details, read in
+  // this same query (INVOICE_EXTRA_FIELDS) and written by public.sync_jobber_invoice_extras, the one mapping the
+  // backfill uses too. It compares before it writes, so a replay of an unchanged invoice changes nothing.
+  const { error: exErr } = await supabase.rpc('sync_jobber_invoice_extras', { p_nodes: [inv] })
+  if (exErr) console.error(`Invoice ${numericId}: extras write failed:`, exErr.message)
+
   if (liErr) throw new Error(`Invoice ${numericId}: line_items rewrite failed (invoice row and visit links written): ${liErr.message}`)
+  if (exErr) throw new Error(`Invoice ${numericId}: paid date / tax / void write failed (invoice row, lines and visit links written): ${exErr.message}`)
   return { entity_id: entityId }
 }
 
@@ -1435,6 +1461,7 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
         amounts { total }
         client { id }
         property { id }
+        ${QUOTE_EXTRA_FIELDS}
       }
     }`,
     { id: gid }
@@ -1455,12 +1482,13 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
   }
   const existingId: number = (resolvedQt as { entity_id: number }).entity_id
 
+  // 2026-11-14: sent_at is no longer the creation time (it held createdAt since the start); the real sentAt is written
+  // by sync_jobber_quote_extras below, with the approved and converted dates and the quote's lines.
   const quoteRow: Record<string, unknown> = {
     quote_number: q.quoteNumber ?? null,
     title: q.title ?? null,
     quote_status: q.quoteStatus?.toLowerCase() ?? null,
     total: q.amounts?.total ?? null,
-    sent_at: q.createdAt ?? null,
   }
   if (clientId) quoteRow.client_id = clientId
   if (propertyId) quoteRow.property_id = propertyId
@@ -1477,7 +1505,52 @@ async function handleQuote(numericId: string, topic: string): Promise<{ entity_i
     match_method: 'webhook',
   })
 
+  // 2026-11-14 (the payments copy): the real sent date, approved and converted dates, subtotal, tax, deposit, viewed,
+  // and the quote's lines (replaced in one transaction only when they differ), read in this same query.
+  const { error: exErr } = await supabase.rpc('sync_jobber_quote_extras', { p_nodes: [q] })
+  if (exErr) throw new Error(`Quote ${numericId}: dates / amounts / lines write failed (quote row written): ${exErr.message}`)
+
   return { entity_id: entityId }
+}
+
+// ============================================================================
+// Payments and payouts (2026-11-14, the payments copy)
+// ============================================================================
+// Fred, 2026-11-14: "Build the copy now ... like with the webhook but if we need to have cronjob then decide the
+// frequency". Same rules as the invoice handler: never trust the event, re-read the object (whatever the topic: a
+// CREATE that lands after a DESTROY re-reads null and writes nothing), a reply that is not an answer throws in gql()
+// and writes nothing, one locked writer per kind (public.sync_jobber_payments / sync_jobber_payouts) that replaces the
+// allocations and payout lines in ONE transaction and only when they differ. A null re-read is a removal (deleted_at).
+// The mapping of Jobber's fields lives in those SQL functions; the selection in _shared/jobber-payments.ts, shared with
+// sync-jobber-payments (the timed net) and scripts/sync/backfill_jobber_payments.mjs.
+// ⚠ The event's id may be typed (JobberPaymentsCreditCardPaymentRecord/N, OtherPaymentRecord/N ...): only the number is
+//   used. A payment whose invoice or quote is not here yet gets it imported through handleInvoice / handleQuote first.
+const rpcSb = (fn: string, args: Record<string, unknown>) =>
+  supabase.rpc(fn, args) as unknown as Promise<{ data: any; error: { message: string } | null }>
+const readPaymentById = async (gid: string) =>
+  ((await gql(`query($id: EncodedId!) { paymentRecord(id: $id) { ${PAYMENT_FIELDS} } }`, { id: gid }, PAY_API_VERSION)) as any).paymentRecord ?? null
+const importPaymentDep = async (kind: 'invoice' | 'quote', gid: string) => {
+  const num = jobberNumber(gid)
+  if (!num) throw new Error(`cannot import ${kind} ${gid}: no number`)
+  if (kind === 'invoice') await handleInvoice(num, 'PAYMENT_DEPENDENCY')
+  else await handleQuote(num, 'PAYMENT_DEPENDENCY')
+}
+
+async function handlePayment(numericId: string, topic: string): Promise<{ entity_id: number }> {
+  const gid = paymentGid(numericId)
+  const node = await readPaymentById(gid)
+  const res = await writePayments(rpcSb, node ? [node] : [], node ? [] : [gid], readPaymentById, importPaymentDep)
+  if (res.held?.length) throw new Error(`${topic} ${numericId}: payment held, ${JSON.stringify(res.held).slice(0, 300)}`)
+  return { entity_id: (await findEntityBySourceId('payment', 'jobber', gid)) ?? 0 }
+}
+
+async function handlePayout(numericId: string, topic: string): Promise<{ entity_id: number }> {
+  const gid = payoutGid(numericId)
+  const data: any = await gql(`query($id: EncodedId!) { payoutRecord(id: $id) { ${PAYOUT_FIELDS} } }`, { id: gid }, PAY_API_VERSION)
+  const node = data.payoutRecord ?? null
+  const res = await writePayouts(rpcSb, node ? [node] : [], node ? [] : [gid], readPaymentById, importPaymentDep)
+  if (res.held?.length) throw new Error(`${topic} ${numericId}: payout held, ${JSON.stringify(res.held).slice(0, 300)}`)
+  return { entity_id: (await findEntityBySourceId('payout', 'jobber', gid)) ?? 0 }
 }
 
 async function handleProperty(numericId: string, topic: string): Promise<{ entity_id: number }> {
@@ -1990,6 +2063,14 @@ const TOPIC_HANDLERS: Record<string, (id: string, topic: string) => Promise<{ en
   PROPERTY_CREATE: handleProperty,
   PROPERTY_UPDATE: handleProperty,
   PROPERTY_DESTROY: handlePropertyDestroy,
+  // 2026-11-14 (the payments copy). Live only once Fred adds the six topics in Jobber's Developer Center; until then
+  // sync-jobber-payments (every 15 min, nightly window) keeps the copy current. All three re-read the object.
+  PAYMENT_CREATE: handlePayment,
+  PAYMENT_UPDATE: handlePayment,
+  PAYMENT_DESTROY: handlePayment,
+  PAYOUT_CREATE: handlePayout,
+  PAYOUT_UPDATE: handlePayout,
+  PAYOUT_DESTROY: handlePayout,
 }
 
 // ============================================================================

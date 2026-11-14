@@ -663,6 +663,12 @@ verify_jwt = true
 [functions.sync-jobber-users]
 verify_jwt = true
 
+# sync-jobber-payments: the payments copy's timed net (2026-11-14). pg_cron every 15 min (recently changed and recently
+# entered payments, payouts updated in 2 days) and nightly ?mode=window&days=35 (removals, by id), via
+# fn_request_jobber_sync, vault bearer. Handler requires role=service_role. Reads Jobber only. docs/reference/payments-copy.md
+[functions.sync-jobber-payments]
+verify_jwt = true
+
 # sync-jobber-invoice-drift: the invoice reconcile (pg_cron 25 */6 * * * via
 # fn_request_jobber_sync('invoice-drift'), vault bearer). Handler requires
 # role=service_role - verify_jwt alone also admits the public anon key.

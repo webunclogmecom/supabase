@@ -1,7 +1,7 @@
 # Scheduled jobs
 
 > **Generated, do not edit by hand.** Written by `node scripts/checks/timed-jobs-inventory.mjs --write`,
-> generated on 2026-11-04 20:35 ET. Re-run it after any schedule change and commit the result.
+> generated on 2026-11-14 06:15 ET. Re-run it after any schedule change and commit the result.
 > Enforced by [a daily GitHub job](../../.github/workflows/scheduled-jobs-doc-drift.yml): it runs `--check` (runtime, job name
 > and schedule against this file) and, on every run while they differ, fails and posts the differences to #viktor-supabase.
 
@@ -49,6 +49,8 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | pg_cron | jobber-billing-observe | `0 6 * * *` | 02:00 EDT / 01:00 EST | `public.fn_request_billing_observe`, edge fn `sync-jobber-billing-observe` | `cron.job_run_details` jobid 38 |
 | pg_cron | jobber-client-state-sweep | `15 7 * * 0` | Sun 03:15 EDT / Sun 02:15 EST | `public.fn_request_jobber_sync('client-state-sweep')` | `cron.job_run_details` jobid 47 |
 | pg_cron | jobber-job-drift-reconcile | `15,45 * * * *` | hourly at :15, :45, same in ET | `public.fn_request_jobber_sync('jobs-drift')` | `cron.job_run_details` jobid 21 |
+| pg_cron | jobber-payments-sync | `13,28,43,58 * * * *` | hourly at :13, :28, :43, :58, same in ET | `public.fn_request_jobber_sync('payments')` | `cron.job_run_details` jobid 192 |
+| pg_cron | jobber-payments-window | `50 8 * * *` | 04:50 EDT / 03:50 EST | `public.fn_request_jobber_sync('payments-window')` | `cron.job_run_details` jobid 193 |
 | pg_cron | jobber-poll-sync | `1-59/5 * * * *` | interval, same in ET | `public.fn_request_jobber_sync('poll')` | `cron.job_run_details` jobid 5 |
 | pg_cron | jobber-sync-health | `13 13 * * *` | 09:13 EDT / 08:13 EST | `public.log_jobber_sync_health` | `cron.job_run_details` jobid 37 |
 | pg_cron | jobber-timesheets-sync | `10,40 * * * *` | hourly at :10, :40, same in ET | `public.fn_request_jobber_sync('timesheets')` | `cron.job_run_details` jobid 182 |
@@ -97,4 +99,4 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | GitHub | `scheduled-jobs-doc-drift.yml` | `40 11 * * *` | 07:40 EDT / 06:40 EST | `scripts/checks/timed-jobs-inventory.mjs` | Actions history (`gh run list -w scheduled-jobs-doc-drift.yml`) |
 | GitHub | `weekly-dedup-audit.yml` | `0 14 * * 0` | Sun 10:00 EDT / Sun 09:00 EST | `scripts/sync/weekly_dedup_audit.js` | Actions history (`gh run list -w weekly-dedup-audit.yml`) |
 
-Totals: pg_cron 60 (0 paused), Railway 2, GitHub 11 schedules in 10 workflows.
+Totals: pg_cron 62 (0 paused), Railway 2, GitHub 11 schedules in 10 workflows.
