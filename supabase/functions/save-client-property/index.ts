@@ -202,6 +202,15 @@ Deno.serve(async (req) => {
   if (!clientId || !street || !city || !postalCode) {
     return fail("bad_request", "client_id, street, city and postal_code are all required.");
   }
+  // The site's own answers (2026-11-14): checked here, BEFORE anything is created, so a bad value refuses with nothing
+  // made in Jobber; written on our row once the importer has made it (saveSiteDetails, below).
+  const details = siteDetails(body);
+  if ("error" in details) return fail("bad_request", details.error);
+  if (details.zone_id != null) {
+    const { data: zone, error: zoneErr } = await db.from("zones").select("id").eq("id", details.zone_id).maybeSingle();
+    if (zoneErr) return fail("lookup_failed", `Could not read the zone: ${zoneErr.message}`);
+    if (!zone) return fail("bad_request", `Zone ${details.zone_id} does not exist.`);
+  }
 
   // ---- resolve the client's Jobber GID, FAIL CLOSED ------------------------
   // A discarded error here would read as "not in Jobber" and refuse a client that is fine, or let us
@@ -279,6 +288,9 @@ Deno.serve(async (req) => {
       { jobber_property_gid: node.id, entity_id: rj?.entity_id });
   }
 
+  // ---- the site's own answers, on OUR row ------------------------------------
+  const detailsSaved = await saveSiteDetails(propertyId, details);
+
   // ---- the Service Call job, via the ONE definition of the rule -------------
   const job = await ensureServiceCallJob({
     db, authHeader: req.headers.get("authorization") ?? "", clientId, propertyId,
@@ -294,8 +306,91 @@ Deno.serve(async (req) => {
     },
     // ONE boolean the caller can act on: a property with no Service Call job cannot be dispatched.
     schedulable: job.ok,
+    // The name, county, zone and map pin the person gave: saved, or the sentence to show (the site exists either way).
+    details: detailsSaved,
   });
 });
+
+// ============================================================================
+// THE SITE'S OWN ANSWERS (2026-11-14, Trello #161, the Clients move)
+// ============================================================================
+// The Add site dialog (the Client App, and the Ops Portal's copy) asks for a site name, the county, the zone and the
+// map pin of the address picked. Until this date the function read only the address, so every site it made landed with
+// no name and no zone and with the county guessed from its city (measured 2026-11-14: the five real sites it made, on
+// four clients, all have no zone, four no name, and the county the city's guess; nothing records what was typed).
+// They are OURS only: Jobber's property gets the address as before. Today's Edit property sends none of them to Jobber,
+// and an update of these columns enqueues nothing for Jobber (trg_properties_enqueue_outbound watches the trap size and
+// the lock box only). The importer keeps them: handleProperty never writes zone_id, writes county only when it creates
+// the row (before this runs), and a blank Jobber name never overwrites ours.
+// 🛑 The map pin FILLS A GAP ONLY. The importer has just written Jobber's own coordinates when Jobber has them (all five
+//    measured sites have them), and every later Jobber update writes them again, so a pin over them would only churn.
+type SiteDetails = {
+  name: string | null;
+  county: string | null;
+  zone_id: number | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+const COUNTIES = ["Dade", "Broward", "Palm Beach"]; // the only values public.properties.county holds
+
+function siteDetails(body: Record<string, unknown> | null): SiteDetails | { error: string } {
+  const given = (v: unknown) => v !== undefined && v !== null && !(typeof v === "string" && v.trim() === "");
+  const out: SiteDetails = { name: null, county: null, zone_id: null, latitude: null, longitude: null };
+  if (given(body?.name)) {
+    if (typeof body!.name !== "string") return { error: "The site name must be text." };
+    const name = (body!.name as string).trim();
+    if (name.length > 120) return { error: "The site name is too long (120 characters at most)." };
+    out.name = name;
+  }
+  if (given(body?.county)) {
+    const county = COUNTIES.find((c) => c.toLowerCase() === String(body!.county).trim().toLowerCase());
+    if (!county) return { error: "The county must be Dade, Broward or Palm Beach." };
+    out.county = county;
+  }
+  if (given(body?.zone_id)) {
+    const zone = Number(body!.zone_id);
+    if (!Number.isInteger(zone) || zone <= 0) return { error: "The zone is not a zone id." };
+    out.zone_id = zone;
+  }
+  if (given(body?.latitude) || given(body?.longitude)) {
+    const lat = Number(body?.latitude), lng = Number(body?.longitude);
+    if (!given(body?.latitude) || !given(body?.longitude) || !Number.isFinite(lat) || !Number.isFinite(lng) ||
+        Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return { error: "The map pin needs both a latitude and a longitude." };
+    }
+    out.latitude = lat;
+    out.longitude = lng;
+  }
+  return out;
+}
+
+async function saveSiteDetails(propertyId: number, d: SiteDetails): Promise<{ saved: boolean; message?: string }> {
+  const patch: Record<string, unknown> = {};
+  if (d.name) patch.name = d.name;
+  if (d.county) patch.county = d.county;
+  if (d.zone_id != null) patch.zone_id = d.zone_id;
+  const missed: string[] = [];
+  if (Object.keys(patch).length) {
+    const { error } = await db.from("properties").update(patch).eq("id", propertyId);
+    if (error) {
+      console.error(`[save-client-property] property ${propertyId}: its answers were not saved: ${error.message}`);
+      missed.push(...Object.keys(patch).map((k) => (k === "zone_id" ? "zone" : k)));
+    }
+  }
+  if (d.latitude != null && d.longitude != null) {
+    const { error } = await db.from("properties").update({ latitude: d.latitude, longitude: d.longitude })
+      .eq("id", propertyId).is("latitude", null);
+    if (error) {
+      console.error(`[save-client-property] property ${propertyId}: its map pin was not saved: ${error.message}`);
+      missed.push("map pin");
+    }
+  }
+  // The site exists in Jobber and here, so this is never a failure of the call: a retry would make a second site.
+  const what = missed.length > 1 ? `${missed.slice(0, -1).join(", ")} and ${missed[missed.length - 1]}` : missed[0];
+  return missed.length
+    ? { saved: false, message: `The site was added, but its ${what} could not be saved. Set ${missed.length === 1 ? "it" : "them"} on the Sites tab.` }
+    : { saved: true };
+}
 
 // ============================================================================
 // PREVIEW + REMOVE (2026-09-18)
