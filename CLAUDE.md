@@ -5885,10 +5885,13 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   gallons are NOT for LWT or DERM filings (owner decision D8 default) without the month-close snapshot of plan M12.
   **A third app-facing read since `2026-11-14_0140`: `public.get_pumping_figures(p_client_id, p_visit_ids)`** (the portal's
   Clients pages and the manifest dialog, B1 of the Client App move): a visit's gallons from `v_visit_tank_service`, trusted as
-  `ops.fn_client_sludge_averages` trusts a reading, else the trap size on a pumping (labelled `trap_size`), and each site's
-  figures straight from `ops.fn_client_sludge_averages`; never `ops.visit_grease_frozen`. It lives in `public` because of Z8.
+  `ops.fn_client_sludge_averages` trusts a reading, else the GREASE TRAP's size on a grease trap pumping only (labelled
+  `trap_size`), else none, and each site's figures straight from `ops.fn_client_sludge_averages`; never
+  `ops.visit_grease_frozen`. Since `2026-11-14_0350` a pumping and its kind come from the line items through
+  `ops.fn_visit_pump_kinds`, the function the Calendar's estimate calls, never from `visits.service_type`. It lives in `public` because of Z8.
   The trust rule now has three copies (the averages' pool, `ops.calendar_grease_estimates`, this read); its VERIFY and
-  `scripts/checks/client_page_reads.sql` compare it with the averages both ways. Contract: [docs/reference/client-page-reads.md](docs/reference/client-page-reads.md).
+  `scripts/checks/client_page_reads.sql` compare it with the averages both ways, and its pumpings with the Calendar's
+  estimate on every completed 2026 visit. Contract: [docs/reference/client-page-reads.md](docs/reference/client-page-reads.md).
 - 🛑 **A new level value arrives only about every 10 minutes**; rows every ~30 s repeat it. **Ingress/egress are hourly
   net changes, never gallons pumped.** We store distance and percent, never Samsara litres: gallons come from OUR
   configuration in force at the reading (`fn_tank_fill_fraction`). A changed configuration is an audited supersede plus

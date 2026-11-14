@@ -4,8 +4,10 @@
 -- body before and after.
 --   1. derm.fn_manifest_row_states_core(), derm.manifest_row_states(), derm.manifest_row_states_for_client(bigint)
 --      (2026-11-14_0135_derm_manifest_row_states_per_client.sql)
---   2. B1, public.get_pumping_figures(bigint, bigint[]) (2026-11-14_0140_public_get_pumping_figures.sql); it also compares
---      the trust rule with ops.fn_client_sludge_averages() both ways
+--   2. B1, public.get_pumping_figures(bigint, bigint[]) (2026-11-14_0140_public_get_pumping_figures.sql, corrected by
+--      2026-11-14_0350_public_get_pumping_figures_line_item_kinds.sql); it also compares a pumping and its kind with the
+--      Calendar's estimate (ops.fn_grease_estimates_live) on every completed 2026 visit, and the trust rule with
+--      ops.fn_client_sludge_averages(), both ways
 --   3. B3, client.get_client_emails(bigint, text) (2026-11-14_0148_client_get_client_emails.sql)
 --   4. B2, derm.get_manifest_dialog(text) (2026-11-14_0155_derm_get_manifest_dialog.sql)
 --   5. B4, ops.portal_search(text) (2026-11-14_0203_ops_portal_search_addresses_invoices_quotes.sql): the new groups only
@@ -140,7 +142,7 @@ end $rowstates$;
 do $pumping$
 declare
   v_sig constant text := 'public.get_pumping_figures(bigint,bigint[])';
-  v_role text; v_uid uuid; v_email text; v_res jsonb; v_all jsonb; v_state text; v_msg text; v_bad bigint; v_n bigint;
+  v_role text; v_uid uuid; v_email text; v_res jsonb; v_counts text; v_state text; v_msg text; v_bad bigint; v_n bigint;
   r record;
 begin
   -- 1. Who may run it.
@@ -181,51 +183,76 @@ begin
     raise exception 'verify_fail: a person without the four apps was not refused (% %)', v_state, v_msg;
   end if;
 
-  -- 3. The test client 112-YA, and every visit the tank view measures: one entry per completed live visit, each with
-  --    one of the four sources, gallons exactly when the source has them, the trap size only on a pumping, and
-  --    "not a pumping" only on a visit whose work is known and is not one.
+  -- 3. Every completed, live visit (in chunks of 2,000), and 112-YA: one entry each, one of the four sources, gallons
+  --    exactly when the source has them, and the trap size as it is on file.
   v_res := public.get_pumping_figures(381);
-  v_all := public.get_pumping_figures(null, (select array_agg(t.visit_id) from public.v_visit_tank_service t));
-  select count(*) into v_bad
-    from (select x, true as ya from jsonb_array_elements(v_res -> 'visits') x
-          union all select x, false from jsonb_array_elements(v_all -> 'visits') x) y
-    left join public.visits vv on vv.id = (y.x ->> 'visit_id')::bigint
-   where (y.ya and (y.x ->> 'client_id')::bigint <> 381)
-      or y.x ->> 'source' not in ('tank', 'trap_size', 'none', 'not_a_pumping')
-      or ((y.x ->> 'gallons') is null) <> (y.x ->> 'source' in ('none', 'not_a_pumping'))
-      or (y.x ->> 'source' = 'trap_size' and vv.service_type is distinct from 'Pumping')
-      or (y.x ->> 'source' = 'not_a_pumping' and (vv.service_type is null or vv.service_type = 'Pumping'
-                                                   and not exists (select 1 from public.v_visit_tank_service t where t.visit_id = vv.id and t.visit_kind = 'dump')));
-  if v_bad <> 0 then raise exception 'verify_fail: % visits are malformed', v_bad; end if;
-  if jsonb_array_length(v_res -> 'visits') <> (select count(*) from public.visits v where v.client_id = 381 and v.deleted_at is null and v.visit_status = 'completed') then
+  if jsonb_array_length(v_res -> 'visits') <> (select count(*) from public.visits v where v.client_id = 381 and v.deleted_at is null and v.visit_status = 'completed')
+     or exists (select 1 from jsonb_array_elements(v_res -> 'visits') x where (x ->> 'client_id')::bigint <> 381) then
     raise exception 'verify_fail: 112-YA does not get one entry per completed visit';
   end if;
-  if jsonb_array_length(v_all -> 'visits') <> (select count(*) from public.v_visit_tank_service) then
-    raise exception 'verify_fail: the visits of the tank view do not each get one entry';
+  drop table if exists _b1_check;
+  create temp table _b1_check as
+  select (x ->> 'visit_id')::bigint as visit_id, x ->> 'source' as source, (x ->> 'gallons')::int as gallons,
+         (x ->> 'property_id')::bigint as pid
+    from (select array_agg(vv.id) as ids from public.visits vv
+           where vv.deleted_at is null and vv.visit_status = 'completed' group by vv.id / 2000) c
+   cross join lateral jsonb_array_elements(public.get_pumping_figures(null, c.ids) -> 'visits') x;
+  if (select count(*) from _b1_check) <> (select count(*) from public.visits vv where vv.deleted_at is null and vv.visit_status = 'completed')
+     or (select count(distinct b.visit_id) from _b1_check b) <> (select count(*) from _b1_check) then
+    raise exception 'verify_fail: not one entry per completed visit';
   end if;
+  select count(*) into v_bad
+    from _b1_check n
+    join public.visits vv on vv.id = n.visit_id
+    left join public.properties p on p.id = vv.property_id
+   where n.source is null or n.source not in ('tank', 'trap_size', 'none', 'not_a_pumping')
+      or (n.gallons is null) <> (n.source in ('none', 'not_a_pumping'))
+      or (n.source = 'trap_size' and n.gallons is distinct from nullif(p.grease_trap_size_gallons, 0));
+  if v_bad <> 0 then raise exception 'verify_fail: % visits are malformed', v_bad; end if;
 
-  -- 4. Both ways against the averages (the other home of the trust rule), over every visit the tank view measures:
-  --    a reading the averages use (any date) is "tank" here with the same whole gallons, and a "tank" reading of a
-  --    visit with a site and a pump kind is one the averages use.
+  -- 4. Both ways against the Calendar's estimate, which finds a visit's pump kinds with the same function B1 calls
+  --    (ops.fn_visit_pump_kinds, from the line items; ops.fn_grease_estimates_live: live, never the frozen rows), on every
+  --    completed 2026 visit: "not a pumping" exactly when the estimate finds no pump kind; the trap size only where its
+  --    kinds hold a grease trap (the size on file is the grease trap's); and "none" never on a grease trap pumping with a
+  --    trap size on file. Each of the four sources must appear, so the comparison is not empty.
+  with cal as materialized (
+    select e.visit_id, e.visit_date, e.pump_kinds
+      from ops.fn_grease_estimates_live(date '2026-01-01',
+             greatest((now() at time zone 'America/New_York')::date,
+                      (select max(vv.visit_date) from public.visits vv where vv.deleted_at is null and vv.visit_status = 'completed'))) e
+  )
+  select count(*) filter (where c.visit_id is null
+                             or (n.source = 'not_a_pumping') <> (c.pump_kinds = '{}')
+                             or (n.source = 'trap_size' and not ('grease_trap' = any (c.pump_kinds)))
+                             or (n.source = 'none' and 'grease_trap' = any (c.pump_kinds) and nullif(p.grease_trap_size_gallons, 0) is not null)),
+         count(distinct n.source)
+    into v_bad, v_n
+    from _b1_check n
+    join public.visits vv on vv.id = n.visit_id
+    left join public.properties p on p.id = vv.property_id
+    left join cal c on c.visit_id = n.visit_id and c.visit_date = vv.visit_date
+   where vv.visit_date >= date '2026-01-01';
+  if v_bad <> 0 then raise exception 'verify_fail: % visits differ from the Calendar''s estimate', v_bad; end if;
+  if v_n <> 4 then raise exception 'verify_fail: only % of the four sources among the 2026 visits', v_n; end if;
+
+  -- 5. Both ways against the averages (the other home of the trust rule): a reading the averages use (any date) is
+  --    "tank" here with the same whole gallons, and every "tank" reading of a visit with a site is one they use (a "tank"
+  --    reading always has a pump kind since 2026-11-14_0350).
   with av as (
     select distinct (rr ->> 'visit_id')::bigint as visit_id, round((rr ->> 'gallons')::numeric)::int as g
       from ops.fn_client_sludge_averages((select array_agg(distinct t.visit_date + 1) from public.v_visit_tank_service t)) a
      cross join lateral jsonb_array_elements(a.readings) rr
-  ), b1 as (
-    select (x ->> 'visit_id')::bigint as visit_id, (x ->> 'gallons')::int as g, x ->> 'source' as source, (x ->> 'property_id')::bigint as pid
-      from jsonb_array_elements(v_all -> 'visits') x
   )
-  select (select count(*) from av left join b1 on b1.visit_id = av.visit_id where b1.source is distinct from 'tank' or b1.g is distinct from av.g)
-       + (select count(*) from b1 join public.visits vv on vv.id = b1.visit_id
-           where b1.source = 'tank' and b1.pid is not null and ops.fn_visit_pump_kind(vv.id, vv.job_id) is not null
-             and not exists (select 1 from av where av.visit_id = b1.visit_id))
+  select (select count(*) from av left join _b1_check b on b.visit_id = av.visit_id where b.source is distinct from 'tank' or b.gallons is distinct from av.g)
+       + (select count(*) from _b1_check b where b.source = 'tank' and b.pid is not null and not exists (select 1 from av where av.visit_id = b.visit_id))
     into v_bad;
   if v_bad <> 0 then raise exception 'verify_fail: % readings differ between this read and the averages', v_bad; end if;
-  if (select count(*) from jsonb_array_elements(v_all -> 'visits') x where x ->> 'source' = 'tank') = 0 then
-    raise exception 'verify_fail: no tank reading at all';
-  end if;
+  if not exists (select 1 from _b1_check b where b.source = 'tank') then raise exception 'verify_fail: no tank reading at all'; end if;
+  select string_agg(b.source || ' ' || b.c, ', ' order by b.source) into v_counts
+    from (select source, count(*) as c from _b1_check group by 1) b;
+  drop table _b1_check;
 
-  -- 5. The site figures are the averages' own, for a client that has some.
+  -- 6. The site figures are the averages' own, for a client that has some.
   select a.client_id into v_n from ops.fn_client_sludge_averages(array[(now() at time zone 'America/New_York')::date + 1]) a
    order by a.readings_n desc, a.property_id limit 1;
   v_res := public.get_pumping_figures(v_n);
@@ -238,9 +265,7 @@ begin
                         and (s ->> 'last_date')::date = a.last_reading_date);
   if v_bad <> 0 or jsonb_array_length(v_res -> 'sites') = 0 then raise exception 'verify_fail: the site figures of client % are not the averages (% differ)', v_n, v_bad; end if;
 
-  raise notice 'pumping figures ok: % visits measured by the tank, % with the trap size, across the tank era',
-    (select count(*) from jsonb_array_elements(v_all -> 'visits') x where x ->> 'source' = 'tank'),
-    (select count(*) from jsonb_array_elements(v_all -> 'visits') x where x ->> 'source' = 'trap_size');
+  raise notice 'pumping figures ok: every completed visit, %', v_counts;
 end $pumping$;
 
 do $emails$
