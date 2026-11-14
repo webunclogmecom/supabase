@@ -535,6 +535,7 @@ Enforced in app layer; not a DB CHECK constraint (vocabulary may evolve).
 |---|---|---|
 | id | BIGSERIAL PK | |
 | client_id | BIGINT FK → clients | |
+| gdo_id | BIGINT FK → gdos (ON DELETE SET NULL) | 🛑 **FROZEN since 2026-11-14, do not read or write.** Two one-time fills only (2026-05-19/20, 2026-08-24); a manifest's permits are its client's ACTIVE GDO permits, worked out on read (`2026-11-14_0100_derm_manifest_permit_on_read.sql`). |
 | service_date | DATE | |
 | dump_ticket_date | DATE | |
 | white_manifest_number | TEXT | Miami-Dade only (e.g. `481xxx`, `824xxx`). NULL for Broward + Palm Beach manifests. |

@@ -310,6 +310,13 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     report was filed on it (`2026-11-03_1600`, Fred: "Show it when filed").
   - `customer.permits` and `customer.clients` show ACTIVE only.
   - A new filing reader must decide expired permits on purpose. Check: `scripts/checks/fp_gdo_reports_complete.sql`.
+- 🛑 **A manifest's permit is worked out on read: `public.derm_manifests.gdo_id` is FROZEN (2026-11-14, Fred: "Yes, work
+  it out").** Only two one-time fills wrote it (2026-05-19/20, `2026-08-24_1600`) and nothing keeps it up: no filing sets
+  it, so manifests filed since have none, and a link can name a permit made INACTIVE since. A manifest is evidence for
+  every ACTIVE GDO permit of its client (the DERM sheets' one row per permit). `derm.gdos.manifest_count` and
+  `derm.audit_pack` work it out from the client since `2026-11-14_0100`. Never read or write the column in new work;
+  `client.derm_manifests` and `customer.work_orders` / `work_orders_all` still select it and never use it, so a drop
+  goes with them. Check: `scripts/checks/derm_manifest_permit_on_read.sql`.
 - `parse-gdo-permit` reads only GDO PDFs; with another `permit_type` it stores the PDF unread at `<type>/<date>-<random>.pdf`.
   `fn_gdo_permit_label_targets` keeps to `permit_types.reads_pdf`, so a CCN PDF never reaches the DERM prompt.
 - Boca Raton is Palm Beach since `2026-11-02_1830` (15 rows) and `webhook-jobber` v151 (`inferCountyFromCity`).

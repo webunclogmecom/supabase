@@ -580,6 +580,11 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 
 ## 4. Built (recent, with evidence)
 
+**A manifest's permit is worked out on read; `derm_manifests.gdo_id` is FROZEN (2026-11-14)**
+- Fred, asked *"Should we stop storing the manifest's permit link and work it out when it's read?"*: *"Yes, work it out"*. Only two one-time fills ever wrote the link (2026-05-19/20, `2026-08-24_1600`) and nothing kept it up: 172 manifests of one-permit clients had none, 20 of 416 links no longer matched, and no screen read it (11 live bundles, 7 days of logs).
+- **Built 2026-11-14, applied 00:59 ET:** `2026-11-14_0100_derm_manifest_permit_on_read.sql`. `derm.gdos.manifest_count` counts the client's live manifests under each ACTIVE GDO- permit (0 under any other: 98 permits up, 10 INACTIVE to 0); `derm.audit_pack` looks the permit up by client only (18 manifests linked to an INACTIVE permit changed, every other one the same, called on all 1,005); the column carries a FROZEN comment. Rollback beside it, rehearsed; check `scripts/checks/derm_manifest_permit_on_read.sql` (5 rows ok; rows 1 to 4 failed on the old bodies). Of 1,428 views, functions and tables, only those three moved.
+- Not done, by decision: no backfill and no drop. `client.derm_manifests` and `customer.work_orders` / `work_orders_all` still select the column and never use it; a drop goes with them. Docs: Supabase `CLAUDE.md` (PERMITS), `docs/schema.md`; Building Apps Field Portal `03-customer-schema.md`, DERM Tracker `03-data-model.md` and changelog, Client App `CLAUDE.md`.
+
 **DERM visit page: open the visit in the Calendar (2026-11-10)**
 - Fred, after his voice note on cross-app buttons: *"yes, show me mockups for the Open in Calendar button to DERM"*, then on the mockups (https://claude.ai/artifact/MjTNFWFfuw9xm3JN7VXVxH, 112-YA): *"go with option B, but add a tooltip for the button to say it opens the visits on the calendar."*
 - **Built 2026-11-10 in the Ops Portal only** (the old `derm.unclogme.app` takes bug fixes only): portal `4d380ea`. The visit date on the visit page is a pale orange link, `/calendar?visit=<id>&date=<yyyy-mm-dd>` in the same tab (the Calendar opens that week with the drawer), tooltip "Open this visit on the Calendar"; plain text for someone the Calendar refuses. Record: `Building Apps/Ops Portal/docs/08-changelog.md` 2026-11-10.

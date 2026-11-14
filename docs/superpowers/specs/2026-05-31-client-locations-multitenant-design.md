@@ -144,7 +144,11 @@ anon** (no app writes locations yet) — anon INSERT/UPDATE + the `audit_critica
 Per-location DERM is now **confirmed real** (Q1 = each location has its own GDO), so the
 DERM track is GO (no longer gated). Rules:
 
-1. **Tenant attribution rides the GDO:** `derm_manifests.gdo_id → gdos.client_location_id
+1. ⚠ **Superseded 2026-11-14 for the manifest:** `derm_manifests.gdo_id` was only ever filled by two one-time
+   fills and is FROZEN (`2026-11-14_0100`). Per-permit attribution lives on the stamp cards
+   (`derm.address_row_map.gdo_id`, one row per permit) and in `customer.gdo_reports`; a manifest counts for every
+   ACTIVE permit of its client. The original rule, kept as written:
+   **Tenant attribution rides the GDO:** `derm_manifests.gdo_id → gdos.client_location_id
    → client_locations`. **No `location_id`/`property_id` column on `derm_manifests`** — a
    second "which facility" key would be a normalization smell.
 2. **One visit → one manifest → N facility lines, NOT N manifests.** The DERM Address PDF
@@ -262,7 +266,7 @@ After this batch: `client_locations` = 14 rows (Casa Neos 3 + Wynd 5 + 6 here); 
 | Q4 | **GDO-dedup** of the 10 dirty multi-GDO clients — when? | OPEN (prereq to Phase-2 backfill; flagged as a separate task). |
 | Q5 | **Single-GDO clients (134):** materialize a 1-location row each for uniformity, or leave implicit? | OPEN (Phase-2). |
 | Q6 | Wynd's single `client_code` (`228-WYN`?) — Fred sets it in Jobber; confirm final value. | OPEN (Fred, external; syncs via webhook). |
-| Q7 | Backfill Casa Neos's NULL `derm_manifests.gdo_id`s now (org-wide per-facility DERM), or defer? | OPEN (DERM Tracker Phase 3). |
+| Q7 | Backfill Casa Neos's NULL `derm_manifests.gdo_id`s now (org-wide per-facility DERM), or defer? | OPEN (DERM Tracker Phase 3). **Closed 2026-11-14: never backfilled; the column is FROZEN (`2026-11-14_0100`, Fred: "Yes, work it out").** |
 
 ---
 
