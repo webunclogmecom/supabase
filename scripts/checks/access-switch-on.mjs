@@ -21,6 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { BASE as CLIENT_APP, ARGS, PORTAL, crawl } from '../client-app/base.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 for (const l of fs.readFileSync(path.resolve(here, '../../.env'), 'utf8').split(/\r?\n/)) {
@@ -80,8 +81,10 @@ const APPS = {
     extra: [],
   },
   client_app: {
-    host: 'https://clients.unclogme.app', control: 'client.update_property_operational',
-    gateReaders: ['client.global_search', 'client.recurring_eligibility'],
+    host: CLIENT_APP, control: 'client.update_property_operational',
+    // On the portal the Clients pages import the shell's header, so its search and its bell are in the walk: the shell's
+    // own reads (no app check by design), not the Client App's.
+    gateReaders: ['client.global_search', 'client.recurring_eligibility', ...(PORTAL ? ['ops.portal_search', 'ops.portal_waiting'] : [])],
     edgeAllow: { 'emergency-session': 'leftover, returns 404' },
     revokes: [], extra: [],
   },
@@ -99,7 +102,7 @@ const APPS = {
 const ALWAYS_ALLOWED = ['hr.get_my_access'];
 const EXPOSED = ['public', 'derm', 'client', 'ops', 'hr', 'customer'];
 
-const args = process.argv.slice(2);
+const args = ARGS;
 const app = args.find(a => !a.startsWith('--'));
 const flag = f => args.includes(f);
 const jsonOut = args.includes('--json') ? args[args.indexOf('--json') + 1] : null;
@@ -144,17 +147,14 @@ function extract(src) {
   if (!want) { console.log('FAIL extractor self-test', JSON.stringify({ rpc: [...e.rpc], edge: [...e.edge], w: [...e.writes], i: e.indirect })); process.exit(2); }
 }
 
+// The walk is scripts/client-app/base.mjs (one walk for a production build and for a dev server). For client_app the host
+// is CLIENT_APP (or --base <url>), default https://clients.unclogme.app; http://localhost:8080/clients is the portal's copy.
 async function walk(base) {
-  const seen = new Set(), q = ['/'], parts = [];
-  while (q.length) {
-    const p = q.shift(); if (seen.has(p)) continue; seen.add(p);
-    let r; try { r = await fetch(base + p); } catch { continue; }
-    if (!r.ok) continue;
-    const t = await r.text(); parts.push(t);
-    for (const m of t.matchAll(/["'`(](\/?assets\/[A-Za-z0-9_.\-]+\.js)/g)) { const x = m[1].startsWith('/') ? m[1] : '/' + m[1]; if (!seen.has(x)) q.push(x); }
-    for (const m of t.matchAll(/["'`]\.\/([A-Za-z0-9_.\-]+\.js)["'`]/g)) { const x = '/assets/' + m[1]; if (!seen.has(x)) q.push(x); }
-  }
-  return { chunks: seen.size - 1, src: parts.join('\n') };
+  const ASSET = /["'`(](\/?assets\/[A-Za-z0-9_.\-]+\.js)|["'`]\.\/([A-Za-z0-9_.\-]+\.js)["'`]/g;
+  const files = await crawl(['/'], { base, html: ASSET, chunk: ASSET });
+  // a production walk always read the page itself too, so its text stays part of what is scanned
+  const page = files.dev ? [] : [await fetch(base + '/').then(r => (r.ok ? r.text() : null)).catch(() => null)].filter(t => t !== null);
+  return { chunks: files.size, src: [...page, ...[...files.values()].filter(Boolean)].join('\n'), dev: !!files.dev };
 }
 
 // ---------- 2. probe ----------

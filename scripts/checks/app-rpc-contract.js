@@ -100,25 +100,13 @@ async function sql(query) {
  * A scan that only follows the absolute form stopped at 2 of 3 chunks during the audit and
  * reported ZERO matches for a string that was present.
  */
+// The walk is scripts/client-app/base.mjs: a production build as always, or a Vite dev server's modules (squeezed, keyed
+// by their /src/ path), which is how the Client App's copy in the portal is checked: CLIENT_APP=http://localhost:8080/clients
+// (or --base <url>) moves the `clients` entry there.
 async function fetchBundle(baseUrl) {
-  const seen = new Map();
-  const queue = [];
-  const html = await (await fetch(baseUrl, { redirect: 'follow' })).text();
-  for (const m of html.matchAll(/\/assets\/[A-Za-z0-9._-]+\.js/g)) queue.push(m[0]);
-  if (!queue.length) throw new Error(`no /assets/*.js found at ${baseUrl} — app moved or is down`);
-
-  while (queue.length) {
-    const p = queue.shift();
-    if (seen.has(p)) continue;
-    const res = await fetch(new URL(p, baseUrl).href);
-    if (!res.ok) { seen.set(p, ''); continue; }
-    const body = await res.text();
-    seen.set(p, body);
-    for (const m of body.matchAll(/(["'`])(?:\.\/|\/assets\/)([A-Za-z0-9._-]+\.js)\1/g)) {
-      const next = `/assets/${m[2]}`;
-      if (!seen.has(next)) queue.push(next);
-    }
-  }
+  const { crawl } = await import('../client-app/base.mjs');
+  const seen = await crawl(['/'], { base: baseUrl, html: /\/assets\/[A-Za-z0-9._-]+\.js/g, chunk: /(["'`])(?:\.\/|\/assets\/)([A-Za-z0-9._-]+\.js)\1/g });
+  if (!seen.size) throw new Error(`no /assets/*.js found at ${baseUrl} — app moved or is down`);
   return { chunks: seen.size, bytes: [...seen.values()].reduce((a, b) => a + b.length, 0), files: seen };
 }
 
@@ -231,16 +219,20 @@ function extract(files) {
   // ...and those names across chunks: export{Wv as v} in one, import{v as ye}from"./x.js" in another.
   // Two passes, so a chunk that re-exports what it imported resolves too.
   const pairs = list => list.split(',').map(p => p.trim().split(/\s+as\s+/)).filter(p => p[0]);
+  // A dev server's modules (keys under /src/) also export `export const x=` and re-export `export{a as b}from"/src/..."`
+  // (the portal's prodDb), and import by their /src/ path: those three shapes are read there only.
+  const dev = [...files.keys()].some(k => k.startsWith('/src/'));
   const exported = new Map();
   for (const [file, body] of files) {
     const names = new Map();
-    for (const m of body.matchAll(/export\s*\{([^}]*)\}/g)) for (const [local, name = local] of pairs(m[1])) names.set(name, local);
+    for (const m of body.matchAll(/export\s*\{([^}]*)\}(\s*from)?/g)) for (const [local, name = local] of pairs(m[1])) names.set(name, dev && m[2] ? name : local);
+    if (dev) for (const m of body.matchAll(/export\s+(?:const|let|var)\s+([\w$]+)/g)) names.set(m[1], m[1]);
     exported.set(file, names);
   }
   for (let pass = 0; pass < 2; pass++) {
     for (const [file, body] of files) {
-      for (const m of body.matchAll(/import\s*\{([^}]*)\}\s*from\s*(["'`])([^"'`]+)\2/g)) {
-        const from = `/assets/${m[3].split('/').pop()}`;
+      for (const m of body.matchAll(dev ? /(?:import|export)\s*\{([^}]*)\}\s*from\s*(["'`])([^"'`]+)\2/g : /import\s*\{([^}]*)\}\s*from\s*(["'`])([^"'`]+)\2/g)) {
+        const from = dev && m[3].startsWith('/src/') ? m[3].split('?')[0] : `/assets/${m[3].split('/').pop()}`;
         for (const [name, local = name] of pairs(m[1])) {
           const schema = bound.get(from)?.get(exported.get(from)?.get(name));
           if (schema) bound.get(file).set(local, schema);
@@ -439,7 +431,9 @@ function selfTest() {
 }
 
 (async () => {
-  const only = process.argv[2];
+  const { BASE, ARGS } = await import('../client-app/base.mjs');
+  APPS.clients.url = BASE;
+  const only = ARGS[0];
   const keys = only ? [only] : Object.keys(APPS);
   if (only && !APPS[only]) { console.error(`unknown app "${only}" — known: ${Object.keys(APPS).join(', ')}`); process.exit(2); }
 

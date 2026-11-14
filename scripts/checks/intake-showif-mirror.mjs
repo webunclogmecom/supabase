@@ -37,13 +37,15 @@ const form = new Function('getA', 'getF', page.slice(a, b)
   + ';return {visible, cond}')(() => A, () => F)
 
 // ---- 3. the dialog's parent-key parser, from the live bundle
-const B = 'https://clients.unclogme.app'
-const seen = new Set(), q = []
-const add = (s) => { for (const m of s.matchAll(/\/assets\/[A-Za-z0-9_.\-]+\.js/g)) if (!seen.has(m[0])) { seen.add(m[0]); q.push(m[0]) } }
-for (const r of ['/', '/clients/381']) add(await (await fetch(B + r)).text())
+// CLIENT_APP=http://localhost:8080/clients (or --base <url>) reads the portal's copy on its dev server, where the method
+// keeps the same name (scripts/client-app/base.mjs walks both hosts).
+const { BASE: B, crawl } = await import('../client-app/base.mjs')
+const ASSET = /\/assets\/[A-Za-z0-9_.\-]+\.js/g
+const q = [...(await crawl(['/', '/clients/381'], { html: ASSET, chunk: ASSET }))]
 let dialogVs = null
 while (q.length && !dialogVs) {
-  const t = await (await fetch(B + q.shift())).text(); add(t)
+  const [file, t] = q.shift()
+  if (B !== 'https://clients.unclogme.app' && /intakeParentKey[(][A-Za-z_$][A-Za-z0-9_$]*[)][{]/.test(t)) console.log(`${B}: the parser is in ${file}`)
   // Since 2026-09-25 the dialog shows no "only if" note (Fred: L1 and L2 only), so the parser is found by
   // its STABLE name: the Client App keeps it as the method intakeParentKey on a small object, and minifiers
   // keep property names. Extract that method by brace matching and call it.

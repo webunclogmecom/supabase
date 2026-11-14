@@ -2,19 +2,15 @@
 // Schedule intake strings are served. Prints chunk names, counts and totals only.
 //   node scripts/client-app/tests/live_bundle.mjs            -> PASS/FAIL lines, exit 1 on a FAIL
 //   node scripts/client-app/tests/live_bundle.mjs --absent   -> the pre-publish control: every NEW needle ABSENT, every GONE needle still there
-const H = 'https://clients.unclogme.app'
+//   CLIENT_APP=http://localhost:8080/clients (or --base <url>) walks the portal's copy instead (scripts/client-app/base.mjs)
+import { BASE, crawl } from '../base.mjs'
 const ROUTES = ['/clients/381', '/dashboard', '/schedule', '/']
 const ABSENT = process.argv.includes('--absent')
-const seen = new Map(), queue = []
-for (const r of ROUTES) { const html = await (await fetch(H + r)).text(); for (const m of html.matchAll(/\/assets\/[A-Za-z0-9._$-]+\.js/g)) queue.push(m[0]) }
-while (queue.length) {
-  const u = queue.shift(); if (seen.has(u)) continue
-  const t = await (await fetch(H + u)).text(); seen.set(u, t)
-  for (const m of t.matchAll(/(?:\.\/|\/assets\/)([A-Za-z0-9._$-]+\.js)/g)) queue.push('/assets/' + m[1])
-}
+const seen = await crawl(ROUTES)
 const all = [...seen.values()].join('\n')
 const bytes = [...seen.values()].reduce((n, t) => n + Buffer.byteLength(t), 0)
-console.log(`${seen.size} chunks, ${bytes} bytes; intake dialog in ${[...seen].filter(([, t]) => t.includes('schedule_property_intake')).map(([u]) => u.slice(8)).join(', ')}`)
+if (BASE !== 'https://clients.unclogme.app') console.log(BASE)
+console.log(`${seen.size} chunks, ${bytes} bytes; intake dialog in ${[...seen].filter(([, t]) => t.includes('schedule_property_intake')).map(([u]) => u.replace(/^\/assets\//, '')).join(', ')}`)
 let pass = 0, fail = 0
 const ok = (c, name) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}`) }
 // controls that must be present before AND after: the instrument can see the dialog, and what shipped before stays shipped

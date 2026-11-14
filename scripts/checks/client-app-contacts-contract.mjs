@@ -31,9 +31,13 @@
 // 🛑 DELIMITER CAPTURE. The literal counter captures the opening quote and BACK-REFERENCES it.
 // A ["'`] class on BOTH ends matches "name` as a pair, and a ["']-only matcher already scored a
 // whole backtick-quoted app at zero in this estate.
+//
+// CLIENT_APP=http://localhost:8080/clients (or --base <url>) checks the portal's copy on its dev server; the
+// walk for both hosts is scripts/client-app/base.mjs.
+import { BASE as CLIENT_APP, crawl } from '../client-app/base.mjs';
 const BASE = process.argv.includes('--mutate')
   ? 'https://admin.unclogme.app'          // a different staff app: everything must go absent
-  : 'https://clients.unclogme.app';
+  : CLIENT_APP;
 const SEEDS = ['/', '/clients/381'];
 
 const PRESENT = [
@@ -109,31 +113,7 @@ const ABSENT = [
   'and what quotes and invoices use',
 ];
 
-const walk = async () => {
-  const chunks = new Set();
-  for (const s of SEEDS) {
-    const r = await fetch(BASE + s, { redirect: 'follow' });
-    const h = await r.text();
-    for (const m of h.matchAll(/\/assets\/[A-Za-z0-9._-]+\.js/g)) chunks.add(m[0]);
-  }
-  const bodies = new Map();
-  let added = true;
-  while (added) {
-    added = false;
-    for (const c of [...chunks]) {
-      if (bodies.has(c)) continue;
-      const r = await fetch(BASE + c);
-      bodies.set(c, r.ok ? await r.text() : '');
-      for (const m of bodies.get(c).matchAll(/["'`](?:\.\.)?(\/?assets\/[A-Za-z0-9._-]+\.js)["'`]/g)) {
-        const p = m[1].startsWith('/') ? m[1] : '/' + m[1];
-        if (!chunks.has(p)) { chunks.add(p); added = true; }
-      }
-    }
-  }
-  return bodies;
-};
-
-const bodies = await walk();
+const bodies = await crawl(SEEDS, { base: BASE, html: /\/assets\/[A-Za-z0-9._-]+\.js/g, chunk: /["'`](?:\.\.)?(\/?assets\/[A-Za-z0-9._-]+\.js)["'`]/g });
 let all = '';
 for (const [, b] of bodies) all += b;
 
@@ -142,8 +122,19 @@ const litRe = new RegExp('(["\'`])(?:\\\\.|(?!\\1)[^\\\\])*?\\1', 'g');
 const literals = (all.match(litRe) || []).length;
 
 const mutating = BASE.includes('admin.');
-const missing = PRESENT.filter((n) => !all.includes(n));
-const leaked = ABSENT.filter((n) => all.includes(n));
+// THE PORTAL'S COPY (a dev server: bodies.dev). Two differences, both measured 2026-11-14:
+//  * the Contacts tab's redesign (portal e122252, "the decided design") split the who-sends line into a tooltip title and
+//    a line under it: "Sent by us" / "From our apps" and "Sent from Jobber" / "This is our record of who should get it".
+//    Same distinction, new words, so those two needles are swapped for the portal's.
+//  * the Clients pages now load another app's modules (the DERM Tracker's manifest and send dialogs, /src/modules/derm/),
+//    whose true sentences about OUR emails ("The municipal FOG-program office will receive ...") are not Contacts copy.
+//    The ABSENT list is about the Client App's own copy, so on the portal it reads only modules that are not another app's.
+const PORTAL_SWAP = { 'Sent by UnclogMe.': ['Sent by us'], 'Sent from Jobber. This is our record of who should get it.': ['Sent from Jobber', 'This is our record of who should get it'] };
+const present = bodies.dev ? PRESENT.flatMap((n) => PORTAL_SWAP[n] || [n]) : PRESENT;
+let own = all;
+if (bodies.dev) { own = ''; for (const [k, b] of bodies) if (!/^\/src\/modules\/(?!clients\/)/.test(k)) own += b; }
+const missing = present.filter((n) => !all.includes(n));
+const leaked = ABSENT.filter((n) => own.includes(n));
 
 console.log(`${BASE}  chunks=${bodies.size}  bytes=${all.length}  string_literals=${literals}`);
 
@@ -192,7 +183,10 @@ if (mutating) {
   // its argument names are object keys, so they survive minification.
   const nGateCalls = count(/clearingWarningShowing:/g);
   if (nGateCalls < 2) fails.push(`DERM sentence gate called ${nGateCalls}x, want >= 2 (Edit contact + Jobber contact dialogs)`);
-  if (!/clearingWarningShowing[^;]{0,120}\.dermActive[^;]{0,160}(["'`])service_report\1/.test(all)) {
+  // A production build merges the gate's three ifs into one condition (no `;` between them); the dev server keeps one
+  // `if (...) return null;` per test, so there the window is the function's block (no `}`) instead of one statement.
+  const gate = bodies.dev ? /clearingWarningShowing[^}]{0,120}\.dermActive[^}]{0,160}(["'`])service_report\1/ : /clearingWarningShowing[^;]{0,120}\.dermActive[^;]{0,160}(["'`])service_report\1/;
+  if (!gate.test(all)) {
     fails.push("DERM sentence gate does not test dermActive and the contact's own service_report tick");
   }
   for (const n of missing) fails.push(`MISSING: ${JSON.stringify(n)}`);
@@ -221,4 +215,4 @@ if (mutating) {
 }
 
 if (fails.length) { fails.forEach((f) => console.log('  FAIL  ' + f)); process.exit(1); }
-console.log(`PASS  ${PRESENT.length} present, ${ABSENT.length} absent, controls ok`);
+console.log(`PASS  ${present.length} present, ${ABSENT.length} absent, controls ok`);

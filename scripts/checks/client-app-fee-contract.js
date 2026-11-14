@@ -24,41 +24,19 @@
 //     that an entire app called no RPCs. Every literal matcher below is (["'`])…\1.
 //
 // EVERY ZERO IS ONLY MEANINGFUL IF THE CONTROLS FIRED. That is enforced, not hoped.
+//
+// CLIENT_APP=http://localhost:8080/clients (or --base <url>) checks the portal's copy on its dev server; the walk for
+// both hosts is scripts/client-app/base.mjs.
 // ---------------------------------------------------------------------------
 
-const BASE = 'https://clients.unclogme.app';
 const SEEDS = ['/', '/dashboard', '/clients/368'];
-
-const ok = (u) => (u.startsWith('http') ? u : BASE + (u.startsWith('/') ? u : '/' + u));
-
-async function get(u) {
-  try {
-    const r = await fetch(ok(u), { headers: { 'user-agent': 'Mozilla/5.0' } });
-    return r.ok ? await r.text() : null;
-  } catch { return null; }
-}
-
 const ASSET_RE = /["'`](\/assets\/[^"'`]+?\.js)["'`]/g;
 
 async function collectBundle() {
-  const queue = [];
-  for (const s of SEEDS) {
-    const html = await get(s);
-    if (!html) continue;
-    for (const m of html.matchAll(ASSET_RE)) queue.push(m[1]);
-  }
-  const seen = new Set(queue);
-  const texts = [];
-  let guard = 0;
-  while (queue.length && guard++ < 300) {
-    const u = queue.shift();
-    const t = await get(u);
-    if (!t) continue;
-    texts.push(t);
-    for (const m of t.matchAll(ASSET_RE)) {
-      if (!seen.has(m[1])) { seen.add(m[1]); queue.push(m[1]); }
-    }
-  }
+  const { BASE, crawl } = await import('../client-app/base.mjs');
+  if (BASE !== 'https://clients.unclogme.app') console.log(BASE);
+  const files = await crawl(SEEDS, { html: ASSET_RE, chunk: ASSET_RE });
+  const texts = [...files.values()].filter(Boolean);
   return { text: texts.join('\n'), chunks: texts.length };
 }
 

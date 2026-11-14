@@ -9,15 +9,19 @@
 // Repaired 2026-11-05: it had been failing every scenario unnoticed (get_my_access, the sb_ key as a Bearer token, the avatar letter on staff options).
 // Added 2026-11-05 (office training film, Fred's picks): the Link ready sentence by task outcome, and Manholes starts ticked when it reads 0 or null.
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (a control: named checks must FAIL)
+//   CLIENT_APP=http://localhost:8080/clients runs it on the portal's copy (scripts/client-app/base.mjs): signed in through the
+//   portal's form, its STABLE reads (POST /rpc) answered read only, and the dialog opened the portal's way (below, openIntake).
+//   CHUNK_SUB edits production chunks only (/assets/*.js); a dev server serves /src/ modules, which it does not touch.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { ARGS, ORIGIN, clientUrl, PORTAL, COOKIE_SIGN_IN, formSignIn, answerRead, reads } from '../base.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
 const env = Object.fromEntries(fs.readFileSync(ENV, 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
 const sql = async (q) => (await fetch('https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/database/query', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SUPABASE_PAT, 'content-type': 'application/json' }, body: JSON.stringify({ query: q }) })).json()
-const H = 'https://clients.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co', KEY = env.SUPABASE_SERVICE_ROLE_KEY
-const out = process.argv[2] || './schedule_assign_shots'; fs.mkdirSync(out, { recursive: true })
+const H = ORIGIN, SB = 'https://wbasvhvvismukaqdnouk.supabase.co', KEY = env.SUPABASE_SERVICE_ROLE_KEY
+const out = ARGS[0] || './schedule_assign_shots'; fs.mkdirSync(out, { recursive: true })
 
 // ---- expectations read from the database, never hard-coded ----
 const [facts] = await sql(`select
@@ -108,7 +112,9 @@ async function open(w, sc = {}) {
   await p.route(SB + '/rest/v1/**', async (x) => {
     const r = x.request(), m = r.method(), u = new URL(r.url()), n = u.pathname.split('/').pop()
     if (m === 'OPTIONS') return x.fulfill({ status: 204, headers: cors })
-    if (m === 'GET' && n === 'employees' && sc.staffFails) return x.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{"message":"stubbed failure"}' })
+    // On the portal the client page itself reads employees (crew names, no status filter) and fails whole without them, so
+    // only the dialog's staff read (status=eq.ACTIVE) fails there; the old app read employees in the dialog only.
+    if (m === 'GET' && n === 'employees' && sc.staffFails && (!PORTAL || u.searchParams.get('status') === 'eq.ACTIVE')) return x.fulfill({ status: 500, headers: cors, contentType: 'application/json', body: '{"message":"stubbed failure"}' })
     if (m === 'GET' && LOCAL[n]) return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pgFilter(LOCAL[n], u)) })
     // the one read of the property row behind the dialog's pre-check
     const isRow = m === 'GET' && n === 'properties' && (u.searchParams.get('select') || '').startsWith('access_schedule,lock_box_key')
@@ -129,15 +135,24 @@ async function open(w, sc = {}) {
     if (m === 'POST' && n === 'get_my_access') return x.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: null, photo_path: null }, apps: [{ app: 'client_app', name: 'Client App', parent: null, mode: 'on', level: 'edit' }] }) })
     if (m === 'POST' && n === 'schedule_property_intake') { st.seq.push('schedule'); st.schedule = r.postDataJSON(); return x.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ ok: true, intake_id: 999, url: URL_STUB, expires_at: '2026-11-28T16:00:00+00:00', requested: st.schedule?.p_requested ?? [], dropped: [], added: [], form_version: 2, note: null }) }) }
     if (m === 'POST' && n === 'cancel_intake') { st.seq.push('cancel'); st.cancel = r.postDataJSON(); const c = sc.cancel || { status: 200, body: { ok: true, intake_id: 999, cancelled_at: new Date().toISOString() } }; return x.fulfill({ status: c.status, headers: cors, contentType: 'application/json', body: JSON.stringify(c.body) }) }
+    if (PORTAL && await answerRead(x)) return
     st.writes.push(m + ' ' + n)
     return x.fulfill({ status: 404, headers: cors, contentType: 'application/json', body: '{"message":"stubbed"}' })
   })
-  await p.goto(H + '/clients/381')
-  await p.getByRole('button', { name: 'Edit property' }).first().waitFor({ timeout: 30000 })
+  if (!COOKIE_SIGN_IN) await formSignIn(p, session, user)
+  await p.goto(clientUrl(381, PORTAL ? '?tab=sites&site=162' : ''))
+  await p.getByRole('button', { name: MENU }).first().waitFor({ timeout: 30000 })
   await p.waitForTimeout(1200)
-  await p.getByRole('button', { name: 'Edit property' }).first().click()
-  await p.getByRole('button', { name: 'Intake Form' }).click()
+  await openIntake(p)
   return { ctx, p, st, phone }
+}
+// The intake choice ("Intake form": "No, schedule it" / "Yes, fill it now"): the old app opens it from a site's Edit property
+// menu, the portal's Sites tab (site 162 by ?site=) from the site's actions menu, item "Schedule survey" (portal SiteMenu.tsx).
+const MENU = PORTAL ? /^Actions for the site / : 'Edit property'
+async function openIntake(p, again = false) {
+  if (!again || PORTAL) await p.getByRole('button', { name: MENU }).first().click()
+  if (PORTAL) await p.getByText('Schedule survey', { exact: true }).first().click()
+  else await p.getByRole('button', { name: 'Intake Form' }).click()
 }
 const dlg = (p) => p.locator('[role=dialog]').last()
 const dlgText = async (p) => (await dlg(p).innerText().catch(() => '')).replace(/\s+/g, ' ')
@@ -152,6 +167,9 @@ async function pick(p, name) {
   await p.getByRole('option').filter({ hasText: name }).first().click({ timeout: 5000 })   // each option starts with its avatar letter
   await p.waitForTimeout(300)
 }
+// The portal's query cache retries a failed read 3 times (lib/module-cache.ts, about 7 s) before the dialog shows the failure;
+// the old app showed it at once. So on the portal a failure check first waits for its sentence (up to 30 s).
+const failureShown = (p, s) => PORTAL ? p.waitForFunction((x) => ([...document.querySelectorAll('[role=dialog]')].pop()?.innerText || '').includes(x), s, { timeout: 30000 }).catch(() => {}) : null
 const create = async (p) => { await dlg(p).getByRole('button', { name: /Create link/ }).click({ timeout: 5000 }); await p.waitForTimeout(2500) }
 const safe = async (name, fn) => { try { await fn() } catch (e) { ok(false, name, e.message.split('\n')[0]) } }
 
@@ -311,7 +329,7 @@ for (const w of [1440, 375]) {
     await dlg(p).getByRole('button', { name: 'Cancel' }).click(); await p.waitForTimeout(700)
     row.grease_trap_manhole_count = 4
     const again = p.getByRole('button', { name: 'No, schedule it' })
-    if (!(await again.isVisible().catch(() => false))) await p.getByRole('button', { name: 'Intake Form' }).click()
+    if (!(await again.isVisible().catch(() => false))) await openIntake(p, true)
     await toSchedule(p); await p.waitForTimeout(2500)
     const m = await tiles(p)
     ok(st.rowReads >= 2 && m.ticked === 'false' && m.pillN === 'On file: 4 manholes' && m.picked === m.of - 1, `${w}: [2026-11-05] opened at 0, cancelled, now 4: unticked, never from the old row`, { ...m, rowReads: st.rowReads })
@@ -358,6 +376,7 @@ for (const w of [1440, 375]) {
   await safe(`${w}: F`, async () => {
     const { ctx, p } = await open(w, { staffFails: true })
     await toSchedule(p)
+    await failureShown(p, "We couldn't load the staff list. Close this and try again.")
     const t = await dlgText(p)
     ok(t.includes("We couldn't load the staff list. Close this and try again.") && await dlg(p).getByRole('button', { name: /Create link/ }).isDisabled(), `${w}: [new] no staff list: the sentence, and no Create link`, t.slice(0, 300))
     ok(NO_SENTENCE(t), `${w}: [guard] no staff list: neither Link ready sentence`)
@@ -366,6 +385,7 @@ for (const w of [1440, 375]) {
   await safe(`${w}: F2`, async () => {
     const { ctx, p } = await open(w, { rowFails: true })
     await toSchedule(p)
+    await failureShown(p, "We couldn't load what is on file, so everything starts ticked.")
     const m = await tiles(p), t = await dlgText(p)
     ok(t.includes("We couldn't load what is on file, so everything starts ticked.") && m.picked === m.of && m.ticked === 'true', `${w}: [guard] the property row fails: everything ticked, it says so`, m)
     await ctx.close()
@@ -393,5 +413,6 @@ for (const w of [1440, 375]) {
 }
 await browser.close()
 if (process.env.CHUNK_SUB) console.log('CHUNK_SUB edits applied:', [...new Set(subHits)].length, 'of', process.env.CHUNK_SUB.split('@@@').length)
+if (PORTAL) console.log('portal reads answered read only: ' + ([...new Set(reads)].join(', ') || 'none'))
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

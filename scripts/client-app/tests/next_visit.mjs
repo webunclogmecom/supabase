@@ -7,15 +7,20 @@
 // write refused. Nothing is written anywhere.
 //   node scripts/client-app/tests/next_visit.mjs [outdir]
 //   CHUNK_SUB='<from>|||<to>@@@<from2>|||<to2>' serves the live chunks with those edits (the control: checks must FAIL)
+//   CLIENT_APP=http://localhost:8080/clients runs it on the portal's copy (scripts/client-app/base.mjs): signed in through the
+//   portal's form, its STABLE reads (POST /rpc) answered read only. The portal's client page has no job card with Future and
+//   Previous visits, so the same rule is checked where the portal shows it (portalChecks below). CHUNK_SUB edits production
+//   chunks only.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { ARGS, ORIGIN, listUrl, PORTAL, COOKIE_SIGN_IN, PORTAL_ACCESS, formSignIn, answerRead, reads } from '../base.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
 const env = Object.fromEntries(fs.readFileSync(ENV, 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
 const sql = async (q) => { const j = await (await fetch('https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/database/query', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SUPABASE_PAT, 'content-type': 'application/json' }, body: JSON.stringify({ query: q }) })).json(); if (!Array.isArray(j)) throw new Error(JSON.stringify(j).slice(0, 300)); return j }
-const H = 'https://clients.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co', KEY = env.SUPABASE_SERVICE_ROLE_KEY
-const out = process.argv[2] || './next_visit_shots'; fs.mkdirSync(out, { recursive: true })
+const H = ORIGIN, SB = 'https://wbasvhvvismukaqdnouk.supabase.co', KEY = env.SUPABASE_SERVICE_ROLE_KEY
+const out = ARGS[0] || './next_visit_shots'; fs.mkdirSync(out, { recursive: true })
 
 const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
 const plus = (n) => new Date(Date.parse(TODAY + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10)
@@ -36,6 +41,13 @@ if (facts.reported.upcoming !== 0 && Number(facts.reported.upcoming) !== 0) { co
 if (!facts.control) { console.log('FAIL fixture: control client 009-CN has no scheduled visit'); process.exit(1) }
 
 const FIX = facts.fixture
+// the portal's checks also need the control's next visit by id, and 112-YA's own soonest scheduled visit outside the fixture job
+let controlVisit = null, fixtureRealNext = null
+if (PORTAL) {
+  const [x] = await sql(`select (select min(id) from public.visits where job_id = ${Number(facts.control.job)} and deleted_at is null and visit_status = 'scheduled' and visit_date = '${facts.control.next}') as cv,
+    (select min(visit_date)::text from public.visits where client_id = 381 and deleted_at is null and visit_status = 'scheduled' and visit_date >= '${TODAY}' and job_id is distinct from ${Number(FIX.job)}) as rn`)
+  controlVisit = x.cv; fixtureRealNext = x.rn
+}
 const base = { client_id: 381, property_id: FIX.property, job_id: FIX.job, source: 'visit-calendar', service_type: 'Labor', title: 'Fixture', deleted_at: null, completed_at: null, completed_by: null, invoice_id: null, jobber_url: null, public_id: null, derm_required: false, notes: null }
 const ROWS = [
   { ...base, id: 990001, visit_status: 'cancelled', visit_date: plus(10) },
@@ -90,7 +102,8 @@ async function open(w, path, sc = {}) {
         return x.fulfill({ status: res.status, contentType: res.headers.get('content-type') || 'application/json', headers: { 'content-range': res.headers.get('content-range') || '' }, body: text })
       } catch { return x.abort() }
     }
-    if (m === 'POST' && n === 'get_my_access') return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: '#334155', photo_path: null }, apps: { client_app: { level: 'edit', mode: 'on' } }, can: {}, access: {} }) })
+    if (m === 'POST' && n === 'get_my_access') return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PORTAL ? PORTAL_ACCESS : { employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: '#334155', photo_path: null }, apps: { client_app: { level: 'edit', mode: 'on' } }, can: {}, access: {} }) })
+    if (PORTAL && await answerRead(x)) return
     if (m === 'POST') {
       const res = await fetch(r.url(), { method: 'POST', headers: { apikey: KEY, 'content-type': 'application/json' }, body: '{}' }).catch(() => null)
       void res
@@ -98,8 +111,66 @@ async function open(w, path, sc = {}) {
     st.writes.push(m + ' ' + n)
     return x.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"stubbed"}' })
   })
-  await p.goto(H + path)
+  if (!COOKIE_SIGN_IN) await formSignIn(p, session, user)
+  await p.goto(path === '/' ? listUrl() : ORIGIN + path)
   return { ctx, p, st, phone }
+}
+
+// ---- the portal's client page (seven tabs): the same rule, where the portal shows it ----
+// A job's next visit and its "N coming up" are its row on the Jobs tab ([data-job], the archived jobs have neither); every
+// visit is on the Visits tab, where ?visit=<id> opens the segment of its kind ("Coming up", "Done", or "All" for any other)
+// with the visit's row ([data-visit]), whose state icon reads Cancelled, Skipped or Not done; the header's Next visit is the
+// client's soonest coming visit. Dates as the portal writes them (lib/visit-list.ts dayText and shortDay).
+const onDay = (d, o) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', ...o })
+const day = (d) => onDay(d, { month: 'short', day: 'numeric', year: 'numeric' })
+const short = (d) => onDay(d, { weekday: 'short', month: 'short', day: 'numeric', ...(d.slice(0, 4) === TODAY.slice(0, 4) ? {} : { year: 'numeric' }) })
+async function jobRow(w, client, number) {
+  const { ctx, p, st } = await open(w, `/clients/${client}?tab=jobs`)
+  const row = p.locator(`[data-job="${number}"]`).first()
+  await row.waitFor({ timeout: 30000 }); await p.waitForTimeout(1500)
+  const cells = await row.locator('[role=cell]').allInnerTexts()
+  await ctx.close()
+  return { next: (cells[4] || '').replace(/^\s*Next visit\s*/, '').trim(), coming: Number(((cells[5] || '').match(/(\d+) coming up/) || [])[1] ?? NaN), st }
+}
+async function visitAt(w, client, id, sc) {
+  const { ctx, p, st } = await open(w, `/clients/${client}?tab=visits&visit=${id}`, sc)
+  await p.locator(`[data-visit="${id}"]`).first().waitFor({ timeout: 30000 }).catch(() => {}); await p.waitForTimeout(1000)
+  const r = await p.evaluate((vid) => {
+    const row = document.querySelector(`[data-visit="${vid}"]`)
+    const seg = [...document.querySelectorAll('[role=tab][aria-selected=true]')].map((t) => t.innerText.trim()).find((t) => /^(All|Coming up|Done)\b/.test(t)) || null
+    const head = [...document.querySelectorAll('*')].find((e) => e.children.length < 6 && /^Next visit\b/.test(e.innerText || '') && (e.innerText || '').length < 60)
+    return { found: !!row, seg: seg && seg.replace(/\s*\d+$/, ''), state: row ? [...row.querySelectorAll('[aria-label]')].map((e) => e.getAttribute('aria-label')).join(' | ') : null, header: head ? head.innerText.replace(/\s+/g, ' ') : null, body: document.body.innerText }
+  }, id)
+  await p.screenshot({ path: `${out}/${w}_portal_visit_${id}.png`, fullPage: false })
+  await ctx.close()
+  return { ...r, st }
+}
+async function portalChecks(w, tag) {
+  // 186-PV: its job has no next visit, and the cancelled visit is not a coming one
+  const j = await jobRow(w, facts.reported.client, facts.reported.number)
+  ok(j.next === 'None planned' && j.coming === 0, `${tag} 186-PV #${facts.reported.number}: Jobs tab Next visit reads "None planned", 0 coming up`, j)
+  const v = await visitAt(w, facts.reported.client, 7318)
+  ok(v.found && v.seg === 'All' && /Cancelled/.test(v.state || ''), `${tag} 186-PV: visit 7318 is not under Coming up, and carries its Cancelled state`, { seg: v.seg, state: v.state })
+  ok(![day(facts.reported.date), short(facts.reported.date)].some((s) => new RegExp('Next visit\\s*' + s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(v.body)), `${tag} 186-PV: no "Next visit ${day(facts.reported.date)}" anywhere on the page, the header included`, v.header)
+  ok(j.st.errors.length === 0 && v.st.errors.length === 0, `${tag} 186-PV: no page errors`, [...j.st.errors, ...v.st.errors])
+  ok(j.st.writes.length === 0 && v.st.writes.length === 0, `${tag} 186-PV: nothing written`, [...j.st.writes, ...v.st.writes])
+  // control: a client with a real next visit keeps it
+  const c = await jobRow(w, facts.control.client, facts.control.number)
+  ok(c.next === day(facts.control.next), `${tag} control ${facts.control.code} #${facts.control.number}: Jobs tab Next visit stays ${day(facts.control.next)}`, c)
+  const cv = await visitAt(w, facts.control.client, controlVisit)
+  ok(cv.found && cv.seg === 'Coming up', `${tag} control: its next visit is under Coming up`, { seg: cv.seg })
+  ok(c.st.errors.length === 0 && cv.st.errors.length === 0, `${tag} control: no page errors`, [...c.st.errors, ...cv.st.errors])
+  // the fixture on 112-YA, served to this page only: every status against the rule
+  const want = { 990003: ['Coming up', null], 990006: ['Coming up', null], 990004: ['Done', null], 990001: ['All', 'Cancelled'], 990002: ['All', 'Skipped'], 990005: ['All', 'Not done'] }
+  let header = null
+  for (const [id, [seg, state]] of Object.entries(want)) {
+    const f = await visitAt(w, 381, id, { fixture: true })
+    header ??= f.header
+    ok(f.found && f.seg === seg && (!state || (f.state || '').includes(state)), `${tag} fixture: visit ${id} (${ROWS.find((r) => r.id === Number(id)).visit_status}, ${ROWS.find((r) => r.id === Number(id)).visit_date}) is under ${seg}${state ? ' with ' + state : ''}`, { seg: f.seg, state: f.state })
+    ok(f.st.errors.length === 0 && f.st.writes.length === 0, `${tag} fixture ${id}: no page errors, nothing written`, { errors: f.st.errors, writes: f.st.writes })
+  }
+  const soonest = [plus(20), fixtureRealNext].filter(Boolean).sort()[0]
+  ok(header === `Next visit ${short(soonest)}` || (header || '').startsWith(`Next visit ${short(soonest)}`), `${tag} fixture: the header's Next visit is the soonest scheduled one (${short(soonest)}), not the cancelled +10 or skipped +5`, { header })
 }
 
 // The smallest element holding the job number AND both visit headings: that one job's card.
@@ -126,6 +197,8 @@ const expandAll = async (p, number) => {
 
 for (const w of [1440, 375]) {
   const tag = `[${w}]`
+  if (PORTAL) await portalChecks(w, tag)
+  else {   // the old app's job cards
   // ---- the reported record: 186-PV, its one job with no real upcoming visit ----
   {
     const { ctx, p, st } = await open(w, `/clients/${facts.reported.client}`)
@@ -165,6 +238,7 @@ for (const w of [1440, 375]) {
     await p.screenshot({ path: `${out}/${w}_112-YA_fixture.png`, fullPage: false })
     await ctx.close()
   }
+  }   // the old app's job cards
   // ---- the Clients list asks for scheduled visits only ----
   {
     const { ctx, p, st } = await open(w, '/')
@@ -178,5 +252,6 @@ for (const w of [1440, 375]) {
 }
 await browser.close()
 if (process.env.CHUNK_SUB) console.log('chunk edits applied: ' + [...subHits].join(' ; '))
+if (PORTAL) console.log('portal reads answered read only: ' + ([...new Set(reads)].join(', ') || 'none'))
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

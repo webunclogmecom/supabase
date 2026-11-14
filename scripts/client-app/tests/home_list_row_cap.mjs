@@ -13,15 +13,18 @@
 // Sign-in faked (a FAKE token); PostgREST GETs forwarded READ-ONLY with the service key (never printed); every write refused.
 //   node scripts/client-app/tests/home_list_row_cap.mjs [outdir]
 // Exit 0 = all pass. Run against the pre-fix bundle it must FAIL the completed-visits read and 234-PV (the control).
+// CLIENT_APP=http://localhost:8080/clients runs it on the portal's copy (scripts/client-app/base.mjs): signed in through the
+// portal's form, the portal's STABLE reads (POST /rpc) answered read only, the same checks.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import { ARGS, listUrl, PORTAL, COOKIE_SIGN_IN, PORTAL_ACCESS, formSignIn, answerRead, reads } from '../base.mjs'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
 const ENV = [new URL('../../../.env', import.meta.url), 'C:/Users/FRED/Desktop/Virtrify/Yannick/Claude/Supabase/.env'].find((p) => fs.existsSync(p))
 const env = Object.fromEntries(fs.readFileSync(ENV, 'utf8').split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^['"]|['"]$/g, '')]))
 const sql = async (q) => { const j = await (await fetch('https://api.supabase.com/v1/projects/wbasvhvvismukaqdnouk/database/query', { method: 'POST', headers: { Authorization: 'Bearer ' + env.SUPABASE_PAT, 'content-type': 'application/json' }, body: JSON.stringify({ query: 'set transaction read only; ' + q }) })).json(); if (!Array.isArray(j)) throw new Error(JSON.stringify(j).slice(0, 300)); return j }
-const H = 'https://clients.unclogme.app', SB = 'https://wbasvhvvismukaqdnouk.supabase.co', KEY = env.SUPABASE_SERVICE_ROLE_KEY
-const out = process.argv[2] || './home_list_shots'; fs.mkdirSync(out, { recursive: true })
+const SB = 'https://wbasvhvvismukaqdnouk.supabase.co', KEY = env.SUPABASE_SERVICE_ROLE_KEY
+const out = ARGS[0] || './home_list_shots'; fs.mkdirSync(out, { recursive: true })
 
 // ---- expectations read from the database, never hard-coded ----
 const [f] = await sql(`with done as (select client_id, visit_date from client.visits where visit_status = 'completed' and deleted_at is null)
@@ -32,6 +35,15 @@ select (select count(*) from done) as completed,
 if (!f.reported || !f.control) { console.log('FAIL fixture: 234-PV or 004-BAO has no completed visit'); process.exit(1) }
 if (!(f.reported.last < f.old_cut)) console.log(`NOTE: 234-PV's last visit ${f.reported.last} is no longer older than the 1,000th completed visit (${f.old_cut}); its check no longer exercises the cut. Pick a client whose last visit is older.`)
 if (Number(f.completed) <= 1000) console.log(`NOTE: only ${f.completed} completed visits, so the cap is not exercised by that read today.`)
+// The portal's list (L2, portal 23de9c0, components/list/data.ts) shows the latest completed visit (by date, then id) on the
+// Eastern day the truck ARRIVED, else on its date. 234-PV's is dated Jun 4 with an arrival at 03:28 ET on Jun 5, so the
+// portal reads Jun 5 by its own rule: on the portal the expected day follows that rule, from the database.
+if (PORTAL) for (const c of [f.reported, f.control]) {
+  const [r] = await sql(`select coalesce((v.actual_arrival_at at time zone 'America/New_York')::date, v.visit_date)::text as d from client.visits v join public.clients c on c.id = v.client_id
+    where c.client_code = '${c.code}' and v.visit_status = 'completed' and v.deleted_at is null order by v.visit_date desc, v.id desc limit 1`)
+  if (r.d !== c.last) console.log(`NOTE (portal): ${c.code}'s last visit is dated ${c.last}; the portal shows the arrival day ${r.d}`)
+  c.last = r.d
+}
 
 // The list renders "Jun 04" (zero-padded day, no year); the other shapes are kept in case the column format changes.
 const fmt = (d) => { const [y, m, dd] = d.split('-').map(Number); const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]; const d2 = String(dd).padStart(2, '0'); return [`${m}/${dd}/${y}`, `${mon} ${dd}, ${y}`, `${mon} ${d2}`, `${mon} ${dd}\t`, d] }
@@ -61,7 +73,8 @@ async function open(w, path) {
   await p.route(SB + '/rest/v1/**', async (x) => {
     const r = x.request(), m = r.method(), u = new URL(r.url()), n = u.pathname.split('/').pop()
     if (m === 'OPTIONS') return x.fulfill({ status: 204 })
-    if (m === 'POST' && n === 'get_my_access') return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: '#334155', photo_path: null }, apps: { client_app: { level: 'edit', mode: 'on' } }, can: {}, access: {} }) })
+    if (m === 'POST' && n === 'get_my_access') return x.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PORTAL ? PORTAL_ACCESS : { employee_id: 1, group: 'admin', me: { full_name: 'Visual Check', color_hex: '#334155', photo_path: null }, apps: { client_app: { level: 'edit', mode: 'on' } }, can: {}, access: {} }) })
+    if (PORTAL && await answerRead(x)) return
     if (m !== 'GET' && m !== 'HEAD') { st.writes.push(m + ' ' + n); return x.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"stubbed"}' }) }
     const rh = r.headers(), h = { apikey: KEY }
     for (const k of ['accept', 'accept-profile', 'prefer', 'range']) if (rh[k]) h[k] = rh[k]
@@ -74,7 +87,8 @@ async function open(w, path) {
       return x.fulfill({ status: res.status, contentType: res.headers.get('content-type') || 'application/json', headers: { 'content-range': res.headers.get('content-range') || '' }, body: text })
     } catch { return x.abort() }
   })
-  await p.goto(H + path)
+  if (!COOKIE_SIGN_IN) await formSignIn(p, session, user)
+  await p.goto(listUrl(path))
   return { ctx, p, st }
 }
 
@@ -104,7 +118,7 @@ async function readsComplete(tag, st) {
 for (const w of [1440, 375]) {
   const tag = `[${w}]`
   for (const c of [{ ...f.reported, role: 'reported' }, { ...f.control, role: 'control' }]) {
-    const { ctx, p, st } = await open(w, `/?q=${encodeURIComponent(c.code)}&hide=${encodeURIComponent('+lastVisit')}`)
+    const { ctx, p, st } = await open(w, `?q=${encodeURIComponent(c.code)}&hide=${encodeURIComponent('+lastVisit')}`)
     await p.waitForFunction((code) => document.body.innerText.includes(code), c.code, { timeout: 45000 }).catch(() => {})
     await p.waitForTimeout(4000)
     const t = await p.evaluate(() => document.body.innerText)
@@ -124,5 +138,6 @@ for (const w of [1440, 375]) {
   }
 }
 await browser.close()
+if (PORTAL) console.log('portal reads answered read only: ' + ([...new Set(reads)].join(', ') || 'none'))
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
