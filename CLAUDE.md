@@ -6294,8 +6294,8 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   the job's open lines, else old uncoded text. 🛑 **Since `2026-11-15_0400` (Fred's pick LL) a visit marked Pumping whose
   old uncoded lines are ONLY the plain "Service Agreement" is a grease trap pumping** (36 completed visits, January to June
   2026; a call for a job alone never takes that arm). Measured before and after: B1 and the live estimate moved for those
-  36 only; their Calendar days stay STORED as "not a pumping" (frozen rows win, the freezer leaves them), so what the
-  Calendar shows did not move; the averages and Admin Review's Grease page did not move. 🛑 **A past day stays the same** (Fred: *"unless like a visit is moved
+  36 only; the averages and Admin Review's Grease page did not move. Their stored Calendar days were then stored again ONCE
+  with the new rule (`2026-11-15_0530`, Fred: "Recalculate once"; 36 rows superseded and re-stored by the job, 25,475 gal on 34 days, nothing else); after that the frozen rule holds as before. 🛑 **A past day stays the same** (Fred: *"unless like a visit is moved
   from that date or into that date ... recalculate with that same average"*): `ops.fn_grease_estimates_resolved` returns
   the stored row of a past day, else, for a visit now on Moises, the stored MEASURED average it had on another date
   (`carried`), else live; the freezer stores pump kinds too, and the guard keeps them immutable. A correction of the

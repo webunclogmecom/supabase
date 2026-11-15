@@ -72,8 +72,8 @@ lift station or grey water pumping at a place with no grease trap service), undo
   moved nothing). `visits.service_type` decides nothing: 91 completed 2026 visits disagree with their lines. Two shapes
   to know: 36 visits of service type Pumping (January to June 2026) carry only the plain line "Service Agreement"; they
   read `not_a_pumping` until `2026-11-15_0400` (Fred's pick LL), which made the shared rule count them as grease trap
-  pumpings, so they read `trap_size` now (their Calendar days stay stored as "not a pumping": see the Supabase `CLAUDE.md`
-  pump kinds paragraph); and the tank view still takes a reading only on a visit of service type Pumping, so a pumping by
+  pumpings, so they read `trap_size` now (their stored Calendar days were stored again once with the new rule,
+  `2026-11-15_0530`, so the Calendar agrees); and the tank view still takes a reading only on a visit of service type Pumping, so a pumping by
   its lines with another service type never has a `tank` reading.
 - **The size on file is the grease trap's where the place has a grease trap service** (an open job there whose own lines
   pump a grease trap: the Calendar's step 7 rule, copied here), so a lift station or grey water pumping there with no
