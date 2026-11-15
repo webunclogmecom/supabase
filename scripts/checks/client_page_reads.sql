@@ -5,9 +5,10 @@
 --   1. derm.fn_manifest_row_states_core(), derm.manifest_row_states(), derm.manifest_row_states_for_client(bigint)
 --      (2026-11-14_0135_derm_manifest_row_states_per_client.sql)
 --   2. B1, public.get_pumping_figures(bigint, bigint[]) (2026-11-14_0140_public_get_pumping_figures.sql, corrected by
---      2026-11-14_0350_public_get_pumping_figures_line_item_kinds.sql); it also compares a pumping and its kind with the
---      Calendar's estimate (ops.fn_grease_estimates_live) on every completed 2026 visit, and the trust rule with
---      ops.fn_client_sludge_averages(), both ways
+--      2026-11-14_0350_public_get_pumping_figures_line_item_kinds.sql, 'size_on_file' since
+--      2026-11-15_0330_public_get_pumping_figures_size_on_file.sql); it also compares a pumping, its kind and the size on
+--      file of a lift station or grey water pumping with the Calendar's estimate (ops.fn_grease_estimates_live) on every
+--      completed 2026 visit, and the trust rule with ops.fn_client_sludge_averages(), both ways
 --   3. B3, client.get_client_emails(bigint, text) (2026-11-14_0148_client_get_client_emails.sql)
 --   4. B2, derm.get_manifest_dialog(text) (2026-11-14_0155_derm_get_manifest_dialog.sql)
 --   5. B4, ops.portal_search(text) (2026-11-14_0203_ops_portal_search_addresses_invoices_quotes.sql): the new groups only
@@ -183,8 +184,8 @@ begin
     raise exception 'verify_fail: a person without the four apps was not refused (% %)', v_state, v_msg;
   end if;
 
-  -- 3. Every completed, live visit (in chunks of 2,000), and 112-YA: one entry each, one of the four sources, gallons
-  --    exactly when the source has them, and the trap size as it is on file.
+  -- 3. Every completed, live visit (in chunks of 2,000), and 112-YA: one entry each, one of the five sources, gallons
+  --    exactly when the source has them, and the size as it is on file for both size sources.
   v_res := public.get_pumping_figures(381);
   if jsonb_array_length(v_res -> 'visits') <> (select count(*) from public.visits v where v.client_id = 381 and v.deleted_at is null and v.visit_status = 'completed')
      or exists (select 1 from jsonb_array_elements(v_res -> 'visits') x where (x ->> 'client_id')::bigint <> 381) then
@@ -205,18 +206,25 @@ begin
     from _b1_check n
     join public.visits vv on vv.id = n.visit_id
     left join public.properties p on p.id = vv.property_id
-   where n.source is null or n.source not in ('tank', 'trap_size', 'none', 'not_a_pumping')
+   where n.source is null or n.source not in ('tank', 'trap_size', 'size_on_file', 'none', 'not_a_pumping')
       or (n.gallons is null) <> (n.source in ('none', 'not_a_pumping'))
-      or (n.source = 'trap_size' and n.gallons is distinct from nullif(p.grease_trap_size_gallons, 0));
+      or (n.source in ('trap_size', 'size_on_file') and n.gallons is distinct from nullif(p.grease_trap_size_gallons, 0));
   if v_bad <> 0 then raise exception 'verify_fail: % visits are malformed', v_bad; end if;
 
   -- 4. Both ways against the Calendar's estimate, which finds a visit's pump kinds with the same function B1 calls
   --    (ops.fn_visit_pump_kinds, from the line items; ops.fn_grease_estimates_live: live, never the frozen rows), on every
-  --    completed 2026 visit: "not a pumping" exactly when the estimate finds no pump kind; the trap size only where its
-  --    kinds hold a grease trap (the size on file is the grease trap's); and "none" never on a grease trap pumping with a
-  --    trap size on file. Each of the four sources must appear, so the comparison is not empty.
+  --    completed 2026 visit:
+  --    a. "not a pumping" exactly when the estimate finds no pump kind;
+  --    b. the trap size only where its kinds hold a grease trap, and "none" never on a grease trap pumping with a size;
+  --    c. "size on file" only on a lift station or grey water pumping the Calendar shows with the size on file (the same
+  --       gallons) or with its Moises average, never one it leaves unknown (a place with a grease trap service);
+  --    d. every lift station or grey water pumping the Calendar shows with the size on file, with no truck tank reading in
+  --       B1 and a size on its own place, is "size on file" in B1.
+  --    c and d hold B1's copy of the Calendar's grease trap service rule (its step 7) to the Calendar's own answer. ponytail: a
+  --    visit the Calendar shows with its Moises average is held one way only (1 visit on 2026-11-15).
+  --    Each of the five sources must appear, so the comparison is not empty.
   with cal as materialized (
-    select e.visit_id, e.visit_date, e.pump_kinds
+    select e.visit_id, e.visit_date, e.pump_kinds, e.basis, e.gallons
       from ops.fn_grease_estimates_live(date '2026-01-01',
              greatest((now() at time zone 'America/New_York')::date,
                       (select max(vv.visit_date) from public.visits vv where vv.deleted_at is null and vv.visit_status = 'completed'))) e
@@ -224,7 +232,14 @@ begin
   select count(*) filter (where c.visit_id is null
                              or (n.source = 'not_a_pumping') <> (c.pump_kinds = '{}')
                              or (n.source = 'trap_size' and not ('grease_trap' = any (c.pump_kinds)))
-                             or (n.source = 'none' and 'grease_trap' = any (c.pump_kinds) and nullif(p.grease_trap_size_gallons, 0) is not null)),
+                             or (n.source = 'none' and 'grease_trap' = any (c.pump_kinds) and nullif(p.grease_trap_size_gallons, 0) is not null)
+                             or (n.source = 'size_on_file'
+                                 and (c.pump_kinds = '{}' or 'grease_trap' = any (c.pump_kinds)
+                                      or c.basis not in ('trap_size', 'measured')
+                                      or (c.basis = 'trap_size' and c.gallons is distinct from n.gallons::numeric)))
+                             or (c.basis = 'trap_size' and c.pump_kinds <> '{}' and not ('grease_trap' = any (c.pump_kinds))
+                                 and n.source <> 'tank' and nullif(p.grease_trap_size_gallons, 0) is not null
+                                 and n.source is distinct from 'size_on_file')),
          count(distinct n.source)
     into v_bad, v_n
     from _b1_check n
@@ -233,7 +248,7 @@ begin
     left join cal c on c.visit_id = n.visit_id and c.visit_date = vv.visit_date
    where vv.visit_date >= date '2026-01-01';
   if v_bad <> 0 then raise exception 'verify_fail: % visits differ from the Calendar''s estimate', v_bad; end if;
-  if v_n <> 4 then raise exception 'verify_fail: only % of the four sources among the 2026 visits', v_n; end if;
+  if v_n <> 5 then raise exception 'verify_fail: only % of the five sources among the 2026 visits', v_n; end if;
 
   -- 5. Both ways against the averages (the other home of the trust rule): a reading the averages use (any date) is
   --    "tank" here with the same whole gallons, and every "tank" reading of a visit with a site is one they use (a "tank"

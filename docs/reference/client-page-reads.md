@@ -36,13 +36,16 @@ Migration `docs/migrations/2026-11-14_0135_derm_manifest_row_states_per_client.s
   ponytail: pass the client's keys into the core if a client page read gets slow.
 - **A new reader of the row states calls the core from behind its own gate**; never copy the rows' rules.
 
-## B1: a visit's gallons and a site's pumping figures (2026-11-14_0140, corrected by 2026-11-14_0350)
+## B1: a visit's gallons and a site's pumping figures (2026-11-14_0140, corrected by 2026-11-14_0350, size on file 2026-11-15_0330)
 
 `public.get_pumping_figures(p_client_id bigint default null, p_visit_ids bigint[] default null) returns jsonb`.
 Migration `docs/migrations/2026-11-14_0140_public_get_pumping_figures.sql`, undo `2026-11-14_rollback_public_get_pumping_figures.sql`.
 Corrected by `docs/migrations/2026-11-14_0350_public_get_pumping_figures_line_item_kinds.sql` (three anchored edits of the
 live body: a pumping and its kind from the line items, the trap size for a grease trap pumping only), undo
 `2026-11-14_rollback_public_get_pumping_figures_line_item_kinds.sql` (the 0140 body back; run it before the 0140 undo).
+Then `docs/migrations/2026-11-15_0330_public_get_pumping_figures_size_on_file.sql` (Fred's pick KK: the size on file for a
+lift station or grey water pumping at a place with no grease trap service), undo
+`2026-11-15_rollback_public_get_pumping_figures_size_on_file.sql` (the 0350 body back; run it first if several are undone).
 
 - **Gate:** the Client App, the DERM Tracker, Stamp Studio OR Admin Review, at View (the manifest dialog opens from the
   first three; Admin Review's Grease page already shows these figures for every client, so it widens nothing).
@@ -57,7 +60,8 @@ live body: a pumping and its kind from the line items, the trap size for a greas
   |---|---|---|
   | `tank` | the truck tank's reading, `v_visit_tank_service.sludge_collected_gallons`, trusted as the averages trust it: a volume visit, confidence high or medium, 40 to 3,840 gal | the gallons, measured |
   | `trap_size` | a GREASE TRAP pumping with no trusted reading: the trap size on file (`properties.grease_trap_size_gallons`, 0 is none), which is the grease trap's | the gallons, labelled as the trap size |
-  | `none` | null: a pumping with neither; every lift station or grey water pumping with no trusted reading is one (the size on file is not its tank's) | "Not measured" |
+  | `size_on_file` | since `2026-11-15_0330`: a LIFT STATION or GREY WATER pumping with no trusted reading, at a place with no grease trap service: the same size field, which there holds the tank pumped at the place | the gallons, labelled "size on file" |
+  | `none` | null: a pumping with neither; a lift station or grey water pumping with no trusted reading at a place WITH a grease trap service is one (the size on file there is the grease trap's) | "Not measured" |
   | `not_a_pumping` | null: no line item of the visit (or of its job) pumps anything | "No pumping on this visit" |
 
 - **A pumping, and its kind, come from the line items, by the Calendar's own rule** (since `2026-11-14_0350`). B1 calls
@@ -66,13 +70,18 @@ live body: a pumping and its kind from the line items, the trap size for a greas
   04, 11 lift station), else its job's job-scope lines, else old uncoded line names that say so. No pumping line:
   `not_a_pumping`, before anything else (on 2026-11-14 no visit had a trusted tank reading without one, so that order
   moved nothing). `visits.service_type` decides nothing: 91 completed 2026 visits disagree with their lines. Two shapes
-  to know: 36 visits of service type Pumping (January to June 2026) carry only the plain line "Service Agreement", so
-  they read `not_a_pumping`, as the Calendar's estimate counts them; and the tank view still takes a reading only on a
-  visit of service type Pumping, so a pumping by its lines with another service type never has a `tank` reading.
-- **The trap size is the grease trap's**, so only a visit whose kinds hold `grease_trap` falls back to it; a lift station
-  or grey water pumping with no trusted reading is `none`. The Calendar's estimate does the same at a place with a grease
-  trap service; at a place without one it still uses the size on file (its step 7), so on 2026-11-14 the two differ on
-  47 completed visits (`none` here, the size on file there).
+  to know: 36 visits of service type Pumping (January to June 2026) carry only the plain line "Service Agreement"; they
+  read `not_a_pumping` until `2026-11-15_0400` (Fred's pick LL), which made the shared rule count them as grease trap
+  pumpings, so they read `trap_size` now (their Calendar days stay stored as "not a pumping": see the Supabase `CLAUDE.md`
+  pump kinds paragraph); and the tank view still takes a reading only on a visit of service type Pumping, so a pumping by
+  its lines with another service type never has a `tank` reading.
+- **The size on file is the grease trap's where the place has a grease trap service** (an open job there whose own lines
+  pump a grease trap: the Calendar's step 7 rule, copied here), so a lift station or grey water pumping there with no
+  trusted reading is `none`, as the Calendar's estimate shows it. At a place without one, the size field holds the tank
+  pumped there, and since `2026-11-15_0330` (pick KK) such a pumping reads `size_on_file`, as the Calendar uses it. That
+  moved 54 visits from `none` (the page that asked counted 47: the 0350 moves from `trap_size`; 6 more were 0350 moves from
+  `not_a_pumping`, pumpings by their lines marked Cleaning or with no service type, and 1 is a visit the Calendar shows with
+  its Moises average). B1 never shows an estimate.
 - **What the correction moved**, 2026-11-14: 215 of the 1,663 completed visits, all 2026 (none to not_a_pumping 80,
   trap_size to none 61, trap_size to not_a_pumping 38, not_a_pumping to none 25, not_a_pumping to trap_size 10, none to
   trap_size 1); the `tank` readings and the site figures did not move.
@@ -87,13 +96,16 @@ live body: a pumping and its kind from the line items, the trap size for a greas
   `tank` here with the same gallons, and every `tank` reading of a visit with a site is one the averages use.
 - **And with the Calendar's estimate, both ways, on every completed 2026 visit** (`ops.fn_grease_estimates_live`, live,
   never the frozen rows; about 1.4 s): `not_a_pumping` exactly when the estimate finds no pump kind, `trap_size` only
-  where its kinds hold a grease trap, never `none` on a grease trap pumping with a trap size on file. So if the Calendar
-  ever finds pump kinds another way, the check fails rather than the two reads drifting apart. Its controls (the 0140
-  body, each correction undone) fail it: 215, 70 and 152 visits differ.
-- 112-YA today: 8 completed visits, 2 `trap_size` (30 gal, grease trap pumpings), 1 `none` (8742, a lift station
-  pumping, line 11), 5 `not_a_pumping` (no pumping line; 5680 has no service type either), no site figure (no tank
-  reading). Example entry: `{"visit_id": 8113, "visit_date": "2026-09-15", "property_id": 162, "source": "trap_size",
-  "gallons": 30}`.
+  where its kinds hold a grease trap, never `none` on a grease trap pumping with a trap size on file; `size_on_file` only
+  where the Calendar shows that pumping with the size on file (same gallons) or its Moises average, and every lift station
+  or grey water pumping the Calendar shows with the size on file (a size on its own place, no tank reading here) is
+  `size_on_file` here. So if the Calendar ever finds pump kinds or grease trap services another way, the check fails
+  rather than the two reads drifting apart. Its controls (the 0140 body, each correction undone) fail it: 215, 70 and 152
+  visits differ; the 0350 body fails the size on file part (53), and so does B1 without its grease trap service rule (16).
+- 112-YA today: 8 completed visits, 2 `trap_size` (30 gal, grease trap pumpings), 1 `size_on_file` (8742, a lift station
+  pumping, line 11, 30 gal: `none` until 2026-11-15), 5 `not_a_pumping` (no pumping line; 5680 has no service type
+  either), no site figure (no tank reading). Example entry: `{"visit_id": 8113, "visit_date": "2026-09-15", "property_id":
+  162, "source": "trap_size", "gallons": 30}`.
 - **Cost** (measured 2026-11-14 as the owner, best of 3): 0.40 s with a client (the averages read every trusted reading
   once); 0.10 s for a ticket's visits. The correction left it so: 0.39 s for a client, 0.12 s for 200 visit ids.
 

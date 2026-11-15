@@ -5986,6 +5986,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   `trap_size`), else none, and each site's figures straight from `ops.fn_client_sludge_averages`; never
   `ops.visit_grease_frozen`. Since `2026-11-14_0350` a pumping and its kind come from the line items through
   `ops.fn_visit_pump_kinds`, the function the Calendar's estimate calls, never from `visits.service_type`. It lives in `public` because of Z8.
+  🛑 **Since `2026-11-15_0330` (Fred's pick KK: "show the size on file, labelled 'size on file', as the Calendar does") a lift
+  station or grey water pumping with no trusted reading, at a place with NO grease trap service, gets the size on file
+  (`properties.grease_trap_size_gallons`) under its own source `size_on_file`; at a place WITH one it stays `none`.** "A grease
+  trap service" is the Calendar's step 7 rule (an open job at the place whose own lines pump a grease trap), COPIED into B1:
+  the VERIFY and the standing check hold the copy to the Calendar's live estimate both ways, so change the two together.
   The trust rule now has three copies (the averages' pool, `ops.calendar_grease_estimates`, this read); its VERIFY and
   `scripts/checks/client_page_reads.sql` compare it with the averages both ways, and its pumpings with the Calendar's
   estimate on every completed 2026 visit. Contract: [docs/reference/client-page-reads.md](docs/reference/client-page-reads.md).
@@ -6286,7 +6291,11 @@ before changing anything): `docs/superpowers/specs/2026-10-12-samsara-tank-senso
   size: it is `unknown` until Moises has a reading of its own kind; the Calendar RPC's `unknown_reason` says
   `no_reading_for_kind` (vs `no_size`). Pump kinds (`ops.fn_visit_pump_kinds`, `ops.fn_visit_pump_kind` = its
   first): catalogue codes 01/02/09 grease trap, 03/10 grey water, 04/11 lift station, from the visit's own lines, else
-  the job's open lines, else old uncoded text. 🛑 **A past day stays the same** (Fred: *"unless like a visit is moved
+  the job's open lines, else old uncoded text. 🛑 **Since `2026-11-15_0400` (Fred's pick LL) a visit marked Pumping whose
+  old uncoded lines are ONLY the plain "Service Agreement" is a grease trap pumping** (36 completed visits, January to June
+  2026; a call for a job alone never takes that arm). Measured before and after: B1 and the live estimate moved for those
+  36 only; their Calendar days stay STORED as "not a pumping" (frozen rows win, the freezer leaves them), so what the
+  Calendar shows did not move; the averages and Admin Review's Grease page did not move. 🛑 **A past day stays the same** (Fred: *"unless like a visit is moved
   from that date or into that date ... recalculate with that same average"*): `ops.fn_grease_estimates_resolved` returns
   the stored row of a past day, else, for a visit now on Moises, the stored MEASURED average it had on another date
   (`carried`), else live; the freezer stores pump kinds too, and the guard keeps them immutable. A correction of the
