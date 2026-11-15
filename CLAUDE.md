@@ -2756,7 +2756,7 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
 
 | write | function (migration) | what it does |
 |---|---|---|
-| Save the bands | `derm.save_page_bands(folder, page, source_url, rules, meta)` (`2026-10-05_1310`) | `record_page_rules` (human-v1-<ET date>, validator judges) + rebuilds `page_slots` + puts every stamp already on the page back in the row its point sits in (refuses a stamp outside every row, or two in one row) + Limit, ONE transaction |
+| Save the bands | `derm.save_page_bands(folder, page, source_url, rules, meta)` (`2026-10-05_1310`; a `slot` band follows its row since `2026-11-15_1350`) | `record_page_rules` (human-v1-<ET date>, validator judges) + rebuilds `page_slots` + puts every stamp already on the page back in the row its point sits in (refuses a stamp outside every row, or two in one row) + Limit, ONE transaction |
 | a stamp drop | `derm.place_stamp_in_row(row, page, x, y)` (`_1310`) | the row from the drop point; no rows / outside every row / a row another stamp holds are refused in plain words; the stamp stays where dropped; band = the row (`band_source 'slot'`); Limit |
 | the Limit | `derm._write_page_extent_from_slots` (service_role only) | first/last row edge, replayed with every publishable card's stored band through `save_page_geometry`, so every G-guard runs. NOT an extent-only writer |
 
@@ -2795,6 +2795,17 @@ extent, `page_block_extents`) is written from the rows as soon as a stamp is in 
     has drawn keep their older Limits (165 of 190 within 2 points of the measured lines; the rest need a person).
   - **A stamp that already has a band keeps it on a redraw** (a reviewed overflow band is never
     replaced); only stamps without a band take their row.
+    ✅ **Since `2026-11-15_1350` (Fred: "Follow the row (Recommended)") a band TAKEN FROM A ROW (`band_source = 'slot'`,
+    written by a stamp drop and by this save) counts as no band:** on every line save it takes the row its stamp sits in
+    (bounds and `slot_index`), so it follows a moved line and the client's copy is remade at the next completion. A band
+    drawn by hand for one client (`manual`, and every older one-time value) stays exactly as drawn. 🛑 A `slot` card also
+    counts as unbanded in both refusals: a stamp outside every new row is refused (0 of 63 `slot` cards would be on a
+    re-save, and the old body refused that save at G8 anyway), and two stamps in one new row are refused whatever the other
+    card's band; a moved row that would overlap another card's band is refused by G7. A `slot` band already on its row is
+    not written again (a band write fires `derm.fn_dirty_on_card_change` and would reopen a completed sheet for nothing).
+    No backfill: the rule acts at a page's next band save. Check `scripts/checks/stamp_slot_band_follows_row.mjs`
+    (`CONTROL=1` puts the old body back and fails S1). Found by Fred's drag test on #111111 (his line moved, the band stayed
+    and lost its row number). "A second look" (pick J) is not a band source: it is a lines save at 40 percent.
   - **Independent check:** when the page's scan has a machine measurement (runlen-v2 / template-v1,
     graded **OK** since `2026-10-05_1600`, same image), a drawn row may not cross a measured line
     between two clients (tolerance 0.5pp, the machine's first and last line exempt). It refuses a

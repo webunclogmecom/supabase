@@ -68,10 +68,11 @@ BEGIN
   END LOOP;
   PERFORM set_config('request.jwt.claims', '', true);
   INSERT INTO _res VALUES ('_editor_found', to_jsonb(EXISTS (SELECT 1 FROM _who)));
-  -- the fixture's premise: page 1 of #111111 still has the rows the fixture's lines keep (else UNKNOWN, not FAIL)
+  -- the fixture's premise: page 1 of #111111 still has the rows of Fred's drag test (2026-11-15 12:17 ET, his line under
+  -- row 1 at 34.352; until then 32.588), else UNKNOWN, not FAIL. The fixture's lines replace them inside the transaction.
   INSERT INTO _res VALUES ('_fixture_rows_as_written', to_jsonb(
     (SELECT array_agg(y0_pct ORDER BY slot_index) FROM derm.page_slots WHERE dump_folder = 'ticket-111111' AND effective_page = 1)
-      = ARRAY[23.882, 32.588, 39.569, 47.255, 55.412]::numeric[]));
+      = ARRAY[23.882, 34.352, 39.569, 47.255, 55.412]::numeric[]));
   DELETE FROM derm.page_row_rules WHERE dump_folder = 'ticket-111111' AND effective_page = 1 AND (source LIKE 'runlen-v2-%' OR source LIKE 'template-v1-%');
   DELETE FROM derm.page_rule_scans WHERE dump_folder = 'ticket-111111' AND effective_page = 1 AND (source LIKE 'runlen-v2-%' OR source LIKE 'template-v1-%');
 END $w$;
