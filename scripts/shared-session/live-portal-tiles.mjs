@@ -1119,6 +1119,32 @@ await block(1280, 620, 'the menu on a short window', ADMIN, PORTAL, async ({ pag
   return `list ${m.needs} px in ${m.has} px; under the fold at first: ${m.under.join(', ') || 'nothing'}`
 })
 
+// The menu scroller (Fred, 2026-11-15, SB4: "go with SB4 and all defaults"): the list carries the one named style
+// .nav-scroll (a slim pill, no arrows), and its edges fade only where there is more: the bottom at the top of the list, both
+// halfway, the top at the end. In the dark look the list puts the bar colour back to auto, or the pill is not drawn.
+// Control: the code before e3450a6 (no class, no edge marks) fails every line here.
+await block(1280, 620, 'the menu scroller fades only where there is more', ADMIN, PORTAL, async ({ page, fails }) => {
+  const edge = (y) => page.evaluate(async ([SIDE, y]) => {
+    const list = document.querySelector(SIDE)?.querySelector('.overflow-y-auto'); if (!list) return null
+    if (y !== null) { list.scrollTop = y === 'end' ? list.scrollHeight : y; await new Promise((r) => setTimeout(r, 150)) }
+    const cs = getComputedStyle(list)
+    return { cls: list.classList.contains('nav-scroll'), above: list.hasAttribute('data-more-above'), below: list.hasAttribute('data-more-below'),
+      mask: /gradient/.test(cs.maskImage || cs.webkitMaskImage || ''), max: list.scrollHeight - list.clientHeight }
+  }, [SIDE, y])
+  const top = await edge(null)
+  if (!top) { fails.push('no menu list'); return }
+  if (!top.cls) fails.push('the list has no .nav-scroll style')
+  if (!top.mask) fails.push('no fade drawn on the list')
+  if (!(top.below && !top.above)) fails.push(`at the top: above ${top.above}, below ${top.below}`)
+  const mid = await edge(Math.round(top.max / 2))
+  if (!(mid?.above && mid?.below)) fails.push(`halfway: above ${mid?.above}, below ${mid?.below}`)
+  const end = await edge('end')
+  if (!(end?.above && !end?.below)) fails.push(`at the end: above ${end?.above}, below ${end?.below}`)
+  const dark = await page.evaluate((SIDE) => { document.documentElement.classList.add('dark'); return getComputedStyle(document.querySelector(SIDE).querySelector('.overflow-y-auto')).scrollbarColor }, SIDE)
+  if (dark !== 'auto') fails.push(`dark look: the bar colour is ${dark}, so the pill is not drawn`)
+  return `${top.max} px to scroll; edges top/halfway/end as they should`
+})
+
 // A person with Stamp Studio and no DERM Tracker (nobody today): Address sheets is their item, lit on the sheet list.
 await block(1440, 900, 'Stamp Studio without the DERM Tracker', STAMP_ONLY, PORTAL, async ({ page, fails }) => {
   fails.push(...menuFails(await readMenu(page, 1440, fails), STAMP_ONLY.menu))
