@@ -285,7 +285,28 @@ Fred, on the Manifests rows: *"make it instead be icons, when hovered it display
 - 🛑 **Grey never counts as "needs someone":** a noted gap, a ticket before 2026 kept for the record, a skipped sheet, nothing to stamp, not sent to the city before 2026-09-15, no city program, copies being made. A visit dated ONE day after the dump says nothing.
 - **A missing client copy** is a second fact (`copies`), only on a completed sheet. Under 20 minutes after the later of Mark completed and the stamp it reads "Copies being made" (grey); from 20 minutes on it is red. 20 minutes is the line `derm.v_blackout_completed_unpublished` already draws, so the row and the health email turn together. Change one, change the other.
 - **Words that now live twice:** the five skip reasons (also in the portal's `modules/stamp/StampStudio.tsx`) and "Not sent to city (before Sep 15)". The reason a copy was not made comes from `derm.fn_sheet_publishable` and `derm.fn_publishable_hint`, for at most 3 sheets per read (about 0.1 s each); `derm.fn_stamp_sheet_wait_reason` is not called, it cost 0.5 s for one sheet.
-- **Not in it:** an email that did not arrive, a client row with no visit, archive and restore, a live message after stamping.
+- **Not in it:** a client row with no visit (pick E archived them instead, below), archive and restore (their own functions, below).
+- **An email that did not arrive (since `2026-11-14_2150`, Stage C step 2):** the place `email`, present ONLY when the newest client
+  email of a client of the row (`public.v_client_email_sends`) or its newest city email that carried the manifest
+  (`public.v_visit_city_email_sends`) did not arrive. The words are the delivery chip's own (Building Apps rule 1e, so they live
+  twice, with the app's `emailDeliveryPresentation`): "Not delivered", "Bounced N of M" bad; "Marked as spam", "Delayed" warn;
+  "No report" grey (never counts). Group "Check an email". 0 rows have one on the day it shipped.
+- **Archive with a reason, and Restore (`2026-11-14_2140`, Fred's default 7):** `public.derm_archive_manifests(ids, reason, note)`
+  and `public.derm_restore_manifests(ids)`, the checks of `public.derm_delete_manifests` word for word (DERM Tracker Edit). The
+  reason lives on the row: `derm_manifests.archive_reason` (test_data | duplicate | not_ours | other, the Monthly page's four),
+  `archive_note`, `archived_by` (email; never returned to an app). `derm.archived_manifest_rows()` is the page's Archived list,
+  one element per archive (ticket + deleted_at), DERM Tracker View, names not emails. The old host's "Delete manifest" is
+  unchanged (a row it deletes shows with no reason, and can be restored from the portal).
+  🛑 **`derm.fn_dirty_on_card_change` skips a card whose ONLY change is its manifest link while the transaction setting
+  `derm.card_link_only` is 'on'.** Only the two writers above and pick E set it: without it, archive + restore of a ticket left
+  its completed sheet REOPENED (measured on #111111), and pick E would have reopened four completed sheets. Every other writer,
+  the old Delete included, reopens exactly as before. A wholly archived ticket's sheet leaves `derm.v_stamp_sheets` by the view's
+  own last WHERE, so "every sheet has a row" holds and the sheet comes back with Restore.
+- **Pick E done (`2026-11-14_2200`):** 8 of the 9 live client rows with no visit archived with a reason (backup in `backups/`).
+  🛑 Row 898 (#813222) is HELD: it alone carries page 2 of that ticket's sheet (`derm.ticket_page_images` keeps a page only while
+  a live row carries its picture), so archiving it raised STAMP_PAGE_PAST_END. **A partial archive must never take a row whose
+  picture is a page no other live row of the ticket carries** (the portal's Archive and the old Delete act on whole tickets, so
+  only a one-time cleanup can meet this).
 - **Since `2026-11-14_0135` the rules live in ONE ungated core, `derm.fn_manifest_row_states_core()`** (SECURITY INVOKER, EXECUTE
   for the owner only). `derm.manifest_row_states()` keeps its gate and calls it (same answer on every row, compared in the migration);
   `derm.manifest_row_states_for_client(bigint)` reads it for one client's tickets behind the Client App OR DERM Tracker gate (the
