@@ -306,7 +306,14 @@ Fred, on the Manifests rows: *"make it instead be icons, when hovered it display
   🛑 Row 898 (#813222) is HELD: it alone carries page 2 of that ticket's sheet (`derm.ticket_page_images` keeps a page only while
   a live row carries its picture), so archiving it raised STAMP_PAGE_PAST_END. **A partial archive must never take a row whose
   picture is a page no other live row of the ticket carries** (the portal's Archive and the old Delete act on whole tickets, so
-  only a one-time cleanup can meet this).
+  only a one-time cleanup can meet this). Since `2026-11-15_0750` (pick PP) row 898 carries a note saying so in
+  `derm_manifests.notes` (the accepted-gap column); `derm.v_orphan_manifests` keeps listing it by design.
+  ⚠ **Pick QQ is NOT done (2026-11-15):** clearing card 234's leftover stamp point on #822919 (`derm.clear_stamp_position`, the
+  screens' path) was rehearsed rolled back and makes it WORSE: the dirty trigger reopens the completed sheet `window5-sheet3`,
+  the blocked list then names it as `frozen_closed_world` (7 clients, 6 manifests, was `no_stamp_timestamp`, 1 client, 0
+  manifests), its Manifests row turns "Stamps to place" and Mark completed is refused ("One card on this sheet has no stamp at
+  all ..."). The entry exists only because that point sits on page 1, which has no measured extent; the other unlinked cards
+  with a point and no stamp time (4 sheets) sit on measured pages and are listed nowhere. Waiting for the main session's call.
 - **Since `2026-11-14_0135` the rules live in ONE ungated core, `derm.fn_manifest_row_states_core()`** (SECURITY INVOKER, EXECUTE
   for the owner only). `derm.manifest_row_states()` keeps its gate and calls it (same answer on every row, compared in the migration);
   `derm.manifest_row_states_for_client(bigint)` reads it for one client's tickets behind the Client App OR DERM Tracker gate (the
