@@ -1,4 +1,5 @@
-// live-portal-tiles.mjs: the Ops Portal, signed in, for each kind of person, AFTER Stage A, the menu by function
+// live-portal-tiles.mjs: THE STANDING CHECK of the Ops Portal, signed in, for each kind of person: the menu by function,
+// Clients inside and Finances, as live since the Clients publish of 2026-11-15 about 5:40 AM ET
 // (plan: Building Apps/Ops Portal/docs/specs/2026-11-12-redesign-by-function.md, section 3 and Stage A).
 // Signs in with a fake session and answers every Supabase call locally: data, storage, sign-in, the server function the
 // Monthly report calls (refused, as a made-up token would be) and the live socket (closed here). Nothing reaches Supabase.
@@ -10,6 +11,11 @@
 // CONTROL=menu hides the new menu from this check (it takes the menu's new names off the page, as on the old build): every
 // case that reads or uses the menu must then FAIL, and the run must still reach its last line.
 // ONLY=<words> runs the cases whose name holds those words, to look at one again. The last line then says it was not a whole run.
+// CONTROL=finances expects the Finances group for a person whose Client App is at None: that case must then FAIL, or this check
+// cannot see the group (Finances, Fred 2026-11-14: "btw also build the finance tab on the sidebar", opened by the Client App
+// setting).
+// ** Two changes of 2026-11-14 are in this check (written in mockups/2026-11-14-clients-screens/F/): (1) the Client App's move
+// (Clients is a page inside, its tile opens /clients); (2) Finances (marked "Finances" below).
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppData/Local/npm-cache/_npx/9833c18b2d85bc59/node_modules/playwright-core')
@@ -19,17 +25,20 @@ const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 // Home does not change in Stage A: the same eleven tiles, in the same order.
 const ALL = ['Visit Calendar', 'DERM Tracker', 'Stamp Studio', 'Admin Review', 'Picture Planner', 'HR App', 'Client App', 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist']
 // Where each home tile opens: an app inside opens its route in the same tab, anything else a new tab to its own host.
-const INSIDE = { 'Visit Calendar': '/calendar', 'DERM Tracker': '/derm', 'Stamp Studio': '/stamp', 'Admin Review': '/review', 'Picture Planner': '/planner', 'HR App': '/hr' }
-// The menu by function, in the plan's order: id, word, heading, address. Clients and My forms leave the portal (a new tab).
+const INSIDE = { 'Visit Calendar': '/calendar', 'DERM Tracker': '/derm', 'Stamp Studio': '/stamp', 'Admin Review': '/review', 'Picture Planner': '/planner', 'HR App': '/hr', 'Client App': '/clients' }
+// The menu by function, in the plan's order: id, word, heading, address. My forms leaves the portal (a new tab).
 const MENU = [
-  ['home', 'Home', null, '/'], ['calendar', 'Calendar', 'Work', '/calendar'], ['clients', 'Clients', 'Work', 'https://clients.unclogme.app'],
+  ['home', 'Home', null, '/'], ['calendar', 'Calendar', 'Work', '/calendar'], ['clients', 'Clients', 'Work', '/clients'],
   ['reviews', 'Reviews', 'Work', '/review'], ['site-files', 'Site files', 'Work', '/planner'], ['my-forms', 'My forms', 'Work', 'https://planner.unclogme.app'],
   ['manifests', 'Manifests', 'Compliance', '/derm/manifests'], ['address-sheets', 'Address sheets', 'Compliance', '/stamp'],
   ['derm-visits', 'DERM visits', 'Compliance', '/derm'], ['monthly-report', 'Monthly report', 'Compliance', '/derm/monthly'],
   ['pumped-water', 'Pumped water', 'Metrics', '/review/water'], ['pumped-grease', 'Pumped grease', 'Metrics', '/review/grease'],
+  // Finances, under Metrics, opened by the Client App setting.
+  ['invoices', 'Invoices', 'Finances', '/finances/invoices'], ['quotes', 'Quotes', 'Finances', '/finances/quotes'], ['payments', 'Payments', 'Finances', '/finances/payments'],
   ['people', 'People', 'Team', '/hr'], ['access', 'Access', 'Team', '/hr/access'],
 ]
-const OFFICE_MENU = ['home', 'calendar', 'clients', 'reviews', 'site-files', 'manifests', 'derm-visits', 'monthly-report', 'pumped-water', 'pumped-grease', 'people']
+const FINANCES = ['invoices', 'quotes', 'payments']
+const OFFICE_MENU = ['home', 'calendar', 'clients', 'reviews', 'site-files', 'manifests', 'derm-visits', 'monthly-report', 'pumped-water', 'pumped-grease', ...FINANCES, 'people']
 const ADMIN_MENU = [...OFFICE_MENU, 'access']
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
@@ -38,8 +47,9 @@ function reply(id, group, levels, modes = {}) {
   return { employee_id: id, group, apps }
 }
 const every = (lvl) => Object.fromEntries(TOP.map((a) => [a, lvl]))
-const control = Boolean(process.env.CONTROL) && process.env.CONTROL !== 'menu'
+const control = Boolean(process.env.CONTROL) && process.env.CONTROL !== 'menu' && process.env.CONTROL !== 'finances'
 const noMenu = process.env.CONTROL === 'menu'
+const financesControl = process.env.CONTROL === 'finances'
 const ONLY = process.env.ONLY
 const ADMIN = { who: 'Fred Zerpa', group: 'admin', r: reply(2, 'admin', { ...every('edit'), pp_forms: 'yes' }), menu: ADMIN_MENU }
 const OFFICE = { who: 'Diego Test', group: 'office', r: reply(28, 'office', every('edit')), menu: OFFICE_MENU }
@@ -53,8 +63,11 @@ const CASES = [
   { name: 'office, view everywhere', who: 'Vera Test', group: 'office', r: reply(32, 'office', every('view')), menu: OFFICE_MENU, tiles: ALL, hello: ', Vera', role: 'Office', card: false, walk: true },
   { name: 'office, HR App none', who: 'Aaron Test', group: 'office', r: reply(26, 'office', { ...every('edit'), hr: 'none' }), menu: less(OFFICE_MENU, 'people'), tiles: less(ALL, 'HR App'), hello: ', Aaron', role: 'Office', card: true, walk: true },
   { name: 'office, Admin Review none', who: 'Nora Test', group: 'office', r: reply(33, 'office', { ...every('edit'), admin_review: 'none' }), menu: less(OFFICE_MENU, 'reviews', 'pumped-water', 'pumped-grease'), tiles: less(ALL, 'Admin Review'), hello: ', Nora', role: 'Office', card: true, walk: true },
-  { name: 'office, DERM Tracker none', who: 'Dana Test', group: 'office', r: reply(34, 'office', { ...every('edit'), derm_tracker: 'none' }), menu: ['home', 'calendar', 'clients', 'reviews', 'site-files', 'address-sheets', 'pumped-water', 'pumped-grease', 'people'], tiles: less(ALL, 'DERM Tracker'), hello: ', Dana', role: 'Office', card: true, walk: true },
+  { name: 'office, DERM Tracker none', who: 'Dana Test', group: 'office', r: reply(34, 'office', { ...every('edit'), derm_tracker: 'none' }), menu: ['home', 'calendar', 'clients', 'reviews', 'site-files', 'address-sheets', 'pumped-water', 'pumped-grease', ...FINANCES, 'people'], tiles: less(ALL, 'DERM Tracker'), hello: ', Dana', role: 'Office', card: true, walk: true },
   { name: 'office, Stamp Studio none', who: 'Sam Test', group: 'office', r: reply(35, 'office', { ...every('edit'), stamp_studio: 'none' }), menu: OFFICE_MENU, tiles: less(ALL, 'Stamp Studio'), hello: ', Sam', role: 'Office', card: true, walk: true },
+  // Finances follows the Client App setting: no Clients, no Finances heading at None (CONTROL=finances expects them: FAIL).
+  { name: 'office, Client App none', who: 'Cleo Test', group: 'office', r: reply(38, 'office', { ...every('edit'), client_app: 'none' }), menu: financesControl ? OFFICE_MENU : less(OFFICE_MENU, 'clients', ...FINANCES), tiles: less(ALL, 'Client App'), hello: ', Cleo', role: 'Office', card: true, walk: true },
+  { name: 'one app, the Client App at View', who: 'Vic Test', group: 'office', r: reply(39, 'office', { client_app: 'view' }), menu: ['home', 'clients', ...FINANCES], tiles: ['Client App', 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist'], hello: ', Vic', role: 'Office', card: true, walk: true },
   { name: 'one app, the Visit Calendar', who: 'Cal Test', group: 'office', r: reply(36, 'office', { visit_calendar: 'edit' }), menu: ['home', 'calendar'], tiles: ['Visit Calendar', 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist'], hello: ', Cal', role: 'Office', card: true, walk: true },
   { name: 'no app at all', who: 'Nobody Test', group: 'office', r: reply(37, 'office', {}), menu: control ? ADMIN_MENU : ['home'], tiles: control ? ALL : ['Field Portal', 'DUMP Schedule'], hello: ', Nobody', role: 'Office', card: true, walk: true },
   { name: 'field, assigned forms', ...FIELD, menu: control ? ADMIN_MENU : FIELD.menu, tiles: control ? ALL : ['Picture Planner', 'Field Portal', 'DUMP Schedule'], role: 'Field', card: true, text: 'Your assigned forms', walk: true },
@@ -124,6 +137,9 @@ async function signedIn(c, w, h, goto = PORTAL) {
         people: [{ id: 2, full_name: 'Fred Zerpa', access_level: 'admin', color_hex: '#3F6212' }],
       }) })
     }
+    // Finances, Payments: an empty list and no month, in the shapes the page reads (anything else it says it could not load).
+    if (/rpc\/list_payments/.test(u)) return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ total: 0, money_in: 0, money_out: 0, fees: 0, limit: 25, offset: 0, payments: [] }) })
+    if (/rpc\/payment_months/.test(u)) return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ from: '2025-10-01', to: '2026-11-14', months: [] }) })
     if (/rpc\/portal_waiting/.test(u)) {
       seen.waitingAsked = true
       if (c.waitingFails) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
@@ -227,6 +243,8 @@ const AREAS = [
   { at: 'planner', app: 'picture_planner', name: 'Picture Planner', links: ['/planner', '/planner/forms'], lit: 'site-files' },
   { at: 'hr/employees', app: 'hr', name: 'HR App', title: 'People', lit: 'people' },
   { at: 'stamp', app: 'stamp_studio', name: 'Stamp Studio', title: 'Address sheets', lit: 'manifests' },
+  // Finances: its pages are the Client App setting's, so a refusal names the Client App.
+  { at: 'finances/payments', app: 'client_app', name: 'Client App', title: 'Payments', lit: 'payments' },
 ]
 const OLD_NAMES = /Visit Calendar|DERM Tracker|Stamp Studio|Admin Review|Picture Planner|HR App/
 function wantOn(c, area) {
@@ -570,6 +588,36 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await shot(page, w, 'reviews module')
   })
 
+  // Finances, opened from the menu: each page's name in the bar with no link, no sideways scroll, a phone included; its reads
+  // are the Client App's (label client-app); its title names the Client App, whose setting opens it.
+  await block(w, h, 'Finances opens from the menu', ADMIN, PORTAL, async ({ page, seen, fails }) => {
+    for (const [id, path, word] of [['invoices', '/finances/invoices', 'Invoices'], ['quotes', '/finances/quotes', 'Quotes'], ['payments', '/finances/payments', 'Payments']]) {
+      await pick(page, w, id, fails)
+      if (!(await arrive(page, path))) { fails.push(`${id} landed on ${at(page)}`); continue }
+      await page.waitForTimeout(2000)
+      const bar = await readBar(page, w >= 768)
+      if (w >= 768 && bar.text !== word) fails.push(`${path} bar "${bar.text.slice(0, 40)}"`)
+      if (bar.links.length) fails.push(`${path} holds links in the bar or a band`)
+      if (bar.sideways > 0) fails.push(`${path} scrolls sideways by ${bar.sideways} px`)
+      if (/This page didn't load|You do not have access|Couldn't load/.test(bar.body)) fails.push(`${path} did not open`)
+      if (!(await page.title()).startsWith(`${word} · Client App`)) fails.push(`${path} title "${await page.title()}"`)
+    }
+    const own = Object.entries(seen.labels).filter(([k]) => /list_payments|payment_months|invoices|quotes/.test(k))
+    if (!own.some(([k]) => /list_payments/.test(k))) fails.push('the Payments page asked for no payments')
+    for (const [k, v] of own) if (![...v].every((x) => x === 'client-app')) fails.push(`${k} labelled "${[...v].join(',')}"`)
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+    if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
+    await shot(page, w, 'finances module')
+  })
+  // A person with no Client App who has the address: the refusal, and no payment asked for.
+  await block(w, h, 'no Client App, Finances address', { ...OFFICE, r: reply(38, 'office', { ...every('edit'), client_app: 'none' }) }, PORTAL + 'finances/payments', async ({ page, seen, fails }) => {
+    await page.waitForTimeout(1500)
+    const text = await page.evaluate(() => document.body.innerText)
+    if (!/You do not have access to Client App/.test(text)) fails.push('no refusal on screen')
+    if (seen.labels['rpc/list_payments']) fails.push('payments were asked for')
+    if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+  })
+
   // Site files, opened from the menu: its own label, its two tabs kept (in the bar, or in the page on a phone), and Forms opens.
   await block(w, h, 'Site files opens from the menu', ADMIN, PORTAL, async ({ page, seen, fails }) => {
     await pick(page, w, 'site-files', fails)
@@ -692,7 +740,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await block(w, h, 'search everything', ADMIN, PORTAL, async ({ page, seen, fails }) => {
       await page.keyboard.press('Control+k')
       await page.waitForTimeout(400)
-      await page.getByPlaceholder(/client code or name/i).fill('canned')
+      await page.getByPlaceholder(/client code or name|invoice or quote number/i).fill('canned')
       await page.waitForTimeout(1200)
       const rows = (await page.getByRole('option').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim())
       if (rows.length !== 4) fails.push(`${rows.length} results: ${rows.join('|')}`)
@@ -711,7 +759,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       if (new URL(page.url()).search) fails.push(`the address kept ${new URL(page.url()).search}`)
       await tap(page.locator('button[aria-label="Search everything"]'), fails, 'the search box')
       await page.waitForTimeout(400)
-      await page.getByPlaceholder(/client code or name/i).fill('fred')
+      await page.getByPlaceholder(/client code or name|invoice or quote number/i).fill('fred')
       await page.waitForTimeout(1200)
       await tap(page.getByRole('option', { name: /Fred Zerpa/ }), fails, 'the person result')
       await page.waitForTimeout(1500)
@@ -728,7 +776,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   await block(w, h, 'one lit item on each address', ADMIN, PORTAL, async ({ page, seen, fails }) => {
     // The eight addresses the plan names, at every width. With the sidebar on screen, the rest of its "Lit on" column too.
     const NAMED = [['', 'home'], ['review/water', 'pumped-water'], ['derm/manifests/health', 'manifests'], ['derm/manifests?q=830714', 'manifests'], ['hr/access', 'access'], ['stamp', 'manifests'], ['derm/visits/1', 'derm-visits'], ['review/visit/1', 'reviews']]
-    const REST = [['calendar', 'calendar'], ['review', 'reviews'], ['review/shift/1', 'reviews'], ['planner', 'site-files'], ['planner/forms', 'site-files'], ['planner/forms/1', 'site-files'], ['planner/property/1', 'site-files'], ['derm/manifests', 'manifests'], ['derm/upload', 'manifests'], ['stamp/1', 'manifests'], ['derm', 'derm-visits'], ['derm/monthly', 'monthly-report'], ['review/grease', 'pumped-grease'], ['hr/employees', 'people'], ['hr/employees/2', 'people']]
+    const REST = [['calendar', 'calendar'], ['review', 'reviews'], ['review/shift/1', 'reviews'], ['planner', 'site-files'], ['planner/forms', 'site-files'], ['planner/forms/1', 'site-files'], ['planner/property/1', 'site-files'], ['derm/manifests', 'manifests'], ['derm/upload', 'manifests'], ['stamp/1', 'manifests'], ['derm', 'derm-visits'], ['derm/monthly', 'monthly-report'], ['review/grease', 'pumped-grease'], ['finances/invoices', 'invoices'], ['finances/quotes', 'quotes'], ['finances/payments', 'payments'], ['finances', 'invoices'], ['hr/employees', 'people'], ['hr/employees/2', 'people']]
     for (const [addr, id] of w >= 1280 ? [...NAMED, ...REST] : NAMED) {
       await page.goto(PORTAL + addr, { waitUntil: 'domcontentloaded' })
       await page.locator('main').waitFor({ timeout: 15000 }).catch(() => {})
@@ -752,7 +800,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // Every page has a way in: each page address with no record id is reached from the menu in two clicks at most. This is the
   // only test of the doors that are tabs or links of the bar (Health, Upload, Forms, Address sheets).
   await block(w, h, 'every page has a way in', ADMIN, PORTAL + 'profile', async ({ page, seen, fails }) => {
-    const WAYS = [['/', 'home'], ['/calendar', 'calendar'], ['/derm', 'derm-visits'], ['/derm/manifests', 'manifests'], ['/derm/manifests/health', 'manifests', true], ['/derm/monthly', 'monthly-report'], ['/derm/upload', 'manifests', true], ['/hr/access', 'access'], ['/hr/employees', 'people'], ['/planner', 'site-files'], ['/planner/forms', 'site-files', true], ['/review', 'reviews'], ['/review/grease', 'pumped-grease'], ['/review/water', 'pumped-water'], ['/stamp', 'manifests', true]]
+    const WAYS = [['/', 'home'], ['/calendar', 'calendar'], ['/derm', 'derm-visits'], ['/derm/manifests', 'manifests'], ['/derm/manifests/health', 'manifests', true], ['/derm/monthly', 'monthly-report'], ['/derm/upload', 'manifests', true], ['/hr/access', 'access'], ['/hr/employees', 'people'], ['/planner', 'site-files'], ['/planner/forms', 'site-files', true], ['/review', 'reviews'], ['/review/grease', 'pumped-grease'], ['/review/water', 'pumped-water'], ['/stamp', 'manifests', true], ['/finances/invoices', 'invoices'], ['/finances/quotes', 'quotes'], ['/finances/payments', 'payments']]
     let reached = 0
     for (const [path, id, second] of WAYS) {
       const first = MENU.find(([m]) => m === id)[3]
