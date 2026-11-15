@@ -308,12 +308,22 @@ Fred, on the Manifests rows: *"make it instead be icons, when hovered it display
   picture is a page no other live row of the ticket carries** (the portal's Archive and the old Delete act on whole tickets, so
   only a one-time cleanup can meet this). Since `2026-11-15_0750` (pick PP) row 898 carries a note saying so in
   `derm_manifests.notes` (the accepted-gap column); `derm.v_orphan_manifests` keeps listing it by design.
-  ⚠ **Pick QQ is NOT done (2026-11-15):** clearing card 234's leftover stamp point on #822919 (`derm.clear_stamp_position`, the
-  screens' path) was rehearsed rolled back and makes it WORSE: the dirty trigger reopens the completed sheet `window5-sheet3`,
-  the blocked list then names it as `frozen_closed_world` (7 clients, 6 manifests, was `no_stamp_timestamp`, 1 client, 0
-  manifests), its Manifests row turns "Stamps to place" and Mark completed is refused ("One card on this sheet has no stamp at
-  all ..."). The entry exists only because that point sits on page 1, which has no measured extent; the other unlinked cards
-  with a point and no stamp time (4 sheets) sit on measured pages and are listed nowhere. Waiting for the main session's call.
+  ✅ **Pick QQ done AS A RULE (`2026-11-15_1240`, applied 12:36 ET; Fred: "Change the rule (Recommended)").** 🛑 **A card with
+  NO manifest link and NO stamp time, on a page with no measured extent, does not count as "stamped but unmeasured": it has no
+  copy to make.** So it neither lists its sheet in `derm.v_blackout_blocked_sheets` (arm 1, and the same condition in the two
+  guards that keep arms 2 and 3 off a sheet arm 1 lists) nor makes `derm.fn_sheet_publishable` answer `needs_extent` (its step
+  3). A LINKED card with no stamp time still counts (a withheld client), and so does an unlinked card WITH a stamp time.
+  The record was NOT touched: clearing card 234's point (`derm.clear_stamp_position`, the first plan) was rehearsed and made it
+  worse (the dirty trigger reopened the completed sheet `window5-sheet3` into `frozen_closed_world` and Mark completed was
+  refused). By the rule `window5-sheet3` (#822919, card 234's point on unmeasured page 1, 1 client, 0 manifests) left the
+  list and stays completed; measured before and after, nothing else moved (view rows, `fn_sheet_publishable` for all 189
+  sheets, the Manifests rows core 180 of 180, the unpublished view, `fn_blackout_targets`, every status and copy row); the
+  health email went 3 -> 2 blocked sheets, 12 -> 11 clients, 11 manifests. Standing check
+  `scripts/checks/stamp_blocked_list_unlinked_card.mjs` (CONTROL=1 must fail A and D). ⚠ Change the condition in all four
+  places together (fixture D: with arm 1 alone, a sheet holding such a card AND a withheld linked card is listed by no arm).
+  Not changed on purpose: arm 2's own unsafe-card test (it mirrors the closed-world gate in `fn_blackout_targets`, which
+  counts every card with a point) and `fn_sheet_publishable_detail`'s `pages_needing_extent` (still lists such a page; it is
+  shown only beside a blocker).
 - **Since `2026-11-14_0135` the rules live in ONE ungated core, `derm.fn_manifest_row_states_core()`** (SECURITY INVOKER, EXECUTE
   for the owner only). `derm.manifest_row_states()` keeps its gate and calls it (same answer on every row, compared in the migration);
   `derm.manifest_row_states_for_client(bigint)` reads it for one client's tickets behind the Client App OR DERM Tracker gate (the
