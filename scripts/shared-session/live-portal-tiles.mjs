@@ -1,3 +1,8 @@
+// Stage D (2026-11-14): the Stamp case also opens one sheet from a Manifests row's three dots (the new stamping screen),
+// and the refusal by address is checked on a sheet's own address.
+// Stage C step 2 (2026-11-14): the Manifests case (two list doors, the Upload button, Health, the sheet list door for Stamp
+// people, the bell's sheet row on "Needs someone", derm-tracker labels, no stamp read), and the DERM case reaches Upload by
+// the page's button, not a tab.
 // live-portal-tiles.mjs: THE STANDING CHECK of the Ops Portal, signed in, for each kind of person: the menu by function,
 // Clients inside and Finances, as live since the Clients publish of 2026-11-15 about 5:40 AM ET
 // (plan: Building Apps/Ops Portal/docs/specs/2026-11-12-redesign-by-function.md, section 3 and Stage A).
@@ -156,6 +161,18 @@ async function signedIn(c, w, h, goto = PORTAL) {
       if (one) return r.fulfill({ status: 200, contentType: 'application/vnd.pgrst.object+json', body: JSON.stringify({ full_name: c.who, color_hex: '#14B8A6' }) })
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ ...PEOPLE[0], full_name: c.who }]) })
     }
+    // Stage D: one made-up ticket, #000001, so the Manifests list has a row whose three dots open its address sheet, and
+    // the stamping screen has a sheet to read. Every name here is invented.
+    if (c.sheet) {
+      const name = (u.match(/\/rest\/v1\/([^?]+)/) ?? [])[1]
+      ;(seen.stampAsked ??= []).push({ name, label: r.request().headers()['x-app-source'] ?? 'NONE', keyed: Boolean(r.request().headers()['x-stamp-key']) })
+      const J = (b) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) })
+      if (name === 'derm_manifests') return J([{ id: 990001, white_manifest_number: '000001', yellow_ticket_number: null, derm_manifest_url: null, derm_address_url: null, derm_manifest_extra_urls: null, derm_address_extra_urls: null, dump_ticket_date: '2026-11-02', service_date: '2026-11-01', disposal_facility_id: null, created_at: '2026-11-02T12:00:00Z', deleted_at: null, derm_address_no: null }])
+      if (name === 'rpc/manifest_row_states') return J({ 990001: { key: '990001', manifest_ids: [990001], needs: false, worst: 'ok', test: false, papers: { s: 'ok', code: 'ok', t: 'Papers on file' }, stamps: { s: 'ok', code: 'ok', t: 'Stamped' }, city: { s: 'na', code: 'none', t: 'No city program' }, sheets: [{ folder: 'ticket-000001', number: '000001', state: 'completed', placed: 1, total: 1 }] } })
+      if (name === 'v_stamp_sheets') return J([{ dump_folder: 'ticket-000001', white_manifest_number: '000001', service_date: '2026-11-01', dump_date: '2026-11-02', page_count: 1, page_image_urls: ['https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/derm/990001/address_1.jpg'], total_rows: 0, matched_rows: 0, placed_rows: 0, completed: true, completed_at: '2026-11-02T15:00:00Z', is_generated: false, filled_by_ai: null, ai_placed_rows: null, skipped: false, missing_scan: null }])
+      if (name === 'rpc/stamp_sheet_facts') { seen.facts = (seen.facts ?? 0) + 1; return J({ completed: true, completed_at: '2026-11-02T15:00:00Z', completed_by: 'someone', reopened_at: null, reopened_by: null, copies: null }) }
+      if (name === 'rpc/fn_sheet_publishable_detail') return J({ blocker: null, message: null })
+    }
     r.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   })
   await page.goto(goto); await page.waitForSelector('input[type=email]', { timeout: 30000 })
@@ -238,7 +255,8 @@ const readBar = (page, wide) => page.evaluate(([wide, BAR]) => {
 const AREAS = [
   { at: 'calendar', app: 'visit_calendar', name: 'Visit Calendar', title: 'Calendar', lit: 'calendar' },
   { at: 'derm', app: 'derm_tracker', name: 'DERM Tracker', title: 'DERM visits', lit: 'derm-visits' },
-  { at: 'derm/manifests', app: 'derm_tracker', name: 'DERM Tracker', links: ['/derm/manifests', '/derm/manifests/health', '/derm/upload'], lit: 'manifests' },
+  // Stage C step 2: Upload is the page's orange button, not a link of the bar
+  { at: 'derm/manifests', app: 'derm_tracker', name: 'DERM Tracker', links: ['/derm/manifests', '/derm/manifests/health'], lit: 'manifests' },
   { at: 'review', app: 'admin_review', name: 'Admin Review', title: 'Reviews', lit: 'reviews' },
   { at: 'planner', app: 'picture_planner', name: 'Picture Planner', links: ['/planner', '/planner/forms'], lit: 'site-files' },
   { at: 'hr/employees', app: 'hr', name: 'HR App', title: 'People', lit: 'people' },
@@ -466,13 +484,21 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await pick(page, w, 'manifests', fails)
     await arrive(page, '/derm/manifests', 8000); await page.waitForTimeout(1200)
     const tabs = await readBar(page, w >= 768)
-    for (const want of ['/derm/manifests/health', '/derm/upload', '/stamp']) if (!tabs.links.includes(want)) fails.push(`from the Manifests item, no link to ${want}`)
+    // Stage C step 2: Upload left the bar for the page's orange "Upload manifest" button (the Manifests case below).
+    for (const want of ['/derm/manifests/health', '/stamp']) if (!tabs.links.includes(want)) fails.push(`from the Manifests item, no link to ${want}`)
+    if (tabs.links.includes('/derm/upload')) fails.push('the bar still has an Upload tab')
     if (tabs.sideways > 0) fails.push('sideways scroll on Manifests')
     await shot(page, w, 'manifests tabs')
-    // The same row on the other two Manifests pages, each reached by its tab: Health and Upload have no other door in the bar.
+    // The same row on the other two Manifests pages: Health by its tab, Upload by the page's button.
     for (const next of ['/derm/manifests/health', '/derm/upload']) {
-      await tap(page.locator(`${w >= 768 ? BAR : 'main header.border-b'} a[href="${next}"]`), fails, `the tab to ${next}`)
-      if (!(await arrive(page, next, 8000))) { fails.push(`the tab to ${next} landed on ${at(page)}`); continue }
+      if (next === '/derm/upload') {
+        await page.goto(PORTAL.replace(/\/$/, '') + '/derm/manifests'); await arrive(page, '/derm/manifests', 8000); await page.waitForTimeout(1200)
+        // A full load of the merged portal (Clients in it) can take longer than 1.2 s to draw the page on a phone: wait for
+        // the button itself (it must still appear, and is still clicked), never a longer fixed pause.
+        await page.locator('main a[data-upload-button]').first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
+        await tap(page.locator('main a[data-upload-button]'), fails, 'the Upload manifest button')
+      } else await tap(page.locator(`${w >= 768 ? BAR : 'main header.border-b'} a[href="${next}"]`), fails, `the tab to ${next}`)
+      if (!(await arrive(page, next, 8000))) { fails.push(`the door to ${next} landed on ${at(page)}`); continue }
       await page.waitForTimeout(900)
       const row = await readBar(page, w >= 768)
       if (JSON.stringify(row.links) !== JSON.stringify(tabs.links)) fails.push(`${next} holds ${row.links.join(' ') || 'no links'}`)
@@ -487,9 +513,62 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     }
   })
 
+  // Stage C step 2, the Manifests page (plan, Stage C, the pinned checks): its two list doors (the Manifests tab and the
+  // "Needs someone" box), the orange Upload button, the door to Health, the door to the sheet list for a person with Stamp
+  // Studio only, the bell's sheet row opening Manifests on "Needs someone" for a person with the DERM Tracker, the DERM reads
+  // labelled derm-tracker, and no stamp read at all (the page asks for none; a person without Stamp Studio causes none).
+  // The made-up ticket #000001 of the Stage D case gives the list one row.
+  for (const [who, c] of [['admin', { ...ADMIN, sheet: true, waiting: SEVEN }], ['no Stamp', { ...OFFICE, who: 'Derm Only', r: reply(33, 'office', { ...every('edit'), stamp_studio: 'none' }), sheet: true, waiting: SEVEN }]]) {
+    await block(w, h, `Manifests doors, ${who}`, c, PORTAL + 'derm/manifests', async ({ page, seen, fails }) => {
+      await page.waitForSelector('[data-needs-box]', { timeout: 20000 }).catch(() => {})
+      await page.waitForTimeout(1500)
+      const stamp = can(c, 'stamp_studio')
+      const got = await page.evaluate(() => ({
+        upload: document.querySelector('main a[data-upload-button]')?.getAttribute('href') ?? null,
+        uploadBg: document.querySelector('main a[data-upload-button]') ? getComputedStyle(document.querySelector('main a[data-upload-button]')).backgroundColor : null,
+        needsBox: Boolean(document.querySelector('[data-needs-box] [role=checkbox]')),
+        links: [...document.querySelectorAll('header.shell-header a[href], main header.border-b a[href]')].map((a) => a.getAttribute('href')),
+        overflow: document.documentElement.scrollWidth > window.innerWidth,
+      }))
+      if (got.upload !== '/derm/upload') fails.push('no "Upload manifest" button to /derm/upload')
+      if (got.uploadBg !== 'rgb(241, 71, 20)') fails.push(`the Upload button is ${got.uploadBg}, not the orange`)
+      if (!got.needsBox) fails.push('no "Needs someone" box')
+      if (!got.links.includes('/derm/manifests')) fails.push('no Manifests tab')
+      if (!got.links.includes('/derm/manifests/health')) fails.push('no door to Health')
+      if (got.links.includes('/derm/upload')) fails.push('an Upload tab in the bar')
+      if (got.links.includes('/stamp') !== stamp) fails.push(stamp ? 'no door to the sheet list for a person with Stamp Studio' : 'a door to the sheet list for a person without Stamp Studio')
+      if (got.overflow) fails.push('sideways scroll')
+      // the reads of the page: DERM's labelled derm-tracker, and no stamp view asked
+      const asked = (seen.stampAsked ?? []).filter((x) => !/get_my_access|portal_waiting|portal_search|employees/.test(x.name))
+      for (const want of ['derm_manifests', 'rpc/manifest_row_states', 'rpc/archived_manifest_rows']) if (!asked.some((x) => x.name === want)) fails.push(`the page did not ask ${want}`)
+      const wrong = asked.filter((x) => !/^(v_stamp|page_slots|rpc\/stamp_sheet_facts)/.test(x.name) && x.label !== 'derm-tracker')
+      if (wrong.length) fails.push('not labelled derm-tracker: ' + [...new Set(wrong.map((x) => x.name + ' ' + x.label))].join(', '))
+      if (asked.some((x) => /^v_stamp/.test(x.name))) fails.push('the Manifests page asked a stamp view')
+      // the bell: "6 sheets not completed" opens Manifests on "Needs someone", in the same tab
+      if (w >= 768) {
+        await tap(page.locator('header button[aria-label^="Notifications"]'), fails, 'the bell')
+        await page.waitForTimeout(600)
+        const row = await page.evaluate(() => { const a = [...document.querySelectorAll('[role=menu] a')].find((x) => /sheets not completed/.test(x.textContent)); return a ? { href: a.getAttribute('href'), target: a.getAttribute('target') } : null })
+        if (!row) fails.push('no sheet row in the bell')
+        else if (row.href !== '/derm/manifests?needs=true' || row.target) fails.push(`the bell's sheet row opens "${row.target ?? ''} ${row.href}"`)
+        await page.keyboard.press('Escape')
+      }
+      if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
+      if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
+      await shot(page, w, `manifests doors ${who}`)
+    })
+  }
+  // A person with Stamp Studio and no DERM Tracker: the bell's sheet row keeps the sheet list (decision 11).
+  if (w >= 768) await block(w, h, 'Manifests bell, Stamp only', { ...STAMP_ONLY, waiting: SEVEN }, PORTAL, async ({ page, fails }) => {
+    await tap(page.locator('header button[aria-label^="Notifications"]'), fails, 'the bell')
+    await page.waitForTimeout(600)
+    const row = await page.evaluate(() => { const a = [...document.querySelectorAll('[role=menu] a')].find((x) => /sheets not completed/.test(x.textContent)); return a ? a.getAttribute('href') : null })
+    if (row !== '/stamp') fails.push(`the bell's sheet row opens ${row}`)
+  })
+
   // Stamp Studio: opens from its tile in the same tab, keeps its own label and look, sends its key (checked, never printed),
   // draws no second theme or sign-out control, and leaving it gives the look back. The bar names the page, not the app.
-  await block(w, h, 'Stamp opens, labels its own', ADMIN, PORTAL, async ({ ctx, page, seen, fails }) => {
+  await block(w, h, 'Stamp opens, labels its own', { ...ADMIN, sheet: true }, PORTAL, async ({ ctx, page, seen, fails }) => {
     let keyed = 0, unkeyed = 0
     page.on('request', (q) => { if (!/\/rest\/v1\/v_stamp/.test(q.url())) return; if (q.headers()['x-stamp-key']) keyed++; else unkeyed++ })
     const before = ctx.pages().length
@@ -524,6 +603,35 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
     if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
     await shot(page, w, 'stamp module')
+    // Stage D: one sheet opened from a Manifests row's three dots, in the same tab: the stamping screen, its reads and the
+    // facts call labelled derm-stamp-studio with the key (checked, never printed), nothing sideways.
+    if (w >= 768) {
+      seen.stampAsked = []
+      await page.goto(PORTAL.replace(/\/$/, '') + '/derm/manifests', { waitUntil: 'domcontentloaded' })
+      const dots = page.locator('button[aria-label^="More actions for"]').first()
+      await dots.waitFor({ timeout: 20000 }).catch(() => {})
+      const tabs = ctx.pages().length
+      if (await tap(dots, fails, 'the row\'s three dots')) {
+        await page.locator('[data-row-menu] [data-item="sheet"]').first().waitFor({ timeout: 5000 }).catch(() => {})
+        await tap(page.locator('[data-row-menu] [data-item="sheet"]').first(), fails, 'Open the address sheet')
+        await page.waitForSelector('[data-stamp-screen]', { timeout: 20000 }).catch(() => {})
+        await page.waitForTimeout(2500)
+        if (ctx.pages().length !== tabs) fails.push('the sheet opened in a new tab')
+        if (at(page) !== '/stamp/000001') fails.push(`the sheet landed on ${at(page)}`)
+        if (!(await page.locator('[data-stamp-screen]').count())) fails.push('no stamping screen')
+        const sa = seen.stampAsked.filter((x) => /^(v_stamp|page_slots|v_page_printed_rules|rpc\/stamp_sheet_facts|rpc\/fn_sheet_publishable_detail)/.test(x.name))
+        for (const want of ['v_stamp_sheets', 'rpc/stamp_sheet_facts']) if (!sa.some((x) => x.name === want)) fails.push(`the screen did not ask ${want}`)
+        const wrong = sa.filter((x) => x.label !== 'derm-stamp-studio' || !x.keyed)
+        if (wrong.length) fails.push('not Stamp\'s label and key: ' + [...new Set(wrong.map((x) => x.name + ' ' + x.label + (x.keyed ? '' : ' no key')))].join(', '))
+        const side = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
+        if (side) fails.push('the stamping screen scrolls sideways')
+        await shot(page, w, 'stamp sheet')
+        // its X goes back where the person came from (the Manifests list), with nothing changed: no question
+        await tap(page.locator('[data-close]'), fails, 'the X of the stamping screen')
+        await page.locator('[data-stamp-screen]').waitFor({ state: 'detached', timeout: 8000 }).catch(() => fails.push('the X did not close the screen'))
+        if (at(page) !== '/derm/manifests') fails.push(`the X went to ${at(page)}`)
+      }
+    }
     if (w >= 1280) {
       await pick(page, w, 'people', fails)
       await page.waitForTimeout(1500)
@@ -534,8 +642,9 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   })
 
   // A person with no Stamp access who has the address: the refusal, and the page never mounts, so no sheet is asked for.
-  await block(w, h, 'no Stamp access, address', FIELD, PORTAL + 'stamp', async ({ page, seen, fails }) => {
+  await block(w, h, 'no Stamp access, address', FIELD, PORTAL + 'stamp/000001', async ({ page, seen, fails }) => {
     await page.waitForTimeout(1500)
+    if (await page.locator('[data-stamp-screen]').count()) fails.push('the stamping screen mounted')
     const text = await page.evaluate(() => document.body.innerText)
     if (!/You do not have access to Stamp Studio/.test(text)) fails.push('no refusal on screen')
     if (/DERM Address Sheets/.test(text)) fails.push('the list showed')
@@ -671,7 +780,9 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // and the word of the menu item it names, and opens that item's page.
   await block(w, h, 'bell, all seven rows', { ...ADMIN, waiting: SEVEN }, PORTAL, async ({ page, seen, fails }) => {
     const bar = w >= 768 ? 'header.shell-header' : 'div.relative.z-50', bell = page.locator(`${bar} button[aria-label^="Notifications"]`)
-    const want = [['/calendar', 'To Be Scheduled'], ['/calendar', 'Calendar'], ['/review', 'Reviews'], ['/review', 'Reviews'], ['/stamp', 'Address sheets'], ['/planner', 'Site files'], ['/derm', 'DERM visits']]
+    // Stage C step 2: for a person with the DERM Tracker the sheets row opens Manifests on "Needs someone" (its href carries
+    // ?needs=true; the landing is checked by path)
+    const want = [['/calendar', 'To Be Scheduled'], ['/calendar', 'Calendar'], ['/review', 'Reviews'], ['/review', 'Reviews'], ['/derm/manifests?needs=true', 'Manifests'], ['/planner', 'Site files'], ['/derm', 'DERM visits']]
     const label = (await bell.first().getAttribute('aria-label').catch(() => null)) ?? 'no bell'
     if (label !== 'Notifications, 7 waiting') fails.push(`the bell says "${label}"`)
     if (!(await tap(bell, fails, 'the bell'))) return
@@ -693,7 +804,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       if ((await bell.first().getAttribute('data-state').catch(() => null)) !== 'open' && !(await tap(bell, fails, 'the bell'))) break
       await page.getByRole('menuitem').first().waitFor({ timeout: 4000 }).catch(() => {})
       if (!(await tap(page.getByRole('menuitem').nth(i), fails, `bell row ${i + 1}`))) { await page.keyboard.press('Escape'); await page.waitForTimeout(400); continue }
-      if (!(await arrive(page, want[i][0], 10000))) fails.push(`row ${i + 1} landed on ${at(page)}, want ${want[i][0]}`)
+      if (!(await arrive(page, want[i][0].split('?')[0], 10000))) fails.push(`row ${i + 1} landed on ${at(page)}, want ${want[i][0]}`)
       await page.waitForTimeout(400)
     }
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
@@ -806,7 +917,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       const first = MENU.find(([m]) => m === id)[3]
       if (!(await pick(page, w, id, fails))) continue
       await page.waitForFunction((p) => location.pathname.startsWith(p), first, { timeout: 10000 }).catch(() => {})
-      if (second) { await page.waitForTimeout(600); await tap(page.locator(`${w >= 768 ? BAR : 'main'} a[href="${path}"]`), fails, `the link to ${path}`) }
+      // Stage C step 2: Upload is reached by the page's orange button, at every width
+      if (second) { await page.waitForTimeout(600); await tap(page.locator(`${w >= 768 && path !== '/derm/upload' ? BAR : 'main'} a[href="${path}"]`).first(), fails, `the link to ${path}`) }
       if (await arrive(page, path, 8000)) reached++; else fails.push(`${path} not reached: at ${at(page)}`)
       await page.waitForTimeout(250)
     }
@@ -947,7 +1059,8 @@ await block(1280, 900, 'the Manifests row fits beside a wide clock', { ...ADMIN,
   }, [BAR, SIDE])
   if (m.clock !== 'Wed, Nov 25, 10:59 AM ET') fails.push(`the clock shows "${m.clock}", not the wide text`)
   if (m.side !== 228) fails.push(`the sidebar is ${m.side} px wide, not open`)
-  if (JSON.stringify(m.words) !== JSON.stringify(['Manifests', 'Health', 'Upload', 'Address sheets'])) fails.push(`the row holds ${(m.words ?? []).join(' | ') || 'nothing'}`)
+  // Stage C step 2: Upload is the page's button, no longer a tab of this row
+  if (JSON.stringify(m.words) !== JSON.stringify(['Manifests', 'Health', 'Address sheets'])) fails.push(`the row holds ${(m.words ?? []).join(' | ') || 'nothing'}`)
   if (m.needs > m.has) fails.push(`the row needs ${m.needs} px and has ${m.has}: it scrolls sideways`)
   if (m.cut?.length) fails.push(`cut at the edge: ${m.cut.join(', ')}`)
   await shot(page, 1280, 'manifests row wide clock')
@@ -965,7 +1078,8 @@ await block(1280, 900, 'the Manifests row fits beside a wide clock', { ...ADMIN,
 // the white bar, so no tab was marked on any of these pages, and nothing checked it. The menu lights one item for all the
 // tabs of a page, so the tab is the only sign of which one a person is on. Its control is the code before the fix: with
 // the two Header files of that commit put back, all five lines fail ("marked: none").
-for (const [addr, word] of [['derm/manifests', 'Manifests'], ['derm/manifests/health', 'Health'], ['derm/upload', 'Upload'], ['planner', 'Page Builder'], ['planner/forms', 'Forms']]) {
+// Stage C step 2: /derm/upload has no tab of its own any more (the page's button replaced it), so none is marked there.
+for (const [addr, word] of [['derm/manifests', 'Manifests'], ['derm/manifests/health', 'Health'], ['derm/upload', null], ['planner', 'Page Builder'], ['planner/forms', 'Forms']]) {
   await block(1280, 900, `the tab you are on is marked, /${addr}`, ADMIN, PORTAL + addr, async ({ page, fails }) => {
     await page.waitForSelector(BAR + ' nav a', { timeout: 15000 }).catch(() => {})
     await page.waitForTimeout(800)
@@ -978,7 +1092,8 @@ for (const [addr, word] of [['derm/manifests', 'Manifests'], ['derm/manifests/he
     }, BAR)
     if (!m) { fails.push('no row of tabs in the bar'); return }
     const marked = m.links.filter((l) => l.fill !== m.bar && l.fill !== 'rgba(0, 0, 0, 0)' && l.fill !== 'transparent')
-    if (marked.length !== 1 || marked[0].word !== word) fails.push(`marked: ${marked.map((l) => l.word).join(' | ') || 'none'}; wanted ${word} alone, of ${m.links.map((l) => l.word).join(' | ')}`)
+    if (word === null) { if (marked.length) fails.push(`marked: ${marked.map((l) => l.word).join(' | ')}; wanted none (Upload is a button now)`) }
+    else if (marked.length !== 1 || marked[0].word !== word) fails.push(`marked: ${marked.map((l) => l.word).join(' | ') || 'none'}; wanted ${word} alone, of ${m.links.map((l) => l.word).join(' | ')}`)
     else if (m.links.some((l) => l.word !== word && l.ink === marked[0].ink)) fails.push(`the marked tab's words are the same ink as the others (${marked[0].ink})`)
     return `${word}: fill ${marked[0]?.fill ?? 'none'} on a ${m.bar} bar`
   })
