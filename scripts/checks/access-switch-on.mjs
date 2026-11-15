@@ -83,8 +83,9 @@ const APPS = {
   client_app: {
     host: CLIENT_APP, control: 'client.update_property_operational',
     // On the portal the Clients pages import the shell's header, so its search and its bell are in the walk: the shell's
-    // own reads (no app check by design), not the Client App's.
-    gateReaders: ['client.global_search', 'client.recurring_eligibility', ...(PORTAL ? ['ops.portal_search', 'ops.portal_waiting'] : [])],
+    // own reads (no app check by design), not the Client App's. And the shell's one write, a person's OWN photo from the
+    // account menu (the photo door, open to everyone by design, guarded by hr.fn_can_set_photo; Supabase CLAUDE.md).
+    gateReaders: ['client.global_search', 'client.recurring_eligibility', ...(PORTAL ? ['ops.portal_search', 'ops.portal_waiting', 'hr.set_employee_photo'] : [])],
     edgeAllow: { 'emergency-session': 'leftover, returns 404' },
     revokes: [], extra: [],
   },
@@ -149,12 +150,38 @@ function extract(src) {
 
 // The walk is scripts/client-app/base.mjs (one walk for a production build and for a dev server). For client_app the host
 // is CLIENT_APP (or --base <url>), default https://clients.unclogme.app; http://localhost:8080/clients is the portal's copy.
+// 🛑 THE PORTAL IS ONE APP FOR EVERY STAFF TOOL, so its production build walked to closure is EVERY app's code (161 chunks
+// on 2026-11-15, portal 7df4f7e), and judging all of it by the Client App's rule gave 107 false failures (the HR App's,
+// the Calendar's, Admin Review's functions). On the portal the Client App is the Clients and Finances pages, so the walk
+// keeps what those pages LOAD: the module graph (static and dynamic imports, any quote) from the page, never entering
+// another app's route chunk (`_shell.<app>...`). The shell's own route (`_shell-*`), the entry chunk and the shared
+// chunks stay in, as the dev walk keeps them (base.mjs follows the imports of the clients route files). A function of
+// another app that the Clients pages really call (the DERM manifest window, the shell's search and bell) is still judged.
+// The preload list (__vite__mapDeps) is not an import, so it is not followed. A dev server is already walked this way.
+const OTHER_APP_ROUTE = (f) => /^_shell\./.test(f) && !/^_shell\.(clients|finances)[.-]/.test(f);
 async function walk(base) {
   const ASSET = /["'`(](\/?assets\/[A-Za-z0-9_.\-]+\.js)|["'`]\.\/([A-Za-z0-9_.\-]+\.js)["'`]/g;
   const files = await crawl(['/'], { base, html: ASSET, chunk: ASSET });
   // a production walk always read the page itself too, so its text stays part of what is scanned
   const page = files.dev ? [] : [await fetch(base + '/').then(r => (r.ok ? r.text() : null)).catch(() => null)].filter(t => t !== null);
-  return { chunks: files.size, src: [...page, ...[...files.values()].filter(Boolean)].join('\n'), dev: !!files.dev };
+  let keep = [...files.keys()];
+  if (app === 'client_app' && PORTAL && !files.dev) {
+    const IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)(["'`])\.\/([\w.$-]+\.js)\1/g, seen = new Set();
+    const queue = page.flatMap(t => [...t.matchAll(/\/assets\/([\w.$-]+\.js)/g)].map(m => m[1]));
+    while (queue.length) {
+      const f = queue.shift();
+      if (seen.has(f) || OTHER_APP_ROUTE(f) || !files.has('/assets/' + f)) continue;
+      seen.add(f);
+      for (const m of files.get('/assets/' + f).matchAll(IMPORT)) queue.push(m[2]);
+    }
+    keep = [...seen].map(f => '/assets/' + f);
+    const routes = keep.map(k => k.slice(8)).filter(f => /^_shell[.-]/.test(f));
+    console.log(`portal: ${keep.length} of ${files.size} chunks are what the Clients and Finances pages load (routes: ${routes.join(' ')})`);
+    // the scope's own controls: it must reach both page groups, and must have left other apps out
+    if (!routes.some(f => /^_shell\.clients\./.test(f)) || !routes.some(f => /^_shell\.finances\./.test(f))) fail('portal scope reaches no Clients or no Finances route chunk (instrument broken)');
+    if (keep.length === files.size) fail('portal scope kept every chunk (instrument broken)');
+  }
+  return { chunks: keep.length, src: [...page, ...keep.map(k => files.get(k)).filter(Boolean)].join('\n'), dev: !!files.dev };
 }
 
 // ---------- 2. probe ----------

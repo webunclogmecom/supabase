@@ -15,7 +15,9 @@ let pass = 0, fail = 0
 const ok = (c, name) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}`) }
 // controls that must be present before AND after: the instrument can see the dialog, and what shipped before stays shipped
 const ALWAYS = ['schedule_property_intake', 'intakeParentKey', 'v_intake_questions', 'Assign to', 'Nobody yet', 'We make a task for this person in Jobber and in the Calendar, and put their name on the form.', 'Technicians', 'save-calendar-task',
-  '"client-app"', 'Open this link on site to fill in the site survey form:', 'cancel_intake', 'Task made for ',
+  // the label as a whole string literal in ANY quote: the old host writes "client-app", the portal's build `client-app`
+  // (root CLAUDE.md 5c: capture the quote and back-reference it, never a ["']-only class)
+  /(["'`])client-app\1/, 'Open this link on site to fill in the site survey form:', 'cancel_intake', 'Task made for ',
   'It is in Jobber and in the Calendar, with this link in its notes.', "'s name is already on the form.", 'Could not confirm the task. Check the Calendar before sending the link.',
   'Check the Calendar', 'No task was made, so the link was cancelled.', 'No task was made, and the link could not be cancelled. Cancel it in the Picture Planner, under Forms.',
   'asked again next to the capacity plate photo.', "We couldn't load the staff list. Close this and try again.", 'rolled_back', 'jobber_task',
@@ -23,7 +25,7 @@ const ALWAYS = ['schedule_property_intake', 'intakeParentKey', 'v_intake_questio
   'intake_closed', 'jobber_rejected', 'property_without_client',
   // kept on purpose by the 2026-11-05 change
   '0 on file, may be unknown', 'Everything starts ticked except what we already have on file.', 'It opens with no login, and it stops working once it has been submitted.']
-for (const n of ALWAYS) ok(all.includes(n), `always live: ${n}`)
+for (const n of ALWAYS) ok(n instanceof RegExp ? n.test(all) : all.includes(n), `always live: ${n}`)
 // the 2026-11-05 change (office training film): the Link ready sentence by task outcome, Manholes ticked at 0
 const NEW = ["It's already in their task, so you don't need to send it.", 'If the task is not in the Calendar, send this to whoever is going on site.', 'We store 0 by default, so 0 and unknown look the same.']
 const GONE = ['Send this to whoever is going on site.', 'Never pre-ticked']

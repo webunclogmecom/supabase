@@ -14,7 +14,10 @@ const control = Boolean(process.env.CONTROL)
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const access = { employee_id: 2, group: 'admin', me: { full_name: 'Test Person', color_hex: '#f14714', photo_path: null }, apps: TOP.map((a) => ({ app: a, parent: null, mode: 'on', level: 'edit' })) }
-const PAGES = [['HR', 'hr/employees'], ['Calendar', 'calendar'], ['DERM', 'derm'], ['DERM upload', 'derm/upload'], ['Stamp', 'stamp'], ['AR queue', 'review'], ['AR grease', 'review/grease'], ['Planner', 'planner']]
+// The Clients pages and Finances (live 2026-11-15, portal 7df4f7e): the list ("New Client" main), one made-up client on
+// its Jobs tab ("New job", the blue operations action) and the three Finances lists (second rank only).
+const PAGES = [['HR', 'hr/employees'], ['Calendar', 'calendar'], ['DERM', 'derm'], ['DERM upload', 'derm/upload'], ['Stamp', 'stamp'], ['AR queue', 'review'], ['AR grease', 'review/grease'], ['Planner', 'planner'],
+  ['Clients', 'clients'], ['Client', 'clients/900001?tab=jobs'], ['Invoices', 'finances/invoices'], ['Quotes', 'finances/quotes'], ['Payments', 'finances/payments']]
 // The Planner's list has buttons only for a property, so it gets one made-up property waiting for approval ("Review
 // version 2" main, "Open Page Builder" second rank). Its Forms list is left out: since F3 (2026-11-10) it has no ranked
 // button, only the three-dot menu.
@@ -38,6 +41,10 @@ await page.route('**/rest/v1/**', (r) => {
   if (/rpc\/portal_waiting/.test(u)) return json(r, {})
   if (/rpc\/page_builder_list/.test(u)) return json(r, [PB_ROW])
   if (/rpc\/get_page_builder/.test(u)) return json(r, { property: { id: PB_ROW.property_id }, pool: [] })   // the list's preview panel
+  // the client page's own row (a made-up client; every other read of it answers empty) and the Payments page's two reads
+  if (/\/clients\?select=(\*|%2A)&id=eq\.900001(&|$)/.test(u)) return json(r, { id: 900001, client_code: '000-ZZ', name: 'Colour Test', status: 'ACTIVE', client_class: 'commercial', zone_id: null, balance: 0, notes: null, group_id: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' })
+  if (/rpc\/list_payments/.test(u)) return json(r, { total: 0, money_in: 0, money_out: 0, fees: 0, payments: [] })
+  if (/rpc\/payment_months/.test(u)) return json(r, { from: '2025-10-01', to: '2026-11-30', months: [] })
   return json(r, (r.request().headers().accept || '').includes('vnd.pgrst.object') ? {} : [])
 })
 await page.goto(PORTAL); await page.waitForSelector('input[type=email]', { timeout: 30000 })
@@ -84,8 +91,9 @@ for (const [name, addr] of PAGES) {
   if (before.orange + before.white === 0) fails.push('no main or second-rank button found')
   // The portal's error page has its own Try again button, so a crashed page must not pass on it.
   if (await page.getByRole('button', { name: /^try again$/i }).count()) fails.push('the page crashed into the error page')
-  // An address that no longer exists must not pass on the not-found page's own white button.
-  if (/Page not found/.test(await page.locator('main').innerText().catch(() => ''))) fails.push('the page says Page not found')
+  // An address that no longer exists must not pass on the not-found page's own white button (nor the client page's own).
+  const said = (await page.locator('main').innerText().catch(() => '')).match(/Page not found|Client not found/)
+  if (said) fails.push(`the page says ${said[0]}`)
   if (after.orange) fails.push(`${after.orange} of ${before.orange} main buttons stayed orange`)
   if (after.teal < before.orange) fails.push(`${after.teal} of ${before.orange} main buttons turned teal`)
   if (after.blue) fails.push(`${after.blue} of ${before.blue} blue action buttons stayed blue`)

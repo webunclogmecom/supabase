@@ -34,7 +34,7 @@
 //
 // CLIENT_APP=http://localhost:8080/clients (or --base <url>) checks the portal's copy on its dev server; the
 // walk for both hosts is scripts/client-app/base.mjs.
-import { BASE as CLIENT_APP, crawl } from '../client-app/base.mjs';
+import { BASE as CLIENT_APP, PORTAL, crawl } from '../client-app/base.mjs';
 const BASE = process.argv.includes('--mutate')
   ? 'https://admin.unclogme.app'          // a different staff app: everything must go absent
   : CLIENT_APP;
@@ -122,17 +122,27 @@ const litRe = new RegExp('(["\'`])(?:\\\\.|(?!\\1)[^\\\\])*?\\1', 'g');
 const literals = (all.match(litRe) || []).length;
 
 const mutating = BASE.includes('admin.');
-// THE PORTAL'S COPY (a dev server: bodies.dev). Two differences, both measured 2026-11-14:
+// THE PORTAL'S COPY (PORTAL: the base is <host>/clients, its dev server or the live build). Two differences, both measured
+// 2026-11-14 on the dev server and again 2026-11-15 on the live build (portal 7df4f7e):
 //  * the Contacts tab's redesign (portal e122252, "the decided design") split the who-sends line into a tooltip title and
 //    a line under it: "Sent by us" / "From our apps" and "Sent from Jobber" / "This is our record of who should get it".
 //    Same distinction, new words, so those two needles are swapped for the portal's.
-//  * the Clients pages now load another app's modules (the DERM Tracker's manifest and send dialogs, /src/modules/derm/),
-//    whose true sentences about OUR emails ("The municipal FOG-program office will receive ...") are not Contacts copy.
-//    The ABSENT list is about the Client App's own copy, so on the portal it reads only modules that are not another app's.
+//  * the Clients pages now load another app's modules (the DERM Tracker's manifest window and its two send dialogs), whose
+//    true sentences about OUR emails are not Contacts copy. The ABSENT list is about the Client App's own copy, so on the
+//    portal those sentences, and only those, are taken out before it is read. Named one by one, never by module: the live
+//    build has no module boundary (one is inside the 1.1 MB entry chunk beside the Contacts code), and a skip by module
+//    would also hide a false sentence the Clients pages took over from that module. A new "will receive" anywhere else
+//    still fails. Each one must be FOUND, or the list is stale and says so.
 const PORTAL_SWAP = { 'Sent by UnclogMe.': ['Sent by us'], 'Sent from Jobber. This is our record of who should get it.': ['Sent from Jobber', 'This is our record of who should get it'] };
-const present = bodies.dev ? PRESENT.flatMap((n) => PORTAL_SWAP[n] || [n]) : PRESENT;
+const DERM_DIALOG_SENTENCES = [
+  'The municipal FOG-program office will receive the Manifest Form and Transporter Manifest.',   // send to the city
+  'They will receive a second copy. It cannot be recalled.',                                      // send again to a client
+];
+const portal = PORTAL && !mutating;
+const present = portal ? PRESENT.flatMap((n) => PORTAL_SWAP[n] || [n]) : PRESENT;
 let own = all;
-if (bodies.dev) { own = ''; for (const [k, b] of bodies) if (!/^\/src\/modules\/(?!clients\/)/.test(k)) own += b; }
+const staleDerm = portal ? DERM_DIALOG_SENTENCES.filter((s) => !all.includes(s)) : [];
+if (portal) for (const s of DERM_DIALOG_SENTENCES) own = own.split(s).join('');
 const missing = present.filter((n) => !all.includes(n));
 const leaked = ABSENT.filter((n) => own.includes(n));
 
@@ -189,6 +199,7 @@ if (mutating) {
   if (!gate.test(all)) {
     fails.push("DERM sentence gate does not test dermActive and the contact's own service_report tick");
   }
+  for (const s of staleDerm) fails.push(`DERM dialog sentence not found, so the list taken out on the portal is stale: ${JSON.stringify(s)}`);
   for (const n of missing) fails.push(`MISSING: ${JSON.stringify(n)}`);
   for (const n of leaked) fails.push(`PRESENT BUT MUST NOT BE (the copy would be false): ${JSON.stringify(n)}`);
 
