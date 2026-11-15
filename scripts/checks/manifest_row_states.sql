@@ -87,7 +87,9 @@ begin
       or (e.value ->> 'needs')::boolean is distinct from
          (coalesce(e.value #>> '{papers,s}', '') in ('warn', 'bad') or coalesce(e.value #>> '{stamps,s}', '') in ('warn', 'bad')
           or coalesce(e.value #>> '{copies,s}', '') in ('warn', 'bad') or coalesce(e.value #>> '{city,s}', '') in ('warn', 'bad')
-          or coalesce(e.value #>> '{visit,s}', '') in ('warn', 'bad'));
+          or coalesce(e.value #>> '{visit,s}', '') in ('warn', 'bad')
+          -- since 2026-11-14_2150: an email that did not arrive (grey "No report" never counts)
+          or coalesce(e.value #>> '{email,s}', '') in ('warn', 'bad'));
   if v_bad <> 0 then raise exception 'verify_fail: % entries are incomplete or their "needs" does not follow their states', v_bad; end if;
 
   -- The sheets: every sheet of the Stamp list is opened by a row, and its state, counts and folder are the list's own.
