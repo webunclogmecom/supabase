@@ -100,3 +100,25 @@ read/write ? he will make a lot changes to the DB"* and, asked what kind, *"Tabl
   the row, so a postgres write would run his trigger code as postgres. Reading is fine. The refresh script never touches it.
 - Its three audit triggers (`contacts`, `gdo_universe`, `hours_of_operation` -> `audit.log_change`, SECURITY DEFINER)
   still log his row changes to `audit.logs`. He may drop them; it is his data.
+
+### 6b. HTTPS for his Claude chat (2026-11-16 evening)
+
+His Claude (claude.ai) "only passes web traffic, and the Postgres connection was dropped on every route I tried", and
+its Add connector box takes only an `https://` connector address. So one HTTPS call now runs one SQL statement with
+exactly his login's rights: `POST /rest/v1/rpc/run`, header `Content-Profile: leads_rpc`, JWT role `leads_caller`
+(HS256 legacy secret, expires 2027-11-16). Build and full reasoning:
+[`sandbox/2026-11-17_frozen_leads_https_run.sql`](sandbox/2026-11-17_frozen_leads_https_run.sql).
+- `leads_rpc.run(query)` is SECURITY DEFINER, owned by `leads_runner` (member of `yannick_leads`, so his rights);
+  `leads_caller` may only use that schema and call it. Anything a call creates is handed to `yannick_leads`.
+- 🛑 **Why definer:** inside a PostgREST request the session user is `authenticator`, which may `SET ROLE service_role`;
+  Postgres refuses SET ROLE, RESET ROLE, `set_config('role')` and SET SESSION AUTHORIZATION inside a definer function.
+- 🛑 **Why nobody inside can name it:** an owner may ALTER its function back to SECURITY INVOKER. `leads_runner` and
+  `yannick_leads` hold no USAGE on `leads_rpc`, so the name lookup fails. Two rehearsal lessons: a new owner needs CREATE
+  on the schema at the moment of the change (granted and revoked around it), and grants must be made BEFORE the owner
+  change, because only the owner can revoke.
+- **Proven live, 30 of 30:** reads, CREATE / INSERT RETURNING / UPDATE / ALTER ADD COLUMN / DELETE / DROP, new table owned
+  by `yannick_leads`; refused: the five role switches (Postgres's own message), altering, dropping or granting
+  `leads_rpc`, `public.employees`, `public.clients`, `auth.users`, creating in public, CREATE ROLE, dropping
+  `v_active_clients`, the public or anon key alone, a fake-signed key (control), tables over REST; data intact after.
+- **Turn off:** `revoke leads_caller from authenticator;` (rehearsed: 403, then 200 after granting back
+  `with inherit false, set true`). The login and the key are in `.local-secrets/yannick-frozen-leads-access.txt`.
