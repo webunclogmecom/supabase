@@ -21,8 +21,7 @@ The public schema is the April-2026 Prod clone. **Yannick has added no custom ta
 - **Prod-only columns (added since the clone):** `clients.client_class`; `derm_manifests.{deleted_at, derm_address_no, derm_address_extra_urls, derm_manifest_extra_urls, fog_manifest_url, notes}`; `disposal_facilities.county`; `gdos.client_location_id`; `jobs.frequency_days`; `line_items.visit_id`; `properties.zone_id`; `visits.{deleted_at, notes, service_line_item_id}`.
 
 **Other schemas in the project:**
-- `frozen_leads` (13 tables, 7 views) — Yannick's Miami-Dade prospecting database (its own comment: "UnclogMe prospecting database: GDO permits, enrichment, route density scoring. Master = DERM (Miami-Dade DERM portal). Created 2026-05-25."): 9,890 GDO permits in `gdo_universe`, loaded 2026-05-26, last written 2026-07-20. **NEVER touch.** Not Yannick's HR data; unrelated to the refresh. It is the only Miami-Dade frozen-leads copy in Supabase: Prod's `leads` schema holds only the Boca Raton BSI leads (ADR 020), the Sales App's 8,166 prospects live in Convex, and the paused project named "frozen leads" (`oodjstkceacbmznccgia`, created the same day) has been idle since.
-- `leads_api` (14 views, since 2026-11-16) — read-only window on `frozen_leads` for ONE outside reader, Yannick (§6). Adds nothing to `frozen_leads`.
+- `frozen_leads` (13 tables, 7 views) — Yannick's Miami-Dade prospecting database (its own comment: "UnclogMe prospecting database: GDO permits, enrichment, route density scoring. Master = DERM (Miami-Dade DERM portal). Created 2026-05-25."): 9,890 GDO permits in `gdo_universe`, loaded 2026-05-26, last written 2026-07-20. **NEVER touch.** Not Yannick's HR data; unrelated to the refresh. It is the only Miami-Dade frozen-leads copy in Supabase: Prod's `leads` schema holds only the Boca Raton BSI leads (ADR 020), the Sales App's 8,166 prospects live in Convex, and the paused project named "frozen leads" (`oodjstkceacbmznccgia`, created the same day) has been idle since. **Since 2026-11-16 every object in it except `v_active_clients` is OWNED by Yannick's own login `yannick_leads`** (§6): he reads, writes and changes its structure; we never write to it as postgres.
 - `audit` — standard audit schema (same as Prod).
 
 ## 3. Data refresh — `scripts/sync/hr_sandbox_refresh.js`
@@ -59,31 +58,45 @@ When the HR app is ready for production, it should follow the **schema-per-app**
 ## 5. Rules (for any agent touching this project)
 
 - Schema-preserving only: never `ALTER`/`DROP` the legacy public schema; refresh = column-intersected + additive (use the script).
-- Never touch `frozen_leads` or anything Yannick adds.
+- Never touch `frozen_leads` or anything Yannick adds. It is his (owned by `yannick_leads` since 2026-11-16, section 6); read it, never write to it as postgres.
 - This is a **dev sandbox** — it is out of scope for the Prod app-auth-gate effort; it carries the same "anon, public URL" exposure and gets a proper gate only when it goes to Prod (§4.4).
 - Cross-ref: `Building Apps/CLAUDE.md` (app landscape), the auth spec, and memory `feedback_no_direct_sandbox_mutations`.
 
-## 6. Yannick's read-only API key to the Miami-Dade frozen leads (2026-11-16, Trello #211)
+## 6. Yannick's own login to the Miami-Dade frozen leads (2026-11-16, Trello #211)
 
 Yannick: *"Also I want to connect the Supabase of the dade frozen leads to my cloud. How do I do that?"*; Fred: *"let's
-give him the api key with a read only"*, and on which copy: *"HR Sandbox now"*.
+give him the api key with a read only"*, on which copy *"HR Sandbox now"*, then *"can we make the API so he can
+read/write ? he will make a lot changes to the DB"* and, asked what kind, *"Tables too, on the HR Sandbox"*.
 
-- **What exists:** schema `leads_api`, 14 owner-rights views (`select *` of `frozen_leads` tables and views), readable by
-  role `leads_reader` only (granted to `authenticator`); PostgREST `db_schema` = `public,graphql_public,leads_api`. The key
-  is a JWT with `"role": "leads_reader"`, signed with the project's legacy HS256 secret (a "previously used" signing key,
-  still accepted), expiring 2027-11-16. It lives only in the workspace's git-ignored `.local-secrets/` (never in a repo).
-- **Left out on purpose:** `enrichment_log` (raw Google requests, 3 carry key-like text), `automation_outbox`,
-  `automations`, `crm_users`, `v_my_tasks`, and `v_active_clients` (OUR client list). Add a view to `leads_api` if asked.
-- **Why not expose `frozen_leads` itself:** the project's public key would then read `v_active_clients` (anon holds
-  SELECT and a view has no RLS) and four lead tables, and that key ships in Yannick's apps.
-- **Why it cannot write:** `leads_reader` holds SELECT on the 14 views and nothing else; no table in an exposed schema
-  grants anything to PUBLIC; the 8 functions PUBLIC may run there are 6 trigger functions, `gen_short_id` (random text)
-  and `graphql` (pg_graphql not installed); no dblink / http / pg_net.
-- **Proven live 2026-11-16, 28 of 28:** every view reads (count 9,890), 1,000 rows per request at most; insert, update and
-  delete 403 (42501); `frozen_leads` 406, `public.employees` 403, `v_active_clients` 404; the public key or the legacy anon
-  key alone 401; a fake-signed key 401 (the control); data unchanged afterwards. Kill switch rehearsed: off 403, on 200.
-- **Turn it off:** `revoke leads_reader from authenticator;` (next request refused). Full undo, and the build itself:
-  [`docs/sandbox/2026-11-16_leads_api_read_only.sql`](sandbox/2026-11-16_leads_api_read_only.sql). Revoking the legacy
-  HS256 signing key in the dashboard also kills it.
-- 🛑 **The refresh script and the rules above still apply:** never touch `frozen_leads`; a new reader gets its own view
-  here, never a grant there.
+- **What exists:** login role `yannick_leads` (5 connections, 60 s statement timeout, `search_path` frozen_leads first,
+  no special attribute, member of no role). It OWNS every object in `frozen_leads` (13 tables with their sequences and
+  indexes, 6 views, 16 functions, 7 enum types) except `v_active_clients`, which reads OUR client list and stays
+  postgres's (he has SELECT on it). He has USAGE and CREATE on the schema, not the schema. `postgres` is a member of
+  `yannick_leads` (INHERIT, SET), so our admin login keeps full rights on his objects. He connects through the pooler,
+  session mode: `aws-1-us-east-1.pooler.supabase.com:5432`, user `yannick_leads.klgtrdwrasrlxbmfyvdh`, SSL. The
+  password lives only in the workspace's git-ignored `.local-secrets/yannick-frozen-leads-login.txt`; it reached the
+  server only as a SCRAM verifier, because this project logs every DDL request in full (`log_statement = ddl`).
+- **Also changed on the sandbox:** CREATE on schema `public` was taken from PUBLIC (it was `=UC/postgres`), so a login
+  with no grant of its own cannot create there. anon, authenticated and service_role held it only through PUBLIC; the
+  API cannot run DDL for them. Undo: `grant create on schema public to public;`.
+- **Replaced the same day:** the first build, a read-only API key over a view schema `leads_api`
+  ([`sandbox/2026-11-16_leads_api_read_only.sql`](sandbox/2026-11-16_leads_api_read_only.sql), tested 28 of 28, never
+  handed over). Its views would have blocked his column changes, so `leads_api` and `leads_reader` were dropped and
+  PostgREST `db_schema` is back to `public,graphql_public`.
+- **Backup before the change:** workspace `backups/2026-11-16_hr_sandbox_frozen_leads_before_yannick_login.json`
+  (35 MB: every row of the 13 tables, columns, constraints, indexes, 12 triggers, 42 policies, views, functions, enums,
+  owners, grants, sequence positions).
+- **Proven live 2026-11-16, 24 of 24, logged in as him through the pooler:** reads 9,890 permits and his views; inside a
+  rolled-back transaction ADD COLUMN, INSERT, UPDATE (his triggers and the audit trigger fire), DELETE, CREATE TABLE,
+  VIEW, FUNCTION and INDEX all work; refused (42501): `public.employees`, `public.clients` (read and write), `auth.users`,
+  `storage.objects`, CREATE TABLE in public, CREATE SCHEMA, CREATE ROLE, changing or dropping `v_active_clients`. Nothing
+  stayed afterwards; the old read-only key answers 406; the sandbox API still answers 200.
+- 🛑 **THE KILL SWITCH IS TWO LINES.** `alter role yannick_leads nologin;` alone did NOT cut him off in the rehearsal: the
+  pooler handed back a connection it already held, and a login is only checked on a new connection. With
+  `select pg_terminate_backend(pid) from pg_stat_activity where usename = 'yannick_leads';` as well, a new connection is
+  refused (XX000); `alter role yannick_leads login;` lets him back in. Full undo, and the build:
+  [`sandbox/2026-11-16b_frozen_leads_yannick_login.sql`](sandbox/2026-11-16b_frozen_leads_yannick_login.sql).
+- 🛑 **We never WRITE to `frozen_leads` as postgres.** A table owner's triggers run with the rights of whoever writes
+  the row, so a postgres write would run his trigger code as postgres. Reading is fine. The refresh script never touches it.
+- Its three audit triggers (`contacts`, `gdo_universe`, `hours_of_operation` -> `audit.log_change`, SECURITY DEFINER)
+  still log his row changes to `audit.logs`. He may drop them; it is his data.

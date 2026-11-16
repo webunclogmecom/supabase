@@ -1,4 +1,7 @@
 -- =====================================================================================================================
+-- 🛑 SUPERSEDED THE SAME DAY by 2026-11-16b_frozen_leads_yannick_login.sql: Fred wanted Yannick to write and change
+-- tables too, so schema leads_api and role leads_reader were DROPPED there and the key below no longer works. Kept as
+-- the record of what was built and tested (28 of 28) and never handed over. Do not re-run it on top of the login.
 -- HR SANDBOX (klgtrdwrasrlxbmfyvdh) ONLY. NEVER RUN ON PROD. The guard below refuses a database that has schema `derm`.
 -- 2026-11-16, Trello #211 (nG6FjqsT): a read-only API key for Yannick to the Miami-Dade frozen leads.
 --
