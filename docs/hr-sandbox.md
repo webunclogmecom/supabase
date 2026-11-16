@@ -21,7 +21,8 @@ The public schema is the April-2026 Prod clone. **Yannick has added no custom ta
 - **Prod-only columns (added since the clone):** `clients.client_class`; `derm_manifests.{deleted_at, derm_address_no, derm_address_extra_urls, derm_manifest_extra_urls, fog_manifest_url, notes}`; `disposal_facilities.county`; `gdos.client_location_id`; `jobs.frequency_days`; `line_items.visit_id`; `properties.zone_id`; `visits.{deleted_at, notes, service_line_item_id}`.
 
 **Other schemas in the project:**
-- `frozen_leads` (20 tables) — old leads-CRM data parked here. **NEVER touch.** Not Yannick's HR data; unrelated to the refresh.
+- `frozen_leads` (13 tables, 7 views) — Yannick's Miami-Dade prospecting database (its own comment: "UnclogMe prospecting database: GDO permits, enrichment, route density scoring. Master = DERM (Miami-Dade DERM portal). Created 2026-05-25."): 9,890 GDO permits in `gdo_universe`, loaded 2026-05-26, last written 2026-07-20. **NEVER touch.** Not Yannick's HR data; unrelated to the refresh. It is the only Miami-Dade frozen-leads copy in Supabase: Prod's `leads` schema holds only the Boca Raton BSI leads (ADR 020), the Sales App's 8,166 prospects live in Convex, and the paused project named "frozen leads" (`oodjstkceacbmznccgia`, created the same day) has been idle since.
+- `leads_api` (14 views, since 2026-11-16) — read-only window on `frozen_leads` for ONE outside reader, Yannick (§6). Adds nothing to `frozen_leads`.
 - `audit` — standard audit schema (same as Prod).
 
 ## 3. Data refresh — `scripts/sync/hr_sandbox_refresh.js`
@@ -61,3 +62,28 @@ When the HR app is ready for production, it should follow the **schema-per-app**
 - Never touch `frozen_leads` or anything Yannick adds.
 - This is a **dev sandbox** — it is out of scope for the Prod app-auth-gate effort; it carries the same "anon, public URL" exposure and gets a proper gate only when it goes to Prod (§4.4).
 - Cross-ref: `Building Apps/CLAUDE.md` (app landscape), the auth spec, and memory `feedback_no_direct_sandbox_mutations`.
+
+## 6. Yannick's read-only API key to the Miami-Dade frozen leads (2026-11-16, Trello #211)
+
+Yannick: *"Also I want to connect the Supabase of the dade frozen leads to my cloud. How do I do that?"*; Fred: *"let's
+give him the api key with a read only"*, and on which copy: *"HR Sandbox now"*.
+
+- **What exists:** schema `leads_api`, 14 owner-rights views (`select *` of `frozen_leads` tables and views), readable by
+  role `leads_reader` only (granted to `authenticator`); PostgREST `db_schema` = `public,graphql_public,leads_api`. The key
+  is a JWT with `"role": "leads_reader"`, signed with the project's legacy HS256 secret (a "previously used" signing key,
+  still accepted), expiring 2027-11-16. It lives only in the workspace's git-ignored `.local-secrets/` (never in a repo).
+- **Left out on purpose:** `enrichment_log` (raw Google requests, 3 carry key-like text), `automation_outbox`,
+  `automations`, `crm_users`, `v_my_tasks`, and `v_active_clients` (OUR client list). Add a view to `leads_api` if asked.
+- **Why not expose `frozen_leads` itself:** the project's public key would then read `v_active_clients` (anon holds
+  SELECT and a view has no RLS) and four lead tables, and that key ships in Yannick's apps.
+- **Why it cannot write:** `leads_reader` holds SELECT on the 14 views and nothing else; no table in an exposed schema
+  grants anything to PUBLIC; the 8 functions PUBLIC may run there are 6 trigger functions, `gen_short_id` (random text)
+  and `graphql` (pg_graphql not installed); no dblink / http / pg_net.
+- **Proven live 2026-11-16, 28 of 28:** every view reads (count 9,890), 1,000 rows per request at most; insert, update and
+  delete 403 (42501); `frozen_leads` 406, `public.employees` 403, `v_active_clients` 404; the public key or the legacy anon
+  key alone 401; a fake-signed key 401 (the control); data unchanged afterwards. Kill switch rehearsed: off 403, on 200.
+- **Turn it off:** `revoke leads_reader from authenticator;` (next request refused). Full undo, and the build itself:
+  [`docs/sandbox/2026-11-16_leads_api_read_only.sql`](sandbox/2026-11-16_leads_api_read_only.sql). Revoking the legacy
+  HS256 signing key in the dashboard also kills it.
+- 🛑 **The refresh script and the rules above still apply:** never touch `frozen_leads`; a new reader gets its own view
+  here, never a grant there.
