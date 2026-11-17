@@ -717,6 +717,12 @@ address sheet (measured: HTTP 200 and a signed URL). Fixed in v26.
   role claim runs with `verify_jwt = true`. Re-check when adding one.
 - The three DERM generators (`generate-derm-address-preview`, `generate-fog-manifest`,
   `generate-derm-address-pdf`) now take service_role or a signed-in staff email, gateway pinned on.
+- 🛑 **The edge access check sends a server key (`sb_secret_...`) as the apikey AND the bearer (2026-11-17).**
+  `_shared/access-check.ts` (25 functions) used to send the anon apikey with it, PostgREST refused the non-JWT
+  (`PGRST301`), and every server-key caller got "Access could not be checked" (503). Now the gateway verifies the key
+  and `hr.check_app_action` runs as service_role. Never skip the check on a prefix or a claim instead.
+  [docs/security.md](docs/security.md) "Edge functions: the access check and the server key"; standing check
+  `scripts/checks/edge_access_check_server_key.mjs`.
 
 ### ⚠ A SECDEF function BYPASSES RLS — so wrapping a write in one can silently WIDEN it (2026-08-05)
 

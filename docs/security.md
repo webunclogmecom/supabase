@@ -222,6 +222,48 @@ Enforcement today: access is managed at the *tool* level (Airtable permissions, 
 
 Any request to "give a tech access to the client list" is a security event. Log in `#viktor-security-setup` and confirm with Fred or Yan directly.
 
+### Edge functions: the access check and the server key (2026-11-17)
+
+25 edge functions ask the database whether the caller may do an action through ONE helper,
+`supabase/functions/_shared/access-check.ts` (`checkAppAction`, which calls `hr.check_app_action` through PostgREST,
+as the caller). The database rule: no request claims and `service_role` get Edit in every app (`hr.fn_app_level`), so
+the server key always passes; a person passes on their own level in the HR App.
+
+**What was broken (found testing Trello #198):** a call with the server key (`sb_secret_...`, the key in
+`Supabase/.env` and in every function's `SUPABASE_SERVICE_ROLE_KEY` since the legacy keys went off on 2026-10-27) got
+"Access could not be checked. Try again." The helper sent the anon apikey with `Bearer sb_secret_...`. A secret key is
+not a JWT, so PostgREST answered `401 PGRST301 "Expected 3 parts in JWT; got 1"` and the helper turned that into 503
+(`save-calendar-visit` wraps it as HTTP 200 `{"ok":false,"code":"no_access"}`). A staff session was never affected.
+
+**The fix (one line in the helper):** a token that starts with `sb_secret_` is sent as the apikey too. Measured on
+`/rest/v1/rpc/check_app_action`:
+
+| apikey | bearer | answer |
+|---|---|---|
+| publishable | secret key (the old helper) | 401 PGRST301 |
+| secret key | the same secret key | 200 `{"ok": true}` |
+| made-up `sb_secret_...` | the same | 401 "Invalid API key" (the helper reports 503, never allows) |
+
+🛑 **Rules that must not be regressed:**
+- The helper never decides "this is our server" by itself: not from the prefix, not from a decoded claim. The gateway
+  checks the key against the project's keys and the database decides. Every project secret key works (default,
+  `railway`, `github_actions`, `field_portal`), not only the one a function holds.
+- With a secret key, apikey and bearer must be the SAME key (a mismatch answers 401 "Conflicting API keys").
+- Any answer other than 2xx or 42501 stays a 503. A check that cannot run never allows.
+
+**Where a server key reaches the check:** only `save-calendar-visit`, `calculate-driving-time` and `parse-gdo-permit`
+(their gate admits a secret key through `isSecretKeyCaller` or the gateway alone). The other 22 turn a secret key away
+at their own sign-in gate (`auth.getUser`, a person-only action) before the check, or skip the check for the server
+key (`get-derm-doc`, `send-derm-email`'s machine caller). Not changed here: `generate-derm-address-preview` and
+`generate-derm-address-pdf` recognise `service_role` by decoding a JWT role claim, so a secret key gets 401 there.
+
+**Proof and standing check:** `node scripts/checks/edge_access_check_server_key.mjs` (writes nothing; empty patch on a
+112-YA visit, no legs, no PDF; mints a staff session for fred@ayache.com and a no-access one for Fred's field test
+sign-in by magic link, no email sent, and signs both out). Before the deploy it failed exactly its 3 server-key lines;
+after it, ALL PASS (server key passes in all three, admin session passes, the no-access sign-in is refused with the
+access sentence, a made-up key gets 401). All 25 functions were redeployed from `main` plus the fix on 2026-11-17
+(~07:05 ET); each deployed body was read back and matches the repo (they all matched `main` before, line endings aside).
+
 ---
 
 ## Incident response checklist
