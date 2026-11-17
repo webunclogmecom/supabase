@@ -77,6 +77,19 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   6:30 AM ET). Checked live on 112-YA in both apps, our row and Jobber read after each step. Record:
   `Building Apps/Ops Portal/docs/08-changelog.md` 2026-11-17 (6:12 AM entry).
 
+**Yan's review of the Clients pages: what Fred agreed in the call (2026-11-16 huddle, cards #212 to #217, #161, #162)**
+- Fred and Yan reviewed the portal's Clients pages on 2026-11-16 (Slack huddle notes F0CJ4EKGCUV, plus 19 comments Yan pinned on the
+  Clients prototype). Checked against the live portal on 2026-11-17; the plan and the true / false table:
+  `Building Apps/Ops Portal/docs/specs/2026-11-17-yan-clients-review-plan.md`.
+- Agreed by Fred in the call (NOT BUILT): red only for a problem and a link is blue, client codes calm (#212 `vD4ZXKGj`); Get the PDF
+  from the county by the exact permit number, the person previews and confirms, a number the county does not know is flagged, and a
+  notice when a location has permits we do not hold (#214 `S8ZuBxCN`); one visit page opened from every door, in the DERM visit
+  page's look, with Auto file in the Manifests and Clients visit menus (#215 `RznftJ0a`); one simple manifest view everywhere and the
+  DERM visits list folded into Manifests (#216 `bfuZbdgY`); an AI review of the Clients pages, then mockups, then build (#162).
+- Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
+  default, what the manifest view keeps instead of M2 and the round-3 Compliance pick, the DERM visits menu item). Not agreed:
+  #213 `S0ZjHZeT` (Late line, balance by age) and #217 `KHcNGcaM` (Yan's organization role, sign-in length).
+
 **Client App contacts: the company card says what it is, Make it primary, phones without texts (2026-11-12, Trello #189 ig5tH74t)**
 - Serena (11-12): "I was trying to update client: 142-57 because I have accounting's contact but the client app doesn't let me like the other day with AC hotel client: 232-AC". Fred's picks on the mockup page (`mockups/2026-11-12-contact-edits.html`, local): "go with N2, B2, T1 (but no need for all that text about it cannot get texts, just say it was saved as normal) and all defaults".
 - To build: N2 (the company card's edit form shows the name in a read-only "Company" panel and an "Adding a person, such as accounting?" box with Add a contact); B2 ("Make it primary" on the cards, "Make <name> primary?" and its button "Make it primary"); T1 (a phone Jobber refuses as a landline is saved with texting off, the normal success message); the six defaults (Add contact keeps what you typed; Add a contact opens the empty form; Add contact stays ours only; the texting rule on every phone save; refusals in plain words; the rename everywhere).
