@@ -540,6 +540,12 @@ stayed `intake-submit?t=`.) Why each piece:
     - The builder's box starts EMPTY on purpose (the collector form's starts with the property's address since
       2026-09-30, rule 17): its search is an effect on the box's text, so a prefill would send a Places request and open
       the list on load. Not asked (PP rule 18).
+  - 🛑 **A photo uploaded in the builder (Trello #219, `2026-11-17_1300`) is the third kind, `upload`**: `fn_page_photo_ids` lists a
+    live `photo_links` row with `entity_type = 'property'` on THIS property whose photo path is exactly
+    `intake-photos/site/<property id>/<uuid>.jpg|png` (anchored; no `.` or `/` can enter the folder or name) and whose object exists.
+    Written only by `client.add_site_photo` after a staff upload under the storage rule `client.fn_site_photo_path_ok` (INSERT only;
+    no update or delete rule for `site/`, on purpose: an approved version points at these files). Drivers see one only once a version
+    holding it is approved (Fred's P2). Rehearsal and controls: the migration header.
   - 🛑 **A page photo is served only from the bucket its LINK KIND names, and only if that object exists there**
     (`fn_page_photo_ids` joins `storage.objects`). `photos.storage_path` is writable by any staff session, and a path like
     `../manifests/...` joined into a storage URL is normalised into ANOTHER bucket: the pre-apply review served an
