@@ -16,7 +16,7 @@ const [row] = await sql(`select token, requested_by, submitted_at from public.pr
 if (!row || !/^\[TEST\]/.test(row.requested_by) || row.submitted_at) throw new Error('not an unsubmitted [TEST] intake')
 const PAGE = 'https://planner.unclogme.app/intake.html'
 const html = fs.readFileSync(fileURLToPath(new URL('../intake.html', import.meta.url)), 'utf8')
-const NOCONN = 'No connection. Nothing is lost: your answers and photos are saved on this phone. Try again when you have signal.'
+const NOCONN = 'No connection. Try again later.'
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 let pass = 0, fail = 0
 const ok = (c, n, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'}  ${n}${v === undefined ? '' : '  ' + JSON.stringify(v).slice(0, 240)}`) }

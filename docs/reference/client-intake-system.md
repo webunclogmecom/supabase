@@ -350,7 +350,7 @@ section, so normalise, prune and `fn_intake_parent_key` treat them like any foll
 **17. 🛑 THE COLLECTOR FORM IS ONE STATIC FILE, AND ITS TOKEN RIDES IN THE FRAGMENT AS `code` (2026-09-25).**
 🛑 **Since 2026-11-17 (Trello #220, v17 `6bd9c6b1`) its photos wait on the PHONE until Submit**: kept in IndexedDB, sent at Submit
 before the answers (upload, PUT, attach per photo, each step saved on the draft so a retry resumes and never claims a second slot
-while the first signed URL lives). With no signal Submit says "No connection. Nothing is lost ..." and keeps everything. The server is
+while the first signed URL lives). With no signal Submit says "No connection. Try again later." (v18, Fred: "just a simple generic error message") and keeps everything. The server is
 unchanged (same ops, same 60-slot ledger, same caps). Tests: `scripts/intake-collector/tests/photos-on-phone.mjs` (fake server) and
 `live-offline.mjs <test intake id> [--live]` (real server). A test that expects an attach right after a pick tests the old form.
 The office link is `https://planner.unclogme.app/intake#code=<token>`: `client.schedule_property_intake` returns it as

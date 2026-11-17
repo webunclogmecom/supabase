@@ -252,7 +252,7 @@ var KEY='intake-draft-'+TOKEN;
 // #220: photos wait on the phone. One IndexedDB record per photo, key TOKEN|lid, value {b: ArrayBuffer, t: type}
 // (localStorage holds text only, about 5 MB). Every failure is a rejected promise. PV: preview URLs by lid; PVL: 1 loading, -1 gone.
 var PV={}, PVL={}, NOLOCAL=false, IDBP=null;
-var NOCONN='No connection. Nothing is lost: your answers and photos are saved on this phone. Try again when you have signal.';
+var NOCONN='No connection. Try again later.';
 function idb(){ if(!IDBP) IDBP=new Promise(function(res,rej){ try{ if(!window.indexedDB) return rej(new Error('no indexedDB')); var rq=indexedDB.open('unclogme-intake',1); rq.onupgradeneeded=function(){ rq.result.createObjectStore('photos') }; rq.onsuccess=function(){ res(rq.result) }; rq.onerror=function(){ rej(rq.error||new Error('idb open')) }; rq.onblocked=function(){ rej(new Error('idb blocked')) } }catch(e){ rej(e) } }); return IDBP }
 function idbTx(mode,fn){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx, out; try{ tx=db.transaction('photos',mode); var r=fn(tx.objectStore('photos')); if(r) r.onsuccess=function(){ out=r.result } }catch(e){ return rej(e) } tx.oncomplete=function(){ res(out) }; tx.onerror=function(){ rej(tx.error||new Error('idb')) }; tx.onabort=function(){ rej(tx.error||new Error('idb abort')) } }) }) }
 function idbPut(k,v){ return idbTx('readwrite',function(s){ return s.put(v,k) }) }

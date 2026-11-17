@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url'
 const { setup, open, LOAD, PNG, sleep } = await import(process.env.PARITY_H || './parity/h.mjs')
 const FILE = pathToFileURL(process.env.INTAKE_HTML || new URL('../intake.html', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')).href
 const AP = 'access_entry.access_photos'
-const NOCONN = 'No connection. Nothing is lost: your answers and photos are saved on this phone. Try again when you have signal.'
+const NOCONN = 'No connection. Try again later.'
 let pass = 0, fail = 0
 const ok = (c, name, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${name}${v === undefined ? '' : ' :: ' + JSON.stringify(v).slice(0, 300)}`) }
 const load = () => { const l = JSON.parse(JSON.stringify(LOAD)); delete l.form.photo_note_required; return l }
