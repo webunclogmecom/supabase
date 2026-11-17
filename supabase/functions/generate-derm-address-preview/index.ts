@@ -1,5 +1,6 @@
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-20_1700 access phase 4
 import { isStaffEmail } from '../_shared/staff.ts'   // 2026-10-26: the staff-email rule (personal addresses)
+import { isSecretKeyCaller } from '../_shared/service-caller.ts'   // 2026-11-17: the server key is not a JWT
 // ============================================================================
 // generate-derm-address-preview/index.ts — Edge Function
 // ============================================================================
@@ -65,6 +66,9 @@ function jsonResponse(
 // config.toml). NEVER deploy this function with --no-verify-jwt, or a hand-made token would pass
 // (that exact bypass was found and closed in get-derm-doc the same day).
 async function callerAllowed(req: Request): Promise<boolean> {
+  // 2026-11-17: the server key is a secret key (sb_secret_), not a JWT, so the decode below never saw it and our own
+  // server got 401. Behind verify_jwt = true the gateway has already refused a made-up one (_shared/service-caller.ts).
+  if (isSecretKeyCaller(req)) return true
   try {
     const tok = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
     let part = (tok.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')

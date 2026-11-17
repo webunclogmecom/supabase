@@ -5,7 +5,8 @@
 // JWT, PostgREST answered 401 PGRST301, and every server-key caller got "Access could not be checked" (503). The fix sends a
 // secret key in both headers, so the API gateway checks it is a real key and the RPC runs as service_role.
 // Calls only the harmless exits right after the check: save-calendar-visit with an empty patch on a 112-YA visit ("Nothing
-// to save."), calculate-driving-time with no legs (400), parse-gdo-permit with no PDF (400). The two sign-ins are minted by
+// to save."), calculate-driving-time with no legs (400), parse-gdo-permit with no PDF (400), and the three DERM generators
+// with no visit or manifest id (400: no sheet number is taken, no PDF made). The two sign-ins are minted by
 // magic link (no email is sent) and signed out at the end: fred@ayache.com (admin) and fredzerpa2@gmail.com (Fred's own
 // field test sign-in, no Visit Calendar Edit). Non-zero exit on any failure; a check that could not run is a failure.
 import { readFileSync } from 'node:fs'
@@ -67,10 +68,25 @@ ok(r.status === 400 && r.j?.error === 'no_file', 'parse-gdo-permit, server key: 
 r = await fn('save-calendar-visit', FAKE, empty)
 ok(r.status === 401, 'save-calendar-visit, made-up secret key: the gateway refuses it', `${r.status} ${r.t}`)
 
+// 3b. The three DERM generators decided "our server" by decoding a JWT role claim, so the server key got 401 at their own
+// gate (fixed the same day with isSecretKeyCaller). Each call stops at the body check: no sheet number, no PDF.
+r = await fn('generate-derm-address-preview', SECRET, { visit_ids: [] })
+ok(r.status === 400 && r.j?.error === 'visit_ids_required_non_empty_array', 'generate-derm-address-preview, server key: passes the gate and the check (400)', `${r.status} ${r.t}`)
+r = await fn('generate-derm-address-pdf', SECRET, {})
+ok(r.status === 400 && r.j?.error === 'manifest_id_required_integer', 'generate-derm-address-pdf, server key: passes the gate and the check (400)', `${r.status} ${r.t}`)
+r = await fn('generate-fog-manifest', SECRET, {})
+ok(r.status === 400 && r.j?.error === 'manifest_id_required_integer', 'generate-fog-manifest, server key: passes its gate (400)', `${r.status} ${r.t}`)
+r = await fn('generate-fog-manifest', FAKE, {})
+ok(r.status === 401, 'generate-fog-manifest, made-up secret key: the gateway refuses it', `${r.status} ${r.t}`)
+
 // 4. People: unchanged by the fix.
 if (staff) {
   r = await fn('save-calendar-visit', staff, empty)
   ok(r.j?.code === 'no_changes', 'save-calendar-visit, staff session (admin): passes', `${r.status} ${r.t}`)
+  r = await fn('generate-derm-address-preview', staff, { visit_ids: [] })
+  ok(r.status === 400 && r.j?.error === 'visit_ids_required_non_empty_array', 'generate-derm-address-preview, staff session (admin): passes (400)', `${r.status} ${r.t}`)
+  r = await fn('generate-fog-manifest', staff, {})
+  ok(r.status === 401, 'generate-fog-manifest, staff session: still refused (our own server only)', `${r.status} ${r.t}`)
 }
 if (field) {
   r = await fn('save-calendar-visit', field, empty)
@@ -78,6 +94,8 @@ if (field) {
     'save-calendar-visit, signed in with no Visit Calendar Edit: refused with the access sentence', `${r.status} ${r.t}`)
   r = await fn('parse-gdo-permit', field, {})
   ok(r.status === 403 && r.j?.error === 'no_access', 'parse-gdo-permit, signed in with no Client App Edit: 403', `${r.status} ${r.t}`)
+  r = await fn('generate-derm-address-preview', field, { visit_ids: [] })
+  ok(r.status === 401 || r.status === 403, 'generate-derm-address-preview, signed in with no DERM Tracker Edit: refused', `${r.status} ${r.t}`)
 }
 
 // 5. Sign the minted sessions out again.

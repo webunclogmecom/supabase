@@ -1,3 +1,4 @@
+import { isSecretKeyCaller } from '../_shared/service-caller.ts'   // 2026-11-17: the server key is not a JWT
 // ============================================================================
 // generate-fog-manifest/index.ts — Edge Function
 // ============================================================================
@@ -52,6 +53,10 @@ function jsonResponse(
 // config.toml). NEVER deploy this function with --no-verify-jwt, or a hand-made token would pass
 // (that exact bypass was found and closed in get-derm-doc the same day).
 function callerAllowed(req: Request): boolean {
+  // 2026-11-17: the server key is a secret key (sb_secret_), not a JWT, so the decode below never saw it and the
+  // function refused every caller it was meant for. Behind verify_jwt = true the gateway has already refused a made-up
+  // one (_shared/service-caller.ts).
+  if (isSecretKeyCaller(req)) return true
   try {
     const tok = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
     let part = (tok.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/')

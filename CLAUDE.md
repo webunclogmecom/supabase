@@ -717,6 +717,9 @@ address sheet (measured: HTTP 200 and a signed URL). Fixed in v26.
   role claim runs with `verify_jwt = true`. Re-check when adding one.
 - The three DERM generators (`generate-derm-address-preview`, `generate-fog-manifest`,
   `generate-derm-address-pdf`) now take service_role or a signed-in staff email, gateway pinned on.
+  ⚠ Their role decode never saw the server key (`sb_secret_`, not a JWT), so from the legacy-key switch-off on
+  2026-10-27 until 2026-11-17 all three answered it 401, and `generate-fog-manifest` (server only) refused everyone.
+  Each gate now starts with `isSecretKeyCaller(req)`; a new decode-the-role gate needs the same line.
 - 🛑 **The edge access check sends a server key (`sb_secret_...`) as the apikey AND the bearer (2026-11-17).**
   `_shared/access-check.ts` (25 functions) used to send the anon apikey with it, PostgREST refused the non-JWT
   (`PGRST301`), and every server-key caller got "Access could not be checked" (503). Now the gateway verifies the key

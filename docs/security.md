@@ -254,14 +254,24 @@ not a JWT, so PostgREST answered `401 PGRST301 "Expected 3 parts in JWT; got 1"`
 **Where a server key reaches the check:** only `save-calendar-visit`, `calculate-driving-time` and `parse-gdo-permit`
 (their gate admits a secret key through `isSecretKeyCaller` or the gateway alone). The other 22 turn a secret key away
 at their own sign-in gate (`auth.getUser`, a person-only action) before the check, or skip the check for the server
-key (`get-derm-doc`, `send-derm-email`'s machine caller). Not changed here: `generate-derm-address-preview` and
-`generate-derm-address-pdf` recognise `service_role` by decoding a JWT role claim, so a secret key gets 401 there.
+key (`get-derm-doc`, `send-derm-email`'s machine caller).
+
+**The same day, the three DERM generators (Fred: "Yes, fix them here").** `generate-derm-address-preview`,
+`generate-derm-address-pdf` and `generate-fog-manifest` decided "our server" by decoding a JWT role claim
+(`role === 'service_role'`). The server key is not a JWT, so all three answered it 401 at their own gate, and
+`generate-fog-manifest`, which takes ONLY the server, refused every caller it was meant for. Measured first: these were
+the only three functions with a `service_role` role test and no secret-key path. Each gate now starts with
+`isSecretKeyCaller(req)` (`_shared/service-caller.ts`), which is safe only behind `verify_jwt = true` (all three are
+pinned; `scripts/checks/service_caller_gateway.mjs` fails if an importer is not). Deployed 2026-11-17 ~07:29 ET
+(preview v54, pdf v57, fog v45), bodies read back. People are unchanged: a staff session still passes the preview,
+`generate-fog-manifest` still refuses a person (401), a sign-in with no DERM Tracker access is still refused.
 
 **Proof and standing check:** `node scripts/checks/edge_access_check_server_key.mjs` (writes nothing; empty patch on a
 112-YA visit, no legs, no PDF; mints a staff session for fred@ayache.com and a no-access one for Fred's field test
-sign-in by magic link, no email sent, and signs both out). Before the deploy it failed exactly its 3 server-key lines;
-after it, ALL PASS (server key passes in all three, admin session passes, the no-access sign-in is refused with the
-access sentence, a made-up key gets 401). All 25 functions were redeployed from `main` plus the fix on 2026-11-17
+sign-in by magic link, no email sent, and signs both out). Before each deploy it failed exactly its new server-key
+lines (3 for the helper, then 3 for the generators); after them, ALL PASS (the server key passes in all six, the admin
+session passes, the no-access sign-in is refused, a made-up key gets 401). The generators' calls stop at their body
+check (no visit or manifest id), so no DERM sheet number is taken and no PDF is made. All 25 functions were redeployed from `main` plus the fix on 2026-11-17
 (~07:05 ET); each deployed body was read back and matches the repo (they all matched `main` before, line endings aside).
 
 ---
