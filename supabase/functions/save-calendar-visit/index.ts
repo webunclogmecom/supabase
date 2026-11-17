@@ -268,9 +268,18 @@ Deno.serve(async (req) => {
   const visitId = Number(body?.visit_id);
   const patch = body?.patch ?? {};
   if (!visitId) return fail("bad_request", "Missing visit_id.");
+  // ONE STEP (2026-11-17, Trello #198, Fred: "One server step only", "Jobber first"). The drawer sends its status change
+  // here too, and every database write below goes through public.save_calendar_visit_drawer: the date move with the
+  // later visits of the agreement, the rest of the edit and the status, in ONE transaction, after Jobber confirmed this
+  // visit's own fields. Before this the drawer saved the status and the date move itself first, and a refusal here left
+  // them saved while it said nothing was.
+  const status: string | null = typeof body?.status === "string" && body.status ? body.status : null;
+  if (status && !["completed", "scheduled", "skipped", "cancelled"].includes(status)) {
+    return fail("bad_request", "That status can't be saved here. Nothing was saved.");
+  }
 
   const keys = Object.keys(patch);
-  if (!keys.length) return done({ code: "no_changes", message: "Nothing to save.", applied: [] });
+  if (!keys.length && !status) return done({ code: "no_changes", message: "Nothing to save.", applied: [] });
 
   if (keys.some((k) => LINEITEM_KEYS.includes(k))) {
     return fail("lineitems_unsupported",
@@ -297,7 +306,7 @@ Deno.serve(async (req) => {
   // attribution that works often enough to look finished.
   if (!pushable.length) {
     const { error } = await writeClient(actorEmail)
-      .rpc("edit_calendar_visit", { p_visit_id: visitId, p_patch: patch });
+      .rpc("save_calendar_visit_drawer", { p_visit_id: visitId, p_patch: patch, p_status: status, p_own_fields_verified: false });
     if (error) return fail("db_write_failed", `Couldn't save: ${error.message}`);
     return done({ code: "local_only", message: "Saved.", applied: [] });
   }
@@ -534,8 +543,11 @@ Deno.serve(async (req) => {
   // and left truck/driver assignments anonymous. If a third write is ever added, it needs this too.
   // The reads (webhook_tokens, visits, entity_source_links, employees) deliberately use `db`: they
   // write nothing, so they have no attribution to carry.
+  // Since 2026-11-17 (#198) this is save_calendar_visit_drawer with p_own_fields_verified: true, which switches off only
+  // the echo push of this visit's own confirmed fields (as edit_calendar_visit_verified did) and also applies the date
+  // move's later visits and the status in the same transaction; those still go to Jobber by their triggers.
   const { error: werr } = await writeClient(actorEmail)
-    .rpc("edit_calendar_visit_verified", { p_visit_id: visitId, p_patch: patch });
+    .rpc("save_calendar_visit_drawer", { p_visit_id: visitId, p_patch: patch, p_status: status, p_own_fields_verified: true });
   if (werr) {
     return fail("db_write_failed",
       `Jobber was updated but saving here failed: ${werr.message}. The two are now out of step — check the visit in Jobber.`,
