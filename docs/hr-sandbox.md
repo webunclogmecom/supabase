@@ -121,4 +121,4 @@ exactly his login's rights: `POST /rest/v1/rpc/run`, header `Content-Profile: le
   `leads_rpc`, `public.employees`, `public.clients`, `auth.users`, creating in public, CREATE ROLE, dropping
   `v_active_clients`, the public or anon key alone, a fake-signed key (control), tables over REST; data intact after.
 - **Turn off:** `revoke leads_caller from authenticator;` (rehearsed: 403, then 200 after granting back
-  `with inherit false, set true`). The login and the key are in `.local-secrets/yannick-frozen-leads-access.txt`.
+  `with inherit false, set true`). The login and the key are in `.local-secrets/yannick-frozen-leads-access.txt`. Sent to Yannick by Fred 2026-11-17; Trello #211 in Testing / QA since then (Yannick has not confirmed his Claude reaches it).
