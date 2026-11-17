@@ -41,7 +41,7 @@ for (const [name, mobile, w, h] of [['phone390', true, 390, 844], ['desktop1280'
     ok(!!c && c.label === 'Photos of the alarm (optional)' && c.note === 'No photos yet.' && c.button, `${name}: Alarm yes shows "Photos of the alarm (optional)" with today's "No photos yet." and the add button`, c)
     await pick(p, 'access_entry.alarm_photos', 4)
     c = await card(p, 'access_entry.alarm_photos')
-    ok(!!c && attaches(S) === 3 && c.tiles === 3 && c.note === '3 photos attached', `${name}: four picked, three sent and attached ("3 photos attached")`, { attach: attaches(S), c })
+    ok(!!c && attaches(S) === 0 && c.tiles === 3 && c.note === '3 photos attached', `${name}: four picked, three kept on the phone ("3 photos attached"; #220: sent at Submit)`, { attach: attaches(S), c })
     ok(!!c && c.errs.includes('This question takes at most 3 photos, so 1 photo was not added.'), `${name}: a sentence says one photo was not added (it stays until dismissed)`, c && c.errs)
     ok(!!c && !c.button, `${name}: at 3 photos the add button is gone`, c)
     await p.screenshot({ path: `${out}/${name}_cap.png`, fullPage: false }).catch(() => {})
@@ -57,13 +57,17 @@ for (const [name, mobile, w, h] of [['phone390', true, 390, 844], ['desktop1280'
     await browser.close()
   }
 }
-{ // the server's own refusal (a 4th photo from anywhere) is shown as sent
-  const { browser, context, page: p } = await setup({ mobile: true, file: FILE, load: withTree() })
+{ // the server's own refusal (a 4th photo from anywhere) is shown as sent. #220: it now arrives at Submit, and the photo stays on the phone
+  const { browser, context, page: p, S } = await setup({ mobile: true, file: FILE, load: withTree() })
   await context.route(EP, async (route) => { const b = JSON.parse(route.request().postData() || '{}'); if (b.op === 'attach') return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ ok: false, message: CAP_MSG }) }); return route.fallback() })
   await open(p); await yes(p, 'access_entry.alarm')
   await pick(p, 'access_entry.alarm_photos', 1)
+  await p.fill('#who', '[TEST] cap'); await p.locator('#send').click(); await sleep(300)
+  const go = p.locator('.cf .go', { hasText: 'Submit anyway' }); if (await go.count()) await go.click()
+  await p.waitForFunction(() => !SENDING, null, { timeout: 15000 }).catch(() => {}); await sleep(300)
   const c = await card(p, 'access_entry.alarm_photos')
-  ok(!!c && c.errs.includes(CAP_MSG) && c.note === 'No photos yet.', 'phone390: a 429 from the server shows its sentence and keeps nothing', c)
+  const msgs = await p.evaluate(() => [...document.querySelectorAll('#fmsg .err span, #main > .err span')].map((e) => e.textContent))
+  ok(!!c && msgs.includes(CAP_MSG) && c.tiles === 1 && c.note === '1 photo attached' && S.submits.length === 0, 'phone390: a 429 from the server at Submit shows its sentence, keeps the photo on the phone and submits nothing', { c, msgs, submits: S.submits.length })
   await browser.close()
 }
 { // guard: a photo question with no limit is today's (no "up to", several files at once, the button stays)
@@ -72,7 +76,7 @@ for (const [name, mobile, w, h] of [['phone390', true, 390, 844], ['desktop1280'
   const sys = p.locator('[data-q="grease_trap.systems_count"] input'); await sys.fill('1'); await sys.dispatchEvent('change'); await sleep(400)
   await pick(p, 'grease_trap.photos', 4)
   const c = await card(p, 'grease_trap.photos')
-  ok(!!c && attaches(S) === 4 && c.note === '4 photos attached' && c.button && c.multiple === true, 'phone390: guard, grease trap photos (no limit) take all four and keep the button', { attach: attaches(S), c })
+  ok(!!c && attaches(S) === 0 && c.note === '4 photos attached' && c.button && c.multiple === true, 'phone390: guard, grease trap photos (no limit) take all four (kept on the phone) and keep the button', { attach: attaches(S), c })
   await browser.close()
 }
 // "Your name": the name the collector typed on this phone, else the task's one assignee, else empty

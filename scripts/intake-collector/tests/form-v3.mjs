@@ -18,7 +18,9 @@ const FILE = pathToFileURL(process.env.INTAKE_HTML || new URL('../intake.html', 
 const clone = (x) => JSON.parse(JSON.stringify(x))
 function toV3(l0) {
   const l = clone(l0); const t = l.form
-  if (t.version === 3) return l
+  // a recorded tree already at version 3 or later carries every change below (load.json is version 6 since 2026-10-23):
+  // converting it again added a second water tank capacity question (found 2026-11-17, #220)
+  if (t.version >= 3) return l
   const qs = () => t.sections.flatMap((s) => s.questions), q = (k) => qs().find((x) => x.key === k), sec = (id) => t.sections.find((s) => s.id === id)
   t.version = 3; t.photo_note_required = true
   Object.assign(q('grease_trap.capacity_photos'), { label: 'Photos of the capacity plate or gallons pumped, and measurements', info: "Take the grease trap's capacity plate. If there is none, the gallons pumped. Add the measurements too." })
@@ -75,7 +77,7 @@ const card = (p, key) => p.evaluate((key) => {
 }, key)
 const secHead = (p, id) => p.evaluate((id) => { const s = document.querySelector(`[data-sc="${id}"]`); return s ? { h2: s.parentElement.querySelector('h2').textContent, sc: s.textContent, cls: s.className } : null }, id)
 const panel = (p) => p.evaluate(() => { const n = document.querySelector('#fmsg .nt'); return n ? { text: n.firstChild.textContent, role: n.getAttribute('role'), btn: [...n.querySelectorAll('button')].map((b) => b.textContent) } : null })
-const draftOf = (p, k) => p.evaluate((k) => { const d = JSON.parse(localStorage.getItem('intake-draft-TESTTOKEN123') || 'null'); return ((d && d[k]) || []).map((x) => x.path) }, k)
+const draftOf = (p, k) => p.evaluate((k) => { const d = JSON.parse(localStorage.getItem('intake-draft-TESTTOKEN123') || 'null'); return ((d && d[k]) || []).map((x) => x.path || x.lid) }, k)  // #220: a photo still on the phone has a lid, a sent one a path
 
 for (const [name, mobile] of [['phone390', true], ['desktop1280', false]]) {
   const { browser, context, page: p, S } = await setup({ mobile, file: FILE, load: V3, ctx: mobile ? {} : { deviceScaleFactor: 1 } })
@@ -159,21 +161,18 @@ for (const [name, mobile] of [['phone390', true], ['desktop1280', false]]) {
     await tap(p.locator('[data-q="lift_station.access_photos"] .prm').nth(1)); await sleep(120)
     await tap(p.locator('[data-q="lift_station.access_photos"] .rmq .go')); await sleep(250); await idle(p)
     ac = await card(p, 'lift_station.access_photos'); const after = await draftOf(p, 'lift_station.access_photos')
-    ok(S.removes.length === 1 && S.removes[0] === before[1], `${name}: [new] R2 Remove sends op remove with THAT photo's path`, { removes: S.removes, before })
+    // #220 (2026-11-17): these photos wait on the phone until Submit, so Remove takes THAT one off with no call. The Remove of a
+    // photo already sent (op remove with its path, a refusal, Submit held) is in photos-on-phone.mjs.
+    ok(S.removes.length === 0 && before.length === 3 && before.every(Boolean), `${name}: [#220] R2 Remove takes a photo still on the phone off with no call`, { removes: S.removes, before })
     ok(ac.tiles === 2 && ac.choose && ac.note === '2 photos attached' && after.length === 2 && !after.includes(before[1]), `${name}: [new] R2/R3 the photo leaves the card and the draft, and its place is free again ("Choose more photos" is back)`, { tiles: ac.tiles, choose: ac.choose, note: ac.note, after })
-    // a Remove the server refuses: the photo stays, the server's words on the card
+    // #220: a photo still on the phone is removed even where the server would refuse, because no call is made; Submit is never held
     S.rmFail = true
     await tap(p.locator('[data-q="lift_station.access_photos"] .prm')); await sleep(120)
     await tap(p.locator('[data-q="lift_station.access_photos"] .rmq .go')); await sleep(250); await idle(p)
     ac = await card(p, 'lift_station.access_photos'); S.rmFail = false
-    ok(ac.tiles === 2 && ac.errs.includes('That photo does not belong to this form.'), `${name}: [new] R4 a refused Remove keeps the photo and shows the server's sentence on the card`, ac)
-    // a Remove on its way holds Submit
-    S.rmDelay = 900
-    await tap(p.locator('[data-q="lift_station.access_photos"] .prm')); await sleep(120)
-    await tap(p.locator('[data-q="lift_station.access_photos"] .rmq .go')); await sleep(250)
     const sb = await p.evaluate(() => { const b = document.getElementById('send'); return { dis: b.disabled, txt: b.textContent } })
-    await idle(p); S.rmDelay = 0
-    ok(sb.dis && sb.txt === 'Removing...', `${name}: [new] R6 while a Remove is on its way Submit is disabled and reads "Removing..."`, sb)
+    ok(ac.tiles === 1 && ac.errs.length === 0 && S.removes.length === 0, `${name}: [#220] R4 a second photo on the phone comes off with no call (nothing to refuse)`, ac)
+    ok(!sb.dis && sb.txt === 'Submit', `${name}: [#220] R6 a Remove on the phone never holds Submit`, sb)
     // the explanations for the access photo left (1 photo on the card now), then the last box: the panel goes
     await box(p, 'lift_station.access_photos').fill('The hatch behind the dumpster')
     pn = await panel(p); const hadPanel = !!pn && pn.text === PANEL1
@@ -189,9 +188,9 @@ for (const [name, mobile] of [['phone390', true], ['desktop1280', false]]) {
     const sub = S.submits[0] || {}
     const sent = Object.entries(sub.answers || {}).filter(([, v]) => Array.isArray(v)).flatMap(([, v]) => v)
     ok(cfShown === 1 && sent.length === 5 && sent.every((x) => typeof x === 'string') && sent.every((x) => typeof (sub.notes || {})[x] === 'string' && sub.notes[x].trim()), `${name}: [new] V3i the blank-questions step comes after, and the submit carries paths only plus an explanation for each of the 5 photos`, { cfShown, sent, notes: sub.notes })
-    // the one refused Remove (R4) answers 400 on purpose, and Chrome logs that response; nothing else may log
+    // since #220 no Remove reaches the server here, so no response is refused and nothing may log
     const errs = S.errors.filter((e) => !/status of 400/.test(e))
-    ok(errs.length === 0, `${name}: no console error (besides the one deliberate 400 of R4)`, S.errors)
+    ok(errs.length === 0, `${name}: no console error`, S.errors)
     const ov = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     ok(ov === 0, `${name}: no sideways scroll`, ov)
   } catch (e) { ok(false, `${name}: run`, String(e)) }
@@ -210,7 +209,7 @@ for (const [name, mobile] of [['phone390', true], ['desktop1280', false]]) {
     await tap(q.locator('[data-q="access_entry.access_photos"] .prm')); await sleep(120)
     await tap(q.locator('[data-q="access_entry.access_photos"] .rmq .go')); await sleep(250); await idle(q)
     c2 = await card(q, 'access_entry.access_photos')
-    ok(c2.tiles === 1 && r2.S.removes.length === 1, `${name}: [new] R5 ... and removes`, { tiles: c2.tiles, removes: r2.S.removes })
+    ok(c2.tiles === 1 && r2.S.removes.length === 0, `${name}: [#220] R5 ... and removes it from the phone (no call)`, { tiles: c2.tiles, removes: r2.S.removes })
     await q.fill('#who', 'Test Collector'); await q.locator('#send').click(); await sleep(300)
     const pn2 = await panel(q); const go2 = q.locator('.cf .go', { hasText: 'Submit anyway' }); const cf2 = await go2.count()
     if (cf2) { await go2.click(); await sleep(400) }

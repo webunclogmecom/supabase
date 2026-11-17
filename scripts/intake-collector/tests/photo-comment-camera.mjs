@@ -50,7 +50,8 @@ for (const [name, mobile] of [['phone390', true], ['desktop1280', false]]) {
     await p.locator(`[data-q="${AP}"] input[type=file][capture]`).setInputFiles(img('camera')); await sleep(300); await idle(p)
     await p.locator(`[data-q="${AP}"] input[type=file]:not([capture])`).setInputFiles(img('chosen')); await sleep(300); await idle(p)
     c = await card(p, AP)
-    ok(c.tiles === 2 && S.ops.filter((o) => o === 'attach').length === 2, `${name}: one photo through the camera input, one through Choose photos, both attached`, { tiles: c.tiles, ops: S.ops })
+    // #220 (2026-11-17): a picked photo waits on the phone until Submit, so nothing is attached yet
+    ok(c.tiles === 2 && S.ops.filter((o) => o === 'attach').length === 0, `${name}: one photo through the camera input, one through Choose photos, both kept on the phone (sent at Submit)`, { tiles: c.tiles, ops: S.ops })
     if (mobile) ok(c.cam === 'Take another photo' && c.choose === 'Choose more photos', `${name}: after a photo the buttons read "Take another photo" and "Choose more photos"`, { cam: c.cam, choose: c.choose })
     ok(c.boxes.length === 2 && c.boxes.every((b, i) => b.tag === 'TEXTAREA' && b.rows === 2 && b.aria === `Comment for photo ${i + 1}` && b.max === 300 && b.ph === 'Comment (optional)' && b.v === ''), `${name}: a two-line comment box per photo, aria-label "Comment for photo N", 300 at most, "Comment (optional)"`, c.boxes)
     // D1 as drawn: each box right under its own photo; on a phone the two photos side by side

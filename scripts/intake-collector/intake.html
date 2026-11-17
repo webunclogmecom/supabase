@@ -112,6 +112,9 @@ footer{position:sticky;bottom:0;z-index:5;margin-top:28px;background:#fff;border
 #send:active{background:var(--or2)}
 #send:disabled{background:var(--line);color:var(--ink2);cursor:default}
 .ph .t.send{background:var(--ort);color:var(--or2)}
+.ph .t{position:relative}
+.ph .t .st{position:absolute;left:6px;bottom:6px;max-width:calc(100% - 12px);padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 1px 2px rgba(0,0,0,.12);font-size:11px;font-weight:600;line-height:16px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph .t .st.ok{color:var(--ok)}
 .q.flash{border-color:var(--or);box-shadow:0 0 0 3px rgba(241,71,20,.2)}
 .cf{background:var(--ort);border:1px solid #fbc4ae;border-radius:12px;padding:12px 14px;margin:0 0 10px;font-size:15px;font-weight:600}
 .cf .row{display:flex;gap:8px;margin-top:10px}
@@ -246,6 +249,17 @@ var DAYN={mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun'}
 // Keep / Remove), RMB (a Remove on its way) and RMV (how many are on their way; Submit waits for them).
 var INFO={}, NOTE_BAD=false, NT=null, RMQ={}, RMB={}, RMV=0;
 var KEY='intake-draft-'+TOKEN;
+// #220: photos wait on the phone. One IndexedDB record per photo, key TOKEN|lid, value {b: ArrayBuffer, t: type}
+// (localStorage holds text only, about 5 MB). Every failure is a rejected promise. PV: preview URLs by lid; PVL: 1 loading, -1 gone.
+var PV={}, PVL={}, NOLOCAL=false, IDBP=null;
+var NOCONN='No connection. Nothing is lost: your answers and photos are saved on this phone. Try again when you have signal.';
+function idb(){ if(!IDBP) IDBP=new Promise(function(res,rej){ try{ if(!window.indexedDB) return rej(new Error('no indexedDB')); var rq=indexedDB.open('unclogme-intake',1); rq.onupgradeneeded=function(){ rq.result.createObjectStore('photos') }; rq.onsuccess=function(){ res(rq.result) }; rq.onerror=function(){ rej(rq.error||new Error('idb open')) }; rq.onblocked=function(){ rej(new Error('idb blocked')) } }catch(e){ rej(e) } }); return IDBP }
+function idbTx(mode,fn){ return idb().then(function(db){ return new Promise(function(res,rej){ var tx, out; try{ tx=db.transaction('photos',mode); var r=fn(tx.objectStore('photos')); if(r) r.onsuccess=function(){ out=r.result } }catch(e){ return rej(e) } tx.oncomplete=function(){ res(out) }; tx.onerror=function(){ rej(tx.error||new Error('idb')) }; tx.onabort=function(){ rej(tx.error||new Error('idb abort')) } }) }) }
+function idbPut(k,v){ return idbTx('readwrite',function(s){ return s.put(v,k) }) }
+function idbGet(k){ return idbTx('readonly',function(s){ return s.get(k) }) }
+function idbDel(k){ return idbTx('readwrite',function(s){ return s.delete(k) }).catch(function(){}) }
+function idbClearForm(){ return idbTx('readwrite',function(s){ return s.delete(IDBKeyRange.bound(TOKEN+'|',TOKEN+'|￿')) }).catch(function(){}) }
+function pid(p){ return (p&&typeof p==='object'&&(p.path||p.lid))||'' }
 var IC={
   check:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
   big:'<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -355,7 +369,7 @@ function noteReq(){ return !!(F&&F.form&&F.form.photo_note_required===true) }
 // Fred's short word for a card ("Access", "Control panel", "Capacity"); on the card only. Every other reader, the panel
 // below included, shows the label ("Access" alone would read like "Photos of the access point").
 function qname(q){ return (typeof q.short==='string'&&q.short.trim())?q.short.trim():q.label }
-function bareIn(q){ var v=A[q.key]; if(q.type!=='photos'||!Array.isArray(v)) return 0; return v.filter(function(p){ return p&&typeof p==='object'&&p.path&&!(typeof p.note==='string'&&p.note.trim()) }).length }
+function bareIn(q){ var v=A[q.key]; if(q.type!=='photos'||!Array.isArray(v)) return 0; return v.filter(function(p){ return p&&typeof p==='object'&&(p.path||p.lid)&&!(typeof p.note==='string'&&p.note.trim()) }).length }
 // The photos Submit sends (requested, visible, photos) that have no explanation, per question, in form order.
 function unexplained(){ var req={}, out=[]; (F.requested||[]).forEach(function(k){req[k]=1});
   ((F.form||{}).sections||[]).forEach(function(s){ (s.questions||[]).forEach(function(q){ if(q&&typeof q==='object'&&req[q.key]&&visible(q)){ var n=bareIn(q); if(n) out.push({q:q,n:n}) } }) });
@@ -717,9 +731,9 @@ function field(q){
     // refuses one more with 429; the page never offers it: the button goes at the limit and a pick is cut to the room left.
     var max=(typeof q.max_photos==='number'&&q.max_photos>0)?Math.floor(q.max_photos):0;
     var room=function(){ return max?max-(Array.isArray(A[q.key])?A[q.key].length:0)-(PEND[q.key]||0):Infinity };
-    var pick=function(inp){ return function(){ var fs=[].slice.call(inp.files||[]); inp.value=''; var r=room();
+    var pick=function(inp){ return function(){ var fs=[].slice.call(inp.files||[]); inp.value=''; if(SENDING) return; var r=room();
       if(fs.length>r){ var n=fs.length-Math.max(0,r); fs=fs.slice(0,Math.max(0,r)); CUT[q.key]='This question takes at most '+max+' photos, so '+n+(n>1?' photos were':' photo was')+' not added.'; if(!fs.length) render() }
-      fs.forEach(function(file){up(q.key,file)}) } };
+      fs.forEach(function(file){keepPhoto(q.key,file)}) } };
     var mk=function(cam){ var i=el('input'); i.type='file'; i.accept='image/*'; if(cam) i.setAttribute('capture','environment'); else i.multiple=room()>1; i.className='hide'; i.setAttribute('aria-hidden','true'); i.tabIndex=-1; i.onchange=pick(i); return i };
     if(room()>0){
       var ci=mk(true), f=mk(false), row=el('div','opts');
@@ -729,28 +743,37 @@ function field(q){
     }
     if(list.length||pend){
       var g=el('div','ph');
-      for(var k=0;k<pend;k++){ var pw=el('div','pi'); pw.appendChild(el('div','t send','Sending...')); g.appendChild(pw) }
+      for(var k=0;k<pend;k++){ var pw=el('div','pi'); pw.appendChild(el('div','t send',NOLOCAL?'Sending...':'Saving...')); g.appendChild(pw) }
       list.forEach(function(p,i){
         var tl=el('div','t');
         // The preview is a blob: URL that dies when the page reloads; the photo itself is safe on the
         // server. Show a plain "Photo N saved" tile instead of a broken image.
-        var gone=function(){ tl.innerHTML=''; tl.textContent='Photo '+(i+1)+' saved'; if(p&&p.preview){ delete p.preview; save() } };
-        if(p&&p.preview){ var im=el('img'); im.alt='Photo '+(i+1); im.onerror=gone; im.src=p.preview; tl.appendChild(im) } else gone();
+        // #220: a photo still on the phone (lid, no path) draws from IndexedDB, so its picture survives a reload. A small
+        // badge ON the picture says where it is ("Saved on this phone" / "Sent"); on the picture so Fred's D1 layout (the
+        // comment box right under its photo, 2026-09-29) does not move.
+        var local=!!(p&&typeof p==='object'&&p.lid&&!p.path), ps=local?PV[p.lid]:(p&&p.preview);
+        var badge=(p&&typeof p==='object'&&(p.lid||p.path))?el('div','st'+(local?'':' ok'),local?'Saved on this phone':'Sent'):null;
+        var gone=function(){ tl.innerHTML=''; tl.textContent='Photo '+(i+1)+' saved'; if(badge) tl.appendChild(badge); if(p&&p.preview){ delete p.preview; save() } };
+        if(ps){ var im=el('img'); im.alt='Photo '+(i+1); im.onerror=gone; im.src=ps; tl.appendChild(im) }
+        else if(local){ tl.textContent=PVL[p.lid]===-1?'This photo is no longer on this phone':'Photo '+(i+1); pvLoad(p.lid) }
+        else gone();
+        if(badge&&!badge.parentNode) tl.appendChild(badge);
         var it=el('div','pi'); it.appendChild(tl);
-        if(p&&typeof p==='object'&&p.path&&RMB[p.path]){ tl.classList.add('rmg'); it.appendChild(el('div','note','Removing...')) }
-        else if(p&&typeof p==='object'&&p.path&&RMQ[p.path]){
+        var id=pid(p);
+        if(id&&RMB[id]){ tl.classList.add('rmg'); it.appendChild(el('div','note','Removing...')) }
+        else if(id&&RMQ[id]){
           // Remove asks first, inside the card (never a browser dialog): Keep, or Remove.
           var cq=el('div','rmq'); cq.setAttribute('role','group'); cq.setAttribute('aria-label','Remove photo '+(i+1)+'?');
           cq.appendChild(el('div','','Remove this photo?'));
           var crow=el('div','row'), keep=el('button','no','Keep'), yes=el('button','go','Remove');
           keep.type='button'; yes.type='button'; keep.setAttribute('data-f',q.key+':rmno:'+i); yes.setAttribute('data-f',q.key+':rmyes:'+i);
-          keep.onclick=function(){ delete RMQ[p.path]; render(); var b0=byAttr('data-f',q.key+':rm:'+i); if(b0) try{ b0.focus({preventScroll:true}) }catch(e){} };
+          keep.onclick=function(){ delete RMQ[id]; render(); var b0=byAttr('data-f',q.key+':rm:'+i); if(b0) try{ b0.focus({preventScroll:true}) }catch(e){} };
           yes.onclick=function(){ removePhoto(q.key,p) };
           crow.appendChild(keep); crow.appendChild(yes); cq.appendChild(crow); it.appendChild(cq);
         } else {
           // Remove (Fred, 2026-09-30): a photo attached before submit can be taken off the form; its place is freed.
-          if(p&&typeof p==='object'&&p.path&&!SENDING){ var rb=el('button','prm'); rb.type='button'; rb.setAttribute('aria-label','Remove photo '+(i+1)); rb.setAttribute('data-f',q.key+':rm:'+i); rb.innerHTML='<span>'+IC.trash+'</span>';
-            rb.onclick=function(){ RMQ[p.path]=1; render(); var k0=byAttr('data-f',q.key+':rmno:'+i); if(k0) try{ k0.focus({preventScroll:true}) }catch(e){} }; it.appendChild(rb) }
+          if(id&&!SENDING){ var rb=el('button','prm'); rb.type='button'; rb.setAttribute('aria-label','Remove photo '+(i+1)); rb.setAttribute('data-f',q.key+':rm:'+i); rb.innerHTML='<span>'+IC.trash+'</span>';
+            rb.onclick=function(){ RMQ[id]=1; render(); var k0=byAttr('data-f',q.key+':rmno:'+i); if(k0) try{ k0.focus({preventScroll:true}) }catch(e){} }; it.appendChild(rb) }
           // The collector's comment on this photo (Fred, 2026-09-29: "When uploading a photo we need to also have a comment
           // for the photo"). One line: Enter is blocked; a pasted line break, tab or other control character becomes a space. Kept in the draft on the
           // photo; sent at Submit as notes; intake-submit stores it in photo_links.caption.
@@ -765,8 +788,57 @@ function field(q){
       d.appendChild(g);
     }
     d.appendChild(el('div','note'+(list.length?' ok':''),list.length?(list.length+' photo'+(list.length>1?'s':'')+' attached'):'No photos yet.'));
+    if(NOLOCAL) d.appendChild(el('div','note','This phone cannot keep photos, so each one is sent right away.'));
   }
   return d;
+}
+
+// #220: keep a picked photo on the phone. Its bytes go to IndexedDB first; only then does the draft name it, so a photo the
+// phone could not store never looks attached. A phone that cannot keep it (no IndexedDB, private mode, full) sends it at
+// once, as before, and from then on every photo of this page.
+function fileBuf(f){ if(f.arrayBuffer) return f.arrayBuffer(); return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(r.result) }; r.onerror=function(){ rej(r.error) }; r.readAsArrayBuffer(f) }) }
+function keepPhoto(key,file){
+  if(NOLOCAL) return up(key,file);
+  busy++; PEND[key]=(PEND[key]||0)+1; render();
+  var lid='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7), t=file.type||'image/jpeg';
+  fileBuf(file).then(function(b){ return idbPut(TOKEN+'|'+lid,{b:b,t:t}) }).then(function(){
+    var cur=Array.isArray(A[key])?A[key]:[]; cur.push({lid:lid,t:t}); A[key]=cur; delete ERR[key];
+    try{ PV[lid]=URL.createObjectURL(file) }catch(e){} save(); return 'kept';
+  },function(){ NOLOCAL=true; return 'send' }).then(function(x){
+    busy--; PEND[key]=Math.max(0,(PEND[key]||0)-1);
+    if(x==='send') up(key,file); else afterPress(render);
+  });
+}
+function pvLoad(lid){
+  if(PVL[lid]) return; PVL[lid]=1;
+  idbGet(TOKEN+'|'+lid).then(function(rec){ if(rec&&rec.b){ PV[lid]=URL.createObjectURL(new Blob([rec.b],{type:rec.t||'image/jpeg'})) } else PVL[lid]=-1; afterPress(render) },
+    function(){ PVL[lid]=-1; afterPress(render) });
+}
+// #220: send one photo that waits on the phone: a slot (upload), the bytes (PUT), the link (attach). Each step is saved on the
+// entry, so a retry starts where the last try stopped. A slot is reused while its signed URL lives (2 h; 90 min to be safe).
+function sendOne(key,p){
+  var old=p.up&&!p.up.put&&!(p.up.at&&Date.now()-p.up.at<90*60*1000);
+  var s=Promise.resolve();
+  if(!p.up||old) s=s.then(function(){ return api({op:'upload',content_type:p.t||'image/jpeg'}).then(function(r){
+    if(!r.ok) throw plain(r.message||'The photo was not accepted. Try again.');
+    p.up={path:r.path,url:r.signed_url,at:Date.now()}; save() }) });
+  return s.then(function(){
+    if(p.up.put) return;
+    return idbGet(TOKEN+'|'+p.lid).then(function(rec){
+      if(!rec||!rec.b) throw plain('A photo is no longer on this phone. Remove it or take it again, then submit.');
+      var ty=rec.t||p.t||'image/jpeg';
+      return fetch(p.up.url,{method:'PUT',headers:{'Content-Type':ty},body:new Blob([rec.b],{type:ty})}).then(function(x){
+        if(x.ok){ p.up.put=true; save(); return }
+        // stored by an earlier try whose answer was lost: the bucket answers Duplicate
+        return x.text().then(function(tx){ if((x.status===400||x.status===409)&&/Duplicate|already exists/i.test(tx)){ p.up.put=true; save(); return } throw new Error('put '+x.status) });
+      });
+    });
+  }).then(function(){
+    return api({op:'attach',path:p.up.path,role:key,content_type:p.t||'image/jpeg'}).then(function(a){
+      if(!a.ok) throw plain(a.message||'Could not attach the photo. Try again.');
+      p.path=p.up.path; delete p.up; save();
+    });
+  });
 }
 
 // Upload is three hops: ask for a signed URL, PUT the bytes, then tell the server to
@@ -794,13 +866,22 @@ function up(key,file){
 // the draft only once the server says so ("removed", or "already gone"), so a dropped connection never loses a photo that is
 // still on the form. Submit waits while a Remove is on its way.
 function removePhoto(key,p){
-  if(SENDING||DONE||!p||!p.path) return;
+  if(SENDING||DONE||!p||!pid(p)) return;
+  // #220: a photo still on the phone was never sent: it leaves the draft and the phone, with no call.
+  if(!p.path){
+    var rest=(Array.isArray(A[key])?A[key]:[]).filter(function(x){ return !(x&&typeof x==='object'&&x.lid===p.lid) });
+    if(rest.length) A[key]=rest; else delete A[key];
+    delete RMQ[p.lid]; delete ERR[key];
+    try{ if(PV[p.lid]) URL.revokeObjectURL(PV[p.lid]) }catch(e){} delete PV[p.lid]; delete PVL[p.lid];
+    idbDel(TOKEN+'|'+p.lid); save(); render(); return;
+  }
   delete RMQ[p.path]; RMB[p.path]=1; RMV++; delete ERR[key]; render();
   api({op:'remove',path:p.path}).then(function(r){
     if(!r.ok) throw plain(r.message||'Could not remove the photo. Try again.');
     var cur=(Array.isArray(A[key])?A[key]:[]).filter(function(x){ return !(x&&typeof x==='object'&&x.path===p.path) });
     if(cur.length) A[key]=cur; else delete A[key];
     try{ if(p.preview) URL.revokeObjectURL(p.preview) }catch(e){}
+    if(p.lid){ try{ if(PV[p.lid]) URL.revokeObjectURL(PV[p.lid]) }catch(e){} delete PV[p.lid]; idbDel(TOKEN+'|'+p.lid) }
     save();
   }).catch(function(e){ ERR[key]=(e&&e.plain&&e.message)?e.message:'Could not remove the photo. Check your signal and try again.' })
     .then(function(){ delete RMB[p.path]; RMV=Math.max(0,RMV-1); afterPress(render) });
@@ -832,25 +913,42 @@ function submit(sure){
   // Send only answers to questions the collector can SEE now. A follow-up keeps what was typed into it
   // when its parent changes (a lock-box code typed, then "How do we get in?" switched to Key); that
   // leftover must not reach the immutable record. The office compare and accept refuse it too.
-  var out={}, req={}, notes={};
+  var req={}, shownQs=[];
   (F.requested||[]).forEach(function(k){req[k]=1});
   ((F.form||{}).sections||[]).forEach(function(s){ (s.questions||[]).forEach(function(q){
     if(!q||typeof q!=='object'||!req[q.key]||!visible(q)||!(q.key in A)) return;
-    var v=A[q.key];
-    out[q.key]=Array.isArray(v)?v.map(function(p){return (p&&p.path)?p.path:p}):v;
-    if(q.type==='photos'&&Array.isArray(v)) v.forEach(function(p){ var c=(p&&typeof p.note==='string')?p.note.trim():''; if(c&&p.path) notes[p.path]=c });
+    shownQs.push(q);
   }) });
-  var b=document.getElementById('send'); SENDING=true; b.disabled=true; b.textContent='Submitting...';
-  api({op:'submit',collector:who,answers:out,notes:notes}).then(function(r){
-    if(!r.ok){ SENDING=false; b.disabled=false; b.textContent='Submit'; show(r.message||'Could not submit.'); return }
+  // #220: first the photos waiting on the phone, one at a time and in the form's order; then the answers. Each sent photo keeps
+  // its path on the entry, so after a failure the next Submit sends only what is still missing.
+  var todo=[];
+  shownQs.forEach(function(q){ if(q.type==='photos'&&Array.isArray(A[q.key])) A[q.key].forEach(function(p){ if(p&&typeof p==='object'&&p.lid&&!p.path) todo.push([q.key,p]) }) });
+  var b=document.getElementById('send'); SENDING=true; b.disabled=true; render();
+  var i=0;
+  var step=function(){ if(i>=todo.length) return Promise.resolve();
+    b.textContent='Sending photo '+(i+1)+' of '+todo.length+'...';
+    return sendOne(todo[i][0],todo[i][1]).then(function(){ i++; render(); return step() }) };
+  b.textContent=todo.length?'Sending photo 1 of '+todo.length+'...':'Submitting...';
+  step().then(function(){
+    var out={}, notes={};
+    shownQs.forEach(function(q){
+      var v=A[q.key];
+      out[q.key]=Array.isArray(v)?v.filter(function(p){ return !(p&&typeof p==='object'&&!p.path) }).map(function(p){return (p&&p.path)?p.path:p}):v;
+      if(q.type==='photos'&&Array.isArray(v)) v.forEach(function(p){ var c=(p&&typeof p.note==='string')?p.note.trim():''; if(c&&p.path) notes[p.path]=c });
+    });
+    b.textContent='Submitting...';
+    return api({op:'submit',collector:who,answers:out,notes:notes});
+  }).then(function(r){
+    if(!r.ok){ SENDING=false; b.disabled=false; b.textContent='Submit'; render(); show(r.message||'Could not submit.'); return }
     try{localStorage.removeItem(KEY);localStorage.removeItem(KEY+'-who');localStorage.removeItem(KEY+'-form')}catch(e){}
+    idbClearForm();
     DONE=true;
     document.getElementById('foot').className='hide';
     document.getElementById('main').innerHTML='<div class="big"><div class="ic">'+IC.big+'</div><h2 tabindex="-1">Thank you</h2><p>'+
       (r.status==='Complete'?'Everything the office asked for is in.':'Sent. The office can see what is still missing.')+
       '</p><p class="note">You can close this page.</p></div>';
     window.scrollTo(0,0); try{document.querySelector('.big h2').focus()}catch(e){}
-  }).catch(function(){ SENDING=false; b.disabled=false; b.textContent='Submit'; show('No connection. Your answers are saved on this device, try again in a moment.') });
+  }).catch(function(e){ SENDING=false; b.disabled=false; b.textContent='Submit'; render(); show((e&&e.plain&&e.message)?e.message:NOCONN) });
 }
 
 load();
@@ -861,7 +959,7 @@ function start(r,offline){
   var p=r.property||{};
   document.getElementById('ttl').textContent=p.address||'Site survey';
   document.getElementById('sub').textContent=[p.name,p.city].filter(Boolean).join(' - ')||'Site survey';
-  if(r.already_submitted){ DONE=true; document.getElementById('main').innerHTML='<div class="big"><div class="ic">'+IC.big+'</div><h2>Already submitted</h2><p>This form was sent in. Ask the office if something needs changing.</p></div>'; return }
+  if(r.already_submitted){ DONE=true; idbClearForm(); document.getElementById('main').innerHTML='<div class="big"><div class="ic">'+IC.big+'</div><h2>Already submitted</h2><p>This form was sent in. Ask the office if something needs changing.</p></div>'; return }
   var wEl=document.getElementById('who');
   var an=(typeof r.assignee_name==='string')?r.assignee_name.trim().slice(0,120):'';
   try{ wEl.value=localStorage.getItem(KEY+'-who')||an }catch(e){ wEl.value=an }
