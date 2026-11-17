@@ -71,7 +71,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `2026-11-17_0435_visit_reviews_missed_next_step` (`26f43d50`); the old Client App, Visit Calendar and Admin Review by one
   Lovable prompt each. Checked live on both hosts with controls that fail on the old code. Record:
   `Building Apps/Ops Portal/docs/08-changelog.md` 2026-11-17. Cards moved to Testing / QA; nobody has re-tested.
-- **#198 NOT BUILT** (the drawer save as one server step): its plan comes first.
+- ✅ **#198 BUILT 2026-11-17 (Fred: "One server step only", then "Jobber first"):** `2026-11-17_0558_calendar_drawer_save_one_step`
+  (`ac32d861`, `public.save_calendar_visit_drawer` + `ops.save_calendar_visit_drawer` + `fn_apply_visit_status`),
+  `save-calendar-visit` v45 (`f0e80707`), portal `a0c89e5` (live 6:12 AM ET), old Calendar by one Lovable prompt (live
+  6:30 AM ET). Checked live on 112-YA in both apps, our row and Jobber read after each step. Record:
+  `Building Apps/Ops Portal/docs/08-changelog.md` 2026-11-17 (6:12 AM entry).
 
 **Client App contacts: the company card says what it is, Make it primary, phones without texts (2026-11-12, Trello #189 ig5tH74t)**
 - Serena (11-12): "I was trying to update client: 142-57 because I have accounting's contact but the client app doesn't let me like the other day with AC hotel client: 232-AC". Fred's picks on the mockup page (`mockups/2026-11-12-contact-edits.html`, local): "go with N2, B2, T1 (but no need for all that text about it cannot get texts, just say it was saved as normal) and all defaults".
