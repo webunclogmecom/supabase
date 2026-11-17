@@ -81,9 +81,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Fred and Yan reviewed the portal's Clients pages on 2026-11-16 (Slack huddle notes F0CJ4EKGCUV, plus 19 comments Yan pinned on the
   Clients prototype). Checked against the live portal on 2026-11-17; the plan and the true / false table:
   `Building Apps/Ops Portal/docs/specs/2026-11-17-yan-clients-review-plan.md`.
-- Agreed by Fred in the call (NOT BUILT): red only for a problem and a link is blue, client codes calm (#212 `vD4ZXKGj`); Get the PDF
+- Agreed by Fred in the call (NOT BUILT): red only for a problem and a link is blue, client codes calm (#212 `vD4ZXKGj`); ~~Get the PDF
   from the county by the exact permit number, the person previews and confirms, a number the county does not know is flagged, and a
-  notice when a location has permits we do not hold (#214 `S8ZuBxCN`); one visit page opened from every door, in the DERM visit
+  notice when a location has permits we do not hold (#214 `S8ZuBxCN`)~~ DROPPED 2026-11-17, card archived (Fred: *"we don't need
+  this one"*), so The Moore's GDO-014768 on sheets 1160 / 1161 is left as found; one visit page opened from every door, in the DERM visit
   page's look, with Auto file in the Manifests and Clients visit menus (#215 `RznftJ0a`); one simple manifest view everywhere and the
   DERM visits list folded into Manifests (#216 `bfuZbdgY`); an AI review of the Clients pages, then mockups, then build (#162).
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
