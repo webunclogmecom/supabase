@@ -287,9 +287,16 @@ recommended but HO1, it doesn't needs to see the like revenue and stuff like tha
 - `ops.portal_home()`: today, today's trucks with their crew, the next 7 days (Visit Calendar), and `business` for the
   Admin group ONLY (invoices by `sent_at`, voided and destroyed left out; past due with the top 3; gallons with the trucks
   measured). 🛑 No money reaches the office: the group test is in the function, not only in the app.
+  🛑 **Since `2026-11-17_1615` (Trello #224) a truck's crew never names the people of a visit whose truck is only the
+  Calendar's GUESS** (`ops.v_calendar_visit.vehicle_source = 'default'`); the visit still counts on that truck's tally, and
+  the "No truck" row (`'none'`) keeps its people. Found when the Home put Grecia on Moises (visit 8597; GPS said David).
+  Standing check `scripts/checks/portal_home_crew_assigned.sql`. The same flaw is still in `ops.portal_search()` (it names
+  "<guessed truck> with <driver>"): its own card.
 - `ops.portal_my_work()`: the caller (`hr.fn_access_caller`) gets their own visits by the Calendar's crew rule (driver or
   `visit_team`), the truck of those visits with its last tank readings, the forms `client.fn_intake_assigned_to_me` allows,
-  and visits done in 7 days. No amount, note, lock box or gate code. The day starts at 6 AM ET (a night truck's visit date
+  and visits done in 7 days. No amount, note, lock box or gate code. Since `2026-11-17_1615` "my truck" is the truck of
+  the first stop with an ASSIGNED truck, never a guess; a person whose stops are all on guessed trucks has no truck that
+  day, so no My truck card and no Book a dump (Fred, 2026-11-17: "No truck when none is assigned"). The day starts at 6 AM ET (a night truck's visit date
   runs to about 5 AM). ⚠ On 2026-11-16 only "Fred Driver" of the Field group had a confirmed sign-in, so the drivers cannot
   use it until their invites are accepted.
 - `public.fn_request_gate`: a door for exactly `POST /rpc/portal_my_work` with `content-profile: ops`, beside the Photo door.
