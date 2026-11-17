@@ -76,6 +76,17 @@ app can never construct a Jobber URL from a displayed number.
 ⚠ Filter `source_system = 'jobber'` **before** decoding: `entity_type='client'` also holds airtable
 and samsara ids that are not base64 and raise `22023 invalid base64 end sequence`.
 
+**`oldest_due_date` (since `2026-11-17_1330`, Trello #213, Fred's pick G1).** `min(due_date)` over the same rows (Jobber's
+`past_due` with money owed), so it only DATES a past due Jobber already set; it never decides one. The Ops Portal shades a
+past-due amount by it: amber up to 60 days, red after (`src/lib/signals.ts` `pastDueAge`). It reaches the client schema
+through `client.v_client_past_due`. 82 clients on 2026-11-17 at 1:04 PM ET: 23 at 1 to 30 days, 16 at 31 to 60, 6 at 61 to
+90, 37 over 90.
+
+**One list, every app (since 2026-11-17, Fred's pick C1).** A client code in every Ops Portal app is red only for the
+clients in this view (the Calendar's rule of 2026-09-08 carried everywhere), except in client pickers, search lists and the
+Finances tables. Consumers now also: the Clients list, preview and client page (`client.v_client_past_due`), the manifest
+window, and Home.
+
 ## 🛑 Do not do these
 
 1. **Do not replace the status test with a date comparison.** That is definition B. It is a product

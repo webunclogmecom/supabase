@@ -242,3 +242,18 @@ app None, against Fred, table by table and function by function (script `mockups
   with no policy for that role); the pages do not read them, B2 does.
 - **Actions of another app** (Open on the Calendar, Send to city, Open the stamping screen) stay refused by their own
   server checks: decision 3 shows them greyed with the reason. Writes need the Client App at Edit.
+
+## The late line and the past-due age (2026-11-17, Trello #212 / #213)
+
+Fred's picks E1 and G1 ("go with all recommended and all defaults"). Migration `2026-11-17_1330_clients_list_late_line_and_past_due_age`
+(rollback beside it), columns appended only, so the old Client App and Calendar see nothing change:
+
+- `client.client_services_flat.next_visit_id` and `next_visit_late_status`: the next visit by the Clients list's own rule
+  (scheduled, not deleted, from today in Eastern time, earliest by date then id) and the Calendar's own late answer for it
+  (`ops.v_calendar_visit.late_status`: `late`, `will_be_late`, `on_time`). The list draws the line only when
+  `next_visit_id` equals the visit it shows (162 of 162 on the day it shipped).
+- `client.v_client_past_due.oldest_due_date`: the due date of the client's oldest past-due invoice
+  (`docs/reference/past-due-definition.md`). The list, the preview and the client page shade a past due by it: amber up to
+  60 days, red after.
+- ⚠ `late_status` counts "today" with `CURRENT_DATE` (UTC): from 7 PM ET in winter Late changes a day early. Not fixed (it
+  changes the old Calendar too; waits for Fred).

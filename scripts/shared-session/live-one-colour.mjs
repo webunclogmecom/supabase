@@ -56,9 +56,19 @@ const count = () => page.evaluate(() => {
   const rgb = (c) => { const m = String(c).match(/(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)/); return m ? m.slice(1, 4).map(Number) : null }
   const near = (a, b) => a && Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < 30
   // Today's ranks: orange main, blue operations action, white second rank. The test colours: teal, pink, purple.
-  const res = { orange: 0, blue: 0, white: 0, grey: 0, teal: 0, pink: 0, purple: 0 }
+  const res = { orange: 0, blue: 0, white: 0, grey: 0, teal: 0, pink: 0, purple: 0, link: 0, linkTest: 0, orangeLink: 0 }
   const paint = document.createElement('div'); document.body.appendChild(paint)
   const solid = (c) => { paint.style.backgroundColor = ''; paint.style.backgroundColor = c; return rgb(getComputedStyle(paint).backgroundColor) }
+  // Links (Fred's picks of 2026-11-17, Yan's review: "If it's a hyperlink, make it blue"; L1 #1d4ed8). A link is words with no
+  // fill: an <a>, or anything drawn with the link colour. Each must follow the one --link value, and none may be orange.
+  for (const e of document.querySelectorAll('main a, main [data-manifest-number], main .text-link')) {
+    const r = e.getBoundingClientRect(); if (r.width < 4 || r.height < 4) continue
+    const cs = getComputedStyle(e); if (!/^rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)) continue
+    const fg = rgb(cs.color)
+    if (near(fg, [29, 78, 216])) res.link++
+    else if (near(fg, [161, 98, 7])) res.linkTest++
+    else if (near(fg, [201, 58, 15]) || near(fg, [241, 71, 20])) res.orangeLink++
+  }
   // A select is a field you fill in, like an input, so it stays with the card colour. A link drawn as a button counts as
   // a button (a plain link has no background and is skipped below).
   for (const e of document.querySelectorAll('main button:not([role=combobox]), main a')) {
@@ -79,11 +89,11 @@ const count = () => page.evaluate(() => {
   paint.remove()
   return res
 })
-let bad = 0
+let bad = 0, linksSeen = 0
 for (const [name, addr] of PAGES) {
   await page.goto(PORTAL + addr, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('main button', { timeout: 30000 }).catch(() => {}); await page.waitForTimeout(2500)
   const before = await count()
-  if (!control) await page.addStyleTag({ content: ':root { --primary: #0e7490; --secondary: #7c3aed; --action: #be185d; }' })
+  if (!control) await page.addStyleTag({ content: ':root { --primary: #0e7490; --secondary: #7c3aed; --action: #be185d; --link: #a16207; }' })
   await page.waitForTimeout(400)
   const after = await count()
   const fails = []
@@ -101,9 +111,15 @@ for (const [name, addr] of PAGES) {
   if (before.grey) fails.push(`${before.grey} second-rank buttons are in the page colour, not the second rank`)
   if (after.white) fails.push(`${after.white} of ${before.white} second-rank buttons stayed white`)
   if (after.purple < before.white) fails.push(`${after.purple} of ${before.white} second-rank buttons turned purple`)
+  if (before.orangeLink) fails.push(`${before.orangeLink} links are orange`)
+  if (after.link) fails.push(`${after.link} of ${before.link} links stayed link blue`)
+  if (after.linkTest < before.link) fails.push(`${after.linkTest} of ${before.link} links turned brown`)
+  linksSeen += before.link + before.orangeLink
   if (fails.length) bad++
-  console.log(`${name.padEnd(12)} main ${before.orange} to teal ${after.teal}, action ${before.blue} to pink ${after.pink}, second ${before.white} to purple ${after.purple}  ${fails.length ? 'FAIL  ' + fails.join('; ') : 'PASS'}`)
+  console.log(`${name.padEnd(12)} main ${before.orange} to teal ${after.teal}, action ${before.blue} to pink ${after.pink}, second ${before.white} to purple ${after.purple}, links ${before.link} to brown ${after.linkTest}  ${fails.length ? 'FAIL  ' + fails.join('; ') : 'PASS'}`)
 }
 await browser.close()
-console.log(bad ? `${bad} FAILED` : 'all follow')
+// The pages answer with empty lists, so few links show: with none at all the link part would prove nothing, so it fails.
+if (!control && linksSeen === 0) { bad++; console.log('FAIL  no link was found on any page, so the link colour was not tested') }
+console.log(bad ? `${bad} FAILED` : `all follow (${linksSeen} links tested)`)
 process.exitCode = control ? (bad === PAGES.length ? 0 : 1) : bad ? 1 : 0

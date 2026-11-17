@@ -92,6 +92,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   this one"*), so The Moore's GDO-014768 on sheets 1160 / 1161 is left as found; one visit page opened from every door, in the DERM visit
   page's look, with Auto file in the Manifests and Clients visit menus (#215 `RznftJ0a`); one simple manifest view everywhere and the
   DERM visits list folded into Manifests (#216 `bfuZbdgY`); an AI review of the Clients pages, then mockups, then build (#162).
+- **Round A (colours, #212 and #213) PICKED AND BUILT 2026-11-17.** Fred: *"go with all recommended and all defaults"* (L1 link
+  #1d4ed8, C1 codes red only when past due in every app except pickers / search / Finances, G1 amber up to 60 days then red, E1
+  the Calendar's late line on the Clients list, N1, D1 dark red #ff6b81, 22 defaults; Save & Next keeps his 2026-10-06 colours).
+  Picks: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-17-colours.md`. BUILT: DB `2026-11-17_1330` (`ab170ac0`); portal
+  `ed06eda` (live ~1:40 PM ET) and `6a8e263` (Calendar requests and tasks); old DERM Tracker's send confirmation wording.
+  Standing check `scripts/shared-session/live-one-colour.mjs` now covers links.
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
   default, what the manifest view keeps instead of M2 and the round-3 Compliance pick, the DERM visits menu item). Not agreed:
   #213 `S0ZjHZeT` (Late line, balance by age). ~~#217 `KHcNGcaM` (Yan's organization role, sign-in length)~~ DROPPED
