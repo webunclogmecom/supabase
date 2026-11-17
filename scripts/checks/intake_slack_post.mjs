@@ -67,13 +67,33 @@ const version = (o = {}) => ({ kind: 'version_waiting', ref_id: 842, test: false
   const r = await run(version({ who: 'Diego' }), { body: { kind: 'version_waiting', id: 842 } });
   const p = r.posts[0], body = p.blocks[1].text.text;
   assert.strictEqual(p.blocks[0].text.text, '📄 Site file waiting for approval');
-  assert.strictEqual(body, '📄 <@U0BKM57UPSS> *<https://planner.unclogme.app/property/162|901-MSB Main Street Burger>*, 100 Sample Street, Miami\nDiego · version 1 · nothing live yet');
+  // ?review=1 opens that version's review (#218, 2026-11-17)
+  assert.strictEqual(body, '📄 <@U0BKM57UPSS> *<https://planner.unclogme.app/property/162?review=1|901-MSB Main Street Burger>*, 100 Sample Street, Miami\nDiego · version 1 · nothing live yet');
   assert.strictEqual(p.text, '📄 Site file waiting for approval: 901-MSB Main Street Burger, version 1, from Diego');
   assert.ok(!body.includes('U0AL9JZ4V7C'), 'the maker is not tagged');
   const r2 = await run(version({ live_version: 1, version: 2, restored_from: 1 }), { body: { kind: 'version_waiting', id: 842 } });
   assert.ok(r2.posts[0].blocks[1].text.text.endsWith('Dana · version 2 · version 1 is live · restored from version 1'));
   const r3 = await run(version({ who: 'Serena Natali' }), { body: { kind: 'version_waiting', id: 842 } });
   assert.ok(r3.posts[0].blocks[1].text.text.includes('U0AL9JZ4V7C') && !r3.posts[0].blocks[1].text.text.includes('U0BKM57UPSS'), 'Serena made it: only Diego is tagged');
+}
+// #218 (2026-11-17): the database's approvers are tagged, each by its Slack id, in the order sent; an approver with no Slack id is
+// named in plain text; the collector of a form is left out by first name; an empty list tags nobody (never the fallback).
+{
+  const five = [
+    { email: 'aaron@unclogme.com', name: 'Aaron' }, { email: 'contact@unclogme.com', name: 'Diego' },
+    { email: 'fred@ayache.com', name: 'Fred' }, { email: 'serena@unclogme.com', name: 'Serena Natali' },
+    { email: 'yannick@ayache.com', name: 'Yannick' }];
+  const r = await run(form({ approvers: five }));
+  assert.ok(r.posts[0].blocks[1].text.text.startsWith('📨 <@U0AMVRCEBHP> <@U0AL9JZ4V7C> <@U0AN9B9MVHN> <@U0BKM57UPSS> <@U0AL2N6NMBM> *<'), r.posts[0].blocks[1].text.text);
+  const own = await run(form({ approvers: five, who: 'serena natali' }));
+  const t = own.posts[0].blocks[1].text.text;
+  assert.ok(!t.includes('U0BKM57UPSS') && t.includes('U0AL2N6NMBM'), 'Serena filled the form: she is not tagged, the others are');
+  const named = await run(version({ approvers: [{ email: 'new.person@unclogme.com', name: 'Pat <x>' }, { email: 'YANNICK@ayache.com', name: 'Yannick' }] }), { body: { kind: 'version_waiting', id: 842 } });
+  assert.ok(named.posts[0].blocks[1].text.text.startsWith('📄 Pat &lt;x&gt; <@U0AL2N6NMBM> *<'), named.posts[0].blocks[1].text.text);
+  const none = await run(version({ approvers: [] }), { body: { kind: 'version_waiting', id: 842 } });
+  assert.ok(!none.posts[0].blocks[1].text.text.includes('<@'), 'an empty list tags nobody');
+  const test = await run(form({ approvers: five, test: true }), { body: { kind: 'form_back', id: 1125, post_test: true } });
+  assert.ok(!allText(test.posts[0]).includes('<@'), 'a test post tags nobody');
 }
 // a second delivery, a test client without post_test, a form not found: no post and no row written
 for (const skip of ['already_claimed', 'test_client', 'not_found']) {

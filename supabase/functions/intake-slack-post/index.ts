@@ -1,6 +1,11 @@
 // intake-slack-post: the Slack post when an intake form comes back, and when a Site file version waits for approval.
 // Fred, 2026-11-05 (office training film): "Build a Slack post first", then from the mockups "go with option B short": a header
-// and two lines, the reader opens the link for the rest. Tags Diego and Serena, never the person who made the version.
+// and two lines, the reader opens the link for the rest. Never tags the person who made the version.
+// WHO IS TAGGED (Trello #218, 2026-11-17): every person who can approve a Site file today, as the database returns them in
+// `approvers` (the HR App's switch "Approve site files", minus the maker of the version), mapped by email to a Slack tag. Fred:
+// "tag the persons who can approve the form (also remember to include the links on the notification so they can just click
+// on it and it opens the submitted review)". Until then only Diego and Serena were tagged; that list is now the fallback for
+// a database that does not send `approvers`. An approver with no Slack id here is named in plain text, never dropped.
 // Shape and rules: docs/reference/slack-notifications.md.
 //
 // WHO CALLS IT: only the database. public.trg_slack_event_request (triggers zz_slack_form_back on public.property_intakes
@@ -35,12 +40,22 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CHANNEL = "C0BJYHQKZM1"; // #apps-notifications
 const PLANNER = "https://planner.unclogme.app";
 // Never on a test; never the person who made the version, who cannot approve their own.
-const TAGS = [{ name: "Diego", id: "U0AL9JZ4V7C" }, { name: "Serena Natali", id: "U0BKM57UPSS" }];
+// Slack ids by staff email (looked up in Slack 2026-11-17). A new approver gets a line here; until then they are named.
+const SLACK_IDS: Record<string, string> = {
+  "aaron@unclogme.com": "U0AMVRCEBHP",
+  "contact@unclogme.com": "U0AL9JZ4V7C", // Diego
+  "fred@ayache.com": "U0AN9B9MVHN",
+  "serena@unclogme.com": "U0BKM57UPSS",
+  "yannick@ayache.com": "U0AL2N6NMBM",
+};
+// Used only when the database sends no `approvers` (the body of 2026-11-05).
+const FALLBACK = [{ name: "Diego", email: "contact@unclogme.com" }, { name: "Serena Natali", email: "serena@unclogme.com" }];
 
 type Facts = {
   kind: "form_back" | "version_waiting"; ref_id: number; test: boolean;
   client_code: string | null; client_name: string | null; address: string | null; city: string | null;
   who: string | null;
+  approvers?: { email: string; name: string }[];
   // form_back
   status?: string | null; answered?: number | null; of?: number | null; photos?: number | null;
   // version_waiting
@@ -70,7 +85,14 @@ function buildPost(f: Facts): { header: string; message: string; text: string } 
   const subject = `${clean(f.client_code, "no code")} ${clean(f.client_name, "no name")}`;
   const place = [f.address, f.city].map(oneLine).filter(Boolean).join(", ");
   const where = place ? `, ${esc(place)}` : "";
-  const mentions = f.test ? "" : TAGS.filter((t) => t.name !== f.who).map((t) => `<@${t.id}> `).join("");
+  // The database already leaves out the maker of a version. A form's collector types their own name, so a person is left out
+  // when the first word of what was typed is their first name (Serena on her own form).
+  const first = (t: string | null | undefined) => oneLine(t).split(" ")[0].toLowerCase();
+  const people = Array.isArray(f.approvers) ? f.approvers : FALLBACK;
+  const mentions = f.test ? "" : people
+    .filter((p) => !(f.who && first(p.name) && first(p.name) === first(f.who)))
+    .map((p) => (SLACK_IDS[String(p.email).toLowerCase()] ? `<@${SLACK_IDS[String(p.email).toLowerCase()]}> ` : `${clean(p.name, "someone")} `))
+    .join("");
 
   if (f.kind === "form_back") {
     const url = `${PLANNER}/forms/${f.ref_id}`;
@@ -83,7 +105,8 @@ function buildPost(f: Facts): { header: string; message: string; text: string } 
     };
   }
 
-  const url = `${PLANNER}/property/${f.property_id}`;
+  // ?review=N opens that version's review on the page (Picture Planner reads it; a page that does not yet only opens the property).
+  const url = `${PLANNER}/property/${f.property_id}?review=${f.version}`;
   const parts = [who, `version ${f.version}`, f.live_version ? `version ${f.live_version} is live` : "nothing live yet"];
   if (f.restored_from) parts.push(`restored from version ${f.restored_from}`);
   return {
