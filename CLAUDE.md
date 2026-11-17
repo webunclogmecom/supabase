@@ -284,6 +284,12 @@ recommended but HO1, it doesn't needs to see the like revenue and stuff like tha
 - `ops.portal_waiting()` gains `late_today`, `requests_open` (Visit Calendar), `reviews_pending` (Admin Review) and
   `manifests_need_someone` (DERM Tracker, from `derm.fn_manifest_row_states_core()` with the Manifests list's own "Needs
   someone" rule). The bell and the Home's "Needs you" read this ONE answer; a new count goes here, behind its app's v_closed test.
+  Since `2026-11-17_1720` (Fred, round B of Yan's review: the menu counts and the bell follow what we notify in Slack
+  #apps-notifications) also `gdo_pending` (DERM Tracker: the GDO bot's ERROR attempts in 30 days with no later SUCCESS on the
+  same permit and manifest, from `public.derm_portal_submissions`; replayed against the bot's 8 AM digest every day from
+  10-30 to 11-17, all equal) and `intake_back` (Site file approvers only: returned, not cancelled site surveys of real
+  clients with no approved Site file version made after they came back; Fred: "All 24 forms"). The portal decides which
+  key goes on which menu item and which the bell shows; the Home's "Needs you" keeps its rows.
 - `ops.portal_home()`: today, today's trucks with their crew, the next 7 days (Visit Calendar), and `business` for the
   Admin group ONLY (invoices by `sent_at`, voided and destroyed left out; past due with the top 3; gallons with the trucks
   measured). 🛑 No money reaches the office: the group test is in the function, not only in the app.
