@@ -104,7 +104,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   all defaults"* (P1, CO1, CM1, S1, MN1, MC1, MF1, MS1, SD1, BO1, TF1, HC1 and the 21 defaults), plus *"when hovered it
   should display the multiple zones, or if it's the counties that are mixed, then the multiple counties"*. Record:
   `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-17-round-b.md`. BUILT so far: the six Clients fixes and the menu
-  counts on branch `yan-review-clients` (`e4aea35`). TO BUILD: MS1, SD1, BO1, TF1, the Mixed hover, the defaults; HC1 = the
+  counts on branch `yan-review-clients` (`e4aea35`). TO BUILD: MS1, SD1, BO1, TF1, the Mixed hover, the defaults, and (Fred, same afternoon, replacing the
+  Sites-row link) a City permit line on the Overview previews the permit's own PDF ("No PDF on file" when none); HC1 = the
   new Home card Trello #224 `kVDDpY7t`, In Progress (the crew-on-a-guessed-truck bug in `ops.portal_home()`, Needs you looks, Team today lines). Then one page
   of the real built screens, and the publish only after Fred's OK.
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
