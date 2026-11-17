@@ -25,6 +25,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Site file builder: upload a photo from the computer or phone (2026-11-17, Trello #219 VinArggt)**
+- Huddle with Serena: she could only drag visit or form photos into the builder; Fred: "So I need to add a function to add pictures manually." On the collector-form page Fred added: "But having that as well for the office form where they're at the builder i think that's good too." And: "they should be also applied to the old apps, we haven't concluded the migration to ops portal yet".
+- Mockups sent (`mockups/2026-11-17-intake-photos.html`, local): picks open: P1 where the upload sits (U1 / U2 / U3, U3 recommended), P2 an upload waits for the next approved version (yes recommended). To build in Picture Planner (planner.unclogme.app) AND the Ops Portal's builder (session named Supabase). NOT BUILT.
+
 **Ops Portal by function: Fred's picks on the redesign mockups (2026-11-12, Trello #161 rKsUKfQH)**
 - Fred, voice note 11-12: "I do not want, like, on the sidebar to have, like, name of micro apps. I want on the sidebar to have, like, functionalities." His picks the same day, about 04:55 ET: sidebar "Option B" (headings Work, Compliance, Metrics, Team, the functions under them); page frame "F1" (white, full width, no outer card; replaces his 11-06 grey page); Clients list "L2" (table with a preview); client page C1 with tabs ("really good approximate of what i want"); Metrics "Two with B" (Pumped water, Pumped grease); Site files and forms their own menu item until Clients moves in ("yes"); access stays per old app for now ("yes").
 - NOT picked, to draw again: stamps inside the Manifests rows. "i don't like all those chips now on the rows ... we should only show when something is wrong, have the three dots menu and there we can even put more actions button, like sending the emails", and a new stamping screen: "open a preview of the image of the manifest address to stamp, with the floating buttons ... the cursor becomes a line ... the 1st step is the line in blue, for the limits of the banding, and then green lines for the 2nd step ... a button X for the cancel ... a floating box ... as a helping box ... it needs to have the same functionalities, like skipping, uncomplete ... add more images ... make some mockups."
@@ -624,6 +628,14 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 - HR pay: per-person bonus amounts? (Admin Review reads the company amounts from HR since 2026-10-18 (b); a per-person amount would show one person's pay to office reviewers there, so still refused.) (Answered 2026-10-18: pay rates admins only; each person on a two-person crew gets the visit bonus; the Oct 5 shift stays $0.)
 
 ## 4. Built (recent, with evidence)
+
+**Collector form: photos wait on the phone until Submit (2026-11-17, Trello #220 tc1P0loq)**
+- Fred: "The store photo locally first on the device ... if they try to submit the form it shows an error like with the internet issue and the form stays with the data because there was an error."
+- **Built and live about 11:09 AM ET**: Supabase `6bd9c6b1` (`form-page.ts`, v17), Picture Planner `public/intake.html` `da1cb04`, live SHA-256 `41a4072d...`. Live tests: `e2e.mjs --live` all passed, `live-offline.mjs --live` 6/6. Waiting: Serena's confirmation in the field (card's Deploy item).
+
+**Intake Slack posts tag everyone who can approve, and the version link opens the review (2026-11-17, Trello #218 4ulTXZPc)**
+- Fred: "tag the persons who can approve the form (also remember to include the links on the notification so they can just click on it and it opens the submitted review)".
+- **Built and live about 10:15 AM ET**: `2026-11-17_1045_intake_slack_tags_approvers.sql`, `intake-slack-post` (Supabase `8fe9ee6c`), Picture Planner `?review=N` (`1313e6f`). Open: the backfill post for 354-TBS (pick P3), and the portal's builder does not read `?review` (Slack links open planner.unclogme.app).
 
 **Upload Manifest: a save that stops halfway says what is saved and finishes with one button (2026-11-13, Trello #192 s8ZiPr02)**
 - Fred, on the page `mockups/2026-11-13-manifest-retry.html` (Diego's Broward 317956): *"go with A and all defaults"*. A: the page says what is saved and what is not, keeps the photos, and one button saves only the missing steps (no new manifest rows). Defaults: the duplicate box never names a client this page has just filed (an earlier filing still blocks); the message stays until finished; the reason is the database's sentence when it gives one, else "the connection dropped or the photo could not be read"; the Ops Portal copy too (session named Supabase); Diego attaches his 9 sheets now in Edit manifest.
