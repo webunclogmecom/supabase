@@ -2,6 +2,8 @@
 // shows an error like with the internet issue and the form stays with the data"). Two photos are picked, the phone goes
 // offline, Submit shows the error and keeps everything; back online, Submit sends the photos and the form, and the database
 // holds exactly the two photos (none sent twice). Run it only on a [TEST] intake (scripts/intake-collector/tests/mk-test-intake.sql).
+// Since 2026-11-17 (Fred: "why waiting on Serena can't you smoke test?") it follows her real case: the photos are picked with NO
+// signal, the failed Submit is followed by CLOSING the page, and the form is reopened later with signal (same phone storage).
 //   node scripts/intake-collector/tests/live-offline.mjs <intake_id> [--live]   (--live = the page from planner.unclogme.app)
 // Never prints the token. Clean up after with cleanup.mjs <id>.
 import fs from 'node:fs'
@@ -23,13 +25,18 @@ const ok = (c, n, v) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 try {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
-  const page = await ctx.newPage()
-  if (mode !== '--live') await page.route(PAGE, (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }))
-  await page.goto(PAGE + '#code=' + row.token)
-  await page.waitForSelector('[data-q="access_entry.access_point"]', { timeout: 20000 })
+  const open = async () => {
+    const p = await ctx.newPage()
+    if (mode !== '--live') await p.route(PAGE, (r) => r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }))
+    await p.goto(PAGE + '#code=' + row.token)
+    await p.waitForSelector('[data-q="access_entry.access_point"]', { timeout: 20000 })
+    return p
+  }
+  let page = await open()
   ok(true, mode === '--live' ? 'the LIVE page loads' : 'the local build loads at the real address')
   await page.locator('[data-q="access_entry.access_point"] button').first().click()
   const AP = 'access_entry.access_photos'
+  await ctx.setOffline(true) // no signal from here: the photos are picked on site
   await page.locator(`[data-q="${AP}"] input[type=file]:not([capture])`).setInputFiles([{ name: 'a.png', mimeType: 'image/png', buffer: png }, { name: 'b.png', mimeType: 'image/png', buffer: png }])
   await page.waitForFunction(() => busy === 0, null, { timeout: 15000 })
   for (const t of await page.locator(`[data-q="${AP}"] textarea.pcm`).all()) await t.fill('[TEST] offline check')
@@ -41,13 +48,29 @@ try {
     const go = page.locator('.cf .go', { hasText: 'Submit anyway' }); if (await go.count()) await go.click()
     await page.waitForFunction(() => !SENDING, null, { timeout: 60000 }).catch(() => {}); await page.waitForTimeout(500)
   }
-  await ctx.setOffline(true)
   await submit()
   const msgs = await page.evaluate(() => [...document.querySelectorAll('.err span')].map((e) => e.textContent))
   ok(msgs.includes(NOCONN), 'offline: Submit says nothing is lost', msgs)
   const states = await page.$$eval(`[data-q="${AP}"] .st`, (es) => es.map((e) => e.textContent))
   ok(states.length === 2 && states.every((t) => t === 'Saved on this phone'), 'offline: both photos still on the phone', states)
+  // the page is closed in the dead zone and opened again later, with signal
+  await page.close()
   await ctx.setOffline(false)
+  page = await open()
+  await page.waitForFunction(() => busy === 0, null, { timeout: 15000 }).catch(() => {})
+  await page.waitForTimeout(800)
+  const back = await page.evaluate((ap) => ({
+    states: [...document.querySelectorAll('[data-q="' + ap + '"] .st')].map((e) => e.textContent),
+    imgs: [...document.querySelectorAll('[data-q="' + ap + '"] .ph img')].filter((i) => i.complete && i.naturalWidth > 0).length,
+    notes: [...document.querySelectorAll('[data-q="' + ap + '"] textarea.pcm')].map((t) => t.value),
+    who: document.querySelector('#who')?.value,
+  }), AP)
+  ok(back.states.length === 2 && back.states.every((t) => t === 'Saved on this phone') && back.imgs === 2,
+    'page closed and reopened: both photos come back from the phone, pictures shown', back)
+  ok(back.notes.length === 2 && back.notes.every((t) => t === '[TEST] offline check') && back.who === '[TEST] offline check',
+    'page closed and reopened: the photo comments and the name come back', back)
+  const [{ links: stillNone }] = await sql(`select count(*)::int as links from public.photo_links where entity_type = 'property_intake' and entity_id = ${Number(intakeId)} and deleted_at is null`)
+  ok(stillNone === 0, 'reopening sends nothing by itself', stillNone)
   await submit()
   const done = await page.evaluate(() => (document.querySelector('.big h2') || {}).textContent)
   ok(done === 'Thank you', 'back online: Submit sends everything', done)
