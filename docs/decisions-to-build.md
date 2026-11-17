@@ -99,8 +99,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `ed06eda` (live ~1:40 PM ET) and `6a8e263` (Calendar requests and tasks, live ~3:20 PM ET, checked as Fred: 39 of 39
   codes red exactly when past due); old DERM Tracker's send confirmation wording.
   Standing check `scripts/shared-session/live-one-colour.mjs` now covers links. **#212 and #213 in Testing / QA since
-  2026-11-17** (every item ticked, complete; Yan has not re-tested). Round B (#162 Clients fixes, #161 menu counts) is built
-  on the portal branch `yan-review-clients` (`e4aea35`, not published), its page of picks in progress.
+  2026-11-17** (every item ticked, complete; Yan has not re-tested).
+- **Round B (#162 Clients fixes, #161 menu counts) PICKED 2026-11-17 about 3:50 PM ET.** Fred: *"go with all recommended and
+  all defaults"* (P1, CO1, CM1, S1, MN1, MC1, MF1, MS1, SD1, BO1, TF1, HC1 and the 21 defaults), plus *"when hovered it
+  should display the multiple zones, or if it's the counties that are mixed, then the multiple counties"*. Record:
+  `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-17-round-b.md`. BUILT so far: the six Clients fixes and the menu
+  counts on branch `yan-review-clients` (`e4aea35`). TO BUILD: MS1, SD1, BO1, TF1, the Mixed hover, the defaults; HC1 = a
+  new Home card (the crew-on-a-guessed-truck bug in `ops.portal_home()`, Needs you looks, Team today lines). Then one page
+  of the real built screens, and the publish only after Fred's OK.
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
   default, what the manifest view keeps instead of M2 and the round-3 Compliance pick, the DERM visits menu item). Not agreed:
   #213 `S0ZjHZeT` (Late line, balance by age). ~~#217 `KHcNGcaM` (Yan's organization role, sign-in length)~~ DROPPED
