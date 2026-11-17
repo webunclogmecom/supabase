@@ -66,7 +66,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - #201 `6OQsw1xs` (Clients, saved views for View-only people): **everything**. A View-only person can save, rename, share, update AND delete their own views.
 - #208 `LlqVVAVP` (Reviews, a missed visit's next step): **keep it on the review** and show it again when the review reopens. Nothing acts on it automatically. Also: a missed save keeps the earlier invoice decision, and the preview shows the invoice decision instead of "Invoice created". Needs a column on `public.visit_reviews`.
 - #202 `McQOTwnN` (Clients, a contact's "Open in Jobber"): no pick needed. Check whether Jobber has a page for a contact: if it does not, the button says where it goes, and a contact that belongs to a property opens that property.
-- **NOT BUILT.** The cards stay in Approved until the work starts.
+- ✅ **BUILT 2026-11-17 (about 4:58 AM ET portal, 5:20 to 5:33 AM ET the old hosts): #201, #202, #197, #208.** Portal
+  `0a913ef`, `7dc3180`, `c748c69`; Supabase `2026-11-17_0405_client_properties_jobber_url` (`0960a871`) and
+  `2026-11-17_0435_visit_reviews_missed_next_step` (`26f43d50`); the old Client App, Visit Calendar and Admin Review by one
+  Lovable prompt each. Checked live on both hosts with controls that fail on the old code. Record:
+  `Building Apps/Ops Portal/docs/08-changelog.md` 2026-11-17. Cards moved to Testing / QA; nobody has re-tested.
+- **#198 NOT BUILT** (the drawer save as one server step): its plan comes first.
 
 **Client App contacts: the company card says what it is, Make it primary, phones without texts (2026-11-12, Trello #189 ig5tH74t)**
 - Serena (11-12): "I was trying to update client: 142-57 because I have accounting's contact but the client app doesn't let me like the other day with AC hotel client: 232-AC". Fred's picks on the mockup page (`mockups/2026-11-12-contact-edits.html`, local): "go with N2, B2, T1 (but no need for all that text about it cannot get texts, just say it was saved as normal) and all defaults".
