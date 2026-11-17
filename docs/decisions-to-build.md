@@ -89,7 +89,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   DERM visits list folded into Manifests (#216 `bfuZbdgY`); an AI review of the Clients pages, then mockups, then build (#162).
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
   default, what the manifest view keeps instead of M2 and the round-3 Compliance pick, the DERM visits menu item). Not agreed:
-  #213 `S0ZjHZeT` (Late line, balance by age) and #217 `KHcNGcaM` (Yan's organization role, sign-in length).
+  #213 `S0ZjHZeT` (Late line, balance by age). ~~#217 `KHcNGcaM` (Yan's organization role, sign-in length)~~ DROPPED
+  2026-11-17, card archived (Fred: *"we don't need this one"*).
 
 **Client App contacts: the company card says what it is, Make it primary, phones without texts (2026-11-12, Trello #189 ig5tH74t)**
 - Serena (11-12): "I was trying to update client: 142-57 because I have accounting's contact but the client app doesn't let me like the other day with AC hotel client: 232-AC". Fred's picks on the mockup page (`mockups/2026-11-12-contact-edits.html`, local): "go with N2, B2, T1 (but no need for all that text about it cannot get texts, just say it was saved as normal) and all defaults".
