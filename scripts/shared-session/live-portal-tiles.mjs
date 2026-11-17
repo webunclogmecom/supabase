@@ -1,3 +1,7 @@
+// Home by role (2026-11-16, Trello #210): the tiles left Home. Each person now sees the Home of their group (data-home: field,
+// office or admin), its parts (data-home-part) by what they can open, and the apps outside the portal; the app blocks get in
+// through the menu. The bell and the Home's "Needs you" read one list of ten rows; portal_home and portal_my_work are answered
+// here, portal_my_work only through the database's one door (POST, content-profile ops).
 // Stage D (2026-11-14): the Stamp case also opens one sheet from a Manifests row's three dots (the new stamping screen),
 // and the refusal by address is checked on a sheet's own address.
 // Stage C step 2 (2026-11-14): the Manifests case (two list doors, the Upload button, Health, the sheet list door for Stamp
@@ -8,11 +12,12 @@
 // (plan: Building Apps/Ops Portal/docs/specs/2026-11-12-redesign-by-function.md, section 3 and Stage A).
 // Signs in with a fake session and answers every Supabase call locally: data, storage, sign-in, the server function the
 // Monthly report calls (refused, as a made-up token would be) and the live socket (closed here). Nothing reaches Supabase.
-// PASS = each person sees exactly their Home tiles and exactly their menu (ids, words, headings, in order), one lit item,
+// PASS = each person sees exactly their Home (its kind, its parts, the apps outside) and exactly their menu (ids, words,
+// headings, in order), one lit item,
 // the page's name or its tabs in the bar, no link above a refusal, no sideways scroll, and the sign-in needed no reload;
 // every page has a way in from the menu; each app opens, labels its own requests, and a sign-out starts clean.
 // PORTAL=http://localhost:8080/ runs it before a publish. SHOTS=<dir> keeps a picture of each case.
-// CONTROL=1 expects a Field person to see an Admin's tiles and menu: every field case must then FAIL, or this check cannot fail.
+// CONTROL=1 expects a Field person to see an Admin's Home and menu: every field case must then FAIL, or this check cannot fail.
 // CONTROL=menu hides the new menu from this check (it takes the menu's new names off the page, as on the old build): every
 // case that reads or uses the menu must then FAIL, and the run must still reach its last line.
 // ONLY=<words> runs the cases whose name holds those words, to look at one again. The last line then says it was not a whole run.
@@ -27,10 +32,9 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || 'C:/Users/FRED/AppDa
 const PORTAL = process.env.PORTAL || 'https://ops.unclogme.app/'
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
-// Home does not change in Stage A: the same eleven tiles, in the same order.
-const ALL = ['Visit Calendar', 'DERM Tracker', 'Stamp Studio', 'Admin Review', 'Picture Planner', 'HR App', 'Client App', 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist']
-// Where each home tile opens: an app inside opens its route in the same tab, anything else a new tab to its own host.
-const INSIDE = { 'Visit Calendar': '/calendar', 'DERM Tracker': '/derm', 'Stamp Studio': '/stamp', 'Admin Review': '/review', 'Picture Planner': '/planner', 'HR App': '/hr', 'Client App': '/clients' }
+// The apps outside the portal at the bottom of Home, each in a new tab: Sales App and Review Assist need an app open.
+const OUT_ALL = ['Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist']
+const OUT_FEW = ['Field Portal', 'DUMP Schedule']
 // The menu by function, in the plan's order: id, word, heading, address. My forms leaves the portal (a new tab).
 const MENU = [
   ['home', 'Home', null, '/'], ['calendar', 'Calendar', 'Work', '/calendar'], ['clients', 'Clients', 'Work', '/clients'],
@@ -63,20 +67,20 @@ const STAMP_ONLY = { who: 'Stamp Test', group: 'office', r: reply(31, 'office', 
 const less = (list, ...gone) => list.filter((x) => !gone.includes(x))
 // The rows of "Who sees what" (plan, section 3.3) that a browser can tell apart. walk: the bar is read on one page of each area.
 const CASES = [
-  { name: 'admin, edit everywhere', ...ADMIN, tiles: ALL, hello: ', Fred', role: 'Admin', card: false, walk: true },
-  { name: 'office, edit everywhere', ...OFFICE, tiles: ALL, hello: ', Diego', role: 'Office', card: false, walk: true },
-  { name: 'office, view everywhere', who: 'Vera Test', group: 'office', r: reply(32, 'office', every('view')), menu: OFFICE_MENU, tiles: ALL, hello: ', Vera', role: 'Office', card: false, walk: true },
-  { name: 'office, HR App none', who: 'Aaron Test', group: 'office', r: reply(26, 'office', { ...every('edit'), hr: 'none' }), menu: less(OFFICE_MENU, 'people'), tiles: less(ALL, 'HR App'), hello: ', Aaron', role: 'Office', card: true, walk: true },
-  { name: 'office, Admin Review none', who: 'Nora Test', group: 'office', r: reply(33, 'office', { ...every('edit'), admin_review: 'none' }), menu: less(OFFICE_MENU, 'reviews', 'pumped-water', 'pumped-grease'), tiles: less(ALL, 'Admin Review'), hello: ', Nora', role: 'Office', card: true, walk: true },
-  { name: 'office, DERM Tracker none', who: 'Dana Test', group: 'office', r: reply(34, 'office', { ...every('edit'), derm_tracker: 'none' }), menu: ['home', 'calendar', 'clients', 'reviews', 'site-files', 'address-sheets', 'pumped-water', 'pumped-grease', ...FINANCES, 'people'], tiles: less(ALL, 'DERM Tracker'), hello: ', Dana', role: 'Office', card: true, walk: true },
-  { name: 'office, Stamp Studio none', who: 'Sam Test', group: 'office', r: reply(35, 'office', { ...every('edit'), stamp_studio: 'none' }), menu: OFFICE_MENU, tiles: less(ALL, 'Stamp Studio'), hello: ', Sam', role: 'Office', card: true, walk: true },
+  { name: 'admin, edit everywhere', ...ADMIN, out: OUT_ALL, hello: ', Fred', role: 'Admin', card: false, walk: true },
+  { name: 'office, edit everywhere', ...OFFICE, out: OUT_ALL, hello: ', Diego', role: 'Office', card: false, walk: true },
+  { name: 'office, view everywhere', who: 'Vera Test', group: 'office', r: reply(32, 'office', every('view')), menu: OFFICE_MENU, out: OUT_ALL, hello: ', Vera', role: 'Office', card: false, walk: true },
+  { name: 'office, HR App none', who: 'Aaron Test', group: 'office', r: reply(26, 'office', { ...every('edit'), hr: 'none' }), menu: less(OFFICE_MENU, 'people'), out: OUT_ALL, hello: ', Aaron', role: 'Office', card: true, walk: true },
+  { name: 'office, Admin Review none', who: 'Nora Test', group: 'office', r: reply(33, 'office', { ...every('edit'), admin_review: 'none' }), menu: less(OFFICE_MENU, 'reviews', 'pumped-water', 'pumped-grease'), out: OUT_ALL, hello: ', Nora', role: 'Office', card: true, walk: true },
+  { name: 'office, DERM Tracker none', who: 'Dana Test', group: 'office', r: reply(34, 'office', { ...every('edit'), derm_tracker: 'none' }), menu: ['home', 'calendar', 'clients', 'reviews', 'site-files', 'address-sheets', 'pumped-water', 'pumped-grease', ...FINANCES, 'people'], out: OUT_ALL, hello: ', Dana', role: 'Office', card: true, walk: true },
+  { name: 'office, Stamp Studio none', who: 'Sam Test', group: 'office', r: reply(35, 'office', { ...every('edit'), stamp_studio: 'none' }), menu: OFFICE_MENU, out: OUT_ALL, hello: ', Sam', role: 'Office', card: true, walk: true },
   // Finances follows the Client App setting: no Clients, no Finances heading at None (CONTROL=finances expects them: FAIL).
-  { name: 'office, Client App none', who: 'Cleo Test', group: 'office', r: reply(38, 'office', { ...every('edit'), client_app: 'none' }), menu: financesControl ? OFFICE_MENU : less(OFFICE_MENU, 'clients', ...FINANCES), tiles: less(ALL, 'Client App'), hello: ', Cleo', role: 'Office', card: true, walk: true },
-  { name: 'one app, the Client App at View', who: 'Vic Test', group: 'office', r: reply(39, 'office', { client_app: 'view' }), menu: ['home', 'clients', ...FINANCES], tiles: ['Client App', 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist'], hello: ', Vic', role: 'Office', card: true, walk: true },
-  { name: 'one app, the Visit Calendar', who: 'Cal Test', group: 'office', r: reply(36, 'office', { visit_calendar: 'edit' }), menu: ['home', 'calendar'], tiles: ['Visit Calendar', 'Field Portal', 'DUMP Schedule', 'Sales App', 'Review Assist'], hello: ', Cal', role: 'Office', card: true, walk: true },
-  { name: 'no app at all', who: 'Nobody Test', group: 'office', r: reply(37, 'office', {}), menu: control ? ADMIN_MENU : ['home'], tiles: control ? ALL : ['Field Portal', 'DUMP Schedule'], hello: ', Nobody', role: 'Office', card: true, walk: true },
-  { name: 'field, assigned forms', ...FIELD, menu: control ? ADMIN_MENU : FIELD.menu, tiles: control ? ALL : ['Picture Planner', 'Field Portal', 'DUMP Schedule'], role: 'Field', card: true, text: 'Your assigned forms', walk: true },
-  { name: 'field, no forms switch', who: 'Grecia Test', group: 'field', hello: ', Grecia', r: reply(1, 'field', {}), menu: control ? ADMIN_MENU : ['home'], tiles: control ? ALL : ['Field Portal', 'DUMP Schedule'], role: 'Field', card: true, walk: true },
+  { name: 'office, Client App none', who: 'Cleo Test', group: 'office', r: reply(38, 'office', { ...every('edit'), client_app: 'none' }), menu: financesControl ? OFFICE_MENU : less(OFFICE_MENU, 'clients', ...FINANCES), out: OUT_ALL, hello: ', Cleo', role: 'Office', card: true, walk: true },
+  { name: 'one app, the Client App at View', who: 'Vic Test', group: 'office', r: reply(39, 'office', { client_app: 'view' }), menu: ['home', 'clients', ...FINANCES], out: OUT_ALL, hello: ', Vic', role: 'Office', card: true, walk: true },
+  { name: 'one app, the Visit Calendar', who: 'Cal Test', group: 'office', r: reply(36, 'office', { visit_calendar: 'edit' }), menu: ['home', 'calendar'], out: OUT_ALL, hello: ', Cal', role: 'Office', card: true, walk: true },
+  { name: 'no app at all', who: 'Nobody Test', group: 'office', r: reply(37, 'office', {}), menu: control ? ADMIN_MENU : ['home'], out: control ? OUT_ALL : OUT_FEW, hello: ', Nobody', role: 'Office', card: true, walk: true },
+  { name: 'field, assigned forms', ...FIELD, menu: control ? ADMIN_MENU : FIELD.menu, out: control ? OUT_ALL : OUT_FEW, kind: control ? 'admin' : 'field', role: 'Field', card: true, text: 'Canned Bistro', walk: true },
+  { name: 'field, no forms switch', who: 'Grecia Test', group: 'field', hello: ', Grecia', r: reply(1, 'field', {}), menu: control ? ADMIN_MENU : ['home'], out: control ? OUT_ALL : OUT_FEW, kind: control ? 'admin' : 'field', role: 'Field', card: true, walk: true },
   { name: 'access check fails', who: 'Fred Zerpa', group: 'admin', fail: true, text: "We couldn't load your apps" },
   { name: 'not staff', who: 'Some Stranger', group: 'field', r: { employee_id: null, group: null, apps: [] }, text: 'is not an UnclogMe staff account', login: true },
 ]
@@ -89,7 +93,41 @@ const mailOf = (who) => who.toLowerCase().replace(/ /g, '.') + '@unclogme.com'
 const PEOPLE = [{ id: 2, full_name: 'Fred Zerpa', email: mailOf('Fred Zerpa'), status: 'ACTIVE', access_level: 'admin', role: null, color_hex: '#3F6212', photo_path: null, phone: null, start_date: null, payroll_week_start_day: 5 }]
 // As the database answers a person with no app open (public.fn_request_gate, measured 2026-11-09).
 const REFUSED = { status: 403, contentType: 'application/json', body: '{"code":"42501","message":"You do not have access to any UnclogMe app."}' }
-const SEVEN = { call_first: 2, time_on_site: 3, photos_unsorted: 4, city_emails: 5, stamp_sheets: 6, site_files: 7, unopened_emails: 8 }
+// Every row the bell and the Home can hold (Trello #210): ten, each above 0.
+const TEN = { late_today: 1, requests_open: 2, call_first: 2, manifests_need_someone: 3, stamp_sheets: 6, city_emails: 5, photos_unsorted: 4, unopened_emails: 8, site_files: 7, time_on_site: 3, reviews_pending: 9 }
+// The Home's reads, made up: one truck today, a week, the Business band for an admin (each part by the app that holds it, as
+// the database decides), and a driver's day with one stop, a truck with a tank reading and, with the forms switch, one form.
+const DAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+const plusDays = (n) => new Date(Date.parse(DAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10)
+function cannedHome(c) {
+  const out = { date: DAY, prev_start: plusDays(-40) }
+  if (can(c, 'visit_calendar')) Object.assign(out, {
+    today: { visits: 12, done: 3, left: 9, late: 2, skipped: 0 },
+    trucks: [{ name: 'Moises', color: '#1E40AF', visits: 6, done: 0, left: 6, first_at: new Date(Date.now() + 3 * 36e5).toISOString(), crew: [{ name: 'Canned Driver', color: '#0EA5E9' }] }],
+    week: [0, 1, 2, 3, 4, 5, 6].map((i) => ({ date: plusDays(i), visits: 7 - i })),
+  })
+  if (c.group === 'admin') out.business = {
+    ...(can(c, 'client_app') ? { invoices: { count: 10, total: 1000, prev_count: 8, prev_total: 900 }, past_due: { amount: 500, clients: 2, top: [{ id: 450, code: '000-ZZ', amount: 300 }] } } : {}),
+    ...(can(c, 'admin_review') ? { pumped: { gallons: 1200, prev_gallons: 1000, trucks: [{ name: 'Moises', visits: 5, measured: 5 }, { name: 'Cloggy', visits: 3, measured: 0 }] } } : {}),
+  }
+  return out
+}
+const cannedMine = (c) => ({
+  date: DAY, done_7d: 4,
+  stops: [{ id: 9072, at: null, all_day: true, status: 'scheduled', late: false, code: '000-ZZ', client: 'Canned Diner', address: '1 Test St', city: 'Miami', zone: 'MID', lat: 25.8, lng: -80.2, work: 'Pumping', manholes: 2, trap: 1000, derm: true, open_from: '21:00', open_to: '06:00', truck: 'Moises', site_file: 'canned-site-file' }],
+  truck: { name: 'Moises', tanks: [{ contents: 'sludge', percent: 40, gallons: 1500, at: new Date().toISOString() }] },
+  forms: level(c, 'pp_forms') === 'yes' ? [{ id: 77, code: '000-ZZ', client: 'Canned Bistro', expires_at: null }] : [],
+})
+const kindOf = (c) => c.kind ?? (c.group === 'field' ? 'field' : c.group === 'admin' ? 'admin' : 'office')
+// The parts of the Home a person sees, worked out here from their settings, not from the app's code.
+function partsFor(c) {
+  if (kindOf(c) === 'field') return ['next', 'stops', 'truck', 'forms', 'week', 'outside']
+  const p = []
+  if (c.group === 'admin' && opensAny(c)) p.push('business', ...(can(c, 'client_app') ? ['invoices', 'past-due'] : []), ...(can(c, 'admin_review') ? ['pumped'] : []), ...(can(c, 'visit_calendar') ? ['team'] : []))
+  if (opensAny(c)) p.push('needs')
+  if (can(c, 'visit_calendar')) p.push('today', 'week')
+  return [...p, 'outside']
+}
 
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 
@@ -150,7 +188,18 @@ async function signedIn(c, w, h, goto = PORTAL) {
       if (c.waitingFails) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
       if (!opensAny(c)) return r.fulfill(REFUSED)
       // The first reply keeps three keys at 0 or missing, as before: four rows. c.waiting gives another one.
-      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.waiting ?? { call_first: 1, time_on_site: 6, photos_unsorted: 8, city_emails: 0, stamp_sheets: 0, unopened_emails: 9 }) })
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.waiting ?? { call_first: 1, requests_open: 3, time_on_site: 6, photos_unsorted: 8, city_emails: 0, stamp_sheets: 0, unopened_emails: 9 }) })
+    }
+    if (/rpc\/portal_home/.test(u)) {
+      seen.homeAsked = true
+      if (!opensAny(c)) return r.fulfill(REFUSED)
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(cannedHome(c)) })
+    }
+    // The database's one door for a person with no app open: POST, schema ops. Anything else would be refused.
+    if (/rpc\/portal_my_work/.test(u)) {
+      seen.mineAsked = true
+      if (r.request().method() !== 'POST' || r.request().headers()['content-profile'] !== 'ops') { seen.mineOffDoor = true; return r.fulfill(REFUSED) }
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(cannedMine(c)) })
     }
     if (/rpc\/get_my_access/.test(u)) {
       if (c.fail) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
@@ -310,8 +359,10 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
         const main = document.querySelector('main')
         const nav = document.querySelector('nav[aria-label="Main menu"]')
         return {
-          tiles: main ? [...main.querySelectorAll('a[href] b')].filter(vis).map((e) => e.textContent.trim()) : [],
-          targets: main ? [...main.querySelectorAll('a[href] b')].filter(vis).map((e) => { const a = e.closest('a'); return [e.textContent.trim(), a.getAttribute('target') || '', a.getAttribute('href')] }) : [],
+          home: main?.querySelector('[data-home]')?.getAttribute('data-home') ?? null,
+          parts: main ? [...main.querySelectorAll('[data-home-part]')].map((e) => e.getAttribute('data-home-part')) : [],
+          outside: main ? [...main.querySelectorAll('[data-home-part="outside"] a')].filter(vis).map((a) => [a.textContent.trim(), a.getAttribute('target') || '', a.getAttribute('href')]) : [],
+          money: /\$\d/.test(main?.innerText ?? ''),
           sidebar: Boolean(nav && vis(nav)),
           h1: document.querySelector('main h1, h1')?.textContent?.trim() ?? '',
           text: document.body.innerText,
@@ -322,23 +373,27 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
         }
       })
       // The bell asks only for someone the database lets read: a person with no app open gets no bell and no refused request; everyone else gets one.
-      if (c.tiles && !opensAny(c)) {
+      if (c.out && !opensAny(c)) {
         if (seen.waitingAsked) fails.push('the bell asked portal_waiting, which the database refuses a person with no app open')
         if (got.bells) fails.push('a bell for a person with no app open')
-      } else if (c.tiles && !got.bells) fails.push('no bell')
+      } else if (c.out && !got.bells) fails.push('no bell')
       if (seen.stray.size) fails.push('stray backend ' + [...seen.stray])
       if (seen.navs !== navsBefore) fails.push('the sign-in reloaded the page')
       if (got.overflow) fails.push('sideways scroll')
-      if (c.tiles) {
-        // Home does not change in Stage A.
-        if (JSON.stringify(got.tiles) !== JSON.stringify(c.tiles)) fails.push(`tiles ${got.tiles.join('|')}`)
-        // An app inside opens in the same tab; a Field person's assigned forms stay on the Planner's own host (decision 7).
-        for (const [name, target, href] of got.targets) {
-          const forms = c.text === 'Your assigned forms' && name === 'Picture Planner'
-          if (forms) { if (target !== '_blank' || href !== 'https://planner.unclogme.app') fails.push(`${name} opens "${target} ${href}" for an assigned-forms person`) }
-          else if (INSIDE[name]) { if (target || href !== INSIDE[name]) fails.push(`${name} opens "${target} ${href}", not ${INSIDE[name]} in the same tab`) }
-          else if (target !== '_blank' || !/^https:/.test(href)) fails.push(`${name} opens "${target} ${href}" in the same tab`)
-        }
+      if (c.out) {
+        // The Home of their group, with the parts their settings open, and money for an admin only (Fred: no money for the office).
+        if (got.home !== kindOf(c)) fails.push(`the ${got.home} Home`)
+        if (JSON.stringify(got.parts) !== JSON.stringify(partsFor(c))) fails.push(`parts ${got.parts.join('|')}`)
+        if (got.money !== partsFor(c).includes('invoices')) fails.push(got.money ? 'money on a Home that is not an admin\'s' : 'no money on the admin\'s Home')
+        // A driver's Home reads only their own day; an office or admin Home reads portal_home only when the database lets them.
+        if (kindOf(c) === 'field') {
+          if (!seen.mineAsked) fails.push('the driver Home did not read portal_my_work')
+          if (seen.homeAsked) fails.push('the driver Home asked portal_home')
+          if (seen.mineOffDoor) fails.push('portal_my_work asked outside its door (POST, schema ops)')
+        } else if (Boolean(seen.homeAsked) !== opensAny(c)) fails.push(seen.homeAsked ? 'asked portal_home, which the database refuses a person with no app open' : 'portal_home was not read')
+        // The apps outside the portal, each in a new tab to its own host.
+        if (JSON.stringify(got.outside.map(([n]) => n)) !== JSON.stringify(c.out)) fails.push(`outside ${got.outside.map(([n]) => n).join('|')}`)
+        for (const [name, target, href] of got.outside) if (target !== '_blank' || !/^https:/.test(href)) fails.push(`${name} opens "${target} ${href}" in the same tab`)
         if (c.hello ? !got.h1.includes(c.hello) : got.h1.includes(',')) fails.push(`greeting "${got.h1}"`)
         if (/\bfailed|undefined|null\b/i.test(got.h1)) fails.push(`greeting "${got.h1}"`)
         if (Boolean(/Need another app\?/.test(got.text)) !== c.card) fails.push('Need another app card')
@@ -358,7 +413,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       if (c.login && !got.loginShown) fails.push('not back on the login')
       if (c.login && !seen.signOut.includes('local')) fails.push(`sign-out scope ${seen.signOut}`)
       if (c.fail && (got.loginShown || seen.signOut.length)) fails.push('a failed check signed the person out')
-      if (c.tiles && seen.errors.length) fails.push('page error: ' + seen.errors[0])
+      if (c.out && seen.errors.length) fails.push('page error: ' + seen.errors[0])
       await shot(page, w, c.name)
     } catch (e) { fails.push('stopped: ' + String(e).split('\n')[0].slice(0, 150)) }
     report(w, c.name, fails)
@@ -369,7 +424,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // items now: the page's own heading says Employees, and Access is in an admin's menu (in the drawer on a phone). An office
   // person's menu has no Access: that is the exact menu of the office cases above.
   await block(w, h, 'HR opens, labels hr-app', ADMIN, PORTAL, async ({ page, seen, fails }) => {
-    await tap(page.locator('main a[href="/hr"]'), fails, 'the HR tile')
+    await pick(page, w, 'people', fails)
     await page.waitForTimeout(2500)
     if (at(page) !== '/hr/employees') fails.push(`landed on ${at(page)}`)
     const heading = await page.evaluate(() => document.querySelector('main h1')?.textContent.trim() ?? '')
@@ -403,7 +458,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // The Calendar module: opens from its tile, keeps its own label, has no theme of its own, draws no second theme or sign-out control,
   // the page is its only scroller, and leaving it gives the look back.
   await block(w, h, 'Calendar opens, labels its own', ADMIN, PORTAL, async ({ page, seen, fails }) => {
-    await tap(page.locator('main a[href="/calendar"]'), fails, 'the Calendar tile')
+    await pick(page, w, 'calendar', fails)
     await page.waitForFunction(() => location.pathname.startsWith('/calendar'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(2500)
     if (at(page) !== '/calendar') fails.push(`landed on ${at(page)}`)
@@ -454,7 +509,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // On DERM visits the bar says so and holds no link. From the Manifests item the bar (the page's band on a phone) holds the
   // doors to Health, Upload and the sheet list. Leaving it gives the look back.
   await block(w, h, 'DERM opens, labels its own', ADMIN, PORTAL, async ({ page, seen, fails }) => {
-    await tap(page.locator('main a[href="/derm"]'), fails, 'the DERM tile')
+    await pick(page, w, 'derm-visits', fails)
     await page.waitForFunction(() => location.pathname.startsWith('/derm'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(2500)
     if (at(page) !== '/derm') fails.push(`landed on ${at(page)}`)
@@ -475,7 +530,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     const visits = await readBar(page, w >= 768)
     if (w >= 768 && visits.text !== 'DERM visits') fails.push(`bar "${visits.text.slice(0, 40)}" on DERM visits`)
     if (got.tabDoors) fails.push('DERM visits still links to Monthly or Health from the bar or a band')
-    const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_search/.test(k))
+    const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_home|portal_search/.test(k))
     if (!own.length) fails.push('the module asked for no data')
     for (const [k, v] of own) if (![...v].every((x) => x === 'derm-tracker')) fails.push(`${k} labelled "${[...v].join(',')}"`)
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
@@ -518,7 +573,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // Studio only, the bell's sheet row opening Manifests on "Needs someone" for a person with the DERM Tracker, the DERM reads
   // labelled derm-tracker, and no stamp read at all (the page asks for none; a person without Stamp Studio causes none).
   // The made-up ticket #000001 of the Stage D case gives the list one row.
-  for (const [who, c] of [['admin', { ...ADMIN, sheet: true, waiting: SEVEN }], ['no Stamp', { ...OFFICE, who: 'Derm Only', r: reply(33, 'office', { ...every('edit'), stamp_studio: 'none' }), sheet: true, waiting: SEVEN }]]) {
+  for (const [who, c] of [['admin', { ...ADMIN, sheet: true, waiting: TEN }], ['no Stamp', { ...OFFICE, who: 'Derm Only', r: reply(33, 'office', { ...every('edit'), stamp_studio: 'none' }), sheet: true, waiting: TEN }]]) {
     await block(w, h, `Manifests doors, ${who}`, c, PORTAL + 'derm/manifests', async ({ page, seen, fails }) => {
       await page.waitForSelector('[data-needs-box]', { timeout: 20000 }).catch(() => {})
       await page.waitForTimeout(1500)
@@ -539,7 +594,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       if (got.links.includes('/stamp') !== stamp) fails.push(stamp ? 'no door to the sheet list for a person with Stamp Studio' : 'a door to the sheet list for a person without Stamp Studio')
       if (got.overflow) fails.push('sideways scroll')
       // the reads of the page: DERM's labelled derm-tracker, and no stamp view asked
-      const asked = (seen.stampAsked ?? []).filter((x) => !/get_my_access|portal_waiting|portal_search|employees/.test(x.name))
+      const asked = (seen.stampAsked ?? []).filter((x) => !/get_my_access|portal_waiting|portal_home|portal_search|employees/.test(x.name))
       for (const want of ['derm_manifests', 'rpc/manifest_row_states', 'rpc/archived_manifest_rows']) if (!asked.some((x) => x.name === want)) fails.push(`the page did not ask ${want}`)
       const wrong = asked.filter((x) => !/^(v_stamp|page_slots|rpc\/stamp_sheet_facts)/.test(x.name) && x.label !== 'derm-tracker')
       if (wrong.length) fails.push('not labelled derm-tracker: ' + [...new Set(wrong.map((x) => x.name + ' ' + x.label))].join(', '))
@@ -559,7 +614,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     })
   }
   // A person with Stamp Studio and no DERM Tracker: the bell's sheet row keeps the sheet list (decision 11).
-  if (w >= 768) await block(w, h, 'Manifests bell, Stamp only', { ...STAMP_ONLY, waiting: SEVEN }, PORTAL, async ({ page, fails }) => {
+  if (w >= 768) await block(w, h, 'Manifests bell, Stamp only', { ...STAMP_ONLY, waiting: TEN }, PORTAL, async ({ page, fails }) => {
     await tap(page.locator('header button[aria-label^="Notifications"]'), fails, 'the bell')
     await page.waitForTimeout(600)
     const row = await page.evaluate(() => { const a = [...document.querySelectorAll('[role=menu] a')].find((x) => /sheets not completed/.test(x.textContent)); return a ? a.getAttribute('href') : null })
@@ -572,7 +627,9 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     let keyed = 0, unkeyed = 0
     page.on('request', (q) => { if (!/\/rest\/v1\/v_stamp/.test(q.url())) return; if (q.headers()['x-stamp-key']) keyed++; else unkeyed++ })
     const before = ctx.pages().length
-    await tap(page.locator('main a[href="/stamp"]'), fails, 'the Stamp tile')
+    // the sheet list's door is on Manifests (an admin's menu has no Address sheets item)
+    if (await pick(page, w, 'manifests', fails)) { await arrive(page, '/derm/manifests'); await page.waitForTimeout(1500) }
+    await tap(page.locator('a[href="/stamp"]').locator('visible=true'), fails, 'the sheet list door on Manifests')
     await page.waitForFunction(() => location.pathname.startsWith('/stamp'), null, { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(2500)
     if (ctx.pages().length !== before) fails.push('opened a new tab')
@@ -689,7 +746,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       if (/This page didn't load|You do not have access/.test(bar.body)) fails.push(`${path} did not open`)
     }
     if (!/Admin Review/.test(await page.title())) fails.push(`title "${await page.title()}"`)
-    const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_search/.test(k))
+    const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_home|portal_search/.test(k))
     if (!own.length) fails.push('the module asked for no data')
     for (const [k, v] of own) if (![...v].every((x) => x === 'admin-review')) fails.push(`${k} labelled "${[...v].join(',')}"`)
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
@@ -737,7 +794,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     if (w >= 768 && OLD_NAMES.test(bar.text)) fails.push(`bar still names the app: "${bar.text.slice(0, 40)}"`)
     if (bar.sideways > 0) fails.push(`scrolls sideways by ${bar.sideways} px`)
     if (!/Picture Planner/.test(await page.title())) fails.push(`title "${await page.title()}"`)
-    const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_search/.test(k))
+    const own = Object.entries(seen.labels).filter(([k]) => !/get_my_access|portal_waiting|portal_home|portal_search/.test(k))
     if (!own.length) fails.push('the module asked for no data')
     for (const [k, v] of own) if (![...v].every((x) => x === 'picture-planner')) fails.push(`${k} labelled "${[...v].join(',')}"`)
     await tap(page.locator(`${w >= 768 ? BAR : 'main'} a[href="/planner/forms"]`), fails, 'the Forms tab')
@@ -758,13 +815,13 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await page.waitForTimeout(400)
     const items = (await page.getByRole('menuitem').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim())
     if (items.length !== 4) fails.push(`bell rows ${items.join('|')}`)
-    if (!items.some((x) => /1 client to phone/.test(x))) fails.push('no call-first row')
+    if (!items.some((x) => /3 visit requests to schedule.*1 asks for a call first/.test(x))) fails.push('no requests row with its call-first line')
     await shot(page, w, 'bell open')
     await page.keyboard.press('Escape')
     if (w >= 768) {
       const title = await page.locator('header.shell-header').innerText()
       if (!/Home/.test(title)) fails.push(`home title "${title.slice(0, 40)}"`)
-      await tap(page.locator('main a[href="/calendar"]'), fails, 'the Calendar tile')
+      await pick(page, w, 'calendar', fails)
       await page.waitForFunction(() => location.pathname.startsWith('/calendar'), null, { timeout: 30000 }).catch(() => {})
       await page.waitForTimeout(2000)
       const t2 = await page.locator('header.shell-header').innerText()
@@ -776,26 +833,29 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     }
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
   })
-  // All seven things the bell can hold: seven rows, the number on the bell is the number of rows, each row carries the icon
-  // and the word of the menu item it names, and opens that item's page.
-  await block(w, h, 'bell, all seven rows', { ...ADMIN, waiting: SEVEN }, PORTAL, async ({ page, seen, fails }) => {
+  // All ten things the bell can hold (the Home's "Needs you" list, Trello #210): ten rows, the number on the bell is the number
+  // of rows, each row carries one icon and its own second line, and opens its list already filtered.
+  await block(w, h, 'bell, all ten rows', { ...ADMIN, waiting: TEN }, PORTAL, async ({ page, seen, fails }) => {
     const bar = w >= 768 ? 'header.shell-header' : 'div.relative.z-50', bell = page.locator(`${bar} button[aria-label^="Notifications"]`)
     // Stage C step 2: for a person with the DERM Tracker the sheets row opens Manifests on "Needs someone" (its href carries
     // ?needs=true; the landing is checked by path)
-    const want = [['/calendar', 'To Be Scheduled'], ['/calendar', 'Calendar'], ['/review', 'Reviews'], ['/review', 'Reviews'], ['/derm/manifests?needs=true', 'Manifests'], ['/planner', 'Site files'], ['/derm', 'DERM visits']]
+    const want = [['/calendar?late=true', 'Past the date their job is due, still to do'], ['/calendar?tbs=true', '2 ask for a call first'],
+      ['/derm/manifests?needs=true', 'A document, a stamp, a copy, the city or an email'], ['/derm/manifests?needs=true', 'Address sheets still to stamp'],
+      ['/review', "Sent from the visit's review"], ['/review', 'Not sorted into before and after yet'], ['/derm', 'City and client emails, as in the Slack reminder'],
+      ['/planner', 'New versions waiting for your yes'], ['/calendar', "The truck's GPS has not confirmed how long it stayed"], ['/review', 'Finished visits waiting for a review']]
     const label = (await bell.first().getAttribute('aria-label').catch(() => null)) ?? 'no bell'
-    if (label !== 'Notifications, 7 waiting') fails.push(`the bell says "${label}"`)
+    if (label !== 'Notifications, 10 waiting') fails.push(`the bell says "${label}"`)
     if (!(await tap(bell, fails, 'the bell'))) return
     await page.waitForTimeout(400)
     const rows = await page.evaluate(() => [...document.querySelectorAll('[role="menuitem"]')].map((a) => ({ href: a.getAttribute('href'), tab: a.getAttribute('target') || '', icon: a.querySelectorAll('svg').length, square: a.firstElementChild?.textContent.trim() ?? '', lines: [...a.querySelectorAll('span.block')].map((s) => s.textContent.trim()) })))
-    if (rows.length !== 7) fails.push(`${rows.length} rows`)
+    if (rows.length !== 10) fails.push(`${rows.length} rows`)
     rows.forEach((r, i) => {
       const [href, where] = want[i] ?? []
       if (r.href !== href || r.tab) fails.push(`row ${i + 1} opens "${r.tab} ${r.href}", want ${href}`)
       if (r.lines[1] !== where) fails.push(`row ${i + 1} second line "${r.lines[1]}", want "${where}"`)
       if (r.icon !== 1 || r.square) fails.push(`row ${i + 1} shows "${r.square}" and ${r.icon} icons, want one icon and no letters`)
     })
-    await shot(page, w, 'bell seven rows')
+    await shot(page, w, 'bell ten rows')
     for (let i = 0; i < want.length; i++) {
       // Back to Home first (the brand link), so a row that does nothing cannot pass on the page the row before it opened.
       if (at(page) !== '/') { await tap(page.locator('a[aria-label="Home"]').locator('visible=true'), fails, 'the brand link'); await arrive(page, '/', 8000); await page.waitForTimeout(400) }
@@ -806,6 +866,12 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       if (!(await tap(page.getByRole('menuitem').nth(i), fails, `bell row ${i + 1}`))) { await page.keyboard.press('Escape'); await page.waitForTimeout(400); continue }
       if (!(await arrive(page, want[i][0].split('?')[0], 10000))) fails.push(`row ${i + 1} landed on ${at(page)}, want ${want[i][0]}`)
       await page.waitForTimeout(400)
+      // On a phone the requests row opens the To Be Scheduled sheet on purpose: shut it before going back to Home.
+      if (w < 768 && want[i][0].includes('tbs=true') && !(await page.locator('[role="dialog"][data-state="open"]').count())) fails.push('the requests row did not open To Be Scheduled on a phone')
+      if (w < 768 && (await page.locator('[role="dialog"][data-state="open"]').count())) {
+        await page.keyboard.press('Escape')
+        await page.locator('[role="dialog"][data-state="open"]').first().waitFor({ state: 'detached', timeout: 4000 }).catch(() => {})
+      }
     }
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
   })
