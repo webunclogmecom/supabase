@@ -109,7 +109,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   ET** (Fred: *"go ahead, publish round B"*): portal `e35a497` (one squashed commit), entry `index-hW2XQjBM.js`; database
   halves `615006f6`, `eee04e67`. Checked live at 1440 and 375 (Ops Portal `docs/08-changelog.md`). #224 `kVDDpY7t` in
   Testing / QA; #161 and #162 keep their other open work In Progress, round B items ticked. Still open from round B: the
-  comment file for Yan (waits on Fred's OK to send).
+  comment file for Yan: Fred sends it himself (2026-11-18: "no need to send anything to yan, i will do so").
   - **Site files menu, 2026-11-18:** Fred, on the menu reading 27, *"it's supposed to be only the waiting for approval"*:
     Site files counts `site_files` only, LIVE (portal `b06fa26`); then "E 2": `site_files` counts locations, not
     versions, LIVE (`2026-11-18_0840`, menu, bell and Home say 2).
