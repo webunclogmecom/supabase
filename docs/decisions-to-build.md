@@ -115,10 +115,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
     versions, LIVE (`2026-11-18_0840`, menu, bell and Home say 2).
 - **Site files list (Page Builder) in tabs, PICKED 2026-11-18 about 8:20 AM ET.** Fred: *"All, No survey, Survey pending and
   Survey live. and like i said i want that to have pagination and to be sorted by the client code number"*, B yes, C M1,
-  D yes, E 2, all defaults. Record: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-18-site-files-tabs.md`. **BUILT,
-  not published** (local branch `site-files-tabs` of the portal): four tabs, client code order, the Clients pager, M1,
-  the side panel's location list, the state in the address; shown to Fred as built screens
-  (`mockups/2026-11-18-site-files-tabs-built.html`, picks P publish and W order). Publish waits on his P.
+  D yes, E 2, all defaults. Record: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-18-site-files-tabs.md`. **BUILT AND
+  LIVE 2026-11-18 about 9:40 AM ET** (Fred, on the built screens: *"P yes, W keep."*): portal `c069f02`, entry
+  `index-2tooY9kj.js`; four tabs, client code order, the Clients pager, M1, the side panel's location list, the state in
+  the address. Same publish: the bell drops the unopened emails row (*"The bell doesn't need a notification for unopened
+  emails"*; the Home and the DERM visits menu count keep it). Checked live at 1440 and 375 (Ops Portal `docs/08-changelog.md`).
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
   default, what the manifest view keeps instead of M2 and the round-3 Compliance pick, the DERM visits menu item). Not agreed:
   #213 `S0ZjHZeT` (Late line, balance by age). ~~#217 `KHcNGcaM` (Yan's organization role, sign-in length)~~ DROPPED
