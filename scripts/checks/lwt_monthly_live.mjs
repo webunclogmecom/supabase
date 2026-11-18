@@ -57,13 +57,23 @@ const lost = words.filter((s) => !present(s))
 ok(words.length > 15, 'the page has sentences to look for', String(words.length))
 ok(lost.length === 0, 'the live build carries this repo’s page', lost.slice(0, 3).join(' | '))
 ok(all.includes('.lw-fhead') || [...html.matchAll(/\/assets\/[A-Za-z0-9_.-]+\.css/g)].length > 0, 'the page’s styles can load')
-// The Ops Portal keeps its own copy of the five files. Line endings aside, they must equal this repo's. Skipped where Building Apps is not beside this repo.
+// The Ops Portal keeps its own copy of the three rule files. Line endings aside, they must equal this repo's. Skipped where
+// Building Apps is not beside this repo. Since 2026-11-18 the portal's PAGE and stylesheet are its own (Fred's redesign, picks
+// H1, F1: src/modules/derm/monthly/), so they are not compared; a copy of the shared page left in the folder is a failure,
+// because it would read as the page the portal ships.
 const lf = (u) => readFileSync(u, 'utf8').replace(/\r\n/g, '\n')
 const portalCopy = new URL('../../../Building%20Apps/Ops%20Portal/app/src/modules/derm/components/monthly/', import.meta.url)
 let portalThere = true
 try { lf(new URL('history-rows.ts', portalCopy)) } catch { portalThere = false }
-if (portalThere) for (const [f, from] of [['MonthlyReportPage.tsx', 'app/'], ['monthly-report.css', 'app/'], ['xlsx-view.ts', 'app/'], ['history-rows.ts', 'app/'], ['monthly-rules.ts', '']]) {
-  ok(lf(new URL(f, portalCopy)) === lf(new URL('../lwt-monthly/' + from + f, import.meta.url)), 'the portal\'s copy equals this repo: ' + f)
+if (portalThere) {
+  for (const [f, from] of [['xlsx-view.ts', 'app/'], ['history-rows.ts', 'app/'], ['monthly-rules.ts', '']]) {
+    ok(lf(new URL(f, portalCopy)) === lf(new URL('../lwt-monthly/' + from + f, import.meta.url)), 'the portal\'s copy equals this repo: ' + f)
+  }
+  for (const f of ['MonthlyReportPage.tsx', 'monthly-report.css']) {
+    let there = true
+    try { readFileSync(new URL(f, portalCopy)) } catch { there = false }
+    ok(!there, 'the portal carries no stale copy of the shared ' + f)
+  }
 }
 
 // 3 ---------------------------------------------------------------------------------------------------------------------------
