@@ -649,6 +649,22 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 - **A band taken from a row follows that row** (Fred, 2026-11-15 after his drag test, in a dialog: "Follow the row (Recommended)"; his line moved, card 3051's band stayed and lost its row number; record `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-12-manifests-and-stamping.md`, last section). **✅ BUILT 2026-11-15 13:57 ET** (`2026-11-15_1350_derm_save_page_bands_slot_band_follows_row.sql`, rollback beside it, standing check `scripts/checks/stamp_slot_band_follows_row.mjs`): on a line save (`derm.save_page_bands`, portal and old Stamp host alike) a `slot` band takes the row its stamp sits in; a hand-drawn band stays; a `slot` card counts as unbanded in both refusals (outside every row, two in one row). No backfill (reach: 1 card against the saved rows, 5 on 2 completed sheets against the current lines). Proved live on #111111 at 13:59 ET as Fred: card 3051 23.882..34.352 row 1, 2017's copy remade in 2 s, city email unchanged, nothing else moved.
 - **The menu scroller: SB4 and all defaults** (Fred, 2026-11-15 about 3:35 PM ET: "go with SB4 and all defaults"; his ask and the four looks: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-15-menu-scroller.md`). The portal menu's scroll area is a slim grey pill (no arrows, no lane, brighter under the mouse) with soft fades at an edge that has more; the drawer and the fixed laptop menu alike, the dark look too, one named style `.nav-scroll` in `app/src/styles.css`, Firefox its thin bar. **✅ LIVE 2026-11-15 about 6:10 PM ET** (portal `e3450a6`, live entry `index-Cu2Fm8qb.js`; Fred on the built pictures: "Publish now (Recommended)"): 8 browser cases pass live and fail on the code before; standing case "the menu scroller fades only where there is more" in `scripts/shared-session/live-portal-tiles.mjs`.
 
+**Truck by category: suggestion, "Are you sure?" on a mismatch, P / C on the visit (2026-11-18, Trello #170 iElTShdF)**
+- Source: Fred and Diego's huddle of 2026-11-04 (transcript, Diego: *"We would have 2 trucks category. One being pumping
+  and one would be emergency"*; the 083-SHUL cleaning of 11-03 was sent with Moises and pumped instead). It replaces the
+  basis of the 2026-10-29 usual-truck pick above, not the pick itself.
+- **Fred's picks, 2026-11-18:** (1) two categories, **Pumping** (Moises, David, the second Moises from December) and
+  **Emergency** (Cloggy, the next one), stored on each truck; (2) the line items decide the category a visit needs:
+  pumping codes 01 to 04 and 09 to 11 -> Pumping, 05 to 08 and 12 to 24 -> Emergency, 25 to 28 none (Dump: the DUMP app
+  sets the truck), and Fred asked for a message to Diego and Yan to confirm the line items (Slack draft
+  Dr0CK1CMT76V in #new-app-issues, NOT sent; it asks about the lift stations 04 and 11); (3) the suggestion stays the
+  usual truck of the last 6 visits there, **counting only trucks of the right category**, else the category's first
+  truck; shown, never written; (4) the letter on the visit: **P for pumping, C for cleaning** (Fred changed Diego's Z
+  to C), nothing on the other visits. The warning asks on Save, both directions, like the skip visit dialog.
+- Still to decide (mockups): where P / C sits on the visit, the warning's look and words, how the drawer's truck list
+  shows the categories, and the night-of-pumping view Diego asked for (requirement 4). Screens go in the Ops Portal
+  (session Supabase); the database half is this card's. **Not built.**
+
 ## 3. Waiting on Fred
 
 - HR invites: answered 2026-10-26 (Field sign-ins open no app yet, D17 stays; parts A to C "go ahead", all built, section 2). Decision 22 (emailed re-authentication before a password change) is REPLACED 2026-10-27, see the HR Change password row in section 2.
