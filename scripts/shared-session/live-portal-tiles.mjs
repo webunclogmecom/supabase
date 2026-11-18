@@ -878,6 +878,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
       if (!(await arrive(page, want[i][0].split('?')[0], 10000))) fails.push(`row ${i + 1} landed on ${at(page)}, want ${want[i][0]}`)
       await page.waitForTimeout(400)
       // On a phone the requests row opens the To Be Scheduled sheet on purpose: shut it before going back to Home.
+      // The sheet opens once the Calendar has mounted, which on the live site can take longer than the 400 ms above.
+      if (w < 768 && want[i][0].includes('tbs=true')) await page.locator('[role="dialog"][data-state="open"]').first().waitFor({ timeout: 5000 }).catch(() => {})
       if (w < 768 && want[i][0].includes('tbs=true') && !(await page.locator('[role="dialog"][data-state="open"]').count())) fails.push('the requests row did not open To Be Scheduled on a phone')
       if (w < 768 && (await page.locator('[role="dialog"][data-state="open"]').count())) {
         await page.keyboard.press('Escape')
