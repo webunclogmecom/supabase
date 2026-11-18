@@ -64,6 +64,17 @@ skip it, so a stored Grease pumped day never moves (the freezer stores days befo
   none) and `default_truck_reason` is the sentence the drawer prints ("Usual truck here: David, 5 of the last 6
   pumping visits."; ties: "(tied 2 to 2 with Moises, David went last)"). The app never computes either.
 - Standing check `scripts/checks/usual_truck.sql` (recomputes the rule; one `ok` row when healthy).
+- 🛑 **Since 2026-11-18 (Trello #170, `2026-11-18_1330_calendar_truck_by_category.sql`) only a truck of a CATEGORY
+  the visit needs can be the usual truck.** Categories: `public.truck_categories` (pumping, emergency), one per truck
+  (`vehicles.truck_category`: Moises, David pumping; Cloggy emergency). A visit needs the categories of its line items
+  (`service_line_items.truck_category`), else its job's, else those of its service type (lateral `need`). The last 6
+  visits still count every truck; the pick is the most frequent that FITS (fits first in the ordering, a tie only
+  between two that fit); with none, the line items' default and "Defaults to Moises from the service line items (no
+  pumping truck on the last 4 pumping visits here)." At ship 9 upcoming visits moved Cloggy -> Moises, 13 kept their
+  truck with a new sentence. New columns at the end: `needed_truck_categories`, `needed_truck_category_names`,
+  `truck_category`, `truck_category_name`, `truck_category_mismatch` (ASSIGNED visits only), `service_letter` (P / C).
+  `ops.fn_truck_check(vehicle, visit, line item codes)` answers the "Are you sure?" for the screens. Spec:
+  `Building Apps/Visit Calendar/docs/specs/2026-11-18-truck-by-category.md`.
 
 ⚠ **`truck_name` joins `vehicles`, so it can NEVER be a person.** Recorded because the opposite was
 believed, twice, on 2026-07-30: a displayed "Moises" on a NULL-vehicle visit was read as *"the driver is
