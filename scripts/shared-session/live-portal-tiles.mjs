@@ -815,7 +815,10 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     await page.waitForTimeout(400)
     const items = (await page.getByRole('menuitem').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim())
     if (items.length !== 4) fails.push(`bell rows ${items.join('|')}`)
-    if (!items.some((x) => /3 visit requests to schedule.*1 asks for a call first/.test(x))) fails.push('no requests row with its call-first line')
+    // Since round B (2026-11-18, Fred: "Notified items, and drop the rest from the bell too") the bell has no requests row;
+    // the call-first requests are their own row, as Slack posts them.
+    if (!items.some((x) => /^1 client to call before scheduling/.test(x))) fails.push('no call-first row')
+    if (items.some((x) => /visit requests to schedule/.test(x))) fails.push('the bell still has the requests row')
     await shot(page, w, 'bell open')
     await page.keyboard.press('Escape')
     if (w >= 768) {
@@ -833,22 +836,24 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     }
     if (seen.errors.length) fails.push('page error: ' + seen.errors[0])
   })
-  // All ten things the bell can hold (the Home's "Needs you" list, Trello #210): ten rows, the number on the bell is the number
-  // of rows, each row carries one icon and its own second line, and opens its list already filtered.
-  await block(w, h, 'bell, all ten rows', { ...ADMIN, waiting: TEN }, PORTAL, async ({ page, seen, fails }) => {
+  // Every row the bell can hold. Since Yan's review round B (2026-11-18, Fred: "Notified items, and drop the rest from the
+  // bell too") that is what Slack #apps-notifications posts: nine rows (`BELL_ROWS`); late visits, requests, manifests that
+  // need someone and reviews stay on the Home only, so TEN's values for them must NOT show here. The number on the bell is
+  // the number of rows, each row carries one icon and its own second line, and opens its list already filtered.
+  await block(w, h, 'bell, every row', { ...ADMIN, waiting: { ...TEN, gdo_pending: 2, intake_back: 4 } }, PORTAL, async ({ page, seen, fails }) => {
     const bar = w >= 768 ? 'header.shell-header' : 'div.relative.z-50', bell = page.locator(`${bar} button[aria-label^="Notifications"]`)
     // Stage C step 2: for a person with the DERM Tracker the sheets row opens Manifests on "Needs someone" (its href carries
     // ?needs=true; the landing is checked by path)
-    const want = [['/calendar?late=true', 'Past the date their job is due, still to do'], ['/calendar?tbs=true', '2 ask for a call first'],
-      ['/derm/manifests?needs=true', 'A document, a stamp, a copy, the city or an email'], ['/derm/manifests?needs=true', 'Address sheets still to stamp'],
+    const want = [['/calendar?tbs=true', 'Call them, then schedule in To Be Scheduled'], ['/derm/manifests?needs=true', 'Address sheets still to stamp'],
       ['/review', "Sent from the visit's review"], ['/review', 'Not sorted into before and after yet'], ['/derm', 'City and client emails, as in the Slack reminder'],
-      ['/planner', 'New versions waiting for your yes'], ['/calendar', "The truck's GPS has not confirmed how long it stayed"], ['/review', 'Finished visits waiting for a review']]
+      ['/derm', 'File them from the visit, as in the Slack alert'], ['/planner', 'New versions waiting for your yes'],
+      ['/planner', 'Approve a Site file version made from it'], ['/calendar', "The truck's GPS has not confirmed how long it stayed"]]
     const label = (await bell.first().getAttribute('aria-label').catch(() => null)) ?? 'no bell'
-    if (label !== 'Notifications, 10 waiting') fails.push(`the bell says "${label}"`)
+    if (label !== `Notifications, ${want.length} waiting`) fails.push(`the bell says "${label}"`)
     if (!(await tap(bell, fails, 'the bell'))) return
     await page.waitForTimeout(400)
     const rows = await page.evaluate(() => [...document.querySelectorAll('[role="menuitem"]')].map((a) => ({ href: a.getAttribute('href'), tab: a.getAttribute('target') || '', icon: a.querySelectorAll('svg').length, square: a.firstElementChild?.textContent.trim() ?? '', lines: [...a.querySelectorAll('span.block')].map((s) => s.textContent.trim()) })))
-    if (rows.length !== 10) fails.push(`${rows.length} rows`)
+    if (rows.length !== want.length) fails.push(`${rows.length} rows`)
     rows.forEach((r, i) => {
       const [href, where] = want[i] ?? []
       if (r.href !== href || r.tab) fails.push(`row ${i + 1} opens "${r.tab} ${r.href}", want ${href}`)
