@@ -45,6 +45,11 @@ await page.route('**/rest/v1/**', (r) => {
   if (/\/clients\?select=(\*|%2A)&id=eq\.900001(&|$)/.test(u)) return json(r, { id: 900001, client_code: '000-ZZ', name: 'Colour Test', status: 'ACTIVE', client_class: 'commercial', zone_id: null, balance: 0, notes: null, group_id: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' })
   if (/rpc\/list_payments/.test(u)) return json(r, { total: 0, money_in: 0, money_out: 0, fees: 0, payments: [] })
   if (/rpc\/payment_months/.test(u)) return json(r, { from: '2025-10-01', to: '2026-11-30', months: [] })
+  // One made-up invoice and quote: since round B (default `emptylist`, 2026-11-18) an EMPTY Invoices or Quotes list shows
+  // only its sentence, no filters and no pages, so it has no button to count and this check failed on it.
+  const first = !/[?&]offset=[1-9]/.test(u)
+  if (/\/rest\/v1\/invoices\?select=(\*|%2A)&order=id\.asc/.test(u)) return json(r, first ? [{ id: 900001, client_id: 900001, job_id: null, invoice_number: '1', subject: 'Colour test', total: 100, outstanding_amount: 100, invoice_status: 'awaiting_payment', due_date: '2026-12-31', sent_at: '2026-11-01T12:00:00Z', paid_at: null, created_at: '2026-11-01T12:00:00Z', jobber_url: null }] : [])
+  if (/\/rest\/v1\/quotes\?select=(\*|%2A)&order=id\.asc/.test(u)) return json(r, first ? [{ id: 900001, client_id: 900001, property_id: null, quote_number: '1', title: 'Colour test', total: 100, deposit_amount: null, quote_status: 'awaiting_response', sent_at: '2026-11-01T12:00:00Z', approved_at: null, converted_to_job_at: null, created_at: '2026-11-01T12:00:00Z', jobber_url: null }] : [])
   return json(r, (r.request().headers().accept || '').includes('vnd.pgrst.object') ? {} : [])
 })
 await page.goto(PORTAL); await page.waitForSelector('input[type=email]', { timeout: 30000 })
