@@ -103,11 +103,13 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - **Round B (#162 Clients fixes, #161 menu counts) PICKED 2026-11-17 about 3:50 PM ET.** Fred: *"go with all recommended and
   all defaults"* (P1, CO1, CM1, S1, MN1, MC1, MF1, MS1, SD1, BO1, TF1, HC1 and the 21 defaults), plus *"when hovered it
   should display the multiple zones, or if it's the counties that are mixed, then the multiple counties"*. Record:
-  `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-17-round-b.md`. BUILT so far: the six Clients fixes and the menu
-  counts on branch `yan-review-clients` (`e4aea35`). TO BUILD: MS1, SD1, BO1, TF1, the Mixed hover, the defaults, and (Fred, same afternoon, replacing the
-  Sites-row link) a City permit line on the Overview previews the permit's own PDF ("No PDF on file" when none); HC1 = the
-  new Home card Trello #224 `kVDDpY7t`, In Progress (the crew-on-a-guessed-truck bug in `ops.portal_home()`, Needs you looks, Team today lines). Then one page
-  of the real built screens, and the publish only after Fred's OK.
+  `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-17-round-b.md`. Changed after the picks: MC2 (orange counts),
+  counts and bell follow the Slack notifications, TF2 (trap stays orange), the permit line previews the permit's own PDF,
+  and on the built-screens page every GDO listed and the phone list as before. **BUILT AND LIVE 2026-11-18 about 1:30 AM
+  ET** (Fred: *"go ahead, publish round B"*): portal `e35a497` (one squashed commit), entry `index-hW2XQjBM.js`; database
+  halves `615006f6`, `eee04e67`. Checked live at 1440 and 375 (Ops Portal `docs/08-changelog.md`). #224 `kVDDpY7t` in
+  Testing / QA; #161 and #162 keep their other open work In Progress, round B items ticked. Still open from round B: the
+  comment file for Yan (waits on Fred's OK to send).
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
   default, what the manifest view keeps instead of M2 and the round-3 Compliance pick, the DERM visits menu item). Not agreed:
   #213 `S0ZjHZeT` (Late line, balance by age). ~~#217 `KHcNGcaM` (Yan's organization role, sign-in length)~~ DROPPED
