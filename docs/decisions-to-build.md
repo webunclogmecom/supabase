@@ -110,6 +110,15 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   halves `615006f6`, `eee04e67`. Checked live at 1440 and 375 (Ops Portal `docs/08-changelog.md`). #224 `kVDDpY7t` in
   Testing / QA; #161 and #162 keep their other open work In Progress, round B items ticked. Still open from round B: the
   comment file for Yan (waits on Fred's OK to send).
+  - **Site files menu, 2026-11-18:** Fred, on the menu reading 27, *"it's supposed to be only the waiting for approval"*:
+    Site files counts `site_files` only, LIVE (portal `b06fa26`); then "E 2": `site_files` counts locations, not
+    versions, LIVE (`2026-11-18_0840`, menu, bell and Home say 2).
+- **Site files list (Page Builder) in tabs, PICKED 2026-11-18 about 8:20 AM ET.** Fred: *"All, No survey, Survey pending and
+  Survey live. and like i said i want that to have pagination and to be sorted by the client code number"*, B yes, C M1,
+  D yes, E 2, all defaults. Record: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-18-site-files-tabs.md`. **BUILT,
+  not published** (local branch `site-files-tabs` of the portal): four tabs, client code order, the Clients pager, M1,
+  the side panel's location list, the state in the address; shown to Fred as built screens
+  (`mockups/2026-11-18-site-files-tabs-built.html`, picks P publish and W order). Publish waits on his P.
 - Each card lists the decisions still Fred's (link blue, client code red when past due or not, balance grey, county letters, columns by
   default, what the manifest view keeps instead of M2 and the round-3 Compliance pick, the DERM visits menu item). Not agreed:
   #213 `S0ZjHZeT` (Late line, balance by age). ~~#217 `KHcNGcaM` (Yan's organization role, sign-in length)~~ DROPPED
