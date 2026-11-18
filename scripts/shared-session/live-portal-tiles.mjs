@@ -845,7 +845,8 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
     // Stage C step 2: for a person with the DERM Tracker the sheets row opens Manifests on "Needs someone" (its href carries
     // ?needs=true; the landing is checked by path)
     const want = [['/calendar?tbs=true', 'Call them, then schedule in To Be Scheduled'], ['/derm/manifests?needs=true', 'Address sheets still to stamp'],
-      ['/review', "Sent from the visit's review"], ['/review', 'Not sorted into before and after yet'], ['/derm', 'City and client emails, as in the Slack reminder'],
+      // no emails row since 2026-11-18 (Fred: "The bell doesn't need a notification for unopened emails"); the Home keeps it
+      ['/review', "Sent from the visit's review"], ['/review', 'Not sorted into before and after yet'],
       ['/derm', 'File them from the visit, as in the Slack alert'], ['/planner', 'New versions waiting for your yes'],
       ['/planner', 'Approve a Site file version made from it'], ['/calendar', "The truck's GPS has not confirmed how long it stayed"]]
     const label = (await bell.first().getAttribute('aria-label').catch(() => null)) ?? 'no bell'
