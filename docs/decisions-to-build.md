@@ -661,15 +661,18 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
   usual truck of the last 6 visits there, **counting only trucks of the right category**, else the category's first
   truck; shown, never written; (4) the letter on the visit: **P for pumping, C for cleaning** (Fred changed Diego's Z
   to C), nothing on the other visits. The warning asks on Save, both directions, like the skip visit dialog.
-- Still to decide (mockups): where P / C sits on the visit, the warning's look and words, how the drawer's truck list
-  shows the categories, and the night-of-pumping view Diego asked for (requirement 4). Screens go in the Ops Portal
-  (session Supabase); the database half is this card's. **Database half BUILT and LIVE 2026-11-18** (Fred: "I do the
+- **Screens picked 2026-11-18 ~3:20 PM ET** (mockups `mockups/2026-11-18-truck-category.html`, local): Fred *"A P1, B D3,
+  C L2, D N1, E yes, all defaults"*: the letter right after the client code; NO box, the `fn_truck_check` sentence as an
+  amber line under the truck and the button "Save with <truck>"; the truck list grouped by kind; a By person / By truck
+  switch on the Day view (drag between truck lanes; a drop on the other kind opens the drawer with the line); Pumping /
+  Cleaning visits in the Types filter; built in BOTH the old Visit Calendar and the portal. Details and what D3 changes in
+  three defaults: the spec's "Fred's picks for the screens". Screens are the session Supabase's; the database half is this card's. **Database half BUILT and LIVE 2026-11-18** (Fred: "I do the
   database, Supabase draws and builds"): `2026-11-18_1300_truck_categories.sql` (13:28 ET, `48f54208`) and
   `2026-11-18_1330_calendar_truck_by_category.sql` (13:35 ET, `96620470`): picks 1 to 4 in the data, the suggestion
   within the category (22 upcoming visits moved, nothing else), the P / C letter and the mismatch flag as columns,
   `ops.fn_truck_check` for the "Are you sure?" sentence; standing check `scripts/checks/usual_truck.sql`. Spec and brief
   for the screens: `Building Apps/Visit Calendar/docs/specs/2026-11-18-truck-by-category.md`. **Not built: the screens**
-  (mockups for Fred first), and Diego and Yan's answer on the line items (draft not sent).
+  (picked 2026-11-18, above), and Diego and Yan's answer on the line items (draft not sent).
 
 ## 3. Waiting on Fred
 
