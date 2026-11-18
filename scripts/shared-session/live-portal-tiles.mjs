@@ -187,7 +187,9 @@ async function signedIn(c, w, h, goto = PORTAL) {
       seen.waitingAsked = true
       if (c.waitingFails) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"canned failure"}' })
       if (!opensAny(c)) return r.fulfill(REFUSED)
-      // The first reply keeps three keys at 0 or missing, as before: four rows. c.waiting gives another one.
+      // The first reply keeps three keys at 0 or missing, as before. Bell rows: call first, time on site, photos = three
+      // (requests left the bell in round B, unopened emails on 2026-11-18: Fred, "The bell doesn't need a notification for
+      // unopened emails"). c.waiting gives another one.
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(c.waiting ?? { call_first: 1, requests_open: 3, time_on_site: 6, photos_unsorted: 8, city_emails: 0, stamp_sheets: 0, unopened_emails: 9 }) })
     }
     if (/rpc\/portal_home/.test(u)) {
@@ -807,14 +809,17 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // The one bar: the bell and the theme at the top right, each page's name in the bar and not again in the page.
   await block(w, h, 'one bar, bell, theme', ADMIN, PORTAL, async ({ page, seen, fails }) => {
     const bar = w >= 768 ? 'header.shell-header' : 'div.relative.z-50'
-    if (!(await page.locator(`${bar} button[aria-label^="Notifications, 4 waiting"]`).count())) fails.push('no bell with 4 waiting')
+    // The bell's number and its rows are live data, so the check asks that they agree rather than pinning a count.
+    const label = (await page.locator(`${bar} button[aria-label^="Notifications"]`).first().getAttribute('aria-label').catch(() => null)) ?? ''
+    const waiting = Number((label.match(/^Notifications, (\d+) waiting/) ?? [])[1] ?? NaN)
+    if (!(waiting > 0)) fails.push(`no bell with a waiting count ("${label}")`)
     if (w >= 768 && !(await page.locator(`${bar} [role="group"][aria-label="Light or dark"]`).count())) fails.push('no theme switch in the bar')
     if (!(await page.locator(SIDE).count()) && w >= 1280) fails.push('no sidebar to look in')
     if (await page.locator(`${SIDE} [role="group"][aria-label="Light or dark"]`).count()) fails.push('the theme is still in the sidebar')
     await tap(page.locator(`${bar} button[aria-label^="Notifications"]`), fails, 'the bell')
     await page.waitForTimeout(400)
     const items = (await page.getByRole('menuitem').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim())
-    if (items.length !== 4) fails.push(`bell rows ${items.join('|')}`)
+    if (items.length !== waiting) fails.push(`bell says ${waiting} waiting, shows ${items.length} rows: ${items.join('|')}`)
     // Since round B (2026-11-18, Fred: "Notified items, and drop the rest from the bell too") the bell has no requests row;
     // the call-first requests are their own row, as Slack posts them.
     if (!items.some((x) => /^1 client to call before scheduling/.test(x))) fails.push('no call-first row')
