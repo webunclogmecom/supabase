@@ -294,16 +294,27 @@ Deno.serve(async (req: Request) => {
       return json({
         ok: false, isDermPermit: false, reason: 'not_a_derm_permit', chars: parsed.chars,
         message: parsed.chars < 200
-          ? 'No readable text in that PDF — it may be a scan. GDO permits from DERM are text PDFs; check you uploaded the permit itself.'
+          ? 'No readable text in that PDF, so it may be a scan. GDO permits from DERM are text PDFs; check you uploaded the permit itself.'
           : 'That PDF does not look like a Miami-Dade DERM operating permit. GDO permits are Miami-Dade only; Broward and Palm Beach use different documents.',
       }, 200, req)
     }
 
     if (!parsed.ok) {
+      // 2026-11-18 (Trello #227, Fred: "check if the drag and drop also shows errors"): the sentence names the
+      // fields in words. The codes travel as `missing_fields`, NOT `missing`: both permit dialogs (Client App and
+      // Ops Portal) append "Missing: <the codes>" when a `missing` array is present, which showed staff
+      // "gdo_number, permit_expiration, max_frequency_days".
+      const words: Record<string, string> = {
+        gdo_number: 'the permit number',
+        permit_expiration: 'the expiration date',
+        max_frequency_days: 'how often it must be cleaned',
+      }
+      const named = parsed.missing.map((k) => words[k] ?? k)
+      const list = named.length > 1 ? `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}` : named[0]
       return json({
-        ok: false, isDermPermit: true, reason: 'fields_missing', missing: parsed.missing,
+        ok: false, isDermPermit: true, reason: 'fields_missing', missing_fields: parsed.missing,
         fields: parsed.fields,
-        message: `This looks like a DERM permit, but ${parsed.missing.join(' and ')} could not be read from it.`,
+        message: `This looks like a DERM permit, but ${list} could not be read from it. Try another copy of the permit, or fill in the fields by hand.`,
       }, 200, req)
     }
 

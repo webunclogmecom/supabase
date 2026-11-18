@@ -435,6 +435,9 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
   `client.derm_manifests` and `customer.work_orders` / `work_orders_all` still select it and never use it, so a drop
   goes with them. Check: `scripts/checks/derm_manifest_permit_on_read.sql`.
 - `parse-gdo-permit` reads only GDO PDFs; with another `permit_type` it stores the PDF unread at `<type>/<date>-<random>.pdf`.
+  Its refusal `message` is the sentence staff read, shown as it is by both permit dialogs. Since v43 (2026-11-18, Trello #227)
+  a fields-missing reply names the fields in words and carries the codes as `missing_fields`: never `missing`, which both
+  dialogs print after the sentence as "Missing: <codes>" (that showed staff `gdo_number, permit_expiration, ...`).
   `fn_gdo_permit_label_targets` keeps to `permit_types.reads_pdf`, so a CCN PDF never reaches the DERM prompt.
 - Boca Raton is Palm Beach since `2026-11-02_1830` (15 rows) and `webhook-jobber` v151 (`inferCountyFromCity`).
 - 🛑 **Line 27 routes by CLIENT since ~16:53 ET 2026-11-03 (`2026-11-03_1830`, Trello #169).**
