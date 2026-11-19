@@ -126,6 +126,28 @@ human could trace (`docs/PROJECT_GDO_BOT.md`).
   `invoice_parse.py`, so the next real filing and Diego's first Monthly invoice preview are their first live use.
   Rollback: Railway Redeploy of `82f52aac`, then revert the commit. The rest of the hardening (a hashed lock, base image
   pins) stays with Trello N9Zcx04p.
+- 🛑 **2026-11-18: what a run key can do is now limited (Trello N9Zcx04p #171, audit items 8 and 9, parts A and B).** Fred:
+  A and B "Enforce right away", C "Keep today's behaviour", D and E later. Bot `6d69769` (= `19c39d5` for #171 plus
+  `6d69769`, Trello #228, a test-only fix: the August duplicate test now dates its report relative to today), deploy
+  `039c149b`, live 19:29 ET in the Mon-Thu window, after the 19:19 poll; `/data` volume backup "before #171 key limits"
+  00:28 UTC 11-19 first. Rollback: Railway Redeploy of `f49ac0ce` (= `f7fc2d0`), then revert the two commits.
+  - **A. `POST /gdo/process-one` (Auto file) takes only the `dermapp` key.** Any other valid key gets **403** "process-one
+    takes only the DERM app's key: file the visit from the DERM app's Auto file button. Nothing was started." Checked by
+    the key's NAME (`_key_is_valid`), because `_require_run_key` hands back the `x-acting-user` name for `dermapp`.
+  - **B. A hand entry needs a person's key.** `/dashboard/bot/manual/add` and `/dashboard/bot/manual/run` refuse the shared
+    `RUN_KEY` with **403** "Hand entries need your personal key: the shared key can no longer add or file them." plus
+    "Nothing was saved." / "Nothing was started.". Reading the dashboard with the shared key is unchanged.
+  - A 403 is never a lockout strike (a 401 still is). The bot's own `docs/API_CONTRACT.md` section 13 says the same.
+  - Measured first: since 2026-11-04 every `/gdo/process-one` call came from `dermapp` (6 calls) and nobody called the two
+    hand-entry routes, so nothing in use was refused.
+  - Tested before the push in the bot's test image with `--network none` and no secrets: `tests/test_card171_key_limits.py`
+    22 checks, the whole suite green, the old code failing the new checks.
+  - Live after the deploy: `/health` 200; probe 1 (the `fred` key on process-one, empty body) 403 with the sentence above;
+    probe 2 (the shared key on manual/run, `{"id":0}`, no dry run) 403 with the sentence; the `dermapp` key reading a past
+    run's `/gdo/status` 200; the `fred` key on `/dashboard/summary` 200. The poll ran at startup (19:31, "Queue returned
+    0 item(s) (mode=live)"), no ERROR; the bot logged both refusals as WARNING.
+  - **Still open on #171:** D (file only our clients' permits) and E (re-read the visit from our database before a
+    filing), the DB read first; C (a hand entry still updates the county contact email) stays as is on purpose.
 - **2026-11-05: who really acted** (Trello EOnFKqSK). Bot commit `c0088db`, deploy `8a48e37b`, running since 10:41:58 ET; `/data`
   backed up first (volume backup 15:40 UTC). One header, `x-acting-user`, believed only from the `dermapp` key. It went outside
   the bot window: Fred waived it once, for this change only ("Push now"), with the bot idle and no page request since 09:14 ET.
@@ -269,7 +291,8 @@ view names it `no_permit`, and the health email lists it per visit (section 8).
 🛑 **Since 2026-10-29 (Fred, plan A) a visit we hold is filed with the DERM Tracker button, not this form** (section
 11b): the button records the filing on the visit by itself, this form never does. The bot-side fix below (plan Part B)
 is shelved. What follows stays true for any hand entry still made on the bot page: it is refused with a Slack post and
-recorded by a person as described here.
+recorded by a person as described here. 🛑 Since bot `6d69769` (2026-11-18, section 2) adding or filing a hand entry needs
+a person's key: the shared `RUN_KEY` gets 403.
 
 Fred, 2026-10-26: *"what data means is that someone used [the bot] dashboard to file it manually ... so at the end of
 the day it was a manual filing, so we can just accept that new data as a criteria and we can classify it as a manual
@@ -548,7 +571,8 @@ presses"). Built and live the same day (migration `2026-10-29_1245`, `rpa-derm-q
 ### 11b. Switched ON (2026-10-29 17:03 ET)
 
 Fred: *"Yes: settings + dry run now"*, after Jonathan shipped `POST /gdo/process-one` (bot `8299174`, contract v2 in the
-bot's `docs/API_CONTRACT.md` section 13) and added a `dermapp` entry to the bot's `RUN_KEYS`.
+bot's `docs/API_CONTRACT.md` section 13) and added a `dermapp` entry to the bot's `RUN_KEYS`. 🛑 Since bot `6d69769`
+(2026-11-18, section 2) `/gdo/process-one` takes ONLY that `dermapp` key: a person's key gets 403.
 - **Secrets:** `GDO_BOT_FILE_URL` = `https://unclogmerpabot-production.up.railway.app/gdo/process-one`;
   `GDO_BOT_FILE_KEY` = the `dermapp` entry of Railway `RUN_KEYS`, copied by script from `railway variables` to the
   Management API (never printed; fingerprint check by digest). Off switch: delete either secret (`status` goes back to

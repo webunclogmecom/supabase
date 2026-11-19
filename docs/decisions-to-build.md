@@ -636,6 +636,10 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
     now, these after"**: A and B now, D (only our clients' permits) and E (re-read the visit) later, the DB read
     first; (4) Docker Desktop started (for the no-network test container). A + B built on branch
     `fix-171-key-limits` of the bot; deploy in a Mon-Thu 19:00-21:30 ET window.
+  - **A and B BUILT and LIVE 2026-11-18 19:29 ET:** bot `6d69769` (with #228's test-only fix), deploy `039c149b`, `/data`
+    backed up first; both approved probes answered 403 with their sentences, the DERM app's key and Fred's key still read
+    200 (`docs/reference/gdo-report-bot.md` section 2). C declined (Fred). **D and E open.** Items 8 and 9 stay unticked
+    on the card until D and E ship.
 
 - Admin Review: rotate button for photos in the Manhole Photos view (Fred, 2026-11-06, asked whether to add one: "Yes, on its own card"): Trello 2FgB4eML (#181, Approved), split from nT3aTuRS. Those photos show only in that view and its popup has no rotate buttons; PNG photos need a decision. **Not started.**
   - **2026-11-18, Fred on PNG photos: "Teach the service PNG/WebP"** (not hide the buttons, not just explain). BUILT: PDF service 0.8.4 (`83018b2`, live about 1:20 AM ET), the turned copy stored as a JPEG. The app half (section lightbox carries the photo id, type and angle) waits for the browser pane; the portal half went to the session named Supabase. Spec `Building Apps/Admin Review/docs/specs/2026-11-18-rotate-in-manhole-photos-and-png.md`.
