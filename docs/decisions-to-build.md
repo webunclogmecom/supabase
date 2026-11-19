@@ -75,7 +75,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   that query, in both copies. **Fred picked "Split it"** (Building Apps the old Calendar, the session named Supabase the portal).
 - **Old Calendar BUILT and LIVE 2026-11-19 about 4:05 PM ET** (`index-1SgnCrMx.js`; checked on 112-YA test visit 9232,
   Jobber and the database agree). Record: `Building Apps/Visit Calendar/docs/08-changelog.md`, rule 20 in its `CLAUDE.md`.
-- **Portal OPEN, the session named Supabase:** hand-off `Building Apps/Ops Portal/docs/specs/2026-11-19-191-drawer-stale-time-handoff.md`.
+- **Portal BUILT and LIVE 2026-11-19 about 4:00 PM ET** (the session named Supabase, portal `721432f`; hand-off
+  `Building Apps/Ops Portal/docs/specs/2026-11-19-191-drawer-stale-time-handoff.md`), checked live on the same test visit
+  at about 4:08 PM ET. Test visit deleted in the app. **Card in Testing / QA since about 4:10 PM ET**, all items ticked;
+  Diego has not re-tested.
 
 **Ops Portal loading screens: a branded app loading screen and a skeleton for every page (2026-11-19, Trello #234 `mQf75Cgd`)**
 - Fred's voice note: one very good looking loading screen in the brand (opening the portal, the sign-in page opening, after Sign in),
