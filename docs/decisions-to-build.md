@@ -75,6 +75,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   steps. Round 6 (the motion: liquid with two waves, pulses on the hose, ripples in the manhole, one shine when full;
   `mockups/2026-11-19-loading-screens-round6.html`) asks pick M (M1 everything moves, recommended / M2 only the logo)
   and the 13 defaults. NOT BUILT: next, the portal's opening screen (`src/shell/gate.tsx`), then the skeleton rounds.
+- Fred on round 6: *"ok let's keep that as an option."* So A4a moving is ONE option, not a go. After the logo cartoon
+  (`logo-animation/`, scene-3, the emblem drinking orange water from a manhole through a striped straw): *"now if you
+  remember A4a option, let's put this one as another option"*. Round 7 (`mockups/2026-11-19-loading-screens-round7.html`)
+  asks pick A: A4a (recommended: fills from the first instant, one light picture) or A5 (the logo drinks; needs an
+  animation player and file on the first page, about 4 s to fill, so a short form in the portal). Still open: pick A,
+  M if A4a, the 13 defaults.
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
