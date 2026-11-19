@@ -69,6 +69,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   3:04 PM ET (`scripts/lwt-monthly/app/MonthlyReportPage.tsx`, Supabase `8a22e985`, re-downloaded byte for byte). Records:
   Ops Portal and DERM Tracker `docs/08-changelog.md`. Card items Truck and Manual entry ticked; Verify stays Fred's.
 
+**Calendar drawer: show the time just saved, never an older cached copy (2026-11-19, Trello #191 `Nt26FU3q`)**
+- Diego, 2026-11-13: a saved 11:55 PM showed as 12:00 AM until saved again. The first save HAD stored it (audit trail);
+  the drawer filled from the cached `["visit-row", visit.id]` query that no save or drag refreshes. Fix: `gcTime: 0` on
+  that query, in both copies. **Fred picked "Split it"** (Building Apps the old Calendar, the session named Supabase the portal).
+- **Old Calendar BUILT and LIVE 2026-11-19 about 4:05 PM ET** (`index-1SgnCrMx.js`; checked on 112-YA test visit 9232,
+  Jobber and the database agree). Record: `Building Apps/Visit Calendar/docs/08-changelog.md`, rule 20 in its `CLAUDE.md`.
+- **Portal OPEN, the session named Supabase:** hand-off `Building Apps/Ops Portal/docs/specs/2026-11-19-191-drawer-stale-time-handoff.md`.
+
 **Ops Portal loading screens: a branded app loading screen and a skeleton for every page (2026-11-19, Trello #234 `mQf75Cgd`)**
 - Fred's voice note: one very good looking loading screen in the brand (opening the portal, the sign-in page opening, after Sign in),
   and a skeleton per page instead of "Loading" / "Reading" text, the Calendar's unlike Pumped water's, every page redone from zero
