@@ -65,7 +65,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   ticket's box, the reading's ticked, a tap changes it (recorded with who and when, undoable, through the same rule as the
   "Trucks differ" answer); A1 an "Add a ticket" button on the invoice row beside Change, opening the number and its truck;
   O2 the old DERM Tracker's Monthly page gets the truck change too; W1 publish as soon as it is checked, before October is
-  filed. NOT BUILT yet.
+  filed. **BUILT and LIVE 2026-11-19**: the portal 2:46 PM ET (portal `ad8061e`), the old DERM Tracker page published about
+  3:04 PM ET (`scripts/lwt-monthly/app/MonthlyReportPage.tsx`, Supabase `8a22e985`, re-downloaded byte for byte). Records:
+  Ops Portal and DERM Tracker `docs/08-changelog.md`. Card items Truck and Manual entry ticked; Verify stays Fred's.
 
 **Ops Portal loading screens: a branded app loading screen and a skeleton for every page (2026-11-19, Trello #234 `mQf75Cgd`)**
 - Fred's voice note: one very good looking loading screen in the brand (opening the portal, the sign-in page opening, after Sign in),
