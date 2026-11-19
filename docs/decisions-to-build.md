@@ -58,6 +58,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   - **"Mark as received" is NOT offered** (Fred, about 8:35 AM ET: "Then we shouldn't mark as received, that's something we have to infer once they record the payment in jobber."). An invoice reads paid when Jobber says so; the invoice menu offers "Record the payment in Jobber". Replaces his "make it color deep green" of the same morning.
   - Screens: the tank drawn with T3's colouring and a real interceptor's shape; permit file icons and Add permit without a Status field accepted (a permit's status from its expiry date, none means active); menu colours: Mark as bad debt deep amber (a warning), Mark as received deep green; Access gets its own Edit and each day mark opens a short form for that day; "Edit property" must say what it edits; a bigger, blue Add permit card. Asked of us: the difference between Mark as received and Record the payment in Jobber, and how an email opened from Activity would look.
 
+**Ops Portal loading screens: a branded app loading screen and a skeleton for every page (2026-11-19, Trello #234 `mQf75Cgd`)**
+- Fred's voice note: one very good looking loading screen in the brand (opening the portal, the sign-in page opening, after Sign in),
+  and a skeleton per page instead of "Loading" / "Reading" text, the Calendar's unlike Pumped water's, every page redone from zero
+  (*"start from zero with these skeletons"*). NOT BUILT: research, then a mockup round for Fred to pick. Card in Approved.
+
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
 - **Fred picked about 8:20 PM ET: "A A2, B B2, all defaults". BUILT and LIVE about 8:25 PM ET** (portal `96c5b01`; record in `Building Apps/Ops Portal/docs/08-changelog.md`). Portal only. Card v9GU2BZo made 2026-11-19, in Testing / QA (8 of 8 ticked, complete). Open, not asked: on a 390 px phone "Shift forms 14" touches the edge of the tab bar (as before).
@@ -101,6 +106,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   this one"*), so The Moore's GDO-014768 on sheets 1160 / 1161 is left as found; one visit page opened from every door, in the DERM visit
   page's look, with Auto file in the Manifests and Clients visit menus (#215 `RznftJ0a`); one simple manifest view everywhere and the
   DERM visits list folded into Manifests (#216 `bfuZbdgY`); an AI review of the Clients pages, then mockups, then build (#162).
+- **Fred's voice note, 2026-11-19 (NOT BUILT, mockups first; added to #215 and #216, the full words on the cards):** the visit page
+  lives at `/visits/<id>` with no menu item (`/derm/visits/<id>` redirects), easy to read with no tabs, Download report kept, no
+  Delete for now, a warning when a visit is deleted on the Calendar, and the Clients Visits tab opens the page instead of the
+  accordion (#215); the Manifests page itself is redesigned with the window, every manifest number opens the same window, and
+  DERM visits goes inside Manifests (#216, decision 4 first half).
 - **Round A (colours, #212 and #213) PICKED AND BUILT 2026-11-17.** Fred: *"go with all recommended and all defaults"* (L1 link
   #1d4ed8, C1 codes red only when past due in every app except pickers / search / Finances, G1 amber up to 60 days then red, E1
   the Calendar's late line on the Clients list, N1, D1 dark red #ff6b81, 22 defaults; Save & Next keeps his 2026-10-06 colours).
