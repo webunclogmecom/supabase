@@ -94,6 +94,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   record: Ops Portal `app/docs/02-architecture.md` "The opening screen"); built pictures sent for his word to publish
   (`mockups/2026-11-19-opening-screen-built.html`, local). NOT BUILT: the skeletons (default "next": round 2 drawings of every
   page and window first).
+- **Fred on the built pictures, 2026-11-19: "can we make the loading of the page a little slow so we can appreciate the
+  animation a little?, like when it shows up the loading, no need to force like with refreshes which the app already has
+  the data for"**. This overrides default "nowait" for the welcome only: a tab's first opening of the portal and the opening
+  after Sign in play one gulp at a time (0.4 s empty, a gulp every 0.75 s, 0.9 s to fill, about 3 s); a reload of the same
+  tab (`sessionStorage`), the sign-in page and the failure card stay quick. BUILT, NOT PUBLISHED (portal `066c296`, local).
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
