@@ -61,7 +61,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 **Ops Portal loading screens: a branded app loading screen and a skeleton for every page (2026-11-19, Trello #234 `mQf75Cgd`)**
 - Fred's voice note: one very good looking loading screen in the brand (opening the portal, the sign-in page opening, after Sign in),
   and a skeleton per page instead of "Loading" / "Reading" text, the Calendar's unlike Pumped water's, every page redone from zero
-  (*"start from zero with these skeletons"*). NOT BUILT: research, then a mockup round for Fred to pick. Card in Approved.
+  (*"start from zero with these skeletons"*). NOT BUILT. Card In Progress since 2026-11-19 (mockups).
+- Round 1 sent 2026-11-19 ~6:35 AM ET (`mockups/2026-11-19-loading-screens.html`, local). **Fred picked: "Go with B1 and C1"**:
+  a skeleton's bars move with a light band crossing them left to right (B1), and the page frame (title, buttons, filters, column
+  names) shows as real words while only the data is grey (C1). Pick A (the opening screen) still open: he asked for A2 redrawn,
+  *"can you make like a person pumping a manhole and filling the logo?"*. The 13 defaults are not answered yet.
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
