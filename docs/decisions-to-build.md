@@ -133,6 +133,21 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - **Fred: "publish"**: the opening screen is LIVE since 2026-11-19 1:50 PM ET (portal `9886168`; record: Ops Portal
   `docs/08-changelog.md`). Then *"the pace is too fast once we're refreshing a page"*: a refresh plays the welcome too, LIVE
   2:12 PM ET (portal `8bb1063`). Still NOT BUILT on #234: the skeletons for every page and window (round 2 drawings first).
+- Skeleton round 2 sent 2026-11-19 ~5:45 PM ET (`mockups/2026-11-19-skeletons-round2.html`, local: every page, tab and window
+  drawn from the real page). **Fred: "K1, all defaults, build them"** (K1: a window shows at once what the page already knows,
+  only the rest as bars; defaults parts, again, tab, rows, phone). BUILDING from 2026-11-19 ~6 PM ET (portal kit
+  `src/components/ui/skeleton.tsx`, first part `41b8d55`).
+
+**Upload progress on every file upload (2026-11-19, Fred in chat; no card yet)**
+- Fred: *"now we need have a progress status on the monthly report (old apps and ops portal) when uploading the files (and this
+  should happen on all the places where we need to upload a file, pdf, jpg, png, etc) so we have a visual of how the process is
+  going, same if there was an error to know something happened. remember to be styled and ux."* Round 1 sent ~5:15 PM ET
+  (`mockups/2026-11-19-upload-progress.html`, local).
+- **Fred picked (2026-11-20 ~12:20 AM ET): "go with u1 s1 and o1"**: U1 the progress in place of where the file was dropped;
+  S1 a server step shows its steps and the seconds, never a made-up percentage; O1 the old apps get it on the DERM Tracker's
+  Monthly report only (his 2026-11-06 rule keeps the old apps to bug fixes). He did not speak of the 10 defaults; built as
+  written. NOT BUILT (after the #234 skeletons): one kit part in the portal for every upload (11 places), the Monthly report in
+  the portal and in `scripts/lwt-monthly/app/MonthlyReportPage.tsx` (the DERM Tracker's byte copy).
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
