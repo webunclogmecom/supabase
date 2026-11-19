@@ -29,7 +29,7 @@ And on drag and drop: "Just make sure the error handler for it works good."
   matcher (`_permit_to_int`, the email matching) is already zero-blind.
 - Permits: 138 ACTIVE (130 with a PDF), 4 EXPIRED (1), 55 INACTIVE (49). No trigger on `gdos` pushes to Jobber.
 
-## The county login gate: PASSED (2026-11-19 ~11:50 PM ET)
+## The county login gate: PASSED (2026-11-19 ~5:45 PM ET)
 
 Fred's rule: "Try 6 digits once ... if it works, the bot types 6 digits from then on ... And if it fails we stop all
 about this change of digits, and keep the 5 digit, and fix what diego did with the 6 digits permits". Fred logged in
@@ -60,7 +60,7 @@ Side finding, not changed (raised to Fred): 8 ACTIVE permits whose stored PDF is
 1801 Collins Ave), 99 171-CAF (GDO-010249, the 2022 permit of Pizza at Ironside), 104 176-SOU (GDO-014681, Pura Vida
 12 NE 17 St), 147 155-PV (GDO-010891, Pura Vida Collins Loews). The report bot has never filed for any of them.
 
-## Step 3, measured and rehearsed (2026-11-20)
+## Step 3, measured and rehearsed (2026-11-19 evening)
 
 189 numbers are rewritten (137 ACTIVE, 3 EXPIRED, 49 INACTIVE); 5 already had 6 digits; 3 INACTIVE rows holding
 several numbers in one field (29, 157, 164) stay as they are. No two live permits of one client share digits (148-MOR
