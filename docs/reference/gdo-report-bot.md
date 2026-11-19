@@ -405,6 +405,16 @@ filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
 - **Since 2026-11-05 the DERM Tracker has its own page for this, `/monthly`** (Trello EOnFKqSK): the bot stays the engine, and the page reaches it through the edge function `lwt-monthly` with the `dermapp` key. The name on a filing comes from the sign-in; the `x-acting-user` header carries it, believed only from that key. The bot's `/monthly` and `/dashboard/monthly` pages keep working as the fallback until Fred says otherwise. The rules of the old page are ported in `scripts/lwt-monthly/monthly-rules.ts`: **a change to `static/monthly.js` means re-reading it, updating that file and its `EXPECTED_SHA`, and running the golden run in the no-network container.** App side: DERM Tracker `CLAUDE.md` rule 18.
 - **Pipeline:** our feed, then the invoice (PDF text or OCR), then reconcile, then a signed preview, then the .xlsx
   written onto `templates/DADE_Monthly_Fill_Form.xlsx`, then "Record as filed".
+- 🛑 **Since 2026-11-19 13:26 ET a photo of the invoice is read by CLAUDE first, tesseract only as the fallback** (Trello
+  #235 mCNzIHp6, bot `e2fba43` + docs `7e96593`; Fred: *"maybe it's using an old OCR, the readings are not really accurate
+  unless the image is extremely clear"*). Measured before, tesseract 5.5.0 on the three real papers: 5 invented numbers
+  (they carry no decal, so they sat with no truck), 834612's C0976 lost, 0 of 3 totals confirmed. Claude
+  (`claude-opus-5-5`, `invoice_vision.py`) only transcribes; `parse_text` judges its lines as before. 9 of 9 reads of the
+  papers perfect, 20 damaged copies with 0 invented numbers; a row it is not sure of is a chip, a partly legible ticket a
+  warning. The reply gains `reader` (`claude` / `tesseract`); `source` stays `ocr`. Switches on Railway:
+  `ANTHROPIC_API_KEY` (set 2026-11-19; the same key is in the workspace root `.env`), `INVOICE_READER=tesseract` turns
+  Claude off. Any Claude failure falls back to tesseract. About 6 to 12 s and a few cents a read. Full record and
+  rollback: the bot's `docs/TASK_INVOICE_READER_235.md`. `/data` backed up first ("before #235 Claude invoice reader").
 - **The month is the county's invoice package**, not the calendar.
 - **Gallons:**
   - Dade loads use the decal constant: C1184 = 3,800, C0976 = 2,000.
