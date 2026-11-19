@@ -86,6 +86,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   defaults. Proposed on the round 7 page, not yet agreed by Fred: the opening screen plays A5's short form (the straw
   already in, one gulp per real step, the portal opens when ready), the full 10 s story stays the video
   (`logo-animation/renders/unclogme-slurp.mp4`).
+- **Fred, 2026-11-19: "all defaults, and yes build the short version".** So the 13 round 1 defaults are agreed as written
+  (delay 0.2 s / at least 0.5 s, nothing waits for motion, in the first HTML, sign-in page unchanged with the screen before it
+  and after Sign in, the three sets of words, no zeros while reading, errors replace skeletons, action words stay, screen reader
+  and reduced motion, one skeleton kit, families, the dark look, round 2 draws every page and window first), and A5's short
+  form is agreed. **The opening screen is BUILT, NOT PUBLISHED** (portal `src/shell/opening.ts`, `gate.tsx`, `__root.tsx`;
+  record: Ops Portal `app/docs/02-architecture.md` "The opening screen"); built pictures sent for his word to publish
+  (`mockups/2026-11-19-opening-screen-built.html`, local). NOT BUILT: the skeletons (default "next": round 2 drawings of every
+  page and window first).
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
