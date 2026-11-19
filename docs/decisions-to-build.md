@@ -69,6 +69,15 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   3:04 PM ET (`scripts/lwt-monthly/app/MonthlyReportPage.tsx`, Supabase `8a22e985`, re-downloaded byte for byte). Records:
   Ops Portal and DERM Tracker `docs/08-changelog.md`. Card items Truck and Manual entry ticked; Verify stays Fred's.
 
+**GDO permit numbers: one form, `GDO-` plus 6 digits (2026-11-19, Trello #227 `CfXqPkZH`, reopened)**
+- Fred: *"One form, 6 digits ... when there are more or less than 6 digits throw the error mentioning it ... we would need to
+  change the GDO Bot ... we need to check all the GDO Permits we have to see if all needs is a 0"*; on drops: *"make sure
+  the error handler for it works good"*. Found when Diego's GDO-014769 saved as a second copy of GDO-14769 (148-MOR).
+- Plan and order: `docs/specs/2026-11-19-gdo-numbers-six-digits-plan.md` (PDF check, then the bot zero-blind before the
+  database, then the rule + reader together, then the apps' hints and the drop errors).
+- **Step 0 BUILT 2026-11-19 17:39 ET:** 148-MOR's duplicates merged (`2026-11-19_1740_gdos_148mor_merge_duplicate_permits.sql`,
+  Fred: "Merge by your rule"). Steps 1 to 6 OPEN.
+
 **Calendar drawer: show the time just saved, never an older cached copy (2026-11-19, Trello #191 `Nt26FU3q`)**
 - Diego, 2026-11-13: a saved 11:55 PM showed as 12:00 AM until saved again. The first save HAD stored it (audit trail);
   the drawer filled from the cached `["visit-row", visit.id]` query that no save or drag refreshes. Fix: `gcTime: 0` on
