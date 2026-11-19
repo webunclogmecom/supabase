@@ -79,8 +79,13 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   (`logo-animation/`, scene-3, the emblem drinking orange water from a manhole through a striped straw): *"now if you
   remember A4a option, let's put this one as another option"*. Round 7 (`mockups/2026-11-19-loading-screens-round7.html`)
   asks pick A: A4a (recommended: fills from the first instant, one light picture) or A5 (the logo drinks; needs an
-  animation player and file on the first page, about 4 s to fill, so a short form in the portal). Still open: pick A,
-  M if A4a, the 13 defaults.
+  animation player and file on the first page, about 4 s to fill, so a short form in the portal).
+- **Fred picked A5 (2026-11-19): "I love A5, so we stick with that, but first make the lid of the manhole to be more
+  realistic ... but it's too dark, so make it more greyish."** The lid is now a grey cast-iron cover (rim, groove,
+  raised square studs, pry slots). A4a and pick M are closed. NOT BUILT. Still open before the build: the 13 round 1
+  defaults. Proposed on the round 7 page, not yet agreed by Fred: the opening screen plays A5's short form (the straw
+  already in, one gulp per real step, the portal opens when ready), the full 10 s story stays the video
+  (`logo-animation/renders/unclogme-slurp.mp4`).
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
