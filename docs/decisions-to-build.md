@@ -66,6 +66,15 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   a skeleton's bars move with a light band crossing them left to right (B1), and the page frame (title, buttons, filters, column
   names) shows as real words while only the data is grey (C1). Pick A (the opening screen) still open: he asked for A2 redrawn,
   *"can you make like a person pumping a manhole and filling the logo?"*. The 13 defaults are not answered yet.
+- Rounds 2 to 5 (2026-11-19, local pages `mockups/2026-11-19-loading-screens-round2..5.html`): drawn pumping scenes, then
+  *"make the logo be on a loading truck and for that truck to be the one being filled, like the truck we used for the
+  halloween theme"*, *"let's have the truck door to have the logo, and the tank of the truck to be silver colored and to
+  have the logo there"*, *"let's remove the background now, we just need the manhole, person, truck, hose, cone."*
+  **Fred picked A4a: "A4a, but now make it animated"**: the painted cut-out truck (orange cab, silver tank), our white
+  logo on the door, our orange logo alone on the tank filling like a liquid in three steps that follow the real sign-in
+  steps. Round 6 (the motion: liquid with two waves, pulses on the hose, ripples in the manhole, one shine when full;
+  `mockups/2026-11-19-loading-screens-round6.html`) asks pick M (M1 everything moves, recommended / M2 only the logo)
+  and the 13 defaults. NOT BUILT: next, the portal's opening screen (`src/shell/gate.tsx`), then the skeleton rounds.
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
