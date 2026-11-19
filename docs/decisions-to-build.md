@@ -58,6 +58,15 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   - **"Mark as received" is NOT offered** (Fred, about 8:35 AM ET: "Then we shouldn't mark as received, that's something we have to infer once they record the payment in jobber."). An invoice reads paid when Jobber says so; the invoice menu offers "Record the payment in Jobber". Replaces his "make it color deep green" of the same morning.
   - Screens: the tank drawn with T3's colouring and a real interceptor's shape; permit file icons and Add permit without a Status field accepted (a permit's status from its expiry date, none means active); menu colours: Mark as bad debt deep amber (a warning), Mark as received deep green; Access gets its own Edit and each day mark opens a short form for that day; "Edit property" must say what it edits; a bigger, blue Add permit card. Asked of us: the difference between Mark as received and Record the payment in Jobber, and how an email opened from Activity would look.
 
+**Monthly report: change a ticket's truck after the reading, add a ticket by hand in plain sight (2026-11-19, Trello #235 `mCNzIHp6` parts 2 and 3)**
+- Fred: *"once it reads something correctly (even if it's not correct) you can't change the truck"* and *"we need to have that
+  manual filing of manifest at the sight not hidden like that"*. Round `mockups/2026-11-19-monthly-truck-and-add.html` (local).
+- **Fred picked "T2, A1, O2, W1"** (defaults not commented, taken as written): T2 the two county trucks always open in the
+  ticket's box, the reading's ticked, a tap changes it (recorded with who and when, undoable, through the same rule as the
+  "Trucks differ" answer); A1 an "Add a ticket" button on the invoice row beside Change, opening the number and its truck;
+  O2 the old DERM Tracker's Monthly page gets the truck change too; W1 publish as soon as it is checked, before October is
+  filed. NOT BUILT yet.
+
 **Ops Portal loading screens: a branded app loading screen and a skeleton for every page (2026-11-19, Trello #234 `mQf75Cgd`)**
 - Fred's voice note: one very good looking loading screen in the brand (opening the portal, the sign-in page opening, after Sign in),
   and a skeleton per page instead of "Loading" / "Reading" text, the Calendar's unlike Pumped water's, every page redone from zero

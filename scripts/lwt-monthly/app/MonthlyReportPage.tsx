@@ -45,7 +45,9 @@ interface Overview {
   rows: FilingRow[];
   me: { name: string; email: string; can_edit: boolean };
 }
-interface Ui { acks: Record<string, boolean>; ticks: Record<string, boolean>; parsed: InvoiceParse | null; invoiceName?: string; ym?: string }
+// trucks: a truck changed by hand in a ticket's box (Trello #235, Fred's pick O2: the portal's T2 here too): who, when,
+// and what it was. Saved with the month's work, so either host shows it.
+interface Ui { acks: Record<string, boolean>; ticks: Record<string, boolean>; parsed: InvoiceParse | null; invoiceName?: string; ym?: string; trucks?: Record<string, { by: string; at: string; was: string }> }
 interface WorkFile extends SavedFile { ui?: Ui }
 interface Item {
   t: string; l: Load | null; date: string; lane: number | null; need: Decision | null; on: boolean; held: boolean; ooc: boolean;
@@ -637,10 +639,41 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
       </div>
     );
   }
+  // The truck, in a ticket's box (#235: "once it reads something correctly (even if it's not correct) you can't change the
+  // truck"). The two county trucks are always open, the current one ticked; a tap changes it through the same rule as the
+  // "Trucks differ" answer, so the filing rules decide the gallons as before. The same as the Ops Portal's page.
+  function renderTruck(t: string, l: Load | null) {
+    if (!r || !canEdit || (l && isOutOfCounty(l))) return null;
+    const cur = String((l && l.decal) || r.PAPER_DECALS[t] || r.INV_DECALS[t] || '').toUpperCase();
+    const read = String(r.INV_DECALS[t] || '').toUpperCase();
+    const mark = ui.trucks?.[t];
+    const named = (d: string) => `${board?.trucks.find(x => (x.decal || '').toUpperCase() === d)?.name || 'No truck'}, ${d}`;
+    const choose = (d: string) => act(() => {
+      if (d === cur) return;
+      if (l) r.setLoadDecal(r.LOADS.indexOf(l), d); else r.setNumberDecal(t, d);
+      const trucks = { ...ui.trucks };
+      if (d === read) { delete trucks[t]; delete ui.acks[`truck_differs|${t}`]; }
+      else { trucks[t] = { by: ov?.me.name || 'Someone', at: new Date().toISOString(), was: read || cur }; ui.acks[`truck_differs|${t}`] = true; }
+      ui.trucks = trucks;
+    });
+    return (
+      <div>
+        <div className="lw-sect">Truck <small>{read ? 'From the invoice reading. Tap the other one if the paper says so.' : 'The invoice does not say. From the Decal column on the paper.'}</small></div>
+        {Object.keys(DECAL_GALLONS).map(d => tile(cur === d, <>{badge(board?.trucks.find(x => (x.decal || '').toUpperCase() === d) || null, true)} {named(d)}</>,
+          `${int(DECAL_GALLONS[d])} gal${read === d ? ', what the invoice reading gave' : ''}`, () => choose(d), d))}
+        {mark && cur !== read && (
+          <div className="lw-gps">
+            <span>Changed by hand to {named(cur)}, by {mark.by} at {clock(mark.at)}.{mark.was ? ` The invoice reading gave ${named(mark.was)}.` : ''}
+              {read && <> <button type="button" className="lw-b q" style={{ height: 'auto', padding: 0 }} onClick={() => choose(read)}>Use the invoice&rsquo;s truck</button></>}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
   const panelHead = (t: string, chip: ReactNode, lead: ReactNode) => (
     <div className="lw-ph">
       <div className="lw-pt"><b>{t === MONTH_KEY ? monthLabel(r?.ym) : `#${t}`}</b>{chip}
-        {compact && <button type="button" className="lw-rm x" aria-label="Close" onClick={() => pick(null)}><Ic d={I.x} /></button>}
+        {compact &&<button type="button" className="lw-rm x" aria-label="Close" onClick={() => pick(null)}><Ic d={I.x} /></button>}
       </div>
       <p>{lead}</p>
       {errLine}
@@ -655,7 +688,6 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     const st = r.formFor(t);
     const mode: 'add' | 'edit' = editing ? 'edit' : 'add';
     const off = r.formOffload(t, st);
-    const decal = pickerDecal;
     const picked = new Set(st.clients.map(c => String(c._visit_id ?? '')));
     const left = visits.filter(v => !picked.has(String(v.visit_id)));
     const q = query.trim().toLowerCase();
@@ -680,11 +712,9 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     const failedS = suggKey && sugg[suggKey] && typeof sugg[suggKey] === 'object' && !Array.isArray(sugg[suggKey]) ? (sugg[suggKey] as { error: string }).error : '';
     const onTaken = grp('same_truck_on_ticket'), otherTaken = grp('other_truck_on_ticket');
     const latest = st.clients.length ? r.formPickup(st) : '';
-    const inputs = decal ? null : (
-      <div><div className="lw-sect">Which truck? <small>the invoice does not say</small></div>
-        {Object.keys(DECAL_GALLONS).map(d => tile(false, decalLine(d), 'From the Decal column on the paper', () => act(() => r.setNumberDecal(t, d)), d))}
-      </div>
-    );
+    // #235: the trucks stay open after a reading too (they hid once the invoice gave one).
+    const at = r.indexOfTicket(t);
+    const inputs = renderTruck(t, at >= 0 ? r.LOADS[at] : null);
     return (
       <aside className={panelClass}>
         {mode === 'add'
@@ -984,6 +1014,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
         {panelHead(sel, chip, lead)}
         {body(<>
           {facts}
+          {renderTruck(sel, l)}
           {held && renderSizes(sel)}
           {renderNotes(sel)}
           <div><div className="lw-sect">Stops</div>{renderStops(sel, l)}</div>
