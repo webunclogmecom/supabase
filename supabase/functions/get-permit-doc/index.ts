@@ -104,6 +104,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     .select('permit_document_path')
     .eq('client_id', cl.id)
     .eq('gdo_number', permitNumber)
+    // Trello #227 (2026-11-20): a retired copy can share a live permit's number once every number has 6 digits
+    // (132-PUM 62/144, 148-MOR 182/307, each with a PDF); maybeSingle() would error on the pair and answer 404.
+    .neq('status', 'INACTIVE')
     .not('permit_document_path', 'is', null)
     .maybeSingle()
   if (!gdo?.permit_document_path) return json({ error: 'not found' }, 404, cors)
