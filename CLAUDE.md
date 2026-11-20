@@ -415,6 +415,15 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
   miami remove it"*: type INACTIVE, its one permit, 057-BAY row 141, INACTIVE, and `trg_aa_permit_number_matches_type`
   refuses a live permit on a retired type, `blocker=permit_type_retired`) and `gdos.permit_effective`. Names kept on purpose
   (`client.get_client_activity` keys history on `table_name = 'gdos'`; the names are literal in apps, bots, pdf-service).
+- 🛑 **A GDO number is `GDO-` plus 6 digits since 2026-11-19 (Trello #227, `2026-11-19_1935`, `_1945`; Fred: "One form,
+  6 digits").** The county prints 6 (`GDO-011226`); 189 numbers were rewritten from 5. `permit_types.number_pattern`
+  is `^GDO-[0-9]{6}$` and the trigger refuses other lengths in words ("GDO-14769 has 5 digits ... type GDO-014769"),
+  on a live permit and on any NEW or CHANGED number of an inactive one. `client.upsert_gdo_permit` finds a copy BY ITS
+  DIGITS among live permits and names the address that holds it. `gdos_client_gdo_unique` is a partial unique INDEX
+  (`WHERE status <> 'INACTIVE'`), no longer a constraint. `parse-gdo-permit` (v44) stores 6. Before it the county
+  login was proved by hand with 6 digits; the GDO report bot (zero-blind ledger key, 6-digit login) and the `@GDO`
+  lookup bot went live first. Never compare a GDO number to an outside value by exact text: compare digits.
+  Plan and record: `docs/specs/2026-11-19-gdo-numbers-six-digits-plan.md`.
 - 🛑 **A reader that means "the Miami-Dade DERM permit" filters `permit_type = 'GDO'` or `gdo_number ~ '^GDO-[0-9]+$'`.**
   The two are equal for every non-INACTIVE row because `trg_aa_permit_number_matches_type` refuses a GDO-looking number
   on another type and a non-`GDO-n` number on a GDO. Never write a new DERM reader that filters only on `status`: before

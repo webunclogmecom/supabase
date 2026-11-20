@@ -76,7 +76,19 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Plan and order: `docs/specs/2026-11-19-gdo-numbers-six-digits-plan.md` (PDF check, then the bot zero-blind before the
   database, then the rule + reader together, then the apps' hints and the drop errors).
 - **Step 0 BUILT 2026-11-19 17:39 ET:** 148-MOR's duplicates merged (`2026-11-19_1740_gdos_148mor_merge_duplicate_permits.sql`,
-  Fred: "Merge by your rule"). Steps 1 to 6 OPEN.
+  Fred: "Merge by your rule").
+- **Gate PASSED ~5:45 PM ET:** Fred logged in to the county portal by hand with `015675`.
+- **Step 1 DONE:** every readable permit PDF prints `GDO-0` + 5 digits; 11 wrong files became Trello #236 (`focSCbGP`)
+  with the standing check `scripts/checks/gdo_permit_pdf_numbers.mjs` (Fred: "New card + standing check").
+- **Step 2 BUILT and LIVE:** the `@GDO` lookup bot 6:36 PM ET (`6f3876f`, three live lookups in #gdo-permit); the GDO
+  report bot 7:31 PM ET (`2349fd0`: zero-blind ledger key, 6-digit login, 6 digits shown; its docs read first, an
+  independent review applied, 54/54 offline, 14/14 mutants killed).
+- **Step 3 BUILT and LIVE 7:32 PM ET:** `2026-11-19_1935_gdos_six_digit_numbers` (189 numbers, partial unique index,
+  pattern, refusal by digits naming the address) + `parse-gdo-permit` v44; `_1945` (a changed number on an inactive
+  permit is checked too, found by the live test). `get-permit-doc` v35 skips retired copies.
+- **OPEN:** step 4 (the apps' hint texts: the old Client App by Building Apps, sent 11-19 evening; the portal by the
+  session named Supabase), step 5 (drop errors in both apps), step 6 (checks: the first live 6-digit county login on
+  the bot's next real filing).
 
 **Calendar drawer: show the time just saved, never an older cached copy (2026-11-19, Trello #191 `Nt26FU3q`)**
 - Diego, 2026-11-13: a saved 11:55 PM showed as 12:00 AM until saved again. The first save HAD stored it (audit trail);
