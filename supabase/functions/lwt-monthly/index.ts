@@ -135,9 +135,10 @@ async function relay(r: Response, action: string, cors: Record<string, string>):
   if (r.status >= 500) {
     const text = await r.text().catch(() => '')
     console.error(`lwt-monthly ${action}: bot HTTP ${r.status}`)
-    let detail: unknown = null; let refusedBy: unknown = null
-    try { const j = JSON.parse(text); detail = j?.detail ?? null; refusedBy = j?.refused_by ?? null } catch { /* not JSON */ }
-    return json({ error: 'bot_error', detail: typeof detail === 'string' ? detail : null, refused_by: refusedBy,
+    let detail: unknown = null; let refusedBy: unknown = null; let noAnswer = false
+    try { const j = JSON.parse(text); detail = j?.detail ?? null; refusedBy = j?.refused_by ?? null; noAnswer = j?.no_answer === true } catch { /* not JSON */ }
+    // no_answer (bot, 2026-11-20): a record whose answer was lost MAY have landed, so a page can say so instead of "refused".
+    return json({ error: noAnswer ? 'bot_no_answer' : 'bot_error', no_answer: noAnswer, detail: typeof detail === 'string' ? detail : null, refused_by: refusedBy,
       message: typeof detail === 'string' ? detail : 'The report service had a problem, so nothing was done. Try again.' }, 502, cors)
   }
   const bytes = await r.arrayBuffer()

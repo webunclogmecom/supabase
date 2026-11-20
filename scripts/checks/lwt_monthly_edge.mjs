@@ -109,6 +109,8 @@ async function run(h, hOff) {
   await t('a refusal in words passes through', async () => { world({ bot: { status: 409, body: { detail: 'stale or missing preview' } } }); const r = await post(h, { action: 'generate', payload: {} }); eq(r.status, 409, 'status'); eq((await r.json()).detail, 'stale or missing preview', 'detail') })
   await t('the bot refusing our key never reads as signed out', async () => { world({ bot: { status: 401, body: { detail: 'Invalid x-run-key header' } } }); const r = await post(h, { action: 'tickets' }); eq(r.status, 502, 'status'); ok(/Tell Fred/.test((await r.json()).message), 'words') })
   await t('the tracker refusing a filing is named', async () => { world({ bot: { status: 502, body: { detail: 'upstream said no', refused_by: 'tracker' } } }); const j = await (await post(h, { action: 'record', id: 1, expect_tickets: ['1'] })).json(); eq(j.refused_by, 'tracker', 'who'); eq(j.message, 'upstream said no', 'words') })
+  await t('a record whose answer the bot lost says so (no_answer), in the bot\'s words', async () => { world({ bot: { status: 502, body: { detail: 'October 2026 may or may not have been recorded', no_answer: true } } }); const j = await (await post(h, { action: 'record', id: 1, expect_tickets: ['1'] })).json(); eq(j.no_answer, true, 'flag'); eq(j.error, 'bot_no_answer', 'error'); eq(j.message, 'October 2026 may or may not have been recorded', 'words') })
+  await t('a plain bot failure is not a lost answer', async () => { world({ bot: { status: 502, body: { detail: 'upstream said no', refused_by: 'tracker' } } }); const j = await (await post(h, { action: 'record', id: 1, expect_tickets: ['1'] })).json(); eq(j.no_answer, false, 'flag'); eq(j.error, 'bot_error', 'error') })
   await t('no answer on a read: nothing changed', async () => { world({ botThrows: true }); const r = await post(h, { action: 'tickets' }); eq(r.status, 502, 'status'); ok(/Nothing changed/.test((await r.json()).message), 'words') })
   await t('no answer on a filing: it says check first', async () => { world({ botThrows: true }); const j = await (await post(h, { action: 'record', id: 1, expect_tickets: ['1'] })).json(); ok(/Check the filing history/.test(j.message), 'words') })
   await t('the invoice goes as raw bytes', async () => { const w = world({ bot: { status: 200, body: { tickets: [] } } }); const r = await raw(h, new Uint8Array([37, 80, 68, 70])); eq(r.status, 200, 'status'); eq(w.botCalls[0].url, 'https://bot.example/monthly/invoice-parse', 'url'); eq([...new Uint8Array(w.botCalls[0].init.body)], [37, 80, 68, 70], 'bytes') })
@@ -147,6 +149,8 @@ const MUTANTS = [
   ['all bot headers pass through', "if (n === 'content-type') out[name] = value", 'out[name] = value; if (false) out[name] = value'],
   ['no size cap on the invoice', 'if (bytes.byteLength > MAX_INVOICE_BYTES)', 'if (false)'],
   ['month not checked on saved work', 'if (!PERIOD_RE.test(period))', 'if (false)'],
+  ['the bot\'s lost answer is dropped', 'noAnswer = j?.no_answer === true', 'noAnswer = false'],
+  ['every bot failure reads as a lost answer', "error: noAnswer ? 'bot_no_answer' : 'bot_error', no_answer: noAnswer,", "error: 'bot_no_answer', no_answer: true,"],
   ['staff check removed', "if (!(await isStaffEmail(token, email))) return json({ error: 'forbidden', message: 'Staff account required.' }, 403, cors)", ''],
 ]
 let bad = failed.length
