@@ -25,6 +25,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Thanksgiving look on the staff apps (2026-11-20, Trello #237 JF95qsNO)**
+- Fred: "create a card to make something like the Halloween theme we did but for Thanksgiving." Mockups round 1 (`mockups/2026-11-20-thanksgiving.html`, local): three looks on the real Ops Portal pages, 7 picks, 15 defaults.
+- **Fred's answer, 2026-11-20: "More of the style of T2, let's work around it. W2, D3 (but include the day before, wednesday), P1, O1 (but only when the theme comes into play, so since wednesday up to friday, not all week), S1, M1"**. So: the Turkey Crew style as the base, with a second round of drawings around it before it is final; the Ops Portal AND the old app addresses (his exception to the 2026-11-06 "bug fixes only" rule for the old hosts); on Wednesday Nov 25 at 12:00 AM ET, off Saturday Nov 28 at 12:00 AM ET; every page its own picture; the greeting on every opening inside those three days only; the picture on the sign-in page, the form untouched; leaves move on the opening screen only. The 15 defaults are not answered yet.
+- **NOT BUILT.** To build once the look is final: a date switch in the Ops Portal (it has none; the session named Supabase), the same dates in the old apps' shared `halloween.ts` (one publish per old app, as on 2026-10-29), the stylesheets and pictures in storage, a same-day off switch, and a read-only check on Saturday Nov 28. Not on customer pages; printing unchanged.
+
 **Site file builder: upload a photo from the computer or phone (2026-11-17, Trello #219 VinArggt)**
 - Huddle with Serena: she could only drag visit or form photos into the builder; Fred: "So I need to add a function to add pictures manually." On the collector-form page Fred added: "But having that as well for the office form where they're at the builder i think that's good too." And: "they should be also applied to the old apps, we haven't concluded the migration to ops portal yet".
 - Mockups (`mockups/2026-11-17-intake-photos.html`, local). **Fred's picks, 2026-11-17: "go with U3, yes to P2 and P3, all defaults"**: U3 the photo box itself uploads; P2 an upload reaches drivers only with the next approved version; defaults: both apps, JPG/PNG turned upright, stored privately, Remove keeps the file.
