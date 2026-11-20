@@ -66,7 +66,9 @@ const dayNo = (d: string) => Math.round(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) 
 const dayStr = (n: number) => new Date(n * 864e5).toISOString().slice(0, 10);
 const int = (n: number) => n.toLocaleString('en-US');
 const count = (n: number, w: string) => `${int(n)} ${w}${n === 1 ? '' : 's'}`;
-const plain = (s: unknown) => String(s ?? '').replace(/\s*(--|—)\s*/g, ', ');
+// The rules file speaks the bot page's words (proven word for word); the reader is Claude first, so never "OCR" on screen.
+const plain = (s: unknown) => String(s ?? '').replace(/\s*(--|—)\s*/g, ', ')
+  .replace(/read by OCR from a scan/g, 'read from a picture of the paper (a photo or a scan)');
 const ymOfLabel = (label: string) => {
   const m = /^([A-Za-z]+)\s+(\d{4})$/.exec(label.trim());
   const i = m ? MONTHS.indexOf(m[1]) : -1;

@@ -1364,7 +1364,7 @@ export class MonthlyRules {
       msg += '; ' + cand + ' number(s) the reader could not commit to are ' +
         'offered below';
     if (p.source === 'ocr')
-      msg += ' \u2014 read from a picture of the paper (a photo or a scan): count the ticket rows on the paper ' +
+      msg += ' \u2014 read by OCR from a scan: count the ticket rows on the paper ' +
         'against the number detected, and check every digit';
     this.invoiceStatus = {text: msg + ' \u2014 verify against the paper before previewing', tone: 'warn'};
     return true;

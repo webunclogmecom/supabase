@@ -151,7 +151,9 @@ export const SEQUENCES = [
     {act: 'approve', on: true}, {act: 'setMonth', ym: '2026-10'}, {act: 'setMonth', ym: 'nope'}, preview([], 'tok-d'), {act: 'approve', on: true},
     {act: 'generate', id: '41', tickets: '2', list: ['900001', '900002']}, {act: 'record', said: {dry_run: true, what: 'x'}},
     {act: 'record', said: {dry_run: false, state: 'already'}}, {act: 'record', said: {dry_run: false, state: 'recorded', what: 'x'}},
-    {act: 'record', ok: false, raw: {detail: 'no', refused_by: 'tracker'}}]},
+    {act: 'record', ok: false, raw: {detail: 'no', refused_by: 'tracker'}},
+    // 2026-11-20 (bot a2ca5a4): a failed answer that says no_answer is "maybe recorded" (amber), never a refusal.
+    {act: 'record', ok: false, raw: {detail: 'our database did not answer in time', no_answer: true}}]},
 
   {name: 'gallons missing panel', ym: '2026-09', steps: [
     open([row('900001', '2026-09-10', HARBOR), row('900005', '2026-09-10', MARINA), row('900003', '2026-09-03', CORAL)]),

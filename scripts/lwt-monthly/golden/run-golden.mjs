@@ -17,7 +17,8 @@ if (!fs.existsSync('/.dockerenv')) {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const OLD_SRC = fs.readFileSync(process.argv[2], 'utf8');
 const RULES_SRC = fs.readFileSync(path.join(here, '..', 'monthly-rules.ts'), 'utf8').replace(/\r\n/g, '\n');
-const EXPECTED_SHA = '5cb8098db91440e4b5a498ee9ab560798f66aa6c7e1d550f5dc1d5faeb21d06e';
+// The bot's page at a2ca5a4 (2026-11-20: Record's no_answer, the new "already" words); before it, 5cb8098d (d00636a).
+const EXPECTED_SHA = '138e6a0e38d597cc25b1a8e987fec7eba706da764d09291d537f8a29ac85588a';
 const FUZZ_SEQ = 400, FUZZ_LEN = 28;
 // The run must actually reach these, or a clean match proves less than it says.
 const MARKERS = ['"_decal_pinned"', '"_offload_pinned":true', '"_offload_pinned":false', '"_offload_guess"', '"_offload_feed"',
@@ -29,7 +30,7 @@ const SEEN = new Set();
 
 const clone = x => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
 const sha = crypto.createHash('sha256').update(OLD_SRC).digest('hex');
-console.log('monthly.js sha256 ' + sha + (sha === EXPECTED_SHA ? ' (the d00636a page)' : ' NOT THE PINNED PAGE'));
+console.log('monthly.js sha256 ' + sha + (sha === EXPECTED_SHA ? ' (the a2ca5a4 page)' : ' NOT THE PINNED PAGE'));
 if (sha !== EXPECTED_SHA && !process.argv.includes('--any-version')) {
   console.error('The page changed since this port was proven. Re-read it, then update EXPECTED_SHA.');
   process.exit(3);
