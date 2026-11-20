@@ -415,6 +415,20 @@ filing, section 9). Brief, corrected 2026-10-27 after reading every bot doc:
   `ANTHROPIC_API_KEY` (set 2026-11-19; the same key is in the workspace root `.env`), `INVOICE_READER=tesseract` turns
   Claude off. Any Claude failure falls back to tesseract. About 6 to 12 s and a few cents a read. Full record and
   rollback: the bot's `docs/TASK_INVOICE_READER_235.md`. `/data` backed up first ("before #235 Claude invoice reader").
+- 🛑 **Since 2026-11-20 12:41 ET a Record pressed again never records the month twice** (bot `a2ca5a4`; Fred, after the
+  Monthly smoke test: *"Let's fix it, now."*; deployed outside the Mon-Thu window on that word, bot idle, `/data` backed
+  up first, "before monthly record retry fix"). The upstream key (`run_id`, the only dedup in `rpa-derm-monthly-filed`)
+  was `manual-<today's UTC date>-<invoice>`: a Record whose answer was lost, pressed again after 7 PM ET (EST), made a new
+  key and a second filing of the same tickets, and the bot's page advised "try again tomorrow". Now the key is
+  `manual-<last offload declared>-<invoice>`; a replay of the same filing (real, same invoice, same dates, same count)
+  marks the history filed (`said.earlier`); a lost answer or a gateway 5xx answers 502 `no_answer: true` ("may or may not
+  have been recorded ... Press Record again"), and `lwt-monthly` (Supabase `dc2b8a8e`, live 12:37 ET) passes the flag on.
+  Measured that day: 9 filings, no ticket in two real filings, and no existing key the new form can collide with. Record
+  in the bot's `docs/DOMAIN_RULES.md` "Recording a filing"; tests `test_monthly_record_retry.py`, 55/55 suites offline,
+  16/16 mutants; independent review applied. The pages' half (the portal and the old DERM page: show `no_answer` as "Not
+  confirmed", the new meaning of `already`, and the raw error texts) went to the session named Supabase the same day; the
+  port's golden pin (`scripts/lwt-monthly/golden/run-golden.mjs` `EXPECTED_SHA`) is stale on purpose until
+  `recordOutcome` learns `no_answer`. Rollback: Railway Redeploy of the `2349fd0` deployment, then revert `a2ca5a4`.
 - **The month is the county's invoice package**, not the calendar.
 - **Gallons:**
   - Dade loads use the decal constant: C1184 = 3,800, C0976 = 2,000.
