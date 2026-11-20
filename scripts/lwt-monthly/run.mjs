@@ -619,7 +619,25 @@ section('config');
   check('an unknown rule degrades to words', ruleInfo('some_brand_new_rule').title === 'Some brand new rule');
   check('tones the page keys on exist', ruleInfo('out_of_county_sizes_missing').tone === 'hold' && ruleInfo('decal_feed_vs_invoice').tone === 'block');
   check('prices name the two trucks', R.PRICE_TO_DECAL['357.20'] === 'C1184' && R.PRICE_TO_DECAL['188.00'] === 'C0976' && R.DECAL_GALLONS.C0976 === 2000);
-  check('explainError keeps its words', R.explainError(409, 'unresolved gallons').indexOf('The file cannot be generated yet') === 0 && R.explainError(500, 'x') === 'Error 500: x');
+  check('explainError keeps its words', R.explainError(409, 'unresolved gallons').indexOf('The file cannot be generated yet') === 0);
+  // Never a code or raw text (smoke test 2026-11-19): a bot sentence is written as one, a gateway page is "not answering".
+  const notAnswering = 'The report service is not answering right now. Nothing changed. Try again in a minute.';
+  check('explainError: a bot sentence reads as a sentence, never "Error 422:"',
+        R.explainError(422, 'the PDF has no text layer (probably a scan) -- type the invoice from the paper') ===
+          'The PDF has no text layer (probably a scan). Type the invoice from the paper.'
+        && R.explainError(500, 'x') === 'X.' && R.explainError(409, 'already generated -- run the preview again') ===
+          'Already generated. Run the check again.');
+  check('explainError: a gateway page or no body says the service is not answering',
+        R.explainError(502, '<html><head><title>502</title></head></html>') === notAnswering
+        && R.explainError(500, '<!DOCTYPE html><html>x</html>') === notAnswering && R.explainError(400, '') === notAnswering
+        && R.explainError(503, 'Service Unavailable') === notAnswering);
+  check('explainError: the stale check names the button "Run the check"',
+        R.explainError(409, 'stale or missing preview').indexOf('Run the check again') !== -1
+        && R.explainError(409, 'stale or missing preview').indexOf('preview') === -1);
+  check('recordOutcome: the edge\'s no_answer is "not confirmed", never a refusal',
+        R.recordOutcome(false, JSON.stringify({error: 'bot_no_answer', no_answer: true, message: 'm'})).state === 'no_answer'
+        && R.recordOutcome(false, JSON.stringify({error: 'bot_no_answer', no_answer: true, message: 'm'})).why === 'm'
+        && R.recordOutcome(false, JSON.stringify({detail: 'no'})).state === 'refused');
   check('recordOutcome: "already" is not a record', R.recordOutcome(true, JSON.stringify({said: {state: 'already', dry_run: false}})).state === 'already'
         && R.recordOutcome(true, JSON.stringify({said: {state: 'recorded', dry_run: false}})).recorded === true
         && R.recordOutcome(true, 'x').state === 'unconfirmed' && R.recordOutcome(null, '').state === 'no_answer'

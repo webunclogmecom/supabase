@@ -531,8 +531,8 @@ export function explainError(status: number, raw: unknown): string {
     return 'There is nothing to file: every ticket is un-ticked in the list. ' +
       'Tick at least one.';
   if (t.indexOf('stale or missing preview') !== -1)
-    return 'Something on this page changed after the preview ran, so the ' +
-      'approval no longer matches the data. Run the preview again, read ' +
+    return 'Something on this page changed after the check ran, so the ' +
+      'approval no longer matches the data. Run the check again, read ' +
       'it, then approve.';
   if (t.indexOf('unreviewed finding') !== -1)
     return 'The file will not generate until a person has reviewed the ' +
@@ -543,7 +543,18 @@ export function explainError(status: number, raw: unknown): string {
   if (t.indexOf('county template missing') !== -1)
     return 'The county\u2019s official form is missing on the server, so ' +
       'nothing can be rendered on it. This one is for the engineers.';
-  return 'Error ' + status + ': ' + t;
+  // A gateway page or no body at all: the service never answered, so there is no sentence to show (never the code or the HTML).
+  if (status === 502 || status === 503 || status === 504 || !t.trim() || /<\s*(!doctype|html|head|body)\b/i.test(t))
+    return 'The report service is not answering right now. Nothing changed. Try again in a minute.';
+  return asSentence(t);
+}
+
+// The bot's own sentence, written as one: a capital first letter, " -- " as a full stop, a full stop at the end, and the
+// page's button by its name ("Run the check", never "Run the preview").
+export function asSentence(raw: string): string {
+  const s = raw.trim().replace(/\s+--\s+/g, '. ').replace(/\brun the preview\b/gi, 'run the check')
+    .replace(/(^|[.!?]\s+)([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase());
+  return /[.!?]$/.test(s) ? s : s + '.';
 }
 
 // recordCard, without the markup: what the answer to Record means.
@@ -554,6 +565,8 @@ export function recordOutcome(ok: boolean | null, raw: string) {
     let why: unknown = raw, who = 'The server';
     try {
       const j = JSON.parse(raw);
+      // The edge says the bot lost the database's answer: maybe recorded, maybe not (never a refusal).
+      if (j.no_answer) return {state: 'no_answer' as const, recorded: false, why: typeof j.message === 'string' ? j.message : ''};
       why = j.detail || raw;
       if (j.refused_by === 'tracker') who = 'The Tracker';
     } catch (e) { /* the raw text is the reason */ }
@@ -1351,7 +1364,7 @@ export class MonthlyRules {
       msg += '; ' + cand + ' number(s) the reader could not commit to are ' +
         'offered below';
     if (p.source === 'ocr')
-      msg += ' \u2014 read by OCR from a scan: count the ticket rows on the paper ' +
+      msg += ' \u2014 read from a picture of the paper (a photo or a scan): count the ticket rows on the paper ' +
         'against the number detected, and check every digit';
     this.invoiceStatus = {text: msg + ' \u2014 verify against the paper before previewing', tone: 'warn'};
     return true;

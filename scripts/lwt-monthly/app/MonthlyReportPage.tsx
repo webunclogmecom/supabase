@@ -78,7 +78,16 @@ const shiftYm = (ym: string, n: number) => {
 };
 const lastDay = (ym: string) => dayStr(dayNo(`${shiftYm(ym, 1)}-01`) - 1);
 const clock = (iso?: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) : '');
-const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// The browser's own words for a dropped connection ("Failed to fetch", "Load failed", "NetworkError ...") never reach a person.
+const dropped = (e: unknown) => e instanceof TypeError && /fetch|network|load failed/i.test(e.message);
+const msg = (e: unknown, ifDropped = 'The connection dropped before the answer came. Check your connection, then try again.') =>
+  dropped(e) ? ifDropped : e instanceof Error ? e.message : String(e);
+// Days to the 20th of the next month counted on the Miami date: the server's count runs a day ahead in the evening.
+const daysLeft = (ym: string) =>
+  dayNo(`${shiftYm(ym, 1)}-20`) - dayNo(new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }));
+// Record pressed again is safe: the same report cannot be recorded twice (the bot, 2026-11-20), so a lost answer says so.
+const RECORD_AGAIN = 'The answer was lost before it reached this page, so this may or may not be recorded. Press Record again: ' +
+  'pressing it again on this same report cannot record it twice, and the answer will say what is on file.';
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion:reduce)').matches;
 
 async function problem(r: Response): Promise<string> {
@@ -227,6 +236,8 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   const [dlgReason, setDlgReason] = useState('');
   const [dlgText, setDlgText] = useState('');
   const [dlgErr, setDlgErr] = useState('');
+  // Record's "maybe": the answer was lost, so it may or may not be on file (amber, never a refusal).
+  const [dlgWait, setDlgWait] = useState('');
   const [homeNote, setHomeNote] = useState('');
 
   const rulesRef = useRef<MonthlyRules | null>(null);
@@ -295,7 +306,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
       const work = { ...JSON.parse(JSON.stringify(rr.savedFileBody())), ui: { ...uiRef.current, ym: rr.ym } };
       const reply = await okJson<{ saved_at: string }>(await api.post('save_work', { period: openYm.current || rr.ym, work }));
       setSavedAt(reply.saved_at); setSavedBy(null); setSaveErr('');
-    } catch (e) { setSaveErr(msg(e)); }
+    } catch (e) { setSaveErr(msg(e, 'Not saved: the connection dropped. Your work is still on this page.')); }
   }, [api, ov]);
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -404,11 +415,12 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     const rr = rulesRef.current;
     if (!rr) return;
     setBusy('reading'); setErr('');
+    const kept = rr.invoiceId ? ` Your invoice ${rr.invoiceId} is kept.` : '';
     try {
       const parsed = await okJson<InvoiceParse>(await api.upload(file));
       // The bytes are not kept. The parse is, so a reopened month needs no second read.
       if (!rr.adoptDroppedInvoice(parsed, file.name, '')) {
-        setErr(plain(rr.invoiceStatus?.text || `No ticket numbers found in ${file.name}. Type them by hand below.`));
+        setErr(plain(rr.invoiceStatus?.text || `No ticket numbers found in ${file.name}. Type them by hand below.`) + kept);
         bump();
         return;
       }
@@ -424,7 +436,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
         k += 1; setReadN(k);
         if (k >= n) { clearInterval(tm); setTimeout(() => { setStage('board'); advance(); }, 420); }
       }, Math.min(110, Math.floor(1800 / Math.max(1, n))));
-    } catch (e) { setErr(msg(e)); } finally { setBusy(''); }
+    } catch (e) { setErr(msg(e, 'The invoice was not sent: the connection dropped. Nothing changed. Try again.') + kept); } finally { setBusy(''); }
   }, [advance, api, loadBoard, scheduleSave]);
 
   // ---- Check, generate, record -------------------------------------------------------------------------------------------
@@ -510,7 +522,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
   }, [filtersOpen]);
 
-  const closeDialog = () => { setDialog(null); setDlgReason(''); setDlgText(''); setDlgErr(''); };
+  const closeDialog = () => { setDialog(null); setDlgReason(''); setDlgText(''); setDlgErr(''); setDlgWait(''); };
   const startOver = useCallback(async () => {
     if (!dialog || dialog.kind !== 'startover') return;
     setBusy('startover'); setDlgErr('');
@@ -523,12 +535,12 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   const record = useCallback(async () => {
     if (!dialog || dialog.kind !== 'record') return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    setBusy('record'); setDlgErr('');
+    setBusy('record'); setDlgErr(''); setDlgWait('');
     try {
       const reply = await api.post('record', { id: dialog.id, expect_tickets: dialog.tickets });
       const raw = await reply.text();
       let said = raw;
-      try { const j = JSON.parse(raw); if (typeof j.message === 'string' && !j.detail) said = JSON.stringify({ detail: j.message }); } catch { /* the raw text is the reason */ }
+      try { const j = JSON.parse(raw); if (typeof j.message === 'string' && !j.detail && !j.no_answer) said = JSON.stringify({ detail: j.message }); } catch { /* the raw text is the reason */ }
       const out = recordOutcome(reply.ok, said);
       if (out.state === 'filed') {
         await api.post('save_work', { period: rulesRef.current ? openYm.current : dialog.period, work: null }).catch(() => null);
@@ -539,9 +551,10 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
         return;
       }
       if (out.state === 'refused') setDlgErr(`${out.who}: ${plain(out.why)}`);
-      else if (out.state === 'already') setDlgErr('This report was already recorded as filed. Nothing changed.');
+      else if (out.state === 'no_answer') setDlgWait(out.why || RECORD_AGAIN);
+      else if (out.state === 'already') setDlgErr('Nothing new was recorded: our database already holds a different filing under this report\u2019s key. Tell Fred before pressing again.');
       else setDlgErr('The server answered without confirming the record. Check the filing history before pressing again.');
-    } catch { setDlgErr('The report service did not answer. Check the filing history before pressing again.'); } finally { setBusy(''); }
+    } catch { setDlgWait(RECORD_AGAIN); } finally { setBusy(''); }
   }, [api, dialog, loadHome]);
 
   const discard = useCallback(async () => {
@@ -1208,7 +1221,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
           )}
           {savedAt && !saveErr && <span className="lw-saved"><Ic d={I.check} /> Saved {clock(savedAt)}{savedBy && savedBy !== ov?.me.name ? ` by ${savedBy}` : ''}</span>}
         </div>
-        {saveErr && <div className="lw-err"><span>{saveErr}</span><button type="button" className="lw-b" onClick={() => void saveNow()}>Save again</button></div>}
+        {saveErr && <div className="lw-err" role="alert"><span>{saveErr}</span><button type="button" className="lw-b" onClick={() => void saveNow()}>Save again</button></div>}
         <div className="lw-steps" aria-label="Steps">
           {labels.map((t, i) => (
             <span key={t} style={{ display: 'contents' }}>
@@ -1319,7 +1332,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
       <div className="lwt" data-stage={stage}>
         {renderHead(pre ? 1 : 2)}
         {(!sel || pre) && errLine}
-        {boardErr && <div className="lw-err"><span>The board could not load: {boardErr}</span><button type="button" className="lw-b" onClick={() => void loadBoard(r)}>Try again</button></div>}
+        {boardErr && <div className="lw-err" role="alert"><span>The board could not load: {boardErr}</span><button type="button" className="lw-b" onClick={() => void loadBoard(r)}>Try again</button></div>}
         {pull > 0 && (
           <div className="lw-warnbox" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span>{count(pull, 'new ticket')} came in since this work was saved.</span>
@@ -1337,7 +1350,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
           </div>
         )}
         {stage === 'board' && ui.parsed?.source === 'ocr' && (
-          <div className="lw-warnbox"><b>This invoice was a scan, so it was read by OCR.</b> Count the ticket rows on the paper against the {count((vm.invoice || []).length, 'ticket')} read here, and check every digit.</div>
+          <div className="lw-warnbox"><b>This invoice was a photo or a scan, so it was read from the picture.</b> Count the ticket rows on the paper against the {count((vm.invoice || []).length, 'ticket')} read here, and check every digit.</div>
         )}
         {stage === 'board' && renderInvoiceFold()}
         <div className="lw-work">
@@ -1391,7 +1404,10 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
           <div className="lw-bar">
             <span className="tx">{needN ? <><b>{needN} need{needN === 1 ? 's' : ''} you</b>, </> : <><b>All decided</b>, </>}<b>{int(vm.onReport.length)}</b> on this report, <b>{int(vm.gallons)}</b> gal</span>
             <span className="lw-prog" role="img" aria-label={`${total - needN} of ${total} decided`}><i style={{ width: `${total ? (Math.max(0, total - needN) / total) * 100 : 0}%` }} /></span>
-            <span className="sp"><button type="button" className="lw-b p" disabled={!!needN || busy === 'check' || !canEdit} onClick={() => void runCheck()}>{busy === 'check' ? 'Checking' : 'Run the check'}</button></span>
+            <span className="sp" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+              <button type="button" className="lw-b p" disabled={!!needN || busy === 'check' || !canEdit} aria-describedby={needN && canEdit ? 'lw-check-why' : undefined} onClick={() => void runCheck()}>{busy === 'check' ? 'Checking' : 'Run the check'}</button>
+              {needN && canEdit ? <small id="lw-check-why" style={{ fontSize: 12, opacity: 0.75 }}>Answer the {count(needN, 'question')} above first.</small> : null}
+            </span>
           </div>
         )}
       </div>
@@ -1477,6 +1493,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     }
     const c = ov.current;
     const ym = ymOfLabel(c.period);
+    const left = ym ? daysLeft(ym) : c.days_left;
     const mine = ov.rows.filter(x => x.ym === ym && !x.discarded);
     const filed = mine.find(x => x.filed);
     const draft = mine.find(x => !x.filed);
@@ -1519,7 +1536,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
           <div>
             <span className={`lw-chip ${tone(c.tone)}`}>{filed && <Ic d={I.check} />}{homeWork && !draft && !filed ? 'In progress' : c.badge}</span>
             <div className="lw-mo">{c.period}</div>
-            <div className="lw-due">{filed ? `Recorded${filed.who ? ` by ${filed.who}` : ''}.` : `Due ${c.due}, ${count(c.days_left, 'day')} left`}</div>
+            <div className="lw-due">{filed ? `Recorded${filed.who ? ` by ${filed.who}` : ''}.` : (left >= 0 ? `Due ${c.due}, ${count(left, 'day')} left` : `Due ${c.due}, ${count(-left, 'day')} late`)}</div>
           </div>
           <div className="lw-go">
             <div className="lw-acts">
@@ -1611,7 +1628,8 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
               <span>Tickets</span><b>{int(dialog.tickets.length)}</b>
               <span>Filed by</span><b><span className="lw-av">{(ov?.me.name || '?')[0]}</span> {ov?.me.name}, from your sign-in</b>
             </div>
-            {dlgErr && <div className="lw-warnbox">{dlgErr}</div>}
+            {dlgWait && <div className="lw-warnbox" role="status"><b>Not confirmed.</b> {dlgWait}</div>}
+            {dlgErr && <div className="lw-err" role="alert"><span>{dlgErr}</span></div>}
             <div className="lw-acts">
               <button type="button" className="lw-b" autoFocus onClick={closeDialog}>Cancel</button>
               <button type="button" className="lw-b p" disabled={busy === 'record'} onClick={() => void record()}>{busy === 'record' ? 'Recording' : 'Record as filed'}</button>
