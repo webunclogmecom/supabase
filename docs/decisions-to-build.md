@@ -138,7 +138,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   only the rest as bars; defaults parts, again, tab, rows, phone). **✅ BUILT and LIVE 2026-11-19 about 7:17 PM ET** (portal
   `41b8d55`, `e36bd14`, `3da1231`, `6993bc1`; live entry `index-B2ArChUY.js`): every page, tab and window of the portal reads
   with the kit `src/components/ui/skeleton.tsx`, no loading word, pulse or zero left (standing check `skeleton.test.ts`);
-  record: Ops Portal `docs/08-changelog.md`, rule 18 in the app's `docs/06-rules.md`.
+  record: Ops Portal `docs/08-changelog.md`, rule 18 in the app's `docs/06-rules.md`. Card #234 in Testing / QA (8 of 8 ticked).
 
 **Upload progress on every file upload (2026-11-19, Fred in chat; no card yet)**
 - Fred: *"now we need have a progress status on the monthly report (old apps and ops portal) when uploading the files (and this
