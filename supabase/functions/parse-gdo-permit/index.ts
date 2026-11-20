@@ -173,10 +173,11 @@ async function parsePermit(pdf: Uint8Array): Promise<Parsed> {
     (/Miami-Dade County Pollution Control Ordinance/i.test(flat) ||
      /Fats,?\s*Oils and Grease Control Device/i.test(flat))
 
-  // Printed zero-padded to 6 ("GDO-000951"); we store 5 ("GDO-00951").
+  // Printed zero-padded to 6 ("GDO-000951"), and stored that way since Trello #227 (Fred, 2026-11-19: "One form,
+  // 6 digits"; the database refuses any other length). Until then we stored 5 ("GDO-00951").
   const gm = flat.match(/GDO[-\s]?(\d{3,7})/i)
   if (gm) {
-    fields.gdo_number = 'GDO-' + String(parseInt(gm[1], 10)).padStart(5, '0')
+    fields.gdo_number = 'GDO-' + String(parseInt(gm[1], 10)).padStart(6, '0')
   } else missing.push('gdo_number')
 
   const vm = flat.match(/valid\s+from\s+(\d{1,2}-[A-Za-z]{3}-\d{4})\s+through\s+(\d{1,2}-[A-Za-z]{3}-\d{4})/i)
