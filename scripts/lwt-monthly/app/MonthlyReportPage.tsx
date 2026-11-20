@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, ReactNode } from 'react';
 import {
-  ARCHIVE_REASONS, DECAL_GALLONS, MonthlyRules, explainError, isHeld, isOutOfCounty, monthLabel, offloadMonth, parseTickets,
+  ARCHIVE_REASONS, DECAL_GALLONS, MonthlyRules, explainError, serviceSilent, isHeld, isOutOfCounty, monthLabel, offloadMonth, parseTickets,
   recordOutcome, resolvedGallons, ruleInfo,
 } from './monthly-rules';
 import type { Decision, FetchResponse, Finding, InvoiceParse, Load, SavedFile } from './monthly-rules';
@@ -88,12 +88,17 @@ const msg = (e: unknown, ifDropped = 'The connection dropped before the answer c
 const daysLeft = (ym: string) =>
   dayNo(`${shiftYm(ym, 1)}-20`) - dayNo(new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }));
 // Record pressed again is safe: the same report cannot be recorded twice (the bot, 2026-11-20), so a lost answer says so.
+// Generate with no answer (a gateway page, a stopped function): the file may exist; a second press rewrites the same draft.
+const MAYBE_DONE = 'The report service did not answer, so it may or may not have gone through. Press it again: ' +
+  'a second press rewrites the same draft, never a second one.';
 const RECORD_AGAIN = 'The answer was lost before it reached this page, so this may or may not be recorded. Press Record again: ' +
   'pressing it again on this same report cannot record it twice, and the answer will say what is on file.';
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion:reduce)').matches;
 
-async function problem(r: Response): Promise<string> {
+async function problem(r: Response, write = false): Promise<string> {
   const raw = await r.text();
+  // A write that got no answer may still have gone through: never "Nothing changed" for it.
+  if (write && serviceSilent(r.status, raw)) return MAYBE_DONE;
   try {
     const j = JSON.parse(raw);
     if (typeof j.message === 'string') return j.message;
@@ -132,7 +137,7 @@ const I = {
 const QUEUE_ORDER = ['number_no_ticket', 'archived_on_invoice', 'date_differs', 'truck_differs', 'unresolved_gallons', 'dumped_not_billed',
   'waiting_on_size', 'not_manifest_number', 'pickup_after_offload', 'reader_candidate', 'report_shape'];
 const WHY: Record<string, string> = {
-  number_no_ticket: 'Billed, but nobody logged it', archived_on_invoice: 'Billed, but archived on our side', date_differs: 'Invoice and ticket disagree on the date',
+  number_no_ticket: 'No manifest found', archived_on_invoice: 'Billed, but archived on our side', date_differs: 'Invoice and ticket disagree on the date',
   truck_differs: 'Invoice and ticket name different trucks', unresolved_gallons: 'No gallons yet', dumped_not_billed: 'Dumped in the dates, not on the invoice',
   waiting_on_size: 'A client has no trap size', not_manifest_number: 'Not a manifest number', pickup_after_offload: 'Picked up after it was dumped',
   reader_candidate: 'The invoice reader was not sure of this number', report_shape: 'Check the report month',
@@ -467,7 +472,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
       const g = rr.generateBody();
       if (g.err || !g.body) throw new Error(g.err || 'Nothing to generate.');
       const reply = await api.post('generate', { payload: g.body });
-      if (!reply.ok) throw new Error(await problem(reply));
+      if (!reply.ok) throw new Error(await problem(reply, true));
       await saveBlob(reply.clone(), `LWT_report_${rr.ym}.xlsx`);
       rr.setGenerated(g.body, { id: reply.headers.get('X-Filing-Id'), tickets: reply.headers.get('X-Filing-Tickets'), list: reply.headers.get('X-Filing-List') });
       setDraftId(rr.GENERATED?.id ? +rr.GENERATED.id : null);
@@ -541,6 +546,8 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     try {
       const reply = await api.post('record', { id: dialog.id, expect_tickets: dialog.tickets });
       const raw = await reply.text();
+      // A gateway page or no body: it may have been recorded, and pressing again cannot record it twice.
+      if (!reply.ok && serviceSilent(reply.status, raw)) { setDlgWait(RECORD_AGAIN); return; }
       let said = raw;
       try { const j = JSON.parse(raw); if (typeof j.message === 'string' && !j.detail && !j.no_answer) said = JSON.stringify({ detail: j.message }); } catch { /* the raw text is the reason */ }
       const out = recordOutcome(reply.ok, said);
@@ -733,7 +740,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     return (
       <aside className={panelClass}>
         {mode === 'add'
-          ? panelHead(t, warnChip('Needs stops'), 'The county billed this ticket and nobody logged it. Pick its stops from the truck’s real visits.')
+          ? panelHead(t, warnChip('Needs stops'), 'The county billed this ticket, and we have no manifest for it. Pick its stops from the truck’s real visits.')
           : panelHead(t, <span className="lw-chip ok">On this report</span>, 'Change the stops on this hand row.')}
         <div className="lw-pb">
           {it ? renderFacts(it, t) : null}

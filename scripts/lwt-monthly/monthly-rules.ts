@@ -543,10 +543,20 @@ export function explainError(status: number, raw: unknown): string {
   if (t.indexOf('county template missing') !== -1)
     return 'The county\u2019s official form is missing on the server, so ' +
       'nothing can be rendered on it. This one is for the engineers.';
-  // A gateway page or no body at all: the service never answered, so there is no sentence to show (never the code or the HTML).
-  if (status === 502 || status === 503 || status === 504 || !t.trim() || /<\s*(!doctype|html|head|body)\b/i.test(t))
+  // The service never answered, so there is no sentence to show (never the code or the HTML). Said for a read; a write that
+  // may have gone through (Record, Generate) is worded by the page.
+  if (serviceSilent(status, t))
     return 'The report service is not answering right now. Nothing changed. Try again in a minute.';
   return asSentence(t);
+}
+
+// The service gave no answer: a gateway status (502 to 504, or 546 when the function was stopped), a gateway page, or no
+// body. A JSON reply is an answer, whatever its status (the edge's no_answer is JSON at 502 and says more).
+export function serviceSilent(status: number, raw: unknown): boolean {
+  const t = String(raw || '');
+  try { JSON.parse(t); return false; } catch (e) { /* not JSON */ }
+  return status === 502 || status === 503 || status === 504 || status === 546 || !t.trim() ||
+    /<\s*(!doctype|html|head|body)\b/i.test(t);
 }
 
 // The bot's own sentence, written as one: a capital first letter, " -- " as a full stop, a full stop at the end, and the

@@ -631,6 +631,9 @@ section('config');
         R.explainError(502, '<html><head><title>502</title></head></html>') === notAnswering
         && R.explainError(500, '<!DOCTYPE html><html>x</html>') === notAnswering && R.explainError(400, '') === notAnswering
         && R.explainError(503, 'Service Unavailable') === notAnswering);
+  check('serviceSilent: a gateway status or page is silence, a JSON reply is an answer',
+        R.serviceSilent(546, '<html>x</html>') && R.serviceSilent(504, 'Gateway Timeout') && R.serviceSilent(200, '')
+        && !R.serviceSilent(502, JSON.stringify({error: 'bot_no_answer', no_answer: true})) && !R.serviceSilent(422, 'the PDF has no text layer'));
   check('explainError: the stale check names the button "Run the check"',
         R.explainError(409, 'stale or missing preview').indexOf('Run the check again') !== -1
         && R.explainError(409, 'stale or missing preview').indexOf('preview') === -1);
