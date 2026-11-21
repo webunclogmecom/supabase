@@ -25,6 +25,19 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Monthly Report: send it by email from the app, as a PDF or the Excel file (2026-11-20, Trello #238 Mr437ii0)**
+- Diego (Slack, 2026-11-20 3:33 PM ET): send the Monthly Report by email from the platform, download it as a PDF, and the
+  county's automatic reply (a payment link and the invoice) must keep reaching the office inbox.
+- **Fred's answers, 2026-11-20:** sent from **contact@unclogme.com** (the inbox Diego sends from today: *"he wants to know
+  if the email it's gonna be sent from contact@unclogme.com so the replies from the county are received there as well"*;
+  our app emails already go out as that address through Resend); *"at the last step of the monthly report, right before
+  sending it, you have 2 buttons, which is a radial choice between PDF or Excel, and PDF is the default one"*; no past
+  sample is needed. The county's address: Fred is asking.
+- **NOT BUILT.** To build: the PDF of the county's Excel form (nothing turns the .xlsx into a PDF today; the bot and the PDF
+  service only print web pages), the send (an edge function through Resend as contact@unclogme.com, the chosen file
+  attached, each send logged on the report), the PDF / Excel choice and the Send button on the portal's Monthly page and
+  the old DERM page (the session named Supabase), one real send with Fred's OK to see the county's reply arrive.
+
 **Thanksgiving look on the staff apps (2026-11-20, Trello #237 JF95qsNO)**
 - Fred: "create a card to make something like the Halloween theme we did but for Thanksgiving." Mockups round 1 (`mockups/2026-11-20-thanksgiving.html`, local): three looks on the real Ops Portal pages, 7 picks, 15 defaults.
 - **Fred's answer, 2026-11-20: "More of the style of T2, let's work around it. W2, D3 (but include the day before, wednesday), P1, O1 (but only when the theme comes into play, so since wednesday up to friday, not all week), S1, M1"**. So: the Turkey Crew style as the base, with a second round of drawings around it before it is final; the Ops Portal AND the old app addresses (his exception to the 2026-11-06 "bug fixes only" rule for the old hosts); on Wednesday Nov 25 at 12:00 AM ET, off Saturday Nov 28 at 12:00 AM ET; every page its own picture; the greeting on every opening inside those three days only; the picture on the sign-in page, the form untouched; leaves move on the opening screen only. The 15 defaults are not answered yet.
