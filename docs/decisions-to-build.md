@@ -54,6 +54,10 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `derm.lwt_monthly_sends` (`2026-11-21_1100`), then recorded as filed through the record action's bot call (Fred: *"once we
   have that we don't need the button "Record as filed""*; a sent email records it, and with the email on the waiting step
   is skipped). Portal `39419f5`. Test copies to fred@ayache.com (PDF and Excel) opened in Gmail 2026-11-21.
+- **The old DERM Tracker page: HANDED to the Building Apps session 2026-11-21 ~12:10 PM ET** (Fred: *"send it to BA session about
+  these changes so it works on the old apps"*, which overrides the bug-fixes-only default here). Spec:
+  `Building Apps/DERM Tracker/docs/specs/2026-11-21-monthly-pdf-excel-and-county-email-old-page.md`. NOT BUILT until that session
+  says so in WORKING-NOW.md.
 - **WAITING:** the county's address (Fred is asking), then `update public.app_config set value = '<the county address>', updated_at = now() where key = 'lwt_county_email';`, then ONE real send with Fred's OK to see the county's
   reply arrive in contact@unclogme.com.
 - **NOT BUILT (default 5 of the round page, not answered yet):** the Delivered / Opened chip on the history row. The Resend id
