@@ -546,7 +546,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
           ? e.stage === 'send'
             ? `The connection dropped at ${Math.round(e.share * 100)}%. Nothing was saved, and your month is as it was.${kept}`
             : `The file arrived, but the connection dropped before the answer. Nothing was saved.${kept}`
-          : `${msg(e)} Nothing was saved.${kept}`,
+          : `${msg(e).replace(/\.?$/, '.')}${/Nothing (changed|was saved)/.test(msg(e)) ? '' : ' Nothing was saved.'}${kept}`,
         [again[0], { label: 'Try again', primary: true, onClick: () => readRef.current(file) }]);
     } finally { setBusy(''); }
   }, [advance, api, loadBoard, patchUp, scheduleSave]);
