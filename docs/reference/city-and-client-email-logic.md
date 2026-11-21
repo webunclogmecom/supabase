@@ -31,6 +31,27 @@ different than when we try to send it at the DERM App, which is not of a problem
 
 ---
 
+## The Monthly Report to the county: a fifth sender (2026-11-21, Trello #238)
+
+`lwt-monthly` action `send_email { id, format, expect_tickets }` (Ops Portal, Monthly report, check step, Send Email).
+Not a visit email: it carries the month's Liquid Waste Transporter report to Miami-Dade.
+- **From and reply-to** `UnclogMe <contact@unclogme.com>`, so the county's reply (its payment link and invoice) reaches the
+  office inbox. **To** `public.app_config` `lwt_county_email`, never the caller's. EMPTY until Fred has the address: the
+  send answers 409 `no_county_email` and the portal keeps the button off. To turn it on: `update public.app_config set value = '<the county address>', updated_at = now() where key = 'lwt_county_email';`
+- **The letter** is `supabase/functions/lwt-monthly/letter.ts`: the city letter's shell (logo, contact line, licence footer,
+  imported from `_shared/city-letter.ts`, which exports those pieces since 2026-11-21 with its output unchanged), a Report
+  Details panel (hauler and licence, period, county invoice, tickets, gallons) and the file card. Fixed copy, facts only from
+  the bot's filing row.
+- **The file** is the report's saved .xlsx, printed to PDF by the pdf-service when PDF is picked (`makePdf`, shared with
+  `download_pdf`), named `LWT_report_<YYYY-MM>.<pdf|xlsx>`. Idempotency-Key `lwt-county:<filing id>:<format>` (one county
+  email per report and type for 24 hours).
+- **Then** the report is recorded as filed with the session's email (the record action's own bot call); `recorded` is true
+  only when the bot's `said.state` is `recorded`. Send first, record second.
+- **Log** `derm.lwt_monthly_sends` (service key only, opted out of audit: it is the record), with the Resend id; no delivery
+  chip yet (needs a `v_email_delivery` branch).
+- **Tests** `test_to` (only @ayache.com / @unclogme.com, refused otherwise): an INTERNAL TEST strip, `[TEST]` subject, never
+  recorded, logged `is_test`. Check `scripts/checks/lwt_monthly_edge.mjs`.
+
 ## "Has this visit's city email gone?": one view (2026-10-12)
 
 The four senders log to two tables (`visit_photo_email_sends` for #1, `derm_email_sends` for #2 to #4), and until

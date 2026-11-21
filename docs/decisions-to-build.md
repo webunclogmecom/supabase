@@ -47,12 +47,17 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - **The check step, LIVE 2026-11-21 about 9:20 AM ET (portal `786bd3e`).** Fred: *"at the 1st image step there have 2
   button which are "Download" and "Send Email""*, and "Back to the tickets" as *"< Back to edit"* at the top left. Built:
   Download (white) and Send Email (blue), Send Email OFF with a line until the send exists.
-- **DECIDED, NOT BUILT (Fred, 2026-11-21):** *"once we have that [the email send] we don't need the button "Record as filed""*.
-  So a successful Send Email records the report as filed, and the waiting step's Record as filed goes away in the same
-  publish as the send.
-- **NOT BUILT.** The send (an edge function through Resend as contact@unclogme.com, the chosen file
-  attached, each send logged on the report), waiting on the county's address; one real send with Fred's OK to see the
-  county's reply arrive.
+- **The send: BUILT 2026-11-21, LIVE, OFF until the county's address is set** (Fred: *"now we're missing is the email, and the
+  template for the email ... depending on the selected file format that's how's gonna be attached to the email (pdf or
+  excel)"*). `lwt-monthly` `send_email` (v6, `325ec282`): the saved report as the file picked, from and reply-to
+  contact@unclogme.com, the letter `lwt-monthly/letter.ts` (the city letter's shell), facts from the filing row, logged in
+  `derm.lwt_monthly_sends` (`2026-11-21_1100`), then recorded as filed through the record action's bot call (Fred: *"once we
+  have that we don't need the button "Record as filed""*; a sent email records it, and with the email on the waiting step
+  is skipped). Portal `39419f5`. Test copies to fred@ayache.com (PDF and Excel) opened in Gmail 2026-11-21.
+- **WAITING:** the county's address (Fred is asking), then `update public.app_config set value = '<the county address>', updated_at = now() where key = 'lwt_county_email';`, then ONE real send with Fred's OK to see the county's
+  reply arrive in contact@unclogme.com.
+- **NOT BUILT (default 5 of the round page, not answered yet):** the Delivered / Opened chip on the history row. The Resend id
+  is logged on every send, so it needs a branch in `public.v_email_delivery` for `derm.lwt_monthly_sends`, then the chip.
 
 **Thanksgiving look on the staff apps (2026-11-20, Trello #237 JF95qsNO)**
 - Fred: "create a card to make something like the Halloween theme we did but for Thanksgiving." Mockups round 1 (`mockups/2026-11-20-thanksgiving.html`, local): three looks on the real Ops Portal pages, 7 picks, 15 defaults.
