@@ -63,6 +63,35 @@ both inboxes; the "overdue" notice was the city's own FOG BMP portal reminder, w
   [client-page-reads.md](client-page-reads.md), B3.
 Full design, research and decisions: `docs/superpowers/specs/2026-10-14-email-delivery-status-audit.md`.
 
+### Resend Forge on unclogme.com (2026-11-20): activated, NOT carrying our email, and keep it that way for now
+
+Fred activated **Resend Forge** ("Auto configure") on the `unclogme.com` sending domain on 2026-11-20, with
+`frg.unclogme.com` as its Return-Path. What it is, from Resend's docs (https://resend.com/docs/resend-forge, read
+2026-11-20): Resend's own sending engine on IPs it operates, replacing the engine it has used for years (today our
+Return-Path `send.unclogme.com` reports to `feedback-smtp.us-east-1.amazonses.com`, i.e. Amazon SES underneath).
+Same API, same SMTP, same webhooks; no code change. Activation needs ONE CNAME, at the chosen Return-Path subdomain,
+pointing at Forge; "Auto configure" asks the DNS host (GoDaddy, `ns53/ns54.domaincontrol.com`, a Domain Connect host)
+to add it. After it verifies the domain reads **Ready**, and Resend then moves sending over gradually (**Active** when it
+routes through Forge). If Forge cannot deliver, Resend falls back to the old engine on its own. Forge runs only in
+`us-east-1`; a Dedicated IP domain cannot use it.
+
+- 🛑 **Forge does not support open or click tracking yet, and our open tracking is ON** (since 2026-10-14, above). Resend:
+  a domain with tracking on can be activated, "but its email keeps going through the current infrastructure until you
+  turn tracking off". So with tracking on, **nothing we send moves to Forge**: today's delivery is unchanged.
+- 🛑 **Do not turn open tracking off to get Forge.** Every "Opened" we show comes from it: the delivery chip on every
+  email line (Building Apps rule 1e), the client page's email list, and the Mon/Wed/Fri 11 AM `unopened-email-reminder`
+  post in #apps-notifications (`public.fn_unopened_emails`). Off, every email would read "delivered, not opened" and that
+  post would list them all. Measured 2026-11-20: 18 city emails in 14 days, 2 of them Opened. Revisit when Resend's docs
+  say Forge tracks opens.
+- ⚠ **The record was not there when checked (2026-11-20, 7:08 PM ET):** `frg.unclogme.com` does not exist at GoDaddy's own
+  name server (`ns53.domaincontrol.com`, every record type) nor at 8.8.8.8 / 1.1.1.1, so the Domain Connect step did not
+  finish (the GoDaddy authorization window) or is still landing. Harmless either way: Resend says the domain "keeps
+  sending at all times while we verify". To finish: Resend, Domains, unclogme.com, Configuration, "Finish Forge setup",
+  then Auto configure again or add the CNAME it shows by hand at GoDaddy. The name must be free (a CNAME cannot sit beside
+  other records at that name). Check: `Resolve-DnsName frg.unclogme.com -Type CNAME -Server ns53.domaincontrol.com`.
+- Nothing else in DNS changes: SPF, DKIM (`resend._domainkey`), DMARC (`p=none`) and Google's MX stay as they are. Forge
+  for RECEIVING (an MX change) is not ours: unclogme.com mail is received by Google Workspace.
+
 ---
 
 ## Which cities get the email, and the Broward cities we cannot reach (2026-10-12)
