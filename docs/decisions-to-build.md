@@ -33,10 +33,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   our app emails already go out as that address through Resend); *"at the last step of the monthly report, right before
   sending it, you have 2 buttons, which is a radial choice between PDF or Excel, and PDF is the default one"*; no past
   sample is needed. The county's address: Fred is asking.
-- **NOT BUILT.** To build: the PDF of the county's Excel form (nothing turns the .xlsx into a PDF today; the bot and the PDF
-  service only print web pages), the send (an edge function through Resend as contact@unclogme.com, the chosen file
-  attached, each send logged on the report), the PDF / Excel choice and the Send button on the portal's Monthly page and
-  the old DERM page (the session named Supabase), one real send with Fred's OK to see the county's reply arrive.
+- **PDF BUILT 2026-11-20 (Fred: "yes go ahead with the PDF").** The pdf-service 0.9.0 `POST /convert/xlsx-to-pdf` prints
+  the bot's saved .xlsx with LibreOffice (pdf-service `00e2717`, live 7:46 PM ET), and `lwt-monthly` action
+  `download_pdf` hands it to the page (Supabase `cb7494e3`, live 7:47 PM ET, View in DERM Tracker). Proven on October's
+  filed report (3 pages, the same layout as the Excel) and end to end from a signed-in portal page (200, 64,789 bytes).
+- **NOT BUILT.** The PDF / Excel choice (PDF by default) and its buttons on the portal's Monthly page and the old DERM
+  page (the session named Supabase); the send (an edge function through Resend as contact@unclogme.com, the chosen file
+  attached, each send logged on the report), waiting on the county's address; one real send with Fred's OK to see the
+  county's reply arrive.
 
 **Thanksgiving look on the staff apps (2026-11-20, Trello #237 JF95qsNO)**
 - Fred: "create a card to make something like the Halloween theme we did but for Thanksgiving." Mockups round 1 (`mockups/2026-11-20-thanksgiving.html`, local): three looks on the real Ops Portal pages, 7 picks, 15 defaults.
