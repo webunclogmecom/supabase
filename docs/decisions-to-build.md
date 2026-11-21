@@ -177,7 +177,7 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   with the kit `src/components/ui/skeleton.tsx`, no loading word, pulse or zero left (standing check `skeleton.test.ts`);
   record: Ops Portal `docs/08-changelog.md`, rule 18 in the app's `docs/06-rules.md`. Card #234 in Testing / QA (8 of 8 ticked).
 
-**Upload progress on every file upload (2026-11-19, Fred in chat; Trello #239 `9WUfIDfz`, In Progress since 2026-11-21)**
+**Upload progress on every file upload (2026-11-19, Fred in chat; Trello #239 `9WUfIDfz`, Testing / QA since 2026-11-20 evening ET)**
 - Fred: *"now we need have a progress status on the monthly report (old apps and ops portal) when uploading the files (and this
   should happen on all the places where we need to upload a file, pdf, jpg, png, etc) so we have a visual of how the process is
   going, same if there was an error to know something happened. remember to be styled and ux."* Round 1 sent ~5:15 PM ET
@@ -185,8 +185,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - **Fred picked (2026-11-19 ~6:20 PM ET): "go with u1 s1 and o1"**: U1 the progress in place of where the file was dropped;
   S1 a server step shows its steps and the seconds, never a made-up percentage; O1 the old apps get it on the DERM Tracker's
   Monthly report only (his 2026-11-06 rule keeps the old apps to bug fixes). He did not speak of the 10 defaults; built as
-  written. NOT BUILT (next, now that the #234 skeletons are live): one kit part in the portal for every upload (11 places), the Monthly report in
-  the portal and in `scripts/lwt-monthly/app/MonthlyReportPage.tsx` (the DERM Tracker's byte copy).
+  written.
+- ✅ **BUILT and LIVE 2026-11-20 evening ET.** Portal about 10:20 PM ET (`8de9ae5`, `da3967a`, `771be7e`; `src/lib/upload.ts` +
+  `src/components/ui/upload.tsx`, the eleven places); the old DERM Tracker Monthly page about 10 PM ET (`f5291dc8`, `087a727e`).
+  Proof and rules: `Building Apps/Ops Portal/docs/08-changelog.md` (2026-11-20, 10:20 PM) and the portal's `app/docs/06-rules.md`
+  rule 18. Not in it on purpose: proof photos carried inside a job or cadence save.
 
 **Reviews queue header: search first, bigger number cards (2026-11-18, Ops Portal `/review`)**
 - Fred: *"move the searchbar before the "to review" "completed" and "shift forms" put the "include a past visit" next to [them] ... so let's have those cards with data to be more styled and bigger"*. Round sent 2026-11-18 about 8:15 PM ET (`mockups/2026-11-18-review-header.html`, local): A1 cards two by two in the right corner / A2 one row beside the title; B1 icon tile / B2 coloured top line / B3 one panel; 7 defaults.
@@ -788,7 +791,7 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 - Monthly Report fixes, Trello mCNzIHp6 (#235, In Progress), Fred 2026-11-19: a better invoice reader, change a ticket's truck, manual ticket entry in plain sight. His picks: "Supabase does 2 and 3"; "Test a Claude reader too"; deploy "Now, but first make extenuating tests, and make sure we're using latest OCR available".
   - **Part 1 BUILT and LIVE 2026-11-19 13:26 ET:** the GDO bot reads an invoice photo with Claude first, tesseract as the fallback (bot `e2fba43`, docs `7e96593`; `docs/reference/gdo-report-bot.md` section 7). 9 of 9 real reads perfect against the paper, 0 invented numbers in 29 reads.
   - **Parts 2 and 3 OPEN, the session named Supabase (the Ops Portal):** hand-off `Building Apps/Ops Portal/docs/specs/2026-11-19-235-truck-change-and-manual-ticket-handoff.md`. Mockups first.
-  - ✅ **Parts 2 and 3 BUILT and LIVE 2026-11-19** (next section). **Card #235 in Testing / QA since 2026-11-21**, every item ticked: Diego's October filing (2026-11-20 1:11 PM ET, filing 78) stands as Fred's "Verify", on Fred's OK.
+  - ✅ **Parts 2 and 3 BUILT and LIVE 2026-11-19** (next section). **Card #235 in Testing / QA since 2026-11-20 (about 9 PM ET)**, every item ticked: Diego's October filing (2026-11-20 1:11 PM ET, filing 78) stands as Fred's "Verify", on Fred's OK.
 **Ops Portal: Fred's answers to the two pages of BUILT pictures (2026-11-15, about 2:45 AM ET; Trello #161)**
 - His words: "go ahead with recomended", then "Both pages (Recommended)" in the question dialog. Record: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-13-clients.md` and `00-fred-picks-2026-11-12-manifests-and-stamping.md` (both end with this answer).
 - Clients page: **GG** publish the Clients pages and Finances (branch `clients-move`); **HH** the list's "Supposed to be" only when it differs from the next visit; **JJ** "Mark inactive" / "Mark active" in a permit's three dots, with a confirm; **KK** lift station and grey water with no tank reading at a place with no grease trap service show the size on file, labelled; **LL** the 36 "Service Agreement" visits marked Pumping count as grease trap pumpings in the one shared rule (Calendar too); the 10 defaults as written. ✅ **GG BUILT: the Clients pages and Finances are LIVE since 2026-11-15 about 5:40 AM ET** (portal `main` `7df4f7e`; live checks pass, the menu check is the standing `live-portal-tiles.mjs` `b4f78080`; the decided real writes on 112-YA done and read back; record in the portal's `docs/08-changelog.md`). **Built 2026-11-15 before that publish:** KK LIVE in the database (`2026-11-15_0330`: B1's `size_on_file`, 54 visits; the page counted 47 of them) and LL LIVE (`2026-11-15_0400`: `ops.fn_visit_pump_kinds`; B1 and the Calendar's live estimate moved for the 36 only; their stored Calendar days were stored again once, Fred: "Recalculate once", `2026-11-15_0530`: 36 rows, 25,475 gal on 34 days, nothing else); HH, JJ and KK's words on the local portal branch `clients-move` (`7df4f7e`), JJ through the existing `client.upsert_gdo_permit` (no new function), with one real round trip on a permit of 112-YA, left as found.
