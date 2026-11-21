@@ -44,6 +44,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   Check `mockups/2026-11-21-pdf238-src/check.mjs` 11 of 11 local and live, desktop and phone.
 - **Old DERM Tracker page: not changed** (pick O unanswered, so the default: old hosts get bug fixes only). Ready if he asks:
   `mockups/2026-11-21-pdf238-src/238-old-page.patch` (two loose buttons there, so it needs the menu first).
+- **The check step, LIVE 2026-11-21 about 9:20 AM ET (portal `786bd3e`).** Fred: *"at the 1st image step there have 2
+  button which are "Download" and "Send Email""*, and "Back to the tickets" as *"< Back to edit"* at the top left. Built:
+  Download (white) and Send Email (blue), Send Email OFF with a line until the send exists.
+- **DECIDED, NOT BUILT (Fred, 2026-11-21):** *"once we have that [the email send] we don't need the button "Record as filed""*.
+  So a successful Send Email records the report as filed, and the waiting step's Record as filed goes away in the same
+  publish as the send.
 - **NOT BUILT.** The send (an edge function through Resend as contact@unclogme.com, the chosen file
   attached, each send logged on the report), waiting on the county's address; one real send with Fred's OK to see the
   county's reply arrive.
