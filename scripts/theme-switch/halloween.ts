@@ -62,7 +62,7 @@ function apply(mode: ThemeMode) {
 // ---- Thanksgiving: the class, two stylesheets, and the title-row helper -------------------------------------------
 // Everything a person sees comes from the stylesheets (app-assets/thanksgiving/): this code only writes a class,
 // attributes and CSS variables, so an empty stylesheet switches the look off with no build.
-const TG_VARS = ["--tg-l", "--tg-r", "--tg-textw", "--tg-up"];
+const TG_VARS = ["--tg-l", "--tg-r", "--tg-textw", "--tg-up", "--tg-pad", "--tg-padt"];
 let tgObserver: MutationObserver | null = null;
 let tgTimer = 0;
 let tgRow: HTMLElement | null = null;
@@ -75,41 +75,53 @@ function clearTitleRow() {
   tgRow = null;
 }
 
-// Finds the row that holds the page's title and tells the stylesheet where a picture may stand in it:
+// Names the page for the stylesheet (data-tg-page on <html>: the address's path, or "sign-in" on a sign-in page),
+// finds the row that holds the page's title and tells the stylesheet where a picture may stand in it:
 // data-tg-title = "right" (in the row's free part), "left" (the row is full) or "top" (a phone),
-// data-tg-cards = how many postcards fit (0, 3, 4 or 5), and four lengths:
+// data-tg-cards = how many postcards fit (0, 3, 4 or 5), and six lengths:
 // --tg-l where the picture may start, --tg-r what the row's own controls take on the right,
-// --tg-textw how wide the title's words may run, --tg-up the gap between the top bar and the row.
+// --tg-textw how wide the title's words may run, --tg-up the gap between the top bar and the row,
+// --tg-pad and --tg-padt the row's own left and top padding.
 function markTitleRow() {
   const html = document.documentElement;
-  const page = location.pathname.replace(/\/+$/, "") || "/";
+  // every app's sign-in page is the same split screen; its orange panel is the mark
+  const signIn = document.querySelector('[class*="135deg,#f14714"]') !== null;
+  const page = signIn ? "sign-in" : location.pathname.replace(/\/+$/, "") || "/";
   if (html.getAttribute("data-tg-page") !== page) html.setAttribute("data-tg-page", page);
-  const main = document.querySelector("main");
-  const h1 = main
-    ? Array.from(main.querySelectorAll("h1")).find((x) => !x.classList.contains("sr-only") && x.offsetWidth > 0)
-    : undefined;
-  if (!main || !h1 || !h1.parentElement) {
-    clearTitleRow();
-    return;
-  }
-  let row: HTMLElement = h1.parentElement;
-  while (row.parentElement && row.parentElement !== main && row.parentElement.getBoundingClientRect().height < 170) {
+  // The marks come off first: the row is found and measured as the page stands WITHOUT the look, so a second run gives
+  // the same answer as the first whatever the stylesheet does to a marked row. Nothing is painted in between.
+  clearTitleRow();
+  if (signIn) return;
+  // an app with no <main> is searched whole, minus its top bar, menus and dialogs
+  const scope: HTMLElement = document.querySelector("main") ?? document.body;
+  const chrome = scope === document.body ? '[role="dialog"],header,nav,aside' : '[role="dialog"]';
+  const first = (tag: string) =>
+    Array.from(scope.querySelectorAll<HTMLElement>(tag)).find(
+      (x) => !x.classList.contains("sr-only") && x.offsetWidth > 0 && !x.closest(chrome),
+    );
+  // the page's title: its h1, or its first h2 on a page that has no h1 (Pumped grease, Stamp Studio)
+  const h1 = first("h1") ?? first("h2");
+  // a screen with no top bar is a loading, refusal or error card, not a page: it gets no row
+  const bar = document.querySelector(".shell-header, header, nav.border-b");
+  if (!h1 || !bar) return;
+  // the title's row: the title itself when nothing wraps it, else the widest box around it that is still a row
+  let row: HTMLElement = h1;
+  while (row.parentElement && row.parentElement !== scope && row.parentElement.getBoundingClientRect().height < 170) {
     row = row.parentElement;
   }
-  if (tgRow && tgRow !== row) clearTitleRow();
-  // measured as if no length were set, so a second run gives the same answer as the first
-  const had = TG_VARS.map((v) => row.style.getPropertyValue(v));
-  for (const v of TG_VARS) row.style.removeProperty(v);
   const box = row.getBoundingClientRect();
-  const pad = parseFloat(getComputedStyle(row).paddingLeft) || 0;
+  if (window.scrollY < 1 && box.top > 420) return; // a title that far down the screen is not the page's title row
+  const style = getComputedStyle(row);
+  const pad = parseFloat(style.paddingLeft) || 0;
+  const padTop = parseFloat(style.paddingTop) || 0;
   // what already stands in the row beside the title (buttons, tiles): a picture must end before it
   const lefts: number[] = [];
   for (const e of Array.from(row.querySelectorAll<HTMLElement>("*"))) {
-    if (e === h1 || e.contains(h1) || e.closest("h1,p") || e.tagName === "P" || e.offsetWidth === 0) continue;
+    if (e === h1 || e.contains(h1) || e.closest("h1,h2,p") || e.offsetWidth === 0) continue;
     lefts.push(e.getBoundingClientRect().left);
   }
-  for (const e of Array.from(main.querySelectorAll<HTMLElement>("button,a,input,select,[role=tab]"))) {
-    if (row.contains(e) || e.offsetWidth === 0) continue;
+  for (const e of Array.from(scope.querySelectorAll<HTMLElement>("button,a,input,select,[role=tab]"))) {
+    if (row.contains(e) || e.offsetWidth === 0 || e.closest("header,nav")) continue;
     const q = e.getBoundingClientRect();
     if (q.top < box.bottom - 2 && q.bottom > box.top + 2) lefts.push(q.left);
   }
@@ -121,12 +133,19 @@ function markTitleRow() {
   const side = phone ? "top" : room >= 320 ? "right" : "left";
   const fit = phone ? Math.floor((box.width - 2 * pad) / 92) : side === "right" ? Math.floor((room - 138) / 100) : 0;
   const cards = fit < 3 ? 0 : Math.min(5, fit);
-  const bar = document.querySelector(".shell-header, header");
-  const up = bar ? Math.max(0, Math.round(box.top - bar.getBoundingClientRect().bottom)) : 0;
-  const want = [left + "px", right + "px", Math.round(box.width * 0.4 - pad) + "px", up + "px"];
-  TG_VARS.forEach((v, i) => row.style.setProperty(v, had[i] === want[i] ? had[i] : want[i]));
-  if (row.getAttribute("data-tg-title") !== side) row.setAttribute("data-tg-title", side);
-  if (row.getAttribute("data-tg-cards") !== String(cards)) row.setAttribute("data-tg-cards", String(cards));
+  // the gap under the top bar as it is with the page at its top (a bar that stays on screen is counted from there)
+  const barStyle = getComputedStyle(bar);
+  const stays = barStyle.position === "sticky" || barStyle.position === "fixed";
+  const barBottom = stays
+    ? (parseFloat(barStyle.top) || 0) + (bar as HTMLElement).offsetHeight
+    : bar.getBoundingClientRect().bottom + window.scrollY;
+  const up = Math.max(0, Math.round(box.top + window.scrollY - barBottom));
+  // the words end before the picture starts, wherever in the row they begin
+  const textw = Math.round(box.width * 0.4 - (h1.getBoundingClientRect().left - box.left));
+  const want = [left, right, Math.max(120, textw), up, Math.round(pad), Math.round(padTop)];
+  TG_VARS.forEach((v, i) => row.style.setProperty(v, want[i] + "px"));
+  row.setAttribute("data-tg-title", side);
+  row.setAttribute("data-tg-cards", String(cards));
   tgRow = row;
 }
 
@@ -149,7 +168,7 @@ function applyThanksgiving() {
       tgObserver.observe(document.body, { childList: true, subtree: true });
       window.addEventListener("resize", queueTitleRow);
     }
-    queueTitleRow();
+    markTitleRow();
   } else {
     html.removeAttribute("data-tg-app");
     html.removeAttribute("data-tg-page");
@@ -180,6 +199,15 @@ export function startHalloween(app: string) {
   if (typeof document === "undefined") return;
   currentApp = app;
   apply(getThemeMode());
+  watchThanksgivingEdge();
+}
+
+// For an app with its own light / dark switch (the Ops Portal): the Thanksgiving look alone. It never reads or sets
+// the light / dark choice and loads nothing from halloween/ or theme/.
+export function startThanksgiving(app: string) {
+  if (typeof document === "undefined") return;
+  currentApp = app;
+  applyThanksgiving();
   watchThanksgivingEdge();
 }
 

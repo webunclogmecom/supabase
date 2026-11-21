@@ -34,8 +34,8 @@ async function run(source) {
   }
   // outside a browser the file must do nothing and must not throw
   let quiet = true;
-  try { m.startHalloween("portal"); } catch { quiet = false; }
-  out.push(["startHalloween does nothing outside a browser", quiet]);
+  try { m.startHalloween("hub"); m.startThanksgiving?.("portal"); } catch { quiet = false; }
+  out.push(["startHalloween and startThanksgiving do nothing outside a browser", quiet]);
   out.push(["the light / dark exports are still there", ["getThemeMode", "setThemeMode", "isHalloween", "startHalloween"].every((k) => typeof m[k] === "function")]);
   return out;
 }
