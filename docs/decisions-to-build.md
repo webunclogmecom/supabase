@@ -37,13 +37,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   the bot's saved .xlsx with LibreOffice (pdf-service `00e2717`, live 7:46 PM ET), and `lwt-monthly` action
   `download_pdf` hands it to the page (Supabase `cb7494e3`, live 7:47 PM ET, View in DERM Tracker). Proven on October's
   filed report (3 pages, the same layout as the Excel) and end to end from a signed-in portal page (200, 64,789 bytes).
-- **The PDF / Excel choice: BUILT 2026-11-20 about 10:40 PM ET, NOT PUBLISHED, waiting on Fred's picks P (publish) and O
-  (the old DERM page too, or the portal only, since old apps get bug fixes only).** Two tiles on the check step, PDF picked,
-  the button says which file; PDF = generate as today, then `download_pdf` of that draft; the waiting step offers both files;
-  a failed PDF keeps the draft and says so. Portal: local branch `238-pdf-choice` (`1caaaf8`), not pushed; the old page as a
-  patch, `mockups/2026-11-21-pdf238-src/238-old-page.patch`. Check `mockups/2026-11-21-pdf238-src/check.mjs` 9 of 9
-  (desktop and phone). Round sent: `mockups/2026-11-20-upload-live-and-pdf-choice.html` (local).
-- **NOT BUILT.** The PDF / Excel choice on the live pages until Fred answers (above); the send (an edge function through Resend as contact@unclogme.com, the chosen file
+- **The PDF / Excel choice: BUILT, LIVE IN THE PORTAL 2026-11-21 about 8:40 AM ET** (portal `1caaaf8`, `bfadd1c`, entry
+  `index-dyRrUqzW.js`). Two tiles on the check step, PDF picked, the button says which file; PDF = generate as today, then
+  `download_pdf` of that draft; a failed PDF keeps the draft and says so. On the round page Fred liked the tiles and changed
+  the waiting step: *"make a menu button from "Download" and it shows "PDF" and "Excel""*, so it is one Download menu.
+  Check `mockups/2026-11-21-pdf238-src/check.mjs` 11 of 11 local and live, desktop and phone.
+- **Old DERM Tracker page: not changed** (pick O unanswered, so the default: old hosts get bug fixes only). Ready if he asks:
+  `mockups/2026-11-21-pdf238-src/238-old-page.patch` (two loose buttons there, so it needs the menu first).
+- **NOT BUILT.** The send (an edge function through Resend as contact@unclogme.com, the chosen file
   attached, each send logged on the report), waiting on the county's address; one real send with Fred's OK to see the
   county's reply arrive.
 
