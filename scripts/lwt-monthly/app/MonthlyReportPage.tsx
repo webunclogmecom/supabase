@@ -44,6 +44,8 @@ interface Overview {
   current: { period: string; due: string; days_left: number; badge: string; tone: string; note: string; cta: string };
   rows: FilingRow[];
   me: { name: string; email: string; can_edit: boolean };
+  // Trello #238: the county's address (public.app_config lwt_county_email). Empty until Fred has it, and Send Email is off.
+  county_email?: string | null;
 }
 // trucks: a truck changed by hand in a ticket's box (Trello #235, Fred's pick O2: the portal's T2 here too): who, when,
 // and what it was. Saved with the month's work, so either host shows it.
@@ -55,7 +57,8 @@ interface Item {
 }
 type Stage = 'loading' | 'home' | 'start' | 'reading' | 'board' | 'check' | 'wait';
 type DialogState = { kind: 'record'; id: number; tickets: string[]; label: string; invoice: string | null; period: string }
-  | { kind: 'discard'; id: number; label: string } | { kind: 'startover'; period: string; label: string } | null;
+  | { kind: 'discard'; id: number; label: string } | { kind: 'startover'; period: string; label: string }
+  | { kind: 'send'; label: string; ym: string; tickets: number } | null;
 
 // ---- Small helpers ---------------------------------------------------------------------------------------------------
 const MONTH_KEY = '__month';
@@ -176,7 +179,7 @@ const I = {
   bang: 'M12 5v9m0 4h.01', dash: 'M6 12h12', pin: 'M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   file: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M12 18v-6m0 0-2.5 2.5M12 12l2.5 2.5', back: 'M15 18l-6-6 6-6',
   redo: 'M21 12a9 9 0 1 1-3-6.7L21 8m0-5v5h-5', eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
-  up: 'm6 15 6-6 6 6', dn: 'm6 9 6 6 6-6', filter: 'M4 6h16M7 12h10M10 18h4',
+  up: 'm6 15 6-6 6 6', dn: 'm6 9 6 6 6-6', filter: 'M4 6h16M7 12h10M10 18h4', mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
 };
 
 // ---- What needs a person ----------------------------------------------------------------------------------------------
@@ -294,6 +297,13 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   // Record's "maybe": the answer was lost, so it may or may not be on file (amber, never a refusal).
   const [dlgWait, setDlgWait] = useState('');
   const [homeNote, setHomeNote] = useState('');
+  const [homeWarn, setHomeWarn] = useState('');
+  const sendOn = !!ov?.county_email;   // Trello #238: Send Email works once the county's address is set
+  // The waiting step's one Download menu (Fred, 2026-11-21: "make a menu button from "Download" and it shows "PDF" and "Excel"").
+  // Where the open menu sits, from its button: fixed, because the waiting step's card clips what overflows it.
+  const [dlAt, setDlAt] = useState<{ top: number; left: number } | null>(null);
+  const dlOpen = !!dlAt;
+  const dlBox = useRef<HTMLDivElement | null>(null);
 
   const rulesRef = useRef<MonthlyRules | null>(null);
   const uiRef = useRef<Ui>({ acks: {}, ticks: {}, parsed: null });
@@ -305,6 +315,8 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   const [animRoute, setAnimRoute] = useState(0);
   const [view, setView] = useState<'board' | 'list' | null>(null);
   const [readN, setReadN] = useState(0);
+  // The file for the county (Trello #238; Fred, 2026-11-20: "a radial choice between PDF or Excel, and PDF is the default one").
+  const [fmt, setFmt] = useState<'pdf' | 'xlsx'>('pdf');
   const [upl, setUpl] = useState<Up | null>(null);
   const patchUp = useCallback((p: Partial<Up> | ((u: Up) => Partial<Up>)) => setUpl(u => (u ? { ...u, ...(typeof p === 'function' ? p(u) : p) } : u)), []);
   const pickRef = useRef<HTMLInputElement>(null);
@@ -437,7 +449,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   };
 
   const openFiling = useCallback(async (ym: string) => {
-    setBusy('open'); setErr(''); setHomeNote('');
+    setBusy('open'); setErr(''); setHomeNote(''); setHomeWarn('');
     try {
       const [f, w] = await Promise.all([api.post('tickets'), api.post('load_work', { period: ym })]);
       const feed = await okJson<FetchResponse>(f);
@@ -579,18 +591,35 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
       if (g.err || !g.body) throw new Error(g.err || 'Nothing to generate.');
       const reply = await api.post('generate', { payload: g.body });
       if (!reply.ok) throw new Error(await problem(reply, true));
-      await saveBlob(reply.clone(), `LWT_report_${rr.ym}.xlsx`);
+      if (fmt === 'xlsx') await saveBlob(reply.clone(), `LWT_report_${rr.ym}.xlsx`);
       rr.setGenerated(g.body, { id: reply.headers.get('X-Filing-Id'), tickets: reply.headers.get('X-Filing-Tickets'), list: reply.headers.get('X-Filing-List') });
-      setDraftId(rr.GENERATED?.id ? +rr.GENERATED.id : null);
-      setStage('wait');
+      const id = rr.GENERATED?.id ? +rr.GENERATED.id : null;
+      setDraftId(id);
+      // The PDF is the saved report printed by the pdf-service, so it can only follow a draft the service recorded.
+      let pdfErr = '';
+      if (fmt === 'pdf') {
+        if (id == null) pdfErr = 'the service did not save a record of the report.';
+        else {
+          const pdf = await api.post('download_pdf', { id }).catch((e: unknown) => e);
+          if (!(pdf instanceof Response)) pdfErr = msg(pdf);
+          else if (!pdf.ok) pdfErr = await problem(pdf);
+          else await saveBlob(pdf, `LWT_report_${rr.ym}.pdf`);
+        }
+      }
+      // Once the county email is on (Trello #238), Download only downloads: the step stays, and Send Email is beside it.
+      // Fred, 2026-11-21: "once we have that we don't need the button "Record as filed"".
+      if (!sendOn) setStage('wait');
+      if (pdfErr) setErr(sendOn
+        ? `The PDF was not made: ${pdfErr.replace(/^./, c => c.toLowerCase())} Press Download again, or pick Excel.`
+        : `The report is drafted, but the PDF was not made: ${pdfErr.replace(/^./, c => c.toLowerCase())} Download it again below, as a PDF or as the Excel file.`);
       bump(); scheduleSave();
     } catch (e) { setErr(msg(e)); } finally { setBusy(''); }
-  }, [api, scheduleSave]);
+  }, [api, fmt, scheduleSave, sendOn]);
 
   const download = useCallback(async (id: number, name: string) => {
-    setBusy(`dl${id}`); setErr('');
+    setBusy(`dl${id}${name.endsWith('.pdf') ? 'pdf' : ''}`); setErr('');
     try {
-      const reply = await api.post('download', { id });
+      const reply = await api.post(name.endsWith('.pdf') ? 'download_pdf' : 'download', { id });
       if (!reply.ok) throw new Error(await problem(reply));
       await saveBlob(reply, name);
     } catch (e) { setErr(msg(e)); } finally { setBusy(''); }
@@ -681,6 +710,57 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
       await loadHome();
     } catch (e) { setDlgErr(msg(e)); } finally { setBusy(''); }
   }, [api, dialog, dlgReason, dlgText, loadHome]);
+
+  // Send Email (Trello #238): a fresh draft, then lwt-monthly send_email, which emails it to the county as the file picked
+  // and records it as filed. The answer says whether the record followed; the email is never sent twice from here.
+  const sendNow = useCallback(async () => {
+    const rr = rulesRef.current;
+    if (!rr || !dialog || dialog.kind !== 'send') return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setBusy('send'); setDlgErr(''); setDlgWait('');
+    try {
+      const g = rr.generateBody();
+      if (g.err || !g.body) throw new Error(g.err || 'Nothing to send.');
+      const made = await api.post('generate', { payload: g.body });
+      if (!made.ok) throw new Error(await problem(made, true));
+      rr.setGenerated(g.body, { id: made.headers.get('X-Filing-Id'), tickets: made.headers.get('X-Filing-Tickets'), list: made.headers.get('X-Filing-List') });
+      const id = rr.GENERATED?.id ? +rr.GENERATED.id : null;
+      setDraftId(id);
+      if (id == null) throw new Error('The report service did not save a record of the report, so nothing was sent.');
+      const list = rr.GENERATED?.list || [];
+      if (!list.length) throw new Error('The report service did not give the list of tickets on the report, so nothing was sent. Try again.');
+      const sent = await api.post('send_email', { id, format: fmt, expect_tickets: list });
+      const j = await sent.json().catch(() => null) as { sent?: boolean; to?: string; recorded?: boolean; message?: string; record?: { status: number; body: string } } | null;
+      if (!sent.ok || !j?.sent) { setDlgErr(j?.message || 'The email was not sent. Try again.'); bump(); scheduleSave(); return; }
+      const label = dialog.label;
+      closeDialog();
+      if (j.recorded) {
+        await api.post('save_work', { period: openYm.current || rr.ym, work: null }).catch(() => null);
+        setHomeNote(`${label} was emailed to the county (${j.to}) and recorded as filed.`);
+      } else {
+        const st = j.record?.status ?? 0;
+        const out = recordOutcome(st ? st >= 200 && st < 300 : null, j.record?.body || '');
+        const why = out.state === 'refused' ? `${out.who}: ${plain(out.why)}` : out.state === 'no_answer' ? 'the report service did not answer.' : 'the report service did not confirm it.';
+        setHomeWarn(`${label} was emailed to the county (${j.to}), but it was not recorded as filed: ${why.replace(/\.?$/, '.')} Record it as filed from the history below.`);
+      }
+      rulesRef.current = null;
+      await loadHome();
+    } catch (e) { setDlgErr(msg(e)); } finally { setBusy(''); }
+  }, [api, dialog, fmt, loadHome, scheduleSave]);
+
+  // The Download menu closes on a click or tap outside it, on a scroll or resize (it is fixed to where its button was), and on
+  // Escape (which hands the focus back to its button).
+  useEffect(() => {
+    if (!dlOpen) return;
+    const box = dlBox.current;
+    box?.querySelector<HTMLElement>('[role=menuitem]')?.focus();
+    const away = (e: PointerEvent) => { if (!box?.contains(e.target as Node)) setDlAt(null); };
+    const shut = () => setDlAt(null);
+    document.addEventListener('pointerdown', away);
+    window.addEventListener('scroll', shut, true);
+    window.addEventListener('resize', shut);
+    return () => { document.removeEventListener('pointerdown', away); window.removeEventListener('scroll', shut, true); window.removeEventListener('resize', shut); };
+  }, [dlOpen]);
 
   const restoreRow = useCallback(async (id: number) => {
     setBusy(`re${id}`); setErr('');
@@ -1320,14 +1400,17 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   }
 
   // ---- The steps and the header --------------------------------------------------------------------------------------------------
-  function renderHead(n: number) {
+  // back: the check step's "< Back to edit" (Fred, 2026-11-21, Trello #238), in the place of "< Monthly Report".
+  function renderHead(n: number, back?: { label: string; go: () => void }) {
     if (!r) return null;
     const months = [shiftYm(r.ym, -1), r.ym, shiftYm(r.ym, 1)];
     const labels = ['Invoice', 'Tickets', 'Check and download', 'Record'];
     return (
       <>
         <div className="lw-fhead">
-          <button type="button" className="lw-b q" onClick={() => { if (saveTimer.current) { clearTimeout(saveTimer.current); void saveNow(); } rulesRef.current = null; void loadHome(); }}><Ic d={I.back} /> Monthly Report</button>
+          {back
+            ? <button type="button" className="lw-b q lw-back" onClick={back.go}><Ic d={I.back} /> {back.label}</button>
+            : <button type="button" className="lw-b q lw-back" onClick={() => { if (saveTimer.current) { clearTimeout(saveTimer.current); void saveNow(); } rulesRef.current = null; void loadHome(); }}><Ic d={I.back} /> Monthly Report</button>}
           <h1>{monthLabel(r.ym)}</h1>
           {stage !== 'wait' && (
             <div className="lw-months" role="group" aria-label="Report month">
@@ -1601,7 +1684,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     const stale = r.flagsAreStale();
     return (
       <div className="lwt" data-stage="check">
-        {renderHead(3)}
+        {renderHead(3, { label: 'Back to edit', go: () => setStage('board') })}
         {errLine}
         <div className="lw-chk">
           <div><iframe className="lw-form" title="The county's form, as it will be filed" sandbox="" srcDoc={preview.html} /></div>
@@ -1616,13 +1699,26 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
             {stale
               ? <div className="lw-warnbox">Something changed since this check, so it no longer matches. Run it again.</div>
               : tile(r.approved, 'This matches the paper', 'Changing anything locks this again.', () => act(() => r.setApproved(!r.approved)))}
-            <div className="lw-acts">
-              <button type="button" className="lw-b" onClick={() => setStage('board')}>Back to the tickets</button>
+            {!stale && (
+              <div className="lw-fmt" role="group" aria-label="The file for the county">
+                {tile(fmt === 'pdf', 'PDF', 'The county\u2019s form as one file. The one to email.', () => setFmt('pdf'), 'pdf')}
+                {tile(fmt === 'xlsx', 'Excel', 'The same report as the bot\u2019s spreadsheet.', () => setFmt('xlsx'), 'xlsx')}
+              </div>
+            )}
+            {/* Fred, 2026-11-21: "2 button which are "Download" and "Send Email"", "to the right". Send Email stays off until
+                the county's address is set; until then the file is emailed by hand and recorded on the next step. */}
+            <div className="lw-acts lw-chkacts">
               {stale
                 ? <button type="button" className="lw-b p" disabled={busy === 'check'} onClick={() => void runCheck()}>Run the check again</button>
-                : <button type="button" className="lw-b p" disabled={!r.canGenerate() || busy === 'generate'} onClick={() => void generate()}><Ic d={I.down} /> {busy === 'generate' ? 'Building the file' : 'Download the Excel file'}</button>}
+                : <>
+                  <button type="button" className="lw-b" disabled={!r.canGenerate() || busy === 'generate'} onClick={() => void generate()}><Ic d={I.down} /> {busy === 'generate' ? (fmt === 'pdf' ? 'Making the PDF' : 'Building the file') : 'Download'}</button>
+                  <button type="button" className="lw-b a" disabled={!sendOn || !canEdit || !r.canGenerate() || !!busy} title={sendOn ? undefined : "Works once we have the county's email address"}
+                    onClick={() => setDialog({ kind: 'send', label: monthLabel(r.ym), ym: r.ym, tickets: vm.onReport.length })}><Ic d={I.mail} /> Send Email</button>
+                </>}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--lw-ink2)' }}>The file is saved with the report. Nothing goes to the county from here.</div>
+            {!stale && <div style={{ fontSize: 12, color: 'var(--lw-ink2)' }}>{sendOn
+              ? <>Send Email sends the file picked to {ov?.county_email} from contact@unclogme.com, and records the report as filed.</>
+              : <>Send Email works once we have the county&rsquo;s email address. Until then, download the file and email it yourself.</>}</div>}
             {byRule.size > 0 && (
               <details className="lw-fold" open={strong.length > 0}>
                 <summary>What the check says <small>{review.length}</small></summary>
@@ -1651,7 +1747,33 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
         <div className="lw-hero">
           <div><span className="lw-chip warn">Drafted, not filed</span><div className="lw-mo" style={{ fontSize: 30 }}>Waiting for the county</div><div className="lw-due">Email the file to the county. Come back here when they approve it.</div></div>
           <div className="lw-go"><div className="lw-acts">
-            {draftId != null && <button type="button" className="lw-b" disabled={busy === `dl${draftId}`} onClick={() => void download(draftId, `LWT_report_${r.ym}.xlsx`)}><Ic d={I.down} /> Download again</button>}
+            {/* Fred, 2026-11-21: "make a menu button from "Download" and it shows "PDF" and "Excel"". This page imports nothing
+                from the app, so the menu is its own: the filters' lw-pop, with the roles of a menu. */}
+            {draftId != null && (
+              <div className="lw-popw" ref={dlBox} onKeyDown={e => {
+                if (e.key === 'Escape' && dlOpen) { e.stopPropagation(); setDlAt(null); dlBox.current?.querySelector<HTMLElement>('[aria-haspopup]')?.focus(); return; }
+                if (e.key === 'Tab') { setDlAt(null); return; }
+                if (!dlOpen || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+                e.preventDefault();
+                const items = [...(dlBox.current?.querySelectorAll<HTMLElement>('[role=menuitem]') || [])];
+                const at = items.indexOf(document.activeElement as HTMLElement);
+                items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+              }}>
+                <button type="button" className="lw-b" aria-haspopup="menu" aria-expanded={dlOpen} disabled={busy.startsWith(`dl${draftId}`)} onClick={e => {
+                  if (dlAt) { setDlAt(null); return; }
+                  const b = e.currentTarget.getBoundingClientRect();
+                  setDlAt({ top: b.bottom + 6, left: Math.max(8, Math.min(b.right - 160, window.innerWidth - 168)) });
+                }}>
+                  <Ic d={I.down} /> {busy === `dl${draftId}pdf` ? 'Making the PDF' : busy === `dl${draftId}` ? 'Downloading' : 'Download'} <Ic d={I.dn} />
+                </button>
+                {dlAt && (
+                  <div className="lw-pop" role="menu" aria-label="Download as" data-lw-download style={{ position: 'fixed', top: dlAt.top, left: dlAt.left, right: 'auto', width: 160 }}>
+                    <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setDlAt(null); void download(draftId, `LWT_report_${r.ym}.pdf`); }}>PDF</button>
+                    <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setDlAt(null); void download(draftId, `LWT_report_${r.ym}.xlsx`); }}>Excel</button>
+                  </div>
+                )}
+              </div>
+            )}
             {g?.id && canEdit && <button type="button" className="lw-b p" onClick={() => setDialog({ kind: 'record', id: +(g.id as string), tickets: g.list || [], label: monthLabel(g.ym), invoice: g.invoice, period: g.ym })}>Record as filed</button>}
           </div></div>
         </div>
@@ -1710,6 +1832,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
         <div className="lw-head"><h1>Monthly Report</h1><p>The county&rsquo;s form ST. One per month, emailed to the county by the 20th.</p></div>
         {errLine}
         {homeNote && <div className="lw-okbox"><Ic d={I.check} /><div>{homeNote}</div></div>}
+        {homeWarn && <div className="lw-warnbox" role="alert">{homeWarn}</div>}
         <div className="lw-hero">
           <div>
             <span className={`lw-chip ${tone(c.tone)}`}>{filed && <Ic d={I.check} />}{homeWork && !draft && !filed ? 'In progress' : c.badge}</span>
@@ -1795,6 +1918,33 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   }
   function renderDialog() {
     if (!dialog) return null;
+    // Trello #238. Fred, 2026-11-21, on From and Sent by: "just leave it like "contact@unclogme.com" and "Fred" no need the
+    // extras", then "you can keep the avatar at "Sent by"".
+    if (dialog.kind === 'send') {
+      const file = `LWT_report_${dialog.ym}.${fmt}`;
+      return (
+        <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label="Email the report to the county" onKeyDown={e => { if (e.key === 'Escape' && busy !== 'send') closeDialog(); }}>
+          <div className="lw-dlg">
+            <h3>Email the {dialog.label} report to the county?</h3>
+            <p>It goes now with the file attached, and the report is then recorded as filed. An email cannot be taken back. The county&rsquo;s reply comes back to contact@unclogme.com.</p>
+            <div className="lw-read">
+              <span>To</span><b>{ov?.county_email}</b>
+              <span>From</span><b>contact@unclogme.com</b>
+              <span>Subject</span><b>UnclogMe, Liquid Waste Transporter report, {dialog.label}</b>
+              <span>File</span><b><Ic d={I.file} /> {file} ({fmt === 'pdf' ? 'PDF' : 'Excel'})</b>
+              <span>Tickets</span><b>{int(dialog.tickets)}</b>
+              <span>Sent by</span><b><span className="lw-av">{(ov?.me.name || '?')[0]}</span> {ov?.me.name}</b>
+            </div>
+            {dlgWait && <div className="lw-warnbox" role="status"><b>Not confirmed.</b> {dlgWait}</div>}
+            {dlgErr && <div className="lw-err" role="alert"><span>{dlgErr}</span></div>}
+            <div className="lw-acts">
+              <button type="button" className="lw-b" autoFocus disabled={busy === 'send'} onClick={closeDialog}>Cancel</button>
+              <button type="button" className="lw-b a" disabled={busy === 'send'} onClick={() => void sendNow()}><Ic d={I.mail} /> {busy === 'send' ? 'Sending' : 'Send Email'}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     if (dialog.kind === 'record') {
       return (
         <div className="lwt lw-scrim" role="dialog" aria-modal="true" aria-label="Record as filed" onKeyDown={e => { if (e.key === 'Escape') closeDialog(); }}>

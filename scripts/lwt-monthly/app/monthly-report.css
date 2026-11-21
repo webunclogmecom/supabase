@@ -24,6 +24,9 @@
 .lw-b:active{transform:scale(.97)}
 .lw-b.p{background:var(--lw-brand);border-color:var(--lw-brand);color:var(--lw-on-brand);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.15)}
 .lw-b.q{border:0;background:none;box-shadow:none;color:var(--lw-brand-d);padding:0 6px}
+/* An operations action, blue (Building Apps rule 1i): Send Email (Trello #238). The same blue reads on the dark app. */
+.lw-b.a{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.lw-b.a:not([disabled]):hover{background:#1d4ed8;border-color:#1d4ed8}
 .lw-b[disabled]{opacity:.45;cursor:not-allowed;transform:none}
 .lw-chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
 .lw-chip.ok{background:var(--lw-ok-t);color:var(--lw-ok);border:1px solid var(--lw-ok-b)}
@@ -349,3 +352,7 @@
 @media (prefers-reduced-motion:reduce){.lw-up-bar span.wait::after{width:100%;opacity:.45;animation:none}}
 @media (max-width:600px){.lw-up-steps{grid-template-columns:minmax(0,1fr);gap:6px}.lw-up-file{flex-wrap:wrap}.lw-up-file .lw-b,.lw-up-act .lw-b{flex:1;height:44px}}
 @media (prefers-reduced-motion:reduce){.lwt *{animation-duration:.001ms!important;transition-duration:.001ms!important}.lw-ov path.draw{stroke-dashoffset:0}}
+/* The file for the county, PDF or Excel (Trello #238): two tiles, PDF picked by default. */
+.lw-fmt{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.lw-fmt .lw-tile{margin-bottom:0}
+/* Download and Send Email on the right of the check step (Fred, 2026-11-21: "to be to the right"). */
+.lw-chkacts{justify-content:flex-end}
