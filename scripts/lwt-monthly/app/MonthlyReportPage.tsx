@@ -95,6 +95,53 @@ const RECORD_AGAIN = 'The answer was lost before it reached this page, so this m
   'pressing it again on this same report cannot record it twice, and the answer will say what is on file.';
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion:reduce)').matches;
 
+// ---- Upload progress (Trello #239, Fred's picks U1 S1 O1, 2026-11-19: "a progress status on the monthly report (old apps and
+// ops portal) when uploading the files ... same if there was an error to know something happened"). The invoice goes up with the
+// browser's own upload, which counts its bytes; same URL, headers and body as before. The Ops Portal's page has the same three
+// steps from its kit (components/ui/upload.tsx); this page draws them with its own lw- classes.
+const STEPS = ['Sending the file', 'Reading the invoice', 'Matching our tickets'];
+type UpAction = { label: string; onClick: () => void; primary?: boolean };
+type Up = {
+  file: File; at: number; sent: number; bytes: number; stepAt: number; times: number[];
+  state: 'going' | 'ok' | 'bad'; title?: string; text?: string; note?: ReactNode; actions?: UpAction[]; abort: AbortController;
+};
+class Lost extends Error {
+  constructor(readonly stage: 'send' | 'answer', readonly kind: 'dropped' | 'cancelled', readonly share: number) {
+    super(kind === 'cancelled' ? 'Cancelled.' : 'The connection dropped.');
+  }
+}
+function sendCounted(url: string, headers: Record<string, string>, body: Blob,
+  o: { onProgress: (share: number, bytes: number) => void; onSent: () => void; signal: AbortSignal }): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    let sent = false, share = 0;
+    const done = () => { if (!sent) { sent = true; share = 1; o.onSent(); } };
+    x.open('POST', url);
+    x.responseType = 'arraybuffer';
+    Object.entries(headers).forEach(([k, v]) => x.setRequestHeader(k, v));
+    x.upload.onprogress = e => {
+      if (!e.lengthComputable || !e.total) return;
+      share = e.loaded / e.total; o.onProgress(share, e.loaded);
+      if (e.loaded >= e.total) done();
+    };
+    x.upload.onload = done;
+    const stop = (kind: 'dropped' | 'cancelled') => () => reject(new Lost(sent ? 'answer' : 'send', kind, share));
+    x.onerror = stop('dropped'); x.ontimeout = stop('dropped'); x.onabort = stop('cancelled');
+    x.onload = () => {
+      done();
+      const h = new Headers();
+      x.getAllResponseHeaders().trim().split(/[\r\n]+/).forEach(l => { const i = l.indexOf(':'); if (i > 0) h.append(l.slice(0, i).trim(), l.slice(i + 1).trim()); });
+      resolve(new Response([101, 204, 205, 304].includes(x.status) ? null : x.response, { status: x.status, statusText: x.statusText, headers: h }));
+    };
+    if (o.signal.aborted) { reject(new Lost('send', 'cancelled', 0)); return; }
+    o.signal.addEventListener('abort', () => x.abort(), { once: true });
+    x.send(body);
+  });
+}
+const mb = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+const kindOf = (f: File) => (/\.([a-z0-9]{2,5})$/i.exec(f.name)?.[1] || f.type.split('/')[1] || 'file').toUpperCase().replace('JPEG', 'JPG');
+const secs = (ms: number) => `${Math.max(1, Math.round(ms / 1000))} s`;
+
 async function problem(r: Response, write = false): Promise<string> {
   const raw = await r.text();
   // A write that got no answer may still have gone through: never "Nothing changed" for it.
@@ -223,7 +270,8 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     return {
       post: async (action: string, body: Record<string, unknown> = {}) =>
         fetch(url, { method: 'POST', headers: await head('application/json'), body: JSON.stringify({ action, ...body }) }),
-      upload: async (file: File) => fetch(`${url}?action=read_invoice`, { method: 'POST', headers: await head('application/octet-stream'), body: file }),
+      upload: async (file: File, o: Parameters<typeof sendCounted>[3]) =>
+        sendCounted(`${url}?action=read_invoice`, await head('application/octet-stream'), file, o),
     };
   }, [functionsUrl, getToken]);
 
@@ -257,6 +305,21 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   const [animRoute, setAnimRoute] = useState(0);
   const [view, setView] = useState<'board' | 'list' | null>(null);
   const [readN, setReadN] = useState(0);
+  const [upl, setUpl] = useState<Up | null>(null);
+  const patchUp = useCallback((p: Partial<Up> | ((u: Up) => Partial<Up>)) => setUpl(u => (u ? { ...u, ...(typeof p === 'function' ? p(u) : p) } : u)), []);
+  const pickRef = useRef<HTMLInputElement>(null);
+  const readRef = useRef<(f: File) => void>(() => undefined);
+  const [, tickUp] = useReducer((n: number) => n + 1, 0);
+  const upServer = !!upl && upl.state === 'going' && (upl.at > 0 || upl.sent >= 1);
+  useEffect(() => { if (!upServer) return; const t = setInterval(tickUp, 1000); return () => clearInterval(t); }, [upServer]);
+  // Closing or reloading the tab while the invoice is on its way asks first.
+  const upGoing = upl?.state === 'going';
+  useEffect(() => {
+    if (!upGoing) return;
+    const ask = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', ask);
+    return () => window.removeEventListener('beforeunload', ask);
+  }, [upGoing]);
   const [byHand, setByHand] = useState(false);
   const [typedNum, setTypedNum] = useState('');
   const [typedDecal, setTypedDecal] = useState('');
@@ -418,33 +481,76 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
   }, [api, loadBoard, scheduleSave]);
 
   // ---- The invoice ----------------------------------------------------------------------------------------------------
+  // Three steps where the file was dropped (Trello #239, Fred's picks U1 S1): sending shows the real share of the file, reading
+  // and matching show their seconds. A failure stays in place, red, says at which step and that nothing was saved.
   const readFile = useCallback(async (file: File) => {
     const rr = rulesRef.current;
     if (!rr) return;
-    setBusy('reading'); setErr('');
     const kept = rr.invoiceId ? ` Your invoice ${rr.invoiceId} is kept.` : '';
+    const again: UpAction[] = [
+      { label: 'Type the numbers by hand', onClick: () => { setUpl(null); setByHand(true); } },
+      { label: 'Choose another file', onClick: () => pickRef.current?.click() },
+    ];
+    const fresh = (): Up => ({ file, at: 0, sent: 0, bytes: 0, stepAt: Date.now(), times: [], state: 'going', abort: new AbortController() });
+    setErr('');
+    // The input asks for a PDF or a photo, but a drop can be anything; the reader takes 10 MB at most (lwt-monthly).
+    if (file.type !== 'application/pdf' && !file.type.startsWith('image/') && !/\.pdf$/i.test(file.name)) {
+      setUpl({ ...fresh(), state: 'bad', title: 'This file is not read', text: `${file.name} is a ${kindOf(file)} file. The reader takes the county\u2019s PDF or a photo of the paper. Nothing was sent.${kept}`, actions: again });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUpl({ ...fresh(), state: 'bad', title: 'The file is too big', text: `${file.name} is ${mb(file.size)}, over the 10 MB the reader takes. Use the PDF from the county. Nothing was sent.${kept}`, actions: again });
+      return;
+    }
+    const u = fresh();
+    setUpl(u);
+    const next = (note?: ReactNode) => patchUp(p => ({ times: [...p.times, Date.now() - p.stepAt], stepAt: Date.now(), at: p.at + 1, sent: 1, bytes: p.file.size, note }));
+    const fail = (title: string, text: string, actions: UpAction[]) => patchUp(p => ({ state: 'bad', times: [...p.times, Date.now() - p.stepAt], title, text, actions }));
+    setBusy('reading');
     try {
-      const parsed = await okJson<InvoiceParse>(await api.upload(file));
+      const parsed = await okJson<InvoiceParse>(await api.upload(file, {
+        onProgress: (sent, bytes) => patchUp({ sent, bytes }),
+        onSent: () => next(<>Reading the paper: the invoice number, every ticket, its date and its truck. This usually takes <b>6 to 12 seconds</b>.</>),
+        signal: u.abort.signal,
+      }));
       // The bytes are not kept. The parse is, so a reopened month needs no second read.
       if (!rr.adoptDroppedInvoice(parsed, file.name, '')) {
-        setErr(plain(rr.invoiceStatus?.text || `No ticket numbers found in ${file.name}. Type them by hand below.`) + kept);
+        next();
+        fail('No ticket numbers found', `${plain(rr.invoiceStatus?.text || `No ticket numbers found in ${file.name}.`)} Nothing was saved.${kept}`, again);
         bump();
         return;
       }
+      const n = (parseTickets(rr.invoiceText) || []).length;
+      next(<>Putting the <b>{count(n, 'ticket')}</b> beside our own records.</>);
       uiRef.current.parsed = parsed; uiRef.current.invoiceName = file.name; uiRef.current.acks = {};
       reapplyTicks(rr, uiRef.current);
       await loadBoard(rr);
       scheduleSave();
-      const n = (parseTickets(rr.invoiceText) || []).length;
-      if (reduced()) { setStage('board'); advance(); return; }
+      const done = () => patchUp(p => ({
+        state: 'ok', at: STEPS.length, times: [...p.times, Date.now() - p.stepAt],
+        title: `${rr.invoiceId.trim() ? `Invoice ${rr.invoiceId.trim()}` : 'The invoice'} read: ${count(n, 'ticket')}`,
+        text: 'Every ticket is on the board below, with its date and its truck.',
+      }));
+      if (reduced()) { setUpl(null); setStage('board'); advance(); return; }
       setReadN(0); setStage('reading');
       let k = 0;
       const tm = setInterval(() => {
         k += 1; setReadN(k);
-        if (k >= n) { clearInterval(tm); setTimeout(() => { setStage('board'); advance(); }, 420); }
+        if (k >= n) { clearInterval(tm); done(); setTimeout(() => { setUpl(null); setStage('board'); advance(); }, 1400); }
       }, Math.min(110, Math.floor(1800 / Math.max(1, n))));
-    } catch (e) { setErr(msg(e, 'The invoice was not sent: the connection dropped. Nothing changed. Try again.') + kept); } finally { setBusy(''); }
-  }, [advance, api, loadBoard, scheduleSave]);
+    } catch (e) {
+      if (e instanceof Lost && e.kind === 'cancelled') return;
+      const lost = e instanceof Lost;
+      fail(lost && e.stage === 'send' ? 'The invoice was not sent' : 'The invoice could not be read',
+        lost
+          ? e.stage === 'send'
+            ? `The connection dropped at ${Math.round(e.share * 100)}%. Nothing was saved, and your month is as it was.${kept}`
+            : `The file arrived, but the connection dropped before the answer. Nothing was saved.${kept}`
+          : `${msg(e)} Nothing was saved.${kept}`,
+        [again[0], { label: 'Try again', primary: true, onClick: () => readRef.current(file) }]);
+    } finally { setBusy(''); }
+  }, [advance, api, loadBoard, patchUp, scheduleSave]);
+  readRef.current = (f: File) => void readFile(f);
 
   // ---- Check, generate, record -------------------------------------------------------------------------------------------
   const runCheck = useCallback(async () => {
@@ -1243,8 +1349,68 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
     );
   }
   // ---- The invoice box, before and after ----------------------------------------------------------------------------------------------
+  function renderUpload() {
+    const u = upl;
+    if (!u) return null;
+    const small = `${mb(u.file.size)}, the county\u2019s invoice`;
+    const steps = (
+      <ol className="lw-up-steps">
+        {STEPS.map((w, k) => {
+          const done = k < u.at || u.state === 'ok', now = k === u.at && u.state !== 'ok', bad = now && u.state === 'bad';
+          const server = now && (k > 0 || u.sent >= 1);
+          const em = done ? secs(u.times[k] ?? 0) : bad ? (k === 0 ? `${Math.round(u.sent * 100)}%` : secs(u.times[k] ?? 0))
+            : now ? (k === 0 && u.sent < 1 ? `${Math.round(u.sent * 100)}%` : secs(Date.now() - u.stepAt)) : '';
+          return (
+            <li key={w} className={done ? 'done' : bad ? 'bad' : now ? 'now' : ''}>
+              <i className={server && !bad ? 'spin' : ''}>{done ? <Ic d={I.check} /> : bad ? '!' : server ? '' : k + 1}</i>
+              <span>{w}</span>{em && <em>{em}</em>}
+            </li>
+          );
+        })}
+      </ol>
+    );
+    const bar = (
+      <div className="lw-up-bar" aria-hidden="true">
+        {STEPS.map((w, k) => {
+          const done = k < u.at || u.state === 'ok', now = k === u.at && u.state !== 'ok';
+          const width = done ? 100 : now && k === 0 ? u.sent * 100 : now && u.state === 'bad' ? 100 : 0;
+          const cls = u.state === 'ok' ? 'okk' : now && u.state === 'bad' ? 'bad' : now && u.state === 'going' && (k > 0 || u.sent >= 1) ? 'wait' : '';
+          return <span key={w} className={cls}><b style={{ width: `${width}%` }} /></span>;
+        })}
+      </div>
+    );
+    if (u.state !== 'going') {
+      const ok = u.state === 'ok';
+      return (
+        <div className={`lw-up ${ok ? 'ok' : 'bad'}`} role={ok ? 'status' : 'alert'}>
+          <div className="lw-up-head">
+            <span className="ic" aria-hidden="true">{ok ? <Ic d={I.check} /> : '!'}</span>
+            <span className="t"><b>{u.title}</b>{u.text && <span>{u.text}</span>}<small>{ok ? `${u.file.name}, ${mb(u.file.size)}, in ${secs(u.times.reduce((a, t) => a + t, 0))}` : `${u.file.name}, ${small}`}</small></span>
+            {!ok && <button type="button" className="lw-up-x" aria-label="Close" onClick={() => setUpl(null)}><Ic d={I.x} /></button>}
+          </div>
+          {!ok && <>{steps}{bar}</>}
+          {!ok && !!u.actions?.length && (
+            <div className="lw-up-act">{u.actions.map(a => <button key={a.label} type="button" className={`lw-b ${a.primary ? 'p' : ''}`} onClick={a.onClick}>{a.label}</button>)}</div>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="lw-up">
+        <p className="lw-sr" role="status">{`${STEPS[Math.min(u.at, 2)]}, ${u.file.name}`}</p>
+        <div className="lw-up-file">
+          <span className="lw-up-thumb" aria-hidden="true">{kindOf(u.file).slice(0, 4)}</span>
+          <span className="lw-up-name"><b>{u.file.name}</b><small>{small}</small></span>
+          {u.at === 0 && u.sent < 1 && <button type="button" className="lw-b" onClick={() => { u.abort.abort(); setUpl(null); }}>Cancel</button>}
+        </div>
+        {steps}{bar}
+        <p className="lw-up-note">{u.at === 0 && u.sent < 1 ? <><b>{mb(u.bytes)} of {mb(u.file.size)}</b> sent.</> : u.note}</p>
+      </div>
+    );
+  }
   function renderDrop() {
     if (!r) return null;
+    if (upl) return renderUpload();
     const list = parseTickets(r.invoiceText) || [];
     const onFile = (f?: File | null) => { if (f) void readFile(f); };
     return (
@@ -1349,7 +1515,9 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
           </div>
         )}
         {vm.notes.filter(n => ['block', 'warn'].includes(n.tone)).map(n => <div className="lw-warnbox" key={`${n.rule}${n.detail}`}><b>{plain(n.title)}.</b> {plain(n.detail)}</div>)}
+        <input ref={pickRef} type="file" hidden accept=".pdf,image/*" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void readFile(f); }} />
         {stage === 'start' && renderDrop()}
+        {stage === 'reading' && renderUpload()}
         {stage === 'reading' && (
           <div className="lw-card" style={{ padding: '12px 14px' }}>
             <div className="lw-sect">Reading {ui.invoiceName || 'the invoice'} <small>{Math.min(readN, (vm.invoice || []).length)} of {(vm.invoice || []).length} rows</small></div>
@@ -1362,6 +1530,7 @@ export default function MonthlyReportPage({ functionsUrl, getToken, manifestsUrl
           <div className="lw-warnbox"><b>This invoice was a photo or a scan, so it was read from the picture.</b> Count the ticket rows on the paper against the {count((vm.invoice || []).length, 'ticket')} read here, and check every digit.</div>
         )}
         {stage === 'board' && renderInvoiceFold()}
+        {stage === 'board' && renderUpload()}
         <div className="lw-work">
           <div className="lw-col">
             <div className="lw-board">
