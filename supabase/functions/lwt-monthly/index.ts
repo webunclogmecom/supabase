@@ -26,6 +26,7 @@
 //   check { payload }                        { html, findings } + x-preview-token and the x-preview-* summary headers
 //   generate { payload }                     the .xlsx + X-Filing-Id, X-Filing-Tickets, X-Filing-List
 //   download { id }                          the saved .xlsx, byte for byte
+//   download_pdf { id }                      that same .xlsx printed to PDF by the pdf-service (Trello #238, 2026-11-20)
 //   record { id, expect_tickets }            the bot's sentence; it refuses a row that moved since it was read
 //   discard { id, reason, reason_text? }     restore { id }
 //   archive { ticket, reason, reason_text?, duplicate_of?, invoice_tickets?, known_tickets?, ticked? }   unarchive { ticket }
@@ -55,6 +56,9 @@ const WORK_BUCKET = 'lwt-monthly-work'
 const MAX_INVOICE_BYTES = 10 * 1024 * 1024   // the bot's own cap
 const MAX_WORK_BYTES = 4_500_000             // the bucket allows 5 MB
 const BOT_TIMEOUT_MS = 120_000               // a scanned invoice takes seconds on OCR; the platform stops at 150 s
+const PDF_SERVICE_URL = (Deno.env.get('PDF_SERVICE_URL') ?? '').trim().replace(/\/$/, '')
+const PDF_SERVICE_API_KEY = (Deno.env.get('PDF_SERVICE_API_KEY') ?? '').trim()
+const PDF_TIMEOUT_MS = 100_000               // the pdf-service gives LibreOffice 90 s
 
 const ALLOWED_ORIGINS = new Set(['https://derm.unclogme.app', 'https://ops.unclogme.app'])
 function corsHeadersFor(origin: string | null): Record<string, string> {
@@ -72,7 +76,7 @@ function json(body: Record<string, unknown>, status: number, cors: Record<string
 
 // The level each action needs. An action missing here does not exist.
 const LEVEL: Record<string, 'view' | 'edit'> = {
-  overview: 'view', tickets: 'view', archive_state: 'view', download: 'view', board: 'view', suggest: 'view', load_work: 'view',
+  overview: 'view', tickets: 'view', archive_state: 'view', download: 'view', download_pdf: 'view', board: 'view', suggest: 'view', load_work: 'view',
   read_invoice: 'edit', check: 'edit', generate: 'edit', record: 'edit', discard: 'edit', restore: 'edit',
   archive: 'edit', unarchive: 'edit', save_size: 'edit', save_work: 'edit',
 }
@@ -97,6 +101,7 @@ export function botRequest(action: string, b: Record<string, unknown>, sessionEm
     case 'check': return { method: 'POST', path: '/monthly/preview', json: objectPayload(b.payload) }
     case 'generate': return { method: 'POST', path: '/monthly/generate', json: objectPayload(b.payload) }
     case 'download': return { method: 'GET', path: `/monthly/filings/${rowId(b.id)}/report` }
+    case 'download_pdf': return { method: 'GET', path: `/monthly/filings/${rowId(b.id)}/report` }
     case 'record': {
       if ('filed_by_email' in b || 'dry_run' in b) throw new BadRequest('The name on a filing comes from the sign-in, and this page does not rehearse.')
       if (!Array.isArray(b.expect_tickets) || b.expect_tickets.length === 0) throw new BadRequest('Send the list of tickets you were shown.')
@@ -143,6 +148,38 @@ async function relay(r: Response, action: string, cors: Record<string, string>):
   }
   const bytes = await r.arrayBuffer()
   return new Response(bytes, { status: r.status, headers: { ...cors, ...forwardedHeaders(r.headers) } })
+}
+
+// download_pdf: the bot's saved .xlsx, printed to PDF by the pdf-service's LibreOffice (POST /convert/xlsx-to-pdf).
+// One source of truth: the PDF is the same file printed, never a redraw of the county's form. The bytes travel raw.
+async function toPdf(answer: Response, cors: Record<string, string>): Promise<Response> {
+  if (!answer.ok) return relay(answer, 'download_pdf', cors)
+  if (!PDF_SERVICE_URL || !PDF_SERVICE_API_KEY) {
+    return json({ error: 'pdf_not_enabled', message: 'The PDF maker is not set up. Download the Excel file instead.' }, 503, cors)
+  }
+  const xlsx = await answer.arrayBuffer()
+  const name = /filename="?([^";]+)"?/i.exec(answer.headers.get('content-disposition') ?? '')?.[1] ?? 'report.xlsx'
+  let up: Response
+  try {
+    up = await fetch(`${PDF_SERVICE_URL}/convert/xlsx-to-pdf?filename=${encodeURIComponent(name)}`, {
+      method: 'POST', body: xlsx, signal: AbortSignal.timeout(PDF_TIMEOUT_MS),
+      headers: { Authorization: `Bearer ${PDF_SERVICE_API_KEY}`, 'Content-Type': 'application/octet-stream' },
+    })
+  } catch (e) {
+    console.error(`lwt-monthly download_pdf: no answer from the pdf-service: ${(e as Error).name}`)
+    return json({ error: 'pdf_no_answer', message: 'The PDF took too long to make. Try again, or download the Excel file.' }, 504, cors)
+  }
+  if (!up.ok) {
+    let code = ''
+    try { code = String((await up.json())?.error ?? '') } catch { /* not JSON */ }
+    console.error(`lwt-monthly download_pdf: pdf-service HTTP ${up.status} ${code}`)
+    if (code === 'converter_busy') return json({ error: 'pdf_busy', message: 'Another PDF is being made right now. Try again in a moment.' }, 503, cors)
+    return json({ error: 'pdf_failed', message: 'The PDF could not be made. Download the Excel file instead, and tell Fred.' }, 502, cors)
+  }
+  const outName = /filename="([^"]+)"/.exec(up.headers.get('content-disposition') ?? '')?.[1] ?? 'report.pdf'
+  return new Response(await up.arrayBuffer(), { status: 200, headers: {
+    ...cors, 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${outName}"`,
+    'Access-Control-Expose-Headers': 'Content-Disposition' } })
 }
 
 // A person's name for the bot's ledger ("Handled by"). The bot keeps letters, digits, - and _ only, and honours this header
@@ -278,6 +315,7 @@ Deno.serve(async (req) => {
       : 'The report service did not answer. Nothing changed. Try again.' }, 502, cors)
   }
 
+  if (action === 'download_pdf') return toPdf(answer, cors)
   if (action !== 'overview') return relay(answer, action, cors)
 
   // overview also says who is asking, so the page never asks twice and never decides access itself.

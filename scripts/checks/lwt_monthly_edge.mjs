@@ -44,12 +44,13 @@ async function load(file, env, tag) {
   await import(pathToFileURL(file).href + `?${tag}`)
   return handler
 }
-const ON = { SUPABASE_URL: 'http://db', SUPABASE_SERVICE_ROLE_KEY: 'service', SUPABASE_ANON_KEY: 'anon', GDO_BOT_FILE_URL: 'https://bot.example/gdo/process-one', GDO_BOT_FILE_KEY: 'k-derm' }
+const ON = { SUPABASE_URL: 'http://db', SUPABASE_SERVICE_ROLE_KEY: 'service', SUPABASE_ANON_KEY: 'anon', GDO_BOT_FILE_URL: 'https://bot.example/gdo/process-one', GDO_BOT_FILE_KEY: 'k-derm', PDF_SERVICE_URL: 'https://pdf.example/', PDF_SERVICE_API_KEY: 'k-pdf' }
+const NO_PDF = { ...ON, PDF_SERVICE_URL: undefined, PDF_SERVICE_API_KEY: undefined }
 const OFF = { SUPABASE_URL: 'http://db', SUPABASE_SERVICE_ROLE_KEY: 'service', SUPABASE_ANON_KEY: 'anon' }
 const EDIT = 'lwt_monthly_edit', VIEW = 'lwt_monthly_view'
 
-function world({ staff = true, deny = {}, bot = null, botThrows = false, signedIn = true, work = null, workErr = null } = {}) {
-  const w = { botCalls: [], rpcCalls: [], uploads: [] }
+function world({ staff = true, deny = {}, bot = null, botThrows = false, signedIn = true, work = null, workErr = null, pdf = null, pdfThrows = false } = {}) {
+  const w = { botCalls: [], rpcCalls: [], uploads: [], pdfCalls: [] }
   globalThis.__staff = staff
   globalThis.__deny = deny
   globalThis.__user = { auth: { getUser: async () => signedIn ? { data: { user: { email: 'person@unclogme.com' } }, error: null } : { data: {}, error: { message: 'no' } } } }
@@ -67,6 +68,12 @@ function world({ staff = true, deny = {}, bot = null, botThrows = false, signedI
       w.rpcCalls.push({ url: u, init, args: JSON.parse(init.body) })
       return new Response(JSON.stringify(w.rpcAnswer ?? { ok: true }), { status: w.rpcStatus ?? 200 })
     }
+    if (u.startsWith('https://pdf.example/')) {
+      w.pdfCalls.push({ url: u, init, bytes: [...new Uint8Array(init.body)] })
+      if (pdfThrows) throw new DOMException('timed out', 'TimeoutError')
+      const p = pdf ?? { status: 200, bytes: new Uint8Array([37, 80, 68, 70, 45]), headers: { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="LWT_2026-10_6.pdf"' } }
+      return new Response(p.bytes ?? JSON.stringify(p.body ?? {}), { status: p.status ?? 200, headers: p.headers ?? { 'content-type': 'application/json' } })
+    }
     w.botCalls.push({ url: u, init })
     if (botThrows) throw new DOMException('timed out', 'TimeoutError')
     const b = bot ?? { status: 200, body: { ok: true } }
@@ -78,7 +85,7 @@ function world({ staff = true, deny = {}, bot = null, botThrows = false, signedI
 const post = (h, body, { auth = 'Bearer tok', origin = 'https://derm.unclogme.app' } = {}) => h(new Request('https://x/functions/v1/lwt-monthly', { method: 'POST', headers: { Authorization: auth, origin, 'content-type': 'application/json' }, body: JSON.stringify(body) }))
 const raw = (h, bytes) => h(new Request('https://x/functions/v1/lwt-monthly?action=read_invoice', { method: 'POST', headers: { Authorization: 'Bearer tok', origin: 'https://derm.unclogme.app', 'content-type': 'application/octet-stream' }, body: bytes }))
 
-async function run(h, hOff) {
+async function run(h, hOff, hNoPdf) {
   const out = []
   const t = async (name, fn) => { try { await fn(); out.push([name, null]) } catch (e) { out.push([name, e.message]) } }
   const eq = (a, b, what) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${what}: got ${JSON.stringify(a)}, expected ${JSON.stringify(b)}`) }
@@ -124,6 +131,25 @@ async function run(h, hOff) {
   await t('off: no connection, 503, nothing sent', async () => { const w = world(); const r = await post(hOff, { action: 'tickets' }); eq(r.status, 503, 'status'); eq(w.botCalls.length, 0, 'bot') })
   await t('off: the database side still answers', async () => { const w = world(); const r = await post(hOff, { action: 'suggest', dump_date: '2026-10-09' }); eq(r.status, 200, 'status'); eq(w.rpcCalls.length, 1, 'rpc') })
   await t('CORS: another site gets our origin back, not its own', async () => { world(); const r = await post(h, { action: 'tickets' }, { origin: 'https://evil.example' }); eq(r.headers.get('access-control-allow-origin'), 'https://derm.unclogme.app', 'origin') })
+  const XLSX = { status: 200, bytes: new Uint8Array([80, 75, 3, 4, 9]), headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition': 'attachment; filename="LWT_2026-10_6.xlsx"' } }
+  await t('download_pdf: the saved .xlsx goes raw to the pdf-service, and its PDF comes back', async () => {
+    const w = world({ bot: XLSX }); const r = await post(h, { action: 'download_pdf', id: 6 })
+    eq(w.botCalls.map((c) => c.url), ['https://bot.example/monthly/filings/6/report'], 'bot url')
+    eq(w.pdfCalls.length, 1, 'pdf calls'); ok(w.pdfCalls[0].url.startsWith('https://pdf.example/convert/xlsx-to-pdf?filename=LWT_2026-10_6.xlsx'), 'pdf url ' + w.pdfCalls[0].url)
+    eq(w.pdfCalls[0].init.headers.Authorization, 'Bearer k-pdf', 'pdf key'); eq(w.pdfCalls[0].bytes, [80, 75, 3, 4, 9], 'xlsx bytes')
+    eq(r.status, 200, 'status'); eq(r.headers.get('content-type'), 'application/pdf', 'type')
+    ok(/filename="LWT_2026-10_6\.pdf"/.test(r.headers.get('content-disposition') ?? ''), 'name'); ok(/content-disposition/i.test(r.headers.get('access-control-expose-headers') ?? ''), 'name not exposed')
+    eq([...new Uint8Array(await r.arrayBuffer())], [37, 80, 68, 70, 45], 'pdf bytes')
+  })
+  await t('download_pdf: View is enough', async () => { const w = world({ bot: XLSX, deny: { [EDIT]: { status: 403, message: 'No' } } }); const r = await post(h, { action: 'download_pdf', id: 6 }); eq(r.status, 200, 'status'); eq(w.pdfCalls.length, 1, 'pdf') })
+  await t('download_pdf: no DERM Tracker access, nothing fetched', async () => { const w = world({ deny: { [VIEW]: { status: 403, message: 'No' } } }); const r = await post(h, { action: 'download_pdf', id: 6 }); eq(r.status, 403, 'status'); eq(w.botCalls.length + w.pdfCalls.length, 0, 'calls') })
+  await t('download_pdf: a bad id goes nowhere', async () => { const w = world(); const r = await post(h, { action: 'download_pdf', id: '6/../x' }); eq(r.status, 400, 'status'); eq(w.botCalls.length + w.pdfCalls.length, 0, 'calls') })
+  await t('download_pdf: a missing report is the bot\'s answer, no PDF asked for', async () => { const w = world({ bot: { status: 404, body: { detail: 'No such row in the filing history.' } } }); const r = await post(h, { action: 'download_pdf', id: 6 }); eq(r.status, 404, 'status'); eq(w.pdfCalls.length, 0, 'pdf') })
+  await t('download_pdf: the pdf-service busy says try again', async () => { world({ bot: XLSX, pdf: { status: 503, body: { error: 'converter_busy' } } }); const r = await post(h, { action: 'download_pdf', id: 6 }); eq(r.status, 503, 'status'); ok(/Try again in a moment/.test((await r.json()).message), 'words') })
+  await t('download_pdf: a failed PDF points to the Excel file', async () => { world({ bot: XLSX, pdf: { status: 502, body: { error: 'convert_failed' } } }); const r = await post(h, { action: 'download_pdf', id: 6 }); eq(r.status, 502, 'status'); ok(/Download the Excel file instead/.test((await r.json()).message), 'words') })
+  await t('download_pdf: no answer from the pdf-service', async () => { world({ bot: XLSX, pdfThrows: true }); const r = await post(h, { action: 'download_pdf', id: 6 }); eq(r.status, 504, 'status'); ok(/took too long/.test((await r.json()).message), 'words') })
+  await t('download_pdf: the PDF maker not set up, said so, nothing sent', async () => { const w = world({ bot: XLSX }); const r = await post(hNoPdf, { action: 'download_pdf', id: 6 }); eq(r.status, 503, 'status'); eq(w.pdfCalls.length, 0, 'pdf'); ok(/Download the Excel file instead/.test((await r.json()).message), 'words') })
+  await t('download (Excel) is unchanged: no PDF asked for', async () => { const w = world({ bot: XLSX }); const r = await post(h, { action: 'download', id: 6 }); eq(r.status, 200, 'status'); eq(w.pdfCalls.length, 0, 'pdf'); eq([...new Uint8Array(await r.arrayBuffer())], [80, 75, 3, 4, 9], 'xlsx bytes') })
   await t('CORS: the Ops Portal is allowed', async () => { world(); const r = await post(h, { action: 'tickets' }, { origin: 'https://ops.unclogme.app' }); eq(r.headers.get('access-control-allow-origin'), 'https://ops.unclogme.app', 'origin') })
   return out
 }
@@ -131,7 +157,7 @@ async function run(h, hOff) {
 console.error = () => {}   // the function logs its refusals; they are expected here
 const src = fs.readFileSync(path.join(REPO, FN), 'utf8')
 const real = build('real', src)
-const results = await run(await load(real, ON, 'on'), await load(real, OFF, 'off'))
+const results = await run(await load(real, ON, 'on'), await load(real, OFF, 'off'), await load(real, NO_PDF, 'nopdf'))
 const failed = results.filter(([, e]) => e)
 for (const [name, e] of failed) console.log(`FAIL ${name}: ${e}`)
 console.log(`${results.length - failed.length} of ${results.length} scenarios hold`)
@@ -152,13 +178,17 @@ const MUTANTS = [
   ['the bot\'s lost answer is dropped', 'noAnswer = j?.no_answer === true', 'noAnswer = false'],
   ['every bot failure reads as a lost answer', "error: noAnswer ? 'bot_no_answer' : 'bot_error', no_answer: noAnswer,", "error: 'bot_no_answer', no_answer: true,"],
   ['staff check removed', "if (!(await isStaffEmail(token, email))) return json({ error: 'forbidden', message: 'Staff account required.' }, 403, cors)", ''],
+  ['download_pdf hands back the Excel file', "if (action === 'download_pdf') return toPdf(answer, cors)", ''],
+  ['download_pdf needs Edit', "download: 'view', download_pdf: 'view',", "download: 'view', download_pdf: 'edit',"],
+  ['the pdf-service key is not sent', 'Authorization: `Bearer ${PDF_SERVICE_API_KEY}`', "Authorization: ''"],
+  ['a pdf-service failure passes through raw', "return json({ error: 'pdf_failed', message: 'The PDF could not be made. Download the Excel file instead, and tell Fred.' }, 502, cors)", 'return up'],
 ]
 let bad = failed.length
 for (let i = 0; i < MUTANTS.length; i++) {
   const [name, from, to] = MUTANTS[i]
   if (!src.includes(from)) { console.log(`MUTANT TARGET MISSING: ${name}`); bad++; continue }
   const file = build(`m${i}`, src.replace(from, to))
-  const res = await run(await load(file, ON, `m${i}on`), await load(file, OFF, `m${i}off`))
+  const res = await run(await load(file, ON, `m${i}on`), await load(file, OFF, `m${i}off`), await load(file, NO_PDF, `m${i}nopdf`))
   const caught = res.filter(([, e]) => e).length
   console.log(`${caught ? 'caught' : 'NOT CAUGHT'} (${caught} scenarios fail): ${name}`)
   if (!caught) bad++
