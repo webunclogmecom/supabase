@@ -27,11 +27,11 @@
 // EVERYTHING ELSE IS FIXED COPY TO A REGULATOR AND IS NOT A REQUEST PARAMETER. If the caller could
 // pass body text, the caller would choose what a regulator reads.
 
-const LOGO_URL = 'https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/_brand/unclogme-logo.jpg'
-const FONT_STACK = "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+export const LOGO_URL = 'https://wbasvhvvismukaqdnouk.supabase.co/storage/v1/object/public/manifests/_brand/unclogme-logo.jpg'
+export const FONT_STACK = "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 const SERVICE_TYPE_LABEL = 'Grease Trap Cleaning'
-const CONTACT_EMAIL = 'contact@unclogme.com'
-const CONTACT_PHONE = '(305) 339-5638'
+export const CONTACT_EMAIL = 'contact@unclogme.com'
+export const CONTACT_PHONE = '(305) 339-5638'
 const CONTACT_TEL = '+13053395638'
 // Fred, 2026-08-27: footer is exactly two lines - "Licensed Grease Trap Hauler" then this.
 // 🛑 It renders TWICE, once in the HTML footer and once in the plain-text alternative. Change both
@@ -59,15 +59,15 @@ const CONTACT_TEL = '+13053395638'
 //    really from us"*. It was printed on customer-facing surfaces for months and is being purged.
 // 🛑 The Dade number carries a HYPHEN. Fred, 2026-09-04: *"Keep the Hyphen over a white-space."*
 //    It shipped with a space until then. Do not "normalise" it back.
-const HAULER_LICENSES = 'Miami-DADE: LW-1133 &middot; Broward: WT-26-0104'
-const HAULER_LICENSES_TEXT = 'Miami-DADE: LW-1133 - Broward: WT-26-0104'
+export const HAULER_LICENSES = 'Miami-DADE: LW-1133 &middot; Broward: WT-26-0104'
+export const HAULER_LICENSES_TEXT = 'Miami-DADE: LW-1133 - Broward: WT-26-0104'
 
 
-function escapeHtml(s: string | null): string {
+export function escapeHtml(s: string | null): string {
   return (s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c))
 }
 
-function detailRow(label: string, value: string): string {
+export function detailRow(label: string, value: string): string {
   return `<tr>
 <td valign="top" style="padding:4px 14px 4px 0;font-family:${FONT_STACK};font-size:14px;line-height:1.6;color:#6b7280;white-space:nowrap;">${label}</td>
 <td valign="top" style="padding:4px 0;font-family:${FONT_STACK};font-size:14px;line-height:1.6;color:#111827;font-weight:600;">${value}</td>

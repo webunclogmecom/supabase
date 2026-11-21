@@ -15,7 +15,13 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const FN = 'supabase/functions/lwt-monthly/index.ts'
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'lwt-monthly-'))
+const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'lwt-monthly-'))
+// The function imports its letter (./letter.ts) and the shared city-letter shell (../_shared/city-letter.ts): copied beside it
+// so the bundle below resolves them as the deploy does.
+const TMP = path.join(ROOT, 'fn')
+fs.mkdirSync(TMP); fs.mkdirSync(path.join(ROOT, '_shared'))
+fs.copyFileSync(path.join(REPO, 'supabase/functions/lwt-monthly/letter.ts'), path.join(TMP, 'letter.ts'))
+fs.copyFileSync(path.join(REPO, 'supabase/functions/_shared/city-letter.ts'), path.join(ROOT, '_shared', 'city-letter.ts'))
 
 fs.writeFileSync(path.join(TMP, 'stub.mjs'), [
   'export function createClient(_u, key) { return key === "anon" ? globalThis.__user : globalThis.__sb }',
@@ -27,7 +33,7 @@ const IMPORTS = [
   "import { isStaffEmail } from '../_shared/staff.ts'",
   "import { checkAppAction } from '../_shared/access-check.ts'",
 ]
-const esbuild = (ts, out) => execFileSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['--no-install', 'esbuild@0.24.0', ts, '--format=esm', `--outfile=${out}`, '--log-level=error'], { shell: process.platform === 'win32', cwd: REPO })
+const esbuild = (ts, out) => execFileSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['--no-install', 'esbuild@0.24.0', ts, '--bundle', '--platform=node', '--format=esm', `--outfile=${out}`, '--log-level=error'], { shell: process.platform === 'win32', cwd: REPO })
 function build(name, src) {
   for (const line of IMPORTS) {
     if (!src.includes(line)) throw new Error(`${name}: an import line changed, update this check`)
@@ -44,19 +50,25 @@ async function load(file, env, tag) {
   await import(pathToFileURL(file).href + `?${tag}`)
   return handler
 }
-const ON = { SUPABASE_URL: 'http://db', SUPABASE_SERVICE_ROLE_KEY: 'service', SUPABASE_ANON_KEY: 'anon', GDO_BOT_FILE_URL: 'https://bot.example/gdo/process-one', GDO_BOT_FILE_KEY: 'k-derm', PDF_SERVICE_URL: 'https://pdf.example/', PDF_SERVICE_API_KEY: 'k-pdf' }
+const ON = { SUPABASE_URL: 'http://db', SUPABASE_SERVICE_ROLE_KEY: 'service', SUPABASE_ANON_KEY: 'anon', GDO_BOT_FILE_URL: 'https://bot.example/gdo/process-one', GDO_BOT_FILE_KEY: 'k-derm', PDF_SERVICE_URL: 'https://pdf.example/', PDF_SERVICE_API_KEY: 'k-pdf', RESEND_API_KEY: 're-key' }
 const NO_PDF = { ...ON, PDF_SERVICE_URL: undefined, PDF_SERVICE_API_KEY: undefined }
 const OFF = { SUPABASE_URL: 'http://db', SUPABASE_SERVICE_ROLE_KEY: 'service', SUPABASE_ANON_KEY: 'anon' }
 const EDIT = 'lwt_monthly_edit', VIEW = 'lwt_monthly_view'
 
-function world({ staff = true, deny = {}, bot = null, botThrows = false, signedIn = true, work = null, workErr = null, pdf = null, pdfThrows = false } = {}) {
-  const w = { botCalls: [], rpcCalls: [], uploads: [], pdfCalls: [] }
+function world({ staff = true, deny = {}, bot = null, botThrows = false, signedIn = true, work = null, workErr = null, pdf = null, pdfThrows = false, county = 'county@example.gov', resend = null } = {}) {
+  const w = { botCalls: [], rpcCalls: [], uploads: [], pdfCalls: [], emails: [], sends: [], updates: [] }
   globalThis.__staff = staff
   globalThis.__deny = deny
   globalThis.__user = { auth: { getUser: async () => signedIn ? { data: { user: { email: 'person@unclogme.com' } }, error: null } : { data: {}, error: { message: 'no' } } } }
   const chain = { select: () => chain, ilike: () => chain, limit: async () => ({ data: [{ full_name: 'Diego Ramos' }], error: null }) }
+  // public.app_config: the county's address (Trello #238)
+  const cfg = { select: () => cfg, eq: (k, v) => { w.cfgAsked = [k, v]; return cfg }, maybeSingle: async () => ({ data: { value: county }, error: null }) }
   globalThis.__sb = {
-    from: () => chain,
+    from: (t) => (t === 'app_config' ? cfg : chain),
+    schema: (sch) => ({ from: (t) => ({
+      insert: (row) => { w.sends.push({ sch, t, row }); return { select: () => ({ single: async () => ({ data: { id: w.sends.length }, error: null }) }) } },
+      update: (obj) => ({ eq: async (k, v) => { w.updates.push({ sch, t, obj, k, v }); return { error: null } } }),
+    }) }),
     storage: { from: (b) => ({
       download: async (p) => { w.download = { b, p }; return work === null ? { data: null, error: workErr ?? { message: 'Object not found', status: 404 } } : { data: { text: async () => JSON.stringify(work) }, error: null } },
       upload: async (p, blob, o) => { w.uploads.push({ b, p, o, text: await blob.text() }); return { error: workErr } },
@@ -74,9 +86,14 @@ function world({ staff = true, deny = {}, bot = null, botThrows = false, signedI
       const p = pdf ?? { status: 200, bytes: new Uint8Array([37, 80, 68, 70, 45]), headers: { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="LWT_2026-10_6.pdf"' } }
       return new Response(p.bytes ?? JSON.stringify(p.body ?? {}), { status: p.status ?? 200, headers: p.headers ?? { 'content-type': 'application/json' } })
     }
+    if (u === 'https://api.resend.com/emails') {
+      w.emails.push({ headers: init.headers, body: JSON.parse(init.body) })
+      const r = resend ?? { status: 200, body: { id: 're_123' } }
+      return new Response(JSON.stringify(r.body), { status: r.status, headers: { 'content-type': 'application/json' } })
+    }
     w.botCalls.push({ url: u, init })
     if (botThrows) throw new DOMException('timed out', 'TimeoutError')
-    const b = bot ?? { status: 200, body: { ok: true } }
+    const b = (typeof bot === 'function' ? bot(u, init) : bot) ?? { status: 200, body: { ok: true } }
     const payload = b.bytes ?? JSON.stringify(b.body ?? {})
     return new Response(payload, { status: b.status ?? 200, headers: b.headers ?? { 'content-type': 'application/json', server: 'uvicorn', 'set-cookie': 'a=b' } })
   }
@@ -150,6 +167,75 @@ async function run(h, hOff, hNoPdf) {
   await t('download_pdf: no answer from the pdf-service', async () => { world({ bot: XLSX, pdfThrows: true }); const r = await post(h, { action: 'download_pdf', id: 6 }); eq(r.status, 504, 'status'); ok(/took too long/.test((await r.json()).message), 'words') })
   await t('download_pdf: the PDF maker not set up, said so, nothing sent', async () => { const w = world({ bot: XLSX }); const r = await post(hNoPdf, { action: 'download_pdf', id: 6 }); eq(r.status, 503, 'status'); eq(w.pdfCalls.length, 0, 'pdf'); ok(/Download the Excel file instead/.test((await r.json()).message), 'words') })
   await t('download (Excel) is unchanged: no PDF asked for', async () => { const w = world({ bot: XLSX }); const r = await post(h, { action: 'download', id: 6 }); eq(r.status, 200, 'status'); eq(w.pdfCalls.length, 0, 'pdf'); eq([...new Uint8Array(await r.arrayBuffer())], [80, 75, 3, 4, 9], 'xlsx bytes') })
+  // ---- send_email (Trello #238, 2026-11-21) ----
+  const ROW = { id: 6, ym: '2026-10', period: 'October 2026', ticket_count: 17, gallons: '21,737', invoice_id: 'SP00014388', filed: false, discarded: null, report: true }
+  const BOT = (row = ROW, recStatus = 200, recState = 'recorded') => (u) => u.endsWith('/dashboard/monthly/data') ? { status: 200, body: { current: {}, rows: [row] } }
+    : u.endsWith('/monthly/filings/6/report') ? XLSX : u.endsWith('/monthly/mark-filed-saved') ? { status: recStatus, body: recStatus === 200 ? { said: { dry_run: false, state: recState, what: 'October 2026' } } : { detail: 'stale: the report changed' } } : { status: 404, body: {} }
+  const SEND = { action: 'send_email', id: 6, format: 'pdf', expect_tickets: ['900001'] }
+  const paths = (w) => w.botCalls.map((c) => c.url.replace('https://bot.example', ''))
+  await t('send_email PDF: the saved report printed to PDF goes to the county from contact@unclogme.com, then it is recorded', async () => {
+    const w = world({ bot: BOT() }); const r = await post(h, SEND); const j = await r.json()
+    eq(r.status, 200, 'status'); eq([j.sent, j.recorded, j.to], [true, true, 'county@example.gov'], 'answer')
+    eq(paths(w), ['/dashboard/monthly/data', '/monthly/filings/6/report', '/monthly/mark-filed-saved'], 'bot calls')
+    eq(w.pdfCalls.length, 1, 'pdf made'); eq(w.emails.length, 1, 'emails')
+    const e = w.emails[0].body
+    eq([e.from, e.to, e.reply_to], ['UnclogMe <contact@unclogme.com>', ['county@example.gov'], 'contact@unclogme.com'], 'from/to/reply')
+    eq(e.attachments, [{ filename: 'LWT_report_2026-10.pdf', content: 'JVBERi0=' }], 'the PDF attached')
+    eq(e.subject, 'UnclogMe, Liquid Waste Transporter report, October 2026', 'subject')
+    ok(/21,737/.test(e.html) && /SP00014388/.test(e.html) && /LW-1133/.test(e.html) && !/INTERNAL TEST/.test(e.html), 'letter facts')
+    eq(w.emails[0].headers['Idempotency-Key'], 'lwt-county:6:pdf', 'one county email per report and type')
+    eq(JSON.parse(w.botCalls[2].init.body), { id: 6, filed_by_email: 'person@unclogme.com', dry_run: false, expect_tickets: ['900001'] }, 'record body')
+    eq(w.cfgAsked, ['key', 'lwt_county_email'], 'the address comes from app_config')
+    eq([w.sends[0].sch, w.sends[0].t, w.sends[0].row.is_test, w.sends[0].row.file_format, w.sends[0].row.to_email, w.sends[0].row.resend_email_id], ['derm', 'lwt_monthly_sends', false, 'pdf', 'county@example.gov', 're_123'], 'logged')
+    eq(w.updates[0].obj, { recorded: true, record_note: null }, 'record logged')
+  })
+  await t('send_email Excel: the spreadsheet itself is attached, no PDF made', async () => {
+    const w = world({ bot: BOT() }); const r = await post(h, { ...SEND, format: 'xlsx' })
+    eq(r.status, 200, 'status'); eq(w.pdfCalls.length, 0, 'no pdf'); eq(w.emails[0].body.attachments, [{ filename: 'LWT_report_2026-10.xlsx', content: 'UEsDBAk=' }], 'xlsx attached')
+  })
+  await t('send_email: no county address yet, nothing sent, nothing asked of the bot', async () => {
+    const w = world({ bot: BOT(), county: '' }); const r = await post(h, SEND); eq(r.status, 409, 'status'); eq((await r.json()).error, 'no_county_email', 'error'); eq(w.emails.length + w.botCalls.length, 0, 'calls')
+  })
+  await t('send_email test: only the internal address gets it, marked, and nothing is recorded', async () => {
+    const w = world({ bot: BOT({ ...ROW, filed: true }) }); const r = await post(h, { action: 'send_email', id: 6, format: 'pdf', test_to: 'Fred@Ayache.com' }); const j = await r.json()
+    eq(r.status, 200, 'status'); eq([j.sent, j.test, j.to], [true, true, 'fred@ayache.com'], 'answer'); eq(w.emails[0].body.to, ['fred@ayache.com'], 'to')
+    ok(/^\[TEST\] /.test(w.emails[0].body.subject) && /INTERNAL TEST/.test(w.emails[0].body.html), 'marked as a test')
+    eq(paths(w), ['/dashboard/monthly/data', '/monthly/filings/6/report'], 'no record'); eq(w.sends[0].row.is_test, true, 'logged as a test'); eq(w.updates.length, 0, 'no record logged')
+  })
+  await t('send_email test to an outside address: refused, never sent', async () => {
+    const w = world({ bot: BOT() }); const r = await post(h, { action: 'send_email', id: 6, format: 'pdf', test_to: 'someone@gmail.com' }); eq(r.status, 400, 'status'); eq(w.emails.length + w.botCalls.length, 0, 'calls')
+  })
+  await t('send_email: the recipient cannot come from the page', async () => {
+    const w = world({ bot: BOT() }); const r = await post(h, { ...SEND, to: 'someone@gmail.com' }); eq(r.status, 400, 'status'); eq(w.emails.length, 0, 'emails')
+  })
+  await t('send_email: View only is refused, nothing sent', async () => {
+    const w = world({ bot: BOT(), deny: { [EDIT]: { status: 403, message: 'No' } } }); const r = await post(h, SEND); eq(r.status, 403, 'status'); eq(w.emails.length + w.botCalls.length, 0, 'calls')
+  })
+  await t('send_email: a report already filed is not sent again', async () => {
+    const w = world({ bot: BOT({ ...ROW, filed: true }) }); const r = await post(h, SEND); eq(r.status, 409, 'status'); eq(w.emails.length, 0, 'emails')
+  })
+  await t('send_email: no ticket list, refused before anything', async () => {
+    const w = world({ bot: BOT() }); const r = await post(h, { action: 'send_email', id: 6, format: 'pdf' }); eq(r.status, 400, 'status'); eq(w.emails.length + w.botCalls.length, 0, 'calls')
+  })
+  await t('send_email: the email service refuses, so nothing is recorded', async () => {
+    const w = world({ bot: BOT(), resend: { status: 422, body: { message: 'invalid' } } }); const r = await post(h, SEND)
+    eq(r.status, 502, 'status'); eq(paths(w).includes('/monthly/mark-filed-saved'), false, 'not recorded'); eq(w.sends.length, 0, 'not logged as sent')
+  })
+  await t('send_email: sent, but the record refused, and the answer says so', async () => {
+    const w = world({ bot: BOT(ROW, 409) }); const j = await (await post(h, SEND)).json()
+    eq([j.sent, j.recorded, j.record.status], [true, false, 409], 'answer'); ok(/stale/.test(j.record.body), 'the bot words'); eq(w.updates[0].obj.recorded, false, 'logged')
+  })
+  await t('send_email: a 2xx from the bot that is not a record (already) reads as not recorded', async () => {
+    const w = world({ bot: BOT(ROW, 200, 'already') }); const j = await (await post(h, SEND)).json()
+    eq([j.sent, j.recorded, j.record.status], [true, false, 200], 'answer'); eq(w.updates[0].obj, { recorded: false, record_note: 'record HTTP 200 already' }, 'logged')
+  })
+  await t('send_email: the PDF cannot be made, nothing sent', async () => {
+    const w = world({ bot: BOT(), pdf: { status: 502, body: { error: 'convert_failed' } } }); const r = await post(h, SEND); eq(r.status, 502, 'status'); eq(w.emails.length, 0, 'emails'); ok(/Nothing was sent/.test((await r.json()).message), 'words')
+  })
+  await t('overview says whether the county address is known', async () => {
+    world({ bot: { status: 200, body: { current: {}, rows: [] } } }); eq((await (await post(h, { action: 'overview' })).json()).county_email, 'county@example.gov', 'set')
+    world({ bot: { status: 200, body: { current: {}, rows: [] } }, county: '' }); eq((await (await post(h, { action: 'overview' })).json()).county_email, null, 'empty')
+  })
   await t('CORS: the Ops Portal is allowed', async () => { world(); const r = await post(h, { action: 'tickets' }, { origin: 'https://ops.unclogme.app' }); eq(r.headers.get('access-control-allow-origin'), 'https://ops.unclogme.app', 'origin') })
   return out
 }
@@ -181,7 +267,16 @@ const MUTANTS = [
   ['download_pdf hands back the Excel file', "if (action === 'download_pdf') return toPdf(answer, cors)", ''],
   ['download_pdf needs Edit', "download: 'view', download_pdf: 'view',", "download: 'view', download_pdf: 'edit',"],
   ['the pdf-service key is not sent', 'Authorization: `Bearer ${PDF_SERVICE_API_KEY}`', "Authorization: ''"],
-  ['a pdf-service failure passes through raw', "return json({ error: 'pdf_failed', message: 'The PDF could not be made. Download the Excel file instead, and tell Fred.' }, 502, cors)", 'return up'],
+  ['a pdf-service failure passes through raw', "  if (!up.ok) {\n    let code = ''", "  if (false) {\n    let code = ''"],
+  ['a test copy may go anywhere', 'if (!TEST_TO_RE.test(testTo))', 'if (false)'],
+  ['a test records the report', 'if (testTo) return json({ sent: true, test: true, to, resend_id: resendId }, 200, cors)', ''],
+  ['sent with no county address', "if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(to))", 'if (false)'],
+  ['PDF picked sends the spreadsheet', "  if (format === 'pdf') {\n    const p", "  if (false) {\n    const p"],
+  ['a filed report is sent again', 'if (!testTo && (row.filed || row.discarded))', 'if (false)'],
+  ['an email refusal is ignored', "if (!r.ok || typeof j?.id !== 'string') {", 'if (false) {'],
+  ['the recipient taken from the page', "if ('to' in b || 'filed_by_email' in b || 'dry_run' in b)", 'if (false)'],
+  ['any 2xx counts as recorded', "const recorded = status >= 200 && status < 300 && state === 'recorded'", 'const recorded = status >= 200 && status < 300'],
+  ['send_email needs only View', "restore: 'edit', send_email: 'edit',", "restore: 'edit', send_email: 'view',"],
 ]
 let bad = failed.length
 for (let i = 0; i < MUTANTS.length; i++) {
@@ -193,6 +288,6 @@ for (let i = 0; i < MUTANTS.length; i++) {
   console.log(`${caught ? 'caught' : 'NOT CAUGHT'} (${caught} scenarios fail): ${name}`)
   if (!caught) bad++
 }
-fs.rmSync(TMP, { recursive: true, force: true })
+fs.rmSync(ROOT, { recursive: true, force: true })
 if (bad) { console.log(`FAILED: ${bad}`); process.exit(1) }
 console.log('OK')
