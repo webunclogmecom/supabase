@@ -42,8 +42,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `download_pdf` of that draft; a failed PDF keeps the draft and says so. On the round page Fred liked the tiles and changed
   the waiting step: *"make a menu button from "Download" and it shows "PDF" and "Excel""*, so it is one Download menu.
   Check `mockups/2026-11-21-pdf238-src/check.mjs` 11 of 11 local and live, desktop and phone.
-- **Old DERM Tracker page: not changed** (pick O unanswered, so the default: old hosts get bug fixes only). Ready if he asks:
-  `mockups/2026-11-21-pdf238-src/238-old-page.patch` (two loose buttons there, so it needs the menu first).
+- **Old DERM Tracker page:** at first not changed (pick O unanswered, so the default: old hosts get bug fixes only); Fred then
+  asked for it (the hand-off below), and it is BUILT and LIVE since 2026-11-21 about 1:23 PM ET.
 - **The check step, LIVE 2026-11-21 about 9:20 AM ET (portal `786bd3e`).** Fred: *"at the 1st image step there have 2
   button which are "Download" and "Send Email""*, and "Back to the tickets" as *"< Back to edit"* at the top left. Built:
   Download (white) and Send Email (blue), Send Email OFF with a line until the send exists.
@@ -56,8 +56,12 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   is skipped). Portal `39419f5`. Test copies to fred@ayache.com (PDF and Excel) opened in Gmail 2026-11-21.
 - **The old DERM Tracker page: HANDED to the Building Apps session 2026-11-21 ~12:10 PM ET** (Fred: *"send it to BA session about
   these changes so it works on the old apps"*, which overrides the bug-fixes-only default here). Spec:
-  `Building Apps/DERM Tracker/docs/specs/2026-11-21-monthly-pdf-excel-and-county-email-old-page.md`. NOT BUILT until that session
-  says so in WORKING-NOW.md.
+  `Building Apps/DERM Tracker/docs/specs/2026-11-21-monthly-pdf-excel-and-county-email-old-page.md`. **BUILT, LIVE 2026-11-21
+  about 1:23 PM ET** (Supabase `4d4e8ab0`, downloaded by Lovable with matching sha256, live `monthly-Bwb49xKK.js`): the
+  PDF / Excel tiles, Download and Send Email on the right, "< Back to edit", the waiting step's one Download menu (its own
+  menu: the page imports nothing from the app), the send window, the amber "not recorded" line. Send Email is OFF there too
+  until `lwt_county_email` is set. Checks on the live page: `check.mjs` 13/13 and `check-send.mjs` 10/10, desktop and phone;
+  dark checked on a local copy; `lwt_monthly_live.mjs` all good.
 - **WAITING:** the county's address (Fred is asking), then `update public.app_config set value = '<the county address>', updated_at = now() where key = 'lwt_county_email';`, then ONE real send with Fred's OK to see the county's
   reply arrive in contact@unclogme.com.
 - **NOT BUILT (default 5 of the round page, not answered yet):** the Delivered / Opened chip on the history row. The Resend id
