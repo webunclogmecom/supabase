@@ -156,12 +156,15 @@ function queueTitleRow() {
 
 function applyThanksgiving() {
   const html = document.documentElement;
-  const on = isThanksgiving();
+  // the Planner's Site file is a customer page: the look never loads there (no stylesheet, no Google font list)
+  const on = isThanksgiving() && !(currentApp === "planner" && /^\/driver(\/|$)/.test(location.pathname));
   html.classList.toggle("thanksgiving", on);
   if (on) {
     html.setAttribute("data-tg-app", currentApp);
     addSheet("tg-css", ASSETS + "thanksgiving/thanksgiving.css");
     addSheet("tg-css-app", ASSETS + "thanksgiving/thanksgiving-" + currentApp + ".css");
+    // the stylesheet moves the top bar's margin: measure the title row again once it has landed
+    document.getElementById("tg-css-app")?.addEventListener("load", queueTitleRow);
     if (!tgObserver) {
       // a move to another page, or a row that fills in later, changes the page's children: mark the row again
       tgObserver = new MutationObserver(queueTitleRow);
