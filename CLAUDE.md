@@ -589,6 +589,16 @@ newest first; each header says the order). (The names `_1700` to `_1830` are lat
   PostgREST's 8 s). `MATERIALIZED` CTEs fixed it (0.26 s, rows identical). Time every view as service_role before
   calling it done.
 
+## 🛑 STORAGE IMAGE TRANSFORMS: A WIDTH ALONE CROPS (2026-11-23)
+
+The render endpoint asked for a width with no height and no `resize=contain` returns WIDTH x the ORIGINAL HEIGHT, the
+middle columns of the photo (810x1080 asked `width=400&resize=cover` -> 400x1080). `resize=contain` returns the whole
+photo. `customer.thumbnail_url` asked for `cover` until `2026-11-23_1610`; its readers (Field Portal, the DERM report,
+the pdf-service printing both) rewrote it to `contain` in the browser, so no screen showed it. A new SQL helper, edge
+function or app request asks for `contain` (or width + height + cover for a known box). Check:
+`scripts/checks/storage_transform_contain.mjs` (database, edge functions, every live app; red until Trello #244 ships
+the Page Builder and `driver-page`).
+
 ## 🛑 This repo is PUBLIC: no secrets, codes or client files in it (2026-10-05)
 
 - Never commit a password, token, connection string with a password, real lock box / gate / access code, or a
