@@ -53,10 +53,11 @@ function apply(mode: ThemeMode) {
     html.classList.remove("halloween");
     html.removeAttribute("data-hw-mode");
     html.classList.toggle("app-dark", mode === "dark");
-    if (mode === "dark") {
-      addSheet("theme-dark", ASSETS + "theme/dark.css");
-      addSheet("theme-dark-app", ASSETS + "theme/dark-" + currentApp + ".css");
-    }
+    // loaded on light too (every rule in them starts with html.app-dark, so they change nothing until dark is on): the
+    // first switch to dark then never waits for a download and never shows half of each look (Fred, 2026-11-22: "when
+    // changing between dark/light mode, it doesn't feels smooth")
+    addSheet("theme-dark", ASSETS + "theme/dark.css");
+    addSheet("theme-dark-app", ASSETS + "theme/dark-" + currentApp + ".css");
   }
   applyThanksgiving();
 }
@@ -222,6 +223,11 @@ export function setThemeMode(mode: ThemeMode) {
   } catch {
     // storage blocked: the choice lasts until the page is reloaded
   }
-  apply(mode);
+  // one short crossfade of the whole page instead of a jump with some colours fading behind (a browser without view
+  // transitions, or a device that asks for less motion, switches at once as before)
+  const doc = document as Document & { startViewTransition?: (update: () => void) => unknown };
+  const still = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (typeof doc.startViewTransition === "function" && !still) doc.startViewTransition(() => apply(mode));
+  else apply(mode);
   window.dispatchEvent(new CustomEvent<ThemeMode>("unclogme-theme", { detail: mode }));
 }
