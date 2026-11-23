@@ -33,7 +33,7 @@ async function run(source) {
   fs.writeFileSync(file, source);
   const m = await import(pathToFileURL(file).href);
   const out = [];
-  out.push(["the start is 9:00 AM ET on Monday Nov 23", et(FROM) === "11/23/2026, 9:00:00 AM"]);
+  out.push(["the start is 6:00 PM ET on Sunday Nov 22", et(FROM) === "11/22/2026, 6:00:00 PM"]);
   out.push(["the end is 12:00 AM ET on Saturday Nov 28", et(UNTIL) === "11/28/2026, 12:00:00 AM"]);
   for (const [name, at, want] of CASES) {
     out.push([name + " -> " + (want ? "on" : "off"), typeof m.isThanksgiving === "function" && m.isThanksgiving(at) === want]);
