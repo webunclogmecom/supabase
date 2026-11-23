@@ -34,7 +34,8 @@
 //     ⚠ So a visit photo URL keeps working after a rotation (public bucket) until the pending
 //     "DERM storage private + signed" work lands. Plan D11 says so.
 //   - Intake photos are in the PRIVATE bucket 'intake-photos': a signed render URL, 6 hours.
-//   - Both are rendered at width 1600 (thumb 480), which also turns HEIC into something a phone shows.
+//   - Both are rendered WHOLE inside a 1600 px box (thumb 480), resize contain, which also turns HEIC into something a
+//     phone shows. Never a width alone: that returns the middle strip of the photo (Trello #244).
 //   - A photo that cannot be signed is COUNTED (sign_failures), never silently dropped.
 //
 // 🛑 Never log the code, never echo it in a message, never put it in a Location header.
@@ -52,8 +53,11 @@ const db = createClient(SUPABASE_URL, SERVICE_KEY, {
 
 const MAX_BODY_BYTES = 4_096
 const SIGNED_TTL = 6 * 60 * 60
-const FULL = { width: 1600, quality: 80 }
-const THUMB = { width: 480, quality: 70 }
+// Trello #244 (measured 2026-11-23): a width ALONE makes Storage return the middle strip of the photo at full height (a
+// 4000 px phone photo kept 12 to 16% small, 40 to 53% large). A square box with resize contain returns the whole photo,
+// upright, at most that size. Standing check: scripts/checks/storage_transform_contain.mjs.
+const FULL = { width: 1600, height: 1600, resize: 'contain' as const, quality: 80 }
+const THUMB = { width: 480, height: 480, resize: 'contain' as const, quality: 70 }
 const PUBLIC_BUCKET = 'GT - Visits Images'
 const PRIVATE_BUCKET = 'intake-photos'
 const CODE_RE = /^[A-Za-z0-9]{22}$/
@@ -83,10 +87,11 @@ type PagePhoto = {
 }
 
 const encPath = (p: string) => p.split('/').map(encodeURIComponent).join('/')
-const publicRender = (path: string, t: { width: number; quality: number }) =>
-  `${SUPABASE_URL}/storage/v1/render/image/public/${encodeURIComponent(PUBLIC_BUCKET)}/${encPath(path)}?width=${t.width}&quality=${t.quality}`
+type Render = typeof FULL | typeof THUMB
+const publicRender = (path: string, t: Render) =>
+  `${SUPABASE_URL}/storage/v1/render/image/public/${encodeURIComponent(PUBLIC_BUCKET)}/${encPath(path)}?width=${t.width}&height=${t.height}&resize=${t.resize}&quality=${t.quality}`
 
-async function signedRender(path: string, t: { width: number; quality: number }): Promise<string | null> {
+async function signedRender(path: string, t: Render): Promise<string | null> {
   const { data, error } = await db.storage.from(PRIVATE_BUCKET).createSignedUrl(path, SIGNED_TTL, { transform: t })
   return error || !data?.signedUrl ? null : data.signedUrl
 }
