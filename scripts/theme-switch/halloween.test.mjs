@@ -11,14 +11,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const et = (ms) => new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York" });
-const FROM = Date.UTC(2026, 10, 23, 14, 0, 0); // Monday 9:00 AM ET (Fred, 2026-11-22)
+const FROM = Date.UTC(2026, 10, 22, 23, 0, 0); // Sunday 6:00 PM ET (Fred, 2026-11-22: turn it on now)
 const UNTIL = Date.UTC(2026, 10, 28, 5, 0, 0);
 const CASES = [
   ["one second before it starts", FROM - 1000, false],
   ["its first second", FROM, true],
+  ["Sunday Nov 22 at 8:00 PM ET", Date.UTC(2026, 10, 23, 1, 0, 0), true],
+  ["Monday Nov 23 at 8:59 AM ET", Date.UTC(2026, 10, 23, 13, 59, 0), true],
   ["Monday Nov 23 at noon ET", Date.UTC(2026, 10, 23, 17, 0, 0), true],
   ["Tuesday Nov 24 at noon ET", Date.UTC(2026, 10, 24, 17, 0, 0), true],
-  ["Monday Nov 23 at 8:59 AM ET", Date.UTC(2026, 10, 23, 13, 59, 0), false],
+  ["Sunday Nov 22 at 5:00 PM ET", Date.UTC(2026, 10, 22, 22, 0, 0), false],
   ["Thanksgiving Day at noon ET", Date.UTC(2026, 10, 26, 17, 0, 0), true],
   ["its last second", UNTIL - 1000, true],
   ["the second it ends", UNTIL, false],

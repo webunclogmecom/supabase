@@ -13,10 +13,11 @@ let currentApp = "";
 
 export const isHalloween = () => Date.now() < HALLOWEEN_UNTIL;
 
-// Thanksgiving "Turkey Crew" look (Building Apps/docs/thanksgiving/README.md). On from Monday 2026-11-23 9:00 AM ET
-// (Fred, 2026-11-22: "let's move the start of it to, monday at 9:00 am ET"; it was Wednesday 12:00 AM) to Saturday
-// 2026-11-28 00:00 ET (ET is UTC-5 in November). It rides on top of light or dark and changes neither.
-const THANKSGIVING_FROM = Date.UTC(2026, 10, 23, 14, 0, 0);
+// Thanksgiving "Turkey Crew" look (Building Apps/docs/thanksgiving/README.md). On from Sunday 2026-11-22 6:00 PM ET
+// (Fred, 2026-11-22 ~7:40 PM ET: "publish everything now as the thanksgiving", turn it on now; before that it was
+// Monday 9:00 AM, and Wednesday 12:00 AM first) to Saturday 2026-11-28 00:00 ET (ET is UTC-5 in November). It rides on
+// top of light or dark and changes neither.
+const THANKSGIVING_FROM = Date.UTC(2026, 10, 22, 23, 0, 0);
 const THANKSGIVING_UNTIL = Date.UTC(2026, 10, 28, 5, 0, 0);
 export const isThanksgiving = (now: number = Date.now()) => now >= THANKSGIVING_FROM && now < THANKSGIVING_UNTIL;
 
