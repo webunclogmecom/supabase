@@ -25,6 +25,23 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**Page Builder: the form's photos beside the counts, Yes / No instead of the arrows, every form photo in "On the form", whole photos (2026-11-23, Trello #244 kyNrxnxl)**
+- Fred (Slack #new-app-issues, 2026-11-23): see the images of Grease trap systems, Cleanouts, Sample ports, Lift stations,
+  Water tanks in the building phase; the photos look "skewed, or cropped"; every form photo in "On the form" by its form
+  part; then here: a preview on a click, Yes/No in place of the `<-` arrows with an optional box for why on No.
+- **Picked 2026-11-23** on `mockups/2026-11-23-planner-photos-244.html`: **Y2 + A2, O2, T2**; remove "Fill empty fields"
+  and "Add N photos from this form" from the "What the collector filled in" card; form photos can always be added (no
+  "Fill it first"); a photo count rule: an empty count becomes 1 with the first photo, and when the photos of a part
+  outnumber its count a line asks "Make it N?" (Yes / No); removing a photo asks first (app dialog) and offers to lower
+  the count only when count and photos were equal. The other defaults of the page stand. Words and measures:
+  `mockups/2026-11-23-planner-photos-244-src/00-fred-picks-round1.md`.
+- **The cause of the cut photos (measured):** a Storage transform asked with a width only returns a centre CROP at full
+  height; `resize: 'contain'` returns the whole photo. Fix in the builder (old app + portal) and the Site file edge fn
+  `driver-page`. Other apps: a separate task (Field Portal's `customer.thumbnail_url` does the same).
+- To build: the old Picture Planner (Lovable `d9464151`) by Supabase 2; the portal copy by the session named Supabase;
+  one migration so the page keeps the No reasons (`public.fn_page_content_problem` refuses unknown keys today).
+  **Not built yet.**
+
 **Monthly Report: send it by email from the app, as a PDF or the Excel file (2026-11-20, Trello #238 Mr437ii0)**
 - Diego (Slack, 2026-11-20 3:33 PM ET): send the Monthly Report by email from the platform, download it as a PDF, and the
   county's automatic reply (a payment link and the invoice) must keep reaching the office inbox.
