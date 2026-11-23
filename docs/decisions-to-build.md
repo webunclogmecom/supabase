@@ -25,6 +25,19 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**GDO lookup: inside a site's City permits section, plus a page under Compliance (2026-11-24, Trello #242 ebj6IVxa)**
+- Fred (round 3, 2026-11-24): "go with D1 and all recommended, build it", "when clicking view, put the Add button at the
+  right bottom"; earlier "make them be aligned, always". Picks and words: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-24-gdo-lookup.md`.
+- **Decided:** the lookup takes the blue Add permit box's place on Miami-Dade sites, opens searched for the site's county
+  parcels; every row: status, View, "+ Add" or "On this site" in fixed columns; View = today's permit preview with the
+  county's file, Add at the bottom right; Add = the D1 confirmation (details left, the county's document right) and then
+  the same save as the permit form (`client.upsert_gdo_permit`); scans read from their picture (E1); a page under
+  Compliance (T, G1); every listed permit read (V); a name also searches its addresses (S: our sites, then Google Maps).
+- **Server:** one new read only staff edge function `gdo-lookup` (county search, PDF and scan reading, the county file
+  passed through as a PDF); a text PDF is stored by `parse-gdo-permit` as today, a scan by `gdo-lookup` with the same
+  no-overwrite naming. Facts behind it: the county keeps 5-digit numbers, its list often names an earlier tenant, its file
+  server answers as a download (`application/octet-stream`), and a site's permits can sit on several parcels.
+
 **Page Builder: the form's photos beside the counts, Yes / No instead of the arrows, every form photo in "On the form", whole photos (2026-11-23, Trello #244 kyNrxnxl)**
 - Fred (Slack #new-app-issues, 2026-11-23): see the images of Grease trap systems, Cleanouts, Sample ports, Lift stations,
   Water tanks in the building phase; the photos look "skewed, or cropped"; every form photo in "On the form" by its form
