@@ -122,6 +122,18 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   3:04 PM ET (`scripts/lwt-monthly/app/MonthlyReportPage.tsx`, Supabase `8a22e985`, re-downloaded byte for byte). Records:
   Ops Portal and DERM Tracker `docs/08-changelog.md`. Card items Truck and Manual entry ticked; Verify stays Fred's.
 
+**GDO permits checked against the client: name, unit and the county's inspections (2026-11-21, Trello #240 `wyCCimZk`)**
+- Yan (#gdo-permit, Nov 19 and 21): 062-TCE held another mall tenant's permit; *"run the AI thru the data base so we have the correct
+  permit for each of our customer"*. Record: `docs/audits/2026-11-21_gdo_tenant_check_240.md` (142 permits, five passes, 54 cards).
+- **Fred's decisions, 2026-11-22:** the page of cards is *"for Yannick or Diego"*, and their answers make *"a prompt for you to update
+  the clients taking into account those decisions"*; light mode only, less on screen (one card per permit, details folded); no
+  "Not sure" and no name box; no link may download (county files the county serves as downloads travel inside the page).
+- **BUILT (the page, local only: real client names):** `mockups/2026-11-21-240-gdo-permit-fixes.html`, built by
+  `mockups/2026-11-21-240-gdo-check/build.mjs`, 37 browser checks. Re-checked against every county inspection after Fred found
+  105-CU's "now operating as Cook unity" (11 cards rewritten, each verified).
+- **NOT BUILT:** every change to `public.gdos` (waits on the answers, applied by the copied instruction); the tenant check in the
+  standing check `scripts/checks/gdo_permit_pdf_numbers.mjs` (card item 5). The page has not been sent to Yannick or Diego.
+
 **GDO permit numbers: one form, `GDO-` plus 6 digits (2026-11-19, Trello #227 `CfXqPkZH`, reopened)**
 - Fred: *"One form, 6 digits ... when there are more or less than 6 digits throw the error mentioning it ... we would need to
   change the GDO Bot ... we need to check all the GDO Permits we have to see if all needs is a 0"*; on drops: *"make sure
