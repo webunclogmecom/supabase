@@ -891,6 +891,13 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 
 ## 4. Built (recent, with evidence)
 
+**Site file photos stay off the customer's Field Portal (2026-11-23, follow-up of Trello #244 / #219)**
+- Asked: "Should Page Builder Site file photos show on the customer's Field Portal page?" Fred: "No, hide them".
+- **Built and live 5:37 PM ET**: `2026-11-23_1700_customer_access_photos_without_site_file_photos.sql` (rollback beside it):
+  `customer.client_access_photos` leaves out `site_file_upload` photos and the private `intake-photos` bucket. The view went
+  3 -> 0 rows (all 112-YA); live 112-YA Location Info shows "No access pictures yet." instead of 3 broken images captioned
+  with a staff email. A public-bucket property photo still shows (rehearsal control).
+
 **Collector form: photos wait on the phone until Submit (2026-11-17, Trello #220 tc1P0loq)**
 - Fred: "The store photo locally first on the device ... if they try to submit the form it shows an error like with the internet issue and the form stays with the data because there was an error."
 - **Built and live about 11:09 AM ET**: Supabase `6bd9c6b1` (`form-page.ts`, v17), Picture Planner `public/intake.html` `da1cb04`, live SHA-256 `41a4072d...`. Live tests: `e2e.mjs --live` all passed, `live-offline.mjs --live` 6/6. Waiting: Serena's confirmation in the field (card's Deploy item). v18 the same day (`706ecdaf`, about 12:27 PM ET): the offline message is "No connection. Try again later." (Fred: "this error is too long"). **Trello: Testing / QA since 2026-11-17** (Fred: "move #220 to testing/QA") after the live smoke test of Serena's case (`live-offline.mjs --live` 9/9: picked offline, page closed, reopened online, two photos once); Serena has not used it in the field yet.
