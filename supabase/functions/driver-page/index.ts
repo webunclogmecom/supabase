@@ -89,7 +89,7 @@ type PagePhoto = {
 const encPath = (p: string) => p.split('/').map(encodeURIComponent).join('/')
 type Render = typeof FULL | typeof THUMB
 const publicRender = (path: string, t: Render) =>
-  `${SUPABASE_URL}/storage/v1/render/image/public/${encodeURIComponent(PUBLIC_BUCKET)}/${encPath(path)}?width=${t.width}&height=${t.height}&resize=${t.resize}&quality=${t.quality}`
+  `${SUPABASE_URL}/storage/v1/render/image/public/${encodeURIComponent(PUBLIC_BUCKET)}/${encPath(path)}?width=${t.width}&height=${t.height}&resize=contain&quality=${t.quality}` // literal, so the standing check reads it
 
 async function signedRender(path: string, t: Render): Promise<string | null> {
   const { data, error } = await db.storage.from(PRIVATE_BUCKET).createSignedUrl(path, SIGNED_TTL, { transform: t })
