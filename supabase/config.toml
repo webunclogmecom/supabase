@@ -982,3 +982,8 @@ verify_jwt = true
 
 [functions.lwt-monthly]
 verify_jwt = true
+
+# GDO lookup (Trello #242, 2026-11-23): the Ops Portal searches Miami-Dade's permit list, reads a permit, shows its file
+# and copies it into gdo-permits. Staff only: verify_jwt = true AND hr.check_app_action as the caller (gdo_lookup, _take).
+[functions.gdo-lookup]
+verify_jwt = true
