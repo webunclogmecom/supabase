@@ -212,9 +212,21 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - **Step 3 BUILT and LIVE 7:32 PM ET:** `2026-11-19_1935_gdos_six_digit_numbers` (189 numbers, partial unique index,
   pattern, refusal by digits naming the address) + `parse-gdo-permit` v44; `_1945` (a changed number on an inactive
   permit is checked too, found by the live test). `get-permit-doc` v35 skips retired copies.
-- **OPEN:** step 4 (the apps' hint texts: the old Client App by Building Apps, sent 11-19 evening; the portal by the
-  session named Supabase), step 5 (drop errors in both apps), step 6 (checks: the first live 6-digit county login on
-  the bot's next real filing).
+- **Step 6 DONE 2026-11-24:** the report bot's first real filings with the 6-digit login, GDO-012656, GDO-014738 and
+  GDO-016046, all "Submitted - DERM email confirmed" (`derm_portal_submissions`).
+- **Step 5 + the real cause of Diego's "I cannot drag the PDF documents", BUILT and LIVE 2026-11-24 about 1:05 PM ET**
+  (Supabase 2 session; Fred: "do a check, test it, see the error fix it, test it ... draft a message and move the card").
+  Every drop surface worked; the READER was the wall: a scanned DERM permit (or one with a field it cannot read) was
+  refused and nothing was stored, so Diego typed 309/310/312/313 with no PDF (his Nov 19 log: 2 reader calls, 1 file kept,
+  then typed permits). Now `parse-gdo-permit` takes `accept_unread: true` and stores such a PDF at
+  `gdo/unread/<date>-<id>.pdf` (fresh name, never replaces), answering `ok:true, read:false` with the fields it read and a
+  `store_note` (Supabase `389df42e`; without the flag the old replies, so an app opts in). The old Client App (Lovable
+  `dbf2133c`, live `index-Z2CP--uv.js`) sends the flag, switches to File manually with the PDF kept, prefills and shows the
+  note; a window guard stops the browser opening a PDF dropped outside a drop area (toast "Drop the permit PDF on the City
+  permits box of the address it belongs to."); a reader HTTP error shows the reader's own message. Another business's text
+  document is still refused. Trello: Testing / QA since 2026-11-24.
+- **OPEN:** the portal's copy (the flag + read:false, the window guard, the 6-digit hint), with the session named Supabase
+  (WORKING-NOW hand-off 2026-11-24); Diego's re-test.
 
 **Calendar drawer: show the time just saved, never an older cached copy (2026-11-19, Trello #191 `Nt26FU3q`)**
 - Diego, 2026-11-13: a saved 11:55 PM showed as 12:00 AM until saved again. The first save HAD stored it (audit trail);
