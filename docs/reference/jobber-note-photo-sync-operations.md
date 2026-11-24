@@ -6,6 +6,16 @@ operational half: cadence, duration, failure modes, and the health check.*
 
 Measured 2026-09-07/08 over the workflow's complete 511-run history.
 
+> 🛑 **SINCE 2026-11-24 (Trello #247) IT RUNS HOURLY ON RAILWAY, NOT GITHUB, AND NOT THROUGH THE ADMIN API.**
+> Railway service `note-photo` (`services/timed-jobs/services.json`), `5 * * * *`, `--days=auto` (14 at 05 UTC, else 3),
+> logged as `railway_note_photo` plus the script's own `jobber_note_photo_sync`. The script talks to the normal API with
+> the timed-jobs server key (header `x-app-source: note-photo-sync`); its joined reads are
+> `public.note_photo_sync_targets` / `_visit` / `_photo_id` (service_role only, `2026-11-24_1215`). The GitHub workflow
+> has no schedule; "Run workflow" (days 3) is the manual fallback. "No run" is an item after 2 hours, the photo check runs
+> hourly and emails Fred at once (`2026-11-24_1310`, `_1340`). Sections 1, 3 and 4 below describe the GitHub years:
+> the throttling (3) and the 429s (4) are gone with the move. Why it moved: on 2026-11-24 GitHub skipped it for 10 hours
+> and three visits of the Nov 23 route had no photos in Admin Review. Plan: `docs/specs/2026-11-24-note-photo-sync-railway-plan.md`.
+
 ---
 
 ## 1. It is NOT a pg_cron job. Do not look for it in `cron.job`.

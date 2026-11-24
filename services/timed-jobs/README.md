@@ -39,8 +39,9 @@ Railway **cron service per schedule**. Decision log: `docs/audits/2026-10-07_tim
 |---|---|---|---|---|---|
 | samsara-gps | `services.json` | `*/5 * * * *` | `railway_samsara_gps` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, AUTO_LOOKBACK_H=168 (since 2026-10-16; a week takes ~16 s), RUN_TIMEOUT_MIN=30 | live since 2026-10-07 12:15 ET; sole runner since 2026-10-08 10:48 ET (GitHub schedule removed); health-watched at 30 min; watchdog every 10 min + manual fallback workflow "Samsara GPS (fallback)" (2026-10-16) |
 | samsara-readings | `services.json` | `*/5 * * * *` | `railway_samsara_readings` | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SAMSARA_API_TOKEN, RUN_TIMEOUT_MIN=10 | created 2026-10-12 (tank sensors on Moises + truck RPM/PTO/geofence events, plan `docs/superpowers/specs/2026-10-12-samsara-tank-sensors-db-plan.md`); history from 2026-08-20 backfilled locally the same day (sync_log 77921 = the resume point); live on Railway since 2026-10-12 ~17:10 ET (secrets set by Fred); health-watched at 30 min (`2026-10-12_2120`); watchdog every 10 min + manual fallback workflow "Samsara tank readings (fallback)" (2026-10-16) |
+| note-photo | `services.json` | `5 * * * *` | `railway_note_photo` (and the script's own `jobber_note_photo_sync`) | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (the timed_jobs secret key, set by Fred 2026-11-24), RUN_TIMEOUT_MIN=45 | live since 2026-11-24 ~12:08 ET (Trello #247); sole runner (GitHub schedule removed, its workflow kept as a manual button); 14 days at 05 UTC, else 3; "no run" after 2 h reaches Fred at once (`log_jobber_note_photo_health` hourly, fast lane) and the daily health email (`log_jobber_sync_health`) |
 
-Planned next (plan section 3.3): note-photo, notes-import (temporary), jobber-visit-nightly.
+Planned next (plan section 3.3): notes-import (temporary), jobber-visit-nightly.
 
 ## Secrets
 
