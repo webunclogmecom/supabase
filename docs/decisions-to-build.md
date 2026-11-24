@@ -55,7 +55,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   one migration so the page keeps the No reasons (`public.fn_page_content_problem` refuses unknown keys today).
 - **BUILT in the old Picture Planner 2026-11-23** (`unclogme-pics-organizer` `20936db`, published from Lovable about
   6:30 PM ET; 57 of 57 behaviour checks on planner.unclogme.app). Database: `2026-11-23_1830_page_survey_no` (the page
-  keeps `survey_no`, the Site file never shows it). `driver-page` v26 asks for whole photos. **Still to build: the Ops
+  keeps `survey_no`, the Site file never shows it). `driver-page` v26 asks for whole photos. Real Submit + Approve on 112-YA
+  passed (v8 of 1164, 7:06 PM ET). **Decided 2026-11-23, pick C1 ("C1, go ahead"): "No, keep N" to "Make it N?" is not saved
+  with the page; the next visit asks again. Nothing to build.** **Still to build: the Ops
   Portal copy** (the session named Supabase ports `20936db`; RELEASE line in `WORKING-NOW.md`).
 
 **Monthly Report: send it by email from the app, as a PDF or the Excel file (2026-11-20, Trello #238 Mr437ii0)**
