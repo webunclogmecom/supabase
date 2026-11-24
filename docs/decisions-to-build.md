@@ -26,6 +26,11 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 ## 2. Agreed, not built (or only partly)
 
 **GDO lookup: inside a site's City permits section, plus a page under Compliance (2026-11-24, Trello #242 ebj6IVxa)**
+- ✅ **BUILT and LIVE 2026-11-23 about 8 PM ET** (card in Testing / QA): edge fn `gdo-lookup` (Supabase `6f8a3179`,
+  `b2fc6e88`), access rows `2026-11-23_1845`, the reader moved to `_shared/gdo-permit-read.ts` (`505e923e`); portal
+  `acd9545`, `93e2641`, `22a7615`, live entry `index-BSghL_Cu.js`. Reference `docs/reference/gdo-lookup.md`. One change
+  from the plan below: `take` stores every county file itself (text or scan) under the no-overwrite naming, instead of
+  sending text PDFs through `parse-gdo-permit` (one hop less; the reader is the same shared file).
 - Fred (round 3, 2026-11-24): "go with D1 and all recommended, build it", "when clicking view, put the Add button at the
   right bottom"; earlier "make them be aligned, always". Picks and words: `Building Apps/Ops Portal/docs/00-fred-picks-2026-11-24-gdo-lookup.md`.
 - **Decided:** the lookup takes the blue Add permit box's place on Miami-Dade sites, opens searched for the site's county
