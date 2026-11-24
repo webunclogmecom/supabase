@@ -77,6 +77,10 @@ Deno.serve(async (req: Request) => {
     let pdf: Uint8Array | null = null
     let filename = 'upload.pdf'
     let permitType = 'GDO'
+    // 2026-11-24 (Trello #227): opt-in. A caller that sends accept_unread gets an unreadable GDO PDF (a scan, or a
+    // permit with a field the reader cannot find) STORED and answered read:false, so a person types the fields from it.
+    // Without the flag the old refusal stands, so an app that has not learned read:false for GDO is unchanged.
+    let acceptUnread = false
 
     if (ct.includes('multipart/form-data')) {
       const form = await req.formData()
@@ -87,6 +91,7 @@ Deno.serve(async (req: Request) => {
       }
       const t = form.get('permit_type')
       if (typeof t === 'string' && t.trim()) permitType = t.trim().toUpperCase()
+      acceptUnread = form.get('accept_unread') === 'true'
     } else {
       const body = await req.json().catch(() => ({}))
       if (typeof body.pdf_base64 === 'string') {
@@ -96,6 +101,7 @@ Deno.serve(async (req: Request) => {
       }
       if (typeof body.filename === 'string') filename = body.filename
       if (typeof body.permit_type === 'string' && body.permit_type.trim()) permitType = body.permit_type.trim().toUpperCase()
+      acceptUnread = body.accept_unread === true
     }
     if (!/^[A-Z0-9]{2,10}$/.test(permitType)) {
       return json({ error: 'bad_permit_type', message: 'Pick the permit type before attaching its PDF.' }, 400, req)
@@ -137,6 +143,33 @@ Deno.serve(async (req: Request) => {
 
     const parsed = await parsePermit(pdf)
 
+    // Trello #227 (Diego, 2026-11-19: "I did it but manually because I cannot drag the PDF documents"): DERM's own
+    // permits are sometimes scans, and the reader refused them and kept nothing, so the permit was typed with no PDF.
+    // Kept under a fresh name (never replaces a document); another business's text document is still refused below.
+    const keepUnread = async (): Promise<string | null> => {
+      if (pdf!.length > MAX_STORE_ONLY_BYTES) return null
+      const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      const url = Deno.env.get('SUPABASE_URL') ?? ''
+      const path = `gdo/unread/${new Date().toISOString().slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.pdf`
+      const r = await fetch(`${url}/storage/v1/object/gdo-permits/${path}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${svc}`, apikey: svc, 'Content-Type': 'application/pdf', 'x-upsert': 'false' },
+        body: new Blob([pdf!], { type: 'application/pdf' }),
+      })
+      if (r.ok) return path
+      console.error('parse-gdo-permit keepUnread', r.status, (await r.text()).slice(0, 200))
+      return null
+    }
+
+    if (acceptUnread && !parsed.isDermPermit && parsed.chars < 200) {
+      const path = await keepUnread()
+      if (path) {
+        return json({ ok: true, isDermPermit: true, read: false, reason: 'scan', filename, permit_type: permitType,
+          fields: { permit_document_path: path }, stored: true,
+          store_note: 'This PDF has no readable text (it is probably a scan), so nothing was filled in. It is attached to the permit: type the permit number, the dates and how often it must be cleaned from it.' }, 200, req)
+      }
+    }
+
     if (!parsed.isDermPermit) {
       return json({
         ok: false, isDermPermit: false, reason: 'not_a_derm_permit', chars: parsed.chars,
@@ -158,6 +191,14 @@ Deno.serve(async (req: Request) => {
       }
       const named = parsed.missing.map((k) => words[k] ?? k)
       const list = named.length > 1 ? `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}` : named[0]
+      if (acceptUnread) {
+        const path = await keepUnread()
+        if (path) {
+          return json({ ok: true, isDermPermit: true, read: false, reason: 'fields_missing', missing_fields: parsed.missing,
+            filename, permit_type: permitType, fields: { ...parsed.fields, permit_document_path: path }, stored: true,
+            store_note: `The PDF is attached, but ${list} could not be read from it. Check what was filled in and type the rest from the PDF.` }, 200, req)
+        }
+      }
       return json({
         ok: false, isDermPermit: true, reason: 'fields_missing', missing_fields: parsed.missing,
         fields: parsed.fields,
