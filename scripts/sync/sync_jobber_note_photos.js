@@ -21,22 +21,32 @@
 // (source in jobber_migration / jobber_late_recovery / jobber_note_sync);
 // app-uploaded photos are never removed.
 //
-// Runs every 6h via .github/workflows/jobber-note-photo-sync.yml.
-//   node scripts/sync/sync_jobber_note_photos.js [--days=45] [--visit=ID]        # DRY-RUN
-//   node scripts/sync/sync_jobber_note_photos.js --execute [--days=45]           # writes
+// Runs hourly on Railway (service note-photo, services/timed-jobs/services.json) since Trello #247 (2026-11-24);
+// the GitHub workflow .github/workflows/jobber-note-photo-sync.yml stays as a manual button.
+//   node scripts/sync/sync_jobber_note_photos.js [--days=45|auto] [--visit=ID]   # DRY-RUN
+//   node scripts/sync/sync_jobber_note_photos.js --execute [--days=45|auto]      # writes
+// --days=auto: 14 when the run starts in the 05 UTC hour (the daily full sweep), else 3.
+//
+// 🛑 DATABASE ACCESS: the normal API with the server key (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY), header
+// x-app-source: note-photo-sync. Until 2026-11-24 it used the Supabase admin API with the account-wide token, whose
+// rate limit (429) caused every failure the job ever had. The three joined reads are the service_role-only functions
+// public.note_photo_sync_targets / _visit / _photo_id (docs/migrations/2026-11-24_1215_note_photo_sync_reads.sql);
+// change their SQL there, not here. Locally, .env's SUPABASE_SERVICE_ROLE_KEY is the legacy key (switched off 2026-10-27):
+// run with SUPABASE_SERVICE_ROLE_KEY set to a secret key (sb_secret_...).
 // ============================================================================
 const https = require('https');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
-const PAT = process.env.SUPABASE_PAT;
-const PROJECT = (process.env.SUPABASE_URL || '').match(/https?:\/\/([^.]+)\./)?.[1];
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SVC = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL || !SVC) { console.error('FATAL SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required'); process.exit(1); }
 let JOBBER_TOKEN = process.env.JOBBER_ACCESS_TOKEN || null; // env override (local); else refreshed from webhook_tokens
 const GQL_VERSION = '2026-04-16';
 const STORAGE_BUCKET = 'GT - Visits Images';
 const STORAGE_SIZE_LIMIT = 52428800;
 const EXECUTE = process.argv.includes('--execute');
-const DAYS = Number((process.argv.find(a => a.startsWith('--days=')) || '').split('=')[1] || 45);
+const DAYS_ARG = (process.argv.find(a => a.startsWith('--days=')) || '').split('=')[1];
+const DAYS = DAYS_ARG === 'auto' ? (new Date().getUTCHours() === 5 ? 14 : 3) : Number(DAYS_ARG || 45);
+if (!Number.isInteger(DAYS) || DAYS < 0) { console.error(`FATAL bad --days=${DAYS_ARG}`); process.exit(1); }
 // +/- days between a NOTE's createdAt and the visit's date for its attachments to
 // belong to that visit. Matches jobber_notes_photos.js NOTE_CLASSIFIER_WINDOW_DAYS.
 // NOT the same thing as --days, which only chooses which visits to refresh.
@@ -57,21 +67,32 @@ function http(opts, body) {
     r.on('error', rej); if (body) r.write(body); r.end();
   });
 }
-async function pg(sql, retries = 4) {
-  const body = JSON.stringify({ query: sql });
+// One call to the normal API (PostgREST). `path` is after /rest/v1/. Returns the parsed JSON, or null for an empty body.
+async function api(method, path, body, prefer, retries = 4) {
+  const data = body == null ? null : Buffer.from(JSON.stringify(body));
+  const headers = { Authorization: 'Bearer ' + SVC, apikey: SVC, 'x-app-source': 'note-photo-sync', Accept: 'application/json' };
+  if (data) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = data.length; }
+  if (prefer) headers.Prefer = prefer;
   let r;
   try {
-    r = await http({ hostname: 'api.supabase.com', path: `/v1/projects/${PROJECT}/database/query`, method: 'POST', headers: { Authorization: `Bearer ${PAT}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, body);
+    r = await http({ hostname: SUPABASE_URL.replace('https://', ''), path: '/rest/v1/' + path, method, headers }, data);
   } catch (e) { // transient network/DNS blip (e.g. ENOTFOUND) — retry with backoff so one drop doesn't kill a long backfill
-    if (retries > 0) { await sleep((5 - retries) * 2000); return pg(sql, retries - 1); }
+    if (retries > 0) { await sleep((5 - retries) * 2000); return api(method, path, body, prefer, retries - 1); }
     throw e;
   }
+  const where = `${method} ${path.split('?')[0]}`;
   if (r.status >= 300) {
-    if (retries > 0 && (r.status === 429 || r.status >= 500)) { await sleep((5 - retries) * 2000); return pg(sql, retries - 1); }
-    throw new Error(`DB ${r.status}: ${r.body.toString().slice(0, 300)}`);
+    if (retries > 0 && (r.status === 429 || r.status >= 500)) { await sleep((5 - retries) * 2000); return api(method, path, body, prefer, retries - 1); }
+    throw new Error(`DB ${where} ${r.status}: ${r.body.toString().slice(0, 300)}`);
   }
-  return JSON.parse(r.body.toString());
+  const txt = r.body.toString();
+  if (!txt) return null;
+  // a gateway page at HTTP 200 is not an answer (the Jobber "waiting room" lesson, Supabase CLAUDE.md)
+  if (!String(r.headers['content-type'] || '').includes('json')) throw new Error(`DB ${where}: not JSON (${r.headers['content-type']})`);
+  return JSON.parse(txt);
 }
+const rpc = (fn, args) => api('POST', 'rpc/' + fn, args);
+const q = encodeURIComponent;
 async function gql(query, variables, retries = 5) {
   const body = JSON.stringify({ query, variables });
   const r = await http({ hostname: 'api.getjobber.com', path: '/api/graphql', method: 'POST', headers: { Authorization: `Bearer ${JOBBER_TOKEN}`, 'X-JOBBER-GRAPHQL-VERSION': GQL_VERSION, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, body);
@@ -85,13 +106,12 @@ async function gql(query, variables, retries = 5) {
 async function downloadFromUrl(url) { const u = new URL(url); const r = await http({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET' }); if (r.status >= 300) throw new Error(`Download ${r.status}`); return { body: r.body, contentType: r.headers['content-type'] }; }
 async function storageUpload(path, buf, ct) { const host = SUPABASE_URL.replace('https://', ''); const enc = encodeURIComponent(STORAGE_BUCKET) + '/' + path.split('/').map(encodeURIComponent).join('/'); const r = await http({ hostname: host, path: '/storage/v1/object/' + enc, method: 'POST', headers: { Authorization: 'Bearer ' + SVC, apikey: SVC, 'Content-Type': ct || 'application/octet-stream', 'Content-Length': buf.length, 'x-upsert': 'true' } }, buf); if (r.status >= 300) throw new Error(`Storage up ${r.status}: ${r.body.toString().slice(0, 150)}`); }
 async function storageDelete(path) { const host = SUPABASE_URL.replace('https://', ''); const enc = encodeURIComponent(STORAGE_BUCKET) + '/' + path.split('/').map(encodeURIComponent).join('/'); const r = await http({ hostname: host, path: '/storage/v1/object/' + enc, method: 'DELETE', headers: { Authorization: 'Bearer ' + SVC, apikey: SVC } }, null); if (r.status >= 300 && r.status !== 404) throw new Error(`Storage del ${r.status}`); }
-const sqlEsc = v => v == null ? 'NULL' : (typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'");
 const extOf = (ct, name) => { const m = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/webp': 'webp', 'application/pdf': 'pdf' }; if (ct && m[ct.toLowerCase().split(';')[0]]) return m[ct.toLowerCase().split(';')[0]]; if (name && name.includes('.')) return name.split('.').pop().toLowerCase().slice(0, 5); return 'bin'; };
 
 // Read Jobber READ token from webhook_tokens (source_system='jobber'), refreshing
 // if near expiry — so the cron needs no static token secret. Env var wins if set.
 async function getReadToken(force) {
-  const rows = await pg(`SELECT access_token, refresh_token, client_id, client_secret, expires_at FROM public.webhook_tokens WHERE source_system='jobber'`);
+  const rows = await api('GET', 'webhook_tokens?source_system=eq.jobber&select=access_token,refresh_token,client_id,client_secret,expires_at');
   const t = rows[0]; if (!t) throw new Error('no jobber read token in webhook_tokens');
   if (!force && new Date(t.expires_at).getTime() > Date.now() + 120000) return t.access_token;
   const body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(t.refresh_token)}&client_id=${encodeURIComponent(t.client_id)}&client_secret=${encodeURIComponent(t.client_secret)}`;
@@ -99,21 +119,14 @@ async function getReadToken(force) {
   if (r.status >= 300) throw new Error(`read token refresh ${r.status}`);
   const j = JSON.parse(r.body.toString());
   const exp = JSON.parse(Buffer.from(j.access_token.split('.')[1], 'base64').toString()).exp * 1000;
-  await pg(`UPDATE public.webhook_tokens SET access_token=${sqlEsc(j.access_token)}, refresh_token=${sqlEsc(j.refresh_token || t.refresh_token)}, expires_at=${sqlEsc(new Date(exp).toISOString())}, updated_at=now() WHERE source_system='jobber'`);
+  await api('PATCH', 'webhook_tokens?source_system=eq.jobber', { access_token: j.access_token, refresh_token: j.refresh_token || t.refresh_token, expires_at: new Date(exp).toISOString(), updated_at: new Date().toISOString() }, 'return=minimal');
   return j.access_token;
 }
 
 (async () => {
   console.log(`sync_jobber_note_photos  ${EXECUTE ? 'EXECUTE' : 'DRY-RUN'}${ENABLE_REMOVE ? ' +remove' : ' (add-only)'}  ${ONLY_VISIT ? `visit=${ONLY_VISIT}` : `last ${DAYS}d`}`);
   if (!JOBBER_TOKEN) JOBBER_TOKEN = await getReadToken();
-  const target = await pg(`
-    SELECT v.id AS visit_id, v.client_id, v.visit_date, v.completed_at, esl.source_id AS visit_gid, c.client_code
-    FROM visits v
-    JOIN entity_source_links esl ON esl.entity_type='visit' AND esl.entity_id=v.id AND esl.source_system='jobber'
-    JOIN clients c ON c.id=v.client_id
-    WHERE v.visit_status='completed' AND v.deleted_at IS NULL
-      ${ONLY_VISIT ? `AND v.id=${Number(ONLY_VISIT)}` : `AND v.visit_date >= (current_date - ${DAYS})`}
-    ORDER BY v.id`);
+  const target = await rpc('note_photo_sync_targets', { p_days: DAYS, p_visit: ONLY_VISIT ? Number(ONLY_VISIT) : null });
   console.log(`${target.length} visit(s) to check`);
   let added = 0, removed = 0, errors = 0, changedVisits = 0, windowSkipped = 0;
   // 2026-09-08. These two used to not exist, and that WAS the bug: an attachment we could
@@ -125,14 +138,9 @@ async function getReadToken(force) {
   for (const t of target) {
     // our jobber-sourced photos for THIS visit: att_gid + the Jobber note it came
     // from (note_gid; NULL for legacy date-matched photos with no note anchor).
-    const ours = await pg(`
-      SELECT ph.id AS photo_id, ph.storage_path, esl.source_id AS att_gid,
-        (SELECT nesl.source_id FROM photo_links pn
-           JOIN entity_source_links nesl ON nesl.entity_type='note' AND nesl.entity_id=pn.entity_id AND nesl.source_system='jobber'
-         WHERE pn.photo_id=ph.id AND pn.entity_type='note' LIMIT 1) AS note_gid
-      FROM photo_links pl JOIN photos ph ON ph.id=pl.photo_id
-      JOIN entity_source_links esl ON esl.entity_type='photo' AND esl.entity_id=ph.id AND esl.source_system='jobber'
-      WHERE pl.entity_type='visit' AND pl.entity_id=${t.visit_id} AND ph.source IN (${JOBBER_SOURCES.map(sqlEsc).join(',')})`);
+    // ours + the completed sibling visits of the same job, in one read (JOBBER_SOURCES is inside the function)
+    const vis = await rpc('note_photo_sync_visit', { p_visit: t.visit_id });
+    const ours = vis.ours;
     const ourByGid = new Map(ours.map(r => [r.att_gid, r]));
 
     // current Jobber attachments on this visit's notes: gid -> att
@@ -232,9 +240,7 @@ async function getReadToken(force) {
     // the comparison only needs a total order, and each side uses its best available time.
     let toAdd = inWindow;
     if (inWindow.length) {
-      const sibs = await pg(`SELECT v2.id, v2.visit_date, v2.completed_at FROM visits v2
-        WHERE v2.job_id = (SELECT job_id FROM visits WHERE id=${t.visit_id})
-          AND v2.id <> ${t.visit_id} AND v2.deleted_at IS NULL AND v2.visit_status='completed'`);
+      const sibs = vis.sibs;
       if (sibs.length) {
         const noonMs = (d) => Date.parse(`${String(d).slice(0, 10)}T12:00:00Z`);
         // 🛑 completed_at IS ONLY TRUSTED WHEN IT IS NEAR THE VISIT DATE. It records when
@@ -288,15 +294,19 @@ async function getReadToken(force) {
       const att = curAtt.get(g);
       try {
         // ensure note row (job note -> visit-scoped)
-        let noteRow = await pg(`SELECT entity_id FROM entity_source_links WHERE entity_type='note' AND source_system='jobber' AND source_id=${sqlEsc(att.noteGid)} LIMIT 1`);
+        let noteRow = await api('GET', `entity_source_links?entity_type=eq.note&source_system=eq.jobber&source_id=eq.${q(att.noteGid)}&select=entity_id&limit=1`);
         let noteId = noteRow[0]?.entity_id;
-        if (!noteId) { const ins = await pg(`INSERT INTO notes (client_id, visit_id, body, note_date, source) VALUES (${t.client_id}, ${t.visit_id}, ${sqlEsc(att.noteMsg)}, ${att.noteCreatedAt ? sqlEsc(att.noteCreatedAt) : 'now()'}, 'jobber_note_sync') RETURNING id`); noteId = ins[0].id; await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('note',${noteId},'jobber',${sqlEsc(att.noteGid)}) ON CONFLICT (entity_type,source_system,source_id) DO NOTHING`); }
+        if (!noteId) {
+          const ins = await api('POST', 'notes', { client_id: t.client_id, visit_id: t.visit_id, body: att.noteMsg, note_date: att.noteCreatedAt || new Date().toISOString(), source: 'jobber_note_sync' }, 'return=representation');
+          noteId = ins[0].id;
+          await api('POST', 'entity_source_links?on_conflict=entity_type,source_system,source_id', { entity_type: 'note', entity_id: noteId, source_system: 'jobber', source_id: att.noteGid }, 'resolution=ignore-duplicates,return=minimal');
+        }
         // reuse an existing photo for this attachment gid ONLY if the photo row still
         // exists — there are ~4k stale photo esls (source_system='jobber') pointing at
         // photos a historical cleanup deleted (esl has no cascade). The JOIN filters
         // those out so we don't hand a dangling photo_id to the FK; the DO UPDATE below
         // then repoints the stale esl to the freshly downloaded photo.
-        let photoId = (await pg(`SELECT esl.entity_id AS id FROM entity_source_links esl JOIN photos ph ON ph.id=esl.entity_id WHERE esl.entity_type='photo' AND esl.source_system='jobber' AND esl.source_id=${sqlEsc(g)} LIMIT 1`))[0]?.id;
+        let photoId = await rpc('note_photo_sync_photo_id', { p_att_gid: g });
         if (!photoId) {
           // 2026-09-08. Was ONE branch with ONE conflated message and NO counter:
           //   if (!att.url || (att.fileSize && att.fileSize > STORAGE_SIZE_LIMIT)) {
@@ -320,19 +330,15 @@ async function getReadToken(force) {
             // recovered a single file. We re-encounter the same attachment ~10x/day, so
             // refreshing on conflict is what makes the row actually usable. `logged_at` is
             // deliberately NOT refreshed so it keeps meaning FIRST SEEN.
-            await pg(`INSERT INTO public.jobber_oversized_attachments
-                        (client_id, visit_id, note_jobber_id, attachment_jobber_id,
-                         file_name, content_type, size_bytes, jobber_url_signed, skip_reason)
-                      VALUES (${t.client_id}, ${t.visit_id}, ${sqlEsc(att.noteGid)}, ${sqlEsc(g)},
-                              ${sqlEsc(att.fileName || null)}, ${sqlEsc(att.contentType || null)},
-                              ${size == null ? 'NULL' : size}, ${sqlEsc(att.url || null)}, ${sqlEsc(reason)})
-                      ON CONFLICT (attachment_jobber_id) DO UPDATE SET
-                        jobber_url_signed = EXCLUDED.jobber_url_signed,
-                        size_bytes        = COALESCE(EXCLUDED.size_bytes, public.jobber_oversized_attachments.size_bytes),
-                        content_type      = COALESCE(EXCLUDED.content_type, public.jobber_oversized_attachments.content_type),
-                        file_name         = COALESCE(EXCLUDED.file_name, public.jobber_oversized_attachments.file_name),
-                        visit_id          = EXCLUDED.visit_id,
-                        skip_reason       = EXCLUDED.skip_reason`)
+            // PostgREST's merge updates exactly the keys sent, so a null file_name / content_type / size_bytes is LEFT
+            // OUT (keeps the stored value, as the old COALESCE did) while jobber_url_signed is always sent.
+            // logged_at is never sent, so it keeps meaning FIRST SEEN.
+            const basin = { client_id: t.client_id, visit_id: t.visit_id, note_jobber_id: att.noteGid, attachment_jobber_id: g,
+                            jobber_url_signed: att.url || null, skip_reason: reason };
+            if (att.fileName) basin.file_name = att.fileName;
+            if (att.contentType) basin.content_type = att.contentType;
+            if (size != null) basin.size_bytes = size;
+            await api('POST', 'jobber_oversized_attachments?on_conflict=attachment_jobber_id', basin, 'resolution=merge-duplicates,return=minimal')
               // Never let bookkeeping fail the import of the OTHER attachments on this note.
               .catch(e => { errors++; console.log(`    basin ${g} ERR: ${e.message.slice(0, 70)}`); });
             continue;
@@ -340,12 +346,17 @@ async function getReadToken(force) {
           const dl = await downloadFromUrl(att.url); const ext = extOf(dl.contentType || att.contentType, att.fileName);
           const path = `notes/${t.client_id}/${att.noteGid}/${g}.${ext}`;
           await storageUpload(path, dl.body, dl.contentType);
-          const p = await pg(`INSERT INTO photos (storage_path,file_name,content_type,size_bytes,source) VALUES (${sqlEsc(path)},${sqlEsc(att.fileName || g + '.' + ext)},${sqlEsc(dl.contentType || null)},${dl.body.length},'jobber_note_sync') ON CONFLICT (storage_path) DO UPDATE SET storage_path=EXCLUDED.storage_path RETURNING id`);
-          photoId = p[0].id;
-          await pg(`INSERT INTO entity_source_links (entity_type,entity_id,source_system,source_id) VALUES ('photo',${photoId},'jobber',${sqlEsc(g)}) ON CONFLICT (entity_type,source_system,source_id) DO UPDATE SET entity_id=EXCLUDED.entity_id`);
+          // A row already at this path is reused untouched (the old ON CONFLICT DO UPDATE changed nothing either).
+          const p = await api('POST', 'photos?on_conflict=storage_path', { storage_path: path, file_name: att.fileName || g + '.' + ext, content_type: dl.contentType || null, size_bytes: dl.body.length, source: 'jobber_note_sync' }, 'resolution=ignore-duplicates,return=representation');
+          photoId = p[0]?.id ?? (await api('GET', `photos?storage_path=eq.${q(path)}&select=id`))[0]?.id;
+          if (!photoId) throw new Error(`no photo row for ${path}`);
+          await api('POST', 'entity_source_links?on_conflict=entity_type,source_system,source_id', { entity_type: 'photo', entity_id: photoId, source_system: 'jobber', source_id: g }, 'resolution=merge-duplicates,return=minimal');
         }
-        await pg(`INSERT INTO photo_links (photo_id,entity_type,entity_id,role) VALUES (${photoId},'note',${noteId},'attachment') ON CONFLICT (photo_id,entity_type,entity_id,role) DO NOTHING;
-                  INSERT INTO photo_links (photo_id,entity_type,entity_id,role) VALUES (${photoId},'visit',${t.visit_id},'other') ON CONFLICT (photo_id,entity_type,entity_id,role) DO NOTHING`);
+        // both links in ONE statement, as before (one request = one transaction)
+        await api('POST', 'photo_links?on_conflict=photo_id,entity_type,entity_id,role', [
+          { photo_id: photoId, entity_type: 'note', entity_id: noteId, role: 'attachment' },
+          { photo_id: photoId, entity_type: 'visit', entity_id: t.visit_id, role: 'other' },
+        ], 'resolution=ignore-duplicates,return=minimal');
         added++;
       } catch (e) { errors++; console.log(`    add ${g} ERR: ${e.message.slice(0, 70)}`); }
     }
@@ -360,16 +371,20 @@ async function getReadToken(force) {
         // cascaded to all of its classifications. It never fired (0 removals in 151
         // runs) only because the trigger condition was unreachable, not because
         // anything prevented it. Only ever unlink the visit being processed.
-        await pg(`DELETE FROM photo_classifications WHERE photo_link_id IN (
-                    SELECT id FROM photo_links WHERE photo_id=${r.photo_id}
-                     AND entity_type='visit' AND entity_id=${t.visit_id})`);
-        await pg(`DELETE FROM photo_links WHERE photo_id=${r.photo_id}
-                   AND entity_type='visit' AND entity_id=${t.visit_id}`);
+        const scope = `photo_id=eq.${Number(r.photo_id)}&entity_type=eq.visit&entity_id=eq.${Number(t.visit_id)}`;
+        const linkIds = (await api('GET', `photo_links?${scope}&select=id`)).map(x => Number(x.id));
+        if (linkIds.length) await api('DELETE', `photo_classifications?photo_link_id=in.(${linkIds.join(',')})`, null, 'return=minimal');
+        await api('DELETE', `photo_links?${scope}`, null, 'return=minimal');
         removed++;
       } catch (e) { errors++; console.log(`    remove ${r.att_gid} ERR: ${e.message.slice(0, 70)}`); }
     }
     await sleep(80);
   }
   console.log(`\n=== ${EXECUTE ? 'DONE' : 'DRY-RUN'} === visits changed: ${changedVisits} | photos added: ${added} | removed: ${removed} | skipped by note-window: ${windowSkipped} | oversized: ${oversizedSkipped}${oversizedSkipped ? ` (${Math.round(oversizedBytes / 1048576)} MB)` : ''} | no url: ${noUrlSkipped} | errors: ${errors}`);
-  if (EXECUTE) await pg(`INSERT INTO public.sync_log (sync_source, started_at, finished_at, rows_updated, rows_errored, status, details) VALUES ('jobber_note_photo_sync', now(), now(), ${added + removed}, ${errors}, ${errors ? "'partial'" : "'success'"}, ${sqlEsc(JSON.stringify({ added, removed, changedVisits, days: DAYS, oversizedSkipped, noUrlSkipped, oversizedBytes }))})`).catch(() => {});
+  if (EXECUTE) {
+    const nowIso = new Date().toISOString();
+    // a failed log write is said out loud now (it used to vanish in .catch(() => {})); it never fails the run
+    await api('POST', 'sync_log', { sync_source: 'jobber_note_photo_sync', started_at: nowIso, finished_at: nowIso, rows_updated: added + removed, rows_errored: errors, status: errors ? 'partial' : 'success', details: { added, removed, changedVisits, days: DAYS, oversizedSkipped, noUrlSkipped, oversizedBytes } }, 'return=minimal')
+      .catch(e => console.log(`sync_log write ERR: ${e.message.slice(0, 120)}`));
+  }
 })().catch(e => { console.error('FATAL', e.message); process.exit(1); });
