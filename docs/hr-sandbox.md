@@ -8,6 +8,17 @@
 
 ## 1. What it is
 
+**Organization (since 2026-11-24):** the sandbox is in its own Supabase organization, **UNCLOGME frozen leads**
+(`xanzndsuyjqajmfcqwsq`, Pro; 1,078 MB, over the free plan's 500 MB, where it would turn read-only). Fred transferred
+it out of the **Unclogme** organization, which now holds only Prod. Why: Yannick's Claude cannot reach the sandbox's
+address from its cloud workspace (Anthropic's proxy answers 403 before Supabase), and the claude.ai Supabase connector,
+which avoids that, signs in as his Supabase account; with the sandbox in the Prod organization that account would have
+put Prod in the connector's reach. The ref, URL, keys, his login and the web address in section 6b did not change
+(checked after the move: his `rpc/run` count 9,890, as before). Fred's choices that day: the connector is for this
+organization only (Yannick picks UNCLOGME frozen leads when he connects); Yannick stays a member of Unclogme too. To do
+before the connector works: invite Yannick to UNCLOGME frozen leads (Developer is enough). Note: the connector acts as
+the database owner over the whole sandbox, not through `yannick_leads`.
+
 A standalone Supabase project Yannick builds his HR (employee-management) Lovable app against, so he has realistic data without touching Prod. It is a **one-time clone of Prod from ~April 2026** that has since **diverged** (Prod moved forward; the sandbox schema was frozen at clone time). It is NOT periodically auto-refreshed structurally — only its **data** is topped up on demand (see §3).
 
 ## 2. Schema / architecture (legacy April-clone — DO NOT "upgrade" it)
