@@ -1,7 +1,7 @@
 # Scheduled jobs
 
 > **Generated, do not edit by hand.** Written by `node scripts/checks/timed-jobs-inventory.mjs --write`,
-> generated on 2026-11-14 06:15 ET. Re-run it after any schedule change and commit the result.
+> generated on 2026-11-24 12:10 ET. Re-run it after any schedule change and commit the result.
 > Enforced by [a daily GitHub job](../../.github/workflows/scheduled-jobs-doc-drift.yml): it runs `--check` (runtime, job name
 > and schedule against this file) and, on every run while they differ, fails and posts the differences to #viktor-supabase.
 
@@ -85,6 +85,7 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | pg_cron | unopened-email-reminder | `0 15,16 * * *` | 11:00, 12:00 EDT / 10:00, 11:00 EST | `public.fn_request_unopened_email_reminder`, edge fn `unopened-email-reminder` | `cron.job_run_details` jobid 173 |
 | pg_cron | vehicle-gps-reconcile-nightly | `5 7 * * *` | 03:05 EDT / 02:05 EST | `public.fn_infer_visit_vehicle` | `cron.job_run_details` jobid 27 |
 | pg_cron | vehicle-stop-facts | `35 * * * *` | hourly at :35, same in ET | `public.fn_refresh_stop_facts` | `cron.job_run_details` jobid 141 |
+| Railway | note-photo | `5 * * * *` | hourly at :05, same in ET | `scripts/sync/sync_jobber_note_photos.js --execute --enable-remove --days=auto` | `public.sync_log` source `railway_note_photo` |
 | Railway | samsara-gps | `*/5 * * * *` | interval, same in ET | `scripts/sync/cron_samsara_locations_history.js` | `public.sync_log` source `railway_samsara_gps` |
 | Railway | samsara-readings | `*/5 * * * *` | interval, same in ET | `scripts/sync/cron_samsara_tank_readings.js` | `public.sync_log` source `railway_samsara_readings` |
 | GitHub | `audit-critical-poll.yml` | `*/5 * * * *` | interval, same in ET | `scripts/alerts/audit_critical_poll.js` | Actions history (`gh run list -w audit-critical-poll.yml`) |
@@ -93,10 +94,8 @@ Background: [timed jobs on Railway](../../services/timed-jobs/README.md), [the m
 | GitHub | `daily-notes-photos-sync.yml` | `12 12 * * *` | 08:12 EDT / 07:12 EST | `scripts/sync/jobber_token.js`, `scripts/migrate/jobber_notes_photos.js` | Actions history (`gh run list -w daily-notes-photos-sync.yml`) |
 | GitHub | `derive-visit-vehicle-id.yml` | `17 * * * *` | hourly at :17, same in ET | `scripts/sync/derive_visit_vehicle_id.js` | Actions history (`gh run list -w derive-visit-vehicle-id.yml`) |
 | GitHub | `frequent-jobber-completion-reconcile.yml` | `*/30 * * * *` | interval, same in ET | `scripts/sync/cron_jobber_reconcile_completion.js` | Actions history (`gh run list -w frequent-jobber-completion-reconcile.yml`) |
-| GitHub | `jobber-note-photo-sync.yml` | `0 */6 * * *` | 20:00, 02:00, 08:00, 14:00 EDT / 19:00, 01:00, 07:00, 13:00 EST | `scripts/sync/sync_jobber_note_photos.js` | Actions history (`gh run list -w jobber-note-photo-sync.yml`) |
-| GitHub | `jobber-note-photo-sync.yml` | `30 * * * *` | hourly at :30, same in ET | `scripts/sync/sync_jobber_note_photos.js` | Actions history (`gh run list -w jobber-note-photo-sync.yml`) |
 | GitHub | `samsara-poll.yml` | `*/10 * * * *` | interval, same in ET | `scripts/sync/cron_samsara_telemetry.js` | Actions history (`gh run list -w samsara-poll.yml`) |
 | GitHub | `scheduled-jobs-doc-drift.yml` | `40 11 * * *` | 07:40 EDT / 06:40 EST | `scripts/checks/timed-jobs-inventory.mjs` | Actions history (`gh run list -w scheduled-jobs-doc-drift.yml`) |
 | GitHub | `weekly-dedup-audit.yml` | `0 14 * * 0` | Sun 10:00 EDT / Sun 09:00 EST | `scripts/sync/weekly_dedup_audit.js` | Actions history (`gh run list -w weekly-dedup-audit.yml`) |
 
-Totals: pg_cron 62 (0 paused), Railway 2, GitHub 11 schedules in 10 workflows.
+Totals: pg_cron 62 (0 paused), Railway 3, GitHub 9 schedules in 9 workflows.

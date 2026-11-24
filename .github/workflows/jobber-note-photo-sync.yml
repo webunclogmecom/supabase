@@ -1,11 +1,11 @@
-name: Jobber note-photo diff sync (every 6h)
+name: Jobber note-photo diff sync (manual fallback; runs hourly on Railway)
 
 # Keeps each recent completed visit's photos in sync with the CURRENT attachments
 # on its Jobber notes — the ADD half catches photos Diego adds to an existing note
 # LATER (the daily migration is note-level idempotent and skips edited notes, so it
 # misses these). Photo-level diff via entity_source_links attachment GID.
 #
-# Runs every 6h (Fred, 2026-07-01). Full sync (add + remove). REMOVE is now safe:
+# Ran every 6h on GitHub from 2026-07-01 (Fred). Full sync (add + remove). REMOVE is now safe:
 # it is NOTE-ANCHORED (only unlinks a JOB-note photo whose own note is still on the
 # visit but dropped the attachment) and UNLINK-based (keeps the photos row + storage,
 # recoverable) — never the old naive visit-diff hard-delete. ADD is dedup-safe (links
@@ -14,23 +14,16 @@ name: Jobber note-photo diff sync (every 6h)
 # The script self-refreshes the Jobber read token from webhook_tokens, so no static
 # JOBBER_ACCESS_TOKEN secret is needed.
 
+# 🛑 NO SCHEDULE SINCE 2026-11-24 (Trello #247). GitHub delivered about a quarter of the hourly runs; on 11-24 none
+# came for 10 hours and three visits of the Nov 23 route had no photos in Admin Review. The sync runs hourly at :05 on Railway
+# (service note-photo, services/timed-jobs/services.json; 14 days at 05 UTC, else 3). This button is the fallback:
+# "Run workflow" with days 3 brings a late visit in within a minute.
 on:
-  schedule:
-    - cron: '0 */6 * * *'   # 00:00 / 06:00 / 12:00 / 18:00 UTC — full 14d sweep
-    # HOT-WINDOW sweep (2026-08-18, from the August photo audit): photos posted between the
-    # 6h runs were invisible for up to 6h, which is exactly what Yannick hit on visit 6537.
-    # Hourly at :30 (offset so it never fires the same minute as the 6h run), --days=3 only
-    # (~20 completed visits/run — measured — so the Jobber cost is a fraction of the full
-    # sweep's). The shared concurrency group makes overlapping runs QUEUE, not collide.
-    # ⚠ A scheduled run CANNOT read workflow_dispatch inputs — days must branch on
-    # github.event.schedule below, or the hourly run silently does the full 14d sweep
-    # 24 times a day (the adversarial review caught this before it shipped).
-    - cron: '30 * * * *'
   workflow_dispatch:
     inputs:
       days:
         description: 'Look-back window (days)'
-        default: '14'
+        default: '3'
 
 concurrency:
   group: jobber-note-photo-sync
@@ -48,7 +41,5 @@ jobs:
       - name: Photo-level diff sync from Jobber notes (add + note-anchored remove)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-          SUPABASE_PAT: ${{ secrets.SUPABASE_PAT }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/sync/sync_jobber_note_photos.js --execute --enable-remove --days=${{ github.event.schedule == '30 * * * *' && '3' || github.event.inputs.days || '14' }}
+        run: node scripts/sync/sync_jobber_note_photos.js --execute --enable-remove --days=${{ github.event.inputs.days || '3' }}
