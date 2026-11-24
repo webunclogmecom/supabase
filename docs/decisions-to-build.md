@@ -925,7 +925,7 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
   for the screens: `Building Apps/Visit Calendar/docs/specs/2026-11-18-truck-by-category.md`. **Screens BUILT in the portal and LIVE 2026-11-18 about 4:20 PM ET** (Fred: "publish, old
   app yes, all defaults"; portal `b8e5b91`, `962e2a6`, `88307e2`; Ops Portal changelog of that day), **and in the old Visit
   Calendar about 4:50 PM ET** (Lovable `6533c3ee`, one prompt; Visit Calendar changelog). **Still open:** a real drag checked
-  by a person (machines cannot drive the Calendar's drag), and Diego and Yan's answer on the line items (draft not sent).
+  by a person (machines cannot drive the Calendar's drag), and Diego and Yan's answer on the line items (Fred posted the message 2026-11-18 2:02 PM ET; no reply by 11-24). **Trello: Testing / QA since 2026-11-24**, every item ticked; Diego has not reviewed. First real use 11-24: Serena saved Cloggy on 5 pumping visits past the warning (4 grey water, 1 grease trap), so grey water and lift stations on Cloggy are the question for Diego.
 
 ## 3. Waiting on Fred
 
