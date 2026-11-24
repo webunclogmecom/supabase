@@ -132,6 +132,12 @@ Verification: `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.re
 
 Related: all 7 `public.*` views and all 8 `ops.*` views have `security_invoker = true` (commits `9388819` and the audit-fix migration). They run as the querying role, so RLS on underlying tables is honored. No `SECURITY DEFINER` views exist anywhere in either schema.
 
+### The change log `audit.logs`: no browser role reads it directly (2026-11-23, `2026-11-23_1950`)
+
+It keeps whole old/new rows, codes included. authenticated / anon / PUBLIC hold nothing on `audit.logs` or schema
+`audit`; RLS is on with no policy. Apps read history only through postgres-owned owner-rights views and SECURITY
+DEFINER functions (list in the migration header). Check: `scripts/checks/audit_logs_not_signed_in_readable.sql`.
+
 ### `public.visits` — anon/authenticated write model (2026-07-09, `159e1c6`)
 
 The Lovable apps write `visits` under the **public anon key** (shipped in every bundle), so their write surface must be minimized — a push-safety audit found the old `visits_anon_update_manhole`/`_authn` policies were `USING(true)/CHECK(true)` with table-wide UPDATE, letting any anon-key holder PATCH `deleted_at`/`visit_status='cancelled'` on any visit → `trg_push_visit_update` → a **real Jobber `visitDelete`** (proven live). Locked down (`2026-07-09_visits_rls_lockdown.sql`):

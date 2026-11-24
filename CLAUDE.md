@@ -177,6 +177,20 @@ DELETE, TRUNCATE, TRIGGER, REFERENCES", which was all of ALL before PG17 and mis
 ⇒ **To take a role off an object, write `REVOKE ALL`, never a list.** Re-check with `aclexplode(relacl)` (or
 `has_table_privilege(..., 'MAINTAIN')`), never by reading the letters by eye.
 
+#### 🛑 NO BROWSER ROLE READS `audit.logs` DIRECTLY (since 2026-11-23, `2026-11-23_1950`; Fred: "Remove it + its rule")
+
+`audit.logs` keeps WHOLE old/new rows: gate and lock box codes inside `property_pages` content, the #244 `survey_no`
+reasons, and `audit.redacted_columns` can only redact whole columns. Until 2026-11-23 `authenticated` held SELECT, schema
+USAGE and a `USING (true)` policy, and only PostgREST's `db_schema` (no `audit`) kept it out of a browser. Now
+authenticated / anon / PUBLIC hold nothing on the table or the schema, and the table has RLS on with NO policy.
+- Every app reader is an owner-rights view (`client.job_activity`, `derm.gdo_report_activity`, `derm.manifest_activity`,
+  `derm.v_orphan_manifests`) or a SECURITY DEFINER function. 🛑 **A new reader must be one of those two.** A
+  `security_invoker` view or an INVOKER function a browser calls gets 42501 (the asymmetry below). The one INVOKER
+  reader, `derm.fn_manifest_row_states_core()`, is owner-only and called only from definer functions.
+- 🛑 Never add `audit` to PostgREST's exposed schemas, and never grant it back to fix a reader: make the reader a definer.
+- Check: `scripts/checks/audit_logs_not_signed_in_readable.sql` (one row `ok`; names a grant, policy or invoker reader
+  that comes back).
+
 #### 🛑 `audit.logs.changed_by` HAS NEVER BEEN POPULATED. Read `jwt_claims->>'email'` instead (2026-08-07)
 
 Measured across the whole table, with a control: **54,756 rows, `changed_by` non-null in 0 of them**,

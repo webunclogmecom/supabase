@@ -926,6 +926,15 @@ Band A cards: Fred approved the one-page list on 2026-11-05 ("yes, keep 25 on 65
 
 ## 4. Built (recent, with evidence)
 
+**The change log is no longer readable by a signed-in browser role (2026-11-23, found in the Trello #244 verification)**
+- Asked: revoke `authenticated`'s read of `audit.logs` (whole old/new rows: gate and lock box codes inside
+  `property_pages`, the #244 No reasons) or keep it. Fred: "Remove it + its rule (Recommended)".
+- **Built and live 7:50 PM ET**: `2026-11-23_1950_audit_logs_no_signed_in_read.sql` (rollback beside it): REVOKE ALL on
+  `audit.logs` and schema `audit` from authenticated / anon / PUBLIC, policy `authenticated_read_all` dropped. Every
+  reader is an owner-rights view or SECURITY DEFINER function: 19 readers identical (count + md5) before and after as a
+  signed-in admin, direct read 28 rows -> 42501 (rolled back); rollback rehearsed to the exact old ACLs. Standing check
+  `scripts/checks/audit_logs_not_signed_in_readable.sql` reads `ok`.
+
 **Site file photos stay off the customer's Field Portal (2026-11-23, follow-up of Trello #244 / #219)**
 - Asked: "Should Page Builder Site file photos show on the customer's Field Portal page?" Fred: "No, hide them".
 - **Built and live 5:37 PM ET**: `2026-11-23_1700_customer_access_photos_without_site_file_photos.sql` (rollback beside it):
