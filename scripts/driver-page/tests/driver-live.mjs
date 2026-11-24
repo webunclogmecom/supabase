@@ -5,7 +5,8 @@
 //   1. SSR HTML of /driver: no supabase chunk in its modulepreload list;
 //   2. the static-import closure of the /driver route chunk: no supabase chunk, no createClient / GoTrue;
 //   3. a real browser at 360 / 390 / 768 / 1280: the page shows the fixture's data, every photo decodes,
-//      no request goes to /rest/v1 or /auth/v1, the page tracker never carries the code (code=redacted),
+//      no request goes to /rest/v1 or /auth/v1, no request but driver-page carries the code (no page tracker since
+//      Visitor analytics went off on 2026-11-14; if one comes back it must send code=redacted),
 //      no sideways scroll, no tap target under 44px;
 //   4. a malformed and an unknown code show "This link is not valid."
 // Writes screenshots to <outdir>. Needs a [TEST] approved page on the property (see the migration notes).
@@ -97,9 +98,12 @@ for (const [name, w, h, dpr] of [['phone360', 360, 740, 2], ['phone390', 390, 84
   ok(`${name}: no tap target under 44px`, m.small.length === 0, m.small.join(', '))
   ok(`${name}: no request to /rest/v1 or /auth/v1`, !reqs.some((r) => /\/rest\/v1|\/auth\/v1/.test(r.url)))
   await p.waitForTimeout(1500)
-  const tracker = reqs.filter((r) => /\/~api\/analytics/.test(r.url))
-  ok(`${name}: control: the page tracker did report the page view`, tracker.length > 0, `${tracker.length} tracker requests`)
-  ok(`${name}: the tracker body carries code=redacted`, tracker.some((r) => r.body.includes('code=redacted')))
+  // Lovable "Visitor analytics" is OFF in this project since 2026-11-14 (Fred), so NO tracker is the expected state
+  // (same as shared-session/guard-shipped.mjs). If a tracker comes back, its page view must carry code=redacted.
+  const tracker = reqs.filter((r) => /\/~api\/analytics|\/__l5e\/|\/~flock\.js/.test(r.url))
+  ok(`${name}: no page tracker (Visitor analytics off), or it carries code=redacted`, tracker.length === 0 || tracker.some((r) => r.body.includes('code=redacted')), tracker.length ? `${tracker.length} tracker requests` : 'tracker=NONE (Visitor analytics off)')
+  // control for the leak check below: the capture does see the code where it belongs (the driver-page POST body)
+  ok(`${name}: control: the driver-page request carries the code`, reqs.some((r) => /functions\/v1\/driver-page/.test(r.url) && r.body.includes(CODE)))
   ok(`${name}: the page tracker never carries the code`, reqs.every((r) => !r.url.includes(CODE) || /functions\/v1\/driver-page/.test(r.url)) && tracker.every((r) => !r.body.includes(CODE)), `${tracker.length} tracker requests`)
   await ctx.close()
 }
