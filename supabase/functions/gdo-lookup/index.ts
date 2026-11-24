@@ -222,17 +222,20 @@ async function byAddress(ctx: Ctx, house: string, zip: string, street: string, v
   else over.streetName = street;
   const a = await ctx.county.all(over, 5);
   ctx.cut ||= a.cut;
-  for (const row of a.rows) ctx.rows.push({ row, via });
+  for (const row of a.rows) if (sameHouse(row, house)) ctx.rows.push({ row, via });
 }
+
+// The county's house number filter is not exact: 650 also brings 5650 (measured 2026-11-23 on 650 NW 33 St, 33127).
+const sameHouse = (row: CountyRow, house: string) => digitsOf(clean(row.houseNumber)) === digitsOf(house);
 
 async function folioOfAddress(ctx: Ctx, house: string, zip: string): Promise<string[]> {
   if (!house || !zip) return [];
   const first = await ctx.county.all({ houseNumber: house, zipCode: zip }, 1);
-  let folios = first.rows.map((r) => clean(r.folio)).filter(Boolean);
+  let folios = first.rows.filter((r) => sameHouse(r, house)).map((r) => clean(r.folio)).filter(Boolean);
   // No GDO permit filed at the address: any county document there names its parcel.
   if (!folios.length) {
     const any = await ctx.county.all({ houseNumber: house, zipCode: zip, caseNumber: "", documentType: "" }, 1);
-    folios = any.rows.map((r) => clean(r.folio)).filter(Boolean);
+    folios = any.rows.filter((r) => sameHouse(r, house)).map((r) => clean(r.folio)).filter(Boolean);
   }
   return [...new Set(folios)];
 }

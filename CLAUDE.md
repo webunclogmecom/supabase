@@ -519,6 +519,18 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
     `docs/migrations/2026-11-03_1830_*_PROOF.sql` (ends in ROLLBACK). The routing rollbacks refuse a wrong order by md5
     guard since `_2255`. A new DERM reader that does not go through `v_derm_portal_fields` must apply the rule itself.
 
+## ✅ THE GDO LOOKUP: edge function `gdo-lookup` (2026-11-24, Trello #242)
+
+Fred: *"go with D1 and all recommended, build it"*. The Ops Portal searches Miami-Dade's public permit list, reads a permit
+(text by `_shared/gdo-permit-read.ts`, the reader `parse-gdo-permit` uses, moved there verbatim; a scan by Claude), shows the
+county's file (passed through as a PDF) and copies it into `gdo-permits` to add it to a site (`take`, never over a file).
+Access rows `gdo_lookup` (Client App or DERM Tracker View) and `gdo_lookup_take` (Client App Edit) in
+`hr.check_app_action` (`2026-11-23_1845`). 🛑 It never returns a permit page as text (page 1 holds a contact and the county's
+reporting password), fetches files only from the county's store, keeps only rows at the EXACT house number (the county's
+filter is not exact: 650 brings 5650), and a county that does not answer is never "no permit". Places refuses the server
+key (HTTP 403), so the portal sends the Google Maps addresses. Read [docs/reference/gdo-lookup.md](docs/reference/gdo-lookup.md)
+before changing it.
+
 ## 🛑 FROZEN LEADS: the private schema `leads` (2026-11-03, Trello #165 / #166)
 
 **Boca Raton and BSI Online, the whole picture (what exists, who is matched, how to file by hand, what is waiting):
