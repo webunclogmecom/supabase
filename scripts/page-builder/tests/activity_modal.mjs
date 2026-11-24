@@ -48,6 +48,8 @@ function diff(nw, old) {
   if (add) out.push(`${add} photo${add > 1 ? 's' : ''} added`)
   if (rem) out.push(`${rem} photo${rem > 1 ? 's' : ''} removed`)
   if (!eq(mapOf(nw?.site_map), mapOf(old?.site_map))) out.push('Site map changed')
+  // Trello #244 (2026-11-23): the page's No answers to the intake form (staff only, never on the Site file)
+  if (!eq(nw?.survey_no ?? null, old?.survey_no ?? null)) out.push('Answers not taken from the form changed')
   return out
 }
 const ET = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })

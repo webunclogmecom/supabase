@@ -53,8 +53,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `driver-page`. Other apps: a separate task (Field Portal's `customer.thumbnail_url` does the same).
 - To build: the old Picture Planner (Lovable `d9464151`) by Supabase 2; the portal copy by the session named Supabase;
   one migration so the page keeps the No reasons (`public.fn_page_content_problem` refuses unknown keys today).
-- **BUILT in the old Picture Planner 2026-11-24** (`unclogme-pics-organizer` `20936db`, published from Lovable about
-  12:30 AM ET; 57 of 57 behaviour checks on planner.unclogme.app). Database: `2026-11-23_1830_page_survey_no` (the page
+- **BUILT in the old Picture Planner 2026-11-23** (`unclogme-pics-organizer` `20936db`, published from Lovable about
+  6:30 PM ET; 57 of 57 behaviour checks on planner.unclogme.app). Database: `2026-11-23_1830_page_survey_no` (the page
   keeps `survey_no`, the Site file never shows it). `driver-page` v26 asks for whole photos. **Still to build: the Ops
   Portal copy** (the session named Supabase ports `20936db`; RELEASE line in `WORKING-NOW.md`).
 

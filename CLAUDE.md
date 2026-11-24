@@ -596,7 +596,7 @@ middle columns of the photo (810x1080 asked `width=400&resize=cover` -> 400x1080
 photo. `customer.thumbnail_url` asked for `cover` until `2026-11-23_1610`; its readers (Field Portal, the DERM report,
 the pdf-service printing both) rewrote it to `contain` in the browser, so no screen showed it. A new SQL helper, edge
 function or app request asks for `contain` (or width + height + cover for a known box). Check:
-`scripts/checks/storage_transform_contain.mjs` (database, edge functions, every live app). Since 2026-11-24 (#244) the old
+`scripts/checks/storage_transform_contain.mjs` (database, edge functions, every live app). Since the evening of 2026-11-23 (#244) the old
 Picture Planner and `driver-page` (v26, the literal `resize=contain` the check reads) are green; it stays red on the Ops
 Portal's copy of the Planner until the session named Supabase ports commit `20936db` of `unclogme-pics-organizer`.
 
