@@ -25,8 +25,8 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
-**One visit view, one manifest view, DERM visits inside Manifests: round 1 picks (2026-11-24, Trello #215 `RznftJ0a`, #216 `bfuZbdgY`)**
-- NOT BUILT. Round 1 page `mockups/2026-11-24-visit-manifest-views.html` (local only, real client names), its words and sources in
+**One visit view, one manifest view, DERM visits inside Manifests (2026-11-24, Trello #215 `RznftJ0a`, #216 `bfuZbdgY`)**
+- BUILT and LIVE 2026-11-24 (see the last line). Round 1 page `mockups/2026-11-24-visit-manifest-views.html` (local only, real client names), its words and sources in
   `mockups/2026-11-23-visit-manifest-views-src/` (`00-brief.md` holds Fred's answer word for word).
 - **Picked 2026-11-24 about 8 AM ET.** Fred: *"Go with VO1, MW1, DV1 (but make the things in the table to be aligned, remember that as
   a rule for when making table/rows)"*.
@@ -43,7 +43,14 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - Still open (round 2): VW, between VW2 as Fred placed it (left: Service details, Manifest, Photos; right: Communication, County
   report) and VW3 (the timeline); MT, where Fred wants a manifest page, "not as an accordion nor dialog" (MT1 and MT2 not taken);
   VS and the round 1 defaults, not answered yet.
-- To be built by the session named Supabase, in the portal only, after the round 2 picks.
+- Round 2 answered 2026-11-24 (Fred: *"go with recommended it, build it, test it and document."*): VW2 (his placement),
+  MT3 (the manifest page), VS1, and the 28 defaults.
+- ✅ **BUILT and LIVE 2026-11-24 about 2:05 PM ET** (portal `6824735`, live entry `index-PH6SU2oI.js`; database
+  `2026-11-24_1430`, Supabase `2ded7025`; standing check `live-portal-tiles.mjs` 104 of 104, `31f8af98`). Record:
+  `Building Apps/Ops Portal/docs/08-changelog.md` 2026-11-24, the build plan
+  `Building Apps/Ops Portal/docs/specs/2026-11-24-visit-and-manifest-views-build.md`. Cards In Progress with open items:
+  Auto file as a line of the visit three dots, the Field Portal link check, the Calendar delete warning, the re-runs of
+  #203 / #204 / #206, and the remaining live checks.
 
 **GDO lookup: inside a site's City permits section, plus a page under Compliance (2026-11-24, Trello #242 ebj6IVxa)**
 - ✅ **BUILT and LIVE 2026-11-23 about 8 PM ET** (card in Testing / QA): edge fn `gdo-lookup` (Supabase `6f8a3179`,
