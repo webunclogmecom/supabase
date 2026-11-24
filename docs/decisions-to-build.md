@@ -225,6 +225,13 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   note; a window guard stops the browser opening a PDF dropped outside a drop area (toast "Drop the permit PDF on the City
   permits box of the address it belongs to."); a reader HTTP error shows the reader's own message. Another business's text
   document is still refused. Trello: Testing / QA since 2026-11-24.
+- **Scans read by Claude, LIVE 2026-11-24 about 1:25 PM ET** (Fred: "do we use the Anthropic scan for it like we do for
+  the Monthly report?" -> "yes"). The GDO lookup's scan reader moved to `_shared/gdo-permit-scan.ts`; `parse-gdo-permit`
+  asks it whenever its text reader finds no permit (a scan can carry 510,170 characters of noise, so not "under 200
+  characters"): Claude sees a permit -> kept and filled, with "Check the permit number, the dates and how often it must
+  be cleaned against the PDF before saving."; Claude says no -> refused, nothing kept. Number fix in the shared reader
+  (the lookup had it too). Live on 3 real scans (148-MOR GDO-014769 60 days, 036-LG GDO-012484 90, 233-AH GDO-015303
+  90), 4 to 7 s each, and a non-permit control refused.
 - **OPEN:** the portal's copy (the flag + read:false, the window guard, the 6-digit hint), with the session named Supabase
   (WORKING-NOW hand-off 2026-11-24); Diego's re-test.
 

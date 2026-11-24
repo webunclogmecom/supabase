@@ -1,5 +1,6 @@
 import { checkAppAction } from '../_shared/access-check.ts'   // 2026-10-21_0900 access phase 5
 import { parsePermit, diag } from '../_shared/gdo-permit-read.ts'
+import { readScan, scanFields } from '../_shared/gdo-permit-scan.ts'   // 2026-11-24 (#227): the GDO lookup's picture reader
 export { diag }
 // ============================================================================
 // parse-gdo-permit — read a Miami-Dade DERM GDO operating-permit PDF and return
@@ -161,12 +162,39 @@ Deno.serve(async (req: Request) => {
       return null
     }
 
-    if (acceptUnread && !parsed.isDermPermit && parsed.chars < 200) {
-      const path = await keepUnread()
+    // Fred, 2026-11-24: "do we use the Anthropic scan for it like we do for the Monthly report?" -> "yes". What the text
+    // could not give is read from the page picture by Claude (the GDO lookup's reader, _shared/gdo-permit-scan.ts).
+    // Always answered read:false, so the app shows it as typed-in fields with a note to check them against the PDF.
+    const fromPicture = async (): Promise<{ state: 'read' | 'not_permit' | 'failed'; fields: Record<string, unknown> }> => {
+      try {
+        const s = await readScan(pdf!)
+        if (!s.ok) { console.log('parse-gdo-permit scan failed', s.why); return { state: 'failed', fields: {} } }
+        if (s.out.is_permit !== true) return { state: 'not_permit', fields: {} }
+        const fields: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(scanFields(s.out))) if (v != null && k !== 'capacity_gpm') fields[k] = v
+        return { state: 'read', fields }
+      } catch (e) {
+        console.log('parse-gdo-permit scan threw', (e instanceof Error ? e.message : String(e)).slice(0, 160))
+        return { state: 'failed', fields: {} }
+      }
+    }
+    const CHECK = 'Check the permit number, the dates and how often it must be cleaned against the PDF before saving.'
+
+    // A scan is NOT always "no text": the 148-MOR permit's picture streams unpack into 510,170 characters of noise and
+    // read as "another document" (measured 2026-11-24). So the picture decides: Claude sees a GDO permit -> kept and
+    // filled; Claude says it is not one -> refused as before, nothing kept; Claude not reachable -> the old rule (kept
+    // only when there is almost no text).
+    if (acceptUnread && !parsed.isDermPermit) {
+      const pic = await fromPicture()
+      const keep = pic.state === 'read' || (pic.state === 'failed' && parsed.chars < 200)
+      const path = keep ? await keepUnread() : null
       if (path) {
-        return json({ ok: true, isDermPermit: true, read: false, reason: 'scan', filename, permit_type: permitType,
-          fields: { permit_document_path: path }, stored: true,
-          store_note: 'This PDF has no readable text (it is probably a scan), so nothing was filled in. It is attached to the permit: type the permit number, the dates and how often it must be cleaned from it.' }, 200, req)
+        const got = Object.keys(pic.fields).length > 0
+        return json({ ok: true, isDermPermit: true, read: false, reason: 'scan', read_by: got ? 'claude' : null,
+          filename, permit_type: permitType, fields: { ...pic.fields, permit_document_path: path }, stored: true,
+          store_note: got
+            ? `This PDF is a scan, so Claude read it from the picture and filled in what it could. ${CHECK}`
+            : 'This PDF is a scan and nothing could be read from it, so nothing was filled in. It is attached to the permit: type the permit number, the dates and how often it must be cleaned from it.' }, 200, req)
       }
     }
 
@@ -194,9 +222,17 @@ Deno.serve(async (req: Request) => {
       if (acceptUnread) {
         const path = await keepUnread()
         if (path) {
+          // The text's answers stand; the picture only fills what the text left empty.
+          const pic = await fromPicture()
+          const filled: Record<string, unknown> = {}
+          for (const [k, v] of Object.entries(pic.fields)) if ((parsed.fields as Record<string, unknown>)[k] == null) filled[k] = v
+          const got = parsed.missing.some((k) => filled[k] != null)
           return json({ ok: true, isDermPermit: true, read: false, reason: 'fields_missing', missing_fields: parsed.missing,
-            filename, permit_type: permitType, fields: { ...parsed.fields, permit_document_path: path }, stored: true,
-            store_note: `The PDF is attached, but ${list} could not be read from it. Check what was filled in and type the rest from the PDF.` }, 200, req)
+            read_by: got ? 'claude' : null,
+            filename, permit_type: permitType, fields: { ...parsed.fields, ...filled, permit_document_path: path }, stored: true,
+            store_note: got
+              ? `The PDF is attached. ${list[0].toUpperCase() + list.slice(1)} could not be read from its text, so Claude read the picture and filled in what it could. ${CHECK}`
+              : `The PDF is attached, but ${list} could not be read from it. Check what was filled in and type the rest from the PDF.` }, 200, req)
         }
       }
       return json({

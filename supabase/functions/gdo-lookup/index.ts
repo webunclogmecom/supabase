@@ -24,16 +24,15 @@
 // County calls are 0.5 s apart within a request (the Slack @GDO bot's courtesy). The county keeps 5 digits in its
 // index (GDO-11423); our numbers have 6 since #227 (GDO-011423). Models and keys: docs/reference/anthropic-api-usage.md.
 
-import Anthropic from "npm:@anthropic-ai/sdk";
 import { checkAppAction } from "../_shared/access-check.ts";
 import { flattenPdf, parsePermit } from "../_shared/gdo-permit-read.ts";
+import { readScan, scanFields } from "../_shared/gdo-permit-scan.ts";   // moved there 2026-11-24 (#227)
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const COUNTY = "https://api-ecmrer.miamidade.gov/derm/documents";
 const FILE_RE = /^https:\/\/stecmrerportal\.blob\.core\.windows\.net\/dermdocuments\/[0-9a-f]{6,64}\.pdf$/i;
 const MAX_PDF_BYTES = 15 * 1024 * 1024;
-const MODEL = "claude-opus-5-5";
 const ALLOW_HEADERS_FALLBACK = "authorization, x-client-info, apikey, content-type, x-app-source";
 
 // ---------------------------------------------------------------------------------------------------- http helpers
@@ -429,70 +428,6 @@ export function fullName(first: string, flat: string): string {
   return best;
 }
 
-function b64(bytes: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
-}
-
-const SCAN_PROMPT =
-  "This file comes from Miami-Dade County's public list of grease (GDO) operating permits. It may be a scanned " +
-  "picture. Read ONLY these facts from the permit itself: the permit number (e.g. GDO-014655), the business it is " +
-  "issued to exactly as printed after \"Permit Issued To:\" or in the PERMITTEE block (the company, never a person's " +
-  "name), the facility location (street address, unit, city, ZIP), the dates the permit is valid from and through " +
-  "(as YYYY-MM-DD), and how often the grease trap must be cleaned at a minimum, in days. Leave out everything else: " +
-  "never return a contact person, a mailing address, a password or a PIN. Use null for a fact you cannot read with " +
-  "certainty. Set is_permit to false if this is not a GDO operating permit.";
-
-const SCAN_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["is_permit", "permit_number", "issued_to", "facility_location", "valid_from", "valid_through", "cleaning_every_days"],
-  properties: {
-    is_permit: { type: "boolean" },
-    permit_number: { anyOf: [{ type: "string" }, { type: "null" }] },
-    issued_to: { anyOf: [{ type: "string" }, { type: "null" }] },
-    facility_location: { anyOf: [{ type: "string" }, { type: "null" }] },
-    valid_from: { anyOf: [{ type: "string", format: "date" }, { type: "null" }] },
-    valid_through: { anyOf: [{ type: "string", format: "date" }, { type: "null" }] },
-    cleaning_every_days: { anyOf: [{ type: "integer" }, { type: "null" }] },
-  },
-};
-
-let anthropic: Anthropic | null = null;
-
-/** Pick E1: a permit the county only has as a scan, read from its picture. */
-async function readScan(pdf: Uint8Array) {
-  anthropic ??= new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
-  // claude-opus-5-5: thinking cannot be turned off, effort is the control; the default server-side fallback answers a
-  // refusal on another model inside the same call (as gdo-permit-label).
-  // deno-lint-ignore no-explicit-any
-  const msg: any = await anthropic.beta.messages.create({
-    model: MODEL,
-    max_tokens: 4000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: "low", format: { type: "json_schema", schema: SCAN_SCHEMA } },
-    messages: [{
-      role: "user",
-      content: [
-        { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64(pdf) } },
-        { type: "text", text: SCAN_PROMPT },
-      ],
-    }],
-  // deno-lint-ignore no-explicit-any
-  } as any);
-  if (msg.stop_reason === "refusal" || msg.stop_reason === "max_tokens") return { ok: false as const, why: msg.stop_reason };
-  // deno-lint-ignore no-explicit-any
-  const text = (msg.content ?? []).filter((c: any) => c?.type === "text").map((c: any) => c.text ?? "").join("");
-  try {
-    return { ok: true as const, out: JSON.parse(text) as Record<string, unknown>, model: String(msg.model ?? MODEL) };
-  } catch {
-    return { ok: false as const, why: "not_json" };
-  }
-}
-
-const ISO = /^\d{4}-\d{2}-\d{2}$/;
 async function read(body: { url?: string }) {
   const pdf = await fetchCountyPdf(String(body.url ?? ""));
   const parsed = await parsePermit(pdf);
@@ -513,20 +448,7 @@ async function read(body: { url?: string }) {
   if (!s.ok || s.out.is_permit !== true) {
     return { read: false, source: "scan", why: s.ok ? "not_a_permit" : s.why };
   }
-  const o = s.out;
-  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : null);
-  const num = str(o.permit_number);
-  const days = typeof o.cleaning_every_days === "number" && o.cleaning_every_days > 0 && o.cleaning_every_days <= 365
-    ? Math.round(o.cleaning_every_days) : null;
-  const fields = {
-    gdo_number: num && /GDO[-\s]*\d{1,6}/i.test(num) ? six(num) : null,
-    issued_to: str(o.issued_to),
-    facility_location: str(o.facility_location),
-    permit_effective: ISO.test(String(o.valid_from)) ? String(o.valid_from) : null,
-    permit_expiration: ISO.test(String(o.valid_through)) ? String(o.valid_through) : null,
-    max_frequency_days: days,
-    capacity_gpm: null,
-  };
+  const fields = scanFields(s.out);
   const missing = Object.entries(fields).filter(([k, v]) => v == null && k !== "capacity_gpm").map(([k]) => k);
   return { read: true, source: "scan", fields, missing, model: s.model };
 }

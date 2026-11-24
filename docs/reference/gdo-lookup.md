@@ -68,6 +68,12 @@ eye. A file that cannot be read returns `read: false`, and the portal asks the p
 (an empty expiry date counts as active, decision 13, which is why it must be asked). Reads are kept an hour in the
 browser; nothing is cached on the server and nothing is written by `read`.
 
+Since 2026-11-24 (Trello #227) the reader lives in `_shared/gdo-permit-scan.ts` (`readScan`, `scanFields`, moved
+verbatim) and `parse-gdo-permit` uses it too, for scans staff drop in the Client App. One fix there, for both: the
+permit number is the first group of at most 6 digits after "GDO". Claude returns the permit years with it ("GDO-14769
+2024-2025"), and the old rule took every digit: "GDO-1476920242025" on 3 of 3 of our own scans. Checked on the live
+page after the move: GDO-015303 (a county scan) read as Lucciano's Usn 6 LLC, expired 2024-12-31, every 90 days.
+
 ## Checks
 
 - `node scratchpad c242/live_lookup.mjs` (session scratch, not kept) ran every action live with the server key on

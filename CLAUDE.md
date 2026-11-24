@@ -459,6 +459,12 @@ portal still see only GDO"*; the PDF is optional for every type; CCN (Boca Raton
   `derm.audit_pack` work it out from the client since `2026-11-14_0100`. Never read or write the column in new work;
   `client.derm_manifests` and `customer.work_orders` / `work_orders_all` still select it and never use it, so a drop
   goes with them. Check: `scripts/checks/derm_manifest_permit_on_read.sql`.
+- 🛑 **`parse-gdo-permit` with `accept_unread: true` (since 2026-11-24, Trello #227) never drops a real permit PDF.** A PDF
+  its text reader cannot read goes to Claude (`_shared/gdo-permit-scan.ts`, the GDO lookup's reader): a GDO permit is
+  kept at `gdo/unread/<date>-<id>.pdf` and answered `ok:true, read:false` with the fields it read and a note to check
+  them; a picture that is not a permit is refused as before and nothing is kept. A scan does NOT mean "no text" (the
+  148-MOR scan unpacks into 510,170 characters of noise), so never gate the picture read on a character count. Without
+  the flag the replies are the old ones; the old Client App sends it, the portal not yet.
 - `parse-gdo-permit` reads only GDO PDFs; with another `permit_type` it stores the PDF unread at `<type>/<date>-<random>.pdf`.
   Its refusal `message` is the sentence staff read, shown as it is by both permit dialogs. Since v43 (2026-11-18, Trello #227)
   a fields-missing reply names the fields in words and carries the codes as `missing_fields`: never `missing`, which both
