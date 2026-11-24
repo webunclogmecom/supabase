@@ -19,6 +19,18 @@ organization only (Yannick picks UNCLOGME frozen leads when he connects); Yannic
 before the connector works: invite Yannick to UNCLOGME frozen leads (Developer is enough). Note: the connector acts as
 the database owner over the whole sandbox, not through `yannick_leads`.
 
+**Yannick's connectors, LIVE 2026-11-24 (Fred: "good he finished"):**
+- **Sandbox, read and write:** the claude.ai Supabase connector, authorised on UNCLOGME frozen leads (he is Administrator
+  there). It acts as the database owner on this project.
+- **Prod, read only:** a custom connector at `https://mcp.supabase.com/mcp?project_ref=wbasvhvvismukaqdnouk&read_only=true`,
+  authorised on Unclogme (he is Administrator there; Fred kept that role so he could authorise it). Every query runs as
+  `supabase_read_only_user`; checked from our side the same day: 3 read statements by that role on Prod, none writing.
+- 🛑 The one rule: **only ever that one Prod connection, always with `read_only=true`.** Any other connector or token he
+  authorises on Unclogme writes to Prod with Administrator rights. It reads everything he can see in the dashboard
+  (pay, `audit.logs` with gate and lock box codes, contacts), so those reads pass through Claude.
+- Fallback not built (Option B, Fred's choice for later): our own read-only login on curated Prod views behind a small
+  server, if his AI should see less than he can.
+
 A standalone Supabase project Yannick builds his HR (employee-management) Lovable app against, so he has realistic data without touching Prod. It is a **one-time clone of Prod from ~April 2026** that has since **diverged** (Prod moved forward; the sandbox schema was frozen at clone time). It is NOT periodically auto-refreshed structurally — only its **data** is topped up on demand (see §3).
 
 ## 2. Schema / architecture (legacy April-clone — DO NOT "upgrade" it)
