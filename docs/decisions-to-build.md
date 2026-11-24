@@ -25,6 +25,26 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 
 ## 2. Agreed, not built (or only partly)
 
+**One visit view, one manifest view, DERM visits inside Manifests: round 1 picks (2026-11-24, Trello #215 `RznftJ0a`, #216 `bfuZbdgY`)**
+- NOT BUILT. Round 1 page `mockups/2026-11-24-visit-manifest-views.html` (local only, real client names), its words and sources in
+  `mockups/2026-11-23-visit-manifest-views-src/` (`00-brief.md` holds Fred's answer word for word).
+- **Picked 2026-11-24 about 8 AM ET.** Fred: *"Go with VO1, MW1, DV1 (but make the things in the table to be aligned, remember that as
+  a rule for when making table/rows)"*.
+  - VO1: a click on a visit opens the visit view in a window over the list, with Open the page; Close returns to the list. This
+    refines the 2026-11-19 voice note line "the Clients Visits tab opens the page": the window comes first, the page is one click on.
+  - MW1: the manifest window shows the ticket first with no tabs: the pictures at the left, the ticket's three facts and its state in
+    words, then every client on it in fixed columns (the visit's day opens the visit; stamp, copy, city, email and county report
+    icons always in the same place).
+  - DV1: DERM visits leaves the menu and becomes a Visits tab inside Manifests (segments Needs a manifest / Has a manifest / Not
+    required / All, the bulk bar Mark not required, Generate address sheet, Attach a manifest).
+  - Every part of a table row lines up on every row, chips included: a client code or county chip has one fixed width, so the name
+    and what follows start at the same x (playbook section 3, rows).
+  - Card names: "Service details" (was "What was done and billed") and "Communication" (was "Sent").
+- Still open (round 2): VW, between VW2 as Fred placed it (left: Service details, Manifest, Photos; right: Communication, County
+  report) and VW3 (the timeline); MT, where Fred wants a manifest page, "not as an accordion nor dialog" (MT1 and MT2 not taken);
+  VS and the round 1 defaults, not answered yet.
+- To be built by the session named Supabase, in the portal only, after the round 2 picks.
+
 **GDO lookup: inside a site's City permits section, plus a page under Compliance (2026-11-24, Trello #242 ebj6IVxa)**
 - ✅ **BUILT and LIVE 2026-11-23 about 8 PM ET** (card in Testing / QA): edge fn `gdo-lookup` (Supabase `6f8a3179`,
   `b2fc6e88`), access rows `2026-11-23_1845`, the reader moved to `_shared/gdo-permit-read.ts` (`505e923e`); portal
