@@ -54,6 +54,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
 - ✅ The open items built and checked the same day (portal `cfac6f3`, live about 4:00 PM ET): File the GDO report in the visit
   menus, the Calendar delete names what a visit carries, a deleted visit's page, the Field Portal link only where a report exists,
   #204 on screen. **Cards #215 and #216 in Testing / QA since 2026-11-24** (every item ticked, complete; the office has not re-tested).
+- 🔁 **CHANGED 2026-11-24 evening: the visit view becomes the timeline (VW3), not VW2.** Fred: *"for the visits view use the 1st
+  image now, i know when you asked me i decided something else, but let's change it"* (with the round 2 picture of VW3). New card
+  #250 `4XCga0bx` (In Progress; #215 stays in Testing / QA untouched). NOT BUILT yet when this line was written.
 
 **GDO lookup: inside a site's City permits section, plus a page under Compliance (2026-11-24, Trello #242 ebj6IVxa)**
 - ✅ **BUILT and LIVE 2026-11-23 about 8 PM ET** (card in Testing / QA): edge fn `gdo-lookup` (Supabase `6f8a3179`,
