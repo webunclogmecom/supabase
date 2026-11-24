@@ -41,13 +41,14 @@ const MENU = [
   ['reviews', 'Reviews', 'Work', '/review'], ['site-files', 'Site files', 'Work', '/planner'], ['my-forms', 'My forms', 'Work', 'https://planner.unclogme.app'],
   ['manifests', 'Manifests', 'Compliance', '/derm/manifests'], ['address-sheets', 'Address sheets', 'Compliance', '/stamp'],
   ['derm-visits', 'DERM visits', 'Compliance', '/derm'], ['monthly-report', 'Monthly report', 'Compliance', '/derm/monthly'],
+  ['gdo-lookup', 'GDO lookup', 'Compliance', '/derm/gdo-lookup'], // Trello #242, 2026-11-24
   ['pumped-water', 'Pumped water', 'Metrics', '/review/water'], ['pumped-grease', 'Pumped grease', 'Metrics', '/review/grease'],
   // Finances, under Metrics, opened by the Client App setting.
   ['invoices', 'Invoices', 'Finances', '/finances/invoices'], ['quotes', 'Quotes', 'Finances', '/finances/quotes'], ['payments', 'Payments', 'Finances', '/finances/payments'],
   ['people', 'People', 'Team', '/hr'], ['access', 'Access', 'Team', '/hr/access'],
 ]
 const FINANCES = ['invoices', 'quotes', 'payments']
-const OFFICE_MENU = ['home', 'calendar', 'clients', 'reviews', 'site-files', 'manifests', 'derm-visits', 'monthly-report', 'pumped-water', 'pumped-grease', ...FINANCES, 'people']
+const OFFICE_MENU = ['home', 'calendar', 'clients', 'reviews', 'site-files', 'manifests', 'derm-visits', 'monthly-report', 'gdo-lookup', 'pumped-water', 'pumped-grease', ...FINANCES, 'people']
 const ADMIN_MENU = [...OFFICE_MENU, 'access']
 const TOP = ['hr', 'admin_review', 'client_app', 'visit_calendar', 'derm_tracker', 'stamp_studio', 'picture_planner']
 const SUBS = { hr_pay: 'hr', hr_bonus: 'hr', pp_approve: 'picture_planner', pp_forms: 'picture_planner' }
@@ -966,7 +967,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   await block(w, h, 'one lit item on each address', ADMIN, PORTAL, async ({ page, seen, fails }) => {
     // The eight addresses the plan names, at every width. With the sidebar on screen, the rest of its "Lit on" column too.
     const NAMED = [['', 'home'], ['review/water', 'pumped-water'], ['derm/manifests/health', 'manifests'], ['derm/manifests?q=830714', 'manifests'], ['hr/access', 'access'], ['stamp', 'manifests'], ['derm/visits/1', 'derm-visits'], ['review/visit/1', 'reviews']]
-    const REST = [['calendar', 'calendar'], ['review', 'reviews'], ['review/shift/1', 'reviews'], ['planner', 'site-files'], ['planner/forms', 'site-files'], ['planner/forms/1', 'site-files'], ['planner/property/1', 'site-files'], ['derm/manifests', 'manifests'], ['derm/upload', 'manifests'], ['stamp/1', 'manifests'], ['derm', 'derm-visits'], ['derm/monthly', 'monthly-report'], ['review/grease', 'pumped-grease'], ['finances/invoices', 'invoices'], ['finances/quotes', 'quotes'], ['finances/payments', 'payments'], ['finances', 'invoices'], ['hr/employees', 'people'], ['hr/employees/2', 'people']]
+    const REST = [['calendar', 'calendar'], ['review', 'reviews'], ['review/shift/1', 'reviews'], ['planner', 'site-files'], ['planner/forms', 'site-files'], ['planner/forms/1', 'site-files'], ['planner/property/1', 'site-files'], ['derm/manifests', 'manifests'], ['derm/upload', 'manifests'], ['stamp/1', 'manifests'], ['derm', 'derm-visits'], ['derm/monthly', 'monthly-report'], ['derm/gdo-lookup', 'gdo-lookup'], ['review/grease', 'pumped-grease'], ['finances/invoices', 'invoices'], ['finances/quotes', 'quotes'], ['finances/payments', 'payments'], ['finances', 'invoices'], ['hr/employees', 'people'], ['hr/employees/2', 'people']]
     for (const [addr, id] of w >= 1280 ? [...NAMED, ...REST] : NAMED) {
       await page.goto(PORTAL + addr, { waitUntil: 'domcontentloaded' })
       await page.locator('main').waitFor({ timeout: 15000 }).catch(() => {})
@@ -990,7 +991,7 @@ for (const [w, h] of [[1440, 900], [375, 812]]) {
   // Every page has a way in: each page address with no record id is reached from the menu in two clicks at most. This is the
   // only test of the doors that are tabs or links of the bar (Health, Upload, Forms, Address sheets).
   await block(w, h, 'every page has a way in', ADMIN, PORTAL + 'profile', async ({ page, seen, fails }) => {
-    const WAYS = [['/', 'home'], ['/calendar', 'calendar'], ['/derm', 'derm-visits'], ['/derm/manifests', 'manifests'], ['/derm/manifests/health', 'manifests', true], ['/derm/monthly', 'monthly-report'], ['/derm/upload', 'manifests', true], ['/hr/access', 'access'], ['/hr/employees', 'people'], ['/planner', 'site-files'], ['/planner/forms', 'site-files', true], ['/review', 'reviews'], ['/review/grease', 'pumped-grease'], ['/review/water', 'pumped-water'], ['/stamp', 'manifests', true], ['/finances/invoices', 'invoices'], ['/finances/quotes', 'quotes'], ['/finances/payments', 'payments']]
+    const WAYS = [['/', 'home'], ['/calendar', 'calendar'], ['/derm', 'derm-visits'], ['/derm/manifests', 'manifests'], ['/derm/manifests/health', 'manifests', true], ['/derm/monthly', 'monthly-report'], ['/derm/gdo-lookup', 'gdo-lookup'], ['/derm/upload', 'manifests', true], ['/hr/access', 'access'], ['/hr/employees', 'people'], ['/planner', 'site-files'], ['/planner/forms', 'site-files', true], ['/review', 'reviews'], ['/review/grease', 'pumped-grease'], ['/review/water', 'pumped-water'], ['/stamp', 'manifests', true], ['/finances/invoices', 'invoices'], ['/finances/quotes', 'quotes'], ['/finances/payments', 'payments']]
     let reached = 0
     for (const [path, id, second] of WAYS) {
       const first = MENU.find(([m]) => m === id)[3]
