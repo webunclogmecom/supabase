@@ -51,6 +51,9 @@ the session scratchpad). Counts and states below are dated observations: re-meas
   `Building Apps/Ops Portal/docs/specs/2026-11-24-visit-and-manifest-views-build.md`. Cards In Progress with open items:
   Auto file as a line of the visit three dots, the Field Portal link check, the Calendar delete warning, the re-runs of
   #203 / #204 / #206, and the remaining live checks.
+- ✅ The open items built and checked the same day (portal `cfac6f3`, live about 4:00 PM ET): File the GDO report in the visit
+  menus, the Calendar delete names what a visit carries, a deleted visit's page, the Field Portal link only where a report exists,
+  #204 on screen. **Cards #215 and #216 in Testing / QA since 2026-11-24** (every item ticked, complete; the office has not re-tested).
 
 **GDO lookup: inside a site's City permits section, plus a page under Compliance (2026-11-24, Trello #242 ebj6IVxa)**
 - ✅ **BUILT and LIVE 2026-11-23 about 8 PM ET** (card in Testing / QA): edge fn `gdo-lookup` (Supabase `6f8a3179`,
